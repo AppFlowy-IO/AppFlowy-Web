@@ -1,5 +1,5 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as Y from 'yjs';
 
@@ -32,9 +32,7 @@ const mockDeleteTrash = jest.fn();
 const mockUpdatePage = jest.fn();
 const mockFlush = jest.fn();
 const mockScheduleDeferredCleanup = jest.fn();
-const mockEnsureCanAuthor = jest.fn();
 const mockMenuSelectPreventDefault = jest.fn();
-let mockCanAuthor: boolean | null = true;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -66,15 +64,6 @@ jest.mock('@/components/app/app.hooks', () => ({
   useOpenPageModal: () => mockOpenPageModal,
   useScheduleDeferredCleanup: () => mockScheduleDeferredCleanup,
   useToView: () => mockToView,
-}));
-
-jest.mock('@/components/database/form/useCanAuthorFormView', () => ({
-  useCanAuthorFormView: () => ({
-    canAuthor: mockCanAuthor,
-    isLoading: mockCanAuthor === null,
-    hasError: false,
-    ensureCanAuthor: mockEnsureCanAuthor,
-  }),
 }));
 
 jest.mock('@/components/chat/request', () => ({
@@ -144,17 +133,10 @@ function view(overrides: Partial<View> = {}): View {
   };
 }
 
-function SearchParamsProbe() {
-  const { search } = useLocation();
-
-  return <output data-testid='search-params'>{search}</output>;
-}
-
-function renderActions(targetView: View, initialEntry = '/', onClose?: () => void) {
+function renderActions(targetView: View) {
   return render(
-    <MemoryRouter initialEntries={[initialEntry]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-      <AddPageActions view={targetView} onClose={onClose} />
-      <SearchParamsProbe />
+    <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+      <AddPageActions view={targetView} />
     </MemoryRouter>
   );
 }
@@ -229,8 +211,6 @@ describe('AddPageActions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAddPage.mockReset();
-    mockCanAuthor = true;
-    mockEnsureCanAuthor.mockResolvedValue(true);
     mockAddPage.mockResolvedValue({ view_id: 'chat-id' });
     mockUpdateChatSettings.mockResolvedValue(undefined);
     mockToView.mockResolvedValue(undefined);
@@ -246,7 +226,7 @@ describe('AddPageActions', () => {
     mockUpdatePage.mockResolvedValue(undefined);
   });
 
-  it('shows Form and creates it through the standalone page API when authoring is allowed', async () => {
+  it('shows Form and creates it without checking a workspace subscription', async () => {
     const parent = view({
       view_id: 'parent-id',
       children: [view({ view_id: 'last-child-id' })],
@@ -268,115 +248,6 @@ describe('AddPageActions', () => {
     );
     expect(mockCreateDatabaseView).not.toHaveBeenCalled();
     await waitFor(() => expect(mockToView).toHaveBeenCalledWith('form-view-id'));
-  });
-
-  it('waits for an unresolved Form entitlement before creating', async () => {
-    let resolveEntitlement!: (allowed: boolean) => void;
-    let resolveCreation!: (value: { view_id: string; database_id: string }) => void;
-    const entitlement = new Promise<boolean>((resolve) => {
-      resolveEntitlement = resolve;
-    });
-    const creation = new Promise<{ view_id: string; database_id: string }>((resolve) => {
-      resolveCreation = resolve;
-    });
-
-    mockCanAuthor = null;
-    mockEnsureCanAuthor.mockReturnValue(entitlement);
-    mockAddPage.mockReturnValueOnce(creation);
-    const onClose = jest.fn();
-
-    renderActions(view({ view_id: 'parent-id' }), '/', onClose);
-
-    const formButton = screen.getByTestId('add-form-button');
-
-    act(() => {
-      formButton.click();
-      formButton.click();
-    });
-
-    expect(mockMenuSelectPreventDefault).toHaveBeenCalledTimes(2);
-    await waitFor(() => expect(mockEnsureCanAuthor).toHaveBeenCalledTimes(1));
-    expect(mockAddPage).not.toHaveBeenCalled();
-    expect(onClose).not.toHaveBeenCalled();
-
-    await act(async () => resolveEntitlement(true));
-
-    await waitFor(() => {
-      expect(mockAddPage).toHaveBeenCalledWith('parent-id', {
-        layout: ViewLayout.Form,
-        name: 'document.plugins.database.newDatabase',
-        prev_view_id: undefined,
-      });
-    });
-    expect(screen.getByTestId('add-grid-button')).toHaveProperty('disabled', true);
-    fireEvent.click(screen.getByTestId('add-grid-button'));
-    expect(mockAddPage).toHaveBeenCalledTimes(1);
-    expect(onClose).not.toHaveBeenCalled();
-
-    await act(async () => resolveCreation({ view_id: 'form-view-id', database_id: 'database-id' }));
-
-    await waitFor(() => {
-      expect(mockToView).toHaveBeenCalledWith('form-view-id');
-      expect(onClose).toHaveBeenCalledTimes(1);
-    });
-    expect(mockAddPage).toHaveBeenCalledTimes(1);
-  });
-
-  it('cancels a cold Form entitlement quietly when its menu is dismissed', async () => {
-    let resolveEntitlement!: (allowed: boolean) => void;
-    const entitlement = new Promise<boolean>((resolve) => {
-      resolveEntitlement = resolve;
-    });
-    const staleOnClose = jest.fn();
-    const reopenedOnClose = jest.fn();
-
-    mockCanAuthor = null;
-    mockEnsureCanAuthor.mockReturnValue(entitlement);
-    const staleMenu = renderActions(view({ view_id: 'parent-id' }), '/', staleOnClose);
-
-    fireEvent.click(screen.getByTestId('add-form-button'));
-    await waitFor(() => expect(mockEnsureCanAuthor).toHaveBeenCalledTimes(1));
-
-    staleMenu.unmount();
-    renderActions(view({ view_id: 'parent-id' }), '/', reopenedOnClose);
-    await act(async () => resolveEntitlement(true));
-
-    expect(mockAddPage).not.toHaveBeenCalled();
-    expect(mockToView).not.toHaveBeenCalled();
-    expect(toast.error).not.toHaveBeenCalled();
-    expect(staleOnClose).not.toHaveBeenCalled();
-    expect(reopenedOnClose).not.toHaveBeenCalled();
-  });
-
-  it('keeps Form visible but opens the upgrade flow for a Free workspace', async () => {
-    mockCanAuthor = false;
-    renderActions(view({ view_id: 'parent-id' }), '/?source=sidebar');
-
-    fireEvent.click(screen.getByTestId('add-form-button'));
-
-    await waitFor(() => {
-      const search = new URLSearchParams(screen.getByTestId('search-params').textContent ?? '');
-
-      expect(search.get('source')).toBe('sidebar');
-      expect(search.get('action')).toBe('change_plan');
-    });
-    expect(mockEnsureCanAuthor).not.toHaveBeenCalled();
-    expect(mockAddPage).not.toHaveBeenCalled();
-    expect(mockToView).not.toHaveBeenCalled();
-  });
-
-  it('does not create Form when the workspace plan cannot be verified', async () => {
-    mockCanAuthor = null;
-    mockEnsureCanAuthor.mockResolvedValue(null);
-    renderActions(view({ view_id: 'parent-id' }));
-
-    fireEvent.click(screen.getByTestId('add-form-button'));
-
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('Could not verify your workspace plan. Please try again.')
-    );
-    expect(mockAddPage).not.toHaveBeenCalled();
-    expect(mockToView).not.toHaveBeenCalled();
   });
 
   it('replaces the temporary standalone Grid child with a durable List child', async () => {

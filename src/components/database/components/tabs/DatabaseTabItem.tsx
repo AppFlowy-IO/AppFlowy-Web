@@ -120,7 +120,7 @@ export const DatabaseTabItem = memo(
         case DatabaseViewLayout.Gallery:
           return 'Gallery';
         case DatabaseViewLayout.Form:
-          return 'Form';
+          return 'Form builder';
         default:
           return t('untitled');
       }

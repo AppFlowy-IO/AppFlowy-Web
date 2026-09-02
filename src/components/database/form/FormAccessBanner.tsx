@@ -1,14 +1,12 @@
 import { Ban, CircleAlert, Globe, LoaderCircle, Lock } from 'lucide-react';
-import { useCallback, useContext } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useContext } from 'react';
 
 import { FormShareTier } from '@/application/services/js-services/http';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import { cn } from '@/lib/utils';
 
-import { FormSharePopover } from './FormSharePopover';
-import { useCanAuthorFormView } from './useCanAuthorFormView';
 import { useFormShareContext } from './FormShareContext';
+import { FormSharePopover } from './FormSharePopover';
 
 /**
  * At-rest banner that surfaces the current share tier (Image #9 /
@@ -31,39 +29,7 @@ export function FormAccessBanner() {
   const submissionAccess = share.info?.submission_access ?? 'none';
   const url = share.resolveShareUrl();
   const isPublic = tier === 'public';
-  const hasUnavailableLink = !share.isLoading && share.info === null;
-
-  // Pro gate — single source of truth in `useCanAuthorFormView`
-  // (covers dev / test / self-hosted bypasses + Pro plan in one
-  // place). Free workspaces clicking `Change` get routed to the
-  // upgrade modal instead of an empty popover; the cloud's plan
-  // gate refuses the underlying mint and `info` would otherwise
-  // stay null forever.
-  const {
-    canAuthor,
-    isLoading: isLoadingEntitlement,
-    hasError: hasEntitlementError,
-    ensureCanAuthor,
-  } = useCanAuthorFormView();
-
-  const [, setSearch] = useSearchParams();
-  const openUpgradePlan = useCallback(() => {
-    setSearch((prev) => {
-      prev.set('action', 'change_plan');
-      return prev;
-    });
-  }, [setSearch]);
-
-  const retryEntitlement = useCallback(async () => {
-    const allowed = await ensureCanAuthor();
-
-    if (allowed === false) openUpgradePlan();
-  }, [ensureCanAuthor, openUpgradePlan]);
-  const shouldShowEntitlementGate =
-    share.canUpdateSettings &&
-    share.info === null &&
-    !share.isLoading &&
-    (share.errorKind === 'plan_required' || (!share.errorKind && !share.error));
+  const hasUnavailableLink = !share.isLoading && (share.info === null || !url);
 
   const changeLinkClasses = cn(
     'text-sm font-medium hover:underline',
@@ -87,46 +53,22 @@ export function FormAccessBanner() {
       <span className='flex-1' aria-live='polite'>
         {bannerCopy(tier, workspaceName, share.isLoading, hasUnavailableLink)}
       </span>
-      {!shouldShowEntitlementGate || canAuthor === true ? (
-        <FormSharePopover
-          trigger={
-            <button type='button' className={changeLinkClasses}>
-              Change
-            </button>
-          }
-          info={share.info}
-          isLoading={share.isLoading}
-          errorKind={share.errorKind}
-          errorMessage={share.error}
-          onUpgradePlan={openUpgradePlan}
-          hasEntitlementError={hasEntitlementError}
-          onRetryEntitlement={() => void retryEntitlement()}
-          onRetry={share.retryBootstrap}
-          onRetryMutation={share.retryMutation}
-          canUpdateSettings={share.canUpdateSettings}
-          canBroadenAccess={share.canUpdateSettings && canAuthor === true}
-          setTier={share.setTier}
-          setAnonymous={share.setAnonymous}
-          url={url}
-        />
-      ) : (
-        <button
-          type='button'
-          className={cn(changeLinkClasses, canAuthor === null && !hasEntitlementError && 'cursor-wait opacity-60')}
-          disabled={canAuthor === null && (!hasEntitlementError || isLoadingEntitlement)}
-          onClick={
-            canAuthor === false ? openUpgradePlan : hasEntitlementError ? () => void retryEntitlement() : undefined
-          }
-        >
-          {canAuthor === null
-            ? isLoadingEntitlement
-              ? 'Checking plan…'
-              : hasEntitlementError
-              ? 'Retry plan check'
-              : 'Plan unavailable'
-            : 'Change'}
-        </button>
-      )}
+      <FormSharePopover
+        trigger={
+          <button type='button' className={changeLinkClasses}>
+            Change
+          </button>
+        }
+        info={share.info}
+        isLoading={share.isLoading}
+        errorMessage={share.error}
+        onRetry={share.retryBootstrap}
+        onRetryMutation={share.retryMutation}
+        canUpdateSettings={share.canUpdateSettings}
+        setTier={share.setTier}
+        setAnonymous={share.setAnonymous}
+        url={url}
+      />
     </div>
   );
 }

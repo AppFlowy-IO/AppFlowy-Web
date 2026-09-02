@@ -99,18 +99,23 @@ export function FormView({
       return <FormLoading />;
     case 'active':
       return (
-        <ErrorBoundary
-          fallback={
-            <FormMessageLayout
-              title='Couldn’t load this form'
-              body='A form component could not be loaded. Refresh the page to try again.'
-            />
-          }
+        <div
+          data-testid='public-form-scroll-container'
+          className='appflowy-scroller h-screen w-full overflow-x-hidden overflow-y-auto'
         >
-          <Suspense fallback={<FormLoading label='Loading form…' />}>
-            <FormBody token={token} schema={status.schema} />
-          </Suspense>
-        </ErrorBoundary>
+          <ErrorBoundary
+            fallback={
+              <FormMessageLayout
+                title='Couldn’t load this form'
+                body='A form component could not be loaded. Refresh the page to try again.'
+              />
+            }
+          >
+            <Suspense fallback={<FormLoading label='Loading form…' />}>
+              <FormBody token={token} schema={status.schema} />
+            </Suspense>
+          </ErrorBoundary>
+        </div>
       );
     case 'auth_required':
       return (

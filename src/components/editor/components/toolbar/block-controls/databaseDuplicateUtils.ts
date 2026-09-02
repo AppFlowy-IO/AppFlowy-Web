@@ -10,9 +10,9 @@ export const LINKED_DATABASE_BLOCK_DUPLICATE_CHECK_FAILED_MESSAGE =
 
 /**
  * Linked block duplication creates fresh database views directly. Until that
- * path can copy Form's per-view Yjs settings and apply the Form entitlement,
- * fail closed before creating any child. Missing metadata is also unsafe: an
- * unverified tab could itself be a Form.
+ * path can copy Form's per-view Yjs settings, fail closed before creating any
+ * child. Missing metadata is also unsafe: an unverified tab could itself be a
+ * Form.
  */
 export function assertLinkedDatabaseBlockDuplicateIsSafe(sourceViews: Array<View | null>): void {
   if (sourceViews.some((view) => view?.layout === ViewLayout.Form)) {

@@ -401,8 +401,8 @@ export const ChartDrilldownSelectors = {
  */
 export const FormSelectors = {
   // Tab-bar dropdown item that creates a Form view linked to the
-  // current database. Only entry point on web — the sidebar `+` menu
-  // doesn't include Form (mirror of `desktop/bdd/form_from_tab_bar`).
+  // current database. Standalone Forms are also available from the
+  // sidebar/page-add menu.
   addFormViewOption: (page: Page) => page.getByTestId('add-form-view-option'),
 
   // Toolbar
@@ -412,8 +412,7 @@ export const FormSelectors = {
 
   // Question stack
   addQuestionButton: (page: Page) => page.getByTestId('form-add-question-button'),
-  questionTypeOption: (page: Page, fieldType: number) =>
-    page.getByTestId(`form-question-type-option-${fieldType}`),
+  questionTypeOption: (page: Page, fieldType: number) => page.getByTestId(`form-question-type-option-${fieldType}`),
   questionCards: (page: Page) => page.locator('[data-testid="form-question-card"]'),
 
   // Banner — `data-tier` exposes the active share tier (workspace / public / closed)
@@ -429,28 +428,18 @@ export const FormSelectors = {
   // desktop's `form_from_tab_bar`) assert on it directly.
   autoCreateDialog: (page: Page) => page.getByTestId('form-auto-create-dialog'),
   autoCreateConfirm: (page: Page) => page.getByTestId('form-auto-create-confirm'),
-  autoCreateStartFromScratch: (page: Page) =>
-    page.getByTestId('form-auto-create-start-from-scratch'),
+  autoCreateStartFromScratch: (page: Page) => page.getByTestId('form-auto-create-start-from-scratch'),
 
   // Per-card query helpers. The Nth card is a stable target because the
   // form builder only ever appends (Q1 is index 0, Q2 is index 1, etc.)
   // — reorders go through `writer.reorderQuestion`, which renumbers the
   // whole list. Tests that care about specific cards should index by
   // their authoring order.
-  questionCardAt: (page: Page, index: number) =>
-    page.locator('[data-testid="form-question-card"]').nth(index),
+  questionCardAt: (page: Page, index: number) => page.locator('[data-testid="form-question-card"]').nth(index),
   questionMenuTriggerAt: (page: Page, index: number) =>
-    page
-      .locator('[data-testid="form-question-card"]')
-      .nth(index)
-      .locator('[data-testid="form-question-menu-trigger"]'),
+    page.locator('[data-testid="form-question-card"]').nth(index).locator('[data-testid="form-question-menu-trigger"]'),
 
-  // Popover state branches — `info === null && !isLoading` flows into
-  // one of these instead of the share rows.
-  popoverUpgradePrompt: (page: Page) =>
-    page.getByTestId('form-share-popover-upgrade-prompt'),
-  popoverUpgradeCta: (page: Page) =>
-    page.getByTestId('form-share-popover-upgrade-cta'),
+  // Popover bootstrap and error states.
   popoverLoading: (page: Page) => page.getByTestId('form-share-popover-loading'),
   popoverError: (page: Page) => page.getByTestId('form-share-popover-error'),
 };
@@ -465,8 +454,7 @@ export const PublicFormSelectors = {
   body: (page: Page) => page.getByTestId('public-form-body'),
   submitButton: (page: Page) => page.getByTestId('public-form-submit'),
   confirmation: (page: Page) => page.getByTestId('public-form-confirmation'),
-  questionByKind: (page: Page, kind: string) =>
-    page.locator(`[data-question-kind="${kind}"]`),
+  questionByKind: (page: Page, kind: string) => page.locator(`[data-question-kind="${kind}"]`),
 
   // Three non-active states the public route can land in:
   //   * authRequired: workspace-tier hit by an anonymous client.
@@ -482,18 +470,12 @@ export const PublicFormSelectors = {
   // clicking the button (Playwright can drive both, but the input route
   // bypasses the OS file chooser).
   mediaInput: (page: Page) => page.getByTestId('public-form-media-input'),
-  mediaFileInput: (page: Page) =>
-    page.getByTestId('public-form-media-file-input'),
-  mediaUploadButton: (page: Page) =>
-    page.getByTestId('public-form-media-upload-button'),
-  mediaAttachmentList: (page: Page) =>
-    page.getByTestId('public-form-media-attachments'),
-  mediaAttachments: (page: Page) =>
-    page.getByTestId('public-form-media-attachment'),
+  mediaFileInput: (page: Page) => page.getByTestId('public-form-media-file-input'),
+  mediaUploadButton: (page: Page) => page.getByTestId('public-form-media-upload-button'),
+  mediaAttachmentList: (page: Page) => page.getByTestId('public-form-media-attachments'),
+  mediaAttachments: (page: Page) => page.getByTestId('public-form-media-attachment'),
   mediaAttachmentByName: (page: Page, name: string) =>
-    page.locator(
-      `[data-testid="public-form-media-attachment"][data-name="${name}"]`,
-    ),
+    page.locator(`[data-testid="public-form-media-attachment"][data-name="${name}"]`),
 };
 
 /**

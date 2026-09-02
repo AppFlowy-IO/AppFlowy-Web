@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Link as LinkIcon, Lock, Sparkles, User, UserCheck } from 'lucide-react';
+import { Check, ChevronRight, Link as LinkIcon, Lock, User, UserCheck } from 'lucide-react';
 import { useContext, useEffect, useRef, useState } from 'react';
 
 import { FormShareInfo, FormShareTier } from '@/application/services/js-services/http';
@@ -7,8 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-
-import type { FormShareErrorKind } from './useFormShare';
 
 /**
  * Notion-parity share popover (Image #10) — three rows + the link row.
@@ -24,15 +22,10 @@ export function FormSharePopover({
   trigger,
   info,
   isLoading,
-  errorKind,
   errorMessage,
-  onUpgradePlan,
-  hasEntitlementError,
-  onRetryEntitlement,
   onRetry,
   onRetryMutation,
   canUpdateSettings,
-  canBroadenAccess,
   setTier,
   setAnonymous,
   url,
@@ -42,27 +35,16 @@ export function FormSharePopover({
   /// Bootstrap pending — shows the skeleton. Distinct from `info === null
   /// && !isLoading` (which is an error state).
   isLoading: boolean;
-  /// Set when the cloud refused the bootstrap (regression image #41).
-  /// `'plan_required'` swaps the popover body for an upgrade prompt
-  /// instead of an infinite skeleton; `'other'` shows a generic error
-  /// so the user knows it isn't loading anymore.
-  errorKind: FormShareErrorKind | null;
   /// Raw error message from the failed bootstrap. Surfaced in the
   /// generic-failure UI so a user-reported screenshot carries the
   /// underlying cause (cloud error code / network failure / etc.) —
   /// the popover alone is otherwise the only diagnostic surface.
   errorMessage: string | null;
-  onUpgradePlan: () => void;
-  /** The plan lookup itself failed, so broadening must offer retry—not pricing. */
-  hasEntitlementError?: boolean;
-  onRetryEntitlement?: () => void;
   onRetry: () => void;
   /** Replays the retained final settings choice after a PATCH failure. */
   onRetryMutation: () => void;
   /** Page permission. False keeps inspection/copy available but blocks writes. */
   canUpdateSettings: boolean;
-  /** Paid-plan entitlement. Closing an existing share remains available. */
-  canBroadenAccess: boolean;
   setTier: (t: FormShareTier) => Promise<void>;
   setAnonymous: (v: boolean) => Promise<void>;
   // `setSubmissionAccess` removed from the surface while the
@@ -107,19 +89,10 @@ export function FormSharePopover({
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent align='end' className='w-[420px] p-1 pb-3'>
         {info === null ? (
-          // Bootstrap not complete (or failed). Three branches:
-          //   * Still loading → skeleton (existing behaviour).
-          //   * plan_required → upgrade prompt (regression image #41:
-          //     DEV mode lets the popover open on Free workspaces, but
-          //     the cloud's `is_workspace_on_paid_plan` gate refuses
-          //     the mint — without this branch the skeleton would
-          //     animate forever).
-          //   * other error → generic non-skeleton message with an explicit
-          //     retry instead of an indicator that won't resolve.
+          // Bootstrap not complete (or failed). Keep loading, read-only empty,
+          // and terminal failure states distinct so each has an actionable UI.
           isLoading ? (
             <ShareLoading />
-          ) : errorKind === 'plan_required' ? (
-            <UpgradePrompt onUpgradePlan={onUpgradePlan} />
           ) : !errorMessage && !canUpdateSettings ? (
             <NoActiveShare onRetry={onRetry} />
           ) : (
@@ -137,10 +110,6 @@ export function FormSharePopover({
                   current={tier}
                   workspaceName={workspaceName}
                   canUpdateSettings={canUpdateSettings}
-                  canBroadenAccess={canBroadenAccess}
-                  onUpgradePlan={onUpgradePlan}
-                  hasEntitlementError={hasEntitlementError}
-                  onRetryEntitlement={onRetryEntitlement}
                   onSelect={setTier}
                 />
               }
@@ -152,24 +121,12 @@ export function FormSharePopover({
               checked={anonymous}
               forcedOn={tier === 'public'}
               forcedTooltip='Public forms always collect responses anonymously.'
-              disabled={!canUpdateSettings || !canBroadenAccess}
-              disabledTooltip={
-                canUpdateSettings
-                  ? 'Upgrade to change response identity settings.'
-                  : 'View-only access can inspect and copy this link, but cannot change settings.'
-              }
+              disabled={!canUpdateSettings}
+              disabledTooltip='View-only access can inspect and copy this link, but cannot change settings.'
               onChange={setAnonymous}
             />
             {canUpdateSettings && errorMessage && (
-              <MutationFailure
-                errorKind={errorKind}
-                errorMessage={errorMessage}
-                onRetry={onRetryMutation}
-                onUpgradePlan={onUpgradePlan}
-              />
-            )}
-            {canUpdateSettings && hasEntitlementError && onRetryEntitlement && (
-              <EntitlementFailure onRetry={onRetryEntitlement} />
+              <MutationFailure errorMessage={errorMessage} onRetry={onRetryMutation} />
             )}
             {/*
               Submission-access row intentionally omitted. The cloud's
@@ -191,26 +148,27 @@ export function FormSharePopover({
               `overflow-hidden` clips the button's hover splash to the
               rounded corners.
             */}
-            <div className='mx-1 flex items-stretch overflow-hidden rounded-md border border-line-divider'>
-              <input
-                readOnly
-                aria-label='Form share URL'
-                value={url}
-                placeholder='Share URL is not configured'
-                className='flex-1 bg-transparent px-2 py-1 text-xs outline-none'
-              />
-              <div className='w-px bg-line-divider' />
-              <button
-                type='button'
-                onClick={copy}
-                disabled={!url}
-                title={url ? undefined : 'APPFLOWY_WEB_URL is not configured on the server'}
-                className='flex shrink-0 items-center gap-1 px-3 py-1 text-xs hover:bg-fill-content disabled:cursor-not-allowed disabled:opacity-50'
-              >
-                <LinkIcon size={12} />
-                {copied ? 'Copied' : 'Copy form link'}
-              </button>
-            </div>
+            {url ? (
+              <div className='mx-1 flex items-stretch overflow-hidden rounded-md border border-line-divider'>
+                <input
+                  readOnly
+                  aria-label='Form share URL'
+                  value={url}
+                  className='flex-1 bg-transparent px-2 py-1 text-xs outline-none'
+                />
+                <div className='w-px bg-line-divider' />
+                <button
+                  type='button'
+                  onClick={copy}
+                  className='flex shrink-0 items-center gap-1 px-3 py-1 text-xs hover:bg-fill-content'
+                >
+                  <LinkIcon size={12} />
+                  {copied ? 'Copied' : 'Copy form link'}
+                </button>
+              </div>
+            ) : (
+              <ShareLinkUnavailable onRetry={onRetry} />
+            )}
           </>
         )}
       </PopoverContent>
@@ -218,15 +176,15 @@ export function FormSharePopover({
   );
 }
 
-function EntitlementFailure({ onRetry }: { onRetry: () => void }) {
+function ShareLinkUnavailable({ onRetry }: { onRetry: () => void }) {
   return (
     <div
-      data-testid='form-share-entitlement-error'
+      data-testid='form-share-link-unavailable'
       role='alert'
-      className='mx-1 mt-2 flex items-center gap-2 rounded-md border border-line-divider px-2 py-2'
+      className='mx-1 flex items-center gap-2 rounded-md border border-line-divider px-2 py-2'
     >
-      <p className='min-w-0 flex-1 text-xs'>Couldn&apos;t verify the workspace plan.</p>
-      <Button data-testid='form-share-entitlement-retry' size='sm' variant='ghost' onClick={onRetry}>
+      <p className='min-w-0 flex-1 text-xs text-text-tertiary'>Form link unavailable.</p>
+      <Button data-testid='form-share-link-unavailable-retry' size='sm' variant='ghost' onClick={onRetry}>
         Retry
       </Button>
     </div>
@@ -248,19 +206,7 @@ function NoActiveShare({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-function MutationFailure({
-  errorKind,
-  errorMessage,
-  onRetry,
-  onUpgradePlan,
-}: {
-  errorKind: FormShareErrorKind | null;
-  errorMessage: string;
-  onRetry: () => void;
-  onUpgradePlan: () => void;
-}) {
-  const planRequired = errorKind === 'plan_required';
-
+function MutationFailure({ errorMessage, onRetry }: { errorMessage: string; onRetry: () => void }) {
   return (
     <div
       data-testid='form-share-mutation-error'
@@ -273,13 +219,8 @@ function MutationFailure({
           {errorMessage}
         </p>
       </div>
-      <Button
-        data-testid='form-share-mutation-retry'
-        size='sm'
-        variant='ghost'
-        onClick={planRequired ? onUpgradePlan : onRetry}
-      >
-        {planRequired ? 'Upgrade' : 'Retry'}
+      <Button data-testid='form-share-mutation-retry' size='sm' variant='ghost' onClick={onRetry}>
+        Retry
       </Button>
     </div>
   );
@@ -309,32 +250,8 @@ function ShareLoading() {
 }
 
 /**
- * Shown when the cloud refused to mint the share token because the
- * workspace isn't on a paid plan. Replaces the previous always-skeleton
- * behaviour where DEV-mode Free workspaces saw a frozen popover.
- *
- * The CTA hands off to `?action=change_plan`, the same upgrade entry
- * the chart-layout settings + AddViewButton's Form item use.
- */
-function UpgradePrompt({ onUpgradePlan }: { onUpgradePlan: () => void }) {
-  return (
-    <div
-      data-testid='form-share-popover-upgrade-prompt'
-      className='flex flex-col items-center gap-3 px-4 py-5 text-center'
-    >
-      <Sparkles size={20} className='text-fill-default' />
-      <div className='text-sm font-semibold'>Sharing forms is a Pro feature</div>
-      <p className='text-xs text-text-caption'>Upgrade to Pro or Team to publish forms and collect responses.</p>
-      <Button data-testid='form-share-popover-upgrade-cta' size='sm' onClick={onUpgradePlan}>
-        See upgrade options
-      </Button>
-    </div>
-  );
-}
-
-/**
- * Catch-all for non-plan-gate failures (network, permission, transient
- * cloud errors). Distinct from the loading skeleton so the user
+ * Catch-all for failures (network, permission, transient cloud errors).
+ * Distinct from the loading skeleton so the user
  * understands the popover finished trying and isn't going to resolve
  * on its own.
  *
@@ -461,34 +378,17 @@ function TierSubmenu({
   current,
   workspaceName,
   canUpdateSettings,
-  canBroadenAccess,
-  onUpgradePlan,
-  hasEntitlementError,
-  onRetryEntitlement,
   onSelect,
 }: {
   current: FormShareTier;
   workspaceName: string;
   canUpdateSettings: boolean;
-  canBroadenAccess: boolean;
-  onUpgradePlan: () => void;
-  hasEntitlementError?: boolean;
-  onRetryEntitlement?: () => void;
   onSelect: (t: FormShareTier) => void;
 }) {
   const selectTier = (next: FormShareTier) => {
     if (next === current) return;
     if (!canUpdateSettings) return;
-    if (next === 'closed' || canBroadenAccess) {
-      onSelect(next);
-      return;
-    }
-
-    if (hasEntitlementError && onRetryEntitlement) {
-      onRetryEntitlement();
-    } else {
-      onUpgradePlan();
-    }
+    onSelect(next);
   };
 
   return (

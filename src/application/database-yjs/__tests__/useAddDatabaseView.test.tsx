@@ -223,8 +223,15 @@ describe('useAddDatabaseView', () => {
       wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
     });
 
-    await expect(result.current(DatabaseViewLayout.Form, 'Form')).resolves.toBe('form-view-id');
-    expect(createDatabaseView).toHaveBeenCalledTimes(1);
+    await expect(result.current(DatabaseViewLayout.Form)).resolves.toBe('form-view-id');
+    expect(createDatabaseView).toHaveBeenCalledWith(
+      'base-view-id',
+      expect.objectContaining({
+        database_id: 'database-id',
+        layout: ViewLayout.Form,
+        name: 'Form builder',
+      })
+    );
   });
 
   it('applies created-tab updates without adding history or clearing redo', async () => {

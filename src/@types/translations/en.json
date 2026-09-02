@@ -3780,7 +3780,8 @@
     "searchPlaceholder": "Type to search"
   },
   "form": {
-    "menuName": "Form"
+    "menuName": "Form",
+    "builderName": "Form builder"
   },
   "invitation": {
     "join": "Join",

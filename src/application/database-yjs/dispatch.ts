@@ -2786,7 +2786,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Chart]: 'Chart',
         [DatabaseViewLayout.List]: 'List',
         [DatabaseViewLayout.Gallery]: 'Gallery',
-        [DatabaseViewLayout.Form]: 'Form',
+        [DatabaseViewLayout.Form]: 'Form builder',
       };
       const viewLayout = layoutToViewLayout[layout];
       const name = layoutToName[layout];

@@ -13,9 +13,10 @@ const FORM_DEEP_DUPLICATE_PREFLIGHT_DEPTH = 50;
 type LoadDuplicateSubtree = (workspaceId: string, viewId: string, depth: number) => Promise<View>;
 
 /**
- * Generic page duplication is server-driven and currently omits the Form view
- * configuration stored in the database Y.Doc. Database-tab duplication has a
- * separate, Form-aware path and must not use this guard.
+ * Generic page duplication is server-driven and currently rejects Form views
+ * because it cannot preserve their configuration stored in the database Y.Doc.
+ * Database-tab duplication has a separate, Form-aware path and must not use
+ * this guard.
  */
 export function isUnsafeFormDeepDuplicate(view: View | null | undefined): boolean {
   if (!view) return false;
@@ -54,7 +55,7 @@ export async function assertGenericDeepDuplicateIsSafe({
   try {
     // Generic page duplication includes descendants. Refresh a deep subtree
     // even when the selected page is a Document or Space: a nested database
-    // may contain a Form whose Yjs-only settings the server copy would omit.
+    // may contain a Form that the generic server duplicate rejects.
     freshView = await loadFreshView(workspaceId, viewId, FORM_DEEP_DUPLICATE_PREFLIGHT_DEPTH);
   } catch {
     throw new Error(FORM_DEEP_DUPLICATE_CHECK_FAILED_MESSAGE);

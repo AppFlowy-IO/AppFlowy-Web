@@ -244,6 +244,50 @@ describe('useFormShare mutations', () => {
     expect(mockMintFormShare).toHaveBeenCalledTimes(1);
   });
 
+  it.each<[string, Record<string, unknown>]>([
+    ['record-already-exists code', { code: ERROR_CODE.RECORD_ALREADY_EXISTS, message: 'conflict' }],
+    ['HTTP conflict status', { code: -1, httpStatus: 409, message: 'conflict' }],
+  ])('recovers a concurrent mint from a structured %s', async (_label, conflict) => {
+    mockGetFormShare.mockResolvedValueOnce(null).mockResolvedValueOnce(shareInfo('view-a'));
+    mockMintFormShare.mockRejectedValueOnce(conflict);
+
+    const { result } = renderHook(() => useFormShare());
+
+    await waitFor(() => expect(result.current.info?.token).toBe('token-view-a'));
+    expect(mockMintFormShare).toHaveBeenCalledTimes(1);
+    expect(mockGetFormShare).toHaveBeenCalledTimes(2);
+  });
+
+  it.each<[string, Partial<FormShareInfo>]>([
+    ['an empty token', { token: '' }],
+    ['a missing URL', { share_url: undefined }],
+    ['a relative URL', { share_url: '/form/token-view-a' }],
+    ['a non-HTTP URL', { share_url: 'javascript:alert(1)' }],
+    ['an HTTP URL without a host', { share_url: 'http://' }],
+  ])('does not expose the respondent link when the server returns %s', async (_label, overrides) => {
+    mockGetFormShare.mockResolvedValueOnce(shareInfo('view-a', overrides));
+
+    const { result } = renderHook(() => useFormShare());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.info).not.toBeNull();
+    expect(result.current.resolveShareUrl()).toBe('');
+  });
+
+  it('trims and exposes a valid absolute HTTPS respondent link', async () => {
+    mockGetFormShare.mockResolvedValueOnce(
+      shareInfo('view-a', {
+        token: ' token-view-a ',
+        share_url: '  https://appflowy.test/form/token-view-a  ',
+      })
+    );
+
+    const { result } = renderHook(() => useFormShare());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.resolveShareUrl()).toBe('https://appflowy.test/form/token-view-a');
+  });
+
   it('retains a failed mutation and retries the same final intent', async () => {
     mockPatchFormShare
       .mockRejectedValueOnce({ message: 'Network unavailable' })
@@ -266,6 +310,178 @@ describe('useFormShare mutations', () => {
     });
     await waitFor(() => expect(result.current.info).toMatchObject({ tier: 'public', anonymous: true }));
     expect(result.current.error).toBeNull();
+  });
+
+  it('drops a failed access-broadening retry when update permission is revoked', async () => {
+    let canUpdateSettings = true;
+
+    mockPatchFormShare.mockRejectedValueOnce({ message: 'Offline' });
+    const { result, rerender } = renderHook(() => useFormShare({ canUpdateSettings }));
+
+    await waitFor(() => expect(result.current.info?.token).toBe('token-view-a'));
+    await act(async () => {
+      await result.current.setTier('public');
+    });
+    expect(result.current.error).toBe('Offline');
+
+    canUpdateSettings = false;
+    rerender();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.info).toMatchObject({ tier: 'workspace', anonymous: false });
+    expect(result.current.error).toBeNull();
+
+    canUpdateSettings = true;
+    rerender();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(flushMicrotasks);
+
+    expect(mockPatchFormShare).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a broadening retry when the server authoritatively rejects permission', async () => {
+    mockPatchFormShare.mockRejectedValueOnce({
+      code: ERROR_CODE.NOT_HAS_PERMISSION,
+      message: 'Permission revoked',
+    });
+    const mounted = renderHook(() => useFormShare({ canUpdateSettings: true }));
+
+    await waitFor(() => expect(mounted.result.current.info?.token).toBe('token-view-a'));
+    await act(async () => {
+      await mounted.result.current.setTier('public');
+    });
+
+    expect(mounted.result.current.info).toMatchObject({ tier: 'workspace', anonymous: false });
+    expect(mounted.result.current.error).toBeNull();
+    expect(mounted.result.current.canUpdateSettings).toBe(false);
+    act(() => mounted.result.current.retryMutation());
+    await act(async () => {
+      await mounted.result.current.setTier('closed');
+      await flushMicrotasks();
+    });
+    expect(mockPatchFormShare).toHaveBeenCalledTimes(1);
+
+    mounted.unmount();
+    const reopened = renderHook(() => useFormShare({ canUpdateSettings: true }));
+
+    await waitFor(() => expect(reopened.result.current.info?.token).toBe('token-view-a'));
+    expect(reopened.result.current.canUpdateSettings).toBe(true);
+    await act(flushMicrotasks);
+    expect(mockPatchFormShare).toHaveBeenCalledTimes(1);
+    reopened.unmount();
+  });
+
+  it('does not let a stale successful bootstrap clear a newer HTTP 403 mutation fence', async () => {
+    const delayedBootstrap = deferred<FormShareInfo>();
+
+    mockGetFormShare.mockResolvedValueOnce(shareInfo('view-a')).mockReturnValueOnce(delayedBootstrap.promise);
+    mockPatchFormShare.mockRejectedValueOnce({
+      code: -1,
+      httpStatus: 403,
+      message: 'Permission revoked',
+    });
+    const { result } = renderHook(() => [useFormShare(), useFormShare()] as const);
+
+    await waitFor(() => {
+      expect(result.current[0].info?.token).toBe('token-view-a');
+      expect(result.current[1].info?.token).toBe('token-view-a');
+    });
+    await act(async () => {
+      await result.current[0].setTier('public');
+    });
+
+    expect(result.current[0].canUpdateSettings).toBe(false);
+    expect(result.current[1].canUpdateSettings).toBe(false);
+
+    await act(async () => {
+      delayedBootstrap.resolve(shareInfo('view-a'));
+      await delayedBootstrap.promise;
+      await flushMicrotasks();
+    });
+
+    expect(result.current[0].canUpdateSettings).toBe(false);
+    expect(result.current[1].canUpdateSettings).toBe(false);
+
+    // A read started after the denial is a fresh authority observation and may
+    // legitimately restore the locally cached page capability.
+    act(() => result.current[0].retryBootstrap());
+    await waitFor(() => {
+      expect(result.current[0].canUpdateSettings).toBe(true);
+      expect(result.current[1].canUpdateSettings).toBe(true);
+    });
+    expect(mockPatchFormShare).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a stale empty bootstrap clear a newer HTTP 401 mutation fence', async () => {
+    const delayedBootstrap = deferred<FormShareInfo | null>();
+
+    mockGetFormShare.mockResolvedValueOnce(shareInfo('view-a')).mockReturnValueOnce(delayedBootstrap.promise);
+    mockPatchFormShare.mockRejectedValueOnce({
+      code: -1,
+      httpStatus: 401,
+      message: 'Session is no longer authorized',
+    });
+    const { result } = renderHook(() => [useFormShare(), useFormShare()] as const);
+
+    await waitFor(() => {
+      expect(result.current[0].info?.token).toBe('token-view-a');
+      expect(result.current[1].info?.token).toBe('token-view-a');
+    });
+    await act(async () => {
+      await result.current[0].setTier('public');
+    });
+
+    expect(result.current[0].canUpdateSettings).toBe(false);
+    expect(result.current[1].canUpdateSettings).toBe(false);
+
+    await act(async () => {
+      delayedBootstrap.resolve(null);
+      await delayedBootstrap.promise;
+      await flushMicrotasks();
+    });
+
+    expect(result.current[0].canUpdateSettings).toBe(false);
+    expect(result.current[1].canUpdateSettings).toBe(false);
+    expect(mockMintFormShare).not.toHaveBeenCalled();
+    expect(mockPatchFormShare).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops a queued drain after permission revocation but retains the final Closed handoff', async () => {
+    let canUpdateSettings = true;
+    const publicPatch = deferred<FormShareInfo>();
+
+    mockPatchFormShare
+      .mockReturnValueOnce(publicPatch.promise)
+      .mockResolvedValueOnce(shareInfo('view-a', { tier: 'closed', anonymous: true }));
+    const { result, rerender } = renderHook(() => useFormShare({ canUpdateSettings }));
+
+    await waitFor(() => expect(result.current.info?.token).toBe('token-view-a'));
+
+    let publicMutation!: Promise<void>;
+    let closedMutation!: Promise<void>;
+
+    act(() => {
+      publicMutation = result.current.setTier('public');
+      closedMutation = result.current.setTier('closed');
+    });
+
+    canUpdateSettings = false;
+    rerender();
+
+    await act(async () => {
+      publicPatch.resolve(shareInfo('view-a', { tier: 'public', anonymous: true }));
+      await Promise.all([publicMutation, closedMutation]);
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(mockPatchFormShare).toHaveBeenCalledTimes(1);
+
+    canUpdateSettings = true;
+    rerender();
+
+    await waitFor(() => expect(mockPatchFormShare).toHaveBeenCalledTimes(2));
+    expect(mockPatchFormShare).toHaveBeenLastCalledWith('workspace-id', 'database-id', 'view-a', {
+      tier: 'closed',
+    });
+    await waitFor(() => expect(result.current.info).toMatchObject({ tier: 'closed', anonymous: true }));
   });
 
   it('replays the latest queued intent after an in-flight mutation fails across unmount', async () => {
@@ -435,7 +651,6 @@ describe('useFormShare mutations', () => {
     const { result } = renderHook(() => useFormShare());
 
     await waitFor(() => expect(result.current.error).toBe('Forbidden'));
-    expect(result.current.errorKind).toBe('other');
     expect(mockMintFormShare).not.toHaveBeenCalled();
     warning.mockRestore();
   });
@@ -468,6 +683,28 @@ describe('useFormShare mutations', () => {
     expect(result.current.error).toBeNull();
     expect(mockMintFormShare).not.toHaveBeenCalled();
     expect(mockPatchFormShare).not.toHaveBeenCalled();
+  });
+
+  it('does not mint when update permission is revoked during the initial GET', async () => {
+    const initialGet = deferred<FormShareInfo | null>();
+
+    mockGetFormShare.mockReturnValueOnce(initialGet.promise).mockResolvedValueOnce(null);
+    const { result, rerender } = renderHook(
+      ({ canUpdateSettings }) => useFormShare({ canUpdateSettings }),
+      { initialProps: { canUpdateSettings: true } }
+    );
+
+    await waitFor(() => expect(mockGetFormShare).toHaveBeenCalledTimes(1));
+    rerender({ canUpdateSettings: false });
+
+    await act(async () => {
+      initialGet.resolve(null);
+      await flushMicrotasks();
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(mockGetFormShare).toHaveBeenCalledTimes(2);
+    expect(mockMintFormShare).not.toHaveBeenCalled();
   });
 
   it('retries a missing read-only link with GET only and adopts a link created by an editor', async () => {

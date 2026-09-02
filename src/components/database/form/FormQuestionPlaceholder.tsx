@@ -53,9 +53,9 @@ export function FormQuestionPlaceholder({
     case FieldType.Media:
       // Mirror of desktop `_MediaBody` (form_question_body.dart): a
       // disabled Upload button, the workspace's per-file / file-count
-      // caps, and an Upgrade affordance. F1 is authoring-only — the
+      // caps, and static Upgrade guidance. F1 is authoring-only — the
       // button stays disabled until F2 wires the upload pipeline.
-      // Authoring-side keeps the Upgrade link (creator-facing); the
+      // Authoring-side keeps the Upgrade copy (creator-facing); the
       // respondent-side mirror in FormMediaInput drops it.
       return (
         <div className='flex flex-wrap items-center gap-3 rounded-md border border-line-divider px-3 py-2'>
@@ -70,13 +70,10 @@ export function FormQuestionPlaceholder({
           <span className='text-xs text-text-tertiary'>
             Size limit: 5 MB. File limit: 10.
           </span>
-          <button
-            type='button'
-            className='inline-flex items-center gap-1 text-xs font-medium text-fill-default'
-          >
-            <ArrowUpCircle size={12} />
+          <span className='inline-flex items-center gap-1 text-xs font-medium text-fill-default'>
+            <ArrowUpCircle size={12} aria-hidden />
             Upgrade
-          </button>
+          </span>
           <span className='text-xs text-text-tertiary'>to increase limit</span>
         </div>
       );

@@ -7,28 +7,19 @@ import { AddViewButton } from '@/components/database/components/tabs/AddViewButt
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 const mockAddView = jest.fn();
-const mockEnsureCanAuthor = jest.fn();
-const mockToastError = jest.fn();
-let mockCanAuthor: boolean | null = true;
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
   useAddDatabaseView: () => mockAddView,
 }));
 
-jest.mock('@/components/database/form/useCanAuthorFormView', () => ({
-  useCanAuthorFormView: () => ({
-    canAuthor: mockCanAuthor,
-    isLoading: mockCanAuthor === null,
-    ensureCanAuthor: mockEnsureCanAuthor,
-  }),
-}));
-
 jest.mock('sonner', () => ({
-  toast: { error: (...args: unknown[]) => mockToastError(...args) },
+  toast: { error: jest.fn() },
 }));
 
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => (key === 'form.builderName' ? 'Form builder' : key),
+  }),
 }));
 
 jest.mock('@/components/_shared/view-icon', () => ({
@@ -65,8 +56,6 @@ jest.mock('@/components/ui/tooltip', () => ({
 describe('AddViewButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCanAuthor = true;
-    mockEnsureCanAuthor.mockResolvedValue(true);
     mockAddView.mockResolvedValue('list-view-id');
     jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(300);
   });
@@ -80,7 +69,7 @@ describe('AddViewButton', () => {
 
     render(
       <MemoryRouter>
-        <AddViewButton onViewAdded={onViewAdded} />
+        <AddViewButton databasePageId='database-page-id' onViewAdded={onViewAdded} />
       </MemoryRouter>
     );
     fireEvent.click(screen.getByTestId('add-list-view-button'));
@@ -95,7 +84,7 @@ describe('AddViewButton', () => {
     mockAddView.mockResolvedValue('gallery-view-id');
     render(
       <MemoryRouter>
-        <AddViewButton onViewAdded={onViewAdded} />
+        <AddViewButton databasePageId='database-page-id' onViewAdded={onViewAdded} />
       </MemoryRouter>
     );
     fireEvent.click(screen.getByTestId('add-gallery-view-button'));
@@ -104,111 +93,110 @@ describe('AddViewButton', () => {
     await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('gallery-view-id'));
   });
 
-  it('waits for an unknown Form entitlement before deciding whether to create', async () => {
-    let resolveEntitlement!: (allowed: boolean) => void;
-    const entitlement = new Promise<boolean>((resolve) => {
-      resolveEntitlement = resolve;
+  it('completes with the latest same-database callbacks and preserves concurrently added view IDs', async () => {
+    let resolveAdd!: (viewId: string) => void;
+    const committedViewIds: string[][] = [];
+    const initialViewIds = ['view-a'];
+    const concurrentViewIds = ['view-a', 'concurrent-view'];
+    const initialOnViewAdded = jest.fn((viewId: string) => committedViewIds.push([...initialViewIds, viewId]));
+    const latestOnViewAdded = jest.fn((viewId: string) => committedViewIds.push([...concurrentViewIds, viewId]));
+    const initialOnAfterAddView = jest.fn();
+    const latestOnAfterAddView = jest.fn();
+    const createPending = new Promise<string>((resolve) => {
+      resolveAdd = resolve;
     });
+    const rendered = render(
+      <MemoryRouter>
+        <AddViewButton
+          databasePageId='database-page-id'
+          onAfterAddView={initialOnAfterAddView}
+          onViewAdded={initialOnViewAdded}
+        />
+      </MemoryRouter>
+    );
+
+    mockAddView.mockReturnValue(createPending);
+    fireEvent.click(screen.getByTestId('add-form-view-option'));
+
+    rendered.rerender(
+      <MemoryRouter>
+        <AddViewButton
+          databasePageId='database-page-id'
+          onAfterAddView={latestOnAfterAddView}
+          onViewAdded={latestOnViewAdded}
+        />
+      </MemoryRouter>
+    );
+
+    await act(async () => resolveAdd('form-view-id'));
+
+    await waitFor(() => expect(latestOnViewAdded).toHaveBeenCalledWith('form-view-id'));
+    expect(initialOnViewAdded).not.toHaveBeenCalled();
+    expect(committedViewIds).toEqual([['view-a', 'concurrent-view', 'form-view-id']]);
+    expect(latestOnAfterAddView).toHaveBeenCalledTimes(1);
+    expect(initialOnAfterAddView).not.toHaveBeenCalled();
+    expect(screen.getByTestId('add-view-button').hasAttribute('disabled')).toBe(false);
+  });
+
+  it('cancels completion callbacks when the database page changes', async () => {
+    let resolveAdd!: (viewId: string) => void;
+    const createPending = new Promise<string>((resolve) => {
+      resolveAdd = resolve;
+    });
+    const initialOnViewAdded = jest.fn();
+    const initialOnAfterAddView = jest.fn();
+    const nextOnViewAdded = jest.fn();
+    const nextOnAfterAddView = jest.fn();
+    const rendered = render(
+      <MemoryRouter>
+        <AddViewButton
+          databasePageId='database-page-a'
+          onAfterAddView={initialOnAfterAddView}
+          onViewAdded={initialOnViewAdded}
+        />
+      </MemoryRouter>
+    );
+
+    mockAddView.mockReturnValue(createPending);
+    fireEvent.click(screen.getByTestId('add-form-view-option'));
+
+    rendered.rerender(
+      <MemoryRouter>
+        <AddViewButton
+          databasePageId='database-page-b'
+          onAfterAddView={nextOnAfterAddView}
+          onViewAdded={nextOnViewAdded}
+        />
+      </MemoryRouter>
+    );
+
+    await act(async () => resolveAdd('stale-form-view-id'));
+
+    expect(initialOnViewAdded).not.toHaveBeenCalled();
+    expect(initialOnAfterAddView).not.toHaveBeenCalled();
+    expect(nextOnViewAdded).not.toHaveBeenCalled();
+    expect(nextOnAfterAddView).not.toHaveBeenCalled();
+  });
+
+  it('creates a Form without checking a workspace subscription', async () => {
     const onViewAdded = jest.fn();
 
-    mockCanAuthor = null;
-    mockEnsureCanAuthor.mockReturnValue(entitlement);
     mockAddView.mockResolvedValue('form-view-id');
     render(
       <MemoryRouter>
-        <AddViewButton onViewAdded={onViewAdded} />
-      </MemoryRouter>
-    );
-
-    fireEvent.click(screen.getByTestId('add-form-view-option'));
-
-    expect(mockEnsureCanAuthor).toHaveBeenCalledTimes(1);
-    expect(mockAddView).not.toHaveBeenCalled();
-
-    resolveEntitlement(true);
-
-    await waitFor(() => {
-      expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Form, 'form.menuName');
-      expect(onViewAdded).toHaveBeenCalledWith('form-view-id');
-    });
-  });
-
-  it('does not treat a failed plan check as a confirmed Free workspace', async () => {
-    mockCanAuthor = null;
-    mockEnsureCanAuthor.mockResolvedValue(null);
-    render(
-      <MemoryRouter>
-        <AddViewButton onViewAdded={jest.fn()} />
-      </MemoryRouter>
-    );
-
-    fireEvent.click(screen.getByTestId('add-form-view-option'));
-
-    await waitFor(() => {
-      expect(mockToastError).toHaveBeenCalledWith('Could not verify your workspace plan. Please try again.');
-    });
-    expect(mockAddView).not.toHaveBeenCalled();
-  });
-
-  it('revalidates a cached Pro result before creating a Form', async () => {
-    mockCanAuthor = true;
-    mockEnsureCanAuthor.mockResolvedValue(false);
-
-    render(
-      <MemoryRouter>
-        <AddViewButton onViewAdded={jest.fn()} />
-      </MemoryRouter>
-    );
-
-    fireEvent.click(screen.getByTestId('add-form-view-option'));
-
-    await waitFor(() => expect(mockEnsureCanAuthor).toHaveBeenCalledTimes(1));
-    expect(mockAddView).not.toHaveBeenCalled();
-  });
-
-  it('does not create a Form after its database scope unmounts during a cold entitlement check', async () => {
-    let resolveEntitlement!: (allowed: boolean) => void;
-    const entitlement = new Promise<boolean>((resolve) => {
-      resolveEntitlement = resolve;
-    });
-
-    mockCanAuthor = null;
-    mockEnsureCanAuthor.mockReturnValue(entitlement);
-    const rendered = render(
-      <MemoryRouter>
-        <AddViewButton onViewAdded={jest.fn()} />
-      </MemoryRouter>
-    );
-
-    fireEvent.click(screen.getByTestId('add-form-view-option'));
-    expect(mockEnsureCanAuthor).toHaveBeenCalledTimes(1);
-
-    rendered.unmount();
-    await act(async () => {
-      resolveEntitlement(true);
-      await entitlement;
-    });
-
-    expect(mockAddView).not.toHaveBeenCalled();
-  });
-
-  it('keeps Form enabled because the surrounding editor already enforces write permission', async () => {
-    const onViewAdded = jest.fn();
-
-    render(
-      <MemoryRouter>
-        <AddViewButton onViewAdded={onViewAdded} />
+        <AddViewButton databasePageId='database-page-id' onViewAdded={onViewAdded} />
       </MemoryRouter>
     );
 
     const formOption = screen.getByTestId('add-form-view-option');
 
     expect(formOption.hasAttribute('disabled')).toBe(false);
+    expect(formOption.textContent).toBe('Form builder');
     fireEvent.click(formOption);
 
     await waitFor(() => {
-      expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Form, 'form.menuName');
-      expect(onViewAdded).toHaveBeenCalledWith('list-view-id');
+      expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Form, 'Form builder');
+      expect(onViewAdded).toHaveBeenCalledWith('form-view-id');
     });
   });
 });

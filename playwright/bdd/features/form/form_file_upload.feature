@@ -16,7 +16,7 @@ Feature: Form Files & Media upload (Phase-2)
   # reachable from the page.
 
   Background:
-    Given a Grid with a Form tab is open on a Pro workspace
+    Given a Grid with a Form tab is open
 
   Scenario: Uploading a small file lands a row with the attachment
     # Happy path. A short text file is well under the 5 MiB cap and

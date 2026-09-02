@@ -15,28 +15,6 @@ import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { useAuthenticatedUserIdOptional } from '@/components/main/app.hooks';
 
 /**
- * Why an error from the share bootstrap matters to the UI:
- *   - `plan_required` — the cloud's `is_workspace_on_paid_plan` gate
- *     refused. Surface an upgrade prompt instead of the loading skeleton
- *     so Free workspaces don't see a blank popover (regression image #41).
- *   - `other` — network failure, permission, transient cloud error. Keep
- *     a generic message and expose an explicit retry action.
- */
-export type FormShareErrorKind = 'plan_required' | 'other';
-
-function classifyError(err: unknown): FormShareErrorKind {
-  const e = err as { code?: number; message?: string } | null | undefined;
-
-  // Server contract: `FeatureNotAvailable` (1067) is the gate refusal.
-  // Message-substring fallback is paranoia for older cloud builds that
-  // might surface the gate as a different code; the message text is
-  // pinned by `share.rs` and changes only via deliberate edit.
-  if (e?.code === ERROR_CODE.FEATURE_NOT_AVAILABLE) return 'plan_required';
-  if (e?.message && /Pro or Team plan/i.test(e.message)) return 'plan_required';
-  return 'other';
-}
-
-/**
  * Errors that warrant a retry rather than a final-state UI commit.
  * The cloud's `check_form_view_scope` rejects with `RecordNotFound`
  * when a freshly-created form view hasn't propagated to its folder-
@@ -44,9 +22,6 @@ function classifyError(err: unknown): FormShareErrorKind {
  * lags by a beat). That's a transient race, not a real failure —
  * retrying with backoff lets the cache catch up.
  *
- * `FeatureNotAvailable` is deliberately NOT in this set: a Free
- * workspace will keep getting the same answer no matter how long we
- * wait, so a retry would just add latency before the upgrade prompt.
  */
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -71,6 +46,9 @@ interface FormShareMutationScope {
   viewId: string | undefined;
   active: boolean;
   owners: Set<symbol>;
+  ownerCanUpdateSettings: Map<symbol, boolean>;
+  authorityDenied: boolean;
+  canPersistMutations: boolean;
   subscribers: Map<symbol, (scope: FormShareMutationScope, bootstrapSettled: boolean) => void>;
   confirmed: FormShareInfo | null;
   desired: FormShareInfo | null;
@@ -78,7 +56,7 @@ interface FormShareMutationScope {
   pendingRequest: FormShareDelta;
   pendingOptimistic: FormShareDelta;
   draining: Promise<void> | null;
-  mutationError: { kind: FormShareErrorKind; message: string } | null;
+  mutationError: { message: string } | null;
 }
 
 // Process-local outbox keyed by the exact Form share scope. A Form provider is
@@ -114,6 +92,9 @@ function createMutationScope(
     viewId,
     active: false,
     owners: new Set(),
+    ownerCanUpdateSettings: new Map(),
+    authorityDenied: false,
+    canPersistMutations: false,
     subscribers: new Map(),
     confirmed: null,
     desired: null,
@@ -144,6 +125,48 @@ function notifyFormShareMutationScope(scope: FormShareMutationScope, bootstrapSe
   scope.subscribers.forEach((subscriber) => subscriber(scope, bootstrapSettled));
 }
 
+function retainClosedMutationOnly(scope: FormShareMutationScope) {
+  const retainsClosedIntent = scope.pendingRequest.tier === 'closed';
+
+  scope.pendingRequest = retainsClosedIntent ? { tier: 'closed' } : {};
+  scope.pendingOptimistic = retainsClosedIntent ? { tier: 'closed' } : {};
+  scope.desired = scope.confirmed;
+  scope.mutationError = null;
+  scope.revision += 1;
+}
+
+function refreshMutationAuthority(scope: FormShareMutationScope) {
+  // When every provider has unmounted, keep the last observed capability so
+  // an accepted write can finish off-screen. An explicit transition to
+  // view-only is different: discard access-broadening retries and retain at
+  // most a queued Closed handoff, matching Desktop's persistence outbox.
+  if (scope.owners.size === 0) return;
+
+  const canPersistMutations =
+    !scope.authorityDenied &&
+    Array.from(scope.owners).some((owner) => scope.ownerCanUpdateSettings.get(owner) === true);
+
+  if (scope.canPersistMutations === canPersistMutations) return;
+  scope.canPersistMutations = canPersistMutations;
+  if (!canPersistMutations) retainClosedMutationOnly(scope);
+  notifyFormShareMutationScope(scope);
+}
+
+function restoreMutationAuthorityAfterSuccessfulRead(
+  scope: FormShareMutationScope,
+  canUpdateSettings: boolean,
+  mutationRevisionAtRequest: number
+) {
+  // A bootstrap that started before a newer mutation/permission fence cannot
+  // prove authority. In particular, `retainClosedMutationOnly` advances this
+  // revision when a PATCH receives 401/403, so an older in-flight GET must not
+  // re-enable writes after that server-authoritative denial.
+  if (scope.revision !== mutationRevisionAtRequest) return;
+  if (!canUpdateSettings || !scope.authorityDenied) return;
+  scope.authorityDenied = false;
+  refreshMutationAuthority(scope);
+}
+
 /** Test isolation for the process-local mutation outbox. */
 export function resetFormShareMutationOutboxForTesting() {
   invalidateFormShareMutationScopes();
@@ -154,6 +177,9 @@ function invalidateFormShareMutationScopes() {
   formShareMutationScopes.forEach((scope) => {
     scope.active = false;
     scope.owners.clear();
+    scope.ownerCanUpdateSettings.clear();
+    scope.authorityDenied = false;
+    scope.canPersistMutations = false;
     scope.subscribers.clear();
     scope.pendingRequest = {};
     scope.pendingOptimistic = {};
@@ -170,20 +196,19 @@ function invalidateFormShareMutationScopes() {
  * Returns `success` when either the GET produced a token, the mint
  * succeeded, or the mint hit 409 and the follow-up GET picked up the
  * existing token. `failure` carries the last error untouched so the
- * caller can classify (plan_required vs transient vs other) and
- * decide whether to retry.
+ * caller can decide whether to retry.
  */
 async function tryBootstrap(
   workspaceId: string,
   databaseId: string,
   viewId: string,
-  canMint = true
+  canMint: boolean | (() => boolean) = true
 ): Promise<BootstrapOutcome> {
   try {
     const existing = await getFormShare(workspaceId, databaseId, viewId);
 
     if (existing) return { kind: 'success', info: existing };
-    if (!canMint) return { kind: 'empty' };
+    if (!(typeof canMint === 'function' ? canMint() : canMint)) return { kind: 'empty' };
   } catch (e) {
     // Never turn a failed read into a write. Auth, permission, network, and
     // server failures must be surfaced/retried as reads; mint is valid only
@@ -196,11 +221,9 @@ async function tryBootstrap(
 
     return { kind: 'success', info: minted };
   } catch (e) {
-    const message = (e as { message?: string })?.message ?? 'mint failed';
-
     // 409 = a token already exists (race between our GET and POST).
     // Re-fetch to pick it up.
-    if (/already exists|409/i.test(message)) {
+    if (isAlreadyExistsError(e)) {
       try {
         const after = await getFormShare(workspaceId, databaseId, viewId);
 
@@ -211,6 +234,61 @@ async function tryBootstrap(
     }
 
     return { kind: 'failure', error: e };
+  }
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+
+  const candidate = error as {
+    code?: unknown;
+    httpStatus?: unknown;
+    response?: { status?: unknown; data?: { code?: unknown } };
+  };
+
+  return (
+    candidate.code === ERROR_CODE.RECORD_ALREADY_EXISTS ||
+    candidate.response?.data?.code === ERROR_CODE.RECORD_ALREADY_EXISTS ||
+    candidate.httpStatus === 409 ||
+    candidate.response?.status === 409
+  );
+}
+
+function isShareAuthorityError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+
+  const candidate = error as {
+    code?: unknown;
+    status?: unknown;
+    httpStatus?: unknown;
+    response?: { status?: unknown; data?: { code?: unknown } };
+  };
+  const code = candidate.code ?? candidate.response?.data?.code;
+  const status = candidate.httpStatus ?? candidate.status ?? candidate.response?.status;
+
+  return (
+    code === ERROR_CODE.NOT_HAS_PERMISSION ||
+    code === ERROR_CODE.USER_UNAUTHORIZED ||
+    code === ERROR_CODE.NOT_LOGGED_IN ||
+    status === 401 ||
+    status === 403
+  );
+}
+
+function validatedShareUrl(info: FormShareInfo | null): string {
+  if (!info?.token.trim()) return '';
+
+  const value = info.share_url?.trim();
+
+  if (!value) return '';
+
+  try {
+    const url = new URL(value);
+
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !url.hostname) return '';
+    return value;
+  } catch {
+    return '';
   }
 }
 
@@ -258,15 +336,11 @@ function coerceSubmissionAccess(
  * does nothing.
  */
 export interface FormShareState {
-  /** Page permission, independent from the paid-plan authoring entitlement. */
+  /** Page permission for changing share settings. */
   canUpdateSettings: boolean;
   info: FormShareInfo | null;
   isLoading: boolean;
   error: string | null;
-  /// Distinguishes a plan-gate refusal from a generic failure so the
-  /// popover can render an upgrade prompt instead of an infinite
-  /// loading skeleton (regression image #41).
-  errorKind: FormShareErrorKind | null;
   /** Re-runs bootstrap for the current form after a terminal load failure. */
   retryBootstrap: () => void;
   /** Replays the latest failed share-settings intent without losing it. */
@@ -274,8 +348,8 @@ export interface FormShareState {
   setTier: (tier: FormShareTier) => Promise<void>;
   setAnonymous: (value: boolean) => Promise<void>;
   setSubmissionAccess: (access: FormSubmissionAccess) => Promise<void>;
-  /// Server-computed Web share URL, or an empty string when the deployment
-  /// has not configured `APPFLOWY_WEB_URL`.
+  /// Validated server-computed Web share URL, or an empty string when the
+  /// response lacks a real token or absolute HTTP(S) respondent URL.
   resolveShareUrl: () => string;
 }
 
@@ -302,7 +376,7 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
   const [info, setInfo] = useState<FormShareInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [errorKind, setErrorKind] = useState<FormShareErrorKind | null>(null);
+  const [authorityDenied, setAuthorityDenied] = useState(false);
   const [stateScopeKey, setStateScopeKey] = useState(scopeKey);
   const [bootstrapRevision, setBootstrapRevision] = useState(0);
 
@@ -316,7 +390,6 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
     // bypass the Form-to-Form scope guards.
     setStateScopeKey(scope.key);
     setError(null);
-    setErrorKind(null);
     setIsLoading(true);
     setBootstrapRevision((revision) => revision + 1);
   }, []);
@@ -326,7 +399,7 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
       if (mutationScopeRef.current !== scope) return;
       setInfo(canUpdateSettings ? scope.desired : scope.confirmed);
       setError(canUpdateSettings ? scope.mutationError?.message ?? null : null);
-      setErrorKind(canUpdateSettings ? scope.mutationError?.kind ?? null : null);
+      setAuthorityDenied(scope.authorityDenied);
       if (bootstrapSettled) setIsLoading(false);
     },
     [canUpdateSettings]
@@ -335,6 +408,7 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
   const startMutationDrain = useCallback((scope: FormShareMutationScope): Promise<void> => {
     if (scope.draining) return scope.draining;
     if (
+      !scope.canPersistMutations ||
       !scope.workspaceId ||
       !scope.databaseId ||
       !scope.viewId ||
@@ -358,7 +432,12 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
       // a revoke loop cannot spin forever.
       let recoveredMissingToken = false;
 
-      while (scope.confirmed && scope.desired && hasFormShareDelta(scope.pendingRequest)) {
+      while (
+        scope.canPersistMutations &&
+        scope.confirmed &&
+        scope.desired &&
+        hasFormShareDelta(scope.pendingRequest)
+      ) {
         const revision = scope.revision;
         const request = scope.pendingRequest;
         const optimistic = scope.pendingOptimistic;
@@ -376,19 +455,30 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
             scope.pendingRequest = { ...request, ...scope.pendingRequest };
             scope.pendingOptimistic = { ...optimistic, ...scope.pendingOptimistic };
 
+            if (!scope.canPersistMutations) {
+              retainClosedMutationOnly(scope);
+              notifyFormShareMutationScope(scope);
+              return;
+            }
+
             if (recoveredMissingToken) {
               const message = 'The form share token changed again. Reload share settings and retry.';
 
               scope.confirmed = null;
               scope.desired = null;
-              scope.mutationError = { kind: 'other', message };
+              scope.mutationError = { message };
               notifyFormShareMutationScope(scope);
 
               return;
             }
 
             recoveredMissingToken = true;
-            const recovered = await tryBootstrap(mutationWorkspaceId, mutationDatabaseId, mutationViewId);
+            const recovered = await tryBootstrap(
+              mutationWorkspaceId,
+              mutationDatabaseId,
+              mutationViewId,
+              () => scope.canPersistMutations
+            );
 
             if (recovered.kind !== 'success') {
               const recoveryError =
@@ -397,11 +487,10 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
                   : new Error('The replacement form share token is unavailable');
               const message =
                 (recoveryError as { message?: string })?.message ?? 'reload failed after the share token changed';
-              const kind = classifyError(recoveryError);
 
               scope.confirmed = null;
               scope.desired = null;
-              scope.mutationError = { kind, message };
+              scope.mutationError = { message };
               notifyFormShareMutationScope(scope);
 
               return;
@@ -433,14 +522,25 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
           notifyFormShareMutationScope(scope);
         } catch (cause) {
           const message = (cause as { message?: string })?.message ?? 'patch failed';
-          const kind = classifyError(cause);
 
           // Preserve the failed request together with any newer queued values.
           // Newer fields win, so Retry always replays the user's final intent.
           scope.pendingRequest = { ...request, ...scope.pendingRequest };
           scope.pendingOptimistic = { ...optimistic, ...scope.pendingOptimistic };
-          scope.desired = scope.confirmed;
-          scope.mutationError = { kind, message };
+          if (isShareAuthorityError(cause)) {
+            // The server is authoritative even if the surrounding permission
+            // snapshot has not refreshed yet. Fence further writes now and
+            // never retain an access-broadening intent for a later remount.
+            scope.authorityDenied = true;
+            scope.canPersistMutations = false;
+            retainClosedMutationOnly(scope);
+          } else if (!scope.canPersistMutations) {
+            retainClosedMutationOnly(scope);
+          } else {
+            scope.desired = scope.confirmed;
+            scope.mutationError = { message };
+          }
+
           notifyFormShareMutationScope(scope);
 
           return;
@@ -460,7 +560,7 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
     const scope = mutationScopeRef.current;
 
     if (!canUpdateSettings) return;
-    if (!scope?.active || !hasFormShareDelta(scope.pendingRequest)) return;
+    if (!scope?.active || !scope.canPersistMutations || !hasFormShareDelta(scope.pendingRequest)) return;
     if (!scope.confirmed || !scope.desired) {
       retryBootstrap();
       return;
@@ -500,25 +600,31 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
 
     if (previous && previous !== mutationScope) {
       previous.owners.delete(mutationOwner);
+      previous.ownerCanUpdateSettings.delete(mutationOwner);
       previous.subscribers.delete(mutationOwner);
       previous.active = previous.owners.size > 0;
+      refreshMutationAuthority(previous);
       releaseFormShareMutationScope(previous);
     }
 
     formShareMutationScopes.set(mutationScope.key, mutationScope);
     mutationScope.owners.add(mutationOwner);
+    mutationScope.ownerCanUpdateSettings.set(mutationOwner, canUpdateSettings);
     mutationScope.subscribers.set(mutationOwner, syncMutationScope);
     mutationScope.active = true;
     mutationScopeRef.current = mutationScope;
+    refreshMutationAuthority(mutationScope);
 
     return () => {
       mutationScope.owners.delete(mutationOwner);
+      mutationScope.ownerCanUpdateSettings.delete(mutationOwner);
       mutationScope.subscribers.delete(mutationOwner);
       mutationScope.active = mutationScope.owners.size > 0;
       if (mutationScopeRef.current === mutationScope) mutationScopeRef.current = null;
+      refreshMutationAuthority(mutationScope);
       releaseFormShareMutationScope(mutationScope);
     };
-  }, [databaseId, mutationOwner, mutationScope, principalId, syncMutationScope, viewId, workspaceId]);
+  }, [canUpdateSettings, databaseId, mutationOwner, mutationScope, principalId, syncMutationScope, viewId, workspaceId]);
 
   // Bootstrap order:
   //   1. GET the existing token (cheap, idempotent — most common case
@@ -546,7 +652,6 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
     if (!viewId || !databaseId || !workspaceId) {
       setInfo(null);
       setError(null);
-      setErrorKind(null);
       setIsLoading(false);
       return;
     }
@@ -562,7 +667,6 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
     // a successful bootstrap of a different form.
     setInfo(null);
     setError(null);
-    setErrorKind(null);
     setIsLoading(true);
     void (async () => {
       // A previous mount may have handed this scope an in-flight outbox drain.
@@ -591,10 +695,21 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
         if (cancelled || mutationScopeRef.current !== scope || !scope.active) return;
         const mutationRevisionAtRequest = scope.revision;
         const confirmedAtRequest = scope.confirmed;
-        const outcome = await tryBootstrap(workspaceId, databaseId, viewId, canUpdateSettings);
+        const outcome = await tryBootstrap(
+          workspaceId,
+          databaseId,
+          viewId,
+          () =>
+            canUpdateSettings &&
+            !cancelled &&
+            mutationScopeRef.current === scope &&
+            scope.active &&
+            scope.canPersistMutations
+        );
 
         if (cancelled || mutationScopeRef.current !== scope || !scope.active) return;
         if (outcome.kind === 'empty') {
+          restoreMutationAuthorityAfterSuccessfulRead(scope, canUpdateSettings, mutationRevisionAtRequest);
           // A concurrent editable provider may have minted while this
           // read-only GET was in flight. Preserve that canonical token rather
           // than replacing it with the older empty observation.
@@ -604,7 +719,6 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
           if (shareChangedWhileReading && scope.confirmed) {
             setInfo(canUpdateSettings ? scope.desired : scope.confirmed);
             setError(null);
-            setErrorKind(null);
             setIsLoading(false);
             return;
           }
@@ -613,12 +727,12 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
           scope.desired = null;
           notifyFormShareMutationScope(scope, true);
           setError(null);
-          setErrorKind(null);
           setIsLoading(false);
           return;
         }
 
         if (outcome.kind === 'success') {
+          restoreMutationAuthorityAfterSuccessfulRead(scope, canUpdateSettings, mutationRevisionAtRequest);
           // Another provider for this Form may have mutated the canonical
           // outbox while this GET was in flight. Never let that older read
           // replace its optimistic/final state; the mutation drain broadcasts
@@ -629,7 +743,6 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
           if (shareChangedWhileReading && scope.confirmed) {
             setInfo(canUpdateSettings ? scope.desired : scope.confirmed);
             setError(canUpdateSettings ? scope.mutationError?.message ?? null : null);
-            setErrorKind(canUpdateSettings ? scope.mutationError?.kind ?? null : null);
             setIsLoading(false);
             return;
           }
@@ -645,7 +758,6 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
           scope.desired = canApplyPendingMutation ? { ...outcome.info, ...scope.pendingOptimistic } : outcome.info;
           notifyFormShareMutationScope(scope, true);
           setError(canUpdateSettings ? scope.mutationError?.message ?? null : null);
-          setErrorKind(canUpdateSettings ? scope.mutationError?.kind ?? null : null);
           setIsLoading(false);
           if (canApplyPendingMutation) void startMutationDrain(scope);
           return;
@@ -653,17 +765,9 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
 
         lastError = outcome.error;
 
-        // `plan_required` is terminal — retrying won't help a Free
-        // workspace; commit the upgrade prompt immediately so the
-        // user can act on it.
-        if (classifyError(outcome.error) === 'plan_required') {
-          break;
-        }
-
         if (!isViewPropagationError(outcome.error)) {
-          // Non-transient, non-plan-gate error (auth, 5xx, etc.)
-          // — break out so we don't burn the user's time on a hopeless
-          // retry loop.
+          // Non-transient error (auth, validation, 5xx, etc.) — break out so
+          // we don't burn the user's time on a retry loop that cannot help.
           break;
         }
 
@@ -684,15 +788,10 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
 
       if (cancelled || mutationScopeRef.current !== scope || !scope.active) return;
       const message = (lastError as { message?: string })?.message ?? 'load failed';
-      const kind = classifyError(lastError);
 
       // eslint-disable-next-line no-console
-      console.warn('[useFormShare] bootstrap failed after retries', {
-        kind,
-        error: lastError,
-      });
+      console.warn('[useFormShare] bootstrap failed after retries', lastError);
       setError(message);
-      setErrorKind(kind);
       setIsLoading(false);
     })();
 
@@ -715,7 +814,9 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
       const scope = mutationScopeRef.current;
 
       if (!canUpdateSettings) return Promise.resolve();
-      if (!scope?.active || !scope.confirmed || !scope.desired) return Promise.resolve();
+      if (!scope?.active || !scope.canPersistMutations || !scope.confirmed || !scope.desired) {
+        return Promise.resolve();
+      }
 
       // Apply invariant-derived values immediately for responsive UI, while
       // retaining only the fields the user actually changed for PATCH. Sparse
@@ -796,14 +897,14 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
   const scopedInfo = stateMatchesScope ? info : null;
   const scopedIsLoading = stateMatchesScope ? isLoading : Boolean(viewId && databaseId && workspaceId);
   const scopedError = stateMatchesScope ? error : null;
-  const scopedErrorKind = stateMatchesScope ? errorKind : null;
+  const scopedAuthorityDenied = stateMatchesScope ? authorityDenied : false;
 
   const resolveShareUrl = useCallback(() => {
     // Never guess from window.location or substitute a view ID. The server
     // deliberately owns this URL so separate Web/API origins and path-prefix
-    // deployments stay correct; an empty value is an operator configuration
-    // error that the popover must surface instead of copying a broken link.
-    return scopedInfo?.share_url ?? '';
+    // deployments stay correct; an invalid server snapshot must surface as
+    // unavailable instead of becoming a copyable broken or unsafe link.
+    return validatedShareUrl(scopedInfo);
   }, [scopedInfo]);
 
   // Memo the returned object so `FormShareProvider`'s context value has a
@@ -813,11 +914,10 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
   // to re-render even when info/setters are unchanged.
   return useMemo(
     () => ({
-      canUpdateSettings,
+      canUpdateSettings: canUpdateSettings && !scopedAuthorityDenied,
       info: scopedInfo,
       isLoading: scopedIsLoading,
       error: scopedError,
-      errorKind: scopedErrorKind,
       retryBootstrap,
       retryMutation,
       setTier,
@@ -827,10 +927,10 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
     }),
     [
       canUpdateSettings,
+      scopedAuthorityDenied,
       scopedInfo,
       scopedIsLoading,
       scopedError,
-      scopedErrorKind,
       retryBootstrap,
       retryMutation,
       setTier,

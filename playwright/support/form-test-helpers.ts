@@ -1,12 +1,7 @@
 import { Page, APIRequestContext, expect } from '@playwright/test';
 
 import { signInAndCreateDatabaseView } from './database-ui-helpers';
-import { seedProSubscriptionForUser } from './pro-seed-helpers';
-import {
-  DatabaseGridSelectors,
-  DatabaseViewSelectors,
-  FormSelectors,
-} from './selectors';
+import { DatabaseGridSelectors, DatabaseViewSelectors, FormSelectors } from './selectors';
 
 /**
  * Field-type ids used by the form question type picker. Mirrors the
@@ -37,18 +32,13 @@ export type FormFieldTypeName = keyof typeof FormFieldType;
  * a Grid and layers a linked Form on top. This is the same posture as
  * the desktop's `form_from_tab_bar.feature`.
  *
- * The Pro-plan gate is bypassed by Vite DEV mode
- * (`useCanAuthorFormView`), so freshly-registered Free-plan users can
- * still reach the Form authoring UI under `pnpm dev`. The cloud's
- * server-side share-mint gate still applies — share-popover scenarios
- * either need a Pro seed or should target only the local builder
- * (preview, add-question, question card) which doesn't touch the
- * cloud share endpoint.
+ * Form authoring and sharing do not require a paid subscription, so a
+ * freshly registered user can exercise the complete flow.
  */
 export async function signInAndAddFormViewViaTabBar(
   page: Page,
   request: APIRequestContext,
-  email: string,
+  email: string
 ): Promise<void> {
   await signInAndCreateDatabaseView(page, request, email, 'Grid', {
     verify: async (p) => {
@@ -60,36 +50,6 @@ export async function signInAndAddFormViewViaTabBar(
       });
     },
   });
-  await addFormViewToTabBar(page);
-}
-
-/**
- * Sign in, seed Pro on the workspace, then layer a Form view on the
- * starter Grid via the tab bar. Required for any scenario that needs
- * the cloud's form-share endpoints to succeed — Free workspaces are
- * refused by `is_workspace_on_paid_plan` and would leave the popover
- * stuck on `errorKind: 'plan_required'`.
- *
- * The Pro seed happens AFTER signin (so the user + workspace rows
- * exist) but BEFORE the Form-view add (which is the first action the
- * cloud gate evaluates).
- */
-export async function signInAddProAndOpenForm(
-  page: Page,
-  request: APIRequestContext,
-  email: string,
-): Promise<void> {
-  await signInAndCreateDatabaseView(page, request, email, 'Grid', {
-    verify: async (p) => {
-      await expect(p.locator('[class*="appflowy-database"]')).toBeVisible({
-        timeout: 15000,
-      });
-      await expect(DatabaseViewSelectors.viewTab(p).first()).toBeVisible({
-        timeout: 10000,
-      });
-    },
-  });
-  await seedProSubscriptionForUser(email);
   await addFormViewToTabBar(page);
 }
 
@@ -160,10 +120,7 @@ async function dismissAutoCreateDialogIfPresent(page: Page): Promise<void> {
  *
  * Returns after the picker closes and the new question card appears.
  */
-export async function addFormQuestion(
-  page: Page,
-  type: FormFieldTypeName,
-): Promise<void> {
+export async function addFormQuestion(page: Page, type: FormFieldTypeName): Promise<void> {
   const before = await FormSelectors.questionCards(page).count();
   await FormSelectors.addQuestionButton(page).click();
   await FormSelectors.questionTypeOption(page, FormFieldType[type]).click();
@@ -207,11 +164,7 @@ export async function closeFormPreview(page: Page): Promise<void> {
  * observer has time to fan out the state change before the caller
  * polls a `data-*` attribute.
  */
-export async function toggleQuestionMenuItem(
-  page: Page,
-  questionIndex: number,
-  label: string,
-): Promise<void> {
+export async function toggleQuestionMenuItem(page: Page, questionIndex: number, label: string): Promise<void> {
   await FormSelectors.questionMenuTriggerAt(page, questionIndex).click();
   // Radix renders menus in a portal — scope the lookup to the open
   // menu surface so we don't match a stray duplicate (e.g. the
@@ -230,15 +183,13 @@ export async function toggleQuestionMenuItem(
 // ── Share popover actions ───────────────────────────────────────────
 
 /**
- * Open the share popover from the toolbar. Waits for either the share
- * controls (Pro path) or the upgrade prompt (Free path) to appear so
- * the caller doesn't race the bootstrap.
+ * Open the share popover from the toolbar and wait for the share
+ * controls to appear so the caller doesn't race the bootstrap.
  *
  * Distinct "fully bootstrapped" anchor: the popover surface flashes
  * the loading skeleton during the GET / mint round-trip; clicks on the
  * skeleton can't navigate to actual controls. After the popover
- * mounts, wait until either the share controls OR the upgrade prompt
- * land before returning — both indicate the bootstrap settled.
+ * mounts, wait until the share controls land before returning.
  */
 export async function openSharePopover(page: Page): Promise<void> {
   await FormSelectors.shareButton(page).click();
@@ -246,27 +197,11 @@ export async function openSharePopover(page: Page): Promise<void> {
   await expect(page.locator('[data-slot="popover-content"]').first()).toBeVisible({
     timeout: 10000,
   });
-  // Second wait — bootstrap settled. Race the two terminal states so
-  // either branch unblocks the caller. The loading skeleton is
-  // explicitly NOT a settled state.
-  //
-  // Anchor on the Anonymous toggle (rows path) and the upgrade prompt
-  // (Free path) — both are mounted exclusively, with the skeleton in
-  // between. Once one of them appears the bootstrap has resolved.
-  await page.waitForFunction(
-    () => {
-      const upgrade = document.querySelector(
-        '[data-testid="form-share-popover-upgrade-prompt"]',
-      );
-      const rows = document.querySelector(
-        '[data-testid="form-share-anonymous-toggle"]',
-      );
-
-      return !!(upgrade || rows);
-    },
-    undefined,
-    { timeout: 15000 },
-  );
+  // The loading skeleton is not a settled state. The Anonymous toggle
+  // is mounted only after the share bootstrap has completed.
+  await expect(page.getByTestId('form-share-anonymous-toggle')).toBeVisible({
+    timeout: 15000,
+  });
 }
 
 /**
@@ -278,10 +213,7 @@ export async function openSharePopover(page: Page): Promise<void> {
  * the popover's submission-access row also surfaces "No access" copy
  * — a visible-text query would be ambiguous for the `closed` tier.
  */
-export async function selectShareTier(
-  page: Page,
-  tier: 'workspace' | 'public' | 'closed',
-): Promise<void> {
+export async function selectShareTier(page: Page, tier: 'workspace' | 'public' | 'closed'): Promise<void> {
   await page.getByRole('button', { name: /Who can fill out/i }).click();
   const choice = page.getByTestId(`form-share-tier-choice-${tier}`);
 
@@ -298,11 +230,9 @@ export async function selectShareTier(
  * we added gives us a stable handle without depending on the visible
  * label (which is wrapped in a span sibling).
  *
- * Server-side `useFormShare.setAnonymous` short-circuits when
- * `tier === 'public'` (cloud forces it). For Workspace tier, toggling
- * Anonymous ON auto-promotes the tier to Public per the
- * "promotePublic" rule — caller should assert on `data-tier` after
- * to verify the promotion.
+ * `useFormShare.setAnonymous` short-circuits when `tier === 'public'`
+ * because the cloud forces anonymous submissions there. Workspace and
+ * Closed tiers preserve their tier while the Anonymous setting changes.
  */
 export async function toggleAnonymousSwitch(page: Page): Promise<void> {
   await page.getByTestId('form-share-anonymous-toggle').click();
@@ -312,10 +242,9 @@ export async function toggleAnonymousSwitch(page: Page): Promise<void> {
 }
 
 /**
- * Read the share URL out of the popover's read-only input. The cloud's
- * `share_url` field is empty when `APPFLOWY_WEB_URL` isn't configured;
- * the popover's `resolveShareUrl` falls back to `${origin}/form/${token}`
- * in that case, which is what we read here.
+ * Read the server-owned share URL out of the popover's read-only input.
+ * The frontend deliberately does not construct a fallback URL because
+ * API and Web origins or deployment path prefixes may differ.
  */
 export async function readShareUrl(page: Page): Promise<string> {
   const input = page.locator('input[readonly]').first();
@@ -343,10 +272,7 @@ export async function readShareUrl(page: Page): Promise<string> {
  * automatically so for one-shot scenario use the explicit cleanup is
  * optional.
  */
-export async function openSharePageInNewTab(
-  page: Page,
-  shareUrl: string,
-): Promise<Page> {
+export async function openSharePageInNewTab(page: Page, shareUrl: string): Promise<Page> {
   const browser = page.context().browser();
 
   if (!browser) {
@@ -371,10 +297,7 @@ export async function openSharePageInNewTab(
  * "Nathan Foo" once Anonymous toggle is OFF and the respondent is a
  * workspace member.
  */
-export async function openSharePageInSameContext(
-  page: Page,
-  shareUrl: string,
-): Promise<Page> {
+export async function openSharePageInSameContext(page: Page, shareUrl: string): Promise<Page> {
   const newTab = await page.context().newPage();
 
   await newTab.goto(shareUrl, { waitUntil: 'domcontentloaded' });
@@ -413,10 +336,7 @@ export async function countGridRows(page: Page): Promise<number> {
  * Returns the final count once met (or the timed-out count for nicer
  * test failures).
  */
-export async function waitForGridRowCount(
-  page: Page,
-  expected: number,
-): Promise<number> {
+export async function waitForGridRowCount(page: Page, expected: number): Promise<number> {
   await page.waitForFunction(
     (target) => {
       const rows = document.querySelectorAll('[data-testid^="grid-row-"]');
@@ -424,7 +344,7 @@ export async function waitForGridRowCount(
       return rows.length >= target;
     },
     expected,
-    { timeout: 15000 },
+    { timeout: 15000 }
   );
   return DatabaseGridSelectors.rows(page).count();
 }
@@ -440,50 +360,47 @@ export async function waitForGridRowCount(
  * the authoring tab, which can lag a beat behind the cloud's
  * persistence.
  */
-export async function readRespondentForRowByName(
-  page: Page,
-  nameSubstring: string,
-): Promise<string> {
-  return page.waitForFunction(
-    (substr) => {
-      const rows = Array.from(
-        document.querySelectorAll('[data-testid^="grid-row-"]'),
-      );
+export async function readRespondentForRowByName(page: Page, nameSubstring: string): Promise<string> {
+  return page
+    .waitForFunction(
+      (substr) => {
+        const rows = Array.from(document.querySelectorAll('[data-testid^="grid-row-"]'));
 
-      for (const row of rows) {
-        const cells = row.querySelectorAll('[data-testid^="grid-cell-"]');
+        for (const row of rows) {
+          const cells = row.querySelectorAll('[data-testid^="grid-cell-"]');
 
-        if (cells.length === 0) continue;
-        // Scan every cell for the submission's text — a Form-added
-        // question creates a new database field at the end of the
-        // column order, so the submission can land in any cell.
-        let matched = false;
+          if (cells.length === 0) continue;
+          // Scan every cell for the submission's text — a Form-added
+          // question creates a new database field at the end of the
+          // column order, so the submission can land in any cell.
+          let matched = false;
 
-        for (let i = 0; i < cells.length; i += 1) {
-          if (cells[i].textContent?.includes(substr)) {
-            matched = true;
-            break;
+          for (let i = 0; i < cells.length; i += 1) {
+            if (cells[i].textContent?.includes(substr)) {
+              matched = true;
+              break;
+            }
           }
+
+          if (!matched) continue;
+          // Find the Person cell within this row. The Person field
+          // type renders an inner `<div data-testid="person-cell-…">`
+          // wrapper that's unique to Person columns — the Respondent
+          // field is a Person field seeded by `make_default_form`, so
+          // there's exactly one per row. Anchoring on this testid
+          // is more robust than "last grid-cell" because additional
+          // Form question fields push Respondent out of the last
+          // position.
+          const personCell = row.querySelector('[data-testid^="person-cell-"]');
+
+          if (!personCell) continue;
+          return personCell.textContent ?? '';
         }
 
-        if (!matched) continue;
-        // Find the Person cell within this row. The Person field
-        // type renders an inner `<div data-testid="person-cell-…">`
-        // wrapper that's unique to Person columns — the Respondent
-        // field is a Person field seeded by `make_default_form`, so
-        // there's exactly one per row. Anchoring on this testid
-        // is more robust than "last grid-cell" because additional
-        // Form question fields push Respondent out of the last
-        // position.
-        const personCell = row.querySelector('[data-testid^="person-cell-"]');
-
-        if (!personCell) continue;
-        return personCell.textContent ?? '';
-      }
-
-      return false;
-    },
-    nameSubstring,
-    { timeout: 15000 },
-  ).then((handle) => handle.jsonValue() as Promise<string>);
+        return false;
+      },
+      nameSubstring,
+      { timeout: 15000 }
+    )
+    .then((handle) => handle.jsonValue() as Promise<string>);
 }

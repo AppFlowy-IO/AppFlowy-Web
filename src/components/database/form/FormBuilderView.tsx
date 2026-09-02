@@ -198,8 +198,8 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
         {/*
         Preview, share-link inspection, and the access banner remain visible
         to view-only members, matching Desktop. The provider and popovers use
-        page permission to disable every mutation independently from the paid
-        plan entitlement. Auto-create and question editing remain author-only.
+        page permission to disable every mutation. Auto-create and question
+        editing remain author-only.
       */}
         <header className='flex items-center justify-end gap-2'>
           <FormPreviewButton snapshot={snapshot} fieldsMap={fields} fieldsVersion={fieldsVersion} />

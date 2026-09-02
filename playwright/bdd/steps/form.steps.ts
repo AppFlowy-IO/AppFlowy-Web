@@ -1,12 +1,14 @@
-import { expect } from '@playwright/test';
+import { BrowserContext, expect, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
-import { Page } from '@playwright/test';
-
+import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
+import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
+import { deletePageByExactText } from '../../support/duplicate-test-helpers';
 import {
   FormFieldType,
   FormFieldTypeName,
   addFormQuestion,
+  addFormViewToTabBar,
   addFormViewToTabBarRaw,
   closeFormPreview,
   openFormPreview,
@@ -16,25 +18,70 @@ import {
   readRespondentForRowByName,
   readShareUrl,
   selectShareTier,
-  signInAddProAndOpenForm,
   signInAndAddFormViewViaTabBar,
   toggleAnonymousSwitch,
   toggleQuestionMenuItem,
   waitForGridRowCount,
 } from '../../support/form-test-helpers';
-import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
+import { createNamedGridDatabase } from '../../support/relation-test-helpers';
 import {
+  DatabaseGridSelectors,
   DatabaseViewSelectors,
   FormSelectors,
   PublicFormSelectors,
+  WorkspaceSelectors,
 } from '../../support/selectors';
-import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
+import { generateRandomEmail, setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
-const { Given, When, Then, Before } = createBdd();
+const { Given, When, Then, Before, After } = createBdd();
+
+const NATHAN_EMAIL = process.env.NATHAN_EMAIL || 'nathan@appflowy.io';
+const NATHAN_PASSWORD = process.env.NATHAN_PASSWORD || process.env.SEEDED_USER_PASSWORD || 'AppFlowy!@123';
+const EVA_EMAIL = process.env.EVA_EMAIL || 'eva@appflowy.io';
+const EVA_PASSWORD = process.env.EVA_PASSWORD || process.env.SEEDED_USER_PASSWORD || 'AppFlowy!@123';
+const MEMBER_FORM_DATABASE_PREFIX = 'Form member submission';
+
+type FormShareScenarioState = {
+  capturedUrl?: string;
+  evaUserId?: string;
+  respondentContext?: BrowserContext;
+  respondentPage?: Page;
+  temporaryDatabaseName?: string;
+  workspaceName?: string;
+};
+
+type WorkspaceSummary = {
+  role?: string;
+  workspace_name?: string;
+};
+
+type UserWorkspaceResponse = {
+  code?: number;
+  data?: {
+    visiting_workspace?: WorkspaceSummary;
+    workspaces?: WorkspaceSummary[];
+  };
+};
+
+const sharedState = new WeakMap<Page, FormShareScenarioState>();
 
 Before(async ({ page }) => {
   setupPageErrorHandling(page);
   await page.setViewportSize({ width: 1280, height: 720 });
+  sharedState.set(page, {});
+});
+
+After(async ({ page }) => {
+  const state = sharedState.get(page);
+
+  await state?.respondentContext?.close().catch(() => undefined);
+
+  if (state?.temporaryDatabaseName?.startsWith(`${MEMBER_FORM_DATABASE_PREFIX} `)) {
+    await page.bringToFront().catch(() => undefined);
+    await deletePageByExactText(page, state.temporaryDatabaseName).catch(() => undefined);
+  }
+
+  sharedState.delete(page);
 });
 
 // ── Setup ────────────────────────────────────────────────────────────
@@ -43,62 +90,33 @@ Given('a Grid with a Form tab is open', async ({ page, request }) => {
   await signInAndAddFormViewViaTabBar(page, request, generateRandomEmail());
 });
 
-Given(
-  'a Grid with a Form tab is open on a simulated Free workspace',
-  async ({ page, request }) => {
-    // Intercept the form-share endpoints and return a FeatureNotAvailable
-    // envelope so the FE classifier resolves to `plan_required`. The
-    // cloud's `is_workspace_on_paid_plan` short-circuits to `Ok(true)`
-    // for debug builds (so devs aren't blocked by the gate), which is
-    // the intended dev UX but removes the natural testbed for this
-    // path. The route-mock restores it for the one scenario that
-    // needs to exercise the upgrade-prompt branch.
-    await page.route('**/form/share', async (route) => {
-      const method = route.request().method();
+Given('Nathan has a Grid with a Form tab open in his workspace', async ({ page }) => {
+  const databaseName = `${MEMBER_FORM_DATABASE_PREFIX} ${Date.now().toString(36)}`;
 
-      if (method === 'GET' || method === 'POST' || method === 'PATCH') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            code: 1067,
-            message: 'Form share authoring requires a Pro or Team plan',
-          }),
-        });
-        return;
-      }
+  await signInWithPasswordViaUi(page, NATHAN_EMAIL, NATHAN_PASSWORD, 2000);
+  const workspaceName = await switchWorkspaceMatching(page, /nathan.*workspace/i);
 
-      await route.fallback();
-    });
-    await signInAndAddFormViewViaTabBar(page, request, generateRandomEmail());
-  },
-);
+  sharedState.set(page, { ...sharedState.get(page), workspaceName });
+  await createNamedGridDatabase(page, databaseName, []);
+  sharedState.set(page, { ...sharedState.get(page), temporaryDatabaseName: databaseName });
+  await addFormViewToTabBar(page);
+});
 
 // ── Question authoring ──────────────────────────────────────────────
 
-When(
-  'I add a {string} question',
-  async ({ page }, typeName: string) => {
-    if (!(typeName in FormFieldType)) {
-      throw new Error(
-        `Unknown form question type ${typeName}; valid: ${Object.keys(
-          FormFieldType,
-        ).join(', ')}`,
-      );
-    }
+When('I add a {string} question', async ({ page }, typeName: string) => {
+  if (!(typeName in FormFieldType)) {
+    throw new Error(`Unknown form question type ${typeName}; valid: ${Object.keys(FormFieldType).join(', ')}`);
+  }
 
-    await addFormQuestion(page, typeName as FormFieldTypeName);
-  },
-);
+  await addFormQuestion(page, typeName as FormFieldTypeName);
+});
 
-Then(
-  'the form has {int} question card(s)',
-  async ({ page }, count: number) => {
-    await expect(FormSelectors.questionCards(page)).toHaveCount(count, {
-      timeout: 10000,
-    });
-  },
-);
+Then('the form has {int} question card(s)', async ({ page }, count: number) => {
+  await expect(FormSelectors.questionCards(page)).toHaveCount(count, {
+    timeout: 10000,
+  });
+});
 
 // ── Preview ─────────────────────────────────────────────────────────
 
@@ -128,28 +146,22 @@ type PreviewSubmitSpy = { calls: string[]; off: () => void };
 
 const previewSubmitSpies = new WeakMap<object, PreviewSubmitSpy>();
 
-When(
-  'I record network calls to the public-form submit endpoint',
-  async ({ page }) => {
-    const calls: string[] = [];
-    const listener = (request: import('@playwright/test').Request): void => {
-      // The public submit endpoint is `/api/.../public-form/{token}/submit`.
-      // Anchor on the path tail so dev/prod hosts don't matter.
-      if (
-        request.method() === 'POST' &&
-        /\/public-form\/[^/]+\/submit(\?|$)/.test(request.url())
-      ) {
-        calls.push(request.url());
-      }
-    };
+When('I record network calls to the public-form submit endpoint', async ({ page }) => {
+  const calls: string[] = [];
+  const listener = (request: import('@playwright/test').Request): void => {
+    // The public submit endpoint is `/api/.../public-form/{token}/submit`.
+    // Anchor on the path tail so dev/prod hosts don't matter.
+    if (request.method() === 'POST' && /\/public-form\/[^/]+\/submit(\?|$)/.test(request.url())) {
+      calls.push(request.url());
+    }
+  };
 
-    page.on('request', listener);
-    previewSubmitSpies.set(page, {
-      calls,
-      off: () => page.off('request', listener),
-    });
-  },
-);
+  page.on('request', listener);
+  previewSubmitSpies.set(page, {
+    calls,
+    off: () => page.off('request', listener),
+  });
+});
 
 When('I submit the form preview', async ({ page }) => {
   const dialog = FormSelectors.previewDialog(page);
@@ -175,7 +187,7 @@ Then('no public-form submit request was sent', async ({ page }) => {
 
   if (!spy) {
     throw new Error(
-      'No request spy registered — call "I record network calls to the public-form submit endpoint" first.',
+      'No request spy registered — call "I record network calls to the public-form submit endpoint" first.'
     );
   }
   // Give any in-flight request a beat to land before we assert
@@ -186,47 +198,29 @@ Then('no public-form submit request was sent', async ({ page }) => {
 
   spy.off();
   previewSubmitSpies.delete(page);
-  expect(
-    sent,
-    'preview-mode submit must not hit /public-form/.../submit',
-  ).toEqual([]);
+  expect(sent, 'preview-mode submit must not hit /public-form/.../submit').toEqual([]);
 });
 
 // ── Question 3-dot menu / per-card state ────────────────────────────
 
-When(
-  'I toggle {string} on question {int}',
-  async ({ page }, label: string, oneBasedIndex: number) => {
-    await toggleQuestionMenuItem(page, oneBasedIndex - 1, label);
-  },
-);
+When('I toggle {string} on question {int}', async ({ page }, label: string, oneBasedIndex: number) => {
+  await toggleQuestionMenuItem(page, oneBasedIndex - 1, label);
+});
 
-Then(
-  'question {int} is marked required',
-  async ({ page }, oneBasedIndex: number) => {
-    await expect(
-      FormSelectors.questionCardAt(page, oneBasedIndex - 1),
-    ).toHaveAttribute('data-required', 'true');
-  },
-);
+Then('question {int} is marked required', async ({ page }, oneBasedIndex: number) => {
+  await expect(FormSelectors.questionCardAt(page, oneBasedIndex - 1)).toHaveAttribute('data-required', 'true');
+});
 
-Then(
-  'question {int} shows the description input',
-  async ({ page }, oneBasedIndex: number) => {
-    await expect(
-      FormSelectors.questionCardAt(page, oneBasedIndex - 1),
-    ).toHaveAttribute('data-description-visible', 'true');
-  },
-);
+Then('question {int} shows the description input', async ({ page }, oneBasedIndex: number) => {
+  await expect(FormSelectors.questionCardAt(page, oneBasedIndex - 1)).toHaveAttribute(
+    'data-description-visible',
+    'true'
+  );
+});
 
-Then(
-  'question {int} uses the long answer body',
-  async ({ page }, oneBasedIndex: number) => {
-    await expect(
-      FormSelectors.questionCardAt(page, oneBasedIndex - 1),
-    ).toHaveAttribute('data-long-answer', 'true');
-  },
-);
+Then('question {int} uses the long answer body', async ({ page }, oneBasedIndex: number) => {
+  await expect(FormSelectors.questionCardAt(page, oneBasedIndex - 1)).toHaveAttribute('data-long-answer', 'true');
+});
 
 // ── Tab-bar auto-create modal (raw variant — no auto-dismiss) ───────
 
@@ -243,105 +237,61 @@ Given('a Grid is open as a starter database', async ({ page, request }) => {
   });
 });
 
-When(
-  'I add a Form view via the tab bar without dismissing modals',
-  async ({ page }) => {
-    await addFormViewToTabBarRaw(page);
-  },
-);
+When('I add a Form view via the tab bar without dismissing modals', async ({ page }) => {
+  await addFormViewToTabBarRaw(page);
+});
 
-Then(
-  'the auto-create form questions dialog is visible',
-  async ({ page }) => {
-    await expect(FormSelectors.autoCreateDialog(page)).toBeVisible({
-      timeout: 5000,
-    });
-  },
-);
+Then('the auto-create form questions dialog is visible', async ({ page }) => {
+  await expect(FormSelectors.autoCreateDialog(page)).toBeVisible({
+    timeout: 5000,
+  });
+});
 
-Then(
-  'the auto-create form questions dialog is hidden',
-  async ({ page }) => {
-    await expect(FormSelectors.autoCreateDialog(page)).toBeHidden({
-      timeout: 5000,
-    });
-  },
-);
+Then('the auto-create form questions dialog is hidden', async ({ page }) => {
+  await expect(FormSelectors.autoCreateDialog(page)).toBeHidden({
+    timeout: 5000,
+  });
+});
 
-When(
-  'I click start from scratch in the auto-create form questions dialog',
-  async ({ page }) => {
-    await FormSelectors.autoCreateStartFromScratch(page).click();
-  },
-);
+When('I click start from scratch in the auto-create form questions dialog', async ({ page }) => {
+  await FormSelectors.autoCreateStartFromScratch(page).click();
+});
 
 // ── Database view tab bar (order regression) ─────────────────────────
 
-Then(
-  'the database view tab bar has {int} tabs',
-  async ({ page }, expected: number) => {
-    // Active assertion (not just count snapshot) so the matcher waits
-    // until the new tab actually mounts — the YJS folder update can
-    // arrive a frame after the auto-create dialog closes.
-    await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(expected, {
-      timeout: 10000,
-    });
-  },
-);
+Then('the database view tab bar has {int} tabs', async ({ page }, expected: number) => {
+  // Active assertion (not just count snapshot) so the matcher waits
+  // until the new tab actually mounts — the YJS folder update can
+  // arrive a frame after the auto-create dialog closes.
+  await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(expected, {
+    timeout: 10000,
+  });
+});
 
-Then(
-  'database view tab {int} is a {string} layout',
-  async ({ page }, position: number, layout: string) => {
-    // 1-based index from the feature file → 0-based locator nth().
-    // `viewTab(page)` (no viewId) returns all `[data-testid^="view-tab-"]`
-    // anchors, preserving DOM order = visual left-to-right order.
-    const tab = DatabaseViewSelectors.viewTab(page).nth(position - 1);
+Then('database view tab {int} is a {string} layout', async ({ page }, position: number, layout: string) => {
+  // 1-based index from the feature file → 0-based locator nth().
+  // `viewTab(page)` (no viewId) returns all `[data-testid^="view-tab-"]`
+  // anchors, preserving DOM order = visual left-to-right order.
+  const tab = DatabaseViewSelectors.viewTab(page).nth(position - 1);
 
-    await expect(tab).toBeVisible({ timeout: 10000 });
-    // The tab label is the layout's default name ("Grid" / "Board" /
-    // "Form" / "Calendar" / "Chart"). Build a case-insensitive regex
-    // anchored on the label so trailing whitespace / icons don't
-    // confuse the match.
-    await expect(tab).toContainText(new RegExp(layout, 'i'));
-  },
-);
+  await expect(tab).toBeVisible({ timeout: 10000 });
+  // The tab label is the layout's default name ("Grid" / "Board" /
+  // "Form" / "Calendar" / "Chart"). Build a case-insensitive regex
+  // anchored on the label so trailing whitespace / icons don't
+  // confuse the match.
+  await expect(tab).toContainText(new RegExp(layout, 'i'));
+});
 
 // ── Share popover ───────────────────────────────────────────────────
-
-Given(
-  'a Grid with a Form tab is open on a Pro workspace',
-  async ({ page, request }) => {
-    await signInAddProAndOpenForm(page, request, generateRandomEmail());
-  },
-);
 
 When('I open the share popover', async ({ page }) => {
   await openSharePopover(page);
 });
 
-Then('the share popover shows the upgrade prompt', async ({ page }) => {
-  await expect(FormSelectors.popoverUpgradePrompt(page)).toBeVisible({
-    timeout: 10000,
-  });
-  await expect(FormSelectors.popoverUpgradeCta(page)).toBeVisible();
-});
-
-Then(
-  'the share popover does not show the loading skeleton',
-  async ({ page }) => {
-    // Loading skeleton is mutually exclusive with the upgrade prompt;
-    // assert non-existence to catch regressions where the skeleton
-    // stays mounted forever (image #41).
-    await expect(FormSelectors.popoverLoading(page)).toBeHidden();
-  },
-);
-
 Then('the share popover shows the share controls', async ({ page }) => {
   // The share rows render the "Who can fill out" submenu trigger when
   // `info` is non-null. Anchor on that since it's stable across tiers.
-  await expect(
-    page.getByRole('button', { name: /Who can fill out/i }),
-  ).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('button', { name: /Who can fill out/i })).toBeVisible({ timeout: 15000 });
 });
 
 Then('the share URL is non-empty', async ({ page }) => {
@@ -357,103 +307,134 @@ Then('the share popover surface is not blank', async ({ page }) => {
   // popover's `bg-surface-layer-03` background in dark mode, so the
   // bars rendered invisibly. The testid was present, but the user saw
   // an empty rectangle. This test catches that class of regression by
-  // requiring SOME readable text in any of the three branches.
-  const text = await page
-    .locator('[data-slot="popover-content"]')
-    .first()
-    .innerText();
+  // requiring readable text after the share controls have loaded.
+  const text = await page.locator('[data-slot="popover-content"]').first().innerText();
 
   expect(text.replace(/\s+/g, '').length).toBeGreaterThan(0);
 });
 
-When(
-  'I switch the share tier to {string}',
-  async ({ page }, tier: string) => {
-    if (tier !== 'workspace' && tier !== 'public' && tier !== 'closed') {
-      throw new Error(`Unknown tier ${tier}`);
-    }
+When('I switch the share tier to {string}', async ({ page }, tier: string) => {
+  if (tier !== 'workspace' && tier !== 'public' && tier !== 'closed') {
+    throw new Error(`Unknown tier ${tier}`);
+  }
 
-    await selectShareTier(page, tier as 'workspace' | 'public' | 'closed');
-  },
-);
+  await selectShareTier(page, tier as 'workspace' | 'public' | 'closed');
+});
 
-Then(
-  'the access banner reflects the {string} tier',
-  async ({ page }, tier: string) => {
-    // `toHaveAttribute` polls the DOM directly, so it works whether
-    // or not the popover is open in front of the banner. Don't dismiss
-    // the popover here — downstream steps may need it open to click
-    // the next toggle.
-    await expect(FormSelectors.accessBanner(page)).toHaveAttribute(
-      'data-tier',
-      tier,
-      { timeout: 10000 },
-    );
-  },
-);
+When('I disable anonymous responses', async ({ page }) => {
+  const toggle = page.getByTestId('form-share-anonymous-toggle');
+
+  await expect(toggle).toBeVisible({ timeout: 10000 });
+  if ((await toggle.getAttribute('aria-checked')) !== 'false') {
+    await toggleAnonymousSwitch(page);
+  }
+
+  await expect(FormSelectors.accessBanner(page)).toHaveAttribute('data-tier', 'workspace', { timeout: 10000 });
+  await expect(FormSelectors.accessBanner(page)).toHaveAttribute('data-anonymous', 'false', { timeout: 10000 });
+});
+
+Then('the access banner reflects the {string} tier', async ({ page }, tier: string) => {
+  // `toHaveAttribute` polls the DOM directly, so it works whether
+  // or not the popover is open in front of the banner. Don't dismiss
+  // the popover here — downstream steps may need it open to click
+  // the next toggle.
+  await expect(FormSelectors.accessBanner(page)).toHaveAttribute('data-tier', tier, { timeout: 10000 });
+});
 
 // ── Share-link submission ──────────────────────────────────────────
 //
-// The respondent tab lives in a separate Playwright `Page` opened on
-// the authoring page's `BrowserContext`. We stash both on the world's
-// `page` reference via module-scope state — `playwright-bdd` rebuilds
-// the context per scenario so this Map never accumulates across runs.
-
-const sharedState = new WeakMap<
-  Page,
-  { authoringPage: Page; respondentPage?: Page; capturedUrl?: string }
->();
+// Respondent pages can use either the author's session, an isolated
+// signed-in member session, or a truly anonymous BrowserContext. State
+// is keyed by Playwright's fixture page and cleared by the After hook.
 
 When('I copy the share URL from the popover', async ({ page }) => {
   const url = await readShareUrl(page);
 
-  sharedState.set(page, { authoringPage: page, capturedUrl: url });
+  sharedState.set(page, { ...sharedState.get(page), capturedUrl: url });
 });
 
-When(
-  'I open the share URL in a fresh anonymous tab',
-  async ({ page }) => {
-    const state = sharedState.get(page);
+When('I open the share URL in a fresh anonymous tab', async ({ page }) => {
+  const state = sharedState.get(page);
 
-    if (!state?.capturedUrl) {
-      throw new Error('share URL was not captured before opening the tab');
-    }
+  if (!state?.capturedUrl) {
+    throw new Error('share URL was not captured before opening the tab');
+  }
 
-    const respondent = await openSharePageInNewTab(page, state.capturedUrl);
+  await state.respondentContext?.close().catch(() => undefined);
+  const respondent = await openSharePageInNewTab(page, state.capturedUrl);
 
-    sharedState.set(page, { ...state, respondentPage: respondent });
-  },
-);
+  sharedState.set(page, {
+    ...state,
+    respondentContext: respondent.context(),
+    respondentPage: respondent,
+  });
+});
 
-When(
-  'I open the share URL in the same context',
-  async ({ page }) => {
-    // Same BrowserContext = same cookies = same GoTrue session, so
-    // the cloud sees the request as the authoring user. Required for
-    // Workspace-tier respondent identification — a fresh-context
-    // submission would 401 against the auth_required gate.
-    const state = sharedState.get(page);
+When('I open the share URL in the same context', async ({ page }) => {
+  // Same BrowserContext = same cookies = same GoTrue session, so
+  // the cloud sees the request as the authoring user. Required for
+  // Workspace-tier respondent identification — a fresh-context
+  // submission would 401 against the auth_required gate.
+  const state = sharedState.get(page);
 
-    if (!state?.capturedUrl) {
-      throw new Error('share URL was not captured before opening the tab');
-    }
+  if (!state?.capturedUrl) {
+    throw new Error('share URL was not captured before opening the tab');
+  }
 
-    const respondent = await openSharePageInSameContext(
-      page,
-      state.capturedUrl,
-    );
+  const respondent = await openSharePageInSameContext(page, state.capturedUrl);
 
-    sharedState.set(page, { ...state, respondentPage: respondent });
-  },
-);
+  sharedState.set(page, { ...state, respondentPage: respondent });
+});
+
+When('Eva signs in and opens the captured share URL', async ({ page, browser, request }) => {
+  const state = sharedState.get(page);
+
+  if (!state?.capturedUrl || !state.workspaceName) {
+    throw new Error('Nathan workspace and share URL must be captured before Eva opens the form');
+  }
+
+  await state.respondentContext?.close().catch(() => undefined);
+  const evaContext = await browser.newContext({ baseURL: new URL(page.url()).origin });
+  const evaPage = await evaContext.newPage();
+
+  setupPageErrorHandling(evaPage);
+  sharedState.set(page, {
+    ...state,
+    respondentContext: evaContext,
+    respondentPage: evaPage,
+  });
+
+  await signInWithPasswordViaUi(evaPage, EVA_EMAIL, EVA_PASSWORD, 2000);
+  const accessToken = await readAuthToken(evaPage);
+  const evaUserId = userIdFromJwt(accessToken);
+  const workspaceResponse = await request.get(`${TestConfig.apiUrl}/api/user/workspace`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    failOnStatusCode: false,
+  });
+  const responseText = await workspaceResponse.text();
+
+  if (!workspaceResponse.ok()) {
+    throw new Error(`Eva workspace lookup failed: HTTP ${workspaceResponse.status()} ${responseText}`);
+  }
+
+  const workspaceBody = JSON.parse(responseText) as UserWorkspaceResponse;
+  const evaWorkspaces = [
+    ...(workspaceBody.data?.workspaces ?? []),
+    ...(workspaceBody.data?.visiting_workspace ? [workspaceBody.data.visiting_workspace] : []),
+  ];
+  const nathanWorkspace = evaWorkspaces.find(({ workspace_name }) => workspace_name === state.workspaceName);
+
+  expect(workspaceBody.code).toBe(0);
+  expect(nathanWorkspace?.role?.toLowerCase()).toBe('member');
+  sharedState.set(page, { ...sharedState.get(page), evaUserId });
+  await evaPage.goto(state.capturedUrl, { waitUntil: 'domcontentloaded' });
+});
 
 function getRespondent(page: Page): Page {
   const r = sharedState.get(page)?.respondentPage;
 
   if (!r) {
-    throw new Error(
-      'respondent tab not opened — call `I open the share URL in a fresh anonymous tab` first',
-    );
+    throw new Error('respondent tab not opened — call `I open the share URL in a fresh anonymous tab` first');
   }
   return r;
 }
@@ -477,20 +458,16 @@ Then('the public form has no question cards', async ({ page }) => {
   await expect(respondent.locator('[data-question-kind]')).toHaveCount(0);
 });
 
-When(
-  'I fill the first text input with {string}',
-  async ({ page }, value: string) => {
-    const respondent = getRespondent(page);
-    // First text question = first input under any text-kind FormQuestion.
-    // Anchor by the kind attribute on the question container so we don't
-    // accidentally hit a Number / URL input.
-    const textQuestion = PublicFormSelectors.questionByKind(respondent, 'text')
-      .first();
+When('I fill the first text input with {string}', async ({ page }, value: string) => {
+  const respondent = getRespondent(page);
+  // First text question = first input under any text-kind FormQuestion.
+  // Anchor by the kind attribute on the question container so we don't
+  // accidentally hit a Number / URL input.
+  const textQuestion = PublicFormSelectors.questionByKind(respondent, 'text').first();
 
-    await expect(textQuestion).toBeVisible({ timeout: 10000 });
-    await textQuestion.locator('input, textarea').first().fill(value);
-  },
-);
+  await expect(textQuestion).toBeVisible({ timeout: 10000 });
+  await textQuestion.locator('input, textarea').first().fill(value);
+});
 
 When('I submit the public form', async ({ page }) => {
   const respondent = getRespondent(page);
@@ -499,9 +476,7 @@ When('I submit the public form', async ({ page }) => {
 });
 
 Then('the public form confirmation page is visible', async ({ page }) => {
-  await expect(
-    PublicFormSelectors.confirmation(getRespondent(page)),
-  ).toBeVisible({ timeout: 15000 });
+  await expect(PublicFormSelectors.confirmation(getRespondent(page))).toBeVisible({ timeout: 15000 });
 });
 
 When('I click submit another response', async ({ page }) => {
@@ -511,9 +486,7 @@ When('I click submit another response', async ({ page }) => {
   // confirmation surface.
   const respondent = getRespondent(page);
 
-  await respondent
-    .getByRole('button', { name: /Submit another response/i })
-    .click();
+  await respondent.getByRole('button', { name: /Submit another response/i }).click();
 });
 
 When(
@@ -538,9 +511,7 @@ When(
       });
 
       if (i < count) {
-        await respondent
-          .getByRole('button', { name: /Submit another response/i })
-          .click();
+        await respondent.getByRole('button', { name: /Submit another response/i }).click();
         // After clicking, the form body re-mounts. Wait for the next
         // iteration's `toBeVisible` poll to settle on the input.
         await expect(PublicFormSelectors.body(respondent)).toBeVisible({
@@ -548,7 +519,7 @@ When(
         });
       }
     }
-  },
+  }
 );
 
 When('I switch back to the authoring tab', async ({ page }) => {
@@ -559,73 +530,62 @@ When('I switch back to the authoring tab', async ({ page }) => {
   await page.bringToFront();
 });
 
-Then(
-  'the source grid has at least {int} rows',
-  async ({ page }, expected: number) => {
-    // Flip to the Grid tab (index 0). Then poll for the new row.
-    await DatabaseViewSelectors.viewTab(page).first().click();
-    const count = await waitForGridRowCount(page, expected);
+Then('the source grid has at least {int} rows', async ({ page }, expected: number) => {
+  // Flip to the Grid tab (index 0). Then poll for the new row.
+  await DatabaseViewSelectors.viewTab(page).first().click();
+  const count = await waitForGridRowCount(page, expected);
 
-    expect(count).toBeGreaterThanOrEqual(expected);
-  },
-);
+  expect(count).toBeGreaterThanOrEqual(expected);
+});
 
-Then(
-  'the respondent for the row with name {string} is identified',
-  async ({ page }, nameSubstring: string) => {
-    // Flip to the Grid tab so the submission row is in the rendered
-    // DOM (it lands on the underlying database, not the Form view's
-    // projection).
-    await DatabaseViewSelectors.viewTab(page).first().click();
-    const respondentText = await readRespondentForRowByName(
-      page,
-      nameSubstring,
-    );
+Then('the respondent for the row with name {string} is identified', async ({ page }, nameSubstring: string) => {
+  // Flip to the Grid tab so the submission row is in the rendered
+  // DOM (it lands on the underlying database, not the Form view's
+  // projection).
+  await DatabaseViewSelectors.viewTab(page).first().click();
+  const respondentText = await readRespondentForRowByName(page, nameSubstring);
 
-    // "Identified" = NOT the anonymous sentinel. We deliberately don't
-    // pin the exact display name because the GoTrue profile that
-    // signed in is whatever `generateRandomEmail()` produced for this
-    // run.
-    expect(respondentText).not.toMatch(/^[·\s]*Anonymous[·\s]*$/);
-    expect(respondentText.replace(/\s+/g, '').length).toBeGreaterThan(0);
-  },
-);
+  // "Identified" = NOT the anonymous sentinel. We deliberately don't
+  // pin the exact display name because the GoTrue profile that
+  // signed in is whatever `generateRandomEmail()` produced for this
+  // run.
+  expect(respondentText).not.toMatch(/^[·\s]*Anonymous[·\s]*$/);
+  expect(respondentText.replace(/\s+/g, '').length).toBeGreaterThan(0);
+});
 
-Then(
-  'the respondent for the row with name {string} is anonymous',
-  async ({ page }, nameSubstring: string) => {
-    await DatabaseViewSelectors.viewTab(page).first().click();
-    const respondentText = await readRespondentForRowByName(
-      page,
-      nameSubstring,
-    );
+Then('the respondent for the row with name {string} is anonymous', async ({ page }, nameSubstring: string) => {
+  await DatabaseViewSelectors.viewTab(page).first().click();
+  const respondentText = await readRespondentForRowByName(page, nameSubstring);
 
-    // The Person cell renders `·Anonymous` for the nil-UUID sentinel
-    // (bullet separator + "Anonymous" label). Strip the bullet/space
-    // ornamentation to assert on the bare token.
-    expect(respondentText.replace(/[·\s]/g, '')).toBe('Anonymous');
-  },
-);
+  // The Person cell renders `·Anonymous` for the nil-UUID sentinel
+  // (bullet separator + "Anonymous" label). Strip the bullet/space
+  // ornamentation to assert on the bare token.
+  expect(respondentText.replace(/[·\s]/g, '')).toBe('Anonymous');
+});
+
+Then('the respondent for the row with name {string} is Eva', async ({ page }, nameSubstring: string) => {
+  await DatabaseViewSelectors.viewTab(page).first().click();
+  const evaUserId = sharedState.get(page)?.evaUserId;
+
+  if (!evaUserId) throw new Error('Eva user ID was not captured from her authenticated session');
+
+  await expect
+    .poll(() => readRespondentIdsForRowByName(page, nameSubstring), {
+      timeout: 15000,
+      message: `Waiting for the Respondent cell to contain Eva's UUID ${evaUserId}`,
+    })
+    .toEqual([evaUserId]);
+});
 
 // ── Access-level respondent landing states ─────────────────────────
 
-Then(
-  'the public form shows the login required prompt',
-  async ({ page }) => {
-    await expect(
-      PublicFormSelectors.authRequiredPage(getRespondent(page)),
-    ).toBeVisible({ timeout: 15000 });
-  },
-);
+Then('the public form shows the login required prompt', async ({ page }) => {
+  await expect(PublicFormSelectors.authRequiredPage(getRespondent(page))).toBeVisible({ timeout: 15000 });
+});
 
-Then(
-  'the public form shows the closed page',
-  async ({ page }) => {
-    await expect(
-      PublicFormSelectors.closedPage(getRespondent(page)),
-    ).toBeVisible({ timeout: 15000 });
-  },
-);
+Then('the public form shows the closed page', async ({ page }) => {
+  await expect(PublicFormSelectors.closedPage(getRespondent(page))).toBeVisible({ timeout: 15000 });
+});
 
 // ── Popover anonymous + submission-access ──────────────────────────
 
@@ -638,102 +598,166 @@ When('I toggle the Anonymous switch', async ({ page }) => {
 // Escape dance needed. (Earlier iteration closed the popover here,
 // which broke any subsequent step that needed to click another
 // popover row.)
-Then(
-  'the access banner reports anonymous responses as {string}',
-  async ({ page }, value: string) => {
-    await expect(FormSelectors.accessBanner(page)).toHaveAttribute(
-      'data-anonymous',
-      value,
-      { timeout: 10000 },
-    );
-  },
-);
+Then('the access banner reports anonymous responses as {string}', async ({ page }, value: string) => {
+  await expect(FormSelectors.accessBanner(page)).toHaveAttribute('data-anonymous', value, { timeout: 10000 });
+});
 
-Then(
-  'the access banner reports submission access as {string}',
-  async ({ page }, value: string) => {
-    await expect(FormSelectors.accessBanner(page)).toHaveAttribute(
-      'data-submission-access',
-      value,
-      { timeout: 10000 },
-    );
-  },
-);
+Then('the access banner reports submission access as {string}', async ({ page }, value: string) => {
+  await expect(FormSelectors.accessBanner(page)).toHaveAttribute('data-submission-access', value, { timeout: 10000 });
+});
 
 // ── Files question / Media upload (Phase-2) ────────────────────────
 
 Then('the public form shows the Files question', async ({ page }) => {
-  await expect(
-    PublicFormSelectors.questionByKind(getRespondent(page), 'files'),
-  ).toBeVisible({ timeout: 15000 });
-  await expect(
-    PublicFormSelectors.mediaUploadButton(getRespondent(page)),
-  ).toBeVisible();
+  await expect(PublicFormSelectors.questionByKind(getRespondent(page), 'files')).toBeVisible({ timeout: 15000 });
+  await expect(PublicFormSelectors.mediaUploadButton(getRespondent(page))).toBeVisible();
 });
 
-When(
-  'I attach the file {string} with content {string}',
-  async ({ page }, name: string, content: string) => {
-    // Drive `setInputFiles` on the hidden file input directly — this
-    // bypasses the OS file chooser, which Playwright can't dismiss in
-    // headless mode on some runners.
-    const respondent = getRespondent(page);
-    await PublicFormSelectors.mediaFileInput(respondent).setInputFiles({
-      name,
-      mimeType: inferMime(name),
-      buffer: Buffer.from(content, 'utf-8'),
-    });
-  },
-);
+When('I attach the file {string} with content {string}', async ({ page }, name: string, content: string) => {
+  // Drive `setInputFiles` on the hidden file input directly — this
+  // bypasses the OS file chooser, which Playwright can't dismiss in
+  // headless mode on some runners.
+  const respondent = getRespondent(page);
+  await PublicFormSelectors.mediaFileInput(respondent).setInputFiles({
+    name,
+    mimeType: inferMime(name),
+    buffer: Buffer.from(content, 'utf-8'),
+  });
+});
 
-When(
-  'I attempt to attach a {string} byte file named {string}',
-  async ({ page }, sizeStr: string, name: string) => {
-    const size = Number.parseInt(sizeStr, 10);
-    if (!Number.isFinite(size) || size <= 0) {
-      throw new Error(`Invalid file size: ${sizeStr}`);
-    }
-    // A buffer of zeros is fine for the size-cap path — the client
-    // rejects before it hits the wire, so the actual content never
-    // leaves the page.
-    const respondent = getRespondent(page);
-    await PublicFormSelectors.mediaFileInput(respondent).setInputFiles({
-      name,
-      mimeType: 'application/octet-stream',
-      buffer: Buffer.alloc(size),
-    });
-  },
-);
+When('I attempt to attach a {string} byte file named {string}', async ({ page }, sizeStr: string, name: string) => {
+  const size = Number.parseInt(sizeStr, 10);
+  if (!Number.isFinite(size) || size <= 0) {
+    throw new Error(`Invalid file size: ${sizeStr}`);
+  }
+  // A buffer of zeros is fine for the size-cap path — the client
+  // rejects before it hits the wire, so the actual content never
+  // leaves the page.
+  const respondent = getRespondent(page);
+  await PublicFormSelectors.mediaFileInput(respondent).setInputFiles({
+    name,
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.alloc(size),
+  });
+});
 
-Then(
-  'the public form attachments list shows {string} as {string}',
-  async ({ page }, name: string, status: string) => {
-    const respondent = getRespondent(page);
-    const row = PublicFormSelectors.mediaAttachmentByName(respondent, name);
-    await expect(row).toBeVisible({ timeout: 30000 });
-    // `uploaded` is the post-success terminal state; `uploading` is the
-    // in-flight one. Polling `toHaveAttribute` waits out the PUT so we
-    // don't race the presigned upload to MinIO.
-    await expect(row).toHaveAttribute('data-status', status, {
-      timeout: 30000,
-    });
-  },
-);
+Then('the public form attachments list shows {string} as {string}', async ({ page }, name: string, status: string) => {
+  const respondent = getRespondent(page);
+  const row = PublicFormSelectors.mediaAttachmentByName(respondent, name);
+  await expect(row).toBeVisible({ timeout: 30000 });
+  // `uploaded` is the post-success terminal state; `uploading` is the
+  // in-flight one. Polling `toHaveAttribute` waits out the PUT so we
+  // don't race the presigned upload to MinIO.
+  await expect(row).toHaveAttribute('data-status', status, {
+    timeout: 30000,
+  });
+});
 
-When(
-  'I remove the attachment {string}',
-  async ({ page }, name: string) => {
-    const respondent = getRespondent(page);
-    const row = PublicFormSelectors.mediaAttachmentByName(respondent, name);
-    await row.getByRole('button', { name: /Remove attachment/i }).click();
-  },
-);
+When('I remove the attachment {string}', async ({ page }, name: string) => {
+  const respondent = getRespondent(page);
+  const row = PublicFormSelectors.mediaAttachmentByName(respondent, name);
+  await row.getByRole('button', { name: /Remove attachment/i }).click();
+});
 
 Then('the public form attachments list is empty', async ({ page }) => {
-  await expect(
-    PublicFormSelectors.mediaAttachmentList(getRespondent(page)),
-  ).toBeHidden({ timeout: 5000 });
+  await expect(PublicFormSelectors.mediaAttachmentList(getRespondent(page))).toBeHidden({ timeout: 5000 });
 });
+
+async function readAuthToken(page: Page): Promise<string> {
+  const accessToken = await page.evaluate(() => {
+    const directToken = localStorage.getItem('af_auth_token');
+
+    if (directToken) return directToken;
+    const rawToken = localStorage.getItem('token');
+
+    if (!rawToken) return '';
+    try {
+      return (JSON.parse(rawToken) as { access_token?: string }).access_token || '';
+    } catch {
+      return '';
+    }
+  });
+
+  if (!accessToken) throw new Error('Eva session has no access token');
+  return accessToken;
+}
+
+function userIdFromJwt(accessToken: string): string {
+  const payloadSegment = accessToken.split('.')[1];
+
+  if (!payloadSegment) throw new Error('Eva access token is not a JWT');
+
+  const payload = JSON.parse(Buffer.from(payloadSegment, 'base64url').toString('utf8')) as { sub?: unknown };
+
+  if (typeof payload.sub !== 'string' || !payload.sub) {
+    throw new Error('Eva access token has no subject');
+  }
+
+  return payload.sub;
+}
+
+/**
+ * Read the persisted Person-cell UUIDs instead of its display text. The
+ * visible chip depends on a separate workspace-member directory cache,
+ * while the row's YJS cell is the authoritative Form submission result.
+ */
+async function readRespondentIdsForRowByName(page: Page, nameSubstring: string): Promise<string[]> {
+  const row = DatabaseGridSelectors.rows(page).filter({ hasText: nameSubstring }).first();
+
+  await expect(row).toBeVisible({ timeout: 15000 });
+  const rowTestId = await row.getAttribute('data-testid');
+  const rowId = rowTestId?.replace(/^grid-row-/, '');
+
+  if (!rowId) throw new Error(`Could not resolve the row ID for ${nameSubstring}`);
+
+  const personCell = row.locator(`[data-testid^="person-cell-${rowId}-"]`).first();
+
+  await expect(personCell).toBeAttached({ timeout: 15000 });
+  const personCellTestId = await personCell.getAttribute('data-testid');
+  const fieldId = personCellTestId?.slice(`person-cell-${rowId}-`.length);
+
+  if (!fieldId) throw new Error(`Could not resolve the Respondent field ID for ${nameSubstring}`);
+
+  return page.evaluate(
+    async ({ fieldId, rowId }) => {
+      const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+      let rowDoc = ctx?.rowMap?.[rowId];
+
+      if (!rowDoc && ctx?.ensureRow) rowDoc = await ctx.ensureRow(rowId);
+      const rowData = rowDoc?.getMap('data')?.get('data');
+      const data = rowData?.get('cells')?.get(fieldId)?.get('data');
+
+      if (typeof data?.toArray === 'function') return data.toArray().map(String);
+      if (Array.isArray(data)) return data.map(String);
+      if (typeof data !== 'string') return [];
+
+      try {
+        const parsed = JSON.parse(data) as unknown;
+
+        return Array.isArray(parsed) ? parsed.map(String) : [];
+      } catch {
+        return [];
+      }
+    },
+    { fieldId, rowId }
+  );
+}
+
+async function switchWorkspaceMatching(page: Page, workspaceName: RegExp): Promise<string> {
+  const currentWorkspaceName = page.getByTestId('current-workspace-name');
+  const currentName = (await currentWorkspaceName.textContent())?.trim();
+
+  if (currentName && workspaceName.test(currentName)) return currentName;
+
+  await WorkspaceSelectors.dropdownTrigger(page).click();
+  await expect(WorkspaceSelectors.dropdownContent(page)).toBeVisible({ timeout: 15000 });
+  await WorkspaceSelectors.item(page).filter({ hasText: workspaceName }).first().click();
+  await expect(currentWorkspaceName).toHaveText(workspaceName, { timeout: 30000 });
+  const selectedName = (await currentWorkspaceName.textContent())?.trim();
+
+  if (!selectedName) throw new Error(`Selected workspace has no name matching ${workspaceName}`);
+  return selectedName;
+}
 
 function inferMime(name: string): string {
   const ext = name.toLowerCase().split('.').pop() ?? '';

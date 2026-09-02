@@ -1,12 +1,11 @@
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { useDuplicateDatabaseView, useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
-import { DatabaseViewLayout, View, YjsDatabaseKey } from '@/application/types';
+import { View, YjsDatabaseKey } from '@/application/types';
 import {
   getDatabaseIdFromExtra,
   isDatabaseContainer,
@@ -19,7 +18,6 @@ import RenameModal from '@/components/app/view-actions/RenameModal';
 import { DatabaseActions } from '@/components/database/components/conditions';
 import { DatabaseViewTabs } from '@/components/database/components/tabs/DatabaseViewTabs';
 import DeleteViewConfirm from '@/components/database/components/tabs/DeleteViewConfirm';
-import { useCanAuthorFormView } from '@/components/database/form/useCanAuthorFormView';
 import { useOpenDatabaseAsPage } from '@/components/database/hooks';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -99,14 +97,6 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const [duplicatingViewId, setDuplicatingViewId] = useState<string | null>(null);
     const mountedRef = useRef(true);
     const duplicateScopeRevisionRef = useRef(0);
-    const { canAuthor, ensureCanAuthor } = useCanAuthorFormView({ enabled: Boolean(menuViewId) });
-    const [, setSearch] = useSearchParams();
-    const openUpgradePlan = useCallback(() => {
-      setSearch((prev) => {
-        prev.set('action', 'change_plan');
-        return prev;
-      });
-    }, [setSearch]);
 
     useEffect(
       () => () => {
@@ -465,25 +455,6 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
 
         setMenuViewId(null);
 
-        if (Number(sourceView?.get(YjsDatabaseKey.layout)) === DatabaseViewLayout.Form) {
-          if (canAuthor === null) setDuplicatingViewId(viewId);
-          const allowed = canAuthor === false ? false : await ensureCanAuthor();
-
-          if (!isCurrentDuplicateScope()) return;
-
-          if (allowed === null) {
-            setDuplicatingViewId(null);
-            toast.error('Could not verify your workspace plan. Please try again.');
-            return;
-          }
-
-          if (!allowed) {
-            setDuplicatingViewId(null);
-            openUpgradePlan();
-            return;
-          }
-        }
-
         const sourceName = viewNameById?.[viewId] ?? sourceView?.get(YjsDatabaseKey.name);
         const copySuffix = t('menuAppHeader.pageNameSuffix');
         const duplicatedName = `${sourceName ? String(sourceName).trim() : 'View'} (${copySuffix})`;
@@ -511,14 +482,11 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       },
       [
         context.createDatabaseView,
-        canAuthor,
         duplicateView,
         duplicatingViewId,
-        ensureCanAuthor,
         handleViewAdded,
         onAfterViewAddedToDatabase,
         onBeforeViewAddedToDatabase,
-        openUpgradePlan,
         t,
         viewNameById,
         views,

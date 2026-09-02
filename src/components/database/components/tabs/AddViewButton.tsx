@@ -1,30 +1,37 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { ViewIcon } from '@/components/_shared/view-icon';
-import { useCanAuthorFormView } from '@/components/database/form/useCanAuthorFormView';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 
 interface AddViewButtonProps {
+  databasePageId: string;
   onBeforeAddView?: () => void;
   onAfterAddView?: () => void;
   onViewAdded: (viewId: string) => void;
 }
 
-export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: AddViewButtonProps) {
+export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView, onViewAdded }: AddViewButtonProps) {
   const { t } = useTranslation();
   const onAddView = useAddDatabaseView();
   const [addLoading, setAddLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const mountedRef = useRef(true);
   const actionScopeRevisionRef = useRef(0);
+  const completionCallbacksRef = useRef({ onAfterAddView, onViewAdded });
+
+  // Callback identities change whenever the tab list changes. Keep async
+  // completions pointed at the latest committed handlers without treating
+  // those identity changes as operation cancellation.
+  useLayoutEffect(() => {
+    completionCallbacksRef.current = { onAfterAddView, onViewAdded };
+  }, [onAfterAddView, onViewAdded]);
 
   useEffect(
     () => () => {
@@ -34,59 +41,23 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
     []
   );
 
-  // An entitlement request can outlive the database that opened this menu.
-  // Invalidate that accepted click when any operation target/callback changes
-  // so the old closure cannot create a Form in an off-screen database.
+  // Only a database target change invalidates an accepted click. View creation
+  // itself updates the tab callbacks while the request is in flight, so using
+  // callback identity as the scope would cancel the successful operation that
+  // caused that render and leave this button busy forever.
   useLayoutEffect(() => {
     actionScopeRevisionRef.current += 1;
+    setAddLoading(false);
+    setMenuOpen(false);
 
     return () => {
       actionScopeRevisionRef.current += 1;
     };
-  }, [onAddView, onAfterAddView, onBeforeAddView, onViewAdded]);
-
-  // Form-view Pro gate — single source of truth in
-  // `useCanAuthorFormView` (covers dev / test / self-hosted / Pro in
-  // one place). Mirrors the desktop's `canCreateFormView`.
-  const { canAuthor, ensureCanAuthor } = useCanAuthorFormView({ enabled: menuOpen });
-
-  // `?action=change_plan` is observed by the `UpgradePlan` widget
-  // mounted in `Workspaces`, which auto-opens the compare-plan modal.
-  // Same entry point the chart-layout settings use — keeps the upgrade
-  // UX consistent across paid features.
-  const [, setSearch] = useSearchParams();
-  const openUpgradePlan = useCallback(() => {
-    setSearch((prev) => {
-      prev.set('action', 'change_plan');
-      return prev;
-    });
-  }, [setSearch]);
+  }, [databasePageId]);
 
   const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
     const actionScopeRevision = actionScopeRevisionRef.current;
     const isCurrentActionScope = () => mountedRef.current && actionScopeRevisionRef.current === actionScopeRevision;
-
-    // Pro gate at click time: Form on Free plan opens the upgrade
-    // modal instead of creating a view the user can't share. Other
-    // layouts proceed without gating.
-    if (layout === DatabaseViewLayout.Form) {
-      if (canAuthor === null) setAddLoading(true);
-      const allowed = canAuthor === false ? false : await ensureCanAuthor();
-
-      if (!isCurrentActionScope()) return;
-
-      if (allowed === null) {
-        setAddLoading(false);
-        toast.error('Could not verify your workspace plan. Please try again.');
-        return;
-      }
-
-      if (!allowed) {
-        setAddLoading(false);
-        openUpgradePlan();
-        return;
-      }
-    }
 
     onBeforeAddView?.();
     setAddLoading(true);
@@ -96,15 +67,15 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
     try {
       const viewId = await onAddView(layout, name);
 
-      if (isCurrentActionScope()) onViewAdded(viewId);
+      if (isCurrentActionScope()) completionCallbacksRef.current.onViewAdded(viewId);
     } catch (e: unknown) {
       if (isCurrentActionScope()) {
         console.error('[AddViewButton] Error adding view:', e);
         toast.error(e instanceof Error ? e.message : 'Failed to add view');
       }
     } finally {
-      onAfterAddView?.();
       if (isCurrentActionScope()) {
+        completionCallbacksRef.current.onAfterAddView?.();
         // Ensure minimum loading time to prevent jarring UI flicker
         const elapsed = Date.now() - startTime;
         const remaining = MIN_LOADING_TIME - elapsed;
@@ -173,11 +144,11 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
         <DropdownMenuItem
           data-testid='add-form-view-option'
           onClick={() => {
-            void handleAddView(DatabaseViewLayout.Form, t('form.menuName'));
+            void handleAddView(DatabaseViewLayout.Form, t('form.builderName', { defaultValue: 'Form builder' }));
           }}
         >
           <ViewIcon layout={ViewLayout.Form} size={'small'} />
-          {t('form.menuName')}
+          {t('form.builderName', { defaultValue: 'Form builder' })}
         </DropdownMenuItem>
 
         <DropdownMenuItem

@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 
 import { FormSharePopover } from '../FormSharePopover';
 
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 
 jest.mock('@/components/ui/popover', () => ({
   Popover: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -10,244 +10,97 @@ jest.mock('@/components/ui/popover', () => ({
   PopoverContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
+const activeInfo = {
+  token: 'active-token',
+  tier: 'workspace' as const,
+  anonymous: false,
+  submission_access: 'none' as const,
+  share_url: 'https://appflowy.test/form/active-token',
+  created_at: '2026-08-28T00:00:00Z',
+};
+
+function renderPopover(overrides: Partial<ComponentProps<typeof FormSharePopover>> = {}) {
+  const props: ComponentProps<typeof FormSharePopover> = {
+    trigger: <button type='button'>Share form</button>,
+    info: activeInfo,
+    isLoading: false,
+    errorMessage: null,
+    onRetry: jest.fn(),
+    onRetryMutation: jest.fn(),
+    canUpdateSettings: true,
+    setTier: jest.fn(),
+    setAnonymous: jest.fn(),
+    url: activeInfo.share_url,
+    ...overrides,
+  };
+
+  render(<FormSharePopover {...props} />);
+  return props;
+}
+
 describe('FormSharePopover', () => {
-  it('exposes an explicit retry for a generic bootstrap failure', () => {
+  it('exposes an explicit retry for a bootstrap failure', () => {
     const onRetry = jest.fn();
 
-    render(
-      <FormSharePopover
-        trigger={<button type='button'>Share form</button>}
-        info={null}
-        isLoading={false}
-        errorKind='other'
-        errorMessage='Network unavailable'
-        onUpgradePlan={jest.fn()}
-        onRetry={onRetry}
-        onRetryMutation={jest.fn()}
-        canUpdateSettings={true}
-        canBroadenAccess={true}
-        setTier={jest.fn()}
-        setAnonymous={jest.fn()}
-        url='https://appflowy.test/form/token'
-      />
-    );
+    renderPopover({ info: null, errorMessage: 'Network unavailable', onRetry });
 
     expect(screen.getByText('Network unavailable')).toBeTruthy();
     fireEvent.click(screen.getByTestId('form-share-popover-retry'));
-
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
   it('does not copy a guessed URL when the server share URL is unconfigured', () => {
-    render(
-      <FormSharePopover
-        trigger={<button type='button'>Share form</button>}
-        info={{
-          token: 'c6c31f9b-c334-4e3a-be20-79f661d4ad87',
-          tier: 'workspace',
-          anonymous: false,
-          submission_access: 'none',
-          share_url: '',
-          created_at: '2026-08-28T00:00:00Z',
-        }}
-        isLoading={false}
-        errorKind={null}
-        errorMessage={null}
-        onUpgradePlan={jest.fn()}
-        onRetry={jest.fn()}
-        onRetryMutation={jest.fn()}
-        canUpdateSettings={true}
-        canBroadenAccess={true}
-        setTier={jest.fn()}
-        setAnonymous={jest.fn()}
-        url=''
-      />
-    );
+    const onRetry = jest.fn();
 
-    expect(screen.getByPlaceholderText('Share URL is not configured')).toBeTruthy();
-    expect(screen.getByText('Copy form link').closest('button')?.disabled).toBe(true);
+    renderPopover({ info: { ...activeInfo, share_url: '' }, onRetry, url: '' });
+
+    expect(screen.getByTestId('form-share-link-unavailable')).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: 'Form share URL' })).toBeNull();
+    expect(screen.queryByText('Copy form link')).toBeNull();
+    fireEvent.click(screen.getByTestId('form-share-link-unavailable-retry'));
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('lets a downgraded owner close an active share but paywalls broader settings', () => {
+  it('allows an editor to change every share setting without a plan gate', () => {
     const setTier = jest.fn();
-    const setAnonymous = jest.fn();
-    const onUpgradePlan = jest.fn();
 
-    render(
-      <FormSharePopover
-        trigger={<button type='button'>Share form</button>}
-        info={{
-          token: 'active-token',
-          tier: 'workspace',
-          anonymous: false,
-          submission_access: 'none',
-          share_url: 'https://appflowy.test/form/active-token',
-          created_at: '2026-08-28T00:00:00Z',
-        }}
-        isLoading={false}
-        errorKind={null}
-        errorMessage={null}
-        onUpgradePlan={onUpgradePlan}
-        onRetry={jest.fn()}
-        onRetryMutation={jest.fn()}
-        canUpdateSettings={true}
-        canBroadenAccess={false}
-        setTier={setTier}
-        setAnonymous={setAnonymous}
-        url='https://appflowy.test/form/active-token'
-      />
-    );
-
-    fireEvent.click(screen.getByTestId('form-share-tier-choice-closed'));
-    expect(setTier).toHaveBeenCalledWith('closed');
+    renderPopover({ setTier });
 
     fireEvent.click(screen.getByTestId('form-share-tier-choice-public'));
-    expect(onUpgradePlan).toHaveBeenCalledTimes(1);
-    expect(setTier).not.toHaveBeenCalledWith('public');
-    expect(screen.getByTestId('form-share-anonymous-toggle').disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('form-share-tier-choice-closed'));
+
+    expect(setTier).toHaveBeenCalledWith('public');
+    expect(setTier).toHaveBeenCalledWith('closed');
+    expect(screen.getByTestId('form-share-anonymous-toggle').disabled).toBe(false);
   });
 
-  it('requires an upgrade to reopen a closed share after a downgrade', () => {
+  it('allows an editor to reopen a closed share', () => {
     const setTier = jest.fn();
-    const onUpgradePlan = jest.fn();
 
-    render(
-      <FormSharePopover
-        trigger={<button type='button'>Share form</button>}
-        info={{
-          token: 'closed-token',
-          tier: 'closed',
-          anonymous: false,
-          submission_access: 'none',
-          share_url: 'https://appflowy.test/form/closed-token',
-          created_at: '2026-08-28T00:00:00Z',
-        }}
-        isLoading={false}
-        errorKind={null}
-        errorMessage={null}
-        onUpgradePlan={onUpgradePlan}
-        onRetry={jest.fn()}
-        onRetryMutation={jest.fn()}
-        canUpdateSettings={true}
-        canBroadenAccess={false}
-        setTier={setTier}
-        setAnonymous={jest.fn()}
-        url='https://appflowy.test/form/closed-token'
-      />
-    );
+    renderPopover({ info: { ...activeInfo, tier: 'closed' }, setTier });
 
     fireEvent.click(screen.getByTestId('form-share-tier-choice-workspace'));
-
-    expect(onUpgradePlan).toHaveBeenCalledTimes(1);
-    expect(setTier).not.toHaveBeenCalled();
+    expect(setTier).toHaveBeenCalledWith('workspace');
   });
 
   it('surfaces an active-token mutation failure and retries the retained intent', () => {
     const onRetryMutation = jest.fn();
 
-    render(
-      <FormSharePopover
-        trigger={<button type='button'>Share form</button>}
-        info={{
-          token: 'active-token',
-          tier: 'workspace',
-          anonymous: false,
-          submission_access: 'none',
-          share_url: 'https://appflowy.test/form/active-token',
-          created_at: '2026-08-28T00:00:00Z',
-        }}
-        isLoading={false}
-        errorKind='other'
-        errorMessage='Network unavailable'
-        onUpgradePlan={jest.fn()}
-        onRetry={jest.fn()}
-        onRetryMutation={onRetryMutation}
-        canUpdateSettings={true}
-        canBroadenAccess={true}
-        setTier={jest.fn()}
-        setAnonymous={jest.fn()}
-        url='https://appflowy.test/form/active-token'
-      />
-    );
+    renderPopover({ errorMessage: 'Network unavailable', onRetryMutation });
 
     expect(screen.getByTestId('form-share-mutation-error').textContent).toContain('Network unavailable');
     fireEvent.click(screen.getByTestId('form-share-mutation-retry'));
-
     expect(onRetryMutation).toHaveBeenCalledTimes(1);
-  });
-
-  it('retries a failed plan lookup for an already-active link', () => {
-    const onRetryEntitlement = jest.fn();
-    const onUpgradePlan = jest.fn();
-
-    render(
-      <FormSharePopover
-        trigger={<button type='button'>Share form</button>}
-        info={{
-          token: 'active-token',
-          tier: 'workspace',
-          anonymous: false,
-          submission_access: 'none',
-          share_url: 'https://appflowy.test/form/active-token',
-          created_at: '2026-08-28T00:00:00Z',
-        }}
-        isLoading={false}
-        errorKind={null}
-        errorMessage={null}
-        onUpgradePlan={onUpgradePlan}
-        hasEntitlementError
-        onRetryEntitlement={onRetryEntitlement}
-        onRetry={jest.fn()}
-        onRetryMutation={jest.fn()}
-        canUpdateSettings
-        canBroadenAccess={false}
-        setTier={jest.fn()}
-        setAnonymous={jest.fn()}
-        url='https://appflowy.test/form/active-token'
-      />
-    );
-
-    fireEvent.click(screen.getByTestId('form-share-entitlement-retry'));
-    expect(onRetryEntitlement).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByTestId('form-share-tier-choice-public'));
-    expect(onRetryEntitlement).toHaveBeenCalledTimes(2);
-    expect(onUpgradePlan).not.toHaveBeenCalled();
   });
 
   it('lets view-only users inspect and copy an active link without exposing mutations', () => {
     const setTier = jest.fn();
     const setAnonymous = jest.fn();
-    const onUpgradePlan = jest.fn();
 
-    render(
-      <FormSharePopover
-        trigger={<button type='button'>Share form</button>}
-        info={{
-          token: 'view-only-token',
-          tier: 'workspace',
-          anonymous: false,
-          submission_access: 'none',
-          share_url: 'https://appflowy.test/form/view-only-token',
-          created_at: '2026-08-28T00:00:00Z',
-        }}
-        isLoading={false}
-        errorKind={null}
-        errorMessage={null}
-        onUpgradePlan={onUpgradePlan}
-        onRetry={jest.fn()}
-        onRetryMutation={jest.fn()}
-        canUpdateSettings={false}
-        canBroadenAccess={false}
-        setTier={setTier}
-        setAnonymous={setAnonymous}
-        url='https://appflowy.test/form/view-only-token'
-      />
-    );
+    renderPopover({ canUpdateSettings: false, setTier, setAnonymous });
 
-    expect(screen.getByDisplayValue('https://appflowy.test/form/view-only-token')).toBeTruthy();
+    expect(screen.getByDisplayValue(activeInfo.share_url)).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'Form share URL' })).toBeTruthy();
-    expect(screen.getByRole('switch', { name: 'Anonymous responses' })).toBeTruthy();
-    expect(screen.getByTestId('form-share-tier-choice-workspace').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByText('Copy form link').closest('button')?.disabled).toBe(false);
     expect(screen.getByTestId('form-share-anonymous-toggle').disabled).toBe(true);
     expect(screen.getByTestId('form-share-tier-choice-workspace').disabled).toBe(true);
@@ -257,29 +110,12 @@ describe('FormSharePopover', () => {
     fireEvent.click(screen.getByTestId('form-share-tier-choice-closed'));
     expect(setTier).not.toHaveBeenCalled();
     expect(setAnonymous).not.toHaveBeenCalled();
-    expect(onUpgradePlan).not.toHaveBeenCalled();
   });
 
   it('explains and allows a GET-only retry when a view-only Form has no active share link', () => {
     const onRetry = jest.fn();
 
-    render(
-      <FormSharePopover
-        trigger={<button type='button'>Share form</button>}
-        info={null}
-        isLoading={false}
-        errorKind={null}
-        errorMessage={null}
-        onUpgradePlan={jest.fn()}
-        onRetry={onRetry}
-        onRetryMutation={jest.fn()}
-        canUpdateSettings={false}
-        canBroadenAccess={false}
-        setTier={jest.fn()}
-        setAnonymous={jest.fn()}
-        url=''
-      />
-    );
+    renderPopover({ info: null, errorMessage: null, onRetry, canUpdateSettings: false, url: '' });
 
     expect(screen.getByTestId('form-share-popover-no-active-link')).toBeTruthy();
     fireEvent.click(screen.getByTestId('form-share-popover-no-active-retry'));

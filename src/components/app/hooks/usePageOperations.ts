@@ -432,7 +432,13 @@ export function usePageOperations({
         const res = await PageService.createDatabaseView(currentWorkspaceId, viewId, payload);
 
         refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
-        await loadOutline?.(currentWorkspaceId, false);
+        // The database response already contains the new view and its Yjs
+        // update. Do not hold tab creation and navigation behind a separate
+        // workspace-wide outline refresh: either outline request can remain
+        // pending while the linked view itself was created successfully.
+        void loadOutline?.(currentWorkspaceId, false).catch((error) => {
+          Log.warn('[createDatabaseView] failed to refresh outline after creating a linked view', error);
+        });
         return res;
       } catch (e) {
         return Promise.reject(e);

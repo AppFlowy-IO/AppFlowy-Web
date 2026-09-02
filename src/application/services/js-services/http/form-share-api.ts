@@ -1,5 +1,3 @@
-import { validate as isUuid } from 'uuid';
-
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
 /**
@@ -23,10 +21,9 @@ export interface FormShareInfo {
   /// tier or anonymous=true forces this to `none` server-side.
   submission_access: FormSubmissionAccess;
   /// Cloud-composed respondent URL — `APPFLOWY_WEB_URL/form/{token}`.
-  /// Empty when the deployment hasn't set `APPFLOWY_WEB_URL`; the UI
-  /// should treat empty as "share not configured" and surface a copy
-  /// error rather than copying a host-less link.
-  share_url: string;
+  /// Older or misconfigured deployments may omit it. Consumers must validate
+  /// that it is an absolute HTTP(S) URL before exposing a copy action.
+  share_url?: string;
   expires_at?: string;
   created_at: string;
 }
@@ -56,26 +53,6 @@ export interface FormShareResetRequest {
   submission_access?: FormSubmissionAccess;
   expires_at?: string | null;
 }
-
-export interface FormSubmissionInfo {
-  id: string;
-  row_id: string;
-  /** PostgreSQL BIGINT encoded as a decimal string to avoid JS precision loss. */
-  submitter_uid?: string;
-  submitted_at: string;
-}
-
-export interface FormSubmissionCursor {
-  submitted_at: string;
-  submission_id: string;
-}
-
-export interface ListFormSubmissionsResponse {
-  submissions: FormSubmissionInfo[];
-  next_cursor?: FormSubmissionCursor;
-}
-
-const RFC3339_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 function shareUrl(workspaceId: string, databaseId: string, viewId: string): string {
   return `/api/workspace/${workspaceId}/database/${databaseId}/view/${viewId}/form/share`;
@@ -136,50 +113,6 @@ export async function resetFormShare(
 ): Promise<FormShareInfo> {
   return executeAPIRequest<FormShareInfo>(
     () => getAxios()?.post<APIResponse<FormShareInfo>>(`${shareUrl(workspaceId, databaseId, viewId)}/reset`, request),
-    { suppressResponseDataLogging: true }
-  );
-}
-
-/**
- * Read the owner-only audit page. The timestamp and submission ID are one
- * lossless cursor and are therefore accepted/emitted only as a pair.
- */
-export async function listFormSubmissions(
-  workspaceId: string,
-  databaseId: string,
-  viewId: string,
-  options: { cursor?: FormSubmissionCursor; limit?: number } = {}
-): Promise<ListFormSubmissionsResponse> {
-  if (options.limit !== undefined && (!Number.isFinite(options.limit) || !Number.isSafeInteger(options.limit))) {
-    return Promise.reject({ code: -1, message: 'Form submission page limit must be an integer.' });
-  }
-
-  if (
-    options.cursor &&
-    (!isUuid(options.cursor.submission_id) ||
-      !RFC3339_TIMESTAMP.test(options.cursor.submitted_at) ||
-      Number.isNaN(Date.parse(options.cursor.submitted_at)))
-  ) {
-    return Promise.reject({ code: -1, message: 'Malformed form submission cursor.' });
-  }
-
-  const limit = options.limit === undefined ? undefined : Math.min(200, Math.max(1, Math.trunc(options.limit)));
-  const params = options.cursor
-    ? {
-        before: options.cursor.submitted_at,
-        before_id: options.cursor.submission_id,
-        ...(limit === undefined ? {} : { limit }),
-      }
-    : limit === undefined
-    ? undefined
-    : { limit };
-
-  return executeAPIRequest<ListFormSubmissionsResponse>(
-    () =>
-      getAxios()?.get<APIResponse<ListFormSubmissionsResponse>>(
-        `/api/workspace/${workspaceId}/database/${databaseId}/view/${viewId}/form/submissions`,
-        { params }
-      ),
     { suppressResponseDataLogging: true }
   );
 }

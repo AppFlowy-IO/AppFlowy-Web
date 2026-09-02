@@ -73,7 +73,7 @@ function ViewActionsPopover({
 
       if (!canCreateViewActions) return null;
 
-      return <AddPageActions view={view} onClose={onClose} onImportClick={onImportClick} />;
+      return <AddPageActions view={view} onImportClick={onImportClick} />;
     }
 
     if (popoverType.category === 'space') {

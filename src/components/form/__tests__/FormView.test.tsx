@@ -49,6 +49,7 @@ describe('FormView publish fallback', () => {
 
     expect(await screen.findByTestId('publish-fallback')).toBeTruthy();
     expect(screen.queryByTestId('public-not-found')).toBeNull();
+    expect(screen.queryByTestId('public-form-scroll-container')).toBeNull();
   });
 
   it('keeps a revoked or expired Form token in the Form not-found state', async () => {
@@ -107,5 +108,19 @@ describe('FormView publish fallback', () => {
     expect(await screen.findByTestId('public-form-body')).toBeTruthy();
     expect(mockPreloadFormQuestionInputs).toHaveBeenCalledWith(activeSchema.questions);
     resolvePreload?.();
+  });
+
+  it('renders an active form inside a viewport-height vertical scroller', async () => {
+    mockGetPublicFormSchema.mockResolvedValue({ kind: 'active', ...activeSchema });
+
+    renderWithFallback();
+
+    const body = await screen.findByTestId('public-form-body');
+    const scroller = screen.getByTestId('public-form-scroll-container');
+
+    expect(scroller.contains(body)).toBe(true);
+    expect(scroller.classList.contains('h-screen')).toBe(true);
+    expect(scroller.classList.contains('overflow-y-auto')).toBe(true);
+    expect(scroller.classList.contains('overflow-x-hidden')).toBe(true);
   });
 });

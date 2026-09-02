@@ -320,9 +320,8 @@ export function useSubscriptionPlan(
     }
 
     // A cache entry does not publish an external-store revision merely
-    // because wall-clock time passes. Wake the active consumer at expiry so
-    // a workspace downgrade cannot leave a mounted Form gate on stale Pro
-    // access indefinitely.
+    // because wall-clock time passes. Wake active consumers at expiry so a
+    // workspace downgrade cannot leave them using stale Pro access.
     const timer = window.setTimeout(() => void loadSubscription(), remainingMs + 1);
 
     return () => window.clearTimeout(timer);

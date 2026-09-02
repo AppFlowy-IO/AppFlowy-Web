@@ -299,9 +299,9 @@ function ControlsMenu({
         });
 
         // The generic linked-view path below does not copy Form's per-view
-        // settings or enforce its plan entitlement. Reject the entire block
-        // before creating any children so a mixed Grid/Form block cannot be
-        // partially duplicated or silently lose its Form projection.
+        // settings. Reject the entire block before creating any children so a
+        // mixed Grid/Form block cannot be partially duplicated or silently
+        // lose its Form projection.
         assertLinkedDatabaseBlockDuplicateIsSafe(sourceViews);
 
         const duplicatedViewIds = await Promise.all(

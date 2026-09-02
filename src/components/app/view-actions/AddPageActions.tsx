@@ -1,6 +1,5 @@
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gallery-layout';
@@ -18,19 +17,10 @@ import {
   useScheduleDeferredCleanup,
   useToView,
 } from '@/components/app/app.hooks';
-import { useCanAuthorFormView } from '@/components/database/form/useCanAuthorFormView';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-function AddPageActions({
-  view,
-  onClose,
-  onImportClick,
-}: {
-  view: View;
-  onClose?: () => void;
-  onImportClick?: (view: View) => void;
-}) {
+function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (view: View) => void }) {
   const { t } = useTranslation();
   const { addPage, bindViewSync, createDatabaseView, deletePage, deleteTrash, loadView, loadViewMeta, updatePage } =
     useAppOperations();
@@ -40,49 +30,10 @@ function AddPageActions({
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const lastChildViewId = view.children?.[view.children.length - 1]?.view_id;
-  const { canAuthor, ensureCanAuthor } = useCanAuthorFormView();
-  const [, setSearch] = useSearchParams();
-  const mountedRef = useRef(true);
-  const pendingKeptOpenSelectionRef = useRef(false);
-  const [isKeptOpenSelectionPending, setIsKeptOpenSelectionPending] = useState(false);
-
-  useEffect(() => {
-    mountedRef.current = true;
-
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-  const openUpgradePlan = useCallback(() => {
-    setSearch((prev) => {
-      prev.set('action', 'change_plan');
-      return prev;
-    });
-  }, [setSearch]);
-
   const handleAddPage = useCallback(
     async (layout: ViewLayout, name?: string) => {
       if (!addPage) return;
       if (layout === ViewLayout.AIChat && !aiEnabled) return;
-      if (layout === ViewLayout.Form) {
-        const allowed = canAuthor === false ? false : await ensureCanAuthor();
-
-        // A cold entitlement check keeps this menu open. If the user dismisses
-        // it while that request is pending, cancel this menu instance quietly;
-        // its hook intentionally rejects results after unmount.
-        if (!mountedRef.current) return;
-
-        if (allowed === null) {
-          toast.error('Could not verify your workspace plan. Please try again.');
-          return;
-        }
-
-        if (!allowed) {
-          openUpgradePlan();
-          return;
-        }
-      }
-
       const loadingToastId = toast.loading(t('document.creating'));
 
       try {
@@ -180,7 +131,6 @@ function AddPageActions({
       addPage,
       aiEnabled,
       bindViewSync,
-      canAuthor,
       createDatabaseView,
       currentWorkspaceId,
       deletePage,
@@ -189,13 +139,11 @@ function AddPageActions({
       loadView,
       loadViewMeta,
       openPageModal,
-      openUpgradePlan,
       scheduleDeferredCleanup,
       t,
       toView,
       updatePage,
       view,
-      ensureCanAuthor,
     ]
   );
 
@@ -205,8 +153,6 @@ function AddPageActions({
     testId?: string;
     disabled?: boolean;
     tooltip?: string;
-    guardWhilePending?: boolean;
-    keepOpenUntilSettled?: boolean;
     onSelect: () => void | Promise<void>;
   }[] = useMemo(
     () => [
@@ -264,11 +210,6 @@ function AddPageActions({
         label: t('form.menuName'),
         icon: <ViewIcon layout={ViewLayout.Form} size={'small'} />,
         testId: 'add-form-button',
-        // Radix normally closes and unmounts the menu on selection. Keep the
-        // entitlement hook alive only for a cold plan check; once it settles,
-        // close explicitly. Known allow/deny states still close immediately.
-        guardWhilePending: true,
-        keepOpenUntilSettled: canAuthor === null,
         onSelect: () => handleAddPage(ViewLayout.Form, t('document.plugins.database.newDatabase')),
       },
       {
@@ -296,7 +237,7 @@ function AddPageActions({
         },
       },
     ],
-    [aiEnabled, canAuthor, handleAddPage, t, onImportClick, view]
+    [aiEnabled, handleAddPage, t, onImportClick, view]
   );
 
   return (
@@ -318,37 +259,8 @@ function AddPageActions({
           <DropdownMenuItem
             key={action.label}
             data-testid={action.testId}
-            disabled={action.disabled || isKeptOpenSelectionPending}
-            onSelect={(event) => {
-              if (action.guardWhilePending && pendingKeptOpenSelectionRef.current) {
-                event.preventDefault();
-                return;
-              }
-
-              if (!action.keepOpenUntilSettled) {
-                void action.onSelect();
-                return;
-              }
-
-              event.preventDefault();
-              if (action.guardWhilePending) {
-                pendingKeptOpenSelectionRef.current = true;
-                setIsKeptOpenSelectionPending(true);
-              }
-
-              void Promise.resolve()
-                .then(action.onSelect)
-                .finally(() => {
-                  pendingKeptOpenSelectionRef.current = false;
-                  if (action.guardWhilePending && mountedRef.current) {
-                    setIsKeptOpenSelectionPending(false);
-                  }
-
-                  if (mountedRef.current) {
-                    onClose?.();
-                  }
-                });
-            }}
+            disabled={action.disabled}
+            onSelect={() => void action.onSelect()}
           >
             {action.icon}
             {action.label}

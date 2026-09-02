@@ -13,7 +13,7 @@ Feature: Form Share UI Rules
   # the decoupled contract.
 
   Background:
-    Given a Grid with a Form tab is open on a Pro workspace
+    Given a Grid with a Form tab is open
 
   Scenario: Toggling Anonymous ON under Workspace does NOT auto-promote tier
     When I open the share popover
