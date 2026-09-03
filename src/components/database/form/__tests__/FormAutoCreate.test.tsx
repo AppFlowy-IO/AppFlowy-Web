@@ -35,6 +35,7 @@ function createWriter(): jest.Mocked<FormWriter> {
     setDescription: jest.fn(),
     setLongAnswer: jest.fn(),
     markDecided: jest.fn(),
+    setRespondentTitle: jest.fn(),
     setFormDescription: jest.fn(),
   };
 }
@@ -43,6 +44,7 @@ const undecided: FormLayoutSnapshot = {
   decided: false,
   fieldOrderIds: ['field-a'],
   explicitlyExcludedFieldIds: [],
+  respondentTitle: '',
   description: '',
   questions: [],
 };

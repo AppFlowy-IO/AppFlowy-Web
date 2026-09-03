@@ -1,5 +1,4 @@
 import { act, render, screen } from '@testing-library/react';
-import type { DropResult } from 'react-beautiful-dnd';
 
 import { FieldType } from '@/application/database-yjs/database.type';
 import type { FormLayoutSnapshot } from '@/application/database-yjs/form-questions';
@@ -8,8 +7,10 @@ import { YjsDatabaseKey } from '@/application/types';
 import { FormBuilderView } from '../FormBuilderView';
 
 import type { ReactNode } from 'react';
+import type { DropResult } from 'react-beautiful-dnd';
 
 const mockWriter = {
+  setRespondentTitle: jest.fn(),
   setFormDescription: jest.fn(),
   reorderQuestion: jest.fn(),
 };
@@ -17,6 +18,7 @@ const decidedSnapshot: FormLayoutSnapshot = {
   decided: true,
   fieldOrderIds: [],
   explicitlyExcludedFieldIds: [],
+  respondentTitle: '',
   description: '',
   questions: [],
 };
@@ -53,20 +55,18 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
 }));
 
 jest.mock('react-beautiful-dnd', () => ({
-  DragDropContext: ({
-    children,
-    onDragEnd,
-  }: {
-    children: ReactNode;
-    onDragEnd: (result: DropResult) => void;
-  }) => {
+  DragDropContext: ({ children, onDragEnd }: { children: ReactNode; onDragEnd: (result: DropResult) => void }) => {
     mockOnDragEnd = onDragEnd;
     return <>{children}</>;
   },
   Droppable: ({
     children,
   }: {
-    children: (provided: { innerRef: () => void; droppableProps: Record<string, never>; placeholder: null }) => ReactNode;
+    children: (provided: {
+      innerRef: () => void;
+      droppableProps: Record<string, never>;
+      placeholder: null;
+    }) => ReactNode;
   }) => children({ innerRef: jest.fn(), droppableProps: {}, placeholder: null }),
   Draggable: ({
     children,
@@ -99,6 +99,9 @@ jest.mock('../FormAutoCreate', () => ({
 jest.mock('../FormFormDescription', () => ({
   FormFormDescription: () => <div data-testid='respondent-form-description-editor' />,
 }));
+jest.mock('../FormRespondentTitle', () => ({
+  FormRespondentTitle: () => <div data-testid='respondent-form-title-editor' />,
+}));
 jest.mock('../FormPreviewButton', () => ({
   FormPreviewButton: () => <button data-testid='form-preview-button' />,
 }));
@@ -108,7 +111,6 @@ jest.mock('../FormQuestionTypePicker', () => ({
   FormQuestionTypePicker: () => <div data-testid='form-question-type-picker' />,
 }));
 jest.mock('../FormShareButton', () => ({ FormShareButton: () => <button data-testid='form-share-button' /> }));
-jest.mock('../FormTitle', () => ({ FormTitle: () => <div data-testid='form-view-name-editor' /> }));
 jest.mock('../FormShareContext', () => ({
   FormShareProvider: ({ canUpdateSettings, children }: { canUpdateSettings: boolean; children: ReactNode }) => (
     <div data-testid='form-share-provider' data-can-update={canUpdateSettings ? 'true' : 'false'}>
@@ -136,9 +138,11 @@ describe('FormBuilderView scrolling', () => {
       expect(scrollContainer.classList.contains(className)).toBe(true);
     });
     expect(screen.getByTestId('form-question-type-picker')).toBeTruthy();
-    expect(screen.getByTestId('form-view-name-editor')).toBeTruthy();
-    expect(screen.getByText('Used in AppFlowy only. Shared forms currently display “Untitled form”.')).toBeTruthy();
-    expect(screen.queryByTestId('respondent-form-description-editor')).toBeNull();
+    expect(screen.queryByText('View name')).toBeNull();
+    expect(screen.queryByText('Used in AppFlowy only.')).toBeNull();
+    expect(screen.queryByText('Shown to respondents')).toBeNull();
+    expect(screen.getByTestId('respondent-form-title-editor')).toBeTruthy();
+    expect(screen.getByTestId('respondent-form-description-editor')).toBeTruthy();
   });
 
   it('evaluates auto-create for a fresh Form even when legacy projection materializes questions', () => {
@@ -146,6 +150,7 @@ describe('FormBuilderView scrolling', () => {
       decided: false,
       fieldOrderIds: ['field-a'],
       explicitlyExcludedFieldIds: [],
+      respondentTitle: '',
       description: '',
       questions: [
         {

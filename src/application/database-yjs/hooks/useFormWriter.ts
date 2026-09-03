@@ -22,6 +22,7 @@ const NOOP_WRITER: FormWriter = {
   setLongAnswer: noop,
   markDecided: noop,
   setFormDescription: noop,
+  setRespondentTitle: noop,
 };
 
 /**

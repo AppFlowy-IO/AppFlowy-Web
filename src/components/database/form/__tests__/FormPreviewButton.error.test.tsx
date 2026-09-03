@@ -40,6 +40,7 @@ const EMPTY_SNAPSHOT: FormLayoutSnapshot = {
   decided: true,
   fieldOrderIds: [],
   explicitlyExcludedFieldIds: [],
+  respondentTitle: '',
   description: '',
   questions: [],
 };

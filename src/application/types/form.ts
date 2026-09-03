@@ -20,6 +20,19 @@ export type PublicFormResponse =
   | { kind: 'closed'; message: string }
   | { kind: 'auth_required'; login_url: string };
 
+/**
+ * Legacy respondent-title fallback used only at display boundaries. Form
+ * authoring keeps an empty title as an empty string so the builder can show its
+ * `Form title` placeholder without silently persisting fallback copy.
+ */
+export const LEGACY_FORM_TITLE = 'Untitled form';
+
+export function resolveFormDisplayTitle(title: string): string {
+  const normalized = title.trim();
+
+  return normalized.length > 0 ? normalized : LEGACY_FORM_TITLE;
+}
+
 export interface PublicFormSchema {
   /** Same as the URL token — surfaced so the client correlates without re-parsing. */
   form_id: string;

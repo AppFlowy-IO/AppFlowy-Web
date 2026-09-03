@@ -1,4 +1,4 @@
-import { getPublicFormClient } from '../public-form-client';
+import { getPublicFormClient, getPublicFormStoredUser } from '../public-form-client';
 
 const TOKEN_STORAGE_KEY = 'token';
 const mockRefreshToken = jest.fn();
@@ -25,6 +25,7 @@ function successfulResponse(): Response {
 
 function errorResponse(status: number, body: unknown): Response {
   return {
+    clone: () => errorResponse(status, body),
     headers: new Headers({ 'Retry-After': '3' }),
     ok: false,
     status,
@@ -35,6 +36,7 @@ function errorResponse(status: number, body: unknown): Response {
 
 function transientResponse(status: number, retryAfter?: string): Response {
   return {
+    clone: () => transientResponse(status, retryAfter),
     headers: new Headers(retryAfter === undefined ? undefined : { 'Retry-After': retryAfter }),
     ok: false,
     status,
@@ -91,6 +93,23 @@ describe('public form HTTP client', () => {
     expect(new Headers(request.headers).get('Authorization')).toBe('Bearer valid-access-token');
   });
 
+  it('reads only a validated local identity for the standalone Form route', () => {
+    window.localStorage.setItem(
+      TOKEN_STORAGE_KEY,
+      JSON.stringify({
+        access_token: 'valid-access-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        refresh_token: 'valid-refresh-token',
+        user: { id: ' user-1 ', email: 'nathan@example.com' },
+      })
+    );
+
+    expect(getPublicFormStoredUser()).toEqual({ id: ' user-1 ', email: 'nathan@example.com' });
+
+    window.localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({ user: { id: '', email: 'nathan@example.com' } }));
+    expect(getPublicFormStoredUser()).toBeNull();
+  });
+
   it('serializes POST bodies and caller-supplied idempotency headers', async () => {
     const fetchMock = jest.fn().mockResolvedValue(successfulResponse());
 
@@ -113,7 +132,9 @@ describe('public form HTTP client', () => {
   it('preserves direct JSON errors and response headers for API normalization', async () => {
     global.fetch = jest
       .fn()
-      .mockResolvedValue(errorResponse(429, { error: 'token_rate_limited', retry_after_seconds: 3 })) as unknown as typeof fetch;
+      .mockResolvedValue(
+        errorResponse(429, { error: 'token_rate_limited', retry_after_seconds: 3 })
+      ) as unknown as typeof fetch;
 
     await expect(client.post('/api/workspace/public-form/test/submit', { answers: {} })).rejects.toMatchObject({
       name: 'PublicFormHTTPError',
@@ -174,6 +195,23 @@ describe('public form HTTP client', () => {
     await jest.advanceTimersByTimeAsync(1);
     await expect(request).resolves.toEqual({ data: {} });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a schema GET when the form owner quota is exhausted', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue(errorResponse(429, { error: 'user_rate_limited', retry_after_seconds: 3 }));
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(client.get('/api/workspace/public-form/test')).rejects.toMatchObject({
+      name: 'PublicFormHTTPError',
+      response: {
+        data: { error: 'user_rate_limited', retry_after_seconds: 3 },
+        status: 429,
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not retry mutation POSTs after a transient response', async () => {

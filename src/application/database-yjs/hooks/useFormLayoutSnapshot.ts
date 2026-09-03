@@ -11,6 +11,7 @@ const EMPTY: FormLayoutSnapshot = Object.freeze({
   fieldOrderIds: null,
   explicitlyExcludedFieldIds: [],
   description: '',
+  respondentTitle: '',
   questions: [],
 });
 
@@ -49,6 +50,7 @@ function snapshotsEqual(a: FormLayoutSnapshot, b: FormLayoutSnapshot): boolean {
   }
 
   if (a.description !== b.description) return false;
+  if (a.respondentTitle !== b.respondentTitle) return false;
   if (a.questions.length !== b.questions.length) return false;
   for (let i = 0; i < a.questions.length; i += 1) {
     if (!questionsEqual(a.questions[i], b.questions[i])) return false;

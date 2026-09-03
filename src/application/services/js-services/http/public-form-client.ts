@@ -10,6 +10,11 @@ interface StoredRequestToken {
   refreshToken: string;
 }
 
+export interface PublicFormStoredUser {
+  email?: string;
+  id: string;
+}
+
 interface PublicFormClientResponse<T> {
   data: T;
 }
@@ -34,8 +39,7 @@ export interface PublicFormClient {
 
 const publicFormClient: PublicFormClient = {
   get: <T>(path: string) => request<T>(path, 'GET'),
-  post: <T>(path: string, body: unknown, options?: PublicFormRequestOptions) =>
-    request<T>(path, 'POST', body, options),
+  post: <T>(path: string, body: unknown, options?: PublicFormRequestOptions) => request<T>(path, 'POST', body, options),
 };
 
 /**
@@ -47,6 +51,22 @@ const publicFormClient: PublicFormClient = {
  */
 export function getPublicFormClient(): PublicFormClient {
   return publicFormClient;
+}
+
+/**
+ * Lightweight signed-in identity for the standalone public Form route. Keep
+ * this beside the public transport's token parser so Form rendering does not
+ * import the authenticated session/outbox graph merely to display a name.
+ */
+export function getPublicFormStoredUser(): PublicFormStoredUser | null {
+  const value = readStoredTokenRecord();
+
+  if (!value || !isRecord(value.user) || !isNonEmptyString(value.user.id)) return null;
+
+  return {
+    id: value.user.id,
+    ...(typeof value.user.email === 'string' && value.user.email.trim().length > 0 ? { email: value.user.email } : {}),
+  };
 }
 
 export function isPublicFormHTTPError(error: unknown): error is PublicFormHTTPError {
@@ -118,6 +138,11 @@ async function sendRequestWithRetry(
         return response;
       }
 
+      // The owner quota is a durable terminal state, not transient admission
+      // pressure. Preserve generic 429 retries, but surface this response
+      // immediately so loading a shared form does not wait through Retry-After.
+      if (await isUserRateLimitedResponse(response)) return response;
+
       await waitForRetry(retryDelay(response.headers, retryCount));
     } catch (error) {
       if (method !== 'GET' || retryCount >= GET_RETRY_COUNT || isAbortError(error)) throw error;
@@ -131,6 +156,14 @@ async function sendRequestWithRetry(
 
 function isRetryableStatus(status: number): boolean {
   return status === 429 || status >= 500;
+}
+
+async function isUserRateLimitedResponse(response: Response): Promise<boolean> {
+  if (response.status !== 429) return false;
+
+  const data = await readResponseJSON(response.clone());
+
+  return isRecord(data) && data.error === 'user_rate_limited';
 }
 
 function retryDelay(headers: Headers, retryCount: number): number {
@@ -152,10 +185,7 @@ function waitForRetry(delayMs: number): Promise<void> {
 
 function isAbortError(error: unknown): boolean {
   return (
-    typeof error === 'object' &&
-    error !== null &&
-    'name' in error &&
-    (error as { name: unknown }).name === 'AbortError'
+    typeof error === 'object' && error !== null && 'name' in error && (error as { name: unknown }).name === 'AbortError'
   );
 }
 
@@ -213,33 +243,48 @@ function createHTTPError(response: Response, data: unknown): PublicFormHTTPError
 }
 
 function readStoredRequestToken(): StoredRequestToken | null {
+  const value = readStoredTokenRecord();
+
+  if (
+    !value ||
+    typeof value.access_token !== 'string' ||
+    value.access_token.length === 0 ||
+    typeof value.refresh_token !== 'string' ||
+    value.refresh_token.length === 0 ||
+    typeof value.expires_at !== 'number' ||
+    !Number.isFinite(value.expires_at)
+  ) {
+    return null;
+  }
+
+  return {
+    accessToken: value.access_token,
+    expiresAt: value.expires_at,
+    refreshToken: value.refresh_token,
+  };
+}
+
+function readStoredTokenRecord(): Record<string, unknown> | null {
   try {
     if (typeof window === 'undefined') return null;
 
     const raw = window.localStorage.getItem(TOKEN_STORAGE_KEY);
 
     if (!raw) return null;
-    const value = JSON.parse(raw) as Record<string, unknown>;
+    const value: unknown = JSON.parse(raw);
 
-    if (
-      typeof value.access_token !== 'string' ||
-      value.access_token.length === 0 ||
-      typeof value.refresh_token !== 'string' ||
-      value.refresh_token.length === 0 ||
-      typeof value.expires_at !== 'number' ||
-      !Number.isFinite(value.expires_at)
-    ) {
-      return null;
-    }
-
-    return {
-      accessToken: value.access_token,
-      expiresAt: value.expires_at,
-      refreshToken: value.refresh_token,
-    };
+    return isRecord(value) ? value : null;
   } catch {
     return null;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function isExpired(token: StoredRequestToken): boolean {
@@ -247,12 +292,7 @@ function isExpired(token: StoredRequestToken): boolean {
 }
 
 function sameStoredToken(left: StoredRequestToken | null, right: StoredRequestToken | null): boolean {
-  return Boolean(
-    left &&
-      right &&
-      left.accessToken === right.accessToken &&
-      left.refreshToken === right.refreshToken
-  );
+  return Boolean(left && right && left.accessToken === right.accessToken && left.refreshToken === right.refreshToken);
 }
 
 async function refreshStoredToken(token: StoredRequestToken): Promise<StoredRequestToken> {

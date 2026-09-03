@@ -3,16 +3,17 @@ import { Trans, useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
+import { AuthService } from '@/application/services/domains';
+import { isPublicFormRedirectUrl } from '@/application/session/sign_in';
 import { invalidToken } from '@/application/session/token';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
-import { AuthService } from '@/application/services/domains';
+import { getPasswordErrors } from '@/components/login/password-validation';
 import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
-import { getPasswordErrors } from '@/components/login/password-validation';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 export function ChangePassword({ email, redirectTo }: { email: string; redirectTo: string }) {
@@ -29,14 +30,22 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
 
   useEffect(() => {
     if (!isAuthenticated) {
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
 
-        next.delete('email');
-        next.delete('action');
-        next.set('redirectTo', redirectTo);
-        return next;
-      });
+          next.delete('email');
+          next.delete('action');
+          if (redirectTo && !isPublicFormRedirectUrl(redirectTo)) {
+            next.set('redirectTo', redirectTo);
+          } else {
+            next.delete('redirectTo');
+          }
+
+          return next;
+        },
+        { replace: true }
+      );
     }
   }, [isAuthenticated, redirectTo, setSearchParams]);
 

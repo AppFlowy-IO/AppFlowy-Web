@@ -17,6 +17,7 @@ export const FORM_INCLUDED = 'included';
 export const FORM_REQUIRED = 'required';
 export const FORM_DESCRIPTION_VISIBLE = 'description_visible';
 export const FORM_DESCRIPTION = 'description';
+export const FORM_TITLE = 'title';
 export const FORM_LONG_ANSWER = 'long_answer';
 export const FORM_ORDER = 'order';
 
@@ -56,6 +57,10 @@ export interface FormLayoutSnapshot {
   /// Form-level description (the "Description (optional)" line below
   /// the title). Stored under `FORM_DESCRIPTION_SENTINEL`.
   description: string;
+  /// Respondent-facing title. This is deliberately independent from the
+  /// Folder-backed database-view name and is stored as `title` inside the
+  /// existing `FORM_DESCRIPTION_SENTINEL` metadata entry.
+  respondentTitle: string;
   /// Visible questions, sorted by `order`. Excludes sentinels, orphans
   /// (entries whose `field_id` no longer exists on the database — the
   /// caller resolves orphans), and entries with `included == false`.
@@ -67,6 +72,7 @@ const EMPTY_SNAPSHOT: FormLayoutSnapshot = Object.freeze({
   fieldOrderIds: null,
   explicitlyExcludedFieldIds: [],
   description: '',
+  respondentTitle: '',
   questions: [],
 });
 
@@ -166,6 +172,7 @@ export function decodeSnapshot(
 ): FormLayoutSnapshot {
   let decided = false;
   let description = '';
+  let respondentTitle = '';
   const settingsByFieldId = new Map<string, FormQuestionEntry>();
 
   map?.forEach((value, key) => {
@@ -182,6 +189,7 @@ export function decodeSnapshot(
 
     if (key === FORM_DESCRIPTION_SENTINEL) {
       description = asString(value.get(FORM_DESCRIPTION));
+      respondentTitle = asString(value.get(FORM_TITLE));
       return;
     }
 
@@ -221,6 +229,7 @@ export function decodeSnapshot(
     fieldOrderIds: fieldOrderIds ? [...fieldOrderIds] : null,
     explicitlyExcludedFieldIds,
     description,
+    respondentTitle,
     questions: entries.map(({ entry }) => entry),
   };
 }

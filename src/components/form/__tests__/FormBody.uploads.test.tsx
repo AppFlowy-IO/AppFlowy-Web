@@ -5,6 +5,7 @@ import {
   submitPublicForm,
   uploadFormFileToPresignedUrl,
 } from '@/application/services/js-services/http/form-api';
+import { beginPublicFormAuthentication } from '@/application/session/public_form_auth';
 import { FormAnswerValue, PublicFormSchema, PublicQuestion } from '@/application/types/form';
 import { FormBody } from '@/components/form/FormBody';
 
@@ -12,6 +13,10 @@ jest.mock('@/application/services/js-services/http/form-api', () => ({
   requestPublicFormUploadUrl: jest.fn(),
   submitPublicForm: jest.fn(),
   uploadFormFileToPresignedUrl: jest.fn(),
+}));
+
+jest.mock('@/application/session/public_form_auth', () => ({
+  beginPublicFormAuthentication: jest.fn(),
 }));
 
 jest.mock('@/components/form/FormQuestion', () => ({
@@ -95,6 +100,9 @@ describe('FormBody file uploads', () => {
   const mockRequestUploadUrl = requestPublicFormUploadUrl as jest.MockedFunction<typeof requestPublicFormUploadUrl>;
   const mockUploadFile = uploadFormFileToPresignedUrl as jest.MockedFunction<typeof uploadFormFileToPresignedUrl>;
   const mockSubmit = submitPublicForm as jest.MockedFunction<typeof submitPublicForm>;
+  const mockBeginPublicFormAuthentication = beginPublicFormAuthentication as jest.MockedFunction<
+    typeof beginPublicFormAuthentication
+  >;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -235,6 +243,39 @@ describe('FormBody file uploads', () => {
     await waitFor(() => expect(screen.getByText(/could not be processed/i)).toBeTruthy());
     expect(screen.queryByTestId('public-form-confirmation')).toBeNull();
     expect(screen.getByTestId('public-form-submit').disabled).toBe(true);
+  });
+
+  it('preserves the Form continuation when authentication expires during submission', async () => {
+    mockSubmit.mockRejectedValue({ message: 'Log in to continue.', loginUrl: '/login' });
+
+    render(<FormBody token='form-token' schema={{ ...schema, questions: [] }} />);
+
+    fireEvent.click(screen.getByTestId('public-form-submit'));
+    fireEvent.click(await screen.findByTestId('public-form-login'));
+
+    expect(mockBeginPublicFormAuthentication).toHaveBeenCalledWith('form-token', 'login');
+  });
+
+  it('shows the exact owner quota message while honoring the retry delay', async () => {
+    const message = 'This form has reached its submission limit. Please try again later.';
+
+    mockSubmit.mockRejectedValue({
+      code: 429,
+      publicCode: 'user_rate_limited',
+      retryAfterSecs: 3600,
+      message,
+    });
+
+    render(<FormBody token='form-token' schema={{ ...schema, questions: [] }} />);
+
+    fireEvent.click(screen.getByTestId('public-form-submit'));
+
+    expect(await screen.findByText(message)).toBeTruthy();
+    expect(screen.queryByText(/Try again in/)).toBeNull();
+    expect(screen.getByTestId('public-form-submit').disabled).toBe(true);
+
+    fireEvent.click(screen.getByTestId('public-form-submit'));
+    expect(mockSubmit).toHaveBeenCalledTimes(1);
   });
 
   it('reuses the idempotency key when an ambiguous retry keeps the same payload', async () => {

@@ -79,6 +79,7 @@ jest.mock('@/application/session', () => ({
 jest.mock('@/application/session/sign_in', () => ({
   afterAuth: jest.fn(),
   AUTH_CALLBACK_URL: 'http://localhost/auth/callback',
+  getAuthCallbackUrl: jest.fn(() => 'http://localhost/auth/callback'),
   saveRedirectTo: jest.fn(),
 }));
 

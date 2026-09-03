@@ -25,13 +25,14 @@ import type { YDatabaseField } from '@/application/types';
 
 import { FormAccessBanner } from './FormAccessBanner';
 import { FormAutoCreate } from './FormAutoCreate';
+import { FormFormDescription } from './FormFormDescription';
 import { FormPreviewButton } from './FormPreviewButton';
 import { FormQuestionCard } from './FormQuestionCard';
 import { FormQuestionCardReadOnly } from './FormQuestionCardReadOnly';
 import { FormQuestionTypePicker } from './FormQuestionTypePicker';
+import { FormRespondentTitle } from './FormRespondentTitle';
 import { FormShareButton } from './FormShareButton';
 import { FormShareProvider } from './FormShareContext';
-import { FormTitle } from './FormTitle';
 
 import type { AddFormSelectOption } from './FormSelectOptionsEditor';
 
@@ -39,7 +40,8 @@ import type { AddFormSelectOption } from './FormSelectOptionsEditor';
  * Top-level form-builder view. Mirrors the desktop's `FormBuilderPage`:
  *
  *   ┌─ toolbar ──────────────────── Preview · Share form ┐
- *   │  View name (AppFlowy-only)                         │
+ *   │  Form title                                        │
+ *   │  Description                                       │
  *   │  ┌─ access banner ────────────────────── Change ─┐ │
  *   │  │ 🔒 Only members at <ws> can fill out this form │
  *   │  └────────────────────────────────────────────────┘ │
@@ -205,12 +207,19 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
           <FormPreviewButton snapshot={snapshot} fieldsMap={fields} fieldsVersion={fieldsVersion} />
           <FormShareButton />
         </header>
-        <section data-testid='form-internal-view-name' className='flex flex-col gap-1'>
-          <span className='text-xs font-medium text-text-caption'>View name</span>
-          <FormTitle key={activeViewId} readOnly={readOnly} />
-          <p className='text-xs text-text-tertiary'>
-            Used in AppFlowy only. Shared forms currently display &ldquo;Untitled form&rdquo;.
-          </p>
+        <section data-testid='form-respondent-copy' className='flex flex-col gap-1'>
+          <FormRespondentTitle
+            key={`respondent-title-${activeViewId ?? ''}`}
+            title={snapshot.respondentTitle}
+            readOnly={readOnly}
+            onChange={writer.setRespondentTitle}
+          />
+          <FormFormDescription
+            key={`form-description-${activeViewId ?? ''}`}
+            description={snapshot.description}
+            readOnly={readOnly}
+            onChange={writer.setFormDescription}
+          />
         </section>
         <FormAccessBanner />
         {autoCreatePending && (

@@ -9,6 +9,7 @@ import {
   FORM_LONG_ANSWER,
   FORM_ORDER,
   FORM_REQUIRED,
+  FORM_TITLE,
   readFormLayoutSnapshot,
 } from '@/application/database-yjs/form-questions';
 import { createFormWriter } from '@/application/database-yjs/form-writer';
@@ -76,14 +77,30 @@ describe('form projection compatibility contract', () => {
     setEntry(view, 'field-a', { [FORM_REQUIRED]: true });
     setEntry(view, 'field-c', { [FORM_INCLUDED]: false });
     setEntry(view, 'deleted-field', { [FORM_REQUIRED]: true, [FORM_ORDER]: 0 });
-    setEntry(view, FORM_DESCRIPTION_SENTINEL, { [FORM_DESCRIPTION]: 'Legacy form' });
+    setEntry(view, FORM_DESCRIPTION_SENTINEL, {
+      [FORM_TITLE]: 'Customer feedback',
+      [FORM_DESCRIPTION]: 'Legacy form',
+    });
 
     const snapshot = readFormLayoutSnapshot(view);
 
     expect(snapshot.decided).toBe(false);
+    expect(snapshot.respondentTitle).toBe('Customer feedback');
     expect(snapshot.description).toBe('Legacy form');
     expect(snapshot.questions.map(({ fieldId }) => fieldId)).toEqual(['field-b', 'field-a']);
     expect(snapshot.questions[1].required).toBe(true);
+  });
+
+  it('keeps respondent title authoring raw and defaults missing or malformed values to empty', () => {
+    const view = createView([]);
+
+    expect(readFormLayoutSnapshot(view).respondentTitle).toBe('');
+
+    setEntry(view, FORM_DESCRIPTION_SENTINEL, { [FORM_TITLE]: 42 });
+    expect(readFormLayoutSnapshot(view).respondentTitle).toBe('');
+
+    ensureSettings(view).get(FORM_DESCRIPTION_SENTINEL)?.set(FORM_TITLE, '  ');
+    expect(readFormLayoutSnapshot(view).respondentTitle).toBe('  ');
   });
 
   it('uses explicit opt-in semantics once the decided sentinel exists', () => {

@@ -34,6 +34,7 @@ const PUBLIC_FORM_ERROR_MESSAGES: Record<string, string> = {
   form_closed: 'This form is no longer accepting responses.',
   public_sharing_disabled_by_admin: 'Public form sharing was disabled by a workspace administrator.',
   rate_limited: 'Too many form requests were sent. Please try again later.',
+  user_rate_limited: 'This form has reached its submission limit. Please try again later.',
   token_rate_limited: 'Too many responses were submitted. Please try again later.',
   workspace_rate_limited: 'This workspace has reached its response limit. Please try again later.',
   upload_rate_limited: 'This form has reached its upload limit. Please try again later.',
@@ -74,7 +75,7 @@ export interface PublicFormAPIError {
  * The response is a tagged union — the caller switches on `kind`:
  *   - `active`   → render the form
  *   - `closed`   → render "no longer accepting responses" page
- *   - `auth_required` → workspace-tier hit by anonymous client; redirect to `login_url`
+ *   - `auth_required` → workspace-tier hit by anonymous client; show the token-free auth gate
  *
  * Wire HTTP status semantics (from the cloud handler):
  *   - 200 with one of the three `kind` variants for the happy-path cases.
@@ -360,7 +361,11 @@ function isValidPublicFormResponse(value: unknown): value is PublicFormResponse 
     case 'closed':
       return typeof response.message === 'string';
     case 'auth_required':
-      return typeof response.login_url === 'string' && response.login_url.length > 0;
+      // The Form token is deliberately stored client-side before navigation.
+      // Only accept the token-free local auth route from Cloud; rendering an
+      // arbitrary server-provided URL here would create a phishing/open-
+      // redirect surface.
+      return response.login_url === '/login';
     case 'active':
       return (
         typeof response.form_id === 'string' &&
@@ -368,6 +373,7 @@ function isValidPublicFormResponse(value: unknown): value is PublicFormResponse 
         (response.tier === 'workspace' || response.tier === 'public') &&
         typeof response.anonymous === 'boolean' &&
         typeof response.title === 'string' &&
+        (response.description === undefined || typeof response.description === 'string') &&
         Array.isArray(response.questions) &&
         typeof response.submit_label === 'string' &&
         typeof response.submit_color === 'string' &&

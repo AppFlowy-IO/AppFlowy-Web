@@ -3,11 +3,13 @@ import * as Y from 'yjs';
 import {
   FORM_DECIDED_SENTINEL,
   FORM_DESCRIPTION,
+  FORM_DESCRIPTION_SENTINEL,
   FORM_DESCRIPTION_VISIBLE,
   FORM_INCLUDED,
   FORM_LONG_ANSWER,
   FORM_ORDER,
   FORM_REQUIRED,
+  FORM_TITLE,
   readFormLayoutSnapshot,
 } from '@/application/database-yjs/form-questions';
 import { createFormWriter } from '@/application/database-yjs/form-writer';
@@ -104,6 +106,34 @@ describe('Form writer database history', () => {
     expect(entry?.get(FORM_LONG_ANSWER)).toBe(true);
     history.undo();
     expect(entry?.get(FORM_LONG_ANSWER)).toBeUndefined();
+
+    databaseDoc.destroy();
+  });
+
+  it('patches respondent title and description in one metadata entry without clobbering either value', () => {
+    const { databaseDoc, settings, view } = createFixture([]);
+    const writer = createFormWriter(view);
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    writer.setFormDescription('Tell us what happened');
+    writer.setRespondentTitle('Customer feedback');
+
+    const metadata = settings.get(FORM_DESCRIPTION_SENTINEL);
+
+    expect(metadata?.get(FORM_TITLE)).toBe('Customer feedback');
+    expect(metadata?.get(FORM_DESCRIPTION)).toBe('Tell us what happened');
+    expect(readFormLayoutSnapshot(view)).toMatchObject({
+      respondentTitle: 'Customer feedback',
+      description: 'Tell us what happened',
+    });
+
+    history.undo();
+    expect(metadata?.get(FORM_TITLE)).toBeUndefined();
+    expect(metadata?.get(FORM_DESCRIPTION)).toBe('Tell us what happened');
+
+    history.redo();
+    expect(metadata?.get(FORM_TITLE)).toBe('Customer feedback');
+    expect(metadata?.get(FORM_DESCRIPTION)).toBe('Tell us what happened');
 
     databaseDoc.destroy();
   });

@@ -8,7 +8,7 @@ import { YjsDatabaseKey } from '@/application/types';
 import { buildFormPreviewSchema } from '../FormPreviewButton';
 
 describe('form respondent preview schema', () => {
-  it('matches the deployed public title and description contract while preserving question descriptions', () => {
+  it('projects authored respondent copy while preserving question descriptions', () => {
     const doc = new Y.Doc();
     const fields = doc.getMap('fields') as YDatabaseFields;
     const field = new Y.Map<unknown>() as YDatabaseField;
@@ -21,7 +21,8 @@ describe('form respondent preview schema', () => {
       decided: true,
       fieldOrderIds: ['question-id'],
       explicitlyExcludedFieldIds: [],
-      description: 'Local form description',
+      respondentTitle: '  Customer feedback  ',
+      description: '  Local form description  ',
       questions: [
         {
           fieldId: 'question-id',
@@ -37,8 +38,8 @@ describe('form respondent preview schema', () => {
 
     const schema = buildFormPreviewSchema(snapshot, fields);
 
-    expect(schema.title).toBe('Untitled form');
-    expect(schema).not.toHaveProperty('description');
+    expect(schema.title).toBe('Customer feedback');
+    expect(schema.description).toBe('Local form description');
     expect(schema.questions[0]).toMatchObject({
       label: 'Question title',
       description: 'Public question description',
@@ -57,7 +58,8 @@ describe('form respondent preview schema', () => {
       decided: true,
       fieldOrderIds: ['select-id'],
       explicitlyExcludedFieldIds: [],
-      description: '',
+      respondentTitle: '',
+      description: '   ',
       questions: [
         {
           fieldId: 'select-id',
@@ -74,6 +76,7 @@ describe('form respondent preview schema', () => {
     const schema = buildFormPreviewSchema(snapshot, fields);
 
     expect(schema.title).toBe('Untitled form');
+    expect(schema.description).toBeUndefined();
     expect(schema.questions[0].options).toEqual([]);
   });
 });

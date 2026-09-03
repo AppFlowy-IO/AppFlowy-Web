@@ -4,8 +4,10 @@ import { v4 as uuid } from 'uuid';
 import {
   requestPublicFormUploadUrl,
   submitPublicForm,
+  type PublicFormAPIError,
   uploadFormFileToPresignedUrl,
 } from '@/application/services/js-services/http/form-api';
+import { beginPublicFormAuthentication } from '@/application/session/public_form_auth';
 import {
   FormAnswerValue,
   FormFileAttachment,
@@ -22,10 +24,13 @@ import {
   PUBLIC_FORM_SUBMIT_MAX_BODY_BYTES,
   PublicFormSchema,
   PublicQuestion,
+  resolveFormDisplayTitle,
 } from '@/application/types/form';
+import { ReactComponent as AppFlowyLogo } from '@/assets/icons/appflowy.svg';
 import { Button } from '@/components/ui/button';
 
 import { FormQuestion } from './FormQuestion';
+import { FormRespondentStatus } from './FormRespondentStatus';
 
 export { preloadFormQuestionInputs } from './FormQuestion';
 
@@ -197,11 +202,12 @@ export function FormBody({
 
       setSubmitState({ kind: 'submitted' });
     } catch (err) {
-      const publicError = err as { message?: string; retryAfterSecs?: number; loginUrl?: string };
+      const publicError = err as Partial<PublicFormAPIError>;
       const retryAfterSecs = publicError.retryAfterSecs;
       const hasRetryDelay = typeof retryAfterSecs === 'number' && Number.isFinite(retryAfterSecs) && retryAfterSecs > 0;
+      const showRetryCountdown = hasRetryDelay && publicError.publicCode !== 'user_rate_limited';
       const message = `${publicError.message ?? 'Submission failed'}${
-        hasRetryDelay ? ` Try again in ${Math.ceil(retryAfterSecs)} seconds.` : ''
+        showRetryCountdown ? ` Try again in ${Math.ceil(retryAfterSecs)} seconds.` : ''
       }`;
 
       if (hasRetryDelay) {
@@ -252,9 +258,11 @@ export function FormBody({
             {schema.icon}
           </div>
         )}
-        <h1 className='text-3xl font-bold'>{schema.title}</h1>
-        {schema.description && <p className='text-text-caption'>{schema.description}</p>}
+        <h1 className='text-3xl font-bold'>{resolveFormDisplayTitle(schema.title)}</h1>
+        {schema.description && <p className='whitespace-pre-wrap break-words text-text-caption'>{schema.description}</p>}
       </header>
+
+      {!previewMode ? <FormRespondentStatus anonymous={schema.anonymous} /> : null}
 
       <fieldset
         data-testid='public-form-questions'
@@ -278,12 +286,7 @@ export function FormBody({
       <div className='flex flex-col items-start gap-2'>
         {submitState.kind === 'error' && <p className='text-sm text-fill-default'>{submitState.message}</p>}
         {submitState.kind === 'error' && submitState.loginUrl ? (
-          <Button
-            data-testid='public-form-login'
-            onClick={() => {
-              window.location.href = submitState.loginUrl!;
-            }}
-          >
+          <Button data-testid='public-form-login' onClick={() => beginPublicFormAuthentication(token, 'login')}>
             Log in
           </Button>
         ) : (
@@ -300,6 +303,20 @@ export function FormBody({
       <p className='pt-6 text-xs text-text-caption'>
         Never submit sensitive personal information, like passwords, through AppFlowy Forms.
       </p>
+
+      {!previewMode && !schema.hide_branding ? (
+        <footer data-testid='public-form-branding' className='flex justify-center pt-2'>
+          <a
+            href='https://appflowy.com'
+            target='_blank'
+            rel='noopener noreferrer'
+            aria-label='AppFlowy'
+            className='text-text-caption opacity-50 transition-opacity hover:opacity-75'
+          >
+            <AppFlowyLogo className='w-[88px]' aria-hidden />
+          </a>
+        </footer>
+      ) : null}
     </div>
   );
 }

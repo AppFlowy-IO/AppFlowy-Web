@@ -1,8 +1,8 @@
 Feature: Form Share End-to-End
 
-  # Every scenario in this feature actually submits a form (or proves
-  # submission is blocked) and verifies the resulting database state.
-  # No chrome-only assertions live here — pure cloud-contract coverage.
+  # These scenarios exercise real share settings against Cloud and verify
+  # the respondent UI, submission result, or resulting database state.
+  # The public-form API is never mocked.
 
   Scenario: Workspace-tier member submission stamps Eva as the respondent
     # New shares default to Workspace tier + anonymous=true. Nathan
@@ -109,7 +109,7 @@ Feature: Form Share End-to-End
     Then the source grid has at least 4 rows
     And the respondent for the row with name "public-anon-check" is anonymous
 
-  Scenario: Workspace-anonymous and Closed tiers block respondent submission
+  Scenario: Workspace anonymous visitor reaches login and Closed tier blocks submission
     # Two unsubmittable states in one scenario. The popover doesn't
     # need to change for the workspace-anon case (default mint =
     # workspace tier, anonymous responder = no session). For Closed
@@ -119,6 +119,10 @@ Feature: Form Share End-to-End
     And I copy the share URL from the popover
     And I open the share URL in a fresh anonymous tab
     Then the public form shows the login required prompt
+    And the public form offers login and sign up
+    When I choose to log in from the public form
+    Then the public form respondent sees the login form
+    And authentication will return to the public form
 
     # Now flip to Closed and reload the public URL. The existing link
     # surfaces "no longer accepting"; no new respondent row is created.

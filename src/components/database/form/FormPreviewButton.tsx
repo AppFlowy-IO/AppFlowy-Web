@@ -7,7 +7,13 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import type { FormLayoutSnapshot } from '@/application/database-yjs/form-questions';
 import { YjsDatabaseKey } from '@/application/types';
 import type { YDatabaseField, YDatabaseFields } from '@/application/types';
-import type { PublicFormSchema, PublicOption, PublicQuestion, PublicQuestionKind } from '@/application/types/form';
+import {
+  resolveFormDisplayTitle,
+  type PublicFormSchema,
+  type PublicOption,
+  type PublicQuestion,
+  type PublicQuestionKind,
+} from '@/application/types/form';
 import { Button } from '@/components/ui/button';
 
 const FormBody = lazy(() =>
@@ -26,9 +32,9 @@ const DIALOG_PAPER_PROPS = {
  * Preview the form-builder draft in respondent mode. Reuses the
  * `FormBody` component the public `/form/:token` page renders, so question
  * rendering and validation stay aligned with the respondent surface. The
- * preview title and form description intentionally match the deployed public
- * schema. Cloud does not project the local authoring values yet, so showing
- * them here would promise respondents a different form than the shared URL.
+ * preview title and form description come from the same per-view collab
+ * metadata projected to the public schema, so authored respondent copy stays
+ * aligned with the shared URL.
  *
  * Building the synthetic schema from the local draft keeps the
  * preview live: every per-question edit ripples into the preview on
@@ -99,12 +105,12 @@ function PreviewLoadError({ onClose }: { onClose: () => void }) {
 /**
  * Build the respondent-shaped preview from the local question projection.
  *
- * The deployed public schema currently returns a fixed title and no form-level
- * description. Keep Preview on that contract until Cloud projects those local
- * authoring values for shared forms.
+ * Title and description come from this Form view's local collab projection so
+ * Preview matches the respondent copy being authored.
  */
 export function buildFormPreviewSchema(snapshot: FormLayoutSnapshot, fieldsMap: YDatabaseFields): PublicFormSchema {
   const questions: PublicQuestion[] = [];
+  const normalizedDescription = snapshot.description.trim();
 
   for (const q of snapshot.questions) {
     const field = fieldsMap.get(q.fieldId);
@@ -134,7 +140,8 @@ export function buildFormPreviewSchema(snapshot: FormLayoutSnapshot, fieldsMap: 
     form_id: 'preview',
     tier: 'workspace',
     anonymous: true,
-    title: 'Untitled form',
+    title: resolveFormDisplayTitle(snapshot.respondentTitle),
+    description: normalizedDescription || undefined,
     questions,
     submit_label: 'Submit',
     submit_color: 'primary',

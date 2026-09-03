@@ -25,6 +25,7 @@ import {
 } from '../../support/form-test-helpers';
 import { createNamedGridDatabase } from '../../support/relation-test-helpers';
 import {
+  AuthSelectors,
   DatabaseGridSelectors,
   DatabaseViewSelectors,
   FormSelectors,
@@ -581,6 +582,52 @@ Then('the respondent for the row with name {string} is Eva', async ({ page }, na
 
 Then('the public form shows the login required prompt', async ({ page }) => {
   await expect(PublicFormSelectors.authRequiredPage(getRespondent(page))).toBeVisible({ timeout: 15000 });
+});
+
+Then('the public form offers login and sign up', async ({ page }) => {
+  const respondent = getRespondent(page);
+  const authRequiredPage = PublicFormSelectors.authRequiredPage(respondent);
+
+  await expect(authRequiredPage.getByRole('button', { name: 'Log in', exact: true })).toBeVisible();
+  await expect(authRequiredPage.getByRole('button', { name: 'Sign up', exact: true })).toBeVisible();
+});
+
+When('I choose to log in from the public form', async ({ page }) => {
+  const respondent = getRespondent(page);
+  const loginButton = PublicFormSelectors.authRequiredPage(respondent).getByRole('button', {
+    name: 'Log in',
+    exact: true,
+  });
+
+  await Promise.all([
+    respondent.waitForURL((url) => url.pathname === '/login' && url.searchParams.get('force') === 'true'),
+    loginButton.click(),
+  ]);
+});
+
+Then('the public form respondent sees the login form', async ({ page }) => {
+  const respondent = getRespondent(page);
+
+  await expect(AuthSelectors.emailInput(respondent)).toBeVisible({ timeout: 15000 });
+  await expect(AuthSelectors.passwordSignInButton(respondent)).toBeVisible();
+});
+
+Then('authentication will return to the public form', async ({ page }) => {
+  const state = sharedState.get(page);
+  const respondent = getRespondent(page);
+
+  if (!state?.capturedUrl) {
+    throw new Error('share URL was not captured before checking the authentication continuation');
+  }
+
+  const loginUrl = new URL(respondent.url());
+  const expectedFormUrl = new URL(state.capturedUrl);
+  const storedRedirectTo = await respondent.evaluate(() => localStorage.getItem('redirectTo'));
+
+  expect(loginUrl.pathname).toBe('/login');
+  expect(loginUrl.searchParams.get('force')).toBe('true');
+  expect(loginUrl.searchParams.has('redirectTo')).toBe(false);
+  expect(storedRedirectTo).toBe(`${expectedFormUrl.pathname}${expectedFormUrl.search}${expectedFormUrl.hash}`);
 });
 
 Then('the public form shows the closed page', async ({ page }) => {

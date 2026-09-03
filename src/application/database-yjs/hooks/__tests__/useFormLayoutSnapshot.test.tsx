@@ -3,10 +3,12 @@ import * as Y from 'yjs';
 
 import {
   FORM_DESCRIPTION,
+  FORM_DESCRIPTION_SENTINEL,
   FORM_DESCRIPTION_VISIBLE,
   FORM_INCLUDED,
   FORM_ORDER,
   FORM_REQUIRED,
+  FORM_TITLE,
 } from '@/application/database-yjs/form-questions';
 import type { YDatabaseFormFieldSettings, YDatabaseView } from '@/application/types';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
@@ -25,6 +27,7 @@ function createView(id: string, questionId: string, description: string): YDatab
   const settings = new Y.Map() as YDatabaseFormFieldSettings;
   const entry = new Y.Map<unknown>();
   const fieldOrders = new Y.Array<{ id: string }>();
+  const metadata = new Y.Map<unknown>();
 
   entry.set(FORM_INCLUDED, true);
   entry.set(FORM_REQUIRED, false);
@@ -32,6 +35,9 @@ function createView(id: string, questionId: string, description: string): YDatab
   entry.set(FORM_DESCRIPTION, description);
   entry.set(FORM_ORDER, 0);
   settings.set(questionId, entry);
+  metadata.set(FORM_TITLE, 'Initial title');
+  metadata.set(FORM_DESCRIPTION, 'Initial form description');
+  settings.set(FORM_DESCRIPTION_SENTINEL, metadata);
   fieldOrders.push([{ id: questionId }]);
   view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Form);
   view.set(YjsDatabaseKey.field_orders, fieldOrders);
@@ -76,10 +82,16 @@ describe('useFormLayoutSnapshot', () => {
     expect(observe).toHaveBeenCalledTimes(1);
 
     act(() => {
-      mockView?.get(YjsDatabaseKey.form_field_settings)?.get('question-a')?.set(FORM_DESCRIPTION, 'After');
+      const settings = mockView?.get(YjsDatabaseKey.form_field_settings);
+
+      settings?.get('question-a')?.set(FORM_DESCRIPTION, 'After');
+      settings?.get(FORM_DESCRIPTION_SENTINEL)?.set(FORM_TITLE, 'Remote title');
+      settings?.get(FORM_DESCRIPTION_SENTINEL)?.set(FORM_DESCRIPTION, 'Remote form description');
     });
 
     expect(result.current[0].questions[0]?.description).toBe('After');
+    expect(result.current[0].respondentTitle).toBe('Remote title');
+    expect(result.current[0].description).toBe('Remote form description');
     expect(result.current[1]).toBe(result.current[0]);
 
     unmount();

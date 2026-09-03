@@ -4,6 +4,8 @@ import { ErrorBoundary } from 'react-error-boundary';
 import { BrowserRouter, Route, Routes, useParams } from 'react-router-dom';
 import { validate as isUuid } from 'uuid';
 
+import { FullScreenLoading } from '@/components/_shared/FullScreenLoading';
+
 const FormPage = lazy(() => import('@/pages/FormPage'));
 const MainAppRoutes = lazy(() => import('@/components/main/MainAppRoutes'));
 
@@ -16,7 +18,7 @@ function App() {
       }}
     >
       <ErrorBoundary FallbackComponent={RouteError}>
-        <Suspense fallback={<RouteLoading />}>
+        <Suspense fallback={<FullScreenLoading label='Loading page' />}>
           <Routes>
             <Route path='/form/:token' element={<FormOrPublishedRoute />} />
             <Route path='*' element={<MainAppRoutes />} />
@@ -50,18 +52,6 @@ function RouteError() {
       >
         Reload page
       </button>
-    </div>
-  );
-}
-
-function RouteLoading() {
-  return (
-    <div
-      role='status'
-      aria-label='Loading page'
-      className='fixed inset-0 flex items-center justify-center bg-background-primary'
-    >
-      <span className='text-text-caption'>Loading…</span>
     </div>
   );
 }

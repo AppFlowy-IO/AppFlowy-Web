@@ -58,6 +58,112 @@ describe('public form uploads', () => {
     });
   });
 
+  it('accepts an optional string form description and rejects malformed descriptions', async () => {
+    const validSchema = {
+      kind: 'active',
+      form_id: 'c6c31f9b-c334-4e3a-be20-79f661d4ad87',
+      tier: 'public',
+      anonymous: true,
+      title: 'Customer feedback',
+      description: 'Tell us what happened.',
+      questions: [],
+      submit_label: 'Submit',
+      submit_color: 'primary',
+      confirmation_title: 'Thanks',
+      allow_another_response: false,
+      hide_branding: false,
+    };
+    const get = jest
+      .fn()
+      .mockResolvedValueOnce({ data: validSchema })
+      .mockResolvedValueOnce({ data: { ...validSchema, description: 42 } });
+
+    mockGetPublicFormClient.mockReturnValue({ get } as never);
+
+    await expect(getPublicFormSchema(validSchema.form_id)).resolves.toEqual(validSchema);
+    await expect(getPublicFormSchema(validSchema.form_id)).rejects.toMatchObject({
+      message: 'Malformed form schema response',
+    });
+  });
+
+  it('accepts only the token-free local login route for auth-required forms', async () => {
+    const get = jest
+      .fn()
+      .mockResolvedValueOnce({ data: { kind: 'auth_required', login_url: '/login' } })
+      .mockResolvedValueOnce({
+        data: {
+          kind: 'auth_required',
+          login_url: '/login?redirectTo=%2Fform%2Fc6c31f9b-c334-4e3a-be20-79f661d4ad87',
+        },
+      })
+      .mockResolvedValueOnce({ data: { kind: 'auth_required', login_url: 'https://evil.example/login' } });
+
+    mockGetPublicFormClient.mockReturnValue({ get } as never);
+
+    await expect(getPublicFormSchema('c6c31f9b-c334-4e3a-be20-79f661d4ad87')).resolves.toEqual({
+      kind: 'auth_required',
+      login_url: '/login',
+    });
+    await expect(getPublicFormSchema('c6c31f9b-c334-4e3a-be20-79f661d4ad87')).rejects.toMatchObject({
+      message: 'Malformed form schema response',
+    });
+    await expect(getPublicFormSchema('c6c31f9b-c334-4e3a-be20-79f661d4ad87')).rejects.toMatchObject({
+      message: 'Malformed form schema response',
+    });
+  });
+
+  it('preserves the public code when a stored account is not a workspace member', async () => {
+    const get = jest.fn().mockRejectedValue({
+      name: 'PublicFormHTTPError',
+      message: 'Forbidden',
+      response: {
+        status: 403,
+        headers: new Headers(),
+        data: { error: 'not_a_workspace_member' },
+      },
+    });
+
+    mockGetPublicFormClient.mockReturnValue({ get } as never);
+
+    await expect(getPublicFormSchema('c6c31f9b-c334-4e3a-be20-79f661d4ad87')).rejects.toMatchObject({
+      code: 403,
+      publicCode: 'not_a_workspace_member',
+      message: 'This form is only available to workspace members.',
+    });
+  });
+
+  it('maps the owner quota error for both schema access and submission', async () => {
+    const ownerQuotaError = {
+      name: 'PublicFormHTTPError',
+      message: 'Request failed with status code 429',
+      response: {
+        status: 429,
+        headers: new Headers(),
+        data: { error: 'user_rate_limited', retry_after_seconds: 3600 },
+      },
+    };
+    const get = jest.fn().mockRejectedValue(ownerQuotaError);
+    const post = jest.fn().mockRejectedValue(ownerQuotaError);
+
+    mockGetPublicFormClient.mockReturnValue({ get, post } as never);
+    const expectedError = {
+      code: 429,
+      httpStatus: 429,
+      publicCode: 'user_rate_limited',
+      retryAfterSecs: 3600,
+      message: 'This form has reached its submission limit. Please try again later.',
+    };
+
+    await expect(getPublicFormSchema('c6c31f9b-c334-4e3a-be20-79f661d4ad87')).rejects.toMatchObject(expectedError);
+    await expect(
+      submitPublicForm(
+        'c6c31f9b-c334-4e3a-be20-79f661d4ad87',
+        { answers: {} },
+        'a0aa83b5-82f8-4eca-a466-954b7f329c78'
+      )
+    ).rejects.toMatchObject(expectedError);
+  });
+
   it('always requests create-only v2 and accepts only its complete signed-header contract', async () => {
     const post = jest.fn().mockResolvedValue({
       data: {

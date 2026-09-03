@@ -4,6 +4,46 @@ import { PublicFormSchema, PublicQuestion, PublicQuestionKind } from '@/applicat
 import { FormBody } from '@/components/form/FormBody';
 
 describe('FormBody typed-answer validation', () => {
+  it('uses the legacy display fallback only when the respondent schema title is empty', () => {
+    const { rerender } = render(<FormBody token='preview' schema={{ ...schemaFor(), title: '' }} previewMode />);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Untitled form' })).toBeTruthy();
+
+    rerender(<FormBody token='preview' schema={{ ...schemaFor(), title: '  Customer feedback  ' }} previewMode />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Customer feedback' })).toBeTruthy();
+  });
+
+  it('preserves authored line breaks in the respondent description', () => {
+    render(<FormBody token='preview' schema={{ ...schemaFor(), description: 'First line\nSecond line' }} previewMode />);
+
+    expect(screen.getByText(/First line/).classList.contains('whitespace-pre-wrap')).toBe(true);
+  });
+
+  it('shows respondent attribution on the public form but not in builder preview', () => {
+    const { rerender } = render(<FormBody token='public-token' schema={schemaFor()} />);
+
+    expect(screen.getByText('Submitting response anonymously')).toBeTruthy();
+
+    rerender(<FormBody token='preview' schema={schemaFor()} previewMode />);
+    expect(screen.queryByTestId('public-form-respondent-status')).toBeNull();
+  });
+
+  it('shows AppFlowy branding only when the shared-form schema permits it', () => {
+    const { rerender } = render(<FormBody token='public-token' schema={schemaFor()} />);
+    const body = screen.getByTestId('public-form-body');
+    const branding = screen.getByTestId('public-form-branding');
+    const logoLink = screen.getByRole('link', { name: 'AppFlowy' });
+
+    expect(body.lastElementChild).toBe(branding);
+    expect(logoLink.getAttribute('href')).toBe('https://appflowy.com');
+
+    rerender(<FormBody token='public-token' schema={{ ...schemaFor(), hide_branding: true }} />);
+    expect(screen.queryByTestId('public-form-branding')).toBeNull();
+
+    rerender(<FormBody token='preview' schema={schemaFor()} previewMode />);
+    expect(screen.queryByTestId('public-form-branding')).toBeNull();
+  });
+
   it.each([
     ['url', 'ftp://appflowy.io', 'Enter a valid URL that starts with http:// or https://.'],
     ['url', 'https://user:secret@appflowy.io', 'Enter a valid URL that starts with http:// or https://.'],

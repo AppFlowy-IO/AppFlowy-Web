@@ -10,6 +10,7 @@ import {
   FORM_LONG_ANSWER,
   FORM_ORDER,
   FORM_REQUIRED,
+  FORM_TITLE,
 } from '@/application/database-yjs/form-questions';
 import { runDatabaseAction } from '@/application/database-yjs/history';
 import { YDatabaseFormFieldSettings, YDatabaseView, YjsDatabaseKey } from '@/application/types';
@@ -67,6 +68,23 @@ function ensureEntry(view: YDatabaseView, fieldId: string): Y.Map<unknown> {
   created.set(FORM_INCLUDED, true);
   map.set(fieldId, created);
   return map.get(fieldId)!;
+}
+
+/**
+ * Acquire the reserved form-metadata entry. Reusing the established
+ * description sentinel keeps older Web/Desktop/Cloud readers compatible: they
+ * already skip this entry when projecting questions and merge unknown keys.
+ */
+function ensureFormMetadataEntry(view: YDatabaseView): Y.Map<unknown> {
+  const map = ensureMap(view);
+  const existing = map.get(FORM_DESCRIPTION_SENTINEL);
+
+  if (existing) return existing;
+  const created = new Y.Map<unknown>();
+
+  created.set(FORM_INCLUDED, false);
+  map.set(FORM_DESCRIPTION_SENTINEL, created);
+  return map.get(FORM_DESCRIPTION_SENTINEL)!;
 }
 
 /**
@@ -145,6 +163,9 @@ export interface FormWriter {
   /// Form-level description (the "Description (optional)" row under
   /// the title). Stored in the `__form_description__` sentinel entry.
   setFormDescription(value: string): void;
+  /// Respondent-facing title. This is independent from the Folder-backed
+  /// database-view name and shares the form metadata sentinel with description.
+  setRespondentTitle(value: string): void;
 }
 
 export function createFormWriter(view: YDatabaseView): FormWriter {
@@ -403,14 +424,13 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
 
     setFormDescription(value) {
       txn('set-form-description', () => {
-        const map = ensureMap(view);
-        const sentinel = map.get(FORM_DESCRIPTION_SENTINEL) ?? new Y.Map<unknown>();
+        ensureFormMetadataEntry(view).set(FORM_DESCRIPTION, value);
+      });
+    },
 
-        sentinel.set(FORM_INCLUDED, false);
-        sentinel.set(FORM_DESCRIPTION, value);
-        if (!map.get(FORM_DESCRIPTION_SENTINEL)) {
-          map.set(FORM_DESCRIPTION_SENTINEL, sentinel);
-        }
+    setRespondentTitle(value) {
+      txn('set-respondent-title', () => {
+        ensureFormMetadataEntry(view).set(FORM_TITLE, value);
       });
     },
   };
