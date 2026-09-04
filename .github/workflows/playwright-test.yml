@@ -127,6 +127,7 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/workspace/space-permission-matrix-management.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/page/eva-more-actions-permissions.feature.spec.js
             shard: ''
+            workers: '1'
             description: 'Create, manage, member, group, and action permission scenarios for spaces'
             bdd: 'true'
           - name: 'embedded'
@@ -284,7 +285,7 @@ jobs:
       - name: Run ${{ matrix.test-group.name }} tests
         shell: bash
         run: |
-          test_args=(--workers=2)
+          test_args=("--workers=${TEST_WORKERS:-2}")
           if [ -n "$TEST_SHARD" ]; then
             test_args+=("--shard=$TEST_SHARD")
           fi
@@ -300,6 +301,7 @@ jobs:
           TEST_BDD: ${{ matrix.test-group.bdd }}
           TEST_SHARD: ${{ matrix.test-group.shard }}
           TEST_SPEC: ${{ matrix.test-group.spec }}
+          TEST_WORKERS: ${{ matrix.test-group.workers }}
 
       - name: Test summary
         if: always()
