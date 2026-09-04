@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { AccessLevel, WorkspaceGroupViewPermission } from '@/application/types';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as CommentIcon } from '@/assets/icons/titlebar_comment.svg';
 import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as ViewIcon } from '@/assets/icons/show.svg';
@@ -47,7 +48,7 @@ export function GroupAccessLevelDropdown({
       case AccessLevel.ReadAndWrite:
         return t('shareAction.readAndWrite');
       case AccessLevel.ReadAndComment:
-        return t('shareAction.readAndComment');
+        return t('shareAction.canComment');
       case AccessLevel.ReadOnly:
       default:
         return t('shareAction.readOnly');
@@ -136,6 +137,23 @@ export function GroupAccessLevelDropdown({
               </div>
               {!loading && group.access_level === AccessLevel.ReadOnly && <DropdownMenuItemTick />}
               {loading === 'view' && <Progress variant='primary' />}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={loading !== null}
+              onSelect={(e) => {
+                e.preventDefault();
+                void changeAccess('comment', AccessLevel.ReadAndComment);
+              }}
+            >
+              <div className='flex items-center gap-2'>
+                <CommentIcon />
+                <div className='flex flex-col'>
+                  <div className='text-sm text-text-primary'>{t('shareAction.canComment')}</div>
+                  <div className='text-xs text-text-tertiary'>{t('shareAction.canCommentDescription')}</div>
+                </div>
+              </div>
+              {!loading && group.access_level === AccessLevel.ReadAndComment && <DropdownMenuItemTick />}
+              {loading === 'comment' && <Progress variant='primary' />}
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={loading !== null}

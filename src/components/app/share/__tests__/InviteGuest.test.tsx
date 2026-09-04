@@ -180,6 +180,32 @@ describe('InviteGuest group sharing', () => {
     expect(mockGetWorkspaceGroups).toHaveBeenCalledWith('workspace-1');
   });
 
+  it('invites a person with comment access without granting edit access', async () => {
+    renderInviteGuest();
+
+    const input = screen.getByLabelText('invite-input');
+
+    fireEvent.change(input, { target: { value: 'commenter@example.com' } });
+    fireEvent.click(await screen.findByTestId('suggestion-email:commenter@example.com'));
+    fireEvent.click(screen.getByText('shareAction.canComment'));
+    fireEvent.click(screen.getByRole('button', { name: 'shareAction.invite' }));
+
+    await waitFor(() =>
+      expect(mockSharePageTo).toHaveBeenCalledWith(
+        'workspace-1',
+        'view-1',
+        ['commenter@example.com'],
+        AccessLevel.ReadAndComment
+      )
+    );
+    expect(mockSharePageTo).not.toHaveBeenCalledWith(
+      'workspace-1',
+      'view-1',
+      ['commenter@example.com'],
+      AccessLevel.ReadAndWrite
+    );
+  });
+
   it('does not load group summaries for a workspace member without page Full Access', async () => {
     renderInviteGuest({ hasFullAccess: false, canManageGroupAccess: false });
 
