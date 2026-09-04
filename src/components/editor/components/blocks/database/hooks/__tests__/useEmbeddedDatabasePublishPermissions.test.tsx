@@ -11,7 +11,7 @@ describe('published embedded database permissions', () => {
         sourceViewId='published-view-id'
         sourceDatabaseId='published-database-id'
         variant={UIVariant.Publish}
-        publishReadOnly={false}
+        inheritedReadOnly={false}
         publishCanWrite
         publishCanShare
       >

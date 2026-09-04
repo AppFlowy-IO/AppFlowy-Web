@@ -27,6 +27,7 @@ const OWNER_EMAIL = 'nathan@appflowy.io';
 const EVA_EMAIL = 'eva@appflowy.io';
 const FIXTURE_PASSWORD = 'AppFlowy!@123';
 const VIEW_LAYOUT_DOCUMENT = 0;
+const FIXTURE_PERMISSION_GRANT_TIMEOUT_MS = 30_000;
 const FIXTURE_PAGE_ALIASES = {
   'Grante full access for eva': AccessLevel.FullAccess,
   'Edit only permission for eva': AccessLevel.ReadAndWrite,
@@ -495,6 +496,10 @@ async function putApi<T>(request: APIRequestContext, token: string, path: string
     headers: apiHeaders(token),
     data,
     failOnStatusCode: false,
+    // Permission propagation can briefly hold this grant behind a server
+    // transaction in CI. Keep the timeout local to this fixture so a
+    // transient stall does not force a full serial-scenario retry.
+    timeout: FIXTURE_PERMISSION_GRANT_TIMEOUT_MS,
   });
 
   return parseApiResponse<T>(response.status(), response.ok(), await response.text(), `PUT ${path}`);

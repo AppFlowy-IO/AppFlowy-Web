@@ -342,7 +342,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
           sourceViewId={viewId}
           sourceDatabaseId={databaseCollabId}
           variant={context.variant}
-          publishReadOnly={context.readOnly}
+          inheritedReadOnly={readOnly}
           publishCanWrite={context.canWrite}
           publishCanShare={context.canShare}
         >

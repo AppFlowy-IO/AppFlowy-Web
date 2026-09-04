@@ -62,6 +62,7 @@ describe('useEmbeddedDatabasePermissions', () => {
       useAppEmbeddedDatabasePermissions({
         sourceViewId,
         sourceDatabaseId,
+        inheritedReadOnly: false,
       })
     );
 
@@ -79,10 +80,25 @@ describe('useEmbeddedDatabasePermissions', () => {
       useAppEmbeddedDatabasePermissions({
         sourceViewId,
         sourceDatabaseId,
+        inheritedReadOnly: false,
       })
     );
 
     expect(result.current).toEqual({ readOnly: false, canWrite: true, canShare: true });
+  });
+
+  it('keeps a locked parent read-only while preserving source database capabilities', () => {
+    mockSourceCapabilities(true, true);
+
+    const { result } = renderHook(() =>
+      useAppEmbeddedDatabasePermissions({
+        sourceViewId,
+        sourceDatabaseId,
+        inheritedReadOnly: true,
+      })
+    );
+
+    expect(result.current).toEqual({ readOnly: true, canWrite: true, canShare: true });
   });
 
   it('probes the known database collab without requiring source folder metadata', () => {
@@ -92,6 +108,7 @@ describe('useEmbeddedDatabasePermissions', () => {
       useAppEmbeddedDatabasePermissions({
         sourceViewId,
         sourceDatabaseId,
+        inheritedReadOnly: false,
       })
     );
 
@@ -108,6 +125,7 @@ describe('useEmbeddedDatabasePermissions', () => {
     const { result } = renderHook(() =>
       useAppEmbeddedDatabasePermissions({
         sourceViewId,
+        inheritedReadOnly: false,
       })
     );
 
@@ -124,7 +142,7 @@ describe('useEmbeddedDatabasePermissions', () => {
         sourceViewId={sourceViewId}
         sourceDatabaseId={sourceDatabaseId}
         variant={UIVariant.Publish}
-        publishReadOnly
+        inheritedReadOnly
       >
         {(permissions) => {
           resolvedPermissions = permissions;
