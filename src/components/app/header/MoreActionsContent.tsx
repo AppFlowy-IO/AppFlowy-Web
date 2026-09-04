@@ -21,6 +21,11 @@ import {
   useLoadViewChildren,
 } from '@/components/app/app.hooks';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
+import {
+  assertGenericDeepDuplicateIsSafe,
+  FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE,
+  isUnsafeFormDeepDuplicate,
+} from '@/components/app/view-actions/formDuplicateSafety';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
@@ -68,6 +73,7 @@ function MoreActionsContent({
   const loadViewChildren = useLoadViewChildren();
   const { syncAllToServer } = useSyncInternal();
   const duplicateCopySuffix = useMemo(() => ` (${t('menuAppHeader.pageNameSuffix')})`, [t]);
+  const formDuplicateUnavailable = isUnsafeFormDeepDuplicate(view);
   const handleDuplicateClick = useCallback(async () => {
     if (!workspaceId) return;
     itemClicked?.();
@@ -75,6 +81,11 @@ function MoreActionsContent({
     // (e.g., clicking on the duplicated page before it's fully created)
     showBlockingLoader(`${t('moreAction.duplicateView')}...`);
     try {
+      await assertGenericDeepDuplicateIsSafe({
+        workspaceId,
+        viewId,
+        knownView: view,
+      });
       // Sync all collab documents to the server via HTTP API before duplicating
       // This is similar to desktop's collab_full_sync_batch - ensures the server
       // has the latest data before the duplicate operation
@@ -117,6 +128,7 @@ function MoreActionsContent({
     showBlockingLoader,
     hideBlockingLoader,
     duplicateCopySuffix,
+    view,
   ]);
 
   const [container, setContainer] = useState<HTMLElement | null>(null);
@@ -168,10 +180,15 @@ function MoreActionsContent({
         <DropdownMenuItem
           data-testid={'more-page-duplicate'}
           className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
-          onSelect={handleDuplicateClick}
+          disabled={formDuplicateUnavailable}
+          title={formDuplicateUnavailable ? FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE : undefined}
+          aria-label={formDuplicateUnavailable ? FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE : undefined}
+          onSelect={formDuplicateUnavailable ? undefined : handleDuplicateClick}
         >
           <DuplicateIcon />
-          {t('button.duplicate')}
+          {formDuplicateUnavailable
+            ? t('form.duplicateUnavailable', 'Duplicate unavailable for Forms')
+            : t('button.duplicate')}
         </DropdownMenuItem>
       )}
       {isLoadingActions && (

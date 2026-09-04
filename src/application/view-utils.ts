@@ -36,7 +36,8 @@ export function isDatabaseLayout(layout: ViewLayout): boolean {
     layout === ViewLayout.Calendar ||
     layout === ViewLayout.Chart ||
     layout === ViewLayout.List ||
-    layout === ViewLayout.Gallery
+    layout === ViewLayout.Gallery ||
+    layout === ViewLayout.Form
   );
 }
 
@@ -99,9 +100,10 @@ export function getDatabaseIdFromExtra(view: View | null | undefined): string | 
  * Check if a view is a referenced database view (child of another database view).
  *
  * Referenced database views show a dot icon instead of normal expand/collapse.
- * This is used for linked database views that share the same database.
- * This mirrors the Flutter implementation: any database view whose parent is
- * also a database layout is treated as "referenced" for sidebar rendering.
+ * This is used for linked database views that share the same database, and for
+ * Form views nested under their backing database — both are managed-by-parent
+ * children that share the same row store, so they render with the bullet
+ * marker for visual consistency with Grid/Board/Calendar siblings.
  *
  * @param view The view to check
  * @param parentView The parent view (optional)

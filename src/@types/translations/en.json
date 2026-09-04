@@ -3779,6 +3779,10 @@
     "zoomOut": "Zoom out",
     "searchPlaceholder": "Type to search"
   },
+  "form": {
+    "menuName": "Form",
+    "builderName": "Form builder"
+  },
   "invitation": {
     "join": "Join",
     "on": "on",

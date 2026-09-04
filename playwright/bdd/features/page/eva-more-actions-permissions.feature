@@ -1,7 +1,8 @@
 @eva-more-actions-permissions @mode:serial
 Feature: Eva page action permissions
-  These scenarios create an isolated Custom space for Eva and verify page action menus
-  for Full access, Can edit, and Can view pages.
+  These scenarios create isolated Custom spaces for Eva and verify page action menus
+  for canonical Full access, Can edit, and Can view permissions. Explicit page grants
+  overriding inherited space access are covered by the space group permission feature.
 
   Background:
     Given a temporary Eva page action permission fixture exists

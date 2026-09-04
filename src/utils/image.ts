@@ -1,5 +1,5 @@
 import { getTokenParsed } from '@/application/session/token';
-import { isAppFlowyFileStorageUrl } from '@/utils/file-storage-url';
+import { isAppFlowyAuthenticatedFileUrl, isAppFlowyPublicFormUploadUrl } from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
 
@@ -33,7 +33,7 @@ export const transcodeIfUnsupported = async (blob: Blob, url?: string): Promise<
 
     if (isTiffBlob(blob, url)) {
       const utifMod = await import('utif');
-      const UTIF = ((utifMod as unknown) as { default?: typeof import('utif') }).default ?? utifMod;
+      const UTIF = (utifMod as unknown as { default?: typeof import('utif') }).default ?? utifMod;
       const arrayBuffer = await blob.arrayBuffer();
       const ifds = UTIF.decode(arrayBuffer);
 
@@ -75,20 +75,19 @@ const resolveImageUrl = (url: string): string => {
   return url.startsWith('http') ? url : `${getConfigValue('APPFLOWY_BASE_URL', '')}${url}`;
 };
 
-
 /**
  * Categorized failure mode for image loads. The polling/retry policy in
  * `Img.tsx` keys off this — different categories deserve different backoff.
  */
 export type CheckImageErrorKind =
-  | 'no-auth'        // Local: no token yet. Wait briefly; token is hydrating.
-  | 'auth-rejected'  // 401 from server. Token expired / invalid. Refresh + retry once.
-  | 'forbidden'      // 403 from server. Permission denied. Terminal.
-  | 'not-ready'      // 425/503 from server. Upload pipeline still in flight. Fast retry.
-  | 'not-found'      // 404 from server. Could still be a slow optimistic upload — slow retry.
-  | 'server-error'   // 5xx. Normal retry.
-  | 'network'        // fetch threw / timed out / opaque <img> onerror.
-  | 'format';        // Successfully fetched but not a usable image blob.
+  | 'no-auth' // Local: no token yet. Wait briefly; token is hydrating.
+  | 'auth-rejected' // 401 from server. Token expired / invalid. Refresh + retry once.
+  | 'forbidden' // 403 from server. Permission denied. Terminal.
+  | 'not-ready' // 425/503 from server. Upload pipeline still in flight. Fast retry.
+  | 'not-found' // 404 from server. Could still be a slow optimistic upload — slow retry.
+  | 'server-error' // 5xx. Normal retry.
+  | 'network' // fetch threw / timed out / opaque <img> onerror.
+  | 'format'; // Successfully fetched but not a usable image blob.
 
 export interface CheckImageResult {
   ok: boolean;
@@ -196,11 +195,8 @@ export interface CheckImageOptions {
   signal?: AbortSignal;
 }
 
-export const checkImage = async (
-  url: string,
-  options: CheckImageOptions = {}
-): Promise<CheckImageResult> => {
-  if (isAppFlowyFileStorageUrl(url)) {
+export const checkImage = async (url: string, options: CheckImageOptions = {}): Promise<CheckImageResult> => {
+  if (isAppFlowyAuthenticatedFileUrl(url)) {
     return checkAppFlowyImage(url, options);
   }
 
@@ -223,15 +219,20 @@ export const checkImage = async (
  *
  * Instead, return a typed error so the caller can apply a sensible backoff.
  */
-async function checkAppFlowyImage(
-  url: string,
-  options: CheckImageOptions
-): Promise<CheckImageResult> {
+async function checkAppFlowyImage(url: string, options: CheckImageOptions): Promise<CheckImageResult> {
   const fullUrl = resolveImageUrl(url);
+  const requiresMemberAuth = isAppFlowyPublicFormUploadUrl(url);
 
-  Log.debug('[checkImage] AppFlowy', fullUrl);
+  Log.debug('[checkImage] resolving authenticated AppFlowy image');
 
   const token = getTokenParsed();
+
+  // Durable form-attachment URLs are deliberately member-only. Avoid a
+  // guaranteed anonymous request (and an unnecessary capability-bearing URL
+  // in access logs) while session state is still hydrating.
+  if (requiresMemberAuth && !token) {
+    return errorResult(0, 'Authentication required', 'no-auth');
+  }
 
   // First attempt: with bearer if we have one, anonymous otherwise.
   // Anonymous covers logged-out viewers on published / template pages where
@@ -244,7 +245,7 @@ async function checkAppFlowyImage(
   // the resource may still be publicly readable. Retry once anonymously so
   // logged-in viewers on public/template pages don't see broken images just
   // because their local session went stale.
-  if (token && (firstAttempt.status === 401 || firstAttempt.status === 403)) {
+  if (!requiresMemberAuth && token && (firstAttempt.status === 401 || firstAttempt.status === 403)) {
     const fallback = await attemptFileStorageFetch(fullUrl, url, options, undefined);
 
     if (fallback.ok) return fallback;
@@ -294,23 +295,14 @@ async function attemptFileStorageFetch(
   }
 
   if (!response.ok) {
-    return errorResult(
-      response.status,
-      response.statusText,
-      classifyHttpStatus(response.status)
-    );
+    return errorResult(response.status, response.statusText, classifyHttpStatus(response.status));
   }
 
   const blob = await response.blob();
   const validatedBlob = await validateImageBlob(blob, originalUrl);
 
   if (!validatedBlob) {
-    return errorResult(
-      406,
-      'Not Acceptable',
-      'format',
-      'Image fetch returned JSON instead of image'
-    );
+    return errorResult(406, 'Not Acceptable', 'format', 'Image fetch returned JSON instead of image');
   }
 
   return {
@@ -322,11 +314,12 @@ async function attemptFileStorageFetch(
 }
 
 export const fetchImageBlob = async (url: string): Promise<Blob | null> => {
-  if (isAppFlowyFileStorageUrl(url)) {
-    Log.debug('[fetchImageBlob] url', url);
+  if (isAppFlowyAuthenticatedFileUrl(url)) {
+    Log.debug('[fetchImageBlob] fetching authenticated AppFlowy image');
     const token = getTokenParsed();
+    const requiresMemberAuth = isAppFlowyPublicFormUploadUrl(url);
 
-    if (!token) {
+    if (requiresMemberAuth && !token) {
       Log.error('No authentication token available for image fetch');
       return null;
     }
@@ -334,12 +327,21 @@ export const fetchImageBlob = async (url: string): Promise<Blob | null> => {
     const fullUrl = resolveImageUrl(url);
 
     try {
-      const response = await fetch(fullUrl, {
-        headers: {
-          Authorization: `Bearer ${token.access_token}`,
-          'x-platform': 'web-app',
-        },
-      });
+      let response = token
+        ? await fetch(fullUrl, {
+            headers: {
+              Authorization: `Bearer ${token.access_token}`,
+              'x-platform': 'web-app',
+            },
+          })
+        : await fetch(fullUrl);
+
+      // Published/template file-storage images remain anonymously readable.
+      // Retry a rejected stale session once without auth, while keeping
+      // durable public-form uploads strictly member-authenticated.
+      if (!requiresMemberAuth && token && (response.status === 401 || response.status === 403)) {
+        response = await fetch(fullUrl);
+      }
 
       if (response.ok) {
         const blob = await response.blob();

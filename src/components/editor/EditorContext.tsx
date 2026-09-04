@@ -81,6 +81,8 @@ export interface EditorContextState {
   canComment?: boolean;
   /** Canonical server write permission, independent from editor UI state. */
   canWrite?: boolean;
+  /** Canonical server share-management permission for embedded databases. */
+  canShare?: boolean;
   layoutStyle?: EditorLayoutStyle;
   codeGrammars?: Record<string, string>;
   addCodeGrammars?: (blockId: string, grammar: string) => void;
@@ -136,6 +138,7 @@ export const EditorContextProvider = ({
   readOnly,
   canComment,
   canWrite,
+  canShare,
   layoutStyle,
   codeGrammars,
   addCodeGrammars,
@@ -229,6 +232,7 @@ export const EditorContextProvider = ({
       readOnly,
       canComment,
       canWrite,
+      canShare,
       layoutStyle,
       codeGrammars,
       addCodeGrammars,
@@ -279,6 +283,7 @@ export const EditorContextProvider = ({
       readOnly,
       canComment,
       canWrite,
+      canShare,
       layoutStyle,
       codeGrammars,
       addCodeGrammars,

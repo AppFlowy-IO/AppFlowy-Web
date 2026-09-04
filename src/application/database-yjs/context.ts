@@ -47,6 +47,8 @@ export interface DatabaseContextState {
   canComment?: boolean;
   /** Canonical server write permission, independent from database UI state. */
   canWrite?: boolean;
+  /** Canonical server permission to change sharing and public Form access. */
+  canShare?: boolean;
   databaseDoc: YDoc;
   /**
    * The database's page ID in the folder/outline structure.

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as Y from 'yjs';
 
@@ -31,6 +32,7 @@ const mockDeleteTrash = jest.fn();
 const mockUpdatePage = jest.fn();
 const mockFlush = jest.fn();
 const mockScheduleDeferredCleanup = jest.fn();
+const mockMenuSelectPreventDefault = jest.fn();
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -88,14 +90,24 @@ jest.mock('@/components/ui/dropdown-menu', () => ({
     children,
     disabled,
     onClick,
+    onSelect,
     ...props
   }: {
     children: ReactNode;
     disabled?: boolean;
     onClick?: () => void;
+    onSelect?: (event: Event) => void;
     [key: string]: unknown;
   }) => (
-    <button data-testid={props['data-testid'] as string | undefined} disabled={disabled} onClick={onClick} type='button'>
+    <button
+      data-testid={props['data-testid'] as string | undefined}
+      disabled={disabled}
+      onClick={() => {
+        onClick?.();
+        onSelect?.({ preventDefault: mockMenuSelectPreventDefault } as unknown as Event);
+      }}
+      type='button'
+    >
       {children}
     </button>
   ),
@@ -119,6 +131,14 @@ function view(overrides: Partial<View> = {}): View {
     is_private: false,
     ...overrides,
   };
+}
+
+function renderActions(targetView: View) {
+  return render(
+    <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+      <AddPageActions view={targetView} />
+    </MemoryRouter>
+  );
 }
 
 function createGridDatabaseDoc(): YDoc {
@@ -190,6 +210,7 @@ function createLinkedListUpdate(databaseDoc: YDoc): number[] {
 describe('AddPageActions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAddPage.mockReset();
     mockAddPage.mockResolvedValue({ view_id: 'chat-id' });
     mockUpdateChatSettings.mockResolvedValue(undefined);
     mockToView.mockResolvedValue(undefined);
@@ -203,6 +224,30 @@ describe('AddPageActions', () => {
     mockDeleteTrash.mockResolvedValue(undefined);
     mockLoadViewMeta.mockResolvedValue(null);
     mockUpdatePage.mockResolvedValue(undefined);
+  });
+
+  it('shows Form and creates it without checking a workspace subscription', async () => {
+    const parent = view({
+      view_id: 'parent-id',
+      children: [view({ view_id: 'last-child-id' })],
+    });
+
+    mockAddPage.mockResolvedValueOnce({ view_id: 'form-view-id', database_id: 'database-id' });
+    renderActions(parent);
+
+    expect(screen.getByTestId('add-form-button').textContent).toBe('form.menuName');
+    fireEvent.click(screen.getByTestId('add-form-button'));
+
+    expect(mockMenuSelectPreventDefault).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockAddPage).toHaveBeenCalledWith('parent-id', {
+        layout: ViewLayout.Form,
+        name: 'document.plugins.database.newDatabase',
+        prev_view_id: 'last-child-id',
+      })
+    );
+    expect(mockCreateDatabaseView).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockToView).toHaveBeenCalledWith('form-view-id'));
   });
 
   it('replaces the temporary standalone Grid child with a durable List child', async () => {
@@ -227,7 +272,7 @@ describe('AddPageActions', () => {
       children: [view({ view_id: 'last-child-id' })],
     });
 
-    render(<AddPageActions view={parent} />);
+    renderActions(parent);
     fireEvent.click(screen.getByTestId('add-list-button'));
 
     await waitFor(() =>
@@ -298,7 +343,7 @@ describe('AddPageActions', () => {
     mockLoadView.mockResolvedValueOnce(databaseDoc);
     mockDeletePage.mockRejectedValueOnce(new Error('temporary Grid could not be moved to trash'));
 
-    render(<AddPageActions view={view({ view_id: 'parent-id' })} />);
+    renderActions(view({ view_id: 'parent-id' }));
     fireEvent.click(screen.getByTestId('add-list-button'));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('temporary Grid could not be moved to trash'));
@@ -334,7 +379,7 @@ describe('AddPageActions', () => {
     mockLoadView.mockResolvedValueOnce(databaseDoc);
     mockFlush.mockResolvedValueOnce(false);
 
-    render(<AddPageActions view={view({ view_id: 'parent-id' })} />);
+    renderActions(view({ view_id: 'parent-id' }));
     fireEvent.click(screen.getByTestId('add-list-button'));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('The new List database could not be persisted'));
@@ -368,7 +413,7 @@ describe('AddPageActions', () => {
     mockLoadView.mockResolvedValueOnce(databaseDoc);
     mockDeleteTrash.mockRejectedValueOnce(new Error('permanent cleanup unavailable'));
 
-    render(<AddPageActions view={view({ view_id: 'parent-id' })} />);
+    renderActions(view({ view_id: 'parent-id' }));
     fireEvent.click(screen.getByTestId('add-list-button'));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('permanent cleanup unavailable'));
@@ -403,7 +448,7 @@ describe('AddPageActions', () => {
     mockLoadView.mockResolvedValueOnce(databaseDoc);
     mockFlush.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
-    render(<AddPageActions view={view({ view_id: 'parent-id' })} />);
+    renderActions(view({ view_id: 'parent-id' }));
     fireEvent.click(screen.getByTestId('add-list-button'));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('The temporary Grid cleanup could not be persisted'));
@@ -428,7 +473,7 @@ describe('AddPageActions', () => {
       children: [view({ view_id: 'space-child-1' }), view({ view_id: 'space-child-2' })],
     });
 
-    render(<AddPageActions view={space} />);
+    renderActions(space);
     fireEvent.click(screen.getByTestId('add-ai-chat-button'));
 
     await waitFor(() =>
@@ -465,7 +510,7 @@ describe('AddPageActions', () => {
 
     mockGetView.mockResolvedValue(page);
 
-    render(<AddPageActions view={page} />);
+    renderActions(page);
     fireEvent.click(screen.getByTestId('add-ai-chat-button'));
 
     await waitFor(() =>
@@ -492,7 +537,7 @@ describe('AddPageActions', () => {
   it('does not initialize or navigate to an AI chat when page creation fails', async () => {
     mockAddPage.mockRejectedValueOnce(new Error('create failed'));
 
-    render(<AddPageActions view={view({ view_id: 'space-id', extra: { is_space: true } })} />);
+    renderActions(view({ view_id: 'space-id', extra: { is_space: true } }));
     fireEvent.click(screen.getByTestId('add-ai-chat-button'));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('create failed'));

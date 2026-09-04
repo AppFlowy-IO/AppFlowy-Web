@@ -20,6 +20,7 @@ const mockLoadView = jest.fn();
 const mockBindViewSync = jest.fn();
 const mockNoop = jest.fn();
 const mockSetOpenPageModalEffectiveViewId = jest.fn();
+const mockRenderedViewProps = jest.fn();
 let mockObjectPermissions: Record<string, ReturnType<typeof createMockPermission>> = {};
 
 function createMockPermission(viewId: string, overrides: Record<string, unknown> = {}) {
@@ -102,12 +103,18 @@ jest.mock('@/components/main/app.hooks', () => ({
 }));
 
 jest.mock('@/components/document', () => ({
-  Document: ({ doc }: { doc: Y.Doc }) => <div data-testid='modal-doc'>{doc.guid}</div>,
+  Document: (props: { doc: Y.Doc; canShare?: boolean }) => {
+    mockRenderedViewProps(props);
+    return <div data-testid='modal-doc'>{props.doc.guid}</div>;
+  },
 }));
 
 jest.mock('@/components/app/DatabaseView', () => ({
   __esModule: true,
-  default: ({ doc }: { doc: Y.Doc }) => <div data-testid='modal-doc'>{doc.guid}</div>,
+  default: (props: { doc: Y.Doc; canShare?: boolean }) => {
+    mockRenderedViewProps(props);
+    return <div data-testid='modal-doc'>{props.doc.guid}</div>;
+  },
 }));
 
 jest.mock('@/components/app/header/MoreActions', () => ({
@@ -146,6 +153,18 @@ describe('ViewModal permission cleanup', () => {
     jest.clearAllMocks();
     mockOutlineViews = [mockView];
     mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId) };
+  });
+
+  it('passes canonical can_share through for an editable member who cannot manage sharing', async () => {
+    mockObjectPermissions = {
+      [modalViewId]: createMockPermission(modalViewId, { can_write: true, can_share: false }),
+    };
+    mockLoadView.mockResolvedValue(new Y.Doc({ guid: 'editable-no-share-doc' }));
+
+    render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await screen.findByText('editable-no-share-doc');
+    expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({ canShare: false }));
   });
 
   it('waits for the effective database child permission before loading cached content', async () => {

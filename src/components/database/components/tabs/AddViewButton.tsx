@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -11,17 +11,54 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Progress } from '@/components/ui/progress';
 
 interface AddViewButtonProps {
+  databasePageId: string;
   onBeforeAddView?: () => void;
   onAfterAddView?: () => void;
   onViewAdded: (viewId: string) => void;
 }
 
-export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: AddViewButtonProps) {
+export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView, onViewAdded }: AddViewButtonProps) {
   const { t } = useTranslation();
   const onAddView = useAddDatabaseView();
   const [addLoading, setAddLoading] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const mountedRef = useRef(true);
+  const actionScopeRevisionRef = useRef(0);
+  const completionCallbacksRef = useRef({ onAfterAddView, onViewAdded });
+
+  // Callback identities change whenever the tab list changes. Keep async
+  // completions pointed at the latest committed handlers without treating
+  // those identity changes as operation cancellation.
+  useLayoutEffect(() => {
+    completionCallbacksRef.current = { onAfterAddView, onViewAdded };
+  }, [onAfterAddView, onViewAdded]);
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+      actionScopeRevisionRef.current += 1;
+    },
+    []
+  );
+
+  // Only a database target change invalidates an accepted click. View creation
+  // itself updates the tab callbacks while the request is in flight, so using
+  // callback identity as the scope would cancel the successful operation that
+  // caused that render and leave this button busy forever.
+  useLayoutEffect(() => {
+    actionScopeRevisionRef.current += 1;
+    setAddLoading(false);
+    setMenuOpen(false);
+
+    return () => {
+      actionScopeRevisionRef.current += 1;
+    };
+  }, [databasePageId]);
 
   const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
+    const actionScopeRevision = actionScopeRevisionRef.current;
+    const isCurrentActionScope = () => mountedRef.current && actionScopeRevisionRef.current === actionScopeRevision;
+
     onBeforeAddView?.();
     setAddLoading(true);
     const startTime = Date.now();
@@ -30,26 +67,32 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
     try {
       const viewId = await onAddView(layout, name);
 
-      onViewAdded(viewId);
+      if (isCurrentActionScope()) completionCallbacksRef.current.onViewAdded(viewId);
     } catch (e: unknown) {
-      console.error('[AddViewButton] Error adding view:', e);
-      toast.error(e instanceof Error ? e.message : 'Failed to add view');
+      if (isCurrentActionScope()) {
+        console.error('[AddViewButton] Error adding view:', e);
+        toast.error(e instanceof Error ? e.message : 'Failed to add view');
+      }
     } finally {
-      onAfterAddView?.();
-      // Ensure minimum loading time to prevent jarring UI flicker
-      const elapsed = Date.now() - startTime;
-      const remaining = MIN_LOADING_TIME - elapsed;
+      if (isCurrentActionScope()) {
+        completionCallbacksRef.current.onAfterAddView?.();
+        // Ensure minimum loading time to prevent jarring UI flicker
+        const elapsed = Date.now() - startTime;
+        const remaining = MIN_LOADING_TIME - elapsed;
 
-      if (remaining > 0) {
-        setTimeout(() => setAddLoading(false), remaining);
-      } else {
-        setAddLoading(false);
+        if (remaining > 0) {
+          setTimeout(() => {
+            if (isCurrentActionScope()) setAddLoading(false);
+          }, remaining);
+        } else {
+          setAddLoading(false);
+        }
       }
     }
   };
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           aria-label={t('grid.settings.addView', { defaultValue: 'Add view' })}
@@ -96,6 +139,16 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
         >
           <ViewIcon layout={ViewLayout.Chart} size={'small'} />
           {t('chart.menuName')}
+        </DropdownMenuItem>
+
+        <DropdownMenuItem
+          data-testid='add-form-view-option'
+          onClick={() => {
+            void handleAddView(DatabaseViewLayout.Form, t('form.builderName', { defaultValue: 'Form builder' }));
+          }}
+        >
+          <ViewIcon layout={ViewLayout.Form} size={'small'} />
+          {t('form.builderName', { defaultValue: 'Form builder' })}
         </DropdownMenuItem>
 
         <DropdownMenuItem

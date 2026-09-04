@@ -133,10 +133,10 @@ export function processUrl(input: string) {
   return;
 }
 
-export async function openUrl(url: string, target: string = '_current') {
+export async function openUrl(url: string, target: string = '_current', features?: string) {
   const newUrl = processUrl(url);
 
   if (!newUrl) return;
 
-  window.open(newUrl, target);
+  window.open(newUrl, target, features);
 }

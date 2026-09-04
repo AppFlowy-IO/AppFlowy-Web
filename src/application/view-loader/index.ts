@@ -15,11 +15,7 @@ import * as Y from 'yjs';
 import { deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { getOrCreateRowSubDoc, hasCollabCache } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
-import {
-  fetchDatabaseCollab,
-  fetchPageCollab,
-  fetchRowDocumentCollab,
-} from '@/application/services/js-services/fetch';
+import { fetchDatabaseCollab, fetchPageCollab, fetchRowDocumentCollab } from '@/application/services/js-services/fetch';
 import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import {
   LoadRowDocumentOptions,
@@ -65,6 +61,7 @@ const LAYOUT_COLLAB_TYPE_MAP: Partial<Record<ViewLayout, Types>> = {
   [ViewLayout.Chart]: Types.Database,
   [ViewLayout.List]: Types.Database,
   [ViewLayout.Gallery]: Types.Database,
+  [ViewLayout.Form]: Types.Database,
 };
 
 const DOC_KEY_COLLAB_TYPE_MAP: Record<string, Types> = {

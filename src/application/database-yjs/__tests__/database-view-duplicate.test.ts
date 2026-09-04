@@ -4,6 +4,7 @@ import { copyDatabaseViewConfiguration } from '@/application/database-yjs/dispat
 import {
   DatabaseViewLayout,
   YDatabaseFilter,
+  YDatabaseFormFieldSettings,
   YDatabaseRowOrders,
   YDatabaseView,
   YjsDatabaseKey,
@@ -144,5 +145,43 @@ describe('copyDatabaseViewConfiguration', () => {
       { id: 'visible-last', height: 50 },
     ]);
     expect(target.get(YjsDatabaseKey.row_orders)).not.toBe(sourceRowOrders);
+  });
+
+  it('deep-copies Form field settings so the duplicated projection is independent', () => {
+    const doc = new Y.Doc();
+    const views = doc.getMap<YDatabaseView>('views');
+    const source = createView('source-form-id', 'Form');
+    const target = createView('target-form-id', 'Form (Copy)');
+    const sourceSettings = new Y.Map() as YDatabaseFormFieldSettings;
+    const sourceQuestion = new Y.Map<unknown>();
+    const sourceDecided = new Y.Map<unknown>();
+
+    source.set(YjsDatabaseKey.layout, DatabaseViewLayout.Form);
+    target.set(YjsDatabaseKey.layout, DatabaseViewLayout.Form);
+    sourceQuestion.set('included', true);
+    sourceQuestion.set('required', true);
+    sourceQuestion.set('description', 'Source description');
+    sourceDecided.set('included', false);
+    sourceSettings.set('field-id', sourceQuestion);
+    sourceSettings.set('__form_decided__', sourceDecided);
+    source.set(YjsDatabaseKey.form_field_settings, sourceSettings);
+    views.set('source-form-id', source);
+    views.set('target-form-id', target);
+
+    copyDatabaseViewConfiguration(source, target);
+
+    const targetSettings = target.get(YjsDatabaseKey.form_field_settings);
+    const targetQuestion = targetSettings?.get('field-id');
+
+    expect(targetSettings?.toJSON()).toEqual(sourceSettings.toJSON());
+    expect(targetSettings).not.toBe(sourceSettings);
+    expect(targetQuestion).not.toBe(sourceQuestion);
+    expect(targetSettings?.get('__form_decided__')).not.toBe(sourceDecided);
+
+    targetQuestion?.set('required', false);
+    sourceQuestion.set('description', 'Updated only on source');
+
+    expect(sourceQuestion.get('required')).toBe(true);
+    expect(targetQuestion?.get('description')).toBe('Source description');
   });
 });

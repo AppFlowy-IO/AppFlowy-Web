@@ -10,6 +10,7 @@ describe('getCollabTypeFromViewLayout', () => {
     ViewLayout.Chart,
     ViewLayout.List,
     ViewLayout.Gallery,
+    ViewLayout.Form,
   ])('maps database layout %s to the database collab type', (layout) => {
     expect(getCollabTypeFromViewLayout(layout)).toBe(Types.Database);
   });

@@ -145,6 +145,8 @@ export interface Database2Props {
   canComment?: boolean;
   /** Canonical server write permission for row-document comment anchors. */
   canWrite?: boolean;
+  /** Canonical server permission to change sharing and public Form access. */
+  canShare?: boolean;
   createRow?: CreateRow;
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
@@ -254,6 +256,7 @@ function Database(props: Database2Props) {
     readOnly = true,
     canComment = false,
     canWrite = !readOnly,
+    canShare = false,
     loadView,
     bindViewSync,
     checkIfRowDocumentExists,
@@ -1456,6 +1459,7 @@ function Database(props: Database2Props) {
       readOnly,
       canComment,
       canWrite,
+      canShare,
       ensureRow,
       loadRowFromSeed,
       peekRowDocFromSeed,
@@ -1506,6 +1510,7 @@ function Database(props: Database2Props) {
       readOnly,
       canComment,
       canWrite,
+      canShare,
       ensureRow,
       loadRowFromSeed,
       peekRowDocFromSeed,

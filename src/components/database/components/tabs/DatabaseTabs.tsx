@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -95,6 +95,24 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
     const [menuViewId, setMenuViewId] = useState<string | null>(null);
     const [duplicatingViewId, setDuplicatingViewId] = useState<string | null>(null);
+    const mountedRef = useRef(true);
+    const duplicateScopeRevisionRef = useRef(0);
+
+    useEffect(
+      () => () => {
+        mountedRef.current = false;
+        duplicateScopeRevisionRef.current += 1;
+      },
+      []
+    );
+
+    useLayoutEffect(() => {
+      duplicateScopeRevisionRef.current += 1;
+
+      return () => {
+        duplicateScopeRevisionRef.current += 1;
+      };
+    }, [databasePageId, duplicateView]);
 
     // Used to trigger a scroll in the child component
     const [pendingScrollToViewId, setPendingScrollToViewId] = useState<string | null>(null);
@@ -430,24 +448,36 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const duplicateDatabaseView = useCallback(
       async (viewId: string) => {
         if (!context.createDatabaseView || !views || duplicatingViewId) return;
-        const sourceName = viewNameById?.[viewId] ?? views.get(viewId)?.get(YjsDatabaseKey.name);
+        const duplicateScopeRevision = duplicateScopeRevisionRef.current;
+        const isCurrentDuplicateScope = () =>
+          mountedRef.current && duplicateScopeRevisionRef.current === duplicateScopeRevision;
+        const sourceView = views.get(viewId);
+
+        setMenuViewId(null);
+
+        const sourceName = viewNameById?.[viewId] ?? sourceView?.get(YjsDatabaseKey.name);
         const copySuffix = t('menuAppHeader.pageNameSuffix');
         const duplicatedName = `${sourceName ? String(sourceName).trim() : 'View'} (${copySuffix})`;
 
         onBeforeViewAddedToDatabase?.();
         setDuplicatingViewId(viewId);
-        setMenuViewId(null);
 
         try {
           const duplicatedViewId = await duplicateView(viewId, duplicatedName);
 
-          handleViewAdded(duplicatedViewId, viewId);
-          toast.success(t('button.duplicateSuccessfully'));
+          if (isCurrentDuplicateScope()) {
+            handleViewAdded(duplicatedViewId, viewId);
+            toast.success(t('button.duplicateSuccessfully'));
+          }
         } catch (error) {
-          toast.error(error instanceof Error ? error.message : t('document.plugins.subPage.errors.failedDuplicatePage'));
+          if (isCurrentDuplicateScope()) {
+            toast.error(
+              error instanceof Error ? error.message : t('document.plugins.subPage.errors.failedDuplicatePage')
+            );
+          }
         } finally {
-          setDuplicatingViewId(null);
           onAfterViewAddedToDatabase?.();
+          if (isCurrentDuplicateScope()) setDuplicatingViewId(null);
         }
       },
       [

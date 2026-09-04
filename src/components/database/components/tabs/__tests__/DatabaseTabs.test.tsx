@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { DatabaseContextState } from '@/application/database-yjs/context';
 import { useDuplicateDatabaseView, useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
-import { UIVariant, View, ViewLayout, YjsDatabaseKey } from '@/application/types';
+import { DatabaseViewLayout, UIVariant, View, ViewLayout, YjsDatabaseKey } from '@/application/types';
 import { DatabaseTabs } from '@/components/database/components/tabs/DatabaseTabs';
 
 jest.mock('@/application/database-yjs', () => ({
@@ -167,6 +167,46 @@ describe('DatabaseTabs', () => {
       expect(onAfterViewAddedToDatabase).toHaveBeenCalledTimes(1);
     });
     expect(onBeforeViewAddedToDatabase).toHaveBeenCalledTimes(1);
+  });
+
+  it('duplicates a Form without checking a workspace subscription', async () => {
+    const duplicateView = jest.fn().mockResolvedValue('duplicated-view-id');
+    const onBeforeViewAddedToDatabase = jest.fn();
+    const onAfterViewAddedToDatabase = jest.fn();
+    const sourceYjsView = {
+      get: jest.fn((key: YjsDatabaseKey) => {
+        if (key === YjsDatabaseKey.name) return 'Form';
+        if (key === YjsDatabaseKey.layout) return DatabaseViewLayout.Form;
+        return undefined;
+      }),
+    };
+    const views = new Map([[databaseView.view_id, sourceYjsView]]);
+    const context = {
+      createDatabaseView: jest.fn(),
+      isDocumentBlock: true,
+      loadViewMeta: jest.fn(async () => databaseContainer),
+      readOnly: false,
+      showActions: true,
+    } as unknown as DatabaseContextState;
+    const props = {
+      databasePageId: databaseView.view_id,
+      selectedViewId: databaseView.view_id,
+      viewIds: [databaseView.view_id],
+      onBeforeViewAddedToDatabase,
+      onAfterViewAddedToDatabase,
+    };
+
+    (useDatabase as jest.Mock).mockReturnValue({ get: () => views });
+    (useDuplicateDatabaseView as jest.Mock).mockReturnValue(duplicateView);
+    (useDatabaseContext as jest.Mock).mockReturnValue(context);
+
+    render(<DatabaseTabs {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate view' }));
+
+    await waitFor(() => expect(duplicateView).toHaveBeenCalledWith(databaseView.view_id, 'Form (Copy)'));
+    expect(onBeforeViewAddedToDatabase).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onAfterViewAddedToDatabase).toHaveBeenCalledTimes(1));
   });
 
   it('renders the database container name for an embedded database', async () => {

@@ -1,0 +1,111 @@
+import { act, renderHook } from '@testing-library/react';
+import * as Y from 'yjs';
+
+import {
+  FORM_DESCRIPTION,
+  FORM_DESCRIPTION_SENTINEL,
+  FORM_DESCRIPTION_VISIBLE,
+  FORM_INCLUDED,
+  FORM_ORDER,
+  FORM_REQUIRED,
+  FORM_TITLE,
+} from '@/application/database-yjs/form-questions';
+import type { YDatabaseFormFieldSettings, YDatabaseView } from '@/application/types';
+import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
+
+import { useFormLayoutSnapshot } from '../useFormLayoutSnapshot';
+
+let mockView: YDatabaseView | undefined;
+
+jest.mock('@/application/database-yjs/context', () => ({
+  useDatabaseView: () => mockView,
+}));
+
+function createView(id: string, questionId: string, description: string): YDatabaseView {
+  const doc = new Y.Doc();
+  const view = doc.getMap(`view-${id}`) as YDatabaseView;
+  const settings = new Y.Map() as YDatabaseFormFieldSettings;
+  const entry = new Y.Map<unknown>();
+  const fieldOrders = new Y.Array<{ id: string }>();
+  const metadata = new Y.Map<unknown>();
+
+  entry.set(FORM_INCLUDED, true);
+  entry.set(FORM_REQUIRED, false);
+  entry.set(FORM_DESCRIPTION_VISIBLE, true);
+  entry.set(FORM_DESCRIPTION, description);
+  entry.set(FORM_ORDER, 0);
+  settings.set(questionId, entry);
+  metadata.set(FORM_TITLE, 'Initial title');
+  metadata.set(FORM_DESCRIPTION, 'Initial form description');
+  settings.set(FORM_DESCRIPTION_SENTINEL, metadata);
+  fieldOrders.push([{ id: questionId }]);
+  view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Form);
+  view.set(YjsDatabaseKey.field_orders, fieldOrders);
+  view.set(YjsDatabaseKey.form_field_settings, settings);
+  return view;
+}
+
+describe('useFormLayoutSnapshot', () => {
+  afterEach(() => {
+    mockView = undefined;
+  });
+
+  it('reads the active view synchronously on the first render and on a view swap', () => {
+    const firstView = createView('first', 'question-a', 'First');
+    const secondView = createView('second', 'question-b', 'Second');
+    const renders: string[] = [];
+
+    mockView = firstView;
+    const { result, rerender } = renderHook(() => {
+      const snapshot = useFormLayoutSnapshot();
+
+      renders.push(snapshot.questions[0]?.fieldId ?? 'empty');
+      return snapshot;
+    });
+
+    expect(renders[0]).toBe('question-a');
+    expect(result.current.questions[0]?.description).toBe('First');
+
+    mockView = secondView;
+    rerender();
+
+    expect(renders[renders.length - 1]).toBe('question-b');
+    expect(result.current.questions[0]?.description).toBe('Second');
+  });
+
+  it('shares one Yjs observer across consumers and publishes nested changes', () => {
+    mockView = createView('shared', 'question-a', 'Before');
+    const observe = jest.spyOn(mockView, 'observeDeep');
+    const unobserve = jest.spyOn(mockView, 'unobserveDeep');
+    const { result, unmount } = renderHook(() => [useFormLayoutSnapshot(), useFormLayoutSnapshot()] as const);
+
+    expect(observe).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      const settings = mockView?.get(YjsDatabaseKey.form_field_settings);
+
+      settings?.get('question-a')?.set(FORM_DESCRIPTION, 'After');
+      settings?.get(FORM_DESCRIPTION_SENTINEL)?.set(FORM_TITLE, 'Remote title');
+      settings?.get(FORM_DESCRIPTION_SENTINEL)?.set(FORM_DESCRIPTION, 'Remote form description');
+    });
+
+    expect(result.current[0].questions[0]?.description).toBe('After');
+    expect(result.current[0].respondentTitle).toBe('Remote title');
+    expect(result.current[0].description).toBe('Remote form description');
+    expect(result.current[1]).toBe(result.current[0]);
+
+    unmount();
+    expect(unobserve).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes Form field-order changes independently of field-map insertion order', () => {
+    mockView = createView('ordered', 'question-a', 'A');
+    const { result } = renderHook(() => useFormLayoutSnapshot());
+
+    act(() => {
+      mockView?.get(YjsDatabaseKey.field_orders)?.insert(0, [{ id: 'question-b' }]);
+    });
+
+    expect(result.current.fieldOrderIds).toEqual(['question-b', 'question-a']);
+  });
+});

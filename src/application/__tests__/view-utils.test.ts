@@ -62,6 +62,10 @@ describe('view-utils', () => {
       expect(isDatabaseLayout(ViewLayout.Gallery)).toBe(true);
     });
 
+    it('should return true for Form layout', () => {
+      expect(isDatabaseLayout(ViewLayout.Form)).toBe(true);
+    });
+
     it('should return false for Document layout', () => {
       expect(isDatabaseLayout(ViewLayout.Document)).toBe(false);
     });
@@ -823,6 +827,7 @@ describe('view-utils', () => {
         ViewLayout.Chart,
         ViewLayout.List,
         ViewLayout.Gallery,
+        ViewLayout.Form,
       ];
       const parentView = createMockView({
         view_id: 'parent-doc',

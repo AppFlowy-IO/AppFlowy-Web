@@ -284,7 +284,7 @@ jobs:
       - name: Run ${{ matrix.test-group.name }} tests
         shell: bash
         run: |
-          test_args=(--workers=2)
+          test_args=("--workers=2")
           if [ -n "$TEST_SHARD" ]; then
             test_args+=("--shard=$TEST_SHARD")
           fi

@@ -22,6 +22,7 @@ import {
 } from '@/application/types';
 import { isDatabaseLayout } from '@/application/view-utils';
 import { findParentView, findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
+import { assertGenericDeepDuplicateIsSafe } from '@/components/app/view-actions/formDuplicateSafety';
 import { Log } from '@/utils/log';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
@@ -238,6 +239,11 @@ export function usePageOperations({
       const { afterPreSync, ...duplicateOptions } = options;
 
       try {
+        await assertGenericDeepDuplicateIsSafe({
+          workspaceId: currentWorkspaceId,
+          viewId,
+          knownView: findView(outlineRef.current || [], viewId),
+        });
         // Sync all collab documents to the server via HTTP API before duplicating.
         // This ensures the server has the latest data (including unregistered row
         // documents) before the duplicate operation, matching MoreActionsContent behavior.
@@ -266,7 +272,7 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, syncAllToServer, flushAllSync, loadOutline, loadViewChildren]
+    [currentWorkspaceId, syncAllToServer, flushAllSync, loadOutline, loadViewChildren, outlineRef]
   );
 
   // Move page
@@ -426,7 +432,13 @@ export function usePageOperations({
         const res = await PageService.createDatabaseView(currentWorkspaceId, viewId, payload);
 
         refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
-        await loadOutline?.(currentWorkspaceId, false);
+        // The database response already contains the new view and its Yjs
+        // update. Do not hold tab creation and navigation behind a separate
+        // workspace-wide outline refresh: either outline request can remain
+        // pending while the linked view itself was created successfully.
+        void loadOutline?.(currentWorkspaceId, false).catch((error) => {
+          Log.warn('[createDatabaseView] failed to refresh outline after creating a linked view', error);
+        });
         return res;
       } catch (e) {
         return Promise.reject(e);
