@@ -58,14 +58,18 @@ type WorkspaceInfo = {
   workspaces: { workspace_id: string }[];
 };
 
+type FixturePage = {
+  pageId: string;
+  pageName: string;
+  spaceId: string;
+  spaceName: string;
+};
+
 type EvaPermissionFixture = {
   workspaceId: string;
   ownerToken: string;
   evaToken: string;
-  spaceId: string;
-  spaceName: string;
-  pageNames: Record<FixturePageAlias, string>;
-  pageIds: Record<FixturePageAlias, string>;
+  pages: Record<FixturePageAlias, FixturePage>;
 };
 
 type ScenarioState = {
@@ -87,7 +91,12 @@ After({ tags: '@eva-more-actions-permissions' }, async ({ page, request }) => {
 
   if (state?.fixture) {
     try {
-      await cleanupTemporarySpace(request, state.fixture.ownerToken, state.fixture.workspaceId, state.fixture.spaceId);
+      await cleanupTemporarySpaces(
+        request,
+        state.fixture.ownerToken,
+        state.fixture.workspaceId,
+        Object.values(state.fixture.pages).map(({ spaceId }) => spaceId)
+      );
     } catch (error) {
       cleanupError = error;
     }
@@ -106,23 +115,30 @@ Given('a temporary Eva page action permission fixture exists', async ({ page, re
 
 Given('I sign in as seeded Eva', async ({ page }) => {
   const fixture = requireFixture(page);
+  const initialPage = fixture.pages['Grante full access for eva'];
 
   await signInWithPasswordViaUi(page, EVA_EMAIL, FIXTURE_PASSWORD, 2000);
   await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
   await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
-  await page.goto(`/app/${fixture.workspaceId}/${fixture.pageIds['Grante full access for eva']}`, {
+  await page.goto(`/app/${fixture.workspaceId}/${initialPage.pageId}`, {
     waitUntil: 'domcontentloaded',
   });
   await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
-  await expandSpaceByName(page, fixture.spaceName);
+  await expandSpaceByName(page, initialPage.spaceName);
 });
 
 When("I open Eva's sidebar more menu for {string}", async ({ page }, pageName: string) => {
-  await openSidebarMoreMenuForPage(page, fixturePageName(page, pageName));
+  const fixturePage = getFixturePage(page, pageName);
+
+  await expandSpaceByName(page, fixturePage.spaceName);
+  await openSidebarMoreMenuForPage(page, fixturePage.pageName);
 });
 
 When("I open Eva's page {string}", async ({ page }, pageName: string) => {
-  await openPageFromSidebar(page, fixturePageName(page, pageName));
+  const fixturePage = getFixturePage(page, pageName);
+
+  await expandSpaceByName(page, fixturePage.spaceName);
+  await openPageFromSidebar(page, fixturePage.pageName);
 });
 
 When("I open Eva's page more menu", async ({ page }) => {
@@ -141,12 +157,15 @@ When("I close Eva's page more menu", async ({ page }) => {
 
 When("I inspect Eva's temporary permission space actions", async ({ page, request }) => {
   const fixture = requireFixture(page);
-  const spaceItem = SpaceSelectors.itemByName(page, fixture.spaceName);
-  const permissionPath = `/api/workspace/${fixture.workspaceId}/spaces/${fixture.spaceId}/permission`;
+  const readOnlyPage = fixture.pages['Read only permission for eva'];
+  const permissionPath = `/api/workspace/${fixture.workspaceId}/spaces/${readOnlyPage.spaceId}/permission`;
   const permission = await getApi<SpacePermissionResponsePayload>(request, fixture.evaToken, permissionPath);
 
   expect(permission.can_manage_space).toBe(false);
   expect(permission.current_user_access_level).toBe(AccessLevel.ReadOnly);
+
+  await expandSpaceByName(page, readOnlyPage.spaceName);
+  const spaceItem = SpaceSelectors.itemByName(page, readOnlyPage.spaceName);
 
   await expect(spaceItem).toBeVisible({ timeout: 30000 });
   await spaceItem.scrollIntoViewIfNeeded();
@@ -170,7 +189,8 @@ Then("Eva's page more menu shows only {string}", async ({ page }, expectedAction
 });
 
 Then("Eva's temporary permission space more actions button is hidden", async ({ page }) => {
-  const spaceItem = SpaceSelectors.itemByName(page, requireFixture(page).spaceName);
+  const readOnlyPage = requireFixture(page).pages['Read only permission for eva'];
+  const spaceItem = SpaceSelectors.itemByName(page, readOnlyPage.spaceName);
 
   await expect(spaceItem.getByTestId('inline-more-actions')).toHaveCount(0);
   await expect(ViewActionSelectors.popover(page)).toHaveCount(0);
@@ -263,12 +283,12 @@ function requireFixture(page: Page): EvaPermissionFixture {
   return fixture;
 }
 
-function fixturePageName(page: Page, aliasValue: string): string {
+function getFixturePage(page: Page, aliasValue: string): FixturePage {
   if (!(aliasValue in FIXTURE_PAGE_ALIASES)) {
     throw new Error(`Unknown Eva permission fixture page alias: ${aliasValue}`);
   }
 
-  return requireFixture(page).pageNames[aliasValue as FixturePageAlias];
+  return requireFixture(page).pages[aliasValue as FixturePageAlias];
 }
 
 async function prepareEvaPermissionFixture(page: Page, request: APIRequestContext): Promise<void> {
@@ -282,51 +302,59 @@ async function prepareEvaPermissionFixture(page: Page, request: APIRequestContex
 
   const evaUid = await findWorkspaceMemberUid(request, ownerToken, workspaceId, EVA_EMAIL);
   const suffix = state.runId.slice(-12);
-  const spaceName = `BDD Eva permission actions ${suffix}`;
-  const requestedSpaceId = uuidv4();
+  const pages = {} as Record<FixturePageAlias, FixturePage>;
+  const createdSpaceIds: string[] = [];
 
   try {
-    const createdSpace = await postApi<{ view_id: string }>(
-      request,
-      ownerToken,
-      `/api/workspace/${workspaceId}/spaces`,
-      {
-        name: spaceName,
-        space_icon: 'lock',
-        space_icon_color: '#555555',
-        view_id: requestedSpaceId,
-        permission: {
-          visibility: SpaceVisibility.Custom,
-          owner_access_level: AccessLevel.FullAccess,
-          member_default_access_level: AccessLevel.ReadOnly,
-          everyone_else_access_level: null,
-          invite_policy: SpaceInvitePolicy.OwnersOnly,
-          sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
-          invite_link_enabled: false,
-          security: {
-            disable_guests: false,
-            disable_public_links: false,
-            disable_export: false,
-          },
-        },
-      }
-    );
-
-    if (createdSpace.view_id !== requestedSpaceId) {
-      throw new Error(`Structured space returned ${createdSpace.view_id}; expected ${requestedSpaceId}`);
-    }
-
-    await postRawApi(
-      request,
-      ownerToken,
-      `/api/workspace/${workspaceId}/spaces/${createdSpace.view_id}/members`,
-      `{"uid":${evaUid},"role":"${SpaceMemberRole.Member}","access_level":${AccessLevel.ReadOnly}}`
-    );
-
-    const pageNames = {} as Record<FixturePageAlias, string>;
-    const pageIds = {} as Record<FixturePageAlias, string>;
-
     for (const [alias, accessLevel] of Object.entries(FIXTURE_PAGE_ALIASES) as [FixturePageAlias, AccessLevel][]) {
+      const spaceName = `BDD Eva ${accessLevel} actions ${suffix}`;
+      const requestedSpaceId = uuidv4();
+
+      // Record the requested ID before the call so teardown can remove a space
+      // even when the server commits it but the HTTP response times out.
+      createdSpaceIds.push(requestedSpaceId);
+
+      const createdSpace = await postApi<{ view_id: string }>(
+        request,
+        ownerToken,
+        `/api/workspace/${workspaceId}/spaces`,
+        {
+          name: spaceName,
+          space_icon: 'lock',
+          space_icon_color: '#555555',
+          view_id: requestedSpaceId,
+          permission: {
+            visibility: SpaceVisibility.Custom,
+            owner_access_level: AccessLevel.FullAccess,
+            member_default_access_level: accessLevel,
+            everyone_else_access_level: null,
+            invite_policy: SpaceInvitePolicy.OwnersOnly,
+            sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
+            invite_link_enabled: false,
+            security: {
+              disable_guests: false,
+              disable_public_links: false,
+              disable_export: false,
+            },
+          },
+        }
+      );
+
+      // Also retain an unexpected returned ID so the validation failure below
+      // cannot leave a server-created fixture behind.
+      createdSpaceIds.push(createdSpace.view_id);
+
+      if (createdSpace.view_id !== requestedSpaceId) {
+        throw new Error(`Structured space returned ${createdSpace.view_id}; expected ${requestedSpaceId}`);
+      }
+
+      await postRawApi(
+        request,
+        ownerToken,
+        `/api/workspace/${workspaceId}/spaces/${createdSpace.view_id}/members`,
+        `{"uid":${evaUid},"role":"${SpaceMemberRole.Member}","access_level":${accessLevel}}`
+      );
+
       const pageName = `${alias} ${suffix}`;
       const createdPage = await postApi<{ view_id: string }>(
         request,
@@ -339,46 +367,35 @@ async function prepareEvaPermissionFixture(page: Page, request: APIRequestContex
         }
       );
 
-      pageNames[alias] = pageName;
-      pageIds[alias] = createdPage.view_id;
-
-      if (accessLevel !== AccessLevel.ReadOnly) {
-        await putApi<void>(request, ownerToken, `/api/sharing/workspace/${workspaceId}/view`, {
-          view_id: createdPage.view_id,
-          emails: [EVA_EMAIL],
-          access_level: accessLevel,
-          auto_confirm: true,
-        });
-      }
+      pages[alias] = {
+        pageId: createdPage.view_id,
+        pageName,
+        spaceId: createdSpace.view_id,
+        spaceName,
+      };
     }
 
-    state.fixture = {
-      workspaceId,
-      ownerToken,
-      evaToken,
-      spaceId: createdSpace.view_id,
-      spaceName,
-      pageNames,
-      pageIds,
-    };
+    for (const fixturePage of Object.values(pages)) {
+      await expect
+        .poll(
+          async () => {
+            const response = await request.get(
+              `${TestConfig.apiUrl}/api/workspace/${workspaceId}/page-view/${fixturePage.pageId}`,
+              { headers: apiHeaders(evaToken), failOnStatusCode: false }
+            );
+            const body = (await response.json().catch(() => null)) as ApiResponse<unknown> | null;
 
-    await expect
-      .poll(
-        async () => {
-          const response = await request.get(
-            `${TestConfig.apiUrl}/api/workspace/${workspaceId}/page-view/${pageIds['Read only permission for eva']}`,
-            { headers: apiHeaders(evaToken), failOnStatusCode: false }
-          );
-          const body = (await response.json().catch(() => null)) as ApiResponse<unknown> | null;
+            return response.ok() && body?.code === 0;
+          },
+          { timeout: 30000, message: `waiting for Eva to receive access to ${fixturePage.spaceName}` }
+        )
+        .toBe(true);
+    }
 
-          return response.ok() && body?.code === 0;
-        },
-        { timeout: 30000, message: 'waiting for Eva to receive the temporary Custom-space permissions' }
-      )
-      .toBe(true);
+    state.fixture = { workspaceId, ownerToken, evaToken, pages };
   } catch (error) {
     try {
-      await cleanupTemporarySpace(request, ownerToken, workspaceId, requestedSpaceId);
+      await cleanupTemporarySpaces(request, ownerToken, workspaceId, createdSpaceIds);
     } catch (cleanupError) {
       throw new Error(
         `Eva permission fixture setup failed: ${String(error)}; cleanup also failed: ${String(cleanupError)}`
@@ -394,14 +411,26 @@ type SpacePermissionResponsePayload = {
   can_manage_space?: boolean;
 };
 
-async function cleanupTemporarySpace(
+async function cleanupTemporarySpaces(
   request: APIRequestContext,
   token: string,
   workspaceId: string,
-  spaceId: string
+  spaceIds: string[]
 ): Promise<void> {
-  await postApi<void>(request, token, `/api/workspace/${workspaceId}/page-view/${spaceId}/move-to-trash`, {});
-  await deleteApi<void>(request, token, `/api/workspace/${workspaceId}/trash/${spaceId}`);
+  const failures: string[] = [];
+
+  for (const spaceId of [...new Set(spaceIds)].reverse()) {
+    try {
+      await postApi<void>(request, token, `/api/workspace/${workspaceId}/page-view/${spaceId}/move-to-trash`, {});
+      await deleteApi<void>(request, token, `/api/workspace/${workspaceId}/trash/${spaceId}`);
+    } catch (error) {
+      failures.push(`${spaceId}: ${String(error)}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(failures.join('; '));
+  }
 }
 
 async function signInApi(request: APIRequestContext, email: string, password: string): Promise<string> {
@@ -488,16 +517,6 @@ async function postApi<T>(request: APIRequestContext, token: string, path: strin
   });
 
   return parseApiResponse<T>(response.status(), response.ok(), await response.text(), `POST ${path}`);
-}
-
-async function putApi<T>(request: APIRequestContext, token: string, path: string, data: unknown): Promise<T> {
-  const response = await request.put(`${TestConfig.apiUrl}${path}`, {
-    headers: apiHeaders(token),
-    data,
-    failOnStatusCode: false,
-  });
-
-  return parseApiResponse<T>(response.status(), response.ok(), await response.text(), `PUT ${path}`);
 }
 
 async function deleteApi<T>(request: APIRequestContext, token: string, path: string): Promise<T> {
