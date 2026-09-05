@@ -2353,6 +2353,19 @@ export enum TimeFormat {
   TwentyFourHour = 1,
 }
 
+/**
+ * Why a user is listed in share access details. Additive on the server: legacy
+ * servers omit it, and rows without it must keep rendering.
+ */
+export enum SharedUserAccessSource {
+  /** A share addressed directly to this user on the page or an ancestor. */
+  DirectShare = 'direct_share',
+  /** Listed only because a workspace group the user belongs to was granted access. */
+  WorkspaceGroup = 'workspace_group',
+  /** Space membership, private-space ownership, or a workspace default. */
+  Inherited = 'inherited',
+}
+
 export interface IPeopleWithAccessType {
   email: string;
   name: string;
@@ -2360,6 +2373,7 @@ export interface IPeopleWithAccessType {
   role: Role;
   avatar_url: string;
   pending_invitation: boolean;
+  access_source?: SharedUserAccessSource;
 }
 
 export interface ObjectPermission {
