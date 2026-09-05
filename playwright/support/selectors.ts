@@ -188,6 +188,11 @@ export const ShareSelectors = {
   editNamespaceButton: (page: Page) => page.getByTestId('edit-namespace-button'),
   homePageSetting: (page: Page) => page.getByTestId('homepage-setting'),
   homePageUpgradeButton: (page: Page) => page.getByTestId('homepage-upgrade-button'),
+  groupRow: (page: Page, groupId: string) => page.getByTestId(`share-group-row-${groupId}`),
+  groupMembersToggle: (page: Page, groupId: string) => page.getByTestId(`share-group-toggle-${groupId}`),
+  groupMembersList: (page: Page, groupId: string) => page.getByTestId(`share-group-members-${groupId}`),
+  groupMemberRows: (page: Page, groupId: string) =>
+    page.getByTestId(`share-group-members-${groupId}`).locator('[data-testid^="share-group-member-"]'),
 };
 
 /**

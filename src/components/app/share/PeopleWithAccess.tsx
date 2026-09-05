@@ -1,19 +1,24 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { APP_EVENTS } from '@/application/constants';
 import { AccessService } from '@/application/services/domains';
-import { AccessLevel, IPeopleWithAccessType, Role, WorkspaceGroupViewPermission } from '@/application/types';
+import {
+  AccessLevel,
+  IPeopleWithAccessType,
+  Role,
+  SharedUserAccessSource,
+  WorkspaceGroupViewPermission,
+} from '@/application/types';
 import { useEventEmitter, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 
-import { GroupAccessLevelDropdown } from './GroupAccessLevelDropdown';
+import { GroupItem } from './GroupItem';
 import { PersonItem } from './PersonItem';
 import { isInheritedWorkspaceAccess, ShareSectionType } from './shareSectionType';
-import { WorkspaceGroupIcon } from './WorkspaceGroupIcon';
 
 import type { ShareAccessRefreshResult } from './useShareAccessDetails';
 
@@ -30,6 +35,8 @@ interface PeopleWithAccessProps {
   canManageGroupAccess: boolean;
   canManageFullAccess: boolean;
   canGrantFullAccess: boolean;
+  /** Whether group rows may expand to list their members (workspace owners only on the server). */
+  canExploreGroupMembers?: boolean;
   disablePersonAccessChanges?: boolean;
   sectionType: ShareSectionType;
 }
@@ -47,11 +54,13 @@ export function PeopleWithAccess({
   canManageGroupAccess,
   canManageFullAccess,
   canGrantFullAccess,
+  canExploreGroupMembers = false,
   disablePersonAccessChanges = false,
   sectionType,
 }: PeopleWithAccessProps) {
   const { t } = useTranslation();
   const currentUser = useCurrentUser();
+  const listRef = useRef<HTMLDivElement>(null);
 
   const currentWorkspaceId = useCurrentWorkspaceId();
   const navigate = useNavigate();
@@ -152,6 +161,19 @@ export function PeopleWithAccess({
 
   const currentUserRole = people.find((p) => p.email === currentUser?.email)?.role;
   const currentUserIsOwner = currentUserRole === Role.Owner;
+  const hasGroupRows = groups.length > 0;
+  // People whose only access comes from a workspace group are represented by that group's row
+  // (which can expand to list them) instead of being listed individually. Rows without a
+  // source come from older servers and are always shown.
+  const visiblePeople = useMemo(
+    () =>
+      hasGroupRows ? people.filter((person) => person.access_source !== SharedUserAccessSource.WorkspaceGroup) : people,
+    [hasGroupRows, people]
+  );
+  const peopleByEmail = useMemo(
+    () => new Map(people.map((person) => [person.email.trim().toLowerCase(), person] as const)),
+    [people]
+  );
   const permissionChangeDisabledReason = disablePersonAccessChanges
     ? t('shareAction.databaseRowPagePermissionChangeDisabled')
     : undefined;
@@ -162,8 +184,8 @@ export function PeopleWithAccess({
         <Label>{t('shareAction.peopleAndGroupsWithAccess')}</Label>
         {isLoading && <Progress variant='primary' />}
       </div>
-      <div className='flex max-h-[200px] w-full flex-col overflow-y-auto'>
-        {people.map((person) => {
+      <div ref={listRef} data-testid='share-access-list' className='flex max-h-[200px] w-full flex-col overflow-y-auto'>
+        {visiblePeople.map((person) => {
           const isYou = currentUser?.email === person.email;
 
           return (
@@ -183,33 +205,18 @@ export function PeopleWithAccess({
           );
         })}
         {groups.map((group) => (
-          <div
+          <GroupItem
             key={`group:${group.group_id}`}
-            className='group flex w-full items-center gap-2 rounded-300 px-2 py-1.5 hover:bg-fill-content-hover'
-          >
-            <div className='flex w-full flex-row items-center gap-2 overflow-hidden'>
-              <WorkspaceGroupIcon variant='row' />
-              <div className='flex w-full flex-1 flex-col gap-0.5 overflow-hidden'>
-                <div className='flex items-center gap-2'>
-                  <div className='truncate text-sm text-text-primary'>{group.name}</div>
-                  <span className='rounded-full bg-fill-content-hover px-2 py-[1px] text-xs text-text-secondary'>
-                    {t('shareAction.group')}
-                  </span>
-                </div>
-                <div className='truncate whitespace-nowrap text-xs text-text-secondary'>
-                  {t('shareAction.groupMembersCount', { count: group.member_count })}
-                </div>
-              </div>
-            </div>
-            <GroupAccessLevelDropdown
-              group={group}
-              canModify={canManageGroupAccess && editableGroupIds.has(group.group_id)}
-              currentUserHasFullAccess={hasFullAccess}
-              canManageFullAccess={canManageFullAccess}
-              onAccessLevelChange={handleGroupAccessLevelChange}
-              onRemoveAccess={handleRemoveGroupAccess}
-            />
-          </div>
+            group={group}
+            peopleByEmail={peopleByEmail}
+            canExploreMembers={canExploreGroupMembers}
+            scrollContainerRef={listRef}
+            canModify={canManageGroupAccess && editableGroupIds.has(group.group_id)}
+            currentUserHasFullAccess={hasFullAccess}
+            canManageFullAccess={canManageFullAccess}
+            onAccessLevelChange={handleGroupAccessLevelChange}
+            onRemoveAccess={handleRemoveGroupAccess}
+          />
         ))}
       </div>
     </div>
