@@ -38,6 +38,18 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+/** A loaded group roster together with the member count it was fetched for. */
+interface GroupRoster {
+  members: WorkspaceGroupMember[];
+  memberCount: number;
+}
+
+const loadingIndicator = (
+  <div className='flex items-center justify-center py-2'>
+    <Progress variant='primary' />
+  </div>
+);
+
 /**
  * One workspace-group row in the share list.
  *
@@ -59,14 +71,15 @@ export function GroupItem({
   const currentWorkspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
   const [expanded, setExpanded] = useState(false);
-  const [members, setMembers] = useState<WorkspaceGroupMember[] | null>(null);
-  const [loadedMemberCount, setLoadedMemberCount] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [roster, setRoster] = useState<GroupRoster | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const showMembers = canExploreMembers && expanded;
   // The server-side member count is part of the group projection, so a changed count is a
   // cheap signal that an already loaded roster is stale.
-  const rosterStale = members === null || loadedMemberCount !== group.member_count;
+  const rosterStale = roster === null || roster.memberCount !== group.member_count;
+  // Derived rather than stored: a fetch is in flight exactly while the row is open and the
+  // roster is stale, so no extra state or render is needed to track it.
+  const loading = showMembers && rosterStale && Boolean(currentWorkspaceId);
   // Resolve the message outside the effect: a string dependency stays stable across renders,
   // whereas the `t` function identity may not.
   const loadFailedMessage = t('shareAction.loadGroupMembersFailed');
@@ -76,21 +89,17 @@ export function GroupItem({
 
     let cancelled = false;
 
-    setLoading(true);
     void (async () => {
       try {
         const result = await WorkspaceService.getWorkspaceGroupMembers(currentWorkspaceId, group.group_id);
 
         if (cancelled) return;
-        setMembers(result?.members ?? []);
-        setLoadedMemberCount(group.member_count);
+        setRoster({ members: result?.members ?? [], memberCount: group.member_count });
       } catch (error) {
         if (cancelled) return;
         console.error(error);
         notify.error(loadFailedMessage);
         setExpanded(false);
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     })();
 
@@ -107,7 +116,7 @@ export function GroupItem({
   const memberRows = useMemo(() => {
     const currentUserEmail = normalizeEmail(currentUser?.email || '');
 
-    return (members ?? []).map((member) => {
+    return (roster?.members ?? []).map((member) => {
       const email = member.email?.trim() || '';
       const person = email ? peopleByEmail.get(normalizeEmail(email)) : undefined;
       const displayName =
@@ -124,7 +133,7 @@ export function GroupItem({
         isYou: Boolean(email) && Boolean(currentUserEmail) && normalizeEmail(email) === currentUserEmail,
       };
     });
-  }, [currentUser?.email, members, peopleByEmail, t]);
+  }, [currentUser?.email, peopleByEmail, roster, t]);
 
   const memberRowCount = memberRows.length;
 
@@ -220,10 +229,8 @@ export function GroupItem({
       </div>
       {showMembers && (
         <div data-testid={`share-group-members-${group.group_id}`} className='flex w-full flex-col'>
-          {loading && members === null ? (
-            <div className='flex items-center justify-center py-2'>
-              <Progress variant='primary' />
-            </div>
+          {loading && roster === null ? (
+            loadingIndicator
           ) : memberRows.length === 0 ? (
             <div className='py-2 pl-12 pr-2 text-xs text-text-secondary'>{t('shareAction.noGroupMembers')}</div>
           ) : (
