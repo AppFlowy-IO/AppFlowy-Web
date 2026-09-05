@@ -3,12 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { PageService } from '@/application/services/domains';
+import { PageService, ViewService } from '@/application/services/domains';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { View, ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
-import { ERROR_CODE } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { isDatabaseContainer, isDatabaseLayout, resolveActiveDatabaseViewId } from '@/application/view-utils';
-import { findParentView, findView } from '@/components/_shared/outline/utils';
+import { findParentView, findView, setOutlineExpands } from '@/components/_shared/outline/utils';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import CalendarSkeleton from '@/components/_shared/skeleton/CalendarSkeleton';
 import DocumentSkeleton from '@/components/_shared/skeleton/DocumentSkeleton';
@@ -19,6 +19,7 @@ import {
   useBreadcrumb,
   useCurrentWorkspaceIdOptional,
   useEnsureViewVisibleInOutline,
+  useEventEmitter,
   useRefreshOutline,
 } from '@/components/app/app.hooks';
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
@@ -34,9 +35,9 @@ type DatabaseViewProps = ViewComponentProps & {
   bindViewSync?: (doc: ViewComponentProps['doc']) => SyncContext | null;
 };
 
-const DATABASE_CONTAINER_STATUS_RETRY_DELAYS_MS = [500, 1500, 3000] as const;
+const DATABASE_CONTAINER_RETRY_DELAYS_MS = [500, 1500, 3000] as const;
 
-function databaseContainerStatusRetryDelay(error: unknown, retryIndex: number): number {
+function databaseContainerRetryDelay(error: unknown, retryIndex: number): number {
   const retryAfterSecs =
     typeof error === 'object' && error !== null && 'retryAfterSecs' in error
       ? (error as { retryAfterSecs?: unknown }).retryAfterSecs
@@ -44,7 +45,25 @@ function databaseContainerStatusRetryDelay(error: unknown, retryIndex: number): 
 
   return typeof retryAfterSecs === 'number' && Number.isFinite(retryAfterSecs) && retryAfterSecs >= 0
     ? retryAfterSecs * 1000
-    : DATABASE_CONTAINER_STATUS_RETRY_DELAYS_MS[retryIndex];
+    : DATABASE_CONTAINER_RETRY_DELAYS_MS[retryIndex];
+}
+
+function waitForDatabaseContainerRetry(error: unknown, retryIndex: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, databaseContainerRetryDelay(error, retryIndex)));
+}
+
+async function upgradeDatabaseContainerWithRetry(workspaceId: string, databasePageId: string) {
+  for (let retryIndex = 0; ; retryIndex += 1) {
+    try {
+      return await PageService.upgradeDatabaseContainer(workspaceId, databasePageId);
+    } catch (error) {
+      if (!isAPIErrorCode(error, ERROR_CODE.RETRY_LATER) || retryIndex >= DATABASE_CONTAINER_RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+
+      await waitForDatabaseContainerRetry(error, retryIndex);
+    }
+  }
 }
 
 function DatabaseView(props: DatabaseViewProps) {
@@ -64,6 +83,7 @@ function DatabaseView(props: DatabaseViewProps) {
     if (!outline || !databasePageId) return;
     return findView(outline || [], databasePageId);
   }, [outline, databasePageId]);
+  const parentViewId = view?.parent_view_id || viewMeta.parentViewId;
 
   // Use hook to determine container view and visible view IDs
   const { containerView, visibleViewIds } = useContainerVisibleViewIds({
@@ -81,10 +101,8 @@ function DatabaseView(props: DatabaseViewProps) {
 
     if (structuralParent) return structuralParent;
 
-    const parentViewId = view?.parent_view_id || viewMeta.parentViewId;
-
     return parentViewId ? findView(outline, parentViewId) || undefined : undefined;
-  }, [databasePageId, outline, view?.parent_view_id, viewMeta.parentViewId]);
+  }, [databasePageId, outline, parentViewId]);
 
   const breadcrumbParentView = useMemo((): View | undefined => {
     if (!breadcrumbs?.length) return undefined;
@@ -111,6 +129,7 @@ function DatabaseView(props: DatabaseViewProps) {
   const workspaceId = useCurrentWorkspaceIdOptional();
   const refreshOutline = useRefreshOutline();
   const ensureViewVisibleInOutline = useEnsureViewVisibleInOutline();
+  const eventEmitter = useEventEmitter();
   const [isUpgradingContainer, setIsUpgradingContainer] = useState(false);
   const [upgradedDatabaseView, setUpgradedDatabaseView] = useState<{
     workspaceId: string;
@@ -196,6 +215,11 @@ function DatabaseView(props: DatabaseViewProps) {
   const database = dataSection?.get(YjsEditorKey.database) as YDatabase | undefined;
   const databaseViews = database?.get(YjsDatabaseKey.views);
   const resolvedParentView = outlineParentView || breadcrumbParentView;
+  const hasKnownNonDatabaseParent =
+    parentViewId === workspaceId ||
+    (resolvedParentView !== undefined &&
+      !isDatabaseContainer(resolvedParentView) &&
+      !isDatabaseLayout(resolvedParentView.layout));
   const isPotentialLegacyDatabase =
     (upgradedDatabaseView === null ||
       upgradedDatabaseView.workspaceId !== workspaceId ||
@@ -204,9 +228,7 @@ function DatabaseView(props: DatabaseViewProps) {
     !breadcrumbContainerView &&
     viewMeta.extra?.embedded !== true &&
     Boolean(databasePageId) &&
-    resolvedParentView !== undefined &&
-    !isDatabaseContainer(resolvedParentView) &&
-    !isDatabaseLayout(resolvedParentView.layout) &&
+    hasKnownNonDatabaseParent &&
     databaseViews?.has(databasePageId) === true;
   const isLegacyDatabase =
     isPotentialLegacyDatabase &&
@@ -242,9 +264,9 @@ function DatabaseView(props: DatabaseViewProps) {
 
         if (
           isAPIErrorCode(error, ERROR_CODE.RETRY_LATER) &&
-          retryIndex < DATABASE_CONTAINER_STATUS_RETRY_DELAYS_MS.length
+          retryIndex < DATABASE_CONTAINER_RETRY_DELAYS_MS.length
         ) {
-          const delay = databaseContainerStatusRetryDelay(error, retryIndex);
+          const delay = databaseContainerRetryDelay(error, retryIndex);
 
           retryIndex += 1;
           retryTimeout = window.setTimeout(() => void loadStatus(), delay);
@@ -268,15 +290,25 @@ function DatabaseView(props: DatabaseViewProps) {
 
     setIsUpgradingContainer(true);
     try {
-      const result = await PageService.upgradeDatabaseContainer(workspaceId, databasePageId);
+      const result = await upgradeDatabaseContainerWithRetry(workspaceId, databasePageId);
 
       setUpgradedDatabaseView({ workspaceId, viewId: result.database_view_id });
       toast.success(
         t(result.upgraded ? 'web.databaseContainerUpgrade.success' : 'web.databaseContainerUpgrade.alreadyUpgraded')
       );
+      ViewService.invalidateDatabaseCatalog(workspaceId);
+      void ViewService.refreshWorkspaceDatabaseCatalog(workspaceId).catch((error) => {
+        Log.warn('[DatabaseView] Database upgraded, but catalog reconciliation failed', getErrorMessage(error));
+      });
       try {
         await refreshOutline?.();
-        await ensureViewVisibleInOutline?.(result.database_view_id);
+        const ancestorIds = await ensureViewVisibleInOutline?.(result.database_view_id);
+
+        if (ancestorIds?.length) {
+          // Hydration does not expand the sidebar. Persist for reloads and notify the mounted outline.
+          ancestorIds.forEach((id) => setOutlineExpands(id, true));
+          eventEmitter.emit(APP_EVENTS.OUTLINE_EXPAND_PATH, { workspaceId, ancestorIds });
+        }
       } catch (error) {
         // The POST is already committed. Keep its success state and let reload/server
         // notifications reconcile the outline rather than telling the user migration failed.
@@ -287,7 +319,7 @@ function DatabaseView(props: DatabaseViewProps) {
     } finally {
       setIsUpgradingContainer(false);
     }
-  }, [databasePageId, ensureViewVisibleInOutline, isUpgradingContainer, refreshOutline, t, workspaceId]);
+  }, [databasePageId, ensureViewVisibleInOutline, eventEmitter, isUpgradingContainer, refreshOutline, t, workspaceId]);
 
   // Ref to track if database is available
   const databaseRef = useRef(database);

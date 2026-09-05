@@ -4,8 +4,9 @@ import { MemoryRouter } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as Y from 'yjs';
 
-import { ERROR_CODE } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { View, ViewLayout, ViewMetaProps, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
 import DatabaseView from '@/components/app/DatabaseView';
 
 declare global {
@@ -20,6 +21,9 @@ declare global {
         ensureViewVisibleInOutline?: jest.Mock;
         getDatabaseContainerUpgradeStatus?: jest.Mock;
         upgradeDatabaseContainer?: jest.Mock;
+        invalidateDatabaseCatalog?: jest.Mock;
+        refreshWorkspaceDatabaseCatalog?: jest.Mock;
+        emit?: jest.Mock;
       }
     | undefined;
 }
@@ -29,6 +33,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useBreadcrumb: () => global.__databaseViewTestState?.breadcrumbs,
   useCurrentWorkspaceIdOptional: () => 'test-workspace',
   useEnsureViewVisibleInOutline: () => global.__databaseViewTestState?.ensureViewVisibleInOutline,
+  useEventEmitter: () => ({ emit: (...args: unknown[]) => global.__databaseViewTestState?.emit?.(...args) }),
   useRefreshOutline: () => global.__databaseViewTestState?.refreshOutline,
 }));
 
@@ -40,6 +45,12 @@ jest.mock('@/application/services/domains', () => ({
       Promise.resolve({ eligible: false, already_upgraded: false }),
     upgradeDatabaseContainer: (...args: unknown[]) =>
       global.__databaseViewTestState?.upgradeDatabaseContainer?.(...args),
+  },
+  ViewService: {
+    invalidateDatabaseCatalog: (...args: unknown[]) =>
+      global.__databaseViewTestState?.invalidateDatabaseCatalog?.(...args),
+    refreshWorkspaceDatabaseCatalog: (...args: unknown[]) =>
+      global.__databaseViewTestState?.refreshWorkspaceDatabaseCatalog?.(...args) ?? Promise.resolve([]),
   },
 }));
 
@@ -122,6 +133,7 @@ function createParentView(child: View): View {
 describe('DatabaseView database container', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    localStorage.clear();
     global.__databaseViewTestState = undefined;
   });
 
@@ -453,6 +465,43 @@ describe('DatabaseView database container', () => {
     expect(getDatabaseContainerUpgradeStatus).not.toHaveBeenCalled();
   });
 
+  it('offers the legacy upgrade for a database directly under the workspace root', async () => {
+    const inlineViewId = 'root-legacy-view-id';
+    const legacyView: View = {
+      ...createLegacyDatabaseView(inlineViewId),
+      parent_view_id: 'test-workspace',
+    };
+    const getDatabaseContainerUpgradeStatus = jest.fn().mockResolvedValue({ eligible: true, already_upgraded: false });
+
+    // getAppOutline returns the workspace root's children, not the root itself.
+    global.__databaseViewTestState = {
+      outline: [legacyView],
+      getDatabaseContainerUpgradeStatus,
+    };
+
+    render(
+      <MemoryRouter initialEntries={[`/app/test-workspace/${inlineViewId}`]}>
+        <DatabaseView
+          doc={createDatabaseDoc('db-1', [inlineViewId])}
+          workspaceId='test-workspace'
+          readOnly={false}
+          canWrite={true}
+          viewMeta={{
+            viewId: inlineViewId,
+            name: legacyView.name,
+            layout: legacyView.layout,
+            extra: legacyView.extra,
+            workspaceId: 'test-workspace',
+          }}
+          onRendered={jest.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByTestId('upgrade-database-container-button')).toBeTruthy();
+    expect(getDatabaseContainerUpgradeStatus).toHaveBeenCalledWith('test-workspace', inlineViewId);
+  });
+
   it('offers the legacy upgrade for a mounted database view whose canonical inline view is hidden', async () => {
     const canonicalInlineViewId = 'unprojected-inline-view-id';
     const mountedViewId = 'mounted-legacy-view-id';
@@ -702,14 +751,34 @@ describe('DatabaseView database container', () => {
   it('upgrades an open legacy mounted database and reconciles its preserved view route', async () => {
     const canonicalInlineViewId = 'unprojected-inline-view-id';
     const mountedViewId = 'legacy-mounted-view-id';
-    const refreshOutline = jest.fn().mockResolvedValue(undefined);
-    const ensureViewVisibleInOutline = jest.fn().mockResolvedValue(['general-space-id', 'new-container-id']);
-    const upgradeDatabaseContainer = jest.fn().mockResolvedValue({
-      database_id: 'db-1',
-      database_view_id: mountedViewId,
-      container_view_id: 'new-container-id',
-      upgraded: true,
+    const refreshOutline = jest.fn(async () => {
+      global.__databaseViewTestState = {
+        ...global.__databaseViewTestState,
+        outline: [
+          createParentView({
+            ...legacyView,
+            view_id: 'new-container-id',
+            extra: { is_database_container: true },
+            children: [{ ...legacyView, parent_view_id: 'new-container-id' }],
+          }),
+        ],
+      };
     });
+    const ensureViewVisibleInOutline = jest.fn().mockResolvedValue(['general-space-id', 'new-container-id']);
+    const upgradeDatabaseContainer = jest
+      .fn()
+      .mockRejectedValueOnce({ code: ERROR_CODE.RETRY_LATER, retryAfterSecs: 0 })
+      .mockResolvedValue({
+        database_id: 'db-1',
+        database_view_id: mountedViewId,
+        container_view_id: 'new-container-id',
+        upgraded: true,
+      });
+    const invalidateDatabaseCatalog = jest.fn();
+    const refreshWorkspaceDatabaseCatalog = jest.fn().mockResolvedValue([]);
+    const emit = jest.fn();
+
+    setOutlineExpands('unrelated-expanded-view', true);
     const navigateToView = jest.fn().mockResolvedValue(undefined);
     const legacyView: View = {
       view_id: mountedViewId,
@@ -740,6 +809,9 @@ describe('DatabaseView database container', () => {
       ensureViewVisibleInOutline,
       getDatabaseContainerUpgradeStatus: jest.fn().mockResolvedValue({ eligible: true, already_upgraded: false }),
       upgradeDatabaseContainer,
+      invalidateDatabaseCatalog,
+      refreshWorkspaceDatabaseCatalog,
+      emit,
     };
 
     render(
@@ -765,10 +837,25 @@ describe('DatabaseView database container', () => {
     fireEvent.click(await screen.findByTestId('upgrade-database-container-button'));
 
     await waitFor(() => {
-      expect(upgradeDatabaseContainer).toHaveBeenCalledWith('test-workspace', mountedViewId);
+      expect(upgradeDatabaseContainer).toHaveBeenCalledTimes(2);
+      expect(upgradeDatabaseContainer).toHaveBeenLastCalledWith('test-workspace', mountedViewId);
+      expect(invalidateDatabaseCatalog).toHaveBeenCalledWith('test-workspace');
+      expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledWith('test-workspace');
       expect(refreshOutline).toHaveBeenCalledTimes(1);
       expect(ensureViewVisibleInOutline).toHaveBeenCalledWith(mountedViewId);
+      expect(emit).toHaveBeenCalledWith(APP_EVENTS.OUTLINE_EXPAND_PATH, {
+        workspaceId: 'test-workspace',
+        ancestorIds: ['general-space-id', 'new-container-id'],
+      });
     });
+    expect(getOutlineExpands()).toEqual({
+      'unrelated-expanded-view': true,
+      'general-space-id': true,
+      'new-container-id': true,
+    });
+    expect(invalidateDatabaseCatalog.mock.invocationCallOrder[0]).toBeLessThan(
+      refreshWorkspaceDatabaseCatalog.mock.invocationCallOrder[0]
+    );
     expect(refreshOutline.mock.invocationCallOrder[0]).toBeLessThan(
       ensureViewVisibleInOutline.mock.invocationCallOrder[0]
     );

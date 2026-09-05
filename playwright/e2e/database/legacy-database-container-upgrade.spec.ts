@@ -236,10 +236,21 @@ test.describe('Legacy database container upgrade', () => {
 
     const copiedDescendantViewIds = await expandedDescendantViewIdsInDfsFolderOrder(page, duplicateViewId);
     const upgradeResponsePromise = page.waitForResponse(
-      (response) => {
+      async (response) => {
         const url = new URL(response.url());
 
-        return response.request().method() === 'POST' && url.pathname === upgradeEndpointPath(duplicateViewId);
+        if (
+          response.request().method() !== 'POST' ||
+          url.pathname !== upgradeEndpointPath(duplicateViewId) ||
+          !response.ok()
+        ) {
+          return false;
+        }
+
+        // The UI retries HTTP-200 RetryLater responses; read the result only after an application success.
+        const body = (await response.json().catch(() => null)) as { code?: unknown } | null;
+
+        return body?.code === 0;
       },
       { timeout: 90_000 }
     );
@@ -256,12 +267,16 @@ test.describe('Legacy database container upgrade', () => {
     expect(result.container_view_id).not.toBe(fixture.viewId);
     await expect(page.getByTestId('legacy-database-upgrade-banner')).toBeHidden({ timeout: 30_000 });
 
+    const containerRow = PageSelectors.pageByViewId(page, result.container_view_id);
+    const containerItem = PageSelectors.itemByViewId(page, result.container_view_id);
+
+    // Wait for reconciliation and persisted expansion before reloading the preserved route.
+    await expect(containerRow.getByTestId('outline-toggle-collapse')).toBeVisible({ timeout: 60_000 });
+    await expect(PageSelectors.pageByViewId(page, duplicateViewId)).toBeVisible();
+
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect.poll(() => currentViewIdFromUrl(page), { timeout: 30_000 }).toBe(duplicateViewId);
     await expect(page.getByTestId('legacy-database-upgrade-banner')).toHaveCount(0, { timeout: 60_000 });
-
-    const containerRow = PageSelectors.pageByViewId(page, result.container_view_id);
-    const containerItem = PageSelectors.itemByViewId(page, result.container_view_id);
 
     await expect(containerRow).toBeVisible({ timeout: 60_000 });
     await expect(containerRow).toHaveAttribute('data-selected', 'true');
