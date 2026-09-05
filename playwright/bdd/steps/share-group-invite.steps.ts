@@ -464,10 +464,7 @@ Then(
 When('I invite the temporary share-menu group from the share panel', async ({ page }) => {
   const group = requireTemporaryGroup(page);
 
-  await shareInviteSuggestion(page, group.name).click();
-  await expect(ShareSelectors.emailTagInput(page).getByText(group.name, { exact: true })).toBeVisible({
-    timeout: 15000,
-  });
+  await selectShareInviteSuggestion(page, group.name);
   await expect(ShareSelectors.inviteButton(page)).toBeEnabled({ timeout: 15000 });
   await ShareSelectors.inviteButton(page).click();
 });
@@ -622,7 +619,12 @@ Then('the expanded temporary share-menu group has no members', async ({ page }) 
   const group = requireTemporaryGroup(page);
   const members = ShareSelectors.groupMembersList(page, group.group_id);
 
-  await expect(members.getByText('No members in this group', { exact: true })).toBeVisible({ timeout: 15000 });
+  const emptyState = members.getByText('No members in this group', { exact: true });
+
+  await expect(emptyState).toBeVisible({ timeout: 15000 });
+  // The access list is height-capped; the expanded content must be scrolled into view, not
+  // merely rendered below the fold.
+  await expect(emptyState).toBeInViewport();
   await expect(ShareSelectors.groupMemberRows(page, group.group_id)).toHaveCount(0);
   await expect(ShareSelectors.groupRow(page, group.group_id).getByText('0 members', { exact: true })).toBeVisible();
 });
@@ -637,6 +639,9 @@ Then(
     await expect(memberRow).toHaveCount(1, { timeout: 15000 });
     // Seeded accounts have no display name, so the row shows the email as both name and email.
     await expect(memberRow).toContainText(email);
+    // The access list is height-capped; a group near the bottom must scroll its members into
+    // view instead of rendering them below the fold.
+    await expect(memberRow).toBeInViewport();
     await expect(ShareSelectors.groupRow(page, group.group_id).getByText('1 member', { exact: true })).toBeVisible();
   }
 );
@@ -737,6 +742,51 @@ function shareGroupRow(page: Page, groupName: string) {
 
 function sharePersonRow(page: Page, email: string) {
   return ShareSelectors.sharePopover(page).locator('.group').filter({ hasText: email }).first();
+}
+
+/**
+ * Turn a typed invite suggestion into a tag.
+ *
+ * Scenarios share one seeded workspace, so share or group mutations made by parallel workers
+ * arrive here as permission-changed events. Each one reloads the access list, which briefly
+ * disables the invite input and closes the suggestion popover; a single click can land on a
+ * detached suggestion. Re-search and retry until the tag is present.
+ */
+async function selectShareInviteSuggestion(page: Page, text: string) {
+  const input = inviteInput(page);
+  const tag = ShareSelectors.emailTagInput(page).getByText(text, { exact: true });
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      await expect
+        .poll(
+          async () =>
+            input.evaluate((element) => {
+              const field = element as HTMLInputElement;
+
+              return field.readOnly || field.disabled;
+            }),
+          { timeout: 15000 }
+        )
+        .toBe(false);
+
+      if ((await input.inputValue()) !== text) {
+        await input.fill(text);
+      }
+
+      const suggestion = shareInviteSuggestion(page, text);
+
+      await expect(suggestion).toBeVisible({ timeout: 5000 });
+      await suggestion.click({ force: true, timeout: 5000 });
+      await expect(tag).toBeVisible({ timeout: 5000 });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`Could not select share invite suggestion ${text}`);
 }
 
 function shareInviteSuggestion(page: Page, text: string) {

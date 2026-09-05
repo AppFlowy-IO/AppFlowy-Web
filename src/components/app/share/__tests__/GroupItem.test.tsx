@@ -166,6 +166,49 @@ describe('GroupItem', () => {
     expect(mockGetWorkspaceGroupMembers).toHaveBeenCalledTimes(2);
   });
 
+  it('scrolls the expanded group into view when its members would be clipped by the list', async () => {
+    mockGetWorkspaceGroupMembers.mockResolvedValueOnce({
+      members: [{ uid: '1', email: 'annie@appflowy.io', name: 'Annie' }],
+    });
+
+    const container = document.createElement('div');
+    const scrollTo = jest.fn();
+
+    container.getBoundingClientRect = () => ({ top: 0, bottom: 200, height: 200 }) as DOMRect;
+    container.scrollTop = 40;
+    container.scrollTo = scrollTo;
+
+    renderGroupItem({ scrollContainerRef: { current: container } });
+
+    // The group sits at the bottom of a 200px-tall list, so its members render below the fold.
+    screen.getByTestId(`share-group-${sharedGroup.group_id}`).getBoundingClientRect = () =>
+      ({ top: 150, bottom: 300, height: 150 }) as DOMRect;
+
+    fireEvent.click(screen.getByTestId(`share-group-toggle-${sharedGroup.group_id}`));
+    await screen.findByTestId('share-group-member-1');
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 190, behavior: 'smooth' });
+  });
+
+  it('does not scroll when the expanded group is already fully visible', async () => {
+    mockGetWorkspaceGroupMembers.mockResolvedValueOnce({ members: [] });
+
+    const container = document.createElement('div');
+    const scrollTo = jest.fn();
+
+    container.getBoundingClientRect = () => ({ top: 0, bottom: 200, height: 200 }) as DOMRect;
+    container.scrollTo = scrollTo;
+
+    renderGroupItem({ group: { ...sharedGroup, member_count: 0 }, scrollContainerRef: { current: container } });
+    screen.getByTestId(`share-group-${sharedGroup.group_id}`).getBoundingClientRect = () =>
+      ({ top: 0, bottom: 120, height: 120 }) as DOMRect;
+
+    fireEvent.click(screen.getByTestId(`share-group-toggle-${sharedGroup.group_id}`));
+    await screen.findByText('shareAction.noGroupMembers');
+
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
   it('shows an empty state for a group without members', async () => {
     mockGetWorkspaceGroupMembers.mockResolvedValueOnce({ members: [] });
 

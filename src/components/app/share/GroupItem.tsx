@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { WorkspaceService } from '@/application/services/domains';
@@ -25,6 +25,8 @@ interface GroupItemProps {
   peopleByEmail: ReadonlyMap<string, IPeopleWithAccessType>;
   /** Whether the current user may list the group's members. The server allows workspace owners only. */
   canExploreMembers?: boolean;
+  /** The scrollable access list; an expanded group scrolls itself into view inside it. */
+  scrollContainerRef?: RefObject<HTMLElement | null>;
   canModify: boolean;
   currentUserHasFullAccess: boolean;
   canManageFullAccess: boolean;
@@ -46,6 +48,7 @@ export function GroupItem({
   group,
   peopleByEmail,
   canExploreMembers = false,
+  scrollContainerRef,
   canModify,
   currentUserHasFullAccess,
   canManageFullAccess,
@@ -59,6 +62,7 @@ export function GroupItem({
   const [members, setMembers] = useState<WorkspaceGroupMember[] | null>(null);
   const [loadedMemberCount, setLoadedMemberCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const showMembers = canExploreMembers && expanded;
   // The server-side member count is part of the group projection, so a changed count is a
   // cheap signal that an already loaded roster is stale.
@@ -122,6 +126,32 @@ export function GroupItem({
     });
   }, [currentUser?.email, members, peopleByEmail, t]);
 
+  const memberRowCount = memberRows.length;
+
+  // The access list is height-capped and scrolls. A group near the bottom expands below the
+  // fold, so bring the header and its members into view once they render.
+  useEffect(() => {
+    if (!showMembers) return;
+
+    const wrapper = wrapperRef.current;
+    const container = scrollContainerRef?.current;
+
+    if (!wrapper || !container) return;
+
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+
+    if (wrapperRect.bottom <= containerRect.bottom) return;
+
+    const top = container.scrollTop + (wrapperRect.top - containerRect.top);
+
+    if (typeof container.scrollTo === 'function') {
+      container.scrollTo({ top, behavior: 'smooth' });
+    } else {
+      container.scrollTop = top;
+    }
+  }, [loading, memberRowCount, scrollContainerRef, showMembers]);
+
   const header = (
     <div className='flex w-full flex-1 flex-col gap-0.5 overflow-hidden'>
       <div className='flex items-center gap-2'>
@@ -137,7 +167,7 @@ export function GroupItem({
   );
 
   return (
-    <div data-testid={`share-group-${group.group_id}`} className='flex w-full flex-col'>
+    <div ref={wrapperRef} data-testid={`share-group-${group.group_id}`} className='flex w-full flex-col'>
       <div
         data-testid={`share-group-row-${group.group_id}`}
         // `group` keeps the row addressable by the same `.group` row selector as person rows.

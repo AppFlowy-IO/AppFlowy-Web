@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
@@ -60,6 +60,7 @@ export function PeopleWithAccess({
 }: PeopleWithAccessProps) {
   const { t } = useTranslation();
   const currentUser = useCurrentUser();
+  const listRef = useRef<HTMLDivElement>(null);
 
   const currentWorkspaceId = useCurrentWorkspaceId();
   const navigate = useNavigate();
@@ -183,7 +184,7 @@ export function PeopleWithAccess({
         <Label>{t('shareAction.peopleAndGroupsWithAccess')}</Label>
         {isLoading && <Progress variant='primary' />}
       </div>
-      <div className='flex max-h-[200px] w-full flex-col overflow-y-auto'>
+      <div ref={listRef} data-testid='share-access-list' className='flex max-h-[200px] w-full flex-col overflow-y-auto'>
         {visiblePeople.map((person) => {
           const isYou = currentUser?.email === person.email;
 
@@ -209,6 +210,7 @@ export function PeopleWithAccess({
             group={group}
             peopleByEmail={peopleByEmail}
             canExploreMembers={canExploreGroupMembers}
+            scrollContainerRef={listRef}
             canModify={canManageGroupAccess && editableGroupIds.has(group.group_id)}
             currentUserHasFullAccess={hasFullAccess}
             canManageFullAccess={canManageFullAccess}

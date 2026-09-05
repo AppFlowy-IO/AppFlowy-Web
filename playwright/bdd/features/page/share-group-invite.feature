@@ -68,3 +68,17 @@ Feature: Share menu group invite
     When I sign in as seeded spm0622 "member closed" and open the temporary share-menu page
     Then the temporary share-menu page is readable
     And the temporary share-menu page is read only
+
+  Scenario: Expanding a group at the bottom of a long access list shows its members
+    Given I sign in as seeded spm0622 "owner 1"
+    When I create a temporary share-menu document page
+    And I create a temporary share-menu group with seeded spm0622 "member closed"
+    And I open the share panel
+    And I search the share invite input for the temporary share-menu group
+    Then the share invite suggestions show the temporary share-menu group
+    When I invite the temporary share-menu group from the share panel
+    Then the share panel shows the temporary share-menu group with "Can view"
+    When I expand the temporary share-menu group in the share panel
+    Then the expanded temporary share-menu group lists seeded spm0622 "member closed"
+    When I collapse the temporary share-menu group in the share panel
+    Then the temporary share-menu group members are hidden
