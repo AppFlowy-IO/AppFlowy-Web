@@ -13,4 +13,6 @@ export {
   createSpaceWithInitialPage,
   updateSpace,
   createDatabaseView,
+  getDatabaseContainerUpgradeStatus,
+  upgradeDatabaseContainer,
 } from '../js-services/http/page-api';
