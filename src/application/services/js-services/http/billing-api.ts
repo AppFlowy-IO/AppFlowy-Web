@@ -39,8 +39,10 @@ export async function getActiveSubscription(workspaceId: string) {
 
 export async function getWorkspaceSubscriptions(workspaceId: string) {
   try {
-    const plans = await getActiveSubscription(workspaceId);
-    const subscriptions = await getSubscriptions();
+    const [plans, subscriptions] = await Promise.all([
+      getActiveSubscription(workspaceId),
+      getSubscriptions(),
+    ]);
 
     return subscriptions?.filter((subscription) => plans?.includes(subscription.plan));
   } catch (e) {

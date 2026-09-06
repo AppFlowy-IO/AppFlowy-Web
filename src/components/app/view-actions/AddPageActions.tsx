@@ -30,12 +30,10 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const lastChildViewId = view.children?.[view.children.length - 1]?.view_id;
-
   const handleAddPage = useCallback(
     async (layout: ViewLayout, name?: string) => {
       if (!addPage) return;
       if (layout === ViewLayout.AIChat && !aiEnabled) return;
-
       const loadingToastId = toast.loading(t('document.creating'));
 
       try {
@@ -155,7 +153,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
     testId?: string;
     disabled?: boolean;
     tooltip?: string;
-    onSelect: () => void;
+    onSelect: () => void | Promise<void>;
   }[] = useMemo(
     () => [
       {
@@ -209,6 +207,12 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         },
       },
       {
+        label: t('form.menuName'),
+        icon: <ViewIcon layout={ViewLayout.Form} size={'small'} />,
+        testId: 'add-form-button',
+        onSelect: () => handleAddPage(ViewLayout.Form, t('document.plugins.database.newDatabase')),
+      },
+      {
         label: t('list.menuName'),
         icon: <ViewIcon layout={ViewLayout.List} size={'small'} />,
         testId: 'add-list-button',
@@ -243,7 +247,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
           <Tooltip key={action.label}>
             <TooltipTrigger asChild>
               <div>
-                <DropdownMenuItem disabled>
+                <DropdownMenuItem data-testid={action.testId} disabled>
                   {action.icon}
                   {action.label}
                 </DropdownMenuItem>
@@ -256,7 +260,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
             key={action.label}
             data-testid={action.testId}
             disabled={action.disabled}
-            onClick={action.onSelect}
+            onSelect={() => void action.onSelect()}
           >
             {action.icon}
             {action.label}

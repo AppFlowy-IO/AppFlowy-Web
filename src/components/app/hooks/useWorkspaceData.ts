@@ -856,10 +856,7 @@ export function useWorkspaceData() {
         if (!shouldNavigate) return;
 
         try {
-          if (
-            isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq) ||
-            isStalePermissionRequest()
-          ) {
+          if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq) || isStalePermissionRequest()) {
             return;
           }
 
@@ -926,6 +923,7 @@ export function useWorkspaceData() {
             ViewLayout.Calendar,
             ViewLayout.List,
             ViewLayout.Gallery,
+            ViewLayout.Form,
           ]);
 
           if (firstView) {
@@ -963,6 +961,7 @@ export function useWorkspaceData() {
                   ViewLayout.Calendar,
                   ViewLayout.List,
                   ViewLayout.Gallery,
+                  ViewLayout.Form,
                 ]);
 
                 if (firstChild) {
@@ -1305,12 +1304,7 @@ export function useWorkspaceData() {
           if (!viewId) continue;
 
           const children = viewData.children ?? [];
-          const mergedOutline = mergeShallowChildrenIntoOutline(
-            nextOutline,
-            viewId,
-            children,
-            viewData?.has_children
-          );
+          const mergedOutline = mergeShallowChildrenIntoOutline(nextOutline, viewId, children, viewData?.has_children);
 
           if (mergedOutline !== nextOutline) {
             nextOutline = mergedOutline;
@@ -1489,8 +1483,7 @@ export function useWorkspaceData() {
               workspaceId,
               freshnessKey === null
                 ? undefined
-                : freshnessKey ??
-                    `manual:${trashLoaderInstanceId}:${workspaceRevisionRef.current}:${requestSeq}`
+                : freshnessKey ?? `manual:${trashLoaderInstanceId}:${workspaceRevisionRef.current}:${requestSeq}`
             )
           : await ViewService.getTrashCached(workspaceId);
 
@@ -1945,8 +1938,7 @@ export function useWorkspaceData() {
       const affectsCurrentUser =
         normalizedCurrentEmail !== undefined &&
         payloadEmails?.some((email) => email?.toLowerCase() === normalizedCurrentEmail);
-      const accessMayAffectCurrentUser =
-        !normalizedCurrentEmail || !hasOnlyValidEmails || Boolean(affectsCurrentUser);
+      const accessMayAffectCurrentUser = !normalizedCurrentEmail || !hasOnlyValidEmails || Boolean(affectsCurrentUser);
 
       const shouldProbeAccess = Boolean(changedViewId && affectsCurrentUser);
       const cachedNavigation =
@@ -2094,8 +2086,7 @@ export function useWorkspaceData() {
       // and process parents before descendants so nested expansions can merge.
       void (async () => {
         const isCurrentPermissionRefresh = () =>
-          currentWorkspaceIdRef.current === workspaceId &&
-          permissionRefreshRevisionRef.current === permissionRevision;
+          currentWorkspaceIdRef.current === workspaceId && permissionRefreshRevisionRef.current === permissionRevision;
         const rehydrateView = async (viewId: string) => {
           for (let attempt = 0; attempt < PERMISSION_SUBTREE_REHYDRATE_MAX_ATTEMPTS; attempt += 1) {
             if (!isCurrentPermissionRefresh()) return;
@@ -2287,11 +2278,8 @@ export function useWorkspaceData() {
         refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
       }
 
-      const knownTrashIds = trashListRef.current
-        ? new Set(trashListRef.current.map((view) => view.view_id))
-        : undefined;
-      const mayRestoreKnownTrash =
-        knownTrashIds !== undefined && addedIds.some((viewId) => knownTrashIds.has(viewId));
+      const knownTrashIds = trashListRef.current ? new Set(trashListRef.current.map((view) => view.view_id)) : undefined;
+      const mayRestoreKnownTrash = knownTrashIds !== undefined && addedIds.some((viewId) => knownTrashIds.has(viewId));
       const hasUnknownRestoreEvidence = addedIds.length > 0 && knownTrashIds === undefined;
 
       if (removedIds.length > 0 || mayRestoreKnownTrash) {
@@ -2384,8 +2372,7 @@ export function useWorkspaceData() {
             const updatedView = JSON.parse(payload.viewJson) as View;
             const previousView = findView(nextOutline, updatedView.view_id);
             const isNonSidebarSelfParentView =
-              (nonSidebarSelfParentViewIdsRef.current.has(updatedView.view_id) ||
-                isSelfParentFolderView(updatedView)) &&
+              (nonSidebarSelfParentViewIdsRef.current.has(updatedView.view_id) || isSelfParentFolderView(updatedView)) &&
               !isDatabaseCatalogView(updatedView) &&
               !isDatabaseCatalogView(previousView);
 
@@ -2538,9 +2525,7 @@ export function useWorkspaceData() {
 
             const hasSemanticTrashEvidence =
               visiblyRemovedChildren.length > 0 ||
-              Boolean(
-                knownTrashIds?.has(parentId) || childIds.some((childId) => knownTrashIds?.has(childId))
-              );
+              Boolean(knownTrashIds?.has(parentId) || childIds.some((childId) => knownTrashIds?.has(childId)));
 
             // A revisioned no-op can still be a remote permanent delete: the
             // protocol sends remaining children and omits the deleted ID. The

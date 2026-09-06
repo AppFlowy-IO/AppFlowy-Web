@@ -1,9 +1,25 @@
-import { afterAuth, buildLoginUrl, getSafeRedirectUrl, isAuthPath, isSafeRedirectUrl, saveRedirectTo } from '../sign_in';
+import {
+  afterAuth,
+  buildLoginUrl,
+  getAuthCallbackUrl,
+  getPublicFormRedirectTo,
+  getSafeRedirectUrl,
+  isAuthPath,
+  isSafeRedirectUrl,
+  PUBLIC_FORM_AUTH_CONTINUATION_TTL_MS,
+  savePublicFormRedirectTo,
+  saveRedirectTo,
+} from '../sign_in';
+import { Log } from '@/utils/log';
 
-// Mock localStorage
-const localStorageMock = (() => {
+function createStorageMock() {
   let store: Record<string, string> = {};
+
   return {
+    get length() {
+      return Object.keys(store).length;
+    },
+    key: (index: number) => Object.keys(store)[index] ?? null,
     getItem: (key: string) => store[key] ?? null,
     setItem: (key: string, value: string) => {
       store[key] = value;
@@ -15,9 +31,12 @@ const localStorageMock = (() => {
       store = {};
     },
   };
-})();
+}
 
+const localStorageMock = createStorageMock();
+const sessionStorageMock = createStorageMock();
 Object.defineProperty(window, 'localStorage', { value: localStorageMock });
+Object.defineProperty(window, 'sessionStorage', { value: sessionStorageMock });
 
 // Mock window.location (jsdom blocks direct href assignment)
 let hrefValue = 'http://localhost/login';
@@ -34,9 +53,49 @@ Object.defineProperty(window, 'location', {
   },
 });
 
+class MockBroadcastChannel {
+  static instances: MockBroadcastChannel[] = [];
+  private readonly listeners: Array<(event: MessageEvent<unknown>) => void> = [];
+  readonly postMessage = jest.fn();
+
+  constructor(readonly name: string) {
+    MockBroadcastChannel.instances.push(this);
+  }
+
+  addEventListener(_type: 'message', listener: (event: MessageEvent<unknown>) => void) {
+    this.listeners.push(listener);
+  }
+
+  dispatch(data: unknown) {
+    this.listeners.forEach((listener) => listener({ data } as MessageEvent<unknown>));
+  }
+}
+
+const originalBroadcastChannel = globalThis.BroadcastChannel;
+
+beforeAll(() => {
+  Object.defineProperty(globalThis, 'BroadcastChannel', {
+    configurable: true,
+    value: MockBroadcastChannel,
+  });
+});
+
 beforeEach(() => {
   localStorageMock.clear();
+  sessionStorageMock.clear();
   hrefValue = 'http://localhost/login';
+  MockBroadcastChannel.instances.forEach((channel) => channel.postMessage.mockClear());
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
+afterAll(() => {
+  Object.defineProperty(globalThis, 'BroadcastChannel', {
+    configurable: true,
+    value: originalBroadcastChannel,
+  });
 });
 
 describe('isSafeRedirectUrl', () => {
@@ -165,6 +224,128 @@ describe('saveRedirectTo', () => {
 
     expect(localStorage.getItem('redirectTo')).toBeNull();
   });
+
+  it('stores a public Form redirect in an expiring tab-scoped record', () => {
+    const redirectTo = '/form/267699aa-58ef-452f-b822-57271c2c218d';
+    const flowId = 'a'.repeat(32);
+
+    savePublicFormRedirectTo(redirectTo, Date.now(), flowId);
+    hrefValue = `http://localhost/login?force=true&formAuth=${flowId}`;
+
+    expect(getPublicFormRedirectTo()).toBe(redirectTo);
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+  });
+
+  it('does not renew a Form continuation when authentication starts after it expires', () => {
+    const redirectTo = '/form/267699aa-58ef-452f-b822-57271c2c218d';
+    const now = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(now);
+    const flowId = 'a'.repeat(32);
+
+    savePublicFormRedirectTo(redirectTo, now, flowId);
+    hrefValue = `http://localhost/login?force=true&formAuth=${flowId}`;
+    nowSpy.mockReturnValue(now + PUBLIC_FORM_AUTH_CONTINUATION_TTL_MS + 1);
+    saveRedirectTo(redirectTo);
+
+    expect(getPublicFormRedirectTo()).toBeNull();
+    nowSpy.mockRestore();
+  });
+
+  it('discards an expired public Form continuation', () => {
+    const now = Date.now();
+    const flowId = 'a'.repeat(32);
+
+    savePublicFormRedirectTo('/form/267699aa-58ef-452f-b822-57271c2c218d', now, flowId);
+    hrefValue = `http://localhost/login?force=true&formAuth=${flowId}`;
+
+    expect(getPublicFormRedirectTo(now + PUBLIC_FORM_AUTH_CONTINUATION_TTL_MS + 1)).toBeNull();
+  });
+
+  it('discards a legacy unbounded public Form redirect', () => {
+    localStorage.setItem('redirectTo', '/form/267699aa-58ef-452f-b822-57271c2c218d');
+
+    expect(getPublicFormRedirectTo()).toBeNull();
+    expect(localStorage.getItem('redirectTo')).not.toBeNull();
+
+    afterAuth();
+
+    expect(window.location.href).toBe('/app');
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+  });
+});
+
+describe('public Form cross-tab continuation', () => {
+  const formPath = '/form/267699aa-58ef-452f-b822-57271c2c218d';
+  const firstFlowId = 'a'.repeat(32);
+
+  it('puts only the opaque flow ID in the magic-link callback URL', () => {
+    savePublicFormRedirectTo(formPath, Date.now(), firstFlowId);
+    const callbackUrl = getAuthCallbackUrl(formPath);
+    const parsed = new URL(callbackUrl);
+
+    expect(parsed.searchParams.get('formAuth')).toBe(firstFlowId);
+    expect(callbackUrl).not.toContain('267699aa-58ef-452f-b822-57271c2c218d');
+  });
+
+  it('does not expose a tab-scoped bearer to a new callback tab', () => {
+    savePublicFormRedirectTo(formPath, Date.now(), firstFlowId);
+    const callbackUrl = getAuthCallbackUrl(formPath);
+
+    sessionStorage.clear();
+    hrefValue = callbackUrl;
+
+    expect(getPublicFormRedirectTo()).toBeNull();
+  });
+
+  it('signals the originating tab after authentication completes in another tab', () => {
+    savePublicFormRedirectTo(formPath, Date.now(), firstFlowId);
+    const callbackUrl = getAuthCallbackUrl(formPath);
+    const channel = MockBroadcastChannel.instances[0];
+
+    sessionStorage.clear();
+    hrefValue = callbackUrl;
+    afterAuth();
+
+    expect(channel.postMessage).toHaveBeenCalledWith({ flowId: firstFlowId, type: 'authenticated' });
+    expect(window.location.href).toBe('/app');
+  });
+
+  it('redirects only the originating tab whose flow ID matches', () => {
+    savePublicFormRedirectTo(formPath, Date.now(), firstFlowId);
+    hrefValue = `http://localhost/login?force=true&formAuth=${firstFlowId}`;
+    const channel = MockBroadcastChannel.instances[0];
+
+    channel.dispatch({ flowId: 'b'.repeat(32), type: 'authenticated' });
+    expect(window.location.href).not.toBe(formPath);
+
+    channel.dispatch({ flowId: firstFlowId, type: 'authenticated' });
+    expect(window.location.href).toBe(formPath);
+    expect(sessionStorage.getItem('publicFormAuthContinuation')).toBeNull();
+  });
+
+  it('does not redirect a tab that has left the Form authentication flow', () => {
+    savePublicFormRedirectTo(formPath, Date.now(), firstFlowId);
+    const channel = MockBroadcastChannel.instances[0];
+
+    hrefValue = 'http://localhost/';
+    channel.dispatch({ flowId: firstFlowId, type: 'authenticated' });
+
+    expect(window.location.href).toBe('http://localhost/');
+    expect(sessionStorage.getItem('publicFormAuthContinuation')).not.toBeNull();
+  });
+
+  it('does not clear another tab\'s generic login destination', () => {
+    saveRedirectTo('/settings');
+    savePublicFormRedirectTo(formPath, Date.now(), firstFlowId);
+    hrefValue = `http://localhost/login?force=true&formAuth=${firstFlowId}`;
+    const channel = MockBroadcastChannel.instances[0];
+
+    channel.dispatch({ flowId: firstFlowId, type: 'authenticated' });
+
+    expect(window.location.href).toBe(formPath);
+    expect(localStorage.getItem('redirectTo')).toBe('/settings');
+    expect(sessionStorage.getItem('publicFormAuthContinuation')).toBeNull();
+  });
 });
 
 describe('buildLoginUrl', () => {
@@ -196,6 +377,26 @@ describe('buildLoginUrl', () => {
 
     expect(parsed.searchParams.get('action')).toBe('resetPassword');
     expect(parsed.searchParams.has('redirectTo')).toBe(false);
+  });
+
+  it('keeps a public Form continuation out of the login query string', () => {
+    const formPath = '/form/267699aa-58ef-452f-b822-57271c2c218d';
+    const flowId = 'a'.repeat(32);
+
+    savePublicFormRedirectTo(formPath, Date.now(), flowId);
+    const loginUrl = buildLoginUrl({
+      action: 'checkEmail',
+      email: 'respondent@example.com',
+      redirectTo: formPath,
+    });
+    const parsed = new URL(loginUrl, window.location.origin);
+
+    expect(parsed.searchParams.get('action')).toBe('checkEmail');
+    expect(parsed.searchParams.get('email')).toBe('respondent@example.com');
+    expect(parsed.searchParams.has('redirectTo')).toBe(false);
+    expect(parsed.searchParams.get('force')).toBe('true');
+    expect(parsed.searchParams.get('formAuth')).toBe(flowId);
+    expect(loginUrl).not.toContain('267699aa-58ef-452f-b822-57271c2c218d');
   });
 });
 
@@ -285,6 +486,32 @@ describe('afterAuth', () => {
     localStorage.setItem('redirectTo', '/settings');
     afterAuth();
     expect(window.location.href).toBe('/settings');
+  });
+
+  it('returns to a stored public Form path', () => {
+    const formPath = '/form/267699aa-58ef-452f-b822-57271c2c218d';
+    const flowId = 'a'.repeat(32);
+
+    savePublicFormRedirectTo(formPath, Date.now(), flowId);
+    hrefValue = `http://localhost/auth/callback?formAuth=${flowId}`;
+    afterAuth();
+
+    expect(window.location.href).toBe(formPath);
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+    expect(getPublicFormRedirectTo()).toBeNull();
+  });
+
+  it('redacts the Form bearer from authentication logs', () => {
+    const token = '267699aa-58ef-452f-b822-57271c2c218d';
+    const flowId = 'a'.repeat(32);
+    const infoSpy = jest.spyOn(Log, 'info').mockImplementation();
+
+    savePublicFormRedirectTo(`/form/${token}`, Date.now(), flowId);
+    hrefValue = `http://localhost/auth/callback?formAuth=${flowId}`;
+    afterAuth();
+
+    expect(JSON.stringify(infoSpy.mock.calls)).not.toContain(token);
+    expect(JSON.stringify(infoSpy.mock.calls)).toContain('/form/[redacted]');
   });
 
   it('does not decode data inside a safe relative redirect', () => {

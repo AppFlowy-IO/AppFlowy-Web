@@ -62,6 +62,9 @@ describe('useViewActionPermissions', () => {
 
     await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
     expect(mockGetObjectPermission).toHaveBeenCalledWith('workspace-id', 'view-id', Types.Document);
+    expect(result.current.canRead).toBe(true);
+    expect(result.current.canWrite).toBe(true);
+    expect(result.current.canShare).toBe(false);
     expect(result.current.canCreateViewActions).toBe(true);
     expect(result.current.canUsePageHistory).toBe(true);
     expect(result.current.canManageViewActions).toBe(false);
@@ -83,6 +86,9 @@ describe('useViewActionPermissions', () => {
 
     await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
     expect(mockGetObjectPermission).toHaveBeenCalledWith('workspace-id', 'database-id', Types.Database);
+    expect(result.current.canRead).toBe(true);
+    expect(result.current.canWrite).toBe(true);
+    expect(result.current.canShare).toBe(false);
   });
 
   it('fetches a database container permission through its folder view identity', async () => {
@@ -124,6 +130,41 @@ describe('useViewActionPermissions', () => {
     expect(mockGetView).toHaveBeenCalledWith('workspace-id', 'view-id');
     expect(mockGetObjectPermission).toHaveBeenCalledWith('workspace-id', 'database-id', Types.Database);
     expect(result.current.canManageViewActions).toBe(true);
+    expect(result.current.canShare).toBe(true);
+  });
+
+  it('uses an explicit database target without requiring folder metadata', async () => {
+    mockGetObjectPermission.mockResolvedValue(
+      createPermission({
+        object_id: 'database-id',
+        collab_type: Types.Database,
+        can_share: true,
+      })
+    );
+
+    const { result } = renderHook(() =>
+      useViewActionPermissions(undefined, true, 'off-outline-view-id', {
+        collabObjectId: 'database-id',
+        collabType: Types.Database,
+      })
+    );
+
+    await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+    expect(mockGetView).not.toHaveBeenCalled();
+    expect(mockGetObjectPermission).toHaveBeenCalledWith('workspace-id', 'database-id', Types.Database);
+    expect(result.current.canWrite).toBe(true);
+    expect(result.current.canShare).toBe(true);
+  });
+
+  it('fails closed while the canonical object permission is unresolved', () => {
+    mockGetObjectPermission.mockReturnValue(new Promise(() => undefined));
+
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    expect(result.current.hasLoadedViewActionPermissions).toBe(false);
+    expect(result.current.canRead).toBe(false);
+    expect(result.current.canWrite).toBe(false);
+    expect(result.current.canShare).toBe(false);
   });
 
   it('reuses the active-page permission without issuing a duplicate request', async () => {

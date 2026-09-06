@@ -301,13 +301,24 @@ export function useViewOperations({
           });
         }
 
-        // Store metadata on doc for deferred sync binding
+        // Store metadata on docs that this load owns so callers can bind sync
+        // after render. Metadata-only database loads are auxiliary reads of the
+        // canonical database Y.Doc, which may already be owned and bound by the
+        // page hosting this linked view. Reassigning its view identity (or
+        // clearing its sync flag) makes AppPage reject the still-current doc and
+        // leaves the database behind a permanent transition overlay.
         const docWithMeta = doc as YDocWithMeta;
 
         docWithMeta.object_id = collabObjectId;
-        docWithMeta.view_id = viewId;
         docWithMeta._collabType = collabType;
-        docWithMeta._syncBound = false;
+
+        if (!options?.databaseMetadataOnly || docWithMeta.view_id === undefined) {
+          docWithMeta.view_id = viewId;
+        }
+
+        if (!options?.databaseMetadataOnly || docWithMeta._syncBound === undefined) {
+          docWithMeta._syncBound = false;
+        }
 
         // For documents with awareness, create and store awareness
         if (collabType === Types.Document && loadAwareness) {

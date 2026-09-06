@@ -54,6 +54,28 @@ describe('GroupAccessLevelDropdown', () => {
     mockNotifySuccess.mockReset();
   });
 
+  it('assigns comment access without assigning edit access', async () => {
+    const onAccessLevelChange = jest.fn(async () => AccessLevel.ReadAndComment);
+
+    render(
+      <GroupAccessLevelDropdown
+        group={group}
+        canModify
+        currentUserHasFullAccess
+        canManageFullAccess
+        onAccessLevelChange={onAccessLevelChange}
+        onRemoveAccess={async () => null}
+      />
+    );
+
+    fireEvent.click(screen.getByText('shareAction.canComment'));
+
+    await waitFor(() =>
+      expect(onAccessLevelChange).toHaveBeenCalledWith(group.group_id, AccessLevel.ReadAndComment)
+    );
+    expect(onAccessLevelChange).not.toHaveBeenCalledWith(group.group_id, AccessLevel.ReadAndWrite);
+  });
+
   it('reports a stronger inherited result instead of a successful downgrade', async () => {
     render(
       <GroupAccessLevelDropdown
@@ -168,6 +190,7 @@ describe('GroupAccessLevelDropdown', () => {
 
     expect(screen.queryByText('shareAction.fullAccess')).toBeNull();
     expect(screen.getByText('shareAction.canView')).toBeTruthy();
+    expect(screen.getByText('shareAction.canComment')).toBeTruthy();
     expect(screen.getByText('shareAction.canEdit')).toBeTruthy();
     expect(screen.getByText('shareAction.removeAccess')).toBeTruthy();
 
