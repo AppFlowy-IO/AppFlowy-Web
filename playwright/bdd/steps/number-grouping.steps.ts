@@ -3,7 +3,14 @@ import { createBdd, DataTable } from 'playwright-bdd';
 
 import { waitForGridReady } from '../../support/database-ui-helpers';
 import { addFieldWithType, addRows, loginAndCreateGrid, typeTextIntoCell } from '../../support/field-type-helpers';
-import { DatabaseGridSelectors, FieldType } from '../../support/selectors';
+import { DatabaseGridSelectors, FieldType, SortSelectors } from '../../support/selectors';
+import {
+  addSortByFieldName,
+  changeSortDirection,
+  closeSortMenu,
+  openSortMenu,
+  SortDirection,
+} from '../../support/sort-test-helpers';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const { Given, When, Then } = createBdd();
@@ -55,8 +62,11 @@ async function closeNumberGroupSettings(page: Page) {
 }
 
 async function fillRange(page: Page, start: string, end: string, interval: string) {
+  await numberControl(page, 'start').click();
   await numberControl(page, 'start').fill(start);
+  await numberControl(page, 'end').click();
   await numberControl(page, 'end').fill(end);
+  await numberControl(page, 'interval').click();
   await numberControl(page, 'interval').fill(interval);
 }
 
@@ -182,6 +192,45 @@ When('I sort number groups {word}', async ({ page }, direction: string) => {
   await expect(numberControl(page, `sort-${direction}`)).toHaveAttribute('aria-checked', 'true');
   await closeNumberGroupSettings(page);
 });
+
+async function expectNumericRowSort(page: Page, direction: string) {
+  expect(['ascending', 'descending']).toContain(direction);
+  await openSortMenu(page);
+  await expect(SortSelectors.sortItem(page)).toHaveCount(1);
+  await expect(
+    SortSelectors.sortItem(page).getByRole('button', { name: new RegExp(`^${direction}$`, 'i') })
+  ).toBeVisible();
+  await closeSortMenu(page);
+}
+
+When('I sort the Grid rows by its number field {word}', async ({ page }, direction: string) => {
+  expect(['ascending', 'descending']).toContain(direction);
+  if ((await SortSelectors.sortCondition(page).count()) === 0) {
+    // The fixture adds one Number property through the UI with its default name.
+    await addSortByFieldName(page, 'Number');
+  }
+
+  await openSortMenu(page);
+  await changeSortDirection(page, 0, direction === 'ascending' ? SortDirection.Ascending : SortDirection.Descending);
+  await closeSortMenu(page);
+  await expectNumericRowSort(page, direction);
+});
+
+Then('the numeric row sort is {word}', async ({ page }, direction: string) => {
+  await expectNumericRowSort(page, direction);
+});
+
+Then(
+  'number group {string} contains numeric values in this order',
+  async ({ page }, bucket: string, table: DataTable) => {
+    const id = bucketId(page, bucket);
+    const cells = page.locator(
+      `[data-index][data-row-key^="group:${id}:row:"] .grid-row-cell[data-column-id="${numberFieldId(page)}"]`
+    );
+
+    await expect(cells).toHaveText(table.hashes().map(({ value }) => value));
+  }
+);
 
 When('I reload the number-grouped Grid', async ({ page }) => {
   await page.reload({ waitUntil: 'domcontentloaded' });
