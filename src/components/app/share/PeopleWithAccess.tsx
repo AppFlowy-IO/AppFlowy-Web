@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
@@ -61,10 +61,25 @@ export function PeopleWithAccess({
   const { t } = useTranslation();
   const currentUser = useCurrentUser();
   const listRef = useRef<HTMLDivElement>(null);
+  const [groupMembersRevision, setGroupMembersRevision] = useState(0);
 
   const currentWorkspaceId = useCurrentWorkspaceId();
   const navigate = useNavigate();
   const eventEmitter = useEventEmitter();
+
+  useEffect(() => {
+    if (!canExploreGroupMembers || !eventEmitter) return;
+
+    // Share one listener across the list. Membership notifications may not
+    // identify a group, so invalidate every roster and let open rows reload.
+    const invalidateGroupMembers = () => setGroupMembersRevision((revision) => revision + 1);
+
+    eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, invalidateGroupMembers);
+    return () => {
+      eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, invalidateGroupMembers);
+    };
+  }, [canExploreGroupMembers, eventEmitter]);
+
   const handleAccessLevelChange = useCallback(
     async (personEmail: string, newAccessLevel: AccessLevel) => {
       if (!currentWorkspaceId) return;
@@ -210,6 +225,7 @@ export function PeopleWithAccess({
             group={group}
             peopleByEmail={peopleByEmail}
             canExploreMembers={canExploreGroupMembers}
+            membersRevision={groupMembersRevision}
             scrollContainerRef={listRef}
             canModify={canManageGroupAccess && editableGroupIds.has(group.group_id)}
             currentUserHasFullAccess={hasFullAccess}
