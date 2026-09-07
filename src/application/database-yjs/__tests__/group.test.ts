@@ -23,7 +23,8 @@ import {
   normalizeGroupIdentifiers,
 } from '@/application/database-yjs/group';
 import { DateGroupCondition, FieldType, FilterType } from '@/application/database-yjs/database.type';
-import { CheckboxFilterCondition, SelectOptionFilterCondition } from '@/application/database-yjs/fields';
+import { CheckboxFilterCondition, NumberFormat, SelectOptionFilterCondition } from '@/application/database-yjs/fields';
+import { defaultNumberGroupConfiguration, NumberGroupMode } from '@/application/database-yjs/number-grouping';
 import { Row } from '@/application/database-yjs/selector';
 import {
   RowId,
@@ -369,7 +370,7 @@ describe('desktop Grid dynamic grouping parity', () => {
       '0',
       '99.9',
       '100',
-      '1,250',
+      '1250',
       '',
     ]);
     const result = groupByNumber(rows, rowMetas, field);
@@ -384,6 +385,31 @@ describe('desktop Grid dynamic grouping parity', () => {
     ]);
     expect(result.get('number_range_0_100')?.map(({ id }) => id)).toEqual(['row-3', 'row-4']);
     expect(result.get('amount')?.map(({ id }) => id)).toEqual(['row-7']);
+  });
+
+  it.each([NumberFormat.Num, NumberFormat.Percent, NumberFormat.USD])('groups raw stored numbers independently of display format %s', (format) => {
+    const field = createField('amount', FieldType.Number, { format, scale: 2 });
+    const { rowMetas, rows } = createRows('amount', FieldType.Number, ['0.5', '1.234', '1,250', '', '0']);
+    const content = JSON.stringify(defaultNumberGroupConfiguration(NumberGroupMode.Exact));
+    const result = groupByField(rows, rowMetas, field, undefined, content);
+
+    expect([...result!.keys()]).toEqual(['amount', 'number_value_0', 'number_value_0.5', 'number_value_1', 'number_value_1.234']);
+    expect(result?.get('number_value_0.5')?.map(({ id }) => id)).toEqual(['row-0']);
+    expect(result?.get('amount')?.map(({ id }) => id)).toEqual(['row-3']);
+  });
+
+  it('removes emptied exact groups after edits and deletions and retains configured empty ranges', () => {
+    const field = createField('amount', FieldType.Number);
+    const { rowMetas, rows } = createRows('amount', FieldType.Number, ['1', '2']);
+    const exact = JSON.stringify(defaultNumberGroupConfiguration(NumberGroupMode.Exact));
+
+    updateCell(rowMetas['row-0'], 'amount', '2.0');
+    expect([...groupByNumber(rows, rowMetas, field, exact).keys()]).toEqual(['amount', 'number_value_2']);
+    expect([...groupByNumber([], rowMetas, field, exact).keys()]).toEqual(['amount']);
+    const range = JSON.stringify(defaultNumberGroupConfiguration(NumberGroupMode.Range));
+
+    expect(groupByNumber([], rowMetas, field, range).size).toBe(13);
+    expect(getGroupCellData('number_above_100', field, range)).toBe('110');
   });
 
   it('moves a row when the RichText grouping cell changes', () => {
@@ -482,7 +508,7 @@ describe('desktop Grid dynamic grouping parity', () => {
     const relationField = createField('project', FieldType.Relation);
 
     expect(getGroupLabel('number_range_-100_0', numberField)).toBe('-100 to 0');
-    expect(getGroupLabel('amount', numberField)).toBe('No Amount');
+    expect(getGroupLabel('amount', numberField)).toBe('No Number');
     expect(getGroupLabel('todo', selectField)).toBe('To do');
     expect(getGroupCellData('number_range_200_300', numberField)).toBe('200');
     expect(getGroupCellData('status', selectField)).toBeUndefined();

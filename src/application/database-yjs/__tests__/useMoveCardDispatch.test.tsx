@@ -1,13 +1,15 @@
 import { act, renderHook } from '@testing-library/react';
-import type React from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState, FieldType } from '@/application/database-yjs';
 import { useMoveCardDispatch } from '@/application/database-yjs/dispatch';
+import { defaultNumberGroupConfiguration, NumberGroupMode } from '@/application/database-yjs/number-grouping';
 import {
   YDatabase,
   YDatabaseField,
   YDatabaseFields,
+  YDatabaseGroup,
+  YDatabaseGroups,
   YDatabaseRow,
   YDatabaseView,
   YDatabaseViews,
@@ -16,13 +18,75 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 
-import { createRowDoc } from './test-helpers';
+import { createCell, createRowDoc } from './test-helpers';
+
+import type { ReactNode } from 'react';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
 }));
 
 describe('useMoveCardDispatch', () => {
+  it.each([
+    [NumberGroupMode.Range, 'number_interval_0_10', 'number_interval_10_20', '10'],
+    [NumberGroupMode.Range, 'number_interval_0_10', 'number_below_0', '-10'],
+    [NumberGroupMode.Range, 'number_interval_0_10', 'number_above_100', '110'],
+    [NumberGroupMode.Exact, 'number_value_1.25', 'number_value_-0.5', '-0.5'],
+    [NumberGroupMode.Legacy, 'number_range_0_100', 'number_range_-100_0', '-100'],
+  ])('writes the numeric representative in mode %s and preserves same-group values', (mode, start, finish, value) => {
+    const databaseId = 'numeric-database';
+    const viewId = 'numeric-view';
+    const fieldId = 'amount';
+    const rowId = 'numeric-row';
+    const databaseDoc = new Y.Doc({ guid: databaseId }) as YDoc;
+    const database = new Y.Map() as YDatabase;
+    const fields = new Y.Map() as YDatabaseFields;
+    const field = new Y.Map() as YDatabaseField;
+    const views = new Y.Map() as YDatabaseViews;
+    const view = new Y.Map() as YDatabaseView;
+    const groups = new Y.Array() as YDatabaseGroups;
+    const group = new Y.Map() as YDatabaseGroup;
+
+    field.set(YjsDatabaseKey.id, fieldId);
+    field.set(YjsDatabaseKey.type, FieldType.Number);
+    fields.set(fieldId, field);
+    group.set(YjsDatabaseKey.field_id, fieldId);
+    group.set(YjsDatabaseKey.content, JSON.stringify(defaultNumberGroupConfiguration(mode as NumberGroupMode)));
+    groups.push([group]);
+    view.set(YjsDatabaseKey.groups, groups);
+    view.set(YjsDatabaseKey.row_orders, Y.Array.from([{ id: rowId, height: 36 }]));
+    views.set(viewId, view);
+    database.set(YjsDatabaseKey.id, databaseId);
+    database.set(YjsDatabaseKey.fields, fields);
+    database.set(YjsDatabaseKey.views, views);
+    databaseDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+    const rowDoc = createRowDoc(rowId, databaseId, { [fieldId]: createCell(FieldType.Number, '1.25') });
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const cell = row.get(YjsDatabaseKey.cells).get(fieldId);
+    const contextValue = {
+      readOnly: false, databaseDoc, databasePageId: viewId, activeViewId: viewId,
+      rowMap: { [rowId]: rowDoc }, workspaceId: 'workspace-id',
+    } as DatabaseContextState;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { result, unmount } = renderHook(useMoveCardDispatch, { wrapper });
+    const before = cell.toJSON();
+
+    act(() => result.current({ rowId, fieldId, startColumnId: start as string, finishColumnId: start as string }));
+    expect(cell.toJSON()).toEqual(before);
+    act(() => result.current({ rowId, fieldId, startColumnId: start as string, finishColumnId: finish as string }));
+    expect(cell.get(YjsDatabaseKey.data)).toBe(value);
+    expect(cell.get(YjsDatabaseKey.field_type)).toBe(FieldType.Number);
+    act(() => result.current({ rowId, fieldId, startColumnId: finish as string, finishColumnId: fieldId }));
+    expect(cell.get(YjsDatabaseKey.data)).toBe('');
+    act(() => row.get(YjsDatabaseKey.cells).delete(fieldId));
+    act(() => result.current({ rowId, fieldId, startColumnId: fieldId, finishColumnId: finish as string }));
+    expect(row.get(YjsDatabaseKey.cells).get(fieldId).get(YjsDatabaseKey.data)).toBe(value);
+    unmount();
+    rowDoc.destroy(); databaseDoc.destroy();
+  });
+
   it('transforms a lazy cell before writing the new board group value', () => {
     const databaseId = 'database-id';
     const viewId = 'view-id';
@@ -74,7 +138,7 @@ describe('useMoveCardDispatch', () => {
       rowMap: { [rowId]: rowDoc },
       workspaceId: 'workspace-id',
     } as DatabaseContextState;
-    const wrapper = ({ children }: { children: React.ReactNode }) => (
+    const wrapper = ({ children }: { children: ReactNode }) => (
       <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
     );
     const { result } = renderHook(() => useMoveCardDispatch(), { wrapper });

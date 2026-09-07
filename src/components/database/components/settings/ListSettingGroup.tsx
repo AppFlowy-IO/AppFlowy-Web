@@ -6,6 +6,7 @@ import {
   useToggleListHideEmptyGroups,
   useUpdateDateGroupConditionDispatch,
 } from '@/application/database-yjs';
+import { useUpdateNumberGroupConfigurationDispatch } from '@/application/database-yjs/dispatch';
 import { DatabaseSettingGroup } from '@/components/database/components/settings/GridSettingGroup';
 import { useListGrouping } from '@/components/database/list/ListGroupingContext';
 
@@ -17,6 +18,7 @@ function ListSettingGroup() {
   const setVisibility = useSetListGroupVisibilityDispatch(grouping.groupId, grouping.fieldId);
   const setAllVisibility = useSetAllListGroupsVisibilityDispatch(grouping.groupId, grouping.fieldId);
   const updateDateCondition = useUpdateDateGroupConditionDispatch();
+  const updateNumberConfiguration = useUpdateNumberGroupConfigurationDispatch();
 
   return (
     <DatabaseSettingGroup
@@ -28,6 +30,7 @@ function ListSettingGroup() {
       testIdPrefix='list'
       toggleHideEmpty={toggleHideEmpty}
       updateDateCondition={updateDateCondition}
+      updateNumberConfiguration={updateNumberConfiguration}
     />
   );
 }

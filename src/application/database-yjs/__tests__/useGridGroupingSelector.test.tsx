@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { StrictMode, type ReactNode, useLayoutEffect, useState } from 'react';
 import * as Y from 'yjs';
 
 import {
@@ -16,8 +17,10 @@ import {
   useUpdateCellDispatch,
   useUpdateDateGroupConditionDispatch,
   useUpdateGroupContentDispatch,
+  useUpdateNumberGroupConfigurationDispatch,
 } from '@/application/database-yjs';
 import { createYDatabaseGroupColumn } from '@/application/database-yjs/group-column';
+import { defaultNumberGroupConfiguration, NumberGroupMode, parseNumberGroupConfiguration } from '@/application/database-yjs/number-grouping';
 import {
   DatabaseViewLayout,
   YDatabase,
@@ -44,7 +47,6 @@ import { useSyncGridGroupingMetadata } from '@/components/database/grid/GridGrou
 
 import { createCell, createRowDoc } from './test-helpers';
 
-import { StrictMode, type ReactNode, useLayoutEffect, useState } from 'react';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
@@ -188,6 +190,135 @@ describe('useGridGroupingSelector refresh behavior', () => {
     useSyncGridGroupingMetadata(grouping);
     return grouping;
   };
+
+  it('starts new numeric grouping in Range and preserves settings and column metadata on reselection', async () => {
+    const fixture = createGridGroupingFixture({ fieldType: FieldType.Number, rowAValue: '10', rowBValue: '100' });
+
+    fixture.groups.delete(0, fixture.groups.length);
+    fixture.gridLayoutSetting.set(YjsDatabaseKey.hide_empty_groups, false);
+    const { result, unmount } = renderHook(() => ({
+      grouping: useGroupingWithMetadataSync(),
+      groupBy: useGroupByFieldDispatch(),
+      update: useUpdateNumberGroupConfigurationDispatch(),
+    }), { wrapper: fixture.wrapper });
+
+    act(() => result.current.groupBy(fixture.fieldId));
+    await waitFor(() => expect(result.current.grouping.visibleGroups).toHaveLength(13));
+    expect(parseNumberGroupConfiguration(result.current.grouping.content).mode).toBe(NumberGroupMode.Range);
+    const group = fixture.groups.get(0);
+    const columns = group.get(YjsDatabaseKey.groups);
+    const final = columns.toArray().find((column) => column.get(YjsDatabaseKey.id) === 'number_interval_closed_90_100')!;
+
+    act(() => {
+      final.set(YjsDatabaseKey.visible, false);
+      final.set(YjsDatabaseKey.group_color, 'appflowy_tint5');
+      group.get(YjsDatabaseKey.collapsed_group_ids).push(['number_interval_closed_90_100']);
+      result.current.groupBy(fixture.fieldId);
+      result.current.update({ ...defaultNumberGroupConfiguration(NumberGroupMode.Range), range_start: '-0.0', sort_descending: true });
+    });
+    await waitFor(() => expect(result.current.grouping.activeGroupIds.slice(0, 3))
+      .toEqual(['name', 'number_above_100', 'number_interval_closed_90_100']));
+    expect(fixture.groups.get(0)).toBe(group);
+    expect(result.current.grouping.groups.find(({ id }) => id === 'number_interval_closed_90_100'))
+      .toMatchObject({ hidden: true, collapsed: true });
+    const canonicalColumns = columns.toArray();
+
+    act(() => result.current.update(parseNumberGroupConfiguration(result.current.grouping.content)));
+    expect(columns.toArray()).toEqual(canonicalColumns);
+    expect(columns.toJSON()).toContainEqual({ id: 'number_interval_closed_90_100', visible: false, group_color: 'appflowy_tint5' });
+    unmount();
+    fixture.rowA.destroy(); fixture.rowB.destroy(); fixture.databaseDoc.destroy();
+  });
+
+  it('switches numeric modes atomically and never shows stale exact headers after editing', async () => {
+    const fixture = createGridGroupingFixture({ fieldType: FieldType.Number, rowAValue: '1', rowBValue: '2' });
+    const { result, unmount } = renderHook(() => ({
+      grouping: useGroupingWithMetadataSync(), update: useUpdateNumberGroupConfigurationDispatch(),
+    }), { wrapper: fixture.wrapper });
+
+    act(() => result.current.update(defaultNumberGroupConfiguration(NumberGroupMode.Exact)));
+    await waitFor(() => expect(result.current.grouping.visibleGroups.map(({ id }) => id)).toEqual(['number_value_1', 'number_value_2']));
+    act(() => fixture.updateCell(fixture.rowA, fixture.fieldId, '2.0'));
+    await waitFor(() => expect(result.current.grouping.visibleGroups.map(({ id }) => id)).toEqual(['number_value_2']));
+    act(() => { fixture.gridLayoutSetting.set(YjsDatabaseKey.hide_empty_groups, false); });
+    await waitFor(() => expect(result.current.grouping.visibleGroups.map(({ id }) => id)).toEqual(['name', 'number_value_2']));
+    act(() => result.current.update({ ...defaultNumberGroupConfiguration(NumberGroupMode.Range), range_start: '-0.5', range_end: '0.6', range_interval: '0.5' }));
+    await waitFor(() => expect(result.current.grouping.visibleGroups).toHaveLength(6));
+    expect(fixture.columns.toJSON().some(({ id }: { id: string }) => id.startsWith('number_value'))).toBe(false);
+    expect(result.current.grouping.groups.find(({ id }) => id === 'number_above_0.6')?.rows).toHaveLength(2);
+    const before = fixture.group.toJSON();
+
+    expect(() => result.current.update({ ...defaultNumberGroupConfiguration(NumberGroupMode.Range), range_interval: '0' })).toThrow(RangeError);
+    expect(fixture.group.toJSON()).toEqual(before);
+    unmount();
+    const reopened = renderHook(useGroupingWithMetadataSync, { wrapper: fixture.wrapper });
+
+    await waitFor(() => expect(reopened.result.current.visibleGroups).toHaveLength(6));
+    expect(parseNumberGroupConfiguration(reopened.result.current.content).range_interval).toBe('0.5');
+    reopened.unmount();
+    fixture.rowA.destroy(); fixture.rowB.destroy(); fixture.databaseDoc.destroy();
+  });
+
+  it('preserves unhydrated valid numeric group metadata while discarding IDs from another mode', async () => {
+    const fixture = createGridGroupingFixture({ fieldType: FieldType.Number, rowAValue: '2', rowBValue: '10' });
+
+    fixture.group.set(YjsDatabaseKey.content, JSON.stringify({ ...defaultNumberGroupConfiguration(NumberGroupMode.Exact), sort_descending: true }));
+    fixture.columns.push([
+      createYDatabaseGroupColumn({ id: 'number_value_9007199254740993', visible: false, groupColor: 'appflowy_tint5' }),
+      createYDatabaseGroupColumn({ id: 'number_range_0_100' }),
+    ]);
+    fixture.rowOrders.push([{ id: 'not-hydrated', height: 36 }]);
+    const { result, unmount } = renderHook(useGroupingWithMetadataSync, { wrapper: fixture.wrapper });
+
+    await waitFor(() => expect(result.current.activeGroupIds).toEqual(['name', 'number_value_9007199254740993', 'number_value_10', 'number_value_2']));
+    expect(result.current.ready).toBe(false);
+    expect(fixture.columns.toJSON()).toContainEqual({ id: 'number_value_9007199254740993', visible: false, group_color: 'appflowy_tint5' });
+    expect(result.current.metadataGroupIds).toContain('number_value_9007199254740993');
+    unmount();
+    fixture.rowA.destroy(); fixture.rowB.destroy(); fixture.databaseDoc.destroy();
+  });
+
+  it('uses the current field type when a grouped schema changes in either direction', async () => {
+    const fixture = createGridGroupingFixture({ fieldType: FieldType.Number, rowAValue: '2', rowBValue: '10' });
+    const field = fixture.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)
+      ?.get(YjsDatabaseKey.fields).get(fixture.fieldId) as YDatabaseField;
+    const { result, unmount } = renderHook(useGroupingWithMetadataSync, { wrapper: fixture.wrapper });
+
+    await waitFor(() => expect(result.current.visibleGroups.map(({ id }) => id)).toEqual(['number_range_0_100']));
+    act(() => {
+      field.set(YjsDatabaseKey.type, FieldType.RichText);
+      [fixture.rowA, fixture.rowB].forEach((doc) => {
+        const row = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+        row.get(YjsDatabaseKey.cells).get(fixture.fieldId).set(YjsDatabaseKey.field_type, FieldType.RichText);
+      });
+      fixture.updateCell(fixture.rowA, fixture.fieldId, 'Alpha');
+      fixture.updateCell(fixture.rowB, fixture.fieldId, 'Beta');
+    });
+    await waitFor(() => expect(fixture.columns.toJSON().map(({ id }: { id: string }) => id)).toContain('Alpha'));
+    const alpha = fixture.columns.toArray().find((column) => column.get(YjsDatabaseKey.id) === 'Alpha')!;
+
+    act(() => {
+      alpha.set(YjsDatabaseKey.visible, false);
+      alpha.set(YjsDatabaseKey.group_color, 'appflowy_tint5');
+      fixture.updateCell(fixture.rowB, fixture.fieldId, 'Gamma');
+    });
+    await waitFor(() => expect(result.current.visibleGroups.map(({ id }) => id)).toEqual(['Gamma']));
+    expect(fixture.columns.toJSON()).toContainEqual({ id: 'Alpha', visible: false, group_color: 'appflowy_tint5' });
+    act(() => {
+      // Imported schema snapshots can retain the old group type too.
+      fixture.group.set(YjsDatabaseKey.type, FieldType.RichText);
+      fixture.group.set(YjsDatabaseKey.content, JSON.stringify({ ...defaultNumberGroupConfiguration(NumberGroupMode.Exact), sort_descending: true }));
+      field.set(YjsDatabaseKey.type, FieldType.Number);
+      fixture.updateCell(fixture.rowA, fixture.fieldId, '2');
+      fixture.updateCell(fixture.rowB, fixture.fieldId, '10');
+    });
+    await waitFor(() => expect(fixture.columns.toJSON().map(({ id }: { id: string }) => id))
+      .toEqual(['name', 'number_value_10', 'number_value_2']));
+    expect(result.current.visibleGroups.map(({ id }) => id)).toEqual(['number_value_10', 'number_value_2']);
+    unmount();
+    fixture.rowA.destroy(); fixture.rowB.destroy(); fixture.databaseDoc.destroy();
+  });
 
   it('uses List layout slot 4 through the generic selector and List alias', async () => {
     const fixture = createGridGroupingFixture();

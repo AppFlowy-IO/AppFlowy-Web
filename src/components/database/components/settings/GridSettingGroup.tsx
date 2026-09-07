@@ -10,16 +10,23 @@ import {
   useSetGridGroupVisibilityDispatch,
   useToggleGridHideEmptyGroups,
   useUpdateDateGroupConditionDispatch,
+  useUpdateNumberGroupConfigurationDispatch,
 } from '@/application/database-yjs/dispatch';
 import {
   DATABASE_GROUPABLE_FIELD_TYPES,
   isDynamicDatabaseGroupFieldType,
   parseDateGroupConfiguration,
 } from '@/application/database-yjs/group';
+import {
+  NumberGroupMode,
+  type NumberGroupConfiguration,
+  parseNumberGroupConfiguration,
+} from '@/application/database-yjs/number-grouping';
 import { ReactComponent as GroupIcon } from '@/assets/icons/group.svg';
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import { FieldDisplay } from '@/components/database/components/field';
+import { NumberGroupSettings } from '@/components/database/components/settings/NumberGroupSettings';
 import { useGridGrouping } from '@/components/database/grid/GridGroupingContext';
 import {
   DropdownMenuItem,
@@ -43,8 +50,10 @@ const DATE_CONDITIONS = [
 
 export const GRID_GROUP_VISIBILITY_LIMIT = 40;
 
-export function getGridGroupVisibilityGroups(groups: GridGroup[], fieldType?: FieldType): GridGroup[] {
+export function getGridGroupVisibilityGroups(groups: GridGroup[], fieldType?: FieldType, content?: string): GridGroup[] {
   if (fieldType === undefined || !isDynamicDatabaseGroupFieldType(fieldType)) return groups;
+  if (fieldType === FieldType.Number && parseNumberGroupConfiguration(content).mode === NumberGroupMode.Range)
+    return groups;
 
   return groups.filter((group) => group.isDefault || group.rows.length > 0);
 }
@@ -229,6 +238,7 @@ interface DatabaseSettingGroupProps {
   setVisibility: (groupId: string, visible: boolean) => void;
   setAllVisibility: (groupIds: string[], visible: boolean) => void;
   updateDateCondition: (condition: DateGroupCondition) => void;
+  updateNumberConfiguration: (configuration: NumberGroupConfiguration) => void;
   testIdPrefix: 'grid' | 'list';
 }
 
@@ -240,6 +250,7 @@ export function DatabaseSettingGroup({
   setVisibility,
   setAllVisibility,
   updateDateCondition,
+  updateNumberConfiguration,
   testIdPrefix,
 }: DatabaseSettingGroupProps) {
   const { t } = useTranslation();
@@ -249,8 +260,8 @@ export function DatabaseSettingGroup({
     [allProperties]
   );
   const visibilityGroups = useMemo(
-    () => getGridGroupVisibilityGroups(grouping.groups, grouping.fieldType),
-    [grouping.fieldType, grouping.groups]
+    () => getGridGroupVisibilityGroups(grouping.groups, grouping.fieldType, grouping.content),
+    [grouping.fieldType, grouping.groups, grouping.content]
   );
   const currentDateCondition = parseDateGroupConfiguration(grouping.content).condition;
 
@@ -305,6 +316,15 @@ export function DatabaseSettingGroup({
                   ))}
                 </>
               )}
+
+              {grouping.fieldType === FieldType.Number ? (
+                <NumberGroupSettings
+                  configuration={parseNumberGroupConfiguration(grouping.content)}
+                  key={grouping.fieldId}
+                  onChange={updateNumberConfiguration}
+                  testIdPrefix={testIdPrefix}
+                />
+              ) : null}
 
               {visibilityGroups.length > 0 && (
                 <>
@@ -374,6 +394,7 @@ function GridSettingGroup() {
   const setVisibility = useSetGridGroupVisibilityDispatch(grouping.groupId, grouping.fieldId);
   const setAllVisibility = useSetAllGridGroupsVisibilityDispatch(grouping.groupId, grouping.fieldId);
   const updateDateCondition = useUpdateDateGroupConditionDispatch();
+  const updateNumberConfiguration = useUpdateNumberGroupConfigurationDispatch();
 
   return (
     <DatabaseSettingGroup
@@ -385,6 +406,7 @@ function GridSettingGroup() {
       testIdPrefix='grid'
       toggleHideEmpty={toggleHideEmpty}
       updateDateCondition={updateDateCondition}
+      updateNumberConfiguration={updateNumberConfiguration}
     />
   );
 }

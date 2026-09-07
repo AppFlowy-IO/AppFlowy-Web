@@ -2804,6 +2804,21 @@
     "ungroupedItemsTitle": "Click to add to the board",
     "groupBy": "Group by",
     "groupCondition": "Group condition",
+    "numberGrouping": {
+      "title": "Group numbers by",
+      "exact": "Exact value",
+      "range": "Range",
+      "legacy": "Automatic ranges of 100",
+      "start": "Start",
+      "end": "End",
+      "interval": "Interval",
+      "sort": "Sort groups",
+      "invalidNumber": "Enter valid decimal numbers.",
+      "invalidBounds": "End must be greater than Start.",
+      "invalidInterval": "Interval must be greater than zero.",
+      "tooManyRanges": "Use a larger interval to create at most 1,000 ranges.",
+      "precisionExceeded": "These values exceed the supported decimal precision."
+    },
     "referencedBoardPrefix": "View of",
     "notesTooltip": "Notes inside",
     "mobile": {

@@ -120,7 +120,12 @@ describe('useGroup', () => {
 
   it.each<[FieldType, string[]]>([
     [FieldType.RichText, ['field-id']],
-    [FieldType.Number, ['field-id']],
+    [FieldType.Number, [
+      'field-id', 'number_below_0', 'number_interval_0_10', 'number_interval_10_20',
+      'number_interval_20_30', 'number_interval_30_40', 'number_interval_40_50',
+      'number_interval_50_60', 'number_interval_60_70', 'number_interval_70_80',
+      'number_interval_80_90', 'number_interval_closed_90_100', 'number_above_100',
+    ]],
     [FieldType.URL, ['field-id']],
     [FieldType.Checkbox, ['Yes', 'No']],
     [FieldType.SingleSelect, ['field-id']],
@@ -153,7 +158,8 @@ describe('useGroup', () => {
     ).toBe(true);
     expect(group?.get(YjsDatabaseKey.collapsed_group_ids)?.toArray()).toEqual([]);
     expect(group?.get(YjsDatabaseKey.content)).toBe(
-      fieldType === FieldType.DateTime ? JSON.stringify({ hide_empty: false, condition: 0 }) : ''
+      fieldType === FieldType.DateTime ? JSON.stringify({ hide_empty: false, condition: 0 }) :
+        fieldType === FieldType.Number ? JSON.stringify({ hide_empty: false, mode: 2, range_start: '0', range_end: '100', range_interval: '10', sort_descending: false }) : ''
     );
     expect(view?.get(YjsDatabaseKey.layout_settings)?.get('0')?.get(YjsDatabaseKey.hide_empty_groups)).toBe(true);
   });
