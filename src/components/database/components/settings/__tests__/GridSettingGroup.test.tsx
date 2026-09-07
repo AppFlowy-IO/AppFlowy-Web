@@ -5,6 +5,7 @@ import { DatabaseContext, FieldType, SelectOptionColor } from '@/application/dat
 import type { DatabaseContextState, GridGroup } from '@/application/database-yjs';
 import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
 import { createYDatabaseGroupColumn } from '@/application/database-yjs/group-column';
+import { defaultNumberGroupConfiguration, NumberGroupMode } from '@/application/database-yjs/number-grouping';
 import { YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import type {
   YDatabase,
@@ -215,6 +216,31 @@ describe('GridGroupVisibilityList', () => {
       'current-value',
     ]);
     expect(getGridGroupVisibilityGroups(groups, FieldType.SingleSelect)).toBe(groups);
+  });
+
+  it('exposes empty configured ranges but omits empty derived numeric groups', () => {
+    const groups = [
+      { ...createGroup(0), id: 'number', isDefault: true },
+      { ...createGroup(1), id: 'occupied', rows: [{ height: 36, id: 'row-a' }] },
+      { ...createGroup(2), id: 'empty' },
+    ];
+
+    expect(
+      getGridGroupVisibilityGroups(
+        groups,
+        FieldType.Number,
+        JSON.stringify(defaultNumberGroupConfiguration(NumberGroupMode.Range))
+      )
+    ).toBe(groups);
+    for (const mode of [NumberGroupMode.Legacy, NumberGroupMode.Exact]) {
+      expect(
+        getGridGroupVisibilityGroups(
+          groups,
+          FieldType.Number,
+          JSON.stringify(defaultNumberGroupConfiguration(mode))
+        ).map((group) => group.id)
+      ).toEqual(['number', 'occupied']);
+    }
   });
 
   it('renders select-option groups with the same semantic tag colors while retaining checkbox semantics', async () => {

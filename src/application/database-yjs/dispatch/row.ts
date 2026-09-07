@@ -50,6 +50,7 @@ import {
   registerDatabaseHistoryRowDoc,
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
+import { createNumberGroupingPolicy } from '@/application/database-yjs/number-grouping';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { getPrimaryFieldId, useCalendarLayoutSetting, useDatabaseViewLayout } from '@/application/database-yjs/selector';
@@ -251,6 +252,30 @@ export function useMoveCardDispatch() {
                 const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
                 let cellChanged = false;
                 let cell = cells.get(fieldId);
+
+                if (fieldType === FieldType.Number) {
+                  const group = view.get(YjsDatabaseKey.groups)?.toArray()
+                    .find((candidate) => candidate.get(YjsDatabaseKey.field_id) === fieldId);
+                  const policy = createNumberGroupingPolicy(group?.get(YjsDatabaseKey.content));
+                  const currentGroupId = policy.groupIdForCell(cell?.get(YjsDatabaseKey.data)) ?? fieldId;
+
+                  // Reordering within a numeric bucket must preserve its actual
+                  // value, including values away from the bucket's lower bound.
+                  if (startColumnId === finishColumnId || currentGroupId === finishColumnId) return;
+                  const value = finishColumnId === fieldId ? '' : policy.valueForGroup(finishColumnId);
+
+                  if (value === undefined) throw new RangeError('Invalid number group');
+                  if (!cell) {
+                    cell = new Y.Map() as YDatabaseCell;
+                    cells.set(fieldId, cell);
+                  }
+
+                  cell.set(YjsDatabaseKey.data, value);
+                  setCellStoredType(cell, fieldType);
+                  cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+                  touchRowAttribution(row, actorUid);
+                  return;
+                }
 
                 if (!cell) {
                   // if the cell is empty, create a new cell and set data to finishColumnId
