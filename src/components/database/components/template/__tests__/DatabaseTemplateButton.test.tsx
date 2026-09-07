@@ -6,6 +6,7 @@ import { DatabaseContext, DatabaseContextState } from '@/application/database-yj
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
 import { DatabaseRowTemplateStore } from '@/application/database-yjs/template';
+import templateInterop from '@/application/database-yjs/template/__tests__/fixtures/row_template_interop.json';
 import { rowDocumentIdFromRowId } from '@/application/row-document/lifecycle';
 import {
   DatabaseViewLayout,
@@ -24,6 +25,10 @@ import { AFConfigContext } from '@/components/main/app.hooks';
 import { DatabaseTemplateButton } from '../DatabaseTemplateButton';
 
 import type { ReactNode } from 'react';
+
+jest.unmock('lodash-es/isEqual');
+
+const documentSnapshot = Array.from(Buffer.from(templateInterop.document_snapshot, 'base64'));
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
@@ -555,7 +560,7 @@ describe('DatabaseTemplateButton', () => {
       templateId: 'non-empty-template',
       name: 'Database template',
       docViewId: 'non-empty-template-document',
-      documentData: [1, 2, 3],
+      documentData: documentSnapshot,
       isDocumentEmpty: false,
       embeddedDatabases: [
         {
@@ -615,8 +620,8 @@ describe('DatabaseTemplateButton', () => {
       templateId: 'desktop-template',
       name: 'Desktop template',
       docViewId: 'desktop-document',
-      documentData: [1, 2, 3],
-      isDocumentEmpty: false,
+      documentData: documentSnapshot,
+      isDocumentEmpty: true,
       embeddedDatabases: [
         {
           sourceViewId: 'snapshot-view',
@@ -653,6 +658,7 @@ describe('DatabaseTemplateButton', () => {
     expect(await screen.findByTestId('database-template-editor')).toBeTruthy();
     const migrated = store.read().templates;
 
+    expect(context.loadRowDocument).not.toHaveBeenCalled();
     expect(migrated).toHaveLength(1);
     expect(migrated[0]).toEqual(
       expect.objectContaining({
@@ -660,6 +666,7 @@ describe('DatabaseTemplateButton', () => {
         docViewId: rowDocumentIdFromRowId(template.templateId),
         documentData: undefined,
         embeddedDatabases: [],
+        isDocumentEmpty: false,
       })
     );
     expect(JSON.parse(String(database.get(YjsDatabaseKey.metas)?.get(YjsDatabaseKey.row_templates)))).not.toContainEqual(
@@ -674,7 +681,7 @@ describe('DatabaseTemplateButton', () => {
       templateId: 'failed-desktop-template',
       name: 'Desktop template',
       docViewId: 'desktop-document',
-      documentData: [1, 2, 3],
+      documentData: documentSnapshot,
       isDocumentEmpty: false,
       embeddedDatabases: [],
       defaultCells: {},
@@ -696,7 +703,7 @@ describe('DatabaseTemplateButton', () => {
 
     expect(preserved).toHaveLength(1);
     expect(preserved[0].templateId).toBe(template.templateId);
-    expect(preserved[0].documentData).toEqual([1, 2, 3]);
+    expect(preserved[0].documentData).toEqual(documentSnapshot);
     expect(screen.queryByTestId('database-template-editor')).toBeNull();
   });
 

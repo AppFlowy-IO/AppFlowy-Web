@@ -62,6 +62,7 @@ import {
   readDatabaseRowTemplateState,
   templateDecorationsNeedResolution,
 } from '@/application/database-yjs/template';
+import { decodeTemplateDocumentSnapshot, encodeTemplateDocument } from '@/application/database-yjs/template/document';
 import { deleteCollabDB, getCachedProviderDoc, openCollabDB } from '@/application/db';
 import {
   ensureRowDocumentView,
@@ -552,17 +553,6 @@ export function useTrashAwareDeleteRowsDispatch() {
   );
 }
 
-function markRowDocumentEmpty(rowDoc: YDoc, rowId: string) {
-  rowDoc.transact(() => {
-    const fallbackMeta = generateRowMeta(rowId, {
-      [RowMetaKey.IsDocumentEmpty]: true,
-    });
-    const meta = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
-
-    Object.entries(fallbackMeta).forEach(([key, value]) => meta.set(key, value));
-  }, 'database-row-template-fallback');
-}
-
 function markRowDocumentNonEmpty(rowDoc: YDoc, rowId: string) {
   rowDoc.transact(() => {
     const materializedMeta = generateRowMeta(rowId, {
@@ -642,36 +632,41 @@ export function useNewRowDispatch() {
       const templateState = readDatabaseRowTemplateState(database);
       const selectedTemplateId = templateId || (skipDefaultTemplate ? undefined : templateState.defaultTemplateId);
       const storedTemplate = selectedTemplateId
-        ? templateState.templates.find((template) => template.templateId === selectedTemplateId)
+        ? new DatabaseRowTemplateStore(database).prepareForRowCreation(selectedTemplateId)
         : undefined;
 
       if (templateId && !storedTemplate) {
         throw new Error('templateId does not match any row template');
       }
 
+      // Decode before creating even an unpublished row. Snapshot bytes are
+      // authoritative when legacy isDocumentEmpty metadata is stale.
+      const documentSnapshot = decodeTemplateDocumentSnapshot(storedTemplate?.documentData);
+      const effectiveTemplate = storedTemplate && documentSnapshot
+        ? { ...storedTemplate, isDocumentEmpty: documentSnapshot.isDocumentEmpty }
+        : storedTemplate;
       const templatePromise = (async () => {
-        if (!storedTemplate) return undefined;
+        if (!effectiveTemplate) return undefined;
 
-        // Desktop stores template decorations on the orphan document view
-        // rather than in RowTemplatePB. Resolve that fallback so templates
-        // authored by either client create the same row metadata.
-        if (templateDecorationsNeedResolution(storedTemplate) && storedTemplate.docViewId && loadViewMeta) {
+        // Older Desktop templates stored decorations only on the orphan view.
+        // Missing fields retain that fallback; empty strings explicitly clear it.
+        if (templateDecorationsNeedResolution(effectiveTemplate) && effectiveTemplate.docViewId && loadViewMeta) {
           try {
-            const templateView = await loadViewMeta(storedTemplate.docViewId);
-            const resolvedTemplate = mergeTemplateViewDecorations(storedTemplate, templateView);
+            const templateView = await loadViewMeta(effectiveTemplate.docViewId);
+            const resolvedTemplate = mergeTemplateViewDecorations(effectiveTemplate, templateView);
 
-            return resolvedTemplate === storedTemplate
-              ? storedTemplate
+            return resolvedTemplate === effectiveTemplate
+              ? effectiveTemplate
               : new DatabaseRowTemplateStore(database).upsert(resolvedTemplate);
           } catch (error) {
             Log.warn('[useNewRowDispatch] failed to resolve template view decorations', {
-              templateId: storedTemplate.templateId,
+              templateId: effectiveTemplate.templateId,
               error,
             });
           }
         }
 
-        return storedTemplate;
+        return effectiveTemplate;
       })();
 
       const rowId = uuidv4();
@@ -873,6 +868,57 @@ export function useNewRowDispatch() {
         });
       });
 
+      if (selectedTemplate && !selectedTemplate.isDocumentEmpty) {
+        if (!duplicateRowDocument) {
+          throw new Error('Template document duplication is unavailable');
+        } else {
+          try {
+            // A template is represented as a hidden row collab. It deliberately
+            // never enters row_orders, but gives the existing cloud duplication
+            // pipeline a stable source identity and preserves inline-vs-linked
+            // database semantics.
+            const cachedSourceDocument =
+              getCachedRowSubDoc(selectedTemplate.docViewId) ?? getCachedProviderDoc(selectedTemplate.docViewId);
+            const sourceDocumentPromise = documentSnapshot
+              ? Promise.resolve(null)
+              : cachedSourceDocument
+              ? Promise.resolve(cachedSourceDocument)
+              : loadRowDocument
+              ? loadRowDocument(selectedTemplate.docViewId)
+              : Promise.resolve(null);
+            const [sourceRowDoc, sourceDocument] = await Promise.all([
+              createRow(getRowKey(guid, selectedTemplate.templateId)),
+              sourceDocumentPromise,
+            ]);
+
+            initializeTemplateSourceRow(sourceRowDoc, database, selectedTemplate);
+
+            const clientDocStateB64 = documentSnapshot?.encodedState ??
+              (sourceDocument ? encodeTemplateDocument(sourceDocument) : undefined);
+
+            const databaseId = database.get(YjsDatabaseKey.id);
+            const sourceDocumentId = rowDocumentIdFromRowId(selectedTemplate.templateId);
+
+            await duplicateRowDocument(databaseId, selectedTemplate.templateId, rowId, clientDocStateB64, async () => {
+              await createRowDocument?.(sourceDocumentId, {
+                database_id: databaseId,
+                database_view_id: viewId,
+                row_id: selectedTemplate.templateId,
+              });
+            });
+            // Cloud returns after queueing duplication, not after writing the
+            // target. Reassert this after the request so row hydration received
+            // while awaiting it cannot make the target open as an empty document.
+            markRowDocumentNonEmpty(rowDoc, rowId);
+          } catch (error) {
+            Log.error('[useNewRowDispatch] template document duplication failed', error);
+            throw error;
+          }
+        }
+      }
+
+      // Publish only after template setup succeeds. A failed copy must leave
+      // neither a visible partial row nor navigation/reciprocal-link side effects.
       executeOperationWithAllViews(
         sharedRoot,
         database,
@@ -899,68 +945,6 @@ export function useNewRowDispatch() {
         'newRowDispatch',
         historyGroup
       );
-
-      if (selectedTemplate && !selectedTemplate.isDocumentEmpty) {
-        if (!duplicateRowDocument) {
-          markRowDocumentEmpty(rowDoc, rowId);
-          Log.warn('[useNewRowDispatch] template document duplication is unavailable', {
-            templateId: selectedTemplate.templateId,
-          });
-        } else {
-          try {
-            // A template is represented as a hidden row collab. It deliberately
-            // never enters row_orders, but gives the existing cloud duplication
-            // pipeline a stable source identity and preserves inline-vs-linked
-            // database semantics.
-            const cachedSourceDocument =
-              getCachedRowSubDoc(selectedTemplate.docViewId) ?? getCachedProviderDoc(selectedTemplate.docViewId);
-            const sourceDocumentPromise = cachedSourceDocument
-              ? Promise.resolve(cachedSourceDocument)
-              : loadRowDocument
-              ? loadRowDocument(selectedTemplate.docViewId)
-              : Promise.resolve(null);
-            const [sourceRowDoc, sourceDocument] = await Promise.all([
-              createRow(getRowKey(guid, selectedTemplate.templateId)),
-              sourceDocumentPromise,
-            ]);
-
-            initializeTemplateSourceRow(sourceRowDoc, database, selectedTemplate);
-
-            let clientDocStateB64: string | undefined;
-
-            if (sourceDocument) {
-              const docState = Y.encodeStateAsUpdate(sourceDocument);
-              const chunks: string[] = [];
-
-              for (let index = 0; index < docState.length; index += 8192) {
-                chunks.push(String.fromCharCode(...docState.subarray(index, index + 8192)));
-              }
-
-              clientDocStateB64 = btoa(chunks.join(''));
-            }
-
-            const databaseId = database.get(YjsDatabaseKey.id);
-            const sourceDocumentId = rowDocumentIdFromRowId(selectedTemplate.templateId);
-
-            await duplicateRowDocument(databaseId, selectedTemplate.templateId, rowId, clientDocStateB64, async () => {
-              await createRowDocument?.(sourceDocumentId, {
-                database_id: databaseId,
-                database_view_id: viewId,
-                row_id: selectedTemplate.templateId,
-              });
-            });
-            // Cloud returns after queueing duplication, not after writing the
-            // target. Reassert this after the request so row hydration received
-            // while awaiting it cannot make the target open as an empty document.
-            markRowDocumentNonEmpty(rowDoc, rowId);
-          } catch (error) {
-            // Cell defaults must remain usable if document materialization is
-            // temporarily unavailable; this is also Desktop's graceful fallback.
-            markRowDocumentEmpty(rowDoc, rowId);
-            Log.error('[useNewRowDispatch] template document duplication failed', error);
-          }
-        }
-      }
 
       if (shouldOpenRowModal || openAfterCreate) {
         navigateToRow?.(rowId);
