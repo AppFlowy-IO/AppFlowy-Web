@@ -14,6 +14,7 @@ import {
 } from '@/components/editor/database-block-lifecycle';
 import { DatabaseNode, EditorElementProps } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
 import { Log } from '@/utils/log';
 
 import { DatabaseContent } from './components/DatabaseContent';
@@ -390,6 +391,24 @@ export const DatabaseBlock = memo(
     const isDuplicatePlaceholder = isDatabaseDuplicatePlaceholder(node.data);
     const editor = useSlateStatic();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
+    const previewId = useEditorPreviewId();
+    const { t } = useTranslation();
+
+    // A linked database can contain this very document. Do not mount its
+    // loader or database view inside a document preview, even when expanded.
+    if (previewId) {
+      return (
+        <div {...attributes} ref={ref} contentEditable={false}>
+          <span className='hidden'>{children}</span>
+          <div
+            className='my-1 rounded border border-border-primary px-3 py-2 text-sm text-text-secondary'
+            data-testid='database-preview-placeholder'
+          >
+            {t('importPanel.database')}
+          </div>
+        </div>
+      );
+    }
 
     if (isDuplicatePlaceholder) {
       return (

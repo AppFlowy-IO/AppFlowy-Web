@@ -49,6 +49,10 @@ import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollu
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
+import {
+  normalizeCreatedDatabaseFeedView,
+  updateCreatesExactFeedView,
+} from '@/application/database-yjs/feed-layout';
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
 import {
@@ -2746,6 +2750,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Chart]: ViewLayout.Chart,
         [DatabaseViewLayout.List]: ViewLayout.List,
         [DatabaseViewLayout.Gallery]: ViewLayout.Gallery,
+        [DatabaseViewLayout.Feed]: ViewLayout.Feed,
         [DatabaseViewLayout.Form]: ViewLayout.Form,
       };
       const layoutToName: Record<DatabaseViewLayout, string> = {
@@ -2755,6 +2760,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Chart]: 'Chart',
         [DatabaseViewLayout.List]: 'List',
         [DatabaseViewLayout.Gallery]: 'Gallery',
+        [DatabaseViewLayout.Feed]: 'Feed',
         [DatabaseViewLayout.Form]: 'Form builder',
       };
       const viewLayout = layoutToViewLayout[layout];
@@ -2844,7 +2850,9 @@ export function useAddDatabaseView() {
 
       const existingViewIds = new Set(database?.get(YjsDatabaseKey.views)?.keys() ?? []);
       const requiresIsolatedValidation =
-        layout === DatabaseViewLayout.Gallery || options?.requireExactCreatedView === true;
+        layout === DatabaseViewLayout.Gallery ||
+        layout === DatabaseViewLayout.Feed ||
+        options?.requireExactCreatedView === true;
       const preRequestState = requiresIsolatedValidation ? Y.encodeStateAsUpdate(databaseDoc) : undefined;
 
       // Create new view as a child of the database container (or document for embedded linked views).
@@ -2866,7 +2874,7 @@ export function useAddDatabaseView() {
           preRequestState !== undefined &&
           databaseUpdate !== undefined &&
           databaseUpdate.length > 0 &&
-          updateCreatesExactDatabaseView({
+          (layout === DatabaseViewLayout.Feed ? updateCreatesExactFeedView : updateCreatesExactDatabaseView)({
             databaseId,
             existingViewIds,
             preRequestState,
@@ -2950,6 +2958,34 @@ export function useAddDatabaseView() {
           }
 
           throw new Error('The server did not return the requested Gallery database view');
+        }
+      }
+
+      if (layout === DatabaseViewLayout.Feed) {
+        const createdView = database?.get(YjsDatabaseKey.views)?.get(response.view_id);
+        const isExactReturnedView =
+          Boolean(response.view_id) &&
+          !existingViewIds.has(response.view_id) &&
+          Boolean(createdView?.get(YjsDatabaseKey.field_orders));
+
+        if (
+          !isExactReturnedView ||
+          normalizeCreatedDatabaseFeedView(databaseDoc, response.view_id) !== response.view_id
+        ) {
+          if (response.view_id && !existingViewIds.has(response.view_id)) {
+            removeCreatedDatabaseView(databaseDoc, response.view_id);
+
+            try {
+              await deletePage?.(response.view_id);
+            } catch (error) {
+              Log.warn('[useAddDatabaseView] failed to roll back an invalid Feed view', {
+                viewId: response.view_id,
+                error,
+              });
+            }
+          }
+
+          throw new Error('The server did not return the requested Feed database view');
         }
       }
 
@@ -3190,7 +3226,10 @@ export function useUpdateDatabaseLayout(viewId: string) {
               initializeGalleryLayoutSetting(view);
             }
 
-            if (currentLayout === DatabaseViewLayout.Board && layout === DatabaseViewLayout.Grid) {
+            if (
+              currentLayout === DatabaseViewLayout.Board &&
+              (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.Feed)
+            ) {
               const groups = view.get(YjsDatabaseKey.groups);
 
               if (groups?.length) groups.delete(0, groups.length);

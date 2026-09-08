@@ -3,6 +3,7 @@ import { Children, forwardRef, useCallback, useMemo } from 'react';
 import { BlockType, YjsEditorKey } from '@/application/types';
 import { DEFAULT_COLUMN_WIDTH, MIN_WIDTH } from '@/components/editor/components/blocks/simple-table/const';
 import { EditorElementProps, SimpleTableCellBlockNode } from '@/components/editor/editor.type';
+import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
 import { renderColor } from '@/utils/color';
 
 import { SimpleTableColumnResizer } from './SimpleTableColumnResizer';
@@ -12,6 +13,7 @@ import { getSlateNodeType } from './simple-table.utils';
 const SimpleTableCell = forwardRef<HTMLTableCellElement, EditorElementProps<SimpleTableCellBlockNode>>(
   ({ node, children, ...attributes }, ref) => {
     const { blockId } = node;
+    const previewId = useEditorPreviewId();
     const context = useSimpleTableContext();
     const readOnly = context?.readOnly ?? true;
     const cellPosition = context?.cellPositionById.get(blockId);
@@ -44,7 +46,7 @@ const SimpleTableCell = forwardRef<HTMLTableCellElement, EditorElementProps<Simp
     return (
       <td
         data-block-type={node.type}
-        data-block-cell={blockId}
+        data-block-cell={`${previewId ?? ''}${blockId}`}
         data-cell-index={colIndex}
         data-row-index={rowIndex}
         ref={ref}

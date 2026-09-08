@@ -7,6 +7,10 @@ import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { isDatabaseBlockType } from '@/application/database-block';
 import {
+  createDatabaseFeedPageViaGrid,
+  createLinkedDatabaseFeedView,
+} from '@/application/database-yjs/feed-layout';
+import {
   createDatabaseGalleryPageViaGrid,
   createLinkedDatabaseGalleryView,
 } from '@/application/database-yjs/gallery-layout';
@@ -64,6 +68,7 @@ import { ReactComponent as DividerIcon } from '@/assets/icons/divider.svg';
 import { ReactComponent as OutlineIcon } from '@/assets/icons/doc.svg';
 import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';
 import { ReactComponent as FormulaIcon } from '@/assets/icons/formula.svg';
+import { ReactComponent as FeedIcon } from '@/assets/icons/feed.svg';
 import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
 import { ReactComponent as Heading1Icon } from '@/assets/icons/h1.svg';
@@ -493,6 +498,24 @@ export function SlashPanel({
                   updatePage,
                 });
               })()
+            : layout === ViewLayout.Feed
+            ? await (() => {
+                if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
+                  throw new Error('Feed creation is not available right now');
+                }
+
+                return createDatabaseFeedPageViaGrid({
+                  parentViewId: documentId,
+                  name,
+                  addPage,
+                  loadViewMeta,
+                  loadView,
+                  bindViewSync,
+                  deletePage,
+                  scheduleDeferredCleanup,
+                  updatePage,
+                });
+              })()
             : await addPage(documentId, { layout, name });
 
         Log.debug('[SlashPanel] {} created inline database', {
@@ -698,6 +721,10 @@ export function SlashPanel({
               return t('gallery.referencedGalleryPrefix', {
                 defaultValue: 'View of',
               });
+            case ViewLayout.Feed:
+              return t('feed.referencedFeedPrefix', {
+                defaultValue: 'View of',
+              });
             case ViewLayout.Chart:
               return t('document.chart.referencedChartPrefix', {
                 defaultValue: 'View of',
@@ -742,6 +769,22 @@ export function SlashPanel({
                 deletePage,
                 scheduleDeferredCleanup,
               })
+            : linkedPicker.layout === ViewLayout.Feed
+            ? await createLinkedDatabaseFeedView({
+                requestViewId: documentId,
+                sourceViewId,
+                payload: {
+                  parent_view_id: documentId,
+                  database_id: databaseId,
+                  name: referencedName,
+                  embedded: true,
+                },
+                createDatabaseView,
+                loadView,
+                bindViewSync,
+                deletePage,
+                scheduleDeferredCleanup,
+              })
             : await createDatabaseView(documentId, {
                 parent_view_id: documentId,
                 database_id: databaseId,
@@ -760,6 +803,7 @@ export function SlashPanel({
         if (
           linkedPicker.layout !== ViewLayout.List &&
           linkedPicker.layout !== ViewLayout.Gallery &&
+          linkedPicker.layout !== ViewLayout.Feed &&
           response.database_update?.length &&
           loadView
         ) {
@@ -1419,6 +1463,28 @@ export function SlashPanel({
         aliases: ['link to gallery', 'referenced gallery'],
         onClick: () => {
           void handleOpenLinkedDatabasePicker(ViewLayout.Gallery, 'linkedGallery');
+        },
+      },
+      {
+        label: t('feed.menuName'),
+        key: 'feed',
+        icon: <FeedIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['feed', 'database', 'posts'],
+        aliases: ['feed database'],
+        onClick: () => {
+          void createInlineDatabase(ViewLayout.Feed);
+        },
+      },
+      {
+        label: t('document.slashMenu.name.linkedFeed', { defaultValue: 'Linked Feed' }),
+        key: 'linkedFeed',
+        icon: <FeedIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['linked', 'feed', 'database', 'posts'],
+        aliases: ['link to feed', 'referenced feed', 'lf'],
+        onClick: () => {
+          void handleOpenLinkedDatabasePicker(ViewLayout.Feed, 'linkedFeed');
         },
       },
       {

@@ -923,6 +923,7 @@ export function useWorkspaceData() {
             ViewLayout.Calendar,
             ViewLayout.List,
             ViewLayout.Gallery,
+            ViewLayout.Feed,
             ViewLayout.Form,
           ]);
 
@@ -961,6 +962,7 @@ export function useWorkspaceData() {
                   ViewLayout.Calendar,
                   ViewLayout.List,
                   ViewLayout.Gallery,
+                  ViewLayout.Feed,
                   ViewLayout.Form,
                 ]);
 

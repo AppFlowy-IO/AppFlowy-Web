@@ -5,6 +5,7 @@ import { ReactComponent as ChatSvg } from '@/assets/icons/ai_chat.svg';
 import { ReactComponent as BoardSvg } from '@/assets/icons/board.svg';
 import { ReactComponent as CalendarSvg } from '@/assets/icons/calendar.svg';
 import { ReactComponent as ChartSvg } from '@/assets/icons/chart.svg';
+import { ReactComponent as FeedSvg } from '@/assets/icons/feed.svg';
 // No dedicated form-view SVG yet; reuse `edit.svg` — it's a pencil
 // glyph that maps cleanly onto "fill out / author this form" and
 // matches the desktop's form-tab icon convention.
@@ -60,6 +61,8 @@ export function ViewIcon ({ layout, size, className }: {
       return <ListSvg className={iconClassName} />;
     case ViewLayout.Gallery:
       return <GallerySvg className={iconClassName} />;
+    case ViewLayout.Feed:
+      return <FeedSvg className={iconClassName} />;
     case ViewLayout.Form:
       return <FormSvg className={iconClassName} />;
     default:

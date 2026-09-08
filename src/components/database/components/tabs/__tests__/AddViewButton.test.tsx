@@ -93,6 +93,21 @@ describe('AddViewButton', () => {
     await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('gallery-view-id'));
   });
 
+  it('creates a Feed view and selects it', async () => {
+    const onViewAdded = jest.fn();
+
+    mockAddView.mockResolvedValue('feed-view-id');
+    render(
+      <MemoryRouter>
+        <AddViewButton databasePageId='database-page-id' onViewAdded={onViewAdded} />
+      </MemoryRouter>
+    );
+    fireEvent.click(screen.getByTestId('add-feed-view-button'));
+
+    expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Feed, 'feed.menuName');
+    await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('feed-view-id'));
+  });
+
   it('completes with the latest same-database callbacks and preserves concurrently added view IDs', async () => {
     let resolveAdd!: (viewId: string) => void;
     const committedViewIds: string[][] = [];

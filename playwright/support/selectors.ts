@@ -323,6 +323,41 @@ export const DatabaseGallerySelectors = {
 };
 
 /**
+ * Database Feed selectors (aligned with Flutter's `DesktopFeedPage` /
+ * `FeedCard` finders so migrated scenarios address the same elements).
+ */
+export const DatabaseFeedSelectors = {
+  feed: (page: Page) => page.getByTestId('database-feed'),
+  list: (page: Page) => page.getByTestId('feed-list'),
+  loading: (page: Page) => page.getByTestId('feed-loading'),
+  empty: (page: Page) => page.getByTestId('feed-empty'),
+  cards: (page: Page) => page.locator('[data-testid^="feed-card-"][data-row-id]'),
+  cardByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-${rowId}`),
+  titles: (page: Page) => page.locator('[data-testid^="feed-card-title-"]'),
+  titleByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-title-${rowId}`),
+  creatorByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-creator-${rowId}`),
+  coverByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-cover-${rowId}`),
+  documentPreviewByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-document-preview-${rowId}`),
+  documentPreviewToggleByRowId: (page: Page, rowId: string) =>
+    page.getByTestId(`feed-document-preview-toggle-${rowId}`),
+  actionsByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-actions-${rowId}`),
+  moreButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-more-${rowId}`),
+  reactionButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-reaction-button-${rowId}`),
+  reactionsByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-row-reactions-${rowId}`),
+  reactionChip: (page: Page, rowId: string, emoji: string) => page.getByTestId(`feed-row-reaction-${rowId}-${emoji}`),
+  addReactionByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-row-add-reaction-${rowId}`),
+  commentSummaryByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-comment-summary-${rowId}`),
+  addCommentByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-add-comment-collapsed-${rowId}`),
+  addCommentInputByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-add-comment-input-${rowId}`),
+  rowActionMenu: (page: Page) => page.getByTestId('feed-row-action-menu'),
+  rowDuplicate: (page: Page) => page.getByTestId('feed-row-duplicate'),
+  rowDelete: (page: Page) => page.getByTestId('feed-row-delete'),
+  newRowButton: (page: Page) => page.getByTestId('feed-new-row'),
+  loadMoreButton: (page: Page) => page.getByTestId('feed-load-more'),
+  settingsMenu: (page: Page) => page.getByTestId('feed-settings-menu'),
+};
+
+/**
  * Database View selectors
  */
 export const DatabaseViewSelectors = {
@@ -340,6 +375,9 @@ export const DatabaseViewSelectors = {
   calendarView: (page: Page) => page.locator('[data-testid*="calendar"]'),
   listView: (page: Page) => page.getByTestId('database-list'),
   galleryView: (page: Page) => page.getByTestId('database-gallery'),
+  feedView: (page: Page) => page.getByTestId('database-feed'),
+  layoutSettingsTrigger: (page: Page) => page.getByTestId('database-layout-settings-trigger'),
+  layoutOption: (page: Page, layout: number) => page.getByTestId(`database-layout-option-${layout}`),
   /**
    * Locator for a layout option inside the AddViewButton dropdown
    * (e.g. "Grid", "Board", "Calendar", "Chart"). The dropdown items have no
@@ -655,6 +693,7 @@ export const AddPageSelectors = {
   addChartButton: (page: Page) => page.getByTestId('add-chart-button'),
   addListButton: (page: Page) => page.getByTestId('add-list-button'),
   addGalleryButton: (page: Page) => page.getByTestId('add-gallery-button'),
+  addFeedButton: (page: Page) => page.getByTestId('add-feed-button'),
   addImportButton: (page: Page) => page.getByTestId('add-import-button'),
 };
 

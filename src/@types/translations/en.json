@@ -756,7 +756,9 @@
     "copyLinkOriginal": "Copy link to original",
     "search": "Search",
     "checked": "Checked",
-    "unchecked": "Unchecked"
+    "unchecked": "Unchecked",
+    "seeMore": "See more",
+    "seeLess": "See less"
   },
   "global-loading": {
     "welcome": "Welcome!",
@@ -2387,7 +2389,9 @@
         "photoGallery": "Photo Gallery",
         "file": "File",
         "continueWriting": "Continue Writing",
-        "askAIAnything": "Ask AI Anything"
+        "askAIAnything": "Ask AI Anything",
+        "feed": "Feed",
+        "linkedFeed": "Linked Feed"
       },
       "linkedDatabase": {
         "title": "Link to an existing database",
@@ -3661,7 +3665,10 @@
     "readMore": "Read more",
     "failedToAddComment": "Failed to add comment",
     "commentAddedSuccessfully": "Comment added successfully.",
-    "commentAddedSuccessTip": "You've just added or replied to a comment. Would you like to jump to the top to see the latest comments?"
+    "commentAddedSuccessTip": "You've just added or replied to a comment. Would you like to jump to the top to see the latest comments?",
+    "replies_one": "1 reply",
+    "replies_other": "{{count}} replies",
+    "edited": "(edited)"
   },
   "inlineComment": {
     "comments": "Comments",
@@ -3806,6 +3813,18 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "searchPlaceholder": "Type to search"
+  },
+  "feed": {
+    "menuName": "Feed",
+    "untitled": "Untitled",
+    "noItemsInFeed": "No items in feed",
+    "referencedFeedPrefix": "View of",
+    "openRow": "Open row",
+    "addReaction": "Add reaction",
+    "removeReaction": "Remove {{emoji}} reaction",
+    "toggleReaction": "Toggle {{emoji}} reaction",
+    "unknownCreator": "Unknown",
+    "loadMore": "Load more"
   },
   "form": {
     "menuName": "Form",

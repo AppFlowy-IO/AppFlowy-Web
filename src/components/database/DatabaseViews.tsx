@@ -42,6 +42,7 @@ import DatabaseConditionsPanel from 'src/components/database/components/conditio
 
 const List = lazy(() => import('@/components/database/list/List'));
 const Gallery = lazy(() => import('@/components/database/gallery'));
+const Feed = lazy(() => import('@/components/database/feed'));
 const FormBuilderView = lazy(() =>
   import('@/components/database/form/FormBuilderView').then(({ FormBuilderView: Component }) => ({
     default: Component,
@@ -360,6 +361,8 @@ function DatabaseViews({
         return <List />;
       case DatabaseViewLayout.Gallery:
         return <Gallery key={activeViewId} />;
+      case DatabaseViewLayout.Feed:
+        return <Feed key={activeViewId} />;
       default:
         return null;
     }

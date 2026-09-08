@@ -41,6 +41,9 @@ export enum BlockType {
   ListBlock = 'list',
   ChartBlock = 'chart',
   DatabaseGalleryBlock = 'gallery',
+  /// Cross-client document block for an embedded/linked Feed database view.
+  /// Matches `DatabaseBlockKeys.feedType` on Desktop.
+  FeedBlock = 'feed',
   OutlineBlock = 'outline',
   TableBlock = 'table',
   TableCell = 'table/cell',
@@ -494,6 +497,9 @@ export enum ViewLayout {
   Chart = 5,
   List = 6,
   Gallery = 7,
+  /// Folder-side layout value for feed views. Matches
+  /// `ViewLayout::Feed = 8` in `libs/collab/src/folder/view.rs`.
+  Feed = 8,
   /// Folder-side layout value for form views. Matches
   /// `ViewLayout::Form = 9` in `libs/collab/src/folder/view.rs`. The
   /// database-side `DatabaseViewLayout.Form` has a different numeric
@@ -876,9 +882,11 @@ export enum DatabaseViewLayout {
   Chart = 3,
   List = 4,
   Gallery = 5,
+  /// Matches `DatabaseLayout::Feed = 6` in
+  /// `libs/collab/src/database/views/layout.rs`.
+  Feed = 6,
   /// Matches `DatabaseLayout::Form = 7` in
-  /// `libs/collab/src/database/views/layout.rs`. `Feed = 6` is not
-  /// represented on the web yet — leave the gap rather than renumber.
+  /// `libs/collab/src/database/views/layout.rs`.
   Form = 7,
 }
 
@@ -1245,6 +1253,7 @@ export const layoutMap = {
   [ViewLayout.Chart]: 'chart',
   [ViewLayout.List]: 'list',
   [ViewLayout.Gallery]: 'gallery',
+  [ViewLayout.Feed]: 'feed',
   [ViewLayout.Form]: 'form',
 };
 
@@ -1255,6 +1264,7 @@ export const databaseLayoutMap = {
   [DatabaseViewLayout.Chart]: 'chart',
   [DatabaseViewLayout.List]: 'list',
   [DatabaseViewLayout.Gallery]: 'gallery',
+  [DatabaseViewLayout.Feed]: 'feed',
   [DatabaseViewLayout.Form]: 'form',
 };
 

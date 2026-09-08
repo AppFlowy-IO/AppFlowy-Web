@@ -113,8 +113,13 @@ export function DatabaseActions() {
   const { activeViewId, isDocumentBlock, databasePageId } = useDatabaseContext();
   const { canOpen, isOpening, openDatabaseAsPage } = useOpenDatabaseAsPage({ fallbackViewId: databasePageId });
 
-  const showSorts = [DatabaseViewLayout.Grid, DatabaseViewLayout.List, DatabaseViewLayout.Gallery].includes(layout);
-  const showSearch = layout === DatabaseViewLayout.Gallery;
+  const showSorts = [
+    DatabaseViewLayout.Grid,
+    DatabaseViewLayout.List,
+    DatabaseViewLayout.Gallery,
+    DatabaseViewLayout.Feed,
+  ].includes(layout);
+  const showSearch = layout === DatabaseViewLayout.Gallery || layout === DatabaseViewLayout.Feed;
   const showTemplates = [
     DatabaseViewLayout.Grid,
     DatabaseViewLayout.Board,
@@ -122,6 +127,7 @@ export function DatabaseActions() {
     DatabaseViewLayout.Chart,
     DatabaseViewLayout.List,
     DatabaseViewLayout.Gallery,
+    DatabaseViewLayout.Feed,
   ].includes(layout);
   const settingsButton = (
     <Button

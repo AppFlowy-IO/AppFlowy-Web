@@ -61,6 +61,7 @@ const LAYOUT_COLLAB_TYPE_MAP: Partial<Record<ViewLayout, Types>> = {
   [ViewLayout.Chart]: Types.Database,
   [ViewLayout.List]: Types.Database,
   [ViewLayout.Gallery]: Types.Database,
+  [ViewLayout.Feed]: Types.Database,
   [ViewLayout.Form]: Types.Database,
 };
 

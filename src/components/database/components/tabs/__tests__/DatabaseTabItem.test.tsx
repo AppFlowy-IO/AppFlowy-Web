@@ -84,6 +84,36 @@ describe('DatabaseTabItem', () => {
     expect(screen.getByTestId('database-tab-icon-layout').textContent).toBe(String(ViewLayout.Gallery));
   });
 
+  it('uses the Feed name and icon for a Feed view', () => {
+    const doc = new Y.Doc();
+    const view = doc.getMap('view') as YDatabaseView;
+
+    view.set(YjsDatabaseKey.name, '');
+    view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Feed);
+
+    render(
+      <Tabs value={viewId}>
+        <TabsList>
+          <DatabaseTabItem
+            databasePageId={viewId}
+            menuViewId={null}
+            onOpenDeleteModal={jest.fn()}
+            onOpenRenameModal={jest.fn()}
+            onSetMenuViewId={jest.fn()}
+            readOnly={false}
+            setTabRef={jest.fn()}
+            view={view}
+            viewId={viewId}
+            visibleViewIds={[viewId]}
+          />
+        </TabsList>
+      </Tabs>
+    );
+
+    expect(screen.getByTestId(`view-tab-${viewId}`).textContent).toContain('Feed');
+    expect(screen.getByTestId('database-tab-icon-layout').textContent).toBe(String(ViewLayout.Feed));
+  });
+
   it('uses the desktop Form builder name and Form icon for an unnamed Form view', () => {
     const doc = new Y.Doc();
     const view = doc.getMap('view') as YDatabaseView;
