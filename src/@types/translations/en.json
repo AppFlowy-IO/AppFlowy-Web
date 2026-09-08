@@ -1,4 +1,11 @@
 {
+  "clientCompatibility": {
+    "serverTooOld": "AppFlowy Web {{clientVersion}} requires server {{requiredServerVersion}} or later. Your server is {{serverVersion}}. Please ask your administrator to upgrade the server.",
+    "clientTooOld": "This server requires AppFlowy Web {{requiredClientVersion}} or later. You are using {{clientVersion}}. Reload after your administrator updates the web app.",
+    "upgradeBoth": "This server requires AppFlowy Web {{requiredClientVersion}} or later, but also needs a server upgrade. Please contact your administrator to update both.",
+    "reload": "Reload web app",
+    "dismiss": "Dismiss compatibility warning"
+  },
   "appName": "AppFlowy",
   "defaultUsername": "Me",
   "welcomeText": "Welcome to @:appName",

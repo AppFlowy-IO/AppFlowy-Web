@@ -385,6 +385,9 @@ importers:
       sass:
         specifier: ^1.70.0
         version: 1.89.0
+      semver:
+        specifier: 7.7.2
+        version: 7.7.2
       slate:
         specifier: ^0.101.4
         version: 0.101.5
@@ -554,6 +557,9 @@ importers:
       '@types/react-window':
         specifier: ^1.8.8
         version: 1.8.8
+      '@types/semver':
+        specifier: 7.7.0
+        version: 7.7.0
       '@types/utf8':
         specifier: ^3.0.1
         version: 3.0.3
@@ -3831,6 +3837,9 @@ packages:
 
   '@types/scheduler@0.16.8':
     resolution: {integrity: sha512-WZLiwShhwLRmeV6zH+GkbOFT6Z6VklCItrDioxUnv+u4Ll+8vKeFySoFyK/0ctcRpOmwAicELfmys1sDc/Rw+A==}
+
+  '@types/semver@7.7.0':
+    resolution: {integrity: sha512-k107IF4+Xr7UHjwDc7Cfd6PRQfbdkiRabXGRjo07b4WyPahFBZCZ1sE+BNxYIJPPg73UkfOsVOLwqVc/6ETrIA==}
 
   '@types/stack-utils@2.0.3':
     resolution: {integrity: sha512-9aEbYZ3TbYMznPdcdr3SmIrLXwC/AKZXQeCf9Pgao5CKb8CyHuEX5jzWPTkvregvhRJHcpRO6BFoGW9ycaOkYw==}
@@ -12247,6 +12256,8 @@ snapshots:
   '@types/resolve@1.20.6': {}
 
   '@types/scheduler@0.16.8': {}
+
+  '@types/semver@7.7.0': {}
 
   '@types/stack-utils@2.0.3': {}
 

@@ -1,0 +1,17 @@
+{
+  "_comment": "Web and desktop have independent release versions. Review this table when releasing web; rows specify the minimum AppFlowy-Cloud version for each web release range.",
+  "reviewed_through_client_version": "0.17.1",
+  "max_enforceable_client_floor": "0.20.0",
+  "rows": [
+    {
+      "client_from": "0.0.0",
+      "min_server": "0.0.0",
+      "reason": "Baseline for releases before web compatibility requirements were recorded."
+    },
+    {
+      "client_from": "0.17.1",
+      "min_server": "0.18.1",
+      "reason": "The current web client requires the AppFlowy-Cloud 0.18.1 API baseline."
+    }
+  ]
+}
