@@ -113,6 +113,42 @@ Then('values appear horizontally below the title without visible field labels', 
   await expect(RowDetailSelectors.modal(page)).toHaveCount(0);
 });
 
+When('the user searches for a Feed property value', async ({ page }) => {
+  await page.getByTestId('database-actions-search').click();
+  await page.getByTestId('database-actions-search-input').fill('42');
+});
+
+Then('only the matching Feed card is visible', async ({ page }) => {
+  const state = scenario(page);
+
+  await expect(DatabaseFeedSelectors.cardByRowId(page, state.rowId)).toBeVisible();
+  await expect(page.locator('article[data-row-id]:visible')).toHaveCount(1);
+});
+
+When('that property changes while the search is active', async ({ page }) => {
+  const state = scenario(page);
+
+  await setCellDirect(page, state.rowId, state.scoreId, FieldType.Number, '7');
+  await expect(DatabaseFeedSelectors.cardByRowId(page, state.rowId)).toBeHidden();
+  await setCellDirect(page, state.rowId, state.scoreId, FieldType.Number, '42');
+  await expect(DatabaseFeedSelectors.cardByRowId(page, state.rowId)).toBeVisible();
+});
+
+Then('Feed search updates and respects hiding that property', async ({ page }) => {
+  const state = scenario(page);
+
+  await openProperties(page);
+  await page.getByTestId(`database-property-visibility-${state.scoreId}`).click();
+  await closeProperties(page);
+  await expect(DatabaseFeedSelectors.cardByRowId(page, state.rowId)).toBeHidden();
+  await openProperties(page);
+  await page.getByTestId(`database-property-visibility-${state.scoreId}`).click();
+  await closeProperties(page);
+  await expect(DatabaseFeedSelectors.cardByRowId(page, state.rowId)).toBeVisible();
+  await page.getByTestId('database-actions-search-clear').click();
+  await expect(page.locator('article[data-row-id]:visible')).toHaveCount(3);
+});
+
 When('the user drags score before status and hides status', async ({ page }) => {
   const state = scenario(page);
 

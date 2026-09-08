@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 
 import { Column, useCellSelector } from '@/application/database-yjs';
 import { ListCell } from '@/components/database/list/ListCell';
@@ -11,14 +11,28 @@ const propertyStyle = {
   overflow: 'hidden',
 };
 
-function FeedProperty({ field, rowId }: { field: Column; rowId: string }) {
+function FeedProperty({ field, onSearchTextChange, rowId }: {
+  field: Column;
+  onSearchTextChange?: (fieldId: string, text: string) => void;
+  rowId: string;
+}) {
   const cell = useCellSelector({ fieldId: field.fieldId, rowId });
+  const handleTextChange = useCallback(
+    (text: string) => onSearchTextChange?.(field.fieldId, text),
+    [field.fieldId, onSearchTextChange]
+  );
 
   return (
     <div className='min-w-0 max-w-full' data-testid={`feed-field-${field.fieldId}-${rowId}`} title={field.fieldName}>
       <dt className='sr-only'>{field.fieldName}</dt>
       <dd className='min-w-0'>
-        <ListCell cell={cell} field={field} rowId={rowId} style={propertyStyle} />
+        <ListCell
+          cell={cell}
+          field={field}
+          onTextChange={onSearchTextChange ? handleTextChange : undefined}
+          rowId={rowId}
+          style={propertyStyle}
+        />
       </dd>
     </div>
   );
@@ -26,10 +40,12 @@ function FeedProperty({ field, rowId }: { field: Column; rowId: string }) {
 
 export const FeedCardProperties = memo(function FeedCardProperties({
   fields,
+  onSearchTextChange,
   primaryFieldId,
   rowId,
 }: {
   fields: Column[];
+  onSearchTextChange?: (fieldId: string, text: string) => void;
   primaryFieldId: string;
   rowId: string;
 }) {
@@ -45,7 +61,7 @@ export const FeedCardProperties = memo(function FeedCardProperties({
       onClick={(event) => event.stopPropagation()}
     >
       {properties.map((field) => (
-        <FeedProperty field={field} key={field.fieldId} rowId={rowId} />
+        <FeedProperty field={field} key={field.fieldId} onSearchTextChange={onSearchTextChange} rowId={rowId} />
       ))}
     </dl>
   );

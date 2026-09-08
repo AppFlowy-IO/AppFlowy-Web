@@ -1,8 +1,9 @@
 # Feed interaction evidence and browser scenarios
 
 Research checked on September 8, 2026. This pass covers card properties and
-access to existing discussions. It does not implement analytics, subscriptions,
-conditional colors, or property-value search.
+access to existing discussions. A subsequent desktop comparison adds visible
+property-value search. This work does not implement analytics, subscriptions,
+or conditional colors.
 
 ## Verified evidence
 
@@ -89,6 +90,11 @@ cross-user permissions.
 
 - Show two properties, verify their horizontal positions, reorder them by
   dragging, hide one, switch views, reload, and show it again.
+- **Feed search follows visible property values and their updates:** search
+  for a number that occurs only in a property, change that value during the
+  search, hide and restore its field, and clear the search to restore all cards.
+  This follows AppFlowy desktop's visible-property search, rather than a
+  verified Notion search interaction.
 - **A discussion popover retains its mention and attachment when dismissed:**
   open an existing discussion, draft a reply with a mention and attachment,
   dismiss and reopen it, submit, and verify continued composing in the popover.
@@ -112,7 +118,7 @@ Focused unit tests additionally check read-only and unauthenticated rendering,
 pending uploads, remote updates, comment-map hydration/replacement, and absence
 of document writes while reading.
 
-## Validation
+## Validation of the initial interaction pass
 
 - All 449 unit suites passed (4,344 tests).
 - Type checking passed; changed source lint passed with no errors.
@@ -124,3 +130,32 @@ of document writes while reading.
 
 Run the Feed BDD suite with `pnpm test:e2e:bdd:feed`; it generates the Given/When/Then
 scenarios before running them. The new scenarios are tagged `@feed-interactions`.
+
+## Desktop comparison follow-up
+
+Compared against AppFlowy Premium desktop at `ecb034b2c4`, including the Flutter
+Feed card/settings/comment components and Rust field-setting, search, and
+attachment storage paths.
+
+- Desktop required property controls and horizontal values, an interactive
+  discussion summary, retained drafts, and cloud comment attachments.
+- Desktop's new Feed field settings saved non-title properties as shown despite
+  the title-only renderer. The desktop change hides them on new Feed creation,
+  matching Web, and preserves existing saved preferences.
+- Web now searches visible properties as well as titles. Person searches include
+  names and emails; relation searches drop deleted or inaccessible target labels.
+- Native Given/When/Then tests live in desktop's
+  `integration_test/desktop/bdd/database/feed/feed_{properties,comments}.feature`.
+  Their runner is `integration_test/desktop/feed/feed_web_parity_test.dart`.
+
+This comparison does not establish exhaustive search parity: desktop also
+indexes row document content and has its own date/media text formatting. It
+does not constitute a live Web-to-desktop synchronization test. The native
+discussion scenario uses a backend write to simulate an arriving comment and
+a local workspace file attachment; cloud upload completion and authentication
+are separately covered by focused desktop tests.
+
+The Web follow-up passed six focused unit suites (37 tests), type checking,
+changed-source lint, and the new visible-property search BDD scenario. The
+relation lifecycle suite also passed after replacing strong document references
+in its search cache with weak identity tokens.

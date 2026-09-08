@@ -87,8 +87,10 @@ function createRelatedDatabaseDoc(rowIds?: string[], viewId = RELATED_VIEW_ID, d
   return doc;
 }
 
-function renderItems(rowIds: string[]) {
-  return render(<RelationItems cell={createRelationCell(rowIds)} fieldId='relation-field' wrap={false} />);
+function renderItems(rowIds: string[], onTextChange?: (text: string) => void) {
+  return render(
+    <RelationItems cell={createRelationCell(rowIds)} fieldId='relation-field' onTextChange={onTextChange} wrap={false} />
+  );
 }
 
 describe('RelationItems loading state', () => {
@@ -108,11 +110,12 @@ describe('RelationItems loading state', () => {
   it('shows an indicator until the related database and linked row are loaded', async () => {
     const view = deferred<YDoc>();
     const rowDoc = deferred<YDoc>();
+    const onTextChange = jest.fn();
 
     mockDatabaseContext.loadView.mockReturnValue(view.promise);
     mockDatabaseContext.createRow.mockReturnValue(rowDoc.promise);
 
-    renderItems(['row-1']);
+    renderItems(['row-1'], onTextChange);
 
     expect(screen.getByRole('status', { name: 'loading' })).toBeTruthy();
 
@@ -161,6 +164,7 @@ describe('RelationItems loading state', () => {
     });
 
     await waitFor(() => expect(screen.getByText('Design system')).toBeTruthy());
+    expect(onTextChange).toHaveBeenLastCalledWith('Design system');
   });
 
   it('does not load the related database for an empty relation cell', async () => {
@@ -400,5 +404,61 @@ describe('RelationItems loading state', () => {
 
     expect(screen.queryByText('Database A row')).toBeNull();
     expect(screen.getByText('Database B row')).toBeTruthy();
+  });
+
+  it('drops deleted or inaccessible search labels and waits for replacement row hydration', async () => {
+    const databaseDoc = createRelatedDatabaseDoc(['row-1']);
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const rowOrders = database.get(YjsDatabaseKey.views).get(RELATED_VIEW_ID).get(YjsDatabaseKey.row_orders);
+    const fields = database.get(YjsDatabaseKey.fields);
+    const originalDoc = new Y.Doc() as YDoc;
+    const replacementDoc = new Y.Doc() as YDoc;
+    const onTextChange = jest.fn();
+    const hydrateRow = (doc: YDoc, title: string) => {
+      const row = new Y.Map();
+      const cells = new Y.Map();
+      const primaryCell = new Y.Map();
+
+      primaryCell.set(YjsDatabaseKey.field_type, FieldType.RichText);
+      primaryCell.set(YjsDatabaseKey.data, title);
+      cells.set(PRIMARY_FIELD_ID, primaryCell);
+      row.set(YjsDatabaseKey.cells, cells);
+      doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database_row, row);
+    };
+
+    hydrateRow(originalDoc, 'Old title');
+    mockDatabaseContext.loadView.mockResolvedValue(databaseDoc);
+    mockDatabaseContext.createRow.mockResolvedValue(originalDoc);
+    renderItems(['row-1'], onTextChange);
+    await waitFor(() => expect(onTextChange).toHaveBeenLastCalledWith('Old title'));
+
+    act(() => rowOrders.delete(0, 1));
+    await waitFor(() => expect(onTextChange).toHaveBeenLastCalledWith(''));
+    expect(screen.queryByText('Old title')).toBeNull();
+
+    mockDatabaseContext.createRow.mockResolvedValue(replacementDoc);
+    onTextChange.mockClear();
+    act(() => rowOrders.push([{ id: 'row-1' }]));
+    await waitFor(() => expect(mockDatabaseContext.createRow).toHaveBeenCalledTimes(2));
+    expect(onTextChange).not.toHaveBeenCalledWith('Old title');
+    expect(screen.queryByText('Old title')).toBeNull();
+    expect(screen.getByRole('status', { name: 'loading' })).toBeTruthy();
+
+    act(() => hydrateRow(replacementDoc, 'Current title'));
+    await waitFor(() => expect(onTextChange).toHaveBeenLastCalledWith('Current title'));
+    expect(screen.queryByRole('status', { name: 'loading' })).toBeNull();
+
+    const primaryField = fields.get(PRIMARY_FIELD_ID).clone();
+
+    act(() => fields.delete(PRIMARY_FIELD_ID));
+    await waitFor(() => expect(screen.getByText('No access')).toBeTruthy());
+    expect(onTextChange).toHaveBeenLastCalledWith('');
+    expect(screen.queryByText('Current title')).toBeNull();
+
+    act(() => {
+      fields.set(PRIMARY_FIELD_ID, primaryField);
+    });
+    await waitFor(() => expect(onTextChange).toHaveBeenLastCalledWith('Current title'));
+    expect(screen.queryByText('No access')).toBeNull();
   });
 });

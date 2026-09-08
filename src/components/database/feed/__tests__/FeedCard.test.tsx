@@ -1,25 +1,48 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createContext, useContext } from 'react';
 import * as Y from 'yjs';
 
 import {
+  Column,
+  FieldType,
   useCellSelector,
+  useDatabase,
   useDatabaseContext,
   useReadOnly,
   useRowDataSelector,
   useRowMetaSelector,
 } from '@/application/database-yjs';
-import { RowCoverType, YDatabaseRow, YjsDatabaseKey } from '@/application/types';
+import { createField, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
+import { RowCoverType, YDatabase, YDatabaseFields, YDatabaseRow, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { EditorPreviewContextProvider } from '@/components/editor/EditorPreviewContext';
 
 import { FeedCard } from '../FeedCard';
-
-jest.mock('../FeedCardProperties', () => ({ FeedCardProperties: () => null }));
 import { useFeedMembers } from '../FeedMembersContext';
 
+jest.mock('../FeedCardProperties', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+
+  return {
+    FeedCardProperties: ({ fields, onSearchTextChange }: {
+      fields: Column[];
+      onSearchTextChange?: (fieldId: string, text: string) => void;
+    }) => {
+      React.useEffect(() => {
+        fields.forEach((field) => {
+          if (field.fieldType === 15) onSearchTextChange?.(field.fieldId, 'Alice');
+          if (field.fieldType === 10) onSearchTextChange?.(field.fieldId, 'Acme');
+        });
+      }, [fields, onSearchTextChange]);
+      return null;
+    },
+  };
+});
+
 jest.mock('@/application/database-yjs', () => ({
+  FieldType: jest.requireActual('@/application/database-yjs/database.type').FieldType,
   useCellSelector: jest.fn(),
+  useDatabase: jest.fn(),
   useDatabaseContext: jest.fn(),
   useReadOnly: jest.fn(),
   useRowDataSelector: jest.fn(),
@@ -58,6 +81,7 @@ jest.mock('../FeedRowReactions', () => ({
 }));
 
 const mockUseCellSelector = useCellSelector as jest.MockedFunction<typeof useCellSelector>;
+const mockUseDatabase = useDatabase as jest.MockedFunction<typeof useDatabase>;
 const mockUseDatabaseContext = useDatabaseContext as jest.MockedFunction<typeof useDatabaseContext>;
 const mockUseReadOnly = useReadOnly as jest.MockedFunction<typeof useReadOnly>;
 const mockUseRowDataSelector = useRowDataSelector as jest.MockedFunction<typeof useRowDataSelector>;
@@ -84,6 +108,7 @@ describe('FeedCard', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseDatabase.mockReturnValue(undefined);
     mockUseDatabaseContext.mockReturnValue({ bindRowSync, navigateToRow } as unknown as ReturnType<
       typeof useDatabaseContext
     >);
@@ -203,6 +228,45 @@ describe('FeedCard', () => {
     render(<FeedCard primaryFieldId='primary' rowId='row-1' />);
     expect(screen.getByTestId('feed-card-row-1').hasAttribute('hidden')).toBe(false);
   });
+
+  it('searches visible property labels instead of stored option IDs and excludes hidden fields', () => {
+    const database = new Y.Doc().getMap('database') as YDatabase;
+    const yFields = new Y.Map() as YDatabaseFields;
+    const rowDoc = createRowDoc('row-1', 'database', {
+      status: { fieldType: FieldType.SingleSelect, data: 'ready-id' },
+    });
+    const fields = [{ fieldId: 'status', fieldType: FieldType.SingleSelect }] as Column[];
+
+    database.set(YjsDatabaseKey.fields, yFields);
+    yFields.set('status', createField('status', FieldType.SingleSelect, {
+      options: [{ id: 'ready-id', name: 'Ready for review', color: 'Purple' }],
+    }).clone());
+    mockUseDatabase.mockReturnValue(database);
+    mockUseRowDataSelector.mockReturnValue({ row: rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) });
+    mockUseDatabaseSearch.mockReturnValue({ query: ' REVIEW ', setQuery: jest.fn() });
+    const { rerender } = render(<FeedCard fields={fields} primaryFieldId='primary' rowId='row-1' />);
+
+    expect(screen.getByTestId('feed-card-row-1').hidden).toBe(false);
+    rerender(<FeedCard fields={[]} primaryFieldId='primary' rowId='row-1' />);
+    expect(screen.getByTestId('feed-card-row-1').hidden).toBe(true);
+    mockUseDatabaseSearch.mockReturnValue({ query: 'ready-id', setQuery: jest.fn() });
+    rerender(<FeedCard fields={fields} primaryFieldId='primary' rowId='row-1' />);
+    expect(screen.getByTestId('feed-card-row-1').hidden).toBe(true);
+  });
+
+  it.each([[FieldType.Person, 'alice'], [FieldType.Relation, 'acme']])(
+    'searches resolved property names for field type %s and drops hidden cached text',
+    async (fieldType, query) => {
+      const fields = [{ fieldId: 'resolved', fieldType }] as Column[];
+
+      mockUseDatabaseSearch.mockReturnValue({ query: String(query), setQuery: jest.fn() });
+      const { rerender } = render(<FeedCard fields={fields} primaryFieldId='primary' rowId='row-1' />);
+
+      await waitFor(() => expect(screen.getByTestId('feed-card-row-1').hidden).toBe(false));
+      rerender(<FeedCard fields={[]} primaryFieldId='primary' rowId='row-1' />);
+      expect(screen.getByTestId('feed-card-row-1').hidden).toBe(true);
+    }
+  );
 
   it('mounts previews only for matching cards near the viewport and releases them when they leave', () => {
     const originalObserver = globalThis.IntersectionObserver;

@@ -25,6 +25,19 @@ import { RelationPrimaryValue } from '@/components/database/components/cell/rela
 import { getLiveDatabaseRowIds } from '@/components/database/components/cell/relation/relationRowOrders';
 import { cn } from '@/lib/utils';
 
+const rowDocSearchIdentities = new WeakMap<YDoc, symbol>();
+
+function getRowDocSearchIdentity(rowDoc: YDoc): symbol {
+  let identity = rowDocSearchIdentities.get(rowDoc);
+
+  if (!identity) {
+    identity = Symbol('relation-row');
+    rowDocSearchIdentities.set(rowDoc, identity);
+  }
+
+  return identity;
+}
+
 function isRowStructurallyHydrated(rowDoc: YDoc): boolean {
   const data = rowDoc.getMap(YjsEditorKey.data_section);
   const row = data.get(YjsEditorKey.database_row);
@@ -41,11 +54,11 @@ function RelationItemValue({
 }: {
   field?: YDatabaseField;
   fieldId?: string;
-  onTextChange: (rowId: string, text: string) => void;
+  onTextChange: (rowId: string, rowDoc: YDoc, text: string) => void;
   rowDoc: YDoc;
   rowId: string;
 }) {
-  const handleTextChange = useCallback((text: string) => onTextChange(rowId, text), [onTextChange, rowId]);
+  const handleTextChange = useCallback((text: string) => onTextChange(rowId, rowDoc, text), [onTextChange, rowDoc, rowId]);
 
   return <RelationPrimaryValue field={field} fieldId={fieldId} onTextChange={handleTextChange} rowDoc={rowDoc} />;
 }
@@ -94,16 +107,31 @@ function RelationItemsForDatabase({
     return data instanceof Y.Array ? (data.toJSON() as RelationCellData) ?? [] : [];
   });
   const [loading, setLoading] = useState(() => rowIds.length > 0);
-  const [rowTexts, setRowTexts] = useState<Record<string, string>>({});
+  const [rowTexts, setRowTexts] = useState<Record<string, { documentIdentity: symbol; text: string }>>({});
   const hasRelatedRows = rowIds.length > 0;
 
   const navigateToView = context?.navigateToView;
 
-  const handleRowTextChange = useCallback((rowId: string, text: string) => {
-    setRowTexts((current) => (current[rowId] === text ? current : { ...current, [rowId]: text }));
+  const handleRowTextChange = useCallback((rowId: string, rowDoc: YDoc, text: string) => {
+    // Retain an identity token rather than a potentially destroyed collab.
+    const documentIdentity = getRowDocSearchIdentity(rowDoc);
+
+    setRowTexts((current) =>
+      current[rowId]?.documentIdentity === documentIdentity && current[rowId]?.text === text
+        ? current
+        : { ...current, [rowId]: { documentIdentity, text } }
+    );
   }, []);
-  const searchText = rowIds.reduce((result, rowId) => {
-    const text = rowTexts[rowId];
+  // Search and rendering use one projection. A deleted/inaccessible target,
+  // or a replacement row shell, must not retain an old resolved title.
+  const liveRowIdSet = liveRelatedRowIds === null ? null : new Set(liveRelatedRowIds);
+  const displayedRowIds = noAccess || !relatedFieldId
+    ? []
+    : rowIds.filter((rowId) => rows?.[rowId] && (liveRowIdSet === null || liveRowIdSet.has(rowId)));
+  const searchText = displayedRowIds.reduce((result, rowId) => {
+    const cached = rowTexts[rowId];
+    const rowDoc = rows?.[rowId];
+    const text = rowDoc && cached?.documentIdentity === getRowDocSearchIdentity(rowDoc) ? cached?.text : '';
 
     return text ? `${result}${result ? ' ' : ''}${text}` : result;
   }, '');
@@ -442,7 +470,7 @@ function RelationItemsForDatabase({
         <div className={'text-text-secondary'}>No access</div>
       ) : (
         <>
-          {rowIds.map((rowId) => {
+          {displayedRowIds.map((rowId) => {
             const rowDoc = rows?.[rowId];
 
             if (!rowDoc) return null;

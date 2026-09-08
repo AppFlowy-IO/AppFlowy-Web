@@ -4,12 +4,15 @@ import { useTranslation } from 'react-i18next';
 
 import {
   Column,
+  FieldType,
   useCellSelector,
+  useDatabase,
   useDatabaseContext,
   useReadOnly,
   useRowDataSelector,
   useRowMetaSelector,
 } from '@/application/database-yjs';
+import { decodeCellToText } from '@/application/database-yjs/decode';
 import { YDatabaseRow, YjsDatabaseKey } from '@/application/types';
 import { canonicalizeUserUid } from '@/application/user-uid';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
@@ -153,6 +156,9 @@ export const FeedCard = memo(function FeedCard({ fields, primaryFieldId, rowId }
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const { bindRowSync, navigateToRow } = useDatabaseContext();
+  const database = useDatabase();
+  const { row } = useRowDataSelector(rowId);
+  const [resolvedSearchText, setResolvedSearchText] = useState<Record<string, string>>({});
   const { resolveMember } = useFeedMembers();
   const meta = useRowMetaSelector(rowId);
   const cell = useCellSelector({ fieldId: primaryFieldId, rowId });
@@ -172,7 +178,37 @@ export const FeedCard = memo(function FeedCard({ fields, primaryFieldId, rowId }
 
   const title = typeof cell?.data === 'string' ? cell.data.trim() : '';
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const matchesSearch = !normalizedQuery || title.toLocaleLowerCase().includes(normalizedQuery);
+  const handleSearchTextChange = useCallback((fieldId: string, text: string) => {
+    setResolvedSearchText((current) => (current[fieldId] === text ? current : { ...current, [fieldId]: text }));
+  }, []);
+  // Desktop indexes the title and visible properties. Person/relation labels
+  // resolve asynchronously in their shared cells; raw IDs are not search text.
+  const searchableText = normalizedQuery
+    ? [
+        title,
+        ...(fields ?? [])
+          .filter((field) => field.fieldId !== primaryFieldId)
+          .map((field) => {
+            if (field.fieldType === FieldType.Person || field.fieldType === FieldType.Relation) {
+              return resolvedSearchText[field.fieldId] ?? '';
+            }
+
+            const yField = database?.get(YjsDatabaseKey.fields)?.get(field.fieldId);
+            const yCell = row?.get(YjsDatabaseKey.cells)?.get(field.fieldId);
+
+            if (!yField || !yCell) return '';
+
+            try {
+              return decodeCellToText(yCell, yField);
+            } catch {
+              return '';
+            }
+          }),
+      ]
+        .join(' ')
+        .toLocaleLowerCase()
+    : '';
+  const matchesSearch = !normalizedQuery || searchableText.includes(normalizedQuery);
   const hasCreator = Boolean(resolveMember(attribution.createdBy));
   const hasDocument = meta?.isEmptyDocument === false && Boolean(meta.documentId);
   // Linked databases still render inside a preview, but their Feed cards must
@@ -238,7 +274,14 @@ export const FeedCard = memo(function FeedCard({ fields, primaryFieldId, rowId }
             </h3>
           </div>
 
-          {fields ? <FeedCardProperties fields={fields} primaryFieldId={primaryFieldId} rowId={rowId} /> : null}
+          {fields ? (
+            <FeedCardProperties
+              fields={fields}
+              onSearchTextChange={normalizedQuery ? handleSearchTextChange : undefined}
+              primaryFieldId={primaryFieldId}
+              rowId={rowId}
+            />
+          ) : null}
 
           {showPreview && meta ? <FeedDocumentPreview documentId={meta.documentId} rowId={rowId} /> : null}
 

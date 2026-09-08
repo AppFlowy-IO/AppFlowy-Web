@@ -1,7 +1,7 @@
 import { render, waitFor } from '@testing-library/react';
 
-import { FieldType } from '@/application/database-yjs/database.type';
 import type { PersonCell as PersonCellData } from '@/application/database-yjs/cell.type';
+import { FieldType } from '@/application/database-yjs/database.type';
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 
 import { PersonCell } from '../PersonCell';
@@ -22,8 +22,8 @@ const mockUseMentionableUsersWithAutoFetch = useMentionableUsersWithAutoFetch as
   typeof useMentionableUsersWithAutoFetch
 >;
 
-describe('PersonCell display text', () => {
-  it('reports the same resolved name that it renders', async () => {
+describe('PersonCell search text', () => {
+  it('indexes name and email while rendering the name, and drops removed members', async () => {
     const onTextChange = jest.fn();
     const cell: PersonCellData = {
       createdAt: 0,
@@ -44,11 +44,26 @@ describe('PersonCell display text', () => {
       ],
     });
 
-    const { getByText } = render(
+    const { getByText, queryByText, rerender } = render(
       <PersonCell cell={cell} fieldId='people' onTextChange={onTextChange} readOnly rowId='row-1' wrap={false} />
     );
 
     expect(getByText('Alice')).toBeTruthy();
-    await waitFor(() => expect(onTextChange).toHaveBeenLastCalledWith('Alice'));
+    expect(queryByText('alice@example.com')).toBeNull();
+    await waitFor(() => expect(onTextChange).toHaveBeenLastCalledWith('Alice alice@example.com'));
+
+    rerender(
+      <PersonCell
+        cell={{ ...cell, data: '[]' }}
+        fieldId='people'
+        onTextChange={onTextChange}
+        readOnly
+        rowId='row-1'
+        wrap={false}
+      />
+    );
+
+    await waitFor(() => expect(onTextChange).toHaveBeenLastCalledWith(''));
+    expect(queryByText('Alice')).toBeNull();
   });
 });

@@ -11,6 +11,14 @@ Feature: Feed property visibility and discussions
     When the user drags score before status and hides status
     Then the saved settings survive view switching and reload
 
+  Scenario: Feed search follows visible property values and their updates
+    Given a Feed with two populated properties hidden by default
+    When the user shows both properties with the eye controls
+    And the user searches for a Feed property value
+    Then only the matching Feed card is visible
+    When that property changes while the search is active
+    Then Feed search updates and respects hiding that property
+
   Scenario: A discussion popover retains its mention and attachment when dismissed
     Given a Feed card with an existing discussion
     When the user replies with a mention and file, then dismisses and reopens the discussion
