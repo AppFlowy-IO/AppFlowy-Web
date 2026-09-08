@@ -49,9 +49,9 @@ export interface PersistedTemplateEmbeddedDatabaseSnapshot {
  * The persisted JSON contract shared with Desktop's
  * `DatabaseRowTemplateMeta` in the database collab `metas` map.
  *
- * `icon` and `cover` are optional Flutter model extensions. Desktop's Rust
- * serde reader ignores them, while Web keeps them for its hidden template-row
- * metadata. Every required Rust field is represented explicitly here.
+ * Missing `icon`/`cover` fields use the legacy orphan-view fallback; empty
+ * strings explicitly remove them. Both clients persist these optional strings.
+ * Every required Rust field is represented explicitly here.
  */
 export interface PersistedDatabaseRowTemplate {
   template_id: string;

@@ -8,6 +8,7 @@ import { TextFilterCondition } from '@/application/database-yjs/fields';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
 import { DatabaseRowTemplateStore } from '@/application/database-yjs/template';
+import templateInterop from '@/application/database-yjs/template/__tests__/fixtures/row_template_interop.json';
 import {
   CoverType,
   DatabaseViewLayout,
@@ -27,6 +28,8 @@ import { AFConfigContext } from '@/components/main/app.hooks';
 
 import type { ReactNode } from 'react';
 
+jest.unmock('lodash-es/isEqual');
+
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
 }));
@@ -43,6 +46,7 @@ const viewId = 'grid-view-id';
 const otherViewId = 'board-view-id';
 const nameFieldId = 'name-field-id';
 const statusFieldId = 'status-field-id';
+const documentSnapshot = Array.from(Buffer.from(templateInterop.document_snapshot, 'base64'));
 
 function createField(id: string, name: string, primary = false): YDatabaseField {
   const field = new Y.Map() as YDatabaseField;
@@ -82,7 +86,7 @@ function createDatabaseDoc(layout: DatabaseViewLayout = DatabaseViewLayout.Grid)
   return { doc, database };
 }
 
-function addTemplate(database: YDatabase, options: { empty?: boolean; makeDefault?: boolean } = {}) {
+function addTemplate(database: YDatabase, options: { empty?: boolean; makeDefault?: boolean; icon?: string; cover?: string } = {}) {
   const now = Date.now();
   const template = new DatabaseRowTemplateStore(database).upsert({
     templateId: '20000000-0000-4000-8000-000000000002',
@@ -94,8 +98,8 @@ function addTemplate(database: YDatabase, options: { empty?: boolean; makeDefaul
       [nameFieldId]: { type: 'text', value: 'From template' },
       [statusFieldId]: { type: 'text', value: 'Template status' },
     },
-    icon: '🐛',
-    cover: JSON.stringify({ data: '1', cover_type: 2 }),
+    icon: 'icon' in options ? options.icon : '🐛',
+    cover: 'cover' in options ? options.cover : JSON.stringify({ data: '1', cover_type: 2 }),
     createdAtMs: now,
     updatedAtMs: now,
   });
@@ -313,10 +317,9 @@ describe('useNewRowDispatch database templates', () => {
 
   it('falls back to the orphan view icon and cover used by Desktop templates', async () => {
     const { doc, database } = createDatabaseDoc();
-    const template = addTemplate(database);
+    const template = addTemplate(database, { icon: undefined, cover: undefined });
     const desktopTemplate = new DatabaseRowTemplateStore(database).upsert({
       ...template,
-      documentData: [1, 2, 3],
       icon: undefined,
       cover: undefined,
     });
@@ -422,9 +425,14 @@ describe('useNewRowDispatch database templates', () => {
     expect(createRow).not.toHaveBeenCalled();
   });
 
-  it('materializes a non-empty template document through the existing deep-copy pipeline', async () => {
+  it.each(['live', 'snapshot'])('materializes a %s template through the existing deep-copy pipeline', async (kind) => {
     const { doc, database } = createDatabaseDoc();
-    const template = addTemplate(database, { empty: false });
+    const original = addTemplate(database, { empty: false });
+    const template = kind === 'snapshot'
+      ? new DatabaseRowTemplateStore(database).upsert({
+        ...original, docViewId: '', documentData: documentSnapshot, isDocumentEmpty: true,
+      })
+      : original;
     const createdRows = new Map<string, YDoc>();
     const sourceDocument = new Y.Doc({ guid: template.docViewId }) as YDoc;
 
@@ -433,6 +441,9 @@ describe('useNewRowDispatch database templates', () => {
     const createRowDocument = jest.fn(async () => new Uint8Array([1]));
     const duplicateRowDocument: NonNullable<DatabaseContextState['duplicateRowDocument']> = jest.fn(
       async (_databaseId, _sourceId, _targetId, _state, prepareSource) => {
+        database.get(YjsDatabaseKey.views)?.forEach((view) => {
+          expect(view.get(YjsDatabaseKey.row_orders)?.toArray()).toEqual([]);
+        });
         await prepareSource?.();
       }
     );
@@ -449,7 +460,7 @@ describe('useNewRowDispatch database templates', () => {
         createdRows.set(key, rowDoc);
         return rowDoc;
       },
-      loadRowDocument: async () => sourceDocument,
+      loadRowDocument: jest.fn(async () => sourceDocument),
       createRowDocument,
       duplicateRowDocument,
     };
@@ -479,7 +490,13 @@ describe('useNewRowDispatch database templates', () => {
       decodedSource,
       Uint8Array.from(atob(encodedSource), (character) => character.charCodeAt(0))
     );
-    expect(decodedSource.getMap(YjsEditorKey.data_section).get('template-marker')).toBe('client document state');
+    if (kind === 'snapshot') {
+      expect(context.loadRowDocument).not.toHaveBeenCalled();
+      expect(decodedSource.getMap(YjsEditorKey.data_section).get(YjsEditorKey.document)).toBeInstanceOf(Y.Map);
+    } else {
+      expect(decodedSource.getMap(YjsEditorKey.data_section).get('template-marker')).toBe('client document state');
+    }
+
     const hiddenSource = createdRows.get(getRowKey(databaseDocId, template.templateId)) as YDoc;
 
     expect(cellData(hiddenSource, nameFieldId)).toBe('From template');
@@ -499,7 +516,24 @@ describe('useNewRowDispatch database templates', () => {
     expect(orderedIds).not.toContain(template.templateId);
   });
 
-  it('keeps template cells but marks the row document empty when materialization fails', async () => {
+  it('rejects corrupt stored snapshots before creating a row even when legacy metadata says empty', async () => {
+    const { doc, database } = createDatabaseDoc();
+    const original = addTemplate(database);
+    const template = new DatabaseRowTemplateStore(database).upsert({ ...original, documentData: [1, 2, 3] });
+    const createRow = jest.fn(async (key: string) => new Y.Doc({ guid: key }) as YDoc);
+    const context: DatabaseContextState = {
+      readOnly: false, databaseDoc: doc, databasePageId: viewId, activeViewId: viewId,
+      rowMap: {}, workspaceId: 'workspace-id', createRow,
+    };
+    const { result } = renderHook(() => useNewRowDispatch(), { wrapper: createWrapper(context) });
+
+    await act(async () => {
+      await expect(result.current({ templateId: template.templateId })).rejects.toThrow('Invalid template document snapshot');
+    });
+    expect(createRow).not.toHaveBeenCalled();
+  });
+
+  it('rejects materialization failures without publishing or opening a partial row', async () => {
     const { doc, database } = createDatabaseDoc();
     const template = addTemplate(database, { empty: false });
     const createdRows = new Map<string, YDoc>();
@@ -517,22 +551,21 @@ describe('useNewRowDispatch database templates', () => {
         return rowDoc;
       },
       duplicateRowDocument: jest.fn(async () => Promise.reject(new Error('copy failed'))),
+      navigateToRow: jest.fn(),
     };
     const { result } = renderHook(() => useNewRowDispatch(), { wrapper: createWrapper(context) });
-    let rowId = '';
 
     await act(async () => {
-      rowId = (await result.current({ templateId: template.templateId })) as string;
+      await expect(result.current({ templateId: template.templateId, openAfterCreate: true })).rejects.toThrow('copy failed');
     });
 
-    const rowDoc = createdRows.get(getRowKey(databaseDocId, rowId)) as YDoc;
-    const meta = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
-
-    expect(cellData(rowDoc, nameFieldId)).toBe('From template');
-    expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty) as string)).toBe(true);
+    database.get(YjsDatabaseKey.views)?.forEach((view) => {
+      expect(view.get(YjsDatabaseKey.row_orders)?.toArray()).toEqual([]);
+    });
+    expect(context.navigateToRow).not.toHaveBeenCalled();
   });
 
-  it('marks a non-empty template document empty when duplication is unavailable', async () => {
+  it('rejects a non-empty template when duplication is unavailable without publishing a row', async () => {
     const { doc, database } = createDatabaseDoc();
     const template = addTemplate(database, { empty: false });
     const createdRows = new Map<string, YDoc>();
@@ -551,17 +584,14 @@ describe('useNewRowDispatch database templates', () => {
       },
     };
     const { result } = renderHook(() => useNewRowDispatch(), { wrapper: createWrapper(context) });
-    let rowId = '';
 
     await act(async () => {
-      rowId = (await result.current({ templateId: template.templateId })) as string;
+      await expect(result.current({ templateId: template.templateId })).rejects.toThrow('Template document duplication is unavailable');
     });
 
-    const rowDoc = createdRows.get(getRowKey(databaseDocId, rowId)) as YDoc;
-    const meta = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
-
-    expect(cellData(rowDoc, nameFieldId)).toBe('From template');
-    expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty) as string)).toBe(true);
+    database.get(YjsDatabaseKey.views)?.forEach((view) => {
+      expect(view.get(YjsDatabaseKey.row_orders)?.toArray()).toEqual([]);
+    });
   });
 
   it.each([
@@ -690,9 +720,18 @@ describe('useNewRowDispatch database templates', () => {
     expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty) as string)).toBe(false);
   });
 
-  it('uses a non-empty default template through the same document materialization path', async () => {
-    const { doc, database } = createDatabaseDoc();
-    const template = addTemplate(database, { empty: false, makeDefault: true });
+  it('keeps the default template body and other cells when a calendar supplies its own date', async () => {
+    const { doc, database } = createDatabaseDoc(DatabaseViewLayout.Calendar);
+    const dateFieldId = 'date-field';
+    const dateField = createField(dateFieldId, 'Date');
+
+    dateField.set(YjsDatabaseKey.type, FieldType.DateTime);
+    database.get(YjsDatabaseKey.fields)?.set(dateFieldId, dateField);
+    const original = addTemplate(database, { empty: false, makeDefault: true });
+    const template = new DatabaseRowTemplateStore(database).upsert({
+      ...original,
+      defaultCells: { ...original.defaultCells, [dateFieldId]: { type: 'date_time', value: 1700000000 } },
+    });
     const sourceDocument = new Y.Doc({ guid: template.docViewId }) as YDoc;
 
     sourceDocument.getMap(YjsEditorKey.data_section).set(YjsEditorKey.document, new Y.Map());
@@ -718,7 +757,7 @@ describe('useNewRowDispatch database templates', () => {
     let rowId = '';
 
     await act(async () => {
-      rowId = (await result.current({})) as string;
+      rowId = (await result.current({ cellsData: { [dateFieldId]: { data: '1800000000' } } })) as string;
     });
 
     expect(duplicateRowDocument).toHaveBeenCalledWith(
@@ -729,6 +768,7 @@ describe('useNewRowDispatch database templates', () => {
       expect.any(Function)
     );
     expect(cellData(createdRows.get(getRowKey(databaseDocId, rowId)) as YDoc, nameFieldId)).toBe('From template');
+    expect(cellData(createdRows.get(getRowKey(databaseDocId, rowId)) as YDoc, dateFieldId)).toBe('1800000000');
   });
 
   it('keeps an empty template row empty without invoking document duplication', async () => {
@@ -770,10 +810,10 @@ describe('useNewRowDispatch database templates', () => {
     ['icon only', '🧭', undefined],
     ['cover only', undefined, JSON.stringify({ data: '2', cover_type: 2 })],
     ['both icon and cover', '🧭', JSON.stringify({ data: '2', cover_type: 2 })],
+    ['explicitly removed icon and cover', '', ''],
   ])('copies %s from explicit and default template creation', async (_variant, icon, cover) => {
     const { doc, database } = createDatabaseDoc();
-    const original = addTemplate(database, { empty: true });
-    const template = new DatabaseRowTemplateStore(database).upsert({ ...original, icon, cover });
+    const template = addTemplate(database, { empty: true, icon, cover });
 
     new DatabaseRowTemplateStore(database).setDefault(template.templateId);
     const createdRows = new Map<string, YDoc>();
@@ -803,8 +843,8 @@ describe('useNewRowDispatch database templates', () => {
       const rowDoc = createdRows.get(getRowKey(databaseDocId, rowId)) as YDoc;
       const meta = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
 
-      expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.IconId) as string)).toBe(icon);
-      expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.CoverId) as string)).toBe(cover);
+      expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.IconId) as string)).toBe(icon || undefined);
+      expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.CoverId) as string)).toBe(cover || undefined);
     });
   });
 
