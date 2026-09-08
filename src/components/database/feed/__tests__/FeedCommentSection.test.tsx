@@ -1,7 +1,7 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { useRowMap } from '@/application/database-yjs';
+import { useDatabaseContext, useRowMap } from '@/application/database-yjs';
 import { useAddCommentDispatch } from '@/application/database-yjs/comment_dispatch';
 import { addComment } from '@/application/database-yjs/row_comment';
 import { YDoc, YjsEditorKey } from '@/application/types';
@@ -9,7 +9,7 @@ import { YDoc, YjsEditorKey } from '@/application/types';
 import { FeedCommentSection } from '../FeedCommentSection';
 import { useFeedMembers } from '../FeedMembersContext';
 
-jest.mock('@/application/database-yjs', () => ({ useRowMap: jest.fn() }));
+jest.mock('@/application/database-yjs', () => ({ useRowMap: jest.fn(), useDatabaseContext: jest.fn() }));
 jest.mock('@/application/database-yjs/comment_dispatch', () => ({ useAddCommentDispatch: jest.fn() }));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -51,6 +51,9 @@ describe('FeedCommentSection', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (useDatabaseContext as jest.Mock).mockReturnValue({
+      uploadFile: jest.fn().mockResolvedValue('https://example.com/note.txt'),
+    });
     addCommentDispatch.mockReturnValue('comment-id');
     mockUseAddCommentDispatch.mockReturnValue(addCommentDispatch);
     resolveMember.mockImplementation((id: string) =>
@@ -64,6 +67,8 @@ describe('FeedCommentSection', () => {
       canComment: true,
     });
   });
+
+  afterEach(() => jest.useRealTimers());
 
   it('shows the add-comment input without creating a comments map when there are no comments', () => {
     const rowDoc = createRowDoc();
@@ -85,7 +90,7 @@ describe('FeedCommentSection', () => {
     fireEvent.change(input, { target: { value: '  Nice post  ' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(addCommentDispatch).toHaveBeenCalledWith('Nice post', 'me');
+    expect(addCommentDispatch).toHaveBeenCalledWith('Nice post', 'me', undefined, []);
     expect(screen.getByTestId('feed-add-comment-collapsed-row-1')).toBeTruthy();
   });
 
@@ -128,7 +133,7 @@ describe('FeedCommentSection', () => {
     rerender(<FeedCommentSection rowId='row-1' />);
     fireEvent.click(screen.getByTestId('feed-add-comment-submit-row-1'));
 
-    expect(addCommentDispatch).toHaveBeenLastCalledWith('Keep my draft', 'me');
+    expect(addCommentDispatch).toHaveBeenLastCalledWith('Keep my draft', 'me', undefined, []);
     expect(screen.getByTestId('feed-add-comment-collapsed-row-1')).toBeTruthy();
   });
 
@@ -145,7 +150,96 @@ describe('FeedCommentSection', () => {
     expect(input.value).toBe('你好');
 
     fireEvent.keyDown(input, { key: 'Enter', isComposing: false, keyCode: 13 });
-    expect(addCommentDispatch).toHaveBeenCalledWith('你好', 'me');
+    expect(addCommentDispatch).toHaveBeenCalledWith('你好', 'me', undefined, []);
+  });
+
+  it('uploads an attachment and allows an attachment-only comment in the desktop wire format', async () => {
+    mockUseRowMap.mockReturnValue({ 'row-1': createRowDoc() });
+    render(<FeedCommentSection rowId='row-1' />);
+    fireEvent.click(screen.getByTestId('feed-add-comment-collapsed-row-1'));
+    fireEvent.change(screen.getByTestId('feed-add-comment-attachment-row-1'), {
+      target: { files: [new File(['hello'], 'note.txt', { type: 'text/plain' })] },
+    });
+    await waitFor(() => expect(screen.getByTestId('comment-pending-attachment').textContent).toContain('note.txt'));
+    fireEvent.click(screen.getByTestId('feed-add-comment-submit-row-1'));
+    expect(addCommentDispatch).toHaveBeenCalledWith('', 'me', undefined, [
+      expect.objectContaining({
+        name: 'note.txt',
+        url: 'https://example.com/note.txt',
+        file_type: 'text/plain',
+        size: 5,
+      }),
+    ]);
+  });
+
+  it('keeps the caret after text typed immediately after selecting a mention', () => {
+    jest.useFakeTimers();
+    mockUseRowMap.mockReturnValue({ 'row-1': createRowDoc() });
+    const personId = 'a318b9a0-6e2a-4c85-9638-16fd152af6e1';
+
+    mockUseFeedMembers.mockReturnValue({
+      resolveMember,
+      currentUser: undefined,
+      currentUid: '42',
+      currentCommentAuthorId: 'me',
+      canComment: true,
+      mentionableUsers: [
+        {
+          person_id: personId,
+          name: 'Alice',
+          email: 'alice@example.com',
+          uid: '7',
+          avatar_url: null,
+          cover_image_url: null,
+          custom_image_url: null,
+          description: null,
+          role: 1,
+          invited: false,
+          last_mentioned_at: null,
+        },
+      ],
+    });
+    render(<FeedCommentSection rowId='row-1' />);
+    fireEvent.click(screen.getByTestId('feed-add-comment-collapsed-row-1'));
+    const input = screen.getByTestId<HTMLTextAreaElement>('feed-add-comment-input-row-1');
+
+    fireEvent.change(input, { target: { value: '@' } });
+    fireEvent.click(screen.getByRole('option'));
+    fireEvent.change(input, { target: { value: '@Alice please review' } });
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
+    expect(input.selectionStart).toBe(input.value.length);
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(addCommentDispatch).toHaveBeenCalledWith(`@[Alice](${personId}) please review`, 'me', undefined, []);
+  });
+
+  it('keeps the draft and disables submission while uploading or when an upload fails', async () => {
+    let rejectUpload!: (error: Error) => void;
+    const uploadFile = jest.fn(
+      () =>
+        new Promise<string>((_resolve, reject) => {
+          rejectUpload = reject;
+        })
+    );
+
+    (useDatabaseContext as jest.Mock).mockReturnValue({ uploadFile });
+    mockUseRowMap.mockReturnValue({ 'row-1': createRowDoc() });
+    render(<FeedCommentSection rowId='row-1' />);
+    fireEvent.click(screen.getByTestId('feed-add-comment-collapsed-row-1'));
+    const input = screen.getByTestId<HTMLTextAreaElement>('feed-add-comment-input-row-1');
+
+    fireEvent.change(input, { target: { value: 'Keep attachment draft' } });
+    fireEvent.change(screen.getByTestId('feed-add-comment-attachment-row-1'), {
+      target: { files: [new File(['hello'], 'note.txt')] },
+    });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(addCommentDispatch).not.toHaveBeenCalled();
+    await act(async () => {
+      rejectUpload(new Error('offline'));
+    });
+    expect(screen.getByRole('alert').textContent).toBe('grid.media.uploadError');
+    expect(input.value).toBe('Keep attachment draft');
   });
 
   it('renders nothing when the viewer cannot comment and the row has no comments', () => {

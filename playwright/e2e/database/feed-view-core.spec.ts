@@ -119,6 +119,8 @@ test.describe('Feed view basics (Flutter desktop parity)', () => {
     await openFeedCardMenu(page, firstRowId);
     await expect(DatabaseFeedSelectors.rowDuplicate(page)).toBeVisible();
     await expect(DatabaseFeedSelectors.rowDelete(page)).toBeVisible();
+    await expect(DatabaseFeedSelectors.rowActionMenu(page).getByRole('menuitem')).toHaveText(['Duplicate', 'Delete']);
+    await expect(page.getByTestId(`feed-card-actions-${firstRowId}`)).toHaveCSS('opacity', '1');
     await expect(RowDetailSelectors.modal(page)).toHaveCount(0);
 
     await page.keyboard.press('Escape');
@@ -221,6 +223,9 @@ test.describe('Feed view basics (Flutter desktop parity)', () => {
     await expect(DatabaseFeedSelectors.settingsMenu(page)).toBeVisible();
     await expect(DatabaseViewSelectors.layoutSettingsTrigger(page)).toBeVisible();
     await expect(page.getByTestId('database-properties-settings-trigger')).toHaveCount(0);
-    await page.keyboard.press('Escape');
+    await expect(DatabaseFeedSelectors.settingsMenu(page).getByRole('menuitem')).toHaveCount(1);
+    await DatabaseViewSelectors.layoutSettingsTrigger(page).hover();
+    await DatabaseViewSelectors.layoutOption(page, DatabaseViewLayout.Grid).click();
+    await expect(DatabaseViewSelectors.gridView(page)).toBeVisible();
   });
 });

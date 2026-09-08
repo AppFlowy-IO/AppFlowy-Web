@@ -55,8 +55,12 @@ export async function getFeedCardRowIds(page: Page): Promise<string[]> {
 }
 
 export async function expectFeedTitles(page: Page, titles: string[]): Promise<void> {
-  await expect(DatabaseFeedSelectors.titles(page)).toHaveCount(titles.length, { timeout: 20_000 });
-  await expect(DatabaseFeedSelectors.titles(page)).toHaveText(titles, { timeout: 20_000 });
+  const visibleTitles = page.locator(
+    '[data-testid^="feed-card-"][data-row-id]:not([hidden]) [data-testid^="feed-card-title-"]'
+  );
+
+  await expect(visibleTitles).toHaveCount(titles.length, { timeout: 20_000 });
+  await expect(visibleTitles).toHaveText(titles, { timeout: 20_000 });
 }
 
 export async function waitForFeedCards(page: Page, minimumCount: number): Promise<void> {

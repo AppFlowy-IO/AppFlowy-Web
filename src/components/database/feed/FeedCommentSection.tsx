@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useRowMap } from '@/application/database-yjs';
@@ -7,13 +7,11 @@ import { useAddCommentDispatch } from '@/application/database-yjs/comment_dispat
 import { getCommentsMap, getRowComments } from '@/application/database-yjs/row_comment';
 import { RowComment } from '@/application/row-comment.type';
 import { YjsEditorKey } from '@/application/types';
-import { ReactComponent as ArrowUpIcon } from '@/assets/icons/arrow_up.svg';
-import { TextareaAutosize } from '@/components/ui/textarea-autosize';
-import { cn } from '@/lib/utils';
+import { CommentComposer } from '@/components/database/components/database-row/comment/CommentComposer';
 
+import { formatFeedRelativeTime } from './feed.utils';
 import { FeedAvatar } from './FeedAvatar';
 import { useFeedMembers } from './FeedMembersContext';
-import { formatFeedRelativeTime } from './feed.utils';
 
 interface FeedRowCommentsState {
   count: number;
@@ -54,9 +52,7 @@ export function useFeedRowComments(rowId: string): FeedRowCommentsState {
     const update = () => {
       const next = summarizeComments(getRowComments(rowDoc));
 
-      setState((current) =>
-        current.count === next.count && current.latest?.id === next.latest?.id ? current : next
-      );
+      setState((current) => (current.count === next.count && current.latest?.id === next.latest?.id ? current : next));
     };
 
     const syncCommentsMap = () => {
@@ -103,118 +99,36 @@ function FeedCommentSummary({ count, latest, rowId }: { count: number; latest: R
 
 function FeedAddCommentInput({ rowId }: { rowId: string }) {
   const { t } = useTranslation();
-  const { currentCommentAuthorId, currentUser, resolveMember } = useFeedMembers();
+  const { currentCommentAuthorId, currentUser, resolveMember, mentionableUsers, canComment } = useFeedMembers();
   const addComment = useAddCommentDispatch(rowId);
-  const [content, setContent] = useState('');
-  const [focused, setFocused] = useState(false);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const collapsed = !focused && !content;
-  const canSend = content.trim().length > 0;
   const author = resolveMember(currentCommentAuthorId) ?? {
     name: currentUser?.name ?? '',
     email: currentUser?.email ?? '',
     avatarUrl: currentUser?.avatar ?? null,
   };
 
-  useEffect(() => {
-    if (focused) inputRef.current?.focus();
-  }, [focused]);
-
-  const reset = useCallback(() => {
-    setContent('');
-    setFocused(false);
-    inputRef.current?.blur();
-  }, []);
-
-  const submit = useCallback(() => {
-    const trimmed = content.trim();
-
-    if (!trimmed || !currentCommentAuthorId) return;
-
-    const commentId = addComment(trimmed, currentCommentAuthorId);
-
-    if (commentId) reset();
-  }, [addComment, content, currentCommentAuthorId, reset]);
-
   return (
     <div
-      className='mt-3 flex items-center gap-2'
+      className='mt-3 flex items-start gap-2'
       data-feed-interactive='true'
       data-testid={`feed-add-comment-${rowId}`}
       onClick={(event) => event.stopPropagation()}
     >
       <FeedAvatar member={author} />
-      {collapsed ? (
-        <div
-          className='flex h-8 flex-1 cursor-text items-center rounded-lg border border-border-primary px-3 text-sm text-text-tertiary hover:border-border-primary-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
-          data-testid={`feed-add-comment-collapsed-${rowId}`}
-          onClick={() => setFocused(true)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              setFocused(true);
-            }
-          }}
-          role='button'
-          tabIndex={0}
-        >
-          {t('rowComment.addComment')}
-        </div>
-      ) : (
-        <div className='flex flex-1 items-end gap-1'>
-          <div
-            className={cn(
-              'flex-1 rounded-lg border px-3 py-1.5 transition-colors',
-              focused ? 'border-border-theme-thick' : 'border-border-primary'
-            )}
-          >
-            <TextareaAutosize
-              autoFocus
-              className='w-full bg-transparent'
-              data-testid={`feed-add-comment-input-${rowId}`}
-              maxRows={6}
-              minRows={1}
-              onBlur={() => {
-                if (!content) setFocused(false);
-              }}
-              onChange={(event) => setContent(event.target.value)}
-              onFocus={() => setFocused(true)}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-
-                if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey) {
-                  event.preventDefault();
-                  submit();
-                }
-
-                if (event.key === 'Escape') {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  event.nativeEvent.stopImmediatePropagation();
-                  reset();
-                }
-              }}
-              placeholder={t('rowComment.addComment')}
-              ref={inputRef}
-              value={content}
-              variant='ghost'
-            />
-          </div>
-          <button
-            aria-label={t('rowComment.reply')}
-            className={cn(
-              'flex h-7 w-7 items-center justify-center rounded-full',
-              canSend ? 'bg-fill-theme-thick text-text-on-fill' : 'bg-fill-content-hover text-text-tertiary'
-            )}
-            data-testid={`feed-add-comment-submit-${rowId}`}
-            disabled={!canSend}
-            onClick={submit}
-            type='button'
-          >
-            <ArrowUpIcon aria-hidden='true' className='h-4 w-4' />
-          </button>
-        </div>
-      )}
+      <CommentComposer
+        placeholder={t('rowComment.addComment')}
+        members={mentionableUsers}
+        testIds={{
+          collapsed: `feed-add-comment-collapsed-${rowId}`,
+          input: `feed-add-comment-input-${rowId}`,
+          submit: `feed-add-comment-submit-${rowId}`,
+          attachment: `feed-add-comment-attachment-${rowId}`,
+        }}
+        onSubmit={(content, attachments) => {
+          if (!canComment || !currentCommentAuthorId) return;
+          return addComment(content, currentCommentAuthorId, undefined, attachments);
+        }}
+      />
     </div>
   );
 }

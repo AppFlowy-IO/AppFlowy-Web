@@ -3,15 +3,86 @@ import { createBdd } from 'playwright-bdd';
 
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { createDatabaseView } from '../../support/database-ui-helpers';
+import { insertLinkedGridViaSlash } from '../../support/duplicate-test-helpers';
 import { getFeedCardRowIds, openFeedCard, waitForFeedCards } from '../../support/feed-test-helpers';
 import { loginAndCreateGrid } from '../../support/filter-test-helpers';
 import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from '../../support/page-utils';
 import { renameCurrentDatabasePage } from '../../support/relation-test-helpers';
 import { closeRowDetailWithEscape, typeInRowDocument } from '../../support/row-detail-helpers';
-import { BlockSelectors, DatabaseFeedSelectors, HeaderSelectors, RowDetailSelectors } from '../../support/selectors';
+import {
+  BlockSelectors,
+  DatabaseFeedSelectors,
+  DatabaseViewSelectors,
+  HeaderSelectors,
+  RowDetailSelectors,
+} from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const { Given, Then, When } = createBdd();
+
+When('the Feed user creates a source grid named {string}', async ({ page }, name: string) => {
+  await createDatabaseView(page, 'Grid', 6_000);
+  await expect(DatabaseViewSelectors.gridView(page)).toBeVisible({ timeout: 30_000 });
+  await renameCurrentDatabasePage(page, name);
+});
+
+When(
+  'the Feed user inserts paragraphs and a linked grid {string} in the row document',
+  async ({ page }, name: string) => {
+    await typeInRowDocument(page, 'First paragraph above the linked database.');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('Second paragraph above the linked database.');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('Third paragraph above the linked database.');
+    await page.keyboard.press('Enter');
+    const editor = RowDetailSelectors.modal(page).getByTestId('editor-content').first();
+    const documentId = (await editor.getAttribute('id'))!.replace('editor-', '');
+
+    await insertLinkedGridViaSlash(page, documentId, name, 3);
+    await expect(editor.getByTestId('database-grid')).toBeVisible({ timeout: 30_000 });
+  }
+);
+
+Then('the first feed card contains a linked grid with bounded expandable height', async ({ page }) => {
+  const [rowId] = await getFeedCardRowIds(page);
+  const preview = DatabaseFeedSelectors.documentPreviewByRowId(page, rowId);
+  const content = page.getByTestId(`feed-document-preview-content-${rowId}`);
+
+  await expect(preview.getByTestId('database-grid')).toBeAttached({ timeout: 30_000 });
+  await expect(preview).toHaveAttribute('data-overflows', 'true');
+  expect((await content.boundingBox())!.height).toBeLessThanOrEqual(120);
+  await DatabaseFeedSelectors.cardByRowId(page, rowId).hover();
+  await DatabaseFeedSelectors.documentPreviewToggleByRowId(page, rowId).click();
+  await expect(preview).toHaveAttribute('data-expanded', 'true');
+  const height = (await content.boundingBox())!.height;
+
+  expect(height).toBeGreaterThan(120);
+  expect(height).toBeLessThan(1500);
+  await expect(preview.getByTestId('database-grid')).toBeVisible();
+  await expect(preview.locator('[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"])')).toHaveCount(3);
+});
+
+When('the Feed user inserts a linked grid {string} in the normal document', async ({ page }, name: string) => {
+  const documentId = new URL(page.url()).pathname.split('/').filter(Boolean).pop()!;
+
+  await insertLinkedGridViaSlash(page, documentId, name);
+});
+
+When('the Feed user opens the original linked grid', async ({ page }) => {
+  const modal = RowDetailSelectors.modal(page);
+  const button = (await modal.count())
+    ? modal.getByTestId('embedded-database-open-original')
+    : page.getByTestId('embedded-database-open-original');
+
+  await expect(button).toBeEnabled({ timeout: 30_000 });
+  await button.click();
+});
+
+Then('the Feed row detail is closed and the source grid is open', async ({ page }) => {
+  await expect(RowDetailSelectors.modal(page)).toHaveCount(0, { timeout: 20_000 });
+  await expect(DatabaseViewSelectors.gridView(page)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('embedded-database-open-original')).toHaveCount(0);
+});
 
 Given('the Feed test app is initialized', async ({ page }) => {
   setupPageErrorHandling(page);
@@ -24,9 +95,9 @@ When('the Feed user signs in anonymously', async ({ page, request }) => {
 
 Then('the Feed user sees the home page with get started page', async ({ page }) => {
   await expect(page).toHaveURL(/\/app/, { timeout: 30_000 });
-  await expect(
-    page.locator('[data-testid="inline-add-page"], [data-testid="new-page-button"]').first()
-  ).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-testid="inline-add-page"], [data-testid="new-page-button"]').first()).toBeVisible({
+    timeout: 20_000,
+  });
 });
 
 When('the user creates a new page named {string} with feed layout', async ({ page }, name: string) => {

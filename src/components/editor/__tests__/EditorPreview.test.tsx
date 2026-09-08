@@ -3,12 +3,10 @@ import * as Y from 'yjs';
 
 import { BlockType, YDoc } from '@/application/types';
 import CollaborativeEditor from '@/components/editor/CollaborativeEditor';
-import { DatabaseBlock } from '@/components/editor/components/blocks/database/DatabaseBlock';
-import { useDocumentLoader } from '@/components/editor/components/blocks/database/hooks/useDocumentLoader';
 import { Heading } from '@/components/editor/components/blocks/heading/Heading';
 import SimpleTableCell from '@/components/editor/components/blocks/simple-table/SimpleTableCell';
 import { Editor } from '@/components/editor/Editor';
-import { DatabaseNode, HeadingNode, SimpleTableCellBlockNode } from '@/components/editor/editor.type';
+import { HeadingNode, SimpleTableCellBlockNode } from '@/components/editor/editor.type';
 
 jest.mock('@/components/editor/editor.scss', () => ({}));
 jest.mock('@/components/editor/CollaborativeEditor', () => ({ __esModule: true, default: jest.fn() }));
@@ -16,27 +14,6 @@ jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) =>
 jest.mock('slate-react', () => ({
   useReadOnly: () => true,
   useSlateStatic: () => ({ isElementReadOnly: () => true }),
-}));
-jest.mock('@/components/database/hooks', () => ({ useEmbeddedVisibleViewIds: jest.fn() }));
-jest.mock('@/components/editor/components/blocks/database/components/DatabaseContent', () => ({
-  DatabaseContent: jest.fn(),
-}));
-jest.mock('@/components/editor/components/blocks/database/hooks/useDocumentLoader', () => ({
-  useDocumentLoader: jest.fn(),
-}));
-jest.mock('@/components/editor/components/blocks/database/hooks/useDatabaseDeletionStatus', () => ({
-  useDatabaseDeletionStatus: jest.fn(),
-}));
-jest.mock('@/components/editor/components/blocks/database/hooks/useEmbeddedDatabasePermissions', () => ({
-  EmbeddedDatabasePermissionsResolver: jest.fn(),
-  resolveEmbeddedDatabaseCollabId: jest.fn(),
-}));
-jest.mock('@/components/editor/components/blocks/database/hooks/useResizePositioning', () => ({
-  useResizePositioning: jest.fn(),
-}));
-jest.mock('@/components/editor/components/blocks/database/hooks/useViewMeta', () => ({ useViewMeta: jest.fn() }));
-jest.mock('@/components/editor/components/blocks/database/hooks/useViewSelection', () => ({
-  useViewSelection: jest.fn(),
 }));
 jest.mock('@/components/editor/components/blocks/simple-table/SimpleTableColumnResizer', () => ({
   SimpleTableColumnResizer: jest.fn(),
@@ -46,36 +23,6 @@ const mockCollaborativeEditor = CollaborativeEditor as jest.MockedFunction<typeo
 
 describe('Editor previews', () => {
   beforeEach(() => jest.clearAllMocks());
-
-  it.each([
-    BlockType.GridBlock,
-    BlockType.BoardBlock,
-    BlockType.CalendarBlock,
-    BlockType.DatabaseGalleryBlock,
-    BlockType.ListBlock,
-    BlockType.ChartBlock,
-    BlockType.FeedBlock,
-  ])('renders nested %s databases as placeholders without loading them', (type) => {
-    const doc = new Y.Doc({ guid: 'row-document' }) as YDoc;
-    const databaseNode = {
-      blockId: 'linked-database',
-      type,
-      data: { database_id: 'parent-database', view_ids: ['parent-feed'] },
-      children: [{ text: '' }],
-    } as DatabaseNode;
-
-    mockCollaborativeEditor.mockImplementation(() => (
-      <DatabaseBlock node={databaseNode}>
-        <span>Slate children</span>
-      </DatabaseBlock>
-    ));
-    const loadView = jest.fn();
-
-    render(<Editor doc={doc} viewId='row-document' workspaceId='workspace' readOnly preview loadView={loadView} />);
-    expect(screen.getByTestId('database-preview-placeholder')).toBeTruthy();
-    expect(useDocumentLoader).not.toHaveBeenCalled();
-    expect(loadView).not.toHaveBeenCalled();
-  });
 
   it('isolates heading and table-cell identities across two previews and the row-detail editor', () => {
     const doc = new Y.Doc() as YDoc;

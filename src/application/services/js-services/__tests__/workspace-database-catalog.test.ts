@@ -147,6 +147,23 @@ describe('workspace database catalog', () => {
     ]);
   });
 
+  it('keeps container-less template Feed databases linkable without listing embedded views or child tabs separately', () => {
+    const feed = {
+      ...database.views[1],
+      view_id: 'legacy-feed',
+      layout: ViewLayout.Feed,
+      name: 'New Feed',
+      parent_view_id: 'space-1',
+    };
+    const legacy = { database_id: 'legacy-database', views: [feed] };
+    const linkedOnly = { database_id: 'linked-only', views: [{ ...feed, embedded: true }] };
+
+    expect(getDatabaseContainerEntries([database, legacy, linkedOnly], { includeStandalone: true })).toEqual([
+      { databaseId: database.database_id, container: database.views[0], primaryView: database.views[1] },
+      { databaseId: legacy.database_id, container: feed, primaryView: feed },
+    ]);
+  });
+
   it('refreshes and atomically replaces IndexedDB records after a cache miss', async () => {
     await expect(getDatabaseIdFromWorkspaceCatalog('workspace-1', 'grid-1')).resolves.toBe('database-1');
 
@@ -246,10 +263,7 @@ describe('workspace database catalog', () => {
     const currentDatabase = databaseWithId('current-database');
     const staleDelete = createDeferred<void>();
 
-    jest
-      .mocked(listWorkspaceDatabases)
-      .mockResolvedValueOnce([staleDatabase])
-      .mockResolvedValueOnce([currentDatabase]);
+    jest.mocked(listWorkspaceDatabases).mockResolvedValueOnce([staleDatabase]).mockResolvedValueOnce([currentDatabase]);
     deleteWorkspaceRecords.mockReturnValueOnce(staleDelete.promise).mockResolvedValueOnce(undefined);
 
     let staleCallerSettled = false;
@@ -397,10 +411,7 @@ describe('workspace database catalog', () => {
   });
 
   it('does not cache a failed catalog refresh', async () => {
-    jest
-      .mocked(listWorkspaceDatabases)
-      .mockRejectedValueOnce(new Error('Unavailable'))
-      .mockResolvedValueOnce([]);
+    jest.mocked(listWorkspaceDatabases).mockRejectedValueOnce(new Error('Unavailable')).mockResolvedValueOnce([]);
 
     await expect(getViewIdFromWorkspaceCatalog('workspace-1', 'missing-database')).rejects.toThrow('Unavailable');
     await expect(getViewIdFromWorkspaceCatalog('workspace-1', 'missing-database')).resolves.toBeNull();

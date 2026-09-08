@@ -15,7 +15,10 @@ export interface RowComment {
 export type CommentReactions = Record<string, string[]>;
 
 export interface CommentAttachment {
+  id: string;
   url: string;
   name: string;
-  type: string;
+  file_type: string;
+  size: number;
+  uploaded_at: number;
 }

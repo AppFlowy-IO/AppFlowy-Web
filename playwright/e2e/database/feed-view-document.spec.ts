@@ -1,9 +1,11 @@
 import { expect, test } from '@playwright/test';
 
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
-import { getFeedCardRowIds, openFeedCard, waitForFeedCards } from '../../support/feed-test-helpers';
+import { addFeedView, getFeedCardRowIds, openFeedCard, waitForFeedCards } from '../../support/feed-test-helpers';
+import { addGalleryView } from '../../support/gallery-test-helpers';
 import { generateRandomEmail, loginAndCreateGrid, setupPageErrorHandling } from '../../support/filter-test-helpers';
 import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from '../../support/page-utils';
+import { renameCurrentDatabasePage } from '../../support/relation-test-helpers';
 import { closeRowDetailWithEscape, typeInRowDocument } from '../../support/row-detail-helpers';
 import { BlockSelectors, DatabaseFeedSelectors, RowDetailSelectors } from '../../support/selectors';
 
@@ -78,6 +80,35 @@ test.describe('Feed document preview (Flutter desktop parity)', () => {
     await toggle.click();
     await expect(preview).toHaveAttribute('data-expanded', 'false');
   });
+
+  test('a row linking back to its own Feed renders nested cards without recursively loading documents', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await renameCurrentDatabasePage(page, 'Recursive Feed');
+    const [rowId] = await getFeedCardRowIds(page);
+    const modal = await openFeedCard(page, rowId);
+
+    await typeInRowDocument(page, 'A row can refer back to its database.');
+    await page.keyboard.press('Enter');
+    const editor = modal.getByTestId('editor-content').first();
+    const documentId = (await editor.getAttribute('id'))!.replace('editor-', '');
+
+    await insertLinkedDatabaseViaSlash(page, documentId, 'Recursive Feed', 'Feed');
+    await expect(modal.getByTestId('database-feed').first()).toBeVisible({ timeout: 30_000 });
+    await closeRowDetailWithEscape(page);
+    const preview = DatabaseFeedSelectors.documentPreviewByRowId(page, rowId).first();
+    const nestedFeed = preview.getByTestId('database-feed');
+
+    await expect(nestedFeed).toBeAttached({ timeout: 30_000 });
+    await expect(nestedFeed.locator('[data-testid^="feed-card-"][data-row-id]')).toHaveCount(3);
+    await expect(nestedFeed.locator('[data-testid^="feed-document-preview-"]')).toHaveCount(0);
+    await expect(page.locator(`[data-testid="feed-document-preview-${rowId}"]`)).toHaveCount(1);
+    await DatabaseFeedSelectors.cardByRowId(page, rowId).first().hover();
+    await DatabaseFeedSelectors.documentPreviewToggleByRowId(page, rowId).click();
+    await expect(preview).toHaveAttribute('data-expanded', 'true');
+    await expect(nestedFeed.locator('[data-testid^="feed-document-preview-"]')).toHaveCount(0);
+  });
 });
 
 test.describe('Linked Feed inside a document (Flutter desktop parity)', () => {
@@ -85,6 +116,30 @@ test.describe('Linked Feed inside a document (Flutter desktop parity)', () => {
     setupPageErrorHandling(page);
     await page.setViewportSize({ height: 900, width: 1440 });
     await loginAndCreateGrid(page, request, generateRandomEmail());
+  });
+
+  test('document_with_database_test.dart: the linked picker lists the container once and excludes Grid, Gallery and Feed tabs', async ({
+    page,
+  }) => {
+    await renameCurrentDatabasePage(page, 'Feed picker source');
+    await addFeedView(page);
+    await addGalleryView(page);
+    const documentId = await createDocumentPageAndNavigate(page);
+    const editor = page.locator(`#editor-${documentId}`);
+
+    await editor.click();
+    await page.keyboard.type('/');
+    await page.getByTestId('slash-menu-linkedGrid').click();
+    const picker = page.locator('.MuiPopover-paper').last();
+
+    await expect(picker).toContainText('Link to an existing database');
+    await picker.locator('input').fill('Feed picker source');
+    await expect(picker.getByText('Feed picker source', { exact: true })).toHaveCount(1);
+    await expect(picker.getByText('Grid', { exact: true })).toHaveCount(0);
+    await expect(picker.getByText('Gallery', { exact: true })).toHaveCount(0);
+    await expect(picker.getByText('Feed', { exact: true })).toHaveCount(0);
+    await picker.getByText('Feed picker source', { exact: true }).click();
+    await expect(editor.getByTestId('database-grid')).toBeVisible({ timeout: 30_000 });
   });
 
   test('feed.feature: clicking a card in a linked feed opens the row detail page', async ({ page }) => {

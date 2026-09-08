@@ -14,7 +14,15 @@ const EmojiPicker = lazy(() =>
 );
 
 /** Desktop `FeedRowReactions`: reaction chips plus an add-reaction chip when commenting is allowed. */
-export const FeedRowReactions = memo(function FeedRowReactions({ rowId }: { rowId: string }) {
+export const FeedRowReactions = memo(function FeedRowReactions({
+  rowId,
+  testIdPrefix = 'feed',
+  showAddReaction = true,
+}: {
+  rowId: string;
+  testIdPrefix?: string;
+  showAddReaction?: boolean;
+}) {
   const { t } = useTranslation();
   const reactions = useRowReactions(rowId);
   const toggleReaction = useToggleRowReactionDispatch(rowId);
@@ -23,13 +31,13 @@ export const FeedRowReactions = memo(function FeedRowReactions({ rowId }: { rowI
   const entries = Object.entries(reactions).filter(([, users]) => users.length > 0);
   const canReact = canComment && currentUid !== null;
 
-  if (entries.length === 0 && !canReact) return null;
+  if (entries.length === 0 && (!canReact || !showAddReaction)) return null;
 
   return (
     <div
       className='mt-1.5 flex flex-wrap items-center gap-1'
       data-feed-interactive='true'
-      data-testid={`feed-row-reactions-${rowId}`}
+      data-testid={`${testIdPrefix}-row-reactions-${rowId}`}
     >
       {entries.map(([emoji, users]) => {
         const hasReacted = currentUid !== null && users.includes(currentUid);
@@ -41,12 +49,12 @@ export const FeedRowReactions = memo(function FeedRowReactions({ rowId }: { rowI
             className={cn(
               'flex h-7 items-center gap-1 rounded-full border px-2 text-xs transition-colors',
               hasReacted
-                ? 'border-border-theme-thick bg-fill-theme-light text-text-theme'
+                ? 'bg-fill-theme-light text-text-theme border-border-theme-thick'
                 : 'border-border-primary bg-transparent text-text-secondary',
               canReact ? 'hover:bg-fill-content-hover' : 'cursor-default'
             )}
             data-reacted={hasReacted}
-            data-testid={`feed-row-reaction-${rowId}-${emoji}`}
+            data-testid={`${testIdPrefix}-row-reaction-${rowId}-${emoji}`}
             disabled={!canReact}
             key={emoji}
             onClick={(event) => {
@@ -56,12 +64,12 @@ export const FeedRowReactions = memo(function FeedRowReactions({ rowId }: { rowI
             type='button'
           >
             <span>{emoji}</span>
-            <span data-testid={`feed-row-reaction-count-${rowId}-${emoji}`}>{users.length}</span>
+            <span data-testid={`${testIdPrefix}-row-reaction-count-${rowId}-${emoji}`}>{users.length}</span>
           </button>
         );
       })}
 
-      {canReact ? (
+      {canReact && showAddReaction ? (
         <Popover onOpenChange={setPickerOpen} open={pickerOpen}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -69,7 +77,7 @@ export const FeedRowReactions = memo(function FeedRowReactions({ rowId }: { rowI
                 <button
                   aria-label={t('feed.addReaction')}
                   className='flex h-7 items-center rounded-full border border-dashed border-border-primary px-2 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
-                  data-testid={`feed-row-add-reaction-${rowId}`}
+                  data-testid={`${testIdPrefix}-row-add-reaction-${rowId}`}
                   onClick={(event) => event.stopPropagation()}
                   type='button'
                 >
@@ -83,7 +91,7 @@ export const FeedRowReactions = memo(function FeedRowReactions({ rowId }: { rowI
             <Suspense fallback={null}>
               <EmojiPicker
                 onEmojiSelect={(emoji) => {
-                  toggleReaction(emoji, currentUid);
+                  if (canReact) toggleReaction(emoji, currentUid);
                   setPickerOpen(false);
                 }}
               />

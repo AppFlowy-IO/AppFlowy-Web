@@ -101,7 +101,7 @@ export function FeedCardActions({
               <Suspense fallback={null}>
                 <EmojiPicker
                   onEmojiSelect={(emoji) => {
-                    toggleReaction(emoji, currentUid);
+                    if (canReact) toggleReaction(emoji, currentUid);
                     setEmoji(false);
                   }}
                 />

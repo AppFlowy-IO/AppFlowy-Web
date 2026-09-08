@@ -9,7 +9,7 @@ import './editor.scss';
 
 export interface EditorProps extends EditorContextState {
   doc: YDoc;
-  /** Render nested databases as placeholders and isolate preview DOM identities. */
+  /** Isolate preview DOM identities and prevent nested Feed document previews. */
   preview?: boolean;
   onEditorConnected?: (editor: YjsEditor) => void;
   onSelectionChange?: (editor: YjsEditor) => void;

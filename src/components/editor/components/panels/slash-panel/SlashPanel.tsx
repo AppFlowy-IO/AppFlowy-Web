@@ -66,9 +66,9 @@ import { ReactComponent as ContinueWritingIcon } from '@/assets/icons/continue_w
 import { ReactComponent as DateIcon } from '@/assets/icons/date.svg';
 import { ReactComponent as DividerIcon } from '@/assets/icons/divider.svg';
 import { ReactComponent as OutlineIcon } from '@/assets/icons/doc.svg';
+import { ReactComponent as FeedIcon } from '@/assets/icons/feed.svg';
 import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';
 import { ReactComponent as FormulaIcon } from '@/assets/icons/formula.svg';
-import { ReactComponent as FeedIcon } from '@/assets/icons/feed.svg';
 import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
 import { ReactComponent as Heading1Icon } from '@/assets/icons/h1.svg';
@@ -603,7 +603,7 @@ export function SlashPanel({
 
     try {
       const databases = await getWorkspaceDatabaseCatalog(workspaceId);
-      const options = getDatabaseContainerEntries(databases).map<DatabaseOption>(
+      const options = getDatabaseContainerEntries(databases, { includeStandalone: true }).map<DatabaseOption>(
         ({ databaseId, container, primaryView }) => ({
           databaseId,
           sourceViewId: primaryView.view_id,

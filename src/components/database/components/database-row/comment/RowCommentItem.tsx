@@ -1,6 +1,5 @@
 import dayjs from 'dayjs';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { RowComment } from '@/application/row-comment.type';
@@ -20,8 +19,11 @@ import { cn } from '@/lib/utils';
 import AddCommentInput from './AddCommentInput';
 import DeleteCommentConfirm from './DeleteCommentConfirm';
 import MemberAvatar, { getMemberDisplayName } from './MemberAvatar';
+import { RowCommentAttachments } from './RowCommentAttachments';
 import { useRowCommentDispatch, useRowCommentState } from './RowCommentContext';
 import RowCommentReactions from './RowCommentReactions';
+
+import type { ReactNode } from 'react';
 
 const DESKTOP_PERSON_MENTION_PATTERN = /@\[([^\]\n]+)\]\(([^)\s]+)\)/g;
 
@@ -66,7 +68,7 @@ function renderCommentContent(content: string): ReactNode {
 
 function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment: RowComment; isFirst?: boolean; isLast?: boolean }) {
   const { t } = useTranslation();
-  const { editingCommentId, replyingCommentId, currentUserId, currentUserUid, members } = useRowCommentState();
+  const { editingCommentId, replyingCommentId, currentUserId, currentUserUid, members, canComment } = useRowCommentState();
   const {
     setEditingCommentId,
     updateComment,
@@ -194,6 +196,7 @@ function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment:
           )}
 
           {/* Reactions */}
+          <RowCommentAttachments attachments={comment.attachments} />
           <RowCommentReactions commentId={comment.id} reactions={comment.reactions} />
 
           {/* Reply input */}
@@ -205,7 +208,7 @@ function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment:
         </div>
 
         {/* Hover actions — CSS-driven visibility, matching Flutter desktop */}
-        {!isEditing && (
+        {!isEditing && canComment && (
           <div data-testid={'row-comment-actions'} className={cn('absolute -top-3 right-2 items-center gap-0.5 rounded-lg border border-border-primary bg-background-primary p-0.5 shadow-sm', actionsForceVisible ? 'flex' : 'hidden group-hover:flex')}>
             {/* Emoji reaction picker */}
             <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
@@ -323,6 +326,7 @@ const EditCommentForm = memo(function EditCommentForm({
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               onSave();
@@ -350,11 +354,4 @@ const EditCommentForm = memo(function EditCommentForm({
   );
 });
 
-export default memo(RowCommentItem, (prev, next) =>
-  prev.comment.id === next.comment.id &&
-  prev.comment.updatedAt === next.comment.updatedAt &&
-  prev.comment.isResolved === next.comment.isResolved &&
-  prev.comment.content === next.comment.content &&
-  prev.isFirst === next.isFirst &&
-  prev.isLast === next.isLast
-);
+export default memo(RowCommentItem);

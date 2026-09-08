@@ -87,8 +87,20 @@ export async function addSortByFieldName(page: Page, fieldName: string): Promise
  */
 export async function openSortMenu(page: Page): Promise<void> {
   if (await isSortMenuOpen(page)) return;
-  await SortSelectors.sortCondition(page).first().click({ force: true });
-  await page.waitForTimeout(500);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await SortSelectors.sortCondition(page).first().click();
+    const opened = await SortSelectors.sortItem(page)
+      .first()
+      .waitFor({ state: 'visible', timeout: 2000 })
+      .then(
+        () => true,
+        () => false
+      );
+
+    if (opened) return;
+  }
+
+  await expect(SortSelectors.sortItem(page).first()).toBeVisible();
 }
 
 /**
@@ -129,11 +141,7 @@ export async function toggleSortDirection(page: Page, sortIndex: number = 0): Pr
 /**
  * Change sort direction for a specific sort
  */
-export async function changeSortDirection(
-  page: Page,
-  sortIndex: number,
-  direction: SortDirection
-): Promise<void> {
+export async function changeSortDirection(page: Page, sortIndex: number, direction: SortDirection): Promise<void> {
   const sortItems = page
     .locator('[data-radix-popper-content-wrapper]')
     .last()
@@ -189,11 +197,7 @@ export async function deleteAllSorts(page: Page): Promise<void> {
 /**
  * Assert the row order based on cell text content in primary field
  */
-export async function assertRowOrder(
-  page: Page,
-  primaryFieldId: string,
-  expectedOrder: string[]
-): Promise<void> {
+export async function assertRowOrder(page: Page, primaryFieldId: string, expectedOrder: string[]): Promise<void> {
   const cells = DatabaseGridSelectors.dataRowCellsForField(page, primaryFieldId);
   for (let i = 0; i < expectedOrder.length; i++) {
     await expect(cells.nth(i)).toContainText(expectedOrder[i]);
@@ -223,10 +227,7 @@ export async function assertSortCount(page: Page, count: number): Promise<void> 
   } else {
     await openSortMenu(page);
     await expect(
-      page
-        .locator('[data-radix-popper-content-wrapper]')
-        .last()
-        .locator('[data-testid="sort-condition"]')
+      page.locator('[data-radix-popper-content-wrapper]').last().locator('[data-testid="sort-condition"]')
     ).toHaveCount(count);
   }
 }

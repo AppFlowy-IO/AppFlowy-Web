@@ -9,9 +9,10 @@ import {
   useRowDataSelector,
   useRowMetaSelector,
 } from '@/application/database-yjs';
-import { canonicalizeUserUid } from '@/application/user-uid';
 import { YDatabaseRow, YjsDatabaseKey } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
+import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
 import { cn } from '@/lib/utils';
 
 import { FEED_CARD_INTRINSIC_HEIGHT, FEED_EDITED_THRESHOLD_SECONDS } from './feed.constants';
@@ -154,6 +155,7 @@ export const FeedCard = memo(function FeedCard({ primaryFieldId, rowId }: FeedCa
   const cell = useCellSelector({ fieldId: primaryFieldId, rowId });
   const attribution = useFeedRowAttribution(rowId);
   const { query } = useDatabaseSearch();
+  const previewId = useEditorPreviewId();
   const cardRef = useRef<HTMLElement>(null);
   // Only read inside the click handler, so a menu opening must not re-render the card.
   const actionsOpenRef = useRef(false);
@@ -170,7 +172,9 @@ export const FeedCard = memo(function FeedCard({ primaryFieldId, rowId }: FeedCa
   const matchesSearch = !normalizedQuery || title.toLocaleLowerCase().includes(normalizedQuery);
   const hasCreator = Boolean(resolveMember(attribution.createdBy));
   const hasDocument = meta?.isEmptyDocument === false && Boolean(meta.documentId);
-  const showPreview = usePreviewNearViewport(cardRef, matchesSearch && hasDocument);
+  // Linked databases still render inside a preview, but their Feed cards must
+  // not load another row document (which can link straight back to this Feed).
+  const showPreview = usePreviewNearViewport(cardRef, !previewId && matchesSearch && hasDocument);
 
   const openRow = useCallback(() => {
     navigateToRow?.(rowId);

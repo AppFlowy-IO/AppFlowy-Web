@@ -11,6 +11,7 @@ import {
 } from '@/application/database-yjs';
 import { RowCoverType, YDatabaseRow, YjsDatabaseKey } from '@/application/types';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
+import { EditorPreviewContextProvider } from '@/components/editor/EditorPreviewContext';
 
 import { FeedCard } from '../FeedCard';
 import { useFeedMembers } from '../FeedMembersContext';
@@ -175,6 +176,18 @@ describe('FeedCard', () => {
     expect(screen.getByTestId('mock-cover-row-1')).toBeTruthy();
     expect(screen.getByTestId('mock-icon').textContent).toBe('🚀');
     expect(screen.getByTestId('mock-preview-row-1').getAttribute('data-document-id')).toBe('doc-1');
+  });
+
+  it('renders a linked Feed card inside a preview without loading another row document', () => {
+    mockUseRowMetaSelector.mockReturnValue({ cover: null, documentId: 'recursive-doc', icon: '', isEmptyDocument: false });
+    render(
+      <EditorPreviewContextProvider enabled>
+        <FeedCard primaryFieldId='primary' rowId='row-1' />
+      </EditorPreviewContextProvider>
+    );
+
+    expect(screen.getByTestId('feed-card-title-row-1').textContent).toBe('Post title');
+    expect(screen.queryByTestId('mock-preview-row-1')).toBeNull();
   });
 
   it('hides cards whose title does not match the toolbar search', () => {

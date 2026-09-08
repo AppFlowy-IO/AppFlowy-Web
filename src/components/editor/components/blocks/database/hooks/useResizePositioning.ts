@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Editor, Element } from 'slate';
 import { ReactEditor } from 'slate-react';
 
+import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
 import { getScrollParent } from '@/components/global-comment/utils';
 
 interface UseResizePositioningProps {
@@ -10,6 +11,7 @@ interface UseResizePositioningProps {
 }
 
 export const useResizePositioning = ({ editor, node }: UseResizePositioningProps) => {
+  const previewId = useEditorPreviewId();
   const [paddingStart, setPaddingStart] = useState(0);
   const [paddingEnd, setPaddingEnd] = useState(0);
   const [width, setWidth] = useState(0);
@@ -18,8 +20,9 @@ export const useResizePositioning = ({ editor, node }: UseResizePositioningProps
     const dom = ReactEditor.toDOMNode(editor, node);
     // History previews use `.appflowy-scroller` and may not overflow before the
     // database finishes rendering, so prefer the stable container classes.
-    const scrollContainer =
-      dom.closest('.appflowy-scroll-container, .appflowy-scroller') || (getScrollParent(dom) as HTMLElement);
+    const scrollContainer = previewId
+      ? ReactEditor.toDOMNode(editor, editor)
+      : dom.closest('.appflowy-scroll-container, .appflowy-scroller') || (getScrollParent(dom) as HTMLElement);
 
     if (!dom || !scrollContainer) return;
 
@@ -44,7 +47,7 @@ export const useResizePositioning = ({ editor, node }: UseResizePositioningProps
     return () => {
       resizeObserver.disconnect();
     };
-  }, [editor, node]);
+  }, [editor, node, previewId]);
 
   return {
     paddingStart,

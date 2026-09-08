@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
+import { useDatabaseContext, useReadOnly } from '@/application/database-yjs';
 import {
   useAddCommentDispatch,
   useDeleteCommentDispatch,
@@ -8,7 +9,7 @@ import {
   useUpdateCommentDispatch,
 } from '@/application/database-yjs/comment_dispatch';
 import { useRowComments } from '@/application/database-yjs/comment_selector';
-import { RowComment } from '@/application/row-comment.type';
+import { CommentAttachment, RowComment } from '@/application/row-comment.type';
 import { MentionablePerson, User } from '@/application/types';
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -28,10 +29,11 @@ interface RowCommentUIValue {
   currentUserUid: string;
   currentUser: User | undefined;
   members: Map<string, MentionablePerson>;
+  canComment: boolean;
 }
 
 interface RowCommentDispatchValue {
-  addComment: (content: string, parentCommentId?: string) => void;
+  addComment: (content: string, parentCommentId?: string, attachments?: CommentAttachment[]) => string | undefined;
   updateComment: (commentId: string, content: string) => void;
   deleteComment: (commentId: string) => void;
   resolveComment: (commentId: string, isResolved: boolean) => void;
@@ -49,6 +51,9 @@ export function RowCommentProvider({ rowId, children }: { rowId: string; childre
   const [replyingCommentId, setReplyingCommentId] = useState<string | null>(null);
   const { comments, openComments, loading, refresh } = useRowComments(rowId);
   const currentUser = useCurrentUser();
+  const readOnly = useReadOnly();
+  const { canComment: contextCanComment } = useDatabaseContext();
+  const canComment = Boolean(currentUser) && (contextCanComment === true || !readOnly);
   // Use uuid (matches person_id in mentionable users) for new comments.
   // Keep uid for backwards compatibility with existing comments.
   const currentUserId = currentUser?.uuid || currentUser?.uid || '';
@@ -85,51 +90,53 @@ export function RowCommentProvider({ rowId, children }: { rowId: string; childre
   const toggleReactionDispatch = useToggleCommentReactionDispatch(rowId);
 
   const addComment = useCallback(
-    (content: string, parentCommentId?: string) => {
-      if (!content.trim()) return;
-      addCommentDispatch(content, currentUserId, parentCommentId);
-      setReplyingCommentId(null);
+    (content: string, parentCommentId?: string, attachments?: CommentAttachment[]) => {
+      if (!canComment || (!content.trim() && !attachments?.length)) return;
+      const id = addCommentDispatch(content, currentUserId, parentCommentId, attachments);
+
+      if (id) setReplyingCommentId(null);
+      return id;
     },
-    [addCommentDispatch, currentUserId]
+    [addCommentDispatch, currentUserId, canComment]
   );
 
   const updateComment = useCallback(
     (commentId: string, content: string) => {
-      if (!content.trim()) return;
+      if (!canComment || !content.trim()) return;
       updateCommentDispatch(commentId, content);
       setEditingCommentId(null);
     },
-    [updateCommentDispatch]
+    [updateCommentDispatch, canComment]
   );
 
   const deleteComment = useCallback(
     (commentId: string) => {
+      if (!canComment) return;
       deleteCommentDispatch(commentId);
     },
-    [deleteCommentDispatch]
+    [deleteCommentDispatch, canComment]
   );
 
   const resolveComment = useCallback(
     (commentId: string, isResolved: boolean) => {
+      if (!canComment) return;
       resolveCommentDispatch(commentId, isResolved, currentUserId);
       // Explicitly refresh to ensure Yjs state propagates to React
       // (observeDeep may not reliably fire for nested property changes in Yjs 14 pre-release)
       requestAnimationFrame(() => refresh());
     },
-    [resolveCommentDispatch, currentUserId, refresh]
+    [resolveCommentDispatch, currentUserId, refresh, canComment]
   );
 
   const toggleReaction = useCallback(
     (commentId: string, emoji: string) => {
+      if (!canComment) return;
       toggleReactionDispatch(commentId, emoji, currentUserId);
     },
-    [toggleReactionDispatch, currentUserId]
+    [toggleReactionDispatch, currentUserId, canComment]
   );
 
-  const dataValue = useMemo(
-    () => ({ comments, openComments, loading }),
-    [comments, openComments, loading]
-  );
+  const dataValue = useMemo(() => ({ comments, openComments, loading }), [comments, openComments, loading]);
 
   const uiValue = useMemo(
     () => ({
@@ -139,8 +146,9 @@ export function RowCommentProvider({ rowId, children }: { rowId: string; childre
       currentUserUid,
       currentUser,
       members,
+      canComment,
     }),
-    [editingCommentId, replyingCommentId, currentUserId, currentUserUid, currentUser, members]
+    [editingCommentId, replyingCommentId, currentUserId, currentUserUid, currentUser, members, canComment]
   );
 
   const dispatchValue = useMemo(
@@ -159,9 +167,7 @@ export function RowCommentProvider({ rowId, children }: { rowId: string; childre
   return (
     <RowCommentDispatchContext.Provider value={dispatchValue}>
       <RowCommentUIContext.Provider value={uiValue}>
-        <RowCommentDataContext.Provider value={dataValue}>
-          {children}
-        </RowCommentDataContext.Provider>
+        <RowCommentDataContext.Provider value={dataValue}>{children}</RowCommentDataContext.Provider>
       </RowCommentUIContext.Provider>
     </RowCommentDispatchContext.Provider>
   );

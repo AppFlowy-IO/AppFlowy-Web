@@ -26,6 +26,7 @@ export interface FeedMembersValue {
   currentCommentAuthorId: string;
   /** Desktop `PageAccessLevelBloc.canComment`: reactions and comments are allowed. */
   canComment: boolean;
+  mentionableUsers?: MentionablePerson[];
 }
 
 const EMPTY_VALUE: FeedMembersValue = {
@@ -91,12 +92,13 @@ export function FeedMembersProvider({ children }: { children: ReactNode }) {
 
     return {
       resolveMember,
+      mentionableUsers: users,
       currentUser,
       currentUid,
       currentCommentAuthorId: currentUser?.uuid || currentUser?.uid || '',
       canComment: Boolean(currentUser) && (contextCanComment === true || !readOnly),
     };
-  }, [contextCanComment, currentUser, readOnly, usersByPersonId, usersByUid]);
+  }, [contextCanComment, currentUser, readOnly, users, usersByPersonId, usersByUid]);
 
   return <FeedMembersContext.Provider value={value}>{children}</FeedMembersContext.Provider>;
 }
