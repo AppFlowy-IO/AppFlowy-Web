@@ -6,6 +6,7 @@ import { UIVariant } from '@/application/types';
 import { ErrorType } from '@/application/utils/error-utils';
 import { AFScroller } from '@/components/_shared/scroller';
 import { useAppViewId, useViewErrorStatus } from '@/components/app/app.hooks';
+import { ClientCompatibilityBanner } from '@/components/app/compatibility/ClientCompatibilityBanner';
 import Main from '@/components/app/Main';
 import DeletedPageComponent from '@/components/error/PageHasBeenDeleted';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -48,6 +49,7 @@ function MobileMainLayout() {
         >
           <MobileTopBar variant={UIVariant.App} />
         </React.Suspense>
+        <ClientCompatibilityBanner />
 
         <ErrorBoundary FallbackComponent={SomethingError}>
           {main}

@@ -2,6 +2,8 @@
 # Build stage
 FROM node:20.12.0-alpine AS builder
 
+ARG VERSION
+
 # Set production environment
 ENV NODE_ENV=production
 
@@ -18,7 +20,7 @@ RUN corepack enable && \
 COPY . .
 
 # Build the application
-RUN pnpm run build
+RUN APPFLOWY_WEB_VERSION="${VERSION}" pnpm run build
 
 # Production stage
 FROM nginx:1.25-alpine

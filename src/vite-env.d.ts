@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 /// <reference types="vite-plugin-svgr/client" />
 
+declare const __APPFLOWY_WEB_VERSION__: string;
+
 interface Window {
   refresh_token: (token: string) => void;
   invalid_token: () => void;

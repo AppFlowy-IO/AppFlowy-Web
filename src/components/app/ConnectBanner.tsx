@@ -76,7 +76,7 @@ export function ConnectBanner() {
   return (
     <div
       data-testid='connect-banner'
-      className='absolute left-0 top-[48px] z-50 w-full bg-surface-container-layer-01 transition-all duration-300 ease-in-out'
+      className='w-full shrink-0 bg-surface-container-layer-01 transition-all duration-300 ease-in-out'
     >
       <div className='flex h-[52px] items-center px-4 py-3'>
         <div className='flex items-center space-x-2'>
