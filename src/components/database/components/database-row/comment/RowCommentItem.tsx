@@ -66,11 +66,22 @@ function renderCommentContent(content: string): ReactNode {
   return parts;
 }
 
-function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment: RowComment; isFirst?: boolean; isLast?: boolean }) {
+function RowCommentItem({
+  comment,
+  isFirst = false,
+  isLast = false,
+  showResolveAction = isFirst,
+}: {
+  comment: RowComment;
+  isFirst?: boolean;
+  isLast?: boolean;
+  showResolveAction?: boolean;
+}) {
   const { t } = useTranslation();
   const { editingCommentId, replyingCommentId, currentUserId, currentUserUid, members, canComment } = useRowCommentState();
   const {
     setEditingCommentId,
+    setReplyingCommentId,
     updateComment,
     deleteComment,
     resolveComment,
@@ -82,6 +93,7 @@ function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment:
   const [tick, setTick] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [hasOpenedReply, setHasOpenedReply] = useState(false);
   const actionsForceVisible = menuOpen || emojiOpen;
 
   const isEditing = editingCommentId === comment.id;
@@ -181,6 +193,9 @@ function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment:
             {wasEdited && (
               <span className={'text-xs text-text-tertiary'}>{t('rowComment.edited')}</span>
             )}
+            {comment.isResolved && (
+              <span className='text-xs text-text-tertiary'>{t('rowComment.resolved')}</span>
+            )}
           </div>
 
           {/* Comment body or edit mode */}
@@ -199,10 +214,24 @@ function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment:
           <RowCommentAttachments attachments={comment.attachments} />
           <RowCommentReactions commentId={comment.id} reactions={comment.reactions} />
 
-          {/* Reply input */}
-          {isReplying && (
-            <div className={'mt-2'}>
-              <AddCommentInput parentCommentId={comment.id} />
+          {canComment && isParent && !comment.isResolved && !isReplying ? (
+            <button
+              className='self-start rounded text-xs text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
+              data-testid={`row-comment-reply-${comment.id}`}
+              onClick={() => {
+                setHasOpenedReply(true);
+                setReplyingCommentId(comment.id);
+              }}
+              type='button'
+            >
+              {t('rowComment.reply')}
+            </button>
+          ) : null}
+
+          {/* Retain drafts and uploads while another thread is selected. */}
+          {hasOpenedReply && (
+            <div className={'mt-2'} hidden={!isReplying}>
+              <AddCommentInput active={isReplying} parentCommentId={comment.id} />
             </div>
           )}
         </div>
@@ -236,8 +265,8 @@ function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment:
               </PopoverContent>
             </Popover>
 
-            {/* Resolve (first comment only — matches Flutter desktop) */}
-            {isFirst && (
+            {/* Feed exposes actions per parent; row detail keeps its first-comment action. */}
+            {showResolveAction && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button

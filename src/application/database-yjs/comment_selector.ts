@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useRowMap } from '@/application/database-yjs/context';
-import { ensureCommentsMap, getCommentsMap, getRowComments } from '@/application/database-yjs/row_comment';
+import { getCommentsMap, getRowComments } from '@/application/database-yjs/row_comment';
 import { RowComment } from '@/application/row-comment.type';
 import { YjsEditorKey } from '@/application/types';
 
@@ -13,10 +13,9 @@ interface CommentsState {
 /**
  * Observe a row's comment count without materializing the comments map.
  *
- * List and other summary surfaces must remain read-only when they render. The
- * full comments hook intentionally creates the map because its consumers are
- * comment editors; a count-only surface should only observe data that already
- * exists.
+ * List and other summary surfaces must remain read-only when they render.
+ * Comment surfaces only observe data that already exists; submitting a comment
+ * creates the map when needed.
  */
 export function useRowCommentCount(rowId: string) {
   const [commentCount, setCommentCount] = useState(0);
@@ -65,6 +64,7 @@ export function useRowCommentCount(rowId: string) {
 export function useRowComments(rowId: string) {
   const [state, setState] = useState<CommentsState>({ comments: [], loading: true });
   const rowMap = useRowMap();
+  const rowDoc = rowMap?.[rowId];
   // Ref to allow external refresh without recreating the observer callback
   const rowMapRef = useRef(rowMap);
 
@@ -82,29 +82,40 @@ export function useRowComments(rowId: string) {
   }, [rowId]);
 
   useEffect(() => {
-    if (!rowMap) return;
-
-    const rowDoc = rowMap[rowId];
-
-    if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) {
+    if (!rowDoc) {
       setState({ comments: [], loading: false });
       return;
     }
 
-    const commentsMap = ensureCommentsMap(rowDoc);
+    const root = rowDoc.getMap(YjsEditorKey.data_section);
+    let commentsMap = getCommentsMap(rowDoc);
 
     // Stable callback — created once per effect run, properly cleaned up
     const onUpdate = () => {
       setState({ comments: getRowComments(rowDoc), loading: false });
     };
 
-    commentsMap.observeDeep(onUpdate);
+    const syncCommentsMap = () => {
+      const nextCommentsMap = getCommentsMap(rowDoc);
+
+      if (nextCommentsMap !== commentsMap) {
+        commentsMap?.unobserveDeep(onUpdate);
+        commentsMap = nextCommentsMap;
+        commentsMap?.observeDeep(onUpdate);
+      }
+
+      onUpdate();
+    };
+
+    root.observe(syncCommentsMap);
+    commentsMap?.observeDeep(onUpdate);
     onUpdate();
 
     return () => {
-      commentsMap.unobserveDeep(onUpdate);
+      root.unobserve(syncCommentsMap);
+      commentsMap?.unobserveDeep(onUpdate);
     };
-  }, [rowId, rowMap]);
+  }, [rowDoc]);
 
   const { sortedComments, parentMap } = useMemo(() => {
     const parents = state.comments.filter((c) => !c.parentCommentId).sort((a, b) => a.createdAt - b.createdAt);

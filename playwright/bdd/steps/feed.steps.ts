@@ -1,11 +1,13 @@
 import { expect } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
+import { FieldType } from '../../../src/application/database-yjs/database.type';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { createDatabaseView } from '../../support/database-ui-helpers';
 import { insertLinkedGridViaSlash } from '../../support/duplicate-test-helpers';
 import { getFeedCardRowIds, openFeedCard, waitForFeedCards } from '../../support/feed-test-helpers';
 import { loginAndCreateGrid } from '../../support/filter-test-helpers';
+import { getActiveDatabaseFields } from '../../support/gallery-test-helpers';
 import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from '../../support/page-utils';
 import { renameCurrentDatabasePage } from '../../support/relation-test-helpers';
 import { closeRowDetailWithEscape, typeInRowDocument } from '../../support/row-detail-helpers';
@@ -183,6 +185,37 @@ Then('Feed mutation controls are available before locking', async ({ page }) => 
   await expect(page.getByTestId('database-new-row-button')).toBeVisible();
   await DatabaseFeedSelectors.cardByRowId(page, rowId).hover();
   await expect(DatabaseFeedSelectors.moreButtonByRowId(page, rowId)).toBeVisible();
+});
+
+Then('a visible Feed checkbox can be changed without opening row detail', async ({ page }) => {
+  const fields = await getActiveDatabaseFields(page);
+  const checkboxField = fields.find((field) => field.type === FieldType.Checkbox);
+
+  expect(checkboxField).toBeTruthy();
+  await page.getByTestId('database-actions-settings').click();
+  await page.getByTestId('database-properties-settings-trigger').click();
+  const toggle = page.getByTestId(`database-property-visibility-${checkboxField!.id}`);
+
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-label'))?.startsWith('Show ')) await toggle.click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  const checkbox = page.getByRole('checkbox').first();
+
+  await expect(checkbox).toBeEnabled();
+  const wasChecked = await checkbox.getAttribute('aria-checked');
+
+  await checkbox.click();
+  await expect(checkbox).toHaveAttribute('aria-checked', String(wasChecked !== 'true'));
+  await expect(RowDetailSelectors.modal(page)).toHaveCount(0);
+});
+
+Then('the visible Feed checkbox is readonly', async ({ page }) => {
+  const checkbox = page.getByRole('checkbox').first();
+
+  await expect(checkbox).toBeVisible();
+  await expect(checkbox).toBeDisabled();
+  await expect(page.getByTestId('database-actions-settings')).toHaveCount(0);
 });
 
 When('I lock the mounted Feed database', async ({ page }) => {

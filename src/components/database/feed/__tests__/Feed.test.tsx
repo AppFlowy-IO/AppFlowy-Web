@@ -10,6 +10,7 @@ jest.mock('@/application/database-yjs', () => ({
   useDatabaseContext: jest.fn(),
   usePrimaryFieldId: jest.fn(),
   useReadOnly: jest.fn(),
+  useFieldsSelector: jest.fn(() => []),
 }));
 jest.mock('@/components/database/components/conditions/DatabaseSearchContext', () => ({
   useDatabaseSearch: jest.fn(),

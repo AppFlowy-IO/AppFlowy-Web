@@ -12,7 +12,7 @@ import { useRowComments } from '@/application/database-yjs/comment_selector';
 import { CommentAttachment, RowComment } from '@/application/row-comment.type';
 import { MentionablePerson, User } from '@/application/types';
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
-import { useCurrentUser } from '@/components/main/app.hooks';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 /** Volatile comment data — changes on every Yjs update */
 interface RowCommentDataValue {
@@ -50,7 +50,7 @@ export function RowCommentProvider({ rowId, children }: { rowId: string; childre
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [replyingCommentId, setReplyingCommentId] = useState<string | null>(null);
   const { comments, openComments, loading, refresh } = useRowComments(rowId);
-  const currentUser = useCurrentUser();
+  const currentUser = useCurrentUserOptional();
   const readOnly = useReadOnly();
   const { canComment: contextCanComment } = useDatabaseContext();
   const canComment = Boolean(currentUser) && (contextCanComment === true || !readOnly);

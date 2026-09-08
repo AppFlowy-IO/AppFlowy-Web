@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { useDatabaseContext, usePrimaryFieldId, useReadOnly } from '@/application/database-yjs';
+import { useDatabaseContext, useFieldsSelector, usePrimaryFieldId, useReadOnly } from '@/application/database-yjs';
 import type { Row } from '@/application/database-yjs';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,7 @@ import { useFeedRowOrders } from './useFeedRowOrders';
 export function Feed() {
   const rowOrders = useFeedRowOrders();
   const primaryFieldId = usePrimaryFieldId();
+  const fields = useFieldsSelector();
   const readOnly = useReadOnly();
   const { query } = useDatabaseSearch();
   const { activeViewId, isDocumentBlock, onRendered, paddingEnd, paddingStart } = useDatabaseContext();
@@ -71,7 +72,7 @@ export function Feed() {
       <FeedMembersProvider>
         <div className='w-full py-2' data-testid='feed-list' style={contentStyle}>
           {visibleRows?.map((row: Row) => (
-            <FeedCard key={row.id} primaryFieldId={primaryFieldId} rowId={row.id} />
+            <FeedCard fields={fields} key={row.id} primaryFieldId={primaryFieldId} rowId={row.id} />
           ))}
 
           {remainingRowCount > 0 ? <FeedLoadMore onLoadMore={loadMoreRows} remainingCount={remainingRowCount} /> : null}

@@ -20,6 +20,9 @@ interface CommentComposerProps {
   members?: MentionablePerson[];
   testIds: { collapsed: string; input: string; submit: string; attachment: string };
   onCancel?: () => void;
+  initiallyExpanded?: boolean;
+  /** Retained reply drafts only take focus while their thread is selected. */
+  active?: boolean;
   onActiveChange?: (active: boolean) => void;
 }
 
@@ -30,12 +33,14 @@ export function CommentComposer({
   members = [],
   testIds,
   onCancel,
+  initiallyExpanded = false,
+  active = true,
   onActiveChange,
 }: CommentComposerProps) {
   const { t } = useTranslation();
   const { uploadFile } = useDatabaseContext();
   const [content, setContent] = useState('');
-  const [focused, setFocused] = useState(false);
+  const [focused, setFocused] = useState(initiallyExpanded);
   const [attachments, setAttachments] = useState<CommentAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(false);
@@ -70,8 +75,11 @@ export function CommentComposer({
     return () => onActiveChange?.(false);
   }, [collapsed, onActiveChange]);
   useEffect(() => {
-    if (focused) inputRef.current?.focus();
-  }, [focused]);
+    if (active && initiallyExpanded) setFocused(true);
+  }, [active, initiallyExpanded]);
+  useEffect(() => {
+    if (focused && active) inputRef.current?.focus();
+  }, [focused, active]);
   useLayoutEffect(() => {
     if (caretAfterRender.current === null) return;
     inputRef.current?.focus();
@@ -159,6 +167,7 @@ export function CommentComposer({
   return (
     <div
       className='min-w-0 flex-1'
+      data-comment-composer='true'
       onBlur={(event) => {
         if (
           !event.currentTarget.contains(event.relatedTarget) &&

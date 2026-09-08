@@ -168,7 +168,7 @@ test.describe('Feed view basics (Flutter desktop parity)', () => {
     await expect(DatabaseFeedSelectors.commentSummaryByRowId(page, rowId)).toContainText('1 reply', {
       timeout: 15_000,
     });
-    await expect(DatabaseFeedSelectors.addCommentByRowId(page, rowId)).toHaveCount(0);
+    await expect(DatabaseFeedSelectors.addCommentByRowId(page, rowId)).toBeHidden();
     await expect(RowDetailSelectors.modal(page)).toHaveCount(0);
 
     const modal = await openFeedCard(page, rowId);
@@ -208,7 +208,7 @@ test.describe('Feed view basics (Flutter desktop parity)', () => {
     await expect(RowDetailSelectors.modal(page)).toHaveCount(0);
   });
 
-  test('database_settings_list.dart: switching an existing view to the Feed layout only exposes the layout setting', async ({
+  test('switching an existing view to the Feed layout exposes property visibility and layout settings', async ({
     page,
   }) => {
     await page.getByTestId('database-actions-settings').click();
@@ -222,8 +222,8 @@ test.describe('Feed view basics (Flutter desktop parity)', () => {
     await page.getByTestId('database-actions-settings').click();
     await expect(DatabaseFeedSelectors.settingsMenu(page)).toBeVisible();
     await expect(DatabaseViewSelectors.layoutSettingsTrigger(page)).toBeVisible();
-    await expect(page.getByTestId('database-properties-settings-trigger')).toHaveCount(0);
-    await expect(DatabaseFeedSelectors.settingsMenu(page).getByRole('menuitem')).toHaveCount(1);
+    await expect(page.getByTestId('database-properties-settings-trigger')).toBeVisible();
+    await expect(DatabaseFeedSelectors.settingsMenu(page).getByRole('menuitem')).toHaveCount(2);
     await DatabaseViewSelectors.layoutSettingsTrigger(page).hover();
     await DatabaseViewSelectors.layoutOption(page, DatabaseViewLayout.Grid).click();
     await expect(DatabaseViewSelectors.gridView(page)).toBeVisible();

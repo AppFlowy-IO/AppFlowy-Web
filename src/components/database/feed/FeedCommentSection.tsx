@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import { memo, useEffect, useState } from 'react';
+import { lazy, memo, MouseEvent, Suspense, useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useRowMap } from '@/application/database-yjs';
@@ -7,11 +7,14 @@ import { useAddCommentDispatch } from '@/application/database-yjs/comment_dispat
 import { getCommentsMap, getRowComments } from '@/application/database-yjs/row_comment';
 import { RowComment } from '@/application/row-comment.type';
 import { YjsEditorKey } from '@/application/types';
+import { Popover } from '@/components/_shared/popover';
 import { CommentComposer } from '@/components/database/components/database-row/comment/CommentComposer';
 
 import { formatFeedRelativeTime } from './feed.utils';
 import { FeedAvatar } from './FeedAvatar';
 import { useFeedMembers } from './FeedMembersContext';
+
+const FeedDiscussion = lazy(() => import('@/components/database/components/database-row/comment/RowCommentList'));
 
 interface FeedRowCommentsState {
   count: number;
@@ -80,27 +83,50 @@ export function useFeedRowComments(rowId: string): FeedRowCommentsState {
   return state;
 }
 
-function FeedCommentSummary({ count, latest, rowId }: { count: number; latest: RowComment; rowId: string }) {
+function FeedCommentSummary({
+  count,
+  expanded,
+  latest,
+  onToggle,
+  panelId,
+  rowId,
+}: {
+  count: number;
+  expanded: boolean;
+  latest: RowComment | null;
+  onToggle: (event: MouseEvent<HTMLButtonElement>) => void;
+  panelId: string;
+  rowId: string;
+}) {
   const { t } = useTranslation();
   const { resolveMember } = useFeedMembers();
-  const commenter = resolveMember(latest.authorId);
-  const relativeTime = formatFeedRelativeTime(latest.createdAt, t, dayjs());
+  const commenter = latest ? resolveMember(latest.authorId) : undefined;
+  const relativeTime = latest ? formatFeedRelativeTime(latest.createdAt, t, dayjs()) : '';
 
   return (
-    <div className='mt-3 flex items-center gap-2' data-testid={`feed-comment-summary-${rowId}`}>
-      <FeedAvatar member={commenter} />
+    <button
+      aria-controls={panelId}
+      aria-expanded={expanded}
+      aria-haspopup='dialog'
+      className='mt-3 flex items-center gap-2 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
+      data-testid={`feed-comment-summary-${rowId}`}
+      onClick={onToggle}
+      type='button'
+    >
+      {latest ? <FeedAvatar member={commenter} /> : null}
       <span className='text-[13px] text-text-secondary' data-testid={`feed-comment-count-${rowId}`}>
         {t('globalComment.replies', { count })}
       </span>
       <span className='text-[13px] text-text-tertiary'>{relativeTime}</span>
-    </div>
+    </button>
   );
 }
 
-function FeedAddCommentInput({ rowId, onActiveChange }: { rowId: string; onActiveChange: (active: boolean) => void }) {
+function FeedAddCommentInput({ rowId, hasComments }: { rowId: string; hasComments: boolean }) {
   const { t } = useTranslation();
   const { currentCommentAuthorId, currentUser, resolveMember, mentionableUsers, canComment } = useFeedMembers();
   const addComment = useAddCommentDispatch(rowId);
+  const [active, setActive] = useState(false);
   const author = resolveMember(currentCommentAuthorId) ?? {
     name: currentUser?.name ?? '',
     email: currentUser?.email ?? '',
@@ -112,11 +138,12 @@ function FeedAddCommentInput({ rowId, onActiveChange }: { rowId: string; onActiv
       className='mt-3 flex items-start gap-2'
       data-feed-interactive='true'
       data-testid={`feed-add-comment-${rowId}`}
+      style={{ display: hasComments && !active ? 'none' : undefined }}
       onClick={(event) => event.stopPropagation()}
     >
       <FeedAvatar member={author} />
       <CommentComposer
-        onActiveChange={onActiveChange}
+        onActiveChange={setActive}
         placeholder={t('rowComment.addComment')}
         members={mentionableUsers}
         testIds={{
@@ -134,21 +161,87 @@ function FeedAddCommentInput({ rowId, onActiveChange }: { rowId: string; onActiv
   );
 }
 
-/**
- * Desktop `FeedCard._buildCommentSection`: a summary of the latest reply when
- * comments exist, otherwise an inline add-comment input when allowed.
- */
+/** Keep discussion and composing available without leaving the feed. */
 export const FeedCommentSection = memo(function FeedCommentSection({ rowId }: { rowId: string }) {
+  const { t } = useTranslation();
   const { count, latest } = useFeedRowComments(rowId);
   const { canComment, currentCommentAuthorId } = useFeedMembers();
-  const [composerActive, setComposerActive] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [hasOpenedDiscussion, setHasOpenedDiscussion] = useState(false);
+  const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const panelId = useId();
 
-  // A remote first reply must not unmount an active composer and discard its
-  // text, mentions, attachments or pending uploads. Summarize once it closes.
-  if (count > 0 && latest && !composerActive) return <FeedCommentSummary count={count} latest={latest} rowId={rowId} />;
-  if (!canComment || !currentCommentAuthorId) return null;
+  if (!latest && !hasOpenedDiscussion && (!canComment || !currentCommentAuthorId)) return null;
 
-  return <FeedAddCommentInput rowId={rowId} onActiveChange={setComposerActive} />;
+  return (
+    <div data-feed-interactive='true' onClick={(event) => event.stopPropagation()}>
+      {latest || hasOpenedDiscussion ? (
+        <FeedCommentSummary
+          count={count}
+          expanded={expanded}
+          latest={latest}
+          onToggle={(event) => {
+            setAnchorEl(event.currentTarget);
+            setHasOpenedDiscussion(true);
+            setExpanded((current) => !current);
+          }}
+          panelId={panelId}
+          rowId={rowId}
+        />
+      ) : null}
+
+      {/* Keep drafts and pending uploads alive when the popover is dismissed. */}
+      {hasOpenedDiscussion ? (
+        <Popover
+          open={expanded}
+          anchorEl={anchorEl}
+          onClose={() => setExpanded(false)}
+          keepMounted
+          disableRestoreFocus={false}
+          disableEnforceFocus
+          disableEscapeKeyDown
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+          transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          onKeyDownCapture={(event) => {
+            if (
+              event.defaultPrevented ||
+              event.nativeEvent.isComposing ||
+              event.nativeEvent.keyCode === 229 ||
+              !event.currentTarget.contains(event.target as Node)
+            ) return;
+
+            // Nested menus handle their own Escape. Within a composer, first
+            // dismiss mention suggestions; otherwise preserve the whole draft.
+            const composer = (event.target as HTMLElement).closest('[data-comment-composer]');
+
+            if (event.key === 'Escape' && !composer?.querySelector('[role="listbox"]')) {
+              event.preventDefault();
+              event.stopPropagation();
+              setExpanded(false);
+            }
+          }}
+        >
+          <div
+            aria-label={t('rowComment.comments')}
+            className='max-h-[min(480px,70vh)] w-[400px] max-w-[calc(100vw-32px)] overflow-y-auto p-4'
+            data-testid={`feed-discussion-${rowId}`}
+            id={panelId}
+            role='dialog'
+            tabIndex={-1}
+          >
+            <Suspense fallback={null}>
+              <FeedDiscussion includeResolved rowId={rowId} />
+            </Suspense>
+          </div>
+        </Popover>
+      ) : null}
+
+      {/* This position stays stable when a first local or remote comment arrives. */}
+      {canComment && currentCommentAuthorId ? (
+        <FeedAddCommentInput rowId={rowId} hasComments={Boolean(latest) || expanded} />
+      ) : null}
+    </div>
+  );
 });
 
 export default FeedCommentSection;

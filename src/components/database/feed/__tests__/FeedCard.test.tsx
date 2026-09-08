@@ -14,6 +14,8 @@ import { useDatabaseSearch } from '@/components/database/components/conditions/D
 import { EditorPreviewContextProvider } from '@/components/editor/EditorPreviewContext';
 
 import { FeedCard } from '../FeedCard';
+
+jest.mock('../FeedCardProperties', () => ({ FeedCardProperties: () => null }));
 import { useFeedMembers } from '../FeedMembersContext';
 
 jest.mock('@/application/database-yjs', () => ({

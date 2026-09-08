@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
+  Column,
   useCellSelector,
   useDatabaseContext,
   useReadOnly,
@@ -20,6 +21,7 @@ import { formatFeedCreatorDate, isFeedInteractiveTarget, isFeedRowEdited, toUnix
 import { FeedAvatar } from './FeedAvatar';
 import { FeedCardActions } from './FeedCardActions';
 import { FeedCardCover } from './FeedCardCover';
+import { FeedCardProperties } from './FeedCardProperties';
 import { FeedCommentSection } from './FeedCommentSection';
 import { FeedDocumentPreview } from './FeedDocumentPreview';
 import { useFeedMembers } from './FeedMembersContext';
@@ -137,6 +139,7 @@ function FeedCreatorInfo({ attribution, rowId }: { attribution: FeedRowAttributi
 }
 
 export interface FeedCardProps {
+  fields?: Column[];
   primaryFieldId: string;
   rowId: string;
 }
@@ -146,7 +149,7 @@ export interface FeedCardProps {
  * reactions and comments. Clicking the card opens the row detail page unless
  * the click landed on an interactive control.
  */
-export const FeedCard = memo(function FeedCard({ primaryFieldId, rowId }: FeedCardProps) {
+export const FeedCard = memo(function FeedCard({ fields, primaryFieldId, rowId }: FeedCardProps) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const { bindRowSync, navigateToRow } = useDatabaseContext();
@@ -234,6 +237,8 @@ export const FeedCard = memo(function FeedCard({ primaryFieldId, rowId }: FeedCa
               {title || t('feed.untitled')}
             </h3>
           </div>
+
+          {fields ? <FeedCardProperties fields={fields} primaryFieldId={primaryFieldId} rowId={rowId} /> : null}
 
           {showPreview && meta ? <FeedDocumentPreview documentId={meta.documentId} rowId={rowId} /> : null}
 

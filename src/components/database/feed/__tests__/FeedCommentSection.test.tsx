@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { useDatabaseContext, useRowMap } from '@/application/database-yjs';
@@ -111,8 +111,8 @@ describe('FeedCommentSection', () => {
     jest.useRealTimers();
 
     expect(screen.getByTestId('feed-comment-count-row-1').textContent).toBe('globalComment.replies:2');
-    expect(screen.getByTestId('feed-avatar').textContent).toBe('Bob');
-    expect(screen.queryByTestId('feed-add-comment-row-1')).toBeNull();
+    expect(within(screen.getByTestId('feed-comment-summary-row-1')).getByTestId('feed-avatar').textContent).toBe('Bob');
+    expect(screen.getByTestId('feed-add-comment-collapsed-row-1')).toBeTruthy();
   });
 
   it('preserves text, mentions and an in-progress upload when the first remote comment arrives', async () => {
@@ -163,7 +163,7 @@ describe('FeedCommentSection', () => {
     expect(screen.getByTestId('feed-add-comment-input-row-1')).toBe(input);
     expect(input.value).toBe('@Alice please review');
     expect(screen.getByRole('status').textContent).toBe('fileDropzone.uploading');
-    expect(screen.queryByTestId('feed-comment-summary-row-1')).toBeNull();
+    expect(screen.getByTestId('feed-comment-count-row-1').textContent).toBe('globalComment.replies:1');
     await act(async () => finishUpload('https://example.com/note.txt'));
     fireEvent.blur(input);
     expect(screen.getByTestId('comment-pending-attachment').textContent).toContain('note.txt');
@@ -177,10 +177,10 @@ describe('FeedCommentSection', () => {
       expect.objectContaining({ name: 'note.txt', url: 'https://example.com/note.txt' }),
     ]);
     expect(screen.getByTestId('feed-comment-count-row-1').textContent).toBe('globalComment.replies:1');
-    expect(screen.queryByTestId('feed-add-comment-row-1')).toBeNull();
+    expect(screen.getByTestId('feed-add-comment-collapsed-row-1')).toBeTruthy();
   });
 
-  it('shows the new summary after the active draft is cancelled', () => {
+  it('keeps the summary and allows a new comment after the active draft is cancelled', () => {
     const rowDoc = createRowDoc();
 
     mockUseRowMap.mockReturnValue({ 'row-1': rowDoc });
@@ -195,7 +195,7 @@ describe('FeedCommentSection', () => {
     expect(screen.getByTestId('feed-add-comment-input-row-1')).toBe(input);
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(screen.getByTestId('feed-comment-count-row-1').textContent).toBe('globalComment.replies:1');
-    expect(screen.queryByTestId('feed-add-comment-row-1')).toBeNull();
+    expect(screen.getByTestId('feed-add-comment-collapsed-row-1')).toBeTruthy();
     expect(addCommentDispatch).not.toHaveBeenCalled();
   });
 
@@ -208,7 +208,7 @@ describe('FeedCommentSection', () => {
       addComment(rowDoc, 'First reply', 'person-1');
     });
     expect(screen.getByTestId('feed-comment-count-row-1').textContent).toBe('globalComment.replies:1');
-    expect(screen.queryByTestId('feed-add-comment-row-1')).toBeNull();
+    expect(screen.getByTestId('feed-add-comment-collapsed-row-1')).toBeTruthy();
   });
 
   it('keeps the summary visible if commenting permission is revoked during a draft', () => {
@@ -226,12 +226,13 @@ describe('FeedCommentSection', () => {
       addComment(rowDoc, 'Second reply', 'person-1');
     });
     expect(screen.getByTestId('feed-comment-count-row-1').textContent).toBe('globalComment.replies:2');
+    expect(screen.queryByTestId('feed-add-comment-row-1')).toBeNull();
     mockUseFeedMembers.mockReturnValue({ ...mockUseFeedMembers(), canComment: true });
     act(() => {
       addComment(rowDoc, 'Third reply', 'person-1');
     });
     expect(screen.getByTestId('feed-comment-count-row-1').textContent).toBe('globalComment.replies:3');
-    expect(screen.queryByTestId('feed-add-comment-row-1')).toBeNull();
+    expect(screen.getByTestId('feed-add-comment-collapsed-row-1')).toBeTruthy();
   });
 
   it('preserves the draft when the row cannot accept a comment, then submits it after hydration', () => {

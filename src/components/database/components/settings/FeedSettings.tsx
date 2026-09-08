@@ -1,5 +1,7 @@
+import { usePrimaryFieldId } from '@/application/database-yjs';
 import { DatabaseViewLayout } from '@/application/types';
 import Layout from '@/components/database/components/settings/Layout';
+import Properties from '@/components/database/components/settings/Properties';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,12 +11,9 @@ import {
 
 import type { ReactNode } from 'react';
 
-/**
- * Desktop parity: `database_settings_list.dart` exposes only the layout
- * switcher for Feed views, so the Feed settings menu has no properties or
- * layout-specific groups.
- */
 function FeedSettings({ children }: { children: ReactNode }) {
+  const primaryFieldId = usePrimaryFieldId();
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -28,6 +27,7 @@ function FeedSettings({ children }: { children: ReactNode }) {
         side='bottom'
       >
         <DropdownMenuGroup>
+          <Properties excludeFieldId={primaryFieldId ?? undefined} />
           <Layout currentLayout={DatabaseViewLayout.Feed} />
         </DropdownMenuGroup>
       </DropdownMenuContent>

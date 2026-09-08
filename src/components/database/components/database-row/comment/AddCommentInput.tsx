@@ -10,9 +10,11 @@ import { useRowCommentDispatch, useRowCommentState } from './RowCommentContext';
 function AddCommentInput({
   parentCommentId,
   showThreadLine = false,
+  active = true,
 }: {
   parentCommentId?: string;
   showThreadLine?: boolean;
+  active?: boolean;
 }) {
   const { t } = useTranslation();
   const { addComment, setReplyingCommentId } = useRowCommentDispatch();
@@ -22,7 +24,10 @@ function AddCommentInput({
   if (!canComment) return null;
 
   return (
-    <div className='flex gap-3 px-2 py-2'>
+    <div
+      className='flex gap-3 px-2 py-2'
+      data-testid={parentCommentId ? `row-comment-reply-composer-${parentCommentId}` : 'row-comment-root-composer'}
+    >
       {!parentCommentId && (
         <div className='-my-2 flex w-8 shrink-0 flex-col items-center'>
           <div className={cn('w-px flex-1', showThreadLine ? 'bg-border-primary' : 'bg-transparent')} />
@@ -33,6 +38,8 @@ function AddCommentInput({
         </div>
       )}
       <CommentComposer
+        active={active}
+        initiallyExpanded={Boolean(parentCommentId)}
         placeholder={t('rowComment.addReply')}
         members={mentionableUsers}
         testIds={{
