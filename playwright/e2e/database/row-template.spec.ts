@@ -752,6 +752,7 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     await addDatabaseView(page, templateBlock, 'Board');
     await expectDatabaseBlockViews(templateBlock, 2);
+    await editFirstGridCell(page, templateBlock, 'Saved inline template value');
     await insertPageReferenceViaSlash(page, documentId as string, referenceName, 1);
     await closeTemplateEditor(page);
     await page.waitForTimeout(3000);
@@ -771,6 +772,12 @@ test.describe('Database row templates (Desktop parity)', () => {
       await expectDatabaseBlockViews(reopenedBlock, 2);
       await expect(reopenedDocument).toContainText('Template document body');
       await expect(reopenedDocument).toContainText(referenceName);
+      await expect
+        .poll(() => firstGridCellText(reopenedBlock), { timeout: 30000 })
+        .toBe(attempt === 0 ? 'Saved inline template value' : 'Updated inline template value');
+      if (attempt === 0) {
+        await editFirstGridCell(page, reopenedBlock, 'Updated inline template value');
+      }
       await closeTemplateEditor(page);
     }
 
@@ -798,6 +805,7 @@ test.describe('Database row templates (Desktop parity)', () => {
     await expectDatabaseBlockViews(direct.block, 2);
     await expect(direct.editor).toContainText('Template document body');
     await expect(direct.editor).toContainText(referenceName);
+    await expect.poll(() => firstGridCellText(direct.block), { timeout: 30000 }).toBe('Updated inline template value');
     await closeRowDetailWithEscape(page);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -828,6 +836,14 @@ test.describe('Database row templates (Desktop parity)', () => {
     await expect(first.editor).toContainText('Template document body');
     await expect(first.editor).toContainText(referenceName);
     await editFirstGridCell(page, first.block, 'only the first copy');
+    await first.block.locator('[data-testid^="checkbox-cell-"]').first().click();
+    await expect(first.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
+    await closeRowDetailWithEscape(page);
+
+    const reopenedFirst = await openRowWithDatabaseBlock(page, copiedRowIds[0]);
+
+    await expect.poll(() => firstGridCellText(reopenedFirst.block), { timeout: 30000 }).toBe('only the first copy');
+    await expect(reopenedFirst.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
     await closeRowDetailWithEscape(page);
 
     const second = await openRowWithDatabaseBlock(page, copiedRowIds[1]);
@@ -835,14 +851,15 @@ test.describe('Database row templates (Desktop parity)', () => {
     await expectDatabaseBlockViews(second.block, 2);
     await expect(second.editor).toContainText('Template document body');
     await expect(second.editor).toContainText(referenceName);
-    expect(await firstGridCellText(second.block)).not.toBe('only the first copy');
+    await expect.poll(() => firstGridCellText(second.block), { timeout: 30000 }).toBe('Updated inline template value');
+    await expect(second.block.getByTestId('checkbox-checked-icon')).toHaveCount(0);
     await closeRowDetailWithEscape(page);
 
     const third = await openRowWithDatabaseBlock(page, copiedRowIds[2]);
 
     await expectDatabaseBlockViews(third.block, 2);
     await expect(third.editor).toContainText(referenceName);
-    expect(await firstGridCellText(third.block)).not.toBe('only the first copy');
+    await expect.poll(() => firstGridCellText(third.block), { timeout: 30000 }).toBe('Updated inline template value');
     await closeRowDetailWithEscape(page);
 
     await openTemplateActions(page, copyName);
@@ -853,6 +870,15 @@ test.describe('Database row templates (Desktop parity)', () => {
     await expect(surviving.block).toBeVisible();
     await expectDatabaseBlockViews(surviving.block, 2);
     await expect(surviving.editor).toContainText(referenceName);
+    await expect.poll(() => firstGridCellText(surviving.block), { timeout: 30000 }).toBe('only the first copy');
+    await expect(surviving.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
+    await closeRowDetailWithEscape(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForGridReady(page);
+    const reloaded = await openRowWithDatabaseBlock(page, copiedRowIds[0]);
+
+    await expect.poll(() => firstGridCellText(reloaded.block), { timeout: 30000 }).toBe('only the first copy');
+    await expect(reloaded.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
   });
 
   test('linked databases stay shared after the source template is deleted', async ({ page, request }) => {
@@ -881,7 +907,26 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     await addDatabaseView(page, templateBlock, 'Board');
     await expectDatabaseBlockViews(templateBlock, 2);
+    await editFirstGridCell(page, templateBlock, 'Initial linked template value');
     await insertPageReferenceViaSlash(page, documentId as string, sourceName, 1);
+    await closeTemplateEditor(page);
+
+    const reopenedTemplate = await editTemplate(page, templateName);
+    const reopenedTemplateBlock = databaseBlocks(reopenedTemplate.getByTestId('editor-content').first()).first();
+
+    await expect
+      .poll(() => firstGridCellText(reopenedTemplateBlock), { timeout: 30000 })
+      .toBe('Initial linked template value');
+    await editFirstGridCell(page, reopenedTemplateBlock, 'Edited linked template value');
+    await closeTemplateEditor(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForGridReady(page);
+    const savedTemplate = await editTemplate(page, templateName);
+    const savedTemplateBlock = databaseBlocks(savedTemplate.getByTestId('editor-content').first()).first();
+
+    await expect
+      .poll(() => firstGridCellText(savedTemplateBlock), { timeout: 30000 })
+      .toBe('Edited linked template value');
     await closeTemplateEditor(page);
 
     await openTemplateActions(page, templateName);
@@ -900,7 +945,16 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     await expectDatabaseBlockViews(first.block, 2);
     await expect(first.editor).toContainText(sourceName);
+    await expect.poll(() => firstGridCellText(first.block), { timeout: 30000 }).toBe('Edited linked template value');
     await editFirstGridCell(page, first.block, 'shared linked value');
+    await first.block.locator('[data-testid^="checkbox-cell-"]').first().click();
+    await expect(first.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
+    await closeRowDetailWithEscape(page);
+
+    const reopenedFirst = await openRowWithDatabaseBlock(page, rowIds[0]);
+
+    await expect.poll(() => firstGridCellText(reopenedFirst.block), { timeout: 30000 }).toBe('shared linked value');
+    await expect(reopenedFirst.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
     await closeRowDetailWithEscape(page);
 
     const second = await openRowWithDatabaseBlock(page, rowIds[1]);
@@ -908,6 +962,7 @@ test.describe('Database row templates (Desktop parity)', () => {
     await expectDatabaseBlockViews(second.block, 2);
     await expect(second.editor).toContainText(sourceName);
     await expect.poll(() => firstGridCellText(second.block), { timeout: 30000 }).toBe('shared linked value');
+    await expect(second.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
     await closeRowDetailWithEscape(page);
 
     const third = await openRowWithDatabaseBlock(page, rowIds[2]);
@@ -925,5 +980,19 @@ test.describe('Database row templates (Desktop parity)', () => {
     await expectDatabaseBlockViews(surviving.block, 2);
     await expect(surviving.editor).toContainText(sourceName);
     await expect.poll(() => firstGridCellText(surviving.block), { timeout: 30000 }).toBe('shared linked value');
+    await expect(surviving.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
+    await closeRowDetailWithEscape(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForGridReady(page);
+    const reloadedTemplate = await editTemplate(page, templateName);
+    const reloadedTemplateBlock = databaseBlocks(reloadedTemplate.getByTestId('editor-content').first()).first();
+
+    await expect.poll(() => firstGridCellText(reloadedTemplateBlock), { timeout: 30000 }).toBe('shared linked value');
+    await expect(reloadedTemplateBlock.getByTestId('checkbox-checked-icon')).toHaveCount(1);
+    await closeTemplateEditor(page);
+    const reloaded = await openRowWithDatabaseBlock(page, rowIds[0]);
+
+    await expect.poll(() => firstGridCellText(reloaded.block), { timeout: 30000 }).toBe('shared linked value');
+    await expect(reloaded.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
   });
 });
