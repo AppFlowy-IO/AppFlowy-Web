@@ -115,6 +115,125 @@ describe('FeedCommentSection', () => {
     expect(screen.queryByTestId('feed-add-comment-row-1')).toBeNull();
   });
 
+  it('preserves text, mentions and an in-progress upload when the first remote comment arrives', async () => {
+    const rowDoc = createRowDoc();
+    const personId = 'a318b9a0-6e2a-4c85-9638-16fd152af6e1';
+    let finishUpload!: (url: string) => void;
+    const uploadFile = jest.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          finishUpload = resolve;
+        })
+    );
+
+    (useDatabaseContext as jest.Mock).mockReturnValue({ uploadFile });
+    mockUseFeedMembers.mockReturnValue({
+      ...mockUseFeedMembers(),
+      mentionableUsers: [
+        {
+          person_id: personId,
+          name: 'Alice',
+          email: 'alice@example.com',
+          uid: '7',
+          avatar_url: null,
+          cover_image_url: null,
+          custom_image_url: null,
+          description: null,
+          role: 1,
+          invited: false,
+          last_mentioned_at: null,
+        },
+      ],
+    });
+    mockUseRowMap.mockReturnValue({ 'row-1': rowDoc });
+    render(<FeedCommentSection rowId='row-1' />);
+    fireEvent.click(screen.getByTestId('feed-add-comment-collapsed-row-1'));
+    const input = screen.getByTestId<HTMLTextAreaElement>('feed-add-comment-input-row-1');
+
+    fireEvent.change(input, { target: { value: '@' } });
+    fireEvent.click(screen.getByRole('option'));
+    fireEvent.change(input, { target: { value: '@Alice please review' } });
+    fireEvent.change(screen.getByTestId('feed-add-comment-attachment-row-1'), {
+      target: { files: [new File(['hello'], 'note.txt', { type: 'text/plain' })] },
+    });
+    act(() => {
+      addComment(rowDoc, 'First reply', 'person-1');
+    });
+
+    expect(screen.getByTestId('feed-add-comment-input-row-1')).toBe(input);
+    expect(input.value).toBe('@Alice please review');
+    expect(screen.getByRole('status').textContent).toBe('fileDropzone.uploading');
+    expect(screen.queryByTestId('feed-comment-summary-row-1')).toBeNull();
+    await act(async () => finishUpload('https://example.com/note.txt'));
+    fireEvent.blur(input);
+    expect(screen.getByTestId('comment-pending-attachment').textContent).toContain('note.txt');
+
+    addCommentDispatch.mockReturnValueOnce(undefined);
+    fireEvent.click(screen.getByTestId('feed-add-comment-submit-row-1'));
+    expect(screen.getByTestId('feed-add-comment-input-row-1')).toBe(input);
+
+    fireEvent.click(screen.getByTestId('feed-add-comment-submit-row-1'));
+    expect(addCommentDispatch).toHaveBeenLastCalledWith(`@[Alice](${personId}) please review`, 'me', undefined, [
+      expect.objectContaining({ name: 'note.txt', url: 'https://example.com/note.txt' }),
+    ]);
+    expect(screen.getByTestId('feed-comment-count-row-1').textContent).toBe('globalComment.replies:1');
+    expect(screen.queryByTestId('feed-add-comment-row-1')).toBeNull();
+  });
+
+  it('shows the new summary after the active draft is cancelled', () => {
+    const rowDoc = createRowDoc();
+
+    mockUseRowMap.mockReturnValue({ 'row-1': rowDoc });
+    render(<FeedCommentSection rowId='row-1' />);
+    fireEvent.click(screen.getByTestId('feed-add-comment-collapsed-row-1'));
+    const input = screen.getByTestId('feed-add-comment-input-row-1');
+
+    fireEvent.change(input, { target: { value: 'Discard this draft' } });
+    act(() => {
+      addComment(rowDoc, 'First reply', 'person-1');
+    });
+    expect(screen.getByTestId('feed-add-comment-input-row-1')).toBe(input);
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.getByTestId('feed-comment-count-row-1').textContent).toBe('globalComment.replies:1');
+    expect(screen.queryByTestId('feed-add-comment-row-1')).toBeNull();
+    expect(addCommentDispatch).not.toHaveBeenCalled();
+  });
+
+  it('shows the first remote comment immediately when the composer is inactive', () => {
+    const rowDoc = createRowDoc();
+
+    mockUseRowMap.mockReturnValue({ 'row-1': rowDoc });
+    render(<FeedCommentSection rowId='row-1' />);
+    act(() => {
+      addComment(rowDoc, 'First reply', 'person-1');
+    });
+    expect(screen.getByTestId('feed-comment-count-row-1').textContent).toBe('globalComment.replies:1');
+    expect(screen.queryByTestId('feed-add-comment-row-1')).toBeNull();
+  });
+
+  it('keeps the summary visible if commenting permission is revoked during a draft', () => {
+    const rowDoc = createRowDoc();
+
+    mockUseRowMap.mockReturnValue({ 'row-1': rowDoc });
+    render(<FeedCommentSection rowId='row-1' />);
+    fireEvent.click(screen.getByTestId('feed-add-comment-collapsed-row-1'));
+    fireEvent.change(screen.getByTestId('feed-add-comment-input-row-1'), { target: { value: 'Draft' } });
+    act(() => {
+      addComment(rowDoc, 'First reply', 'person-1');
+    });
+    mockUseFeedMembers.mockReturnValue({ ...mockUseFeedMembers(), canComment: false });
+    act(() => {
+      addComment(rowDoc, 'Second reply', 'person-1');
+    });
+    expect(screen.getByTestId('feed-comment-count-row-1').textContent).toBe('globalComment.replies:2');
+    mockUseFeedMembers.mockReturnValue({ ...mockUseFeedMembers(), canComment: true });
+    act(() => {
+      addComment(rowDoc, 'Third reply', 'person-1');
+    });
+    expect(screen.getByTestId('feed-comment-count-row-1').textContent).toBe('globalComment.replies:3');
+    expect(screen.queryByTestId('feed-add-comment-row-1')).toBeNull();
+  });
+
   it('preserves the draft when the row cannot accept a comment, then submits it after hydration', () => {
     mockUseRowMap.mockReturnValue(null);
     addCommentDispatch.mockReturnValue(undefined);

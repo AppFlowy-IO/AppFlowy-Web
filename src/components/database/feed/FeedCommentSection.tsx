@@ -97,7 +97,7 @@ function FeedCommentSummary({ count, latest, rowId }: { count: number; latest: R
   );
 }
 
-function FeedAddCommentInput({ rowId }: { rowId: string }) {
+function FeedAddCommentInput({ rowId, onActiveChange }: { rowId: string; onActiveChange: (active: boolean) => void }) {
   const { t } = useTranslation();
   const { currentCommentAuthorId, currentUser, resolveMember, mentionableUsers, canComment } = useFeedMembers();
   const addComment = useAddCommentDispatch(rowId);
@@ -116,6 +116,7 @@ function FeedAddCommentInput({ rowId }: { rowId: string }) {
     >
       <FeedAvatar member={author} />
       <CommentComposer
+        onActiveChange={onActiveChange}
         placeholder={t('rowComment.addComment')}
         members={mentionableUsers}
         testIds={{
@@ -140,11 +141,14 @@ function FeedAddCommentInput({ rowId }: { rowId: string }) {
 export const FeedCommentSection = memo(function FeedCommentSection({ rowId }: { rowId: string }) {
   const { count, latest } = useFeedRowComments(rowId);
   const { canComment, currentCommentAuthorId } = useFeedMembers();
+  const [composerActive, setComposerActive] = useState(false);
 
-  if (count > 0 && latest) return <FeedCommentSummary count={count} latest={latest} rowId={rowId} />;
+  // A remote first reply must not unmount an active composer and discard its
+  // text, mentions, attachments or pending uploads. Summarize once it closes.
+  if (count > 0 && latest && !composerActive) return <FeedCommentSummary count={count} latest={latest} rowId={rowId} />;
   if (!canComment || !currentCommentAuthorId) return null;
 
-  return <FeedAddCommentInput rowId={rowId} />;
+  return <FeedAddCommentInput rowId={rowId} onActiveChange={setComposerActive} />;
 });
 
 export default FeedCommentSection;

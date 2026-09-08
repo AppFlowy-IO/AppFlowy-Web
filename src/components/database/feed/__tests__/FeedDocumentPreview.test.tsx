@@ -1,6 +1,9 @@
+import EventEmitter from 'events';
+
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
+import { APP_EVENTS } from '@/application/constants';
 import { useDatabaseContextOptional } from '@/application/database-yjs';
 import { CollabOrigin, Types, YDoc, YDocWithMeta, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { useSyncInternalOptional } from '@/components/app/contexts/SyncInternalContext';
@@ -32,8 +35,8 @@ const mockUseDatabaseContextOptional = useDatabaseContextOptional as jest.Mocked
 >;
 const mockUseSyncInternalOptional = useSyncInternalOptional as jest.MockedFunction<typeof useSyncInternalOptional>;
 
-function createDocumentDoc(): YDoc {
-  const doc = new Y.Doc() as unknown as YDoc;
+function createDocumentDoc(guid?: string): YDoc {
+  const doc = new Y.Doc({ guid }) as unknown as YDoc;
 
   doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.document, new Y.Map());
   return doc;
@@ -45,9 +48,11 @@ describe('FeedDocumentPreview', () => {
   const loadRowDocument = jest.fn();
   const registerSyncContext = jest.fn();
   const scheduleDeferredCleanup = jest.fn();
+  let eventEmitter: EventEmitter;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    eventEmitter = new EventEmitter();
     renderedDocs.length = 0;
     scrollHeight = 80;
     scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
@@ -68,6 +73,7 @@ describe('FeedDocumentPreview', () => {
       openPageModal: jest.fn(),
     } as unknown as ReturnType<typeof useDatabaseContextOptional>);
     mockUseSyncInternalOptional.mockReturnValue({
+      eventEmitter,
       registerSyncContext,
       scheduleDeferredCleanup,
     } as unknown as ReturnType<typeof useSyncInternalOptional>);
@@ -125,6 +131,123 @@ describe('FeedDocumentPreview', () => {
 
     expect(renderedDocs[0]).not.toBe(source);
     expect(renderedDocs[0].guid).toBe(`${source.guid}:feed-preview`);
+  });
+
+  it('replaces the preview after a matching reset and continues mirroring edits without adding a sync owner', async () => {
+    const source = createDocumentDoc('doc-1');
+
+    source.getMap(YjsEditorKey.data_section).set('text', 'Before reset');
+    loadRowDocument.mockResolvedValue(source);
+    const { unmount } = render(<FeedDocumentPreview documentId='doc-1' rowId='row-1' />);
+
+    const firstEditor = await screen.findByTestId('mock-editor');
+    const firstMirror = renderedDocs[renderedDocs.length - 1];
+    const destroyFirstMirror = jest.spyOn(firstMirror, 'destroy');
+    const replacement = createDocumentDoc('doc-1');
+
+    replacement.getMap(YjsEditorKey.data_section).set('text', 'Restored content');
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, { objectId: 'other-doc', doc: createDocumentDoc('other-doc') });
+    });
+    expect(renderedDocs[renderedDocs.length - 1]).toBe(firstMirror);
+    act(() => {
+      source.destroy();
+      eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, { objectId: 'doc-1', doc: replacement });
+    });
+
+    const replacementMirror = renderedDocs[renderedDocs.length - 1];
+
+    expect(screen.getByTestId('mock-editor')).not.toBe(firstEditor);
+    expect(replacementMirror).not.toBe(firstMirror);
+    expect(replacementMirror).not.toBe(replacement);
+    expect(replacementMirror.getMap(YjsEditorKey.data_section).get('text')).toBe('Restored content');
+    expect(destroyFirstMirror).toHaveBeenCalledTimes(1);
+    expect(registerSyncContext).toHaveBeenCalledTimes(1);
+    expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+    act(() => {
+      replacement.transact(
+        () => replacement.getMap(YjsEditorKey.data_section).set('text', 'Edited after reset'),
+        CollabOrigin.Local
+      );
+    });
+    expect(replacementMirror.getMap(YjsEditorKey.data_section).get('text')).toBe('Edited after reset');
+
+    const destroyReplacementMirror = jest.spyOn(replacementMirror, 'destroy');
+    const destroyReplacement = jest.spyOn(replacement, 'destroy');
+
+    unmount();
+    expect(destroyReplacementMirror).toHaveBeenCalledTimes(1);
+    expect(destroyReplacement).not.toHaveBeenCalled();
+    expect(eventEmitter.listenerCount(APP_EVENTS.COLLAB_DOC_RESET)).toBe(0);
+    expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+    expect(scheduleDeferredCleanup).toHaveBeenCalledWith('doc-1');
+  });
+
+  it.each(['initial load', 'reset'])(
+    'renders and measures an empty document after %s when it hydrates later',
+    async (stage) => {
+      const source = new Y.Doc({ guid: 'doc-1' }) as YDoc;
+
+      loadRowDocument.mockResolvedValue(stage === 'reset' ? createDocumentDoc('doc-1') : source);
+      const { container, unmount } = render(<FeedDocumentPreview documentId='doc-1' rowId='row-1' />);
+
+      await waitFor(() => expect(registerSyncContext).toHaveBeenCalledTimes(1));
+      if (stage === 'reset') {
+        act(() => {
+          eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, { objectId: 'doc-1', doc: source });
+        });
+      }
+
+      expect(container.firstChild).toBeNull();
+      scrollHeight = 400;
+      act(() => {
+        source.getMap(YjsEditorKey.data_section).set(YjsEditorKey.document, new Y.Map());
+      });
+
+      await screen.findByTestId('mock-editor');
+      expect(screen.getByTestId('feed-document-preview-toggle-row-1').textContent).toContain('button.seeMore');
+      expect(loadRowDocument).toHaveBeenCalledTimes(1);
+      unmount();
+      expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('uses a reset received during loading instead of the stale load result', async () => {
+    const stale = createDocumentDoc('doc-1');
+    const replacement = createDocumentDoc('doc-1');
+    let finishLoad!: (doc: YDoc) => void;
+
+    replacement.getMap(YjsEditorKey.data_section).set('text', 'Restored while loading');
+    loadRowDocument.mockReturnValue(
+      new Promise<YDoc>((resolve) => {
+        finishLoad = resolve;
+      })
+    );
+    const { unmount } = render(<FeedDocumentPreview documentId='doc-1' rowId='row-1' />);
+
+    act(() => {
+      stale.destroy();
+      eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, { objectId: 'doc-1', doc: replacement });
+    });
+    await act(async () => finishLoad(stale));
+    await screen.findByTestId('mock-editor');
+    expect(renderedDocs[0].getMap(YjsEditorKey.data_section).get('text')).toBe('Restored while loading');
+    expect(registerSyncContext).toHaveBeenCalledTimes(1);
+    expect(registerSyncContext).toHaveBeenCalledWith({ doc: replacement, collabType: Types.Document });
+    unmount();
+    expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares the reset listener across previews and removes it after the last preview unmounts', async () => {
+    const first = render(<FeedDocumentPreview documentId='doc-1' rowId='row-1' />);
+    const second = render(<FeedDocumentPreview documentId='doc-2' rowId='row-2' />);
+
+    await screen.findAllByTestId('mock-editor');
+    expect(eventEmitter.listenerCount(APP_EVENTS.COLLAB_DOC_RESET)).toBe(1);
+    first.unmount();
+    expect(eventEmitter.listenerCount(APP_EVENTS.COLLAB_DOC_RESET)).toBe(1);
+    second.unmount();
+    expect(eventEmitter.listenerCount(APP_EVENTS.COLLAB_DOC_RESET)).toBe(0);
   });
 
   it('renders nothing when the row document cannot be loaded', async () => {

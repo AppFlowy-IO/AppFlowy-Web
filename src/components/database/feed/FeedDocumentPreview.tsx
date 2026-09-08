@@ -7,6 +7,8 @@ import { useDatabaseContextOptional } from '@/application/database-yjs';
 import { Types, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { useSyncInternalOptional } from '@/components/app/contexts/SyncInternalContext';
 import { Editor } from '@/components/editor';
+import { subscribeCollabDocReset } from '@/components/ws/sync/subscribeCollabDocReset';
+import { CollabDocResetPayload } from '@/components/ws/sync/types';
 import { cn } from '@/lib/utils';
 
 import { FEED_DOCUMENT_PREVIEW_MAX_HEIGHT } from './feed.constants';
@@ -88,6 +90,7 @@ export const FeedDocumentPreview = memo(function FeedDocumentPreview({
   const sync = useSyncInternalOptional();
   const registerSyncContext = sync?.registerSyncContext;
   const scheduleDeferredCleanup = sync?.scheduleDeferredCleanup;
+  const eventEmitter = sync?.eventEmitter;
   const [doc, setDoc] = useState<YDoc | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
@@ -95,12 +98,44 @@ export const FeedDocumentPreview = memo(function FeedDocumentPreview({
 
   useEffect(() => {
     let cancelled = false;
-    let mirror: ReturnType<typeof createMirroredPreviewDoc> | null = null;
+    let disposeMirror: (() => void) | undefined;
     let syncOwnerDoc: YDoc | null = null;
+    let latestResetDoc: YDoc | null = null;
 
     setDoc(null);
 
     if (!documentId || !loadRowDocument) return;
+
+    const replaceMirror = (source: YDoc) => {
+      disposeMirror?.();
+      const mirror = createMirroredPreviewDoc(source);
+      const root = mirror.doc.getMap(YjsEditorKey.data_section);
+      const updateDocument = () => {
+        // Empty local docs can hydrate after the loader exhausts its retries.
+        // Only publish a ready mirror so hydration also triggers measurement.
+        setDoc(root.get(YjsEditorKey.document) ? mirror.doc : null);
+      };
+
+      root.observe(updateDocument);
+      updateDocument();
+      disposeMirror = () => {
+        root.unobserve(updateDocument);
+        mirror.dispose();
+      };
+    };
+
+    const handleReset = ({ objectId, doc: nextDoc }: CollabDocResetPayload) => {
+      if (cancelled || objectId !== documentId || nextDoc === latestResetDoc) return;
+      latestResetDoc = nextDoc;
+      if (!disposeMirror) return;
+
+      // rebuildCollabDoc already transfers the preview's sync ownership.
+      // Re-registering here would leak an extra owner on every reset.
+      if (syncOwnerDoc) syncOwnerDoc = nextDoc;
+      replaceMirror(nextDoc);
+    };
+
+    const unsubscribeReset = eventEmitter ? subscribeCollabDocReset(eventEmitter, handleReset) : undefined;
 
     loadRowDocument(
       documentId,
@@ -109,18 +144,20 @@ export const FeedDocumentPreview = memo(function FeedDocumentPreview({
         : undefined
     )
       .then((loadedDoc) => {
-        if (cancelled || !loadedDoc) return;
+        // A reset can finish before the initial load returns its old source.
+        const source = latestResetDoc ?? loadedDoc;
+
+        if (cancelled || !source) return;
 
         // A preview owns its subscription even when a row-detail editor already
         // bound the source. bindViewSync's _syncBound guard cannot acquire this
         // additional owner. Published previews have no realtime context.
         if (registerSyncContext && scheduleDeferredCleanup) {
-          registerSyncContext({ doc: loadedDoc, collabType: Types.Document });
-          syncOwnerDoc = loadedDoc;
+          registerSyncContext({ doc: source, collabType: Types.Document });
+          syncOwnerDoc = source;
         }
 
-        mirror = createMirroredPreviewDoc(loadedDoc);
-        setDoc(mirror.doc);
+        replaceMirror(source);
       })
       .catch(() => {
         // A missing or forbidden row document simply has no preview.
@@ -128,10 +165,20 @@ export const FeedDocumentPreview = memo(function FeedDocumentPreview({
 
     return () => {
       cancelled = true;
-      mirror?.dispose();
+      unsubscribeReset?.();
+      disposeMirror?.();
       if (syncOwnerDoc) scheduleDeferredCleanup?.(syncOwnerDoc.guid);
     };
-  }, [databaseId, databaseViewId, documentId, loadRowDocument, registerSyncContext, rowId, scheduleDeferredCleanup]);
+  }, [
+    databaseId,
+    databaseViewId,
+    documentId,
+    eventEmitter,
+    loadRowDocument,
+    registerSyncContext,
+    rowId,
+    scheduleDeferredCleanup,
+  ]);
 
   useLayoutEffect(() => {
     const element = contentRef.current;
@@ -156,10 +203,6 @@ export const FeedDocumentPreview = memo(function FeedDocumentPreview({
 
   if (!doc || !documentId || !context || !workspaceId) return null;
 
-  const document = doc.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document);
-
-  if (!document) return null;
-
   const { openPageModal: _openPageModal, ...editorContext } = context;
   const showToggle = expanded || overflows;
 
@@ -180,6 +223,7 @@ export const FeedDocumentPreview = memo(function FeedDocumentPreview({
         style={expanded ? undefined : { maxHeight: FEED_DOCUMENT_PREVIEW_MAX_HEIGHT }}
       >
         <Editor
+          key={doc.clientID}
           {...editorContext}
           canComment={false}
           canWrite={false}

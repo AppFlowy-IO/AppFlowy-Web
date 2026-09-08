@@ -20,10 +20,18 @@ interface CommentComposerProps {
   members?: MentionablePerson[];
   testIds: { collapsed: string; input: string; submit: string; attachment: string };
   onCancel?: () => void;
+  onActiveChange?: (active: boolean) => void;
 }
 
 /** Shared by Feed cards and row detail so drafts, attachments and IME behave alike. */
-export function CommentComposer({ onSubmit, placeholder, members = [], testIds, onCancel }: CommentComposerProps) {
+export function CommentComposer({
+  onSubmit,
+  placeholder,
+  members = [],
+  testIds,
+  onCancel,
+  onActiveChange,
+}: CommentComposerProps) {
   const { t } = useTranslation();
   const { uploadFile } = useDatabaseContext();
   const [content, setContent] = useState('');
@@ -57,6 +65,10 @@ export function CommentComposer({ onSubmit, placeholder, members = [], testIds, 
     },
     []
   );
+  useLayoutEffect(() => {
+    onActiveChange?.(!collapsed);
+    return () => onActiveChange?.(false);
+  }, [collapsed, onActiveChange]);
   useEffect(() => {
     if (focused) inputRef.current?.focus();
   }, [focused]);
