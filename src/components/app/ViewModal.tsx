@@ -335,7 +335,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
     return (
       <div
-        className={'sticky top-0 z-[10] flex w-full items-center justify-between gap-2 bg-background-primary px-4 py-4'}
+        className={'sticky top-0 z-[10] flex w-full items-center justify-between gap-2 bg-surface-primary px-4 py-4'}
       >
         <div className={'flex items-center gap-4'}>
           <Tooltip title={t('tooltip.openAsPage')}>

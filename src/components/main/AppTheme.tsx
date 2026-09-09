@@ -183,7 +183,9 @@ function AppTheme({ children }: { children: React.ReactNode }) {
               },
               paper: {
                 borderRadius: '12px',
-                backgroundColor: 'var(--background-primary)',
+                backgroundColor: 'var(--surface-primary)',
+                border: '1px solid var(--border-primary)',
+                boxShadow: 'var(--custom-shadow-md)',
               },
             },
             defaultProps: {

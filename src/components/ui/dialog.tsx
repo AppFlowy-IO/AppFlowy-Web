@@ -52,7 +52,7 @@ const DialogOverlay = forwardRef<HTMLDivElement>(
 const dialogVariants = cva(
   cn(
     // Base appearance
-    'bg-background-primary rounded-500 shadow-dialog',
+    'bg-surface-primary rounded-500 border border-border-primary shadow-dialog',
 
     // Positioning and sizing
     'fixed top-[50%] left-[50%] z-50',
