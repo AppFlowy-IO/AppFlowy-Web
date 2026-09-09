@@ -192,6 +192,46 @@ When('I type {string} into the second grid cell', async ({ page }, text: string)
   await expect.poll(() => getRowCellText(page, nextRowId, primaryFieldId), { timeout: 15000 }).toBe(text);
 });
 
+When('I edit the first grid cell to {string} without committing', async ({ page }, text: string) => {
+  const primaryFieldId = requireStateValue(getState(page).primaryFieldId, 'primary field id');
+  const cell = DatabaseGridSelectors.dataRowCellsForField(page, primaryFieldId).first();
+
+  await cell.click();
+  await cell.click();
+  const input = page.locator('textarea:visible').first();
+
+  await input.fill(text);
+  await expect(input).toBeFocused();
+});
+
+When('I click the empty grid background', async ({ page }) => {
+  const grid = DatabaseGridSelectors.grid(page);
+  const position = await grid.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    const x = bounds.left + bounds.width / 2;
+    const y = bounds.bottom - 24;
+
+    if (document.elementFromPoint(x, y) !== element) {
+      throw new Error('Expected an empty, non-focusable grid background below the rows');
+    }
+
+    return { x, y };
+  });
+
+  // Use the browser's pointerdown -> mousedown -> blur sequence. Blurring or
+  // activating the history scope separately would hide focus ownership bugs.
+  await page.mouse.click(position.x, position.y);
+  await expect(grid.locator('textarea:visible')).toHaveCount(0);
+});
+
+When('I press the database undo shortcut without changing focus', async ({ page }) => {
+  await pressDatabaseHistoryShortcut(page, 'undo');
+});
+
+When('I press the database redo shortcut without changing focus', async ({ page }) => {
+  await pressDatabaseHistoryShortcut(page, 'redo');
+});
+
 When('I activate the first grid cell', async ({ page }) => {
   const state = getState(page);
   const primaryFieldId = requireStateValue(state.primaryFieldId, 'primary field id');
@@ -644,6 +684,11 @@ async function triggerDatabaseRowHotkey(page: Page, action: 'undo' | 'redo') {
     await page.waitForTimeout(100);
   }
 
+  await pressDatabaseHistoryShortcut(page, action);
+  await page.waitForTimeout(500);
+}
+
+async function pressDatabaseHistoryShortcut(page: Page, action: 'undo' | 'redo') {
   const shortcut =
     action === 'undo'
       ? process.platform === 'darwin'
@@ -654,7 +699,6 @@ async function triggerDatabaseRowHotkey(page: Page, action: 'undo' | 'redo') {
       : 'Control+Y';
 
   await page.keyboard.press(shortcut);
-  await page.waitForTimeout(500);
 }
 
 async function changeUndoRedoDatabaseLayout(page: Page, layout: UndoRedoDatabaseLayout) {

@@ -33,6 +33,15 @@ Feature: Database row undo redo
     When I trigger database row redo
     Then the second grid cell is "222"
 
+  Scenario: Grid cell undo survives clicking the empty grid background
+    Given a grid database is ready for cell undo redo
+    When I edit the first grid cell to "123" without committing
+    And I click the empty grid background
+    And I press the database undo shortcut without changing focus
+    Then the first grid cell is ""
+    When I press the database redo shortcut without changing focus
+    Then the first grid cell is "123"
+
   Scenario: Database row insertion supports undo and redo
     Given a grid database is ready for cell undo redo
     When I add a new database row for undo redo

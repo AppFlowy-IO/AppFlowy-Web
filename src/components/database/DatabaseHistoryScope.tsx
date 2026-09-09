@@ -27,7 +27,6 @@ export function DatabaseHistoryScope({
 }) {
   const { readOnly } = useDatabaseContext();
   const scopeRef = useRef<HTMLDivElement | null>(null);
-  const pointerOwnershipRef = useRef<boolean | null>(null);
   const { activateHistoryScope, clearHistoryScope, historyScopeId } = useDatabaseHistoryScope({ enabled: !readOnly });
   const contextValue = useMemo(() => ({ activateHistoryScope, historyScopeId }), [activateHistoryScope, historyScopeId]);
 
@@ -42,20 +41,16 @@ export function DatabaseHistoryScope({
           // React events from portals still follow the component tree. Reclaim
           // ownership after the native document listener sees the portaled DOM
           // node as outside this scope.
-          pointerOwnershipRef.current = true;
           activateHistoryScope();
-          queueMicrotask(() => {
-            pointerOwnershipRef.current = null;
-          });
         }}
         onFocusCapture={activateHistoryScope}
         onBlurCapture={(event) => {
           const nextTarget = event.relatedTarget;
 
-          // pointerdown precedes blur. When an in-scope pointer targets a
-          // non-focusable card/surface, blur reports body/null; keep the pointer
-          // ownership selected above instead of immediately clearing it.
-          if (pointerOwnershipRef.current === true) return;
+          // A non-focusable pointer target leaves relatedTarget null. The
+          // document pointer listener already selected the owning scope (or
+          // cleared it for an outside click); preserve that decision on blur.
+          if (!nextTarget) return;
 
           if (!scopeRef.current || !(nextTarget instanceof Node) || !scopeRef.current.contains(nextTarget)) {
             clearHistoryScope();
