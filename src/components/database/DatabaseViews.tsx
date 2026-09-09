@@ -15,6 +15,7 @@ import {
 } from '@/components/database/components/conditions/context';
 import { DatabaseSearchProvider } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { DatabaseTabs } from '@/components/database/components/tabs';
+import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
 import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
@@ -25,7 +26,6 @@ import {
   shouldUseFixedDatabaseViewport,
 } from '@/components/database/layout';
 import { ListGroupingProvider } from '@/components/database/list/ListGroupingContext';
-import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { cn } from '@/lib/utils';
 import {
@@ -352,11 +352,7 @@ function DatabaseViews({
       case DatabaseViewLayout.Chart:
         return <Chart />;
       case DatabaseViewLayout.Form:
-        return (
-          <DatabaseHistoryScope className='flex h-full min-h-0 w-full flex-1 flex-col'>
-            <FormBuilderView key={activeViewId} />
-          </DatabaseHistoryScope>
-        );
+        return <FormBuilderView key={activeViewId} />;
       case DatabaseViewLayout.List:
         return <List />;
       case DatabaseViewLayout.Gallery:
@@ -480,14 +476,24 @@ function DatabaseViews({
     </DatabaseSearchProvider>
   );
 
+  let groupedContent = content;
+
   switch (effectiveLayout) {
     case DatabaseViewLayout.Grid:
-      return <GridGroupingProvider>{content}</GridGroupingProvider>;
+      groupedContent = <GridGroupingProvider>{content}</GridGroupingProvider>;
+      break;
     case DatabaseViewLayout.List:
-      return <ListGroupingProvider>{content}</ListGroupingProvider>;
-    default:
-      return content;
+      groupedContent = <ListGroupingProvider>{content}</ListGroupingProvider>;
+      break;
   }
+
+  return (
+    <DatabaseHistoryScope
+      className={cn('flex w-full flex-col', shouldUseFixedViewport ? 'min-h-0 flex-1' : 'overflow-visible')}
+    >
+      {groupedContent}
+    </DatabaseHistoryScope>
+  );
 }
 
 export default DatabaseViews;

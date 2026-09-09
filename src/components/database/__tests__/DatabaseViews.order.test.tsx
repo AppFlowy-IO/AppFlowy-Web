@@ -585,7 +585,9 @@ describe('DatabaseViews order', () => {
 
     const formBuilder = await screen.findByTestId('form-builder-layout');
 
-    expect(formBuilder.parentElement).toBe(screen.getByTestId('database-history-scope'));
+    expect(formBuilder.closest('[data-testid="database-history-scope"]')).toBe(
+      screen.getByTestId('database-history-scope')
+    );
     expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual(['form']);
     doc.destroy();
   });

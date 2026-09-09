@@ -33,6 +33,15 @@ Feature: Database row undo redo
     When I trigger database row redo
     Then the second grid cell is "222"
 
+  Scenario: Grid cell undo survives clicking the empty grid background
+    Given a grid database is ready for cell undo redo
+    When I edit the first grid cell to "123" without committing
+    And I click the empty grid background
+    And I press the database undo shortcut without changing focus
+    Then the first grid cell is ""
+    When I press the database redo shortcut without changing focus
+    Then the first grid cell is "123"
+
   Scenario: Database row insertion supports undo and redo
     Given a grid database is ready for cell undo redo
     When I add a new database row for undo redo
@@ -108,6 +117,23 @@ Feature: Database row undo redo
     Then the database has 0 filters
     When I trigger database row redo
     Then the database has 1 filter with content "Alpha"
+
+  Scenario Outline: Database history hotkeys work in non-grid layouts
+    Given a seeded grid database is ready for complex undo redo
+    And the undo redo database uses the "<layout>" layout
+    When I create a text filter containing "Alpha" for undo redo
+    Then the database has 1 filter with content "Alpha"
+    When I trigger database layout undo
+    Then the database has 0 filters
+    When I trigger database layout redo
+    Then the database has 1 filter with content "Alpha"
+
+    Examples:
+      | layout   |
+      | Board    |
+      | List     |
+      | Gallery  |
+      | Calendar |
 
   Scenario: Database filter update supports undo and redo
     Given a seeded grid database is ready for complex undo redo

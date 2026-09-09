@@ -7,6 +7,7 @@ import { DatabaseContext } from '@/application/database-yjs';
 import type { DatabaseContextState, GridGrouping } from '@/application/database-yjs';
 import type { YDoc } from '@/application/types';
 import { useIsDatabaseHistoryScopeActive } from '@/components/database/databaseHistoryScopeCoordinator';
+import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { GridProvider } from '@/components/database/grid/GridProvider';
 import {
   createGridInteractionStore,
@@ -242,10 +243,7 @@ describe('GridProvider interaction isolation', () => {
 
       return (
         <>
-          <button
-            onClick={() => setActiveCell({ fieldId: 'status', rowId: 'row-a', rowKey: 'row-a' })}
-            type='button'
-          >
+          <button onClick={() => setActiveCell({ fieldId: 'status', rowId: 'row-a', rowKey: 'row-a' })} type='button'>
             Activate cell
           </button>
           <button
@@ -330,6 +328,28 @@ describe('GridProvider interaction isolation', () => {
     );
     expect(screen.getByText('Grid A').closest('[data-database-history-scope]')).toBe(scopeElements[0]);
     expect(screen.getByText('Grid B').closest('[data-database-history-scope]')).toBe(scopeElements[1]);
+  });
+
+  it('reuses the surrounding database history scope', () => {
+    function HistoryScopeProbe() {
+      return <output data-testid='grid-history-scope-id'>{useGridHistoryScopeId()}</output>;
+    }
+
+    const { container } = render(
+      <DatabaseContext.Provider value={createContextValue()}>
+        <DatabaseHistoryScope>
+          <GridProvider grouping={grouping}>
+            <HistoryScopeProbe />
+          </GridProvider>
+        </DatabaseHistoryScope>
+      </DatabaseContext.Provider>
+    );
+    const scopeElements = container.querySelectorAll('[data-database-history-scope]');
+
+    expect(scopeElements).toHaveLength(1);
+    expect(screen.getByTestId('grid-history-scope-id').textContent).toBe(
+      scopeElements[0].getAttribute('data-database-history-scope')
+    );
   });
 
   it('keeps history ownership exclusive when focus moves or a grid restores it', () => {
