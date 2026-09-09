@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useToggleRowReactionDispatch } from '@/application/database-yjs';
@@ -33,26 +33,46 @@ const EmojiPicker = lazy(() =>
  * is allowed and a more menu (duplicate / delete) when the database is
  * editable. Both stay visible while their popovers are open.
  */
-export function FeedCardActions({
-  editable,
-  onOpenChange,
-  rowId,
-}: {
+interface FeedCardActionsProps {
   editable: boolean;
   onOpenChange?: (open: boolean) => void;
   rowId: string;
-}) {
-  const { t } = useTranslation();
+}
+
+export function FeedCardActions(props: FeedCardActionsProps) {
   const { canComment, currentUid } = useFeedMembers();
+  const canReact = canComment && currentUid !== null;
+
+  if (!canReact && !props.editable) return null;
+
+  // Permission changes remove controls without Radix emitting onOpenChange.
+  // Reset their local state and release the card's click guard on unmount.
+  return (
+    <FeedCardActionControls
+      key={`${props.editable}:${canReact}`}
+      {...props}
+      canReact={canReact}
+      currentUid={currentUid}
+    />
+  );
+}
+
+function FeedCardActionControls({
+  editable,
+  onOpenChange,
+  rowId,
+  canReact,
+  currentUid,
+}: FeedCardActionsProps & { canReact: boolean; currentUid: string | null }) {
+  const { t } = useTranslation();
   const duplicateRow = useDuplicateRowDispatch();
   const toggleReaction = useToggleRowReactionDispatch(rowId);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const canReact = canComment && currentUid !== null;
   const forceVisible = emojiOpen || menuOpen;
 
-  if (!canReact && !editable) return null;
+  useEffect(() => () => onOpenChange?.(false), [onOpenChange]);
 
   const setEmoji = (open: boolean) => {
     setEmojiOpen(open);
@@ -101,7 +121,7 @@ export function FeedCardActions({
               <Suspense fallback={null}>
                 <EmojiPicker
                   onEmojiSelect={(emoji) => {
-                    if (canReact) toggleReaction(emoji, currentUid);
+                    if (canReact && currentUid !== null) toggleReaction(emoji, currentUid);
                     setEmoji(false);
                   }}
                 />

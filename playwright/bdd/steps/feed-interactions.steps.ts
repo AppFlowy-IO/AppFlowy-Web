@@ -338,7 +338,12 @@ function discussionParent(page: Page, rowId: string, content: string) {
   });
 }
 
-When('the user drafts replies under two different parent comments', async ({ page }) => {
+const firstReplyDraft = [
+  'Reply for first parent',
+  ...Array.from({ length: 9 }, (_, index) => `More feedback on line ${index + 2}`),
+].join('\n');
+
+When('the user drafts multiline replies, switches threads, and resizes the window', async ({ page }) => {
   const state = scenario(page);
   const discussion = page.getByTestId(`feed-discussion-${state.rowId}`);
   const root = discussion.getByTestId('row-comment-root-composer');
@@ -350,12 +355,26 @@ When('the user drafts replies under two different parent comments', async ({ pag
   const second = discussionParent(page, state.rowId, 'Second parent');
 
   await first.locator('button[data-testid^="row-comment-reply-"]').click();
-  await first.getByTestId('row-comment-input').fill('Reply for first parent');
+  const firstInput = first.getByTestId('row-comment-input');
+  const expectScrollableDraft = async () => {
+    await expect.poll(() => firstInput.evaluate((element) => {
+      const style = window.getComputedStyle(element);
+
+      return element.clientHeight >= Number.parseFloat(style.lineHeight) * 5 &&
+        element.scrollHeight > element.clientHeight && style.overflowY === 'auto';
+    })).toBe(true);
+  };
+
+  await firstInput.fill(firstReplyDraft);
+  await expectScrollableDraft();
   await second.locator('button[data-testid^="row-comment-reply-"]').click();
   await second.getByTestId('row-comment-input').fill('Reply for second parent');
+  await expect(firstInput).toBeHidden();
+  await page.setViewportSize({ width: 1200, height: 900 });
   await first.locator('button[data-testid^="row-comment-reply-"]').click();
-  await expect(first.getByTestId('row-comment-input')).toBeFocused();
-  await expect(first.getByTestId('row-comment-input')).toHaveValue('Reply for first parent');
+  await expect(firstInput).toBeFocused();
+  await expect(firstInput).toHaveValue(firstReplyDraft);
+  await expectScrollableDraft();
   await expect(second.getByTestId('row-comment-input')).toBeHidden();
   await first.getByTestId('row-comment-send-button').click();
   await second.locator('button[data-testid^="row-comment-reply-"]').click();
@@ -372,7 +391,7 @@ Then('each reply is sent to its original parent and both parents can be resolved
   // Replies render directly after their parent, so this order also catches a
   // draft accidentally submitted under the last-selected thread.
   await expect(discussion.getByTestId('row-comment-content')).toHaveText([
-    'Feedback requested', 'Reply for first parent', 'Second parent', 'Reply for second parent',
+    'Feedback requested', firstReplyDraft, 'Second parent', 'Reply for second parent',
   ]);
   await first.hover();
   await first.getByTestId('row-comment-more-button').click();

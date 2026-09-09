@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -13,6 +13,7 @@ import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { cn } from '@/lib/utils';
 
 import { DraftMention, serializeCommentMentions, updateDraftMentions } from './comment-mentions';
+import { CommentDraftContext } from './CommentDraftContext';
 
 interface CommentComposerProps {
   onSubmit: (content: string, attachments: CommentAttachment[]) => string | undefined;
@@ -39,6 +40,8 @@ export function CommentComposer({
 }: CommentComposerProps) {
   const { t } = useTranslation();
   const { uploadFile } = useDatabaseContext();
+  const composerId = useId();
+  const notifyDraft = useContext(CommentDraftContext);
   const [content, setContent] = useState('');
   const [focused, setFocused] = useState(initiallyExpanded);
   const [attachments, setAttachments] = useState<CommentAttachment[]>([]);
@@ -54,6 +57,7 @@ export function CommentComposer({
   const uploadingRef = useRef(false);
   const collapsed = !focused && !content && attachments.length === 0 && !uploading;
   const canSend = !uploading && (content.trim().length > 0 || attachments.length > 0);
+  const hasDraft = content.length > 0 || attachments.length > 0 || uploading;
   const suggestions = mentionQuery
     ? members
         .filter(
@@ -74,6 +78,10 @@ export function CommentComposer({
     onActiveChange?.(!collapsed);
     return () => onActiveChange?.(false);
   }, [collapsed, onActiveChange]);
+  useLayoutEffect(() => {
+    notifyDraft?.(composerId, hasDraft);
+    return () => notifyDraft?.(composerId, false);
+  }, [composerId, hasDraft, notifyDraft]);
   useEffect(() => {
     if (active && initiallyExpanded) setFocused(true);
   }, [active, initiallyExpanded]);

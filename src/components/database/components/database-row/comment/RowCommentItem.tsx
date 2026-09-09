@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { RowComment } from '@/application/row-comment.type';
@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 
 import AddCommentInput from './AddCommentInput';
+import { CommentDraftContext } from './CommentDraftContext';
 import DeleteCommentConfirm from './DeleteCommentConfirm';
 import MemberAvatar, { getMemberDisplayName } from './MemberAvatar';
 import { RowCommentAttachments } from './RowCommentAttachments';
@@ -97,6 +98,14 @@ function RowCommentItem({
   const actionsForceVisible = menuOpen || emojiOpen;
 
   const isEditing = editingCommentId === comment.id;
+  const editDraftId = useId();
+  const notifyDraft = useContext(CommentDraftContext);
+  const hasEditDraft = isEditing && editContent !== comment.content;
+
+  useLayoutEffect(() => {
+    notifyDraft?.(editDraftId, hasEditDraft);
+    return () => notifyDraft?.(editDraftId, false);
+  }, [editDraftId, hasEditDraft, notifyDraft]);
 
   // Sync editContent when the underlying comment changes (e.g., external collaborative edit)
   useEffect(() => {

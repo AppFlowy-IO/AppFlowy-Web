@@ -170,6 +170,10 @@ const EditorEditable = () => {
   );
 
   useEffect(() => {
+    // Previews can share the host editor's scroll container. Atlaskit keeps one
+    // registration per element, so preview cleanup would remove the host's.
+    if (previewId) return;
+
     try {
       const editorDom = ReactEditor.toDOMNode(editor, editor);
       const scrollContainer = getScrollParent(editorDom);
@@ -182,7 +186,7 @@ const EditorEditable = () => {
     } catch (e) {
       console.error('Error initializing auto-scroll:', e);
     }
-  }, [editor]);
+  }, [editor, previewId]);
 
   return (
     <PanelProvider editor={editor}>

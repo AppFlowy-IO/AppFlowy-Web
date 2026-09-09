@@ -4,18 +4,15 @@ import { useTranslation } from 'react-i18next';
 
 import {
   Column,
-  FieldType,
   useCellSelector,
-  useDatabase,
   useDatabaseContext,
   useReadOnly,
   useRowDataSelector,
   useRowMetaSelector,
 } from '@/application/database-yjs';
-import { decodeCellToText } from '@/application/database-yjs/decode';
 import { YDatabaseRow, YjsDatabaseKey } from '@/application/types';
 import { canonicalizeUserUid } from '@/application/user-uid';
-import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
+import { CommentDraftContext } from '@/components/database/components/database-row/comment/CommentDraftContext';
 import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
 import { cn } from '@/lib/utils';
 
@@ -143,6 +140,8 @@ function FeedCreatorInfo({ attribution, rowId }: { attribution: FeedRowAttributi
 
 export interface FeedCardProps {
   fields?: Column[];
+  hidden?: boolean;
+  onDraftChange?: (rowId: string, hasDraft: boolean) => void;
   primaryFieldId: string;
   rowId: string;
 }
@@ -152,20 +151,31 @@ export interface FeedCardProps {
  * reactions and comments. Clicking the card opens the row detail page unless
  * the click landed on an interactive control.
  */
-export const FeedCard = memo(function FeedCard({ fields, primaryFieldId, rowId }: FeedCardProps) {
+export const FeedCard = memo(function FeedCard({
+  fields,
+  hidden = false,
+  onDraftChange,
+  primaryFieldId,
+  rowId,
+}: FeedCardProps) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const { bindRowSync, navigateToRow } = useDatabaseContext();
-  const database = useDatabase();
-  const { row } = useRowDataSelector(rowId);
-  const [resolvedSearchText, setResolvedSearchText] = useState<Record<string, string>>({});
   const { resolveMember } = useFeedMembers();
   const meta = useRowMetaSelector(rowId);
   const cell = useCellSelector({ fieldId: primaryFieldId, rowId });
   const attribution = useFeedRowAttribution(rowId);
-  const { query } = useDatabaseSearch();
   const previewId = useEditorPreviewId();
   const cardRef = useRef<HTMLElement>(null);
+  const draftIds = useRef(new Set<string>());
+  const handleDraftChange = useCallback(
+    (id: string, hasDraft: boolean) => {
+      if (hasDraft) draftIds.current.add(id);
+      else draftIds.current.delete(id);
+      onDraftChange?.(rowId, draftIds.current.size > 0);
+    },
+    [onDraftChange, rowId]
+  );
   // Only read inside the click handler, so a menu opening must not re-render the card.
   const actionsOpenRef = useRef(false);
   const handleActionsOpenChange = useCallback((open: boolean) => {
@@ -177,43 +187,11 @@ export const FeedCard = memo(function FeedCard({ fields, primaryFieldId, rowId }
   }, [bindRowSync, rowId]);
 
   const title = typeof cell?.data === 'string' ? cell.data.trim() : '';
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const handleSearchTextChange = useCallback((fieldId: string, text: string) => {
-    setResolvedSearchText((current) => (current[fieldId] === text ? current : { ...current, [fieldId]: text }));
-  }, []);
-  // Desktop indexes the title and visible properties. Person/relation labels
-  // resolve asynchronously in their shared cells; raw IDs are not search text.
-  const searchableText = normalizedQuery
-    ? [
-        title,
-        ...(fields ?? [])
-          .filter((field) => field.fieldId !== primaryFieldId)
-          .map((field) => {
-            if (field.fieldType === FieldType.Person || field.fieldType === FieldType.Relation) {
-              return resolvedSearchText[field.fieldId] ?? '';
-            }
-
-            const yField = database?.get(YjsDatabaseKey.fields)?.get(field.fieldId);
-            const yCell = row?.get(YjsDatabaseKey.cells)?.get(field.fieldId);
-
-            if (!yField || !yCell) return '';
-
-            try {
-              return decodeCellToText(yCell, yField);
-            } catch {
-              return '';
-            }
-          }),
-      ]
-        .join(' ')
-        .toLocaleLowerCase()
-    : '';
-  const matchesSearch = !normalizedQuery || searchableText.includes(normalizedQuery);
   const hasCreator = Boolean(resolveMember(attribution.createdBy));
   const hasDocument = meta?.isEmptyDocument === false && Boolean(meta.documentId);
   // Linked databases still render inside a preview, but their Feed cards must
   // not load another row document (which can link straight back to this Feed).
-  const showPreview = usePreviewNearViewport(cardRef, !previewId && matchesSearch && hasDocument);
+  const showPreview = usePreviewNearViewport(cardRef, !previewId && !hidden && hasDocument);
 
   const openRow = useCallback(() => {
     navigateToRow?.(rowId);
@@ -238,7 +216,7 @@ export const FeedCard = memo(function FeedCard({ fields, primaryFieldId, rowId }
       )}
       data-row-id={rowId}
       data-testid={`feed-card-${rowId}`}
-      hidden={!matchesSearch}
+      hidden={hidden}
       onClick={handleClick}
       ref={cardRef}
       style={feedCardStyle}
@@ -254,7 +232,7 @@ export const FeedCard = memo(function FeedCard({ fields, primaryFieldId, rowId }
         type='button'
       />
 
-      {meta?.cover ? <FeedCardCover cover={meta.cover} rowId={rowId} /> : null}
+      {!hidden && meta?.cover ? <FeedCardCover cover={meta.cover} rowId={rowId} /> : null}
 
       <div className='p-4'>
         {hasCreator ? <FeedCreatorInfo attribution={attribution} rowId={rowId} /> : null}
@@ -274,19 +252,14 @@ export const FeedCard = memo(function FeedCard({ fields, primaryFieldId, rowId }
             </h3>
           </div>
 
-          {fields ? (
-            <FeedCardProperties
-              fields={fields}
-              onSearchTextChange={normalizedQuery ? handleSearchTextChange : undefined}
-              primaryFieldId={primaryFieldId}
-              rowId={rowId}
-            />
-          ) : null}
+          {fields ? <FeedCardProperties fields={fields} primaryFieldId={primaryFieldId} rowId={rowId} /> : null}
 
           {showPreview && meta ? <FeedDocumentPreview documentId={meta.documentId} rowId={rowId} /> : null}
 
           <FeedRowReactions rowId={rowId} />
-          <FeedCommentSection rowId={rowId} />
+          <CommentDraftContext.Provider value={handleDraftChange}>
+            <FeedCommentSection rowId={rowId} />
+          </CommentDraftContext.Provider>
         </div>
       </div>
 

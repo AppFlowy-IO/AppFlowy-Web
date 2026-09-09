@@ -29,7 +29,7 @@ Feature: Feed property visibility and discussions
     When a first comment arrives while the original tab holds an unsent draft
     Then the draft survives and both tabs receive further discussion updates
 
-  Scenario: Switching reply threads retains drafts and each thread can be resolved
+  Scenario: Switching reply threads retains multiline drafts after resize and each thread can be resolved
     Given a Feed card with an existing discussion
-    When the user drafts replies under two different parent comments
+    When the user drafts multiline replies, switches threads, and resizes the window
     Then each reply is sent to its original parent and both parents can be resolved independently

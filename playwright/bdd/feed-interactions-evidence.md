@@ -159,3 +159,21 @@ The Web follow-up passed six focused unit suites (37 tests), type checking,
 changed-source lint, and the new visible-property search BDD scenario. The
 relation lifecycle suite also passed after replacing strong document references
 in its search cache with weak identity tokens.
+
+## September 9 React review regressions
+
+Feed search now matches row data before mounting cards and applies pagination
+to matching results. Cards with unsent text, attachments, or pending uploads
+remain mounted while hidden. Candidate row subscriptions use the existing
+database sync lifecycle with limited concurrent setup, so remote edits can
+make an offscreen row match. Created by and Last edited by search reads row
+metadata and resolves member names.
+
+- `feed-search-lifecycle.feature` covers off-page results, bounded card mounts,
+  draft retention, and a remote edit reaching a previously unmounted result.
+- `feed-attribution-search.feature` covers both attribution fields, hidden-field
+  exclusion, and metadata changes while a query remains active.
+- The switching-thread scenario in `feed-interactions.feature` now resizes the
+  browser while a multiline reply is hidden and checks its size when reopened.
+- Focused component tests exercise real Radix menus across permission changes
+  and real Atlaskit auto-scroll registration across preview mount/unmount.

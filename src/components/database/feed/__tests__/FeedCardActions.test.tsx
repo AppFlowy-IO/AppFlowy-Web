@@ -6,7 +6,7 @@ import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch';
 import { FeedCardActions } from '../FeedCardActions';
 import { useFeedMembers } from '../FeedMembersContext';
 
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 jest.mock('@/application/database-yjs', () => ({ useToggleRowReactionDispatch: jest.fn() }));
 jest.mock('@/application/database-yjs/dispatch', () => ({ useDuplicateRowDispatch: jest.fn() }));
@@ -21,29 +21,6 @@ jest.mock('@/components/_shared/emoji-picker', () => ({
   EmojiPicker: ({ onEmojiSelect }: { onEmojiSelect: (emoji: string) => void }) => (
     <button data-testid='emoji-picker' onClick={() => onEmojiSelect('🎉')} type='button' />
   ),
-}));
-jest.mock('@/components/ui/button', () => ({
-  Button: ({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
-}));
-jest.mock('@/components/ui/dropdown-menu', () => ({
-  DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuContent: ({ children, ...props }: { children: ReactNode }) => <div {...props}>{children}</div>,
-  DropdownMenuGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({
-    children,
-    onSelect,
-    ...props
-  }: ButtonHTMLAttributes<HTMLButtonElement> & { onSelect?: () => void }) => (
-    <button {...props} onClick={onSelect}>
-      {children}
-    </button>
-  ),
-  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
-jest.mock('@/components/ui/popover', () => ({
-  Popover: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  PopoverContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  PopoverTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 jest.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -60,6 +37,15 @@ const mockUseFeedMembers = useFeedMembers as jest.MockedFunction<typeof useFeedM
 describe('FeedCardActions', () => {
   const duplicateRow = jest.fn();
   const toggleReaction = jest.fn();
+
+  beforeAll(() => {
+    global.ResizeObserver = class {
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = jest.fn();
+    };
+    Element.prototype.scrollIntoView = jest.fn();
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -94,34 +80,71 @@ describe('FeedCardActions', () => {
     expect(screen.getByTestId('feed-card-reaction-button-row-1')).toBeTruthy();
     expect(screen.queryByTestId('feed-card-more-row-1')).toBeNull();
 
+    fireEvent.click(screen.getByTestId('feed-card-reaction-button-row-1'));
     fireEvent.click(await screen.findByTestId('emoji-picker'));
     await waitFor(() => expect(toggleReaction).toHaveBeenCalledWith('🎉', '42'));
   });
 
-  it('duplicates and deletes from the more menu', () => {
+  it('duplicates and deletes from the more menu', async () => {
     render(<FeedCardActions editable rowId='row-1' />);
 
-    fireEvent.click(screen.getByTestId('feed-row-duplicate'));
+    fireEvent.keyDown(screen.getByTestId('feed-card-more-row-1'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByTestId('feed-row-duplicate'));
     expect(duplicateRow).toHaveBeenCalledWith('row-1');
 
     expect(screen.queryByTestId('delete-row-confirm')).toBeNull();
-    fireEvent.click(screen.getByTestId('feed-row-delete'));
+    fireEvent.keyDown(screen.getByTestId('feed-card-more-row-1'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByTestId('feed-row-delete'));
     expect(screen.getByTestId('delete-row-confirm').textContent).toBe('row-1');
   });
 
-  it('reports popover state so the card can ignore clicks while a menu is open', () => {
+  it('releases the card click guard when the menu closes or unmounts', async () => {
     const onOpenChange = jest.fn();
+    const { unmount } = render(<FeedCardActions editable onOpenChange={onOpenChange} rowId='row-1' />);
 
-    mockUseFeedMembers.mockReturnValue({
-      resolveMember: () => undefined,
-      currentUser: undefined,
-      currentUid: null,
-      currentCommentAuthorId: '',
-      canComment: false,
-    });
-    render(<FeedCardActions editable onOpenChange={onOpenChange} rowId='row-1' />);
+    fireEvent.keyDown(screen.getByTestId('feed-card-more-row-1'), { key: 'ArrowDown' });
+    const menu = await screen.findByTestId('feed-row-action-menu');
 
-    expect(screen.queryByTestId('feed-card-reaction-button-row-1')).toBeNull();
-    expect(screen.getByTestId('feed-card-more-row-1')).toBeTruthy();
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    await waitFor(() => expect(onOpenChange).toHaveBeenLastCalledWith(false));
+    fireEvent.keyDown(screen.getByTestId('feed-card-more-row-1'), { key: 'ArrowDown' });
+    await screen.findByTestId('feed-row-action-menu');
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    unmount();
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it.each([true, false])('releases the card when edit access is revoked (canComment=%s)', async (canComment) => {
+    mockUseFeedMembers.mockReturnValue({ ...mockUseFeedMembers(), canComment });
+    const onOpenChange = jest.fn();
+    const { rerender } = render(<FeedCardActions editable onOpenChange={onOpenChange} rowId='row-1' />);
+
+    fireEvent.keyDown(screen.getByTestId('feed-card-more-row-1'), { key: 'ArrowDown' });
+    await screen.findByTestId('feed-row-action-menu');
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    rerender(<FeedCardActions editable={false} onOpenChange={onOpenChange} rowId='row-1' />);
+    expect(screen.queryByTestId('feed-row-action-menu')).toBeNull();
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+
+    rerender(<FeedCardActions editable onOpenChange={onOpenChange} rowId='row-1' />);
+    expect(screen.queryByTestId('feed-row-action-menu')).toBeNull();
+  });
+
+  it('closes the reaction picker and releases the card when commenting is revoked', async () => {
+    const onOpenChange = jest.fn();
+    const { rerender } = render(<FeedCardActions editable onOpenChange={onOpenChange} rowId='row-1' />);
+
+    fireEvent.click(screen.getByTestId('feed-card-reaction-button-row-1'));
+    await screen.findByTestId('emoji-picker');
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    mockUseFeedMembers.mockReturnValue({ ...mockUseFeedMembers(), canComment: false });
+    rerender(<FeedCardActions editable onOpenChange={onOpenChange} rowId='row-1' />);
+    expect(screen.queryByTestId('emoji-picker')).toBeNull();
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+
+    mockUseFeedMembers.mockReturnValue({ ...mockUseFeedMembers(), canComment: true });
+    rerender(<FeedCardActions editable onOpenChange={onOpenChange} rowId='row-1' />);
+    expect(screen.queryByTestId('emoji-picker')).toBeNull();
   });
 });

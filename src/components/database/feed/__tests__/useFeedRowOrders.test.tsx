@@ -5,7 +5,7 @@ import { useRowMap, useRowOrdersSelector, useSortsSelector } from '@/application
 import { useBackgroundRowDocLoader } from '@/application/database-yjs/hooks/useBackgroundRowDocLoader';
 import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
-import { readRowCreatedAt, useFeedRowOrders } from '../useFeedRowOrders';
+import { readRowCreatedAt, useFeedRowData, useFeedRowOrders } from '../useFeedRowOrders';
 
 jest.mock('@/application/database-yjs', () => ({
   useRowMap: jest.fn(),
@@ -20,9 +20,7 @@ jest.mock('@/application/database-yjs/hooks/useBackgroundRowDocLoader', () => ({
 const mockUseRowMap = useRowMap as jest.MockedFunction<typeof useRowMap>;
 const mockUseRowOrdersSelector = useRowOrdersSelector as jest.MockedFunction<typeof useRowOrdersSelector>;
 const mockUseSortsSelector = useSortsSelector as jest.MockedFunction<typeof useSortsSelector>;
-const mockUseBackgroundRowDocLoader = useBackgroundRowDocLoader as jest.MockedFunction<
-  typeof useBackgroundRowDocLoader
->;
+const mockUseBackgroundRowDocLoader = useBackgroundRowDocLoader as jest.MockedFunction<typeof useBackgroundRowDocLoader>;
 
 function createRowDoc(createdAt?: string): YDoc {
   const doc = new Y.Doc() as unknown as YDoc;
@@ -43,9 +41,7 @@ describe('useFeedRowOrders', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseSortsSelector.mockReturnValue([]);
-    mockUseBackgroundRowDocLoader.mockReturnValue({ cachedRowDocs: {} } as ReturnType<
-      typeof useBackgroundRowDocLoader
-    >);
+    mockUseBackgroundRowDocLoader.mockReturnValue({ cachedRowDocs: {} } as ReturnType<typeof useBackgroundRowDocLoader>);
   });
 
   it('returns newest-first order from row created_at when the view has no sorts', () => {
@@ -79,6 +75,23 @@ describe('useFeedRowOrders', () => {
 
     expect(result.current).toBe(rows);
     expect(mockUseBackgroundRowDocLoader).toHaveBeenCalledWith(false, 'feed');
+  });
+
+  it('uses a populated cache over an empty live shell and keeps sorted search hydration enabled', () => {
+    mockUseRowOrdersSelector.mockReturnValue(rows);
+    mockUseRowMap.mockReturnValue({ a: createRowDoc('100'), b: new Y.Doc() as YDoc });
+    mockUseBackgroundRowDocLoader.mockReturnValue({ cachedRowDocs: { b: createRowDoc('300') } } as ReturnType<
+      typeof useBackgroundRowDocLoader
+    >);
+    const first = renderHook(() => useFeedRowOrders());
+
+    expect(first.result.current?.map(({ id }) => id)).toEqual(['b', 'a', 'c']);
+    first.unmount();
+    mockUseSortsSelector.mockReturnValue([{ id: 'sort', fieldId: 'field' }]);
+    const second = renderHook(() => useFeedRowData(true));
+
+    expect(second.result.current.rowOrders).toBe(rows);
+    expect(mockUseBackgroundRowDocLoader).toHaveBeenLastCalledWith(true, 'feed');
   });
 
   it('passes through the loading state', () => {

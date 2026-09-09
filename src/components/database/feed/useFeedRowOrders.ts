@@ -21,16 +21,26 @@ export function readRowCreatedAt(rowDoc: YDoc | undefined): number | undefined {
  * orders rows newest-first by creation time in memory; that needs every row
  * doc, so the shared background loader hydrates them while the sort is absent.
  */
-export function useFeedRowOrders(): Row[] | undefined {
+export function useFeedRowData(searchActive = false) {
   const rowOrders = useRowOrdersSelector();
   const sorts = useSortsSelector();
   const rowMap = useRowMap();
   const hasSorts = sorts.length > 0;
-  const { cachedRowDocs } = useBackgroundRowDocLoader(!hasSorts && rowOrders !== undefined, 'feed');
+  const { cachedRowDocs } = useBackgroundRowDocLoader((!hasSorts || searchActive) && rowOrders !== undefined, 'feed');
 
-  return useMemo(() => {
+  const orderedRows = useMemo(() => {
     if (!rowOrders || hasSorts) return rowOrders;
 
-    return sortFeedRowsByCreatedAt(rowOrders, (rowId) => readRowCreatedAt(rowMap?.[rowId] ?? cachedRowDocs[rowId]));
+    return sortFeedRowsByCreatedAt(rowOrders, (rowId) => {
+      const liveDoc = rowMap?.[rowId];
+
+      return readRowCreatedAt(hasRowConditionData(liveDoc) ? liveDoc : cachedRowDocs[rowId] ?? liveDoc);
+    });
   }, [cachedRowDocs, hasSorts, rowMap, rowOrders]);
+
+  return { rowOrders: orderedRows, cachedRowDocs };
+}
+
+export function useFeedRowOrders(): Row[] | undefined {
+  return useFeedRowData().rowOrders;
 }
