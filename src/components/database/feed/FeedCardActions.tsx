@@ -175,9 +175,10 @@ function FeedCardActionControls({
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
-      </div>
 
-      {deleteOpen ? <DeleteRowConfirm onClose={() => setDeleteOpen(false)} open rowIds={[rowId]} /> : null}
+        {/* Dialog portals bubble through React ancestors, so keep confirmation clicks inside this boundary. */}
+        {deleteOpen ? <DeleteRowConfirm onClose={() => setDeleteOpen(false)} open rowIds={[rowId]} /> : null}
+      </div>
     </>
   );
 }

@@ -162,7 +162,13 @@ function FeedAddCommentInput({ rowId, hasComments }: { rowId: string; hasComment
 }
 
 /** Keep discussion and composing available without leaving the feed. */
-export const FeedCommentSection = memo(function FeedCommentSection({ rowId }: { rowId: string }) {
+export const FeedCommentSection = memo(function FeedCommentSection({
+  rowId,
+  visible = true,
+}: {
+  rowId: string;
+  visible?: boolean;
+}) {
   const { t } = useTranslation();
   const { count, latest } = useFeedRowComments(rowId);
   const { canComment, currentCommentAuthorId } = useFeedMembers();
@@ -170,6 +176,13 @@ export const FeedCommentSection = memo(function FeedCommentSection({ rowId }: { 
   const [hasOpenedDiscussion, setHasOpenedDiscussion] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
   const panelId = useId();
+  const discussionOpen = visible && expanded;
+
+  useEffect(() => {
+    // A search can hide this card while retaining its unsent drafts. Close the
+    // portal until the user explicitly opens it again when the card returns.
+    if (!visible) setExpanded(false);
+  }, [visible]);
 
   if (!latest && !hasOpenedDiscussion && (!canComment || !currentCommentAuthorId)) return null;
 
@@ -178,7 +191,7 @@ export const FeedCommentSection = memo(function FeedCommentSection({ rowId }: { 
       {latest || hasOpenedDiscussion ? (
         <FeedCommentSummary
           count={count}
-          expanded={expanded}
+          expanded={discussionOpen}
           latest={latest}
           onToggle={(event) => {
             setAnchorEl(event.currentTarget);
@@ -193,11 +206,11 @@ export const FeedCommentSection = memo(function FeedCommentSection({ rowId }: { 
       {/* Keep drafts and pending uploads alive when the popover is dismissed. */}
       {hasOpenedDiscussion ? (
         <Popover
-          open={expanded}
+          open={discussionOpen}
           anchorEl={anchorEl}
           onClose={() => setExpanded(false)}
           keepMounted
-          disableRestoreFocus={false}
+          disableRestoreFocus={!visible}
           disableEnforceFocus
           disableEscapeKeyDown
           anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
@@ -238,7 +251,7 @@ export const FeedCommentSection = memo(function FeedCommentSection({ rowId }: { 
 
       {/* This position stays stable when a first local or remote comment arrives. */}
       {canComment && currentCommentAuthorId ? (
-        <FeedAddCommentInput rowId={rowId} hasComments={Boolean(latest) || expanded} />
+        <FeedAddCommentInput rowId={rowId} hasComments={Boolean(latest) || discussionOpen} />
       ) : null}
     </div>
   );

@@ -126,8 +126,12 @@ export function createFeedSearchIndex() {
       const doc = await ensureRow(rowId);
 
       if (!doc || candidates.get(rowId) !== entry || entry.revision !== revision) return;
+      const currentDoc = entry.doc ?? entry.inputDoc;
+
       setDocument(entry, doc);
-      schedule();
+      // Input documents are already observed. Completing their sync registration
+      // without replacing them must not rebuild the entire index for every batch.
+      if (doc !== currentDoc) schedule();
     });
   };
 

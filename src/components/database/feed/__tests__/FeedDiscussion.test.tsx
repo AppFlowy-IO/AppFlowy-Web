@@ -53,31 +53,85 @@ function setup({ readOnly = false, canComment, anonymous = false }: {
     databasePageId: 'database',
     uploadFile,
   } as unknown as DatabaseContextState;
-  const content = (
+  const content = (visible: boolean) => (
     <DatabaseContext.Provider value={context}>
       <FeedMembersProvider>
-        <div onClick={onNavigate}>
-          <FeedCommentSection rowId='row' />
+        <div data-testid='feed-card' hidden={!visible} onClick={onNavigate}>
+          <FeedCommentSection rowId='row' visible={visible} />
         </div>
       </FeedMembersProvider>
     </DatabaseContext.Provider>
   );
 
-  render(anonymous ? content : (
+  const renderContent = (visible: boolean) => anonymous ? content(visible) : (
     <AFConfigContext.Provider value={{
       currentUser: { uuid: 'me', uid: '42', name: 'Me' } as User,
       isAuthenticated: true,
       updateCurrentUser: async () => undefined,
       openLoginModal: () => undefined,
     }}>
-      {content}
+      {content(visible)}
     </AFConfigContext.Provider>
-  ));
+  );
+  const { rerender } = render(renderContent(true));
 
-  return { rowDoc, parentId, onNavigate, uploadFile };
+  return { rowDoc, parentId, onNavigate, uploadFile, setVisible: (visible: boolean) => rerender(renderContent(visible)) };
 }
 
 describe('in-feed discussions', () => {
+  it('dismisses nested comment action portals when their retained card is hidden', async () => {
+    const { setVisible } = setup();
+
+    fireEvent.click(screen.getByTestId('feed-comment-summary-row'));
+    fireEvent.click(await screen.findByTestId('row-comment-emoji-button'));
+    expect(screen.getAllByRole('dialog')).toHaveLength(2);
+    setVisible(false);
+    await waitFor(() => expect(screen.queryAllByRole('dialog')).toHaveLength(0));
+    setVisible(true);
+    fireEvent.click(screen.getByTestId('feed-comment-summary-row'));
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  });
+
+  it('closes a hidden retained card discussion and restores its draft and upload only when reopened', async () => {
+    const { rowDoc, parentId, uploadFile, setVisible } = setup();
+    let finishUpload!: (url: string) => void;
+
+    uploadFile.mockImplementation(() => new Promise((resolve) => { finishUpload = resolve; }));
+    fireEvent.click(screen.getByTestId('feed-comment-summary-row'));
+    fireEvent.click(await screen.findByTestId(`row-comment-reply-${parentId}`));
+    const input = screen.getByTestId<HTMLTextAreaElement>('row-comment-input');
+
+    fireEvent.change(input, { target: { value: 'Keep the remote-filtered draft' } });
+    fireEvent.change(screen.getByTestId('row-comment-attachment-input'), {
+      target: { files: [new File(['attachment'], 'draft.txt', { type: 'text/plain' })] },
+    });
+    setVisible(false);
+    expect(isInaccessible(screen.getByTestId('feed-card'))).toBe(true);
+    await waitFor(() => expect(isInaccessible(screen.getByTestId('feed-discussion-row'))).toBe(true));
+    expect(screen.getByTestId('row-comment-input')).toBe(input);
+    expect(input.value).toBe('Keep the remote-filtered draft');
+
+    await act(async () => finishUpload('https://example.com/draft.txt'));
+    setVisible(true);
+    const summary = screen.getByTestId('feed-comment-summary-row');
+
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
+    expect(isInaccessible(screen.getByTestId('feed-discussion-row'))).toBe(true);
+    fireEvent.click(summary);
+    expect(isInaccessible(input)).toBe(false);
+    expect(screen.getByTestId('row-comment-input')).toBe(input);
+    expect(input.value).toBe('Keep the remote-filtered draft');
+    expect(screen.getByTestId('comment-pending-attachment').textContent).toContain('draft.txt');
+    fireEvent.click(screen.getByTestId('row-comment-send-button'));
+    expect(getRowComments(rowDoc)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        parentCommentId: parentId,
+        content: 'Keep the remote-filtered draft',
+        attachments: [expect.objectContaining({ name: 'draft.txt' })],
+      }),
+    ]));
+  });
+
   it('opens existing comments, streams replies and keeps a composer available without navigating', async () => {
     const { rowDoc, parentId, onNavigate } = setup();
     const summary = screen.getByTestId('feed-comment-summary-row');

@@ -6,6 +6,7 @@ import * as Y from 'yjs';
 import { APP_EVENTS } from '@/application/constants';
 import { createField, createFieldWithTypeOption, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
 import { FieldType } from '@/application/database-yjs/database.type';
+import * as decode from '@/application/database-yjs/decode';
 import { MentionablePerson, YDatabase, YDatabaseFields, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 import { createFeedSearchIndex, FeedSearchData } from '../feed-search';
@@ -82,6 +83,46 @@ it('uses hydrated cached values until the live shell hydrates, without reconfigu
   Y.applyUpdate(live, Y.encodeStateAsUpdate(hydrated));
   await waitFor(() => expect(index.getSnapshot().get('row')).toBe('live'));
   index.dispose();
+});
+
+it('indexes hydrated candidates once while unchanged sync registrations complete, and still observes edits', async () => {
+  const { database } = databaseFixture();
+  const rows = Object.fromEntries(
+    Array.from({ length: 1000 }, (_, i) => [
+      String(i),
+      createRowDoc(String(i), 'database', { title: { fieldType: FieldType.RichText, data: 'Cached title' } }),
+    ])
+  );
+  const ensureRow = jest.fn(async (rowId: string) => rows[rowId]);
+  const decodeCell = jest.spyOn(decode, 'decodeCellToText');
+  const index = createFeedSearchIndex();
+  const input: FeedSearchData = { database, rows, fieldIds: ['title'], users: [], ensureRow };
+
+  try {
+    // Clearing and restarting a search must not reindex every row for each
+    // batch of registrations that returns the documents already being observed.
+    for (let session = 0; session < 2; session++) {
+      ensureRow.mockClear();
+      decodeCell.mockClear();
+      index.configure(input);
+      await waitFor(() => expect(ensureRow).toHaveBeenCalledTimes(1000));
+      await Promise.all(ensureRow.mock.results.map(({ value }) => value));
+      expect(index.getSnapshot().size).toBe(1000);
+      expect(decodeCell).toHaveBeenCalledTimes(1000);
+      if (session === 0) index.dispose();
+    }
+
+    rows['0']
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database_row)!
+      .get(YjsDatabaseKey.cells)
+      .get('title')!
+      .set(YjsDatabaseKey.data, 'Changed remotely');
+    await waitFor(() => expect(index.getSnapshot().get('0')).toBe('changed remotely'));
+  } finally {
+    index.dispose();
+    decodeCell.mockRestore();
+  }
 });
 
 it('deduplicates relation targets and observes hydration, deletion, access loss and document reset', async () => {

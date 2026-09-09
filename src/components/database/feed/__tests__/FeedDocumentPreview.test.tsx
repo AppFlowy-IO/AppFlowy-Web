@@ -1,17 +1,28 @@
 import EventEmitter from 'events';
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabaseContextOptional } from '@/application/database-yjs';
+import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import { CollabOrigin, Types, YDoc, YDocWithMeta, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { useSyncInternalOptional } from '@/components/app/contexts/SyncInternalContext';
+import { useBindViewSync } from '@/components/database/hooks/useBindViewSync';
+import { rebuildCollabDoc } from '@/components/ws/sync/rebuildCollabDoc';
+import { useSyncRefs } from '@/components/ws/sync/syncRefs';
+import { useSyncContextLifecycle } from '@/components/ws/sync/useSyncContextLifecycle';
 
 import { createMirroredPreviewDoc, FEED_PREVIEW_MIRROR_ORIGIN, FeedDocumentPreview } from '../FeedDocumentPreview';
 
 jest.mock('@/application/database-yjs', () => ({ useDatabaseContextOptional: jest.fn() }));
 jest.mock('@/components/app/contexts/SyncInternalContext', () => ({ useSyncInternalOptional: jest.fn() }));
+jest.mock('@/application/sync-outbox', () => ({
+  deleteOutboxByObjectId: jest.fn().mockResolvedValue(undefined),
+  enqueueOutboxUpdate: jest.fn().mockResolvedValue(true),
+  shouldRouteUpdateThroughOutbox: jest.fn(() => false),
+  waitForDrain: jest.fn().mockResolvedValue(true),
+}));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 const renderedDocs: YDoc[] = [];
 
@@ -356,6 +367,121 @@ describe('FeedDocumentPreview', () => {
     await screen.findByTestId('mock-editor');
     expect(registerSyncContext).not.toHaveBeenCalled();
   });
+});
+
+describe('Feed preview reset ownership', () => {
+  let documents: YDoc[];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+    documents = [];
+    renderedDocs.length = 0;
+  });
+
+  afterEach(() => {
+    cleanup();
+    documents.forEach((doc) => doc.destroy());
+    jest.useRealTimers();
+  });
+
+  it.each([false, true])(
+    'keeps row-detail edits syncing after repeated resets (detail initially bound: %s)',
+    async (initiallyBound) => {
+      const documentId = 'ba9d7062-d74b-458e-a3a4-cab8a9e39074';
+      const source = createDocumentDoc(documentId) as YDocWithMeta;
+
+      documents.push(source);
+      source.object_id = documentId;
+      source.view_id = documentId;
+      source._collabType = Types.Document;
+      source._syncBound = false;
+      const noop = () => undefined;
+      const { result: sync } = renderHook(() => {
+        const refs = useSyncRefs();
+
+        return { refs, ...useSyncContextLifecycle(refs, noop, noop) };
+      });
+      const eventEmitter = new EventEmitter();
+
+      mockUseSyncInternalOptional.mockReturnValue({
+        ...sync.current,
+        eventEmitter,
+      } as unknown as ReturnType<typeof useSyncInternalOptional>);
+      mockUseDatabaseContextOptional.mockReturnValue({
+        loadRowDocument: jest.fn().mockResolvedValue(source),
+        workspaceId: 'workspace',
+      } as unknown as ReturnType<typeof useDatabaseContextOptional>);
+      const detail = renderHook(() => useBindViewSync());
+
+      if (initiallyBound) {
+        act(() => {
+          detail.result.current(source);
+        });
+      }
+
+      const preview = render(<FeedDocumentPreview documentId={documentId} rowId='row-id' />);
+
+      await screen.findByTestId('mock-editor');
+      const ownerCount = initiallyBound ? 2 : 1;
+
+      expect(sync.current.refs.contextRefCounts.current.get(documentId)).toBe(ownerCount);
+      let currentDoc = source;
+
+      for (let reset = 0; reset < 2; reset++) {
+        const replacement = createDocumentDoc(documentId) as YDocWithMeta;
+        const context = sync.current.refs.registeredContexts.current.get(documentId)!;
+
+        documents.push(replacement);
+        await act(async () => {
+          currentDoc.destroy();
+          await rebuildCollabDoc({
+            previousDoc: currentDoc,
+            context,
+            eventEmitter,
+            registerSyncContext: sync.current.registerSyncContext,
+            scheduleDeferredCleanup: sync.current.scheduleDeferredCleanup,
+            openDoc: async () => replacement,
+            ownerCount,
+            hadPendingDeferredCleanup: false,
+          });
+        });
+        currentDoc = replacement;
+        if (initiallyBound) {
+          act(() => {
+            detail.result.current(currentDoc);
+          });
+        }
+
+        expect(sync.current.refs.contextRefCounts.current.get(documentId)).toBe(ownerCount);
+      }
+
+      if (!initiallyBound) {
+        act(() => {
+          detail.result.current(currentDoc);
+        });
+      }
+
+      // Opening the row full page removes its Feed preview. The row editor
+      // must retain sync after the preview's deferred cleanup would expire.
+      preview.unmount();
+      act(() => {
+        jest.advanceTimersByTime(10_001);
+      });
+      expect(sync.current.refs.registeredContexts.current.has(documentId)).toBe(true);
+      expect(sync.current.refs.contextRefCounts.current.get(documentId)).toBe(1);
+
+      jest.mocked(enqueueOutboxUpdate).mockClear();
+      act(() => {
+        currentDoc.transact(
+          () => currentDoc.getMap(YjsEditorKey.data_section).set('text', 'Edited in the full-page row'),
+          CollabOrigin.Local
+        );
+      });
+      expect(enqueueOutboxUpdate).toHaveBeenCalledTimes(1);
+      expect(enqueueOutboxUpdate).toHaveBeenCalledWith(expect.objectContaining({ objectId: documentId }));
+    }
+  );
 });
 
 describe('createMirroredPreviewDoc', () => {

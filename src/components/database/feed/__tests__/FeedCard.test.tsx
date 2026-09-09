@@ -38,7 +38,9 @@ jest.mock('../FeedCardCover', () => ({
   FeedCardCover: ({ rowId }: { rowId: string }) => <div data-testid={`mock-cover-${rowId}`} />,
 }));
 jest.mock('../FeedCommentSection', () => ({
-  FeedCommentSection: ({ rowId }: { rowId: string }) => <div data-testid={`mock-comments-${rowId}`} />,
+  FeedCommentSection: ({ rowId, visible }: { rowId: string; visible: boolean }) => (
+    <div data-testid={`mock-comments-${rowId}`} data-visible={String(visible)} />
+  ),
 }));
 jest.mock('../FeedDocumentPreview', () => ({
   FeedDocumentPreview: ({ documentId, rowId }: { documentId: string; rowId: string }) => (
@@ -208,8 +210,13 @@ describe('FeedCard', () => {
 
       expect(screen.queryByTestId('mock-preview-row-1')).toBeNull();
       expect(observers).toHaveLength(0);
+      const comments = screen.getByTestId('mock-comments-row-1');
+
+      expect(comments.getAttribute('data-visible')).toBe('false');
 
       rerender(renderCard(false));
+      expect(screen.getByTestId('mock-comments-row-1')).toBe(comments);
+      expect(comments.getAttribute('data-visible')).toBe('true');
       expect(observers[0].observe).toHaveBeenCalledWith(screen.getByTestId('feed-card-row-1'));
       expect(screen.queryByTestId('mock-preview-row-1')).toBeNull();
 
@@ -225,6 +232,8 @@ describe('FeedCard', () => {
       expect(screen.getByTestId('mock-preview-row-1')).toBeTruthy();
 
       rerender(renderCard(true));
+      expect(screen.getByTestId('mock-comments-row-1')).toBe(comments);
+      expect(comments.getAttribute('data-visible')).toBe('false');
       expect(screen.queryByTestId('mock-preview-row-1')).toBeNull();
       expect(observers[0].disconnect).toHaveBeenCalled();
       intersect(true);

@@ -258,7 +258,7 @@ export const FeedCard = memo(function FeedCard({
 
           <FeedRowReactions rowId={rowId} />
           <CommentDraftContext.Provider value={handleDraftChange}>
-            <FeedCommentSection rowId={rowId} />
+            <FeedCommentSection rowId={rowId} visible={!hidden} />
           </CommentDraftContext.Provider>
         </div>
       </div>
