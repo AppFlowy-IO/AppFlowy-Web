@@ -461,13 +461,14 @@ describe('Database blob prefetch lifecycle', () => {
     }
   });
 
-  it('retains remote reconciliation when a visible ensure joins a seed-only load', async () => {
+  it('binds sync and retains reconciliation when concurrent ensures join a seed-only load', async () => {
     jest.useFakeTimers();
     const doc = createDatabaseDoc('database-id');
     const seededRowDoc = createHydratedRowDoc('remote-row-id');
+    const canonicalRowDoc = createHydratedRowDoc('remote-row-id');
     const seedLoad = createDeferred<YDoc>();
     const seed = { bytes: new Uint8Array([1, 2, 3]), encoderVersion: 1 };
-    const createRow = jest.fn(async () => seededRowDoc);
+    const createRow = jest.fn(async () => canonicalRowDoc);
 
     mockedPeekSeed.mockImplementation((rowKey) => (rowKey === 'database-id_rows_remote-row-id' ? seed : undefined));
     mockedOpenRowDoc.mockImplementation((rowKey) => {
@@ -489,18 +490,17 @@ describe('Database blob prefetch lifecycle', () => {
 
       const seedRequest = requestRemoteSeedLoad();
       const firstEnsure = requestRemoteRowEnsure();
+      const secondEnsure = requestRemoteRowEnsure();
+      let results: Array<YDoc | undefined> = [];
 
       await act(async () => {
         seedLoad.resolve(seededRowDoc);
-        await Promise.all([seedRequest, firstEnsure]);
-      });
-      expect(createRow).not.toHaveBeenCalled();
-
-      await act(async () => {
-        await requestRemoteRowEnsure();
+        results = await Promise.all([seedRequest, firstEnsure, secondEnsure]);
       });
       expect(createRow).toHaveBeenCalledTimes(1);
       expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id');
+      expect(results).toEqual([seededRowDoc, canonicalRowDoc, canonicalRowDoc]);
+      expect(mockDatabaseContext?.rowMap?.['remote-row-id']).toBe(canonicalRowDoc);
 
       await act(async () => {
         await jest.advanceTimersByTimeAsync(1_000);
@@ -511,6 +511,7 @@ describe('Database blob prefetch lifecycle', () => {
       unmount();
       doc.destroy();
       seededRowDoc.destroy();
+      canonicalRowDoc.destroy();
       jest.useRealTimers();
     }
   });

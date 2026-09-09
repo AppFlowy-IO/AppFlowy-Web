@@ -1,6 +1,10 @@
 import { expect, type ElementHandle, type Page, test } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
+import type { DatabaseContextState } from '../../../src/application/database-yjs/context';
+import { SortCondition } from '../../../src/application/database-yjs/database.type';
+import { YjsDatabaseKey, YjsEditorKey } from '../../../src/application/types';
+import { FEED_LOAD_MORE_INCREMENT } from '../../../src/components/database/feed/feed.constants';
 import {
   addFeedView,
   activeDatabaseViewId,
@@ -9,7 +13,8 @@ import {
   seedPrimaryTitlesDirect,
 } from '../../support/feed-test-helpers';
 import { appendRowToCurrentDatabaseDirect, setPrimaryCellTextDirect } from '../../support/relation-test-helpers';
-import { setupPageErrorHandling } from '../../support/filter-test-helpers';
+import { getPrimaryFieldId, setupPageErrorHandling } from '../../support/filter-test-helpers';
+import { setSortsDirect } from '../../support/gallery-test-helpers';
 import { DatabaseFeedSelectors, RowDetailSelectors } from '../../support/selectors';
 
 const { Given, When, Then } = createBdd();
@@ -21,6 +26,7 @@ const scenarios = new WeakMap<Page, {
   matchRowId: string;
   rowIds: string[];
   feedId: string;
+  primaryFieldId: string;
   remotePage?: Page;
   remoteFeedRoot?: ElementHandle<HTMLElement | SVGElement>;
 }>();
@@ -32,8 +38,28 @@ function scenario(page: Page) {
   return state;
 }
 
+async function readPrimaryTitle(page: Page, rowId: string) {
+  return page.evaluate(({ rowId, keys, editorKeys }) => {
+    const context = (window as unknown as { __TEST_DATABASE_CONTEXT__?: DatabaseContextState }).__TEST_DATABASE_CONTEXT__;
+    const fields = context?.databaseDoc.getMap(editorKeys.data_section).get(editorKeys.database)?.get(keys.fields);
+    const primaryId = [...fields?.keys() ?? []].find((id) => fields?.get(id)?.get(keys.is_primary));
+    const row = context?.rowMap?.[rowId]?.getMap(editorKeys.data_section).get(editorKeys.database_row);
+
+    return primaryId ? row?.get(keys.cells)?.get(primaryId)?.get(keys.data) ?? null : null;
+  }, { rowId, keys: YjsDatabaseKey, editorKeys: YjsEditorKey });
+}
+
+async function flushLocalEdits(page: Page) {
+  await page.evaluate(async () => {
+    const flush = (window as unknown as { __TEST_FLUSH_ALL_SYNC__?: () => Promise<boolean> }).__TEST_FLUSH_ALL_SYNC__;
+
+    if (!flush || !(await flush())) throw new Error('Could not flush the Feed edits to sync');
+  });
+}
+
 Given('a Feed with thirty-five rows and a match outside the first page', async ({ page }) => {
   test.setTimeout(180_000);
+  const primaryFieldId = await getPrimaryFieldId(page);
   const initialRows = await getActiveRowIds(page);
 
   for (let index = initialRows.length; index < 35; index++) {
@@ -49,7 +75,7 @@ Given('a Feed with thirty-five rows and a match outside the first page', async (
 
   if (!matchRowId) throw new Error('Expected a row outside the initial Feed page');
   await setPrimaryCellTextDirect(page, matchRowId, MATCH_TITLE);
-  scenarios.set(page, { draftRowId: mountedIds[0], matchRowId, rowIds, feedId });
+  scenarios.set(page, { draftRowId: mountedIds[0], matchRowId, rowIds, feedId, primaryFieldId });
 });
 
 When('the user drafts a comment and searches for a missing value', async ({ page }) => {
@@ -85,12 +111,11 @@ Then('only that result is added and clearing search restores the draft', async (
 Given('a fresh second tab searches for a value that no row contains', async ({ page }) => {
   const state = scenario(page);
 
+  // This scenario tests search transport, so use a persisted sort to keep the
+  // initial twenty cards stable while the receiver hydrates row timestamps.
+  await setSortsDirect(page, [{ fieldId: state.primaryFieldId, condition: SortCondition.Ascending }]);
   // Finish fixture writes before the second tab takes its initial snapshot.
-  await page.evaluate(async () => {
-    const flush = (window as unknown as { __TEST_FLUSH_ALL_SYNC__?: () => Promise<boolean> }).__TEST_FLUSH_ALL_SYNC__;
-
-    if (!flush || !(await flush())) throw new Error('Could not flush the Feed fixture to sync');
-  });
+  await flushLocalEdits(page);
   const remote = await page.context().newPage();
 
   state.remotePage = remote;
@@ -113,6 +138,13 @@ Given('a fresh second tab searches for a value that no row contains', async ({ p
   await expect.poll(() => activeDatabaseViewId(remote)).toBe(state.feedId);
   await expect.poll(() => getActiveRowIds(remote)).toHaveLength(35);
   await expect(DatabaseFeedSelectors.cards(remote)).toHaveCount(20);
+  state.remoteFeedRoot = (await DatabaseFeedSelectors.feed(remote).elementHandle()) ?? undefined;
+  await remote.getByTestId('database-actions-search').click();
+  await remote.getByTestId('database-actions-search-input').fill(LIVE_MATCH_TITLE);
+  await expect(DatabaseFeedSelectors.cards(remote)).toHaveCount(0);
+
+  // Creation-time hydration can reorder the initial page. Pick only after the
+  // no-results query is committed, when those transient mounts are recorded.
   const previouslyMounted = await remote.evaluate(() =>
     [...(window as unknown as { __FEED_SEARCH_MOUNTED_ROWS__: Set<string> }).__FEED_SEARCH_MOUNTED_ROWS__]
   );
@@ -120,21 +152,18 @@ Given('a fresh second tab searches for a value that no row contains', async ({ p
 
   if (!target) throw new Error('Expected a never-mounted row in the fresh Feed tab');
   state.matchRowId = target;
-  state.remoteFeedRoot = (await DatabaseFeedSelectors.feed(remote).elementHandle()) ?? undefined;
-  await remote.getByTestId('database-actions-search').click();
-  await remote.getByTestId('database-actions-search-input').fill(LIVE_MATCH_TITLE);
-  await expect(DatabaseFeedSelectors.cards(remote)).toHaveCount(0);
 });
 
 When('the original tab renames a never-mounted row to match that search', async ({ page }) => {
-  const { matchRowId, remotePage: remote } = scenario(page);
+  const { matchRowId, remotePage: remote, rowIds } = scenario(page);
 
   if (!remote) throw new Error('The fresh search tab was not opened');
   expect(await remote.evaluate((id) =>
     (window as unknown as { __FEED_SEARCH_MOUNTED_ROWS__: Set<string> }).__FEED_SEARCH_MOUNTED_ROWS__.has(id), matchRowId
   )).toBe(false);
   await page.bringToFront();
-  if (await DatabaseFeedSelectors.cardByRowId(page, matchRowId).count() === 0) {
+  for (let attempt = 0; attempt < Math.ceil(rowIds.length / FEED_LOAD_MORE_INCREMENT); attempt++) {
+    if (await DatabaseFeedSelectors.cardByRowId(page, matchRowId).count() > 0) break;
     await DatabaseFeedSelectors.loadMoreButton(page).click();
   }
   await DatabaseFeedSelectors.titleByRowId(page, matchRowId).click();
@@ -142,6 +171,8 @@ When('the original tab renames a never-mounted row to match that search', async 
   await RowDetailSelectors.titleInput(page).fill(LIVE_MATCH_TITLE);
   await RowDetailSelectors.titleInput(page).press('Tab');
   await expect(RowDetailSelectors.titleInput(page)).toHaveValue(LIVE_MATCH_TITLE);
+  await expect.poll(() => readPrimaryTitle(page, matchRowId), { message: 'The title edit must reach the source row collab' }).toBe(LIVE_MATCH_TITLE);
+  await flushLocalEdits(page);
 });
 
 Then('the second tab shows the live result without remounting its Feed', async ({ page }) => {
@@ -149,6 +180,7 @@ Then('the second tab shows the live result without remounting its Feed', async (
 
   if (!remote || !remoteFeedRoot) throw new Error('The fresh search tab was not initialized');
   await remote.bringToFront();
+  await expect.poll(() => readPrimaryTitle(remote, matchRowId), { message: 'The searched row collab must receive the remote title edit' }).toBe(LIVE_MATCH_TITLE);
   await expect(DatabaseFeedSelectors.titleByRowId(remote, matchRowId)).toHaveText(LIVE_MATCH_TITLE);
   await expect(DatabaseFeedSelectors.cards(remote)).toHaveCount(1);
   await expect(remote.getByTestId('database-actions-search-input')).toHaveValue(LIVE_MATCH_TITLE);
