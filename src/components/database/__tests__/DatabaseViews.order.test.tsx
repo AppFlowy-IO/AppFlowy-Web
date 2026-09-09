@@ -74,7 +74,7 @@ jest.mock('@/components/database/list/ListGroupingContext', () => ({
       listGroupingProviderRenderCount: (global.__databaseViewsOrderTestState?.listGroupingProviderRenderCount ?? 0) + 1,
     };
 
-    return <>{children}</>;
+    return <div data-testid='list-grouping-provider'>{children}</div>;
   },
 }));
 
@@ -97,6 +97,13 @@ jest.mock('@/components/database/fullcalendar', () => ({
 jest.mock('@/components/database/gallery', () => ({
   __esModule: true,
   default: () => <div data-testid='gallery-layout' />,
+}));
+
+// This suite verifies DatabaseViews composition; loading the real lazy List
+// renderer also loads every cell implementation under coverage.
+jest.mock('@/components/database/list/List', () => ({
+  __esModule: true,
+  default: () => <div data-testid='list-layout' />,
 }));
 
 jest.mock('@/components/database/form/FormBuilderView', () => ({
@@ -482,7 +489,7 @@ describe('DatabaseViews order', () => {
       workspaceId: 'workspace-id',
     };
 
-    render(
+    const rendered = render(
       <DatabaseContext.Provider value={contextValue}>
         <DatabaseViews
           activeViewId='list'
@@ -493,12 +500,18 @@ describe('DatabaseViews order', () => {
       </DatabaseContext.Provider>
     );
 
-    await waitFor(() => {
-      expect(global.__databaseViewsOrderTestState?.listGroupingProviderRenderCount).toBeGreaterThan(0);
-    });
-    expect(global.__databaseViewsOrderTestState?.gridGroupingProviderRenderCount ?? 0).toBe(0);
+    try {
+      const list = await screen.findByTestId('list-layout');
+      const providers = screen.getAllByTestId('list-grouping-provider');
 
-    doc.destroy();
+      expect(providers).toHaveLength(1);
+      expect(providers[0].contains(list)).toBe(true);
+      expect(providers[0].contains(screen.getByTestId('database-tabs-mock'))).toBe(true);
+      expect(global.__databaseViewsOrderTestState?.gridGroupingProviderRenderCount ?? 0).toBe(0);
+    } finally {
+      rendered.unmount();
+      doc.destroy();
+    }
   });
 
   it('switches from the Form tab to the linked Responses Grid', async () => {
