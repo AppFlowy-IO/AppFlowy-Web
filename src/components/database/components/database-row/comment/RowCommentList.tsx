@@ -5,9 +5,16 @@ import AddCommentInput from './AddCommentInput';
 import { RowCommentProvider, useRowCommentData } from './RowCommentContext';
 import RowCommentItem from './RowCommentItem';
 
-const RowCommentListInner = memo(function RowCommentListInner() {
+interface CommentListOptions {
+  includeResolved?: boolean;
+}
+
+const RowCommentListInner = memo(function RowCommentListInner({
+  includeResolved = false,
+}: CommentListOptions) {
   const { t } = useTranslation();
-  const { openComments, loading } = useRowCommentData();
+  const { comments, openComments, loading } = useRowCommentData();
+  const visibleComments = includeResolved ? comments : openComments;
 
   return (
     <div data-testid={'row-comment-section'} className={'flex flex-col gap-3'} aria-live={'polite'}>
@@ -19,25 +26,25 @@ const RowCommentListInner = memo(function RowCommentListInner() {
         <div className={'py-4 text-center text-sm text-text-tertiary'}>...</div>
       ) : (
         <div className={'flex flex-col'}>
-          {openComments.map((comment, index) => (
+          {visibleComments.map((comment, index) => (
             <RowCommentItem
               key={comment.id}
               comment={comment}
               isFirst={index === 0}
-              isLast={false}
+              showResolveAction={includeResolved ? !comment.parentCommentId : index === 0}
             />
           ))}
-          <AddCommentInput showThreadLine={openComments.length > 0} />
+          <AddCommentInput showThreadLine={visibleComments.length > 0} />
         </div>
       )}
     </div>
   );
 });
 
-export function RowCommentList({ rowId }: { rowId: string }) {
+export function RowCommentList({ rowId, ...options }: { rowId: string } & CommentListOptions) {
   return (
     <RowCommentProvider rowId={rowId}>
-      <RowCommentListInner />
+      <RowCommentListInner {...options} />
     </RowCommentProvider>
   );
 }

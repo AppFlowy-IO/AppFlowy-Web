@@ -200,6 +200,7 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
       case ViewLayout.Grid:
       case ViewLayout.List:
       case ViewLayout.Gallery:
+      case ViewLayout.Feed:
         return <GridSkeleton includeTitle={false} />;
       case ViewLayout.Board:
         return <KanbanSkeleton includeTitle={false} />;

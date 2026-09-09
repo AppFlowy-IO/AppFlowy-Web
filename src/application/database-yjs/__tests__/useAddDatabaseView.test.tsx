@@ -604,6 +604,86 @@ describe('useAddDatabaseView', () => {
     expect(deletePage).toHaveBeenCalledWith(returnedViewId);
   });
 
+  it('prevalidates and normalizes the exact Feed child returned by the server', async () => {
+    const databaseId = 'db-1';
+    const baseViewId = 'base-view-id';
+    const feedViewId = 'feed-view-id';
+    const databaseDoc = createDatabaseDoc(databaseId);
+
+    addExistingGridView(databaseDoc, baseViewId);
+    const createDatabaseView = jest.fn().mockResolvedValue({
+      view_id: feedViewId,
+      database_id: databaseId,
+      database_update: createGalleryUpdate(databaseDoc, baseViewId, feedViewId),
+    });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: baseViewId,
+      activeViewId: baseViewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await expect(result.current(DatabaseViewLayout.Feed, 'Feed')).resolves.toBe(feedViewId);
+
+    expect(createDatabaseView).toHaveBeenCalledWith(
+      baseViewId,
+      expect.objectContaining({ layout: ViewLayout.Feed, name: 'Feed' })
+    );
+
+    const views = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)?.get(YjsDatabaseKey.views);
+    const fieldSettings = views?.get(feedViewId)?.get(YjsDatabaseKey.field_settings);
+
+    expect(views?.get(baseViewId)?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Grid);
+    expect(views?.get(feedViewId)?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Feed);
+    expect(fieldSettings?.get('primary-field')?.get(YjsDatabaseKey.visibility)).toBe(FieldVisibility.AlwaysShown);
+  });
+
+  it('rejects an invalid Feed update before it can mutate the live database', async () => {
+    const databaseId = 'db-1';
+    const baseViewId = 'base-view-id';
+    const returnedViewId = 'missing-feed-view-id';
+    const databaseDoc = createDatabaseDoc(databaseId);
+    const deletePage = jest.fn().mockResolvedValue(undefined);
+
+    addExistingGridView(databaseDoc, baseViewId);
+    const createDatabaseView = jest.fn().mockResolvedValue({
+      view_id: returnedViewId,
+      database_id: databaseId,
+      database_update: createUpdateWithoutReturnedView(databaseDoc, baseViewId),
+    });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: baseViewId,
+      activeViewId: baseViewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      deletePage,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await expect(result.current(DatabaseViewLayout.Feed, 'Feed')).rejects.toThrow(
+      'The server did not return the requested Feed database view'
+    );
+
+    const views = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)?.get(YjsDatabaseKey.views);
+
+    expect(views?.get(baseViewId)?.get(YjsDatabaseKey.name)).toBe('Grid');
+    expect(views?.has(returnedViewId)).toBe(false);
+    expect(deletePage).toHaveBeenCalledWith(returnedViewId);
+  });
+
   it('uses the preceding sibling as prev_view_id when inserting before a container child', async () => {
     const databaseId = 'db-1';
     const baseViewId = 'base-view-id';

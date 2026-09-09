@@ -81,7 +81,9 @@ export function PersonCell({
 
   const isEmpty = entries.length === 0;
   const searchText = entries
-    .map((entry) => (entry.kind === 'anonymous' ? 'Anonymous' : entry.user.name || entry.user.email || '?'))
+    .map((entry) =>
+      entry.kind === 'anonymous' ? 'Anonymous' : [entry.user.name, entry.user.email].filter(Boolean).join(' ')
+    )
     .join(' ');
 
   useEffect(() => {

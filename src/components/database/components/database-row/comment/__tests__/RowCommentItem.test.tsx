@@ -1,7 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { useCallback, useState } from 'react';
 
 import { RowComment } from '@/application/row-comment.type';
 
+import { CommentDraftContext } from '../CommentDraftContext';
+import { useRowCommentState } from '../RowCommentContext';
 import RowCommentItem from '../RowCommentItem';
 
 jest.mock('react-i18next', () => ({
@@ -15,13 +18,13 @@ jest.mock('@/components/_shared/emoji-picker', () => ({
 }));
 
 jest.mock('../RowCommentContext', () => ({
-  useRowCommentState: () => ({
+  useRowCommentState: jest.fn(() => ({
     editingCommentId: null,
     replyingCommentId: null,
     currentUserId: 'author-id',
     currentUserUid: 'author-uid',
     members: new Map([['author-id', { name: 'Lucas Xu' }]]),
-  }),
+  })),
   useRowCommentDispatch: () => ({
     setEditingCommentId: jest.fn(),
     updateComment: jest.fn(),
@@ -87,5 +90,37 @@ describe('RowCommentItem', () => {
     expect(mention?.textContent).toBe(`@${mentionName}`);
     expect(content.textContent).toBe(`Message before @${mentionName} message after`);
     expect(content.textContent).not.toContain(`@[${mentionName}](${mentionId})`);
+  });
+
+  it('retains an unsaved comment edit while search hides its card and releases it after cancel', () => {
+    const mockState = useRowCommentState as jest.MockedFunction<typeof useRowCommentState>;
+
+    mockState.mockReturnValue({ ...mockState(), editingCommentId: baseComment.id });
+    const comment = { ...baseComment, content: 'Original comment' };
+
+    function RetainedComment({ visible }: { visible: boolean }) {
+      const [hasDraft, setHasDraft] = useState(false);
+      const notifyDraft = useCallback((_id: string, draft: boolean) => setHasDraft(draft), []);
+
+      return (
+        <CommentDraftContext.Provider value={notifyDraft}>
+          {visible || hasDraft ? <div hidden={!visible}><RowCommentItem comment={comment} /></div> : null}
+        </CommentDraftContext.Provider>
+      );
+    }
+
+    const { rerender } = render(<RetainedComment visible />);
+    const input = screen.getByRole<HTMLTextAreaElement>('textbox');
+
+    fireEvent.change(input, { target: { value: 'Unsaved comment edit' } });
+    rerender(<RetainedComment visible={false} />);
+    expect(screen.getByRole('textbox', { hidden: true })).toBe(input);
+    rerender(<RetainedComment visible />);
+    expect(screen.getByRole('textbox')).toBe(input);
+    expect(input.value).toBe('Unsaved comment edit');
+
+    fireEvent.click(screen.getByTestId('row-comment-edit-cancel'));
+    rerender(<RetainedComment visible={false} />);
+    expect(screen.queryByRole('textbox', { hidden: true })).toBeNull();
   });
 });

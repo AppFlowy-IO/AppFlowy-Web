@@ -1151,7 +1151,19 @@ function Database(props: Database2Props) {
       if (pending) {
         const rowDoc = await pending;
 
-        return finishEnsure(isCurrentEnsure() ? rowDoc : undefined);
+        if (!rowDoc || !isCurrentEnsure()) return;
+
+        // Seed hydration shares this pending map but does not register sync.
+        // Search candidates may call ensureRow only once, so this caller must
+        // acquire the row's sync owner even when it joined a seed-only load.
+        const syncedRowDoc = await registerRowSync(getRowKey(getDatabaseId(), rowId));
+
+        if (!isCurrentEnsure()) return;
+        const canonicalRowDoc = syncedRowDoc ?? rowDoc;
+
+        registerRowDocWithHistory(rowId, canonicalRowDoc);
+        setRowMap((prev) => (prev[rowId] === canonicalRowDoc ? prev : { ...prev, [rowId]: canonicalRowDoc }));
+        return finishEnsure(canonicalRowDoc);
       }
 
       const promise = (async () => {

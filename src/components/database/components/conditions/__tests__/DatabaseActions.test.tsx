@@ -101,6 +101,7 @@ describe('DatabaseActions template support', () => {
     ['chart', DatabaseViewLayout.Chart],
     ['list', DatabaseViewLayout.List],
     ['gallery', DatabaseViewLayout.Gallery],
+    ['feed', DatabaseViewLayout.Feed],
   ])('renders the template New button in the %s layout', (_name, layout) => {
     mockUseDatabaseViewLayout.mockReturnValue(layout);
 
@@ -130,6 +131,35 @@ describe('DatabaseActions template support', () => {
     rerender(<DatabaseActions />);
 
     expect(screen.getByTestId('sorts-button')).toBeTruthy();
+
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Feed);
+    rerender(<DatabaseActions />);
+
+    expect(screen.getByTestId('sorts-button')).toBeTruthy();
+  });
+
+  it('matches the Desktop Feed setting bar: filter, sort, search, settings, and New', () => {
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Feed);
+
+    render(<DatabaseActions />);
+
+    expect(screen.getByTestId('filters-button').getAttribute('data-compact')).toBe('true');
+    expect(screen.getByTestId('sorts-button').getAttribute('data-compact')).toBe('true');
+    expect(screen.getByTestId('database-actions-search')).toBeTruthy();
+    expect(screen.getByTestId('database-actions-settings').closest('[data-database-settings-layout]')?.getAttribute('data-database-settings-layout')).toBe(String(DatabaseViewLayout.Feed));
+    expect(screen.getByTestId('database-template-button')).toBeTruthy();
+  });
+
+  it('keeps only Search in a read-only standalone Feed', () => {
+    mockUseReadOnly.mockReturnValue(true);
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Feed);
+
+    render(<DatabaseActions />);
+
+    expect(screen.queryByTestId('filters-button')).toBeNull();
+    expect(screen.queryByTestId('sorts-button')).toBeNull();
+    expect(screen.queryByTestId('database-template-button')).toBeNull();
+    expect(screen.getByTestId('database-actions-search')).toBeTruthy();
   });
 
   it('matches the editable Gallery action order and accessible labels', () => {

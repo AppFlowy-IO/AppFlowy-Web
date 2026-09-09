@@ -173,6 +173,16 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
           <ViewIcon layout={ViewLayout.Gallery} size={'small'} />
           {t('gallery.menuName')}
         </DropdownMenuItem>
+
+        <DropdownMenuItem
+          data-testid='add-feed-view-button'
+          onClick={() => {
+            void handleAddView(DatabaseViewLayout.Feed, t('feed.menuName'));
+          }}
+        >
+          <ViewIcon layout={ViewLayout.Feed} size={'small'} />
+          {t('feed.menuName')}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

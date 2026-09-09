@@ -62,6 +62,10 @@ describe('view-utils', () => {
       expect(isDatabaseLayout(ViewLayout.Gallery)).toBe(true);
     });
 
+    it('should return true for Feed layout', () => {
+      expect(isDatabaseLayout(ViewLayout.Feed)).toBe(true);
+    });
+
     it('should return true for Form layout', () => {
       expect(isDatabaseLayout(ViewLayout.Form)).toBe(true);
     });
@@ -827,6 +831,7 @@ describe('view-utils', () => {
         ViewLayout.Chart,
         ViewLayout.List,
         ViewLayout.Gallery,
+        ViewLayout.Feed,
         ViewLayout.Form,
       ];
       const parentView = createMockView({

@@ -45,13 +45,17 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         value: DatabaseViewLayout.Gallery,
         label: t('gallery.menuName'),
       },
+      {
+        value: DatabaseViewLayout.Feed,
+        label: t('feed.menuName'),
+      },
     ],
     [t]
   );
 
   return (
     <DropdownMenuSub>
-      <DropdownMenuSubTrigger aria-label={t('grid.settings.layout')}>
+      <DropdownMenuSubTrigger aria-label={t('grid.settings.layout')} data-testid='database-layout-settings-trigger'>
         <LayoutIcon aria-hidden='true' />
         <span>{t('grid.settings.layout')}</span>
         <span className='ml-auto text-xs text-text-tertiary'>
@@ -64,6 +68,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
             <DropdownMenuItem
               key={option.value}
               className={'w-full'}
+              data-testid={`database-layout-option-${option.value}`}
               onSelect={() => {
                 updateLayout(option.value);
               }}

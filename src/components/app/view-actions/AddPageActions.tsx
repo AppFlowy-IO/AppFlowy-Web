@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { FORM_VIEW_CREATION_ENABLED } from '@/application/constants';
+import { createDatabaseFeedPageViaGrid } from '@/application/database-yjs/feed-layout';
 import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gallery-layout';
 import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
 import { View, ViewLayout } from '@/application/types';
@@ -70,6 +71,28 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
                 }
 
                 return createDatabaseGalleryPageViaGrid({
+                  parentViewId: view.view_id,
+                  name,
+                  prevViewId: lastChildViewId,
+                  standalone: true,
+                  addPage,
+                  createDatabaseView,
+                  deletePage,
+                  deleteTrash,
+                  loadViewMeta,
+                  loadView,
+                  bindViewSync,
+                  scheduleDeferredCleanup,
+                  updatePage,
+                });
+              })()
+            : layout === ViewLayout.Feed
+            ? await (() => {
+                if (!bindViewSync || !createDatabaseView || !deletePage || !deleteTrash || !scheduleDeferredCleanup) {
+                  throw new Error('Feed creation is not available right now');
+                }
+
+                return createDatabaseFeedPageViaGrid({
                   parentViewId: view.view_id,
                   name,
                   prevViewId: lastChildViewId,
@@ -231,6 +254,14 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         testId: 'add-gallery-button',
         onSelect: () => {
           void handleAddPage(ViewLayout.Gallery, t('document.plugins.database.newDatabase'));
+        },
+      },
+      {
+        label: t('feed.menuName'),
+        icon: <ViewIcon layout={ViewLayout.Feed} size={'small'} />,
+        testId: 'add-feed-button',
+        onSelect: () => {
+          void handleAddPage(ViewLayout.Feed, t('document.plugins.database.newDatabase'));
         },
       },
       {

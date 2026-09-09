@@ -1,51 +1,13 @@
 import EventEmitter from 'events';
 import { useCallback, useEffect, useState } from 'react';
 
-import { APP_EVENTS } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
 import { LoadView, YDoc, YDocWithMeta } from '@/application/types';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
+import { subscribeCollabDocReset } from '@/components/ws/sync/subscribeCollabDocReset';
 import { CollabDocResetPayload } from '@/components/ws/sync/types';
 import { Log } from '@/utils/log';
-
-type ResetCallback = (payload: CollabDocResetPayload) => void;
-type ResetSubscriptionEntry = {
-  callbacks: Set<ResetCallback>;
-  handler: (payload: CollabDocResetPayload) => void;
-};
-
-const resetSubscriptions = new WeakMap<EventEmitter, ResetSubscriptionEntry>();
-
-function subscribeCollabDocReset(eventEmitter: EventEmitter, callback: ResetCallback) {
-  let entry = resetSubscriptions.get(eventEmitter);
-
-  if (!entry) {
-    entry = {
-      callbacks: new Set(),
-      handler: (payload) => {
-        entry?.callbacks.forEach((cb) => cb(payload));
-      },
-    };
-    resetSubscriptions.set(eventEmitter, entry);
-    eventEmitter.on(APP_EVENTS.COLLAB_DOC_RESET, entry.handler);
-  }
-
-  entry.callbacks.add(callback);
-
-  return () => {
-    const current = resetSubscriptions.get(eventEmitter);
-
-    if (!current) return;
-
-    current.callbacks.delete(callback);
-
-    if (current.callbacks.size === 0) {
-      eventEmitter.off(APP_EVENTS.COLLAB_DOC_RESET, current.handler);
-      resetSubscriptions.delete(eventEmitter);
-    }
-  };
-}
 
 interface UseDocumentLoaderProps {
   viewId: string;

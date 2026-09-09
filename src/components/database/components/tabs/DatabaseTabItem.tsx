@@ -119,6 +119,8 @@ export const DatabaseTabItem = memo(
           return 'List';
         case DatabaseViewLayout.Gallery:
           return 'Gallery';
+        case DatabaseViewLayout.Feed:
+          return 'Feed';
         case DatabaseViewLayout.Form:
           return 'Form builder';
         default:
@@ -144,6 +146,8 @@ export const DatabaseTabItem = memo(
         ? ViewLayout.List
         : databaseLayout === DatabaseViewLayout.Gallery
         ? ViewLayout.Gallery
+        : databaseLayout === DatabaseViewLayout.Feed
+        ? ViewLayout.Feed
         : databaseLayout === DatabaseViewLayout.Form
         ? ViewLayout.Form
         : ViewLayout.Grid;

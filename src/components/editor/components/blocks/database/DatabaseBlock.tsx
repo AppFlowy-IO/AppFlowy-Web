@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { Element, Transforms } from 'slate';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
-import { DatabaseContextState } from '@/application/database-yjs';
 import { getDatabaseLayoutFromBlockType } from '@/application/database-block';
+import { DatabaseContextState } from '@/application/database-yjs';
 import { UIVariant, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { useEmbeddedVisibleViewIds } from '@/components/database/hooks';
 import {

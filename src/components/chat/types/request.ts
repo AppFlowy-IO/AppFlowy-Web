@@ -163,6 +163,7 @@ export enum ViewLayout {
   AIChat = 4,
   List = 6,
   Gallery = 7,
+  Feed = 8,
 }
 
 export interface View {

@@ -6,6 +6,7 @@ import { ReactComponent as ChatSvg } from '@/assets/icons/ai_chat.svg';
 import { ReactComponent as BoardSvg } from '@/assets/icons/board.svg';
 import { ReactComponent as CalendarSvg } from '@/assets/icons/calendar.svg';
 import { ReactComponent as ChartSvg } from '@/assets/icons/chart.svg';
+import { ReactComponent as FeedSvg } from '@/assets/icons/feed.svg';
 import { ReactComponent as GallerySvg } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
 import { ReactComponent as ListSvg } from '@/assets/icons/list.svg';
@@ -156,6 +157,8 @@ function PageIcon({
       return <ListSvg data-testid='list-view-icon' className={className} />;
     case ViewLayout.Gallery:
       return <GallerySvg data-testid='gallery-view-icon' className={className} />;
+    case ViewLayout.Feed:
+      return <FeedSvg data-testid='feed-view-icon' className={className} />;
     case ViewLayout.Form:
       return <FormSvg data-testid='form-view-icon' className={className} />;
     case ViewLayout.Document:

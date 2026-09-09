@@ -186,7 +186,7 @@ async function addDatabaseView(page: Page, block: Locator, layout: 'Board' | 'Ca
 
 async function addRootDatabaseView(
   page: Page,
-  layout: 'Board' | 'Calendar' | 'Chart' | 'Gallery' | 'List'
+  layout: 'Board' | 'Calendar' | 'Chart' | 'Gallery' | 'List' | 'Feed'
 ): Promise<string> {
   const tabs = DatabaseViewSelectors.viewTab(page);
   const previousIds = new Set(
@@ -224,7 +224,7 @@ async function addRootDatabaseView(
 async function switchDatabaseView(page: Page, tabTestId: string): Promise<void> {
   const tab = page.getByTestId(tabTestId);
 
-  await tab.click({ force: true });
+  await tab.click();
   await expect(tab).toHaveAttribute('data-state', 'active', { timeout: 30000 });
 }
 
@@ -703,6 +703,10 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     await expect(DatabaseGallerySelectors.gallery(page)).toBeVisible({ timeout: 30_000 });
 
+    await switchDatabaseView(page, gridTabTestId as string);
+    const feedTabTestId = await addRootDatabaseView(page, 'Feed');
+
+    await expect(page.getByTestId('database-feed')).toBeVisible({ timeout: 30_000 });
     const createdRows: string[] = [];
 
     for (const { indicatorLayout, tabTestId } of [
@@ -712,13 +716,14 @@ test.describe('Database row templates (Desktop parity)', () => {
       { tabTestId: chartTabTestId },
       { indicatorLayout: 'List' as const, tabTestId: listTabTestId },
       { indicatorLayout: 'Gallery' as const, tabTestId: galleryTabTestId },
+      { tabTestId: feedTabTestId },
     ]) {
       createdRows.push(
         await createDefaultTemplateRowFromView(page, gridTabTestId as string, tabTestId, indicatorLayout)
       );
     }
 
-    expect(new Set(createdRows).size).toBe(6);
+    expect(new Set(createdRows).size).toBe(7);
   });
 
   test('default templates preserve icon-only, icon-and-cover, and cover-only row metadata after reload', async ({

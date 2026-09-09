@@ -59,7 +59,10 @@ export async function rebuildCollabDoc(params: RebuildCollabDocParams): Promise<
   nextDoc.object_id = previousDoc.object_id;
   nextDoc.view_id = previousDoc.view_id;
   nextDoc._collabType = previousDoc._collabType;
-  nextDoc._syncBound = true;
+  // A preview can own sync without having acquired the normal view binding.
+  // Preserve that distinction so opening row detail after a preview-only reset
+  // still acquires its own owner before the preview releases its subscription.
+  nextDoc._syncBound = previousDoc._syncBound ?? true;
 
   const newContext = registerSyncContext({
     doc: nextDoc,

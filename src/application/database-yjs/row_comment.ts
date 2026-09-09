@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
 import { RowCommentKey } from '@/application/database-yjs/database.type';
-import { CommentReactions, RowComment } from '@/application/row-comment.type';
+import { CommentAttachment, CommentReactions, RowComment } from '@/application/row-comment.type';
 import { CollabOrigin, YDoc, YjsEditorKey, YSharedRoot } from '@/application/types';
 
 export function getCommentsMap(rowDoc: YDoc): Y.Map<Y.Map<unknown>> | undefined {
@@ -54,9 +54,8 @@ export function parseComment(commentMap: Y.Map<unknown>): RowComment {
     updatedAt: Number(commentMap.get(RowCommentKey.UpdatedAt) ?? 0),
     isResolved: Boolean(commentMap.get(RowCommentKey.IsResolved)),
     resolvedBy: (commentMap.get(RowCommentKey.ResolvedBy) as string) || null,
-    resolvedAt: commentMap.get(RowCommentKey.ResolvedAt) !== null
-      ? Number(commentMap.get(RowCommentKey.ResolvedAt))
-      : null,
+    resolvedAt:
+      commentMap.get(RowCommentKey.ResolvedAt) !== null ? Number(commentMap.get(RowCommentKey.ResolvedAt)) : null,
     reactions,
     attachments,
   };
@@ -80,7 +79,8 @@ export function addComment(
   rowDoc: YDoc,
   content: string,
   authorId: string,
-  parentCommentId?: string
+  parentCommentId?: string,
+  attachments: CommentAttachment[] = []
 ): string {
   const commentsMap = ensureCommentsMap(rowDoc);
   const id = uuidv4();
@@ -99,7 +99,7 @@ export function addComment(
     commentMap.set(RowCommentKey.ResolvedBy, '');
     commentMap.set(RowCommentKey.ResolvedAt, 0);
     commentMap.set(RowCommentKey.Reactions, '{}');
-    commentMap.set(RowCommentKey.Attachments, '[]');
+    commentMap.set(RowCommentKey.Attachments, JSON.stringify(attachments));
 
     commentsMap.set(id, commentMap);
   }, CollabOrigin.Local);
@@ -107,11 +107,7 @@ export function addComment(
   return id;
 }
 
-export function updateCommentContent(
-  rowDoc: YDoc,
-  commentId: string,
-  content: string
-): void {
+export function updateCommentContent(rowDoc: YDoc, commentId: string, content: string): void {
   const commentsMap = getCommentsMap(rowDoc);
 
   if (!commentsMap) return;
@@ -149,12 +145,7 @@ export function deleteComment(rowDoc: YDoc, commentId: string): void {
   }, CollabOrigin.Local);
 }
 
-export function resolveComment(
-  rowDoc: YDoc,
-  commentId: string,
-  isResolved: boolean,
-  resolvedBy?: string
-): void {
+export function resolveComment(rowDoc: YDoc, commentId: string, isResolved: boolean, resolvedBy?: string): void {
   const commentsMap = getCommentsMap(rowDoc);
 
   if (!commentsMap) return;
@@ -165,18 +156,13 @@ export function resolveComment(
 
   rowDoc.transact(() => {
     commentMap.set(RowCommentKey.IsResolved, isResolved);
-    commentMap.set(RowCommentKey.ResolvedBy, isResolved ? (resolvedBy || '') : '');
+    commentMap.set(RowCommentKey.ResolvedBy, isResolved ? resolvedBy || '' : '');
     commentMap.set(RowCommentKey.ResolvedAt, isResolved ? dayjs().unix() : 0);
     commentMap.set(RowCommentKey.UpdatedAt, dayjs().unix());
   }, CollabOrigin.Local);
 }
 
-export function addCommentReaction(
-  rowDoc: YDoc,
-  commentId: string,
-  emoji: string,
-  userId: string
-): void {
+export function addCommentReaction(rowDoc: YDoc, commentId: string, emoji: string, userId: string): void {
   const commentsMap = getCommentsMap(rowDoc);
 
   if (!commentsMap) return;
@@ -208,12 +194,7 @@ export function addCommentReaction(
   }, CollabOrigin.Local);
 }
 
-export function removeCommentReaction(
-  rowDoc: YDoc,
-  commentId: string,
-  emoji: string,
-  userId: string
-): void {
+export function removeCommentReaction(rowDoc: YDoc, commentId: string, emoji: string, userId: string): void {
   const commentsMap = getCommentsMap(rowDoc);
 
   if (!commentsMap) return;

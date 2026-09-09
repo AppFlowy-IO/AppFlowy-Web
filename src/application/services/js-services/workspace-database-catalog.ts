@@ -40,9 +40,7 @@ function getSuccessfulRefresh(userId: string | undefined, workspaceId: string) {
 }
 
 /** Return the current in-memory catalog object without reading disk or network. */
-export function getCachedWorkspaceDatabaseCatalog(
-  workspaceId: string
-): WorkspaceDatabaseWithViews[] | undefined {
+export function getCachedWorkspaceDatabaseCatalog(workspaceId: string): WorkspaceDatabaseWithViews[] | undefined {
   return getSuccessfulRefresh(currentUserId(), workspaceId);
 }
 
@@ -183,11 +181,16 @@ export interface DatabaseContainerCatalogEntry {
   primaryView: WorkspaceDatabaseViewItem;
 }
 
-/** Return exactly one selectable container for each complete database. */
-export function getDatabaseContainerEntries(databases: WorkspaceDatabaseWithViews[]): DatabaseContainerCatalogEntry[] {
+/** Return one selectable entry per database, optionally including legacy standalone views. */
+export function getDatabaseContainerEntries(
+  databases: WorkspaceDatabaseWithViews[],
+  { includeStandalone = false }: { includeStandalone?: boolean } = {}
+): DatabaseContainerCatalogEntry[] {
   return databases.flatMap((database) => {
-    const container = getDatabaseContainerView(database);
     const primaryView = getDatabasePrimaryView(database);
+    const container =
+      getDatabaseContainerView(database) ??
+      (includeStandalone && primaryView && !primaryView.embedded ? primaryView : undefined);
 
     return container && primaryView ? [{ databaseId: database.database_id, container, primaryView }] : [];
   });
@@ -228,8 +231,7 @@ export async function refreshWorkspaceDatabaseCatalog(workspaceId: string): Prom
 
   const request = (async () => {
     const isSessionCurrent = () => isSameSession(requestSessionGeneration, userId);
-    const isCurrent = () =>
-      isSessionCurrent() && (catalogGenerations.get(key) ?? 0) === requestCatalogGeneration;
+    const isCurrent = () => isSessionCurrent() && (catalogGenerations.get(key) ?? 0) === requestCatalogGeneration;
     const useReplacementCatalog = () => {
       // Catalog invalidations within the same signed-in session may join the
       // replacement request. A session transition belongs to a different
