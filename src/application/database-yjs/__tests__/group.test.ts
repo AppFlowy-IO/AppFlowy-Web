@@ -1,5 +1,7 @@
 import * as Y from 'yjs';
 
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, defaultValue: string) => defaultValue,
 }));
@@ -214,6 +216,41 @@ describe('desktop-model lazy conversion grouping', () => {
     expect([...result.keys()]).toEqual([fieldId]);
     expect(result.get(fieldId)?.map((row) => row.id)).toEqual(['row-a']);
   });
+
+  it.each([NumberGroupMode.Legacy, NumberGroupMode.Exact, NumberGroupMode.Range])(
+    'keeps unsupported lazy conversions in No Number in mode %s',
+    (mode) => {
+      const fieldId = 'converted-number';
+      const field = createField(fieldId, FieldType.Number);
+      const inputs = {
+        date: createCell(FieldType.DateTime, '1710000000'),
+        select: createCell(FieldType.SingleSelect, 'option-12'),
+        url: createCell(FieldType.URL, 'https://example.com/42'),
+        legacyDate: createCell(FieldType.Number, '1710000000', FieldType.DateTime),
+        text: createCell(FieldType.RichText, '12.50'),
+        number: createCell(FieldType.Number, '12.5'),
+      };
+      const rows: Row[] = Object.keys(inputs).map((id) => ({ id, height: 36 }));
+      const rowMetas = Object.fromEntries(
+        Object.entries(inputs).map(([id, input]) => [id, createRowDoc(id, databaseId, { [fieldId]: input })])
+      );
+      const emptyRowIds = ['date', 'select', 'url', 'legacyDate'];
+
+      for (const id of emptyRowIds) {
+        const row = rowMetas[id].getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+        expect(parseYDatabaseCellToCell(row.get(YjsDatabaseKey.cells).get(fieldId), field).data).toBe('');
+      }
+
+      const content = JSON.stringify(defaultNumberGroupConfiguration(mode));
+      const result = groupByNumber(rows, rowMetas, field, content);
+
+      expect(result.get(fieldId)?.map(({ id }) => id)).toEqual(emptyRowIds);
+      expect(result.get(getNumberGroupId('12.5', content)!)?.map(({ id }) => id)).toEqual(['text', 'number']);
+      Object.values(rowMetas).forEach((doc) => doc.destroy());
+      field.doc?.destroy();
+    }
+  );
 });
 
 describe('group by field fallback', () => {

@@ -1,5 +1,5 @@
 import { getStoredCellFieldType } from '@/application/database-yjs/cell.field-type';
-import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { isCellDataTransformable, parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { getRowConditionSnapshot, hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { getCell } from '@/application/database-yjs/const';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
@@ -14,7 +14,7 @@ import { checkboxFilterCheck, selectOptionFilterCheck } from '@/application/data
 import { createNumberGroupingPolicy, getNumberGroupLabel } from '@/application/database-yjs/number-grouping';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import type { Row } from '@/application/database-yjs/selector';
-import { RowId, YDatabaseField, YDatabaseFilter, YDoc, YjsDatabaseKey } from '@/application/types';
+import { RowId, YDatabaseCell, YDatabaseField, YDatabaseFilter, YDoc, YjsDatabaseKey } from '@/application/types';
 import { canonicalizeUserUid } from '@/application/user-uid';
 
 export const DATABASE_GROUPABLE_FIELD_TYPES: readonly FieldType[] = [
@@ -277,6 +277,16 @@ export function getNumberGroupId(value: unknown, groupContent?: string): string 
   return createNumberGroupingPolicy(groupContent).groupIdForCell(value);
 }
 
+export function getNumberGroupingCellData(cell?: YDatabaseCell) {
+  if (!cell) return undefined;
+
+  const storedType = getStoredCellFieldType(cell, FieldType.Number);
+
+  // Field switches preserve the original payload. Honor the renderer's
+  // conversion eligibility while keeping Percent/Currency values unformatted.
+  return isCellDataTransformable(storedType, FieldType.Number) ? cell.get(YjsDatabaseKey.data) : undefined;
+}
+
 export function groupByNumber(rows: Row[], rowMetas: Record<RowId, YDoc>, field: YDatabaseField, groupContent?: string) {
   const fieldId = field.get(YjsDatabaseKey.id);
   const policy = createNumberGroupingPolicy(groupContent);
@@ -286,9 +296,7 @@ export function groupByNumber(rows: Row[], rowMetas: Record<RowId, YDoc>, field:
   rows.forEach((row) => {
     if (!hasRowConditionData(rowMetas[row.id])) return;
 
-    // Formatting a Percent or Currency cell changes its apparent numeric value.
-    // Desktop groups its raw stored string independently of the field format.
-    const groupId = policy.groupIdForCell(getCell(row.id, fieldId, rowMetas)?.get(YjsDatabaseKey.data));
+    const groupId = policy.groupIdForCell(getNumberGroupingCellData(getCell(row.id, fieldId, rowMetas)));
 
     if (!groupId) {
       ungroupedRows.push(row);

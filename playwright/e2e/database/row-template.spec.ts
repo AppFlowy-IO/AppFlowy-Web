@@ -1,4 +1,8 @@
 import { expect, Locator, Page, test } from '@playwright/test';
+import * as Y from 'yjs';
+
+import { Types } from '../../../src/application/types';
+import type { DatabaseTestWindow } from '../../../src/components/database/database-test-context';
 
 import {
   createNamedGridPage,
@@ -23,7 +27,7 @@ import {
   FieldType,
   PropertyMenuSelectors,
 } from '../../support/selectors';
-import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
+import { generateRandomEmail, setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const TEMPLATE_MENU = 'database-template-menu';
 const TEMPLATE_EDITOR = 'database-template-editor';
@@ -365,6 +369,69 @@ async function expectRowCover(page: Page, rowId: string): Promise<void> {
 
   await expect(rowDialog.locator('.row-header-cover img')).toBeVisible({ timeout: 15000 });
   await closeRowDetailWithEscape(page);
+}
+
+async function waitForTemplateRowsOnServer(page: Page, rowIds: string[]): Promise<void> {
+  const { token, snapshots } = await page.evaluate((ids) => {
+    const testWindow = window as DatabaseTestWindow & { Y?: typeof Y };
+    const context = testWindow.__TEST_DATABASE_CONTEXT__;
+    const yjs = testWindow.Y;
+
+    if (!context?.databaseDoc || !yjs) throw new Error('Database test context is unavailable');
+
+    const docs = [context.databaseDoc, ...ids.map((id) => context.rowMap?.[id])];
+    const token = JSON.parse(localStorage.getItem('token') || 'null')?.access_token;
+
+    if (!token) throw new Error('No access token for checking row persistence');
+
+    return {
+      token,
+      snapshots: docs.map((doc) => {
+        if (!doc) throw new Error('A template row has not loaded');
+        return { objectId: doc.guid, stateVector: Array.from(yjs.encodeStateVector(doc)) };
+      }),
+    };
+  }, rowIds);
+  const workspaceId = new URL(page.url()).pathname.split('/')[2];
+
+  // Local cells and decorations render before their separate row/database
+  // collabs reach the server. Wait for both before reload can fetch a blob
+  // built from an incomplete row order or row payload.
+  await expect
+    .poll(
+      () =>
+        Promise.all(
+          snapshots.map(async ({ objectId, stateVector }, index) => {
+            const response = await page.request.get(
+              `${TestConfig.apiUrl}/api/workspace/v1/${workspaceId}/collab/${objectId}`,
+              {
+                params: { collab_type: index === 0 ? Types.Database : Types.DatabaseRow, _t: Date.now() },
+                headers: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache' },
+              }
+            );
+
+            if (!response.ok()) return `${objectId}: HTTP ${response.status()}`;
+            const body = (await response.json()) as { code?: number; data?: { doc_state?: number[] } };
+
+            if (body.code !== 0 || !body.data?.doc_state) return `${objectId}: collab is not available`;
+            const serverDoc = new Y.Doc();
+
+            try {
+              Y.applyUpdate(serverDoc, new Uint8Array(body.data.doc_state));
+              const serverVector = Y.decodeStateVector(Y.encodeStateVector(serverDoc));
+              const expectedVector = Y.decodeStateVector(new Uint8Array(stateVector));
+
+              return Array.from(expectedVector).every(([clientId, clock]) => (serverVector.get(clientId) ?? 0) >= clock)
+                ? 'persisted'
+                : `${objectId}: server is behind local edits`;
+            } finally {
+              serverDoc.destroy();
+            }
+          })
+        ),
+      { timeout: 30000, intervals: [250, 500, 1000], message: 'Waiting for template rows and row order to reach the server' }
+    )
+    .toEqual(snapshots.map(() => 'persisted'));
 }
 
 test.describe('Database row templates (Desktop parity)', () => {
@@ -710,6 +777,7 @@ test.describe('Database row templates (Desktop parity)', () => {
     await expect(page.getByTestId(`row-document-icon-${coverOnlyRowId}`)).toHaveCount(0);
     await expectRowCover(page, coverOnlyRowId);
 
+    await waitForTemplateRowsOnServer(page, [iconOnlyRowId, iconCoverRowId, coverOnlyRowId]);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitForGridReady(page);
     await expect(DatabaseGridSelectors.rowById(page, iconOnlyRowId).locator('.custom-icon')).toContainText(

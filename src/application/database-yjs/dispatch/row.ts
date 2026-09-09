@@ -42,7 +42,7 @@ import {
   normalizeFilterNode,
   relationFilterFillData,
 } from '@/application/database-yjs/filter';
-import { normalizeGroupIdentifiers } from '@/application/database-yjs/group';
+import { getNumberGroupingCellData, normalizeGroupIdentifiers } from '@/application/database-yjs/group';
 import {
   createDatabaseHistoryGroup,
   executeDatabaseOperations as executeOperations,
@@ -258,7 +258,7 @@ export function useMoveCardDispatch() {
                   const group = view.get(YjsDatabaseKey.groups)?.toArray()
                     .find((candidate) => candidate.get(YjsDatabaseKey.field_id) === fieldId);
                   const policy = createNumberGroupingPolicy(group?.get(YjsDatabaseKey.content));
-                  const currentGroupId = policy.groupIdForCell(cell?.get(YjsDatabaseKey.data)) ?? fieldId;
+                  const currentGroupId = policy.groupIdForCell(getNumberGroupingCellData(cell)) ?? fieldId;
 
                   // Reordering within a numeric bucket must preserve its actual
                   // value, including values away from the bucket's lower bound.
