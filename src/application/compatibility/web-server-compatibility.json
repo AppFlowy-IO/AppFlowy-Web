@@ -1,6 +1,6 @@
 {
   "_comment": "Web and desktop have independent release versions. Review this table when releasing web; rows specify the minimum AppFlowy-Cloud version for each web release range.",
-  "reviewed_through_client_version": "0.18.1",
+  "reviewed_through_client_version": "0.18.2",
   "max_enforceable_client_floor": "0.20.0",
   "rows": [
     {
