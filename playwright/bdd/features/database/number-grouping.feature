@@ -170,3 +170,57 @@ Feature: Number grouping matches Desktop
       | = 1    | 1    |
       | = 10   | 1    |
       | = 11   | 1    |
+
+  Scenario: Numeric group order stays independent of the primary row sort after reopening
+    Given a Grid contains the following numbers for number grouping
+      | value   |
+      | 3       |
+      | 4       |
+      | 5       |
+      | 6       |
+      | <empty> |
+    When I group the Grid by its number field
+    And I apply number ranges with Start "1", End "5", and Interval "2"
+    And I sort number groups ascending
+    And I sort the Grid rows by its number field descending
+    Then number grouping uses Range with Start "1", End "5", and Interval "2"
+    And the displayed number groups are ordered as follows
+      | bucket |
+      | empty  |
+      | [3, 5] |
+      | > 5    |
+    And the number groups contain these row counts
+      | bucket | rows |
+      | empty  | 1    |
+      | [3, 5] | 3    |
+      | > 5    | 1    |
+    And number group "[3, 5]" contains numeric values in this order
+      | value |
+      | 5     |
+      | 4     |
+      | 3     |
+    When I sort number groups descending
+    And I sort the Grid rows by its number field ascending
+    Then the displayed number groups are ordered as follows
+      | bucket |
+      | empty  |
+      | > 5    |
+      | [3, 5] |
+    And number group "[3, 5]" contains numeric values in this order
+      | value |
+      | 3     |
+      | 4     |
+      | 5     |
+    When I reload the number-grouped Grid
+    Then number grouping uses Range with Start "1", End "5", and Interval "2"
+    And the numeric row sort is ascending
+    And the displayed number groups are ordered as follows
+      | bucket |
+      | empty  |
+      | > 5    |
+      | [3, 5] |
+    And number group "[3, 5]" contains numeric values in this order
+      | value |
+      | 3     |
+      | 4     |
+      | 5     |

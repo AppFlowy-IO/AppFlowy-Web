@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useMemo, useState } from 'react';
+import { type KeyboardEvent, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DateGroupCondition, FieldType, usePropertiesSelector } from '@/application/database-yjs';
@@ -254,6 +254,7 @@ export function DatabaseSettingGroup({
   testIdPrefix,
 }: DatabaseSettingGroupProps) {
   const { t } = useTranslation();
+  const contentRef = useRef<HTMLDivElement>(null);
   const { properties: allProperties } = usePropertiesSelector(true);
   const properties = useMemo(
     () => allProperties.filter((property) => DATABASE_GROUPABLE_FIELD_TYPES.includes(property.type)),
@@ -267,12 +268,22 @@ export function DatabaseSettingGroup({
 
   return (
     <DropdownMenuSub>
-      <DropdownMenuSubTrigger data-testid={`${testIdPrefix}-group-settings-trigger`}>
+      <DropdownMenuSubTrigger
+        data-testid={`${testIdPrefix}-group-settings-trigger`}
+        onPointerLeave={(event) => {
+          // Entering the portaled editor must not focus the parent menu and
+          // dismiss the draft when Radix's geometric hover grace area is missed.
+          if (event.relatedTarget instanceof Node && contentRef.current?.contains(event.relatedTarget)) {
+            event.preventDefault();
+          }
+        }}
+      >
         <GroupIcon />
         {t('grid.settings.group', 'Group')}
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent
+          ref={contentRef}
           className='appflowy-scroller max-h-[520px] max-w-[280px] overflow-y-auto'
           data-testid={`${testIdPrefix}-group-settings-menu`}
         >
