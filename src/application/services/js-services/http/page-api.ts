@@ -6,6 +6,7 @@ import {
   AccessLevel,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  DatabaseContainerUpgradeStatusResponse,
   DuplicatePageOptions,
   CreatePagePayload,
   CreatePageResponse,
@@ -19,6 +20,7 @@ import {
   SpaceSidebarEditPolicy,
   UpdatePagePayload,
   UpdateSpacePayload,
+  UpgradeDatabaseContainerResponse,
   ViewIconType,
 } from '@/application/types';
 import { getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
@@ -475,5 +477,27 @@ export async function createDatabaseView(workspaceId: string, viewId: string, pa
       name: payload.name,
       embedded: payload.embedded ?? false,
     })
+  );
+}
+
+export async function upgradeDatabaseContainer(
+  workspaceId: string,
+  viewId: string
+): Promise<UpgradeDatabaseContainerResponse> {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/upgrade-database-container`;
+
+  return executeAPIRequest<UpgradeDatabaseContainerResponse>(() =>
+    getAxios()?.post<APIResponse<UpgradeDatabaseContainerResponse>>(url)
+  );
+}
+
+export async function getDatabaseContainerUpgradeStatus(
+  workspaceId: string,
+  viewId: string
+): Promise<DatabaseContainerUpgradeStatusResponse> {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/upgrade-database-container`;
+
+  return executeAPIRequest<DatabaseContainerUpgradeStatusResponse>(() =>
+    getAxios()?.get<APIResponse<DatabaseContainerUpgradeStatusResponse>>(url)
   );
 }

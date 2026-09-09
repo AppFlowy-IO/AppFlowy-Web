@@ -151,6 +151,31 @@ export function Outline({ width }: { width: number }) {
     expandViewIdsRef.current = expandViewIds;
   }, [expandViewIds]);
 
+  const expandHydratedPath = useCallback((ancestorIds: string[]) => {
+    setExpandViewIds((prev) => {
+      const next = new Set([...prev, ...ancestorIds]);
+
+      return next.size === prev.length ? prev : Array.from(next);
+    });
+    setPendingAutoLoadIds((prev) => {
+      const filtered = prev.filter((id) => !ancestorIds.includes(id));
+
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleExpandPath = ({ workspaceId, ancestorIds }: { workspaceId: string; ancestorIds: string[] }) => {
+      if (workspaceId !== currentWorkspaceId) return;
+      expandHydratedPath(ancestorIds);
+    };
+
+    eventEmitter.on(APP_EVENTS.OUTLINE_EXPAND_PATH, handleExpandPath);
+    return () => {
+      eventEmitter.off(APP_EVENTS.OUTLINE_EXPAND_PATH, handleExpandPath);
+    };
+  }, [currentWorkspaceId, eventEmitter, expandHydratedPath]);
+
   useEffect(() => {
     if (!selectedViewId || !outline || !ensureViewVisibleInOutline) return;
     if (findView(outline, selectedViewId)) return;
@@ -172,17 +197,7 @@ export function Outline({ width }: { width: number }) {
 
         navigationHydrationRetryAfterRef.current.delete(selectedViewId);
         ancestorIds.forEach((id) => setOutlineExpands(id, true));
-        setExpandViewIds((prev) => {
-          const next = new Set(prev);
-
-          ancestorIds.forEach((id) => next.add(id));
-          return next.size === prev.length ? prev : Array.from(next);
-        });
-        setPendingAutoLoadIds((prev) => {
-          const filtered = prev.filter((id) => !ancestorIds.includes(id));
-
-          return filtered.length === prev.length ? prev : filtered;
-        });
+        expandHydratedPath(ancestorIds);
       })
       .catch((error) => {
         navigationHydrationRetryAfterRef.current.set(selectedViewId, Date.now() + NAVIGATION_HYDRATION_RETRY_DELAY_MS);
@@ -194,7 +209,7 @@ export function Outline({ width }: { width: number }) {
       .finally(() => {
         navigationHydrationInFlightRef.current.delete(selectedViewId);
       });
-  }, [ensureViewVisibleInOutline, outline, selectedViewId]);
+  }, [ensureViewVisibleInOutline, expandHydratedPath, outline, selectedViewId]);
 
   useEffect(() => {
     sidebarRevalidationStateRef.current = createSidebarOutlineRevalidationScheduleState();

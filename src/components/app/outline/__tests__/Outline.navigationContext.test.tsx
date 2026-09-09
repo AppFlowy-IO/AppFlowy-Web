@@ -1,7 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import EventEmitter from 'events';
+
+import { act, render, screen, waitFor } from '@testing-library/react';
 import React, { useMemo, useState } from 'react';
 
+import { APP_EVENTS } from '@/application/constants';
 import { View, ViewLayout } from '@/application/types';
+import { getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
 import Outline from '@/components/app/outline/Outline';
 
 declare global {
@@ -14,7 +18,7 @@ declare global {
   // eslint-disable-next-line no-var
   var __outlineNavigationTestToView: jest.Mock<Promise<void>, [viewId: string]> | undefined;
   // eslint-disable-next-line no-var
-  var __outlineNavigationTestEventEmitter: { on: jest.Mock; off: jest.Mock } | undefined;
+  var __outlineNavigationTestEventEmitter: EventEmitter | undefined;
 }
 
 jest.mock('react-i18next', () => ({
@@ -221,7 +225,7 @@ describe('Outline navigation context hydration', () => {
     global.__outlineNavigationTestEnsureViewVisible = undefined;
     global.__outlineNavigationTestSelectedViewId = undefined;
     global.__outlineNavigationTestToView = undefined;
-    global.__outlineNavigationTestEventEmitter = { on: jest.fn(), off: jest.fn() };
+    global.__outlineNavigationTestEventEmitter = new EventEmitter();
   });
 
   it('hydrates and expands a notification target path when the selected view is missing locally', async () => {
@@ -259,6 +263,62 @@ describe('Outline navigation context hydration', () => {
     expect(JSON.parse(localStorage.getItem('outline_expanded') || '{}')).toEqual({});
 
     warnSpy.mockRestore();
+  });
+
+  it('reveals an already hydrated database child when its upgraded path is expanded', async () => {
+    const databaseViewId = 'database-view-id';
+    const containerId = 'new-container-id';
+
+    global.__outlineNavigationTestOutline = [
+      createView(spaceId, {
+        extra: { is_space: true },
+        children: [
+          createView(containerId, {
+            layout: ViewLayout.Grid,
+            extra: { is_database_container: true },
+            parent_view_id: spaceId,
+            children: [createView(databaseViewId, { layout: ViewLayout.Grid, parent_view_id: containerId })],
+          }),
+        ],
+      }),
+    ];
+    global.__outlineNavigationTestSelectedViewId = databaseViewId;
+    global.__outlineNavigationTestEnsureViewVisible = jest.fn().mockResolvedValue([spaceId, containerId]);
+    global.__outlineNavigationTestToView = jest.fn().mockResolvedValue(undefined);
+    setOutlineExpands(spaceId, true);
+
+    const { unmount } = render(<Outline width={280} />);
+
+    expect(global.__outlineNavigationTestEnsureViewVisible).not.toHaveBeenCalled();
+    expect(screen.getByTestId(`page-${containerId}`)).toBeTruthy();
+    expect(screen.queryByTestId(`page-${databaseViewId}`)).toBeNull();
+
+    await act(async () => {
+      global.__outlineNavigationTestEventEmitter?.emit(APP_EVENTS.OUTLINE_EXPAND_PATH, {
+        workspaceId: 'other-workspace',
+        ancestorIds: [spaceId, containerId],
+      });
+    });
+    expect(screen.queryByTestId(`page-${databaseViewId}`)).toBeNull();
+
+    // DatabaseView persists the hydrated path and asks the mounted sidebar to reveal it.
+    await act(async () => {
+      [spaceId, containerId].forEach((id) => setOutlineExpands(id, true));
+      global.__outlineNavigationTestEventEmitter?.emit(APP_EVENTS.OUTLINE_EXPAND_PATH, {
+        workspaceId: 'workspace-id',
+        ancestorIds: [spaceId, containerId],
+      });
+    });
+
+    expect(screen.getByTestId(`page-${databaseViewId}`).getAttribute('data-selected')).toBe('true');
+    expect(getOutlineExpands()).toEqual({ [spaceId]: true, [containerId]: true });
+    unmount();
+    expect(global.__outlineNavigationTestEventEmitter?.listenerCount(APP_EVENTS.OUTLINE_EXPAND_PATH)).toBe(0);
+
+    await act(async () => {
+      render(<Outline width={280} />);
+    });
+    expect(screen.getByTestId(`page-${databaseViewId}`).getAttribute('data-selected')).toBe('true');
   });
 
   it('renders only visible spaces from mixed workspace-root views', () => {

@@ -14,9 +14,9 @@ import {
 } from '@/application/services/js-services/workspace-view-metadata';
 import { getTokenParsed } from '@/application/session/token';
 import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
+import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
 import { AppOperationsContext } from '@/components/app/contexts/AppOperationsContext';
-import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { useAuthInternal } from '@/components/app/contexts/AuthInternalContext';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import { useDatabaseOperations } from '@/components/app/hooks/useDatabaseOperations';
@@ -40,6 +40,7 @@ jest.mock('@/application/services/domains', () => ({
     refresh: jest.fn(),
     getCached: jest.fn(),
     getCachedFromDisk: jest.fn(),
+    getDatabaseIdFromWorkspaceCatalog: jest.fn(),
     invalidateCache: jest.fn(),
   },
 }));
@@ -258,6 +259,7 @@ describe('AppBusinessLayer permission gates', () => {
     (useViewOperations as jest.Mock).mockReturnValue({ awarenessMap: {} });
     (ViewService.getCached as jest.Mock).mockReturnValue(undefined);
     (ViewService.getCachedFromDisk as jest.Mock).mockResolvedValue(undefined);
+    (ViewService.getDatabaseIdFromWorkspaceCatalog as jest.Mock).mockResolvedValue(null);
     (getCachedWorkspaceViewMetadata as jest.Mock).mockReturnValue(undefined);
     (resolveWorkspaceViewMetadata as jest.Mock).mockImplementation(
       (_workspaceId: string, _viewId: string, loader: () => Promise<View | null | undefined>) => loader()
@@ -281,6 +283,26 @@ describe('AppBusinessLayer permission gates', () => {
     await waitFor(() => {
       expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(permission);
     });
+  });
+
+  it('probes a containerless legacy database through its canonical database identity', async () => {
+    const eventEmitter = new EventEmitter();
+    const legacyDatabaseView: View = {
+      ...createView(routeViewId),
+      layout: ViewLayout.Grid,
+      extra: { legacy_database_container_fixture: true },
+    };
+    const permission = createObjectPermission(modalDatabaseId, Types.Database);
+
+    (ViewService.getDatabaseIdFromWorkspaceCatalog as jest.Mock).mockResolvedValue(modalDatabaseId);
+    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue(permission);
+    renderBusinessLayer(eventEmitter, [legacyDatabaseView]);
+
+    await waitFor(() => {
+      expect(AccessService.getObjectPermission).toHaveBeenCalledWith(workspaceId, modalDatabaseId, Types.Database);
+      expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(permission);
+    });
+    expect(ViewService.getDatabaseIdFromWorkspaceCatalog).toHaveBeenCalledWith(workspaceId, routeViewId);
   });
 
   it.each([ERROR_CODE.NOT_HAS_PERMISSION, 403])(
