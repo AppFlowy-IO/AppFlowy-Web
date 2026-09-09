@@ -14,6 +14,7 @@ import {
   CreateSpacePayload,
   CreateSpaceWithInitialPagePayload,
   PublishViewPayload,
+  PublishConfigPatch,
   Role,
   UpdatePagePayload,
   UpdateSpacePayload,
@@ -482,7 +483,7 @@ export function usePageOperations({
 
   // Publish view
   const publish = useCallback(
-    async (view: View, publishName?: string, visibleViewIds?: string[], commentsEnabled?: boolean) => {
+    async (view: View, publishName?: string, visibleViewIds?: string[], config?: PublishConfigPatch) => {
       if (!currentWorkspaceId) return;
       const viewId = view.view_id;
       const isDatabaseView = isDatabaseLayout(view.layout);
@@ -552,6 +553,7 @@ export function usePageOperations({
         const meta: PublishCollabMetadata = {
           view_id: viewId,
           publish_name: name,
+          config,
           metadata: {
             view: toPublishViewInfo(view),
             child_views: view.children.filter((child) => visibleViewIdSet.has(child.view_id)).map(toPublishViewInfo),
@@ -561,15 +563,6 @@ export function usePageOperations({
 
         await publishCollabs(currentWorkspaceId, [{ meta, data }]);
         clearPublishViewInfoCache(viewId);
-
-        // The binary database-publish endpoint does not accept publish config.
-        // Apply an explicit comments setting immediately after publishing.
-        if (commentsEnabled !== undefined) {
-          await PublishService.updateConfig(currentWorkspaceId, {
-            view_id: viewId,
-            comments_enabled: commentsEnabled,
-          });
-        }
       } else {
         // Document publishing gathers the folder, document, and referenced
         // dependencies on the server. Push the browser's current state first,
@@ -593,7 +586,7 @@ export function usePageOperations({
           {
             publish_name: publishName,
             visible_database_view_ids: visibleViewIds,
-            comments_enabled: commentsEnabled,
+            ...config,
           },
           ensureServerState
         );

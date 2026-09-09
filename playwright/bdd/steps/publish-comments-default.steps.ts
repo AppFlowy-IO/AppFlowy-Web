@@ -11,6 +11,7 @@ const publishedPageByEditorPage = new WeakMap<Page, Page>();
 // editor-editing.steps.ts.
 
 When('I turn the comments toggle on', async ({ page }) => {
+  await page.bringToFront();
   const toggle = ShareSelectors.publishCommentsSwitch(page);
 
   await expect(toggle).toBeVisible({ timeout: 10000 });
@@ -22,11 +23,12 @@ When('I turn the comments toggle on', async ({ page }) => {
   }
 
   await expect(toggle).toBeChecked({ timeout: 10000 });
-  // Allow the updatePublishConfig round-trip to persist before moving on.
-  await page.waitForTimeout(1500);
+  // The switch is disabled until the server confirms the save.
+  await expect(toggle).toBeEnabled({ timeout: 10000 });
 });
 
 When('I turn the comments toggle off', async ({ page }) => {
+  await page.bringToFront();
   const toggle = ShareSelectors.publishCommentsSwitch(page);
 
   await expect(toggle).toBeVisible({ timeout: 10000 });
@@ -36,7 +38,7 @@ When('I turn the comments toggle off', async ({ page }) => {
   }
 
   await expect(toggle).not.toBeChecked({ timeout: 10000 });
-  await page.waitForTimeout(1500);
+  await expect(toggle).toBeEnabled({ timeout: 10000 });
 });
 
 When('I close and reopen the publish panel', async ({ page }) => {
@@ -82,6 +84,13 @@ When('I open the published page in another tab', async ({ page }) => {
 
   await publishedPage.waitForLoadState('domcontentloaded');
   publishedPageByEditorPage.set(page, publishedPage);
+});
+
+When('I return to the published page', async ({ page }) => {
+  const publishedPage = publishedPageByEditorPage.get(page);
+
+  expect(publishedPage, 'Expected the published page to be open in another tab').toBeTruthy();
+  await publishedPage!.bringToFront();
 });
 
 Then('the published comment panel is visible', async ({ page }) => {

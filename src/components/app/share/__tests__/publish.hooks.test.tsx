@@ -1,11 +1,13 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import { View, ViewLayout } from '@/application/types';
+import { PublishConfig, PublishConfigPatch, View, ViewLayout } from '@/application/types';
 import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
 
 const mockGetViewInfo = jest.fn();
 const mockGetView = jest.fn();
 const mockUpdateConfig = jest.fn();
+const mockGetConfig = jest.fn();
+const mockUpdateSettings = jest.fn();
 
 const childView: View = {
   view_id: 'board-view',
@@ -51,6 +53,8 @@ jest.mock('@/application/services/domains', () => ({
   PublishService: {
     getViewInfo: (...args: unknown[]) => mockGetViewInfo(...args),
     updateConfig: (...args: unknown[]) => mockUpdateConfig(...args),
+    getConfig: (...args: unknown[]) => mockGetConfig(...args),
+    updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
   },
   ViewService: {
     get: (...args: unknown[]) => mockGetView(...args),
@@ -81,6 +85,17 @@ beforeEach(() => {
   jest.resetAllMocks();
   mockGetView.mockResolvedValue(undefined);
   mockUpdateConfig.mockResolvedValue(undefined);
+  mockGetConfig.mockRejectedValue(new Error('Record not found'));
+  mockUpdateSettings.mockImplementation(async (_workspace: string, _view: string, patch: PublishConfigPatch) => ({
+    comments_enabled: patch.comments_enabled ?? false,
+    duplicate_enabled: patch.duplicate_enabled ?? true,
+  }));
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+  window.localStorage.clear();
+  window.sessionStorage.clear();
 });
 
 const childPublishInfo = {
@@ -97,6 +112,89 @@ const containerPublishInfo = {
 };
 
 describe('useLoadPublishInfo database publication identity', () => {
+  it('loads saved config and retains an unpublished container identity without browser storage', async () => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    mockGetViewInfo.mockRejectedValue(new Error('Record not found'));
+    mockGetConfig.mockImplementation((_workspace: string, requestedView: string) =>
+      requestedView === containerView.view_id
+        ? Promise.resolve({ comments_enabled: true, duplicate_enabled: false })
+        : Promise.reject(new Error('Record not found'))
+    );
+    const { result } = renderHook(() => useLoadPublishInfo(childView.view_id, containerView.view_id));
+
+    await waitFor(() =>
+      expect(result.current.publishConfig).toEqual({
+        comments_enabled: true,
+        duplicate_enabled: false,
+      })
+    );
+    expect(result.current.publishInfo).toBeUndefined();
+    expect(result.current.publishInfoViewId).toBe(containerView.view_id);
+    expect(result.current.view).toBe(containerView);
+    expect(mockGetConfig.mock.calls).toEqual([
+      ['workspace-id', childView.view_id],
+      ['workspace-id', containerView.view_id],
+    ]);
+  });
+
+  it('uses the complete saved response after a partial setting update', async () => {
+    mockGetViewInfo.mockResolvedValue(childPublishInfo);
+    mockGetConfig.mockResolvedValue({ comments_enabled: true, duplicate_enabled: true });
+    mockUpdateSettings.mockResolvedValue({ comments_enabled: false, duplicate_enabled: false });
+    const { result } = renderHook(() => useLoadPublishInfo(childView.view_id));
+
+    await waitFor(() => expect(result.current.publishConfig?.comments_enabled).toBe(true));
+    await act(async () => {
+      await result.current.updatePublishConfig({ view_id: childView.view_id, comments_enabled: false });
+    });
+
+    expect(result.current.publishConfig).toEqual({ comments_enabled: false, duplicate_enabled: false });
+    expect(result.current.publishInfo?.duplicateEnabled).toBe(false);
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+  });
+
+  it('keeps a successful save when an older authenticated config read finishes', async () => {
+    mockGetViewInfo.mockResolvedValue(childPublishInfo);
+    mockGetConfig.mockResolvedValue({ comments_enabled: false, duplicate_enabled: true });
+    const { result } = renderHook(() => useLoadPublishInfo(childView.view_id));
+
+    await waitFor(() => expect(result.current.publishConfig?.comments_enabled).toBe(false));
+    const staleConfig = deferred<PublishConfig>();
+
+    mockGetConfig.mockReturnValueOnce(staleConfig.promise);
+    let loadPromise!: Promise<void>;
+
+    act(() => {
+      loadPromise = result.current.loadPublishInfo();
+    });
+    await act(async () => {
+      await result.current.updatePublishConfig({ view_id: childView.view_id, comments_enabled: true });
+      staleConfig.resolve({ comments_enabled: false, duplicate_enabled: true });
+      await loadPromise;
+    });
+
+    expect(result.current.publishConfig?.comments_enabled).toBe(true);
+  });
+
+  it('keeps slug changes on the existing publication endpoint', async () => {
+    mockGetViewInfo.mockResolvedValue(childPublishInfo);
+    const { result } = renderHook(() => useLoadPublishInfo(childView.view_id));
+
+    await waitFor(() => expect(result.current.publishInfo).toEqual(childPublishInfo));
+    await act(async () => {
+      await result.current.updatePublishConfig({ view_id: childView.view_id, publish_name: 'new-name' });
+    });
+
+    expect(mockUpdateConfig).toHaveBeenCalledWith('workspace-id', {
+      view_id: childView.view_id,
+      publish_name: 'new-name',
+    });
+    expect(mockUpdateSettings).not.toHaveBeenCalled();
+    expect(result.current.publishInfo?.publishName).toBe('new-name');
+    expect(result.current.publishConfig?.comments_enabled).toBe(true);
+  });
+
   it('recognizes a Desktop publication keyed by the active database child', async () => {
     mockGetViewInfo.mockImplementation((viewId: string) =>
       viewId === childView.view_id ? Promise.resolve(childPublishInfo) : Promise.reject(new Error('Record not found'))
@@ -161,6 +259,36 @@ function publishInfo(commentEnabled: boolean) {
 }
 
 describe('useLoadPublishInfo config updates', () => {
+  it('loads and saves settings only on the server, ignoring legacy browser storage', async () => {
+    window.localStorage.setItem('appflowy:publish-comments:v2:view-id', '1');
+    window.sessionStorage.setItem('appflowy:publish-comments:v1:view-id', '1');
+    const storageRead = jest.spyOn(Storage.prototype, 'getItem');
+    const storageWrite = jest.spyOn(Storage.prototype, 'setItem');
+
+    mockGetViewInfo.mockResolvedValue(publishInfo(false));
+    mockGetConfig.mockResolvedValue({ comments_enabled: false, duplicate_enabled: true });
+    const firstRender = renderHook(() => useLoadPublishInfo('view-id'));
+
+    await waitFor(() => expect(firstRender.result.current.publishConfig?.comments_enabled).toBe(false));
+    await act(async () => {
+      await firstRender.result.current.updatePublishConfig({ view_id: 'view-id', comments_enabled: true });
+    });
+    expect(mockUpdateSettings).toHaveBeenCalledWith('workspace-id', 'view-id', { comments_enabled: true });
+    expect(firstRender.result.current.publishConfig?.comments_enabled).toBe(true);
+    firstRender.unmount();
+
+    // Another client changes the saved setting before this panel reopens.
+    mockGetConfig.mockResolvedValue({ comments_enabled: false, duplicate_enabled: false });
+    const secondRender = renderHook(() => useLoadPublishInfo('view-id'));
+
+    await waitFor(() =>
+      expect(secondRender.result.current.publishConfig).toEqual({ comments_enabled: false, duplicate_enabled: false })
+    );
+    expect(mockGetConfig).toHaveBeenCalledTimes(2);
+    expect(storageRead).not.toHaveBeenCalled();
+    expect(storageWrite).not.toHaveBeenCalled();
+  });
+
   it.each(
     [
       { viewId: documentView.view_id, fallbackViewId: undefined, publishedViewId: documentView.view_id },
@@ -214,9 +342,12 @@ describe('useLoadPublishInfo config updates', () => {
 
   it('serializes config updates and merges changes to different fields', async () => {
     mockGetViewInfo.mockResolvedValueOnce(publishInfo(true));
-    const firstUpdate = deferred<void>();
+    const firstUpdate = deferred<PublishConfig>();
 
-    mockUpdateConfig.mockReturnValueOnce(firstUpdate.promise).mockResolvedValueOnce(undefined);
+    mockUpdateSettings.mockReturnValueOnce(firstUpdate.promise).mockResolvedValueOnce({
+      comments_enabled: false,
+      duplicate_enabled: false,
+    });
     const { result } = renderHook(() => useLoadPublishInfo('view-id'));
 
     await waitFor(() => expect(result.current.publishInfo?.commentEnabled).toBe(true));
@@ -235,17 +366,17 @@ describe('useLoadPublishInfo config updates', () => {
       });
     });
 
-    await waitFor(() => expect(mockUpdateConfig).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalledTimes(1));
 
     await act(async () => {
-      firstUpdate.resolve();
+      firstUpdate.resolve({ comments_enabled: false, duplicate_enabled: true });
       await commentPromise;
       await duplicatePromise;
     });
 
-    expect(mockUpdateConfig.mock.calls).toEqual([
-      ['workspace-id', { view_id: 'view-id', comments_enabled: false }],
-      ['workspace-id', { view_id: 'view-id', duplicate_enabled: false }],
+    expect(mockUpdateSettings.mock.calls).toEqual([
+      ['workspace-id', 'view-id', { comments_enabled: false }],
+      ['workspace-id', 'view-id', { duplicate_enabled: false }],
     ]);
     expect(result.current.publishInfo).toEqual(
       expect.objectContaining({
@@ -257,7 +388,7 @@ describe('useLoadPublishInfo config updates', () => {
 
   it('reports a failed config update without changing publish info', async () => {
     mockGetViewInfo.mockResolvedValueOnce(publishInfo(false));
-    mockUpdateConfig.mockRejectedValueOnce(new Error('update failed'));
+    mockUpdateSettings.mockRejectedValueOnce(new Error('update failed'));
     const { result } = renderHook(() => useLoadPublishInfo('view-id'));
 
     await waitFor(() => expect(result.current.publishInfo?.commentEnabled).toBe(false));

@@ -2,7 +2,6 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { cachePublishCommentsEnabled, clearCachedPublishCommentsEnabled } from '@/application/publish/comment-state';
 import { normalizePublishedPageSnapshot } from '@/application/publish-snapshot/normalize';
 import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot/database-yjs-render-bridge';
 import {
@@ -138,7 +137,8 @@ function unpublishedDatabaseContainer(viewId: string, children: View[]): View {
 describe('PublishProvider', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    clearCachedPublishCommentsEnabled(publishedDocumentPayload.view.viewId);
+    window.localStorage.clear();
+    window.sessionStorage.clear();
     mockGetOutline.mockResolvedValue([]);
     mockGetViewInfo.mockResolvedValue({
       namespace: 'published-namespace',
@@ -177,7 +177,7 @@ describe('PublishProvider', () => {
     expect(mockGetViewMeta).not.toHaveBeenCalled();
   });
 
-  it('refreshes comment visibility when another tab confirms a setting change', async () => {
+  it.each(['focus', 'visibilitychange'])('refreshes public settings from the server on %s', async (event) => {
     const snapshot = normalizePublishedPageSnapshot(publishedDocumentPayload);
     let latestContext: PublishContextType | undefined;
 
@@ -192,7 +192,7 @@ describe('PublishProvider', () => {
         namespace: snapshot.namespace,
         publishName: snapshot.publishName,
         commentEnabled: false,
-        duplicateEnabled: true,
+        duplicateEnabled: false,
       });
 
     render(
@@ -208,10 +208,11 @@ describe('PublishProvider', () => {
     await waitFor(() => expect(latestContext?.commentEnabled).toBe(true));
 
     act(() => {
-      cachePublishCommentsEnabled(snapshot.view.viewId, false);
+      (event === 'focus' ? window : document).dispatchEvent(new Event(event));
     });
 
     await waitFor(() => expect(latestContext?.commentEnabled).toBe(false));
+    expect(latestContext?.duplicateEnabled).toBe(false);
     expect(mockGetViewInfo).toHaveBeenLastCalledWith(snapshot.view.viewId);
   });
 

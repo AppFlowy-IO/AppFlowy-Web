@@ -131,22 +131,25 @@ describe('usePageOperations publish', () => {
     expect(PublishService.publish).toHaveBeenCalledWith(workspaceId, 'document-view-id', {
       publish_name: undefined,
       visible_database_view_ids: undefined,
-      comments_enabled: undefined,
     });
     expect(calls).toEqual(['flush', 'publish']);
   });
 
-  it('passes an explicit comments setting to document publishing', async () => {
+  it('passes explicit configuration to document publishing', async () => {
     const { result, workspaceId } = renderUsePageOperations();
 
     await act(async () => {
-      await result.current.publish(createView({ view_id: 'document-view-id' }), undefined, undefined, false);
+      await result.current.publish(createView({ view_id: 'document-view-id' }), undefined, undefined, {
+        comments_enabled: false,
+        duplicate_enabled: false,
+      });
     });
 
     expect(PublishService.publish).toHaveBeenCalledWith(workspaceId, 'document-view-id', {
       publish_name: undefined,
       visible_database_view_ids: undefined,
       comments_enabled: false,
+      duplicate_enabled: false,
     });
   });
 
@@ -277,7 +280,7 @@ describe('usePageOperations publish', () => {
     expect(gatherDatabasePublishData).toHaveBeenCalledWith(viewId, undefined, databaseId);
   });
 
-  it('applies an explicit comments setting after database publishing', async () => {
+  it('publishes database content and explicit settings in one request', async () => {
     const viewId = 'grid-view-id';
     const { result, workspaceId } = renderUsePageOperations();
 
@@ -291,14 +294,19 @@ describe('usePageOperations publish', () => {
         }),
         undefined,
         undefined,
-        false
+        { comments_enabled: false, duplicate_enabled: false }
       );
     });
 
-    expect(PublishService.updateConfig).toHaveBeenCalledWith(workspaceId, {
-      view_id: viewId,
-      comments_enabled: false,
-    });
+    expect(publishCollabs).toHaveBeenCalledWith(workspaceId, [
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          view_id: viewId,
+          config: { comments_enabled: false, duplicate_enabled: false },
+        }),
+      }),
+    ]);
+    expect(PublishService.updateConfig).not.toHaveBeenCalled();
   });
 
   it('publishes Chart views through the client-side database endpoint', async () => {

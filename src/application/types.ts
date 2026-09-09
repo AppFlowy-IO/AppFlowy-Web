@@ -1235,10 +1235,9 @@ export enum CollabOrigin {
   InlineCommentAuthorized = 'inline_comment_authorized',
 }
 
-export interface PublishViewPayload {
+export interface PublishViewPayload extends PublishConfigPatch {
   publish_name?: string;
   visible_database_view_ids?: string[];
-  comments_enabled?: boolean;
 }
 
 export interface UploadPublishNamespacePayload {
@@ -1862,9 +1861,14 @@ export interface View {
   workspace_id?: string;
 }
 
-export interface UpdatePublishConfigPayload {
-  comments_enabled?: boolean;
-  duplicate_enabled?: boolean;
+export interface PublishConfig {
+  comments_enabled: boolean;
+  duplicate_enabled: boolean;
+}
+
+export type PublishConfigPatch = Partial<PublishConfig>;
+
+export interface UpdatePublishConfigPayload extends PublishConfigPatch {
   publish_name?: string;
   view_id: string;
 }

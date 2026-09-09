@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 
 import { db } from '@/application/db';
 import { ViewMeta } from '@/application/db/tables/view_metas';
-import { subscribeToPublishCommentsEnabled } from '@/application/publish/comment-state';
 import { createDatabaseYjsRenderDocsFromSnapshot } from '@/application/publish-snapshot/database-yjs-render-bridge';
 import { createPublishSnapshotDataSource } from '@/application/publish-snapshot/data-source';
 import {
@@ -184,6 +183,7 @@ export const PublishProvider = ({
 
   const [publishInfo, setPublishInfo] = React.useState<
     | {
+        viewId: string;
         commentEnabled: boolean;
         duplicateEnabled: boolean;
       }
@@ -297,6 +297,7 @@ export const PublishProvider = ({
 
     publishInfoRequestSeqRef.current = requestSeq;
     try {
+      clearPublishViewInfoCache(viewId);
       const res = await PublishService.getViewInfo(viewId);
 
       if (publishInfoRequestSeqRef.current !== requestSeq) {
@@ -304,7 +305,7 @@ export const PublishProvider = ({
         return;
       }
 
-      setPublishInfo(res);
+      setPublishInfo({ ...res, viewId });
 
       // eslint-disable-next-line
     } catch (e: any) {
@@ -313,16 +314,25 @@ export const PublishProvider = ({
   }, [viewId]);
 
   useEffect(() => {
-    void loadPublishInfo();
-  }, [loadPublishInfo]);
-
-  useEffect(() => {
     if (!viewId) return;
 
-    return subscribeToPublishCommentsEnabled(viewId, () => {
-      clearPublishViewInfoCache(viewId);
-      void loadPublishInfo();
-    });
+    let refreshing = false;
+    const refresh = () => {
+      if (refreshing || document.visibilityState !== 'visible') return;
+      refreshing = true;
+      void loadPublishInfo().finally(() => {
+        refreshing = false;
+      });
+    };
+
+    refresh();
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      publishInfoRequestSeqRef.current += 1;
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
   }, [loadPublishInfo, viewId]);
 
   const navigate = useNavigate();
@@ -616,8 +626,8 @@ export const PublishProvider = ({
   useEffect(() => {
     void loadOutline();
   }, [loadOutline]);
-  const commentEnabled = publishInfo?.commentEnabled;
-  const duplicateEnabled = publishInfo?.duplicateEnabled;
+  const commentEnabled = publishInfo?.viewId === viewId ? publishInfo?.commentEnabled : undefined;
+  const duplicateEnabled = publishInfo?.viewId === viewId ? publishInfo?.duplicateEnabled : undefined;
   const contextValue = useMemo(
     () => ({
       loadView,

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo } from 'react';
 
-import { cachePublishCommentsEnabled } from '@/application/publish/comment-state';
-import { UpdatePublishConfigPayload, View } from '@/application/types';
+import { PublishConfig, UpdatePublishConfigPayload, View } from '@/application/types';
 import { isSameUserUid } from '@/application/user-uid';
 import { notify } from '@/components/_shared/notify';
 import { useAppView, useUserWorkspaceInfo } from '@/components/app/app.hooks';
@@ -61,11 +60,12 @@ export function useLoadPublishInfo(viewId: string, fallbackViewId?: string) {
     () => (fallbackViewId && fallbackViewId !== viewId ? [viewId, fallbackViewId] : [viewId]),
     [fallbackViewId, viewId]
   );
-  const requestKey = candidateViewIds.join(':');
+  const requestKey = `${workspaceId}:${candidateViewIds.join(':')}`;
   const [publishState, setPublishState] = React.useState<{
     requestKey: string;
     viewId: string;
     publishInfo?: PublishInfo;
+    publishConfig?: PublishConfig;
   }>();
   const publishInfoRequestSeqRef = React.useRef(0);
   const publishInfoMutationSeqRef = React.useRef(0);
@@ -76,12 +76,15 @@ export function useLoadPublishInfo(viewId: string, fallbackViewId?: string) {
   const currentPublishState = publishState?.requestKey === requestKey ? publishState : undefined;
   const publishInfoViewId = currentPublishState?.viewId ?? viewId;
   const publishInfo = currentPublishState?.publishInfo;
+  const publishConfig = currentPublishState?.publishConfig;
   const view = publishInfoViewId === fallbackViewId ? fallbackView : primaryView;
   const currentUser = useCurrentUser();
   const isOwner = isSameUserUid(userWorkspaceInfo?.selectedWorkspace?.owner?.uid, currentUser?.uid);
   const isPublisher = publishInfo?.publisherEmail === currentUser?.email;
 
   const loadPublishInfo = useCallback(async () => {
+    if (!workspaceId) return;
+
     const requestSeq = publishInfoRequestSeqRef.current + 1;
     const mutationSeq = publishInfoMutationSeqRef.current;
 
@@ -89,8 +92,16 @@ export function useLoadPublishInfo(viewId: string, fallbackViewId?: string) {
 
     setLoading(true);
     try {
-      const results = await Promise.allSettled(
-        candidateViewIds.map((candidateViewId) => PublishService.getViewInfo(candidateViewId))
+      const results = await Promise.all(
+        candidateViewIds.map(async (candidateViewId) => {
+          clearPublishViewInfoCache(candidateViewId);
+          const [info, config] = await Promise.allSettled([
+            PublishService.getViewInfo(candidateViewId),
+            PublishService.getConfig(workspaceId, candidateViewId),
+          ]);
+
+          return { info, config };
+        })
       );
 
       const stale =
@@ -103,27 +114,32 @@ export function useLoadPublishInfo(viewId: string, fallbackViewId?: string) {
         return;
       }
 
-      const publishedResultIndex = results.findIndex((result) => result.status === 'fulfilled');
+      const publishedIndex = results.findIndex((result) => result.info.status === 'fulfilled');
+      // An unpublished database can still have saved config under its legacy
+      // container ID. Keep that identity when the public endpoint returns 404.
+      const savedIndex = results.findIndex((result) => result.config.status === 'fulfilled');
+      const selectedIndex = publishedIndex >= 0 ? publishedIndex : savedIndex >= 0 ? savedIndex : 0;
+      const selected = results[selectedIndex];
+      const info = selected.info.status === 'fulfilled' ? selected.info.value : undefined;
+      const config =
+        selected.config.status === 'fulfilled'
+          ? selected.config.value
+          : info
+          ? { comments_enabled: info.commentEnabled, duplicate_enabled: info.duplicateEnabled }
+          : undefined;
 
-      if (publishedResultIndex === -1) {
-        setPublishState({ requestKey, viewId });
-      } else {
-        const publishedResult = results[publishedResultIndex];
-
-        if (publishedResult.status === 'fulfilled') {
-          setPublishState({
-            requestKey,
-            viewId: candidateViewIds[publishedResultIndex],
-            publishInfo: publishedResult.value,
-          });
-        }
-      }
+      setPublishState({
+        requestKey,
+        viewId: candidateViewIds[selectedIndex],
+        publishInfo: info,
+        publishConfig: config,
+      });
     } finally {
       if (publishInfoRequestSeqRef.current === requestSeq) {
         setLoading(false);
       }
     }
-  }, [candidateViewIds, requestKey, viewId]);
+  }, [candidateViewIds, requestKey, workspaceId]);
 
   useEffect(() => {
     void loadPublishInfo();
@@ -138,33 +154,36 @@ export function useLoadPublishInfo(viewId: string, fallbackViewId?: string) {
 
       const mutation = publishInfoMutationQueueRef.current.then(async () => {
         try {
-          await PublishService.updateConfig(workspaceId, payload);
-          if (payload.comments_enabled !== undefined) {
-            cachePublishCommentsEnabled(payload.view_id, payload.comments_enabled);
+          const { view_id: targetViewId, publish_name: publishName, ...configPatch } = payload;
+          let savedConfig: PublishConfig | undefined;
+
+          if (publishName !== undefined) {
+            await PublishService.updateConfig(workspaceId, payload);
+          } else {
+            savedConfig = await PublishService.updateSettings(workspaceId, targetViewId, configPatch);
           }
 
+          const savedComments = savedConfig?.comments_enabled ?? payload.comments_enabled;
+
           setPublishState((previousState) => {
-            if (
-              !previousState?.publishInfo ||
-              previousState.requestKey !== requestKey ||
-              previousState.viewId !== payload.view_id
-            )
+            if (!previousState || previousState.requestKey !== requestKey || previousState.viewId !== payload.view_id)
               return previousState;
             return {
               ...previousState,
-              publishInfo: {
-                publishName: payload.publish_name || previousState.publishInfo.publishName,
-                namespace: previousState.publishInfo.namespace,
-                publisherEmail: previousState.publishInfo.publisherEmail,
-                commentEnabled:
-                  payload.comments_enabled === undefined
-                    ? previousState.publishInfo.commentEnabled
-                    : payload.comments_enabled,
-                duplicateEnabled:
-                  payload.duplicate_enabled === undefined
-                    ? previousState.publishInfo.duplicateEnabled
-                    : payload.duplicate_enabled,
-              },
+              publishConfig:
+                savedConfig ??
+                (previousState.publishConfig ? { ...previousState.publishConfig, ...configPatch } : undefined),
+              publishInfo: previousState.publishInfo
+                ? {
+                    ...previousState.publishInfo,
+                    publishName: publishName || previousState.publishInfo.publishName,
+                    commentEnabled: savedComments ?? previousState.publishInfo.commentEnabled,
+                    duplicateEnabled:
+                      savedConfig?.duplicate_enabled ??
+                      payload.duplicate_enabled ??
+                      previousState.publishInfo.duplicateEnabled,
+                  }
+                : undefined,
             };
           });
           return true;
@@ -191,6 +210,7 @@ export function useLoadPublishInfo(viewId: string, fallbackViewId?: string) {
 
   return {
     publishInfo,
+    publishConfig,
     publishInfoViewId,
     url,
     loadPublishInfo,
