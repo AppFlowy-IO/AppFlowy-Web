@@ -37,7 +37,49 @@ env:
   LATEST_TAG: latest
 
 jobs:
+  # A release tag whose version is newer than the reviewed boundary in
+  # web-server-compatibility.json cannot build (vite.config.ts throws). Instead of failing
+  # here, skip: the Compatibility Review PR workflow advances the boundary, moves the tag and
+  # dispatches this workflow again.
+  compatibility_gate:
+    runs-on: ubuntu-22.04
+    outputs:
+      build: ${{ steps.gate.outputs.build }}
+    steps:
+      - name: Check out the repository
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+
+      - name: Check the tag against the compatibility policy
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" != "push" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # A version the script cannot parse is left to the build itself, as before.
+          if node scripts/review-compatibility.cjs "$TAG_NAME" --check > gate.txt && grep -q '^changed=true$' gate.txt; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::web-server-compatibility.json does not cover ${TAG_NAME} yet. The Compatibility Review PR workflow advances it, moves the tag and starts a new build."
+            {
+              echo "### Build skipped"
+              echo ""
+              echo "The compatibility policy is not reviewed for \`${TAG_NAME}\`. The Compatibility Review PR workflow advances it, moves the tag onto the merged commit and starts a new build."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
   appflowy_web_image:
+    needs: [compatibility_gate]
+    if: needs.compatibility_gate.outputs.build == 'true'
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false

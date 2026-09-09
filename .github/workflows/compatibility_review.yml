@@ -2,12 +2,14 @@ name: Compatibility Review PR
 run-name: Review web/server compatibility for ${{ inputs.version || github.ref_name }}
 
 # Vite refuses to build a release whose version is newer than
-# `reviewed_through_client_version` in web-server-compatibility.json. This workflow
-# opens a pull request that advances that boundary so the release can build.
+# `reviewed_through_client_version` in web-server-compatibility.json.
 #
-# Preferred: run it manually with the upcoming version BEFORE pushing the tag, merge the
-# PR, then tag. The Docker build then passes on the first try.
-# Fallback: it also runs on every release tag push, so a forgotten review still gets a PR.
+# On a release tag push this workflow advances that boundary in a pull request, merges it,
+# moves the tag onto the merged commit and starts the Docker build for it. The Docker
+# workflow skips its own build for an uncovered tag, so a release needs no manual step.
+#
+# Run it manually with a version to prepare the bump before tagging. Untick "merge" to get
+# a pull request you review by hand.
 
 on:
   push:
@@ -17,11 +19,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Web release version to review (e.g. 0.18.1). Run before pushing the tag.'
+        description: 'Web release version to review (e.g. 0.18.1).'
         required: true
         type: string
+      merge:
+        description: 'Merge the review PR automatically'
+        type: boolean
+        required: false
+        default: true
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -37,6 +45,7 @@ jobs:
       # start workflows on pull requests it opens.
       GH_TOKEN: ${{ secrets.CI_TOKEN || secrets.GITHUB_TOKEN }}
       BASE_BRANCH: ${{ github.event.repository.default_branch }}
+      AUTO_MERGE: ${{ github.event_name == 'push' || inputs.merge }}
     steps:
       - name: Check out ${{ github.event.repository.default_branch }}
         uses: actions/checkout@v4
@@ -56,12 +65,13 @@ jobs:
           echo "web-server-compatibility.json already covers ${{ steps.bump.outputs.version }} (reviewed through ${{ steps.bump.outputs.previous }}). No PR needed." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Open pull request
+        id: pr
         if: steps.bump.outputs.changed == 'true'
         env:
           VERSION: ${{ steps.bump.outputs.version }}
           PREVIOUS: ${{ steps.bump.outputs.previous }}
           MIN_SERVER: ${{ steps.bump.outputs.min_server }}
-          TAG_ALREADY_PUSHED: ${{ github.event_name == 'push' }}
+          IS_TAG_PUSH: ${{ github.event_name == 'push' }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
           BRANCH="chore/compatibility-review-${VERSION}"
@@ -75,22 +85,28 @@ jobs:
           # This branch belongs to the workflow; re-running regenerates it.
           git push --force origin "$BRANCH"
 
-          if [ "$TAG_ALREADY_PUSHED" = "true" ]; then
+          if [ "$IS_TAG_PUSH" = "true" ]; then
             NEXT_STEPS=$(cat <<STEPS
-          The Docker build for tag \`${TAG_NAME}\` ran against the old policy and failed at the
-          compatibility gate. After merging, move the tag onto the merged commit to rebuild:
+          This PR is merged automatically. The workflow then moves tag \`${TAG_NAME}\` onto the
+          merged commit and starts the Docker build for it; the build that ran on the original
+          tag push skipped itself.
+          STEPS
+          )
+          elif [ "$AUTO_MERGE" = "true" ]; then
+            NEXT_STEPS=$(cat <<STEPS
+          This PR is merged automatically. Then create the release tag from \`${BASE_BRANCH}\`;
+          its Docker build passes the compatibility gate:
 
           \`\`\`
           git fetch origin ${BASE_BRANCH}
-          git tag -f ${TAG_NAME} origin/${BASE_BRANCH}
-          git push -f origin ${TAG_NAME}
+          git tag ${VERSION} origin/${BASE_BRANCH}
+          git push origin ${VERSION}
           \`\`\`
           STEPS
           )
           else
             NEXT_STEPS=$(cat <<STEPS
-          After merging, push the release tag from \`${BASE_BRANCH}\`. The Docker build will pass
-          the compatibility gate:
+          Review and merge this PR, then create the release tag from \`${BASE_BRANCH}\`:
 
           \`\`\`
           git fetch origin ${BASE_BRANCH}
@@ -106,14 +122,11 @@ jobs:
           (\`${PREVIOUS}\`), so \`vite build\` refuses to produce it. This PR advances
           \`reviewed_through_client_version\` to \`${VERSION}\`.
 
-          ## Review before merging
+          The current server floor is AppFlowy-Cloud \`${MIN_SERVER}\`. If web ${VERSION} needs a
+          newer server, add a row to \`src/application/compatibility/web-server-compatibility.json\`
+          with \`client_from: "${VERSION}"\`, the new \`min_server\` and a reason.
 
-          - [ ] Does web ${VERSION} need a newer AppFlowy-Cloud than the current floor (\`${MIN_SERVER}\`)?
-                If so, add a row to \`src/application/compatibility/web-server-compatibility.json\`
-                with \`client_from: "${VERSION}"\`, the new \`min_server\`, and a reason.
-          - [ ] If the server requirement is unchanged, this version bump alone is enough.
-
-          ## After merging
+          ## Next
 
           ${NEXT_STEPS}
 
@@ -127,8 +140,70 @@ jobs:
 
           if [ -n "$EXISTING" ]; then
             gh pr edit "$EXISTING" --title "$TITLE" --body "$BODY"
-            echo "Updated existing PR: $EXISTING" >> "$GITHUB_STEP_SUMMARY"
+            URL="$EXISTING"
+            echo "Updated existing PR: $URL" >> "$GITHUB_STEP_SUMMARY"
           else
             URL=$(gh pr create --base "$BASE_BRANCH" --head "$BRANCH" --title "$TITLE" --body "$BODY")
             echo "Opened PR: $URL" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Merge pull request
+        id: merge
+        if: steps.bump.outputs.changed == 'true' && env.AUTO_MERGE == 'true'
+        env:
+          PR_URL: ${{ steps.pr.outputs.url }}
+        run: |
+          # GitHub computes mergeability shortly after a PR opens; retry briefly.
+          for attempt in $(seq 1 12); do
+            if gh pr merge "$PR_URL" --squash 2> merge-error.txt; then
+              break
+            fi
+            if [ "$attempt" = 12 ]; then
+              cat merge-error.txt
+              echo "::error::Could not merge ${PR_URL}. Merge it by hand, then move the release tag onto the merged commit and re-run the Docker build."
+              exit 1
+            fi
+            sleep 5
+          done
+
+          MERGE_SHA=""
+          for attempt in $(seq 1 12); do
+            MERGE_SHA=$(gh pr view "$PR_URL" --json mergeCommit --jq '.mergeCommit.oid // empty')
+            [ -n "$MERGE_SHA" ] && break
+            sleep 5
+          done
+
+          if [ -z "$MERGE_SHA" ]; then
+            echo "::error::${PR_URL} merged, but its merge commit could not be read."
+            exit 1
+          fi
+
+          echo "sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Merged ${PR_URL} as \`${MERGE_SHA}\`." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Move the release tag onto the merged commit
+        if: github.event_name == 'push' && steps.merge.outputs.sha != ''
+        env:
+          # The default token never triggers workflows, so this does not start a second Docker
+          # build or re-run this workflow. The build is dispatched explicitly below.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          MERGE_SHA: ${{ steps.merge.outputs.sha }}
+        run: |
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG_NAME}" -f sha="$MERGE_SHA" -F force=true --silent
+          echo "Moved tag \`${TAG_NAME}\` to \`${MERGE_SHA}\`." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build the Docker image
+        if: github.event_name == 'push' && steps.merge.outputs.sha != ''
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh workflow run web_docker.yml --ref "$BASE_BRANCH" \
+            -f tag_name="$TAG_NAME" \
+            -f appflowy_web_branch="$TAG_NAME" \
+            -f build_arm64=true \
+            -f tag_latest=true \
+            -f test=false
+          echo "Started the Docker build for \`${TAG_NAME}\`: https://github.com/${GITHUB_REPOSITORY}/actions/workflows/web_docker.yml" >> "$GITHUB_STEP_SUMMARY"

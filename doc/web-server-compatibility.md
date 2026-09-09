@@ -18,14 +18,18 @@ web 0.17.1. Unknown/unreviewed web versions do not produce old-server warnings.
 There is no appcast or native update gate on web.
 
 The "Compatibility Review PR" workflow
-(`.github/workflows/compatibility_review.yml`) makes that bump for you. Run it
-from the Actions tab with the upcoming version before tagging, or let it run on
-the release tag push. It opens a pull request that advances the reviewed
-boundary; check whether the release needs a new `min_server` row, merge, then
-push (or move) the release tag. Locally,
+(`.github/workflows/compatibility_review.yml`) makes that bump for you. On a
+release tag push it opens a pull request that advances the reviewed boundary,
+merges it, moves the tag onto the merged commit and starts the Docker build for
+it; the Docker workflow skips its own build for a tag the policy does not cover
+yet. Creating a release from the GitHub UI is therefore enough. You can also run
+the workflow from the Actions tab with the upcoming version before tagging, and
+untick "merge" to review the pull request by hand. Locally,
 `node scripts/review-compatibility.cjs <version>` applies the same change. The
 script refuses a version at or above `max_enforceable_client_floor`; raise that
-cap by hand first.
+cap by hand first. Because the bump merges without review, a release that needs
+a newer server must add its `min_server` row in the feature change that
+introduces the dependency.
 
 `GET /api/server-info`, with `x-platform: web`, must expose:
 
