@@ -64,11 +64,18 @@ describe('web/server compatibility', () => {
     expect(evaluate('manual-build', '0.17.2')).toMatchObject({ type: 'client-too-old', remedyReachable: true });
   });
 
-  it('fails open for an unknown or unreviewed installed build', () => {
-    const unreviewedClientVersion = normalizeVersion(policy.reviewed_through_client_version)!.inc('patch').version;
+  it('fails open for an unknown build and applies the latest row to a build newer than the reviewed version', () => {
+    const newerClientVersion = normalizeVersion(policy.reviewed_through_client_version)!.inc('patch').version;
+    const latestServerFloor = policy.rows[policy.rows.length - 1].min_server;
 
     expect(evaluate('0.1.0', undefined, 'manual-build')).toEqual({ type: 'unknown', reason: 'client-version' });
-    expect(evaluate('0.1.0', undefined, unreviewedClientVersion)).toEqual({ type: 'unknown', reason: 'unreviewed-client' });
+    expect(evaluate('0.1.0', undefined, newerClientVersion)).toEqual({
+      type: 'server-too-old',
+      clientVersion: newerClientVersion,
+      serverVersion: '0.1.0',
+      requiredServerVersion: latestServerFloor,
+    });
+    expect(evaluate(latestServerFloor, undefined, newerClientVersion)).toEqual({ type: 'compatible' });
     expect(evaluate('0.18.1', '0.17.3', '0.17.2').type).toBe('client-too-old');
   });
 

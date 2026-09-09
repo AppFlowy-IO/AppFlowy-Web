@@ -11,21 +11,15 @@ back to the reviewed version in
 Both Docker builds pass their `VERSION` build argument to Vite. Runtime endpoint
 configuration cannot change the version of a bundle already loaded by a browser.
 
-When releasing web, review the JSON policy's server requirements and advance
-`reviewed_through_client_version`; builds reject newer release versions until this
-reviewed boundary is advanced. The initial policy requires server 0.18.1 for
-web 0.17.1. Unknown/unreviewed web versions do not produce old-server warnings.
-There is no appcast or native update gate on web.
-
-The "Compatibility Review PR" workflow
-(`.github/workflows/compatibility_review.yml`) makes that bump for you. Run it
-from the Actions tab with the upcoming version before tagging, or let it run on
-the release tag push. It opens a pull request that advances the reviewed
-boundary; check whether the release needs a new `min_server` row, merge, then
-push (or move) the release tag. Locally,
-`node scripts/review-compatibility.cjs <version>` applies the same change. The
-script refuses a version at or above `max_enforceable_client_floor`; raise that
-cap by hand first.
+The policy is maintained by hand and never blocks a build. When a web release
+needs a newer AppFlowy-Cloud, add a row with the release's `client_from` and the
+new `min_server`. A build whose version is newer than
+`reviewed_through_client_version` uses the last row, so leaving the file
+untouched means the current requirements still apply. Advance
+`reviewed_through_client_version` when you review the table for a release; it is
+also the version source builds report. The initial policy requires server 0.18.1
+for web 0.17.1. Web versions that cannot be parsed do not produce old-server
+warnings. There is no appcast or native update gate on web.
 
 `GET /api/server-info`, with `x-platform: web`, must expose:
 

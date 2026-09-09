@@ -10,7 +10,7 @@ export type CompatibilityWarning =
 export type CompatibilityVerdict =
   | CompatibilityWarning
   | { type: 'compatible' }
-  | { type: 'unknown'; reason: 'client-version' | 'server-version' | 'unreviewed-client' };
+  | { type: 'unknown'; reason: 'client-version' | 'server-version' };
 
 /** Match desktop's normalization without flattening real SemVer prereleases. */
 export function normalizeVersion(raw?: string) {
@@ -61,10 +61,6 @@ export function evaluateCompatibility({
       requiredClientVersion: requiredClient.version,
       remedyReachable: !server || compare(server, minimumServerVersion(requiredClient.version)) >= 0,
     };
-  }
-
-  if (compare(client, policy.reviewed_through_client_version) > 0) {
-    return { type: 'unknown', reason: 'unreviewed-client' };
   }
 
   if (!server) return { type: 'unknown', reason: 'server-version' };
