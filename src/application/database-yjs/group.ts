@@ -1,5 +1,5 @@
 import { getStoredCellFieldType } from '@/application/database-yjs/cell.field-type';
-import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { isCellDataTransformable, parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { getRowConditionSnapshot, hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { getCell } from '@/application/database-yjs/const';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
@@ -11,12 +11,11 @@ import {
 } from '@/application/database-yjs/fields';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { checkboxFilterCheck, selectOptionFilterCheck } from '@/application/database-yjs/filter';
+import { createNumberGroupingPolicy, getNumberGroupLabel } from '@/application/database-yjs/number-grouping';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import type { Row } from '@/application/database-yjs/selector';
-import { RowId, YDatabaseField, YDatabaseFilter, YDoc, YjsDatabaseKey } from '@/application/types';
+import { RowId, YDatabaseCell, YDatabaseField, YDatabaseFilter, YDoc, YjsDatabaseKey } from '@/application/types';
 import { canonicalizeUserUid } from '@/application/user-uid';
-
-const NUMBER_GROUP_INTERVAL = 100;
 
 export const DATABASE_GROUPABLE_FIELD_TYPES: readonly FieldType[] = [
   FieldType.RichText,
@@ -110,7 +109,7 @@ export function groupByField(
   }
 
   if (fieldType === FieldType.Number) {
-    return groupByNumber(rows, rowMetas, field);
+    return groupByNumber(rows, rowMetas, field, groupContent);
   }
 
   if (fieldType === FieldType.DateTime) {
@@ -124,7 +123,7 @@ export function groupByField(
   return;
 }
 
-export function getGroupColumns(field: YDatabaseField) {
+export function getGroupColumns(field: YDatabaseField, groupContent?: string) {
   const fieldType = Number(field.get(YjsDatabaseKey.type));
   const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
 
@@ -146,6 +145,11 @@ export function getGroupColumns(field: YDatabaseField) {
 
   if (fieldType === FieldType.Checkbox) {
     return [{ id: 'Yes' }, { id: 'No' }];
+  }
+
+  if (fieldType === FieldType.Number) {
+    return [field.get(YjsDatabaseKey.id), ...createNumberGroupingPolicy(groupContent).configuredGroupIds()]
+      .map((id) => ({ id }));
   }
 
   if (isDatabaseGroupableFieldType(fieldType)) {
@@ -269,35 +273,30 @@ export function groupByText(rows: Row[], rowMetas: Record<RowId, YDoc>, field: Y
   return result;
 }
 
-export function getNumberGroupId(value: unknown): string | null {
-  if (value === null || value === undefined || String(value).trim() === '') return null;
-
-  const parsed = Number(String(value).replaceAll(',', ''));
-
-  if (!Number.isFinite(parsed)) return null;
-
-  const start = Math.floor(parsed / NUMBER_GROUP_INTERVAL) * NUMBER_GROUP_INTERVAL;
-
-  return `number_range_${start}_${start + NUMBER_GROUP_INTERVAL}`;
+export function getNumberGroupId(value: unknown, groupContent?: string): string | null {
+  return createNumberGroupingPolicy(groupContent).groupIdForCell(value);
 }
 
-function getNumberGroupStart(groupId: string): number {
-  if (!groupId.startsWith('number_range_')) return Number.NEGATIVE_INFINITY;
+export function getNumberGroupingCellData(cell?: YDatabaseCell) {
+  if (!cell) return undefined;
 
-  const match = /^number_range_(-?\d+(?:\.\d+)?)_/.exec(groupId);
+  const storedType = getStoredCellFieldType(cell, FieldType.Number);
 
-  return match ? Number(match[1]) : Number.NEGATIVE_INFINITY;
+  // Field switches preserve the original payload. Honor the renderer's
+  // conversion eligibility while keeping Percent/Currency values unformatted.
+  return isCellDataTransformable(storedType, FieldType.Number) ? cell.get(YjsDatabaseKey.data) : undefined;
 }
 
-export function groupByNumber(rows: Row[], rowMetas: Record<RowId, YDoc>, field: YDatabaseField) {
+export function groupByNumber(rows: Row[], rowMetas: Record<RowId, YDoc>, field: YDatabaseField, groupContent?: string) {
   const fieldId = field.get(YjsDatabaseKey.id);
-  const dynamicGroups = new Map<string, Row[]>();
+  const policy = createNumberGroupingPolicy(groupContent);
+  const dynamicGroups = new Map<string, Row[]>(policy.configuredGroupIds().map((id) => [id, []]));
   const ungroupedRows: Row[] = [];
 
   rows.forEach((row) => {
     if (!hasRowConditionData(rowMetas[row.id])) return;
 
-    const groupId = getNumberGroupId(getGroupingCellData(row.id, rowMetas, field));
+    const groupId = policy.groupIdForCell(getNumberGroupingCellData(getCell(row.id, fieldId, rowMetas)));
 
     if (!groupId) {
       ungroupedRows.push(row);
@@ -313,7 +312,7 @@ export function groupByNumber(rows: Row[], rowMetas: Record<RowId, YDoc>, field:
   const result = new Map<string, Row[]>([[fieldId, ungroupedRows]]);
 
   [...dynamicGroups.entries()]
-    .sort(([left], [right]) => getNumberGroupStart(left) - getNumberGroupStart(right))
+    .sort(([left], [right]) => policy.compareGroupIds(left, right))
     .forEach(([groupId, groupRows]) => result.set(groupId, groupRows));
 
   return result;
@@ -466,9 +465,9 @@ export function getGroupLabel(
   const fieldId = field.get(YjsDatabaseKey.id);
   const fieldName = field.get(YjsDatabaseKey.name) || '';
 
-  if (groupId === fieldId) return `No ${fieldName}`.trim();
-
   const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+  if (groupId === fieldId) return fieldType === FieldType.Number ? 'No Number' : `No ${fieldName}`.trim();
 
   if ([FieldType.Relation, FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(fieldType)) {
     const resolved = identifierLabels?.get(groupId)?.trim();
@@ -491,9 +490,7 @@ export function getGroupLabel(
   }
 
   if (fieldType === FieldType.Number) {
-    const match = /^number_range_(-?\d+(?:\.\d+)?)_(-?\d+(?:\.\d+)?)$/.exec(groupId);
-
-    return match ? `${match[1]} to ${match[2]}` : groupId;
+    return getNumberGroupLabel(groupId) ?? groupId;
   }
 
   if (fieldType === FieldType.DateTime) {
@@ -536,7 +533,7 @@ export function getGroupLabel(
   return groupId;
 }
 
-export function getGroupCellData(groupId: string, field: YDatabaseField): string | undefined {
+export function getGroupCellData(groupId: string, field: YDatabaseField, groupContent?: string): string | undefined {
   const fieldId = field.get(YjsDatabaseKey.id);
 
   if (groupId === fieldId) return undefined;
@@ -544,9 +541,7 @@ export function getGroupCellData(groupId: string, field: YDatabaseField): string
   const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 
   if (fieldType === FieldType.Number) {
-    const match = /^number_range_(-?\d+(?:\.\d+)?)_/.exec(groupId);
-
-    return match?.[1];
+    return createNumberGroupingPolicy(groupContent).valueForGroup(groupId);
   }
 
   if (fieldType === FieldType.DateTime) {

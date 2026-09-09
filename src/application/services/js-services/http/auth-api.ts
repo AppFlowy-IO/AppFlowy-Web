@@ -8,13 +8,17 @@ import {
 } from '@/application/types';
 import { Log } from '@/utils/log';
 
+import { APIError, APIResponse, executeAPIRequest, getAxios } from './core';
 import { verifyAndRefreshGoTrueToken } from './gotrue';
 import { parseGoTrueErrorFromUrl } from './gotrue-error';
-import { APIError, APIResponse, executeAPIRequest, getAxios } from './core';
 
 export { verifyToken } from './cloud-auth';
 
 export interface ServerInfo {
+  /** Missing on older web server-info responses; never interpret absence as an old version. */
+  version?: string;
+  /** Web uses a separate release line from the native min_client_version field. */
+  min_web_client_version?: string;
   enable_page_history: boolean;
   ai_enabled?: boolean;
   /** Maximum raw Yjs update accepted by the realtime WebSocket fast lane. */
@@ -130,7 +134,7 @@ export async function signInWithLdap(username: string, password: string, connect
 export async function getServerInfo(signal?: AbortSignal): Promise<ServerInfo> {
   const url = '/api/server-info';
 
-  return executeAPIRequest<ServerInfo>(() =>
+  const info = await executeAPIRequest<ServerInfo>(() =>
     getAxios()?.get<APIResponse<ServerInfo>>(url, {
       headers: {
         'x-platform': 'web',
@@ -139,6 +143,29 @@ export async function getServerInfo(signal?: AbortSignal): Promise<ServerInfo> {
       ...(signal ? { signal } : {}),
     })
   );
+
+  if (info.version !== undefined) return info;
+
+  // Already-deployed servers may strip version from the web projection. Their
+  // native projection has always exposed it. Read only that field: native
+  // feature flags and min_client_version must never override web's values.
+  try {
+    const legacy = await executeAPIRequest<Pick<ServerInfo, 'version'>>(
+      () =>
+        getAxios()?.get<APIResponse<Pick<ServerInfo, 'version'>>>(url, {
+          headers: { 'x-platform': 'app' },
+          timeout: SERVER_INFO_REQUEST_TIMEOUT_MS,
+          ...(signal ? { signal } : {}),
+        }),
+      { suppressResponseDataLogging: true }
+    );
+
+    return typeof legacy.version === 'string' ? { ...info, version: legacy.version } : info;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    Log.warn('[Compatibility] Could not read the legacy server version:', error);
+    return info;
+  }
 }
 
 interface AuthProvidersPayload {

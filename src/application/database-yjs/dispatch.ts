@@ -6,7 +6,7 @@ import * as Y from 'yjs';
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
-import { normalizeLegacyCellFieldType, setCellStoredType } from '@/application/database-yjs/cell.field-type';
+import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import {
@@ -43,14 +43,14 @@ import {
   SelectOptionColor,
   SelectTypeOption,
 } from '@/application/database-yjs/fields';
-import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
-import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
+import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
+import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
 import {
   initializeGalleryLayoutSetting,
   normalizeCreatedDatabaseGalleryView,
@@ -81,6 +81,14 @@ import {
   normalizeCreatedDatabaseListView,
   removeCreatedDatabaseView,
 } from '@/application/database-yjs/list-layout';
+import {
+  createNumberGroupingPolicy,
+  defaultNumberGroupConfiguration,
+  NumberGroupConfiguration,
+  NumberGroupMode,
+  parseNumberGroupConfiguration,
+  validateNumberGroupConfiguration,
+} from '@/application/database-yjs/number-grouping';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import { useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
@@ -267,8 +275,15 @@ function generateGroupByField(field: YDatabaseField) {
 
       columns.push([createYDatabaseGroupColumn({ id: fieldId })]);
       break;
+    case FieldType.Number: {
+      const content = JSON.stringify(defaultNumberGroupConfiguration(NumberGroupMode.Range));
+
+      group.set(YjsDatabaseKey.content, content);
+      columns.push((getGroupColumns(field, content) ?? []).map(createYDatabaseGroupColumn));
+      break;
+    }
+
     case FieldType.RichText:
-    case FieldType.Number:
     case FieldType.URL:
     case FieldType.Relation:
     case FieldType.Person:
@@ -413,6 +428,76 @@ export function useUpdateGroupContentDispatch() {
     },
     [sharedRoot, view]
   );
+}
+
+export function useUpdateNumberGroupConfigurationDispatch() {
+  const view = useDatabaseView();
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((configuration: NumberGroupConfiguration) => {
+    const validated = validateNumberGroupConfiguration(configuration);
+
+    if (!validated.valid) throw new RangeError(validated.error);
+    const next = validated.configuration;
+
+    executeOperations(sharedRoot, [() => {
+      const group = view?.get(YjsDatabaseKey.groups)?.toArray()[0];
+      const fieldId = group?.get(YjsDatabaseKey.field_id);
+      const field = fieldId ? database.get(YjsDatabaseKey.fields)?.get(fieldId) : undefined;
+
+      if (!group || !field || Number(field.get(YjsDatabaseKey.type)) !== FieldType.Number) {
+        throw new Error('Number group not found');
+      }
+
+      const previous = parseNumberGroupConfiguration(group.get(YjsDatabaseKey.content));
+      const content = JSON.stringify(next);
+
+      if (JSON.stringify(previous) === content) return;
+      const membershipChanged = previous.mode !== next.mode ||
+        (next.mode === NumberGroupMode.Range && (
+          previous.range_start !== next.range_start || previous.range_end !== next.range_end ||
+          previous.range_interval !== next.range_interval
+        ));
+
+      // Retain the group map and surviving column/collapse metadata. Only IDs
+      // invalid under the new policy can be discarded without hydrating rows.
+      group.set(YjsDatabaseKey.content, content);
+      if (membershipChanged) {
+        const policy = createNumberGroupingPolicy(content);
+        const isValid = (id: string) => id === fieldId || policy.isValidGroupId(id);
+        const columns = group.get(YjsDatabaseKey.groups);
+
+        if (columns) {
+          for (let index = columns.length - 1; index >= 0; index--) {
+            if (!isValid(getDatabaseGroupColumnId(columns.get(index)) ?? '')) columns.delete(index);
+          }
+        }
+
+        const collapsed = group.get(YjsDatabaseKey.collapsed_group_ids);
+
+        if (collapsed instanceof Y.Array) {
+          for (let index = collapsed.length - 1; index >= 0; index--) {
+            if (!isValid(collapsed.get(index))) collapsed.delete(index);
+          }
+        } else if (Array.isArray(collapsed)) {
+          group.set(YjsDatabaseKey.collapsed_group_ids, Y.Array.from(collapsed.filter(isValid)));
+        }
+
+        const currentIds = new Set(columns?.toArray().map(getDatabaseGroupColumnId));
+        const additions = [fieldId, ...policy.configuredGroupIds()]
+          .filter((id): id is string => Boolean(id && !currentIds.has(id)))
+          .map((id) => createYDatabaseGroupColumn({ id }));
+
+        if (columns && additions.length) columns.push(additions);
+        const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
+
+        if (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List) {
+          markLocalDatabaseGroupInitialization(group);
+        }
+      }
+    }], 'updateNumberGroupConfiguration');
+  }, [database, sharedRoot, view]);
 }
 
 export function useUpdateDateGroupConditionDispatch() {
@@ -648,7 +733,7 @@ function setGroupColumnsHidden({
 
   if (missingRequestedColumnIds.length > 0) {
     const field = fields?.get(fieldId);
-    const fallbackColumns = field ? getGroupColumns(field) ?? [] : [];
+    const fallbackColumns = field ? getGroupColumns(field, group.get(YjsDatabaseKey.content)) ?? [] : [];
     const fallbackColumnIds = new Set(fallbackColumns.map((column) => column.id));
 
     if (!allowDynamicColumn) {
@@ -710,13 +795,13 @@ function setGroupColumnHidden({
 
 export function useSyncDatabaseGroupColumnsDispatch(groupId?: string) {
   const view = useDatabaseView();
+  const database = useDatabase();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
     (activeGroupIds: readonly string[]) => {
       if (!view || !groupId) return;
 
-      const uniqueGroupIds = [...new Set(activeGroupIds.filter(Boolean))];
       const group = view
         .get(YjsDatabaseKey.groups)
         ?.toArray()
@@ -724,6 +809,14 @@ export function useSyncDatabaseGroupColumnsDispatch(groupId?: string) {
       const columns = group?.get(YjsDatabaseKey.groups);
 
       if (!columns) return;
+      const defaultGroupId = group?.get(YjsDatabaseKey.field_id);
+      const groupingField = defaultGroupId ? database.get(YjsDatabaseKey.fields)?.get(defaultGroupId) : undefined;
+      // A schema conversion updates the field before the saved group type.
+      // Match the selector's current field type when validating metadata.
+      const isNumberGroup = Number(groupingField?.get(YjsDatabaseKey.type)) === FieldType.Number;
+      const numberPolicy = isNumberGroup ? createNumberGroupingPolicy(group?.get(YjsDatabaseKey.content)) : undefined;
+      const isValidGroupId = (id: string) => !numberPolicy || id === defaultGroupId || numberPolicy.isValidGroupId(id);
+      const uniqueGroupIds = [...new Set(activeGroupIds.filter((id) => Boolean(id) && isValidGroupId(id)))];
 
       const currentColumns = columns.toArray();
       const currentGroupIds = new Set<string>();
@@ -733,7 +826,7 @@ export function useSyncDatabaseGroupColumnsDispatch(groupId?: string) {
       currentColumns.forEach((column) => {
         const id = getDatabaseGroupColumnId(column);
 
-        if (!id || currentGroupIds.has(id)) {
+        if (!id || !isValidGroupId(id) || currentGroupIds.has(id)) {
           hasDuplicateOrInvalidColumns = true;
           return;
         }
@@ -745,7 +838,6 @@ export function useSyncDatabaseGroupColumnsDispatch(groupId?: string) {
       const legacyColumns = currentColumns.filter(
         (column) => !(column instanceof Y.Map) || !column.has(YjsDatabaseKey.visible)
       );
-      const isNumberGroup = Number(group?.get(YjsDatabaseKey.type)) === FieldType.Number;
       const hasCanonicalNumberOrder =
         !isNumberGroup || uniqueGroupIds.every((id, index) => currentGroupIdOrder[index] === id);
       const alreadyCanonical =
@@ -774,7 +866,7 @@ export function useSyncDatabaseGroupColumnsDispatch(groupId?: string) {
             latestColumns.toArray().forEach((column, index) => {
               const id = getDatabaseGroupColumnId(column);
 
-              if (!id || seenColumnIds.has(id)) {
+              if (!id || !isValidGroupId(id) || seenColumnIds.has(id)) {
                 redundantColumnIndexes.push(index);
                 return;
               }
@@ -797,7 +889,7 @@ export function useSyncDatabaseGroupColumnsDispatch(groupId?: string) {
                 }),
               ]);
             });
-            if (Number(latestGroup?.get(YjsDatabaseKey.type)) === FieldType.Number) {
+            if (isNumberGroup) {
               // Desktop keeps the default Number group first and inserts dynamic
               // ranges by their numeric start. The selector supplies that desired
               // order; reconcile it without replacing columns already in place so
@@ -832,7 +924,7 @@ export function useSyncDatabaseGroupColumnsDispatch(groupId?: string) {
         { type: 'database.sync-group-columns', policy: 'skip' }
       );
     },
-    [groupId, sharedRoot, view]
+    [database, groupId, sharedRoot, view]
   );
 }
 
@@ -1260,129 +1352,8 @@ export function useReorderRowDispatch() {
   );
 }
 
-export function useMoveCardDispatch() {
-  const view = useDatabaseView();
-  const sharedRoot = useSharedRoot();
-  const rowMap = useRowMap();
-  const database = useDatabase();
-  const { databaseDoc } = useDatabaseContext();
-  const currentUser = useCurrentUserOptional();
-  const actorUid = resolveUserAttributionUid(currentUser);
-
-  return useCallback(
-    ({
-      rowId,
-      beforeRowId,
-      fieldId,
-      startColumnId,
-      finishColumnId,
-    }: {
-      rowId: string;
-      beforeRowId?: string;
-      fieldId: string;
-      startColumnId: string;
-      finishColumnId: string;
-    }) => {
-      if (!view) {
-        throw new Error(`Unable to reorder card`);
-      }
-
-      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
-
-      if (!field) {
-        throw new Error(`Field not found`);
-      }
-
-      const fieldType = Number(field.get(YjsDatabaseKey.type));
-
-      if (isAttributionFieldType(fieldType)) {
-        executeOperations(
-          sharedRoot,
-          [
-            () => {
-              if (startColumnId === finishColumnId) {
-                reorderRow(rowId, beforeRowId, view);
-              }
-            },
-          ],
-          'reorderCard',
-          { type: 'database.reorder-card', rowId, fieldId, fieldType }
-        );
-        return;
-      }
-
-      const rowDoc = rowMap?.[rowId];
-
-      if (!rowDoc) {
-        throw new Error(`Unable to reorder card`);
-      }
-
-      const historyGroup = createDatabaseHistoryGroup();
-
-      getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
-      executeOperations(
-        sharedRoot,
-        [
-          () => {
-            runDatabaseRowAction(rowDoc, { type: 'row.move-card-cell', rowId, fieldId, fieldType, historyGroup }, () => {
-              const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
-              const cells = row.get(YjsDatabaseKey.cells);
-              const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
-              let cellChanged = false;
-              let cell = cells.get(fieldId);
-
-              if (!cell) {
-                // if the cell is empty, create a new cell and set data to finishColumnId
-                if (isSelectOptionField) {
-                  cell = createSelectOptionCell(fieldId, fieldType, finishColumnId);
-                } else if (fieldType === FieldType.Checkbox) {
-                  cell = createCheckboxCell(fieldId, finishColumnId);
-                }
-
-                if (cell) {
-                  cells.set(fieldId, cell);
-                  cellChanged = true;
-                }
-              } else {
-                const cellData = parseYDatabaseCellToCell(cell, field).data;
-                let newCellData = cellData;
-
-                if (isSelectOptionField) {
-                  const selectedIds = (cellData as string)?.split(',') ?? [];
-                  const index = selectedIds.findIndex((id) => id === startColumnId);
-
-                  if (selectedIds.includes(finishColumnId)) {
-                    selectedIds.splice(index, 1);
-                  } else {
-                    selectedIds.splice(index, 1, finishColumnId);
-                  }
-
-                  newCellData = selectedIds.join(',');
-                } else if (fieldType === FieldType.Checkbox) {
-                  newCellData = finishColumnId;
-                }
-
-                cell.set(YjsDatabaseKey.data, newCellData);
-                setCellStoredType(cell, fieldType);
-                cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-                cellChanged = newCellData !== cellData;
-              }
-
-              if (cellChanged) {
-                touchRowAttribution(row, actorUid);
-              }
-            });
-
-            reorderRow(rowId, beforeRowId, view);
-          },
-        ],
-        'reorderCard',
-        { type: 'database.reorder-card', rowId, fieldId, fieldType, historyGroup }
-      );
-    },
-    [actorUid, database, databaseDoc, rowMap, sharedRoot, view]
-  );
-}
+// Keep the public and modular dispatch entry points on the same mutation path.
+export { useMoveCardDispatch } from '@/application/database-yjs/dispatch/row';
 
 export function useDeleteRowDispatch() {
   const database = useDatabase();
@@ -1599,14 +1570,14 @@ export function useUpdatePropertyNameDispatch(fieldId: string) {
   );
 }
 
-function createField(type: FieldType, fieldId: string) {
+function createField(type: FieldType, fieldId: string, fieldName?: string) {
   const createSimpleField = (fieldType: FieldType, initTypeOption?: (typeOption: YMapFieldTypeOption) => void) => {
     const field = new Y.Map() as YDatabaseField;
     const typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
     const typeOption = new Y.Map() as YMapFieldTypeOption;
     const timestamp = String(dayjs().unix());
 
-    field.set(YjsDatabaseKey.name, getFieldName(fieldType));
+    field.set(YjsDatabaseKey.name, fieldName ?? getFieldName(fieldType));
     field.set(YjsDatabaseKey.id, fieldId);
     field.set(YjsDatabaseKey.type, fieldType);
     field.set(YjsDatabaseKey.created_at, timestamp);
@@ -1628,8 +1599,16 @@ function createField(type: FieldType, fieldId: string) {
       return createSimpleField(FieldType.Number, (typeOption) => {
         typeOption.set(YjsDatabaseKey.format, NumberFormat.Num);
       });
-    case FieldType.DateTime:
-      return createDateTimeField(fieldId);
+    case FieldType.DateTime: {
+      const field = createDateTimeField(fieldId);
+
+      if (fieldName !== undefined) {
+        field.set(YjsDatabaseKey.name, fieldName);
+      }
+
+      return field;
+    }
+
     case FieldType.SingleSelect:
       return createSimpleField(FieldType.SingleSelect, (typeOption) => {
         typeOption.set(
@@ -1701,6 +1680,81 @@ function createField(type: FieldType, fieldId: string) {
     default:
       throw new Error(`Field type ${type} not supported`);
   }
+}
+
+/**
+ * Desktop parity for Form's "New question" command. The generic property
+ * creator and a subsequent Form-writer call would produce two Yjs/history
+ * transactions and expose a transient unattached field. Keep the entire
+ * schema + projection mutation indivisible and name the field `Question N`.
+ */
+export function useNewFormQuestionDispatch() {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+  const formViewId = useDatabaseViewId();
+
+  return useCallback(
+    (fieldType: FieldType) => {
+      if (!formViewId || !isFormQuestionFieldType(fieldType)) {
+        throw new Error('Unsupported Form question type or missing Form view');
+      }
+
+      const fieldId = nanoid(6);
+      const fields = database.get(YjsDatabaseKey.fields);
+      const views = database.get(YjsDatabaseKey.views);
+      const targetView = views?.get(formViewId);
+
+      if (
+        !fields ||
+        !views ||
+        !targetView ||
+        Number(targetView.get(YjsDatabaseKey.layout)) !== DatabaseViewLayout.Form
+      ) {
+        throw new Error('Target view must be a Form');
+      }
+
+      // Validate every linked view before the transaction mutates anything.
+      // A malformed view must not leave a partially-created schema field.
+      const linkedViews: YDatabaseView[] = [];
+
+      views.forEach((view) => {
+        if (!view.get(YjsDatabaseKey.field_orders) || !view.get(YjsDatabaseKey.field_settings)) {
+          throw new Error('Database view is missing field configuration');
+        }
+
+        linkedViews.push(view);
+      });
+
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            const questionNumber = attachNewFormQuestion(targetView, fieldId);
+            const field = createField(fieldType, fieldId, `Question ${questionNumber}`);
+
+            fields.set(fieldId, field);
+            linkedViews.forEach((view) => {
+              const setting = new Y.Map() as YDatabaseFieldSetting;
+
+              setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+              setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
+              view.get(YjsDatabaseKey.field_settings).set(fieldId, setting);
+              view.get(YjsDatabaseKey.field_orders).push([{ id: fieldId }]);
+            });
+          },
+        ],
+        'createFormQuestion',
+        {
+          type: 'field.create',
+          fieldId,
+          fieldType,
+          policy: 'capture',
+        }
+      );
+      return fieldId;
+    },
+    [database, formViewId, sharedRoot]
+  );
 }
 
 export function useNewPropertyDispatch() {
@@ -2637,10 +2691,22 @@ interface AddDatabaseViewOptions {
   requireExactCreatedView?: boolean;
 }
 
+export const FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION =
+  'Edit access is required to create or duplicate a Form view.';
+
 export function useAddDatabaseView() {
   // databasePageId: The main database page in folder (used as parent for new views)
-  const { databasePageId, activeViewId, createDatabaseView, databaseDoc, deletePage, loadViewMeta, isDocumentBlock } =
-    useDatabaseContext();
+  const {
+    databasePageId,
+    activeViewId,
+    createDatabaseView,
+    databaseDoc,
+    deletePage,
+    loadViewMeta,
+    isDocumentBlock,
+    readOnly,
+    canWrite,
+  } = useDatabaseContext();
   const sharedRoot = useSharedRoot();
 
   const database = useMemo(() => {
@@ -2655,6 +2721,10 @@ export function useAddDatabaseView() {
 
   return useCallback(
     async (layout: DatabaseViewLayout, nameOverride?: string, options?: AddDatabaseViewOptions) => {
+      if (layout === DatabaseViewLayout.Form && (readOnly || canWrite === false)) {
+        throw new Error(FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION);
+      }
+
       if (!createDatabaseView) {
         throw new Error('createDatabaseView not found');
       }
@@ -2676,6 +2746,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Chart]: ViewLayout.Chart,
         [DatabaseViewLayout.List]: ViewLayout.List,
         [DatabaseViewLayout.Gallery]: ViewLayout.Gallery,
+        [DatabaseViewLayout.Form]: ViewLayout.Form,
       };
       const layoutToName: Record<DatabaseViewLayout, string> = {
         [DatabaseViewLayout.Grid]: 'Grid',
@@ -2684,6 +2755,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Chart]: 'Chart',
         [DatabaseViewLayout.List]: 'List',
         [DatabaseViewLayout.Gallery]: 'Gallery',
+        [DatabaseViewLayout.Form]: 'Form builder',
       };
       const viewLayout = layoutToViewLayout[layout];
       const name = layoutToName[layout];
@@ -2893,6 +2965,8 @@ export function useAddDatabaseView() {
       deletePage,
       loadViewMeta,
       isDocumentBlock,
+      readOnly,
+      canWrite,
     ]
   );
 }
@@ -2900,6 +2974,7 @@ export function useAddDatabaseView() {
 const DUPLICATED_DATABASE_VIEW_CONFIGURATION_KEYS = [
   YjsDatabaseKey.field_orders,
   YjsDatabaseKey.field_settings,
+  YjsDatabaseKey.form_field_settings,
   YjsDatabaseKey.filters,
   YjsDatabaseKey.groups,
   YjsDatabaseKey.layout_settings,
@@ -3192,7 +3267,7 @@ export function useUpdateDatabaseView() {
               throw new Error(`View not found`);
             }
 
-            const name = payload.name || view.get(YjsDatabaseKey.name);
+            const name = payload.name ?? view.get(YjsDatabaseKey.name);
 
             view.set(YjsDatabaseKey.name, name);
           },
@@ -3856,12 +3931,12 @@ export function useUpdateTranslateLanguage(fieldId: string) {
   );
 }
 
-export function useAddSelectOption(fieldId: string) {
+export function useAddSelectOptionDispatch() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (option: SelectOption, explicitHistoryGroup?: object) => {
+    (fieldId: string, option: SelectOption, explicitHistoryGroup?: object) => {
       const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
       if (!field) {
@@ -3953,7 +4028,18 @@ export function useAddSelectOption(fieldId: string) {
         historyGroup
       );
     },
-    [database, fieldId, sharedRoot]
+    [database, sharedRoot]
+  );
+}
+
+export function useAddSelectOption(fieldId: string) {
+  const addSelectOption = useAddSelectOptionDispatch();
+
+  return useCallback(
+    (option: SelectOption, explicitHistoryGroup?: object) => {
+      addSelectOption(fieldId, option, explicitHistoryGroup);
+    },
+    [addSelectOption, fieldId]
   );
 }
 

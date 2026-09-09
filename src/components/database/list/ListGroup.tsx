@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldType, useDatabaseFields, useReadOnly } from '@/application/database-yjs';
+import { FieldType, useDatabaseFields, useDatabaseView, useReadOnly } from '@/application/database-yjs';
 import type { GridGroup } from '@/application/database-yjs';
 import {
   useClearGroupByFieldDispatch,
@@ -23,15 +23,16 @@ import { getListGroupCellsData } from './ListRowActions';
 
 function useCreateListGroupRow(groupFieldId?: string, groupId?: string, openAfterCreate = false) {
   const fields = useDatabaseFields();
+  const view = useDatabaseView();
   const createRow = useNewRowDispatch();
 
   return useCallback(async () => {
     await createRow({
-      cellsData: getListGroupCellsData(fields, groupFieldId, groupId),
+      cellsData: getListGroupCellsData(fields, groupFieldId, groupId, view),
       openAfterCreate,
       tailing: true,
     });
-  }, [createRow, fields, groupFieldId, groupId, openAfterCreate]);
+  }, [createRow, fields, groupFieldId, groupId, openAfterCreate, view]);
 }
 
 export function ListGroupHeader({

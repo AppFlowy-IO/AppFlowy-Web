@@ -35,6 +35,11 @@ jest.mock('@/application/database-yjs', () => ({
   useUpdateDateGroupConditionDispatch: () => jest.fn(),
 }));
 
+jest.mock('@/application/database-yjs/dispatch', () => ({
+  ...jest.requireActual('@/application/database-yjs/dispatch'),
+  useUpdateNumberGroupConfigurationDispatch: () => jest.fn(),
+}));
+
 jest.mock('@/components/database/list/ListGroupingContext', () => ({
   useListGrouping: () => mockGrouping,
 }));

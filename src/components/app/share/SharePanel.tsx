@@ -179,6 +179,8 @@ function SharePanel({
           canManageGroupAccess={canManageGroupAccess}
           canManageFullAccess={canManageFullAccess}
           canGrantFullAccess={canManageFullAccess}
+          // Listing a group's members is a workspace-owner capability on the server.
+          canExploreGroupMembers={isOwner}
           disablePersonAccessChanges={disablePersonAccessChanges}
           sectionType={sectionType}
         />

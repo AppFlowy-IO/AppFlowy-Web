@@ -19,6 +19,10 @@ import { Log } from '@/utils/log';
 import { DatabaseContent } from './components/DatabaseContent';
 import { useDatabaseDeletionStatus } from './hooks/useDatabaseDeletionStatus';
 import { useDocumentLoader } from './hooks/useDocumentLoader';
+import {
+  EmbeddedDatabasePermissionsResolver,
+  resolveEmbeddedDatabaseCollabId,
+} from './hooks/useEmbeddedDatabasePermissions';
 import { useResizePositioning } from './hooks/useResizePositioning';
 import { useViewMeta } from './hooks/useViewMeta';
 import { useViewSelection } from './hooks/useViewSelection';
@@ -95,6 +99,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
     ignoreMetaErrors: true, // Embedded databases don't require meta
     onNotFound: () => setNotFound(true),
   });
+  const databaseCollabId = resolveEmbeddedDatabaseCollabId(databaseId, doc);
 
   // 5. Detect when the database page is deleted from (or restored to) trash.
   const deletionStatus = useDatabaseDeletionStatus({
@@ -333,34 +338,48 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
         ref={containerRef}
         className='container-bg relative my-1 flex w-full select-none flex-col'
       >
-        <DatabaseContent
-          baseViewId={viewId}
-          selectedViewId={selectedViewId}
-          hasDatabase={hasDatabase}
-          notFound={notFound}
-          noAccess={noAccess}
-          deletionStatus={effectiveDeletionStatus}
-          paddingStart={paddingStart}
-          paddingEnd={paddingEnd}
-          width={width}
-          doc={doc}
-          workspaceId={workspaceId}
-          createRow={createRow}
-          loadView={loadView}
-          navigateToView={navigateToView}
-          onOpenRowPage={handleNavigateToRow}
-          loadViewMeta={loadViewMeta}
-          databaseName={databaseName}
-          visibleViewIds={visibleViewIds}
-          onChangeView={onChangeView}
-          onViewAdded={onViewAdded}
-          onRendered={handleRendered}
-          onViewIdsChanged={handleViewIdsChanged}
-          // EditorContextState shares common fields with DatabaseContextState but not all
-          // The missing fields (databaseDoc, databasePageId, activeViewId, rowMap) are
-          // explicitly set by DatabaseContent via baseViewId, selectedViewId, and doc props
-          context={context as unknown as DatabaseContextState}
-        />
+        <EmbeddedDatabasePermissionsResolver
+          sourceViewId={viewId}
+          sourceDatabaseId={databaseCollabId}
+          variant={context.variant}
+          inheritedReadOnly={readOnly}
+          publishCanWrite={context.canWrite}
+          publishCanShare={context.canShare}
+        >
+          {(databasePermissions) => (
+            <DatabaseContent
+              baseViewId={viewId}
+              selectedViewId={selectedViewId}
+              hasDatabase={hasDatabase}
+              notFound={notFound}
+              noAccess={noAccess}
+              deletionStatus={effectiveDeletionStatus}
+              paddingStart={paddingStart}
+              paddingEnd={paddingEnd}
+              width={width}
+              doc={doc}
+              workspaceId={workspaceId}
+              createRow={createRow}
+              loadView={loadView}
+              navigateToView={navigateToView}
+              onOpenRowPage={handleNavigateToRow}
+              loadViewMeta={loadViewMeta}
+              databaseName={databaseName}
+              visibleViewIds={visibleViewIds}
+              onChangeView={onChangeView}
+              onViewAdded={onViewAdded}
+              onRendered={handleRendered}
+              onViewIdsChanged={handleViewIdsChanged}
+              databaseReadOnly={databasePermissions.readOnly}
+              databaseCanWrite={databasePermissions.canWrite}
+              databaseCanShare={databasePermissions.canShare}
+              // EditorContextState shares common fields with DatabaseContextState but not all
+              // The missing fields (databaseDoc, databasePageId, activeViewId, rowMap) are
+              // explicitly set by DatabaseContent via baseViewId, selectedViewId, and doc props
+              context={context as unknown as DatabaseContextState}
+            />
+          )}
+        </EmbeddedDatabasePermissionsResolver>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { PageService, PublishService, ViewService } from '@/application/services/domains';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
@@ -62,6 +62,7 @@ function createView(overrides: Partial<View>): View {
 
 function renderUsePageOperations(options?: {
   outlineRef?: MutableRefObject<View[] | undefined>;
+  loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
   getDatabaseIdForViewId?: (viewId: string) => Promise<string | null | undefined>;
   flushAllSync?: () => Promise<boolean>;
   syncAllToServer?: (workspaceId: string) => Promise<void>;
@@ -72,7 +73,7 @@ function renderUsePageOperations(options?: {
     isAuthenticated: true,
     onChangeWorkspace: () => Promise.resolve(),
   };
-  const loadOutline = jest.fn(async () => undefined);
+  const loadOutline = jest.fn(options?.loadOutline ?? (async () => undefined));
   const outlineRef = options?.outlineRef ?? { current: undefined };
 
   const rendered = renderHook(
@@ -444,6 +445,35 @@ describe('usePageOperations addPage', () => {
     expect(jest.mocked(ViewService.invalidateDatabaseCatalog).mock.invocationCallOrder[0]).toBeLessThan(
       jest.mocked(ViewService.refreshWorkspaceDatabaseCatalog).mock.invocationCallOrder[0]
     );
+  });
+
+  it('returns a created database view without waiting for the outline refresh', async () => {
+    const response = {
+      view_id: 'linked-view-id',
+      database_id: 'database-id',
+    };
+    const pendingOutline = new Promise<void>(() => undefined);
+
+    jest.mocked(PageService.createDatabaseView).mockResolvedValue(response);
+    jest.mocked(ViewService.refreshWorkspaceDatabaseCatalog).mockResolvedValue([]);
+    const { result, loadOutline, workspaceId } = renderUsePageOperations({
+      loadOutline: () => pendingOutline,
+    });
+    const payload = {
+      parent_view_id: 'parent-view-id',
+      database_id: 'database-id',
+      layout: ViewLayout.Form,
+    };
+    const creation = result.current.createDatabaseView('request-view-id', payload);
+
+    await waitFor(() => {
+      expect(loadOutline).toHaveBeenCalledWith(workspaceId, false);
+    });
+
+    const stillPending = Symbol('outline refresh still pending');
+    const outcome = await Promise.race([creation, Promise.resolve(stillPending)]);
+
+    expect(outcome).toEqual(response);
   });
 
   it('refreshes the shared catalog after moving a database view to trash', async () => {

@@ -47,6 +47,7 @@ describe('permission probe identity', () => {
     ViewLayout.Chart,
     ViewLayout.List,
     ViewLayout.Gallery,
+    ViewLayout.Form,
   ])('uses the canonical database collab id for database layout %s', (layout) => {
     expect(
       resolvePermissionProbeTarget('database-view-id', createView('database-view-id', layout, 'database-id'))

@@ -11,6 +11,7 @@ import PublishLinkPreview from '@/components/app/share/PublishLinkPreview';
 
 function PublishPanel({
   viewId,
+  fallbackViewId,
   opened,
   onClose,
   onOpenPublishManage,
@@ -18,6 +19,7 @@ function PublishPanel({
   shareDetailsLoading,
 }: {
   viewId: string;
+  fallbackViewId?: string;
   onClose: () => void;
   opened: boolean;
   onOpenPublishManage?: () => void;
@@ -36,7 +38,7 @@ function PublishPanel({
     isOwner,
     isPublisher,
     updatePublishConfig,
-  } = useLoadPublishInfo(viewId);
+  } = useLoadPublishInfo(viewId, fallbackViewId);
   const [unpublishLoading, setUnpublishLoading] = React.useState<boolean>(false);
   const [publishLoading, setPublishLoading] = React.useState<boolean>(false);
   // Track publish/unpublish actions locally so the panel updates immediately,
@@ -48,7 +50,7 @@ function PublishPanel({
   // Reset session-local overrides when the target view changes
   useEffect(() => {
     setPublishedOverride(undefined);
-  }, [viewId]);
+  }, [publishInfoViewId]);
 
   useEffect(() => {
     if (opened) {
@@ -57,11 +59,11 @@ function PublishPanel({
   }, [loadPublishInfo, opened]);
 
   useEffect(() => {
-    if (opened && publishInfo && publishInfoViewId === viewId) {
+    if (opened && publishInfo) {
       setCommentEnabled(publishInfo.commentEnabled);
       setDuplicateEnabled(publishInfo.duplicateEnabled);
     }
-  }, [opened, publishInfo, publishInfoViewId, viewId]);
+  }, [opened, publishInfo]);
 
   const handlePublish = useCallback(
     async (publishName?: string) => {
@@ -95,7 +97,7 @@ function PublishPanel({
     setUnpublishLoading(true);
 
     try {
-      await unpublish(viewId);
+      await unpublish(publishInfoViewId);
       setPublishedOverride(false);
       await loadPublishInfo();
       notify.success(t('publish.unpublishSuccessfully'));
@@ -105,16 +107,16 @@ function PublishPanel({
     } finally {
       setUnpublishLoading(false);
     }
-  }, [isOwner, isPublisher, loadPublishInfo, t, unpublish, view, viewId]);
+  }, [isOwner, isPublisher, loadPublishInfo, publishInfoViewId, t, unpublish, view]);
 
-  const scopedPublishInfo = publishInfoViewId === viewId ? publishInfo : undefined;
+  const scopedPublishInfo = publishInfo;
 
   const renderPublished = useCallback(() => {
     if (!scopedPublishInfo || !view) return null;
     return (
       <div className={'flex flex-col gap-5'}>
         <PublishLinkPreview
-          viewId={viewId}
+          viewId={publishInfoViewId}
           publishInfo={scopedPublishInfo}
           url={url}
           updatePublishConfig={updatePublishConfig}
@@ -155,7 +157,7 @@ function PublishPanel({
               checked={commentEnabled !== false}
               onChange={(e) => {
                 setCommentEnabled(e.target.checked);
-                void updatePublishConfig({ comments_enabled: e.target.checked, view_id: viewId });
+                void updatePublishConfig({ comments_enabled: e.target.checked, view_id: publishInfoViewId });
               }}
               size={'small'}
               inputProps={{ 'data-testid': 'publish-comments-switch' } as React.InputHTMLAttributes<HTMLInputElement>}
@@ -167,7 +169,7 @@ function PublishPanel({
               checked={duplicateEnabled !== false}
               onChange={(e) => {
                 setDuplicateEnabled(e.target.checked);
-                void updatePublishConfig({ duplicate_enabled: e.target.checked, view_id: viewId });
+                void updatePublishConfig({ duplicate_enabled: e.target.checked, view_id: publishInfoViewId });
               }}
               size={'small'}
             />
@@ -188,7 +190,7 @@ function PublishPanel({
     commentEnabled,
     duplicateEnabled,
     updatePublishConfig,
-    viewId,
+    publishInfoViewId,
     onOpenPublishManage,
   ]);
 
@@ -222,10 +224,7 @@ function PublishPanel({
 
     return (
       <div className={'flex w-full flex-col gap-4'}>
-        <Tooltip
-          disableHoverListener={canShare}
-          title={!canShare ? t('shareAction.readOnlyPublishTooltip') : ''}
-        >
+        <Tooltip disableHoverListener={canShare} title={!canShare ? t('shareAction.readOnlyPublishTooltip') : ''}>
           <span className={'w-full'}>{publishButton}</span>
         </Tooltip>
       </div>

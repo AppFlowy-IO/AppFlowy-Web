@@ -53,7 +53,6 @@ import {
   isDatabaseGroupableFieldType,
   isDynamicDatabaseGroupFieldType,
 } from '@/application/database-yjs/group';
-import { canonicalizeUserUid } from '@/application/user-uid';
 import {
   hasPendingLocalDatabaseGroupInitialization,
   normalizeDatabaseGroupColumn,
@@ -65,6 +64,7 @@ import {
   useBackgroundRowDocLoader,
   useRollupFieldObservers,
 } from '@/application/database-yjs/hooks';
+import { createNumberGroupingPolicy, NumberGroupingPolicy } from '@/application/database-yjs/number-grouping';
 import {
   ensureRelationGroupLabel,
   getRelationGroupLabelRevision,
@@ -113,6 +113,7 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
+import { canonicalizeUserUid } from '@/application/user-uid';
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
@@ -1100,10 +1101,10 @@ export function useGroupsSelector() {
 
 export type GroupColumn = DatabaseGroupColumn;
 
-function getFallbackGroupColumns(field?: YDatabaseField): GroupColumn[] {
+function getFallbackGroupColumns(field?: YDatabaseField, content?: string): GroupColumn[] {
   if (!field) return [];
 
-  return (getGroupColumns(field) ?? []).map((column) => ({
+  return (getGroupColumns(field, content) ?? []).map((column) => ({
     id: column.id,
     visible: true,
     visibleExplicit: false,
@@ -1476,23 +1477,12 @@ const EMPTY_DATABASE_GROUPING: DatabaseGrouping = {
   metadataSyncKey: '',
 };
 
-function getNumberGroupStart(groupId: string) {
-  const match = /^number_range_(-?\d+(?:\.\d+)?)_/.exec(groupId);
-
-  return match ? Number(match[1]) : undefined;
-}
-
-function orderNumberGroupIds(groupIds: string[], defaultGroupId: string) {
+function orderNumberGroupIds(groupIds: string[], defaultGroupId: string, policy: NumberGroupingPolicy) {
   return [...groupIds].sort((left, right) => {
     if (left === defaultGroupId) return -1;
     if (right === defaultGroupId) return 1;
 
-    const leftStart = getNumberGroupStart(left);
-    const rightStart = getNumberGroupStart(right);
-
-    if (leftStart === undefined) return rightStart === undefined ? 0 : 1;
-    if (rightStart === undefined) return -1;
-    return leftStart - rightStart;
+    return policy.compareGroupIds(left, right);
   });
 }
 
@@ -1947,6 +1937,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
 
     const groupingFieldId = field.get(YjsDatabaseKey.id);
     const content = group.get(YjsDatabaseKey.content);
+    const numberPolicy = fieldType === FieldType.Number ? createNumberGroupingPolicy(content) : undefined;
     const result = rowOrders ? groupByField(rowOrders, groupingRows, field, undefined, content) : undefined;
     const metadataResult = haveSameRowOrder(rowOrders, allRowOrders)
       ? result
@@ -1962,8 +1953,12 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     const ready = rowsHydrated;
     const initializesLocalGroup = ready && hasPendingLocalDatabaseGroupInitialization(group);
     const rawColumns = group.get(YjsDatabaseKey.groups)?.toArray() ?? [];
-    const persistedColumns = normalizeUniqueDatabaseGroupColumns(rawColumns);
-    const fallbackColumns = getFallbackGroupColumns(field);
+    // Configuration changes can invalidate old numeric IDs without proving
+    // anything about unloaded rows. Keep every still-valid persisted ID.
+    const persistedColumns = normalizeUniqueDatabaseGroupColumns(rawColumns).filter(
+      (column) => !numberPolicy || column.id === groupingFieldId || numberPolicy.isValidGroupId(column.id)
+    );
+    const fallbackColumns = getFallbackGroupColumns(field, content);
     const derivedMetadataGroupIds = metadataResult
       ? [...metadataResult.keys()]
       : fallbackColumns.map((column) => column.id);
@@ -1983,8 +1978,8 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
       }
     });
     const orderedIds =
-      fieldType === FieldType.Number
-        ? orderNumberGroupIds(persistedAndDerivedIds, groupingFieldId)
+      numberPolicy
+        ? orderNumberGroupIds(persistedAndDerivedIds, groupingFieldId, numberPolicy)
         : persistedAndDerivedIds;
 
     // Seed-only docs may lag a Desktop edit indefinitely because background
@@ -2012,7 +2007,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
       }
     });
     const orderedMetadataGroupIds =
-      fieldType === FieldType.Number ? orderNumberGroupIds(metadataGroupIds, groupingFieldId) : metadataGroupIds;
+      numberPolicy ? orderNumberGroupIds(metadataGroupIds, groupingFieldId, numberPolicy) : metadataGroupIds;
 
     const collapsedValue = group.get(YjsDatabaseKey.collapsed_group_ids) as unknown;
     const collapsedIds = new Set(
@@ -2039,7 +2034,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
         ? (Number(primarySort.get(YjsDatabaseKey.condition)) as SortCondition)
         : undefined;
     const displayIds =
-      primarySortCondition === undefined
+      primarySortCondition === undefined || numberPolicy
         ? orderedIds
         : orderDatabaseGroupsForPrimarySort(orderedIds, result, rowOrders, primarySortCondition);
     const identifierLabels = new Map<string, string>();
@@ -2085,7 +2080,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
       const automaticallyHidden =
         ready &&
         groupRows.length === 0 &&
-        (hideEmptyGroups || (id !== currentFieldId && isDynamicDatabaseGroupFieldType(fieldType)));
+        (hideEmptyGroups || (id !== currentFieldId && isDynamicDatabaseGroupFieldType(fieldType) && !numberPolicy?.retainsEmptyGroups));
 
       return {
         id,

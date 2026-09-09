@@ -1,10 +1,16 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { FieldType, useDatabaseFields } from '@/application/database-yjs';
+import { FieldType, useDatabaseFields, useDatabaseView } from '@/application/database-yjs';
 import { useDuplicateRowDispatch, useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
-import type { YDatabaseField, YDatabaseFields } from '@/application/types';
+import type {
+  YDatabaseField,
+  YDatabaseFields,
+  YDatabaseGroup,
+  YDatabaseGroups,
+  YDatabaseView,
+} from '@/application/types';
 
 import { getListGroupCellsData, ListRowActions } from '../ListRowActions';
 import { ListSortState } from '../ListSortState';
@@ -12,6 +18,7 @@ import { ListSortState } from '../ListSortState';
 jest.mock('@/application/database-yjs', () => ({
   FieldType: { Number: 1, SingleSelect: 3 },
   useDatabaseFields: jest.fn(),
+  useDatabaseView: jest.fn(),
 }));
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
@@ -47,6 +54,7 @@ jest.mock('@/components/database/components/sorts/ClearSortingConfirm', () => ({
 }));
 
 const mockUseDatabaseFields = useDatabaseFields as jest.MockedFunction<typeof useDatabaseFields>;
+const mockUseDatabaseView = useDatabaseView as jest.MockedFunction<typeof useDatabaseView>;
 const mockUseDuplicateRowDispatch = useDuplicateRowDispatch as jest.MockedFunction<typeof useDuplicateRowDispatch>;
 const mockUseNewRowDispatch = useNewRowDispatch as jest.MockedFunction<typeof useNewRowDispatch>;
 
@@ -85,6 +93,7 @@ describe('ListRowActions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseDatabaseFields.mockReturnValue(undefined);
+    mockUseDatabaseView.mockReturnValue(undefined);
     mockUseDuplicateRowDispatch.mockReturnValue(duplicateRow);
     mockUseNewRowDispatch.mockReturnValue(createRow);
   });
@@ -135,6 +144,40 @@ describe('ListRowActions', () => {
     await openMenu();
     fireEvent.click(screen.getByTestId('row-menu-delete'));
     expect((await screen.findByTestId('mock-delete-row-confirm')).getAttribute('data-row-ids')).toBe('row-a');
+  });
+
+  it('uses the current numeric range when adding a row after settings change', async () => {
+    const doc = new Y.Doc();
+    const fields = doc.getMap('fields') as YDatabaseFields;
+    const view = doc.getMap('view') as YDatabaseView;
+    const groups = new Y.Array<YDatabaseGroup>() as YDatabaseGroups;
+    const group = new Y.Map() as YDatabaseGroup;
+
+    fields.set('amount', createField('amount', FieldType.Number));
+    group.set(YjsDatabaseKey.field_id, 'amount');
+    group.set(YjsDatabaseKey.content, JSON.stringify({ mode: 2, range_interval: '10' }));
+    groups.push([group]);
+    view.set(YjsDatabaseKey.groups, groups);
+    mockUseDatabaseFields.mockReturnValue(fields);
+    mockUseDatabaseView.mockReturnValue(view);
+
+    render(
+      <ListSortState hasSorts={false}>
+        <ListRowActions
+          reorderable
+          groupFieldId='amount'
+          groupId='number_above_100'
+          rowId='row-a'
+          rowOrders={[{ height: 36, id: 'row-a' }]}
+        />
+      </ListSortState>
+    );
+
+    // The same Yjs view reference now carries new settings; the action must
+    // read them when clicked instead of retaining its render-time prefill.
+    group.set(YjsDatabaseKey.content, JSON.stringify({ mode: 2, range_interval: '25' }));
+    fireEvent.click(screen.getByTestId('list-row-add-below-row-a'));
+    await waitFor(() => expect(createRow).toHaveBeenCalledWith({ beforeRowId: 'row-a', cellsData: { amount: '125' } }));
   });
 
   it('requires sorting removal before inserting a row', async () => {

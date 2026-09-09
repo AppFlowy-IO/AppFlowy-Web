@@ -2,9 +2,9 @@
  * Grid grouping desktop-parity integration coverage.
  *
  * Migrated from the Desktop Grid grouping, grouping/filter/sort, all-field,
- * visibility, number, text, hide-empty, and sort-with-group suites. Exact
- * date/number boundaries and high-volume derivation stay in the colocated Jest
- * suites; this file exercises every Web-supported grouping field through UI.
+ * visibility, number, text, hide-empty, and sort-with-group suites. Number
+ * configuration and boundaries also have Playwright BDD coverage. High-volume
+ * derivation stays in Jest; this file exercises each supported grouping field through UI.
  *
  * Desktop sources audited:
  * - database_grid_group_test.dart
@@ -447,25 +447,26 @@ test.describe('Database Grid grouping', () => {
     await typeTextIntoCell(page, urlFieldId, 2, 'https://appflowy.io');
 
     await groupGridByField(page, numberFieldId);
-    await expect(page.getByTestId('grid-group-header-number_range_0_100')).toBeVisible();
-    await expect(page.getByTestId('grid-group-header-number_range_0_100')).toContainText('0 to 100');
     await expect(
-      page.getByTestId('grid-group-header-number_range_0_100').getByTestId('grid-group-row-count')
-    ).toHaveText('2');
-    await expect(
-      page.getByTestId('grid-group-header-number_range_100_200').getByTestId('grid-group-row-count')
+      page.getByTestId('grid-group-header-number_interval_50_60').getByTestId('grid-group-row-count')
     ).toHaveText('1');
+    await expect(
+      page.getByTestId('grid-group-header-number_interval_70_80').getByTestId('grid-group-row-count')
+    ).toHaveText('1');
+    await expect(page.getByTestId('grid-group-header-number_above_100').getByTestId('grid-group-row-count')).toHaveText(
+      '1'
+    );
 
     await typeTextIntoCell(page, numberFieldId, 0, '250');
     await expect(
-      page.getByTestId('grid-group-header-number_range_0_100').getByTestId('grid-group-row-count')
+      page.getByTestId('grid-group-header-number_interval_70_80').getByTestId('grid-group-row-count')
     ).toHaveText('1');
-    await expect(
-      page.getByTestId('grid-group-header-number_range_200_300').getByTestId('grid-group-row-count')
-    ).toHaveText('1');
+    await expect(page.getByTestId('grid-group-header-number_above_100').getByTestId('grid-group-row-count')).toHaveText(
+      '2'
+    );
     await expect
       .poll(() => gridGroupHeaders(page).evaluateAll((headers) => headers.map((header) => header.dataset.groupId)))
-      .toEqual(['number_range_0_100', 'number_range_100_200', 'number_range_200_300']);
+      .toEqual(['number_interval_70_80', 'number_above_100']);
 
     await openGridGroupSettings(page);
     await page.getByTestId(`grid-group-by-field-${urlFieldId}`).click();

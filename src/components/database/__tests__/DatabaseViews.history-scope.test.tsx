@@ -36,6 +36,10 @@ jest.mock('@/components/database/fullcalendar', () => ({
   Calendar: () => <button data-testid='calendar-layout'>Calendar</button>,
 }));
 
+jest.mock('@/components/database/form/FormBuilderView', () => ({
+  FormBuilderView: () => <button data-testid='form-layout'>Form</button>,
+}));
+
 jest.mock('@/components/database/gallery', () => ({
   __esModule: true,
   default: () => <button data-testid='gallery-layout'>Gallery</button>,
@@ -152,6 +156,7 @@ describe('DatabaseViews history scope', () => {
     ['List', DatabaseViewLayout.List, 'list-layout'],
     ['Gallery', DatabaseViewLayout.Gallery, 'gallery-layout'],
     ['Calendar', DatabaseViewLayout.Calendar, 'calendar-layout'],
+    ['Form', DatabaseViewLayout.Form, 'form-layout'],
   ])('handles keyboard undo and redo from the %s layout', async (_name, layout, testId) => {
     const { databaseDoc, unmount } = renderDatabaseViews(layout);
     const layoutSurface = await screen.findByTestId(testId);

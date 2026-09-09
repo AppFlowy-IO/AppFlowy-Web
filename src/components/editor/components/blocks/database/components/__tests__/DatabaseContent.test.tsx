@@ -10,7 +10,7 @@ import { Database } from '@/components/database';
 import { DatabaseContent } from '../DatabaseContent';
 
 jest.mock('@/components/database', () => ({
-  Database: jest.fn(() => <div data-testid="database" />),
+  Database: jest.fn(() => <div data-testid='database' />),
 }));
 
 jest.mock('react-i18next', () => ({
@@ -48,18 +48,21 @@ describe('DatabaseContent', () => {
         selectedViewId={snapshot.database.activeViewId}
         hasDatabase={true}
         notFound={false}
-        deletionStatus="none"
+        deletionStatus='none'
         paddingStart={0}
         paddingEnd={0}
         width={800}
         doc={doc}
-        workspaceId="publish"
+        workspaceId='publish'
         onOpenRowPage={jest.fn()}
         loadViewMeta={jest.fn()}
         databaseName={snapshot.view.name}
         visibleViewIds={snapshot.database.visibleViewIds}
         onChangeView={jest.fn()}
         context={context}
+        databaseReadOnly={true}
+        databaseCanWrite={false}
+        databaseCanShare={false}
       />
     );
 
@@ -83,7 +86,7 @@ describe('DatabaseContent', () => {
 
     const { getByText } = render(
       <DatabaseContent
-        baseViewId="view-id"
+        baseViewId='view-id'
         selectedViewId={null}
         hasDatabase={false}
         notFound={true}
@@ -93,17 +96,69 @@ describe('DatabaseContent', () => {
         paddingEnd={0}
         width={800}
         doc={null}
-        workspaceId="workspace-id"
+        workspaceId='workspace-id'
         onOpenRowPage={jest.fn()}
         loadViewMeta={jest.fn()}
-        databaseName=""
+        databaseName=''
         visibleViewIds={[]}
         onChangeView={jest.fn()}
         context={context}
+        databaseReadOnly={true}
+        databaseCanWrite={false}
+        databaseCanShare={false}
       />
     );
 
     expect(getByText("You don't have permission to view this database")).toBeTruthy();
     expect(Database).not.toHaveBeenCalled();
+  });
+
+  it('passes source-scoped permissions after the parent context spread', () => {
+    const snapshot = normalizePublishedPageSnapshot(publishedDatabasePayload);
+
+    if (snapshot.kind !== 'database') {
+      throw new Error('Expected database snapshot fixture');
+    }
+
+    const { doc } = createDatabaseYjsRenderDocsFromSnapshot(snapshot);
+    const parentContext = {
+      readOnly: false,
+      canWrite: true,
+      canShare: false,
+      workspaceId: 'workspace-id',
+      variant: UIVariant.App,
+    } as DatabaseContextState;
+
+    render(
+      <DatabaseContent
+        baseViewId={snapshot.view.viewId}
+        selectedViewId={snapshot.database.activeViewId}
+        hasDatabase={true}
+        notFound={false}
+        deletionStatus='none'
+        paddingStart={0}
+        paddingEnd={0}
+        width={800}
+        doc={doc}
+        workspaceId='workspace-id'
+        onOpenRowPage={jest.fn()}
+        loadViewMeta={jest.fn()}
+        databaseName={snapshot.view.name}
+        visibleViewIds={snapshot.database.visibleViewIds}
+        onChangeView={jest.fn()}
+        context={parentContext}
+        databaseReadOnly={true}
+        databaseCanWrite={false}
+        databaseCanShare={true}
+      />
+    );
+
+    expect((Database as jest.Mock).mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        readOnly: true,
+        canWrite: false,
+        canShare: true,
+      })
+    );
   });
 });

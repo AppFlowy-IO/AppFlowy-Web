@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import * as Y from 'yjs';
 
 import { FieldType } from '@/application/database-yjs/database.type';
@@ -9,7 +10,11 @@ import {
   readDatabaseRowTemplateState,
   subscribeDatabaseRowTemplates,
 } from '../store';
+import { serializeDatabaseRowTemplate } from '../codec';
 import { DATABASE_DEFAULT_ROW_TEMPLATE_KEY, DATABASE_ROW_TEMPLATES_KEY, DatabaseRowTemplate } from '../types';
+
+// The repository's manual isEqual mock always returns true, hiding real writes.
+jest.unmock('lodash-es/isEqual');
 
 function createTemplate(id: string): DatabaseRowTemplate {
   return {
@@ -200,7 +205,7 @@ describe('DatabaseRowTemplateStore', () => {
     store.upsert(createTemplate('second'));
     const updated = store.upsert({ ...createTemplate('first'), name: 'Renamed', createdAtMs: 42 });
 
-    expect(updated.createdAtMs).toBe(42);
+    expect(updated.createdAtMs).toBe(1);
     expect(updated.updatedAtMs).toBeGreaterThan(1);
     expect(store.read().templates.map((item) => item.templateId)).toEqual(['first', 'second']);
   });
@@ -349,5 +354,118 @@ describe('DatabaseRowTemplateStore', () => {
 
     name.set(YjsDatabaseKey.type, FieldType.Number);
     expect(getDatabaseRowTemplateSnapshot(database)).not.toBe(initialSnapshot);
+  });
+});
+
+describe('database template replication and legacy compatibility', () => {
+  function fork(database: YDatabase) {
+    const doc = new Y.Doc();
+
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(database.doc!));
+    return doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+  }
+
+  function sync(left: YDatabase, right: YDatabase) {
+    const leftUpdate = Y.encodeStateAsUpdate(left.doc!);
+    const rightUpdate = Y.encodeStateAsUpdate(right.doc!);
+
+    Y.applyUpdate(left.doc!, rightUpdate);
+    Y.applyUpdate(right.doc!, leftUpdate);
+  }
+
+  it('merges edits to different templates during the first upgrade of a legacy database', () => {
+    const left = createDatabase();
+    const records = ['first', 'second'].map((id) => serializeDatabaseRowTemplate(createTemplate(id)));
+
+    // A legacy field map must not cause an unrelated record to be rewritten
+    // as a side effect of decoding and serializing the template list.
+    left.get(YjsDatabaseKey.metas)?.set(
+      DATABASE_ROW_TEMPLATES_KEY,
+      JSON.stringify(records.map((record) => ({ ...record, default_cells: { deleted: 'Kept in storage' } })))
+    );
+    const right = fork(left);
+    const leftStore = new DatabaseRowTemplateStore(left);
+    const rightStore = new DatabaseRowTemplateStore(right);
+
+    leftStore.upsert({ ...leftStore.read().templates[0], name: 'Left edit' });
+    rightStore.upsert({ ...rightStore.read().templates[1], name: 'Right edit' });
+    sync(left, right);
+
+    expect(leftStore.read().templates.map(({ name }) => name)).toEqual(['Left edit', 'Right edit']);
+    expect(rightStore.read()).toEqual(leftStore.read());
+  });
+
+  it('merges a deletion with a concurrent insertion without resurrecting the deleted template', () => {
+    const left = createDatabase();
+    const leftStore = new DatabaseRowTemplateStore(left);
+
+    leftStore.upsert(createTemplate('first'));
+    const right = fork(left);
+    const rightStore = new DatabaseRowTemplateStore(right);
+
+    leftStore.delete('first');
+    rightStore.upsert(createTemplate('second'));
+    sync(left, right);
+
+    expect(leftStore.read().templates.map(({ templateId }) => templateId)).toEqual(['second']);
+    expect(rightStore.read()).toEqual(leftStore.read());
+    expect((left.get(YjsDatabaseKey.metas) as Y.Map<unknown>).get('row_template_v2:first')).toBe('null');
+  });
+
+  it('imports edits and deletions from an older client before the next upgraded save', () => {
+    const database = createDatabase();
+    const store = new DatabaseRowTemplateStore(database);
+    const metas = database.get(YjsDatabaseKey.metas) as Y.Map<unknown>;
+
+    store.upsert(createTemplate('first'));
+    store.upsert(createTemplate('second'));
+    metas.set(DATABASE_ROW_TEMPLATES_KEY, JSON.stringify([
+      { ...serializeDatabaseRowTemplate(createTemplate('first')), name: 'Older client edit', future_field: 7 },
+    ]));
+    expect(store.read().templates.map(({ name }) => name)).toEqual(['Older client edit']);
+
+    store.upsert(createTemplate('third'));
+    expect(store.read().templates.map(({ name }) => name)).toEqual(['Older client edit', 'third']);
+    expect(JSON.parse(metas.get('row_template_v2:first') as string)).toMatchObject({ future_field: 7 });
+    expect(metas.get('row_template_v2:second')).toBe('null');
+    const projection = metas.get(DATABASE_ROW_TEMPLATES_KEY) as string;
+
+    expect(metas.get('row_templates_projection_sha256')).toBe(createHash('sha256').update(projection).digest('hex'));
+  });
+
+  it('updates React snapshots for a per-template change without a projection change', () => {
+    const database = createDatabase();
+    const store = new DatabaseRowTemplateStore(database);
+    const metas = database.get(YjsDatabaseKey.metas) as Y.Map<unknown>;
+
+    store.upsert(createTemplate('first'));
+    const before = getDatabaseRowTemplateSnapshot(database);
+    const listener = jest.fn();
+    const unsubscribe = subscribeDatabaseRowTemplates(database, listener);
+
+    metas.set('row_template_v2:first', JSON.stringify({
+      ...serializeDatabaseRowTemplate(createTemplate('first')), name: 'Desktop edit 🧭',
+    }));
+    const after = getDatabaseRowTemplateSnapshot(database);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(after).not.toBe(before);
+    expect(readDatabaseRowTemplateState(database, after).templates[0].name).toBe('Desktop edit 🧭');
+    // Preparing a row also makes the merged record visible to old cloud workers.
+    expect(store.prepareForRowCreation('first')?.name).toBe('Desktop edit 🧭');
+    expect(JSON.parse(metas.get(DATABASE_ROW_TEMPLATES_KEY) as string)[0].name).toBe('Desktop edit 🧭');
+    unsubscribe();
+  });
+
+  it('preserves missing decorations from old payloads while accepting explicit removal', () => {
+    const database = createDatabase();
+    const store = new DatabaseRowTemplateStore(database);
+    const template = createTemplate('first');
+
+    store.upsert({ ...template, icon: '📘', cover: '{"data":"#123456","cover_type":0}' });
+    store.upsert({ ...template, name: 'Older client rename' });
+    expect(store.read().templates[0]).toMatchObject({ icon: '📘', cover: '{"data":"#123456","cover_type":0}' });
+    store.upsert({ ...template, icon: '', cover: '' });
+    expect(store.read().templates[0]).toMatchObject({ icon: '', cover: '' });
   });
 });

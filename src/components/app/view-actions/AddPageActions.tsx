@@ -2,6 +2,7 @@ import { ReactNode, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { FORM_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gallery-layout';
 import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
 import { View, ViewLayout } from '@/application/types';
@@ -30,12 +31,10 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const lastChildViewId = view.children?.[view.children.length - 1]?.view_id;
-
   const handleAddPage = useCallback(
     async (layout: ViewLayout, name?: string) => {
       if (!addPage) return;
       if (layout === ViewLayout.AIChat && !aiEnabled) return;
-
       const loadingToastId = toast.loading(t('document.creating'));
 
       try {
@@ -155,7 +154,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
     testId?: string;
     disabled?: boolean;
     tooltip?: string;
-    onSelect: () => void;
+    onSelect: () => void | Promise<void>;
   }[] = useMemo(
     () => [
       {
@@ -208,6 +207,16 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
           void handleAddPage(ViewLayout.Chart, t('document.plugins.database.newDatabase'));
         },
       },
+      ...(FORM_VIEW_CREATION_ENABLED
+        ? [
+            {
+              label: t('form.menuName'),
+              icon: <ViewIcon layout={ViewLayout.Form} size={'small'} />,
+              testId: 'add-form-button',
+              onSelect: () => handleAddPage(ViewLayout.Form, t('document.plugins.database.newDatabase')),
+            },
+          ]
+        : []),
       {
         label: t('list.menuName'),
         icon: <ViewIcon layout={ViewLayout.List} size={'small'} />,
@@ -243,7 +252,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
           <Tooltip key={action.label}>
             <TooltipTrigger asChild>
               <div>
-                <DropdownMenuItem disabled>
+                <DropdownMenuItem data-testid={action.testId} disabled>
                   {action.icon}
                   {action.label}
                 </DropdownMenuItem>
@@ -256,7 +265,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
             key={action.label}
             data-testid={action.testId}
             disabled={action.disabled}
-            onClick={action.onSelect}
+            onSelect={() => void action.onSelect()}
           >
             {action.icon}
             {action.label}

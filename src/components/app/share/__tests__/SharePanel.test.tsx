@@ -153,6 +153,22 @@ describe('SharePanel', () => {
     );
   });
 
+  it('only lets workspace owners expand group rows to explore members', () => {
+    renderSharePanel(AccessLevel.ReadOnly);
+
+    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(
+      expect.objectContaining({ canExploreGroupMembers: false })
+    );
+
+    mockPeopleWithAccessProps.mockClear();
+    mockWorkspaceRole = Role.Owner;
+    renderSharePanel(AccessLevel.ReadOnly);
+
+    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(
+      expect.objectContaining({ canExploreGroupMembers: true })
+    );
+  });
+
   it('forwards the database row-page person access restriction', () => {
     renderSharePanel(AccessLevel.ReadOnly, jest.fn(), true, true, null, true);
 

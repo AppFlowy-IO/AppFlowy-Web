@@ -26,6 +26,7 @@ import {
   templateCoverToViewCover,
   updateTemplateFromSourceRow,
 } from '@/application/database-yjs/template';
+import { decodeTemplateDocumentSnapshot, encodeTemplateDocument } from '@/application/database-yjs/template/document';
 import { useDatabaseRowTemplates } from '@/application/database-yjs/template/hooks';
 import { getCachedProviderDoc } from '@/application/db';
 import { rowDocumentIdFromRowId } from '@/application/row-document/lifecycle';
@@ -68,19 +69,6 @@ const TEMPLATE_EDITOR_PAPER_PROPS = {
   className:
     'block h-[70vh] max-h-[calc(100vh-48px)] w-[70vw] min-w-[320px] !max-w-[calc(100vw-80px)] overflow-hidden overscroll-contain !rounded-[16px] bg-surface-primary p-0',
 } as const;
-
-function encodeDocument(doc?: YDoc | null): string | undefined {
-  if (!doc) return undefined;
-
-  const update = Y.encodeStateAsUpdate(doc);
-  const chunks: string[] = [];
-
-  for (let index = 0; index < update.length; index += 8192) {
-    chunks.push(String.fromCharCode(...update.subarray(index, index + 8192)));
-  }
-
-  return btoa(chunks.join(''));
-}
 
 function DatabaseTemplateEditor({
   editing,
@@ -336,11 +324,14 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
         return template;
       }
 
+      const snapshot = decodeTemplateDocumentSnapshot(template.documentData);
+      const sourceTemplate = snapshot ? { ...template, isDocumentEmpty: snapshot.isDocumentEmpty } : template;
+
       // Desktop does not maintain Web's hidden source-row collab, so refresh
       // its editable properties before migrating Desktop snapshot metadata.
-      initializeTemplateSourceRow(targetRowDoc, database, template);
+      initializeTemplateSourceRow(targetRowDoc, database, sourceTemplate);
 
-      if (template.isDocumentEmpty) {
+      if (sourceTemplate.isDocumentEmpty) {
         return store.upsert({
           ...updateTemplateFromSourceRow(template, targetRowDoc, database),
           docViewId: targetDocumentId,
@@ -353,15 +344,16 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
         throw new Error('Template document duplication is unavailable');
       }
 
-      const sourceDocument = await loadTemplateDocument(template);
+      const sourceDocument = snapshot ? null : await loadTemplateDocument(sourceTemplate);
+      const encodedState = snapshot?.encodedState ?? (sourceDocument ? encodeTemplateDocument(sourceDocument) : undefined);
 
-      if (!sourceDocument) {
+      if (!encodedState) {
         throw new Error('Template document is unavailable for live editing');
       }
 
       const stagingId = uuidv4();
       const stagingTemplate: DatabaseRowTemplate = {
-        ...template,
+        ...sourceTemplate,
         templateId: stagingId,
         name: '',
         docViewId: rowDocumentIdFromRowId(stagingId),
@@ -374,7 +366,7 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
       // then remove it regardless of success.
       store.upsertTransientMigrationSource(stagingTemplate);
       try {
-        await duplicateRowDocument(databaseId, stagingId, template.templateId, encodeDocument(sourceDocument), () =>
+        await duplicateRowDocument(databaseId, stagingId, template.templateId, encodedState, () =>
           registerSource(stagingId)
         );
       } finally {
@@ -476,14 +468,20 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
 
   const duplicateTemplate = useCallback(
     async (source: DatabaseRowTemplate) => {
-      if (!source.isDocumentEmpty && !duplicateRowDocument) {
+      const preparedSource = store.prepareForRowCreation(source.templateId) ?? source;
+      const snapshot = decodeTemplateDocumentSnapshot(preparedSource.documentData);
+      const sourceTemplate = snapshot
+        ? { ...preparedSource, isDocumentEmpty: snapshot.isDocumentEmpty }
+        : preparedSource;
+
+      if (!sourceTemplate.isDocumentEmpty && !duplicateRowDocument) {
         throw new Error('Template document duplication is unavailable');
       }
 
       const templateId = uuidv4();
       const now = Date.now();
       const duplicate: DatabaseRowTemplate = {
-        ...source,
+        ...sourceTemplate,
         templateId,
         name: `${source.name} ${t('grid.rowTemplate.copySuffix', { defaultValue: '(Copy)' })}`,
         docViewId: rowDocumentIdFromRowId(templateId),
@@ -492,22 +490,24 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
         createdAtMs: now,
         updatedAtMs: now,
       };
-      const sourceDocumentPromise = source.isDocumentEmpty ? Promise.resolve(null) : loadTemplateDocument(source);
+      const sourceDocumentPromise = snapshot || sourceTemplate.isDocumentEmpty
+        ? Promise.resolve(null)
+        : loadTemplateDocument(sourceTemplate);
       const [sourceRowDoc, targetRowDoc, sourceDocument] = await Promise.all([
-        ensureTemplateRow(source),
+        ensureTemplateRow(sourceTemplate),
         ensureTemplateRow(duplicate),
         sourceDocumentPromise,
       ]);
 
-      initializeTemplateSourceRow(sourceRowDoc, database, source);
+      initializeTemplateSourceRow(sourceRowDoc, database, sourceTemplate);
       initializeTemplateSourceRow(targetRowDoc, database, duplicate);
 
-      if (!source.isDocumentEmpty && duplicateRowDocument) {
+      if (!sourceTemplate.isDocumentEmpty && duplicateRowDocument) {
         await duplicateRowDocument(
           databaseId,
           source.templateId,
           duplicate.templateId,
-          encodeDocument(sourceDocument),
+          snapshot?.encodedState ?? (sourceDocument ? encodeTemplateDocument(sourceDocument) : undefined),
           () => registerSource(source.templateId)
         );
       } else {

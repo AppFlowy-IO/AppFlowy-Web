@@ -132,4 +132,27 @@ describe('useUpdateDatabaseView', () => {
     expect(database.get('history-marker')).toBe(true);
     expect((getViewsMap(databaseDoc).get(viewId) as Y.Map<unknown>).get(YjsDatabaseKey.name)).toBe('Renamed view');
   });
+
+  it('preserves an explicitly empty view name', async () => {
+    const viewId = 'empty-name-view';
+    const databaseDoc = createDatabaseDoc(viewId);
+    const view = getViewsMap(databaseDoc).get(viewId) as Y.Map<unknown>;
+
+    view.set(YjsDatabaseKey.name, 'Previous name');
+    const updatePage = jest.fn().mockResolvedValue(undefined);
+    const contextValue: DatabaseContextState = {
+      ...createContextValue(databaseDoc, undefined),
+      updatePage,
+    };
+    const { result } = renderHook(() => useUpdateDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await act(async () => {
+      await result.current(viewId, { name: '' });
+    });
+
+    expect(updatePage).toHaveBeenCalledWith(viewId, { name: '' });
+    expect(view.get(YjsDatabaseKey.name)).toBe('');
+  });
 });
