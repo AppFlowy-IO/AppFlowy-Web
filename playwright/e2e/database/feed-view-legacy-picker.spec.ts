@@ -22,11 +22,29 @@ test('cloud_linked_grid_picker.feature: container-less Feed, To-dos and Grid dat
   const documentId = await createDocumentPageAndNavigate(page);
   const names = ['New Feed', 'To-dos', 'New Grid'];
   let legacyNames: string[] = [];
+  let catalogRevalidation: { url: string; headers: Record<string, string> } | undefined;
 
   // Desktop uses a pre-seeded cloud template account. Adapt its legacy catalog
   // shape while keeping real authorized database/view/row IDs for linking.
   await page.route(/\/api\/workspace\/[^/]+\/database\?/, async (route) => {
-    const response = await route.fetch();
+    const headers = { ...route.request().headers() };
+
+    // This fixture rewrites the JSON body, so it needs a full response even
+    // when the app revalidates its catalog. A 304 has no JSON to transform.
+    delete headers['if-none-match'];
+    delete headers['if-modified-since'];
+    const response = await route.fetch({ headers });
+
+    expect(response.status()).toBe(200);
+    const etag = response.headers().etag;
+
+    if (etag) {
+      catalogRevalidation = {
+        url: route.request().url(),
+        headers: { 'if-none-match': etag, ...(headers.authorization ? { authorization: headers.authorization } : {}) },
+      };
+    }
+
     const body = await response.json();
     const includedNames = new Set<string>();
 
@@ -68,6 +86,17 @@ test('cloud_linked_grid_picker.feature: container-less Feed, To-dos and Grid dat
   for (const name of names) await expect(picker.getByText(name, { exact: true })).toHaveCount(1);
   expect(new Set(legacyNames)).toEqual(new Set(names));
   await expect(picker.locator('span.flex-1.truncate')).toHaveCount(3);
+  // Force the conditional refresh that failed in CI, without depending on
+  // background refresh timing. It still goes through the real catalog route.
+  expect(catalogRevalidation).toBeDefined();
+  const revalidated = await page.evaluate(async ({ url, headers }) => {
+    const response = await fetch(url, { headers });
+
+    return { status: response.status, body: await response.json() };
+  }, catalogRevalidation!);
+
+  expect(revalidated.status).toBe(200);
+  expect(revalidated.body.data.databases).toHaveLength(3);
   await picker.getByRole('textbox').fill('New Feed');
   await expect(picker.locator('span.flex-1.truncate')).toHaveCount(1);
   const [linkedView] = await Promise.all([
