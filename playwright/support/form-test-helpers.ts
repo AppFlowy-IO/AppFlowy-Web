@@ -74,6 +74,12 @@ export async function addFormViewToTabBar(page: Page): Promise<void> {
  * Same as `addFormViewToTabBar` but does NOT dismiss the auto-create
  * modal — exposes the same posture the desktop's
  * `form_from_tab_bar.feature` asserts on.
+ *
+ * NOTE: the `Form` option is only rendered while
+ * `FORM_VIEW_CREATION_ENABLED` (src/application/constants.ts) is `true`.
+ * Web currently ships with it `false` (legacy Desktop clients cannot open
+ * web-created Form views), so the form BDD features are excluded from CI
+ * and will fail locally until the flag is flipped back on.
  */
 export async function addFormViewToTabBarRaw(page: Page): Promise<void> {
   const addBtn = DatabaseViewSelectors.addViewButton(page);

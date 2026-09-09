@@ -2,6 +2,7 @@ import { ReactNode, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { FORM_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gallery-layout';
 import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
 import { View, ViewLayout } from '@/application/types';
@@ -206,12 +207,16 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
           void handleAddPage(ViewLayout.Chart, t('document.plugins.database.newDatabase'));
         },
       },
-      {
-        label: t('form.menuName'),
-        icon: <ViewIcon layout={ViewLayout.Form} size={'small'} />,
-        testId: 'add-form-button',
-        onSelect: () => handleAddPage(ViewLayout.Form, t('document.plugins.database.newDatabase')),
-      },
+      ...(FORM_VIEW_CREATION_ENABLED
+        ? [
+            {
+              label: t('form.menuName'),
+              icon: <ViewIcon layout={ViewLayout.Form} size={'small'} />,
+              testId: 'add-form-button',
+              onSelect: () => handleAddPage(ViewLayout.Form, t('document.plugins.database.newDatabase')),
+            },
+          ]
+        : []),
       {
         label: t('list.menuName'),
         icon: <ViewIcon layout={ViewLayout.List} size={'small'} />,

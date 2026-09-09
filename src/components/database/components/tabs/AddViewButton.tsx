@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { FORM_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
@@ -141,15 +142,17 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
           {t('chart.menuName')}
         </DropdownMenuItem>
 
-        <DropdownMenuItem
-          data-testid='add-form-view-option'
-          onClick={() => {
-            void handleAddView(DatabaseViewLayout.Form, t('form.builderName', { defaultValue: 'Form builder' }));
-          }}
-        >
-          <ViewIcon layout={ViewLayout.Form} size={'small'} />
-          {t('form.builderName', { defaultValue: 'Form builder' })}
-        </DropdownMenuItem>
+        {FORM_VIEW_CREATION_ENABLED && (
+          <DropdownMenuItem
+            data-testid='add-form-view-option'
+            onClick={() => {
+              void handleAddView(DatabaseViewLayout.Form, t('form.builderName', { defaultValue: 'Form builder' }));
+            }}
+          >
+            <ViewIcon layout={ViewLayout.Form} size={'small'} />
+            {t('form.builderName', { defaultValue: 'Form builder' })}
+          </DropdownMenuItem>
+        )}
 
         <DropdownMenuItem
           data-testid='add-list-view-button'

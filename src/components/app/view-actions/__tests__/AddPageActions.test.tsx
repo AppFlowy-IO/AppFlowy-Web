@@ -33,6 +33,14 @@ const mockUpdatePage = jest.fn();
 const mockFlush = jest.fn();
 const mockScheduleDeferredCleanup = jest.fn();
 const mockMenuSelectPreventDefault = jest.fn();
+let mockFormViewCreationEnabled = false;
+
+jest.mock('@/application/constants', () => ({
+  ...jest.requireActual('@/application/constants'),
+  get FORM_VIEW_CREATION_ENABLED() {
+    return mockFormViewCreationEnabled;
+  },
+}));
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -210,6 +218,7 @@ function createLinkedListUpdate(databaseDoc: YDoc): number[] {
 describe('AddPageActions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockFormViewCreationEnabled = false;
     mockAddPage.mockReset();
     mockAddPage.mockResolvedValue({ view_id: 'chat-id' });
     mockUpdateChatSettings.mockResolvedValue(undefined);
@@ -226,12 +235,22 @@ describe('AddPageActions', () => {
     mockUpdatePage.mockResolvedValue(undefined);
   });
 
-  it('shows Form and creates it without checking a workspace subscription', async () => {
+  it('hides Form while form creation is disabled on web', () => {
+    renderActions(view({ view_id: 'parent-id' }));
+
+    expect(screen.queryByTestId('add-form-button')).toBeNull();
+    expect(screen.getByTestId('add-grid-button')).toBeTruthy();
+    expect(screen.getByTestId('add-list-button')).toBeTruthy();
+    expect(mockAddPage).not.toHaveBeenCalled();
+  });
+
+  it('shows Form and creates it without checking a workspace subscription once form creation is enabled', async () => {
     const parent = view({
       view_id: 'parent-id',
       children: [view({ view_id: 'last-child-id' })],
     });
 
+    mockFormViewCreationEnabled = true;
     mockAddPage.mockResolvedValueOnce({ view_id: 'form-view-id', database_id: 'database-id' });
     renderActions(parent);
 
