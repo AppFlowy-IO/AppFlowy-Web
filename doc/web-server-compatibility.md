@@ -17,6 +17,16 @@ reviewed boundary is advanced. The initial policy requires server 0.18.1 for
 web 0.17.1. Unknown/unreviewed web versions do not produce old-server warnings.
 There is no appcast or native update gate on web.
 
+The "Compatibility Review PR" workflow
+(`.github/workflows/compatibility_review.yml`) makes that bump for you. Run it
+from the Actions tab with the upcoming version before tagging, or let it run on
+the release tag push. It opens a pull request that advances the reviewed
+boundary; check whether the release needs a new `min_server` row, merge, then
+push (or move) the release tag. Locally,
+`node scripts/review-compatibility.cjs <version>` applies the same change. The
+script refuses a version at or above `max_enforceable_client_floor`; raise that
+cap by hand first.
+
 `GET /api/server-info`, with `x-platform: web`, must expose:
 
 ```json

@@ -65,8 +65,10 @@ describe('web/server compatibility', () => {
   });
 
   it('fails open for an unknown or unreviewed installed build', () => {
+    const unreviewedClientVersion = normalizeVersion(policy.reviewed_through_client_version)!.inc('patch').version;
+
     expect(evaluate('0.1.0', undefined, 'manual-build')).toEqual({ type: 'unknown', reason: 'client-version' });
-    expect(evaluate('0.1.0', undefined, '0.17.2')).toEqual({ type: 'unknown', reason: 'unreviewed-client' });
+    expect(evaluate('0.1.0', undefined, unreviewedClientVersion)).toEqual({ type: 'unknown', reason: 'unreviewed-client' });
     expect(evaluate('0.18.1', '0.17.3', '0.17.2').type).toBe('client-too-old');
   });
 
