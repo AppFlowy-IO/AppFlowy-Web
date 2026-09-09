@@ -7,6 +7,14 @@ import { AddViewButton } from '@/components/database/components/tabs/AddViewButt
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 const mockAddView = jest.fn();
+let mockFormViewCreationEnabled = false;
+
+jest.mock('@/application/constants', () => ({
+  ...jest.requireActual('@/application/constants'),
+  get FORM_VIEW_CREATION_ENABLED() {
+    return mockFormViewCreationEnabled;
+  },
+}));
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
   useAddDatabaseView: () => mockAddView,
@@ -56,6 +64,7 @@ jest.mock('@/components/ui/tooltip', () => ({
 describe('AddViewButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockFormViewCreationEnabled = false;
     mockAddView.mockResolvedValue('list-view-id');
     jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(300);
   });
@@ -131,7 +140,7 @@ describe('AddViewButton', () => {
     );
 
     mockAddView.mockReturnValue(createPending);
-    fireEvent.click(screen.getByTestId('add-form-view-option'));
+    fireEvent.click(screen.getByTestId('add-list-view-button'));
 
     rendered.rerender(
       <MemoryRouter>
@@ -143,11 +152,11 @@ describe('AddViewButton', () => {
       </MemoryRouter>
     );
 
-    await act(async () => resolveAdd('form-view-id'));
+    await act(async () => resolveAdd('list-view-id'));
 
-    await waitFor(() => expect(latestOnViewAdded).toHaveBeenCalledWith('form-view-id'));
+    await waitFor(() => expect(latestOnViewAdded).toHaveBeenCalledWith('list-view-id'));
     expect(initialOnViewAdded).not.toHaveBeenCalled();
-    expect(committedViewIds).toEqual([['view-a', 'concurrent-view', 'form-view-id']]);
+    expect(committedViewIds).toEqual([['view-a', 'concurrent-view', 'list-view-id']]);
     expect(latestOnAfterAddView).toHaveBeenCalledTimes(1);
     expect(initialOnAfterAddView).not.toHaveBeenCalled();
     expect(screen.getByTestId('add-view-button').hasAttribute('disabled')).toBe(false);
@@ -173,7 +182,7 @@ describe('AddViewButton', () => {
     );
 
     mockAddView.mockReturnValue(createPending);
-    fireEvent.click(screen.getByTestId('add-form-view-option'));
+    fireEvent.click(screen.getByTestId('add-list-view-button'));
 
     rendered.rerender(
       <MemoryRouter>
@@ -185,7 +194,7 @@ describe('AddViewButton', () => {
       </MemoryRouter>
     );
 
-    await act(async () => resolveAdd('stale-form-view-id'));
+    await act(async () => resolveAdd('stale-list-view-id'));
 
     expect(initialOnViewAdded).not.toHaveBeenCalled();
     expect(initialOnAfterAddView).not.toHaveBeenCalled();
@@ -193,9 +202,22 @@ describe('AddViewButton', () => {
     expect(nextOnAfterAddView).not.toHaveBeenCalled();
   });
 
-  it('creates a Form without checking a workspace subscription', async () => {
+  it('hides the Form option while form creation is disabled on web', () => {
+    render(
+      <MemoryRouter>
+        <AddViewButton databasePageId='database-page-id' onViewAdded={jest.fn()} />
+      </MemoryRouter>
+    );
+
+    expect(screen.queryByTestId('add-form-view-option')).toBeNull();
+    expect(screen.getByTestId('add-list-view-button')).toBeTruthy();
+    expect(mockAddView).not.toHaveBeenCalled();
+  });
+
+  it('creates a Form without checking a workspace subscription once form creation is enabled', async () => {
     const onViewAdded = jest.fn();
 
+    mockFormViewCreationEnabled = true;
     mockAddView.mockResolvedValue('form-view-id');
     render(
       <MemoryRouter>

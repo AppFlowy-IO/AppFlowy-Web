@@ -25,6 +25,8 @@ interface GroupItemProps {
   peopleByEmail: ReadonlyMap<string, IPeopleWithAccessType>;
   /** Whether the current user may list the group's members. The server allows workspace owners only. */
   canExploreMembers?: boolean;
+  /** Advances when a permission notification invalidates cached group membership. */
+  membersRevision?: number;
   /** The scrollable access list; an expanded group scrolls itself into view inside it. */
   scrollContainerRef?: RefObject<HTMLElement | null>;
   canModify: boolean;
@@ -38,10 +40,11 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-/** A loaded group roster together with the member count it was fetched for. */
+/** A loaded group roster together with the membership snapshot it was fetched for. */
 interface GroupRoster {
   members: WorkspaceGroupMember[];
   memberCount: number;
+  revision: number;
 }
 
 const loadingIndicator = (
@@ -60,6 +63,7 @@ export function GroupItem({
   group,
   peopleByEmail,
   canExploreMembers = false,
+  membersRevision = 0,
   scrollContainerRef,
   canModify,
   currentUserHasFullAccess,
@@ -74,9 +78,10 @@ export function GroupItem({
   const [roster, setRoster] = useState<GroupRoster | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const showMembers = canExploreMembers && expanded;
-  // The server-side member count is part of the group projection, so a changed count is a
-  // cheap signal that an already loaded roster is stale.
-  const rosterStale = roster === null || roster.memberCount !== group.member_count;
+  // Replacing a member can leave the count unchanged. Permission notifications
+  // also invalidate rosters, including those in collapsed rows or still loading.
+  const rosterStale =
+    roster === null || roster.memberCount !== group.member_count || roster.revision !== membersRevision;
   // Derived rather than stored: a fetch is in flight exactly while the row is open and the
   // roster is stale, so no extra state or render is needed to track it.
   const loading = showMembers && rosterStale && Boolean(currentWorkspaceId);
@@ -94,7 +99,7 @@ export function GroupItem({
         const result = await WorkspaceService.getWorkspaceGroupMembers(currentWorkspaceId, group.group_id);
 
         if (cancelled) return;
-        setRoster({ members: result?.members ?? [], memberCount: group.member_count });
+        setRoster({ members: result?.members ?? [], memberCount: group.member_count, revision: membersRevision });
       } catch (error) {
         if (cancelled) return;
         console.error(error);
@@ -106,7 +111,7 @@ export function GroupItem({
     return () => {
       cancelled = true;
     };
-  }, [currentWorkspaceId, group.group_id, group.member_count, loadFailedMessage, rosterStale, showMembers]);
+  }, [currentWorkspaceId, group.group_id, group.member_count, loadFailedMessage, membersRevision, rosterStale, showMembers]);
 
   const toggleExpanded = useCallback(() => setExpanded((value) => !value), []);
   const toggleLabel = t(expanded ? 'shareAction.hideGroupMembers' : 'shareAction.showGroupMembers', {

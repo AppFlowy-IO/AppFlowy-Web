@@ -1,12 +1,14 @@
 import EventEmitter from 'events';
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import { APP_EVENTS } from '@/application/constants';
 import {
   AccessLevel,
   IPeopleWithAccessType,
   Role,
   SharedUserAccessSource,
+  WorkspaceGroupMembers,
   WorkspaceGroupViewPermission,
 } from '@/application/types';
 import { PeopleWithAccess } from '@/components/app/share/PeopleWithAccess';
@@ -18,6 +20,7 @@ const mockRevokeGroupAccess = jest.fn();
 const mockNavigate = jest.fn();
 const mockEventEmitter = new EventEmitter();
 const mockGroupMutationResult = jest.fn();
+const mockGetWorkspaceGroupMembers = jest.fn();
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -36,7 +39,7 @@ jest.mock('@/application/services/domains', () => ({
     turnIntoMember: jest.fn(),
   },
   WorkspaceService: {
-    getWorkspaceGroupMembers: jest.fn(),
+    getWorkspaceGroupMembers: (...args: unknown[]) => mockGetWorkspaceGroupMembers(...args),
   },
 }));
 
@@ -133,6 +136,27 @@ const directPerson: IPeopleWithAccessType = {
   access_source: SharedUserAccessSource.DirectShare,
 };
 
+function renderExplorableGroups() {
+  return render(
+    <PeopleWithAccess
+      viewId='view-1'
+      people={[groupOnlyPerson]}
+      groups={[{ ...sharedGroup, member_count: 1 }, { ...sharedGroup, group_id: 'group-2', member_count: 1 }]}
+      editableGroupIds={new Set()}
+      isLoading={false}
+      onPeopleChange={async () => undefined}
+      onPersonRemoved={jest.fn()}
+      updateGroupInAccessList={jest.fn()}
+      hasFullAccess
+      canManageGroupAccess
+      canManageFullAccess
+      canGrantFullAccess
+      canExploreGroupMembers
+      sectionType={ShareSectionType.Shared}
+    />
+  );
+}
+
 describe('PeopleWithAccess', () => {
   beforeEach(() => {
     mockRevokeAccess.mockReset();
@@ -143,6 +167,64 @@ describe('PeopleWithAccess', () => {
     mockRevokeGroupAccess.mockResolvedValue(undefined);
     mockNavigate.mockReset();
     mockGroupMutationResult.mockReset();
+    mockGetWorkspaceGroupMembers.mockReset();
+  });
+
+  it.each([true, false])('refreshes replaced group members with an unchanged count (expanded: %s)', async (expanded) => {
+    mockGetWorkspaceGroupMembers
+      .mockResolvedValueOnce({ members: [{ uid: 'old', email: groupOnlyPerson.email, name: 'Old member' }] })
+      .mockResolvedValueOnce({ members: [{ uid: 'new', email: 'new@appflowy.io', name: 'New member' }] });
+
+    const { unmount } = renderExplorableGroups();
+    const toggle = screen.getByTestId('share-group-toggle-group-1');
+
+    fireEvent.click(toggle);
+    await screen.findByTestId('share-group-member-old');
+    if (!expanded) fireEvent.click(toggle);
+
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: sharedGroup.group_id });
+    });
+
+    if (!expanded) {
+      expect(mockGetWorkspaceGroupMembers).toHaveBeenCalledTimes(1);
+      fireEvent.click(toggle);
+    }
+
+    await screen.findByTestId('share-group-member-new');
+    expect(screen.queryByTestId('share-group-member-old')).toBeNull();
+    expect(mockGetWorkspaceGroupMembers).toHaveBeenCalledTimes(2);
+    // All group rows share one subscription, and collapsed groups stay lazy.
+    expect(mockEventEmitter.listenerCount(APP_EVENTS.PERMISSION_CHANGED)).toBe(1);
+    unmount();
+    expect(mockEventEmitter.listenerCount(APP_EVENTS.PERMISSION_CHANGED)).toBe(0);
+  });
+
+  it('ignores a roster response started before a membership notification', async () => {
+    let resolveOldRoster!: (value: WorkspaceGroupMembers) => void;
+    const oldRoster = new Promise<WorkspaceGroupMembers>((resolve) => {
+      resolveOldRoster = resolve;
+    });
+
+    mockGetWorkspaceGroupMembers
+      .mockReturnValueOnce(oldRoster)
+      .mockResolvedValueOnce({ members: [{ uid: 'new', email: 'new@appflowy.io', name: 'New member' }] });
+    renderExplorableGroups();
+    fireEvent.click(screen.getByTestId('share-group-toggle-group-1'));
+    expect(mockGetWorkspaceGroupMembers).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: sharedGroup.group_id });
+    });
+
+    await screen.findByTestId('share-group-member-new');
+    await act(async () => {
+      resolveOldRoster({ members: [{ uid: 'old', email: groupOnlyPerson.email, name: 'Old member' }] });
+      await oldRoster;
+    });
+    expect(screen.queryByTestId('share-group-member-old')).toBeNull();
+    expect(screen.getByTestId('share-group-member-new')).toBeTruthy();
+    expect(mockGetWorkspaceGroupMembers).toHaveBeenCalledTimes(2);
   });
 
   it('disables person access changes for a database row page', () => {

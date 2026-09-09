@@ -33,7 +33,8 @@ describe('useMoveCardDispatch', () => {
     [NumberGroupMode.Range, 'number_interval_0_10', 'number_above_100', '110'],
     [NumberGroupMode.Exact, 'number_value_1.25', 'number_value_-0.5', '-0.5'],
     [NumberGroupMode.Legacy, 'number_range_0_100', 'number_range_-100_0', '-100'],
-  ])('writes the numeric representative in mode %s and preserves same-group values', (mode, start, finish, value) => {
+    [NumberGroupMode.Exact, 'amount', 'number_value_1710000000', '1710000000', FieldType.DateTime, '1710000000'],
+  ])('writes the numeric representative in mode %s from %s to %s and preserves same-group values', (mode, start, finish, value, storedType = FieldType.Number, rawValue = '1.25') => {
     const databaseId = 'numeric-database';
     const viewId = 'numeric-view';
     const fieldId = 'amount';
@@ -60,7 +61,7 @@ describe('useMoveCardDispatch', () => {
     database.set(YjsDatabaseKey.fields, fields);
     database.set(YjsDatabaseKey.views, views);
     databaseDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
-    const rowDoc = createRowDoc(rowId, databaseId, { [fieldId]: createCell(FieldType.Number, '1.25') });
+    const rowDoc = createRowDoc(rowId, databaseId, { [fieldId]: createCell(storedType, rawValue) });
     const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
     const cell = row.get(YjsDatabaseKey.cells).get(fieldId);
     const contextValue = {
