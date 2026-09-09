@@ -145,6 +145,8 @@ export interface Database2Props {
   canComment?: boolean;
   /** Canonical server write permission for row-document comment anchors. */
   canWrite?: boolean;
+  /** Canonical server permission to change sharing and public Form access. */
+  canShare?: boolean;
   createRow?: CreateRow;
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
@@ -254,6 +256,7 @@ function Database(props: Database2Props) {
     readOnly = true,
     canComment = false,
     canWrite = !readOnly,
+    canShare = false,
     loadView,
     bindViewSync,
     checkIfRowDocumentExists,
@@ -1148,7 +1151,19 @@ function Database(props: Database2Props) {
       if (pending) {
         const rowDoc = await pending;
 
-        return finishEnsure(isCurrentEnsure() ? rowDoc : undefined);
+        if (!rowDoc || !isCurrentEnsure()) return;
+
+        // Seed hydration shares this pending map but does not register sync.
+        // Search candidates may call ensureRow only once, so this caller must
+        // acquire the row's sync owner even when it joined a seed-only load.
+        const syncedRowDoc = await registerRowSync(getRowKey(getDatabaseId(), rowId));
+
+        if (!isCurrentEnsure()) return;
+        const canonicalRowDoc = syncedRowDoc ?? rowDoc;
+
+        registerRowDocWithHistory(rowId, canonicalRowDoc);
+        setRowMap((prev) => (prev[rowId] === canonicalRowDoc ? prev : { ...prev, [rowId]: canonicalRowDoc }));
+        return finishEnsure(canonicalRowDoc);
       }
 
       const promise = (async () => {
@@ -1456,6 +1471,7 @@ function Database(props: Database2Props) {
       readOnly,
       canComment,
       canWrite,
+      canShare,
       ensureRow,
       loadRowFromSeed,
       peekRowDocFromSeed,
@@ -1506,6 +1522,7 @@ function Database(props: Database2Props) {
       readOnly,
       canComment,
       canWrite,
+      canShare,
       ensureRow,
       loadRowFromSeed,
       peekRowDocFromSeed,

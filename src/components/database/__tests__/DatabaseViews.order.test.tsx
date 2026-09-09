@@ -1,5 +1,5 @@
 import { expect } from '@jest/globals';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
@@ -11,6 +11,7 @@ import type { ReactNode } from 'react';
 
 type CapturedDatabaseTabsProps = {
   viewIds: string[];
+  setSelectedViewId?: (viewId: string) => void;
   onBeforeViewAddedToDatabase?: () => void;
   onViewAddedToDatabase?: (viewId: string) => void;
   onAfterViewAddedToDatabase?: () => void;
@@ -41,7 +42,15 @@ jest.mock('@/components/database/components/tabs', () => ({
       latestTabsProps: props,
     };
 
-    return null;
+    return (
+      <div data-testid='database-tabs-mock'>
+        {props.viewIds.map((viewId) => (
+          <button key={viewId} type='button' onClick={() => props.setSelectedViewId?.(viewId)}>
+            {viewId}
+          </button>
+        ))}
+      </div>
+    );
   },
 }));
 
@@ -65,12 +74,12 @@ jest.mock('@/components/database/list/ListGroupingContext', () => ({
       listGroupingProviderRenderCount: (global.__databaseViewsOrderTestState?.listGroupingProviderRenderCount ?? 0) + 1,
     };
 
-    return <>{children}</>;
+    return <div data-testid='list-grouping-provider'>{children}</div>;
   },
 }));
 
 jest.mock('@/components/database/grid', () => ({
-  Grid: () => null,
+  Grid: () => <div data-testid='grid-layout' />,
 }));
 
 jest.mock('@/components/database/board', () => ({
@@ -88,6 +97,23 @@ jest.mock('@/components/database/fullcalendar', () => ({
 jest.mock('@/components/database/gallery', () => ({
   __esModule: true,
   default: () => <div data-testid='gallery-layout' />,
+}));
+
+// This suite verifies DatabaseViews composition; loading the real lazy List
+// renderer also loads every cell implementation under coverage.
+jest.mock('@/components/database/list/List', () => ({
+  __esModule: true,
+  default: () => <div data-testid='list-layout' />,
+}));
+
+jest.mock('@/components/database/form/FormBuilderView', () => ({
+  FormBuilderView: () => <div data-testid='form-builder-layout' />,
+}));
+
+jest.mock('@/components/database/DatabaseHistoryScope', () => ({
+  DatabaseHistoryScope: ({ children }: { children: ReactNode }) => (
+    <div data-testid='database-history-scope'>{children}</div>
+  ),
 }));
 
 jest.mock('@/components/database/components/UnsupportedView', () => () => null);
@@ -463,7 +489,7 @@ describe('DatabaseViews order', () => {
       workspaceId: 'workspace-id',
     };
 
-    render(
+    const rendered = render(
       <DatabaseContext.Provider value={contextValue}>
         <DatabaseViews
           activeViewId='list'
@@ -474,11 +500,95 @@ describe('DatabaseViews order', () => {
       </DatabaseContext.Provider>
     );
 
-    await waitFor(() => {
-      expect(global.__databaseViewsOrderTestState?.listGroupingProviderRenderCount).toBeGreaterThan(0);
-    });
-    expect(global.__databaseViewsOrderTestState?.gridGroupingProviderRenderCount ?? 0).toBe(0);
+    try {
+      const list = await screen.findByTestId('list-layout');
+      const providers = screen.getAllByTestId('list-grouping-provider');
 
+      expect(providers).toHaveLength(1);
+      expect(providers[0].contains(list)).toBe(true);
+      expect(providers[0].contains(screen.getByTestId('database-tabs-mock'))).toBe(true);
+      expect(global.__databaseViewsOrderTestState?.gridGroupingProviderRenderCount ?? 0).toBe(0);
+    } finally {
+      rendered.unmount();
+      doc.destroy();
+    }
+  });
+
+  it('switches from the Form tab to the linked Responses Grid', async () => {
+    const visibleViewIds = ['form', 'responses'];
+    const doc = createDatabaseDoc('db-form-responses', [
+      { viewId: 'form', name: 'Form', createdAt: '100', layout: DatabaseViewLayout.Form },
+      { viewId: 'responses', name: 'Responses', createdAt: '200', layout: DatabaseViewLayout.Grid },
+    ]);
+    const onChangeView = jest.fn();
+    const renderForActiveView = (activeViewId: string) => {
+      const contextValue: DatabaseContextState = {
+        readOnly: false,
+        databaseDoc: doc,
+        databasePageId: 'form',
+        activeViewId,
+        rowDocMap: {},
+        workspaceId: 'workspace-id',
+      };
+
+      return (
+        <DatabaseContext.Provider value={contextValue}>
+          <DatabaseViews
+            activeViewId={activeViewId}
+            databasePageId='form'
+            onChangeView={onChangeView}
+            visibleViewIds={visibleViewIds}
+          />
+        </DatabaseContext.Provider>
+      );
+    };
+
+    const rendered = render(renderForActiveView('form'));
+
+    expect(await screen.findByTestId('form-builder-layout')).toBeTruthy();
+    expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual(visibleViewIds);
+
+    fireEvent.click(screen.getByRole('button', { name: 'responses' }));
+
+    expect(onChangeView).toHaveBeenCalledWith('responses');
+    rendered.rerender(renderForActiveView('responses'));
+
+    expect(await screen.findByTestId('grid-layout')).toBeTruthy();
+    expect(screen.queryByTestId('form-builder-layout')).toBeNull();
+    doc.destroy();
+  });
+
+  it('keeps a legacy single-Form database inside the database history scope', async () => {
+    const visibleViewIds = ['form'];
+    const doc = createDatabaseDoc('db-form-history', [
+      { viewId: 'form', name: 'Form', createdAt: '100', layout: DatabaseViewLayout.Form },
+    ]);
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: doc,
+      databasePageId: 'form',
+      activeViewId: 'form',
+      rowDocMap: {},
+      workspaceId: 'workspace-id',
+    };
+
+    render(
+      <DatabaseContext.Provider value={contextValue}>
+        <DatabaseViews
+          activeViewId='form'
+          databasePageId='form'
+          onChangeView={jest.fn()}
+          visibleViewIds={visibleViewIds}
+        />
+      </DatabaseContext.Provider>
+    );
+
+    const formBuilder = await screen.findByTestId('form-builder-layout');
+
+    expect(formBuilder.closest('[data-testid="database-history-scope"]')).toBe(
+      screen.getByTestId('database-history-scope')
+    );
+    expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual(['form']);
     doc.destroy();
   });
 });

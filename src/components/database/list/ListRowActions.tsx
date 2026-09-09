@@ -1,12 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useDatabaseFields } from '@/application/database-yjs';
+import { useDatabaseFields, useDatabaseView } from '@/application/database-yjs';
 import type { Row } from '@/application/database-yjs';
 import { useDuplicateRowDispatch, useNewRowDispatch } from '@/application/database-yjs/dispatch';
-import { getGroupCellData } from '@/application/database-yjs/group';
-import { YjsDatabaseKey } from '@/application/types';
-import type { FieldId, YDatabaseFields } from '@/application/types';
+import { getGroupRowCellsData } from '@/application/database-yjs/group-row';
 import { ReactComponent as UpIcon } from '@/assets/icons/arrow_up.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
@@ -26,21 +24,7 @@ import { Progress } from '@/components/ui/progress';
 
 import { useListHasSorts } from './ListSortState';
 
-export function getListGroupCellsData(
-  fields?: YDatabaseFields,
-  groupFieldId?: string,
-  groupId?: string
-): Record<FieldId, string> | undefined {
-  const groupField = groupFieldId ? fields?.get(groupFieldId) : undefined;
-
-  if (groupFieldId && groupField && groupId === groupField.get(YjsDatabaseKey.id)) {
-    return { [groupFieldId]: '' };
-  }
-
-  const groupCellData = groupField && groupId ? getGroupCellData(groupId, groupField) : undefined;
-
-  return groupFieldId && groupCellData !== undefined ? { [groupFieldId]: groupCellData } : undefined;
-}
+export const getListGroupCellsData = getGroupRowCellsData;
 
 function useListRowActions({
   groupFieldId,
@@ -54,19 +38,19 @@ function useListRowActions({
   rowOrders: Row[];
 }) {
   const fields = useDatabaseFields();
+  const view = useDatabaseView();
   const createRow = useNewRowDispatch();
   const duplicateRow = useDuplicateRowDispatch();
   const [loadingAction, setLoadingAction] = useState<'above' | 'below' | 'duplicate' | null>(null);
-  const cellsData = useMemo(() => getListGroupCellsData(fields, groupFieldId, groupId), [fields, groupFieldId, groupId]);
 
   const addBelow = useCallback(async () => {
     setLoadingAction('below');
     try {
-      await createRow({ beforeRowId: rowId, cellsData });
+      await createRow({ beforeRowId: rowId, cellsData: getListGroupCellsData(fields, groupFieldId, groupId, view) });
     } finally {
       setLoadingAction(null);
     }
-  }, [cellsData, createRow, rowId]);
+  }, [createRow, fields, groupFieldId, groupId, rowId, view]);
 
   const addAbove = useCallback(async () => {
     const rowIndex = rowOrders.findIndex((row) => row.id === rowId);
@@ -74,11 +58,14 @@ function useListRowActions({
 
     setLoadingAction('above');
     try {
-      await createRow({ beforeRowId: previousRowId, cellsData });
+      await createRow({
+        beforeRowId: previousRowId,
+        cellsData: getListGroupCellsData(fields, groupFieldId, groupId, view),
+      });
     } finally {
       setLoadingAction(null);
     }
-  }, [cellsData, createRow, rowId, rowOrders]);
+  }, [createRow, fields, groupFieldId, groupId, rowId, rowOrders, view]);
 
   const duplicate = useCallback(async () => {
     setLoadingAction('duplicate');

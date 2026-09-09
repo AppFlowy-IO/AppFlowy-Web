@@ -99,9 +99,7 @@ describe('ShareTabs publish availability', () => {
     expect(screen.getByRole('tab', { name: 'shareAction.shareTab' })).toBeTruthy();
     expect(screen.queryByTestId('publish-tab')).toBeNull();
     expect(screen.getByTestId('share-panel')).toBeTruthy();
-    expect(mockSharePanelProps).toHaveBeenCalledWith(
-      expect.objectContaining({ disablePersonAccessChanges: true })
-    );
+    expect(mockSharePanelProps).toHaveBeenCalledWith(expect.objectContaining({ disablePersonAccessChanges: true }));
   });
 
   it('keeps Publish available by default', () => {
@@ -112,6 +110,24 @@ describe('ShareTabs publish availability', () => {
       expect.objectContaining({ view_id: 'database-view' }),
       true,
       'database-view'
+    );
+  });
+
+  it('keeps access on the container while publishing the active database child', () => {
+    render(<ShareTabs opened viewId='database-container' publishViewId='board-view' onClose={() => undefined} />);
+
+    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(
+      expect.objectContaining({ view_id: 'database-container' }),
+      true,
+      'database-container'
+    );
+
+    fireEvent.mouseDown(screen.getByTestId('publish-tab'), { button: 0, ctrlKey: false });
+    expect(mockPublishPanelProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        viewId: 'board-view',
+        fallbackViewId: 'database-container',
+      })
     );
   });
 

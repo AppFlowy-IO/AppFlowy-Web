@@ -3,10 +3,10 @@ import * as Y from 'yjs';
 import { YDatabase, YDatabaseMetas, YjsDatabaseKey } from '@/application/types';
 
 import { sanitizeTemplateCells } from './cell';
-import { parseDatabaseRowTemplateState, serializeDatabaseRowTemplate } from './codec';
+import { parseDatabaseRowTemplate, parseDatabaseRowTemplateState, serializeDatabaseRowTemplate } from './codec';
+import { readTemplateRecords, repairTemplateProjection, writeTemplateRecords } from './storage';
 import {
   DATABASE_DEFAULT_ROW_TEMPLATE_KEY,
-  DATABASE_ROW_TEMPLATES_KEY,
   DatabaseRowTemplate,
   DatabaseRowTemplateState,
 } from './types';
@@ -44,42 +44,6 @@ function transact(database: YDatabase, operation: () => void) {
   }
 }
 
-type PersistedTemplateRecord = Record<string, unknown>;
-
-function readPersistedTemplateRecords(database: YDatabase): PersistedTemplateRecord[] {
-  const raw = database.get(YjsDatabaseKey.metas)?.get(DATABASE_ROW_TEMPLATES_KEY);
-
-  if (typeof raw !== 'string' || raw.trim() === '') return [];
-
-  try {
-    const parsed: unknown = JSON.parse(raw);
-
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed.filter(
-      (entry): entry is PersistedTemplateRecord => typeof entry === 'object' && entry !== null && !Array.isArray(entry)
-    );
-  } catch {
-    return [];
-  }
-}
-
-function isHiddenMigrationSource(record: PersistedTemplateRecord): boolean {
-  return typeof record.template_id === 'string' && record.template_id.length > 0 && record.name === '';
-}
-
-function serializeVisibleTemplatesPreservingMigrationSources(
-  database: YDatabase,
-  templates: DatabaseRowTemplate[]
-): string {
-  const visibleTemplateIds = new Set(templates.map((template) => template.templateId));
-  const migrationSources = readPersistedTemplateRecords(database).filter(
-    (record) => isHiddenMigrationSource(record) && !visibleTemplateIds.has(record.template_id as string)
-  );
-
-  return JSON.stringify([...templates.map(serializeDatabaseRowTemplate), ...migrationSources]);
-}
-
 function parseSnapshotState(snapshot: string): [unknown, unknown] | undefined {
   try {
     const value: unknown = JSON.parse(snapshot);
@@ -96,7 +60,7 @@ export function readDatabaseRowTemplateState(database?: YDatabase | null, snapsh
   const metas = database?.get(YjsDatabaseKey.metas);
   const snapshotState = snapshot === undefined ? undefined : parseSnapshotState(snapshot);
   const state = parseDatabaseRowTemplateState(
-    snapshotState?.[0] ?? metas?.get(DATABASE_ROW_TEMPLATES_KEY),
+    snapshotState?.[0] ?? JSON.stringify(readTemplateRecords(metas)),
     snapshotState?.[1] ?? metas?.get(DATABASE_DEFAULT_ROW_TEMPLATE_KEY)
   );
 
@@ -114,7 +78,7 @@ export function readDatabaseRowTemplateState(database?: YDatabase | null, snapsh
 
 export function getDatabaseRowTemplateSnapshot(database?: YDatabase | null): string {
   const metas = database?.get(YjsDatabaseKey.metas);
-  const templates = metas?.get(DATABASE_ROW_TEMPLATES_KEY);
+  const templates = JSON.stringify(readTemplateRecords(metas));
   const defaultId = metas?.get(DATABASE_DEFAULT_ROW_TEMPLATE_KEY);
   const fields = database?.get(YjsDatabaseKey.fields);
   const fieldSchema: Array<[string, string, string]> = [];
@@ -130,7 +94,7 @@ export function getDatabaseRowTemplateSnapshot(database?: YDatabase | null): str
   });
 
   return JSON.stringify([
-    typeof templates === 'string' ? templates : '',
+    templates,
     typeof defaultId === 'string' ? defaultId : '',
     fieldSchema,
   ]);
@@ -179,25 +143,40 @@ export class DatabaseRowTemplateStore {
     return readDatabaseRowTemplateState(this.database);
   }
 
+  prepareForRowCreation(templateId: string): DatabaseRowTemplate | undefined {
+    const template = this.read().templates.find((item) => item.templateId === templateId);
+
+    if (template) {
+      // The duplication API flushes this database before the server reads its
+      // legacy array. Keep this write out of React's pure snapshot getter.
+      transact(this.database, () => repairTemplateProjection(ensureMetas(this.database)));
+    }
+
+    return template;
+  }
+
   upsert(template: DatabaseRowTemplate): DatabaseRowTemplate {
-    const state = this.read();
-    const index = state.templates.findIndex((item) => item.templateId === template.templateId);
+    const records = readTemplateRecords(this.database.get(YjsDatabaseKey.metas));
+    const index = records.findIndex((record) => record.template_id === template.templateId);
+    const existing = index < 0 ? undefined : parseDatabaseRowTemplate(records[index]);
     const updated = {
       ...template,
       embeddedDatabases: sanitizeEmbeddedDatabases(template.embeddedDatabases),
       defaultCells: sanitizeTemplateCells(this.database, template.defaultCells),
+      createdAtMs: existing?.createdAtMs ?? template.createdAtMs,
+      icon: template.icon ?? existing?.icon,
+      cover: template.cover ?? existing?.cover,
       updatedAtMs: Date.now(),
     };
-    const templates = [...state.templates];
+    // Preserve unknown fields and untouched legacy records. Normalizing the
+    // whole list would turn a local edit into writes to unrelated templates.
+    const record = { ...records[index], ...serializeDatabaseRowTemplate(updated) };
 
-    if (index < 0) templates.push(updated);
-    else templates[index] = updated;
+    if (index < 0) records.push(record);
+    else records[index] = record;
 
     transact(this.database, () => {
-      ensureMetas(this.database).set(
-        DATABASE_ROW_TEMPLATES_KEY,
-        serializeVisibleTemplatesPreservingMigrationSources(this.database, templates)
-      );
+      writeTemplateRecords(ensureMetas(this.database), records);
     });
 
     return updated;
@@ -205,17 +184,16 @@ export class DatabaseRowTemplateStore {
 
   delete(templateId: string): boolean {
     const state = this.read();
-    const templates = state.templates.filter((template) => template.templateId !== templateId);
 
-    if (templates.length === state.templates.length) return false;
+    if (!state.templates.some((template) => template.templateId === templateId)) return false;
+    const records = readTemplateRecords(this.database.get(YjsDatabaseKey.metas)).filter(
+      (record) => record.template_id !== templateId
+    );
 
     transact(this.database, () => {
       const metas = ensureMetas(this.database);
 
-      metas.set(
-        DATABASE_ROW_TEMPLATES_KEY,
-        serializeVisibleTemplatesPreservingMigrationSources(this.database, templates)
-      );
+      writeTemplateRecords(metas, records);
       if (state.defaultTemplateId === templateId) metas.set(DATABASE_DEFAULT_ROW_TEMPLATE_KEY, '');
     });
 
@@ -238,21 +216,18 @@ export class DatabaseRowTemplateStore {
   move(fromTemplateId: string, toTemplateId: string): boolean {
     if (fromTemplateId === toTemplateId) return true;
 
-    const templates = [...this.read().templates];
-    const fromIndex = templates.findIndex((template) => template.templateId === fromTemplateId);
-    const toIndex = templates.findIndex((template) => template.templateId === toTemplateId);
+    const records = readTemplateRecords(this.database.get(YjsDatabaseKey.metas));
+    const fromIndex = records.findIndex((record) => record.template_id === fromTemplateId && record.name !== '');
+    const toIndex = records.findIndex((record) => record.template_id === toTemplateId && record.name !== '');
 
     if (fromIndex < 0 || toIndex < 0) return false;
 
-    const [moved] = templates.splice(fromIndex, 1);
+    const [moved] = records.splice(fromIndex, 1);
 
-    templates.splice(toIndex, 0, moved);
+    records.splice(toIndex, 0, moved);
 
     transact(this.database, () => {
-      ensureMetas(this.database).set(
-        DATABASE_ROW_TEMPLATES_KEY,
-        serializeVisibleTemplatesPreservingMigrationSources(this.database, templates)
-      );
+      writeTemplateRecords(ensureMetas(this.database), records);
     });
 
     return true;
@@ -271,26 +246,26 @@ export class DatabaseRowTemplateStore {
       defaultCells: sanitizeTemplateCells(this.database, template.defaultCells),
       updatedAtMs: Date.now(),
     };
-    const records = readPersistedTemplateRecords(this.database).filter(
+    const records = readTemplateRecords(this.database.get(YjsDatabaseKey.metas)).filter(
       (record) => record.template_id !== updated.templateId
     );
 
     records.push({ ...serializeDatabaseRowTemplate(updated) });
     transact(this.database, () => {
-      ensureMetas(this.database).set(DATABASE_ROW_TEMPLATES_KEY, JSON.stringify(records));
+      writeTemplateRecords(ensureMetas(this.database), records);
     });
 
     return updated;
   }
 
   deleteTransientMigrationSource(templateId: string): boolean {
-    const records = readPersistedTemplateRecords(this.database);
+    const records = readTemplateRecords(this.database.get(YjsDatabaseKey.metas));
     const remaining = records.filter((record) => record.template_id !== templateId);
 
     if (remaining.length === records.length) return false;
 
     transact(this.database, () => {
-      ensureMetas(this.database).set(DATABASE_ROW_TEMPLATES_KEY, JSON.stringify(remaining));
+      writeTemplateRecords(ensureMetas(this.database), remaining);
     });
 
     return true;

@@ -2,9 +2,13 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import type { ActiveRowPageInfo } from '@/application/row-document/row-page-state';
+import { ViewLayout } from '@/application/types';
 import RightMenu from '@/components/app/header/RightMenu';
 
 let mockActiveRowPage: ActiveRowPageInfo | null = null;
+let mockRouteViewId = 'database-container';
+let mockRouteView = { view_id: mockRouteViewId };
+let mockOutline: Array<Record<string, unknown>> = [];
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -20,16 +24,29 @@ jest.mock('@/application/row-document/row-page-state', () => ({
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
-  useAppOutline: () => [],
-  useAppView: () => ({ view_id: 'database-container' }),
-  useAppViewId: () => 'database-container',
+  useAppOutline: () => mockOutline,
+  useAppView: () => mockRouteView,
+  useAppViewId: () => mockRouteViewId,
   useCurrentWorkspaceId: () => 'workspace-1',
 }));
 
 jest.mock('src/components/app/share/ShareButton', () => ({
   __esModule: true,
-  default: ({ hidePublish = false }: { hidePublish?: boolean }) => (
-    <div data-testid='share-button' data-publish-hidden={String(hidePublish)} />
+  default: ({
+    viewId,
+    publishViewId,
+    hidePublish = false,
+  }: {
+    viewId: string;
+    publishViewId?: string;
+    hidePublish?: boolean;
+  }) => (
+    <div
+      data-testid='share-button'
+      data-view-id={viewId}
+      data-publish-view-id={publishViewId}
+      data-publish-hidden={String(hidePublish)}
+    />
   ),
 }));
 
@@ -50,6 +67,9 @@ jest.mock('@/components/app/header/Users', () => ({
 describe('RightMenu row-page actions', () => {
   beforeEach(() => {
     mockActiveRowPage = null;
+    mockRouteViewId = 'database-container';
+    mockRouteView = { view_id: mockRouteViewId };
+    mockOutline = [];
   });
 
   it('hides the favorite action while the requested row page state is not ready', () => {
@@ -132,5 +152,38 @@ describe('RightMenu row-page actions', () => {
 
     expect(screen.getByTestId('favorite-button').getAttribute('data-view-id')).toBe('database-container');
     expect(screen.getByTestId('share-button').getAttribute('data-publish-hidden')).toBe('false');
+  });
+
+  it('keeps database sharing on the container while publishing the active child', () => {
+    const containerViewId = 'database-container';
+
+    mockRouteViewId = 'board-view';
+    mockRouteView = {
+      view_id: mockRouteViewId,
+      parent_view_id: containerViewId,
+    };
+    mockOutline = [
+      {
+        view_id: containerViewId,
+        name: 'Database',
+        layout: ViewLayout.Grid,
+        extra: { is_database_container: true },
+        children: [mockRouteView],
+      },
+    ];
+
+    render(
+      <MemoryRouter
+        initialEntries={['/app/workspace-1/board-view']}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <RightMenu />
+      </MemoryRouter>
+    );
+
+    const shareButton = screen.getByTestId('share-button');
+
+    expect(shareButton.getAttribute('data-view-id')).toBe(containerViewId);
+    expect(shareButton.getAttribute('data-publish-view-id')).toBe(mockRouteViewId);
   });
 });

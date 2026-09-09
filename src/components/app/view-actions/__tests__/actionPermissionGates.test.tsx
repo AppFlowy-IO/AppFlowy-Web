@@ -1,6 +1,7 @@
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 import { render, screen } from '@testing-library/react';
 
+import { ViewLayout, type View } from '@/application/types';
 import MoreActionsContent from '@/components/app/header/MoreActionsContent';
 import MoreSpaceActions from '@/components/app/view-actions/MoreSpaceActions';
 import SpaceSidebarActions from '@/components/app/view-actions/SpaceSidebarActions';
@@ -10,16 +11,18 @@ import type { ReactNode } from 'react';
 
 const mockUseViewActionPermissions = jest.fn();
 const mockUseSpaceActionPermissions = jest.fn();
-const mockDocumentView = {
+const mockDocumentView: View = {
   children: [],
   extra: null,
   icon: null,
   is_published: false,
-  layout: 0,
+  is_private: false,
+  layout: ViewLayout.Document,
   name: 'Document',
   parent_view_id: 'space-1',
   view_id: 'view-1',
 };
+let mockCurrentView: View = mockDocumentView;
 const mockSpaceView = {
   ...mockDocumentView,
   extra: {
@@ -93,7 +96,7 @@ jest.mock('@/components/app/app-overlay/AppOverlayContext', () => ({
 
 jest.mock('@/components/app/app.hooks', () => ({
   useAppOutline: () => [],
-  useAppView: () => mockDocumentView,
+  useAppView: () => mockCurrentView,
   useCurrentWorkspaceId: () => 'workspace-1',
   useLoadViewChildren: () => jest.fn(),
   useRefreshOutline: () => jest.fn(),
@@ -130,6 +133,7 @@ jest.mock('@/components/app/view-actions/useSpaceActionPermissions', () => ({
 
 describe('view action permission gates', () => {
   beforeEach(() => {
+    mockCurrentView = mockDocumentView;
     mockUseViewActionPermissions.mockReset();
     mockUseSpaceActionPermissions.mockReset();
     mockUseSpaceActionPermissions.mockReturnValue({
@@ -137,6 +141,23 @@ describe('view action permission gates', () => {
       hasLoadedSpaceActionPermissions: true,
       isLoadingSpaceActionPermissions: false,
     });
+  });
+
+  it('disables generic deep duplication for a Form page with a clear explanation', () => {
+    mockCurrentView = {
+      ...mockDocumentView,
+      layout: ViewLayout.Form,
+      name: 'Form',
+    };
+
+    render(
+      <MoreActionsContent viewId='view-1' canDuplicateActions canManageActions={false} canUsePageHistory={false} />
+    );
+
+    const duplicate = screen.getByTestId('more-page-duplicate');
+
+    expect(duplicate.hasAttribute('disabled')).toBe(true);
+    expect(duplicate.textContent).toContain('form.duplicateUnavailable');
   });
 
   it('keeps page duplicate available for edit access while hiding full-management actions', () => {
@@ -203,6 +224,41 @@ describe('view action permission gates', () => {
     expect(screen.getByTestId('space-action-manage')).toBeTruthy();
     expect(screen.getByTestId('space-action-duplicate')).toBeTruthy();
     expect(screen.getByTestId('space-action-delete')).toBeTruthy();
+  });
+
+  it('disables space duplication when a nested page contains a Form', () => {
+    const unsafeSpace: View = {
+      ...mockSpaceView,
+      children: [
+        {
+          ...mockDocumentView,
+          view_id: 'nested-document',
+          children: [
+            {
+              ...mockDocumentView,
+              view_id: 'nested-form',
+              layout: ViewLayout.Form,
+              name: 'Form',
+            },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <MoreSpaceActions
+        view={unsafeSpace}
+        onClose={jest.fn()}
+        canManageActions={false}
+        canOpenManageActions
+        isLoadingActions={false}
+      />
+    );
+
+    const duplicate = screen.getByTestId('space-action-duplicate');
+
+    expect(duplicate.hasAttribute('disabled')).toBe(true);
+    expect(duplicate.textContent).toContain('form.duplicateUnavailable');
   });
 
   it('hides the space more trigger when no menu action is permitted while keeping Add independent', () => {

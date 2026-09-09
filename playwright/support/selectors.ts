@@ -188,6 +188,11 @@ export const ShareSelectors = {
   editNamespaceButton: (page: Page) => page.getByTestId('edit-namespace-button'),
   homePageSetting: (page: Page) => page.getByTestId('homepage-setting'),
   homePageUpgradeButton: (page: Page) => page.getByTestId('homepage-upgrade-button'),
+  groupRow: (page: Page, groupId: string) => page.getByTestId(`share-group-row-${groupId}`),
+  groupMembersToggle: (page: Page, groupId: string) => page.getByTestId(`share-group-toggle-${groupId}`),
+  groupMembersList: (page: Page, groupId: string) => page.getByTestId(`share-group-members-${groupId}`),
+  groupMemberRows: (page: Page, groupId: string) =>
+    page.getByTestId(`share-group-members-${groupId}`).locator('[data-testid^="share-group-member-"]'),
 };
 
 /**
@@ -318,6 +323,41 @@ export const DatabaseGallerySelectors = {
 };
 
 /**
+ * Database Feed selectors (aligned with Flutter's `DesktopFeedPage` /
+ * `FeedCard` finders so migrated scenarios address the same elements).
+ */
+export const DatabaseFeedSelectors = {
+  feed: (page: Page) => page.getByTestId('database-feed'),
+  list: (page: Page) => page.getByTestId('feed-list'),
+  loading: (page: Page) => page.getByTestId('feed-loading'),
+  empty: (page: Page) => page.getByTestId('feed-empty'),
+  cards: (page: Page) => page.locator('[data-testid^="feed-card-"][data-row-id]'),
+  cardByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-${rowId}`),
+  titles: (page: Page) => page.locator('[data-testid^="feed-card-title-"]'),
+  titleByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-title-${rowId}`),
+  creatorByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-creator-${rowId}`),
+  coverByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-cover-${rowId}`),
+  documentPreviewByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-document-preview-${rowId}`),
+  documentPreviewToggleByRowId: (page: Page, rowId: string) =>
+    page.getByTestId(`feed-document-preview-toggle-${rowId}`),
+  actionsByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-actions-${rowId}`),
+  moreButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-more-${rowId}`),
+  reactionButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-reaction-button-${rowId}`),
+  reactionsByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-row-reactions-${rowId}`),
+  reactionChip: (page: Page, rowId: string, emoji: string) => page.getByTestId(`feed-row-reaction-${rowId}-${emoji}`),
+  addReactionByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-row-add-reaction-${rowId}`),
+  commentSummaryByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-comment-summary-${rowId}`),
+  addCommentByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-add-comment-collapsed-${rowId}`),
+  addCommentInputByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-add-comment-input-${rowId}`),
+  rowActionMenu: (page: Page) => page.getByTestId('feed-row-action-menu'),
+  rowDuplicate: (page: Page) => page.getByTestId('feed-row-duplicate'),
+  rowDelete: (page: Page) => page.getByTestId('feed-row-delete'),
+  newRowButton: (page: Page) => page.getByTestId('feed-new-row'),
+  loadMoreButton: (page: Page) => page.getByTestId('feed-load-more'),
+  settingsMenu: (page: Page) => page.getByTestId('feed-settings-menu'),
+};
+
+/**
  * Database View selectors
  */
 export const DatabaseViewSelectors = {
@@ -335,6 +375,9 @@ export const DatabaseViewSelectors = {
   calendarView: (page: Page) => page.locator('[data-testid*="calendar"]'),
   listView: (page: Page) => page.getByTestId('database-list'),
   galleryView: (page: Page) => page.getByTestId('database-gallery'),
+  feedView: (page: Page) => page.getByTestId('database-feed'),
+  layoutSettingsTrigger: (page: Page) => page.getByTestId('database-layout-settings-trigger'),
+  layoutOption: (page: Page, layout: number) => page.getByTestId(`database-layout-option-${layout}`),
   /**
    * Locator for a layout option inside the AddViewButton dropdown
    * (e.g. "Grid", "Board", "Calendar", "Chart"). The dropdown items have no
@@ -392,6 +435,90 @@ export const ChartSettingsSelectors = {
 export const ChartDrilldownSelectors = {
   dialog: (page: Page) => page.getByRole('dialog'),
   closeButton: (page: Page) => page.getByRole('dialog').getByRole('button').first(),
+};
+
+/**
+ * Form-builder selectors. The Form layout is web-mirror of the desktop's
+ * `FormBuilderPage`. Field-type ids match the FieldType enum in
+ * `database-yjs/database.type.ts` — keep in sync if the enum renumbers.
+ */
+export const FormSelectors = {
+  // Tab-bar dropdown item that creates a Form view linked to the
+  // current database. Standalone Forms are also available from the
+  // sidebar/page-add menu.
+  addFormViewOption: (page: Page) => page.getByTestId('add-form-view-option'),
+
+  // Toolbar
+  previewButton: (page: Page) => page.getByTestId('form-preview-button'),
+  shareButton: (page: Page) => page.getByTestId('form-share-button'),
+  previewDialog: (page: Page) => page.getByTestId('form-preview-dialog'),
+
+  // Question stack
+  addQuestionButton: (page: Page) => page.getByTestId('form-add-question-button'),
+  questionTypeOption: (page: Page, fieldType: number) => page.getByTestId(`form-question-type-option-${fieldType}`),
+  questionCards: (page: Page) => page.locator('[data-testid="form-question-card"]'),
+
+  // Banner — `data-tier` exposes the active share tier (workspace / public / closed)
+  // so tests can assert the at-rest state without scraping copy.
+  accessBanner: (page: Page) => page.getByTestId('form-access-banner'),
+  accessBannerTier: async (page: Page): Promise<string | null> =>
+    page.getByTestId('form-access-banner').getAttribute('data-tier'),
+
+  // Auto-create modal. Fires when a Form view is layered onto a database
+  // with > 2 supported fields (e.g. a default Grid w/ Name/Type/Done).
+  // Most scenarios dismiss it via Start-from-scratch to land on an empty
+  // form; scenarios that care about the modal itself (mirror of
+  // desktop's `form_from_tab_bar`) assert on it directly.
+  autoCreateDialog: (page: Page) => page.getByTestId('form-auto-create-dialog'),
+  autoCreateConfirm: (page: Page) => page.getByTestId('form-auto-create-confirm'),
+  autoCreateStartFromScratch: (page: Page) => page.getByTestId('form-auto-create-start-from-scratch'),
+
+  // Per-card query helpers. The Nth card is a stable target because the
+  // form builder only ever appends (Q1 is index 0, Q2 is index 1, etc.)
+  // — reorders go through `writer.reorderQuestion`, which renumbers the
+  // whole list. Tests that care about specific cards should index by
+  // their authoring order.
+  questionCardAt: (page: Page, index: number) => page.locator('[data-testid="form-question-card"]').nth(index),
+  questionMenuTriggerAt: (page: Page, index: number) =>
+    page.locator('[data-testid="form-question-card"]').nth(index).locator('[data-testid="form-question-menu-trigger"]'),
+
+  // Popover bootstrap and error states.
+  popoverLoading: (page: Page) => page.getByTestId('form-share-popover-loading'),
+  popoverError: (page: Page) => page.getByTestId('form-share-popover-error'),
+};
+
+/**
+ * Public form page selectors. The page mounts when a respondent opens
+ * `/form/{token}`; on web that route auth-bypasses (`form-api.ts`) so
+ * tests can open it in an incognito context to exercise the anonymous
+ * path.
+ */
+export const PublicFormSelectors = {
+  body: (page: Page) => page.getByTestId('public-form-body'),
+  submitButton: (page: Page) => page.getByTestId('public-form-submit'),
+  confirmation: (page: Page) => page.getByTestId('public-form-confirmation'),
+  questionByKind: (page: Page, kind: string) => page.locator(`[data-question-kind="${kind}"]`),
+
+  // Three non-active states the public route can land in:
+  //   * authRequired: workspace-tier hit by an anonymous client.
+  //     The cloud responds with `kind: 'auth_required'` + a login_url.
+  //   * closed: tier=closed (or revoked) — page shows "Form closed".
+  //   * notFound: 404 / 410 surface as a clean NotFound to avoid
+  //     leaking server internals (no testid; assert on visible copy).
+  authRequiredPage: (page: Page) => page.getByTestId('public-form-auth-required'),
+  closedPage: (page: Page) => page.getByTestId('public-form-closed'),
+
+  // Files question (Phase-2). The Upload button triggers a hidden file
+  // input — tests should setInputFiles on the input directly instead of
+  // clicking the button (Playwright can drive both, but the input route
+  // bypasses the OS file chooser).
+  mediaInput: (page: Page) => page.getByTestId('public-form-media-input'),
+  mediaFileInput: (page: Page) => page.getByTestId('public-form-media-file-input'),
+  mediaUploadButton: (page: Page) => page.getByTestId('public-form-media-upload-button'),
+  mediaAttachmentList: (page: Page) => page.getByTestId('public-form-media-attachments'),
+  mediaAttachments: (page: Page) => page.getByTestId('public-form-media-attachment'),
+  mediaAttachmentByName: (page: Page, name: string) =>
+    page.locator(`[data-testid="public-form-media-attachment"][data-name="${name}"]`),
 };
 
 /**
@@ -566,6 +693,7 @@ export const AddPageSelectors = {
   addChartButton: (page: Page) => page.getByTestId('add-chart-button'),
   addListButton: (page: Page) => page.getByTestId('add-list-button'),
   addGalleryButton: (page: Page) => page.getByTestId('add-gallery-button'),
+  addFeedButton: (page: Page) => page.getByTestId('add-feed-button'),
   addImportButton: (page: Page) => page.getByTestId('add-import-button'),
 };
 

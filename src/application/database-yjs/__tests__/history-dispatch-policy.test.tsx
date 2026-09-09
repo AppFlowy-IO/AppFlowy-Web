@@ -12,6 +12,7 @@ import {
   useDeletePropertyDispatch,
   useDeleteSelectOption,
   useMoveCardDispatch,
+  useNewFormQuestionDispatch,
   useNewPropertyDispatch,
   useSwitchPropertyType,
   useUpdateCellDispatch,
@@ -26,6 +27,7 @@ import {
 } from '@/application/database-yjs/dispatch/row';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
+import { FORM_DECIDED_SENTINEL, FORM_INCLUDED, FORM_ORDER } from '@/application/database-yjs/form-questions';
 import {
   createDatabaseHistoryGroup,
   getOrCreateDatabaseHistoryManager,
@@ -41,6 +43,7 @@ import {
   YDatabaseField,
   YDatabaseFieldTypeOption,
   YDatabaseFields,
+  YDatabaseFormFieldSettings,
   YDatabaseGroup,
   YDatabaseGroupColumns,
   YDatabaseGroups,
@@ -372,6 +375,53 @@ describe('database history production dispatch policies', () => {
     expect(relation.fields.has(relationFieldId)).toBe(true);
     expect(relationHistory.canUndo()).toBe(false);
     expect(relationHistory.canRedo()).toBe(true);
+  });
+
+  it('creates a Form question atomically with one undo step and Desktop naming', () => {
+    const fixture = createFixture([
+      ['question-a', createField('question-a', FieldType.RichText)],
+      ['question-b', createField('question-b', FieldType.RichText)],
+    ]);
+    const formSettings = new Y.Map() as YDatabaseFormFieldSettings;
+    const decided = new Y.Map<unknown>();
+
+    decided.set(FORM_INCLUDED, false);
+    formSettings.set(FORM_DECIDED_SENTINEL, decided);
+    ['question-a', 'question-b'].forEach((id, index) => {
+      const entry = new Y.Map<unknown>();
+
+      entry.set(FORM_INCLUDED, true);
+      entry.set(FORM_ORDER, (index + 1) * 10);
+      formSettings.set(id, entry);
+    });
+
+    fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Form);
+    fixture.view.set(YjsDatabaseKey.form_field_settings, formSettings);
+    const hook = renderHook(() => useNewFormQuestionDispatch(), {
+      wrapper: createWrapper(fixture.databaseDoc),
+    });
+    let createdId = '';
+
+    act(() => {
+      createdId = hook.result.current(FieldType.DateTime);
+    });
+
+    expect(fixture.fields.get(createdId)?.get(YjsDatabaseKey.name)).toBe('Question 3');
+    expect(fixture.view.get(YjsDatabaseKey.field_orders).toArray()).toContainEqual({ id: createdId });
+    expect(fixture.view.get(YjsDatabaseKey.form_field_settings)?.get(createdId)?.get('included')).toBe(true);
+    expect(fixture.view.get(YjsDatabaseKey.form_field_settings)?.get(createdId)?.get('order')).toBe(21);
+
+    const history = getOrCreateDatabaseHistoryManager(fixture.databaseDoc);
+
+    expect(history.canUndo()).toBe(true);
+    void act(() => history.undo());
+    expect(fixture.fields.has(createdId)).toBe(false);
+    expect(fixture.view.get(YjsDatabaseKey.field_orders).toArray()).not.toContainEqual({ id: createdId });
+    expect(fixture.view.get(YjsDatabaseKey.form_field_settings)?.has(createdId) ?? false).toBe(false);
+
+    void act(() => history.redo());
+    expect(fixture.fields.get(createdId)?.get(YjsDatabaseKey.name)).toBe('Question 3');
+    expect(fixture.view.get(YjsDatabaseKey.form_field_settings)?.get(createdId)?.get('order')).toBe(21);
   });
 
   it('captures ordinary field deletion but skips relation field deletion', () => {

@@ -26,12 +26,14 @@ enum TabKey {
 function ShareTabs({
   opened,
   viewId,
+  publishViewId = viewId,
   hidePublish = false,
   onClose,
   onOpenPublishManage,
 }: {
   opened: boolean;
   viewId: string;
+  publishViewId?: string;
   hidePublish?: boolean;
   onClose: () => void;
   onOpenPublishManage?: () => void;
@@ -149,7 +151,8 @@ function ShareTabs({
               />
             ) : option.value === TabKey.PUBLISH ? (
               <PublishPanel
-                viewId={viewId}
+                viewId={publishViewId}
+                fallbackViewId={publishViewId === viewId ? undefined : viewId}
                 onClose={onClose}
                 opened={opened}
                 onOpenPublishManage={onOpenPublishManage}

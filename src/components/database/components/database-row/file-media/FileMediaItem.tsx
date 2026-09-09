@@ -7,8 +7,8 @@ import FileIcon from '@/components/database/components/cell/file-media/FileIcon'
 import FileMediaMore from '@/components/database/components/cell/file-media/FileMediaMore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { openFileUrl } from '@/utils/download';
 import { resolveFileUrl } from '@/utils/file-storage-url';
-import { openUrl } from '@/utils/url';
 
 function FileMediaItem({
   file,
@@ -64,7 +64,7 @@ function FileMediaItem({
           const newUrl = resolveFileUrl(file.url, workspaceId, databasePageId);
 
           if (newUrl) {
-            void openUrl(newUrl, '_blank');
+            void openFileUrl(newUrl, '_blank', file.name);
           }
         }
       }}

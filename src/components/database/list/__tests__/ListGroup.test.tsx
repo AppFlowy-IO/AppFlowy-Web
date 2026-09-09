@@ -14,6 +14,7 @@ import { getListGroupCellsData } from '../ListRowActions';
 jest.mock('@/application/database-yjs', () => ({
   FieldType: { Checkbox: 5, RichText: 0 },
   useDatabaseFields: jest.fn(),
+  useDatabaseView: jest.fn(),
   useReadOnly: jest.fn(),
 }));
 

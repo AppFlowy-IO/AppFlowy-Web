@@ -1,10 +1,13 @@
 import { BlockType, View, ViewLayout } from '@/application/types';
 
 import {
+  assertLinkedDatabaseBlockDuplicateIsSafe,
   findDuplicatedContainerChild,
   getDatabaseLayoutFromBlockType,
   isDatabaseBlockType,
   loadDatabaseDuplicateSourceViews,
+  LINKED_DATABASE_BLOCK_DUPLICATE_CHECK_FAILED_MESSAGE,
+  LINKED_FORM_BLOCK_DUPLICATE_UNAVAILABLE_MESSAGE,
 } from '../databaseDuplicateUtils';
 
 function makeView(overrides: Partial<View>): View {
@@ -71,6 +74,30 @@ describe('databaseDuplicateUtils', () => {
     ).resolves.toEqual([firstSourceView, secondSourceView, null]);
     expect(loadViewMeta).toHaveBeenCalledTimes(2);
     expect(loadViewMeta).not.toHaveBeenCalledWith(firstSourceView.view_id);
+  });
+
+  it('blocks a linked database block containing a Form before creating children', () => {
+    expect(() =>
+      assertLinkedDatabaseBlockDuplicateIsSafe([
+        makeView({ view_id: 'grid-view', layout: ViewLayout.Grid }),
+        makeView({ view_id: 'form-view', layout: ViewLayout.Form }),
+      ])
+    ).toThrow(LINKED_FORM_BLOCK_DUPLICATE_UNAVAILABLE_MESSAGE);
+  });
+
+  it('fails closed when a linked tab layout could not be verified', () => {
+    expect(() =>
+      assertLinkedDatabaseBlockDuplicateIsSafe([makeView({ view_id: 'grid-view', layout: ViewLayout.Grid }), null])
+    ).toThrow(LINKED_DATABASE_BLOCK_DUPLICATE_CHECK_FAILED_MESSAGE);
+  });
+
+  it('allows linked database blocks whose tabs are all non-Form layouts', () => {
+    expect(() =>
+      assertLinkedDatabaseBlockDuplicateIsSafe([
+        makeView({ view_id: 'grid-view', layout: ViewLayout.Grid }),
+        makeView({ view_id: 'board-view', layout: ViewLayout.Board }),
+      ])
+    ).not.toThrow();
   });
 
   it('finds the duplicated container from newly added children', () => {

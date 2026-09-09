@@ -1,6 +1,7 @@
 import EventEmitter from 'events';
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
@@ -105,11 +106,13 @@ function setupContext({
 
 function renderTabs() {
   return render(
-    <DatabaseTabs
-      databasePageId={databaseView.view_id}
-      selectedViewId={databaseView.view_id}
-      viewIds={[databaseView.view_id]}
-    />
+    <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+      <DatabaseTabs
+        databasePageId={databaseView.view_id}
+        selectedViewId={databaseView.view_id}
+        viewIds={[databaseView.view_id]}
+      />
+    </MemoryRouter>
   );
 }
 
@@ -298,11 +301,13 @@ describe('DatabaseTabs embedded database title rename', () => {
     } as DatabaseContextState);
 
     render(
-      <DatabaseTabs
-        databasePageId={linkedDatabaseView.view_id}
-        selectedViewId={linkedDatabaseView.view_id}
-        viewIds={[linkedDatabaseView.view_id]}
-      />
+      <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+        <DatabaseTabs
+          databasePageId={linkedDatabaseView.view_id}
+          selectedViewId={linkedDatabaseView.view_id}
+          viewIds={[linkedDatabaseView.view_id]}
+        />
+      </MemoryRouter>
     );
 
     const openOriginal = await screen.findByTestId('embedded-database-open-original');
@@ -336,11 +341,13 @@ describe('DatabaseTabs embedded database title rename', () => {
     } as DatabaseContextState);
 
     render(
-      <DatabaseTabs
-        databasePageId={legacyLinkedDatabaseView.view_id}
-        selectedViewId={legacyLinkedDatabaseView.view_id}
-        viewIds={[legacyLinkedDatabaseView.view_id]}
-      />
+      <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+        <DatabaseTabs
+          databasePageId={legacyLinkedDatabaseView.view_id}
+          selectedViewId={legacyLinkedDatabaseView.view_id}
+          viewIds={[legacyLinkedDatabaseView.view_id]}
+        />
+      </MemoryRouter>
     );
 
     expect((await screen.findByTestId('embedded-database-open-original')).hasAttribute('disabled')).toBe(false);
@@ -361,11 +368,13 @@ describe('DatabaseTabs embedded database title rename', () => {
     } as DatabaseContextState);
 
     render(
-      <DatabaseTabs
-        databasePageId={linkedDatabaseView.view_id}
-        selectedViewId={linkedDatabaseView.view_id}
-        viewIds={[linkedDatabaseView.view_id]}
-      />
+      <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+        <DatabaseTabs
+          databasePageId={linkedDatabaseView.view_id}
+          selectedViewId={linkedDatabaseView.view_id}
+          viewIds={[linkedDatabaseView.view_id]}
+        />
+      </MemoryRouter>
     );
 
     const title = await screen.findByTestId('embedded-database-title-rename');

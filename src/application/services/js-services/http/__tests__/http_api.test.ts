@@ -420,6 +420,8 @@ describe('http_api client (unit)', () => {
         data: {
           enable_page_history: true,
           ai_enabled: true,
+          version: '0.18.0',
+          min_web_client_version: '0.17.1',
         },
       },
     });
@@ -427,7 +429,10 @@ describe('http_api client (unit)', () => {
     await expect(module.getServerInfo(abortController.signal)).resolves.toEqual({
       enable_page_history: true,
       ai_enabled: true,
+      version: '0.18.0',
+      min_web_client_version: '0.17.1',
     });
+    expect(mockAxiosInstance.get).toHaveBeenCalledTimes(1);
     expect(mockAxiosInstance.get).toHaveBeenCalledWith('/api/server-info', {
       headers: {
         'x-platform': 'web',
@@ -435,6 +440,36 @@ describe('http_api client (unit)', () => {
       signal: abortController.signal,
       timeout: 10_000,
     });
+  });
+
+  it('recovers a legacy server version without importing native-client flags or floors', async () => {
+    const module = await import('../http_api');
+    module.initAPIService(baseConfig);
+    const controller = new AbortController();
+    const webInfo = { enable_page_history: true, ai_enabled: true };
+
+    mockAxiosInstance.get
+      .mockResolvedValueOnce({ data: { code: 0, data: webInfo } })
+      .mockResolvedValueOnce({ data: { code: 0, data: {
+        version: '0.17.0', enable_page_history: false, ai_enabled: false, min_client_version: '0.14.1',
+      } } });
+
+    await expect(module.getServerInfo(controller.signal)).resolves.toEqual({ ...webInfo, version: '0.17.0' });
+    expect(mockAxiosInstance.get).toHaveBeenLastCalledWith('/api/server-info', {
+      headers: { 'x-platform': 'app' }, timeout: 10_000, signal: controller.signal,
+    });
+  });
+
+  it('keeps web capabilities and unknown compatibility when the legacy version request fails', async () => {
+    const module = await import('../http_api');
+    module.initAPIService(baseConfig);
+    const webInfo = { enable_page_history: true, ai_enabled: false };
+
+    mockAxiosInstance.get
+      .mockResolvedValueOnce({ data: { code: 0, data: webInfo } })
+      .mockRejectedValueOnce(new Error('legacy endpoint unavailable'));
+
+    await expect(module.getServerInfo()).resolves.toEqual(webInfo);
   });
 
   it('does not log LDAP session tokens from the response envelope', async () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { useDatabaseFields } from '@/application/database-yjs';
+import { useDatabaseFields, useDatabaseView } from '@/application/database-yjs';
 import { useDuplicateRowDispatch, useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { getGridGroupCellsData } from '@/components/database/components/grid/grid-row/GridNewRow';
 import { useGridContext, useIsGridRowHovered } from '@/components/database/grid/useGridContext';
@@ -53,9 +53,10 @@ export function useHoverControlsActions(rowId: string, groupFieldId?: string, gr
   const onNewRow = useNewRowDispatch();
   const duplicateRow = useDuplicateRowDispatch();
   const fields = useDatabaseFields();
+  const view = useDatabaseView();
   const getCellsData = useCallback(
-    () => getGridGroupCellsData(fields, groupFieldId, groupId),
-    [fields, groupFieldId, groupId]
+    () => getGridGroupCellsData(fields, groupFieldId, groupId, view),
+    [fields, groupFieldId, groupId, view]
   );
 
   const onAddRowBelow = useCallback(async () => {

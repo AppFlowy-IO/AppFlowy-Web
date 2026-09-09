@@ -2,7 +2,7 @@
 # Build stage - Build the React application
 FROM node:20.12.0-alpine AS builder
 
-ARG VERSION=dev
+ARG VERSION
 ENV NODE_ENV=production
 
 WORKDIR /app
@@ -18,7 +18,7 @@ RUN corepack enable && \
 COPY . .
 
 # Build the application
-RUN pnpm run build
+RUN APPFLOWY_WEB_VERSION="${VERSION}" pnpm run build
 
 # Runtime stage - SSR with Bun + nginx
 FROM oven/bun:latest

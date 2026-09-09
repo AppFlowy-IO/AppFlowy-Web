@@ -5,6 +5,7 @@ import { DatabaseContext, FieldType, SelectOptionColor } from '@/application/dat
 import type { DatabaseContextState, GridGroup } from '@/application/database-yjs';
 import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
 import { createYDatabaseGroupColumn } from '@/application/database-yjs/group-column';
+import { defaultNumberGroupConfiguration, NumberGroupMode } from '@/application/database-yjs/number-grouping';
 import { YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import type {
   YDatabase,
@@ -25,13 +26,14 @@ import type {
 } from '@/application/types';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import {
+  DatabaseSettingGroup,
   GRID_GROUP_VISIBILITY_LIMIT,
   GridGroupVisibilityActions,
   GridGroupVisibilityList,
   getGridGroupVisibilityGroups,
 } from '@/components/database/components/settings/GridSettingGroup';
 import { GridGroupingProvider, useGridGrouping } from '@/components/database/grid/GridGroupingContext';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 import type { ComponentProps } from 'react';
 
@@ -187,6 +189,77 @@ async function openMenuWithKeyboard() {
   await waitFor(() => expect(screen.getByTestId('grid-show-all-groups')).toBeTruthy());
 }
 
+describe('DatabaseSettingGroup submenu', () => {
+  it('keeps the numeric draft and validation visible when the pointer enters its portaled editor', async () => {
+    const fixture = createLiveColorFixture();
+    const updateNumberConfiguration = jest.fn();
+    const { unmount } = render(
+      <DatabaseContext.Provider value={fixture.contextValue}>
+        <DropdownMenu>
+          <DropdownMenuTrigger>Settings</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DatabaseSettingGroup
+              grouping={{
+                isGrouped: true,
+                fieldId: 'status',
+                fieldType: FieldType.Number,
+                content: JSON.stringify(defaultNumberGroupConfiguration(NumberGroupMode.Range)),
+                activeGroupIds: [],
+                groups: [],
+                visibleGroups: [],
+                hideEmptyGroups: true,
+                ready: true,
+              }}
+              groupBy={jest.fn()}
+              clearGrouping={jest.fn()}
+              toggleHideEmpty={jest.fn()}
+              setVisibility={jest.fn()}
+              setAllVisibility={jest.fn()}
+              updateDateCondition={jest.fn()}
+              updateNumberConfiguration={updateNumberConfiguration}
+              testIdPrefix='grid'
+            />
+            <DropdownMenuItem>Other setting</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </DatabaseContext.Provider>
+    );
+
+    const settingsTrigger = screen.getByRole('button', { name: 'Settings' });
+
+    settingsTrigger.focus();
+    fireEvent.keyDown(settingsTrigger, { key: 'ArrowDown' });
+    const groupTrigger = await screen.findByTestId('grid-group-settings-trigger');
+
+    fireEvent.click(groupTrigger);
+    const interval = await screen.findByRole('textbox', { name: 'Interval' });
+
+    fireEvent.change(interval, { target: { value: '0' } });
+    const apply = screen.getByRole('button', { name: 'Apply' });
+    // A direct pointer transition can miss Radix's geometric hover grace area.
+    const pointerOut = new MouseEvent('pointerout', { bubbles: true, relatedTarget: apply, clientX: 100, clientY: 100 });
+
+    Object.defineProperty(pointerOut, 'pointerType', { value: 'mouse' });
+    fireEvent(groupTrigger, pointerOut);
+    await waitFor(() => expect(screen.getByTestId('grid-group-settings-menu')).toBeTruthy());
+    fireEvent.click(apply);
+    expect(screen.getByRole('alert').textContent).toBe('Interval must be greater than zero.');
+    expect(screen.getByRole('textbox', { name: 'Interval' }).value).toBe('0');
+    expect(updateNumberConfiguration).not.toHaveBeenCalled();
+
+    const otherSetting = screen.getByRole('menuitem', { name: 'Other setting' });
+
+    act(() => otherSetting.focus());
+    await waitFor(() => expect(screen.queryByTestId('grid-group-settings-menu')).toBeNull());
+    expect(screen.getByRole('menuitem', { name: 'Other setting' })).toBeTruthy();
+    fireEvent.keyDown(otherSetting, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    unmount();
+    fixture.databaseDoc.destroy();
+    fixture.rowDoc.destroy();
+  });
+});
+
 describe('GridGroupVisibilityList', () => {
   it('supports stable List visibility identifiers without changing Grid defaults', async () => {
     render(<VisibilityMenu groups={[createGroup(1)]} testIdPrefix='list' />);
@@ -215,6 +288,31 @@ describe('GridGroupVisibilityList', () => {
       'current-value',
     ]);
     expect(getGridGroupVisibilityGroups(groups, FieldType.SingleSelect)).toBe(groups);
+  });
+
+  it('exposes empty configured ranges but omits empty derived numeric groups', () => {
+    const groups = [
+      { ...createGroup(0), id: 'number', isDefault: true },
+      { ...createGroup(1), id: 'occupied', rows: [{ height: 36, id: 'row-a' }] },
+      { ...createGroup(2), id: 'empty' },
+    ];
+
+    expect(
+      getGridGroupVisibilityGroups(
+        groups,
+        FieldType.Number,
+        JSON.stringify(defaultNumberGroupConfiguration(NumberGroupMode.Range))
+      )
+    ).toBe(groups);
+    for (const mode of [NumberGroupMode.Legacy, NumberGroupMode.Exact]) {
+      expect(
+        getGridGroupVisibilityGroups(
+          groups,
+          FieldType.Number,
+          JSON.stringify(defaultNumberGroupConfiguration(mode))
+        ).map((group) => group.id)
+      ).toEqual(['number', 'occupied']);
+    }
   });
 
   it('renders select-option groups with the same semantic tag colors while retaining checkbox semantics', async () => {

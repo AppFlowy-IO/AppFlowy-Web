@@ -22,6 +22,8 @@ export const SlashMenuNames = {
   linkedList: 'Linked List',
   databaseGallery: 'Gallery',
   linkedGallery: 'Linked Gallery',
+  feed: 'Feed',
+  linkedFeed: 'Linked Feed',
   kanban: 'Kanban',
   linkedKanban: 'Linked Kanban',
   calendar: 'Calendar',

@@ -15,9 +15,13 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 
-function Properties() {
+function Properties({ excludeFieldId }: { excludeFieldId?: string }) {
   const { t } = useTranslation();
-  const { properties } = usePropertiesSelector();
+  const { properties: allProperties } = usePropertiesSelector();
+  const properties = React.useMemo(
+    () => allProperties.filter((property) => property.id !== excludeFieldId),
+    [allProperties, excludeFieldId]
+  );
 
   const [container, setContainer] = React.useState<HTMLDivElement | null>(null);
   const contextValue = usePropertyDragContextValue(properties, container);

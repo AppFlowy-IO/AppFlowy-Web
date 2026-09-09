@@ -9,18 +9,22 @@ import { ViewService, PublishService } from '@/application/services/domains';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
 import { useCurrentUser } from '@/components/main/app.hooks';
 
-export function useLoadPublishInfo(viewId: string) {
-  const outlineView = useAppView(viewId);
-  const userWorkspaceInfo = useUserWorkspaceInfo();
-  const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
+type PublishInfo = {
+  namespace: string;
+  publishName: string;
+  publisherEmail: string;
+  commentEnabled: boolean;
+  duplicateEnabled: boolean;
+};
 
-  // Fallback view fetched from server when not in outline (e.g. lazy-loaded children)
-  const [fallbackView, setFallbackView] = React.useState<View | null>(null);
+function usePublishView(viewId: string | undefined, workspaceId: string | undefined) {
+  const outlineView = useAppView(viewId);
+  const [fetchedView, setFetchedView] = React.useState<View | null>(null);
 
   useEffect(() => {
     if (outlineView || !viewId || !workspaceId) {
       if (outlineView) {
-        setFallbackView((prev) => (prev?.view_id === viewId ? null : prev));
+        setFetchedView((previousView) => (previousView?.view_id === viewId ? null : previousView));
       }
 
       return;
@@ -29,13 +33,13 @@ export function useLoadPublishInfo(viewId: string) {
     let cancelled = false;
 
     ViewService.get(workspaceId, viewId)
-      .then((fetchedView) => {
-        if (!cancelled && fetchedView) {
-          setFallbackView(fetchedView);
+      .then((view) => {
+        if (!cancelled && view) {
+          setFetchedView(view);
         }
       })
       .catch(() => {
-        // View not found - ignore
+        // The publish-info request remains useful even when folder metadata is unavailable.
       });
 
     return () => {
@@ -43,26 +47,39 @@ export function useLoadPublishInfo(viewId: string) {
     };
   }, [outlineView, viewId, workspaceId]);
 
-  const view = outlineView ?? (fallbackView?.view_id === viewId ? fallbackView : null) ?? undefined;
+  return outlineView ?? (fetchedView?.view_id === viewId ? fetchedView : undefined);
+}
 
-  const [publishInfo, setPublishInfo] = React.useState<{
-    namespace: string;
-    publishName: string;
-    publisherEmail: string;
-    commentEnabled: boolean;
-    duplicateEnabled: boolean;
+export function useLoadPublishInfo(viewId: string, fallbackViewId?: string) {
+  const userWorkspaceInfo = useUserWorkspaceInfo();
+  const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
+  const primaryView = usePublishView(viewId, workspaceId);
+  const fallbackView = usePublishView(fallbackViewId, workspaceId);
+  // Desktop publications are keyed by the active database child. Older Web
+  // publications can be keyed by the container, so probe both without a waterfall.
+  const candidateViewIds = useMemo(
+    () => (fallbackViewId && fallbackViewId !== viewId ? [viewId, fallbackViewId] : [viewId]),
+    [fallbackViewId, viewId]
+  );
+  const requestKey = candidateViewIds.join(':');
+  const [publishState, setPublishState] = React.useState<{
+    requestKey: string;
+    viewId: string;
+    publishInfo?: PublishInfo;
   }>();
-  const [publishInfoViewId, setPublishInfoViewId] = React.useState<string | null>(null);
   const publishInfoRequestSeqRef = React.useRef(0);
   const publishInfoMutationSeqRef = React.useRef(0);
   const publishInfoMutationPendingRef = React.useRef(0);
   const publishInfoMutationQueueRef = React.useRef<Promise<void>>(Promise.resolve());
   const [loading, setLoading] = React.useState<boolean>(false);
 
+  const currentPublishState = publishState?.requestKey === requestKey ? publishState : undefined;
+  const publishInfoViewId = currentPublishState?.viewId ?? viewId;
+  const publishInfo = currentPublishState?.publishInfo;
+  const view = publishInfoViewId === fallbackViewId ? fallbackView : primaryView;
   const currentUser = useCurrentUser();
   const isOwner = isSameUserUid(userWorkspaceInfo?.selectedWorkspace?.owner?.uid, currentUser?.uid);
-  const currentViewPublishInfo = publishInfoViewId === viewId ? publishInfo : undefined;
-  const isPublisher = currentViewPublishInfo?.publisherEmail === currentUser?.email;
+  const isPublisher = publishInfo?.publisherEmail === currentUser?.email;
 
   const loadPublishInfo = useCallback(async () => {
     const requestSeq = publishInfoRequestSeqRef.current + 1;
@@ -72,7 +89,9 @@ export function useLoadPublishInfo(viewId: string) {
 
     setLoading(true);
     try {
-      const res = await PublishService.getViewInfo(viewId);
+      const results = await Promise.allSettled(
+        candidateViewIds.map((candidateViewId) => PublishService.getViewInfo(candidateViewId))
+      );
 
       const stale =
         publishInfoRequestSeqRef.current !== requestSeq ||
@@ -80,34 +99,31 @@ export function useLoadPublishInfo(viewId: string) {
         publishInfoMutationPendingRef.current > 0;
 
       if (stale) {
-        clearPublishViewInfoCache(viewId);
+        candidateViewIds.forEach((candidateViewId) => clearPublishViewInfoCache(candidateViewId));
         return;
       }
 
-      setPublishInfo(res);
-      setPublishInfoViewId(viewId);
+      const publishedResultIndex = results.findIndex((result) => result.status === 'fulfilled');
 
-      // eslint-disable-next-line
-    } catch (e: any) {
-      const stale =
-        publishInfoRequestSeqRef.current !== requestSeq ||
-        publishInfoMutationSeqRef.current !== mutationSeq ||
-        publishInfoMutationPendingRef.current > 0;
+      if (publishedResultIndex === -1) {
+        setPublishState({ requestKey, viewId });
+      } else {
+        const publishedResult = results[publishedResultIndex];
 
-      if (stale) {
-        clearPublishViewInfoCache(viewId);
-        return;
+        if (publishedResult.status === 'fulfilled') {
+          setPublishState({
+            requestKey,
+            viewId: candidateViewIds[publishedResultIndex],
+            publishInfo: publishedResult.value,
+          });
+        }
       }
-
-      // Not published or fetch failed - clear stale publish info
-      setPublishInfo(undefined);
-      setPublishInfoViewId(viewId);
     } finally {
       if (publishInfoRequestSeqRef.current === requestSeq) {
         setLoading(false);
       }
     }
-  }, [viewId]);
+  }, [candidateViewIds, requestKey, viewId]);
 
   useEffect(() => {
     void loadPublishInfo();
@@ -127,15 +143,28 @@ export function useLoadPublishInfo(viewId: string) {
             cachePublishCommentsEnabled(payload.view_id, payload.comments_enabled);
           }
 
-          setPublishInfo((prev) => {
-            if (!prev) return prev;
+          setPublishState((previousState) => {
+            if (
+              !previousState?.publishInfo ||
+              previousState.requestKey !== requestKey ||
+              previousState.viewId !== payload.view_id
+            )
+              return previousState;
             return {
-              publishName: payload.publish_name || prev.publishName,
-              namespace: prev.namespace,
-              publisherEmail: prev.publisherEmail,
-              commentEnabled: payload.comments_enabled === undefined ? prev.commentEnabled : payload.comments_enabled,
-              duplicateEnabled:
-                payload.duplicate_enabled === undefined ? prev.duplicateEnabled : payload.duplicate_enabled,
+              ...previousState,
+              publishInfo: {
+                publishName: payload.publish_name || previousState.publishInfo.publishName,
+                namespace: previousState.publishInfo.namespace,
+                publisherEmail: previousState.publishInfo.publisherEmail,
+                commentEnabled:
+                  payload.comments_enabled === undefined
+                    ? previousState.publishInfo.commentEnabled
+                    : payload.comments_enabled,
+                duplicateEnabled:
+                  payload.duplicate_enabled === undefined
+                    ? previousState.publishInfo.duplicateEnabled
+                    : payload.duplicate_enabled,
+              },
             };
           });
           return true;
@@ -153,15 +182,15 @@ export function useLoadPublishInfo(viewId: string) {
       publishInfoMutationQueueRef.current = mutation.then(() => undefined);
       return mutation;
     },
-    [workspaceId]
+    [requestKey, workspaceId]
   );
 
   const url = useMemo(() => {
-    return `${window.origin}/${currentViewPublishInfo?.namespace}/${currentViewPublishInfo?.publishName}`;
-  }, [currentViewPublishInfo]);
+    return `${window.origin}/${publishInfo?.namespace}/${publishInfo?.publishName}`;
+  }, [publishInfo]);
 
   return {
-    publishInfo: currentViewPublishInfo,
+    publishInfo,
     publishInfoViewId,
     url,
     loadPublishInfo,

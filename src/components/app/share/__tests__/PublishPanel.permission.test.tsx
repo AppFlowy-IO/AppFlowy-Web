@@ -36,7 +36,7 @@ jest.mock('@/components/app/share/publish.hooks', () => ({
       is_private: false,
     },
     publishInfo: undefined,
-    publishInfoViewId: undefined,
+    publishInfoViewId: 'view-id',
     loading: false,
     isOwner: false,
     isPublisher: false,

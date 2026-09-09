@@ -1,42 +1,109 @@
 import { useCallback } from 'react';
+import { validate as isUuid } from 'uuid';
 
-import { useRowMap } from '@/application/database-yjs/context';
+import { useDatabaseContext, useRowMap } from '@/application/database-yjs/context';
 import {
   addComment,
   addCommentReaction,
   deleteComment,
   getCommentsMap,
+  getRowComments,
   parseComment,
   removeCommentReaction,
   resolveComment,
   updateCommentContent,
 } from '@/application/database-yjs/row_comment';
+import { CommentAttachment } from '@/application/row-comment.type';
+import { RowService } from '@/application/services/domains';
+import { YDoc } from '@/application/types';
+import { Log } from '@/utils/log';
+
+function mentionedUserUuids(content: string): string[] {
+  return [...new Set([...content.matchAll(/@\[[^\]\n]+\]\(([^)\s]+)\)/g)].map((match) => match[1]).filter(isUuid))];
+}
+
+function useNotifyRowComment(rowId: string) {
+  const { workspaceId, activeViewId, databasePageId } = useDatabaseContext();
+
+  return useCallback(
+    (
+      rowDoc: YDoc,
+      commentId: string,
+      content: string,
+      {
+        authorId,
+        parentCommentId,
+        previousContent = '',
+      }: {
+        authorId?: string;
+        parentCommentId?: string;
+        previousContent?: string;
+      } = {}
+    ) => {
+      const previousMentions = new Set(mentionedUserUuids(previousContent));
+      const mentionedUsers = mentionedUserUuids(content).filter((id) => !previousMentions.has(id));
+      const participants = parentCommentId
+        ? [
+            ...new Set(
+              getRowComments(rowDoc)
+                .filter((comment) => comment.id === parentCommentId || comment.parentCommentId === parentCommentId)
+                .map((comment) => comment.authorId)
+                .filter((id) => id !== authorId && isUuid(id))
+            ),
+          ]
+        : [];
+
+      if (!workspaceId || (!mentionedUsers.length && !participants.length)) return;
+      void RowService.notifyComment(workspaceId, activeViewId || databasePageId, rowId, {
+        comment_id: commentId,
+        content: content.slice(0, 2000),
+        parent_comment_id: parentCommentId,
+        mentioned_user_uuids: mentionedUsers,
+        reply_participant_uuids: participants,
+      }).catch((error) => Log.warn('[RowComment] Notification failed; comment remains saved', error));
+    },
+    [workspaceId, activeViewId, databasePageId, rowId]
+  );
+}
 
 export function useAddCommentDispatch(rowId: string) {
+  const notify = useNotifyRowComment(rowId);
   const rowMap = useRowMap();
   const rowDoc = rowMap?.[rowId];
 
   return useCallback(
-    (content: string, authorId: string, parentCommentId?: string) => {
+    (content: string, authorId: string, parentCommentId?: string, attachments?: CommentAttachment[]) => {
       if (!rowDoc) return;
 
-      return addComment(rowDoc, content, authorId, parentCommentId);
+      const id = addComment(rowDoc, content, authorId, parentCommentId, attachments);
+
+      notify(rowDoc, id, content || attachments?.map((attachment) => attachment.name).join(', ') || '', {
+        authorId,
+        parentCommentId,
+      });
+      return id;
     },
-    [rowDoc]
+    [rowDoc, notify]
   );
 }
 
 export function useUpdateCommentDispatch(rowId: string) {
+  const notify = useNotifyRowComment(rowId);
   const rowMap = useRowMap();
   const rowDoc = rowMap?.[rowId];
 
   return useCallback(
     (commentId: string, content: string) => {
       if (!rowDoc) return;
+      const comment = getCommentsMap(rowDoc)?.get(commentId);
+
+      if (!comment) return;
+      const previousContent = parseComment(comment).content;
 
       updateCommentContent(rowDoc, commentId, content);
+      notify(rowDoc, commentId, content, { previousContent });
     },
-    [rowDoc]
+    [rowDoc, notify]
   );
 }
 

@@ -41,6 +41,9 @@ export enum BlockType {
   ListBlock = 'list',
   ChartBlock = 'chart',
   DatabaseGalleryBlock = 'gallery',
+  /// Cross-client document block for an embedded/linked Feed database view.
+  /// Matches `DatabaseBlockKeys.feedType` on Desktop.
+  FeedBlock = 'feed',
   OutlineBlock = 'outline',
   TableBlock = 'table',
   TableCell = 'table/cell',
@@ -494,6 +497,15 @@ export enum ViewLayout {
   Chart = 5,
   List = 6,
   Gallery = 7,
+  /// Folder-side layout value for feed views. Matches
+  /// `ViewLayout::Feed = 8` in `libs/collab/src/folder/view.rs`.
+  Feed = 8,
+  /// Folder-side layout value for form views. Matches
+  /// `ViewLayout::Form = 9` in `libs/collab/src/folder/view.rs`. The
+  /// database-side `DatabaseViewLayout.Form` has a different numeric
+  /// value (7) — they're distinct enums and the mapping between them
+  /// lives in `dispatch.ts`.
+  Form = 9,
 }
 
 export enum YjsEditorKey {
@@ -585,6 +597,10 @@ export enum YjsDatabaseKey {
   rollup_show_as_show_number = '__rollup_show_as_show_number__',
   field_orders = 'field_orders',
   field_settings = 'field_settings',
+  /// Per-view form-builder map (`form_field_settings` key on each view in
+  /// the database collab). Keys are field ids; values are the
+  /// `FormFieldSettings` map (see `parseFormFieldSettings`).
+  form_field_settings = 'form_field_settings',
   visibility = 'visibility',
   wrap = 'wrap',
   width = 'width',
@@ -866,6 +882,12 @@ export enum DatabaseViewLayout {
   Chart = 3,
   List = 4,
   Gallery = 5,
+  /// Matches `DatabaseLayout::Feed = 6` in
+  /// `libs/collab/src/database/views/layout.rs`.
+  Feed = 6,
+  /// Matches `DatabaseLayout::Form = 7` in
+  /// `libs/collab/src/database/views/layout.rs`.
+  Form = 7,
 }
 
 export interface YDatabaseView extends Y.Map<unknown> {
@@ -889,6 +911,13 @@ export interface YDatabaseView extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.sorts): YDatabaseSorts;
 
   get(key: YjsDatabaseKey.field_settings): YDatabaseFieldSettings;
+
+  /// Per-view form-builder map; only present on Form-layout views.
+  /// Missing on every other layout (Grid/Board/Calendar/etc). On a Form
+  /// layout, a missing map is the legacy opt-out shape: fields in that
+  /// view's `field_orders` default to included until the decided sentinel
+  /// switches the projection to builder opt-in mode.
+  get(key: YjsDatabaseKey.form_field_settings): YDatabaseFormFieldSettings | undefined;
 
   get(key: YjsDatabaseKey.field_orders): YDatabaseFieldOrders;
 
@@ -1076,6 +1105,24 @@ export interface YDatabaseFieldSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.width): string;
 }
 
+/// Per-view form-builder overrides. Mirrors the collab struct
+/// `FormFieldSettingsByFieldIdMap` in
+/// `libs/collab/src/database/views/form_field_settings.rs` —
+/// keys are field ids, values are the `FormFieldSettings` map. The
+/// map stores projection overrides. Without the `__form_decided__`
+/// sentinel, legacy opt-out semantics include each view field by default;
+/// with the sentinel, builder opt-in semantics require an explicit included
+/// entry. Entries render in `order` ascending, with view field order as the
+/// stable tie-break. `__form_description__` carries form-level text; readers
+/// must skip both sentinels when projecting per-question entries.
+export interface YDatabaseFormFieldSettings extends Y.Map<unknown> {
+  // The value type is intentionally a permissive `Y.Map<unknown>` rather
+  // than a typed `YDatabaseFormFieldSetting` because the per-key set is
+  // small enough that callers reach for `get(string)` directly and the
+  // typed-overload pattern doesn't pay off here.
+  get(key: string): Y.Map<unknown> | undefined;
+}
+
 export interface YDatabaseMetas extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.iid): string;
   get(key: YjsDatabaseKey.schema_version): string | number;
@@ -1207,6 +1254,8 @@ export const layoutMap = {
   [ViewLayout.Chart]: 'chart',
   [ViewLayout.List]: 'list',
   [ViewLayout.Gallery]: 'gallery',
+  [ViewLayout.Feed]: 'feed',
+  [ViewLayout.Form]: 'form',
 };
 
 export const databaseLayoutMap = {
@@ -1216,6 +1265,8 @@ export const databaseLayoutMap = {
   [DatabaseViewLayout.Chart]: 'chart',
   [DatabaseViewLayout.List]: 'list',
   [DatabaseViewLayout.Gallery]: 'gallery',
+  [DatabaseViewLayout.Feed]: 'feed',
+  [DatabaseViewLayout.Form]: 'form',
 };
 
 export enum FontLayout {
@@ -2000,6 +2051,8 @@ export interface ViewComponentProps {
   canComment?: boolean;
   /** Canonical server write permission, independent from locks/mobile UI. */
   canWrite?: boolean;
+  /** Canonical server share-management permission. Never infer this from editability. */
+  canShare?: boolean;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   createRow?: CreateRow;
@@ -2069,6 +2122,18 @@ export interface CreatePagePayload {
 export interface CreatePageResponse {
   view_id: string;
   database_id?: string;
+}
+
+export interface UpgradeDatabaseContainerResponse {
+  database_id: string;
+  container_view_id: string;
+  database_view_id: string;
+  upgraded: boolean;
+}
+
+export interface DatabaseContainerUpgradeStatusResponse {
+  eligible: boolean;
+  already_upgraded: boolean;
 }
 
 export interface DuplicatePageOptions {
@@ -2311,6 +2376,19 @@ export enum TimeFormat {
   TwentyFourHour = 1,
 }
 
+/**
+ * Why a user is listed in share access details. Additive on the server: legacy
+ * servers omit it, and rows without it must keep rendering.
+ */
+export enum SharedUserAccessSource {
+  /** A share addressed directly to this user on the page or an ancestor. */
+  DirectShare = 'direct_share',
+  /** Listed only because a workspace group the user belongs to was granted access. */
+  WorkspaceGroup = 'workspace_group',
+  /** Space membership, private-space ownership, or a workspace default. */
+  Inherited = 'inherited',
+}
+
 export interface IPeopleWithAccessType {
   email: string;
   name: string;
@@ -2318,6 +2396,7 @@ export interface IPeopleWithAccessType {
   role: Role;
   avatar_url: string;
   pending_invitation: boolean;
+  access_source?: SharedUserAccessSource;
 }
 
 export interface ObjectPermission {

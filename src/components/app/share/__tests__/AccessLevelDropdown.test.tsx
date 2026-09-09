@@ -13,6 +13,8 @@ jest.mock('react-i18next', () => ({
       const translations: Record<string, string> = {
         'shareAction.canEdit': 'Can edit',
         'shareAction.canEditDescription': 'Can make any changes',
+        'shareAction.canComment': 'Can comment',
+        'shareAction.canCommentDescription': 'Can view and comment',
         'shareAction.canView': 'Can view',
         'shareAction.canViewDescription': "Can't make changes",
         'shareAction.fullAccess': 'Full access',
@@ -99,10 +101,31 @@ describe('AccessLevelDropdown', () => {
 
     expect(trigger.disabled).toBe(false);
     expect(screen.getByText('Can view')).toBeTruthy();
+    expect(screen.getByText('Can comment')).toBeTruthy();
+    expect(screen.getByText('Can view and comment')).toBeTruthy();
     expect(screen.getByText('Can edit')).toBeTruthy();
     expect(screen.getAllByText('Full access')).toHaveLength(2);
     expect(screen.getByText('Can edit and share with others')).toBeTruthy();
     expect(screen.getByText('Remove access')).toBeTruthy();
+  });
+
+  it('assigns comment access without assigning edit access', async () => {
+    const onAccessLevelChange = jest.fn(async () => undefined);
+
+    renderAccessLevelDropdown({
+      onAccessLevelChange,
+      person: createPerson({ access_level: AccessLevel.ReadOnly }),
+    });
+
+    fireEvent.click(screen.getByText('Can comment'));
+
+    await waitFor(() =>
+      expect(onAccessLevelChange).toHaveBeenCalledWith('collaborator@appflowy.local', AccessLevel.ReadAndComment)
+    );
+    expect(onAccessLevelChange).not.toHaveBeenCalledWith(
+      'collaborator@appflowy.local',
+      AccessLevel.ReadAndWrite
+    );
   });
 
   it('shows full-access grants for workspace owners', () => {

@@ -1,7 +1,8 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
-import { AuthService, UserService, WorkspaceService } from '@/application/services/domains';
+import { UserService, WorkspaceService } from '@/application/services/domains';
+import { defaultConfig } from '@/application/services/js-services/http/cloud-config';
 import { buildLoginUrl, isAuthPath } from '@/application/session/sign_in';
 import { invalidToken } from '@/application/session/token';
 import { UserWorkspaceInfo } from '@/application/types';
@@ -9,7 +10,9 @@ import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
+import { ClientCompatibilityProvider } from '../compatibility/ClientCompatibility';
 import { AuthInternalContext, AuthInternalContextType } from '../contexts/AuthInternalContext';
+import { useServerInfo } from '../hooks/useServerInfo';
 
 interface AppAuthLayerProps {
   children: React.ReactNode;
@@ -68,11 +71,12 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
 
   const [userWorkspaceInfo, setUserWorkspaceInfo] = useState<UserWorkspaceInfo | undefined>(undefined);
   const [workspaceInfoError, setWorkspaceInfoError] = useState<Error | undefined>(undefined);
-  const [enablePageHistory, setEnablePageHistory] = useState<boolean | undefined>(undefined);
-  const [aiEnabled, setAIEnabled] = useState<boolean | undefined>(false);
-  const [maxUpdateBytes, setMaxUpdateBytes] = useState<number | undefined>(undefined);
-  const [maxSlowSyncUpdateBytes, setMaxSlowSyncUpdateBytes] = useState<number | undefined>(undefined);
-  const [syncLimitsLoaded, setSyncLimitsLoaded] = useState(false);
+  const serverInfo = useServerInfo(!!isAuthenticated, defaultConfig.baseURL);
+  const enablePageHistory = serverInfo.info?.enable_page_history ?? (serverInfo.status === 'unavailable' ? true : undefined);
+  const aiEnabled = serverInfo.status === 'loading' ? false : serverInfo.info?.ai_enabled ?? true;
+  const maxUpdateBytes = serverInfo.info?.max_update_bytes;
+  const maxSlowSyncUpdateBytes = serverInfo.info?.max_slow_sync_update_bytes;
+  const syncLimitsLoaded = serverInfo.status === 'available';
   const workspaceInfoPromiseRef = useRef<Promise<UserWorkspaceInfo | undefined> | null>(null);
   const workspaceInfoRequestIdRef = useRef(0);
   const workspaceInfoLoadedAtRef = useRef(0);
@@ -184,58 +188,13 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
     logout();
   }, [hasConfigContext, isAuthenticated, location.pathname, logout]);
 
-  // Load user workspace info and server info on mount. An unauthenticated
+  // Load user workspace info on mount. An unauthenticated
   // instance only exists for the commit in which AppProvider remounts this
   // layer, so there is no account-scoped state to clear here.
   useEffect(() => {
     if (!isAuthenticated) return;
 
     void loadUserWorkspaceInfo();
-
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let retryAttempt = 0;
-    const serverInfoAbortController = new AbortController();
-
-    const loadServerInfo = () => {
-      void AuthService.getServerInfo(serverInfoAbortController.signal)
-        .then((info) => {
-          if (cancelled) return;
-
-          setEnablePageHistory(info.enable_page_history);
-          setAIEnabled(info.ai_enabled ?? true);
-          setMaxUpdateBytes(info.max_update_bytes);
-          setMaxSlowSyncUpdateBytes(info.max_slow_sync_update_bytes);
-          // A successful response that omits the optional fields is an older
-          // server, not a loading state. The outbox can now safely use its
-          // legacy realtime default while keeping the HTTP slow lane disabled.
-          setSyncLimitsLoaded(true);
-        })
-        .catch((e) => {
-          if (cancelled) return;
-
-          console.error('[AppAuthLayer] Failed to load server info:', e);
-          setEnablePageHistory(true);
-          setAIEnabled(true);
-          setMaxUpdateBytes(undefined);
-          setMaxSlowSyncUpdateBytes(undefined);
-          setSyncLimitsLoaded(false);
-
-          const delayMs = Math.min(30_000, 1_000 * 2 ** retryAttempt);
-
-          retryAttempt += 1;
-          retryTimer = setTimeout(loadServerInfo, delayMs);
-        });
-    };
-
-    setSyncLimitsLoaded(false);
-    loadServerInfo();
-
-    return () => {
-      cancelled = true;
-      serverInfoAbortController.abort();
-      if (retryTimer) clearTimeout(retryTimer);
-    };
   }, [loadUserWorkspaceInfo, isAuthenticated]);
 
   // If the app boots while the server is down, the first workspace-info request
@@ -375,5 +334,11 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
     ]
   );
 
-  return <AuthInternalContext.Provider value={authContextValue}>{children}</AuthInternalContext.Provider>;
+  return (
+    <AuthInternalContext.Provider value={authContextValue}>
+      <ClientCompatibilityProvider serverInfo={serverInfo.info} serverUrl={defaultConfig.baseURL}>
+        {children}
+      </ClientCompatibilityProvider>
+    </AuthInternalContext.Provider>
+  );
 };

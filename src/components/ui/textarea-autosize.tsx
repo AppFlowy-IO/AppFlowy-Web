@@ -139,6 +139,11 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
 
       const textarea = innerRef.current;
       const contentMirror = contentRef.current;
+
+      // Retained drafts may be under display:none while another thread is open.
+      // Their mirror has no layout until the editor is shown again.
+      if (textarea.getClientRects().length === 0) return;
+
       const metrics = getTextareaMetrics();
 
       // Update content mirror first
@@ -200,20 +205,36 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
       });
     }, [value, currentValue, adjustHeight]);
 
-    // Handle initial render and window resize
-    React.useEffect(() => {
-      // Initial height adjustment
-      adjustHeight();
+    const adjustHeightRef = React.useRef(adjustHeight);
 
-      // Handle window resize
-      const handleResize = () => adjustHeight();
-
-      window.addEventListener('resize', handleResize);
-
-      return () => {
-        window.removeEventListener('resize', handleResize);
-      };
+    React.useLayoutEffect(() => {
+      adjustHeightRef.current = adjustHeight;
     }, [adjustHeight]);
+
+    // Observe the editor's width, including a hidden editor becoming visible.
+    // Keep the subscription stable as the draft changes, and ignore height-only
+    // notifications caused by our own textarea sizing.
+    React.useEffect(() => {
+      const wrapper = wrapperRef.current;
+      const handleResize = () => adjustHeightRef.current();
+
+      if (!wrapper) return;
+      if (typeof ResizeObserver === 'undefined') {
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+      }
+
+      let previousWidth: number | undefined;
+      const observer = new ResizeObserver(([entry]) => {
+        if (!entry || entry.contentRect.width === previousWidth) return;
+        previousWidth = entry.contentRect.width;
+        if (previousWidth > 0) handleResize();
+      });
+
+      observer.observe(wrapper);
+
+      return () => observer.disconnect();
+    }, []);
 
     // Force adjustment when component mounts to get accurate initial measurements
     React.useEffect(() => {

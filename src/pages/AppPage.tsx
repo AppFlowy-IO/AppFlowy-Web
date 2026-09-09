@@ -508,6 +508,7 @@ function AppPage() {
     if (!viewId) return false;
     return getViewCanWriteStatus(viewId, outline, view, objectPermission);
   }, [objectPermission, outline, view, viewId]);
+  const canShare = objectPermission.can_share;
 
   const viewDom = useMemo(() => {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)
@@ -541,6 +542,7 @@ function AppPage() {
           readOnly={isReadOnly}
           canComment={canComment}
           canWrite={canWrite}
+          canShare={canShare}
           viewMeta={viewMeta}
           navigateToView={toView}
           loadViewMeta={loadViewMeta}
@@ -589,6 +591,7 @@ function AppPage() {
         readOnly={isReadOnly}
         canComment={canComment}
         canWrite={canWrite}
+        canShare={canShare}
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
@@ -636,6 +639,7 @@ function AppPage() {
     isReadOnly,
     canComment,
     canWrite,
+    canShare,
     toView,
     loadViewMeta,
     createRow,

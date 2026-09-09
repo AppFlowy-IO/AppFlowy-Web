@@ -2,10 +2,12 @@ import { forwardRef, memo } from 'react';
 
 import { HEADER_HEIGHT } from '@/application/constants';
 import { EditorElementProps, HeadingNode } from '@/components/editor/editor.type';
+import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
 
 export const Heading = memo(
   forwardRef<HTMLDivElement, EditorElementProps<HeadingNode>>(({ node, children, ...attributes }, ref) => {
     const level = node.data.level;
+    const previewId = useEditorPreviewId();
 
     const className = `${attributes.className ?? ''} heading level-${level}`;
 
@@ -13,7 +15,7 @@ export const Heading = memo(
       <div
         {...attributes}
         ref={ref}
-        id={`heading-${node.blockId}`}
+        id={`${previewId ?? ''}heading-${node.blockId}`}
         style={{
           scrollMarginTop: HEADER_HEIGHT,
           ...attributes.style,

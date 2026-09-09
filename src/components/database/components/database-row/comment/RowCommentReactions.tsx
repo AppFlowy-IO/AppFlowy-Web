@@ -12,7 +12,7 @@ function RowCommentReactions({
   commentId: string;
   reactions: CommentReactions;
 }) {
-  const { currentUserId } = useRowCommentState();
+  const { currentUserId, canComment } = useRowCommentState();
   const { toggleReaction } = useRowCommentDispatch();
 
   const entries = Object.entries(reactions).filter(([, users]) => users.length > 0);
@@ -30,6 +30,7 @@ function RowCommentReactions({
             data-testid={`row-comment-reaction-${emoji}`}
             aria-label={`${hasReacted ? 'Remove' : 'Add'} ${emoji} reaction (${users.length})`}
             onClick={() => toggleReaction(commentId, emoji)}
+            disabled={!canComment}
             className={cn(
               'flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors',
               hasReacted

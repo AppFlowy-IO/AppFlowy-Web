@@ -3,6 +3,16 @@ export const databasePrefix = 'af_database';
 export const HEADER_HEIGHT = 48;
 
 /**
+ * Temporarily hides every "create a Form view" entry point on web.
+ *
+ * Legacy Desktop clients cannot open workspaces that contain a Form view
+ * created by web, so until those clients are upgraded Form views may only be
+ * created from Desktop. Flip this back to `true` to restore the menu items.
+ * Existing Form views still open and work normally regardless of this flag.
+ */
+export const FORM_VIEW_CREATION_ENABLED = false;
+
+/**
  * Server error codes from AppFlowy Cloud ErrorCode enum.
  * See: libs/app-error/src/lib.rs in AppFlowy-Cloud
  *
@@ -61,6 +71,7 @@ export const ERROR_CODE = {
 export const APP_EVENTS = {
   // App lifecycle events
   OUTLINE_LOADED: 'outline-loaded',
+  OUTLINE_EXPAND_PATH: 'outline-expand-path',            // Reveal an already hydrated sidebar path
   TRASH_UPDATED: 'trash-updated',                     // Fresh workspace trash payload accepted by app state
   RECONNECT_WEBSOCKET: 'reconnect-websocket',
   WEBSOCKET_STATUS: 'websocket-status',

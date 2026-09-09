@@ -1,4 +1,11 @@
 {
+  "clientCompatibility": {
+    "serverTooOld": "AppFlowy Web {{clientVersion}} requires server {{requiredServerVersion}} or later. Your server is {{serverVersion}}. Please ask your administrator to upgrade the server.",
+    "clientTooOld": "This server requires AppFlowy Web {{requiredClientVersion}} or later. You are using {{clientVersion}}. Reload after your administrator updates the web app.",
+    "upgradeBoth": "This server requires AppFlowy Web {{requiredClientVersion}} or later, but also needs a server upgrade. Please contact your administrator to update both.",
+    "reload": "Reload web app",
+    "dismiss": "Dismiss compatibility warning"
+  },
   "appName": "AppFlowy",
   "defaultUsername": "Me",
   "welcomeText": "Welcome to @:appName",
@@ -199,12 +206,14 @@
     "pending": "Pending",
     "you": "You",
     "canView": "Can view",
+    "canComment": "Can comment",
     "canEdit": "Can edit",
     "canViewAndComment": "Can view and comment",
     "canEditAndComment": "Can edit and comment",
     "group": "Group",
     "removeAccess": "Remove access",
     "canViewDescription": "Can’t make changes",
+    "canCommentDescription": "Can view and comment",
     "canEditDescription": "Can make any changes",
     "fullAccessDescription": "Can edit and share with others",
     "turnIntoMember": "Turn into member",
@@ -219,6 +228,10 @@
     "groupMembersCount_zero": "{{count}} members",
     "groupMembersCount_one": "{{count}} member",
     "groupMembersCount_other": "{{count}} members",
+    "showGroupMembers": "Show members of {{group}}",
+    "hideGroupMembers": "Hide members of {{group}}",
+    "noGroupMembers": "No members in this group",
+    "loadGroupMembersFailed": "Failed to load group members",
     "peopleAndGroupsWithAccess": "People and groups with access",
     "invite": "Invite",
     "inviteSuccess": "Invite sent successfully",
@@ -743,7 +756,9 @@
     "copyLinkOriginal": "Copy link to original",
     "search": "Search",
     "checked": "Checked",
-    "unchecked": "Unchecked"
+    "unchecked": "Unchecked",
+    "seeMore": "See more",
+    "seeLess": "See less"
   },
   "global-loading": {
     "welcome": "Welcome!",
@@ -2374,7 +2389,9 @@
         "photoGallery": "Photo Gallery",
         "file": "File",
         "continueWriting": "Continue Writing",
-        "askAIAnything": "Ask AI Anything"
+        "askAIAnything": "Ask AI Anything",
+        "feed": "Feed",
+        "linkedFeed": "Linked Feed"
       },
       "linkedDatabase": {
         "title": "Link to an existing database",
@@ -2798,6 +2815,21 @@
     "ungroupedItemsTitle": "Click to add to the board",
     "groupBy": "Group by",
     "groupCondition": "Group condition",
+    "numberGrouping": {
+      "title": "Group numbers by",
+      "exact": "Exact value",
+      "range": "Range",
+      "legacy": "Automatic ranges of 100",
+      "start": "Start",
+      "end": "End",
+      "interval": "Interval",
+      "sort": "Sort groups",
+      "invalidNumber": "Enter valid decimal numbers.",
+      "invalidBounds": "End must be greater than Start.",
+      "invalidInterval": "Interval must be greater than zero.",
+      "tooManyRanges": "Use a larger interval to create at most 1,000 ranges.",
+      "precisionExceeded": "These values exceed the supported decimal precision."
+    },
     "referencedBoardPrefix": "View of",
     "notesTooltip": "Notes inside",
     "mobile": {
@@ -3540,6 +3572,13 @@
   "web": {
     "continue": "Continue",
     "or": "or",
+    "databaseContainerUpgrade": {
+      "description": "Upgrade to the latest database version.",
+      "button": "Upgrade database",
+      "success": "Database upgraded",
+      "alreadyUpgraded": "Database is already upgraded",
+      "failed": "Failed to upgrade database"
+    },
     "continueWithGoogle": "Continue with Google",
     "continueWithGithub": "Continue with GitHub",
     "continueWithDiscord": "Continue with Discord",
@@ -3633,7 +3672,10 @@
     "readMore": "Read more",
     "failedToAddComment": "Failed to add comment",
     "commentAddedSuccessfully": "Comment added successfully.",
-    "commentAddedSuccessTip": "You've just added or replied to a comment. Would you like to jump to the top to see the latest comments?"
+    "commentAddedSuccessTip": "You've just added or replied to a comment. Would you like to jump to the top to see the latest comments?",
+    "replies_one": "1 reply",
+    "replies_other": "{{count}} replies",
+    "edited": "(edited)"
   },
   "inlineComment": {
     "comments": "Comments",
@@ -3778,6 +3820,22 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "searchPlaceholder": "Type to search"
+  },
+  "feed": {
+    "menuName": "Feed",
+    "untitled": "Untitled",
+    "noItemsInFeed": "No items in feed",
+    "referencedFeedPrefix": "View of",
+    "openRow": "Open row",
+    "addReaction": "Add reaction",
+    "removeReaction": "Remove {{emoji}} reaction",
+    "toggleReaction": "Toggle {{emoji}} reaction",
+    "unknownCreator": "Unknown",
+    "loadMore": "Load more"
+  },
+  "form": {
+    "menuName": "Form",
+    "builderName": "Form builder"
   },
   "invitation": {
     "join": "Join",

@@ -265,7 +265,12 @@ export function DatabaseViewTabs({
       </AFScroller>
 
       {!readOnly && onViewAdded && (
-        <AddViewButton onBeforeAddView={onBeforeViewAdded} onAfterAddView={onAfterViewAdded} onViewAdded={onViewAdded} />
+        <AddViewButton
+          databasePageId={databasePageId}
+          onBeforeAddView={onBeforeViewAdded}
+          onAfterAddView={onAfterViewAdded}
+          onViewAdded={onViewAdded}
+        />
       )}
     </div>
   );

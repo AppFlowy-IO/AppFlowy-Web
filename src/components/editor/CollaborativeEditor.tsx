@@ -11,13 +11,14 @@ import { withYjs, YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
 import { ensureValidSelection } from '@/application/slate-yjs/utils/transformSelection';
 import { CollabOrigin, YDoc } from '@/application/types';
 import { FindReplaceProvider } from '@/components/editor/components/find-replace/FindReplaceContext';
+import { resolveDatabaseBlockDeletionTarget } from '@/components/editor/database-block-lifecycle';
 import EditorEditable from '@/components/editor/Editable';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { resolveDatabaseBlockDeletionTarget } from '@/components/editor/database-block-lifecycle';
-import { useInlineCommentEditorBridgeOptional } from '@/components/inline-comment/InlineCommentContext';
-import { useInlineCommentEditorRegistration } from '@/components/inline-comment/editor/useInlineCommentEditorRegistration';
+import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
 import { withPlugins } from '@/components/editor/plugins';
 import { clipboardFormatKey } from '@/components/editor/plugins/withCopy';
+import { useInlineCommentEditorRegistration } from '@/components/inline-comment/editor/useInlineCommentEditorRegistration';
+import { useInlineCommentEditorBridgeOptional } from '@/components/inline-comment/InlineCommentContext';
 import { Log } from '@/utils/log';
 import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 import { getTextCount } from '@/utils/word';
@@ -83,7 +84,9 @@ function CollaborativeEditor({
   onSelectionChange?: (editor: YjsEditor) => void;
 }) {
   const context = useEditorContext();
-  const inlineComments = useInlineCommentEditorBridgeOptional();
+  const previewId = useEditorPreviewId();
+  const inlineCommentBridge = useInlineCommentEditorBridgeOptional();
+  const inlineComments = previewId ? null : inlineCommentBridge;
   const readSummary = context.readSummary;
   const onRendered = context.onRendered;
   const uploadFile = context.uploadFile;
@@ -324,8 +327,9 @@ function CollaborativeEditor({
     const pendingDatabaseViewDeletion = pendingDatabaseViewDeletionRef.current;
 
     // Expose editor and doc for E2E testing in development/test mode
-    const isE2ETest =
-      isDevelopmentOrTestEnvironment() || (typeof window !== 'undefined' && 'Cypress' in window);
+    const isE2ETest = !previewId && (
+      isDevelopmentOrTestEnvironment() || (typeof window !== 'undefined' && 'Cypress' in window)
+    );
 
     if (isE2ETest) {
       const testWindow = window as Window & {

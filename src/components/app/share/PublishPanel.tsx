@@ -13,6 +13,7 @@ import PublishLinkPreview from '@/components/app/share/PublishLinkPreview';
 
 function PublishPanel({
   viewId,
+  fallbackViewId,
   opened,
   onClose,
   onOpenPublishManage,
@@ -20,6 +21,7 @@ function PublishPanel({
   shareDetailsLoading,
 }: {
   viewId: string;
+  fallbackViewId?: string;
   onClose: () => void;
   opened: boolean;
   onOpenPublishManage?: () => void;
@@ -38,7 +40,7 @@ function PublishPanel({
     isOwner,
     isPublisher,
     updatePublishConfig,
-  } = useLoadPublishInfo(viewId);
+  } = useLoadPublishInfo(viewId, fallbackViewId);
   const publishedCommentEnabled = publishInfo?.commentEnabled;
   const publishedDuplicateEnabled = publishInfo?.duplicateEnabled;
   const [unpublishLoading, setUnpublishLoading] = React.useState<boolean>(false);
@@ -46,12 +48,13 @@ function PublishPanel({
   // Track publish/unpublish actions locally so the panel updates immediately,
   // even when the view object (e.g. server fallback) has a stale is_published flag.
   const [publishedOverride, setPublishedOverride] = React.useState<boolean | undefined>(undefined);
-  const cachedCommentEnabled = useCachedPublishCommentsEnabled(viewId);
+  const cachedCommentEnabled = useCachedPublishCommentsEnabled(publishInfoViewId);
   const [pendingCommentChange, setPendingCommentChange] = React.useState<{
     viewId: string;
     enabled: boolean;
   }>();
-  const pendingCommentEnabled = pendingCommentChange?.viewId === viewId ? pendingCommentChange.enabled : undefined;
+  const pendingCommentEnabled =
+    pendingCommentChange?.viewId === publishInfoViewId ? pendingCommentChange.enabled : undefined;
   const commentsEnabledForPublish = pendingCommentEnabled ?? cachedCommentEnabled ?? publishedCommentEnabled;
   const commentEnabled = commentsEnabledForPublish ?? false;
   const commentUpdatePending = pendingCommentEnabled !== undefined;
@@ -60,7 +63,7 @@ function PublishPanel({
   // Reset the immediate publish-state override when the target view changes.
   useEffect(() => {
     setPublishedOverride(undefined);
-  }, [viewId]);
+  }, [publishInfoViewId]);
 
   useEffect(() => {
     if (opened) {
@@ -69,30 +72,30 @@ function PublishPanel({
   }, [loadPublishInfo, opened]);
 
   useEffect(() => {
-    if (!opened || publishedCommentEnabled === undefined || publishInfoViewId !== viewId) return;
+    if (!opened || publishedCommentEnabled === undefined) return;
 
-    cachePublishCommentsEnabled(viewId, publishedCommentEnabled);
-  }, [opened, publishedCommentEnabled, publishInfoViewId, viewId]);
+    cachePublishCommentsEnabled(publishInfoViewId, publishedCommentEnabled);
+  }, [opened, publishedCommentEnabled, publishInfoViewId]);
 
   useEffect(() => {
-    if (!opened || publishedDuplicateEnabled === undefined || publishInfoViewId !== viewId) return;
+    if (!opened || publishedDuplicateEnabled === undefined) return;
 
     setDuplicateEnabled(publishedDuplicateEnabled);
-  }, [opened, publishedDuplicateEnabled, publishInfoViewId, viewId]);
+  }, [opened, publishedDuplicateEnabled, publishInfoViewId]);
 
   useEffect(() => {
     if (!opened || publishedCommentEnabled === undefined) return;
 
     if (cachedCommentEnabled === undefined) {
-      cachePublishCommentsEnabled(viewId, publishedCommentEnabled);
+      cachePublishCommentsEnabled(publishInfoViewId, publishedCommentEnabled);
       return;
     }
 
     if (cachedCommentEnabled === publishedCommentEnabled) return;
 
-    clearPublishViewInfoCache(viewId);
+    clearPublishViewInfoCache(publishInfoViewId);
     void loadPublishInfo();
-  }, [cachedCommentEnabled, loadPublishInfo, opened, publishedCommentEnabled, viewId]);
+  }, [cachedCommentEnabled, loadPublishInfo, opened, publishedCommentEnabled, publishInfoViewId]);
 
   const handlePublish = useCallback(
     async (publishName?: string) => {
@@ -104,7 +107,7 @@ function PublishPanel({
       try {
         await publish(view, newPublishName, undefined, commentsEnabledForPublish);
         if (commentsEnabledForPublish !== undefined) {
-          cachePublishCommentsEnabled(viewId, commentsEnabledForPublish);
+          cachePublishCommentsEnabled(publishInfoViewId, commentsEnabledForPublish);
         }
 
         setPublishedOverride(true);
@@ -117,7 +120,7 @@ function PublishPanel({
         setPublishLoading(false);
       }
     },
-    [commentsEnabledForPublish, loadPublishInfo, publish, t, view, publishInfo, viewId]
+    [commentsEnabledForPublish, loadPublishInfo, publish, t, view, publishInfo, publishInfoViewId]
   );
 
   const handleUnpublish = useCallback(async () => {
@@ -130,7 +133,7 @@ function PublishPanel({
     setUnpublishLoading(true);
 
     try {
-      await unpublish(viewId);
+      await unpublish(publishInfoViewId);
       setPublishedOverride(false);
       await loadPublishInfo();
       notify.success(t('publish.unpublishSuccessfully'));
@@ -140,16 +143,16 @@ function PublishPanel({
     } finally {
       setUnpublishLoading(false);
     }
-  }, [isOwner, isPublisher, loadPublishInfo, t, unpublish, view, viewId]);
+  }, [isOwner, isPublisher, loadPublishInfo, publishInfoViewId, t, unpublish, view]);
 
-  const scopedPublishInfo = publishInfoViewId === viewId ? publishInfo : undefined;
+  const scopedPublishInfo = publishInfo;
 
   const renderPublished = useCallback(() => {
     if (!scopedPublishInfo || !view) return null;
     return (
       <div className={'flex flex-col gap-5'}>
         <PublishLinkPreview
-          viewId={viewId}
+          viewId={publishInfoViewId}
           publishInfo={scopedPublishInfo}
           url={url}
           updatePublishConfig={updatePublishConfig}
@@ -192,11 +195,11 @@ function PublishPanel({
               onChange={(e) => {
                 const enabled = e.target.checked;
 
-                setPendingCommentChange({ viewId, enabled });
-                void updatePublishConfig({ comments_enabled: enabled, view_id: viewId }).then((updated) => {
-                  if (updated) cachePublishCommentsEnabled(viewId, enabled);
+                setPendingCommentChange({ viewId: publishInfoViewId, enabled });
+                void updatePublishConfig({ comments_enabled: enabled, view_id: publishInfoViewId }).then((updated) => {
+                  if (updated) cachePublishCommentsEnabled(publishInfoViewId, enabled);
                   setPendingCommentChange((current) =>
-                    current?.viewId === viewId && current.enabled === enabled ? undefined : current
+                    current?.viewId === publishInfoViewId && current.enabled === enabled ? undefined : current
                   );
                 });
               }}
@@ -213,7 +216,7 @@ function PublishPanel({
                 const enabled = e.target.checked;
 
                 setDuplicateEnabled(enabled);
-                void updatePublishConfig({ duplicate_enabled: enabled, view_id: viewId }).then((updated) => {
+                void updatePublishConfig({ duplicate_enabled: enabled, view_id: publishInfoViewId }).then((updated) => {
                   if (!updated) setDuplicateEnabled(previousValue);
                 });
               }}
@@ -237,7 +240,7 @@ function PublishPanel({
     commentUpdatePending,
     duplicateEnabled,
     updatePublishConfig,
-    viewId,
+    publishInfoViewId,
     onOpenPublishManage,
   ]);
 

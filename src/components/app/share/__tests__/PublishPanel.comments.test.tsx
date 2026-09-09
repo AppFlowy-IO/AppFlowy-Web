@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { clearCachedPublishCommentsEnabled } from '@/application/publish/comment-state';
+import { clearCachedPublishCommentsEnabled, getCachedPublishCommentsEnabled } from '@/application/publish/comment-state';
 import { ViewLayout } from '@/application/types';
 import PublishPanel from '@/components/app/share/PublishPanel';
 
@@ -8,6 +8,7 @@ const mockPublish = jest.fn();
 const mockUnpublish = jest.fn();
 const mockLoadPublishInfo = jest.fn();
 const mockUpdatePublishConfig = jest.fn();
+let mockPublishInfoViewId = 'view-id';
 
 let mockPublishInfo:
   | {
@@ -39,7 +40,7 @@ jest.mock('@/components/app/share/publish.hooks', () => ({
     url: 'https://appflowy.test/namespace/page',
     loadPublishInfo: mockLoadPublishInfo,
     view: {
-      view_id: 'view-id',
+      view_id: mockPublishInfoViewId,
       name: 'Page',
       icon: null,
       layout: ViewLayout.Document,
@@ -49,7 +50,7 @@ jest.mock('@/components/app/share/publish.hooks', () => ({
       is_private: false,
     },
     publishInfo: mockPublishInfo,
-    publishInfoViewId: 'view-id',
+    publishInfoViewId: mockPublishInfoViewId,
     loading: false,
     isOwner: true,
     isPublisher: true,
@@ -66,6 +67,8 @@ describe('PublishPanel comments setting', () => {
     jest.clearAllMocks();
     clearCachedPublishCommentsEnabled('view-id');
     clearCachedPublishCommentsEnabled('other-view-id');
+    clearCachedPublishCommentsEnabled('board-view');
+    clearCachedPublishCommentsEnabled('database-container');
     window.localStorage.clear();
     window.sessionStorage.clear();
     mockPublish.mockResolvedValue(undefined);
@@ -73,6 +76,7 @@ describe('PublishPanel comments setting', () => {
     mockLoadPublishInfo.mockResolvedValue(undefined);
     mockUpdatePublishConfig.mockResolvedValue(true);
     mockPublishInfo = undefined;
+    mockPublishInfoViewId = 'view-id';
   });
 
   it('leaves an unknown first-publish setting to the backend default', async () => {
@@ -329,4 +333,39 @@ describe('PublishPanel comments setting', () => {
 
     await waitFor(() => expect(screen.getByTestId('publish-comments-switch').checked).toBe(false));
   });
+
+  it.each(['board-view', 'database-container'])(
+    'updates and caches comments under the resolved database publication %s',
+    async (publishedViewId) => {
+      mockPublishInfoViewId = publishedViewId;
+      mockPublishInfo = {
+        namespace: 'namespace',
+        publishName: 'database',
+        publisherEmail: 'owner@appflowy.test',
+        commentEnabled: true,
+        duplicateEnabled: true,
+      };
+      render(
+        <PublishPanel viewId='board-view' fallbackViewId='database-container' opened onClose={jest.fn()} canShare />
+      );
+
+      await waitFor(() => expect(screen.getByTestId('publish-comments-switch').checked).toBe(true));
+      expect(getCachedPublishCommentsEnabled(publishedViewId)).toBe(true);
+      fireEvent.click(screen.getByTestId('publish-comments-switch'));
+
+      await waitFor(() => {
+        expect(mockUpdatePublishConfig).toHaveBeenCalledWith({
+          view_id: publishedViewId,
+          comments_enabled: false,
+        });
+        expect(getCachedPublishCommentsEnabled(publishedViewId)).toBe(false);
+        expect(screen.getByTestId('publish-comments-switch').checked).toBe(false);
+        expect(screen.getByTestId('publish-comments-switch').disabled).toBe(false);
+      });
+
+      const otherViewId = publishedViewId === 'board-view' ? 'database-container' : 'board-view';
+
+      expect(getCachedPublishCommentsEnabled(otherViewId)).toBeUndefined();
+    }
+  );
 });

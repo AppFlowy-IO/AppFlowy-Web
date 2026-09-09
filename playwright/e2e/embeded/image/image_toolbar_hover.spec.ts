@@ -9,7 +9,7 @@
  *
  * Migrated from: cypress/e2e/embeded/image/image_toolbar_hover.cy.ts
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
@@ -20,6 +20,23 @@ const PNG_BUFFER = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   'base64'
 );
+
+async function createUploadedImageWithPointerOutside(page: Page) {
+  await createPageAndInsertImage(page, PNG_BUFFER);
+  const imageBlock = page.locator('[data-block-type="image"]').first();
+  const image = imageBlock.locator('img');
+
+  await expect(image).toBeVisible();
+  await expect(imageBlock.getByTestId('image-upload-pending')).toBeHidden();
+  await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+
+  // The upload menu can leave the pointer inside this block before it has a
+  // remote URL. Start outside so hovering tests a real mouse-enter event.
+  await EditorSelectors.firstEditor(page).hover({ position: { x: 5, y: 5 } });
+  await expect(page.getByTestId('copy-image-button')).toBeHidden();
+
+  return imageBlock;
+}
 
 test.describe('Image Toolbar Hover Actions', () => {
   test.beforeEach(async ({ page }) => {
@@ -49,11 +66,10 @@ test.describe('Image Toolbar Hover Actions', () => {
     const testEmail = generateRandomEmail();
     await signInAndWaitForApp(page, request, testEmail);
     await page.waitForTimeout(1000);
-    await createPageAndInsertImage(page, PNG_BUFFER);
+    const imageBlock = await createUploadedImageWithPointerOutside(page);
 
     // Hover over the image block to trigger toolbar
-    await page.locator('[data-block-type="image"]').first().hover();
-    await page.waitForTimeout(1000);
+    await imageBlock.hover();
 
     // Verify toolbar actions are visible without errors
     await expect(page.getByTestId('copy-image-button')).toBeVisible();
@@ -69,17 +85,14 @@ test.describe('Image Toolbar Hover Actions', () => {
     const testEmail = generateRandomEmail();
     await signInAndWaitForApp(page, request, testEmail);
     await page.waitForTimeout(1000);
-    await createPageAndInsertImage(page, PNG_BUFFER);
+    const imageBlock = await createUploadedImageWithPointerOutside(page);
 
     // Hover to show toolbar
-    await page.locator('[data-block-type="image"]').first().hover();
-    await page.waitForTimeout(1000);
+    await imageBlock.hover();
     await expect(page.getByTestId('copy-image-button')).toBeVisible();
 
     // Move mouse away to hide toolbar
     await EditorSelectors.firstEditor(page).hover({ position: { x: 5, y: 5 } });
-    await page.waitForTimeout(1000);
-
     // Toolbar should be hidden
     await expect(page.getByTestId('copy-image-button')).not.toBeVisible();
   });
@@ -88,16 +101,15 @@ test.describe('Image Toolbar Hover Actions', () => {
     const testEmail = generateRandomEmail();
     await signInAndWaitForApp(page, request, testEmail);
     await page.waitForTimeout(1000);
-    await createPageAndInsertImage(page, PNG_BUFFER);
+    const imageBlock = await createUploadedImageWithPointerOutside(page);
 
     // Hover and unhover multiple times to ensure no stale state or context errors
     for (let i = 0; i < 3; i++) {
-      await page.locator('[data-block-type="image"]').first().hover();
-      await page.waitForTimeout(500);
+      await imageBlock.hover();
       await expect(page.getByTestId('copy-image-button')).toBeVisible();
 
       await EditorSelectors.firstEditor(page).hover({ position: { x: 5, y: 5 } });
-      await page.waitForTimeout(500);
+      await expect(page.getByTestId('copy-image-button')).toBeHidden();
     }
   });
 });

@@ -14,6 +14,7 @@ function RowDocumentContextProbe() {
       data-has-load={String(Boolean(context.loadRowDocument))}
       data-has-sync-cleanup={String(Boolean(context.scheduleDeferredCleanup))}
       data-has-update={String(Boolean(context.updatePage))}
+      data-can-share={String(context.canShare)}
       data-content-padding={context.contentPadding}
       onClick={() => void context.updatePage?.('database-view-id', { name: 'Renamed view' })}
     />
@@ -29,6 +30,7 @@ describe('EditorContextProvider', () => {
         workspaceId='workspace-id'
         viewId='view-id'
         readOnly={false}
+        canShare
         contentPadding='template'
         checkIfRowDocumentExists={jest.fn()}
         createRowDocument={jest.fn()}
@@ -49,6 +51,7 @@ describe('EditorContextProvider', () => {
     expect(probe.getAttribute('data-has-load')).toBe('true');
     expect(probe.getAttribute('data-has-sync-cleanup')).toBe('true');
     expect(probe.getAttribute('data-has-update')).toBe('true');
+    expect(probe.getAttribute('data-can-share')).toBe('true');
     expect(probe.getAttribute('data-content-padding')).toBe('template');
 
     fireEvent.click(probe);

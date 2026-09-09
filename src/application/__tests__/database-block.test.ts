@@ -15,6 +15,7 @@ describe('database block types', () => {
   it.each([
     [BlockType.ListBlock, ViewLayout.List],
     [BlockType.DatabaseGalleryBlock, ViewLayout.Gallery],
+    [BlockType.FeedBlock, ViewLayout.Feed],
   ])('maps the native %s block to database layout %s', (blockType, layout) => {
     expect(getDatabaseLayoutFromBlockType(blockType)).toBe(layout);
   });

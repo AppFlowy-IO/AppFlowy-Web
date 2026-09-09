@@ -152,7 +152,8 @@ function usePageContentImage(rowId: string, enabled: boolean): string | null {
   return enabled ? url : null;
 }
 
-function getPageCover(cover: RowMeta['cover']): { background?: string; src?: string } {
+/** Resolve a row's page cover meta into a background color or image source. */
+export function getPageCover(cover: RowMeta['cover']): { background?: string; src?: string } {
   if (!cover?.data) return {};
 
   if (cover.cover_type === RowCoverType.GradientCover || cover.cover_type === RowCoverType.ColorCover) {

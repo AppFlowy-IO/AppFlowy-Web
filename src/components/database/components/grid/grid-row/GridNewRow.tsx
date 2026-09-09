@@ -1,40 +1,23 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useDatabaseContext, useDatabaseFields } from '@/application/database-yjs';
+import { useDatabaseContext, useDatabaseFields, useDatabaseView } from '@/application/database-yjs';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
-import { getGroupCellData } from '@/application/database-yjs/group';
-import { YjsDatabaseKey } from '@/application/types';
-import type { FieldId, YDatabaseFields } from '@/application/types';
+import { getGroupRowCellsData } from '@/application/database-yjs/group-row';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useGridContext } from '@/components/database/grid/useGridContext';
 
-export function getGridGroupCellsData(
-  fields?: YDatabaseFields,
-  groupFieldId?: string,
-  groupId?: string
-): Record<FieldId, string> | undefined {
-  const groupField = groupFieldId ? fields?.get(groupFieldId) : undefined;
-
-  if (groupFieldId && groupField && groupId === groupField.get(YjsDatabaseKey.id)) {
-    // Explicitly overwrite same-field filter prefills when a row is inserted
-    // into Desktop's default/ungrouped column.
-    return { [groupFieldId]: '' };
-  }
-
-  const groupCellData = groupField && groupId ? getGroupCellData(groupId, groupField) : undefined;
-
-  return groupFieldId && groupCellData !== undefined ? { [groupFieldId]: groupCellData } : undefined;
-}
+export const getGridGroupCellsData = getGroupRowCellsData;
 
 export function useCreateGridGroupRow(groupFieldId?: string, groupId?: string) {
   const onNewRow = useNewRowDispatch();
   const { isDocumentBlock } = useDatabaseContext();
   const { lastVisibleRowId, revealCreatedRow } = useGridContext();
   const fields = useDatabaseFields();
+  const view = useDatabaseView();
 
   return useCallback(async () => {
-    const cellsData = getGridGroupCellsData(fields, groupFieldId, groupId);
+    const cellsData = getGridGroupCellsData(fields, groupFieldId, groupId, view);
 
     await onNewRow(
       isDocumentBlock
@@ -46,7 +29,7 @@ export function useCreateGridGroupRow(groupFieldId?: string, groupId?: string) {
         : { cellsData, tailing: true }
     );
     revealCreatedRow();
-  }, [fields, groupFieldId, groupId, isDocumentBlock, lastVisibleRowId, onNewRow, revealCreatedRow]);
+  }, [fields, groupFieldId, groupId, isDocumentBlock, lastVisibleRowId, onNewRow, revealCreatedRow, view]);
 }
 
 function GridNewRow({ groupFieldId, groupId }: { groupFieldId?: string; groupId?: string }) {

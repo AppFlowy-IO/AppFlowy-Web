@@ -1,6 +1,5 @@
 import dayjs from 'dayjs';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
+import { memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { RowComment } from '@/application/row-comment.type';
@@ -18,10 +17,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 
 import AddCommentInput from './AddCommentInput';
+import { CommentDraftContext } from './CommentDraftContext';
 import DeleteCommentConfirm from './DeleteCommentConfirm';
 import MemberAvatar, { getMemberDisplayName } from './MemberAvatar';
+import { RowCommentAttachments } from './RowCommentAttachments';
 import { useRowCommentDispatch, useRowCommentState } from './RowCommentContext';
 import RowCommentReactions from './RowCommentReactions';
+
+import type { ReactNode } from 'react';
 
 const DESKTOP_PERSON_MENTION_PATTERN = /@\[([^\]\n]+)\]\(([^)\s]+)\)/g;
 
@@ -64,11 +67,22 @@ function renderCommentContent(content: string): ReactNode {
   return parts;
 }
 
-function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment: RowComment; isFirst?: boolean; isLast?: boolean }) {
+function RowCommentItem({
+  comment,
+  isFirst = false,
+  isLast = false,
+  showResolveAction = isFirst,
+}: {
+  comment: RowComment;
+  isFirst?: boolean;
+  isLast?: boolean;
+  showResolveAction?: boolean;
+}) {
   const { t } = useTranslation();
-  const { editingCommentId, replyingCommentId, currentUserId, currentUserUid, members } = useRowCommentState();
+  const { editingCommentId, replyingCommentId, currentUserId, currentUserUid, members, canComment } = useRowCommentState();
   const {
     setEditingCommentId,
+    setReplyingCommentId,
     updateComment,
     deleteComment,
     resolveComment,
@@ -80,9 +94,18 @@ function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment:
   const [tick, setTick] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [hasOpenedReply, setHasOpenedReply] = useState(false);
   const actionsForceVisible = menuOpen || emojiOpen;
 
   const isEditing = editingCommentId === comment.id;
+  const editDraftId = useId();
+  const notifyDraft = useContext(CommentDraftContext);
+  const hasEditDraft = isEditing && editContent !== comment.content;
+
+  useLayoutEffect(() => {
+    notifyDraft?.(editDraftId, hasEditDraft);
+    return () => notifyDraft?.(editDraftId, false);
+  }, [editDraftId, hasEditDraft, notifyDraft]);
 
   // Sync editContent when the underlying comment changes (e.g., external collaborative edit)
   useEffect(() => {
@@ -179,6 +202,9 @@ function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment:
             {wasEdited && (
               <span className={'text-xs text-text-tertiary'}>{t('rowComment.edited')}</span>
             )}
+            {comment.isResolved && (
+              <span className='text-xs text-text-tertiary'>{t('rowComment.resolved')}</span>
+            )}
           </div>
 
           {/* Comment body or edit mode */}
@@ -194,18 +220,33 @@ function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment:
           )}
 
           {/* Reactions */}
+          <RowCommentAttachments attachments={comment.attachments} />
           <RowCommentReactions commentId={comment.id} reactions={comment.reactions} />
 
-          {/* Reply input */}
-          {isReplying && (
-            <div className={'mt-2'}>
-              <AddCommentInput parentCommentId={comment.id} />
+          {canComment && isParent && !comment.isResolved && !isReplying ? (
+            <button
+              className='self-start rounded text-xs text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
+              data-testid={`row-comment-reply-${comment.id}`}
+              onClick={() => {
+                setHasOpenedReply(true);
+                setReplyingCommentId(comment.id);
+              }}
+              type='button'
+            >
+              {t('rowComment.reply')}
+            </button>
+          ) : null}
+
+          {/* Retain drafts and uploads while another thread is selected. */}
+          {hasOpenedReply && (
+            <div className={'mt-2'} hidden={!isReplying}>
+              <AddCommentInput active={isReplying} parentCommentId={comment.id} />
             </div>
           )}
         </div>
 
         {/* Hover actions — CSS-driven visibility, matching Flutter desktop */}
-        {!isEditing && (
+        {!isEditing && canComment && (
           <div data-testid={'row-comment-actions'} className={cn('absolute -top-3 right-2 items-center gap-0.5 rounded-lg border border-border-primary bg-background-primary p-0.5 shadow-sm', actionsForceVisible ? 'flex' : 'hidden group-hover:flex')}>
             {/* Emoji reaction picker */}
             <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
@@ -233,8 +274,8 @@ function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment:
               </PopoverContent>
             </Popover>
 
-            {/* Resolve (first comment only — matches Flutter desktop) */}
-            {isFirst && (
+            {/* Feed exposes actions per parent; row detail keeps its first-comment action. */}
+            {showResolveAction && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -323,6 +364,7 @@ const EditCommentForm = memo(function EditCommentForm({
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               onSave();
@@ -350,11 +392,4 @@ const EditCommentForm = memo(function EditCommentForm({
   );
 });
 
-export default memo(RowCommentItem, (prev, next) =>
-  prev.comment.id === next.comment.id &&
-  prev.comment.updatedAt === next.comment.updatedAt &&
-  prev.comment.isResolved === next.comment.isResolved &&
-  prev.comment.content === next.comment.content &&
-  prev.isFirst === next.isFirst &&
-  prev.isLast === next.isLast
-);
+export default memo(RowCommentItem);

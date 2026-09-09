@@ -39,6 +39,9 @@ interface DatabaseContentProps {
   onViewAdded?: (viewId: string) => void;
   onViewIdsChanged?: (viewIds: string[]) => void;
   context: DatabaseContextState;
+  databaseReadOnly: boolean;
+  databaseCanWrite: boolean;
+  databaseCanShare: boolean;
   fixedHeight?: number;
   onRendered?: () => void;
 }
@@ -66,6 +69,9 @@ export const DatabaseContent = ({
   onViewAdded,
   onViewIdsChanged,
   context,
+  databaseReadOnly,
+  databaseCanWrite,
+  databaseCanShare,
   fixedHeight = EMBEDDED_DATABASE_FIXED_HEIGHT,
   onRendered,
 }: DatabaseContentProps) => {
@@ -84,6 +90,9 @@ export const DatabaseContent = ({
       >
         <Database
           {...context}
+          readOnly={databaseReadOnly}
+          canWrite={databaseCanWrite}
+          canShare={databaseCanShare}
           workspaceId={workspaceId}
           doc={doc}
           initialRowMap={initialRowMap}
@@ -130,14 +139,8 @@ export const DatabaseContent = ({
   const showError = notFound || noAccess || deletionStatus === 'inTrash' || deletionStatus === 'deleted';
 
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded bg-background-primary px-16 py-10 text-text-secondary max-md:px-4">
-      {showError ? (
-        <div className="text-base font-medium">
-          {getNotFoundMessage()}
-        </div>
-      ) : (
-        <CircularProgress size={20} />
-      )}
+    <div className='flex h-full w-full flex-col items-center justify-center gap-2 rounded bg-background-primary px-16 py-10 text-text-secondary max-md:px-4'>
+      {showError ? <div className='text-base font-medium'>{getNotFoundMessage()}</div> : <CircularProgress size={20} />}
     </div>
   );
 };

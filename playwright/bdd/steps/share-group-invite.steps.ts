@@ -56,6 +56,14 @@ type WorkspaceMember = {
   email: string;
 };
 
+type ShareAccessDetailsPayload = {
+  shared_with?: Array<{
+    email: string;
+    /** Additive server field; absent on servers that predate group folding. */
+    access_source?: 'direct_share' | 'workspace_group' | 'inherited';
+  }>;
+};
+
 type ScenarioState = {
   viewId?: string;
   privateSpaceId?: string;
@@ -154,6 +162,43 @@ When('I create a temporary private-space share-menu page', async ({ page, reques
     space_icon: 'lock',
     space_icon_color: '#555555',
     space_permission: SPACE_PERMISSION_PRIVATE,
+  });
+  const pageResponse = await postApi<{ view_id: string }>(request, token, `/api/workspace/${workspaceId}/page-view`, {
+    parent_view_id: space.view_id,
+    layout: VIEW_LAYOUT_DOCUMENT,
+    name: pageTitle,
+  });
+
+  state.ownerToken = token;
+  state.workspaceId = workspaceId;
+  state.privateSpaceId = space.view_id;
+  state.viewId = pageResponse.view_id;
+  state.pageTitle = pageTitle;
+});
+
+When('I create a temporary structured private-space share-menu page', async ({ page, request }) => {
+  const state = requireState(page);
+  const token = await requireAuthToken(page);
+  const workspaceId = await getCurrentWorkspaceId(request, token);
+  const suffix = Date.now().toString(36);
+  const spaceName = `${TEMPORARY_PRIVATE_SPACE_PREFIX} ${suffix}`;
+  const pageTitle = `${TEMPORARY_PRIVATE_PAGE_PREFIX} ${suffix}`;
+  // Structured private spaces resolve every workspace member's canonical access, which is the
+  // path that used to surface group-only members as individual share rows.
+  const space = await postApi<{ view_id: string }>(request, token, `/api/workspace/${workspaceId}/spaces`, {
+    name: spaceName,
+    space_icon: 'lock',
+    space_icon_color: '#555555',
+    permission: {
+      visibility: 'private',
+      owner_access_level: 50,
+      member_default_access_level: 30,
+      everyone_else_access_level: null,
+      invite_policy: 'owners_only',
+      sidebar_edit_policy: 'owners_only',
+      invite_link_enabled: false,
+      security: { disable_guests: false, disable_public_links: false, disable_export: false },
+    },
   });
   const pageResponse = await postApi<{ view_id: string }>(request, token, `/api/workspace/${workspaceId}/page-view`, {
     parent_view_id: space.view_id,
@@ -419,10 +464,7 @@ Then(
 When('I invite the temporary share-menu group from the share panel', async ({ page }) => {
   const group = requireTemporaryGroup(page);
 
-  await shareInviteSuggestion(page, group.name).click();
-  await expect(ShareSelectors.emailTagInput(page).getByText(group.name, { exact: true })).toBeVisible({
-    timeout: 15000,
-  });
+  await selectShareInviteSuggestion(page, group.name);
   await expect(ShareSelectors.inviteButton(page)).toBeEnabled({ timeout: 15000 });
   await ShareSelectors.inviteButton(page).click();
 });
@@ -546,6 +588,116 @@ Then('the seeded group-share page is editable but share controls are read only',
   }
 });
 
+When('I expand the temporary share-menu group in the share panel', async ({ page }) => {
+  const group = requireTemporaryGroup(page);
+  const toggle = ShareSelectors.groupMembersToggle(page, group.group_id);
+
+  await expect(toggle).toBeVisible({ timeout: 15000 });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(ShareSelectors.groupMembersList(page, group.group_id)).toBeVisible({ timeout: 15000 });
+});
+
+When('I collapse the temporary share-menu group in the share panel', async ({ page }) => {
+  const group = requireTemporaryGroup(page);
+  const toggle = ShareSelectors.groupMembersToggle(page, group.group_id);
+
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+});
+
+Then('the temporary share-menu group members are hidden', async ({ page }) => {
+  const group = requireTemporaryGroup(page);
+
+  await expect(ShareSelectors.groupMembersList(page, group.group_id)).toHaveCount(0, { timeout: 15000 });
+  await expect(ShareSelectors.groupRow(page, group.group_id)).toBeVisible();
+});
+
+Then('the expanded temporary share-menu group has no members', async ({ page }) => {
+  const group = requireTemporaryGroup(page);
+  const members = ShareSelectors.groupMembersList(page, group.group_id);
+
+  const emptyState = members.getByText('No members in this group', { exact: true });
+
+  await expect(emptyState).toBeVisible({ timeout: 15000 });
+  // The access list is height-capped; the expanded content must be scrolled into view, not
+  // merely rendered below the fold.
+  await expect(emptyState).toBeInViewport();
+  await expect(ShareSelectors.groupMemberRows(page, group.group_id)).toHaveCount(0);
+  await expect(ShareSelectors.groupRow(page, group.group_id).getByText('0 members', { exact: true })).toBeVisible();
+});
+
+Then(
+  'the expanded temporary share-menu group lists seeded spm0622 {string}',
+  async ({ page }, accountAliasValue: string) => {
+    const group = requireTemporaryGroup(page);
+    const email = spmAccountEmail(accountAliasValue);
+    const memberRow = ShareSelectors.groupMemberRows(page, group.group_id).filter({ hasText: email });
+
+    await expect(memberRow).toHaveCount(1, { timeout: 15000 });
+    // Seeded accounts have no display name, so the row shows the email as both name and email.
+    await expect(memberRow).toContainText(email);
+    // The access list is height-capped; a group near the bottom must scroll its members into
+    // view instead of rendering them below the fold.
+    await expect(memberRow).toBeInViewport();
+    await expect(ShareSelectors.groupRow(page, group.group_id).getByText('1 member', { exact: true })).toBeVisible();
+  }
+);
+
+Then(
+  'seeded spm0622 {string} is listed only inside the temporary share-menu group',
+  async ({ page, request }, accountAliasValue: string) => {
+    const state = requireState(page);
+    const group = requireTemporaryGroup(page);
+    const email = spmAccountEmail(accountAliasValue);
+    const token = await requireAuthToken(page);
+    const workspaceId = state.workspaceId || (await getCurrentWorkspaceId(request, token));
+
+    if (!state.viewId) {
+      throw new Error('No temporary share-menu page has been created for this scenario');
+    }
+
+    await expect(
+      ShareSelectors.groupMembersList(page, group.group_id).getByText(email, { exact: true }).first()
+    ).toBeVisible({ timeout: 15000 });
+
+    const details = await getApi<ShareAccessDetailsPayload>(
+      request,
+      token,
+      `/api/sharing/workspace/${workspaceId}/access-details/v2?type=page&page_id=${state.viewId}`
+    );
+    const memberDetails = details.shared_with?.find((user) => user.email.toLowerCase() === email.toLowerCase());
+    const standalonePersonRows = ShareSelectors.sharePopover(page).locator('.group').filter({ hasText: email });
+
+    if (memberDetails !== undefined && memberDetails.access_source === undefined) {
+      // Servers without `access_source` cannot tell the web which rows are group-only, so a
+      // member the server lists is still rendered individually. The folded layout below is
+      // asserted once the server reports the field.
+      console.warn(`Server did not report access_source for ${email}; expecting the legacy standalone row`);
+      await expect(standalonePersonRows).toHaveCount(1, { timeout: 15000 });
+      return;
+    }
+
+    // Either the server never listed the group member as a person (legacy private spaces) or
+    // it marked the row as group-only; both must fold into the group row.
+    if (memberDetails !== undefined) {
+      expect(memberDetails.access_source).toBe('workspace_group');
+    }
+
+    await expect(standalonePersonRows).toHaveCount(0, { timeout: 15000 });
+  }
+);
+
+Then('the temporary share-menu group cannot be expanded in the share panel', async ({ page }) => {
+  const group = requireTemporaryGroup(page);
+
+  await expect(ShareSelectors.groupRow(page, group.group_id)).toBeVisible({ timeout: 15000 });
+  await expect(ShareSelectors.groupMembersToggle(page, group.group_id)).toHaveCount(0);
+  await expect(ShareSelectors.groupMembersList(page, group.group_id)).toHaveCount(0);
+});
+
 function requireState(page: Page): ScenarioState {
   const state = stateByPage.get(page);
 
@@ -590,6 +742,51 @@ function shareGroupRow(page: Page, groupName: string) {
 
 function sharePersonRow(page: Page, email: string) {
   return ShareSelectors.sharePopover(page).locator('.group').filter({ hasText: email }).first();
+}
+
+/**
+ * Turn a typed invite suggestion into a tag.
+ *
+ * Scenarios share one seeded workspace, so share or group mutations made by parallel workers
+ * arrive here as permission-changed events. Each one reloads the access list, which briefly
+ * disables the invite input and closes the suggestion popover; a single click can land on a
+ * detached suggestion. Re-search and retry until the tag is present.
+ */
+async function selectShareInviteSuggestion(page: Page, text: string) {
+  const input = inviteInput(page);
+  const tag = ShareSelectors.emailTagInput(page).getByText(text, { exact: true });
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      await expect
+        .poll(
+          async () =>
+            input.evaluate((element) => {
+              const field = element as HTMLInputElement;
+
+              return field.readOnly || field.disabled;
+            }),
+          { timeout: 15000 }
+        )
+        .toBe(false);
+
+      if ((await input.inputValue()) !== text) {
+        await input.fill(text);
+      }
+
+      const suggestion = shareInviteSuggestion(page, text);
+
+      await expect(suggestion).toBeVisible({ timeout: 5000 });
+      await suggestion.click({ force: true, timeout: 5000 });
+      await expect(tag).toBeVisible({ timeout: 5000 });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`Could not select share invite suggestion ${text}`);
 }
 
 function shareInviteSuggestion(page: Page, text: string) {

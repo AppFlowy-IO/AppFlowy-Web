@@ -175,6 +175,65 @@ function getDatabase(databaseDoc: YDoc): Y.Map<unknown> {
 }
 
 describe('useAddDatabaseView', () => {
+  it('rejects Form creation before calling the server without canonical write permission', async () => {
+    const databaseDoc = createDatabaseDoc('database-id');
+    const createDatabaseView = jest.fn();
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      canWrite: false,
+      canShare: true,
+      databaseDoc,
+      databasePageId: 'base-view-id',
+      activeViewId: 'base-view-id',
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await expect(result.current(DatabaseViewLayout.Form, 'Form')).rejects.toThrow(
+      'Edit access is required to create or duplicate a Form view.'
+    );
+    expect(createDatabaseView).not.toHaveBeenCalled();
+  });
+
+  it('allows an editor to create a Form without share-management permission', async () => {
+    const databaseDoc = createDatabaseDoc('database-id');
+    const createDatabaseView = jest.fn().mockResolvedValue({
+      view_id: 'form-view-id',
+      database_id: 'database-id',
+      database_update: createAddViewUpdate(databaseDoc, 'form-view-id'),
+    });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      canWrite: true,
+      canShare: false,
+      databaseDoc,
+      databasePageId: 'base-view-id',
+      activeViewId: 'base-view-id',
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await expect(result.current(DatabaseViewLayout.Form)).resolves.toBe('form-view-id');
+    expect(createDatabaseView).toHaveBeenCalledWith(
+      'base-view-id',
+      expect.objectContaining({
+        database_id: 'database-id',
+        layout: ViewLayout.Form,
+        name: 'Form builder',
+      })
+    );
+  });
+
   it('applies created-tab updates without adding history or clearing redo', async () => {
     const databaseId = 'db-history';
     const baseViewId = 'base-view-id';
@@ -536,6 +595,86 @@ describe('useAddDatabaseView', () => {
 
     await expect(result.current(DatabaseViewLayout.Gallery, 'Gallery')).rejects.toThrow(
       'The server did not return the requested Gallery database view'
+    );
+
+    const views = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)?.get(YjsDatabaseKey.views);
+
+    expect(views?.get(baseViewId)?.get(YjsDatabaseKey.name)).toBe('Grid');
+    expect(views?.has(returnedViewId)).toBe(false);
+    expect(deletePage).toHaveBeenCalledWith(returnedViewId);
+  });
+
+  it('prevalidates and normalizes the exact Feed child returned by the server', async () => {
+    const databaseId = 'db-1';
+    const baseViewId = 'base-view-id';
+    const feedViewId = 'feed-view-id';
+    const databaseDoc = createDatabaseDoc(databaseId);
+
+    addExistingGridView(databaseDoc, baseViewId);
+    const createDatabaseView = jest.fn().mockResolvedValue({
+      view_id: feedViewId,
+      database_id: databaseId,
+      database_update: createGalleryUpdate(databaseDoc, baseViewId, feedViewId),
+    });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: baseViewId,
+      activeViewId: baseViewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await expect(result.current(DatabaseViewLayout.Feed, 'Feed')).resolves.toBe(feedViewId);
+
+    expect(createDatabaseView).toHaveBeenCalledWith(
+      baseViewId,
+      expect.objectContaining({ layout: ViewLayout.Feed, name: 'Feed' })
+    );
+
+    const views = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)?.get(YjsDatabaseKey.views);
+    const fieldSettings = views?.get(feedViewId)?.get(YjsDatabaseKey.field_settings);
+
+    expect(views?.get(baseViewId)?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Grid);
+    expect(views?.get(feedViewId)?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Feed);
+    expect(fieldSettings?.get('primary-field')?.get(YjsDatabaseKey.visibility)).toBe(FieldVisibility.AlwaysShown);
+  });
+
+  it('rejects an invalid Feed update before it can mutate the live database', async () => {
+    const databaseId = 'db-1';
+    const baseViewId = 'base-view-id';
+    const returnedViewId = 'missing-feed-view-id';
+    const databaseDoc = createDatabaseDoc(databaseId);
+    const deletePage = jest.fn().mockResolvedValue(undefined);
+
+    addExistingGridView(databaseDoc, baseViewId);
+    const createDatabaseView = jest.fn().mockResolvedValue({
+      view_id: returnedViewId,
+      database_id: databaseId,
+      database_update: createUpdateWithoutReturnedView(databaseDoc, baseViewId),
+    });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: baseViewId,
+      activeViewId: baseViewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      deletePage,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await expect(result.current(DatabaseViewLayout.Feed, 'Feed')).rejects.toThrow(
+      'The server did not return the requested Feed database view'
     );
 
     const views = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)?.get(YjsDatabaseKey.views);

@@ -14,6 +14,10 @@ let axiosInstance: AxiosInstance | null = null;
 let activeEtagStore: Map<string, string> | null = null;
 let activeResponseStore: Map<string, unknown> | null = null;
 
+function requestUrlForLog(url: string | undefined): string | undefined {
+  return url?.replace(/\/public-form\/[^/?#]+/g, '/public-form/[redacted]');
+}
+
 /**
  * Clear the ETag/304 response caches. Must be called when the session becomes
  * invalid (logout, token expiry): the cache key is the request URL without any
@@ -212,11 +216,13 @@ export async function executeAPIRequest<TResponseData = unknown>(
     }
 
     // Get the actual URL that was requested
-    const requestUrl = response.request?.responseURL
-      || (response.config?.baseURL && response.config?.url
-        ? `${response.config.baseURL}${response.config.url}`
-        : response.config?.url)
-      || 'unknown';
+    const requestUrl = requestUrlForLog(
+      response.request?.responseURL ||
+        (response.config?.baseURL && response.config?.url
+          ? `${response.config.baseURL}${response.config.url}`
+          : response.config?.url) ||
+        'unknown'
+    );
 
     const method = response.config?.method?.toUpperCase() || 'UNKNOWN';
 
@@ -360,8 +366,7 @@ export async function withRetry<T>(
       // HTTP 5xx range is retryable; treating every value above 500 as a
       // transport failure makes permanent denials wait through all backoffs.
       const httpStatus =
-        normalized.httpStatus ??
-        (normalized.code >= 100 && normalized.code <= 599 ? normalized.code : undefined);
+        normalized.httpStatus ?? (normalized.code >= 100 && normalized.code <= 599 ? normalized.code : undefined);
       const isRetryable =
         normalized.code === -1 ||
         httpStatus === 429 ||
@@ -383,7 +388,11 @@ export async function withRetry<T>(
         delay = Math.round(delays[attempt] * (1.0 + Math.random()));
       }
 
-      Log.debug(`[withRetry] Attempt ${attempt + 1}/${delays.length} failed (code=${normalized.code}, retryAfter=${normalized.retryAfterSecs ?? 'none'}), retrying in ${delay}ms`);
+      Log.debug(
+        `[withRetry] Attempt ${attempt + 1}/${delays.length} failed (code=${normalized.code}, retryAfter=${
+          normalized.retryAfterSecs ?? 'none'
+        }), retrying in ${delay}ms`
+      );
 
       // Wait for backoff, but abort early if signal fires
       await new Promise<void>((resolve) => {
@@ -394,10 +403,14 @@ export async function withRetry<T>(
 
         const timer = setTimeout(resolve, delay);
 
-        signal?.addEventListener('abort', () => {
-          clearTimeout(timer);
-          resolve();
-        }, { once: true });
+        signal?.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          { once: true }
+        );
       });
     }
   }
@@ -429,7 +442,7 @@ export function initAPIService(config: AFCloudConfig) {
 
       if (!token) {
         Log.debug('[initAPIService][request] no token found, sending request without auth header', {
-          url: config.url,
+          url: requestUrlForLog(config.url),
         });
         return config;
       }
@@ -446,7 +459,7 @@ export function initAPIService(config: AFCloudConfig) {
           access_token = newToken?.access_token || '';
         } catch (e) {
           console.warn('[initAPIService][request] refresh token failed, marking token invalid', {
-            url: config.url,
+            url: requestUrlForLog(config.url),
             message: (e as Error)?.message,
           });
           invalidToken();
@@ -487,7 +500,7 @@ export function initAPIService(config: AFCloudConfig) {
       } catch (e) {
         console.warn('[initAPIService][response] refresh on 401 failed, emitting invalid token', {
           message: (e as Error)?.message,
-          url: axiosError.config?.url,
+          url: requestUrlForLog(axiosError.config?.url),
         });
         invalidToken();
       }
@@ -643,7 +656,7 @@ export function initAPIService(config: AFCloudConfig) {
         signal.addEventListener('abort', onAbort, { once: true });
       });
 
-    Log.debug(`[HTTP Retry] Attempt ${nextRetry}/${RETRY_COUNT} for ${config.url} in ${delay}ms`);
+    Log.debug(`[HTTP Retry] Attempt ${nextRetry}/${RETRY_COUNT} for ${requestUrlForLog(config.url)} in ${delay}ms`);
     const backoffResult = await waitForBackoff(delay, config.signal as AbortSignal | undefined);
 
     if (backoffResult === 'aborted' || config.signal?.aborted) return Promise.reject(error);

@@ -59,7 +59,7 @@ import {
   signUpWithPassword,
 } from '@/application/services/js-services/http';
 import { emit, EventType } from '@/application/session';
-import { afterAuth, AUTH_CALLBACK_URL, saveRedirectTo } from '@/application/session/sign_in';
+import { afterAuth, getAuthCallbackUrl, saveRedirectTo } from '@/application/session/sign_in';
 import { getTokenParsed, isTokenValid } from '@/application/session/token';
 import {
   DatabaseRelations,
@@ -815,27 +815,27 @@ export {
 
 export async function signInGoogleWithRedirect(params: { redirectTo: string }) {
   saveRedirectTo(params.redirectTo);
-  return signInGoogle(AUTH_CALLBACK_URL);
+  return signInGoogle(getAuthCallbackUrl(params.redirectTo));
 }
 
 export async function signInAppleWithRedirect(params: { redirectTo: string }) {
   saveRedirectTo(params.redirectTo);
-  return signInApple(AUTH_CALLBACK_URL);
+  return signInApple(getAuthCallbackUrl(params.redirectTo));
 }
 
 export async function signInGithubWithRedirect(params: { redirectTo: string }) {
   saveRedirectTo(params.redirectTo);
-  return signInGithub(AUTH_CALLBACK_URL);
+  return signInGithub(getAuthCallbackUrl(params.redirectTo));
 }
 
 export async function signInDiscordWithRedirect(params: { redirectTo: string }) {
   saveRedirectTo(params.redirectTo);
-  return signInDiscord(AUTH_CALLBACK_URL);
+  return signInDiscord(getAuthCallbackUrl(params.redirectTo));
 }
 
 export async function signInSamlWithRedirect(params: { redirectTo: string; domain: string }): Promise<void> {
   saveRedirectTo(params.redirectTo);
-  return signInSaml(AUTH_CALLBACK_URL, params.domain);
+  return signInSaml(getAuthCallbackUrl(params.redirectTo), params.domain);
 }
 
 export async function signInCustomProviderWithRedirect(params: {
@@ -843,7 +843,7 @@ export async function signInCustomProviderWithRedirect(params: {
   identifier: string;
 }): Promise<void> {
   saveRedirectTo(params.redirectTo);
-  return signInCustomProvider(params.identifier, AUTH_CALLBACK_URL);
+  return signInCustomProvider(params.identifier, getAuthCallbackUrl(params.redirectTo));
 }
 
 /**
@@ -873,7 +873,7 @@ export async function signUpWithPasswordWithRedirect(params: { email: string; pa
 
 export async function signInMagicLinkWithRedirect({ email, redirectTo }: { email: string; redirectTo: string }) {
   saveRedirectTo(redirectTo);
-  return signInWithMagicLink(email, AUTH_CALLBACK_URL);
+  return signInWithMagicLink(email, getAuthCallbackUrl(redirectTo));
 }
 
 export async function signInOTPWithRedirect(params: {

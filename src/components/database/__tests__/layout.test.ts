@@ -76,6 +76,18 @@ describe('shouldUseFixedDatabaseViewport', () => {
     expect(getDatabaseViewportStyle(input)).toEqual({ maxHeight: '600px' });
   });
 
+  it('uses embedded height as a scrollable max cap for document feed viewports', () => {
+    const input = {
+      embeddedHeight: 600,
+      isDocumentBlock: true,
+      layout: DatabaseViewLayout.Feed,
+    };
+
+    expect(shouldAutoShrinkDatabaseViewport(input)).toBe(true);
+    expect(shouldScrollEmbeddedDatabaseViewport(input)).toBe(true);
+    expect(getDatabaseViewportStyle(input)).toEqual({ maxHeight: '600px' });
+  });
+
   it('keeps embedded grid height capped at the default viewport when content is taller', () => {
     expect(getEmbeddedGridViewportStyle({ contentHeight: 900, embeddedHeight: 600, isDocumentBlock: true })).toEqual({
       height: 600,

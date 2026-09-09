@@ -33,6 +33,11 @@ jest.mock('@/components/database/components/settings/GallerySettings', () => ({
   default: () => <div data-testid='gallery-settings' />,
 }));
 
+jest.mock('@/components/database/components/settings/FeedSettings', () => ({
+  __esModule: true,
+  default: () => <div data-testid='feed-settings' />,
+}));
+
 describe('database Settings', () => {
   it('renders nothing while the database layout is unresolved', () => {
     const { container } = render(
@@ -52,6 +57,17 @@ describe('database Settings', () => {
     );
 
     expect(screen.getByTestId('list-settings')).toBeTruthy();
+    expect(screen.queryByTestId('grid-settings')).toBeNull();
+  });
+
+  it('uses the Feed settings menu for a Feed view', () => {
+    render(
+      <Settings layout={DatabaseViewLayout.Feed}>
+        <button type='button'>Settings</button>
+      </Settings>
+    );
+
+    expect(screen.getByTestId('feed-settings')).toBeTruthy();
     expect(screen.queryByTestId('grid-settings')).toBeNull();
   });
 

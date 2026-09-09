@@ -335,7 +335,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
     return (
       <div
-        className={'sticky top-0 z-[10] flex w-full items-center justify-between gap-2 bg-background-primary px-4 py-4'}
+        className={'sticky top-0 z-[10] flex w-full items-center justify-between gap-2 bg-surface-primary px-4 py-4'}
       >
         <div className={'flex items-center gap-4'}>
           <Tooltip title={t('tooltip.openAsPage')}>
@@ -420,6 +420,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     if (!effectiveViewId) return false;
     return getViewCanWriteStatus(effectiveViewId, outline, resolvedView, objectPermission);
   }, [effectiveViewId, objectPermission, outline, resolvedView]);
+  const canShare = objectPermission.can_share;
 
   const View = useMemo(() => {
     switch (layout) {
@@ -431,6 +432,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       case ViewLayout.Chart:
       case ViewLayout.List:
       case ViewLayout.Gallery:
+      case ViewLayout.Feed:
+      case ViewLayout.Form:
         return DatabaseView;
       default:
         return null;
@@ -447,6 +450,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         readOnly={isReadOnly}
         canComment={canComment}
         canWrite={canWrite}
+        canShare={canShare}
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
@@ -493,6 +497,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     isReadOnly,
     canComment,
     canWrite,
+    canShare,
     toView,
     loadViewMeta,
     createRow,

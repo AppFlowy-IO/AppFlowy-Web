@@ -110,8 +110,13 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-relation-prefill.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-row-detail-no-stacking.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/feed.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/feed-readonly.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/feed-interactions.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/feed-search-lifecycle.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/feed-attribution-search.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/rollup-relation-live-update.feature.spec.js
-            description: 'Authentication, sidebar, database-row mention, migrated Gallery behavior, and rollup reactivity scenarios'
+            description: 'Authentication, sidebar, database-row mention, migrated Gallery and Feed behavior, and rollup reactivity scenarios'
             bdd: 'true'
             shard: ''
           - name: 'database-filters'
@@ -284,7 +289,7 @@ jobs:
       - name: Run ${{ matrix.test-group.name }} tests
         shell: bash
         run: |
-          test_args=(--workers=2)
+          test_args=("--workers=2")
           if [ -n "$TEST_SHARD" ]; then
             test_args+=("--shard=$TEST_SHARD")
           fi

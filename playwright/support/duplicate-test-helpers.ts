@@ -397,11 +397,12 @@ async function waitForDocumentDatabaseBlocksOnServer(
 }
 
 async function focusEditorForSlash(page: Page, editor: Locator): Promise<void> {
-  let slateEditor = editor.locator('[data-slate-editor="true"]').first();
-
-  if (!(await slateEditor.isVisible({ timeout: 3000 }).catch(() => false))) {
-    slateEditor = page.locator('[data-slate-editor="true"]').first();
-  }
+  // editorForView resolves the Editable itself. Falling back to the first
+  // editor on the page can focus a background Feed preview behind a dialog.
+  const slateEditor =
+    (await editor.getAttribute('data-slate-editor')) === 'true'
+      ? editor
+      : editor.locator('[data-slate-editor="true"]').first();
 
   await expect(slateEditor).toBeVisible({ timeout: 15000 });
   await slateEditor.scrollIntoViewIfNeeded();

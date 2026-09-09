@@ -17,10 +17,11 @@ import { LeafContext } from '@/components/editor/components/leaf/leaf.hooks';
 import { PanelProvider } from '@/components/editor/components/panels/PanelsContext';
 import { RemoteSelectionsLayer } from '@/components/editor/components/remote-selections';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
-import { InlineCommentEditorControls } from '@/components/inline-comment/editor/InlineCommentEditorControls';
+import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
 import { useShortcuts } from '@/components/editor/shortcut.hooks';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { getScrollParent } from '@/components/global-comment/utils';
+import { InlineCommentEditorControls } from '@/components/inline-comment/editor/InlineCommentEditorControls';
 import { cn } from '@/lib/utils';
 
 import { Element } from './components/element';
@@ -64,6 +65,7 @@ function scrollSelectionIntoView(_editor: ReactEditor, domRange: globalThis.Rang
 }
 
 const EditorEditable = () => {
+  const previewId = useEditorPreviewId();
   const { canComment = false, readOnly, viewId, workspaceId, fullWidth, contentPadding = 'page' } = useEditorContext();
   const { decorateState } = useEditorLocalState();
   const { getMatchDecorations } = useFindReplaceDecorations();
@@ -168,6 +170,10 @@ const EditorEditable = () => {
   );
 
   useEffect(() => {
+    // Previews can share the host editor's scroll container. Atlaskit keeps one
+    // registration per element, so preview cleanup would remove the host's.
+    if (previewId) return;
+
     try {
       const editorDom = ReactEditor.toDOMNode(editor, editor);
       const scrollContainer = getScrollParent(editorDom);
@@ -180,7 +186,7 @@ const EditorEditable = () => {
     } catch (e) {
       console.error('Error initializing auto-scroll:', e);
     }
-  }, [editor]);
+  }, [editor, previewId]);
 
   return (
     <PanelProvider editor={editor}>
@@ -198,7 +204,7 @@ const EditorEditable = () => {
 
                 return [...codeDecoration, ...decoration];
               }}
-              id={`editor-${viewId}`}
+              id={`${previewId ?? ''}editor-${viewId}`}
               className={cn(
                 'custom-caret min-w-0 max-w-full scroll-mb-[100px] scroll-mt-[300px] pb-56 outline-none focus:outline-none',
                 contentPaddingClassName,

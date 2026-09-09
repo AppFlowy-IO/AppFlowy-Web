@@ -18,8 +18,7 @@ import { Button } from '@/components/ui/button';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { downloadFile } from '@/utils/download';
-import { openUrl } from '@/utils/url';
+import { downloadFile, openFileUrl } from '@/utils/download';
 
 function FileMediaMore({
   file,
@@ -72,7 +71,7 @@ function FileMediaMore({
           label: t('grid.media.openInBrowser'),
           icon: <OpenIcon />,
           onSelect: () => {
-            void openUrl(file.url, '_blank');
+            void openFileUrl(file.url, '_blank', file.name);
           },
         },
         {

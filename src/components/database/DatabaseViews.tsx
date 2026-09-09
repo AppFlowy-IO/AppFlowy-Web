@@ -15,6 +15,7 @@ import {
 } from '@/components/database/components/conditions/context';
 import { DatabaseSearchProvider } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { DatabaseTabs } from '@/components/database/components/tabs';
+import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
 import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
@@ -41,6 +42,12 @@ import DatabaseConditionsPanel from 'src/components/database/components/conditio
 
 const List = lazy(() => import('@/components/database/list/List'));
 const Gallery = lazy(() => import('@/components/database/gallery'));
+const Feed = lazy(() => import('@/components/database/feed'));
+const FormBuilderView = lazy(() =>
+  import('@/components/database/form/FormBuilderView').then(({ FormBuilderView: Component }) => ({
+    default: Component,
+  }))
+);
 
 function DatabaseViews({
   onChangeView,
@@ -344,10 +351,14 @@ function DatabaseViews({
         return <Calendar />;
       case DatabaseViewLayout.Chart:
         return <Chart />;
+      case DatabaseViewLayout.Form:
+        return <FormBuilderView key={activeViewId} />;
       case DatabaseViewLayout.List:
         return <List />;
       case DatabaseViewLayout.Gallery:
         return <Gallery key={activeViewId} />;
+      case DatabaseViewLayout.Feed:
+        return <Feed key={activeViewId} />;
       default:
         return null;
     }
@@ -465,14 +476,24 @@ function DatabaseViews({
     </DatabaseSearchProvider>
   );
 
+  let groupedContent = content;
+
   switch (effectiveLayout) {
     case DatabaseViewLayout.Grid:
-      return <GridGroupingProvider>{content}</GridGroupingProvider>;
+      groupedContent = <GridGroupingProvider>{content}</GridGroupingProvider>;
+      break;
     case DatabaseViewLayout.List:
-      return <ListGroupingProvider>{content}</ListGroupingProvider>;
-    default:
-      return content;
+      groupedContent = <ListGroupingProvider>{content}</ListGroupingProvider>;
+      break;
   }
+
+  return (
+    <DatabaseHistoryScope
+      className={cn('flex w-full flex-col', shouldUseFixedViewport ? 'min-h-0 flex-1' : 'overflow-visible')}
+    >
+      {groupedContent}
+    </DatabaseHistoryScope>
+  );
 }
 
 export default DatabaseViews;

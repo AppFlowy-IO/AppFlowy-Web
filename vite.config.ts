@@ -8,11 +8,13 @@ import svgr from 'vite-plugin-svgr';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
 import { stripTestIdPlugin } from './vite-plugin-strip-testid';
 import { VITE_DEDUPED_DEPENDENCIES, VITE_OPTIMIZED_DEPENDENCIES } from './vite.dependencies';
+import compatibilityPolicy from './src/application/compatibility/web-server-compatibility.json';
 
 const resourcesPath = path.resolve(__dirname, '../resources');
 const isDev = process.env.NODE_ENV ? process.env.NODE_ENV === 'development' : true;
 const isProd = process.env.NODE_ENV === 'production';
 const isTest = process.env.NODE_ENV === 'test' || process.env.COVERAGE === 'true';
+const webClientVersion = process.env.APPFLOWY_WEB_VERSION || compatibilityPolicy.reviewed_through_client_version;
 
 // Namespace redirect plugin for dev mode - mirrors deploy/server.ts behavior
 function namespaceRedirectPlugin() {
@@ -112,6 +114,9 @@ function linkPreviewApiPlugin() {
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  define: {
+    __APPFLOWY_WEB_VERSION__: JSON.stringify(webClientVersion),
+  },
   plugins: [
     react(),
     isDev ? namespaceRedirectPlugin() : undefined,

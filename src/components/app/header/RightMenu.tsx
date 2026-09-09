@@ -62,7 +62,10 @@ function RightMenu() {
   return (
     <div className={'flex items-center gap-2'}>
       <Users viewId={routeViewId} />
-      {actionViewId ? <ShareButton viewId={actionViewId} hidePublish={hasRowPageRoute} /> : null}
+      {/* Access control belongs to the database container, but Desktop publishes the active child view. */}
+      {actionViewId ? (
+        <ShareButton viewId={actionViewId} publishViewId={routeViewId} hidePublish={hasRowPageRoute} />
+      ) : null}
       <InlineCommentToggleButton />
       {favoriteViewId && (
         <FavoriteButton viewId={favoriteViewId} beforeToggle={rowPage ? prepareRowDocumentForFavorite : undefined} />
