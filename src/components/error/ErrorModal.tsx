@@ -11,7 +11,7 @@ export const ErrorModal = ({ message, onClose }: { message: string; onClose: () 
     <div className={'fixed inset-0 z-10 flex items-center justify-center bg-bg-mask backdrop-blur-sm'}>
       <div
         className={
-          'border-shade-5 relative flex flex-col items-center gap-8 rounded-xl border border-border-primary bg-background-primary px-16 py-8 shadow-md'
+          'relative flex flex-col items-center gap-8 rounded-xl border border-border-primary bg-surface-primary px-16 py-8 shadow-dialog'
         }
       >
         <button
