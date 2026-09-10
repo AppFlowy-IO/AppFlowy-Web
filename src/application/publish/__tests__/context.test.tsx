@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 
 import { getRowKey } from '@/application/database-yjs/row_meta';
@@ -89,8 +89,8 @@ function ContextProbe({ onContext }: { onContext: (context: PublishContextType) 
 
   return (
     <>
-      <div data-testid="view-id">{context?.viewMeta?.view_id}</div>
-      <div data-testid="breadcrumbs">{context?.breadcrumbs.map((crumb) => crumb.name).join('/')}</div>
+      <div data-testid='view-id'>{context?.viewMeta?.view_id}</div>
+      <div data-testid='breadcrumbs'>{context?.breadcrumbs.map((crumb) => crumb.name).join('/')}</div>
     </>
   );
 }
@@ -137,6 +137,8 @@ function unpublishedDatabaseContainer(viewId: string, children: View[]): View {
 describe('PublishProvider', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
     mockGetOutline.mockResolvedValue([]);
     mockGetViewInfo.mockResolvedValue({
       namespace: 'published-namespace',
@@ -151,14 +153,12 @@ describe('PublishProvider', () => {
     let latestContext: PublishContextType | undefined;
 
     render(
-      <PublishProvider
-        namespace={snapshot.namespace}
-        publishName={snapshot.publishName}
-        snapshot={snapshot}
-      >
-        <ContextProbe onContext={(context) => {
-          latestContext = context;
-        }} />
+      <PublishProvider namespace={snapshot.namespace} publishName={snapshot.publishName} snapshot={snapshot}>
+        <ContextProbe
+          onContext={(context) => {
+            latestContext = context;
+          }}
+        />
       </PublishProvider>
     );
 
@@ -175,6 +175,45 @@ describe('PublishProvider', () => {
     );
     expect(mockGetViewInfo).toHaveBeenCalledWith(snapshot.view.viewId);
     expect(mockGetViewMeta).not.toHaveBeenCalled();
+  });
+
+  it.each(['focus', 'visibilitychange'])('refreshes public settings from the server on %s', async (event) => {
+    const snapshot = normalizePublishedPageSnapshot(publishedDocumentPayload);
+    let latestContext: PublishContextType | undefined;
+
+    mockGetViewInfo
+      .mockResolvedValueOnce({
+        namespace: snapshot.namespace,
+        publishName: snapshot.publishName,
+        commentEnabled: true,
+        duplicateEnabled: true,
+      })
+      .mockResolvedValueOnce({
+        namespace: snapshot.namespace,
+        publishName: snapshot.publishName,
+        commentEnabled: false,
+        duplicateEnabled: false,
+      });
+
+    render(
+      <PublishProvider namespace={snapshot.namespace} publishName={snapshot.publishName} snapshot={snapshot}>
+        <ContextProbe
+          onContext={(context) => {
+            latestContext = context;
+          }}
+        />
+      </PublishProvider>
+    );
+
+    await waitFor(() => expect(latestContext?.commentEnabled).toBe(true));
+
+    act(() => {
+      (event === 'focus' ? window : document).dispatchEvent(new Event(event));
+    });
+
+    await waitFor(() => expect(latestContext?.commentEnabled).toBe(false));
+    expect(latestContext?.duplicateEnabled).toBe(false);
+    expect(mockGetViewInfo).toHaveBeenLastCalledWith(snapshot.view.viewId);
   });
 
   it('loads related published pages through the JSON snapshot data source', async () => {
@@ -211,9 +250,11 @@ describe('PublishProvider', () => {
         publishName={currentSnapshot.publishName}
         snapshot={currentSnapshot}
       >
-        <ContextProbe onContext={(context) => {
-          latestContext = context;
-        }} />
+        <ContextProbe
+          onContext={(context) => {
+            latestContext = context;
+          }}
+        />
       </PublishProvider>
     );
 
@@ -260,9 +301,11 @@ describe('PublishProvider', () => {
         publishName={currentSnapshot.publishName}
         snapshot={currentSnapshot}
       >
-        <ContextProbe onContext={(context) => {
-          latestContext = context;
-        }} />
+        <ContextProbe
+          onContext={(context) => {
+            latestContext = context;
+          }}
+        />
       </PublishProvider>
     );
 
@@ -274,9 +317,11 @@ describe('PublishProvider', () => {
 
     const rowDocument = await latestContext?.loadRowDocument?.(publishedRowDocumentId);
     const rowDocumentContent = rowDocument ? yDocToSlateContent(rowDocument) : undefined;
-    const firstRowDocumentBlock = rowDocumentContent?.children[0] as {
-      children?: Array<{ children?: Array<{ text?: string }> }>;
-    } | undefined;
+    const firstRowDocumentBlock = rowDocumentContent?.children[0] as
+      | {
+          children?: Array<{ children?: Array<{ text?: string }> }>;
+        }
+      | undefined;
 
     expect(firstRowDocumentBlock?.children?.[0]?.children?.[0]?.text).toBe('Published row document body');
     expect(mockGetRowDocument).not.toHaveBeenCalled();
@@ -336,9 +381,11 @@ describe('PublishProvider', () => {
         publishName={currentSnapshot.publishName}
         snapshot={currentSnapshot}
       >
-        <ContextProbe onContext={(context) => {
-          latestContext = context;
-        }} />
+        <ContextProbe
+          onContext={(context) => {
+            latestContext = context;
+          }}
+        />
       </PublishProvider>
     );
 
@@ -423,9 +470,11 @@ describe('PublishProvider', () => {
         publishName={currentSnapshot.publishName}
         snapshot={currentSnapshot}
       >
-        <ContextProbe onContext={(context) => {
-          latestContext = context;
-        }} />
+        <ContextProbe
+          onContext={(context) => {
+            latestContext = context;
+          }}
+        />
       </PublishProvider>
     );
 

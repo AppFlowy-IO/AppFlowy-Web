@@ -19,6 +19,7 @@ import {
   LoadRowDocument,
   LoadView,
   LoadViewMeta,
+  PublishConfigPatch,
   Subscription,
   TestDatabasePromptConfig,
   TextCount,
@@ -109,7 +110,7 @@ export interface AppOperationsContextType {
 
   // ── Publishing ─────────────────────────────────────────────────────
   /** Publish a view to the web. Hook: `usePublishing()`. */
-  publish?: (view: View, publishName?: string, visibleViewIds?: string[]) => Promise<void>;
+  publish?: (view: View, publishName?: string, visibleViewIds?: string[], config?: PublishConfigPatch) => Promise<void>;
   /** Unpublish a previously published view. Hook: `usePublishing()`. */
   unpublish?: (viewId: string) => Promise<void>;
 

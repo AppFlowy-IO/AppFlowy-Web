@@ -14,6 +14,7 @@ import {
   CreateSpacePayload,
   CreateSpaceWithInitialPagePayload,
   PublishViewPayload,
+  PublishConfigPatch,
   Role,
   UpdatePagePayload,
   UpdateSpacePayload,
@@ -483,7 +484,7 @@ export function usePageOperations({
 
   // Publish view
   const performPublish = useCallback(
-    async (view: View, publishName?: string, visibleViewIds?: string[]) => {
+    async (view: View, publishName?: string, visibleViewIds?: string[], config?: PublishConfigPatch) => {
       if (!currentWorkspaceId) return;
       const viewId = view.view_id;
       const isDatabaseView = isDatabaseLayout(view.layout);
@@ -553,6 +554,7 @@ export function usePageOperations({
         const meta: PublishCollabMetadata = {
           view_id: viewId,
           publish_name: name,
+          config,
           metadata: {
             view: toPublishViewInfo(view),
             child_views: view.children.filter((child) => visibleViewIdSet.has(child.view_id)).map(toPublishViewInfo),
@@ -585,6 +587,7 @@ export function usePageOperations({
           {
             publish_name: publishName,
             visible_database_view_ids: visibleViewIds,
+            ...config,
           },
           ensureServerState
         );
@@ -596,7 +599,7 @@ export function usePageOperations({
   );
 
   const publish = useCallback(
-    (view: View, publishName?: string, visibleViewIds?: string[]): Promise<void> => {
+    (view: View, publishName?: string, visibleViewIds?: string[], config?: PublishConfigPatch): Promise<void> => {
       if (!currentWorkspaceId) return Promise.resolve();
 
       const key = `${currentWorkspaceId}:${view.view_id}`;
@@ -607,7 +610,7 @@ export function usePageOperations({
 
       // Share the entire operation, including sync and retries, so repeated
       // triggers cannot start another publish while this page is still busy.
-      const publishPromise = performPublish(view, publishName, visibleViewIds).finally(() => {
+      const publishPromise = performPublish(view, publishName, visibleViewIds, config).finally(() => {
         pendingPublishes.delete(key);
       });
 

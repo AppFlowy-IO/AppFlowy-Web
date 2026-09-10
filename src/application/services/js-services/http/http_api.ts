@@ -120,6 +120,8 @@ export {
   getPublishViewBlob,
   getPublishView,
   updatePublishConfig,
+  getPublishConfig,
+  patchPublishConfig,
   getPublishInfoWithViewId,
   getPublishNamespace,
   getPublishHomepage,

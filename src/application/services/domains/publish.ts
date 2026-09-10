@@ -1,5 +1,6 @@
 export {
   getPublishNamespace as getNamespace,
+  getPublishConfig as getConfig,
   getPublishHomepage as getHomepage,
   updatePublishHomepage as updateHomepage,
   removePublishHomepage as removeHomepage,
@@ -15,6 +16,7 @@ export {
   publishViewClearingCache as publish,
   unpublishViewClearingCache as unpublish,
   updatePublishConfigClearingCache as updateConfig,
+  patchPublishConfigClearingCache as updateSettings,
   updatePublishNamespaceClearingCache as updateNamespace,
   getPublishViewCached as getView,
   getPublishViewMetaCached as getViewMeta,

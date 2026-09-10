@@ -39,6 +39,7 @@ import {
   publishView as publishViewAPI,
   unpublishView as unpublishViewAPI,
   updatePublishConfig as updatePublishConfigAPI,
+  patchPublishConfig as patchPublishConfigAPI,
   updatePublishNamespace as updatePublishNamespaceAPI,
   getCollab,
   getCurrentUser as getCurrentUserAPI,
@@ -66,6 +67,7 @@ import {
   DuplicatePublishView,
   DuplicatePublishViewResponse,
   PublishViewPayload,
+  PublishConfigPatch,
   Types,
   UpdatePublishConfigPayload,
   UploadPublishNamespacePayload,
@@ -769,6 +771,13 @@ export async function unpublishViewClearingCache(workspaceId: string, viewId: st
 export async function updatePublishConfigClearingCache(workspaceId: string, config: UpdatePublishConfigPayload) {
   publishViewInfo.delete(config.view_id);
   return updatePublishConfigAPI(workspaceId, config);
+}
+
+export async function patchPublishConfigClearingCache(workspaceId: string, viewId: string, config: PublishConfigPatch) {
+  const saved = await patchPublishConfigAPI(workspaceId, viewId, config);
+
+  publishViewInfo.delete(viewId);
+  return saved;
 }
 
 export async function updatePublishNamespaceClearingCache(workspaceId: string, payload: UploadPublishNamespacePayload) {

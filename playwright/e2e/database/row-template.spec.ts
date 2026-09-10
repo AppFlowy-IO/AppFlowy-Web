@@ -826,6 +826,12 @@ test.describe('Database row templates (Desktop parity)', () => {
     await addDatabaseView(page, templateBlock, 'Board');
     await expectDatabaseBlockViews(templateBlock, 2);
     await editFirstGridCell(page, templateBlock, 'Saved inline template value');
+    const templateCheckbox = templateBlock.locator('[data-testid^="checkbox-cell-"]').first();
+
+    await expect(templateCheckbox).toHaveAttribute('data-checked', /^(true|false)$/);
+    const initialCheckboxState = (await templateCheckbox.getAttribute('data-checked')) === 'true' ? 'true' : 'false';
+    const updatedCheckboxState = initialCheckboxState === 'true' ? 'false' : 'true';
+
     await insertPageReferenceViaSlash(page, documentId as string, referenceName, 1);
     await closeTemplateEditor(page);
     await page.waitForTimeout(3000);
@@ -851,6 +857,7 @@ test.describe('Database row templates (Desktop parity)', () => {
       if (attempt === 0) {
         await editFirstGridCell(page, reopenedBlock, 'Updated inline template value');
       }
+
       await closeTemplateEditor(page);
     }
 
@@ -909,14 +916,20 @@ test.describe('Database row templates (Desktop parity)', () => {
     await expect(first.editor).toContainText('Template document body');
     await expect(first.editor).toContainText(referenceName);
     await editFirstGridCell(page, first.block, 'only the first copy');
-    await first.block.locator('[data-testid^="checkbox-cell-"]').first().click();
-    await expect(first.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
+    const firstCheckbox = first.block.locator('[data-testid^="checkbox-cell-"]').first();
+
+    await expect(firstCheckbox).toHaveAttribute('data-checked', initialCheckboxState);
+    await firstCheckbox.click();
+    await expect(firstCheckbox).toHaveAttribute('data-checked', updatedCheckboxState);
     await closeRowDetailWithEscape(page);
 
     const reopenedFirst = await openRowWithDatabaseBlock(page, copiedRowIds[0]);
 
     await expect.poll(() => firstGridCellText(reopenedFirst.block), { timeout: 30000 }).toBe('only the first copy');
-    await expect(reopenedFirst.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
+    await expect(reopenedFirst.block.locator('[data-testid^="checkbox-cell-"]').first()).toHaveAttribute(
+      'data-checked',
+      updatedCheckboxState
+    );
     await closeRowDetailWithEscape(page);
 
     const second = await openRowWithDatabaseBlock(page, copiedRowIds[1]);
@@ -925,7 +938,10 @@ test.describe('Database row templates (Desktop parity)', () => {
     await expect(second.editor).toContainText('Template document body');
     await expect(second.editor).toContainText(referenceName);
     await expect.poll(() => firstGridCellText(second.block), { timeout: 30000 }).toBe('Updated inline template value');
-    await expect(second.block.getByTestId('checkbox-checked-icon')).toHaveCount(0);
+    await expect(second.block.locator('[data-testid^="checkbox-cell-"]').first()).toHaveAttribute(
+      'data-checked',
+      initialCheckboxState
+    );
     await closeRowDetailWithEscape(page);
 
     const third = await openRowWithDatabaseBlock(page, copiedRowIds[2]);
@@ -944,14 +960,20 @@ test.describe('Database row templates (Desktop parity)', () => {
     await expectDatabaseBlockViews(surviving.block, 2);
     await expect(surviving.editor).toContainText(referenceName);
     await expect.poll(() => firstGridCellText(surviving.block), { timeout: 30000 }).toBe('only the first copy');
-    await expect(surviving.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
+    await expect(surviving.block.locator('[data-testid^="checkbox-cell-"]').first()).toHaveAttribute(
+      'data-checked',
+      updatedCheckboxState
+    );
     await closeRowDetailWithEscape(page);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitForGridReady(page);
     const reloaded = await openRowWithDatabaseBlock(page, copiedRowIds[0]);
 
     await expect.poll(() => firstGridCellText(reloaded.block), { timeout: 30000 }).toBe('only the first copy');
-    await expect(reloaded.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
+    await expect(reloaded.block.locator('[data-testid^="checkbox-cell-"]').first()).toHaveAttribute(
+      'data-checked',
+      updatedCheckboxState
+    );
   });
 
   test('linked databases stay shared after the source template is deleted', async ({ page, request }) => {

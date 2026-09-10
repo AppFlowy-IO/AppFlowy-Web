@@ -2,6 +2,8 @@ import { GlobalComment, Reaction } from '@/application/comment.type';
 import { blobToBytes } from '@/application/services/js-services/http/utils';
 import {
   DatabaseId,
+  PublishConfig,
+  PublishConfigPatch,
   PublishViewPayload,
   RowId,
   UpdatePublishConfigPayload,
@@ -38,6 +40,7 @@ export interface PublishCollabMetadata {
   view_id: string; // UUID string
   publish_name: string;
   metadata: PublishCollabViewMetaData;
+  config?: PublishConfigPatch;
 }
 
 export interface PublishCollabItem {
@@ -210,6 +213,22 @@ export async function updatePublishConfig(workspaceId: string, payload: UpdatePu
   const url = `/api/workspace/${workspaceId}/publish`;
 
   return executeAPIVoidRequest(() => getAxios()?.patch<APIResponse>(url, [payload]));
+}
+
+export async function getPublishConfig(workspaceId: string, viewId: string): Promise<PublishConfig> {
+  const url = `/api/workspace/${workspaceId}/publish/${viewId}/config`;
+
+  return executeAPIRequest<PublishConfig>(() => getAxios()?.get<APIResponse<PublishConfig>>(url));
+}
+
+export async function patchPublishConfig(
+  workspaceId: string,
+  viewId: string,
+  config: PublishConfigPatch
+): Promise<PublishConfig> {
+  const url = `/api/workspace/${workspaceId}/publish/${viewId}/config`;
+
+  return executeAPIRequest<PublishConfig>(() => getAxios()?.patch<APIResponse<PublishConfig>>(url, config));
 }
 
 export async function getPublishInfoWithViewId(viewId: string) {
