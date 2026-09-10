@@ -1,4 +1,7 @@
+import { readFileSync } from 'fs';
+
 import { test, expect, devices, type Page } from '@playwright/test';
+import inc from 'semver/functions/inc.js';
 
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { createDocumentPageAndNavigate } from '../../support/page-utils';
@@ -14,6 +17,13 @@ async function refreshServerInfo(page: Page) {
 
 test('compatibility warnings allow editing and follow server changes and tab-session dismissal', async ({ page, request, browser }, testInfo) => {
   test.setTimeout(180_000);
+  const policy = JSON.parse(
+    readFileSync(new URL('../../../src/application/compatibility/web-server-compatibility.json', import.meta.url), 'utf8')
+  ) as { reviewed_through_client_version: string };
+  const clientVersion = process.env.APPFLOWY_WEB_VERSION || policy.reviewed_through_client_version;
+  const firstClientFloor = inc(clientVersion, 'patch')!;
+  const secondClientFloor = inc(firstClientFloor, 'patch')!;
+
   await page.clock.install();
   const server = await mockServerInfo(page, { version: '0.18.0', min_web_client_version: '0.0.0' });
   let legacyWebProjection = true;
@@ -33,7 +43,7 @@ test('compatibility warnings allow editing and follow server changes and tab-ses
   const dismiss = page.getByRole('button', { name: 'Dismiss compatibility warning' });
 
   await signInAndWaitForApp(page, request, generateRandomEmail());
-  await expect(banner).toContainText('AppFlowy Web 0.17.1 requires server 0.18.1');
+  await expect(banner).toContainText(`AppFlowy Web ${clientVersion} requires server 0.18.1`);
   await expect(reload).toHaveCount(0);
 
   await createDocumentPageAndNavigate(page);
@@ -69,7 +79,7 @@ test('compatibility warnings allow editing and follow server changes and tab-ses
     await expect(mobilePage.locator('.appflowy-mobile-layout')).toBeVisible();
     const mobileBanner = mobilePage.getByTestId('client-compatibility-banner');
 
-    await expect(mobileBanner).toContainText('AppFlowy Web 0.17.1 requires server 0.18.1');
+    await expect(mobileBanner).toContainText(`AppFlowy Web ${clientVersion} requires server 0.18.1`);
     const bounds = await mobileBanner.boundingBox();
 
     expect(bounds).not.toBeNull();
@@ -87,14 +97,14 @@ test('compatibility warnings allow editing and follow server changes and tab-ses
   await refreshServerInfo(page);
   await expect(banner).toHaveCount(0);
 
-  server.setServerInfo({ min_web_client_version: '0.17.2' });
+  server.setServerInfo({ min_web_client_version: firstClientFloor });
   await refreshServerInfo(page);
-  await expect(banner).toContainText('requires AppFlowy Web 0.17.2');
+  await expect(banner).toContainText(`requires AppFlowy Web ${firstClientFloor}`);
   await expect(reload).toBeVisible();
   await dismiss.click();
-  server.setServerInfo({ min_web_client_version: '0.17.3' });
+  server.setServerInfo({ min_web_client_version: secondClientFloor });
   await refreshServerInfo(page);
-  await expect(banner).toContainText('requires AppFlowy Web 0.17.3');
+  await expect(banner).toContainText(`requires AppFlowy Web ${secondClientFloor}`);
 
   server.setServerInfo({ version: '0.17.0' });
   await refreshServerInfo(page);
@@ -105,7 +115,7 @@ test('compatibility warnings allow editing and follow server changes and tab-ses
   await refreshServerInfo(page);
   await expect(banner).toHaveCount(0);
 
-  server.setServerInfo({ version: '0.18.1', min_web_client_version: '0.17.2' });
+  server.setServerInfo({ version: '0.18.1', min_web_client_version: firstClientFloor });
   await refreshServerInfo(page);
   await expect(reload).toBeVisible();
   // The updated deployment is ready; the action loads it into this tab.
