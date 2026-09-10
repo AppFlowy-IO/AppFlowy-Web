@@ -1,4 +1,4 @@
-import { MutableRefObject, useCallback } from 'react';
+import { MutableRefObject, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 
 import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
@@ -99,6 +99,7 @@ export function usePageOperations({
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
+  const pendingPublishesRef = useRef(new Map<string, Promise<void>>());
 
   // Add a new page
   const addPage = useCallback(
@@ -481,7 +482,7 @@ export function usePageOperations({
   }, [currentWorkspaceId]);
 
   // Publish view
-  const publish = useCallback(
+  const performPublish = useCallback(
     async (view: View, publishName?: string, visibleViewIds?: string[]) => {
       if (!currentWorkspaceId) return;
       const viewId = view.view_id;
@@ -592,6 +593,28 @@ export function usePageOperations({
       await loadOutline?.(currentWorkspaceId, false);
     },
     [currentWorkspaceId, loadOutline, flushAllSync, syncAllToServer, outlineRef, getDatabaseIdForViewId]
+  );
+
+  const publish = useCallback(
+    (view: View, publishName?: string, visibleViewIds?: string[]): Promise<void> => {
+      if (!currentWorkspaceId) return Promise.resolve();
+
+      const key = `${currentWorkspaceId}:${view.view_id}`;
+      const pendingPublishes = pendingPublishesRef.current;
+      const pendingPublish = pendingPublishes.get(key);
+
+      if (pendingPublish) return pendingPublish;
+
+      // Share the entire operation, including sync and retries, so repeated
+      // triggers cannot start another publish while this page is still busy.
+      const publishPromise = performPublish(view, publishName, visibleViewIds).finally(() => {
+        pendingPublishes.delete(key);
+      });
+
+      pendingPublishes.set(key, publishPromise);
+      return publishPromise;
+    },
+    [currentWorkspaceId, performPublish]
   );
 
   // Unpublish view
