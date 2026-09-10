@@ -3,7 +3,7 @@ import { ReactEditor } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { TEXT_BLOCK_TYPES } from '@/application/slate-yjs/command/const';
+import { SOFT_BREAK_TYPES, TEXT_BLOCK_TYPES } from '@/application/slate-yjs/command/const';
 import { findSlateEntryByBlockId, getBlockEntry, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
 import {
   BlockType,
@@ -31,12 +31,20 @@ export const withInsertData = (editor: ReactEditor) => {
   const e = editor as YjsEditor;
 
   editor.insertData = (data: DataTransfer) => {
+    const entry = getBlockEntry(e);
+
+    // Internal copies also carry rich fragments. Code blocks must consume the
+    // plain text first so those fragments cannot replace the block or create siblings.
+    if (entry && SOFT_BREAK_TYPES.includes(entry[0].type as BlockType) && data.getData('text/plain')) {
+      editor.insertTextData(data);
+      return;
+    }
+
     const richFragment = extractAppFlowyClipboardFragment(data);
 
     // When pasting inside a table cell, check if the fragment contains table blocks
     // and prevent nesting tables. Instead, extract text and fill adjacent cells.
-    const tableCheckEntry = getBlockEntry(e);
-    const tableCheckBlockId = tableCheckEntry ? (tableCheckEntry[0] as BlockElement).blockId : undefined;
+    const tableCheckBlockId = entry ? (entry[0] as BlockElement).blockId : undefined;
 
     if (tableCheckBlockId && isInsideSimpleTableCell(e, tableCheckBlockId)) {
       // Check plain text for TSV (tab-separated values)
@@ -122,7 +130,6 @@ export const withInsertData = (editor: ReactEditor) => {
     // Do something with the data...
     const fileArray = Array.from(data.files);
     const { selection } = editor;
-    const entry = getBlockEntry(e);
 
     if (!entry) return;
 
