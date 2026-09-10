@@ -324,67 +324,170 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(result.current.loadedViewIds?.has(siblingSpaceId)).toBe(true);
   });
 
-  it('restarts a superseded sibling load without letting the stale request clear its marker', async () => {
+  it.each([
+    [APP_EVENTS.PERMISSION_CHANGED, false],
+    [APP_EVENTS.SHARE_VIEWS_CHANGED, false],
+    [APP_EVENTS.PERMISSION_CHANGED, true],
+    [APP_EVENTS.SHARE_VIEWS_CHANGED, true],
+  ])('preserves sibling branches during %s for a page (revoked: %s)', async (event, revoked) => {
     const eventEmitter = new EventEmitter();
-    const loadingSpaceId = 'loading-space-id';
-    const changedSpaceId = 'changed-space-id';
-    const staleLoad = createDeferred<View[]>();
-    const replacementLoad = createDeferred<View[]>();
-    const shallowRoot = [
-      createView(loadingSpaceId, { extra: { is_space: true }, has_children: true }),
-      createView(changedSpaceId, { extra: { is_space: true }, has_children: true }),
-    ];
-
-    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: shallowRoot, folderRid: '1-1' });
-
-    const { result } = renderHook(() => useWorkspaceData(), {
-      wrapper: createWrapper(eventEmitter),
+    const changed = createView('changed-page', { children: [createView('old-child')], has_children: true });
+    const sibling = createView('sibling-page', { children: [createView('sibling-child')], has_children: true });
+    const space = createView('space', { children: [changed, sibling], is_space: true, has_children: true });
+    const otherSpace = createView('other-space', {
+      children: [createView('other-space-child')],
+      is_space: true,
+      has_children: true,
     });
+    const shallowRoot = [space, otherSpace].map((view) => ({ ...view, children: [] }));
+    const rootRefresh = createDeferred<{ outline: View[]; folderRid: string }>();
+    const parentRefresh = createDeferred<View[]>();
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: shallowRoot, folderRid: '1-1' })
+      .mockReturnValue(rootRefresh.promise);
+    (ViewService.getMultiple as jest.Mock).mockResolvedValue([
+      { ...space, children: [changed, sibling].map((view) => ({ ...view, children: [] })) },
+      otherSpace,
+      changed,
+      sibling,
+    ]);
+    const { result } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
 
     await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+    await act(async () => {
+      await result.current.loadViewChildrenBatch?.([space.view_id, otherSpace.view_id, changed.view_id, sibling.view_id]);
+    });
+    const originalSibling = findView(result.current.outline ?? [], sibling.view_id);
+    const originalOtherSpace = findView(result.current.outline ?? [], otherSpace.view_id);
+    const freshChanged = { ...changed, children: [createView('fresh-child')] };
+
     (ViewService.getMultiple as jest.Mock).mockClear();
-    (ViewService.getMultiple as jest.Mock)
-      .mockImplementationOnce(() => staleLoad.promise)
-      .mockImplementationOnce(() => replacementLoad.promise);
-    let originalLoad: Promise<View[]> | undefined;
+    (ViewService.getMultiple as jest.Mock).mockImplementation((_workspaceId: string, viewIds: string[]) => {
+      if (viewIds[0] === space.view_id) return parentRefresh.promise;
+      if (viewIds[0] === changed.view_id) {
+        return revoked ? Promise.reject({ code: ERROR_CODE.NOT_HAS_PERMISSION }) : Promise.resolve([freshChanged]);
+      }
+
+      return Promise.resolve([]);
+    });
+    if (revoked) (ViewService.getNavigation as jest.Mock).mockRejectedValue({ code: ERROR_CODE.NOT_HAS_PERMISSION });
 
     act(() => {
-      originalLoad = result.current.loadViewChildrenBatch?.([loadingSpaceId]);
-    });
-    await waitFor(() => expect(ViewService.getMultiple).toHaveBeenCalledTimes(1));
-
-    act(() => {
-      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: changedSpaceId });
-    });
-
-    await waitFor(() => expect(ViewService.getMultiple).toHaveBeenCalledTimes(2));
-    expect(ViewService.getMultiple).toHaveBeenNthCalledWith(2, workspaceId, [loadingSpaceId], 1);
-
-    await act(async () => {
-      staleLoad.resolve([createView(loadingSpaceId, { children: [createView('stale-child-id')] })]);
-      await staleLoad.promise;
-      await originalLoad;
+      eventEmitter.emit(
+        event,
+        event === APP_EVENTS.PERMISSION_CHANGED
+          ? { objectId: changed.view_id }
+          : { viewId: changed.view_id, emails: ['current-user@appflowy.io'] }
+      );
     });
 
-    // The stale request's finally handler must not clear the replacement
-    // request's marker and permit a third concurrent request.
-    await act(async () => {
-      await result.current.loadViewChildrenBatch?.([loadingSpaceId]);
-    });
-    expect(ViewService.getMultiple).toHaveBeenCalledTimes(2);
+    // Assert while both root and parent requests are pending, so a transient
+    // sidebar collapse cannot be hidden by a fast successful response.
+    expect(findView(result.current.outline ?? [], 'old-child')).toBeNull();
+    expect(findView(result.current.outline ?? [], sibling.view_id)).toBe(originalSibling);
+    expect(findView(result.current.outline ?? [], otherSpace.view_id)).toBe(originalOtherSpace);
+    expect(result.current.loadedViewIds?.has(sibling.view_id)).toBe(true);
+    expect(result.current.loadedViewIds?.has(otherSpace.view_id)).toBe(true);
+    expect(ViewService.getMultiple).toHaveBeenCalledWith(workspaceId, [space.view_id], 1);
 
     await act(async () => {
-      replacementLoad.resolve([createView(loadingSpaceId, { children: [createView('fresh-child-id')] })]);
-      await replacementLoad.promise;
+      parentRefresh.resolve([
+        {
+          ...space,
+          children: [
+            ...(revoked ? [] : [{ ...changed, children: [] }]),
+            { ...sibling, children: [] },
+          ],
+        },
+      ]);
+      await parentRefresh.promise;
     });
-    await waitFor(() => expect(findView(result.current.outline ?? [], 'fresh-child-id')).not.toBeNull());
-    expect(findView(result.current.outline ?? [], 'stale-child-id')).toBeNull();
-
+    await waitFor(() => {
+      expect(findView(result.current.outline ?? [], revoked ? changed.view_id : 'fresh-child') === null).toBe(revoked);
+    });
     await act(async () => {
-      await result.current.loadViewChildrenBatch?.([loadingSpaceId]);
+      rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
+      await rootRefresh.promise;
     });
-    expect(ViewService.getMultiple).toHaveBeenCalledTimes(3);
+
+    expect(findView(result.current.outline ?? [], 'old-child')).toBeNull();
+    expect(findView(result.current.outline ?? [], 'sibling-child')).not.toBeNull();
+    expect(findView(result.current.outline ?? [], 'other-space-child')).not.toBeNull();
+    expect(ViewService.getMultiple).not.toHaveBeenCalledWith(workspaceId, [sibling.view_id], 1);
+    expect(ViewService.getMultiple).not.toHaveBeenCalledWith(workspaceId, [otherSpace.view_id], 1);
+    if (revoked) expect(findView(result.current.outline ?? [], changed.view_id)).toBeNull();
   });
+
+  it.each([APP_EVENTS.PERMISSION_CHANGED, APP_EVENTS.SHARE_VIEWS_CHANGED])(
+    'restarts a superseded sibling load after %s without letting the stale request clear its marker',
+    async (event) => {
+      const eventEmitter = new EventEmitter();
+      const loadingSpaceId = 'loading-space-id';
+      const changedSpaceId = 'changed-space-id';
+      const staleLoad = createDeferred<View[]>();
+      const replacementLoad = createDeferred<View[]>();
+      const shallowRoot = [
+        createView(loadingSpaceId, { extra: { is_space: true }, has_children: true }),
+        createView(changedSpaceId, { extra: { is_space: true }, has_children: true }),
+      ];
+
+      (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: shallowRoot, folderRid: '1-1' });
+
+      const { result } = renderHook(() => useWorkspaceData(), {
+        wrapper: createWrapper(eventEmitter),
+      });
+
+      await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+      (ViewService.getMultiple as jest.Mock).mockClear();
+      (ViewService.getMultiple as jest.Mock)
+        .mockImplementationOnce(() => staleLoad.promise)
+        .mockImplementationOnce(() => replacementLoad.promise);
+      let originalLoad: Promise<View[]> | undefined;
+
+      act(() => {
+        originalLoad = result.current.loadViewChildrenBatch?.([loadingSpaceId]);
+      });
+      await waitFor(() => expect(ViewService.getMultiple).toHaveBeenCalledTimes(1));
+
+      act(() => {
+        eventEmitter.emit(
+          event,
+          event === APP_EVENTS.PERMISSION_CHANGED
+            ? { objectId: changedSpaceId }
+            : { viewId: changedSpaceId, emails: ['current-user@appflowy.io'] }
+        );
+      });
+
+      await waitFor(() => expect(ViewService.getMultiple).toHaveBeenCalledTimes(2));
+      expect(ViewService.getMultiple).toHaveBeenNthCalledWith(2, workspaceId, [loadingSpaceId], 1);
+
+      await act(async () => {
+        staleLoad.resolve([createView(loadingSpaceId, { children: [createView('stale-child-id')] })]);
+        await staleLoad.promise;
+        await originalLoad;
+      });
+
+      // The stale request's finally handler must not clear the replacement
+      // request's marker and permit a third concurrent request.
+      await act(async () => {
+        await result.current.loadViewChildrenBatch?.([loadingSpaceId]);
+      });
+      expect(ViewService.getMultiple).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        replacementLoad.resolve([createView(loadingSpaceId, { children: [createView('fresh-child-id')] })]);
+        await replacementLoad.promise;
+      });
+      await waitFor(() => expect(findView(result.current.outline ?? [], 'fresh-child-id')).not.toBeNull());
+      expect(findView(result.current.outline ?? [], 'stale-child-id')).toBeNull();
+
+      await act(async () => {
+        await result.current.loadViewChildrenBatch?.([loadingSpaceId]);
+      });
+      expect(ViewService.getMultiple).toHaveBeenCalledTimes(3);
+    }
+  );
 
   it('drops a loaded deep subtree that a permission refresh omits from the shallow root', async () => {
     const eventEmitter = new EventEmitter();

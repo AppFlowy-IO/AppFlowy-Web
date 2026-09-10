@@ -28,7 +28,7 @@ import {
   reorderChildrenInOutline,
   updateViewInOutline,
 } from '@/components/_shared/outline/mergeOutline';
-import { findShareWithMeSpace, findView, findViewByLayout } from '@/components/_shared/outline/utils';
+import { findParentView, findShareWithMeSpace, findView, findViewByLayout } from '@/components/_shared/outline/utils';
 import {
   limitSidebarOutlineExpandedViewIds,
   type SidebarOutlineRevalidationResult,
@@ -1867,24 +1867,24 @@ export function useWorkspaceData() {
       void loadOutline(currentWorkspaceId, false);
     };
 
-    const evictAccessDerivedSubtrees = (targetSpaceId?: string) => {
+    const evictAccessDerivedSubtrees = (targetViewId?: string) => {
       if (!currentWorkspaceId) return { staleSubtreeIds: [], viewDepths: new Map<string, number>() };
 
       const viewDepths = buildViewDepthIndex(stableOutlineRef.current);
       const staleSubtreeIdSet = new Set([...loadedViewIdsRef.current, ...loadingViewIdsRef.current]);
-      const targetSpace = targetSpaceId ? findView(stableOutlineRef.current, targetSpaceId) : null;
-      const targetSubtreeIds = targetSpace ? collectOutlineViewIds([targetSpace]) : null;
+      const targetView = targetViewId ? findView(stableOutlineRef.current, targetViewId) : null;
+      const targetSubtreeIds = targetView ? collectOutlineViewIds([targetView]) : null;
 
       if (targetSubtreeIds) {
         for (const viewId of staleSubtreeIdSet) {
           if (!targetSubtreeIds.has(viewId)) staleSubtreeIdSet.delete(viewId);
         }
 
-        // Root responses are shallow. If this space currently has materialized
+        // Root responses are shallow. If this view currently has materialized
         // children without a lazy-load marker, clear and refresh it as well so
         // a revoke cannot leave those children visible until the root request
         // finishes.
-        if (targetSpace?.children?.length) staleSubtreeIdSet.add(targetSpace.view_id);
+        if (targetView?.children?.length) staleSubtreeIdSet.add(targetView.view_id);
       }
 
       const staleSubtreeIds = Array.from(staleSubtreeIdSet);
@@ -1974,16 +1974,10 @@ export function useWorkspaceData() {
       const cachedDatabaseId = changedView?.extra?.database_id;
 
       if (accessMayAffectCurrentUser) {
-        // Fence root/lazy responses that started before this share event.
-        // Sharing an ancestor can alter inherited descendant access.
-        permissionRefreshRevisionRef.current += 1;
-        ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
-        ViewService.invalidateWorkspaceMemoryCache?.(currentWorkspaceId);
-        markWorkspaceViewMetadataOutlineUntrusted(currentWorkspaceId);
+        refreshPermissionSubtrees(changedViewId ?? undefined);
+      } else {
+        refreshPermissionDerivedState();
       }
-
-      if (accessMayAffectCurrentUser) evictAccessDerivedSubtrees();
-      refreshPermissionDerivedState();
 
       if (!changedViewId || !affectsCurrentUser) return;
 
@@ -2029,7 +2023,7 @@ export function useWorkspaceData() {
         });
     };
 
-    const handlePermissionChanged = (payload?: notification.IPermissionChanged) => {
+    const refreshPermissionSubtrees = (changedViewId?: string) => {
       if (!currentWorkspaceId) return;
 
       ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
@@ -2038,13 +2032,18 @@ export function useWorkspaceData() {
 
       // AppBusinessLayer handles the same event separately because it owns the
       // active route/modal IDs and can re-probe and purge either rendered view.
-      // `objectId` can identify a workspace group rather than a view. Target
-      // the refresh only when the current outline proves it is a space; keep
-      // the workspace-wide fallback for group, page, missing and unknown IDs.
-      // This preserves expanded sibling spaces after an ACL edit without
-      // weakening the conservative behavior for ambiguous notifications.
-      const changedView = payload?.objectId ? findView(stableOutlineRef.current, payload.objectId) : null;
-      const targetSpaceId = isSpaceView(changedView) ? changedView?.view_id : undefined;
+      // A permission object can also be a workspace group. Scope eviction to a
+      // known view, retaining the broad fallback for unknown or missing IDs.
+      const changedView = changedViewId ? findView(stableOutlineRef.current, changedViewId) : null;
+      const targetViewId = changedView?.view_id;
+      // A shallow root refresh cannot remove a revoked page below its depth
+      // boundary. Refresh its parent without clearing the parent's children:
+      // the authoritative child list removes that page while preserving loaded
+      // sibling branches throughout the request.
+      const parentView =
+        changedView && !isSpaceView(changedView)
+          ? findParentView(stableOutlineRef.current, changedView.view_id)
+          : null;
 
       // Invalidate every affected subtree that could otherwise be grafted onto
       // the depth-limited root response, and supersede lazy-load responses that
@@ -2054,11 +2053,11 @@ export function useWorkspaceData() {
       permissionRefreshRevisionRef.current += 1;
       const permissionRevision = permissionRefreshRevisionRef.current;
       const workspaceId = currentWorkspaceId;
-      const { staleSubtreeIds, viewDepths } = evictAccessDerivedSubtrees(targetSpaceId);
+      const { staleSubtreeIds, viewDepths } = evictAccessDerivedSubtrees(targetViewId);
       const staleSubtreeWaves = new Map<number, string[]>();
 
       // The permission revision above makes every captured request stale. A
-      // targeted eviction clears markers inside the changed space, but must not
+      // targeted eviction clears markers inside the changed view, but must not
       // leave an in-flight sibling permanently marked as loading. Release all
       // superseded markers before replacement requests claim them. Stale
       // request finally handlers are revision-gated, so they cannot clear a
@@ -2071,6 +2070,11 @@ export function useWorkspaceData() {
       // permission revision superseded. Parent depths run first so a nested
       // request always has an outline node to merge into.
       const rehydrateViewIds = new Set([...staleSubtreeIds, ...supersededLoadingViewIds]);
+
+      if (parentView && !parentView.extra?.is_hidden_space) {
+        ViewService.invalidateCache(workspaceId, parentView.view_id);
+        rehydrateViewIds.add(parentView.view_id);
+      }
 
       for (const viewId of rehydrateViewIds) {
         const depth = viewDepths.get(viewId) ?? Number.MAX_SAFE_INTEGER;
@@ -2115,6 +2119,10 @@ export function useWorkspaceData() {
           await Promise.all(viewIds.map(rehydrateView));
         }
       })();
+    };
+
+    const handlePermissionChanged = (payload?: notification.IPermissionChanged) => {
+      refreshPermissionSubtrees(payload?.objectId ?? undefined);
     };
 
     if (eventEmitter) {
