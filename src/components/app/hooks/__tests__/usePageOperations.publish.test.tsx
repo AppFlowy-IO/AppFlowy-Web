@@ -61,6 +61,17 @@ function createView(overrides: Partial<View>): View {
   };
 }
 
+function deferredPublish() {
+  let resolve!: () => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+}
+
 function renderUsePageOperations(options?: {
   outlineRef?: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
@@ -167,6 +178,82 @@ describe('usePageOperations publish', () => {
     expect(PublishService.publish).toHaveBeenCalledTimes(1);
   });
 
+  it('shares an in-flight publish for the same page until the operation finishes', async () => {
+    const pendingPublish = deferredPublish();
+
+    jest.mocked(PublishService.publish).mockReturnValue(pendingPublish.promise);
+    const { result, loadOutline } = renderUsePageOperations();
+    const view = createView({ view_id: 'document-view-id' });
+    const firstPublish = result.current.publish(view);
+    const repeatedPublish = result.current.publish(view);
+
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(PublishService.publish).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => {
+        pendingPublish.resolve();
+        await Promise.all([firstPublish, repeatedPublish]);
+      });
+    }
+
+    expect(loadOutline).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.publish(view);
+    });
+
+    expect(PublishService.publish).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for each publish request to finish before starting its retry delay', async () => {
+    jest.useFakeTimers();
+    const firstAttempt = deferredPublish();
+    const retryAttempt = deferredPublish();
+
+    jest
+      .mocked(PublishService.publish)
+      .mockReturnValueOnce(firstAttempt.promise)
+      .mockReturnValueOnce(retryAttempt.promise);
+
+    const { result } = renderUsePageOperations();
+    const publishPromise = result.current.publish(createView({ view_id: 'document-view-id' }));
+
+    try {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(30000);
+      });
+      expect(PublishService.publish).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        firstAttempt.reject({ code: -2, message: 'Record not found: view is not projected yet' });
+        await jest.advanceTimersByTimeAsync(249);
+      });
+      expect(PublishService.publish).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1);
+      });
+      expect(PublishService.publish).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(30000);
+      });
+      expect(PublishService.publish).toHaveBeenCalledTimes(2);
+    } finally {
+      await act(async () => {
+        firstAttempt.resolve();
+        retryAttempt.resolve();
+        await jest.runAllTimersAsync();
+        await publishPromise;
+      });
+      jest.useRealTimers();
+    }
+  });
+
   it('retries document publishing while the folder projection is pending', async () => {
     jest.useFakeTimers();
 
@@ -233,6 +320,12 @@ describe('usePageOperations publish', () => {
     });
 
     expect(PublishService.publish).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.publish(createView({ view_id: 'document-view-id' }));
+    });
+
+    expect(PublishService.publish).toHaveBeenCalledTimes(2);
   });
 
   it('resolves canonical database id before publishing legacy database views', async () => {
