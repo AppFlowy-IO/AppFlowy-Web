@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useContext, useEffect, useLayoutEffect, useRef } from 'react';
 
-import { useListGroupingSelector } from '@/application/database-yjs';
+import { useListGroupingSelector, useReadOnly } from '@/application/database-yjs';
 import type { DatabaseGrouping } from '@/application/database-yjs';
 import { useSyncListGroupColumnsDispatch } from '@/application/database-yjs/dispatch';
 import { consumeLocalDatabaseGroupInitialization } from '@/application/database-yjs/group-column';
@@ -16,6 +16,7 @@ export function useListGrouping() {
 }
 
 export function useSyncListGroupingMetadata(grouping: DatabaseGrouping) {
+  const readOnly = useReadOnly();
   const syncGroupColumns = useSyncListGroupColumnsDispatch(grouping.groupId);
   const metadataGroupIdsRef = useRef(grouping.metadataGroupIds ?? grouping.activeGroupIds);
   const metadataInitializationGroupRef = useRef(grouping.metadataInitializationGroup);
@@ -28,7 +29,7 @@ export function useSyncListGroupingMetadata(grouping: DatabaseGrouping) {
   }, [grouping.activeGroupIds, grouping.metadataGroupIds, grouping.metadataInitializationGroup]);
 
   useEffect(() => {
-    if (!grouping.isGrouped || !grouping.ready || !hasMetadataGroupIds) return;
+    if (readOnly || !grouping.isGrouped || !grouping.ready || !hasMetadataGroupIds) return;
 
     syncGroupColumns(metadataGroupIdsRef.current);
 
@@ -42,6 +43,7 @@ export function useSyncListGroupingMetadata(grouping: DatabaseGrouping) {
     hasMetadataGroupIds,
     hasPendingMetadataInitialization,
     syncGroupColumns,
+    readOnly,
   ]);
 }
 

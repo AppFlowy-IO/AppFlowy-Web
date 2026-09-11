@@ -15,7 +15,7 @@ export function useNavigationKey(
     onEnter: (id: string) => void;
   }
 ) {
-  const { isDocumentBlock } = useDatabaseContext();
+  const { isDocumentBlock, readOnly } = useDatabaseContext();
   const {
     selectedCardIds,
     setSelectedCardIds,
@@ -53,7 +53,7 @@ export function useNavigationKey(
   }, [creatingColumnId]);
 
   useEffect(() => {
-    if (!element || isDocumentBlock) return;
+    if (!element || isDocumentBlock || readOnly) return;
 
     const clearSelection = () => {
       if (stableSelectedCardId.current.length > 0) {
@@ -350,5 +350,5 @@ export function useNavigationKey(
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('mousedown', clearSelection);
     };
-  }, [element, setSelectedCardIds, onDelete, onEnter, setEditingCardId, setCreatingColumnId, createCard, moveCard, isDocumentBlock]);
+  }, [element, setSelectedCardIds, onDelete, onEnter, setEditingCardId, setCreatingColumnId, createCard, moveCard, isDocumentBlock, readOnly]);
 }

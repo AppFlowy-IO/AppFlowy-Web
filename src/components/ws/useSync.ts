@@ -9,6 +9,9 @@ import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
 
 import { useSyncRefs } from './sync/syncRefs';
 import { HttpFullSyncResult, SyncContextType } from './sync/types';
+import { Types } from '@/application/types';
+
+import { useDatabaseHistoryRestoreSync } from './sync/useDatabaseHistoryRestoreSync';
 import { useBatchSync } from './sync/useBatchSync';
 import { useCollabMessageHandler } from './sync/useCollabMessageHandler';
 import { useCollabVersionRevert } from './sync/useCollabVersionRevert';
@@ -152,7 +155,8 @@ export const useSync = (
   ws: AppflowyWebSocketType,
   bc: BroadcastChannelType,
   eventEmitter: EventEmitter,
-  workspaceId: string
+  workspaceId: string,
+  historyOptions?: { enabled?: boolean; capabilityLoaded?: boolean }
 ): SyncContextType => {
   const { sendMessage, lastMessage, readyState } = ws;
   const { postMessage, lastBroadcastMessage } = bc;
@@ -169,6 +173,14 @@ export const useSync = (
   // Passed to every sub-hook so they share the same Maps/Sets without prop-drilling
   // 13 individual refs.
   const refs = useSyncRefs();
+
+  refs.latestUserRef.current = currentUser;
+  const beforeDatabaseSendRef = useRef<(id: string, type: Types, marker?: string) => Promise<boolean>>(async () => false);
+  const prepareDatabaseContextRef = useRef<(context: import('./sync/types').RegisterSyncContext) => void>(() => undefined);
+  const beforeDatabaseSend = useCallback((id: string, type: Types, marker?: string) =>
+    beforeDatabaseSendRef.current(id, type, marker), []);
+  const prepareDatabaseContext = useCallback((context: import('./sync/types').RegisterSyncContext) =>
+    prepareDatabaseContextRef.current(context), []);
 
   // Keep the latest user reference accessible to async callbacks that outlive
   // the render in which they were created (e.g. message queue processing).
@@ -209,6 +221,8 @@ export const useSync = (
   const { flushAllSync, syncAllToServer, notifyLocalEdit, notifyManifestSync } = useBatchSync(refs, {
     workspaceId,
     wsReadyState: readyState,
+    beforeSend: beforeDatabaseSend,
+    databaseHistoryEnabled: historyOptions?.enabled,
   });
 
   // ── Sync context lifecycle ───────────────────────────────────────────
@@ -220,8 +234,31 @@ export const useSync = (
     sendMessage,
     postMessage,
     notifyLocalEdit,
-    notifyManifestSync
+    notifyManifestSync,
+    historyOptions ? beforeDatabaseSend : undefined,
+    prepareDatabaseContext
   );
+  const databaseRestore = useDatabaseHistoryRestoreSync({
+    refs, workspaceId, eventEmitter, userId: currentUser?.uuid,
+    enabled: historyOptions?.enabled, capabilityLoaded: historyOptions?.capabilityLoaded,
+    register: registerSyncContext, unregister: unregisterSyncContext, scheduleDeferredCleanup,
+  });
+
+  beforeDatabaseSendRef.current = databaseRestore.ensureDatabaseRestoreCurrent;
+  prepareDatabaseContextRef.current = databaseRestore.prepareDatabaseContext;
+  const { reloadDatabaseAfterRestore, handleRestoreNotification } = databaseRestore;
+
+  useEffect(() => {
+    if (historyOptions?.capabilityLoaded !== true) return;
+    for (const context of refs.registeredContexts.current.values()) {
+      if (context.collabType !== Types.Database && context.collabType !== Types.DatabaseRow) continue;
+      prepareDatabaseContext(context);
+      bindSyncContext(context);
+    }
+  }, [historyOptions?.enabled, historyOptions?.capabilityLoaded, refs, prepareDatabaseContext]);
+
+  useEffect(() => { handleRestoreNotification(wsNotification?.databaseRestored); }, [wsNotification, handleRestoreNotification]);
+  useEffect(() => { handleRestoreNotification(bcNotification?.databaseRestored); }, [bcNotification, handleRestoreNotification]);
 
   // A reopened socket has no knowledge of messages this tab missed while it
   // was disconnected. Re-bind every live document so the server and client
@@ -280,7 +317,8 @@ export const useSync = (
     bcCollabMessage,
     eventEmitter,
     registerSyncContext,
-    scheduleDeferredCleanup
+    scheduleDeferredCleanup,
+    historyOptions ? beforeDatabaseSend : undefined
   );
 
   const applyHttpFullSyncResult = useCallback(
@@ -355,6 +393,8 @@ export const useSync = (
       registerSyncContext,
       rebindSyncContext,
       revertCollabVersion,
+      reloadDatabaseAfterRestore,
+      ensureDatabaseRestoreCurrent: beforeDatabaseSend,
       flushAllSync,
       syncAllToServer,
       applyHttpFullSyncResult,
@@ -364,6 +404,8 @@ export const useSync = (
       registerSyncContext,
       rebindSyncContext,
       revertCollabVersion,
+      reloadDatabaseAfterRestore,
+      beforeDatabaseSend,
       flushAllSync,
       syncAllToServer,
       applyHttpFullSyncResult,

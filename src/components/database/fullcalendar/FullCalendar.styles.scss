@@ -12,6 +12,11 @@
 }
 
 .database-calendar {
+  .fc-daygrid-day,
+  .fc-daygrid-day-frame {
+    min-height: var(--calendar-day-min-height, 80px) !important;
+  }
+
   /* Event height configuration */
   --fc-daygrid-event-height: 22px;
   

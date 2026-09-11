@@ -689,6 +689,8 @@ export enum YjsDatabaseKey {
  * - `view_id` is the UI routing identity.
  */
 export interface YDoc extends Y.Doc {
+  /** Committed database branch captured before generating local updates. */
+  databaseRestoreId?: string;
   /**
    * Collab object ID used by sync/persistence routing.
    */

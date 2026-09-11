@@ -3,6 +3,7 @@ import EventEmitter from 'events';
 import { AxiosInstance } from 'axios';
 import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 
+import { retainDatabaseHistoryRow } from '@/application/database-yjs/history-row-store';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
@@ -39,6 +40,8 @@ import { useCurrentUser } from '@/components/main/app.hooks';
 
 export interface DatabaseContextState {
   readOnly: boolean;
+  /** Immutable historical sessions must never fall back to live caches or services. */
+  dataSource?: { type: 'history'; id: string };
   /**
    * Whether the current user may comment on this database's row documents.
    * Independent from [readOnly] — Read-and-comment access is read-only but
@@ -314,6 +317,8 @@ export const useRow = (rowId: string) => {
   const { rowMap, ensureRow } = useDatabaseContext();
   const [, forceUpdate] = useState(0);
   const rowDoc = rowMap?.[rowId];
+
+  useEffect(() => retainDatabaseHistoryRow(rowMap, rowDoc), [rowMap, rowDoc]);
 
   // Ensure row document is loaded.
   useEffect(() => {

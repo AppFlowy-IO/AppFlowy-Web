@@ -168,11 +168,15 @@ function renderDatabaseViews({
   visibleViewIds,
   activeViewId = visibleViewIds[0],
   onReorderViews,
+  dataSource,
+  readOnly = false,
 }: {
   databaseId?: string;
   visibleViewIds: string[];
   activeViewId?: string;
   onReorderViews?: (movedViewId: string, prevViewId: string | null) => void | Promise<void>;
+  dataSource?: DatabaseContextState['dataSource'];
+  readOnly?: boolean;
 }) {
   const doc = createDatabaseDoc(databaseId, [
     { viewId: visibleViewIds[0], name: 'Launch Review Log', createdAt: '300' },
@@ -180,11 +184,12 @@ function renderDatabaseViews({
     { viewId: visibleViewIds[2], name: 'Grid2', createdAt: '100' },
   ]);
   const contextValue: DatabaseContextState = {
-    readOnly: true,
+    readOnly,
+    dataSource,
     databaseDoc: doc,
     databasePageId: visibleViewIds[0],
     activeViewId,
-    rowDocMap: {},
+    rowMap: {},
     workspaceId: 'workspace-id',
   };
 
@@ -205,6 +210,31 @@ describe('DatabaseViews order', () => {
   beforeEach(() => {
     window.localStorage.clear();
     global.__databaseViewsOrderTestState = undefined;
+  });
+
+  it('keeps historical tab order in memory and rejects direct reorder callbacks', async () => {
+    const visibleViewIds = ['launch-review-log', 'grid', 'grid2'];
+    const storedOrder = JSON.stringify(['grid2', 'launch-review-log', 'grid']);
+
+    window.localStorage.setItem('database_view_order:db-1', storedOrder);
+    const getItem = jest.spyOn(Storage.prototype, 'getItem');
+    const setItem = jest.spyOn(Storage.prototype, 'setItem');
+    const onReorderViews = jest.fn();
+
+    renderDatabaseViews({ visibleViewIds, dataSource: { type: 'history', id: 'session-1' }, readOnly: true, onReorderViews });
+
+    await waitFor(() => expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual(visibleViewIds));
+    act(() => global.__databaseViewsOrderTestState?.latestTabsProps?.onReorderTabs?.({
+      nextIds: ['grid2', 'launch-review-log', 'grid'], movedId: 'grid2', prevId: null,
+      fromIndex: 2, toIndex: 0,
+    }));
+    expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual(visibleViewIds);
+    expect(onReorderViews).not.toHaveBeenCalled();
+    expect(getItem).not.toHaveBeenCalledWith('database_view_order:db-1');
+    expect(setItem).not.toHaveBeenCalled();
+    getItem.mockRestore();
+    setItem.mockRestore();
+    expect(window.localStorage.getItem('database_view_order:db-1')).toBe(storedOrder);
   });
 
   it('preserves visible view order instead of sorting container tabs by created_at', async () => {
@@ -318,7 +348,7 @@ describe('DatabaseViews order', () => {
     ]);
     const renderForVisibleViews = (nextVisibleViewIds: string[]) => {
       const contextValue: DatabaseContextState = {
-        readOnly: true,
+        readOnly: false,
         databaseDoc: doc,
         databasePageId: 'launch-review-log',
         activeViewId: 'grid',

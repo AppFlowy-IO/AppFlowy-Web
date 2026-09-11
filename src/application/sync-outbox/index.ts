@@ -1,7 +1,8 @@
 import BaseDexie from 'dexie';
 import * as Y from 'yjs';
 
-import { db } from '@/application/db';
+import { db, matchesDatabaseStorageFence } from '@/application/db';
+import { type DatabaseStorageFence, isDatabaseStorageFenceCurrent } from '@/application/db/database-storage-fence';
 import { SyncOutboxRecord } from '@/application/db/tables/sync_outbox';
 import { Types } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
@@ -24,6 +25,7 @@ export interface SlowSyncOutboxItem {
   objectId: string;
   collabType: Types;
   version?: string | null;
+  databaseRestoreId?: string;
   stateVector: Uint8Array;
   docState: Uint8Array;
 }
@@ -62,6 +64,15 @@ interface DrainConfig {
    */
   sendBestEffort?: OutboxSender;
   isReady: OutboxReady;
+  /**
+   * Verify the current database restore identity before transmitting captured
+   * bytes. False leaves durable records queued; a reset may discard them.
+   * A callback that discards this object must use skipActiveDrain to avoid
+   * waiting for the drain that is awaiting this callback.
+   */
+  beforeSend?: (objectId: string, collabType: Types, databaseRestoreId?: string) => Promise<boolean>;
+  /** Fence legacy database bytes as the unmarked generation on capable servers. */
+  databaseHistoryEnabled?: boolean;
   /** Notifies the elected socket owner after the IndexedDB row is durable. */
   onPersisted?: (workspaceId: string, objectId: string) => void;
   /** Realtime raw-update cap advertised by the server. */
@@ -106,6 +117,10 @@ const inflightAdds = new Map<string, Set<Promise<unknown>>>();
 // stale async cleanup from workspace A from dropping edits in workspace B.
 // A drain loop that already loaded records must abort before sending.
 const suppressedObjects = new Set<string>();
+// An awaited permission/restore check can outlive a completed discard. The
+// suppression set alone cannot detect that case once cleanup releases it.
+const objectGenerations = new Map<string, number>();
+let lifecycleGeneration = 0;
 // When `purgeAllOutbox` is running, both new enqueues and new drain iterations
 // are blocked so we can quiesce the outbox across a logout boundary without
 // racing concurrent writes or sends.
@@ -155,6 +170,7 @@ export function setCurrentSession(session: { userId: string; workspaceId: string
   const currentSessionKey = currentUserId && currentWorkspaceId ? sessionKey(currentUserId, currentWorkspaceId) : null;
 
   if (nextSessionKey !== currentSessionKey) {
+    lifecycleGeneration += 1;
     discoveredOutboxSessionKey = null;
   }
 
@@ -195,6 +211,11 @@ export function enqueueOutboxUpdate(
   }
 
   const objectSessionKey = sessionObjectKey(userId, workspaceId, record.objectId);
+  const capturedLifecycleGeneration = lifecycleGeneration;
+  const capturedObjectGeneration = objectGenerations.get(objectSessionKey) ?? 0;
+  const isCurrentGeneration = () =>
+    lifecycleGeneration === capturedLifecycleGeneration &&
+    (objectGenerations.get(objectSessionKey) ?? 0) === capturedObjectGeneration;
 
   // A discard is in progress for this objectId (version reset / revert).
   // Refuse to add new rows so a local edit landing mid-discard cannot slip
@@ -219,9 +240,9 @@ export function enqueueOutboxUpdate(
   // the durable outbox row remains the fallback when it is not.
   const broadcast = drainConfig?.broadcast;
 
-  if (options?.broadcast !== false && broadcast && drainConfig?.workspaceId === workspaceId) {
+  if (options?.broadcast !== false && broadcast && drainConfig?.workspaceId === workspaceId && !drainConfig.beforeSend) {
     try {
-      broadcast(buildUpdateMessage(record));
+      broadcast(buildUpdateMessage(record, drainConfig));
     } catch (error) {
       Log.warn('[outbox] broadcast failed', { objectId: record.objectId, error });
     }
@@ -254,6 +275,7 @@ export function enqueueOutboxUpdate(
   // frame limit before the slow lane gets a chance to run.
   if (
     activeConfig &&
+    !activeConfig.beforeSend &&
     activeConfig.userId === enqueueUserId &&
     activeConfig.workspaceId === enqueueWorkspaceId &&
     !isPurging &&
@@ -265,7 +287,7 @@ export function enqueueOutboxUpdate(
     !serializedSlowSyncObjects.has(objectSessionKey)
   ) {
     try {
-      activeConfig.send(buildUpdateMessage(record));
+      activeConfig.send(buildUpdateMessage(record, activeConfig));
       sentImmediately = true;
     } catch (error) {
       Log.warn('[outbox] immediate send failed; durable row will drain', { objectId: record.objectId, error });
@@ -277,6 +299,35 @@ export function enqueueOutboxUpdate(
 
   return addPromise
     .then(async (id) => {
+      if (activeConfig?.beforeSend) {
+        const allowed = await maySendOutboxUpdate(
+          activeConfig,
+          record.objectId,
+          record.collabType as Types,
+          record.databaseRestoreId
+        );
+
+        if (
+          !allowed ||
+          !isCurrentGeneration() ||
+          !sameDrainSession(drainConfig, activeConfig) ||
+          isPurging ||
+          suppressedObjects.has(objectSessionKey)
+        )
+          return true;
+
+        // Keep the enqueue durable while the check is pending, including
+        // offline operation. Fan-out is subject to the same restore barrier
+        // as WebSocket and HTTP transmission.
+        if (options?.broadcast !== false) {
+          try {
+            activeConfig.broadcast?.(buildUpdateMessage(record, activeConfig));
+          } catch (error) {
+            Log.warn('[outbox] broadcast failed', { objectId: record.objectId, error });
+          }
+        }
+      }
+
       try {
         notifyPersisted?.(enqueueWorkspaceId, record.objectId);
       } catch (error) {
@@ -382,6 +433,7 @@ export function enqueueOutboxUpdate(
             flags: FLAGS_LIB0V1,
             payload: record.payload,
             version: record.version ?? undefined,
+            databaseRestoreId: wireDatabaseRestoreId(activeConfig, record.collabType, record.databaseRestoreId),
             beforeStateVector: record.beforeStateVector,
           } as collab.IUpdate,
         },
@@ -393,6 +445,22 @@ export function enqueueOutboxUpdate(
         Log.warn('[outbox] cannot fall back: no sendBestEffort and WS not OPEN', {
           objectId: record.objectId,
         });
+        return false;
+      }
+
+      if (
+        activeConfig.beforeSend &&
+        !(await maySendOutboxUpdate(activeConfig, record.objectId, record.collabType as Types, record.databaseRestoreId))
+      ) {
+        return false;
+      }
+
+      if (
+        !isCurrentGeneration() ||
+        !sameDrainSession(drainConfig, activeConfig) ||
+        isPurging ||
+        suppressedObjects.has(objectSessionKey)
+      ) {
         return false;
       }
 
@@ -435,7 +503,12 @@ async function persistOutboxRow(row: SyncOutboxRecord): Promise<number> {
       .where('[userId+workspaceId+objectId]')
       .equals([row.userId, row.workspaceId, row.objectId])
       .each((pending) => {
-        if (pending.source === 'manifest' && pending.id !== undefined) {
+        if (
+          pending.source === 'manifest' &&
+          pending.id !== undefined &&
+          pending.databaseRestoreId === row.databaseRestoreId &&
+          (pending.version ?? undefined) === (row.version ?? undefined)
+        ) {
           supersededIds.push(pending.id);
         }
       });
@@ -639,6 +712,9 @@ export function purgeAllOutbox(): Promise<void> {
   // should join the in-flight work rather than kick off a parallel clear().
   if (pendingPurge) return pendingPurge;
 
+  lifecycleGeneration += 1;
+  objectGenerations.clear();
+
   // Set the gate synchronously so any enqueue arriving in the same tick
   // — e.g. from a React render triggered by `SESSION_INVALID` — is dropped
   // before it can add new rows behind the purge.
@@ -702,8 +778,13 @@ export async function deleteOutboxByObjectId(
      * workspace. When omitted, the active session is captured at call time.
      */
     session?: SyncOutboxSession;
+    /** A blob tombstone may only discard updates from its captured aggregate. */
+    storageFence?: DatabaseStorageFence;
+    /** Keep edits already generated against this restored database generation. */
+    preserveDatabaseRestoreId?: string;
   }
 ): Promise<void> {
+  if (options?.storageFence && !isDatabaseStorageFenceCurrent(options.storageFence)) return;
   const targetSession = options?.session ?? getCurrentOutboxSession();
   const userId = targetSession?.userId;
   const workspaceId = targetSession?.workspaceId;
@@ -718,6 +799,7 @@ export async function deleteOutboxByObjectId(
   // Synchronously suppress in-flight work for this exact session/object BEFORE
   // yielding. A stale cleanup from another workspace must not drop current
   // edits that happen to use the same object ID.
+  objectGenerations.set(objectSessionKey, (objectGenerations.get(objectSessionKey) ?? 0) + 1);
   suppressedObjects.add(objectSessionKey);
   abortSlowSyncCoordination(objectSessionKey);
 
@@ -742,7 +824,33 @@ export async function deleteOutboxByObjectId(
     // to ensure stale rows are gone before rebuilding the doc. Silently
     // resolving here would let a blocked/closing IDB leave stale records that
     // then drain onto the newly rebuilt document.
-    await db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, objectId]).delete();
+    const discard = async () => {
+      const records = db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, objectId]);
+
+      if (options?.preserveDatabaseRestoreId !== undefined) {
+        await records
+          .filter(
+            (record) =>
+              (record.databaseRestoreId ?? '00000000-0000-0000-0000-000000000000') !== options.preserveDatabaseRestoreId
+          )
+          .delete();
+      } else {
+        await records.delete();
+      }
+    };
+
+    if (options?.storageFence) {
+      const fence = options.storageFence;
+
+      await db.transaction('rw', db.sync_outbox, db.collab_custom, async () => {
+        if (!(await matchesDatabaseStorageFence(fence))) return;
+        await discard();
+      });
+    } else if (options?.preserveDatabaseRestoreId !== undefined) {
+      await db.transaction('rw', db.sync_outbox, discard);
+    } else {
+      await discard();
+    }
 
     serializedSlowSyncObjects.delete(objectSessionKey);
     oversizedDiagnostics.delete(objectSessionKey);
@@ -766,7 +874,11 @@ async function distinctObjectIdsForSession(userId: string, workspaceId: string):
 }
 
 function buildUpdateMessage(
-  record: Pick<SyncOutboxRecord, 'objectId' | 'collabType' | 'payload' | 'version' | 'beforeStateVector'>
+  record: Pick<
+    SyncOutboxRecord,
+    'objectId' | 'collabType' | 'payload' | 'version' | 'databaseRestoreId' | 'beforeStateVector'
+  >,
+  config: DrainConfig | null
 ): messages.IMessage {
   return {
     collabMessage: {
@@ -776,6 +888,7 @@ function buildUpdateMessage(
         flags: FLAGS_LIB0V1,
         payload: record.payload,
         version: record.version ?? undefined,
+        databaseRestoreId: wireDatabaseRestoreId(config, record.collabType, record.databaseRestoreId),
         beforeStateVector: record.beforeStateVector,
       } as collab.IUpdate,
     },
@@ -804,11 +917,27 @@ async function readOutboxPrefix(userId: string, workspaceId: string, objectId: s
   // The four-part index is naturally ordered by the auto-incremented id. A
   // fixed prefix bound prevents one long-offline object from being read into
   // memory in a single drain iteration.
-  return db.sync_outbox
+  const records = await db.sync_outbox
     .where('[userId+workspaceId+objectId+id]')
     .between([userId, workspaceId, objectId, BaseDexie.minKey], [userId, workspaceId, objectId, BaseDexie.maxKey])
     .limit(OUTBOX_READ_BATCH_SIZE)
     .toArray();
+
+  const first = records[0];
+
+  if (!first) return records;
+
+  // Yjs updates from distinct restore branches must never be merged and
+  // stamped with the last record's identity. Missing and explicit nil UUID
+  // are distinct, preserving the legacy wire contract.
+  const nextBranch = records.findIndex(
+    (record) =>
+      record.databaseRestoreId !== first.databaseRestoreId ||
+      (record.version ?? undefined) !== (first.version ?? undefined) ||
+      record.collabType !== first.collabType
+  );
+
+  return nextBranch === -1 ? records : records.slice(0, nextBranch);
 }
 
 function mergeRecordPrefix(records: SyncOutboxRecord[], count = records.length): Uint8Array {
@@ -1075,6 +1204,40 @@ function sameDrainSession(left: DrainConfig | null, right: DrainConfig | null): 
   return Boolean(left && right && left.userId === right.userId && left.workspaceId === right.workspaceId);
 }
 
+function wireDatabaseRestoreId(
+  config: DrainConfig | null,
+  collabType: number,
+  capturedMarker?: string
+): string | undefined {
+  if (capturedMarker !== undefined) return capturedMarker;
+  return config?.databaseHistoryEnabled && (collabType === Types.Database || collabType === Types.DatabaseRow)
+    ? '00000000-0000-0000-0000-000000000000'
+    : undefined;
+}
+
+async function maySendOutboxUpdate(
+  config: DrainConfig,
+  objectId: string,
+  collabType: Types,
+  databaseRestoreId?: string
+): Promise<boolean> {
+  try {
+    // Legacy queued database bytes predate any committed restore. Explicitly
+    // check that generation; undefined is reserved by the coordinator for
+    // discovery calls that do not carry a captured update.
+    const expectedRestoreId =
+      databaseRestoreId ??
+      (collabType === Types.Database || collabType === Types.DatabaseRow
+        ? '00000000-0000-0000-0000-000000000000'
+        : undefined);
+
+    return (await config.beforeSend?.(objectId, collabType, expectedRestoreId)) ?? true;
+  } catch (error) {
+    Log.warn('[outbox] pre-send check failed; leaving updates queued', { objectId, error });
+    return false;
+  }
+}
+
 function logOversizedOnce(objectSessionKey: string, reason: string, details: Record<string, unknown>) {
   if (oversizedDiagnostics.get(objectSessionKey) === reason) return;
 
@@ -1171,6 +1334,11 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
     const userId = config.userId;
     const workspaceId = config.workspaceId;
     const objectSessionKey = sessionObjectKey(userId, workspaceId, objectId);
+    const capturedLifecycleGeneration = lifecycleGeneration;
+    const capturedObjectGeneration = objectGenerations.get(objectSessionKey) ?? 0;
+    const isCurrentGeneration = () =>
+      lifecycleGeneration === capturedLifecycleGeneration &&
+      (objectGenerations.get(objectSessionKey) ?? 0) === capturedObjectGeneration;
 
     if (slowSyncRetryTimers.has(objectSessionKey)) return;
 
@@ -1247,11 +1415,39 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
 
           const lockedLastRecord = lockedBatch.records[lockedBatch.records.length - 1];
           const lockedIds = recordIds(lockedBatch.records);
+
+          if (
+            config.beforeSend &&
+            !(await maySendOutboxUpdate(
+              config,
+              objectId,
+              lockedLastRecord.collabType as Types,
+              lockedLastRecord.databaseRestoreId
+            ))
+          ) {
+            return { status: 'aborted' as const };
+          }
+
+          if (
+            !isCurrentGeneration() ||
+            suppressedObjects.has(objectSessionKey) ||
+            !sameDrainSession(drainConfig, initialConfig) ||
+            isPurging ||
+            signal.aborted
+          ) {
+            return { status: 'aborted' as const };
+          }
+
           const result = await config.slowSync!(
             {
               objectId,
               collabType: lockedLastRecord.collabType as Types,
               version: lockedLastRecord.version,
+              databaseRestoreId: wireDatabaseRestoreId(
+                config,
+                lockedLastRecord.collabType,
+                lockedLastRecord.databaseRestoreId
+              ),
               stateVector: lockedBatch.stateVector,
               docState: lockedBatch.merged,
             },
@@ -1317,13 +1513,25 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
 
     const realtimeBatch = selectRecordsForRealtime(records, realtimeLimit);
     const lastRecord = realtimeBatch.records[realtimeBatch.records.length - 1];
-    const message = buildUpdateMessage({
-      objectId,
-      collabType: lastRecord.collabType,
-      payload: realtimeBatch.merged,
-      version: lastRecord.version,
-      beforeStateVector: firstRecord.beforeStateVector,
-    });
+
+    if (
+      config.beforeSend &&
+      !(await maySendOutboxUpdate(config, objectId, lastRecord.collabType as Types, lastRecord.databaseRestoreId))
+    )
+      return;
+    if (!isCurrentGeneration()) return;
+
+    const message = buildUpdateMessage(
+      {
+        objectId,
+        collabType: lastRecord.collabType,
+        payload: realtimeBatch.merged,
+        version: lastRecord.version,
+        databaseRestoreId: lastRecord.databaseRestoreId,
+        beforeStateVector: firstRecord.beforeStateVector,
+      },
+      config
+    );
 
     // Synchronous gate right before the send. Abort if a discard is in
     // progress for this objectId, the drain config has been swapped out

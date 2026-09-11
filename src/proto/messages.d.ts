@@ -460,6 +460,9 @@ export namespace collab {
 
         /** Update afterStateVector */
         afterStateVector?: (Uint8Array|null);
+
+        /** Update databaseRestoreId */
+        databaseRestoreId?: (string|null);
     }
 
     /**
@@ -492,6 +495,12 @@ export namespace collab {
 
         /** Update afterStateVector. */
         public afterStateVector: Uint8Array;
+
+        /** Update databaseRestoreId. */
+        public databaseRestoreId?: (string|null);
+
+        /** Update _databaseRestoreId. */
+        public _databaseRestoreId?: "databaseRestoreId";
 
         /**
          * Creates a new Update instance using the specified properties.
@@ -940,6 +949,9 @@ export namespace collab {
 
         /** CollabDocStateParams collabVersion */
         collabVersion?: (string|null);
+
+        /** CollabDocStateParams databaseRestoreId */
+        databaseRestoreId?: (string|null);
     }
 
     /** Parameters for a single collab document state in batch sync. */
@@ -968,6 +980,12 @@ export namespace collab {
 
         /** CollabDocStateParams collabVersion. */
         public collabVersion: string;
+
+        /** CollabDocStateParams databaseRestoreId. */
+        public databaseRestoreId?: (string|null);
+
+        /** CollabDocStateParams _databaseRestoreId. */
+        public _databaseRestoreId?: "databaseRestoreId";
 
         /**
          * Creates a new CollabDocStateParams instance using the specified properties.
@@ -1434,6 +1452,9 @@ export namespace notification {
 
         /** WorkspaceNotification commentChanged */
         commentChanged?: (notification.ICommentChanged|null);
+
+        /** WorkspaceNotification databaseRestored */
+        databaseRestored?: (notification.IDatabaseRestored|null);
     }
 
     /** Represents a WorkspaceNotification. */
@@ -1478,8 +1499,11 @@ export namespace notification {
         /** WorkspaceNotification commentChanged. */
         public commentChanged?: (notification.ICommentChanged|null);
 
+        /** WorkspaceNotification databaseRestored. */
+        public databaseRestored?: (notification.IDatabaseRestored|null);
+
         /** WorkspaceNotification payload. */
-        public payload?: ("profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged");
+        public payload?: ("profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"databaseRestored");
 
         /**
          * Creates a new WorkspaceNotification instance using the specified properties.
@@ -1553,6 +1577,115 @@ export namespace notification {
 
         /**
          * Gets the default type url for WorkspaceNotification
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    /** Properties of a DatabaseRestored. */
+    interface IDatabaseRestored {
+
+        /** DatabaseRestored databaseId */
+        databaseId?: (string|null);
+
+        /** DatabaseRestored databaseRestoreId */
+        databaseRestoreId?: (string|null);
+
+        /** DatabaseRestored version */
+        version?: (string|null);
+    }
+
+    /** Represents a DatabaseRestored. */
+    class DatabaseRestored implements IDatabaseRestored {
+
+        /**
+         * Constructs a new DatabaseRestored.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: notification.IDatabaseRestored);
+
+        /** DatabaseRestored databaseId. */
+        public databaseId: string;
+
+        /** DatabaseRestored databaseRestoreId. */
+        public databaseRestoreId: string;
+
+        /** DatabaseRestored version. */
+        public version: string;
+
+        /**
+         * Creates a new DatabaseRestored instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns DatabaseRestored instance
+         */
+        public static create(properties?: notification.IDatabaseRestored): notification.DatabaseRestored;
+
+        /**
+         * Encodes the specified DatabaseRestored message. Does not implicitly {@link notification.DatabaseRestored.verify|verify} messages.
+         * @param message DatabaseRestored message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: notification.IDatabaseRestored, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified DatabaseRestored message, length delimited. Does not implicitly {@link notification.DatabaseRestored.verify|verify} messages.
+         * @param message DatabaseRestored message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: notification.IDatabaseRestored, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a DatabaseRestored message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns DatabaseRestored
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.DatabaseRestored;
+
+        /**
+         * Decodes a DatabaseRestored message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns DatabaseRestored
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.DatabaseRestored;
+
+        /**
+         * Verifies a DatabaseRestored message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a DatabaseRestored message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns DatabaseRestored
+         */
+        public static fromObject(object: { [k: string]: any }): notification.DatabaseRestored;
+
+        /**
+         * Creates a plain object from a DatabaseRestored message. Also converts values to other types if specified.
+         * @param message DatabaseRestored
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: notification.DatabaseRestored, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this DatabaseRestored to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for DatabaseRestored
          * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
          * @returns The default type url
          */
@@ -1682,6 +1815,9 @@ export namespace notification {
 
         /** PermissionChanged reason */
         reason?: (number|null);
+
+        /** PermissionChanged timestampMs */
+        timestampMs?: (number|Long|null);
     }
 
     /** Represents a PermissionChanged. */
@@ -1698,6 +1834,9 @@ export namespace notification {
 
         /** PermissionChanged reason. */
         public reason: number;
+
+        /** PermissionChanged timestampMs. */
+        public timestampMs: (number|Long);
 
         /**
          * Creates a new PermissionChanged instance using the specified properties.

@@ -15,6 +15,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { useAuthenticatedImage } from '@/components/_shared/hooks/useAuthenticatedImage';
+import { HistoricalRowDocumentNotice } from '@/components/database/history/HistoricalRowDocumentNotice';
 import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
 import { resolveFileUrl } from '@/utils/file-storage-url';
@@ -283,7 +284,10 @@ function PageContentPreview({
   meta: RowMeta | null | undefined;
   rowId: string;
 }) {
+  const { dataSource } = useDatabaseContext();
   const pageContentUrl = usePageContentImage(rowId, meta?.isEmptyDocument === false);
+
+  if (dataSource?.type === 'history') return <HistoricalRowDocumentNotice />;
 
   return (
     <GalleryPreviewFrame

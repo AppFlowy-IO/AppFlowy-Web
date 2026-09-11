@@ -110,7 +110,7 @@ export function DatabaseActions() {
   const layout = useDatabaseViewLayout() as DatabaseViewLayout;
   const readOnly = useReadOnly();
   const conditionsContext = useConditionsContext();
-  const { activeViewId, isDocumentBlock, databasePageId } = useDatabaseContext();
+  const { activeViewId, isDocumentBlock, databasePageId, dataSource } = useDatabaseContext();
   const { canOpen, isOpening, openDatabaseAsPage } = useOpenDatabaseAsPage({ fallbackViewId: databasePageId });
 
   const showSorts = [
@@ -119,7 +119,7 @@ export function DatabaseActions() {
     DatabaseViewLayout.Gallery,
     DatabaseViewLayout.Feed,
   ].includes(layout);
-  const showSearch = layout === DatabaseViewLayout.Gallery || layout === DatabaseViewLayout.Feed;
+  const showSearch = dataSource?.type === 'history' || layout === DatabaseViewLayout.Gallery || layout === DatabaseViewLayout.Feed;
   const showTemplates = [
     DatabaseViewLayout.Grid,
     DatabaseViewLayout.Board,

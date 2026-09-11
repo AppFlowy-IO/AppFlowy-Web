@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { CalendarViewType } from '@/components/database/fullcalendar/types';
 
-export const useDynamicDayMaxEventRows = (currentView: CalendarViewType) => {
+export const useDynamicDayMaxEventRows = (currentView: CalendarViewType, calendarElement: HTMLElement | null) => {
   const [dayMaxEventRows, setDayMaxEventRows] = useState(4);
 
   const calculateDayMaxEventRows = useCallback(() => {
@@ -21,26 +21,17 @@ export const useDynamicDayMaxEventRows = (currentView: CalendarViewType) => {
   }, []);
 
   const updateCalendarCellStyles = useCallback((weekHeight: number) => {
-    if (currentView === CalendarViewType.TIME_GRID_WEEK) return;
+    if (!calendarElement) return;
+    if (currentView === CalendarViewType.TIME_GRID_WEEK) {
+      calendarElement.style.removeProperty('--calendar-day-min-height');
+      return;
+    }
 
     const minHeight = Math.max(weekHeight, 80);
-    
-    const styleId = 'dynamic-calendar-styles';
-    let styleElement = document.getElementById(styleId) as HTMLStyleElement;
-    
-    if (!styleElement) {
-      styleElement = document.createElement('style');
-      styleElement.id = styleId;
-      document.head.appendChild(styleElement);
-    }
-    
-    styleElement.textContent = `
-      .fc-daygrid-day,
-      .fc-daygrid-day-frame {
-        min-height: ${minHeight}px !important;
-      }
-    `;
-  }, [currentView]);
+
+    // Each mounted calendar owns its sizing, including historical previews.
+    calendarElement.style.setProperty('--calendar-day-min-height', `${minHeight}px`);
+  }, [calendarElement, currentView]);
 
   const updateDayMaxEventRows = useCallback(() => {
     const newRows = calculateDayMaxEventRows();
@@ -57,8 +48,9 @@ export const useDynamicDayMaxEventRows = (currentView: CalendarViewType) => {
     
     return () => {
       window.removeEventListener('resize', updateDayMaxEventRows);
+      calendarElement?.style.removeProperty('--calendar-day-min-height');
     };
-  }, [updateDayMaxEventRows]);
+  }, [calendarElement, updateDayMaxEventRows]);
 
   return { 
     dayMaxEventRows, 

@@ -54,6 +54,7 @@ import {
   updateCreatesExactFeedView,
 } from '@/application/database-yjs/feed-layout';
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
 import {
   initializeGalleryLayoutSetting,
@@ -1365,6 +1366,8 @@ export function useDeleteRowDispatch() {
 
   return useCallback(
     (rowId: string) => {
+      if (sharedRoot.doc && isDatabaseHistoryDocumentImmutable(sharedRoot.doc as YDoc)) return;
+
       executeOperationWithAllViews(
         sharedRoot,
         database,
@@ -1398,6 +1401,8 @@ export function useBulkDeleteRowDispatch() {
 
   return useCallback(
     (rowIds: string[], historyGroup?: object) => {
+      if (sharedRoot.doc && isDatabaseHistoryDocumentImmutable(sharedRoot.doc as YDoc)) return;
+
       executeOperationWithAllViews(
         sharedRoot,
         database,

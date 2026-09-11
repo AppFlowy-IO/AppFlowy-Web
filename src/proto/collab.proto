@@ -77,6 +77,9 @@ message Update {
   // generated this update. Advisory only — the server never trusts a
   // client-provided after vector; it derives its own from the update bytes.
   bytes after_state_vector = 6;
+
+  // Aggregate generation when the update was authored; nil UUID means no restore.
+  optional string database_restore_id = 7;
 }
 
 /**
@@ -135,6 +138,7 @@ message CollabDocStateParams {
     bytes sv = 4;
     bytes doc_state = 5;
     string collab_version = 6;
+    optional string database_restore_id = 7;
 }
 
 /**

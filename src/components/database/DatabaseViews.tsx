@@ -93,7 +93,8 @@ function DatabaseViews({
   onReorderViews?: (movedViewId: string, prevViewId: string | null) => void | Promise<void>;
 }) {
   const { childViews, viewIds } = useDatabaseViewsSelector(databasePageId, visibleViewIds);
-  const { isDocumentBlock, variant } = useDatabaseContext();
+  const { isDocumentBlock, variant, dataSource, readOnly } = useDatabaseContext();
+  const persistViewOrder = dataSource?.type !== 'history';
   const database = useDatabase();
   const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
   const views = database?.get(YjsDatabaseKey.views);
@@ -134,7 +135,7 @@ function DatabaseViews({
 
   useEffect(() => {
     const isNewDatabase = orderedDatabaseIdRef.current !== databaseId;
-    const storedViewIds = readStoredViewOrder(databaseId);
+    const storedViewIds = persistViewOrder ? readStoredViewOrder(databaseId) : undefined;
     const previousViewIds = orderedViewIdsRef.current;
 
     orderedDatabaseIdRef.current = databaseId;
@@ -182,9 +183,9 @@ function DatabaseViews({
     }
 
     orderedViewIdsRef.current = nextViewIds;
-    writeStoredViewOrder(databaseId, nextViewIds);
+    if (persistViewOrder) writeStoredViewOrder(databaseId, nextViewIds);
     setOrderedViewIds(nextViewIds);
-  }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder, viewIds]);
+  }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder, persistViewOrder, viewIds]);
 
   const [conditionsExpanded, setConditionsExpanded] = useState<boolean>(false);
   const toggleExpanded = useCallback(() => {
@@ -246,6 +247,8 @@ function DatabaseViews({
   );
 
   const handleBeforeViewAddedToDatabase = useCallback(() => {
+    if (readOnly) return;
+
     const storedViewIds = readStoredViewOrder(databaseId);
     const baseViewIds =
       orderedViewIdsRef.current.length > 0
@@ -258,7 +261,7 @@ function DatabaseViews({
 
     pendingViewCreationRef.current = true;
     pendingViewAppendBaseRef.current = baseViewIds;
-  }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder]);
+  }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder, readOnly]);
 
   const handleAfterViewAddedToDatabase = useCallback(() => {
     pendingViewCreationRef.current = false;
@@ -267,6 +270,8 @@ function DatabaseViews({
 
   const handleViewAddedToDatabase = useCallback(
     (newViewId: string) => {
+      if (readOnly) return;
+
       const storedViewIds = readStoredViewOrder(databaseId);
       const baseViewIds =
         pendingViewAppendBaseRef.current ??
@@ -286,11 +291,13 @@ function DatabaseViews({
       });
       onViewAdded?.(newViewId);
     },
-    [databaseId, fallbackViewIds, onViewAdded]
+    [databaseId, fallbackViewIds, onViewAdded, readOnly]
   );
 
   const handleReorderTabs = useCallback(
     ({ nextIds, movedId, prevId }: ReorderResult) => {
+      if (readOnly) return;
+
       const previousIds = orderedViewIdsRef.current.length > 0 ? orderedViewIdsRef.current : viewIds;
       const previousPendingExpectedViewIds = pendingExpectedViewIdsRef.current;
       const pendingCreatedViewId = previousPendingExpectedViewIds?.[previousPendingExpectedViewIds.length - 1];
@@ -331,7 +338,7 @@ function DatabaseViews({
         }
       })();
     },
-    [databaseId, onReorderViews, viewIds]
+    [databaseId, onReorderViews, readOnly, viewIds]
   );
 
   const displayedViewIds = orderedViewIds.length > 0 ? orderedViewIds : viewIds;

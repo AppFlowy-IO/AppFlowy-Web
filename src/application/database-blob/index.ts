@@ -4,11 +4,20 @@ import * as Y from 'yjs';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
+  captureDatabaseStorageFence,
+  rotateDatabaseStorageFence,
+  publishWithDatabaseStorageFence,
   deleteCollabDB,
   getCachedProviderDoc,
   openCollabDBWithProvider,
   openRowCollabDBWithProvider,
 } from '@/application/db';
+import {
+  DatabaseStorageGenerationChangedError,
+  type DatabaseStorageFence,
+  isDatabaseStorageFenceCurrent,
+  withDatabaseStorageFence,
+} from '@/application/db/database-storage-fence';
 import { deleteRow as deleteCachedRow, getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
 import { deleteOutboxByObjectId, getCurrentOutboxSession, type SyncOutboxSession } from '@/application/sync-outbox';
@@ -22,14 +31,18 @@ import {
   createDatabaseRowDocSeed,
   invalidateDatabaseRowDocSeedGeneration,
   type DatabaseRowDocSeed,
+  isDatabaseRowDocSeedCurrent,
 } from './row-seed-fence';
 
 type DatabaseBlobRowRid = {
   timestamp: number;
   seqNo: number;
+  storageEpoch?: string | null;
 };
 
 type PrefetchOptions = {
+  /** Restore completion requires every page to reach canonical row storage. */
+  requirePersistence?: boolean;
   priorityRowIds?: string[];
   /**
    * Fetch a complete row seed set even when a cached RID exists. Filtered and
@@ -42,13 +55,28 @@ type PrefetchOptions = {
   onSeedsReady?: () => void;
 };
 
+class InvalidatedRows extends Set<string> {
+  all = false;
+  storageFence?: DatabaseStorageFence;
+
+  has(rowId: string): boolean {
+    return (
+      this.all || Boolean(this.storageFence && !isDatabaseStorageFenceCurrent(this.storageFence)) || super.has(rowId)
+    );
+  }
+}
+
 type SharedPrefetchEntry = {
+  invalidated?: boolean;
+  storageFence?: DatabaseStorageFence;
   priorityRowIds: Set<string>;
   /** Rows reset after this prefetch started must not consume its stale snapshot. */
-  invalidatedRowIds: Set<string>;
+  invalidatedRowIds: InvalidatedRows;
   onSeedsReadyCallbacks: Set<() => void>;
   seedsReady: boolean;
   hasCompleteSeedSet: boolean;
+  /** True only after all pages reached durable canonical storage. */
+  persisted?: boolean;
   coversFullSnapshot: boolean;
   reuseSettled?: boolean;
   settled?: boolean;
@@ -146,7 +174,9 @@ function applyPrefetchOptions(entry: SharedPrefetchEntry, options?: PrefetchOpti
   if (!options?.onSeedsReady) return;
 
   if (entry.seedsReady) {
-    void Promise.resolve().then(options.onSeedsReady);
+    void Promise.resolve().then(() => {
+      if (!entry.storageFence || isDatabaseStorageFenceCurrent(entry.storageFence)) options.onSeedsReady?.();
+    });
     return;
   }
 
@@ -154,6 +184,8 @@ function applyPrefetchOptions(entry: SharedPrefetchEntry, options?: PrefetchOpti
 }
 
 function notifySeedsReady(entry: SharedPrefetchEntry) {
+  if (entry.invalidated || (entry.storageFence && !isDatabaseStorageFenceCurrent(entry.storageFence)))
+    throw new Error('Database prefetch superseded by restore');
   entry.seedsReady = true;
   const callbacks = Array.from(entry.onSeedsReadyCallbacks);
 
@@ -189,7 +221,7 @@ function parseRid(rid?: database_blob.IDatabaseBlobRowRid | null): DatabaseBlobR
   };
 }
 
-function readCachedRid(databaseId: string): DatabaseBlobRowRid | null {
+function readCachedRid(databaseId: string, fence?: DatabaseStorageFence): DatabaseBlobRowRid | null {
   try {
     const raw = localStorage.getItem(ridCacheKey(databaseId));
 
@@ -197,15 +229,19 @@ function readCachedRid(databaseId: string): DatabaseBlobRowRid | null {
     const parsed = JSON.parse(raw) as DatabaseBlobRowRid;
 
     if (typeof parsed?.timestamp !== 'number' || typeof parsed?.seqNo !== 'number') return null;
+    if (fence && (parsed.storageEpoch ?? null) !== fence.epoch) return null;
     return parsed;
   } catch {
     return null;
   }
 }
 
-function writeCachedRid(databaseId: string, rid: DatabaseBlobRowRid) {
+function writeCachedRid(databaseId: string, rid: DatabaseBlobRowRid, fence: DatabaseStorageFence) {
   try {
-    localStorage.setItem(ridCacheKey(databaseId), JSON.stringify(rid));
+    localStorage.setItem(
+      ridCacheKey(databaseId),
+      JSON.stringify(fence.epoch === null ? rid : { ...rid, storageEpoch: fence.epoch })
+    );
   } catch {
     // Ignore storage failures (private mode/quota).
   }
@@ -231,6 +267,7 @@ function cursorKey(cursor: Uint8Array) {
 const rowDocSeedCache = new Map<string, DatabaseRowDocSeed>();
 const rowDocSeedLookup = new Map<string, DatabaseRowDocSeed>();
 const rowDocSeedDocCache = new Map<string, YDoc>();
+const seedDocumentFences = new WeakMap<YDoc, DatabaseStorageFence>();
 const rowDocSeedCacheRetainCounts = new Map<string, number>();
 const ROW_KEY_SEPARATOR = '_rows_';
 
@@ -288,7 +325,9 @@ function applySeedToSharedRowDoc(rowKey: string, seed: DatabaseRowDocSeed) {
   if (!doc) return;
 
   try {
-    applyYDoc(doc, seed.bytes, seed.encoderVersion);
+    if (!isDatabaseRowDocSeedCurrent(seed)) return;
+    withDatabaseStorageFence(doc, seed.storageFence, () => applyYDoc(doc, seed.bytes, seed.encoderVersion));
+    if (seed.storageFence) seedDocumentFences.set(doc, seed.storageFence);
     invalidateRowConditionCache(doc);
   } catch {
     doc.destroy();
@@ -305,7 +344,12 @@ function trimRowDocSeedLookup() {
   }
 }
 
-function cacheRowDocSeed(rowKey: string, rowId: string, docState?: database_blob.ICollabDocState | null) {
+function cacheRowDocSeed(
+  rowKey: string,
+  rowId: string,
+  docState?: database_blob.ICollabDocState | null,
+  storageFence?: DatabaseStorageFence
+) {
   const cachedDoc = getCachedRowDoc(rowKey);
 
   if (hasRowConditionData(cachedDoc)) return;
@@ -314,7 +358,7 @@ function cacheRowDocSeed(rowKey: string, rowId: string, docState?: database_blob
 
   if (!state) return;
 
-  const seed = createDatabaseRowDocSeed(rowId, state);
+  const seed = createDatabaseRowDocSeed(rowId, { ...state, storageFence });
 
   applySeedToSharedRowDoc(rowKey, seed);
   rowDocSeedCache.set(rowKey, seed);
@@ -328,39 +372,27 @@ function cacheRowDocSeed(rowKey: string, rowId: string, docState?: database_blob
 }
 
 export function takeDatabaseRowDocSeed(rowKey: string): DatabaseRowDocSeed | null {
-  const cachedSeed = rowDocSeedCache.get(rowKey);
+  const source = rowDocSeedCache.has(rowKey) ? 'cache' : 'lookup';
+  const cachedSeed = peekDatabaseRowDocSeed(rowKey);
 
   if (cachedSeed) {
     rowDocSeedCache.delete(rowKey);
     rowDocSeedLookup.delete(rowKey);
     Log.debug('[Database] row seed hit', {
       rowKey,
-      source: 'cache',
+      source,
       cacheSize: rowDocSeedCache.size,
       lookupSize: rowDocSeedLookup.size,
     });
     return cachedSeed;
   }
 
-  const seed = rowDocSeedLookup.get(rowKey);
-
-  if (!seed) {
-    Log.debug('[Database] row seed miss', {
-      rowKey,
-      cacheSize: rowDocSeedCache.size,
-      lookupSize: rowDocSeedLookup.size,
-    });
-    return null;
-  }
-
-  rowDocSeedLookup.delete(rowKey);
-  Log.debug('[Database] row seed hit', {
+  Log.debug('[Database] row seed miss', {
     rowKey,
-    source: 'lookup',
     cacheSize: rowDocSeedCache.size,
     lookupSize: rowDocSeedLookup.size,
   });
-  return seed;
+  return null;
 }
 
 /**
@@ -369,7 +401,16 @@ export function takeDatabaseRowDocSeed(rowKey: string): DatabaseRowDocSeed | nul
  * filter/sort, another to open the IndexedDB-backed row doc for rendering.
  */
 export function peekDatabaseRowDocSeed(rowKey: string): DatabaseRowDocSeed | null {
-  return rowDocSeedCache.get(rowKey) ?? rowDocSeedLookup.get(rowKey) ?? null;
+  const seed = rowDocSeedCache.get(rowKey) ?? rowDocSeedLookup.get(rowKey) ?? null;
+
+  if (seed && !isDatabaseRowDocSeedCurrent(seed)) {
+    rowDocSeedCache.delete(rowKey);
+    rowDocSeedLookup.delete(rowKey);
+    rowDocSeedDocCache.delete(rowKey);
+    return null;
+  }
+
+  return seed;
 }
 
 /**
@@ -379,12 +420,21 @@ export function peekDatabaseRowDocSeed(rowKey: string): DatabaseRowDocSeed | nul
  */
 export function getDatabaseRowDocFromSeed(rowKey: string): YDoc | null {
   const liveDoc = getCachedRowDoc(rowKey);
+  const liveFence = liveDoc && seedDocumentFences.get(liveDoc);
 
+  if (liveFence && !isDatabaseStorageFenceCurrent(liveFence)) return null;
   if (hasRowConditionData(liveDoc)) return liveDoc;
 
   const cachedDoc = rowDocSeedDocCache.get(rowKey);
 
   if (cachedDoc) {
+    const fence = seedDocumentFences.get(cachedDoc);
+
+    if (fence && !isDatabaseStorageFenceCurrent(fence)) {
+      rowDocSeedDocCache.delete(rowKey);
+      return null;
+    }
+
     if (hasRowConditionData(cachedDoc)) return cachedDoc;
     cachedDoc.destroy();
     rowDocSeedDocCache.delete(rowKey);
@@ -411,6 +461,7 @@ export function getDatabaseRowDocFromSeed(rowKey: string): YDoc | null {
   }
 
   rowDocSeedDocCache.set(rowKey, doc);
+  if (seed.storageFence) seedDocumentFences.set(doc, seed.storageFence);
   return doc;
 }
 
@@ -456,6 +507,56 @@ export function clearDatabaseRowDocSeedCache(databaseId: string) {
       sharedPrefetchEntries.delete(key);
     }
   }
+}
+
+/** Retires an aggregate generation before deleting its canonical row storage. */
+export async function invalidateDatabaseBlobAfterRestore(
+  databaseId: string,
+  databaseRestoreId: string,
+  expectedStorageEpoch: string | null
+): Promise<void> {
+  await rotateDatabaseStorageFence(databaseId, databaseRestoreId, expectedStorageEpoch);
+  const storageFence: DatabaseStorageFence = { databaseId, epoch: databaseRestoreId, cacheEpoch: databaseRestoreId };
+
+  if (!isDatabaseStorageFenceCurrent(storageFence)) throw new DatabaseStorageGenerationChangedError();
+  const retiring: Promise<unknown>[] = [];
+
+  for (const [key, entry] of sharedPrefetchEntries) {
+    if (!sharedPrefetchEntryMatchesDatabase(key, databaseId) || entry.storageFence?.epoch === databaseRestoreId)
+      continue;
+    entry.invalidated = true;
+    entry.onSeedsReadyCallbacks.clear();
+    entry.invalidatedRowIds.all = true;
+    if (entry.promise) retiring.push(entry.promise);
+  }
+
+  for (const key of new Set([...rowDocSeedCache.keys(), ...rowDocSeedLookup.keys(), ...rowDocSeedDocCache.keys()])) {
+    if (!key.startsWith(`${databaseId}_rows_`)) continue;
+    const doc = rowDocSeedDocCache.get(key);
+    const fence =
+      (rowDocSeedCache.get(key) ?? rowDocSeedLookup.get(key))?.storageFence ?? (doc && seedDocumentFences.get(doc));
+
+    if (fence?.epoch === databaseRestoreId) continue;
+    invalidateDatabaseRowDocSeedGeneration(key.slice(`${databaseId}_rows_`.length));
+    rowDocSeedCache.delete(key);
+    rowDocSeedLookup.delete(key);
+    rowDocSeedDocCache.delete(key);
+    doc?.destroy();
+  }
+
+  await Promise.allSettled(retiring);
+  for (const [key, entry] of sharedPrefetchEntries) {
+    if (sharedPrefetchEntryMatchesDatabase(key, databaseId) && entry.invalidated) sharedPrefetchEntries.delete(key);
+  }
+
+  // Do not remove the checkpoint that a faster tab already published for R.
+  const current = await publishWithDatabaseStorageFence(storageFence, () => {
+    const rid = readCachedRid(databaseId);
+
+    if (rid && rid.storageEpoch !== databaseRestoreId) localStorage.removeItem(ridCacheKey(databaseId));
+  });
+
+  if (!current) throw new DatabaseStorageGenerationChangedError();
 }
 
 export function retainDatabaseRowDocSeedCache(databaseId: string) {
@@ -548,7 +649,9 @@ function applySeedToCachedDoc(rowKey: string, seed: DatabaseRowDocSeed) {
 
   if (!cachedDoc) return false;
 
-  applyYDoc(cachedDoc, seed.bytes, seed.encoderVersion);
+  if (!isDatabaseRowDocSeedCurrent(seed)) return false;
+  withDatabaseStorageFence(cachedDoc, seed.storageFence, () => applyYDoc(cachedDoc, seed.bytes, seed.encoderVersion));
+  if (seed.storageFence) seedDocumentFences.set(cachedDoc, seed.storageFence);
   invalidateRowConditionCache(cachedDoc);
   return true;
 }
@@ -556,7 +659,10 @@ function applySeedToCachedDoc(rowKey: string, seed: DatabaseRowDocSeed) {
 function seedRowDocCacheFromDiff(
   databaseId: string,
   diff: database_blob.DatabaseBlobDiffResponse,
-  options?: Pick<PrefetchOptions, 'priorityRowIds'> & { invalidatedRowIds?: ReadonlySet<string> }
+  options?: Pick<PrefetchOptions, 'priorityRowIds'> & {
+    invalidatedRowIds?: ReadonlySet<string>;
+    storageFence?: DatabaseStorageFence;
+  }
 ) {
   const updates = [...diff.creates, ...diff.updates];
 
@@ -584,7 +690,7 @@ function seedRowDocCacheFromDiff(
 
     if (!state) return;
 
-    const seed = createDatabaseRowDocSeed(rowId, state);
+    const seed = createDatabaseRowDocSeed(rowId, { ...state, storageFence: options?.storageFence });
 
     applySeedToSharedRowDoc(rowKey, seed);
     rowDocSeedLookup.set(rowKey, seed);
@@ -627,7 +733,7 @@ function seedRowDocCacheFromDiff(
 
     if (!state) return;
 
-    const seed = createDatabaseRowDocSeed(rowId, state);
+    const seed = createDatabaseRowDocSeed(rowId, { ...state, storageFence: options?.storageFence });
 
     applySeedToSharedRowDoc(rowKey, seed);
     rowDocSeedLookup.set(rowKey, seed);
@@ -713,7 +819,7 @@ function inspectDocRowData(
 async function applyCollabUpdate(
   objectId: string,
   docState: database_blob.ICollabDocState,
-  options?: { useSharedRowStorage?: boolean; shouldApply?: () => boolean }
+  options?: { useSharedRowStorage?: boolean; shouldApply?: () => boolean; storageFence?: DatabaseStorageFence }
 ) {
   const state = getDocState(docState);
 
@@ -735,7 +841,9 @@ async function applyCollabUpdate(
       encoderVersion: state.encoderVersion,
       ...beforeState,
     });
-    applyYDoc(cachedDoc, state.bytes, state.encoderVersion);
+    withDatabaseStorageFence(cachedDoc, options?.storageFence, () =>
+      applyYDoc(cachedDoc, state.bytes, state.encoderVersion)
+    );
     invalidateRowConditionCache(cachedDoc);
 
     const afterState = inspectDocRowData(cachedDoc, objectId);
@@ -773,7 +881,7 @@ async function applyCollabUpdate(
     const beforeState = inspectDocRowData(doc, objectId);
     const applyStartedAt = Date.now();
 
-    applyYDoc(doc, state.bytes, state.encoderVersion);
+    withDatabaseStorageFence(doc, options?.storageFence, () => applyYDoc(doc, state.bytes, state.encoderVersion));
 
     const afterState = inspectDocRowData(doc, objectId);
 
@@ -799,7 +907,7 @@ async function applyCollabUpdate(
 async function applyRowUpdate(
   databaseId: string,
   update: database_blob.IDatabaseBlobRowUpdate,
-  options?: { seedCache?: boolean; invalidatedRowIds?: ReadonlySet<string> }
+  options?: { seedCache?: boolean; invalidatedRowIds?: ReadonlySet<string>; storageFence?: DatabaseStorageFence }
 ) {
   const rowId = decodeRowId(update.rowId);
 
@@ -831,11 +939,12 @@ async function applyRowUpdate(
     const rowKey = getRowKey(databaseId, rowId);
 
     if (options?.seedCache !== false) {
-      cacheRowDocSeed(rowKey, rowId, rowDocState);
+      cacheRowDocSeed(rowKey, rowId, rowDocState, options?.storageFence);
     }
 
     await applyCollabUpdate(rowId, rowDocState, {
       useSharedRowStorage: true,
+      storageFence: options?.storageFence,
       shouldApply: () => !isInvalidated(),
     });
 
@@ -896,7 +1005,8 @@ async function applyRowDelete(
   databaseId: string,
   deletion: database_blob.IDatabaseBlobRowDelete,
   outboxSession: SyncOutboxSession | null,
-  invalidatedRowIds?: ReadonlySet<string>
+  invalidatedRowIds?: ReadonlySet<string>,
+  storageFence?: DatabaseStorageFence
 ) {
   const rowId = decodeRowId(deletion.rowId);
 
@@ -917,15 +1027,18 @@ async function applyRowDelete(
       throw new Error(`cannot persist database row tombstone ${rowId} without its originating outbox session`);
     }
 
-    await deleteOutboxByObjectId(rowId, { session: outboxSession });
+    // A drain can be waiting on restore reconciliation, which in turn retires
+    // this prefetch. Object generations fence its captured bytes without
+    // waiting on that same drain and forming a cycle.
+    await deleteOutboxByObjectId(rowId, { session: outboxSession, storageFence, skipActiveDrain: true });
 
     if (isInvalidated()) return;
 
     const storageDeletes = await Promise.allSettled([
-      deleteCollabDB(rowId, { destroyDoc: false }),
+      deleteCollabDB(rowId, { destroyDoc: false, storageFence }),
       // Older Web clients persisted rows under the composite row key. Leaving
       // that database behind lets legacy backfill resurrect a tombstoned row.
-      deleteCollabDB(rowKey),
+      deleteCollabDB(rowKey, storageFence ? { storageFence } : undefined),
     ]);
     const rejectedDelete = storageDeletes.find(
       (result): result is PromiseRejectedResult => result.status === 'rejected'
@@ -964,6 +1077,7 @@ async function applyDiff(
     seedCache?: boolean;
     outboxSession?: SyncOutboxSession | null;
     invalidatedRowIds?: ReadonlySet<string>;
+    storageFence?: DatabaseStorageFence;
   }
 ) {
   const updates = [...diff.creates, ...diff.updates];
@@ -1012,7 +1126,13 @@ async function applyDiff(
 
     await awaitBatch(
       batch.map((deletion) =>
-        applyRowDelete(databaseId, deletion, options?.outboxSession ?? null, options?.invalidatedRowIds)
+        applyRowDelete(
+          databaseId,
+          deletion,
+          options?.outboxSession ?? null,
+          options?.invalidatedRowIds,
+          options?.storageFence
+        )
       )
     );
   }
@@ -1031,12 +1151,13 @@ async function persistDiffToIndexedDB(
   diff: database_blob.DatabaseBlobDiffResponse,
   source: string,
   outboxSession: SyncOutboxSession | null,
-  invalidatedRowIds?: ReadonlySet<string>
+  invalidatedRowIds?: ReadonlySet<string>,
+  storageFence?: DatabaseStorageFence
 ): Promise<boolean> {
   const applyStartedAt = Date.now();
 
   try {
-    await applyDiff(databaseId, diff, { seedCache: false, outboxSession, invalidatedRowIds });
+    await applyDiff(databaseId, diff, { seedCache: false, outboxSession, invalidatedRowIds, storageFence });
     Log.debug('[Database] blob diff persisted to IndexedDB', {
       databaseId,
       source,
@@ -1237,7 +1358,10 @@ async function fetchReadyDiff(
 export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: string, options?: PrefetchOptions) {
   const { sharedKey, entry: existingEntry } = findSharedPrefetchEntry(workspaceId, databaseId, options);
 
-  if (existingEntry?.promise) {
+  if (existingEntry?.storageFence && !isDatabaseStorageFenceCurrent(existingEntry.storageFence))
+    existingEntry.invalidated = true;
+
+  if (existingEntry?.promise && !existingEntry.invalidated) {
     const canReuseSettledFullSeed = Boolean(
       options?.forceFullSync && existingEntry.settled && existingEntry.hasCompleteSeedSet
     );
@@ -1252,7 +1376,16 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
         existingEntry.reuseSettled = false;
       }
 
-      return existingEntry.promise;
+      const result = await existingEntry.promise;
+
+      // A restore may join an ordinary prefetch that tolerates unavailable
+      // storage. Shared downloads retain each caller's persistence contract.
+      if (options?.requirePersistence && !existingEntry.persisted) {
+        if (sharedPrefetchEntries.get(sharedKey) === existingEntry) sharedPrefetchEntries.delete(sharedKey);
+        throw new Error('Some restored database rows could not be saved locally. Retry the reload.');
+      }
+
+      return result;
     }
   }
 
@@ -1268,7 +1401,7 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
   const cachedRid = options?.forceFullSync ? null : readCachedRid(databaseId);
   const entry: SharedPrefetchEntry = {
     priorityRowIds: new Set(),
-    invalidatedRowIds: new Set(),
+    invalidatedRowIds: new InvalidatedRows(),
     onSeedsReadyCallbacks: new Set(),
     seedsReady: false,
     hasCompleteSeedSet: false,
@@ -1278,9 +1411,12 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
   applyPrefetchOptions(entry, options);
 
   const seedDiff = (diff: database_blob.DatabaseBlobDiffResponse, source: string) => {
+    if (entry.invalidated || (entry.storageFence && !isDatabaseStorageFenceCurrent(entry.storageFence)))
+      throw new Error('Database prefetch superseded by restore');
     const seedSummary = seedRowDocCacheFromDiff(databaseId, diff, {
       priorityRowIds: Array.from(entry.priorityRowIds),
       invalidatedRowIds: entry.invalidatedRowIds,
+      storageFence: entry.storageFence,
     });
 
     Log.debug('[Database] blob seed cache prepared', {
@@ -1296,13 +1432,21 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
   };
 
   const promise = (async () => {
+    const storageFence = await captureDatabaseStorageFence(databaseId, { required: options?.requirePersistence });
+
+    entry.storageFence = storageFence;
+    entry.invalidatedRowIds.storageFence = storageFence;
+    const capturedRid = options?.forceFullSync ? null : readCachedRid(databaseId, storageFence);
+
+    entry.coversFullSnapshot = capturedRid === null;
     const sourceLabel = options?.forceFullSync ? 'ready full' : 'ready delta';
     const { diff, ready, stagedPages } = await fetchReadyDiff(workspaceId, databaseId, {
-      cachedRid,
+      cachedRid: capturedRid,
       forceFullSync: options?.forceFullSync,
     });
 
     if (!ready) {
+      if (options?.requirePersistence) throw new Error('The restored database is still finalizing. Retry shortly.');
       notifySeedsReady(entry);
       return diff;
     }
@@ -1316,6 +1460,8 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
     }
 
     try {
+      if (entry.invalidated || (entry.storageFence && !isDatabaseStorageFenceCurrent(entry.storageFence)))
+        throw new Error('Database prefetch superseded by restore');
       if (pageCount === 0) {
         throw new Error('database blob diff paging protocol error: Ready walk did not stage any pages');
       }
@@ -1340,19 +1486,27 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
           page,
           `${sourceLabel} page ${index + 1}/${pageCount}`,
           outboxSession,
-          entry.invalidatedRowIds
+          entry.invalidatedRowIds,
+          storageFence
         );
 
         allPagesPersisted = persisted && allPagesPersisted;
       }
 
+      if (options?.requirePersistence && !allPagesPersisted) {
+        throw new Error('Some restored database rows could not be saved locally. Retry the reload.');
+      }
+
+      const checkpointPublished = await publishWithDatabaseStorageFence(storageFence, () => {
+        if (!entry.invalidated && !options?.forceFullSync && allPagesPersisted && maxRid) {
+          writeCachedRid(databaseId, maxRid, storageFence);
+        }
+      });
+
+      if (!checkpointPublished || entry.invalidated) throw new Error('Database prefetch superseded by restore');
+      entry.persisted = allPagesPersisted && !storageFence.nonDurable;
       if (!options?.forceFullSync && allPagesPersisted && maxRid) {
-        writeCachedRid(databaseId, maxRid);
-        Log.debug('[Database] blob updated rid cache after terminal page', {
-          databaseId,
-          maxRid,
-          pageCount,
-        });
+        Log.debug('[Database] blob updated rid cache after terminal page', { databaseId, maxRid, pageCount });
       } else if (!allPagesPersisted) {
         Log.warn('[Database] blob rid cache unchanged because one or more pages failed to persist', {
           databaseId,

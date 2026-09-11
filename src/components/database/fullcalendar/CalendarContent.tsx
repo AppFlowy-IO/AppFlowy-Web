@@ -294,7 +294,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
   const { containerRef: scrollRef } = useScrollNavigation(currentView, calendarApi);
 
   // Dynamic day max event rows
-  const { dayMaxEventRows, updateDayMaxEventRows } = useDynamicDayMaxEventRows(currentView);
+  const { dayMaxEventRows, updateDayMaxEventRows } = useDynamicDayMaxEventRows(currentView, calendarElement);
 
   // Sticky header handling
   const { parentRef: stickyHeaderRef, showStickyToolbar } = useCalendarStickyHeader(calendarApi, normalToolbarRef);
@@ -325,7 +325,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
   useScrollDetection(scrollRef, addButtonRef);
 
   // Enhanced current time indicator with time label
-  useCurrentTimeIndicator(calendarApi, currentView);
+  useCurrentTimeIndicator(calendarApi, currentView, calendarElement);
 
   // Combine refs for container element
   const setContainerRef = useCallback(

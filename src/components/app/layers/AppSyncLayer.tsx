@@ -83,6 +83,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     maxUpdateBytes,
     maxSlowSyncUpdateBytes,
     syncLimitsLoaded = false,
+    enableDatabaseHistory,
   } = useAuthInternal();
   const [awarenessMap] = useState<Record<string, Awareness>>({});
   // Lazy-init so a throwaway EventEmitter isn't constructed on every render
@@ -125,9 +126,13 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     flushAllSync,
     syncAllToServer,
     applyHttpFullSyncResult,
+    ensureDatabaseRestoreCurrent,
+    reloadDatabaseAfterRestore,
     revertCollabVersion,
     scheduleDeferredCleanup,
-  } = useSync(webSocket, broadcastChannel, eventEmitter, currentWorkspaceId!);
+  } = useSync(webSocket, broadcastChannel, eventEmitter, currentWorkspaceId!, {
+    enabled: enableDatabaseHistory, capabilityLoaded: syncLimitsLoaded,
+  });
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -221,6 +226,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
                 stateVector: item.stateVector,
                 docState,
                 collabVersion: item.version,
+                databaseRestoreId: item.databaseRestoreId,
               },
             ],
             {
@@ -237,6 +243,12 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
         // Axios cannot cancel a response that has already resolved. Recheck
         // the outbox lifecycle at the last possible point before enqueueing,
         // then carry the same signal through the per-object apply queue.
+        throwIfAborted(signal);
+        if (!await ensureDatabaseRestoreCurrent(item.objectId, item.collabType,
+          item.databaseRestoreId ?? '00000000-0000-0000-0000-000000000000')) {
+          throw new Error('The database changed while a synchronization response was pending');
+        }
+
         throwIfAborted(signal);
         await applyHttpFullSyncResult(
           {
@@ -285,7 +297,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
 
       return { outcome: 'confirmed' as const, messageId: uploaded.messageId };
     },
-    [applyHttpFullSyncResult, currentWorkspaceId]
+    [applyHttpFullSyncResult, currentWorkspaceId, ensureDatabaseRestoreCurrent]
   );
 
   // `clearDrainConfig` aborts in-flight oversized uploads, so anything in the
@@ -326,6 +338,8 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     configureDrain({
       userId: currentUserId,
       workspaceId: currentWorkspaceId,
+      beforeSend: ensureDatabaseRestoreCurrent,
+      databaseHistoryEnabled: enableDatabaseHistory,
       // Server send — gated on WS being OPEN via isReady(). `keep=false` so
       // a transient close does not silently buffer the message into
       // react-use-websocket's in-memory retry queue (which would be lost on
@@ -374,6 +388,8 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     maxSlowSyncUpdateBytes,
     syncLimitsLoaded,
     stableSlowSync,
+    ensureDatabaseRestoreCurrent,
+    enableDatabaseHistory,
   ]);
 
   // Transport readiness only wakes the already-configured drain. Keeping it
@@ -638,6 +654,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       registerSyncContext,
       rebindSyncContext,
       revertCollabVersion,
+      reloadDatabaseAfterRestore,
       eventEmitter,
       awarenessMap,
       flushAllSync,
@@ -649,6 +666,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       registerSyncContext,
       rebindSyncContext,
       revertCollabVersion,
+      reloadDatabaseAfterRestore,
       awarenessMap,
       flushAllSync,
       syncAllToServer,

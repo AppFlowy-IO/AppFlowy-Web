@@ -8,6 +8,7 @@ import { parseNumberTypeOptions } from '@/application/database-yjs/fields/number
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
@@ -754,7 +755,18 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   return withTargetFieldType(calculatedValue);
 }
 
+function readStoredRollupValue(context: RollupComputeContext): RollupCellValue {
+  const raw = context.row.get(YjsDatabaseKey.cells)?.get(context.fieldId)?.get(YjsDatabaseKey.data);
+
+  return {
+    value: typeof raw === 'string' || typeof raw === 'number' ? String(raw) : '',
+    rawNumeric: typeof raw === 'number' ? raw : undefined,
+  };
+}
+
 export async function readRollupCell(context: RollupComputeContext): Promise<RollupCellValue> {
+  if (isDatabaseHistoryDocumentImmutable(context.baseDoc)) return readStoredRollupValue(context);
+
   pruneCache();
   const cellId = `${context.rowId}:${context.fieldId}`;
   const generation = getGeneration(cellId);
@@ -829,6 +841,8 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
 }
 
 export function readRollupCellSync(context: RollupComputeContext): RollupCellValue {
+  if (isDatabaseHistoryDocumentImmutable(context.baseDoc)) return readStoredRollupValue(context);
+
   pruneCache();
   const cellId = `${context.rowId}:${context.fieldId}`;
   const generation = getGeneration(cellId);

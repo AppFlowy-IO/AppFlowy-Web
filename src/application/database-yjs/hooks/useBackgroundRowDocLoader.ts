@@ -287,14 +287,17 @@ function destroyStore(store: LoaderStore) {
  * @param scope - Isolates independently activated consumers sharing a view
  * @returns Cached read-only row docs that are not already in the main row map
  */
-export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions') {
+export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'conditions') {
   const rows = useRowMap();
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
   const rowOrders = view?.get(YjsDatabaseKey.row_orders);
-  const { databaseDoc, ensureRow, loadRowFromSeed, peekRowDocFromSeed, blobPrefetchComplete, seedsReady } =
+  const { databaseDoc, ensureRow, loadRowFromSeed, peekRowDocFromSeed, blobPrefetchComplete, seedsReady, dataSource } =
     useDatabaseContext();
-  const storeKey = `${databaseDoc.guid}:${viewId ?? 'unknown'}:${scope}`;
+  const isHistory = dataSource?.type === 'history';
+  // Historical snapshots are complete and provide their own bounded synchronous accessor.
+  const active = requestedActive && !isHistory;
+  const storeKey = `${dataSource?.id ?? databaseDoc.guid}:${viewId ?? 'unknown'}:${scope}`;
   const store = useMemo(() => getLoaderStore(storeKey), [storeKey]);
   const [rowOrderRevision, setRowOrderRevision] = useState(0);
 
@@ -643,6 +646,10 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
 
       if (!isRunActive()) return;
 
+      // Historical data is complete and immutable. A missing historical row
+      // must never be replaced with an unrelated current IndexedDB row.
+      if (isHistory) return;
+
       // The first pass checks every local cache. Later passes only re-request
       // the live collab; repeating skip-cache opens cannot make remote data appear.
       if (retryAttempt > 0) {
@@ -726,6 +733,7 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
     };
   }, [
     databaseDoc.guid,
+    isHistory,
     active,
     blobPrefetchComplete,
     rows,
