@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { FieldType } from '@/application/database-yjs';
@@ -16,6 +16,7 @@ const mockDatabaseContext = {
   bindViewSync: jest.fn(),
   loadView: jest.fn(),
   createRow: jest.fn(),
+  templateEditingRowId: undefined as string | undefined,
 };
 
 jest.mock('@/application/database-yjs', () => ({
@@ -136,6 +137,47 @@ function skeletons() {
 describe('RelationCellMenuContent loading states', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockDatabaseContext.templateEditingRowId = undefined;
+  });
+
+  it('loads and selects existing related rows in an isolated editor without offering target creation', async () => {
+    mockDatabaseContext.templateEditingRowId = 'calendar-draft';
+    const target = createTargetDoc(['row-1', 'row-2']);
+    const originalTarget = Y.encodeStateAsUpdate(target);
+    const onAddRelationRowId = jest.fn();
+
+    mockDatabaseContext.loadView.mockResolvedValue(target);
+    mockDatabaseContext.createRow.mockImplementation(async (key: string) => {
+      const id = rowIdFromKey(key);
+
+      return createTitledRowDoc(id, id === 'row-1' ? 'Existing task' : 'Another task');
+    });
+    render(
+      <RelationCellMenuContent
+        relationRowIds={[]}
+        selectedView={{ view_id: VIEW_ID, name: 'Tasks' } as View}
+        relatedDatabaseId={DATABASE_ID}
+        onAddRelationRowId={onAddRelationRowId}
+        onRemoveRelationRowId={jest.fn()}
+      />
+    );
+
+    fireEvent.click(await screen.findByText('Existing task'));
+    expect(onAddRelationRowId).toHaveBeenCalledWith('row-1');
+    await screen.findByText('Another task');
+    expect(skeletons()).toHaveLength(0);
+
+    const search = screen.getByPlaceholderText('searchLabel');
+
+    fireEvent.change(search, { target: { value: 'New target row' } });
+    await screen.findByText(NO_RESULT);
+    expect(screen.queryByTestId('relation-create-and-link')).toBeNull();
+    fireEvent.keyDown(search, { key: 'Enter', code: 'Enter' });
+    expect(mockDatabaseContext.createRow.mock.calls.map(([key]) => key).sort()).toEqual([
+      `${VIEW_ID}_rows_row-1`, `${VIEW_ID}_rows_row-2`,
+    ]);
+    expect(onAddRelationRowId).toHaveBeenCalledTimes(1);
+    expect(Y.encodeStateAsUpdate(target)).toEqual(originalTarget);
   });
 
   it('holds a placeholder per row until its title arrives, rather than reading "Untitled"', async () => {

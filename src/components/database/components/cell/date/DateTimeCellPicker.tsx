@@ -7,6 +7,7 @@ import {
   FieldType,
   getFieldDateTimeFormats,
   getTypeOptions,
+  useDatabaseContext,
   useDatabaseViewLayout,
   useFieldSelector,
 } from '@/application/database-yjs';
@@ -45,6 +46,9 @@ function DateTimeCellPicker({
 }) {
   const currentUser = useCurrentUser();
   const { t } = useTranslation();
+  const { templateEditingRowId } = useDatabaseContext();
+  // Isolated row editors stage cell values, not database-wide date formats.
+  const canEditFieldFormat = templateEditingRowId !== rowId;
 
   const [isRange, setIsRange] = useState<boolean>(() => {
     if (!cell) return false;
@@ -329,22 +333,24 @@ function DateTimeCellPicker({
           </div>
         </div>
         <Separator className={'my-2'} />
-        <div className={'px-2'}>
-          <DateTimeFormatMenu fieldId={fieldId}>
-            <div
-              className={cn(
-                dropdownMenuItemVariants({
-                  variant: 'default',
-                }),
-                'w-full'
-              )}
-            >
-              {`${t('datePicker.dateFormat')} & ${t('datePicker.timeFormat')}`}
+        {canEditFieldFormat && (
+          <div className={'px-2'}>
+            <DateTimeFormatMenu fieldId={fieldId}>
+              <div
+                className={cn(
+                  dropdownMenuItemVariants({
+                    variant: 'default',
+                  }),
+                  'w-full'
+                )}
+              >
+                {`${t('datePicker.dateFormat')} & ${t('datePicker.timeFormat')}`}
 
-              <ChevronRight className={'ml-auto h-5 w-5 text-text-tertiary'} />
-            </div>
-          </DateTimeFormatMenu>
-        </div>
+                <ChevronRight className={'ml-auto h-5 w-5 text-text-tertiary'} />
+              </div>
+            </DateTimeFormatMenu>
+          </div>
+        )}
         <div className={'px-2 pb-2'}>
           <div
             data-testid="clear-date-button"

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { useDatabaseContext } from '@/application/database-yjs/context';
 import { RelationCell as RelationCellType, RelationCellData } from '@/application/database-yjs/cell.type';
 import { useUpdateRelationCell } from '@/application/database-yjs/dispatch/relation';
 import LoadingDots from '@/components/_shared/LoadingDots';
@@ -25,6 +26,7 @@ function RelationCellMenu ({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
+  const { templateEditingRowId } = useDatabaseContext();
   const data = cell?.data;
   const relationRowIds = useMemo(() => (data?.toJSON() as RelationCellData) ?? [], [data]);
 
@@ -83,18 +85,23 @@ function RelationCellMenu ({
             <LoadingDots />
           </div>
         ) : !relatedDatabaseId ? (
-          <NoDatabaseSelectedContent
-            loading={loading}
-            views={views}
-            onSelect={(view) => {
-              setSelectedView(view);
-              const databaseId = Object.entries(relations || []).find(([, id]) => id === view.view_id)?.[0];
+          // Choosing a target changes field schema and may create reciprocal
+          // fields. Isolated row editors only stage cell selections.
+          <fieldset disabled={!!templateEditingRowId} className='min-w-0 disabled:opacity-50'>
+            <NoDatabaseSelectedContent
+              loading={loading}
+              views={views}
+              onSelect={(view) => {
+                if (templateEditingRowId) return;
+                setSelectedView(view);
+                const databaseId = Object.entries(relations || []).find(([, id]) => id === view.view_id)?.[0];
 
-              if (databaseId) {
-                void onUpdateDatabaseId(databaseId);
-              }
-            }}
-          />
+                if (databaseId) {
+                  void onUpdateDatabaseId(databaseId);
+                }
+              }}
+            />
+          </fieldset>
         ) : (
           <RelationCellMenuContent
             relationRowIds={relationRowIds}

@@ -20,6 +20,7 @@ import {
   editEventTitle,
   deleteEventFromPopover,
   closeEventPopover,
+  submitEventPopover,
   assertTotalEventCount,
   assertEventExists,
   getToday,
@@ -101,8 +102,8 @@ test.describe('Calendar Basic Tests (Desktop Parity)', () => {
     // Event editor/popover should open
     await expect(page.locator('[data-radix-popper-content-wrapper]')).toBeVisible();
 
-    // Close the popover
-    await closeEventPopover(page);
+    // Explicitly keep the untitled placeholder.
+    await submitEventPopover(page);
 
     // Verify event was created
     await assertTotalEventCount(page, 1);
@@ -121,19 +122,14 @@ test.describe('Calendar Basic Tests (Desktop Parity)', () => {
     await CalendarSelectors.dayCellByDate(page, dateStr).hover();
     await page.waitForTimeout(500);
 
-    // Click the add button if visible, otherwise double-click
-    const addButton = page.locator('[data-testid="calendar-add-button"], .add-event-button');
-    const addButtonCount = await addButton.count();
-    if (addButtonCount > 0 && await addButton.first().isVisible()) {
-      await addButton.first().click({ force: true });
-    } else {
-      await doubleClickCalendarDay(page, today);
-    }
+    const addButton = page.locator('button.calendar-add-button[data-add-button]');
+    await expect(addButton).toBeVisible();
+    await addButton.click();
 
     await page.waitForTimeout(1000);
 
-    // Close any open popover
-    await closeEventPopover(page);
+    // Explicitly keep the untitled placeholder.
+    await submitEventPopover(page);
 
     // Verify event exists
     await expect(CalendarSelectors.event(page).first()).toBeVisible();

@@ -116,11 +116,19 @@ export async function clickEvent(page: Page, eventIndex: number = 0): Promise<vo
  * Edit event title in the popover
  */
 export async function editEventTitle(page: Page, newTitle: string): Promise<void> {
-  const popover = page.locator('[data-radix-popper-content-wrapper]').last();
-  const titleInput = popover.locator('input, textarea, [contenteditable="true"]').first();
+  const titleInput = page.getByTestId('calendar-event-title-input');
+  await expect(titleInput).toBeVisible();
   await titleInput.fill('');
   await titleInput.pressSequentially(newTitle, { delay: 30 });
   await page.waitForTimeout(500);
+}
+
+/** Explicit submission keeps an intentionally untitled calendar placeholder. */
+export async function submitEventPopover(page: Page): Promise<void> {
+  const titleInput = page.getByTestId('calendar-event-title-input');
+  await expect(titleInput).toBeVisible();
+  await titleInput.press('Enter');
+  await expect(titleInput).toHaveCount(0);
 }
 
 /**

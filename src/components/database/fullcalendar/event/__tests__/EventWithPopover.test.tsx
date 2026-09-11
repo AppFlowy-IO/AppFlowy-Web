@@ -16,6 +16,11 @@ jest.mock('@/application/database-yjs', () => ({
   useDatabaseViewLayout: () => undefined,
 }));
 
+jest.mock('@/application/database-yjs/context', () => ({
+  ...jest.requireActual('@/application/database-yjs/context'),
+  useNavigateToRow: () => undefined,
+}));
+
 jest.mock('@/application/database-yjs/dispatch', () => ({
   useTrashAwareDeleteRowsDispatch: () => mockDeleteRows,
 }));

@@ -1,11 +1,14 @@
 import { EventApi, EventContentArg } from '@fullcalendar/core';
 import { memo, useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
+import { DatabaseContext, useNavigateToRow } from '@/application/database-yjs/context';
 import DeleteRowConfirm from '@/components/database/components/database-row/DeleteRowConfirm';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 import { useEventContext } from '../CalendarContent';
 
+import { useCalendarDraftContext } from './CalendarDraftContext';
 import { EventDisplay } from './EventDisplay';
 import EventPopoverContent from './EventPopoverContent';
 
@@ -15,7 +18,7 @@ interface EventWithPopoverProps {
   isWeekView?: boolean;
 }
 
-export const EventWithPopover = memo(({ event, eventInfo, isWeekView = false }: EventWithPopoverProps) => {
+const PersistedEventWithPopover = memo(({ event, eventInfo, isWeekView = false }: EventWithPopoverProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [deleteConfirmationPending, setDeleteConfirmationPending] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -129,5 +132,97 @@ export const EventWithPopover = memo(({ event, eventInfo, isWeekView = false }: 
     </>
   );
 });
+
+export const EventWithPopover = memo((props: EventWithPopoverProps) => {
+  const draftContext = useCalendarDraftContext();
+  const navigateToRow = useNavigateToRow();
+  const draft = draftContext?.draft;
+
+  if (draftContext && props.event.extendedProps.isDraft && draft?.id === props.event.id) {
+    return (
+      <DatabaseContext.Provider value={draft.context}>
+        <DraftEventWithPopover
+          {...props}
+          saving={draft.saving}
+          finish={draftContext.finishDraft}
+          discard={draftContext.discardDraft}
+          navigateToRow={navigateToRow}
+        />
+      </DatabaseContext.Provider>
+    );
+  }
+
+  return <PersistedEventWithPopover {...props} />;
+});
+
+function DraftEventWithPopover({
+  event,
+  eventInfo,
+  isWeekView,
+  saving,
+  finish,
+  discard,
+  navigateToRow,
+}: EventWithPopoverProps & {
+  saving: boolean;
+  finish: (force?: boolean) => Promise<string | null>;
+  discard: () => void;
+  navigateToRow?: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(eventInfo.isStart);
+  const complete = useCallback(
+    async (force = false, expand = false) => {
+      if (saving) return;
+      try {
+        const id = await finish(force);
+
+        setOpen(false);
+        if (expand && id) navigateToRow?.(id);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [finish, navigateToRow, saving]
+  );
+
+  return (
+    <div className='relative h-full w-full' data-testid='calendar-draft-event' data-event-id={event.id}>
+      <EventDisplay event={event} eventInfo={eventInfo} isWeekView={isWeekView} onClick={() => setOpen(true)} />
+      {open && (
+        <Popover
+          open
+          modal
+          onOpenChange={(next) => {
+            if (!next) void complete();
+          }}
+        >
+          <PopoverTrigger asChild>
+            <div className='absolute left-0 top-0 h-full w-full' />
+          </PopoverTrigger>
+          <PopoverContent
+            collisionPadding={20}
+            side='left'
+            align='center'
+            sideOffset={8}
+            onCloseAutoFocus={(event) => event.preventDefault()}
+          >
+            <EventPopoverContent
+              rowId={event.id}
+              isDraft
+              onCloseEvent={() => void complete()}
+              onSubmit={() => void complete(true)}
+              onExpand={() => void complete(true, true)}
+              onRequestDelete={() => {
+                discard();
+                setOpen(false);
+              }}
+              onGotoDate={() => undefined}
+            />
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  );
+}
 
 export default EventWithPopover;
