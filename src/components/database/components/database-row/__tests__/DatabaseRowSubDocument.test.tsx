@@ -243,6 +243,165 @@ describe('DatabaseRowSubDocument', () => {
     }
   });
 
+  it.each([
+    { failure: 'fetch error', isEmptyDocument: false },
+    { failure: 'fetch error', isEmptyDocument: true },
+    { failure: 'incomplete document', isEmptyDocument: false },
+    { failure: 'incomplete document', isEmptyDocument: true },
+    { failure: 'existence error', isEmptyDocument: false },
+    { failure: 'existence error', isEmptyDocument: true },
+  ])('does not repair after a $failure, including retries (empty=$isEmptyDocument)', async ({ failure, isEmptyDocument }) => {
+    jest.useFakeTimers();
+
+    const rowId = 'row-id';
+    const documentId = 'document-id';
+    const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+
+    if (failure !== 'incomplete document') {
+      Y.applyUpdate(cachedDoc, createRowDocumentState(documentId));
+    }
+
+    const transientError = new Error('temporary request failure');
+    const loadRowDocument = failure === 'fetch error'
+      ? jest.fn().mockRejectedValue(transientError)
+      : jest.fn().mockResolvedValue(cachedDoc);
+    const checkIfRowDocumentExists = failure === 'existence error'
+      ? jest.fn().mockRejectedValue(transientError)
+      : jest.fn().mockResolvedValue(true);
+    const createRowDocument = jest.fn().mockResolvedValue(createRowDocumentState(documentId));
+
+    configureRowDocumentTest({
+      documentIds: { [rowId]: documentId },
+      cachedDocs: new Map([[documentId, cachedDoc]]),
+      loadRowDocument,
+      createRowDocument,
+      checkIfRowDocumentExists,
+      isEmptyDocument,
+      readOnly: true,
+    });
+    render(<DatabaseRowSubDocument rowId={rowId} />);
+    await act(flushAsyncWork);
+
+    expect(createRowDocument).not.toHaveBeenCalled();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10000);
+      await flushAsyncWork();
+    });
+
+    expect(createRowDocument).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('row-document-editor')).toBeNull();
+    expect(screen.queryByTestId('row-document-no-access')).toBeNull();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it.each([false, true])('recovers from a temporary fetch failure by reading again (empty=%s)', async (isEmptyDocument) => {
+    jest.useFakeTimers();
+
+    const rowId = 'row-id';
+    const documentId = 'document-id';
+    const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+
+    Y.applyUpdate(cachedDoc, createRowDocumentState(documentId));
+    const loadRowDocument = jest.fn()
+      .mockRejectedValueOnce(new Error('temporary fetch failure'))
+      .mockResolvedValue(cachedDoc);
+    const createRowDocument = jest.fn().mockResolvedValue(createRowDocumentState(documentId));
+
+    configureRowDocumentTest({
+      documentIds: { [rowId]: documentId },
+      cachedDocs: new Map([[documentId, cachedDoc]]),
+      loadRowDocument,
+      createRowDocument,
+      checkIfRowDocumentExists: jest.fn().mockResolvedValue(true),
+      isEmptyDocument,
+      readOnly: true,
+    });
+    render(<DatabaseRowSubDocument rowId={rowId} />);
+    await act(flushAsyncWork);
+
+    expect(createRowDocument).not.toHaveBeenCalled();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(2000);
+      await flushAsyncWork();
+    });
+
+    expect(screen.getByTestId('row-document-editor').getAttribute('data-read-only')).toBe('true');
+    expect(loadRowDocument).toHaveBeenCalledTimes(2);
+    expect(createRowDocument).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('reads an empty document that appears before a failed creation is retried', async () => {
+    jest.useFakeTimers();
+
+    const rowId = 'row-id';
+    const documentId = 'document-id';
+    const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+
+    Y.applyUpdate(cachedDoc, createRowDocumentState(documentId));
+    const loadRowDocument = jest.fn().mockResolvedValue(cachedDoc);
+    const createRowDocument = jest.fn().mockResolvedValue(null);
+    const checkIfRowDocumentExists = jest.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+
+    configureRowDocumentTest({
+      documentIds: { [rowId]: documentId },
+      cachedDocs: new Map([[documentId, cachedDoc]]),
+      loadRowDocument,
+      createRowDocument,
+      checkIfRowDocumentExists,
+      isEmptyDocument: true,
+    });
+    render(<DatabaseRowSubDocument rowId={rowId} />);
+    await act(flushAsyncWork);
+    expect(createRowDocument).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(2000);
+      await flushAsyncWork();
+    });
+
+    expect(screen.getByTestId('row-document-editor')).not.toBeNull();
+    expect(loadRowDocument).toHaveBeenCalledTimes(1);
+    expect(createRowDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates a nonempty row document only after missing-document retries are exhausted', async () => {
+    jest.useFakeTimers();
+
+    const rowId = 'row-id';
+    const documentId = 'document-id';
+    const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+    const loadRowDocument = jest.fn().mockResolvedValue(cachedDoc);
+    const createRowDocument = jest.fn().mockResolvedValue(createRowDocumentState(documentId));
+    const checkIfRowDocumentExists = jest.fn().mockResolvedValue(false);
+
+    configureRowDocumentTest({
+      documentIds: { [rowId]: documentId },
+      cachedDocs: new Map([[documentId, cachedDoc]]),
+      loadRowDocument,
+      createRowDocument,
+      checkIfRowDocumentExists,
+    });
+    render(<DatabaseRowSubDocument rowId={rowId} />);
+    await act(flushAsyncWork);
+    expect(createRowDocument).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(2000);
+      await flushAsyncWork();
+    });
+    expect(createRowDocument).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10000);
+      await flushAsyncWork();
+    });
+
+    expect(screen.getByTestId('row-document-editor')).not.toBeNull();
+    expect(createRowDocument).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
   it('waits for server creation before binding an empty row that exists only locally', async () => {
     const rowId = 'row-id';
     const documentId = 'document-id';
@@ -273,11 +432,11 @@ describe('DatabaseRowSubDocument', () => {
     expect(await screen.findByTestId('row-document-editor')).not.toBeNull();
   });
 
-  it('repairs and opens an existing row document immediately after one failed page fetch', async () => {
+  it('repairs and opens an existing row document immediately after one denied page fetch', async () => {
     const rowId = 'row-id';
     const documentId = 'document-id';
     const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
-    const loadRowDocument = jest.fn().mockResolvedValue(cachedDoc);
+    const loadRowDocument = jest.fn().mockRejectedValue({ code: 1012, message: 'document read denied' });
     const createRowDocument = jest.fn().mockResolvedValue(createRowDocumentState(documentId));
     const checkIfRowDocumentExists = jest.fn().mockResolvedValue(true);
 
@@ -320,7 +479,7 @@ describe('DatabaseRowSubDocument', () => {
     const rowId = 'row-id';
     const documentId = 'document-id';
     const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
-    const loadRowDocument = jest.fn().mockResolvedValue(cachedDoc);
+    const loadRowDocument = jest.fn().mockRejectedValue({ code: 1012, message: 'document read denied' });
     const createRowDocument = jest.fn().mockResolvedValue(null);
     const checkIfRowDocumentExists = jest.fn().mockResolvedValue(true);
 
@@ -509,7 +668,7 @@ describe('DatabaseRowSubDocument', () => {
       [secondDocumentId, secondCachedDoc],
     ]);
     const firstRepair = createDeferred<Uint8Array | null>();
-    const loadRowDocument = jest.fn((documentId: string) => Promise.resolve(cachedDocs.get(documentId) ?? null));
+    const loadRowDocument = jest.fn().mockRejectedValue({ code: 1012, message: 'document read denied' });
     const createRowDocument = jest.fn((documentId: string) => {
       if (documentId === firstDocumentId) return firstRepair.promise;
       return Promise.resolve(createRowDocumentState(documentId));
@@ -557,6 +716,8 @@ describe('DatabaseRowSubDocument', () => {
     const documentId = 'document-id';
     const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
 
+    Y.applyUpdate(cachedDoc, createRowDocumentState(documentId));
+
     configureRowDocumentTest({
       documentIds: { [rowId]: documentId },
       cachedDocs: new Map([[documentId, cachedDoc]]),
@@ -581,6 +742,8 @@ describe('DatabaseRowSubDocument', () => {
     const rowId = 'row-id';
     const documentId = 'document-id';
     const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+
+    Y.applyUpdate(cachedDoc, createRowDocumentState(documentId));
     const updateRowMeta = jest.fn();
     let pendingFlush: (() => void) | null = null;
 
@@ -620,6 +783,8 @@ describe('DatabaseRowSubDocument', () => {
     const rowId = 'row-id';
     const documentId = 'document-id';
     const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+
+    Y.applyUpdate(cachedDoc, createRowDocumentState(documentId));
     let pendingFlush: (() => void) | null = null;
     const { rows } = configureRowDocumentTest({
       documentIds: { [rowId]: documentId },
