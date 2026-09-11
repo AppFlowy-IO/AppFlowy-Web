@@ -437,7 +437,8 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         return 'ready';
       } catch (e) {
         if (isPermissionDeniedError(e)) {
-          if (isCurrent()) markPermissionDenied(documentId);
+          // An existing document may still need server-owned provenance repair. The caller
+          // decides whether to attempt that transition before displaying a terminal denial.
           return 'forbidden';
         }
 
@@ -451,7 +452,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         }
       }
     },
-    [loadRowDocument, markPermissionDenied, rowDocumentSource, rowId]
+    [loadRowDocument, rowDocumentSource, rowId]
   );
   // Open document with server-provided doc_state (Y.js update)
   const openDocumentWithState = useCallback(
@@ -620,6 +621,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         if (loadRowDocument) {
           const loadAttempt = await handleOpenDocument(documentId, undefined, isCurrent);
 
+          if (loadAttempt === 'forbidden' && isCurrent()) markPermissionDenied(documentId);
           if (loadAttempt !== 'retryable') {
             return loadAttempt;
           }
@@ -645,6 +647,28 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       rowDocumentSource,
       rowId,
     ]
+  );
+
+  const handleOpenExistingDocument = useCallback(
+    async (
+      documentId: string,
+      options: LoadRowDocumentOptions | undefined,
+      isCurrentRequest: IsCurrentRowDocumentRequest
+    ): Promise<RowDocumentAttempt> => {
+      const isCurrent = () => isCurrentRequest() && activeDocumentIdRef.current === documentId;
+      const attempt = await handleOpenDocument(documentId, options, isCurrent);
+
+      if (attempt === 'ready' || !isCurrent()) return attempt;
+      if (attempt === 'forbidden' && (!rowDocumentSource || !createRowDocument)) {
+        markPermissionDenied(documentId);
+        return 'forbidden';
+      }
+
+      // Read permission is sufficient to request an eligible repair. The server verifies the
+      // source and existing document; a denied repair remains terminal and never becomes a loop.
+      return handleCreateDocument(documentId, true, isCurrent);
+    },
+    [createRowDocument, handleCreateDocument, handleOpenDocument, markPermissionDenied, rowDocumentSource]
   );
 
   const scheduleEnsureRowDocumentExists = useCallback(() => {
@@ -807,7 +831,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         const retryingEmptyDocument = isDocumentEmptyResolved === true;
         const retryAttempt = retryingEmptyDocument
           ? await handleCreateDocument(documentId, false, isCurrentRequest)
-          : await handleOpenDocument(documentId, loadOptions, isCurrentRequest);
+          : await handleOpenExistingDocument(documentId, loadOptions, isCurrentRequest);
 
         if (retryAttempt !== 'retryable' || !isCurrentRequest()) {
           return;
@@ -964,22 +988,14 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           // present. Do one read attempt, then repair its row-document
           // registration and open the returned state instead of waiting
           // through the duplication-oriented backoff loop.
-          const loadAttempt = await handleOpenDocument(
+          const loadAttempt = await handleOpenExistingDocument(
             documentId,
             CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS,
             isCurrentRequest
           );
 
           if (loadAttempt === 'retryable' && isCurrentRequest()) {
-            Log.debug('[DatabaseRowSubDocument] repairing row document after load failure', {
-              rowId,
-              documentId,
-            });
-            const repairAttempt = await handleCreateDocument(documentId, true, isCurrentRequest);
-
-            if (repairAttempt === 'retryable' && isCurrentRequest()) {
-              scheduleRetry(CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS);
-            }
+            scheduleRetry(CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS);
           }
 
           return;
@@ -996,7 +1012,19 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         if (!isCurrentRequest()) return;
 
         if (isPermissionDeniedError(e)) {
-          markPermissionDenied(documentId);
+          // Existence is also permission-checked. A legacy row body can be denied here before
+          // its first fetch, so give the contextual repair endpoint the same bounded chance.
+          if (!rowDocumentSource || !createRowDocument) {
+            markPermissionDenied(documentId);
+            return;
+          }
+
+          const repairAttempt = await handleCreateDocument(documentId, true, isCurrentRequest);
+
+          if (repairAttempt === 'retryable' && isCurrentRequest()) {
+            scheduleRetry(CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS);
+          }
+
           return;
         }
 
@@ -1013,10 +1041,12 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       clearRetryTimer();
     };
   }, [
-    handleOpenDocument,
+    handleOpenExistingDocument,
     documentId,
     handleCreateDocument,
     checkIfRowDocumentExists,
+    createRowDocument,
+    rowDocumentSource,
     isDocumentEmptyResolved,
     hasLocalDocContent,
     markPermissionDenied,

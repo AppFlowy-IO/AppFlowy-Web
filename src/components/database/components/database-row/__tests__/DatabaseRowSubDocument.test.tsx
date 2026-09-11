@@ -299,7 +299,47 @@ describe('DatabaseRowSubDocument', () => {
     });
   });
 
-  it('shows no access without repairing or retrying when an existing row document is forbidden', async () => {
+  it.each(['existence check', 'document fetch'])(
+    'repairs an existing row document for a read-only member after a denied %s',
+    async (deniedOperation) => {
+      const rowId = 'row-id';
+      const documentId = 'document-id';
+      const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+      const denied = { code: 1012, message: 'user is not allowed to access this view' };
+      const loadRowDocument = jest.fn().mockRejectedValue(denied);
+      const createRowDocument = jest.fn().mockResolvedValue(createRowDocumentState(documentId));
+      const checkIfRowDocumentExists =
+        deniedOperation === 'existence check'
+          ? jest.fn().mockRejectedValue(denied)
+          : jest.fn().mockResolvedValue(true);
+
+      configureRowDocumentTest({
+        documentIds: { [rowId]: documentId },
+        cachedDocs: new Map([[documentId, cachedDoc]]),
+        loadRowDocument,
+        createRowDocument,
+        checkIfRowDocumentExists,
+        readOnly: true,
+      });
+
+      render(<DatabaseRowSubDocument rowId={rowId} />);
+
+      const editor = await screen.findByTestId('row-document-editor');
+
+      expect(editor.getAttribute('data-read-only')).toBe('true');
+      expect(editor.getAttribute('data-can-write')).toBe('false');
+      expect(screen.queryByTestId('row-document-no-access')).toBeNull();
+      expect(createRowDocument).toHaveBeenCalledTimes(1);
+      expect(createRowDocument).toHaveBeenCalledWith(documentId, {
+        database_id: 'database-id',
+        database_view_id: 'database-view-id',
+        row_id: rowId,
+      });
+      expect(loadRowDocument).toHaveBeenCalledTimes(deniedOperation === 'existence check' ? 0 : 1);
+    }
+  );
+
+  it('shows no access without retrying when the contextual repair is also forbidden', async () => {
     jest.useFakeTimers();
 
     const rowId = 'row-id';
@@ -308,7 +348,9 @@ describe('DatabaseRowSubDocument', () => {
     const loadRowDocument = jest
       .fn()
       .mockRejectedValue({ code: 1012, message: 'user is not allowed to access this view' });
-    const createRowDocument = jest.fn();
+    const createRowDocument = jest
+      .fn()
+      .mockRejectedValue({ code: 1012, message: 'user is not allowed to access this view' });
     const checkIfRowDocumentExists = jest.fn().mockResolvedValue(true);
 
     configureRowDocumentTest({
@@ -317,6 +359,7 @@ describe('DatabaseRowSubDocument', () => {
       loadRowDocument,
       createRowDocument,
       checkIfRowDocumentExists,
+      readOnly: true,
     });
 
     render(<DatabaseRowSubDocument rowId={rowId} />);
@@ -334,7 +377,7 @@ describe('DatabaseRowSubDocument', () => {
         row_id: rowId,
       },
     });
-    expect(createRowDocument).not.toHaveBeenCalled();
+    expect(createRowDocument).toHaveBeenCalledTimes(1);
     expect(jest.getTimerCount()).toBe(0);
 
     await act(async () => {
@@ -343,7 +386,7 @@ describe('DatabaseRowSubDocument', () => {
     });
 
     expect(loadRowDocument).toHaveBeenCalledTimes(1);
-    expect(createRowDocument).not.toHaveBeenCalled();
+    expect(createRowDocument).toHaveBeenCalledTimes(1);
   });
 
   it('shows no access without retrying when empty row document creation is forbidden', async () => {
