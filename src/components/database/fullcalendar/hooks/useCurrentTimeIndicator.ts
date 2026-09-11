@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { useCalendarLayoutSetting } from '@/application/database-yjs';
 import { Log } from '@/utils/log';
@@ -11,11 +11,28 @@ import type { CalendarApi } from '@fullcalendar/core';
  * Custom hook to enhance the current time indicator with time label
  * Adds a time label (e.g., "9:07 AM") next to the current time line in week view
  */
-export function useCurrentTimeIndicator(calendarApi: CalendarApi | null, currentView: CalendarViewType) {
+export function useCurrentTimeIndicator(
+  calendarApi: CalendarApi | null,
+  currentView: CalendarViewType,
+  calendarElement: HTMLElement | null
+) {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const isCurrentWeekRef = useRef(false);
   const setting = useCalendarLayoutSetting();
+
+  // Define resetTimeSlotVisibility outside the main effect so it can be accessed in cleanup
+  const resetTimeSlotVisibility = useCallback(() => {
+    // Reset all time slot labels to fully opaque
+    for (let hour = 0; hour < 24; hour++) {
+      const timeString = String(hour).padStart(2, '0') + ':00:00';
+      const timeSlot = calendarElement?.querySelector(`[data-time="${timeString}"]`) as HTMLElement;
+
+      if (timeSlot) {
+        timeSlot.classList.remove('hidden-text');
+      }
+    }
+  }, [calendarElement]);
 
   useEffect(() => {
     if (!calendarApi || currentView !== CalendarViewType.TIME_GRID_WEEK) {
@@ -26,7 +43,7 @@ export function useCurrentTimeIndicator(calendarApi: CalendarApi | null, current
       }
 
       // Remove existing custom line when switching away from week view
-      const existingLine = document.querySelector('.custom-now-indicator-line');
+      const existingLine = calendarElement?.querySelector('.custom-now-indicator-line');
 
       if (existingLine) {
         existingLine.remove();
@@ -37,6 +54,8 @@ export function useCurrentTimeIndicator(calendarApi: CalendarApi | null, current
 
       return;
     }
+
+    let cancelled = false;
 
     const isCurrentWeek = () => {
       if (!calendarApi) return false;
@@ -54,7 +73,7 @@ export function useCurrentTimeIndicator(calendarApi: CalendarApi | null, current
       if (!isCurrentWeek()) {
         isCurrentWeekRef.current = false;
         // Remove horizontal line if not in current week
-        const existingLine = document.querySelector('.custom-now-indicator-line');
+        const existingLine = calendarElement?.querySelector('.custom-now-indicator-line');
 
         if (existingLine) {
           existingLine.remove();
@@ -70,7 +89,9 @@ export function useCurrentTimeIndicator(calendarApi: CalendarApi | null, current
 
       // We're in the current week, try to find and update the time indicator
       const tryUpdateTimeIndicator = (retryCount = 0) => {
-        const nowIndicatorArrow = document.querySelector('.fc-timegrid-now-indicator-arrow') as HTMLElement;
+        if (cancelled) return;
+
+        const nowIndicatorArrow = calendarElement?.querySelector('.fc-timegrid-now-indicator-arrow') as HTMLElement;
 
         if (nowIndicatorArrow) {
           // Get current time
@@ -112,7 +133,7 @@ export function useCurrentTimeIndicator(calendarApi: CalendarApi | null, current
       // Hide/show hourly time slots based on proximity to current time
       for (let hour = 0; hour < 24; hour++) {
         const timeString = String(hour).padStart(2, '0') + ':00:00';
-        const timeSlot = document.querySelector(`[data-time="${timeString}"]`) as HTMLElement;
+        const timeSlot = calendarElement?.querySelector(`[data-time="${timeString}"]`) as HTMLElement;
 
         if (timeSlot) {
           const shouldHide = shouldHideTimeSlot(currentHour, currentMinute, hour);
@@ -145,19 +166,19 @@ export function useCurrentTimeIndicator(calendarApi: CalendarApi | null, current
 
     const createHorizontalTimeLine = (arrowElement: HTMLElement) => {
       // Remove existing line if it exists
-      const existingLine = document.querySelector('.custom-now-indicator-line');
+      const existingLine = calendarElement?.querySelector('.custom-now-indicator-line');
 
       if (existingLine) {
         existingLine.remove();
       }
 
       // Find the FullCalendar's native now indicator line to align with
-      const nowIndicatorLine = document.querySelector('.fc-timegrid-now-indicator-line') as HTMLElement;
+      const nowIndicatorLine = calendarElement?.querySelector('.fc-timegrid-now-indicator-line') as HTMLElement;
 
       if (!nowIndicatorLine) return;
 
       // Find the week view container
-      const weekViewContainer = document.querySelector('.database-calendar.week-view .fc') as HTMLElement;
+      const weekViewContainer = calendarElement?.querySelector('.fc') as HTMLElement;
 
       if (!weekViewContainer) return;
 
@@ -211,9 +232,10 @@ export function useCurrentTimeIndicator(calendarApi: CalendarApi | null, current
         intervalRef.current = null;
       }
 
+      cancelled = true;
       calendarApi.off('datesSet', handleDatesSet);
     };
-  }, [calendarApi, currentView, setting]);
+  }, [calendarApi, calendarElement, currentView, resetTimeSlotVisibility, setting]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -223,7 +245,7 @@ export function useCurrentTimeIndicator(calendarApi: CalendarApi | null, current
       }
 
       // Remove custom line on unmount
-      const existingLine = document.querySelector('.custom-now-indicator-line');
+      const existingLine = calendarElement?.querySelector('.custom-now-indicator-line');
 
       if (existingLine) {
         existingLine.remove();
@@ -232,18 +254,6 @@ export function useCurrentTimeIndicator(calendarApi: CalendarApi | null, current
       // Reset time slot visibility on unmount
       resetTimeSlotVisibility();
     };
-  }, []);
+  }, [calendarElement, resetTimeSlotVisibility]);
 
-  // Define resetTimeSlotVisibility outside the main effect so it can be accessed in cleanup
-  const resetTimeSlotVisibility = () => {
-    // Reset all time slot labels to fully opaque
-    for (let hour = 0; hour < 24; hour++) {
-      const timeString = String(hour).padStart(2, '0') + ':00:00';
-      const timeSlot = document.querySelector(`[data-time="${timeString}"]`) as HTMLElement;
-
-      if (timeSlot) {
-        timeSlot.classList.remove('hidden-text');
-      }
-    }
-  };
 }

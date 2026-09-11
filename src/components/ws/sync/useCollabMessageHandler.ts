@@ -44,7 +44,8 @@ export function useCollabMessageHandler(
   bcCollabMessage: ICollabMessage | undefined | null,
   eventEmitter: EventEmitter,
   registerSyncContext: (context: RegisterSyncContext) => SyncContext,
-  scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void
+  scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void,
+  beforeApply?: (objectId: string, type: Types, marker?: string) => Promise<boolean>
 ) {
   const lastHandledWsMessageRef = useRef<ICollabMessage | null>(null);
   const lastHandledBcMessageRef = useRef<ICollabMessage | null>(null);
@@ -55,6 +56,23 @@ export function useCollabMessageHandler(
 
       if (isApplyCancelled(options)) {
         return false;
+      }
+
+      // Revocation is authoritative across every restore generation. Its
+      // permission check can already return 403, and it carries no version.
+      if (message.accessChanged) {
+        const context = refs.registeredContexts.current.get(objectId);
+
+        if (context) handleMessage(context, message);
+        return options?.requireActiveContext ? Boolean(context) : true;
+      }
+
+      if (beforeApply && (message.update || message.syncRequest) &&
+          (message.collabType === Types.Database || message.collabType === Types.DatabaseRow)) {
+        const contextBeforeCheck = refs.registeredContexts.current.get(objectId);
+        const allowed = await beforeApply(objectId, message.collabType, message.update?.databaseRestoreId ?? undefined);
+
+        if (!allowed || isApplyCancelled(options) || contextBeforeCheck !== refs.registeredContexts.current.get(objectId)) return false;
       }
 
       const incomingVersion = message.update?.version || message.syncRequest?.version || null;
@@ -329,7 +347,7 @@ export function useCollabMessageHandler(
       Log.debug('Received collab message:', message.collabType, message);
       return options?.requireActiveContext ? messageHandled : true;
     },
-    [refs, eventEmitter, registerSyncContext, scheduleDeferredCleanup]
+    [refs, eventEmitter, registerSyncContext, scheduleDeferredCleanup, beforeApply]
   );
 
   const processIncomingMessageQueueForObject = useCallback(

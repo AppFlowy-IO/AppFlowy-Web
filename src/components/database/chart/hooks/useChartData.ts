@@ -2,6 +2,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useDatabaseContext, useDatabaseFields, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import {
   ChartAggregationType,
   ChartDataItem,
@@ -9,7 +10,6 @@ import {
   isDateGroupableFieldType,
   isGroupableFieldType,
 } from '@/application/database-yjs/chart.type';
-import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { getCell } from '@/application/database-yjs/const';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import { parseSelectOptionTypeOptions, SelectOption } from '@/application/database-yjs/fields';
@@ -470,7 +470,8 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   const fields = useDatabaseFields();
   const rowOrders = useRowOrdersSelector();
   const rowMetas = useRowMap();
-  const { ensureRow } = useDatabaseContext();
+  const { ensureRow, dataSource } = useDatabaseContext();
+  const isHistory = dataSource?.type === 'history';
 
   // Yjs mutates the `fields` Y.Map in place when fields are added, renamed,
   // or have their type changed, so its reference identity is a stale
@@ -506,6 +507,11 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
 
   // Lazily request row docs that haven't been loaded yet.
   useEffect(() => {
+    if (isHistory) {
+      setRowsLoaded(Boolean(rowOrders));
+      return;
+    }
+
     if (!rowOrders || !ensureRow) {
       // Inputs not yet available — keep the loading indicator up.
       return;
@@ -564,7 +570,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowOrdersReady, rowIdsKey, ensureRow]);
+  }, [rowOrdersReady, rowIdsKey, ensureRow, isHistory]);
 
   // Find all groupable fields
   const groupableFields = useMemo<GroupableField[]>(() => {

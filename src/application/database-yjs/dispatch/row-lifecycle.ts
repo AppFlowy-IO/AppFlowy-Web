@@ -10,8 +10,9 @@
  */
 
 import { deleteCollabDB } from '@/application/db';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { deleteOutboxByObjectId } from '@/application/sync-outbox';
-import { YDatabase, YjsDatabaseKey, YSharedRoot } from '@/application/types';
+import { YDatabase, YDoc, YjsDatabaseKey, YSharedRoot } from '@/application/types';
 
 import { executeOperationWithAllViews } from './utils';
 
@@ -81,6 +82,8 @@ export function removeRowsFromDatabase(
   rowIds: string[],
   options: { cleanupLocalCollab?: boolean } = {}
 ) {
+  if (sharedRoot.doc && isDatabaseHistoryDocumentImmutable(sharedRoot.doc as YDoc)) return;
+
   const { cleanupLocalCollab = true } = options;
 
   executeOperationWithAllViews(

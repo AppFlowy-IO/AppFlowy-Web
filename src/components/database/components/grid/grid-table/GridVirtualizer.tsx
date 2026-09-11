@@ -41,7 +41,8 @@ const gridLoadingDots = (
 function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { rows: data, rowResizeStore } = useGridContext();
   const { handleResizeStart, isResizing } = useColumnResize(columns);
-  const { embeddedHeight, isDocumentBlock, paddingEnd } = useDatabaseContext();
+  const { dataSource, embeddedHeight, isDocumentBlock, paddingEnd } = useDatabaseContext();
+  const isHistoryPreview = dataSource?.type === 'history';
 
   const { parentRef, virtualizer, columnVirtualizer, scrollMarginTop, isReady } = useGridVirtualizer({
     data,
@@ -126,7 +127,9 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
 
       if (!stickyHeader) return;
 
-      const shouldShowStickyHeader = gridTop <= 48 && bottom - PADDING_END >= 48;
+      // History scrolls inside a dialog, whose top differs from the page header.
+      const stickyTop = isHistoryPreview ? scrollElement.getBoundingClientRect().top : 48;
+      const shouldShowStickyHeader = gridTop <= stickyTop && bottom - PADDING_END >= stickyTop;
 
       if (stickyHeaderVisibleRef.current !== shouldShowStickyHeader) {
         stickyHeaderVisibleRef.current = shouldShowStickyHeader;
@@ -155,7 +158,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
       clearTimeout(timeout);
       scrollElement.removeEventListener('scroll', onScroll, scrollListenerOptions);
     };
-  }, [parentRef, scrollMarginTop, virtualizer.scrollElement, setShowStickyHeader]);
+  }, [isHistoryPreview, parentRef, scrollMarginTop, virtualizer.scrollElement, setShowStickyHeader]);
 
   const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
     const scrollLeft = e.currentTarget.scrollLeft;

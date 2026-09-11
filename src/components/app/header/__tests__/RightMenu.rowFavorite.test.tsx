@@ -57,7 +57,8 @@ jest.mock('@/components/app/header/FavoriteButton', () => ({
 
 jest.mock('@/components/app/header/MoreActions', () => ({
   __esModule: true,
-  default: () => <div data-testid='more-actions' />,
+  default: ({ viewId, activeViewId, rowId }: { viewId: string; activeViewId: string; rowId?: string | null }) =>
+    <div data-testid='more-actions' data-view-id={viewId} data-active-view-id={activeViewId} data-row-id={rowId} />,
 }));
 
 jest.mock('@/components/app/header/Users', () => ({
@@ -83,6 +84,7 @@ describe('RightMenu row-page actions', () => {
     );
 
     expect(screen.queryByTestId('favorite-button')).toBeNull();
+    expect(screen.getByTestId('more-actions').getAttribute('data-row-id')).toBe('requested-row');
   });
 
   it('does not fall back to the database for an empty row query', () => {
@@ -96,6 +98,7 @@ describe('RightMenu row-page actions', () => {
     );
 
     expect(screen.queryByTestId('favorite-button')).toBeNull();
+    expect(screen.getByTestId('more-actions').getAttribute('data-row-id')).toBe('');
   });
 
   it('targets the row document once matching row page state is ready', () => {
@@ -185,5 +188,7 @@ describe('RightMenu row-page actions', () => {
 
     expect(shareButton.getAttribute('data-view-id')).toBe(containerViewId);
     expect(shareButton.getAttribute('data-publish-view-id')).toBe(mockRouteViewId);
+    expect(screen.getByTestId('more-actions').getAttribute('data-view-id')).toBe(containerViewId);
+    expect(screen.getByTestId('more-actions').getAttribute('data-active-view-id')).toBe(mockRouteViewId);
   });
 });

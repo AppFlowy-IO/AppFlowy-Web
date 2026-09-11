@@ -9,6 +9,7 @@ interface MockSyncOutboxRecord {
   objectId: string;
   collabType: number;
   version?: string | null;
+  databaseRestoreId?: string;
   payload: Uint8Array;
   createdAt: number;
   beforeStateVector?: Uint8Array;
@@ -56,6 +57,11 @@ const mockSyncOutboxTable = {
       delete: async () => {
         mockRecords = mockRecords.filter((record) => !mockMatchesIndex(index, key, record));
       },
+      filter: (predicate: (record: MockSyncOutboxRecord) => boolean) => ({
+        delete: async () => {
+          mockRecords = mockRecords.filter((record) => !mockMatchesIndex(index, key, record) || !predicate(record));
+        },
+      }),
       each: async (callback: (record: MockSyncOutboxRecord) => void) => {
         mockRecords.filter((record) => mockMatchesIndex(index, key, record)).forEach(callback);
       },
@@ -78,19 +84,20 @@ const mockSyncOutboxTable = {
   })),
 };
 
-const mockTransaction = jest.fn(
-  (_mode: string, _table: typeof mockSyncOutboxTable, callback: () => Promise<unknown>) => {
-    const transaction = mockTransactionQueue.then(callback);
+const mockTransaction = jest.fn((...args: unknown[]) => {
+  const callback = args[args.length - 1] as () => Promise<unknown>;
+  const transaction = mockTransactionQueue.then(callback);
 
-    // IndexedDB serializes read-write transactions that touch the same store.
-    mockTransactionQueue = transaction.catch(() => undefined);
-    return transaction;
-  }
-);
+  // IndexedDB serializes read-write transactions that touch the same store.
+  mockTransactionQueue = transaction.catch(() => undefined);
+  return transaction;
+});
 
 jest.mock('@/application/db', () => ({
+  matchesDatabaseStorageFence: jest.fn(async () => true),
   db: {
     sync_outbox: mockSyncOutboxTable,
+    collab_custom: {},
     transaction: mockTransaction,
   },
 }));
@@ -103,6 +110,7 @@ jest.mock('@/utils/log', () => ({
   },
 }));
 
+import { matchesDatabaseStorageFence } from '@/application/db';
 import {
   clearDrainConfig,
   configureDrain,
@@ -145,6 +153,7 @@ function createDeferred<T>() {
 describe('sync outbox live send', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
+    jest.mocked(matchesDatabaseStorageFence).mockResolvedValue(true);
     mockRecords = [];
     mockNextId = 1;
     mockTransactionQueue = Promise.resolve();
@@ -170,6 +179,305 @@ describe('sync outbox live send', () => {
     await purgeAllOutbox();
     clearDrainConfig();
     setCurrentSession(null);
+  });
+
+  it('persists edits while the restore check is pending and gates all sibling/server sends', async () => {
+    const gate = createDeferred<boolean>();
+    const beforeSend = jest.fn(() => gate.promise);
+    const send = jest.fn();
+    const broadcast = jest.fn();
+
+    configureDrain({ userId, workspaceId, send, broadcast, isReady: () => true, beforeSend });
+    const enqueue = enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.DatabaseRow,
+      payload: makeUpdate('offline edit'),
+    });
+
+    await flushPromises();
+    expect(mockRecords).toHaveLength(1);
+    expect(beforeSend).toHaveBeenCalledWith(objectId, Types.DatabaseRow, '00000000-0000-0000-0000-000000000000');
+    expect(send).not.toHaveBeenCalled();
+    expect(broadcast).not.toHaveBeenCalled();
+    gate.resolve(false);
+    expect(await enqueue).toBe(true);
+    expect(mockRecords).toHaveLength(1);
+
+    beforeSend.mockImplementation(async () => true);
+    startDrainAll();
+    await flushPromises();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('drops captured enqueue fan-out after a completed discard even if the check returns true', async () => {
+    const gate = createDeferred<boolean>();
+    const send = jest.fn();
+    const broadcast = jest.fn();
+
+    configureDrain({ userId, workspaceId, send, broadcast, isReady: () => true, beforeSend: () => gate.promise });
+    const enqueue = enqueueOutboxUpdate({ objectId, collabType: Types.DatabaseRow, payload: makeUpdate('old branch') });
+
+    await flushPromises();
+    await deleteOutboxByObjectId(objectId, { skipActiveDrain: true });
+    gate.resolve(true);
+    await enqueue;
+    await flushPromises();
+    expect(mockRecords).toHaveLength(0);
+    expect(send).not.toHaveBeenCalled();
+    expect(broadcast).not.toHaveBeenCalled();
+  });
+
+  it('lets a restore check discard an active realtime prefix without deadlocking or sending it', async () => {
+    await enqueueOutboxUpdate({ objectId, collabType: Types.DatabaseRow, payload: makeUpdate('stale row') });
+    const send = jest.fn();
+    const beforeSend = jest.fn(async () => {
+      await deleteOutboxByObjectId(objectId, { skipActiveDrain: true });
+      return false;
+    });
+
+    configureDrain({ userId, workspaceId, send, isReady: () => true, beforeSend });
+    startDrainAll();
+    await flushPromises();
+    expect(beforeSend).toHaveBeenCalled();
+    expect(mockRecords).toHaveLength(0);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('checks a locked HTTP prefix before uploading an oversized database update', async () => {
+    const payload = makeUpdate('oversized old database branch');
+
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Database, payload });
+    const send = jest.fn();
+    const slowSync = jest.fn(async () => ({ outcome: 'confirmed' as const }));
+    const beforeSend = jest.fn(async () => false);
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send,
+      slowSync,
+      beforeSend,
+      isReady: () => true,
+      maxUpdateBytes: payload.byteLength - 1,
+      maxSlowSyncUpdateBytes: payload.byteLength * 2,
+    });
+    startDrainAll();
+    await flushPromises();
+    expect(beforeSend).toHaveBeenCalledWith(objectId, Types.Database, '00000000-0000-0000-0000-000000000000');
+    expect(slowSync).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(mockRecords).toHaveLength(1);
+  });
+
+  it('gates best-effort sends when IndexedDB persistence fails', async () => {
+    const sendBestEffort = jest.fn();
+    const send = jest.fn();
+    const broadcast = jest.fn();
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send,
+      broadcast,
+      sendBestEffort,
+      isReady: () => true,
+      beforeSend: async () => false,
+    });
+    mockSyncOutboxTable.add.mockRejectedValueOnce(new Error('quota exhausted'));
+
+    expect(await enqueueOutboxUpdate({ objectId, collabType: Types.DatabaseRow, payload: makeUpdate('old row') })).toBe(
+      false
+    );
+    expect(sendBestEffort).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(broadcast).not.toHaveBeenCalled();
+  });
+
+  it('leaves offline updates durable when the restore authority cannot be reached', async () => {
+    const send = jest.fn();
+    const beforeSend = jest.fn(async () => {
+      throw new Error('offline');
+    });
+
+    configureDrain({ userId, workspaceId, send, isReady: () => true, beforeSend });
+    expect(await enqueueOutboxUpdate({ objectId, collabType: Types.DatabaseRow, payload: makeUpdate('offline') })).toBe(
+      true
+    );
+    startDrainAll();
+    await flushPromises();
+    expect(mockRecords).toHaveLength(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('never merges updates across captured database restore identities', async () => {
+    const legacyPayload = makeUpdate('legacy');
+    const firstPayload = makeUpdate('before restore');
+    const secondPayload = makeUpdate('after restore');
+    const firstRestoreId = '00000000-0000-0000-0000-000000000000';
+    const secondRestoreId = '22222222-2222-4222-8222-222222222222';
+
+    await enqueueOutboxUpdate({ objectId, collabType: Types.DatabaseRow, payload: legacyPayload });
+    await enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.DatabaseRow,
+      payload: firstPayload,
+      databaseRestoreId: firstRestoreId,
+    });
+    await enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.DatabaseRow,
+      payload: secondPayload,
+      databaseRestoreId: secondRestoreId,
+    });
+    const send = jest.fn();
+    const beforeSend = jest.fn(async () => true);
+
+    configureDrain({ userId, workspaceId, send, beforeSend, isReady: () => true });
+    startDrainAll();
+    await flushPromises();
+    await flushPromises();
+    const updates = send.mock.calls.map(([message]) => message.collabMessage.update);
+
+    expect(updates.map((update) => update.databaseRestoreId)).toEqual([undefined, firstRestoreId, secondRestoreId]);
+    expect(updates.map((update) => update.payload)).toEqual([legacyPayload, firstPayload, secondPayload]);
+    expect(beforeSend.mock.calls).toEqual([
+      [objectId, Types.DatabaseRow, firstRestoreId],
+      [objectId, Types.DatabaseRow, firstRestoreId],
+      [objectId, Types.DatabaseRow, secondRestoreId],
+    ]);
+  });
+
+  it('does not delete current outbox bytes for a tombstone from a retired aggregate', async () => {
+    await enqueueOutboxUpdate({ objectId, collabType: Types.DatabaseRow, payload: makeUpdate('current') });
+    jest.mocked(matchesDatabaseStorageFence).mockResolvedValue(false);
+    await deleteOutboxByObjectId(objectId, {
+      session: { userId, workspaceId },
+      storageFence: { databaseId: 'database', epoch: null, cacheEpoch: null },
+    });
+    expect(mockRecords).toHaveLength(1);
+    expect(matchesDatabaseStorageFence).toHaveBeenCalledWith({ databaseId: 'database', epoch: null, cacheEpoch: null });
+  });
+
+  it.each(['22222222-2222-4222-8222-222222222222', '00000000-0000-0000-0000-000000000000'])(
+    'preserves pending edits already generated against restore %s during sibling-tab cleanup',
+    async (currentMarker) => {
+      const markers = [undefined, '00000000-0000-0000-0000-000000000000', 'retired-marker', currentMarker];
+
+      for (const databaseRestoreId of markers) {
+        await enqueueOutboxUpdate({
+          objectId,
+          collabType: Types.DatabaseRow,
+          payload: makeUpdate(String(databaseRestoreId)),
+          databaseRestoreId,
+        });
+      }
+      await enqueueOutboxUpdate({
+        objectId: 'other-row',
+        collabType: Types.DatabaseRow,
+        payload: makeUpdate('unrelated'),
+      });
+      await deleteOutboxByObjectId(objectId, { skipActiveDrain: true, preserveDatabaseRestoreId: currentMarker });
+
+      expect(
+        mockRecords.filter((record) => record.objectId === objectId).map((record) => record.databaseRestoreId)
+      ).toEqual(markers.filter((marker) => (marker ?? '00000000-0000-0000-0000-000000000000') === currentMarker));
+      expect(mockRecords.some((record) => record.objectId === 'other-row')).toBe(true);
+      expect(mockTransaction).toHaveBeenCalledWith('rw', mockSyncOutboxTable, expect.any(Function));
+    }
+  );
+
+  it('fences unmarked legacy database bytes on every enabled wire lane', async () => {
+    const nilMarker = '00000000-0000-0000-0000-000000000000';
+    const payload = makeUpdate('legacy row');
+    const send = jest.fn();
+    const broadcast = jest.fn();
+    const slowSync = jest.fn(async () => ({ outcome: 'confirmed' as const }));
+    const beforeSend = jest.fn(async () => true);
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send,
+      broadcast,
+      beforeSend,
+      databaseHistoryEnabled: true,
+      isReady: () => true,
+    });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.DatabaseRow, payload });
+    await flushPromises();
+    expect(broadcast.mock.calls[0][0].collabMessage.update.databaseRestoreId).toBe(nilMarker);
+    expect(send.mock.calls[0][0].collabMessage.update.databaseRestoreId).toBe(nilMarker);
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send,
+      slowSync,
+      beforeSend,
+      databaseHistoryEnabled: true,
+      isReady: () => true,
+      maxUpdateBytes: payload.byteLength - 1,
+      maxSlowSyncUpdateBytes: payload.byteLength * 2,
+    });
+    await enqueueOutboxUpdate({ objectId: 'http-row', collabType: Types.DatabaseRow, payload });
+    await flushPromises();
+    expect(slowSync.mock.calls[0][0].databaseRestoreId).toBe(nilMarker);
+
+    const sendBestEffort = jest.fn();
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send,
+      sendBestEffort,
+      beforeSend,
+      databaseHistoryEnabled: true,
+      isReady: () => true,
+    });
+    mockSyncOutboxTable.add.mockRejectedValueOnce(new Error('quota'));
+    await enqueueOutboxUpdate({ objectId: 'fallback-row', collabType: Types.Database, payload });
+    await flushPromises();
+    expect(sendBestEffort.mock.calls[0][0].collabMessage.update.databaseRestoreId).toBe(nilMarker);
+  });
+
+  it('keeps manifest coalescing inside one restore identity', async () => {
+    const currentRestoreId = '33333333-3333-4333-8333-333333333333';
+
+    await enqueueOutboxUpdate(
+      { objectId, collabType: Types.Database, payload: makeUpdate('current'), databaseRestoreId: currentRestoreId },
+      { source: 'manifest' }
+    );
+    await enqueueOutboxUpdate(
+      { objectId, collabType: Types.Database, payload: makeUpdate('late legacy') },
+      { source: 'manifest' }
+    );
+    expect(mockRecords).toHaveLength(2);
+    expect(mockRecords[0].databaseRestoreId).toBe(currentRestoreId);
+  });
+
+  it('passes the captured restore identity unchanged to HTTP slow sync', async () => {
+    const databaseRestoreId = '44444444-4444-4444-8444-444444444444';
+    const payload = makeUpdate('large row');
+
+    await enqueueOutboxUpdate({ objectId, collabType: Types.DatabaseRow, payload, databaseRestoreId });
+    const slowSync = jest.fn(async () => ({ outcome: 'confirmed' as const }));
+    const beforeSend = jest.fn(async () => true);
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send: jest.fn(),
+      isReady: () => true,
+      slowSync,
+      beforeSend,
+      maxUpdateBytes: payload.byteLength - 1,
+      maxSlowSyncUpdateBytes: payload.byteLength * 2,
+    });
+    startDrainAll();
+    await flushPromises();
+    expect(beforeSend).toHaveBeenCalledWith(objectId, Types.DatabaseRow, databaseRestoreId);
+    expect(slowSync.mock.calls[0][0]).toMatchObject({ objectId, databaseRestoreId, docState: payload });
   });
 
   it('sends immediately when the transport is ready and removes the durable copy after enqueue lands', async () => {

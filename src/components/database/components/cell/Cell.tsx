@@ -2,6 +2,7 @@ import { FC, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CellProps, Cell as CellType } from '@/application/database-yjs/cell.type';
+import { useDatabaseContextOptional } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { YjsDatabaseKey } from '@/application/types';
@@ -27,6 +28,7 @@ export function Cell(props: CellProps<CellType>) {
   const { rowId, fieldId, style, wrap, isHovering } = props;
   const { t } = useTranslation();
   const { field } = useFieldSelector(fieldId);
+  const context = useDatabaseContextOptional();
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const disableRelationRollupEdit = isFieldEditingDisabled(fieldType);
 
@@ -81,7 +83,11 @@ export function Cell(props: CellProps<CellType>) {
     return <AttributionCell {...props} readOnly editing={false} setEditing={undefined} />;
   }
 
-  const cellProps = disableRelationRollupEdit
+  if (fieldType === FieldType.Rollup && context?.dataSource?.type === 'history' && !props.cell?.data) {
+    return <span className='text-text-tertiary'>{t('databaseHistory.valueUnavailable', 'Unavailable in this version')}</span>;
+  }
+
+  const cellProps = disableRelationRollupEdit || context?.readOnly
     ? {
       ...props,
       readOnly: true,

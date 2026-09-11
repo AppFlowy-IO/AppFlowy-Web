@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useContext, useEffect, useLayoutEffect, useRef } from 'react';
 
-import { useGridGroupingSelector } from '@/application/database-yjs';
+import { useGridGroupingSelector, useReadOnly } from '@/application/database-yjs';
 import type { GridGrouping } from '@/application/database-yjs';
 import { useSyncGridGroupColumnsDispatch } from '@/application/database-yjs/dispatch';
 import { consumeLocalGridGroupInitialization } from '@/application/database-yjs/group-column';
@@ -16,6 +16,7 @@ export function useGridGrouping() {
 }
 
 export function useSyncGridGroupingMetadata(grouping: GridGrouping) {
+  const readOnly = useReadOnly();
   const syncGroupColumns = useSyncGridGroupColumnsDispatch(grouping.groupId);
   const metadataGroupIdsRef = useRef(grouping.metadataGroupIds ?? grouping.activeGroupIds);
   const metadataInitializationGroupRef = useRef(grouping.metadataInitializationGroup);
@@ -28,7 +29,7 @@ export function useSyncGridGroupingMetadata(grouping: GridGrouping) {
   }, [grouping.activeGroupIds, grouping.metadataGroupIds, grouping.metadataInitializationGroup]);
 
   useEffect(() => {
-    if (!grouping.isGrouped || !grouping.ready || !hasMetadataGroupIds) return;
+    if (readOnly || !grouping.isGrouped || !grouping.ready || !hasMetadataGroupIds) return;
 
     // activeGroupIds may include values read only from stale seed docs. The
     // selector exposes a separate persisted-plus-live list for shared writes.
@@ -44,6 +45,7 @@ export function useSyncGridGroupingMetadata(grouping: GridGrouping) {
     hasMetadataGroupIds,
     hasPendingMetadataInitialization,
     syncGroupColumns,
+    readOnly,
   ]);
 }
 

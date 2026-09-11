@@ -10,6 +10,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+import { AbstractType, type Transaction, type YEvent } from 'yjs';
 
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -59,6 +60,7 @@ import {
   normalizeUniqueDatabaseGroupColumns,
 } from '@/application/database-yjs/group-column';
 import type { DatabaseGroupColumn } from '@/application/database-yjs/group-column';
+import { retainDatabaseHistoryRow } from '@/application/database-yjs/history-row-store';
 import {
   type BackgroundRowDocChange,
   useBackgroundRowDocLoader,
@@ -76,6 +78,7 @@ import {
   subscribeRelationGroupLabels,
 } from '@/application/database-yjs/relation/cache';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
+import { readHistoricalRelationText } from '@/application/database-yjs/relation/history';
 import {
   invalidateRollupCell,
   readRollupCell,
@@ -132,7 +135,6 @@ import {
   SortCondition,
 } from './database.type';
 
-import type { Transaction, YEvent } from 'yjs';
 
 export interface Column {
   fieldId: string;
@@ -1290,9 +1292,11 @@ export function useRowsByGroup(groupId: string) {
   const rows = useRowMap();
   const rowOrders = useRowOrdersSelector();
   const viewId = useDatabaseViewId();
-  const { databaseDoc } = useDatabaseContext();
+  const { databaseDoc, dataSource } = useDatabaseContext();
+  const isHistory = dataSource?.type === 'history';
   const { cachedRowDocs } = useBackgroundRowDocLoader(Boolean(fieldId), 'board-grouping');
   const groupingRows = useMemo(() => {
+    if (isHistory) return rows ?? {};
     const next = { ...cachedRowDocs };
 
     Object.entries(rows ?? {}).forEach(([rowId, rowDoc]) => {
@@ -1302,7 +1306,7 @@ export function useRowsByGroup(groupId: string) {
     });
 
     return next;
-  }, [cachedRowDocs, rows]);
+  }, [cachedRowDocs, rows, isHistory]);
 
   const fields = useDatabaseFields();
   const [notFound, setNotFound] = useState(false);
@@ -1365,6 +1369,7 @@ export function useRowsByGroup(groupId: string) {
     };
 
     onConditionsChange();
+    if (isHistory) return;
 
     fields.observeDeep(onConditionsChange);
     filters?.observeDeep(onConditionsChange);
@@ -1387,7 +1392,7 @@ export function useRowsByGroup(groupId: string) {
         row.getMap(YjsEditorKey.data_section).unobserveDeep(observerRowsEvent);
       });
     };
-  }, [databaseDoc, fieldId, fields, rowOrders, groupingRows, filters, groupingKey]);
+  }, [databaseDoc, fieldId, fields, rowOrders, groupingRows, filters, groupingKey, isHistory]);
 
   // Cold Boards must wait for their first complete grouping before empty
   // columns can be classified safely. Once that baseline exists, a later
@@ -1743,6 +1748,7 @@ function orderDatabaseGroupsForPrimarySort(
  */
 export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): DatabaseGrouping {
   const {
+    dataSource,
     createRow,
     getCellLocalMutationRevision,
     getViewIdFromDatabaseId,
@@ -1750,6 +1756,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     loadView,
     subscribeToCellLocalMutations,
   } = useDatabaseContext();
+  const isHistory = dataSource?.type === 'history';
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
   const database = useDatabase();
@@ -1772,6 +1779,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     `${layout === DatabaseViewLayout.List ? 'list' : 'grid'}-grouping`
   );
   const groupingRows = useMemo(() => {
+    if (isHistory) return rows ?? {};
     const next = { ...cachedRowDocs };
 
     Object.entries(rows ?? {}).forEach(([rowId, rowDoc]) => {
@@ -1781,7 +1789,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     });
 
     return next;
-  }, [cachedRowDocs, rows]);
+  }, [cachedRowDocs, rows, isHistory]);
   const groupingRowsStore = useMemo(() => {
     // The same database field can group multiple views; each view owns its
     // observer lifecycle even when the field ID is identical.
@@ -1792,17 +1800,18 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   useLayoutEffect(() => {
     // Live row-map changes are small and may be followed by another layout
     // effect that edits a cell, so close that commit-phase observation gap.
-    groupingRowsStore.replaceLiveRows(rows ?? {});
-  }, [groupingRowsStore, rows]);
+    if (!isHistory) groupingRowsStore.replaceLiveRows(rows ?? {});
+  }, [groupingRowsStore, rows, isHistory]);
   useEffect(() => {
     // Seed hydration publishes bounded add/remove deltas before its React
     // snapshot. Subscribe once instead of rescanning every accumulated seed doc
     // in a layout effect for each 128-row batch.
+    if (isHistory) return;
     const unsubscribe = subscribeToCachedRowDocChanges(groupingRowsStore.applyCachedRowsChange);
 
     groupingRowsStore.replaceCachedRows(getCachedRowDocs());
     return unsubscribe;
-  }, [getCachedRowDocs, groupingRowsStore, subscribeToCachedRowDocChanges]);
+  }, [getCachedRowDocs, groupingRowsStore, subscribeToCachedRowDocChanges, isHistory]);
   useLayoutEffect(
     () => () => {
       // React StrictMode and reusable effects replay cleanup followed by setup
@@ -1882,7 +1891,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   );
   // Only relation grouping renders resolved titles, so every other grouping
   // field type holds a constant snapshot and never recomputes for them.
-  const groupsByRelation = persistedGroupingFieldType === FieldType.Relation;
+  const groupsByRelation = !isHistory && persistedGroupingFieldType === FieldType.Relation;
   const subscribeToRelationGroupLabels = useCallback(
     (onStoreChange: () => void) => (groupsByRelation ? subscribeRelationGroupLabels(onStoreChange) : () => undefined),
     [groupsByRelation]
@@ -2063,7 +2072,9 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
       displayIds.forEach((id) => {
         if (id === currentFieldId) return;
 
-        const label = readRelationGroupLabel({ relationField: field, relatedRowId: id });
+        const label = isHistory
+          ? readHistoricalRelationText(database, parseRelationTypeOption(field).database_id, [id], groupingRows)
+          : readRelationGroupLabel({ relationField: field, relatedRowId: id });
 
         if (label) identifierLabels.set(id, label);
       });
@@ -2117,6 +2128,8 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     allRowOrders,
     fields,
     groupingRows,
+    database,
+    isHistory,
     groupingViewRevision,
     hasCellLocalMutation,
     layout,
@@ -2143,19 +2156,19 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   );
 
   useEffect(() => {
-    if (!groupingField || !relationDatabaseId || !relationGroupLabelIds) return;
+    if (isHistory || !groupingField || !relationDatabaseId || !relationGroupLabelIds) return;
 
     return retainRelationGroupLabels(
       relationGroupLabelIds.map((relatedRowId) => ({ relationField: groupingField, relatedRowId }))
     );
-  }, [groupingField, relationDatabaseId, relationGroupLabelIds]);
+  }, [groupingField, relationDatabaseId, relationGroupLabelIds, isHistory]);
 
   useEffect(() => {
     // Resolving a title loads a related document, so it belongs after commit
     // rather than inside the memo. Each resolution publishes on the group-label
     // channel, which brings the memo back through relationGroupLabelRevision.
     void relationGroupLabelRevision;
-    if (!groupingField || !relationDatabaseId || !relationGroupLabelIds) return;
+    if (isHistory || !groupingField || !relationDatabaseId || !relationGroupLabelIds) return;
 
     relationGroupLabelIds.forEach((id) => {
       ensureRelationGroupLabel({
@@ -2174,6 +2187,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     relationDatabaseId,
     relationGroupLabelIds,
     relationGroupLabelRevision,
+    isHistory,
   ]);
 
   return grouping;
@@ -2209,6 +2223,7 @@ export function useRowOrdersSelector() {
   const database = useDatabase();
   const inlineRowOrders = getInlineViewRowOrders(database);
   const {
+    dataSource,
     databaseDoc,
     loadView,
     createRow,
@@ -2218,6 +2233,7 @@ export function useRowOrdersSelector() {
     blobPrefetchComplete,
     seedsReady,
   } = useDatabaseContext();
+  const isHistory = dataSource?.type === 'history';
   const hasAttributionSort =
     sorts?.toArray().some((sort) => {
       const field = fields?.get(sort.get(YjsDatabaseKey.field_id));
@@ -2266,6 +2282,7 @@ export function useRowOrdersSelector() {
   // so a burst of cache updates coalesces into fewer renders — React will
   // abandon in-progress filter work when a newer snapshot arrives.
   const rowDocsForConditionsRaw = useMemo(() => {
+    if (isHistory) return rows ?? {};
     const next = { ...cachedRowDocs };
 
     Object.entries(rows || {}).forEach(([rowId, rowDoc]) => {
@@ -2275,7 +2292,7 @@ export function useRowOrdersSelector() {
     });
 
     return next;
-  }, [cachedRowDocs, rows]);
+  }, [cachedRowDocs, rows, isHistory]);
   const rowDocsForConditions = useDeferredValue(rowDocsForConditionsRaw);
   const rowDocsForConditionsRef = useRef(rowDocsForConditions);
 
@@ -2401,6 +2418,11 @@ export function useRowOrdersSelector() {
       const row = rowSharedRoot?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
 
       if (!row) return '';
+      if (isHistory) {
+        return readHistoricalRelationText(database, parseRelationTypeOption(field).database_id,
+          getRelationRowIdsFromCell(row.get(YjsDatabaseKey.cells)?.get(fieldId)), rowDocsForConditions);
+      }
+
       return readRelationCellText({
         baseDoc: databaseDoc,
         database,
@@ -2413,7 +2435,7 @@ export function useRowOrdersSelector() {
         getViewIdFromDatabaseId,
       });
     },
-    [rowDocsForConditions, fields, database, databaseDoc, loadView, createRow, getViewIdFromDatabaseId]
+    [rowDocsForConditions, fields, database, databaseDoc, loadView, createRow, getViewIdFromDatabaseId, isHistory]
   );
 
   // Getter for rollup cell value (used in sorting/filtering)
@@ -2587,6 +2609,7 @@ export function useRowOrdersSelector() {
 
   // Subscribe to relation/rollup cache changes
   useEffect(() => {
+    if (isHistory) return;
     const handleCacheChange = debounce(onConditionsChange, 200);
     const unsubscribeRelation = subscribeRelationCache(() => handleCacheChange());
     const unsubscribeRollup = subscribeRollupCache(() => handleCacheChange());
@@ -2596,10 +2619,13 @@ export function useRowOrdersSelector() {
       unsubscribeRelation();
       unsubscribeRollup();
     };
-  }, [onConditionsChange]);
+  }, [onConditionsChange, isHistory]);
 
   // Observe Yjs data changes
   useEffect(() => {
+    // A complete historical snapshot cannot change. Registering every row
+    // would also retain the full CRDT graph outside its bounded row store.
+    if (isHistory) return;
     // Single debounced handler for all data changes (consolidated from 4 separate debounced callbacks)
     const debouncedChange = debounce(() => {
       setRollupWatchVersion((prev) => prev + 1);
@@ -2727,6 +2753,7 @@ export function useRowOrdersSelector() {
     viewId,
     syncUnconditionedRowOrders,
     hasConditions,
+    isHistory,
   ]);
 
   // Set up rollup field observers (extracted hook)
@@ -2760,7 +2787,7 @@ function useRollupCellValue({
   fieldClock: number;
 }) {
   const database = useDatabase();
-  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId, dataSource } = useDatabaseContext();
   const [value, setValue] = useState<RollupCellValue>({ value: '' });
   const [relationRowIdsKey, setRelationRowIdsKey] = useState('');
   const [relatedObserverRevision, setRelatedObserverRevision] = useState(0);
@@ -2773,7 +2800,7 @@ function useRollupCellValue({
     return parseRollupTypeOption(field);
   }, [field, fieldClock]);
   const rollupContext = useMemo(() => {
-    if (!database || !row || !field) return null;
+    if (!database || !row || !field || dataSource?.type === 'history') return null;
     return {
       baseDoc: databaseDoc,
       database,
@@ -2785,7 +2812,7 @@ function useRollupCellValue({
       createRow,
       getViewIdFromDatabaseId,
     };
-  }, [database, row, field, rowId, fieldId, databaseDoc, loadView, createRow, getViewIdFromDatabaseId]);
+  }, [database, row, field, rowId, fieldId, databaseDoc, loadView, createRow, getViewIdFromDatabaseId, dataSource]);
 
   useEffect(() => {
     if (!rollupContext || fieldType !== FieldType.Rollup) {
@@ -3035,6 +3062,7 @@ function useRollupCellValue({
 }
 
 export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: string }) {
+  const { dataSource } = useDatabaseContext();
   const { row } = useRowDataSelector(rowId);
   const cells = row?.get(YjsDatabaseKey.cells);
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
@@ -3090,7 +3118,7 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
     };
   }, [cells, cell, field, fieldId]);
 
-  if (fieldType === FieldType.Rollup) {
+  if (fieldType === FieldType.Rollup && dataSource?.type !== 'history') {
     return rollupCell;
   }
 
@@ -3115,7 +3143,8 @@ export function useCalendarEventsSelector() {
   const { field: primaryField, clock: primaryFieldClock } = useFieldSelector(primaryFieldId || '');
   const rowOrders = useRowOrdersSelector();
   const rows = useRowMap();
-  const { ensureRow } = useDatabaseContext();
+  const { ensureRow, dataSource } = useDatabaseContext();
+  const isHistory = dataSource?.type === 'history';
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [emptyEvents, setEmptyEvents] = useState<CalendarEvent[]>([]);
 
@@ -3227,6 +3256,7 @@ export function useCalendarEventsSelector() {
     };
 
     observerEvent();
+    if (isHistory) return;
 
     const debouncedObserverEvent = debounce(observerEvent, 150);
 
@@ -3247,7 +3277,7 @@ export function useCalendarEventsSelector() {
         rowDoc.getMap(YjsEditorKey.data_section).unobserveDeep(debouncedObserverEvent);
       });
     };
-  }, [field, fieldClock, rowOrders, rows, fieldId, primaryFieldId, primaryField, primaryFieldClock, ensureRow]);
+  }, [field, fieldClock, rowOrders, rows, fieldId, primaryFieldId, primaryField, primaryFieldClock, ensureRow, isHistory]);
 
   return { events, emptyEvents };
 }
@@ -3332,6 +3362,8 @@ export const useRowMetaSelector = (rowId: string) => {
     resolvedRowDoc?.rowId === rowId && resolvedRowDoc.mappedRowDoc === mappedRowDoc
       ? resolvedRowDoc.rowDoc
       : mappedRowDoc;
+
+  useEffect(() => retainDatabaseHistoryRow(rowMap, rowDoc ?? undefined), [rowMap, rowDoc]);
   const [observedMeta, setObservedMeta] = useState<{
     rowId: string;
     rowDoc: YDoc;
@@ -3435,6 +3467,8 @@ export const useRowMetaSelector = (rowId: string) => {
 export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
   const [cells, setCells] = useState<Map<string, unknown> | null>(null);
   const rowMap = useRowMap();
+  const { dataSource } = useDatabaseContext();
+  const isHistory = dataSource?.type === 'history';
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
 
   useEffect(() => {
@@ -3458,7 +3492,10 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
       const getCellValue = () => {
         const cell = databaseRow.get(YjsDatabaseKey.cells)?.get(fieldId);
 
-        return cell ? parseYDatabaseCellToCell(cell, field).data : '';
+        const value = cell ? parseYDatabaseCellToCell(cell, field).data : '';
+
+        // Aggregations keep values, never a Yjs type that owns the whole row.
+        return isHistory && value instanceof AbstractType ? value.toJSON() : value;
       };
 
       const observerEvent = () => {
@@ -3472,6 +3509,7 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
       };
 
       nextCells.set(row.id, getCellValue());
+      if (isHistory) return;
       cells?.observeDeep(observerEvent);
 
       unobserveCells.push(() => {
@@ -3486,7 +3524,7 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
         unobserverEvent();
       });
     };
-  }, [rows, rowMap, fieldId, field, fieldClock]);
+  }, [rows, rowMap, fieldId, field, fieldClock, isHistory]);
 
   return {
     cells,

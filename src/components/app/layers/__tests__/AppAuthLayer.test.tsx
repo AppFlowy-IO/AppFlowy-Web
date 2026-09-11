@@ -81,6 +81,27 @@ describe('AppAuthLayer workspace info loading', () => {
     mockOpenWorkspace.mockResolvedValue(undefined as never);
   });
 
+  it.each([
+    [undefined, undefined, false],
+    [true, undefined, false],
+    [undefined, true, false],
+    [false, true, false],
+    [true, true, true],
+  ])('gates database history on both server capabilities (%s, %s)', async (history, ui, enabled) => {
+    mockGetWorkspaceInfo.mockResolvedValue(createWorkspaceInfo('workspace-old'));
+    mockGetServerInfo.mockResolvedValue({ enable_page_history: true,
+      enable_database_history: history, enable_database_history_version_ui: ui });
+    function Capability() {
+      return <span data-testid='database-history-enabled'>{String(useContext(AuthInternalContext)?.enableDatabaseHistory)}</span>;
+    }
+
+    render(<AFConfigContext.Provider value={{ isAuthenticated: true, updateCurrentUser: jest.fn(), openLoginModal: jest.fn() }}>
+      <AppAuthLayer><Capability /></AppAuthLayer>
+    </AFConfigContext.Provider>);
+    await waitFor(() => expect(mockGetServerInfo).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('database-history-enabled').textContent).toBe(String(enabled)));
+  });
+
   it('redirects an unauthenticated app route without timer-based polling', async () => {
     mockPathname = '/app/workspace-old';
 

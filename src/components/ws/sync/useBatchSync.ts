@@ -88,8 +88,31 @@ export function useBatchSync(
   options?: {
     workspaceId?: string;
     wsReadyState?: number;
+    beforeSend?: (objectId: string, type: Types, marker?: string) => Promise<boolean>;
+    databaseHistoryEnabled?: boolean;
   }
 ) {
+  const beforeSendRef = useRef(options?.beforeSend);
+
+  beforeSendRef.current = options?.beforeSend;
+  const databaseHistoryEnabledRef = useRef(options?.databaseHistoryEnabled);
+
+  databaseHistoryEnabledRef.current = options?.databaseHistoryEnabled;
+  const guardedBatchSync = useCallback(async (workspaceId: string, items: Parameters<typeof collabFullSyncBatch>[1]) => {
+    const admitted: typeof items = [];
+
+    for (const item of items) {
+      const marker = item.databaseRestoreId ??
+        (item.collabType === Types.Database || item.collabType === Types.DatabaseRow
+          ? '00000000-0000-0000-0000-000000000000' : undefined);
+
+      if (!beforeSendRef.current || await beforeSendRef.current(item.objectId, item.collabType, marker)) {
+        admitted.push(databaseHistoryEnabledRef.current ? { ...item, databaseRestoreId: marker } : item);
+      }
+    }
+
+    return admitted.length ? collabFullSyncBatch(workspaceId, admitted) : [];
+  }, []);
   const batchSyncAbortRef = useRef<AbortController | null>(null);
   const backgroundHttpSyncAbortRef = useRef<AbortController | null>(null);
   const backgroundHttpSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -161,6 +184,7 @@ export function useBatchSync(
       collabType: Types;
       stateVector: Uint8Array;
       docState: Uint8Array;
+      databaseRestoreId?: string;
     }> = [];
 
     refs.registeredContexts.current.forEach((context) => {
@@ -174,6 +198,7 @@ export function useBatchSync(
         collabType,
         stateVector: Y.encodeStateVector(doc),
         docState: Y.encodeStateAsUpdate(doc),
+        databaseRestoreId: doc.databaseRestoreId,
       });
     });
 
@@ -215,8 +240,14 @@ export function useBatchSync(
       });
   }, [clearBackgroundDirtyEdits]);
 
-  const applyFullSyncResults = useCallback((results: Awaited<ReturnType<typeof collabFullSyncBatch>>) => {
+  const applyFullSyncResults = useCallback(async (results: Awaited<ReturnType<typeof collabFullSyncBatch>>,
+    requestedItems?: Parameters<typeof collabFullSyncBatch>[1]) => {
     for (const result of results) {
+      const requested = requestedItems?.find((item) => item.objectId === result.objectId);
+
+      if (beforeSendRef.current && !await beforeSendRef.current(result.objectId, result.collabType,
+        requested?.databaseRestoreId ?? (result.collabType === Types.Database || result.collabType === Types.DatabaseRow
+          ? '00000000-0000-0000-0000-000000000000' : undefined))) continue;
       if (result.error) {
         Log.warn('[sync] HTTP full-sync result error', {
           objectId: result.objectId,
@@ -316,13 +347,13 @@ export function useBatchSync(
         workspaceId,
         items: items.length,
       });
-      const results = await withRetry(() => collabFullSyncBatch(workspaceId, items), {
+      const results = await withRetry(() => guardedBatchSync(workspaceId, items), {
         delays: BATCH_SYNC_DELAYS,
         signal: controller.signal,
       });
 
       backgroundHttpSyncPausedUntilRef.current = 0;
-      applyFullSyncResults(results);
+      await applyFullSyncResults(results, items);
 
       for (const [objectId, dirty] of dirtySnapshot) {
         if (itemIds.has(objectId) && backgroundDirtyEditsRef.current.get(objectId)?.seq === dirty.seq) {
@@ -376,7 +407,7 @@ export function useBatchSync(
         scheduleBackgroundHttpSyncTimer();
       }
     }
-  }, [applyFullSyncResults, buildBackgroundHttpSyncItems, scheduleBackgroundHttpSyncTimer]);
+  }, [applyFullSyncResults, buildBackgroundHttpSyncItems, scheduleBackgroundHttpSyncTimer, guardedBatchSync]);
 
   useEffect(() => {
     runBackgroundHttpSyncRef.current = runBackgroundHttpSync;
@@ -441,6 +472,7 @@ export function useBatchSync(
         collabType: Types;
         stateVector: Uint8Array;
         docState: Uint8Array;
+        databaseRestoreId?: string;
       }> = [];
 
       const registeredObjectIds = new Set<string>();
@@ -467,6 +499,7 @@ export function useBatchSync(
           collabType,
           stateVector,
           docState,
+          databaseRestoreId: doc.databaseRestoreId,
         });
       });
 
@@ -476,7 +509,7 @@ export function useBatchSync(
       // concurrent opens (matches BACKGROUND_CONCURRENCY in useBackgroundRowDocLoader).
       const ROW_SYNC_CONCURRENCY = 12;
 
-      const unregisteredRows: { rowId: string; rowKey: string }[] = [];
+      const unregisteredRows: { rowId: string; rowKey: string; databaseRestoreId?: string }[] = [];
       const unregisteredRowDocumentIds = new Set<string>();
 
       refs.registeredContexts.current.forEach((context) => {
@@ -497,7 +530,7 @@ export function useBatchSync(
         });
 
         for (const rowId of unregisteredRowIds) {
-          unregisteredRows.push({ rowId, rowKey: getRowKey(databaseId, rowId) });
+          unregisteredRows.push({ rowId, rowKey: getRowKey(databaseId, rowId), databaseRestoreId: context.doc.databaseRestoreId });
         }
       });
 
@@ -507,7 +540,7 @@ export function useBatchSync(
         const slice = unregisteredRows.slice(i, i + ROW_SYNC_CONCURRENCY);
 
         await Promise.all(
-          slice.map(async ({ rowId, rowKey }) => {
+          slice.map(async ({ rowId, rowKey, databaseRestoreId }) => {
             try {
               // Use skipCache to avoid permanently pinning every row doc in memory.
               const { doc: rowDoc, provider } = await openRowCollabDBWithProvider(rowId, { skipCache: true });
@@ -544,6 +577,7 @@ export function useBatchSync(
                 items.push({
                   objectId: rowId,
                   collabType: Types.DatabaseRow,
+                  databaseRestoreId,
                   stateVector,
                   docState,
                 });
@@ -674,12 +708,12 @@ export function useBatchSync(
       );
 
       try {
-        const results = await withRetry(() => collabFullSyncBatch(workspaceId, items), {
+        const results = await withRetry(() => guardedBatchSync(workspaceId, items), {
           delays: BATCH_SYNC_DELAYS,
           signal: controller.signal,
         });
 
-        applyFullSyncResults(results);
+        await applyFullSyncResults(results, items);
         for (const item of items) {
           const seq = dirtySeqBeforeSync.get(item.objectId);
 
@@ -694,7 +728,7 @@ export function useBatchSync(
         // Don't throw - we still want to attempt the duplicate
       }
     },
-    [refs, flushAllSync, applyFullSyncResults]
+    [refs, flushAllSync, applyFullSyncResults, guardedBatchSync]
   );
 
   // Cancel all pending deferred cleanup timers and in-flight batch sync on unmount

@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 
 import { useDatabaseContext, useRow } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { assertDocExists } from '@/application/slate-yjs/utils/yjs';
 import { FieldId, RowId, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 
@@ -565,6 +566,8 @@ export function getOrCreateDatabaseRowHistoryController(rowDoc: YDoc, rowId?: Ro
 }
 
 export function runDatabaseAction(databaseDoc: YDoc, action: DatabaseHistoryAction, mutate: () => void) {
+  if (isDatabaseHistoryDocumentImmutable(databaseDoc)) return;
+
   runDatabaseHistoryGroup(() => {
     if (getDatabaseHistoryPolicy(action) === 'capture') {
       getOrCreateDatabaseHistoryManager(databaseDoc);
@@ -575,6 +578,8 @@ export function runDatabaseAction(databaseDoc: YDoc, action: DatabaseHistoryActi
 }
 
 export function runDatabaseRowAction(rowDoc: YDoc, action: DatabaseRowHistoryAction, mutate: () => void) {
+  if (isDatabaseHistoryDocumentImmutable(rowDoc)) return;
+
   runDatabaseHistoryGroup(() => {
     if (getDatabaseHistoryPolicy(action) === 'capture') {
       getOrCreateDatabaseRowHistoryController(rowDoc, action.rowId);

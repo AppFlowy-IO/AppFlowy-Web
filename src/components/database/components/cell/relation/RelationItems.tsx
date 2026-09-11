@@ -525,11 +525,53 @@ function RelationItemsForDatabase({
 
 function RelationItems(props: RelationItemsProps) {
   const relatedDatabaseId = useDatabaseIdFromField(props.fieldId);
+  const context = useDatabaseContextOptional();
+
+  if (context?.dataSource?.type === 'history') {
+    return <HistoricalRelationItems {...props} context={context} relatedDatabaseId={relatedDatabaseId} />;
+  }
 
   // Every local doc and async row result belongs to one immutable relation
   // target. A keyed implementation prevents a pending database-A load from
   // committing rows after the field has switched to database B.
   return <RelationItemsForDatabase key={relatedDatabaseId ?? ''} {...props} relatedDatabaseId={relatedDatabaseId} />;
+}
+
+function HistoricalRelationItems({
+  cell,
+  context,
+  relatedDatabaseId,
+  onTextChange,
+  style,
+  wrap,
+}: RelationItemsProps & { context: DatabaseContextState; relatedDatabaseId?: string }) {
+  const { t } = useTranslation();
+  const database = context.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+  const ids = cell.data instanceof Y.Array ? cell.data.toArray() : [];
+  const isSameDatabase = database?.get(YjsDatabaseKey.id) === relatedDatabaseId;
+  const primaryFieldId = database ? getPrimaryFieldId(database) : undefined;
+  const primaryField = primaryFieldId ? database?.get(YjsDatabaseKey.fields)?.get(primaryFieldId) : undefined;
+  const storedText = ids.join(', ');
+
+  useEffect(() => onTextChange?.(storedText), [onTextChange, storedText]);
+
+  return (
+    <div className={cn('flex gap-1', wrap && 'flex-wrap')} style={style}>
+      {ids.map((id) => {
+        const doc = isSameDatabase ? context.rowMap?.[id] : undefined;
+
+        return doc ? (
+          <button key={id} type='button' className='text-left underline' onClick={() => context.navigateToRow?.(id)}>
+            <RelationPrimaryValue rowDoc={doc} fieldId={primaryFieldId} field={primaryField} />
+          </button>
+        ) : (
+          <span key={id} className='text-text-secondary' title={t('databaseHistory.relatedRowUnavailable', 'Related row is not included in this version.')}>
+            {id}
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 export default RelationItems;

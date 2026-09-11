@@ -189,6 +189,7 @@ export async function collabFullSyncBatch(
     stateVector: Uint8Array;
     docState: Uint8Array;
     collabVersion?: string | null;
+    databaseRestoreId?: string;
   }>,
   options?: CollabFullSyncBatchOptions
 ): Promise<CollabFullSyncBatchResult[]> {
@@ -235,6 +236,7 @@ export async function collabFullSyncBatch(
       sv: item.stateVector,
       docState: item.docState,
       collabVersion: item.collabVersion ?? undefined,
+      databaseRestoreId: item.databaseRestoreId,
     })),
     responseCompression: collab.PayloadCompressionType.COMPRESSION_NONE,
   });

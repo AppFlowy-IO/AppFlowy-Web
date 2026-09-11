@@ -20,6 +20,7 @@ import {
   useUpdateNumberGroupConfigurationDispatch,
 } from '@/application/database-yjs';
 import { createYDatabaseGroupColumn } from '@/application/database-yjs/group-column';
+import { DatabaseHistoryRowStore } from '@/application/database-yjs/history-row-store';
 import { defaultNumberGroupConfiguration, NumberGroupMode, parseNumberGroupConfiguration } from '@/application/database-yjs/number-grouping';
 import {
   DatabaseViewLayout,
@@ -1124,4 +1125,35 @@ describe('useGridGroupingSelector refresh behavior', () => {
     fixture.rowB.destroy();
     fixture.databaseDoc.destroy();
   });
+});
+
+
+test.each([DatabaseViewLayout.Grid, DatabaseViewLayout.List])('groups the complete historical layout %s with bounded row documents', async (layout) => {
+  const fixture = createGridGroupingFixture({ fieldType: FieldType.Checkbox, rowAValue: 'No', rowBValue: 'Yes' });
+  const store = new DatabaseHistoryRowStore('history:groups');
+  const rows = Array.from({ length: 400 }, (_, i) => ({ id: String(i), height: 36 }));
+
+  fixture.view.set(YjsDatabaseKey.layout, layout);
+  fixture.rowOrders.delete(0, fixture.rowOrders.length);
+  fixture.rowOrders.push(rows);
+  rows.forEach(({ id }, i) => {
+    const doc = createRowDoc(id, 'database', { [fixture.fieldId]: createCell(FieldType.Checkbox, i % 2 ? 'Yes' : 'No') });
+
+    store.add(id, Y.encodeStateAsUpdate(doc), 1);
+    doc.destroy();
+  });
+  fixture.contextValue.rowMap = store.rows;
+  fixture.contextValue.readOnly = true;
+  fixture.contextValue.dataSource = { type: 'history', id: 'groups' };
+  const before = Y.encodeStateAsUpdate(fixture.databaseDoc);
+  const { result, unmount } = renderHook(() => useDatabaseGroupingSelector(layout), { wrapper: fixture.wrapper });
+
+  await waitFor(() => expect(result.current.ready).toBe(true));
+  expect(result.current.groups.find((group) => group.id === 'Yes')?.rows).toHaveLength(200);
+  expect(result.current.groups.find((group) => group.id === 'No')?.rows).toHaveLength(200);
+  expect(store.cachedDocumentCount).toBeLessThanOrEqual(128);
+  expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(before);
+  unmount();
+  store.destroy();
+  fixture.rowA.destroy(); fixture.rowB.destroy(); fixture.databaseDoc.destroy();
 });

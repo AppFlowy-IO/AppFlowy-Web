@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import * as Y from 'yjs';
 
+import { ViewService } from '@/application/services/domains';
 import { AccessLevel, Types, ViewLayout, type View } from '@/application/types';
 
 const modalViewId = '00000000-0000-4000-8000-000000000001';
@@ -21,6 +22,7 @@ const mockBindViewSync = jest.fn();
 const mockNoop = jest.fn();
 const mockSetOpenPageModalEffectiveViewId = jest.fn();
 const mockRenderedViewProps = jest.fn();
+const mockMoreActionsProps = jest.fn();
 let mockObjectPermissions: Record<string, ReturnType<typeof createMockPermission>> = {};
 
 function createMockPermission(viewId: string, overrides: Record<string, unknown> = {}) {
@@ -119,7 +121,7 @@ jest.mock('@/components/app/DatabaseView', () => ({
 
 jest.mock('@/components/app/header/MoreActions', () => ({
   __esModule: true,
-  default: () => null,
+  default: (props: unknown) => { mockMoreActionsProps(props); return null; },
 }));
 
 jest.mock('@/components/app/view-actions/MovePagePopover', () => ({
@@ -153,6 +155,21 @@ describe('ViewModal permission cleanup', () => {
     jest.clearAllMocks();
     mockOutlineViews = [mockView];
     mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId) };
+  });
+
+  it('passes fetched off-outline database metadata to its own history menu', async () => {
+    const fetchedView: View = { ...mockView, layout: ViewLayout.Board,
+      extra: { database_id: 'modal-database', is_space: false } };
+
+    mockOutlineViews = [];
+    jest.mocked(ViewService.get).mockResolvedValue(fetchedView);
+    mockLoadView.mockResolvedValue(new Y.Doc({ guid: 'off-outline-database-doc' }));
+    render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await waitFor(() => expect(mockMoreActionsProps).toHaveBeenCalledWith(expect.objectContaining({
+      viewId: modalViewId, viewMetadata: fetchedView,
+    })));
+    expect(ViewService.get).toHaveBeenCalledWith('workspace-id', modalViewId);
   });
 
   it('passes canonical can_share through for an editable member who cannot manage sharing', async () => {

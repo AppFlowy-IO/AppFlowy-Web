@@ -6,6 +6,7 @@ import * as Y from 'yjs';
 import { useDatabaseContextOptional } from '@/application/database-yjs';
 import { Types, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { useSyncInternalOptional } from '@/components/app/contexts/SyncInternalContext';
+import { HistoricalRowDocumentNotice } from '@/components/database/history/HistoricalRowDocumentNotice';
 import { Editor } from '@/components/editor';
 import { subscribeCollabDocReset } from '@/components/ws/sync/subscribeCollabDocReset';
 import { CollabDocResetPayload } from '@/components/ws/sync/types';
@@ -200,6 +201,8 @@ export const FeedDocumentPreview = memo(function FeedDocumentPreview({
 
     return () => observer.disconnect();
   }, [doc, expanded]);
+
+  if (context?.dataSource?.type === 'history') return <HistoricalRowDocumentNotice />;
 
   if (!doc || !documentId || !context || !workspaceId) return null;
 

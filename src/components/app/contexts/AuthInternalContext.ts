@@ -32,6 +32,8 @@ export interface AuthInternalContextType {
   isAuthenticated: boolean;
   /** Whether page history (version snapshots) is enabled for the current workspace plan. */
   enablePageHistory?: boolean;
+  /** Requires preview, checkpoint-required restore jobs, and restore synchronization support. */
+  enableDatabaseHistory?: boolean;
   /** Whether server-backed AI features are enabled for this deployment/workspace. */
   aiEnabled?: boolean;
   /** Maximum raw Yjs update accepted by the realtime WebSocket lane. */

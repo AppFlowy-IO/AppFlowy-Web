@@ -93,6 +93,8 @@ const stableSyncValue = {
   flushAllSync: jest.fn(),
   syncAllToServer: jest.fn(),
   applyHttpFullSyncResult: jest.fn(async () => undefined),
+  ensureDatabaseRestoreCurrent: jest.fn(async () => true),
+  reloadDatabaseAfterRestore: jest.fn(async () => undefined),
   scheduleDeferredCleanup: jest.fn(),
 };
 

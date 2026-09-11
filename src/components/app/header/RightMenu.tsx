@@ -70,7 +70,7 @@ function RightMenu() {
       {favoriteViewId && (
         <FavoriteButton viewId={favoriteViewId} beforeToggle={rowPage ? prepareRowDocumentForFavorite : undefined} />
       )}
-      {actionViewId && <MoreActions viewId={actionViewId} />}
+      {actionViewId && <MoreActions viewId={actionViewId} activeViewId={routeViewId} rowId={rowPageRowId} />}
 
       <Divider orientation={'vertical'} className={'mx-2'} flexItem />
       <Tooltip title={t('publish.downloadApp')}>

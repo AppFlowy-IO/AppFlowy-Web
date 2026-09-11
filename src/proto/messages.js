@@ -1059,6 +1059,7 @@ export const collab = $root.collab = (() => {
          * @property {string|null} [version] Update version
          * @property {Uint8Array|null} [beforeStateVector] Update beforeStateVector
          * @property {Uint8Array|null} [afterStateVector] Update afterStateVector
+         * @property {string|null} [databaseRestoreId] Update databaseRestoreId
          */
 
         /**
@@ -1127,6 +1128,28 @@ export const collab = $root.collab = (() => {
         Update.prototype.afterStateVector = $util.newBuffer([]);
 
         /**
+         * Update databaseRestoreId.
+         * @member {string|null|undefined} databaseRestoreId
+         * @memberof collab.Update
+         * @instance
+         */
+        Update.prototype.databaseRestoreId = null;
+
+        // OneOf field names bound to virtual getters and setters
+        let $oneOfFields;
+
+        /**
+         * Update _databaseRestoreId.
+         * @member {"databaseRestoreId"|undefined} _databaseRestoreId
+         * @memberof collab.Update
+         * @instance
+         */
+        Object.defineProperty(Update.prototype, "_databaseRestoreId", {
+            get: $util.oneOfGetter($oneOfFields = ["databaseRestoreId"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
          * Creates a new Update instance using the specified properties.
          * @function create
          * @memberof collab.Update
@@ -1162,6 +1185,8 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.beforeStateVector);
             if (message.afterStateVector != null && Object.hasOwnProperty.call(message, "afterStateVector"))
                 writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.afterStateVector);
+            if (message.databaseRestoreId != null && Object.hasOwnProperty.call(message, "databaseRestoreId"))
+                writer.uint32(/* id 7, wireType 2 =*/58).string(message.databaseRestoreId);
             return writer;
         };
 
@@ -1222,6 +1247,10 @@ export const collab = $root.collab = (() => {
                         message.afterStateVector = reader.bytes();
                         break;
                     }
+                case 7: {
+                        message.databaseRestoreId = reader.string();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -1257,6 +1286,7 @@ export const collab = $root.collab = (() => {
         Update.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
+            let properties = {};
             if (message.messageId != null && message.hasOwnProperty("messageId")) {
                 let error = $root.collab.Rid.verify(message.messageId);
                 if (error)
@@ -1277,6 +1307,11 @@ export const collab = $root.collab = (() => {
             if (message.afterStateVector != null && message.hasOwnProperty("afterStateVector"))
                 if (!(message.afterStateVector && typeof message.afterStateVector.length === "number" || $util.isString(message.afterStateVector)))
                     return "afterStateVector: buffer expected";
+            if (message.databaseRestoreId != null && message.hasOwnProperty("databaseRestoreId")) {
+                properties._databaseRestoreId = 1;
+                if (!$util.isString(message.databaseRestoreId))
+                    return "databaseRestoreId: string expected";
+            }
             return null;
         };
 
@@ -1316,6 +1351,8 @@ export const collab = $root.collab = (() => {
                     $util.base64.decode(object.afterStateVector, message.afterStateVector = $util.newBuffer($util.base64.length(object.afterStateVector)), 0);
                 else if (object.afterStateVector.length >= 0)
                     message.afterStateVector = object.afterStateVector;
+            if (object.databaseRestoreId != null)
+                message.databaseRestoreId = String(object.databaseRestoreId);
             return message;
         };
 
@@ -1370,6 +1407,11 @@ export const collab = $root.collab = (() => {
                 object.beforeStateVector = options.bytes === String ? $util.base64.encode(message.beforeStateVector, 0, message.beforeStateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.beforeStateVector) : message.beforeStateVector;
             if (message.afterStateVector != null && message.hasOwnProperty("afterStateVector"))
                 object.afterStateVector = options.bytes === String ? $util.base64.encode(message.afterStateVector, 0, message.afterStateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.afterStateVector) : message.afterStateVector;
+            if (message.databaseRestoreId != null && message.hasOwnProperty("databaseRestoreId")) {
+                object.databaseRestoreId = message.databaseRestoreId;
+                if (options.oneofs)
+                    object._databaseRestoreId = "databaseRestoreId";
+            }
             return object;
         };
 
@@ -2280,6 +2322,7 @@ export const collab = $root.collab = (() => {
          * @property {Uint8Array|null} [sv] CollabDocStateParams sv
          * @property {Uint8Array|null} [docState] CollabDocStateParams docState
          * @property {string|null} [collabVersion] CollabDocStateParams collabVersion
+         * @property {string|null} [databaseRestoreId] CollabDocStateParams databaseRestoreId
          */
 
         /**
@@ -2346,6 +2389,28 @@ export const collab = $root.collab = (() => {
         CollabDocStateParams.prototype.collabVersion = "";
 
         /**
+         * CollabDocStateParams databaseRestoreId.
+         * @member {string|null|undefined} databaseRestoreId
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.databaseRestoreId = null;
+
+        // OneOf field names bound to virtual getters and setters
+        let $oneOfFields;
+
+        /**
+         * CollabDocStateParams _databaseRestoreId.
+         * @member {"databaseRestoreId"|undefined} _databaseRestoreId
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        Object.defineProperty(CollabDocStateParams.prototype, "_databaseRestoreId", {
+            get: $util.oneOfGetter($oneOfFields = ["databaseRestoreId"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
          * Creates a new CollabDocStateParams instance using the specified properties.
          * @function create
          * @memberof collab.CollabDocStateParams
@@ -2381,6 +2446,8 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.docState);
             if (message.collabVersion != null && Object.hasOwnProperty.call(message, "collabVersion"))
                 writer.uint32(/* id 6, wireType 2 =*/50).string(message.collabVersion);
+            if (message.databaseRestoreId != null && Object.hasOwnProperty.call(message, "databaseRestoreId"))
+                writer.uint32(/* id 7, wireType 2 =*/58).string(message.databaseRestoreId);
             return writer;
         };
 
@@ -2441,6 +2508,10 @@ export const collab = $root.collab = (() => {
                         message.collabVersion = reader.string();
                         break;
                     }
+                case 7: {
+                        message.databaseRestoreId = reader.string();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -2476,6 +2547,7 @@ export const collab = $root.collab = (() => {
         CollabDocStateParams.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
+            let properties = {};
             if (message.objectId != null && message.hasOwnProperty("objectId"))
                 if (!$util.isString(message.objectId))
                     return "objectId: string expected";
@@ -2500,6 +2572,11 @@ export const collab = $root.collab = (() => {
             if (message.collabVersion != null && message.hasOwnProperty("collabVersion"))
                 if (!$util.isString(message.collabVersion))
                     return "collabVersion: string expected";
+            if (message.databaseRestoreId != null && message.hasOwnProperty("databaseRestoreId")) {
+                properties._databaseRestoreId = 1;
+                if (!$util.isString(message.databaseRestoreId))
+                    return "databaseRestoreId: string expected";
+            }
             return null;
         };
 
@@ -2551,6 +2628,8 @@ export const collab = $root.collab = (() => {
                     message.docState = object.docState;
             if (object.collabVersion != null)
                 message.collabVersion = String(object.collabVersion);
+            if (object.databaseRestoreId != null)
+                message.databaseRestoreId = String(object.databaseRestoreId);
             return message;
         };
 
@@ -2599,6 +2678,11 @@ export const collab = $root.collab = (() => {
                 object.docState = options.bytes === String ? $util.base64.encode(message.docState, 0, message.docState.length) : options.bytes === Array ? Array.prototype.slice.call(message.docState) : message.docState;
             if (message.collabVersion != null && message.hasOwnProperty("collabVersion"))
                 object.collabVersion = message.collabVersion;
+            if (message.databaseRestoreId != null && message.hasOwnProperty("databaseRestoreId")) {
+                object.databaseRestoreId = message.databaseRestoreId;
+                if (options.oneofs)
+                    object._databaseRestoreId = "databaseRestoreId";
+            }
             return object;
         };
 
@@ -3623,6 +3707,7 @@ export const notification = $root.notification = (() => {
          * @property {notification.IFolderViewChanged|null} [folderViewChanged] WorkspaceNotification folderViewChanged
          * @property {notification.IInboxNotification|null} [inboxNotification] WorkspaceNotification inboxNotification
          * @property {notification.ICommentChanged|null} [commentChanged] WorkspaceNotification commentChanged
+         * @property {notification.IDatabaseRestored|null} [databaseRestored] WorkspaceNotification databaseRestored
          */
 
         /**
@@ -3728,17 +3813,25 @@ export const notification = $root.notification = (() => {
          */
         WorkspaceNotification.prototype.commentChanged = null;
 
+        /**
+         * WorkspaceNotification databaseRestored.
+         * @member {notification.IDatabaseRestored|null|undefined} databaseRestored
+         * @memberof notification.WorkspaceNotification
+         * @instance
+         */
+        WorkspaceNotification.prototype.databaseRestored = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
         /**
          * WorkspaceNotification payload.
-         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|undefined} payload
+         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"databaseRestored"|undefined} payload
          * @memberof notification.WorkspaceNotification
          * @instance
          */
         Object.defineProperty(WorkspaceNotification.prototype, "payload", {
-            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification", "commentChanged"]),
+            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification", "commentChanged", "databaseRestored"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -3788,6 +3881,8 @@ export const notification = $root.notification = (() => {
                 $root.notification.InboxNotification.encode(message.inboxNotification, writer.uint32(/* id 10, wireType 2 =*/82).fork()).ldelim();
             if (message.commentChanged != null && Object.hasOwnProperty.call(message, "commentChanged"))
                 $root.notification.CommentChanged.encode(message.commentChanged, writer.uint32(/* id 11, wireType 2 =*/90).fork()).ldelim();
+            if (message.databaseRestored != null && Object.hasOwnProperty.call(message, "databaseRestored"))
+                $root.notification.DatabaseRestored.encode(message.databaseRestored, writer.uint32(/* id 12, wireType 2 =*/98).fork()).ldelim();
             return writer;
         };
 
@@ -3866,6 +3961,10 @@ export const notification = $root.notification = (() => {
                     }
                 case 11: {
                         message.commentChanged = $root.notification.CommentChanged.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 12: {
+                        message.databaseRestored = $root.notification.DatabaseRestored.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -4012,6 +4111,16 @@ export const notification = $root.notification = (() => {
                         return "commentChanged." + error;
                 }
             }
+            if (message.databaseRestored != null && message.hasOwnProperty("databaseRestored")) {
+                if (properties.payload === 1)
+                    return "payload: multiple values";
+                properties.payload = 1;
+                {
+                    let error = $root.notification.DatabaseRestored.verify(message.databaseRestored);
+                    if (error)
+                        return "databaseRestored." + error;
+                }
+            }
             return null;
         };
 
@@ -4081,6 +4190,11 @@ export const notification = $root.notification = (() => {
                 if (typeof object.commentChanged !== "object")
                     throw TypeError(".notification.WorkspaceNotification.commentChanged: object expected");
                 message.commentChanged = $root.notification.CommentChanged.fromObject(object.commentChanged);
+            }
+            if (object.databaseRestored != null) {
+                if (typeof object.databaseRestored !== "object")
+                    throw TypeError(".notification.WorkspaceNotification.databaseRestored: object expected");
+                message.databaseRestored = $root.notification.DatabaseRestored.fromObject(object.databaseRestored);
             }
             return message;
         };
@@ -4153,6 +4267,11 @@ export const notification = $root.notification = (() => {
                 if (options.oneofs)
                     object.payload = "commentChanged";
             }
+            if (message.databaseRestored != null && message.hasOwnProperty("databaseRestored")) {
+                object.databaseRestored = $root.notification.DatabaseRestored.toObject(message.databaseRestored, options);
+                if (options.oneofs)
+                    object.payload = "databaseRestored";
+            }
             return object;
         };
 
@@ -4183,6 +4302,258 @@ export const notification = $root.notification = (() => {
         };
 
         return WorkspaceNotification;
+    })();
+
+    notification.DatabaseRestored = (function() {
+
+        /**
+         * Properties of a DatabaseRestored.
+         * @memberof notification
+         * @interface IDatabaseRestored
+         * @property {string|null} [databaseId] DatabaseRestored databaseId
+         * @property {string|null} [databaseRestoreId] DatabaseRestored databaseRestoreId
+         * @property {string|null} [version] DatabaseRestored version
+         */
+
+        /**
+         * Constructs a new DatabaseRestored.
+         * @memberof notification
+         * @classdesc Represents a DatabaseRestored.
+         * @implements IDatabaseRestored
+         * @constructor
+         * @param {notification.IDatabaseRestored=} [properties] Properties to set
+         */
+        function DatabaseRestored(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * DatabaseRestored databaseId.
+         * @member {string} databaseId
+         * @memberof notification.DatabaseRestored
+         * @instance
+         */
+        DatabaseRestored.prototype.databaseId = "";
+
+        /**
+         * DatabaseRestored databaseRestoreId.
+         * @member {string} databaseRestoreId
+         * @memberof notification.DatabaseRestored
+         * @instance
+         */
+        DatabaseRestored.prototype.databaseRestoreId = "";
+
+        /**
+         * DatabaseRestored version.
+         * @member {string} version
+         * @memberof notification.DatabaseRestored
+         * @instance
+         */
+        DatabaseRestored.prototype.version = "";
+
+        /**
+         * Creates a new DatabaseRestored instance using the specified properties.
+         * @function create
+         * @memberof notification.DatabaseRestored
+         * @static
+         * @param {notification.IDatabaseRestored=} [properties] Properties to set
+         * @returns {notification.DatabaseRestored} DatabaseRestored instance
+         */
+        DatabaseRestored.create = function create(properties) {
+            return new DatabaseRestored(properties);
+        };
+
+        /**
+         * Encodes the specified DatabaseRestored message. Does not implicitly {@link notification.DatabaseRestored.verify|verify} messages.
+         * @function encode
+         * @memberof notification.DatabaseRestored
+         * @static
+         * @param {notification.IDatabaseRestored} message DatabaseRestored message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DatabaseRestored.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.databaseId != null && Object.hasOwnProperty.call(message, "databaseId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.databaseId);
+            if (message.databaseRestoreId != null && Object.hasOwnProperty.call(message, "databaseRestoreId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.databaseRestoreId);
+            if (message.version != null && Object.hasOwnProperty.call(message, "version"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.version);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified DatabaseRestored message, length delimited. Does not implicitly {@link notification.DatabaseRestored.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof notification.DatabaseRestored
+         * @static
+         * @param {notification.IDatabaseRestored} message DatabaseRestored message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DatabaseRestored.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a DatabaseRestored message from the specified reader or buffer.
+         * @function decode
+         * @memberof notification.DatabaseRestored
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {notification.DatabaseRestored} DatabaseRestored
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DatabaseRestored.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.DatabaseRestored();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.databaseId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.databaseRestoreId = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.version = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a DatabaseRestored message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof notification.DatabaseRestored
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {notification.DatabaseRestored} DatabaseRestored
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DatabaseRestored.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a DatabaseRestored message.
+         * @function verify
+         * @memberof notification.DatabaseRestored
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        DatabaseRestored.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.databaseId != null && message.hasOwnProperty("databaseId"))
+                if (!$util.isString(message.databaseId))
+                    return "databaseId: string expected";
+            if (message.databaseRestoreId != null && message.hasOwnProperty("databaseRestoreId"))
+                if (!$util.isString(message.databaseRestoreId))
+                    return "databaseRestoreId: string expected";
+            if (message.version != null && message.hasOwnProperty("version"))
+                if (!$util.isString(message.version))
+                    return "version: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a DatabaseRestored message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof notification.DatabaseRestored
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {notification.DatabaseRestored} DatabaseRestored
+         */
+        DatabaseRestored.fromObject = function fromObject(object) {
+            if (object instanceof $root.notification.DatabaseRestored)
+                return object;
+            let message = new $root.notification.DatabaseRestored();
+            if (object.databaseId != null)
+                message.databaseId = String(object.databaseId);
+            if (object.databaseRestoreId != null)
+                message.databaseRestoreId = String(object.databaseRestoreId);
+            if (object.version != null)
+                message.version = String(object.version);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a DatabaseRestored message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof notification.DatabaseRestored
+         * @static
+         * @param {notification.DatabaseRestored} message DatabaseRestored
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        DatabaseRestored.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.databaseId = "";
+                object.databaseRestoreId = "";
+                object.version = "";
+            }
+            if (message.databaseId != null && message.hasOwnProperty("databaseId"))
+                object.databaseId = message.databaseId;
+            if (message.databaseRestoreId != null && message.hasOwnProperty("databaseRestoreId"))
+                object.databaseRestoreId = message.databaseRestoreId;
+            if (message.version != null && message.hasOwnProperty("version"))
+                object.version = message.version;
+            return object;
+        };
+
+        /**
+         * Converts this DatabaseRestored to JSON.
+         * @function toJSON
+         * @memberof notification.DatabaseRestored
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        DatabaseRestored.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for DatabaseRestored
+         * @function getTypeUrl
+         * @memberof notification.DatabaseRestored
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        DatabaseRestored.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/notification.DatabaseRestored";
+        };
+
+        return DatabaseRestored;
     })();
 
     notification.UserProfileChange = (function() {
@@ -4492,6 +4863,7 @@ export const notification = $root.notification = (() => {
          * @interface IPermissionChanged
          * @property {string|null} [objectId] PermissionChanged objectId
          * @property {number|null} [reason] PermissionChanged reason
+         * @property {number|Long|null} [timestampMs] PermissionChanged timestampMs
          */
 
         /**
@@ -4526,6 +4898,14 @@ export const notification = $root.notification = (() => {
         PermissionChanged.prototype.reason = 0;
 
         /**
+         * PermissionChanged timestampMs.
+         * @member {number|Long} timestampMs
+         * @memberof notification.PermissionChanged
+         * @instance
+         */
+        PermissionChanged.prototype.timestampMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+        /**
          * Creates a new PermissionChanged instance using the specified properties.
          * @function create
          * @memberof notification.PermissionChanged
@@ -4553,6 +4933,8 @@ export const notification = $root.notification = (() => {
                 writer.uint32(/* id 1, wireType 2 =*/10).string(message.objectId);
             if (message.reason != null && Object.hasOwnProperty.call(message, "reason"))
                 writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.reason);
+            if (message.timestampMs != null && Object.hasOwnProperty.call(message, "timestampMs"))
+                writer.uint32(/* id 3, wireType 0 =*/24).int64(message.timestampMs);
             return writer;
         };
 
@@ -4597,6 +4979,10 @@ export const notification = $root.notification = (() => {
                         message.reason = reader.uint32();
                         break;
                     }
+                case 3: {
+                        message.timestampMs = reader.int64();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -4638,6 +5024,9 @@ export const notification = $root.notification = (() => {
             if (message.reason != null && message.hasOwnProperty("reason"))
                 if (!$util.isInteger(message.reason))
                     return "reason: integer expected";
+            if (message.timestampMs != null && message.hasOwnProperty("timestampMs"))
+                if (!$util.isInteger(message.timestampMs) && !(message.timestampMs && $util.isInteger(message.timestampMs.low) && $util.isInteger(message.timestampMs.high)))
+                    return "timestampMs: integer|Long expected";
             return null;
         };
 
@@ -4657,6 +5046,15 @@ export const notification = $root.notification = (() => {
                 message.objectId = String(object.objectId);
             if (object.reason != null)
                 message.reason = object.reason >>> 0;
+            if (object.timestampMs != null)
+                if ($util.Long)
+                    (message.timestampMs = $util.Long.fromValue(object.timestampMs)).unsigned = false;
+                else if (typeof object.timestampMs === "string")
+                    message.timestampMs = parseInt(object.timestampMs, 10);
+                else if (typeof object.timestampMs === "number")
+                    message.timestampMs = object.timestampMs;
+                else if (typeof object.timestampMs === "object")
+                    message.timestampMs = new $util.LongBits(object.timestampMs.low >>> 0, object.timestampMs.high >>> 0).toNumber();
             return message;
         };
 
@@ -4676,11 +5074,21 @@ export const notification = $root.notification = (() => {
             if (options.defaults) {
                 object.objectId = "";
                 object.reason = 0;
+                if ($util.Long) {
+                    let long = new $util.Long(0, 0, false);
+                    object.timestampMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.timestampMs = options.longs === String ? "0" : 0;
             }
             if (message.objectId != null && message.hasOwnProperty("objectId"))
                 object.objectId = message.objectId;
             if (message.reason != null && message.hasOwnProperty("reason"))
                 object.reason = message.reason;
+            if (message.timestampMs != null && message.hasOwnProperty("timestampMs"))
+                if (typeof message.timestampMs === "number")
+                    object.timestampMs = options.longs === String ? String(message.timestampMs) : message.timestampMs;
+                else
+                    object.timestampMs = options.longs === String ? $util.Long.prototype.toString.call(message.timestampMs) : options.longs === Number ? new $util.LongBits(message.timestampMs.low >>> 0, message.timestampMs.high >>> 0).toNumber() : message.timestampMs;
             return object;
         };
 

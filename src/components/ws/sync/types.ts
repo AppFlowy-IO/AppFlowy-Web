@@ -74,6 +74,8 @@ export interface QueuedCollabMessage {
 }
 
 export type SyncContextType = {
+  reloadDatabaseAfterRestore: (databaseId: string, restoreId: string) => Promise<void>;
+  ensureDatabaseRestoreCurrent: (objectId: string, type: Types, marker?: string) => Promise<boolean>;
   registerSyncContext: (context: RegisterSyncContext) => SyncContext;
   /**
    * Return the canonical live document and, while online, re-send its

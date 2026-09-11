@@ -3,6 +3,7 @@ import { startTransition, Suspense, type ReactNode, useEffect } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
+import { openRowCollabDBWithProvider } from '@/application/db';
 import {
   type BackgroundRowDocChange,
   useBackgroundRowDocLoader,
@@ -66,6 +67,33 @@ function BackgroundLoader({ scope, suspend = false }: { scope: string; suspend?:
 }
 
 describe('useBackgroundRowDocLoader', () => {
+  it('does not open a current IndexedDB row when a historical row is missing', async () => {
+    const { databaseDoc, viewId } = createDatabaseFixture();
+    const loadRowFromSeed = jest.fn(async () => undefined);
+    const openLiveRow = jest.mocked(openRowCollabDBWithProvider);
+
+    openLiveRow.mockClear();
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      databaseDoc,
+      databasePageId: viewId,
+      dataSource: { type: 'history', id: 'history-with-missing-row' },
+      loadRowFromSeed,
+      blobPrefetchComplete: true,
+      seedsReady: true,
+      rowMap: {},
+      readOnly: true,
+      workspaceId: 'workspace-id',
+    };
+    const { unmount } = render(<BackgroundLoaderHarness contextValue={contextValue} scope='missing-history-row' />);
+
+    await act(async () => { await Promise.resolve(); });
+    expect(loadRowFromSeed).not.toHaveBeenCalled();
+    expect(openLiveRow).not.toHaveBeenCalled();
+    unmount();
+    databaseDoc.destroy();
+  });
+
   it('publishes seed hydration as bounded row-document deltas', async () => {
     const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
     const rowIds = Array.from({ length: 129 }, (_, index) => `seed-row-${index}`);
