@@ -912,35 +912,9 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         return;
       }
 
-      if (isDocumentEmptyResolved) {
-        // Skip if doc is already loaded
-        if (docReadyRef.current && loadedDocumentIdRef.current === documentId) {
-          Log.debug('[DatabaseRowSubDocument] row meta says empty but doc already loaded, skipping', {
-            rowId,
-            documentId,
-          });
-          return;
-        }
-
-        // Document is empty, but the editor must still bind to a server-side
-        // collab before accepting edits. Otherwise a paste-and-close flow can
-        // enqueue the first update before the orphaned collab exists, then a
-        // fast reopen loads the still-empty server state over the local cache.
-        Log.debug('[DatabaseRowSubDocument] row meta says empty; creating row doc before opening editor', {
-          rowId,
-          documentId,
-        });
-        const createAttempt = await handleCreateDocument(documentId, false, isCurrentRequest);
-
-        if (createAttempt === 'retryable' && isCurrentRequest()) {
-          scheduleRetry();
-        }
-
-        return;
-      }
-
-      // meta.isEmptyDocument is false - document should exist on server
-      // If checkIfRowDocumentExists is not available, try to load directly.
+      // Empty content does not imply a missing server document. Check existence for both
+      // states so reopening an empty document can read it without taking the repair write path.
+      // Without an existence check, creation still confirms server readiness before binding.
       if (!checkIfRowDocumentExists) {
         const localHasContent = await hasLocalDocContent(documentId);
 
@@ -996,6 +970,18 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
           if (loadAttempt === 'retryable' && isCurrentRequest()) {
             scheduleRetry(CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS);
+          }
+
+          return;
+        }
+
+        if (isDocumentEmptyResolved) {
+          // A local document alone cannot admit edits: paste-and-close must wait until its
+          // server collab exists. Missing empty documents are created without the upload retry.
+          const createAttempt = await handleCreateDocument(documentId, false, isCurrentRequest);
+
+          if (createAttempt === 'retryable' && isCurrentRequest()) {
+            scheduleRetry();
           }
 
           return;
