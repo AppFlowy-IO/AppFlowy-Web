@@ -10,6 +10,8 @@ import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/
 import { DatabaseViewLayout, UIVariant, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import Database, { Database2Props } from '@/components/database/Database';
 
+jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+
 const mockSeedLoadPromises: Array<Promise<YDoc | undefined>> = [];
 const mockEnsureRowPromises: Array<Promise<YDoc | undefined> | void> = [];
 let mockDatabaseContext: DatabaseContextState | undefined;
@@ -331,6 +333,155 @@ describe('Database blob prefetch lifecycle', () => {
     mockedPrefetch.mockImplementation(() => new Promise(() => undefined));
   });
 
+  it('keeps row fallback paused after overload and allows an explicit blob retry', async () => {
+    const doc = createDatabaseDoc('overload-database');
+    const rowDoc = createHydratedRowDoc('database-id_rows_row-id');
+    const createRow = jest.fn().mockResolvedValue(rowDoc);
+    const retry = createDeferred<Awaited<ReturnType<typeof prefetchDatabaseBlobDiff>>>();
+
+    mockedPrefetch.mockRejectedValueOnce({ code: 1079, message: 'Busy' }).mockReturnValueOnce(retry.promise);
+    const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    const ensured = requestEnsureRow();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(createRow).not.toHaveBeenCalled();
+    expect(mockedOpenRowDoc).not.toHaveBeenCalled();
+    expect(mockDatabaseContext?.seedsReady).toBe(false);
+    expect(mockDatabaseContext?.blobPrefetchComplete).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'landingPage.serverError.retry' }));
+    expect(mockedPrefetch).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(createRow).not.toHaveBeenCalled();
+    await act(async () => {
+      mockedPrefetch.mock.calls[1][2]?.onSeedsReady?.();
+      retry.resolve({} as Awaited<ReturnType<typeof prefetchDatabaseBlobDiff>>);
+      await retry.promise;
+    });
+    await act(async () => {
+      await ensured;
+    });
+    expect(createRow).toHaveBeenCalledTimes(1);
+    expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true);
+    unmount();
+    doc.destroy();
+    rowDoc.destroy();
+  });
+
+  it.each(['settled', 'in-flight'])(
+    'restores a successful delta after an %s full-prefetch overload and can retry full mode later',
+    async (phase) => {
+      const doc = createDatabaseDoc('overload-mode-switch');
+      const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+      const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
+      const groups = new Y.Array();
+      const overload = createDeferred<void>();
+      const retry = createDeferred<Awaited<ReturnType<typeof prefetchDatabaseBlobDiff>>>();
+
+      view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
+      view?.set(YjsDatabaseKey.groups, groups);
+      mockedPrefetch
+        .mockImplementationOnce(async (_workspaceId, _databaseId, options) => {
+          options?.onSeedsReady?.();
+          return {} as Awaited<ReturnType<typeof prefetchDatabaseBlobDiff>>;
+        })
+        .mockImplementationOnce(async () => {
+          await overload.promise;
+          throw Object.assign(new Error('Busy'), { code: 1079 });
+        })
+        .mockRejectedValueOnce({ code: 1079, message: 'Busy' })
+        .mockReturnValueOnce(retry.promise);
+      const { unmount } = render(<Database {...databaseProps(doc)} />);
+
+      try {
+        await waitFor(() => expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true));
+        expect(mockDatabaseContext?.seedsReady).toBe(true);
+        expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+        expect(mockedPrefetch.mock.calls[0][2]?.forceFullSync).toBe(false);
+
+        await act(async () => {
+          groups.push([new Y.Map()]);
+        });
+        expect(mockedPrefetch).toHaveBeenCalledTimes(2);
+        expect(mockedPrefetch.mock.calls[1][2]?.forceFullSync).toBe(true);
+        expect(mockDatabaseContext?.seedsReady).toBe(false);
+        expect(mockDatabaseContext?.blobPrefetchComplete).toBe(false);
+
+        if (phase === 'settled') {
+          await act(async () => overload.resolve());
+          await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+        }
+
+        await act(async () => {
+          groups.delete(0, groups.length);
+        });
+        await waitFor(() => {
+          expect(screen.queryByRole('alert')).toBeNull();
+          expect(mockDatabaseContext?.seedsReady).toBe(true);
+          expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true);
+        });
+        expect(mockedPrefetch).toHaveBeenCalledTimes(2);
+
+        await act(async () => overload.resolve());
+        expect(screen.queryByRole('alert')).toBeNull();
+        expect(mockDatabaseContext?.seedsReady).toBe(true);
+        expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true);
+
+        await act(async () => {
+          groups.push([new Y.Map()]);
+        });
+        await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+        expect(mockedPrefetch).toHaveBeenCalledTimes(3);
+        expect(mockedPrefetch.mock.calls[2][2]?.forceFullSync).toBe(true);
+
+        fireEvent.click(screen.getByRole('button', { name: 'landingPage.serverError.retry' }));
+        expect(mockedPrefetch).toHaveBeenCalledTimes(4);
+        expect(mockedPrefetch.mock.calls[3][2]?.forceFullSync).toBe(true);
+        expect(screen.queryByRole('alert')).toBeNull();
+        await act(async () => {
+          mockedPrefetch.mock.calls[3][2]?.onSeedsReady?.();
+          retry.resolve({} as Awaited<ReturnType<typeof prefetchDatabaseBlobDiff>>);
+          await retry.promise;
+        });
+        expect(mockDatabaseContext?.seedsReady).toBe(true);
+        expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true);
+        expect(screen.queryByRole('alert')).toBeNull();
+      } finally {
+        unmount();
+        doc.destroy();
+      }
+    }
+  );
+
+  it.each(['settled', 'in-flight'])('hides an %s overload when switching to the read-only path', async (phase) => {
+    const doc = createDatabaseDoc('overload-to-readonly');
+    const response = createDeferred<void>();
+
+    mockedPrefetch.mockImplementationOnce(async () => {
+      await response.promise;
+      throw Object.assign(new Error('Busy'), { code: 1079 });
+    });
+    const { rerender, unmount } = render(<Database {...databaseProps(doc)} />);
+
+    if (phase === 'settled') {
+      await act(async () => response.resolve());
+      await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    }
+
+    rerender(<Database {...databaseProps(doc)} readOnly />);
+    await act(async () => response.resolve());
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(mockDatabaseContext?.seedsReady).toBe(true);
+    expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true);
+    expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+    unmount();
+    doc.destroy();
+  });
+
   it.each([
     ['Board', DatabaseViewLayout.Board],
     ['List', DatabaseViewLayout.List],
@@ -365,11 +516,7 @@ describe('Database blob prefetch lifecycle', () => {
     );
     const scheduleDeferredCleanup = jest.fn();
     const { unmount } = render(
-      <Database
-        {...databaseProps(doc)}
-        createRow={createRow}
-        scheduleDeferredCleanup={scheduleDeferredCleanup}
-      />
+      <Database {...databaseProps(doc)} createRow={createRow} scheduleDeferredCleanup={scheduleDeferredCleanup} />
     );
 
     try {

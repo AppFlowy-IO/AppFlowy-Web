@@ -160,7 +160,7 @@ describe('view-loader database cache identity', () => {
     expect(mockOpenCollabDB).not.toHaveBeenCalledWith(viewId);
   });
 
-  it('fetches by viewId into the canonical databaseId cache when local cache is empty', async () => {
+  it('fetches metadata by viewId into the canonical database cache without requesting row snapshots', async () => {
     const viewId = '00000000-0000-4000-8000-000000000003';
     const databaseId = '00000000-0000-4000-8000-000000000004';
     const canonicalDoc = createEmptyDoc(databaseId);
@@ -193,7 +193,34 @@ describe('view-loader database cache identity', () => {
     expect(result.doc).toBe(canonicalDoc);
     expect(result.fromCache).toBe(false);
     expect(getDatabaseIdFromDoc(canonicalDoc)).toBe(databaseId);
-    expect(mockFetchPageCollab).toHaveBeenCalledWith('workspace-id', viewId);
+    expect(mockFetchPageCollab).toHaveBeenCalledWith('workspace-id', viewId, { includeRows: false });
+    expect(mockFetchDatabaseCollab).not.toHaveBeenCalled();
+  });
+
+  it('loads complete database row orders without row snapshots before the layout or database ID is known', async () => {
+    const viewId = 'unknown-database-view';
+    const databaseId = 'canonical-database';
+    const doc = createEmptyDoc(viewId);
+    const serverDoc = createCompleteDatabaseDoc(databaseId, databaseId, viewId);
+    const database = serverDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as Y.Map<unknown>;
+    const views = database.get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+    const rowOrders = new Y.Array();
+
+    rowOrders.push([{ id: 'row-1' }, { id: 'row-2' }]);
+    views.get(viewId)?.set(YjsDatabaseKey.row_orders, rowOrders);
+    mockOpenCollabDB.mockResolvedValue(doc);
+    mockFetchPageCollab.mockResolvedValue({ data: Y.encodeStateAsUpdate(serverDoc), rows: {} });
+
+    const result = await openView('workspace-id', viewId);
+    const loadedDatabase = result.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as Y.Map<unknown>;
+    const loadedViews = loadedDatabase.get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+    const loadedRowOrders = loadedViews.get(viewId)?.get(YjsDatabaseKey.row_orders) as Y.Array<unknown>;
+
+    expect(result.collabType).toBe(Types.Database);
+    expect(getDatabaseIdFromDoc(result.doc)).toBe(databaseId);
+    expect(loadedRowOrders.toJSON()).toEqual([{ id: 'row-1' }, { id: 'row-2' }]);
+    expect(mockFetchPageCollab).toHaveBeenCalledWith('workspace-id', viewId, { includeRows: false });
+    expect(mockFetchDatabaseCollab).not.toHaveBeenCalled();
   });
 
   it('fetches only the canonical database collab for metadata-only relation loads', async () => {
