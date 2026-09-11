@@ -1,7 +1,14 @@
 import { expect } from '@jest/globals';
-import { fetchPublishView, fetchPublishViewMeta, fetchRowDocumentCollab, fetchViewInfo } from '../fetch';
+import {
+  fetchPageCollab,
+  fetchPublishView,
+  fetchPublishViewMeta,
+  fetchRowDocumentCollab,
+  fetchViewInfo,
+} from '../fetch';
 import {
   getCollab,
+  getPageCollab,
   getPublishView,
   getPublishInfoWithViewId,
   getPublishViewMeta,
@@ -21,6 +28,43 @@ jest.mock('@/application/services/js-services/http', () => {
 describe('Collab fetch functions with deduplication', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('fetchPageCollab', () => {
+    it('normalizes omitted and explicit full-row options for deduplication', async () => {
+      const response = { data: new Uint8Array([1]), rows: { 'row-id': [2] } };
+
+      jest.mocked(getPageCollab).mockResolvedValue(response);
+
+      const defaultRequest = fetchPageCollab('workspace-id', 'view-id');
+      const explicitRequest = fetchPageCollab('workspace-id', 'view-id', { includeRows: true });
+
+      expect(defaultRequest).toBe(explicitRequest);
+      await expect(defaultRequest).resolves.toEqual(response);
+      expect(getPageCollab).toHaveBeenCalledTimes(1);
+      expect(getPageCollab).toHaveBeenCalledWith('workspace-id', 'view-id', { includeRows: true });
+    });
+
+    it('deduplicates no-row loads without sharing their response with full-row callers', async () => {
+      const fullResponse = { data: new Uint8Array([1]), rows: { 'row-id': [2] } };
+      const noRowsResponse = { data: new Uint8Array([1]), rows: {} };
+
+      jest.mocked(getPageCollab).mockImplementation(async (_workspaceId, _viewId, options) => {
+        return options?.includeRows === false ? noRowsResponse : fullResponse;
+      });
+
+      const noRowsRequest = fetchPageCollab('workspace-id', 'view-id', { includeRows: false });
+      const duplicateNoRowsRequest = fetchPageCollab('workspace-id', 'view-id', { includeRows: false });
+      const fullRequest = fetchPageCollab('workspace-id', 'view-id');
+
+      expect(noRowsRequest).toBe(duplicateNoRowsRequest);
+      expect(noRowsRequest).not.toBe(fullRequest);
+      await expect(noRowsRequest).resolves.toEqual(noRowsResponse);
+      await expect(fullRequest).resolves.toEqual(fullResponse);
+      expect(getPageCollab).toHaveBeenCalledTimes(2);
+      expect(getPageCollab).toHaveBeenCalledWith('workspace-id', 'view-id', { includeRows: false });
+      expect(getPageCollab).toHaveBeenCalledWith('workspace-id', 'view-id', { includeRows: true });
+    });
   });
 
   describe('fetchPublishView', () => {

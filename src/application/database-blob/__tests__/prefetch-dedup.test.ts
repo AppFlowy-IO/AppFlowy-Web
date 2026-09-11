@@ -2,6 +2,8 @@ import {
   prefetchDatabaseBlobDiff,
   clearDatabaseRowDocSeedCache,
   invalidateDatabaseRowDocSeed,
+  retainDatabaseRowDocSeedCache,
+  releaseDatabaseRowDocSeedCache,
   takeDatabaseRowDocSeed,
 } from '@/application/database-blob';
 import * as pageStageModule from '@/application/database-blob/page-stage';
@@ -357,6 +359,164 @@ describe('database blob prefetch deduplication', () => {
       timestamp: 1_721_800_002,
       seqNo: 2,
     });
+  });
+
+  it('shares an admission retry and commits no seeds until the unchanged continuation succeeds', async () => {
+    jest.useFakeTimers();
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+    const workspaceId = 'workspace-overloaded';
+    const databaseId = 'database-overloaded';
+    const nextCursor = new Uint8Array([4, 5]);
+    const originalRid = { timestamp: 10, seqNo: 1 };
+    const onSeedsReady = jest.fn();
+
+    databaseIds.add(databaseId);
+    localStorage.setItem(`af_database_blob_rid:${databaseId}`, JSON.stringify(originalRid));
+    mockedDatabaseBlobDiff
+      .mockResolvedValueOnce(persistablePage({ timestamp: 20, seqNo: 1 }, { hasMore: true, nextCursor }))
+      .mockRejectedValueOnce({ code: 1079, httpStatus: 200, message: 'Busy', retryAfterSecs: 2 })
+      .mockResolvedValueOnce(readyDiff());
+    const first = prefetchDatabaseBlobDiff(workspaceId, databaseId, { onSeedsReady });
+    const second = prefetchDatabaseBlobDiff(workspaceId, databaseId);
+
+    await jest.advanceTimersByTimeAsync(2999);
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+    expect(onSeedsReady).not.toHaveBeenCalled();
+    expect(mockedOpenRowCollabDB).not.toHaveBeenCalled();
+    expect(takeDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).toBeNull();
+    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${databaseId}`) ?? 'null')).toEqual(originalRid);
+    await jest.advanceTimersByTimeAsync(1);
+    await Promise.all([first, second]);
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(3);
+    expect(mockedDatabaseBlobDiff.mock.calls[2][2]).toBe(mockedDatabaseBlobDiff.mock.calls[1][2]);
+    expect(mockedDatabaseBlobDiff.mock.calls[2][2].maxKnownRid).toMatchObject(originalRid);
+    expect(onSeedsReady).toHaveBeenCalledTimes(1);
+    expect(mockedOpenRowCollabDB).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${databaseId}`) ?? 'null')).toEqual({
+      timestamp: 20,
+      seqNo: 1,
+    });
+  });
+
+  it('bounds admission retries and discards provisional pages without signaling row fallback', async () => {
+    jest.useFakeTimers();
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    const databaseId = 'database-overload-exhausted';
+    const onSeedsReady = jest.fn();
+    const overloaded = { code: 1079, message: 'Busy' };
+    const { stage, clear } = createMockPageStage();
+
+    jest.spyOn(pageStageModule, 'createDatabaseBlobDiffPageStage').mockReturnValueOnce(stage);
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff
+      .mockResolvedValueOnce(
+        persistablePage({ timestamp: 20, seqNo: 1 }, { hasMore: true, nextCursor: new Uint8Array([1]) })
+      )
+      .mockRejectedValue(overloaded);
+    const result = prefetchDatabaseBlobDiff('workspace', databaseId, { onSeedsReady }).catch((error) => error);
+
+    await jest.runAllTimersAsync();
+    expect(await result).toBe(overloaded);
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(5);
+    expect(onSeedsReady).not.toHaveBeenCalled();
+    expect(mockedOpenRowCollabDB).not.toHaveBeenCalled();
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(takeDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).toBeNull();
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels a backpressure wait only after the last database owner releases it', async () => {
+    jest.useFakeTimers();
+    const databaseId = 'database-overload-cancel';
+    const onSeedsReady = jest.fn();
+
+    databaseIds.add(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockRejectedValue({ code: 1079, message: 'Busy' });
+    const result = prefetchDatabaseBlobDiff('workspace', databaseId, { onSeedsReady }).catch((error) => error);
+
+    await jest.advanceTimersByTimeAsync(0);
+    const signal = mockedDatabaseBlobDiff.mock.calls[0][3]?.signal;
+
+    releaseDatabaseRowDocSeedCache(databaseId);
+    expect(signal?.aborted).toBe(false);
+    releaseDatabaseRowDocSeedCache(databaseId);
+    expect(signal?.aborted).toBe(true);
+    expect(await result).toMatchObject({ name: 'AbortError' });
+    await jest.runAllTimersAsync();
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(1);
+    expect(onSeedsReady).not.toHaveBeenCalled();
+    expect(mockedOpenRowCollabDB).not.toHaveBeenCalled();
+
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(readyDiff());
+    await prefetchDatabaseBlobDiff('workspace', databaseId);
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { code: 1012, message: 'Denied' },
+    { code: 1079, message: 'Busy', retryAfterSecs: 60 },
+  ])('does not retry permanent errors or violate a long server cooldown: %p', async (error) => {
+    const databaseId = `database-no-retry-${error.code}`;
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockRejectedValue(error);
+    await expect(prefetchDatabaseBlobDiff('workspace', databaseId)).rejects.toBe(error);
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses a terminal walk during close and reopen while staged seeds are being committed', async () => {
+    const databaseId = 'database-reopen-during-commit';
+    const diff = persistablePage({ timestamp: 20, seqNo: 1 });
+    const stagedRead = createDeferred<Uint8Array>();
+    const { stage, read } = createMockPageStage();
+    const reopenedSeedsReady = jest.fn();
+
+    jest.spyOn(pageStageModule, 'createDatabaseBlobDiffPageStage').mockReturnValueOnce(stage);
+    read.mockReturnValueOnce(stagedRead.promise);
+    databaseIds.add(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(diff);
+    const first = prefetchDatabaseBlobDiff('workspace', databaseId);
+
+    await flushPendingWork();
+    expect(read).toHaveBeenCalledTimes(1);
+    const signal = mockedDatabaseBlobDiff.mock.calls[0][3]?.signal;
+
+    releaseDatabaseRowDocSeedCache(databaseId);
+    expect(signal?.aborted).toBe(false);
+    retainDatabaseRowDocSeedCache(databaseId);
+    const reopened = prefetchDatabaseBlobDiff('workspace', databaseId, { onSeedsReady: reopenedSeedsReady });
+
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(1);
+    stagedRead.resolve(database_blob.DatabaseBlobDiffResponse.encode(diff).finish());
+    await Promise.all([first, reopened]);
+    expect(reopenedSeedsReady).toHaveBeenCalledTimes(1);
+    expect(mockedOpenRowCollabDB).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${databaseId}`) ?? 'null')).toEqual({
+      timestamp: 20,
+      seqNo: 1,
+    });
+    releaseDatabaseRowDocSeedCache(databaseId);
+  });
+
+  it('discards a late response after its last owner cancels the in-flight request', async () => {
+    const databaseId = 'database-cancel-in-flight';
+    const onSeedsReady = jest.fn();
+    const response = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+    databaseIds.add(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockReturnValueOnce(response.promise);
+    const result = prefetchDatabaseBlobDiff('workspace', databaseId, { onSeedsReady }).catch((error) => error);
+
+    releaseDatabaseRowDocSeedCache(databaseId);
+    response.resolve(persistablePage({ timestamp: 20, seqNo: 1 }));
+    expect(await result).toMatchObject({ name: 'AbortError' });
+    expect(onSeedsReady).not.toHaveBeenCalled();
+    expect(mockedOpenRowCollabDB).not.toHaveBeenCalled();
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
   });
 
   it('retries a Pending page with the same cursor', async () => {

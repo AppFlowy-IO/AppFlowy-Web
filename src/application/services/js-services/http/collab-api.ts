@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { toBase64 } from 'lib0/buffer';
 
 import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
@@ -359,7 +360,12 @@ export async function getCollab(
   };
 }
 
-export async function getPageCollab(workspaceId: string, viewId: string) {
+export interface PageCollabFetchOptions {
+  /** Omit row snapshots when the caller loads rows through a separate pipeline. Defaults to true. */
+  includeRows?: boolean;
+}
+
+export async function getPageCollab(workspaceId: string, viewId: string, options: PageCollabFetchOptions = {}) {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}`;
 
   const response = await executeAPIRequest<{
@@ -381,7 +387,7 @@ export async function getPageCollab(workspaceId: string, viewId: string) {
           last_editor?: User;
         };
       }>
-    >(url)
+    >(url, options.includeRows === false ? { params: { include_rows: false } } : undefined)
   );
 
   const { encoded_collab, row_data, owner, last_editor } = response.data;
@@ -414,7 +420,8 @@ export async function duplicateRowDocument(
 export async function databaseBlobDiff(
   workspaceId: string,
   databaseId: string,
-  request: database_blob.IDatabaseBlobDiffRequest
+  request: database_blob.IDatabaseBlobDiffRequest,
+  options?: { signal?: AbortSignal }
 ) {
   const axiosInstance = getAxios();
 
@@ -428,18 +435,60 @@ export async function databaseBlobDiff(
   const url = `/api/workspace/${workspaceId}/database/${databaseId}/blob/diff`;
   const payload = database_blob.DatabaseBlobDiffRequest.encode(request).finish();
 
-  const response = await axiosInstance.post<ArrayBuffer>(url, payload, {
-    responseType: 'arraybuffer',
-    headers: {
-      'Content-Type': 'application/octet-stream',
-    },
-    transformRequest: [(data) => data],
-    validateStatus: (status) => status === 200 || status === 202,
-  });
+  let response;
 
-  const bytes = new Uint8Array(response.data);
+  try {
+    response = await axiosInstance.post<ArrayBuffer>(url, payload, {
+      responseType: 'arraybuffer',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+      },
+      signal: options?.signal,
+      transformRequest: [(data) => data],
+      validateStatus: (status) => status === 200 || status === 202,
+    });
+  } catch (error) {
+    if (!axios.isAxiosError(error) || !error.response) throw error;
+    throw databaseBlobResponseError(error.response);
+  }
 
-  return database_blob.DatabaseBlobDiffResponse.decode(bytes);
+  if (String(response.headers?.['content-type'] ?? '').includes('application/json')) {
+    throw databaseBlobResponseError(response);
+  }
+
+  return database_blob.DatabaseBlobDiffResponse.decode(new Uint8Array(response.data));
+}
+
+/** Binary endpoints can still return the ordinary JSON application error envelope. */
+function databaseBlobResponseError(response: {
+  status: number;
+  data: unknown;
+  headers?: Record<string, unknown>;
+}): APIError {
+  let body: Partial<APIResponse> = {};
+
+  try {
+    const data = response.data;
+    const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
+
+    const parsed =
+      bytes instanceof Uint8Array
+        ? JSON.parse(new TextDecoder().decode(bytes))
+        : typeof data === 'string'
+        ? JSON.parse(data)
+        : data;
+
+    if (parsed && typeof parsed === 'object') body = parsed;
+  } catch {
+    // Preserve the transport status even if a proxy supplies a non-JSON body.
+  }
+
+  return {
+    code: typeof body.code === 'number' ? body.code : response.status,
+    message: typeof body.message === 'string' ? body.message : 'Database rows could not be loaded',
+    httpStatus: response.status,
+    retryAfterSecs: parseRetryAfterSecs(response.headers) ?? body.retry_after_secs,
+  };
 }
 
 export async function getCollabVersions(workspaceId: string, objectId: string, since?: Date) {
