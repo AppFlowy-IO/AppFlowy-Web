@@ -4,6 +4,8 @@ import { useCallback } from 'react';
 
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks';
 import { cn } from '@/lib/utils';
+import { Column } from '@/application/database-yjs';
+import { EventPropertiesList } from './EventPropertiesList';
 
 import { EventIconButton } from './EventIconButton';
 
@@ -14,6 +16,7 @@ interface MonthMultiDayTimedEventProps {
   showLeftIndicator?: boolean;
   className?: string;
   rowId: string;
+  showFields?: Column[];
 }
 
 export function MonthMultiDayTimedEvent({
@@ -23,6 +26,7 @@ export function MonthMultiDayTimedEvent({
   showLeftIndicator = true,
   className,
   rowId,
+  showFields,
 }: MonthMultiDayTimedEventProps) {
   const { formatTimeDisplay } = useTimeFormat();
   const isEventStart = eventInfo.isStart;
@@ -122,8 +126,9 @@ export function MonthMultiDayTimedEvent({
               </span>
             )}
             <EventIconButton className='event-time-icon' rowId={rowId} />
-            <span className='min-w-[28px] flex-1 truncate'>{getDisplayContent()}</span>
+            <span className='min-w-[28px] flex-1 truncate font-semibold'>{getDisplayContent()}</span>
           </div>
+          <EventPropertiesList rowId={rowId} showFields={showFields} />
         </div>
       </div>
     </div>

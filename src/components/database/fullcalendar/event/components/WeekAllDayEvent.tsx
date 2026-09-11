@@ -2,6 +2,8 @@ import { EventApi, EventContentArg } from '@fullcalendar/core';
 import { useCallback, useMemo } from 'react';
 
 import { cn } from '@/lib/utils';
+import { Column } from '@/application/database-yjs';
+import { EventPropertiesList } from './EventPropertiesList';
 
 import { EventIconButton } from './EventIconButton';
 
@@ -12,6 +14,7 @@ interface WeekAllDayEventProps {
   showLeftIndicator?: boolean;
   className?: string;
   rowId: string;
+  showFields?: Column[];
 }
 
 export function WeekAllDayEvent({
@@ -21,6 +24,7 @@ export function WeekAllDayEvent({
   showLeftIndicator = true,
   className,
   rowId,
+  showFields,
 }: WeekAllDayEventProps) {
   const isEventStart = eventInfo.isStart;
   const isEventEnd = eventInfo.isEnd;
@@ -85,7 +89,7 @@ export function WeekAllDayEvent({
     return (
       <div className='flex h-full items-center gap-1 truncate'>
         <EventIconButton rowId={rowId} />
-        <span className='min-w-[28px] flex-1 truncate'>{getDisplayContent()}</span>
+        <span className='min-w-[28px] flex-1 truncate font-semibold'>{getDisplayContent()}</span>
       </div>
     );
   }, [getDisplayContent, rowId]);
@@ -121,6 +125,7 @@ export function WeekAllDayEvent({
         {showLeftIndicator && !hideLine && <div className='event-line h-4 w-[3px] rounded-200 bg-fill-theme-thick' />}
         <div className='event-inner flex h-full max-h-full w-full flex-1 flex-col justify-center overflow-hidden'>
           {renderAllDayEvent}
+          <EventPropertiesList rowId={rowId} showFields={showFields} />
         </div>
       </div>
     </div>

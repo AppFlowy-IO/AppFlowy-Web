@@ -3,6 +3,8 @@ import dayjs from 'dayjs';
 
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks';
 import { cn } from '@/lib/utils';
+import { Column } from '@/application/database-yjs';
+import { EventPropertiesList } from './EventPropertiesList';
 
 import { EventIconButton } from './EventIconButton';
 
@@ -13,9 +15,10 @@ interface MonthTimedEventProps {
   showLeftIndicator?: boolean;
   className?: string;
   rowId: string;
+  showFields?: Column[];
 }
 
-export function MonthTimedEvent({ event, onClick, showLeftIndicator = true, className, rowId }: MonthTimedEventProps) {
+export function MonthTimedEvent({ event, onClick, showLeftIndicator = true, className, rowId, showFields }: MonthTimedEventProps) {
   const { formatTimeDisplay } = useTimeFormat();
   const handleClick = () => {
     onClick?.(event);
@@ -48,9 +51,10 @@ export function MonthTimedEvent({ event, onClick, showLeftIndicator = true, clas
             )}
             <div className='flex w-full items-center gap-1 truncate'>
               <EventIconButton className='event-time-icon' rowId={rowId} />
-              <span className='min-w-full flex-1 truncate'>{event.title || 'Untitled'}</span>
+              <span className='min-w-full flex-1 truncate font-semibold'>{event.title || 'Untitled'}</span>
             </div>
           </div>
+          <EventPropertiesList rowId={rowId} showFields={showFields} />
         </div>
       </div>
     </div>
