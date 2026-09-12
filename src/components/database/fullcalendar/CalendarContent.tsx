@@ -11,6 +11,8 @@ import './FullCalendar.styles.scss';
 import { useDatabaseContext } from '@/application/database-yjs';
 import { useConditionsContext } from '@/components/database/components/conditions/context';
 import { AddButton } from '@/components/database/fullcalendar/AddButton';
+import { useCalendarDraft } from '@/components/database/fullcalendar/draft/useCalendarDraft';
+import { CalendarDraftContext } from '@/components/database/fullcalendar/event/CalendarDraftContext';
 import { MoreLinkContent } from '@/components/database/fullcalendar/event/MoreLinkContent';
 import { useFullCalendarSetup } from '@/components/database/fullcalendar/FullCalendar.hooks';
 import {
@@ -34,7 +36,7 @@ import { dateToUnixTimestamp } from '@/utils/time';
 import EventWithPopover from './event/EventWithPopover';
 import { CalendarViewType } from './types';
 
-import type { CalendarApi, EventContentArg, MoreLinkContentArg } from '@fullcalendar/core';
+import type { CalendarApi, DateSelectArg, EventContentArg, MoreLinkContentArg } from '@fullcalendar/core';
 
 import { EventDef } from '@fullcalendar/core/internal';
 
@@ -104,8 +106,6 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
     handleMoreLinkClick,
     handleEventDrop,
     handleEventResize,
-    handleSelect: originalHandleSelect,
-    handleAdd: originalHandleAdd,
     updateEventTime,
     morelinkInfo,
     closeMorePopover,
@@ -118,6 +118,12 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
     updateEventRowIds,
     currentView
   );
+  const { draft, event: draftEvent, startDraft, finishDraft, discardDraft } = useCalendarDraft(events, emptyEvents);
+  const calendarEvents = useMemo(
+    () => (draftEvent ? [...events.filter((event) => event.id !== draftEvent.id), draftEvent] : events),
+    [draftEvent, events]
+  );
+  const draftContext = useMemo(() => ({ draft, finishDraft, discardDraft }), [draft, finishDraft, discardDraft]);
 
   // Time formatting hook
   const { formatSlotLabel } = useTimeFormat();
@@ -126,7 +132,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
   const expanded = conditionsContext?.expanded ?? false;
 
   // Calendar permissions and behavior based on field type
-  const { permissions, isAddButtonEnabled, createEvent } = useCalendarPermissions();
+  const { permissions, isAddButtonEnabled } = useCalendarPermissions();
   // Calendar reference for API access
   const calendarRef = useRef<FullCalendar>(null);
 
@@ -167,63 +173,37 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
     });
   }, []);
 
-  // Wrap handleAdd to mark event as new after creating
+  // Empty slots remain local until the user edits or explicitly submits the editor.
   const handleAdd = useCallback(
     async (date: Date) => {
-      let rowId: string | null = null;
-
-      if (createEvent) {
-        // For created/modified time fields, use custom dispatch
-        rowId = await createEvent();
-      } else {
-        // For regular date fields, use the original handler
-        rowId = await originalHandleAdd(date);
-      }
-
-      if (rowId) {
-        // Mark this event as newly created
-        setNewEventRowIds((prev) => new Set(prev).add(rowId!));
-      }
-
-      return rowId;
+      if (!isAddButtonEnabled(date)) return null;
+      return startDraft({ start: date, allDay: true });
     },
-    [originalHandleAdd, createEvent]
+    [isAddButtonEnabled, startDraft]
   );
 
   // Create debounced version of the select handler to prevent double-click issues
   const debouncedSelectHandler = useMemo(
     () =>
       debounce(
-        async (selectInfo: Parameters<typeof originalHandleSelect>[0]) => {
-          let rowId: string | null = null;
-
-          if (createEvent) {
-            // For created/modified time fields, use custom dispatch
-            rowId = await createEvent();
-          } else {
-            // For regular date fields, use the original handler
-            rowId = await originalHandleSelect(selectInfo);
-          }
-
-          if (rowId) {
-            // Mark this event as newly created
-            setNewEventRowIds((prev) => new Set(prev).add(rowId!));
-          }
-
-          return rowId;
-        },
+        (selectInfo: DateSelectArg) =>
+          startDraft({ start: selectInfo.start, end: selectInfo.end, allDay: selectInfo.allDay }),
         300,
         { leading: true, trailing: false }
       ), // Leading edge trigger to prevent double-click
-    [originalHandleSelect, createEvent]
+    [startDraft]
   );
+
+  useEffect(() => () => debouncedSelectHandler.cancel(), [debouncedSelectHandler]);
 
   // Wrap handleSelect to use debounced version
   const handleSelect = useCallback(
-    (selectInfo: Parameters<typeof originalHandleSelect>[0]) => {
+    (selectInfo: DateSelectArg) => {
+      selectInfo.view.calendar.unselect();
+      if (!permissions.selectable) return;
       return debouncedSelectHandler(selectInfo);
     },
-    [debouncedSelectHandler]
+    [debouncedSelectHandler, permissions.selectable]
   );
 
   // Handle external event creation (FullCalendar eventReceive callback)
@@ -505,63 +485,65 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
   );
 
   return (
-    <EventContext.Provider
-      value={{ clearNewEvent, setOpenEventRowId, markEventAsNew, markEventAsUpdate, clearUpdateEvent }}
-    >
-      <div ref={setContainerRef} style={containerStyle} className={containerClassName}>
-        <FullCalendar
-          initialView={currentView}
-          viewDidMount={updateDayMaxEventRows}
-          ref={calendarRef}
-          plugins={calendarPlugins}
-          headerToolbar={false}
-          dayHeaders={false}
-          events={events}
-          slotEventOverlap={false}
-          firstDay={firstDayOfWeek}
-          dayMaxEventRows={currentView === CalendarViewType.TIME_GRID_WEEK ? 3 : dayMaxEventRows}
-          eventDisplay='block'
-          showNonCurrentDates={true}
-          height={'auto'}
-          scrollTimeReset={false}
-          slotMinTime='00:00:00'
-          slotMaxTime='24:00:00'
-          snapDuration='00:30:00'
-          slotDuration='00:30:00'
-          slotLabelContent={slotLabelContent}
-          dayHeaderFormat={currentView === CalendarViewType.TIME_GRID_WEEK ? dayHeaderFormat : undefined}
-          dayHeaderContent={currentView === CalendarViewType.TIME_GRID_WEEK ? dayHeaderContent : undefined}
-          dayCellContent={currentView === CalendarViewType.DAY_GRID_MONTH ? dayCellContentCallback : undefined}
-          nowIndicator={true}
-          datesSet={memoizedHandleDatesSet}
-          eventContent={eventContent}
-          moreLinkClick={handleMoreLinkClick}
-          moreLinkContent={renderMoreLinkContent}
-          dayPopoverFormat={dayPopoverFormat}
-          // eslint-disable-next-line
-          eventOrder={currentView === CalendarViewType.TIME_GRID_WEEK ? ['start', 'title'] : (eventOrder as any)}
-          eventOrderStrict={false}
-          editable={permissions.editable}
-          selectable={permissions.selectable}
-          droppable={permissions.droppable}
-          eventResizableFromStart={permissions.eventResizable}
-          eventDrop={handleEventDrop}
-          eventResize={handleEventResize}
-          eventReceive={handleEventReceive}
-          select={handleSelect}
-          fixedMirrorParent={document.body}
-          dragScroll={true}
+    <CalendarDraftContext.Provider value={draftContext}>
+      <EventContext.Provider
+        value={{ clearNewEvent, setOpenEventRowId, markEventAsNew, markEventAsUpdate, clearUpdateEvent }}
+      >
+        <div ref={setContainerRef} style={containerStyle} className={containerClassName}>
+          <FullCalendar
+            initialView={currentView}
+            viewDidMount={updateDayMaxEventRows}
+            ref={calendarRef}
+            plugins={calendarPlugins}
+            headerToolbar={false}
+            dayHeaders={false}
+            events={calendarEvents}
+            slotEventOverlap={false}
+            firstDay={firstDayOfWeek}
+            dayMaxEventRows={currentView === CalendarViewType.TIME_GRID_WEEK ? 3 : dayMaxEventRows}
+            eventDisplay='block'
+            showNonCurrentDates={true}
+            height={'auto'}
+            scrollTimeReset={false}
+            slotMinTime='00:00:00'
+            slotMaxTime='24:00:00'
+            snapDuration='00:30:00'
+            slotDuration='00:30:00'
+            slotLabelContent={slotLabelContent}
+            dayHeaderFormat={currentView === CalendarViewType.TIME_GRID_WEEK ? dayHeaderFormat : undefined}
+            dayHeaderContent={currentView === CalendarViewType.TIME_GRID_WEEK ? dayHeaderContent : undefined}
+            dayCellContent={currentView === CalendarViewType.DAY_GRID_MONTH ? dayCellContentCallback : undefined}
+            nowIndicator={true}
+            datesSet={memoizedHandleDatesSet}
+            eventContent={eventContent}
+            moreLinkClick={handleMoreLinkClick}
+            moreLinkContent={renderMoreLinkContent}
+            dayPopoverFormat={dayPopoverFormat}
+            // eslint-disable-next-line
+            eventOrder={currentView === CalendarViewType.TIME_GRID_WEEK ? ['start', 'title'] : (eventOrder as any)}
+            eventOrderStrict={false}
+            editable={permissions.editable}
+            selectable={permissions.selectable}
+            droppable={permissions.droppable}
+            eventResizableFromStart={permissions.eventResizable}
+            eventDrop={handleEventDrop}
+            eventResize={handleEventResize}
+            eventReceive={handleEventReceive}
+            select={handleSelect}
+            fixedMirrorParent={document.body}
+            dragScroll={true}
+          />
+        </div>
+        <AddButton
+          ref={addButtonRef}
+          visible={addButtonState.visible}
+          position={addButtonState.position}
+          date={addButtonState.date}
+          onClick={handleAddButtonClick}
+          onMouseLeave={handleAddButtonMouseLeave}
+          container={calendarElement}
         />
-      </div>
-      <AddButton
-        ref={addButtonRef}
-        visible={addButtonState.visible}
-        position={addButtonState.position}
-        date={addButtonState.date}
-        onClick={handleAddButtonClick}
-        onMouseLeave={handleAddButtonMouseLeave}
-        container={calendarElement}
-      />
-    </EventContext.Provider>
+      </EventContext.Provider>
+    </CalendarDraftContext.Provider>
   );
 }

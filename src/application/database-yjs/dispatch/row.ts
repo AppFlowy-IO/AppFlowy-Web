@@ -30,19 +30,10 @@ import {
   useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
-import { FieldType, FilterType, isAttributionFieldType, RowMetaKey } from '@/application/database-yjs/database.type';
+import { FieldType, isAttributionFieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
-import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
-import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
-import {
-  dateFilterFillData,
-  filterFillData,
-  getFilterChildren,
-  normalizeFilterNode,
-  relationFilterFillData,
-} from '@/application/database-yjs/filter';
-import { getNumberGroupingCellData, normalizeGroupIdentifiers } from '@/application/database-yjs/group';
+import { getNumberGroupingCellData } from '@/application/database-yjs/group';
 import {
   createDatabaseHistoryGroup,
   executeDatabaseOperations as executeOperations,
@@ -55,7 +46,6 @@ import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { getPrimaryFieldId, useCalendarLayoutSetting, useDatabaseViewLayout } from '@/application/database-yjs/selector';
 import {
-  applyTemplateCellsToRow,
   DatabaseRowTemplateStore,
   initializeTemplateSourceRow,
   mergeTemplateViewDecorations,
@@ -78,8 +68,7 @@ import {
   DatabaseViewLayout,
   FieldId,
   YDatabaseCell,
-  YDatabaseFilter,
-  YDatabaseFilters,
+  YDatabaseCells,
   YDatabaseRow,
   YDatabaseView,
   YDoc,
@@ -90,44 +79,12 @@ import {
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
+import { populateNewRowCells, NewRowCellsData } from './new-row-cells';
 import { applyRelationReciprocalInserts } from './relation';
 import { removeRowsFromDatabase, softDeleteRowsInDatabase } from './row-lifecycle';
 import { executeOperationWithAllViews } from './utils';
 
-export function collectNewRowPrefillFilters(filters: YDatabaseFilters | undefined): YDatabaseFilter[] {
-  if (!filters) return [];
-
-  const leaves: YDatabaseFilter[] = [];
-  const visit = (rawNode: unknown) => {
-    const node = normalizeFilterNode(rawNode);
-
-    if (!node) return;
-
-    const rawType = node.get(YjsDatabaseKey.filter_type);
-    const parsedType = Number(rawType);
-    const type =
-      rawType === undefined || rawType === null || !Number.isFinite(parsedType) ? FilterType.Data : parsedType;
-
-    if (type === FilterType.Data) {
-      leaves.push(node);
-      return;
-    }
-
-    const children = getFilterChildren(node);
-
-    if (type === FilterType.And) {
-      children.forEach(visit);
-      return;
-    }
-
-    if (type === FilterType.Or && children.length > 0) {
-      visit(children[0]);
-    }
-  };
-
-  filters.toArray().forEach(visit);
-  return leaves;
-}
+export { collectNewRowPrefillFilters } from './new-row-cells';
 
 /**
  * Helper: Reorder a row within a view's row_orders
@@ -255,7 +212,9 @@ export function useMoveCardDispatch() {
                 let cell = cells.get(fieldId);
 
                 if (fieldType === FieldType.Number) {
-                  const group = view.get(YjsDatabaseKey.groups)?.toArray()
+                  const group = view
+                    .get(YjsDatabaseKey.groups)
+                    ?.toArray()
                     .find((candidate) => candidate.get(YjsDatabaseKey.field_id) === fieldId);
                   const policy = createNumberGroupingPolicy(group?.get(YjsDatabaseKey.content));
                   const currentGroupId = policy.groupIdForCell(getNumberGroupingCellData(cell)) ?? fieldId;
@@ -599,19 +558,15 @@ export function useNewRowDispatch() {
       templateId,
       skipDefaultTemplate = false,
       openAfterCreate = false,
+      draft,
+      suppressAutoOpen = false,
     }: {
       beforeRowId?: string;
-      cellsData?: Record<
-        FieldId,
-        | string
-        | {
-            data: string;
-            endTimestamp?: string;
-            isRange?: boolean;
-            includeTime?: boolean;
-            reminderId?: string;
-          }
-      >;
+      cellsData?: NewRowCellsData;
+      /** Publish an edited local draft with its original identity and raw cells. */
+      draft?: { id: string; cells: YDatabaseCells; meta: Y.Map<unknown> };
+      /** The calendar draft already owns its editor, including under filters. */
+      suppressAutoOpen?: boolean;
       tailing?: boolean;
       historyGroup?: object;
       /** Explicit template selection. An unknown id is an error, matching Desktop. */
@@ -642,9 +597,10 @@ export function useNewRowDispatch() {
       // Decode before creating even an unpublished row. Snapshot bytes are
       // authoritative when legacy isDocumentEmpty metadata is stale.
       const documentSnapshot = decodeTemplateDocumentSnapshot(storedTemplate?.documentData);
-      const effectiveTemplate = storedTemplate && documentSnapshot
-        ? { ...storedTemplate, isDocumentEmpty: documentSnapshot.isDocumentEmpty }
-        : storedTemplate;
+      const effectiveTemplate =
+        storedTemplate && documentSnapshot
+          ? { ...storedTemplate, isDocumentEmpty: documentSnapshot.isDocumentEmpty }
+          : storedTemplate;
       const templatePromise = (async () => {
         if (!effectiveTemplate) return undefined;
 
@@ -669,13 +625,21 @@ export function useNewRowDispatch() {
         return effectiveTemplate;
       })();
 
-      const rowId = uuidv4();
+      const rowId = draft?.id ?? uuidv4();
+
+      // A reciprocal-link failure may occur after publication. A retry still
+      // applies the latest draft and repairs links, without duplicating the row.
+      const alreadyPublished =
+        !!draft &&
+        currentView
+          .get(YjsDatabaseKey.row_orders)
+          .toArray()
+          .some((row) => row.id === rowId);
       const rowKey = getRowKey(guid, rowId);
       const [selectedTemplate, rowDoc] = await Promise.all([templatePromise, createRow(rowKey)]);
       // Snapshot the filter array once: Y.Array.toArray() allocates a fresh
       // JS array on each call, and we read it twice (length check + forEach).
       const hasActiveFilters = (filters?.length ?? 0) > 0;
-      const filterArray = collectNewRowPrefillFilters(filters);
       // Open the row detail page whenever filters are active so the user can
       // see and complete the new row (its primary "Name" cell is always empty,
       // and other cells get pre-filled from filters but still need user input).
@@ -694,164 +658,18 @@ export function useNewRowDispatch() {
         const row = rowSharedRoot.get(YjsEditorKey.database_row);
         const meta = rowSharedRoot.get(YjsEditorKey.meta);
 
-        const cells = row.get(YjsDatabaseKey.cells);
-
-        if (selectedTemplate) {
-          const appliedCells = applyTemplateCellsToRow(row, database, selectedTemplate.defaultCells);
-
-          // Template relation defaults join the same reciprocal-backfill queue
-          // as filter prefills. A later filter prefill on the same field
-          // overwrites both the cell and this queue entry, so the backfill
-          // always mirrors the final cell state.
-          Object.entries(appliedCells).forEach(([fieldId, value]) => {
-            if (value.type === 'relation' && value.value.length > 0) {
-              relationPrefills.set(fieldId, value.value);
-            }
-          });
-        }
-
-        filterArray.forEach((filter) => {
-          const cell = new Y.Map() as YDatabaseCell;
-          const fieldId = filter.get(YjsDatabaseKey.field_id);
-          const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
-
-          if (!field) {
-            return;
-          }
-
-          // Desktop deliberately leaves the primary title empty when a row is
-          // created under an active filter. The filtered-out row is completed
-          // through the row detail page; secondary fields can still inherit
-          // their filter values.
-          if (field.get(YjsDatabaseKey.is_primary)) {
-            return;
-          }
-
-          if (isCalendar && calendarSetting?.fieldId === fieldId) {
-            shouldOpenRowModal = true;
-          }
-
-          const type = Number(field.get(YjsDatabaseKey.type));
-
-          if (isAttributionFieldType(type)) {
-            shouldOpenRowModal = true;
-            return;
-          }
-
-          if (type === FieldType.DateTime) {
-            const { data, endTimestamp, isRange } = dateFilterFillData(filter);
-
-            if (data !== null) {
-              cell.set(YjsDatabaseKey.data, data);
-            }
-
-            if (endTimestamp) {
-              cell.set(YjsDatabaseKey.end_timestamp, endTimestamp);
-            }
-
-            if (isRange) {
-              cell.set(YjsDatabaseKey.is_range, isRange);
-            }
-          } else if ([FieldType.CreatedTime, FieldType.LastEditedTime].includes(type)) {
-            shouldOpenRowModal = true;
-            return;
-          } else if (type === FieldType.Relation) {
-            const rowIds = relationFilterFillData(
-              String(filter.get(YjsDatabaseKey.content) ?? ''),
-              Number(filter.get(YjsDatabaseKey.condition))
-            );
-
-            if (!rowIds) {
-              return;
-            }
-
-            // Enforce source_limit synchronously so OneOnly relations don't
-            // silently end up with multiple linked rows when the filter has
-            // several values selected.
-            const typeOption = parseRelationTypeOption(field);
-            const limitedRowIds =
-              typeOption.source_limit === RelationLimit.OneOnly && rowIds.length > 1
-                ? [rowIds[rowIds.length - 1]]
-                : rowIds;
-
-            const data = new Y.Array<string>();
-
-            if (limitedRowIds.length > 0) {
-              data.push([...limitedRowIds]);
-              relationPrefills.set(fieldId, limitedRowIds);
-            } else {
-              // An earlier filter on this same field may have queued IDs;
-              // an empty later filter must clear that queue so the backfill
-              // doesn't write reciprocals to rows the source no longer links.
-              relationPrefills.delete(fieldId);
-            }
-
-            cell.set(YjsDatabaseKey.data, data);
-          } else {
-            const data = filterFillData(filter, field);
-
-            if (data === null) {
-              return;
-            }
-
-            cell.set(YjsDatabaseKey.data, data);
-          }
-
-          cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-          cell.set(YjsDatabaseKey.field_type, type);
-
-          cells.set(fieldId, cell);
+        const prefill = populateNewRowCells({
+          row,
+          database,
+          filters,
+          template: selectedTemplate,
+          cellsData,
+          initialCells: draft?.cells,
+          calendarFieldId: isCalendar ? calendarSetting?.fieldId : undefined,
         });
 
-        if (cellsData) {
-          Object.entries(cellsData).forEach(([fieldId, data]) => {
-            const cell = new Y.Map() as YDatabaseCell;
-            const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
-
-            if (!field) return;
-
-            // The raw cell payload replaces whatever a template or filter
-            // wrote for this field, so any queued reciprocal backfill for it
-            // would no longer match the final cell state.
-            relationPrefills.delete(fieldId);
-
-            const type = Number(field.get(YjsDatabaseKey.type));
-
-            if (isAttributionFieldType(type)) return;
-
-            const rawData = typeof data === 'object' ? data.data : data;
-
-            cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-            cell.set(YjsDatabaseKey.field_type, type);
-
-            if (type === FieldType.Relation) {
-              const relationOption = parseRelationTypeOption(field);
-              const identifiers = normalizeGroupIdentifiers(rawData);
-              const rowIds =
-                relationOption.source_limit === RelationLimit.OneOnly && identifiers.length > 1
-                  ? [identifiers[identifiers.length - 1]]
-                  : identifiers;
-              const relationData = new Y.Array<string>();
-
-              if (rowIds.length > 0) {
-                relationData.push(rowIds);
-                relationPrefills.set(fieldId, rowIds);
-              }
-
-              cell.set(YjsDatabaseKey.data, relationData);
-            } else if (typeof data === 'object') {
-              cell.set(YjsDatabaseKey.data, data.data);
-              cell.set(YjsDatabaseKey.end_timestamp, data.endTimestamp);
-              cell.set(YjsDatabaseKey.is_range, data.isRange);
-              cell.set(YjsDatabaseKey.include_time, data.includeTime);
-              cell.set(YjsDatabaseKey.reminder_id, data.reminderId);
-            } else {
-              cell.set(YjsDatabaseKey.data, data);
-            }
-
-            cells.set(fieldId, cell);
-          });
-        }
+        shouldOpenRowModal = prefill.shouldOpenRowModal;
+        prefill.relationPrefills.forEach((ids, fieldId) => relationPrefills.set(fieldId, ids));
 
         const newMeta = generateRowMeta(rowId, {
           [RowMetaKey.IsDocumentEmpty]: selectedTemplate?.isDocumentEmpty ?? true,
@@ -866,9 +684,10 @@ export function useNewRowDispatch() {
             meta.set(key, value);
           }
         });
+        draft?.meta.forEach((value, key) => meta.set(key, value));
       });
 
-      if (selectedTemplate && !selectedTemplate.isDocumentEmpty) {
+      if (!alreadyPublished && selectedTemplate && !selectedTemplate.isDocumentEmpty) {
         if (!duplicateRowDocument) {
           throw new Error('Template document duplication is unavailable');
         } else {
@@ -893,8 +712,8 @@ export function useNewRowDispatch() {
 
             initializeTemplateSourceRow(sourceRowDoc, database, selectedTemplate);
 
-            const clientDocStateB64 = documentSnapshot?.encodedState ??
-              (sourceDocument ? encodeTemplateDocument(sourceDocument) : undefined);
+            const clientDocStateB64 =
+              documentSnapshot?.encodedState ?? (sourceDocument ? encodeTemplateDocument(sourceDocument) : undefined);
 
             const databaseId = database.get(YjsDatabaseKey.id);
             const sourceDocumentId = rowDocumentIdFromRowId(selectedTemplate.templateId);
@@ -929,6 +748,7 @@ export function useNewRowDispatch() {
             throw new Error(`Row orders not found`);
           }
 
+          if (draft && rowOrders.toArray().some((row) => row.id === rowId)) return;
           const row = {
             id: rowId,
             height: 36,
@@ -946,7 +766,7 @@ export function useNewRowDispatch() {
         historyGroup
       );
 
-      if (shouldOpenRowModal || openAfterCreate) {
+      if ((!suppressAutoOpen && shouldOpenRowModal) || openAfterCreate) {
         navigateToRow?.(rowId);
       }
 
@@ -971,7 +791,7 @@ export function useNewRowDispatch() {
         )
       );
 
-      if (isCalendar && shouldOpenRowModal) {
+      if (isCalendar && shouldOpenRowModal && !suppressAutoOpen) {
         return null;
       }
 

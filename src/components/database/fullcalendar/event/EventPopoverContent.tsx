@@ -3,7 +3,13 @@ import { uniqBy } from 'lodash-es';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldType, isAIFieldType, useFieldsSelector, useNavigateToRow, usePrimaryFieldId } from '@/application/database-yjs';
+import {
+  FieldType,
+  isAIFieldType,
+  useFieldsSelector,
+  useNavigateToRow,
+  usePrimaryFieldId,
+} from '@/application/database-yjs';
 import { Cell } from '@/application/database-yjs/cell.type';
 import { useReadOnly } from '@/application/database-yjs/context';
 import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch';
@@ -11,8 +17,8 @@ import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/full_screen.svg';
-import RowPropertyPrimitive from '@/components/database/components/database-row/RowPropertyPrimitive';
 import { useAIEnabled } from '@/components/app/app.hooks';
+import RowPropertyPrimitive from '@/components/database/components/database-row/RowPropertyPrimitive';
 import { EventTitle } from '@/components/database/fullcalendar/event/EventTitle';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -25,8 +31,14 @@ function EventPopoverContent({
   onCloseEvent,
   onGotoDate,
   onRequestDelete,
+  onSubmit,
+  onExpand,
+  isDraft = false,
 }: {
   rowId: string;
+  isDraft?: boolean;
+  onSubmit?: () => void;
+  onExpand?: () => void;
   onCloseEvent: () => void;
   onGotoDate: (date: Date) => void;
   onRequestDelete: () => void;
@@ -77,20 +89,24 @@ function EventPopoverContent({
   const handleCellUpdated = useCallback(
     (cell: Cell) => {
       if (cell.fieldType === FieldType.DateTime) {
+        if (isDraft) return;
         markEventAsUpdate(rowId);
         if (cell.data) {
           onGotoDate(dayjs.unix(Number(cell.data)).toDate());
         }
       }
     },
-    [markEventAsUpdate, onGotoDate, rowId]
+    [isDraft, markEventAsUpdate, onGotoDate, rowId]
   );
 
   return (
-    <div className={'appflowy-scroller max-h-[560px] w-[360px] overflow-y-auto px-3 py-2'}>
+    <div
+      data-testid={isDraft ? 'calendar-event-draft-editor' : undefined}
+      className={'appflowy-scroller max-h-[560px] w-[360px] overflow-y-auto px-3 py-2'}
+    >
       <div className={'sticky top-0 flex w-full items-center justify-end gap-1'}>
         {/* Duplicate button */}
-        {!readOnly && (
+        {!readOnly && !isDraft && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant='ghost' size='icon' onClick={handleDuplicate}>
@@ -104,7 +120,13 @@ function EventPopoverContent({
         {!readOnly && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button data-testid='calendar-event-delete' variant='ghost' size='icon' className='hover:text-text-error' onClick={handleDelete}>
+              <Button
+                data-testid='calendar-event-delete'
+                variant='ghost'
+                size='icon'
+                className='hover:text-text-error'
+                onClick={handleDelete}
+              >
                 <DeleteIcon className='h-5 w-5' />
               </Button>
             </TooltipTrigger>
@@ -120,6 +142,11 @@ function EventPopoverContent({
               variant={'ghost'}
               onClick={(e) => {
                 e.stopPropagation();
+                if (onExpand) {
+                  onExpand();
+                  return;
+                }
+
                 onCloseEvent();
                 navigateToRow?.(rowId);
               }}
@@ -141,7 +168,9 @@ function EventPopoverContent({
         </Tooltip>
       </div>
       <div className={'event-properties flex w-full flex-1 flex-col overflow-y-auto px-0.5'}>
-        {primaryFieldId && <EventTitle onCloseEvent={onCloseEvent} rowId={rowId} fieldId={primaryFieldId} />}
+        {primaryFieldId && (
+          <EventTitle onSubmit={onSubmit} onCloseEvent={onCloseEvent} rowId={rowId} fieldId={primaryFieldId} />
+        )}
         {filteredFields.map((field) => {
           return (
             <RowPropertyPrimitive
@@ -152,6 +181,7 @@ function EventPopoverContent({
               key={field.fieldId}
               onCellUpdated={handleCellUpdated}
               showPropertyName={false}
+              disableFieldEditing={isDraft}
             />
           );
         })}
