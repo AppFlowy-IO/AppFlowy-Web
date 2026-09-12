@@ -221,10 +221,11 @@ export class CalendarEventDraft {
       snapshotDoc.getMap('snapshot').set('meta', meta);
       try {
         await this.resolveUploads(cells);
-        this.commitOptions();
         const id = await persist({ id: this.id, cells, meta });
 
         if (!id) throw new Error('The calendar row could not be saved');
+        // Keep shared schema untouched while row/template setup can still fail.
+        this.commitOptions();
         this.savedId = id;
         return id;
       } catch (error) {
@@ -233,7 +234,13 @@ export class CalendarEventDraft {
         const liveDatabase = this.source.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
         const orders = liveDatabase.get(YjsDatabaseKey.views).get(this.source.activeViewId)?.get(YjsDatabaseKey.row_orders);
 
-        if (orders?.toArray().some((row) => row.id === this.id)) this.savedId = this.id;
+        if (orders?.toArray().some((row) => row.id === this.id)) {
+          this.savedId = this.id;
+          // The published row already references these options even if a
+          // later reciprocal-link update failed.
+          this.commitOptions();
+        }
+
         throw error;
       } finally {
         snapshotDoc.destroy();
