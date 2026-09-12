@@ -34,6 +34,7 @@ import {
 } from '@/application/database-yjs/database.type';
 import { deleteReciprocalRelationField } from '@/application/database-yjs/dispatch/relation';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
+import { normalizeCreatedDatabaseFeedView, updateCreatesExactFeedView } from '@/application/database-yjs/feed-layout';
 import {
   normalizeCreatedDatabaseFeedView,
   updateCreatesExactFeedView,
@@ -49,6 +50,7 @@ import {
 } from '@/application/database-yjs/fields';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
+import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
@@ -93,6 +95,11 @@ import {
   parseNumberGroupConfiguration,
   validateNumberGroupConfiguration,
 } from '@/application/database-yjs/number-grouping';
+import {
+  newRollupFilterMetadata,
+  migrateRollupFilters, migrateRollupsForRelation,
+  rollupResultType,
+} from '@/application/database-yjs/rollup/filter';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import { useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
@@ -4456,6 +4463,7 @@ export function useUpdateRelationDatabaseId(fieldId: string) {
             }
 
             typeOption.set(YjsDatabaseKey.database_id, databaseId);
+            if (isDirty) migrateRollupsForRelation(database, fieldId);
 
             field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
           },
@@ -4479,6 +4487,7 @@ export function useUpdateRollupTypeOption(fieldId: string) {
 
   return useCallback(
     (updates: {
+      target_field_type?: FieldType;
       relation_field_id?: string;
       target_field_id?: string;
       calculation_type?: CalculationType;
@@ -4498,6 +4507,8 @@ export function useUpdateRollupTypeOption(fieldId: string) {
             if (!field) {
               throw new Error(`Field not found`);
             }
+
+            const previousOption = parseRollupTypeOption(field);
 
             let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
 
@@ -4548,6 +4559,17 @@ export function useUpdateRollupTypeOption(fieldId: string) {
             if (updates.visualization_show_number !== undefined) {
               typeOption.set(YjsDatabaseKey.rollup_show_as_show_number, updates.visualization_show_number);
             }
+
+            const nextOption = parseRollupTypeOption(field);
+
+            if (
+              nextOption.show_as !== RollupDisplayMode.Calculated ||
+              rollupResultType(nextOption) !== FieldType.Number
+            ) {
+              typeOption.set(YjsDatabaseKey.rollup_show_as_type, RollupShowAsType.Number);
+            }
+
+            migrateRollupFilters(database, fieldId, updates.target_field_type, previousOption);
 
             field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
           },
@@ -4813,6 +4835,7 @@ export function useAddFilter() {
 
             if (rollupTargetFieldType !== undefined) {
               filter.set(YjsDatabaseKey.rollup_target_type, rollupTargetFieldType);
+              if (field) filter.set(YjsDatabaseKey.rollup_meta, newRollupFilterMetadata(field));
             }
 
             filters.push([filter]);
@@ -4862,84 +4885,9 @@ export function useRemoveFilter() {
   );
 }
 
-export interface UpdateFilterParams {
-  filterId: string;
-  fieldId?: string;
-  condition?: number;
-  content?: string;
-}
+export type { UpdateFilterParams } from './dispatch/filter-update';
 
-export function useUpdateFilter() {
-  const view = useDatabaseView();
-  const sharedRoot = useSharedRoot();
-
-  return useCallback(
-    (params: UpdateFilterParams) => {
-      const { filterId, fieldId, condition, content } = params;
-
-      Log.debug('[useUpdateFilter] Updating filter', { filterId, fieldId, condition, content });
-
-      // Guard: view must exist
-      if (!view) {
-        Log.warn('[useUpdateFilter] View is not available');
-        return;
-      }
-
-      // Guard: fieldId is required for filter updates
-      if (!fieldId) {
-        Log.warn('[useUpdateFilter] FieldId is missing', { filterId });
-        return;
-      }
-
-      executeOperations(
-        sharedRoot,
-        [
-          () => {
-            // Get filters array from view
-            const filters = view.get(YjsDatabaseKey.filters);
-
-            if (!filters) {
-              Log.warn('[useUpdateFilter] No filters found in view', { filterId });
-              return;
-            }
-
-            // Find the filter by id
-            const filter = filters.toArray().find((f) => f.get(YjsDatabaseKey.id) === filterId);
-
-            if (!filter) {
-              Log.warn('[useUpdateFilter] Filter not found', { filterId });
-              return;
-            }
-
-            // fieldId identifies the filter target; field changes use a separate
-            // rebuild path. Ignore delayed updates aimed at a previous field.
-            if (filter.get(YjsDatabaseKey.field_id) !== fieldId) {
-              Log.debug('[useUpdateFilter] Skipping stale filter update', { filterId, fieldId });
-              return;
-            }
-
-            // Update condition if provided
-            if (condition !== undefined) {
-              filter.set(YjsDatabaseKey.condition, condition);
-            }
-
-            // Update content if provided
-            if (content !== undefined) {
-              filter.set(YjsDatabaseKey.content, content);
-            }
-
-            Log.debug('[useUpdateFilter] Filter updated successfully', {
-              filterId,
-              filter: filter.toJSON(),
-            });
-          },
-        ],
-        'updateFilter'
-      );
-    },
-    [view, sharedRoot]
-  );
-}
+export { useUpdateAdvancedFilter as useUpdateFilter } from './dispatch/sort-filter';
 
 export function useUpdateFileMediaTypeOption(fieldId: string) {
   const database = useDatabase();

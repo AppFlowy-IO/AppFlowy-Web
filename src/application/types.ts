@@ -628,6 +628,7 @@ export enum YjsDatabaseKey {
   source_field_type = 'source_field_type', // Added this
   condition = 'condition',
   rollup_target_type = 'rollup_target_ty',
+  rollup_meta = 'rollup_meta',
   schema_version = 'schema_version',
   row_templates = 'row_templates',
   default_row_template = 'default_row_template',
@@ -1082,6 +1083,8 @@ export interface YDatabaseFilter extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.type | YjsDatabaseKey.condition | YjsDatabaseKey.content | YjsDatabaseKey.filter_type): string;
 
   get(key: YjsDatabaseKey.rollup_target_type): number | string | undefined;
+
+  get(key: YjsDatabaseKey.rollup_meta): unknown;
 
   get(key: YjsDatabaseKey.children): YDatabaseFilters | YDatabaseFilter[] | undefined;
 }
