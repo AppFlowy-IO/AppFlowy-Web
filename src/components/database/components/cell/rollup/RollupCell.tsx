@@ -9,6 +9,8 @@ import { Tag } from '@/components/_shared/tag';
 import { getRollupVisualizationColor } from '@/components/database/components/property/rollup/visualization';
 import { cn } from '@/lib/utils';
 
+import { RollupPersonList } from './RollupPersonList';
+
 const RollupCellMenu = lazy(() =>
   import('./RollupCellMenu').then(({ RollupCellMenu: Component }) => ({ default: Component }))
 );
@@ -120,7 +122,9 @@ export function RollupCell({
   const canVisualize =
     !isCardCell &&
     cell?.showAs === RollupDisplayMode.Calculated &&
-    cell.targetFieldType === FieldType.Number &&
+    ![CalculationType.DateEarliest, CalculationType.DateLatest, CalculationType.DateRange].includes(
+      cell.calculationType ?? CalculationType.Count
+    ) &&
     cell.visualization?.type !== RollupShowAsType.Number &&
     cell.rawNumeric !== undefined;
   const handleOpenChange = useCallback(
@@ -144,6 +148,13 @@ export function RollupCell({
     >
       {canVisualize && cell ? (
         <RollupVisualization cell={cell} value={value} />
+      ) : cell &&
+        [FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(cell.targetFieldType!) &&
+        cell.showAs !== RollupDisplayMode.Calculated ? (
+        <RollupPersonList
+          value={listItems.length ? listItems.map((item) => item.label).join(', ') : value}
+          type={cell.targetFieldType!}
+        />
       ) : isList ? (
         listItems.map((item, index) => {
           const itemRowId = item.rowId;
@@ -166,9 +177,7 @@ export function RollupCell({
               key={`${itemViewId}-${itemRowId}-${index}`}
               type={'button'}
               data-testid={`rollup-list-item-${itemRowId}-${fieldId}-${index}`}
-              className={
-                'min-w-fit max-w-[140px] cursor-pointer overflow-hidden rounded-[6px] bg-fill-secondary'
-              }
+              className={'min-w-fit max-w-[140px] cursor-pointer overflow-hidden rounded-[6px] bg-fill-secondary'}
               onClick={(event) => {
                 event.stopPropagation();
                 navigateToRow(itemRowId, itemViewId !== databasePageId ? itemViewId : undefined);

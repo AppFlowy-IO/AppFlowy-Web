@@ -131,6 +131,7 @@ import {
   RollupDisplayMode,
   SortCondition,
 } from './database.type';
+import { useRelativeDateFilterRefresh } from './hooks/useRelativeDateFilterRefresh';
 
 import type { Transaction, YEvent } from 'yjs';
 
@@ -786,6 +787,8 @@ export function useAdvancedFiltersSelector() {
             if (key === YjsDatabaseKey.id) return draft.id;
             if (key === YjsDatabaseKey.content) return draft.content;
             if (key === YjsDatabaseKey.condition) return draft.condition;
+            if (key === YjsDatabaseKey.rollup_meta) return draft.rollupMetadata;
+            if (key === YjsDatabaseKey.rollup_target_type) return draft.rollupTargetFieldType;
 
             return undefined;
           },
@@ -798,6 +801,7 @@ export function useAdvancedFiltersSelector() {
           operator: draft.operator,
           fieldType: ft,
           rollupTargetFieldType: draft.rollupTargetFieldType,
+          rollupMetadata: draft.rollupMetadata,
         } as Filter;
       });
 
@@ -2731,6 +2735,7 @@ export function useRowOrdersSelector() {
 
   // Set up rollup field observers (extracted hook)
   useRollupFieldObservers(onConditionsChange, rollupWatchVersion);
+  useRelativeDateFilterRefresh(filters, fields, onConditionsChange);
 
   const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
 

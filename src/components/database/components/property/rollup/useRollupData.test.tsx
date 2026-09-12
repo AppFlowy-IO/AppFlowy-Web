@@ -18,6 +18,7 @@ let fieldClock = 0;
 
 jest.mock('@/application/database-yjs/context', () => ({
   useDatabase: () => baseDatabase,
+  useReadOnly: () => false,
   useDatabaseContext: () => ({
     loadView: mockLoadView,
     getViewIdFromDatabaseId: mockGetViewIdFromDatabaseId,
@@ -120,6 +121,7 @@ describe('useRollupData Desktop interactions', () => {
     );
     expect(mockUpdateRollupTypeOption).toHaveBeenNthCalledWith(2, {
       target_field_id: 'Amount',
+      target_field_type: FieldType.Number,
       calculation_type: CalculationType.Count,
       condition_value: '',
     });
@@ -258,7 +260,7 @@ describe('useRollupData Desktop interactions', () => {
     ).toBe('Name');
   });
 
-  it('resets an unsupported calculation and visualization when a non-number target is selected', async () => {
+  it('resets an unsupported calculation to Count while retaining numeric visualization on non-number targets', async () => {
     const typeOption = rollupField.get(YjsDatabaseKey.type_option).get(String(FieldType.Rollup));
 
     typeOption.set(YjsDatabaseKey.calculation_type, CalculationType.Sum);
@@ -271,9 +273,9 @@ describe('useRollupData Desktop interactions', () => {
 
     expect(mockUpdateRollupTypeOption).toHaveBeenCalledWith({
       target_field_id: 'Name',
+      target_field_type: FieldType.RichText,
       calculation_type: CalculationType.Count,
       condition_value: '',
-      visualization_type: 0,
     });
   });
 });

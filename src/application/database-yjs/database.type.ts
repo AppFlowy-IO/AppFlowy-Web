@@ -1,5 +1,7 @@
 import { FieldId, RowCoverType } from '@/application/types';
 
+import type { RollupFilterMetadata } from './fields/rollup/rollup.type';
+
 export enum FieldVisibility {
   AlwaysShown = 0,
   HideWhenEmpty = 1,
@@ -93,6 +95,7 @@ export interface Filter {
   fieldType?: FieldType;
   /** Persisted Rollup filter variant used by Desktop to distinguish Number from Text filters. */
   rollupTargetFieldType?: FieldType;
+  rollupMetadata?: RollupFilterMetadata;
 }
 
 export enum CalendarLayout {

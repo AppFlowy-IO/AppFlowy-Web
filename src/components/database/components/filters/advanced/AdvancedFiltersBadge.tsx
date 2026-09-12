@@ -43,7 +43,7 @@ export function AdvancedFiltersBadge({ count }: AdvancedFiltersBadgeProps) {
       </PopoverTrigger>
       <PopoverContent
         align='start'
-        className='w-[520px] max-w-[520px] rounded-xl border border-border-primary bg-surface-layer-04 p-0 shadow-[0px_2px_16px_rgba(0,0,0,0.12)]'
+        className='w-[720px] max-w-[calc(100vw-24px)] rounded-xl border border-border-primary bg-surface-layer-04 p-0 shadow-[0px_2px_16px_rgba(0,0,0,0.12)]'
         onCloseAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(e) => {
           // Prevent closing when clicking inside nested floating elements

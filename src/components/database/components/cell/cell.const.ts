@@ -1,4 +1,4 @@
-import { SelectOptionColor } from '@/application/database-yjs';
+import { SelectOptionColor } from '@/application/database-yjs/fields/select-option/select_option.type';
 
 export const SelectOptionColorMap = {
   [SelectOptionColor.OptionColor1]: '--tag-fill-01-light',

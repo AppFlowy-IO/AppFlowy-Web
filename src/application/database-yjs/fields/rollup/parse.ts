@@ -22,5 +22,11 @@ export function parseRollupVisualizationOption(option?: RollupTypeOption | null)
 export function parseRollupTypeOption(field: YDatabaseField) {
   const rollupTypeOption = getTypeOptions(field)?.toJSON();
 
+  if (rollupTypeOption) {
+    for (const key of ['calculation_type', 'show_as', '__rollup_show_as_type__', '__rollup_show_as_divisor__']) {
+      if (rollupTypeOption[key] !== undefined) rollupTypeOption[key] = Number(rollupTypeOption[key]);
+    }
+  }
+
   return rollupTypeOption as RollupTypeOption;
 }
