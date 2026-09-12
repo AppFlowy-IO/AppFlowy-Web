@@ -6,7 +6,7 @@ import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import OutlineItemContent from '@/components/_shared/outline/OutlineItemContent';
 import { getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
-import { useAIEnabled } from '@/components/app/app.hooks';
+import { useAIEnabled, useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 
 function OutlineItem({
   view,
@@ -29,13 +29,14 @@ function OutlineItem({
     selectedViewId === view.view_id ||
     (isDatabaseContainer(view) && Boolean(view.children?.some((child) => child.view_id === selectedViewId)));
   const aiEnabled = useAIEnabled();
+  const currentWorkspaceId = useCurrentWorkspaceIdOptional();
   const [isExpanded, setIsExpanded] = React.useState(() => {
-    return getOutlineExpands()[view.view_id] || false;
+    return getOutlineExpands(currentWorkspaceId)[view.view_id] || false;
   });
 
   useEffect(() => {
-    setOutlineExpands(view.view_id, isExpanded);
-  }, [isExpanded, view.view_id]);
+    setOutlineExpands(view.view_id, isExpanded, currentWorkspaceId);
+  }, [isExpanded, view.view_id, currentWorkspaceId]);
 
   const getIcon = useCallback(() => {
     return (

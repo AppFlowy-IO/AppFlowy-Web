@@ -848,7 +848,13 @@ describe('DatabaseView database container', () => {
         ancestorIds: ['general-space-id', 'new-container-id'],
       });
     });
+    // Expand state is persisted per workspace (AppFlowy-Web#526): the legacy global entry
+    // keeps what was there before, and the hydrated path lands in the workspace-scoped entry
+    // (seeded from the legacy entry on first write).
     expect(getOutlineExpands()).toEqual({
+      'unrelated-expanded-view': true,
+    });
+    expect(getOutlineExpands('test-workspace')).toEqual({
       'unrelated-expanded-view': true,
       'general-space-id': true,
       'new-container-id': true,

@@ -306,7 +306,7 @@ function DatabaseView(props: DatabaseViewProps) {
 
         if (ancestorIds?.length) {
           // Hydration does not expand the sidebar. Persist for reloads and notify the mounted outline.
-          ancestorIds.forEach((id) => setOutlineExpands(id, true));
+          ancestorIds.forEach((id) => setOutlineExpands(id, true, workspaceId));
           eventEmitter.emit(APP_EVENTS.OUTLINE_EXPAND_PATH, { workspaceId, ancestorIds });
         }
       } catch (error) {
