@@ -4,7 +4,7 @@ import interactionPlugin, { EventReceiveArg } from '@fullcalendar/interaction';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import { debounce } from 'lodash-es';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import './FullCalendar.styles.scss';
 
@@ -33,12 +33,12 @@ import { Log } from '@/utils/log';
 import { dateToUnixTimestamp } from '@/utils/time';
 
 // CustomToolbar will be handled by parent component
-import EventWithPopover from './event/EventWithPopover';
-import { CalendarViewType } from './types';
+import { changeCalendarView } from './calendarNavigation';
+import { EventWithPopover } from './event/EventWithPopover';
+import { CALENDAR_CUSTOM_VIEWS, CalendarViewType, isTimeGridView } from './types';
 
 import type { CalendarApi, DateSelectArg, EventContentArg, MoreLinkContentArg } from '@fullcalendar/core';
-
-import { EventDef } from '@fullcalendar/core/internal';
+import type { EventDef } from '@fullcalendar/core/internal';
 
 // Context to provide the clearNewEvent function to EventWithPopover components
 const EventContext = createContext<{
@@ -139,6 +139,12 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
   const [calendarElement, setCalendarElement] = useState<HTMLDivElement | null>(null);
   // Get calendar API instance
   const calendarApi = calendarRef.current?.getApi() || null;
+
+  // Shared layout notifications update the mounted calendar, preserving its
+  // focused date and local draft/editor state without writing the setting back.
+  useLayoutEffect(() => {
+    changeCalendarView(calendarApi, currentView);
+  }, [calendarApi, currentView]);
 
   // Resize handling
   const resizeRef = useCalendarResize(onRendered, expanded, isDocumentBlock, calendarApi || undefined);
@@ -305,7 +311,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
   useScrollDetection(scrollRef, addButtonRef);
 
   // Enhanced current time indicator with time label
-  useCurrentTimeIndicator(calendarApi, currentView);
+  useCurrentTimeIndicator(calendarApi, currentView, calendarElement);
 
   // Combine refs for container element
   const setContainerRef = useCallback(
@@ -397,7 +403,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
       <EventWithPopover
         event={eventInfo.event}
         eventInfo={eventInfo}
-        isWeekView={currentView === CalendarViewType.TIME_GRID_WEEK}
+        isWeekView={isTimeGridView(currentView)}
       />
     ),
     [currentView]
@@ -492,6 +498,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
         <div ref={setContainerRef} style={containerStyle} className={containerClassName}>
           <FullCalendar
             initialView={currentView}
+            views={CALENDAR_CUSTOM_VIEWS}
             viewDidMount={updateDayMaxEventRows}
             ref={calendarRef}
             plugins={calendarPlugins}
@@ -500,7 +507,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
             events={calendarEvents}
             slotEventOverlap={false}
             firstDay={firstDayOfWeek}
-            dayMaxEventRows={currentView === CalendarViewType.TIME_GRID_WEEK ? 3 : dayMaxEventRows}
+            dayMaxEventRows={isTimeGridView(currentView) ? 3 : dayMaxEventRows}
             eventDisplay='block'
             showNonCurrentDates={true}
             height={'auto'}
@@ -510,8 +517,8 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
             snapDuration='00:30:00'
             slotDuration='00:30:00'
             slotLabelContent={slotLabelContent}
-            dayHeaderFormat={currentView === CalendarViewType.TIME_GRID_WEEK ? dayHeaderFormat : undefined}
-            dayHeaderContent={currentView === CalendarViewType.TIME_GRID_WEEK ? dayHeaderContent : undefined}
+            dayHeaderFormat={isTimeGridView(currentView) ? dayHeaderFormat : undefined}
+            dayHeaderContent={isTimeGridView(currentView) ? dayHeaderContent : undefined}
             dayCellContent={currentView === CalendarViewType.DAY_GRID_MONTH ? dayCellContentCallback : undefined}
             nowIndicator={true}
             datesSet={memoizedHandleDatesSet}
@@ -520,7 +527,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
             moreLinkContent={renderMoreLinkContent}
             dayPopoverFormat={dayPopoverFormat}
             // eslint-disable-next-line
-            eventOrder={currentView === CalendarViewType.TIME_GRID_WEEK ? ['start', 'title'] : (eventOrder as any)}
+            eventOrder={isTimeGridView(currentView) ? ['start', 'title'] : (eventOrder as any)}
             eventOrderStrict={false}
             editable={permissions.editable}
             selectable={permissions.selectable}

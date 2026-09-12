@@ -5,6 +5,7 @@ import * as Y from 'yjs';
 
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
+import { CalendarLayoutUpdate, updateCalendarLayoutSetting } from '@/application/database-yjs/calendar-layout';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -15,15 +16,14 @@ import {
   useDatabaseFields,
   useDatabaseView,
   useDatabaseViewId,
-  useDefaultTimeSetting,
   useRowMap,
+  useReadOnly,
   useSharedRoot,
 } from '@/application/database-yjs/context';
 import {
   AITranslateLanguage,
   CalculationType,
   CalendarLayout,
-  CalendarLayoutSetting,
   DateGroupCondition,
   FieldType,
   FieldVisibility,
@@ -34,6 +34,10 @@ import {
 } from '@/application/database-yjs/database.type';
 import { deleteReciprocalRelationField } from '@/application/database-yjs/dispatch/relation';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
+import {
+  normalizeCreatedDatabaseFeedView,
+  updateCreatesExactFeedView,
+} from '@/application/database-yjs/feed-layout';
 import {
   getFieldName,
   NumberFormat,
@@ -49,10 +53,6 @@ import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollu
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
-import {
-  normalizeCreatedDatabaseFeedView,
-  updateCreatesExactFeedView,
-} from '@/application/database-yjs/feed-layout';
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
 import {
@@ -139,7 +139,6 @@ import {
   YMapFieldTypeOption,
   YSharedRoot,
 } from '@/application/types';
-import { DefaultTimeSetting } from '@/application/user-metadata';
 import { isDatabaseContainer } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -2018,7 +2017,6 @@ export function useCreateCalendarEvent() {
   const newRowDispatch = useNewRowDispatch();
   const currentView = useDatabaseView();
   const sharedRoot = useSharedRoot();
-  const defaultTimeSetting = useDefaultTimeSetting();
   const enhanceCalendarLayoutByFieldExists = useEnhanceCalendarLayoutByFieldExists();
   const calendarSetting = useCalendarLayoutSetting();
 
@@ -2040,17 +2038,15 @@ export function useCreateCalendarEvent() {
 
       // Create or ensure correct date field before creating the event
       const fieldOrders = currentView.get(YjsDatabaseKey.field_orders);
-      const validFieldId = () => {
-        if (!calendarSetting || !calendarSetting.fieldId) {
-          return false;
-        }
-
-        return fieldOrders.toArray().some((fieldOrder) => fieldOrder.id === calendarSetting.fieldId);
-      };
+      const configuredField = getValidCalendarField(
+        sharedRoot.get(YjsEditorKey.database),
+        fieldOrders,
+        calendarSetting.fieldId
+      );
 
       let finalFieldId = calendarSetting?.fieldId;
 
-      if (!validFieldId()) {
+      if (!configuredField) {
         const dateField: YDatabaseField | undefined = enhanceCalendarLayoutByFieldExists(fieldOrders, historyGroup);
         const createdFieldId = dateField?.get(YjsDatabaseKey.id);
 
@@ -2058,11 +2054,9 @@ export function useCreateCalendarEvent() {
           throw new Error(`Date field not found`);
         }
 
-        const newCalendarSetting = generateCalendarLayoutSettings(createdFieldId, defaultTimeSetting);
-
         executeOperations(
           sharedRoot,
-          [() => currentView.set(YjsDatabaseKey.layout_settings, newCalendarSetting)],
+          [() => initializeCalendarLayoutSetting(currentView, createdFieldId)],
           'updateCalendarLayoutSetting',
           { type: 'database.update-calendar-layout-setting', historyGroup }
         );
@@ -2090,7 +2084,7 @@ export function useCreateCalendarEvent() {
 
       return rowId;
     },
-    [newRowDispatch, currentView, defaultTimeSetting, enhanceCalendarLayoutByFieldExists, calendarSetting, sharedRoot]
+    [newRowDispatch, currentView, enhanceCalendarLayoutByFieldExists, calendarSetting, sharedRoot]
   );
 }
 
@@ -2576,14 +2570,6 @@ function hasBoardCompatibleGroup(database: YDatabase, groups: YDatabaseGroups | 
   return [FieldType.SingleSelect, FieldType.MultiSelect, FieldType.Checkbox].includes(fieldType);
 }
 
-function generateCalendarLayoutSettings(fieldId: FieldId, _defaultTimeSetting: DefaultTimeSetting) {
-  const layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
-  const layoutSetting = createCalendarLayoutSetting(fieldId);
-
-  layoutSettings.set('2', layoutSetting);
-  return layoutSettings;
-}
-
 function createCalendarLayoutSetting(fieldId: FieldId) {
   const layoutSetting = new Y.Map() as YDatabaseCalendarLayoutSetting;
 
@@ -2607,7 +2593,8 @@ function initializeCalendarLayoutSetting(view: YDatabaseView, fieldId: FieldId) 
   if (!calendarSetting) {
     layoutSettings.set('2', createCalendarLayoutSetting(fieldId));
   } else if (calendarSetting.get(YjsDatabaseKey.field_id) !== fieldId) {
-    calendarSetting.set(YjsDatabaseKey.field_id, fieldId);
+    // Repair the field without replacing mode, range, or another layout's map.
+    updateCalendarLayoutSetting(view, { fieldId });
   }
 }
 
@@ -2616,7 +2603,9 @@ function getValidCalendarField(database: YDatabase, fieldOrders: YDatabaseFieldO
 
   const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
-  return Number(field?.get(YjsDatabaseKey.type)) === FieldType.DateTime ? field : undefined;
+  return [FieldType.DateTime, FieldType.CreatedTime, FieldType.LastEditedTime].includes(
+    Number(field?.get(YjsDatabaseKey.type))
+  ) ? field : undefined;
 }
 
 function useEnhanceCalendarLayoutByFieldExists() {
@@ -5007,62 +4996,19 @@ export function useUpdateFileMediaTypeOption(fieldId: string) {
 }
 
 export function useUpdateCalendarSetting() {
-  const view = useDatabaseView();
+  const viewId = useDatabaseViewId();
+  const readOnly = useReadOnly();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (settings: Partial<CalendarLayoutSetting>) => {
-      executeOperations(
-        sharedRoot,
-        [
-          () => {
-            if (!view) {
-              throw new Error(`Unable to toggle hide ungrouped column`);
-            }
+    (settings: CalendarLayoutUpdate) => {
+      const database = sharedRoot.get(YjsEditorKey.database);
+      const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
 
-            // Get or create the layout settings for the view
-            let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
-
-            if (!layoutSettings) {
-              layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
-            }
-
-            let layoutSetting = layoutSettings.get('2');
-
-            if (!layoutSetting) {
-              layoutSetting = new Y.Map() as YDatabaseCalendarLayoutSetting;
-              layoutSettings.set('2', layoutSetting);
-            }
-
-            if (settings.fieldId !== undefined) {
-              layoutSetting.set(YjsDatabaseKey.field_id, settings.fieldId);
-            }
-
-            if (settings.firstDayOfWeek !== undefined) {
-              layoutSetting.set(YjsDatabaseKey.first_day_of_week, settings.firstDayOfWeek);
-            }
-
-            if (settings.showWeekNumbers !== undefined) {
-              layoutSetting.set(YjsDatabaseKey.show_week_numbers, settings.showWeekNumbers);
-            }
-
-            if (settings.showWeekends !== undefined) {
-              layoutSetting.set(YjsDatabaseKey.show_weekends, settings.showWeekends);
-            }
-
-            if (settings.layout !== undefined) {
-              layoutSetting.set(YjsDatabaseKey.layout_ty, settings.layout);
-            }
-
-            if (settings.numberOfDays !== undefined) {
-              layoutSetting.set(YjsDatabaseKey.number_of_days, settings.numberOfDays);
-            }
-          },
-        ],
-        'updateCalendarSetting'
-      );
+      if (readOnly || !view) return;
+      executeOperations(sharedRoot, [() => updateCalendarLayoutSetting(view, settings)], 'updateCalendarSetting');
     },
-    [sharedRoot, view]
+    [sharedRoot, viewId, readOnly]
   );
 }
 

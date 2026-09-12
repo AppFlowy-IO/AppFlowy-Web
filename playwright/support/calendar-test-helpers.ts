@@ -71,6 +71,23 @@ export async function waitForCalendarLoad(page: Page): Promise<void> {
   await page.waitForTimeout(1000);
 }
 
+/** Change the calendar range through the same dropdown used on desktop. */
+export async function switchCalendarView(page: Page, view: 'Month' | 'Week' | 2 | 3 | 4 | 5 | 6 | 8): Promise<void> {
+  await CalendarSelectors.viewSelect(page).filter({ visible: true }).last().click();
+  if (typeof view === 'number') {
+    await CalendarSelectors.numberOfDaysMenu(page).click();
+    await CalendarSelectors.customDayOption(page, view).click();
+  } else {
+    await (view === 'Month' ? CalendarSelectors.monthViewOption(page) : CalendarSelectors.weekViewOption(page)).click();
+  }
+
+  const label = typeof view === 'number' ? `${view} days` : view;
+  const viewName = typeof view === 'number' ? `timeGrid${view}Days` : view === 'Month' ? 'dayGridMonth' : 'timeGridWeek';
+
+  await expect(CalendarSelectors.viewSelect(page).filter({ visible: true }).last()).toHaveText(label);
+  await expect(page.locator(`.fc-${viewName}-view`)).toBeVisible();
+}
+
 /**
  * Navigate to next month/week
  */

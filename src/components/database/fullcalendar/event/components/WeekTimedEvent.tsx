@@ -98,7 +98,7 @@ export function WeekTimedEvent({ event, eventInfo, onClick, className, rowId }: 
             {moreThanHalfHour ? '' : ','}
           </span>
         </div>
-        <div className='time-slot flex h-[16px] items-center text-xs font-normal text-other-colors-text-event-light'>
+        <div className='time-slot flex h-[16px] items-center text-xs font-normal text-other-colors-text-event'>
           {isEventStart && event.start && <span className='shrink-0'>{formatTimeDisplay(event.start)}</span>}
           {isRange && (
             <span className='shrink-0'>

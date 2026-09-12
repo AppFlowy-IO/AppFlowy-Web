@@ -1,5 +1,6 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 
+import { switchCalendarView } from './calendar-test-helpers';
 import { getCurrentDatabaseInfo, waitForDatabaseTestContext } from './relation-test-helpers';
 import { CalendarSelectors } from './selectors';
 import { TestConfig } from './test-config';
@@ -158,10 +159,7 @@ export async function expectCalendarRowsInCloud(
 
 export async function switchPlaceholderCalendarView(page: Page, name: string): Promise<void> {
   if (name !== 'Month' && name !== 'Week') throw new Error(`Unsupported calendar view ${name}`);
-  const toolbar = CalendarSelectors.toolbar(page).filter({ visible: true }).first();
-
-  await toolbar.getByRole('button', { name, exact: true }).click();
-  await expect(page.locator(name === 'Month' ? '.fc-dayGridMonth-view' : '.fc-timeGridWeek-view')).toBeVisible();
+  await switchCalendarView(page, name);
 }
 
 export async function clickOutsideCalendarDraft(page: Page): Promise<void> {

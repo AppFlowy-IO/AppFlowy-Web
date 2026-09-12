@@ -348,7 +348,7 @@ function DatabaseViews({
       case DatabaseViewLayout.Board:
         return <Board />;
       case DatabaseViewLayout.Calendar:
-        return <Calendar />;
+        return <Calendar key={activeViewId} />;
       case DatabaseViewLayout.Chart:
         return <Chart />;
       case DatabaseViewLayout.Form:
