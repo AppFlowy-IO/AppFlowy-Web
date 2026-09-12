@@ -4,6 +4,7 @@
 export enum CalendarViewType {
   DAY_GRID_MONTH = 'dayGridMonth',
   TIME_GRID_WEEK = 'timeGridWeek',
+  TIME_GRID_DAY = 'timeGridDay',
   TIME_GRID_2_DAYS = 'timeGrid2Days',
   TIME_GRID_3_DAYS = 'timeGrid3Days',
   TIME_GRID_4_DAYS = 'timeGrid4Days',
@@ -15,6 +16,7 @@ export enum CalendarViewType {
 export const CALENDAR_DAY_COUNTS = [2, 3, 4, 5, 6, 8] as const;
 
 const calendarDayViews: Record<number, CalendarViewType> = {
+  1: CalendarViewType.TIME_GRID_DAY,
   2: CalendarViewType.TIME_GRID_2_DAYS,
   3: CalendarViewType.TIME_GRID_3_DAYS,
   4: CalendarViewType.TIME_GRID_4_DAYS,
@@ -30,6 +32,7 @@ export function getCalendarDayView(count: number): CalendarViewType | undefined 
 
 export function getCalendarDayCount(view: string): number | undefined {
   if (view === CalendarViewType.TIME_GRID_WEEK) return 7;
+  if (view === CalendarViewType.TIME_GRID_DAY) return 1;
   return CALENDAR_DAY_COUNTS.find((count) => calendarDayViews[count] === view);
 }
 

@@ -1,25 +1,28 @@
 import { CalendarApi } from '@fullcalendar/core';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { ReactNode } from 'react';
+import { ReactNode, useState, ComponentProps } from 'react';
 
-import { CustomToolbar } from '../CustomToolbar';
+import { changeCalendarView } from '../calendarNavigation';
+import { CustomToolbar as Toolbar } from '../CustomToolbar';
 import { CalendarViewType } from '../types';
 
 let mockViewTypeMap: Map<string, CalendarViewType>;
 let mockViewId = 'calendar';
-let mockReadOnly = false;
 const mockSetCalendarViewType = jest.fn((viewId: string, view: CalendarViewType) => {
   mockViewTypeMap = new Map(mockViewTypeMap).set(viewId, view);
 });
 
-jest.mock('@/application/database-yjs', () => ({
-  useDatabaseContext: () => ({
-    calendarViewTypeMap: mockViewTypeMap,
-    setCalendarViewType: mockSetCalendarViewType,
-    readOnly: mockReadOnly,
-  }),
-  useDatabaseViewId: () => mockViewId,
-}));
+function CustomToolbar(props: ComponentProps<typeof Toolbar>) {
+  const [, refresh] = useState(0);
+
+  return <Toolbar {...props} currentView={mockViewTypeMap.get(mockViewId) ?? CalendarViewType.DAY_GRID_MONTH}
+    onViewChange={(view) => {
+      mockSetCalendarViewType(mockViewId, view);
+      refresh((value) => value + 1);
+      if (props.onViewChange) props.onViewChange(view);
+      else changeCalendarView(props.calendar, view);
+    }} />;
+}
 
 jest.mock('react-i18next', () => {
   const i18n = jest.requireActual('i18next').createInstance();
@@ -107,10 +110,19 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockViewId = 'calendar';
   mockViewTypeMap = new Map();
-  mockReadOnly = false;
 });
 
 afterEach(cleanup);
+
+it('labels a shared one-day layout Day, matching desktop', () => {
+  const { calendar } = createCalendar();
+
+  mockViewTypeMap.set('calendar', CalendarViewType.TIME_GRID_DAY);
+  render(<CustomToolbar calendar={calendar} />);
+  expect(screen.getByTestId('calendar-view-select').textContent).toBe('Day');
+  expect(screen.getByRole('button', { name: 'Previous Day' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Next Day' })).toBeTruthy();
+});
 
 it('shows the selected view, changes it once, and closes the dropdown', async () => {
   const { calendar, api } = createCalendar();
@@ -176,7 +188,7 @@ it('offers the desktop day counts and keeps the selected custom range checked', 
   expect(screen.getByTestId('calendar-view-select').textContent).toContain('8 days');
 });
 
-it('falls back to today for a standard view and the focused date for a custom range', async () => {
+it('preserves the focused date for standard and custom ranges', async () => {
   const { calendar, api, state } = createCalendar();
   const { rerender } = render(<CustomToolbar calendar={calendar} />);
 
@@ -186,7 +198,7 @@ it('falls back to today for a standard view and the focused date for a custom ra
   expect(api.changeView.mock.calls[0][0]).toBe(CalendarViewType.TIME_GRID_WEEK);
   const anchor = new Date(api.changeView.mock.calls[0][1]);
 
-  expect(anchor.toDateString()).toBe(new Date().toDateString());
+  expect(anchor.toDateString()).toBe(new Date(2025, 11, 30).toDateString());
   rerender(<CustomToolbar calendar={calendar} />);
   await openDayMenu();
   fireEvent.click(screen.getByRole('menuitemradio', { name: /^2 days(?:\s|$)/ }));
@@ -199,7 +211,6 @@ it('keeps date and view navigation available in a read-only calendar', async () 
   const onViewChange = jest.fn();
 
   state.date = new Date(2026, 0, 31);
-  mockReadOnly = true;
   render(<CustomToolbar calendar={calendar} onViewChange={onViewChange} />);
   expect(screen.getByRole('button', { name: 'Previous Month' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Next Month' })).toBeTruthy();

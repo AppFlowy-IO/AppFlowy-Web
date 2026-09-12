@@ -76,7 +76,7 @@ async function box(locator: Locator) {
   return result!;
 }
 
-test('calendar custom ranges navigate by their exact day count and standard views reset to today', async ({
+test('calendar custom ranges navigate by their exact day count and standard views preserve the focused date', async ({
   page,
   request,
 }, testInfo) => {
@@ -84,7 +84,6 @@ test('calendar custom ranges navigate by their exact day count and standard view
   await page.addInitScript(() => localStorage.setItem('dark-mode', 'true'));
   await loginAndCreateCalendar(page, request, generateRandomEmail());
   const currentDate = await today(page);
-  const initialTitle = (await CalendarSelectors.title(page).first().textContent())!.trim();
 
   await expect(CalendarSelectors.viewSelect(page)).toHaveText('Month');
   await expect(CalendarSelectors.viewSelect(page)).toHaveCSS('height', '28px');
@@ -119,8 +118,9 @@ test('calendar custom ranges navigate by their exact day count and standard view
   await switchCalendarView(page, 'Week');
   await clickNavigation(page, 'next');
   await switchCalendarView(page, 2);
-  await expect.poll(() => displayedDates(page)).toEqual(range(addDays(currentDate, 7), 2));
+  await expect.poll(() => displayedDates(page)).toEqual(range(addDays(nextMonth(currentDate), 7), 2));
   await switchCalendarView(page, 'Month');
+  await clickNavigation(page, 'today');
 
   for (const days of [2, 3, 4, 5, 6, 8] as const) {
     await switchCalendarView(page, days);
@@ -150,12 +150,19 @@ test('calendar custom ranges navigate by their exact day count and standard view
   const week = await displayedDates(page);
 
   expect(week).toHaveLength(7);
-  expect(week).toContain(currentDate);
+  expect(week).toContain(addDays(currentDate, 8));
   await clickNavigation(page, 'next');
   await expect.poll(() => displayedDates(page)).toEqual(week.map((date) => addDays(date!, 7)));
   await switchPlaceholderCalendarView(page, 'Month');
-  await expect(CalendarSelectors.title(page).filter({ visible: true }).last()).toHaveText(initialTitle);
-  await expect(page.locator('.fc-daygrid-day.fc-day-today')).toBeVisible();
+  const focusedDate = addDays(currentDate, 15);
+  const expectedTitle = new Date(`${focusedDate}T12:00:00Z`).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+
+  await expect(CalendarSelectors.title(page).filter({ visible: true }).last()).toHaveText(expectedTitle);
+  await expect(page.locator(`.fc-daygrid-day[data-date="${focusedDate}"]`)).toBeVisible();
 });
 
 test('calendar shortcuts navigate once with a sticky toolbar and leave focused event input alone', async ({

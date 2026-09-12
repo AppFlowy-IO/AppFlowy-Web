@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { CalendarEvent, useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
+import { CalendarEvent } from '@/application/database-yjs';
 import { ReactComponent as ChevronLeft } from '@/assets/icons/alt_arrow_left.svg';
 import { ReactComponent as ChevronRight } from '@/assets/icons/alt_arrow_right.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
@@ -35,6 +35,7 @@ import { CALENDAR_DAY_COUNTS, CalendarViewType, getCalendarDayCount, getCalendar
 
 interface CustomToolbarProps {
   calendar?: CalendarApi | null;
+  currentView?: CalendarViewType;
   onViewChange?: (view: CalendarViewType) => void;
   slideDirection?: 'up' | 'down' | null;
   emptyEvents?: CalendarEvent[];
@@ -46,6 +47,7 @@ interface CustomToolbarProps {
 export const CustomToolbar = memo(
   ({
     calendar,
+    currentView = CalendarViewType.DAY_GRID_MONTH,
     onViewChange,
     slideDirection,
     emptyEvents = [],
@@ -54,11 +56,8 @@ export const CustomToolbar = memo(
     onDragEnd,
   }: CustomToolbarProps) => {
     const { t } = useTranslation();
-    const { calendarViewTypeMap, setCalendarViewType } = useDatabaseContext();
-    const viewId = useDatabaseViewId();
     const toolbarRef = useRef<HTMLDivElement>(null);
     const overlapDayMenu = useMediaQuery('(max-width: 520px)');
-    const currentView = calendarViewTypeMap?.get(viewId) || CalendarViewType.DAY_GRID_MONTH;
     const [menuOpen, setMenuOpen] = useState(false);
     const [currentMonth, setCurrentMonth] = useState('');
     const [animationKey, setAnimationKey] = useState(0);
@@ -98,14 +97,13 @@ export const CustomToolbar = memo(
         setMenuOpen(false);
         if (!calendar || view === currentView) return;
 
-        setCalendarViewType?.(viewId, view);
         if (onViewChange) {
           onViewChange(view);
         } else {
           changeCalendarView(calendar, view);
         }
       },
-      [calendar, currentView, onViewChange, viewId, setCalendarViewType]
+      [calendar, currentView, onViewChange]
     );
     const views = useMemo(
       () => [
@@ -115,8 +113,8 @@ export const CustomToolbar = memo(
       [t]
     );
     const isCustomRange =
-      currentView !== CalendarViewType.DAY_GRID_MONTH && currentView !== CalendarViewType.TIME_GRID_WEEK;
-    const label = isCustomRange
+      currentView !== CalendarViewType.DAY_GRID_MONTH && currentView !== CalendarViewType.TIME_GRID_WEEK && currentView !== CalendarViewType.TIME_GRID_DAY;
+    const label = currentView === CalendarViewType.TIME_GRID_DAY ? t('calendar.navigation.views.day') : isCustomRange
       ? t('calendar.dayCount', { count: getCalendarDayCount(currentView) })
       : views.find((view) => view.key === currentView)?.label;
     const navigationLabel = isCustomRange ? t('calendar.navigation.views.period') : label;

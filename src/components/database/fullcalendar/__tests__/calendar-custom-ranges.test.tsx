@@ -21,12 +21,15 @@ const mockUpdateCell = jest.fn();
 const mockLayoutSetting = { fieldId: 'date', use24Hour: true };
 
 jest.mock('@/application/database-yjs', () => ({
+  CalendarLayout: jest.requireActual('@/application/database-yjs/database.type').CalendarLayout,
+  useReadOnly: () => true,
   useDatabaseContext: () => ({}),
   useDatabaseViewId: () => 'calendar',
   useCalendarLayoutSetting: () => mockLayoutSetting,
   useCreateCalendarEvent: () => mockCreateCalendarEvent,
   useUpdateStartEndTimeCell: () => mockUpdateCell,
 }));
+jest.mock('@/application/database-yjs/dispatch', () => ({ useUpdateCalendarSetting: () => jest.fn() }));
 jest.mock('@/utils/log', () => ({ Log: { debug: jest.fn() } }));
 
 const today = new Date(2026, 2, 18, 12);
@@ -103,7 +106,7 @@ test.each(CALENDAR_DAY_COUNTS)('%s-day ranges retain their anchor and navigate w
   expect(calendar.view.currentEnd).toEqual(dateAfter(today, count));
 });
 
-test('standard views reset to today, restore week alignment, and reselecting the current view does nothing', () => {
+test('standard views retain the focused date, restore week alignment, and reselecting the current view does nothing', () => {
   const { result } = renderHook(() => useCalendarHandlers());
   const originalDate = calendar.getDate();
   const changeView = jest.spyOn(calendar, 'changeView');
@@ -120,12 +123,12 @@ test('standard views reset to today, restore week alignment, and reselecting the
   act(() => result.current.handleViewChange(CalendarViewType.TIME_GRID_8_DAYS, calendar));
   act(() => result.current.handleViewChange(CalendarViewType.TIME_GRID_WEEK, calendar));
   expect(changeView).toHaveBeenCalledTimes(2);
-  expect(changeView).toHaveBeenLastCalledWith(CalendarViewType.TIME_GRID_WEEK, today);
+  expect(changeView).toHaveBeenLastCalledWith(CalendarViewType.TIME_GRID_WEEK, originalDate);
   expect(navigateToday).not.toHaveBeenCalled();
   expect(datesSet).toHaveBeenCalledTimes(2);
-  expect(calendar.view.currentStart).toEqual(new Date(2026, 2, 16));
-  expect(calendar.view.currentEnd).toEqual(new Date(2026, 2, 23));
-  expect(calendar.getDate()).toEqual(today);
+  expect(calendar.view.currentStart).toEqual(new Date(2026, 11, 28));
+  expect(calendar.view.currentEnd).toEqual(new Date(2027, 0, 4));
+  expect(calendar.getDate()).toEqual(originalDate);
   expect(container.querySelectorAll('.fc-timegrid-col[data-date]')).toHaveLength(7);
 
   act(() => calendar.next());
@@ -138,11 +141,11 @@ test('standard views reset to today, restore week alignment, and reselecting the
 
   act(() => result.current.handleViewChange(CalendarViewType.DAY_GRID_MONTH, calendar));
   expect(changeView).toHaveBeenCalledTimes(3);
-  expect(changeView).toHaveBeenLastCalledWith(CalendarViewType.DAY_GRID_MONTH, today);
+  expect(changeView).toHaveBeenLastCalledWith(CalendarViewType.DAY_GRID_MONTH, navigatedWeek);
   expect(navigateToday).not.toHaveBeenCalled();
-  expect(calendar.view.currentStart).toEqual(new Date(2026, 2, 1));
-  expect(calendar.view.currentEnd).toEqual(new Date(2026, 3, 1));
-  expect(calendar.getDate()).toEqual(today);
+  expect(calendar.view.currentStart).toEqual(new Date(2027, 0, 1));
+  expect(calendar.view.currentEnd).toEqual(new Date(2027, 1, 1));
+  expect(calendar.getDate()).toEqual(navigatedWeek);
   expect(container.querySelector('.fc-dayGridMonth-view')).not.toBeNull();
 });
 

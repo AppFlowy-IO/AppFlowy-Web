@@ -12,6 +12,7 @@ import {
 } from 'react';
 
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
+import { createCalendarLayoutStore } from '@/application/database-yjs/calendar-layout';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
@@ -120,7 +121,6 @@ import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
 import { ChartLayoutSettings } from './chart.type';
 import {
-  CalendarLayoutSetting,
   CalculationType,
   DateGroupCondition,
   FieldType,
@@ -3257,39 +3257,15 @@ export function useCalendarLayoutSetting() {
   const startWeekOn = Number(currentUser?.metadata?.[MetadataKey.StartWeekOn] || 0);
 
   const timeFormat = currentUser?.metadata?.[MetadataKey.TimeFormat] || TimeFormat.TwelveHour;
-  const database = useDatabase();
+  const { databaseDoc } = useDatabaseContext();
 
-  const [setting, setSetting] = useState<CalendarLayoutSetting | null>(null);
   const viewId = useDatabaseViewId();
+  const store = useMemo(
+    () => createCalendarLayoutStore(databaseDoc, viewId, startWeekOn, timeFormat === TimeFormat.TwentyFourHour),
+    [databaseDoc, viewId, startWeekOn, timeFormat]
+  );
 
-  useEffect(() => {
-    const view = database.get(YjsDatabaseKey.views)?.get(viewId);
-    const observerHandler = () => {
-      const layoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('2');
-      const firstDayOfWeek =
-        layoutSetting?.get(YjsDatabaseKey.first_day_of_week) === undefined
-          ? startWeekOn
-          : Number(layoutSetting?.get(YjsDatabaseKey.first_day_of_week) || 0);
-
-      setSetting({
-        fieldId: layoutSetting?.get(YjsDatabaseKey.field_id),
-        firstDayOfWeek,
-        showWeekNumbers: Boolean(layoutSetting?.get(YjsDatabaseKey.show_week_numbers)),
-        showWeekends: Boolean(layoutSetting?.get(YjsDatabaseKey.show_weekends)),
-        layout: Number(layoutSetting?.get(YjsDatabaseKey.layout_ty)),
-        numberOfDays: layoutSetting?.get(YjsDatabaseKey.number_of_days) || 7,
-        use24Hour: timeFormat === TimeFormat.TwentyFourHour,
-      });
-    };
-
-    observerHandler();
-    view?.observeDeep(observerHandler);
-    return () => {
-      view?.unobserveDeep(observerHandler);
-    };
-  }, [startWeekOn, timeFormat, database, viewId]);
-
-  return setting;
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 }
 
 export function getPrimaryFieldId(database: YDatabase) {

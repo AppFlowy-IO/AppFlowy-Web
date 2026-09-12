@@ -5,10 +5,7 @@ import type { CalendarApi } from '@fullcalendar/core';
 export function changeCalendarView(calendar: CalendarApi | null | undefined, view: CalendarViewType) {
   if (!calendar || calendar.view.type === view) return;
 
-  const date =
-    view === CalendarViewType.DAY_GRID_MONTH || view === CalendarViewType.TIME_GRID_WEEK
-      ? new Date()
-      : calendar.getDate();
+  const date = calendar.getDate();
 
   const updateView = () => {
     calendar.changeView(view, date);

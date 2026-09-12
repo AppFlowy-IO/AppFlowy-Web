@@ -45,7 +45,6 @@ import {
 import { DatabaseRow } from '@/components/database/DatabaseRow';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import DatabaseViews from '@/components/database/DatabaseViews';
-import { CalendarViewType } from '@/components/database/fullcalendar/types';
 import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
 import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
@@ -1377,18 +1376,6 @@ function Database(props: Database2Props) {
     rowMap: null,
   }));
 
-  // Calendar view type map state
-  const [calendarViewTypeMap, setCalendarViewTypeMap] = useState<Map<string, CalendarViewType>>(() => new Map());
-
-  const setCalendarViewType = useCallback((viewId: string, viewType: CalendarViewType) => {
-    setCalendarViewTypeMap((prev) => {
-      const newMap = new Map(prev);
-
-      newMap.set(viewId, viewType);
-      return newMap;
-    });
-  }, []);
-
   const handleOpenRow = useCallback(
     async (rowId: string, viewId?: string) => {
       // A locked document's embedded database must keep the row detail inside
@@ -1512,8 +1499,6 @@ function Database(props: Database2Props) {
       searchMentions,
       loadViews: loadViews ? loadViewsForContext : undefined,
       variant: props.variant,
-      calendarViewTypeMap,
-      setCalendarViewType,
       uploadFile: props.uploadFile,
       generateAISummaryForRow,
       generateAITranslateForRow,
@@ -1564,8 +1549,6 @@ function Database(props: Database2Props) {
       loadViews,
       loadViewsForContext,
       props.variant,
-      calendarViewTypeMap,
-      setCalendarViewType,
       generateAISummaryForRow,
       generateAITranslateForRow,
       props.uploadFile,

@@ -4,7 +4,7 @@ import interactionPlugin, { EventReceiveArg } from '@fullcalendar/interaction';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import { debounce } from 'lodash-es';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import './FullCalendar.styles.scss';
 
@@ -33,6 +33,7 @@ import { Log } from '@/utils/log';
 import { dateToUnixTimestamp } from '@/utils/time';
 
 // CustomToolbar will be handled by parent component
+import { changeCalendarView } from './calendarNavigation';
 import { EventWithPopover } from './event/EventWithPopover';
 import { CALENDAR_CUSTOM_VIEWS, CalendarViewType, isTimeGridView } from './types';
 
@@ -138,6 +139,12 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
   const [calendarElement, setCalendarElement] = useState<HTMLDivElement | null>(null);
   // Get calendar API instance
   const calendarApi = calendarRef.current?.getApi() || null;
+
+  // Shared layout notifications update the mounted calendar, preserving its
+  // focused date and local draft/editor state without writing the setting back.
+  useLayoutEffect(() => {
+    changeCalendarView(calendarApi, currentView);
+  }, [calendarApi, currentView]);
 
   // Resize handling
   const resizeRef = useCalendarResize(onRendered, expanded, isDocumentBlock, calendarApi || undefined);

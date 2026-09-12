@@ -93,14 +93,20 @@ jest.mock('@/components/database/chart', () => ({
 
 jest.mock('@/components/database/fullcalendar', () => {
   const { useState } = jest.requireActual<typeof import('react')>('react');
-  const { useDatabaseContext } =
-    jest.requireActual<typeof import('@/application/database-yjs')>('@/application/database-yjs');
+  const { useDatabase, useDatabaseViewId } = jest.requireActual<typeof import('@/application/database-yjs')>('@/application/database-yjs');
+  const { readCalendarLayoutSetting } = jest.requireActual<typeof import('@/application/database-yjs/calendar-layout')>('@/application/database-yjs/calendar-layout');
+  const { getCalendarDayView } = jest.requireActual<typeof import('@/components/database/fullcalendar/types')>('@/components/database/fullcalendar/types');
 
   return {
     Calendar: () => {
-      const { activeViewId, calendarViewTypeMap } = useDatabaseContext();
+      const database = useDatabase();
+      const viewId = useDatabaseViewId();
       // FullCalendar consumes initialView only when its instance is created.
-      const [initialView] = useState(() => calendarViewTypeMap?.get(activeViewId || '') || 'dayGridMonth');
+      const [initialView] = useState(() => {
+        const setting = readCalendarLayoutSetting(database, viewId, 0, false);
+
+        return setting.layout === 0 ? 'dayGridMonth' : getCalendarDayView(setting.numberOfDays);
+      });
 
       return <div data-testid='calendar-layout'>{initialView}</div>;
     },
@@ -296,7 +302,14 @@ describe('DatabaseViews order', () => {
         layout: DatabaseViewLayout.Calendar,
       }))
     );
-    const calendarViewTypeMap = new Map([['calendar-a', CalendarViewType.TIME_GRID_4_DAYS]]);
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as Y.Map<Y.Map<Y.Map<unknown>>>;
+    const layoutSettings = new Y.Map();
+    const calendarSetting = new Y.Map();
+
+    calendarSetting.set(YjsDatabaseKey.layout_ty, 1);
+    calendarSetting.set(YjsDatabaseKey.day_count, 4);
+    layoutSettings.set('2', calendarSetting);
+    database.get(YjsDatabaseKey.views)!.get('calendar-a')!.set(YjsDatabaseKey.layout_settings, layoutSettings);
     const renderForActiveView = (activeViewId: string) => (
       <DatabaseContext.Provider
         value={{
@@ -306,7 +319,6 @@ describe('DatabaseViews order', () => {
           activeViewId,
           rowDocMap: {},
           workspaceId: 'workspace-id',
-          calendarViewTypeMap,
         }}
       >
         <DatabaseViews
@@ -326,7 +338,7 @@ describe('DatabaseViews order', () => {
     await waitFor(() =>
       expect(screen.getByTestId('calendar-layout').textContent).toBe(CalendarViewType.TIME_GRID_4_DAYS)
     );
-    expect(calendarViewTypeMap.get('calendar-a')).toBe(CalendarViewType.TIME_GRID_4_DAYS);
+    expect(calendarSetting.get(YjsDatabaseKey.day_count)).toBe(4);
   });
 
   it('overwrites stale stored order when visible view order is authoritative', async () => {
