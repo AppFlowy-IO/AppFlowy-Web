@@ -16,23 +16,25 @@ row corners. At narrow widths the toolbar wraps while the controls remain usable
 
 Paths are relative to `AppFlowy-Premium/frontend/appflowy_flutter/`.
 
-| Source                                                                       | Contract                                                                                              |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `packages/appflowy_calendar/lib/src/widgets/toolbar/view_type_switcher.dart` | Week, Month, and Number of days menu; selected view label and checkmark                               |
-| `packages/appflowy_calendar/lib/src/model/calendar_controller.dart`          | 2, 3, 4, 5, 6, and 8 day ranges; focused date; date navigation                                        |
-| `packages/appflowy_calendar/lib/src/widgets/calendar_view.dart`              | Switching standard views resets to today; switching custom ranges preserves focus; keyboard shortcuts |
-| `packages/appflowy_calendar/lib/src/widgets/toolbar/calendar_toolbar.dart`   | Navigation controls, tooltips, and responsive toolbar                                                 |
-| `lib/plugins/database/calendar/presentation/desktop_calendar.dart`           | Local controller ownership; view changes do not write persisted database layout                       |
-| `packages/appflowy_calendar/test/widgets/calendar_custom_range_test.dart`    | Untracked desktop working-tree regression coverage for custom ranges                                  |
+| Source                                                                       | Contract                                                                |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `packages/appflowy_calendar/lib/src/widgets/toolbar/view_type_switcher.dart` | Week, Month, and Number of days menu; selected view label and checkmark |
+| `packages/appflowy_calendar/lib/src/model/calendar_controller.dart`          | 2, 3, 4, 5, 6, and 8 day ranges; focused date; date navigation          |
+| `packages/appflowy_calendar/lib/src/widgets/calendar_view.dart`              | View switching, focused date, and keyboard shortcuts                    |
+| `packages/appflowy_calendar/lib/src/widgets/toolbar/calendar_toolbar.dart`   | Navigation controls, tooltips, and responsive toolbar                   |
+| `lib/plugins/database/calendar/presentation/desktop_calendar.dart`           | Calendar controller ownership and database integration                  |
+| `packages/appflowy_calendar/test/widgets/calendar_custom_range_test.dart`    | Untracked desktop working-tree regression coverage for custom ranges    |
 
-Month and Week are standard views. Choosing a different standard view resets the
-focused date to today; choosing the already selected standard view does nothing.
-Choosing a custom range preserves the focused day and starts exactly on that
+Month and Week are standard views. Switching views preserves the focused date;
+choosing the already selected view does nothing. A custom range starts exactly on that
 day, regardless of the first weekday setting. Previous and Next move by the
 selected number of calendar days. Month navigation preserves the day of month,
 clamping it when the destination month is shorter. Today retains the selected
-view. View selection remains local session state and does not write Yjs layout
-settings.
+view. Editable calendars persist the selected mode and day count in the shared
+Yjs layout settings and follow remote changes without remounting. Read-only
+viewers can explore a different range locally. The shared setting is restored
+when the view is reopened. Legacy layout keys and native Yrs integer values are
+supported without replacing unrelated settings.
 
 ## Browser coverage
 
@@ -42,8 +44,7 @@ UI. It covers:
 
 - Selected menu state and all six custom day counts, with exact rendered date
   columns after Previous, Next, Today, and navigation across a month boundary.
-- Focus preservation when moving from a navigated Month or Week to a custom
-  range, and reset to today when switching back to a standard view.
+- Focus preservation when switching between navigated standard and custom views.
 - Single keyboard navigation when the original and sticky toolbars are both
   mounted; view and numeric shortcuts; typing shortcut letters in an event
   input without navigating the calendar.
@@ -61,6 +62,13 @@ Existing navigation tests retain their coverage. The cloud Calendar placeholder
 BDD scenarios use the updated shared dropdown helper and verify that only
 committed cards survive a fresh browser session.
 
+The shared-layout BDD scenario opens the same calendar in two browser sessions,
+checks live mode changes, and verifies the saved layout from a fresh session.
+The event-color browser tests cover light and dark themes across month, week,
+and overflow cards, including past, hover, open, drag, and resize states. These
+tests start their own Vite fixture server because CI serves prebuilt application
+assets. They do not require an application or backend server.
+
 ## React review regressions
 
 Keyboard and pointer focus guards stop at the Calendar container so an outer
@@ -74,61 +82,49 @@ calendar from changing another calendar's indicator or leaving a stale timer.
 Unit regressions cover both instance isolation and focus/portal boundaries; the
 embedded browser case exercises genuine Slate markup and editing.
 
+Event completion is derived during render and schedules a timer only for the
+affected card. Timers are canceled on unmount and rescheduled when the deadline
+changes. A deadline that passes before the effect subscribes still updates the
+card. Foreground opacity is applied once so nested titles, times, and icons do
+not compound the fade.
+
 ## Validation
 
-Use the normal local Web/API configuration. For this session Web runs at
-`http://localhost:3005`, with API/WebSocket traffic proxied to the isolated local
-API at `127.0.0.1:8015` and local authentication at `127.0.0.1:9999`.
-The API uses the existing development binary copied from
-`AppFlowy-Cloud-Preminum/target/macos-dev/appflowy_cloud`; matching that binary to
-the backend working-tree source was not verified. These are Web browser tests,
-not a live Flutter/Web synchronization run.
+Use the local Web/API configuration from `.env`. Browser validation uses
+Chromium on macOS, Web at `http://localhost:3000`, and the local API at
+`http://localhost:8000`. Native Yrs compatibility is covered by checked-in
+binary fixtures; browser synchronization uses two Web sessions.
 
 ```sh
-BASE_URL=http://localhost:3005 \
-APPFLOWY_BASE_URL=http://localhost:3005 \
-APPFLOWY_GOTRUE_BASE_URL=http://localhost:3005/gotrue \
-APPFLOWY_WS_BASE_URL=ws://localhost:3005/ws/v2 \
 pnpm exec playwright test \
   playwright/e2e/calendar/calendar-toolbar-parity.spec.ts \
-  playwright/e2e/calendar/calendar-navigation.spec.ts \
   --workers=1 --trace on
 
-pnpm exec bddgen -c playwright.bdd.config.ts
-BASE_URL=http://localhost:3005 \
-APPFLOWY_BASE_URL=http://localhost:3005 \
-APPFLOWY_GOTRUE_BASE_URL=http://localhost:3005/gotrue \
-APPFLOWY_WS_BASE_URL=ws://localhost:3005/ws/v2 \
+pnpm exec bddgen test -c playwright.bdd.config.ts
 pnpm exec playwright test -c playwright.bdd.config.ts \
-  --grep '@calendar-placeholder' --workers=1 --trace on
+  --grep '@calendar_shared_layout' --workers=1 --trace on
+
+# This suite supplies its own server even if BASE_URL is unreachable.
+BASE_URL=http://127.0.0.1:1 pnpm exec playwright test \
+  playwright/e2e/calendar/calendar-event-colors.spec.ts --workers=1
 ```
 
-Validation on the inspected working tree:
+Validation of the event appearance and shared-layout changes:
 
-| Check                                                     | Result                    |
-| --------------------------------------------------------- | ------------------------- |
-| Toolbar/range E2E after React review                      | 4 passed                  |
-| Real embedded Slate E2E after React review                | 1 passed, 22.4 seconds    |
-| Existing navigation E2E before React review               | 5 passed                  |
-| Cloud Calendar placeholder BDD before React review        | 2 passed, 1.4 minutes     |
-| Final Calendar and database view unit tests               | 89 passed across 9 suites |
-| Final Web TypeScript and changed production-source ESLint | Passed                    |
+| Check                                                            | Result                                  |
+| ---------------------------------------------------------------- | --------------------------------------- |
+| Calendar, layout, history, selector, and database-tab unit tests | 155 passed across 15 suites             |
+| Light/dark event-color browser checks                            | 2 passed                                |
+| Toolbar/range, focus, narrow width, tabs, and embedded E2E       | 5 passed across batch and focused rerun |
+| Shared-layout synchronization and fresh-session BDD              | 1 passed                                |
+| Web TypeScript and full repository ESLint                        | Passed                                  |
 
-The E2E tests use the existing 120-second timeout. All five parity scenarios
-passed after the React review. The new embedded scenario passed in a focused
-rerun after adding the normal database creation dialog dismissal to its setup.
-The earlier full browser batch passed all nine then-existing E2E cases in
-4.9 minutes at source fingerprint
-`c4c1e09b5d2cc74715e54a5d5643e17a2a2565a8e008bd9d312e1685643693c0`.
-The final review source fingerprint is
-`4e55ab25d5d495965f4eaf2fcae7ccc8f8079db7722b1f0eab9fe6546b459ae2`.
-It hashes sorted relative paths and contents for Calendar `.ts`/`.tsx` files,
-`DatabaseViews.tsx`, and English translations, with NUL separators. Session logs
-and traces are under `/tmp/appflowy-rollup-parity/`:
-`calendar-final-tests.log`, `calendar-final-results/`,
-`calendar-placeholder-bdd.log`, `calendar-placeholder-results/`,
-`calendar-react-review-final-tests.log`, `calendar-react-review-final-results/`,
-`calendar-embedded-review-tests.log`, and `calendar-embedded-review-results/`.
+The range-navigation case timed out once during parallel execution and passed
+on a focused rerun. The color fixture allows extra time for its initial Vite
+compilation while keeping the ordinary assertion timeout for interactions.
+Local browser artifacts are under `test-results/calendar-toolbar-review/`,
+`test-results/calendar-range-review/`, `test-results/calendar-colors-final/`,
+and `test-results/calendar-shared-layout-review/`.
 
 The reviewed previews capture the final browser UI:
 

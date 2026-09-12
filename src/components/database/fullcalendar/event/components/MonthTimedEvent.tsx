@@ -1,5 +1,4 @@
 import { EventApi, EventContentArg } from '@fullcalendar/core';
-import dayjs from 'dayjs';
 
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks';
 import { cn } from '@/lib/utils';
@@ -22,14 +21,10 @@ export function MonthTimedEvent({ event, onClick, showLeftIndicator = true, clas
   };
 
 
-  // Check if event is in the past
-  const isPastEvent = event.start && dayjs(event.start).isBefore(dayjs(), 'minute');
-
   return (
     <div
       className={cn(
         'event-content time-event-content relative flex h-full max-h-full min-h-[22px] w-full cursor-pointer flex-col items-center overflow-hidden text-xs font-medium text-text-primary hover:bg-fill-content-hover',
-        isPastEvent ? 'fc-event-past' : '',
         'transition-shadow duration-200',
         'rounded-200',
         'py-0 pl-1 pr-1',

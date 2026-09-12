@@ -132,7 +132,7 @@ export const CustomToolbar = memo(
     });
 
     const selectionMark = (selected: boolean) => (
-      <CheckIcon aria-hidden className={cn('h-5 w-5 shrink-0 text-icon-info-thick', !selected && 'invisible')} />
+      <CheckIcon aria-hidden className={cn('h-5 w-5 shrink-0 text-fill-theme-thick', !selected && 'invisible')} />
     );
 
     return (
@@ -176,10 +176,10 @@ export const CustomToolbar = memo(
                   className='h-7 gap-1 rounded-300 pl-3 pr-2 font-medium'
                 >
                   {label}
-                  <DropdownIcon aria-hidden className='h-5 w-3' />
+                  <DropdownIcon aria-hidden className='h-5 w-3 text-icon-secondary' />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align='end' className='w-60 rounded-400'>
+              <DropdownMenuContent align='end' className='w-60 rounded-400 bg-surface-layer-04'>
                 <DropdownMenuRadioGroup value={currentView}>
                   {views.map((view) => (
                     <DropdownMenuRadioItem
@@ -190,7 +190,9 @@ export const CustomToolbar = memo(
                     >
                       {selectionMark(currentView === view.key)}
                       <span>{view.label}</span>
-                      <DropdownMenuShortcut>{createHotKeyLabel(view.shortcut)}</DropdownMenuShortcut>
+                      <DropdownMenuShortcut className='text-text-secondary'>
+                        {createHotKeyLabel(view.shortcut)}
+                      </DropdownMenuShortcut>
                     </DropdownMenuRadioItem>
                   ))}
                 </DropdownMenuRadioGroup>
@@ -202,7 +204,10 @@ export const CustomToolbar = memo(
                   </DropdownMenuSubTrigger>
                   <DropdownMenuPortal>
                     <DropdownMenuSubContent
-                      className={cn('w-60 rounded-400 border border-border-primary', overlapDayMenu && 'data-[side=right]:!ml-0')}
+                      className={cn(
+                        'w-60 rounded-400 border border-border-primary bg-surface-layer-04',
+                        overlapDayMenu && 'data-[side=right]:!ml-0'
+                      )}
                       // Overlap the parent menu when two 240px menus cannot fit side by side.
                       sideOffset={overlapDayMenu ? -232 : 0}
                       collisionPadding={8}
@@ -220,7 +225,7 @@ export const CustomToolbar = memo(
                             >
                               {selectionMark(currentView === view)}
                               <span>{t('calendar.dayCount', { count })}</span>
-                              <DropdownMenuShortcut>{count}</DropdownMenuShortcut>
+                              <DropdownMenuShortcut className='text-text-secondary'>{count}</DropdownMenuShortcut>
                             </DropdownMenuRadioItem>
                           );
                         })}

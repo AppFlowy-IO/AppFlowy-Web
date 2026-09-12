@@ -5,23 +5,19 @@ import { useCalendarEventsSelector, useCalendarLayoutSetting } from '@/applicati
 import { CalendarViewType, isTimeGridView } from '@/components/database/fullcalendar/types';
 import { correctAllDayEndForDisplay } from '@/utils/time';
 
+import { calendarEventCompletionTime } from './event/eventAppearance';
+
 export function useFullCalendarSetup(newEventRowIds: Set<string>, openEventRowId: string | null, updateEventRowIds: Set<string>, currentView: CalendarViewType) {
   const layoutSetting = useCalendarLayoutSetting();
   const { events, emptyEvents } = useCalendarEventsSelector();
 
   // Convert events to FullCalendar format
   const fullCalendarEvents = useMemo(() => {
-    const today = new Date();
-
-    today.setHours(0, 0, 0, 0);
-
     const processedEvents = events.map((event) => {
-      const eventEndTime = event.end ? new Date(event.end) : new Date(event.start!);
-      const isPastEvent = eventEndTime < today;
       const isNewEvent = newEventRowIds.has(event.rowId);
       const isUpdateEvent = updateEventRowIds.has(event.rowId);
       const isOpenEvent = isNewEvent || isUpdateEvent || openEventRowId === event.rowId;
-      const classNames = isPastEvent ? ['fc-event-past'] : [];
+      const classNames = [];
 
       const isMultipleDayEvent = event.start && event.end && event.start.toDateString() !== event.end.toDateString();
 
@@ -55,7 +51,8 @@ export function useFullCalendarSetup(newEventRowIds: Set<string>, openEventRowId
           start: event.start,
           end: end,
           isMultipleDayEvent,
-          isRange: event.isRange
+          isRange: event.isRange,
+          completionTime: calendarEventCompletionTime(event),
         },
       };
     });
