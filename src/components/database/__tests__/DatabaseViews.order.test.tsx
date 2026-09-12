@@ -6,6 +6,7 @@ import { DatabaseContext, DatabaseContextState } from '@/application/database-yj
 import { DatabaseViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
 import DatabaseViews from '@/components/database/DatabaseViews';
+import { CalendarViewType } from '@/components/database/fullcalendar/types';
 
 import type { ReactNode } from 'react';
 
@@ -90,9 +91,21 @@ jest.mock('@/components/database/chart', () => ({
   Chart: () => null,
 }));
 
-jest.mock('@/components/database/fullcalendar', () => ({
-  Calendar: () => null,
-}));
+jest.mock('@/components/database/fullcalendar', () => {
+  const { useState } = jest.requireActual<typeof import('react')>('react');
+  const { useDatabaseContext } =
+    jest.requireActual<typeof import('@/application/database-yjs')>('@/application/database-yjs');
+
+  return {
+    Calendar: () => {
+      const { activeViewId, calendarViewTypeMap } = useDatabaseContext();
+      // FullCalendar consumes initialView only when its instance is created.
+      const [initialView] = useState(() => calendarViewTypeMap?.get(activeViewId || '') || 'dayGridMonth');
+
+      return <div data-testid='calendar-layout'>{initialView}</div>;
+    },
+  };
+});
 
 jest.mock('@/components/database/gallery', () => ({
   __esModule: true,
@@ -270,6 +283,50 @@ describe('DatabaseViews order', () => {
     rerender(renderForActiveView('gallery-b'));
 
     await waitFor(() => expect(screen.getByTestId('gallery-layout')).not.toBe(firstGalleryNode));
+  });
+
+  it('restores each Calendar tab mode without retaining the previous tab initial view', async () => {
+    const visibleViewIds = ['calendar-a', 'calendar-b'];
+    const doc = createDatabaseDoc(
+      'calendar-db',
+      visibleViewIds.map((viewId) => ({
+        viewId,
+        name: viewId,
+        createdAt: '100',
+        layout: DatabaseViewLayout.Calendar,
+      }))
+    );
+    const calendarViewTypeMap = new Map([['calendar-a', CalendarViewType.TIME_GRID_4_DAYS]]);
+    const renderForActiveView = (activeViewId: string) => (
+      <DatabaseContext.Provider
+        value={{
+          readOnly: true,
+          databaseDoc: doc,
+          databasePageId: visibleViewIds[0],
+          activeViewId,
+          rowDocMap: {},
+          workspaceId: 'workspace-id',
+          calendarViewTypeMap,
+        }}
+      >
+        <DatabaseViews
+          activeViewId={activeViewId}
+          databasePageId={visibleViewIds[0]}
+          onChangeView={jest.fn()}
+          visibleViewIds={visibleViewIds}
+        />
+      </DatabaseContext.Provider>
+    );
+    const { rerender } = render(renderForActiveView('calendar-a'));
+
+    expect((await screen.findByTestId('calendar-layout')).textContent).toBe(CalendarViewType.TIME_GRID_4_DAYS);
+    rerender(renderForActiveView('calendar-b'));
+    await waitFor(() => expect(screen.getByTestId('calendar-layout').textContent).toBe(CalendarViewType.DAY_GRID_MONTH));
+    rerender(renderForActiveView('calendar-a'));
+    await waitFor(() =>
+      expect(screen.getByTestId('calendar-layout').textContent).toBe(CalendarViewType.TIME_GRID_4_DAYS)
+    );
+    expect(calendarViewTypeMap.get('calendar-a')).toBe(CalendarViewType.TIME_GRID_4_DAYS);
   });
 
   it('overwrites stale stored order when visible view order is authoritative', async () => {

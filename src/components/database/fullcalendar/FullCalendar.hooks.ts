@@ -2,7 +2,7 @@ import { sortBy } from 'lodash-es';
 import { useMemo } from 'react';
 
 import { useCalendarEventsSelector, useCalendarLayoutSetting } from '@/application/database-yjs';
-import { CalendarViewType } from '@/components/database/fullcalendar/types';
+import { CalendarViewType, isTimeGridView } from '@/components/database/fullcalendar/types';
 import { correctAllDayEndForDisplay } from '@/utils/time';
 
 export function useFullCalendarSetup(newEventRowIds: Set<string>, openEventRowId: string | null, updateEventRowIds: Set<string>, currentView: CalendarViewType) {
@@ -60,7 +60,7 @@ export function useFullCalendarSetup(newEventRowIds: Set<string>, openEventRowId
       };
     });
 
-    return sortBy(processedEvents, currentView === CalendarViewType.TIME_GRID_WEEK ? [] : ['allDay', 'isMultipleDayEvent', 'start', 'title']);
+    return sortBy(processedEvents, isTimeGridView(currentView) ? [] : ['allDay', 'isMultipleDayEvent', 'start', 'title']);
   }, [currentView, events, newEventRowIds, openEventRowId, updateEventRowIds]);
 
   return {

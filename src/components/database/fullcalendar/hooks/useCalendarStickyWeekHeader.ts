@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getScrollParent } from '@/components/global-comment/utils';
 
-import { CalendarViewType } from '../types';
+import { CalendarViewType, getCalendarDayCount, isTimeGridView } from '../types';
 
 import type { CalendarApi } from '@fullcalendar/core';
 
@@ -26,7 +26,7 @@ export function useCalendarStickyWeekHeader(
   {
     currentView,
     firstDayOfWeek,
-    numberOfDays = 7,
+    numberOfDays = getCalendarDayCount(currentView) ?? 7,
   }: {
     currentView: CalendarViewType,
     firstDayOfWeek: number,
@@ -50,8 +50,8 @@ export function useCalendarStickyWeekHeader(
     const cellsData: HeaderCellData[] = [];
 
     // Generate cells based on view type
-    if (currentView === CalendarViewType.TIME_GRID_WEEK) {
-      // Week view: show numberOfDays days starting from firstDayOfWeek
+    if (isTimeGridView(currentView)) {
+      // FullCalendar supplies the aligned week start or the custom range anchor.
       const startOfWeek = new Date(currentDate);
       
       for (let i = 0; i < numberOfDays; i++) {

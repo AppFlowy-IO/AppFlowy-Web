@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
 import { Log } from '@/utils/log';
 
+import { changeCalendarView } from '../calendarNavigation';
 import { CalendarViewType } from '../types';
 
 import { useCalendarEvents } from './useCalendarEvents';
@@ -28,15 +29,9 @@ export function useCalendarHandlers() {
   // Get calendar event handlers
   const { handleEventDrop, handleEventResize, handleSelect, handleAdd, updateEventTime } = useCalendarEvents();
 
-  // Handle view changes (month/week toggle)
+  // Standard views return to today; custom ranges preserve the focused date.
   const handleViewChange = useCallback((view: CalendarViewType, calendarApi: CalendarApi | null) => {
-    if (calendarApi) {
-      // Switch view and adjust to today's date range
-      calendarApi.changeView(view);
-      
-      // Navigate to today
-      calendarApi.today();
-    }
+    changeCalendarView(calendarApi, view);
   }, []);
 
   // Handle calendar date range changes

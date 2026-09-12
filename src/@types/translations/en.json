@@ -2871,12 +2871,16 @@
         "day": "Day",
         "week": "Week",
         "month": "Month",
-        "year": "Year"
+        "year": "Year",
+        "period": "period"
       }
     },
     "week": "Week",
     "month": "Month",
     "multiMonth": "Multi-month",
+    "numberOfDays": "Number of days",
+    "dayCount_one": "{{count}} day",
+    "dayCount_other": "{{count}} days",
     "mobileEventScreen": {
       "emptyTitle": "No events yet",
       "emptyBody": "Press the plus button to create an event on this day."
