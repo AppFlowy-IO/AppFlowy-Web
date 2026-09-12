@@ -157,6 +157,10 @@ async function openRowWithDatabaseBlock(page: Page, rowId: string): Promise<{ ed
 
 async function addDatabaseView(page: Page, block: Locator, layout: 'Board' | 'Calendar' | 'Chart' = 'Board') {
   const tabs = block.locator('[data-testid^="view-tab-"]');
+
+  // The embedded block appears before its database finishes loading. Count the
+  // existing tabs only after the initial view has rendered.
+  await expect(tabs.first()).toBeVisible({ timeout: 30000 });
   const initialCount = await tabs.count();
   const addViewButton = block.getByTestId('add-view-button');
   const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();
