@@ -39,6 +39,8 @@ import {
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
+import { migrateRollupsForRelation } from '../rollup/filter';
+
 type RelationTypeOptionUpdates = Partial<RelationTypeOption>;
 
 type RelationCellChanges = {
@@ -835,6 +837,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
 
             if (!currentField) return;
             setRelationTypeOption(currentField, nextOption);
+            if (databaseIdChanged) migrateRollupsForRelation(database, fieldId);
           },
         ],
         'updateRelationTypeOption',

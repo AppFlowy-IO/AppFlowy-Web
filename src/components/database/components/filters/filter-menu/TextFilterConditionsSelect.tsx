@@ -4,8 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { TextFilter, TextFilterCondition } from '@/application/database-yjs';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
 
-
-function TextFilterConditionsSelect ({ filter }: { filter: TextFilter }) {
+function TextFilterConditionsSelect({
+  filter,
+  onSelect,
+}: {
+  filter: TextFilter;
+  onSelect?: (condition: number) => void;
+}) {
   const { t } = useTranslation();
 
   // Desktop parity: conditions listed in protobuf ordinal order.
@@ -46,12 +51,7 @@ function TextFilterConditionsSelect ({ filter }: { filter: TextFilter }) {
     ];
   }, [t]);
 
-  return (
-    <FilterConditionsSelect
-      filter={filter}
-      conditions={conditions}
-    />
-  );
+  return <FilterConditionsSelect filter={filter} conditions={conditions} onSelect={onSelect} />;
 }
 
 export default TextFilterConditionsSelect;

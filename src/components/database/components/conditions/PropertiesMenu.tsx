@@ -122,7 +122,11 @@ function PropertiesMenu({
               >
                 <Tooltip delayDuration={1000}>
                   <TooltipTrigger>
-                    <FieldDisplay className={'max-w-[180px] flex-1 gap-[10px] truncate'} fieldId={property.id} />
+                    <FieldDisplay
+                      className={'max-w-[240px] flex-1 gap-[10px] truncate'}
+                      fieldId={property.id}
+                      showRelationDatabaseName
+                    />
                   </TooltipTrigger>
                   <TooltipContent side={'right'}>{property.name}</TooltipContent>
                 </Tooltip>

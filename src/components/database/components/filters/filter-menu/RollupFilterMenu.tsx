@@ -1,42 +1,74 @@
 import { useCallback } from 'react';
 
-import { FieldType, NumberFilter, TextFilter, useFieldSelector, useReadOnly } from '@/application/database-yjs';
-import { useUpdateFilter } from '@/application/database-yjs/dispatch';
+import { useReadOnly } from '@/application/database-yjs/context';
+import { FieldType } from '@/application/database-yjs/database.type';
+import { useUpdateAdvancedFilter, UpdateFilterParams } from '@/application/database-yjs/dispatch/sort-filter';
+import { NumberFilter } from '@/application/database-yjs/fields/number/number.type';
+import { RollupFilterMetadata } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { SelectOption } from '@/application/database-yjs/fields/select-option/select_option.type';
-import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
+import { TextFilter } from '@/application/database-yjs/fields/text/text.type';
+import { newRollupFilterMetadata, rollupPredicateType } from '@/application/database-yjs/rollup/filter';
+import { useFieldSelector } from '@/application/database-yjs/selector';
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
-import NumberFilterMenu from '@/components/database/components/filters/filter-menu/NumberFilterMenu';
 import TextFilterConditionsSelect from '@/components/database/components/filters/filter-menu/TextFilterConditionsSelect';
-import TextFilterMenu from '@/components/database/components/filters/filter-menu/TextFilterMenu';
 import { useRollupData } from '@/components/database/components/property/rollup/useRollupData';
 import { DropdownMenuItemTick, dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
+import RollupFilterControls from './RollupFilterControls';
+
 function RollupFilterMenu({ filter }: { filter: TextFilter | NumberFilter }) {
+  return filter.rollupMetadata ? <RollupFilterMenuBody filter={filter} /> : <LegacyRollupFilterMenu filter={filter} />;
+}
+
+function RollupFilterMenuBody({ filter }: { filter: TextFilter | NumberFilter }) {
+  return (
+    <div className='flex w-[340px] max-w-[calc(100vw-32px)] flex-col gap-2 p-2'>
+      <FieldMenuTitle filterId={filter.id} fieldId={filter.fieldId} renderConditionSelect={null} />
+      <RollupFilterControls filter={filter} />
+    </div>
+  );
+}
+
+function LegacyRollupFilterMenu({ filter }: { filter: TextFilter | NumberFilter }) {
   const { field } = useFieldSelector(filter.fieldId);
   const { targetField, selectOptions } = useRollupData(filter.fieldId);
 
-  if (isNumericRollupField(field)) {
-    // Desktop parity: rollup→Number filters use the compact symbol labels
-    // (=, ≠, <, ≤, >, ≥) instead of the verbose Number filter labels.
-    return <NumberFilterMenu filter={filter as NumberFilter} conditionLabelStyle='symbols' />;
+  const isSelectTarget = targetField?.type === FieldType.SingleSelect || targetField?.type === FieldType.MultiSelect;
+
+  if (rollupPredicateType(filter, field) === FieldType.RichText && isSelectTarget && selectOptions.length > 0) {
+    return (
+      <RollupSelectOptionFilter
+        filter={filter as TextFilter}
+        options={selectOptions}
+        expectedMetadata={field ? newRollupFilterMetadata(field, targetField?.type) : undefined}
+      />
+    );
   }
 
-  const isSelectTarget =
-    targetField?.type === FieldType.SingleSelect || targetField?.type === FieldType.MultiSelect;
-
-  if (isSelectTarget && selectOptions.length > 0) {
-    return <RollupSelectOptionFilter filter={filter as TextFilter} options={selectOptions} />;
-  }
-
-  return <TextFilterMenu filter={filter as TextFilter} />;
+  return <RollupFilterMenuBody filter={filter} />;
 }
 
-function RollupSelectOptionFilter({ filter, options }: { filter: TextFilter; options: SelectOption[] }) {
-  const updateFilter = useUpdateFilter();
+function RollupSelectOptionFilter({
+  filter,
+  options,
+  expectedMetadata,
+}: {
+  filter: TextFilter;
+  options: SelectOption[];
+  expectedMetadata?: RollupFilterMetadata;
+}) {
+  const updateFilter = useUpdateAdvancedFilter();
   const readOnly = useReadOnly();
+  const update = useCallback(
+    (params: UpdateFilterParams) => {
+      if (readOnly) return;
+      updateFilter({ ...params, expectedRollupMetadata: expectedMetadata });
+    },
+    [expectedMetadata, readOnly, updateFilter]
+  );
 
   const handleToggleOption = useCallback(
     (optionName: string) => {
@@ -45,13 +77,13 @@ function RollupSelectOptionFilter({ filter, options }: { filter: TextFilter; opt
       // clicking a different option replaces it. Single-selection only.
       const next = filter.content === optionName ? '' : optionName;
 
-      updateFilter({
+      update({
         filterId: filter.id,
         fieldId: filter.fieldId,
         content: next,
       });
     },
-    [filter.content, filter.id, filter.fieldId, readOnly, updateFilter],
+    [filter.content, filter.id, filter.fieldId, readOnly, update]
   );
 
   return (
@@ -59,7 +91,12 @@ function RollupSelectOptionFilter({ filter, options }: { filter: TextFilter; opt
       <FieldMenuTitle
         filterId={filter.id}
         fieldId={filter.fieldId}
-        renderConditionSelect={<TextFilterConditionsSelect filter={filter} />}
+        renderConditionSelect={
+          <TextFilterConditionsSelect
+            filter={filter}
+            onSelect={(condition) => update({ filterId: filter.id, fieldId: filter.fieldId, condition })}
+          />
+        }
       />
       <div className={'flex flex-col'}>
         {options

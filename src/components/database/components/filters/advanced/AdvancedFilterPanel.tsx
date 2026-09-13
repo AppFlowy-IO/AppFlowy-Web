@@ -3,14 +3,14 @@ import { useTranslation } from 'react-i18next';
 
 import { useAdvancedFiltersSelector, useReadOnly } from '@/application/database-yjs';
 import { FilterType } from '@/application/database-yjs/database.type';
-import { FilterDraft } from '@/application/database-yjs/filter';
 import {
   useAddAdvancedFilterAndRebuild,
   useClearAllFilters,
   useRebuildFilterTree,
 } from '@/application/database-yjs/dispatch';
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import { FilterDraft } from '@/application/database-yjs/filter';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
 import { FILTER_EXCLUDED_FIELD_TYPES } from '@/components/database/components/filters/filter-field-types';
 import { Button } from '@/components/ui/button';
@@ -67,9 +67,10 @@ export function AdvancedFilterPanel() {
         fieldId: f.fieldId,
         fieldType: f.fieldType ?? 0,
         rollupTargetFieldType: f.rollupTargetFieldType,
+        rollupMetadata: f.rollupMetadata,
         condition: f.condition,
         content: f.content,
-        operator: f.id === filterId ? newOperator : (index === 0 ? null : f.operator ?? FilterType.And),
+        operator: f.id === filterId ? newOperator : index === 0 ? null : f.operator ?? FilterType.And,
       }));
 
       rebuildTree(drafts);
@@ -139,11 +140,7 @@ export function AdvancedFilterPanel() {
             <Button variant={'outline'} onClick={() => setDeleteAllConfirmOpen(false)}>
               {t('button.cancel')}
             </Button>
-            <Button
-              variant={'destructive'}
-              data-testid='confirm-delete-all-filters'
-              onClick={handleDeleteAllFilters}
-            >
+            <Button variant={'destructive'} data-testid='confirm-delete-all-filters' onClick={handleDeleteAllFilters}>
               {t('button.delete')}
             </Button>
           </DialogFooter>

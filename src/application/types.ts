@@ -628,6 +628,7 @@ export enum YjsDatabaseKey {
   source_field_type = 'source_field_type', // Added this
   condition = 'condition',
   rollup_target_type = 'rollup_target_ty',
+  rollup_meta = 'rollup_meta',
   schema_version = 'schema_version',
   row_templates = 'row_templates',
   default_row_template = 'default_row_template',
@@ -652,9 +653,11 @@ export enum YjsDatabaseKey {
   shown_empty_group_ids = 'shown_empty_group_ids',
   collapse_hidden_groups = 'collapse_hidden_groups',
   first_day_of_week = 'first_day_of_week',
+  first_day_of_week_v2 = 'first_day_of_week_v2',
   show_week_numbers = 'show_week_numbers',
   show_weekends = 'show_weekends',
   layout_ty = 'layout_ty',
+  day_count = 'day_count',
   icon = 'icon',
   is_inline = 'is_inline',
   embedded = 'embedded',
@@ -983,8 +986,10 @@ export interface YDatabaseBoardLayoutSetting extends Y.Map<unknown> {
 }
 
 export interface YDatabaseCalendarLayoutSetting extends Y.Map<unknown> {
-  get(key: YjsDatabaseKey.first_day_of_week | YjsDatabaseKey.field_id | YjsDatabaseKey.layout_ty): string;
-  get(key: YjsDatabaseKey.number_of_days): number;
+  get(key: YjsDatabaseKey.field_id): string;
+  get(
+    key: YjsDatabaseKey.first_day_of_week | YjsDatabaseKey.first_day_of_week_v2 | YjsDatabaseKey.layout_ty | YjsDatabaseKey.day_count | YjsDatabaseKey.number_of_days
+  ): number | bigint | null | undefined;
 
   get(key: YjsDatabaseKey.show_week_numbers | YjsDatabaseKey.show_weekends): boolean;
 }
@@ -1078,6 +1083,8 @@ export interface YDatabaseFilter extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.type | YjsDatabaseKey.condition | YjsDatabaseKey.content | YjsDatabaseKey.filter_type): string;
 
   get(key: YjsDatabaseKey.rollup_target_type): number | string | undefined;
+
+  get(key: YjsDatabaseKey.rollup_meta): unknown;
 
   get(key: YjsDatabaseKey.children): YDatabaseFilters | YDatabaseFilter[] | undefined;
 }

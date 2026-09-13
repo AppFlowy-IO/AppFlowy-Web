@@ -437,6 +437,8 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         return 'ready';
       } catch (e) {
         if (isPermissionDeniedError(e)) {
+          // The server handles eligible legacy recovery during reads, so a final denial must
+          // surface as no access instead of starting a separate create/repair request.
           if (isCurrent()) markPermissionDenied(documentId);
           return 'forbidden';
         }
@@ -779,96 +781,32 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       }
     };
 
-    const scheduleRetry = (loadOptions?: LoadRowDocumentOptions) => {
+    const scheduleRetry = () => {
       if (retryLoadTimerRef.current || deniedDocumentIdRef.current === documentId) return;
-      retryLoadTimerRef.current = setTimeout(async () => {
+      if (retryCount >= MAX_RETRIES) {
+        Log.warn('[DatabaseRowSubDocument] max retries reached; row document was not opened', {
+          rowId,
+          documentId,
+          retryCount,
+        });
+        setLoading(false);
+        return;
+      }
+
+      retryLoadTimerRef.current = setTimeout(() => {
+        retryLoadTimerRef.current = null;
         if (!isCurrentRequest() || deniedDocumentIdRef.current === documentId) return;
 
-        // If doc is already loaded (e.g., by handleCreateDocument), skip retry
-        // This prevents resetting the editor mid-typing
-        if (docReadyRef.current && loadedDocumentIdRef.current === documentId) {
-          Log.debug('[DatabaseRowSubDocument] skipping retry - doc already loaded', {
-            rowId,
-            documentId,
-          });
-          retryLoadTimerRef.current = null;
-          return;
-        }
-
         retryCount++;
-
-        // A newly-created row can reach this component before its row collab has
-        // propagated to the server. In that case the initial create request is
-        // rejected because the server cannot resolve the row yet. Retrying a
-        // load first is both unnecessary (the meta already says the document is
-        // empty) and slow enough to keep the editor skeleton visible for the
-        // entire retry window, so retry creation directly after propagation has
-        // had another chance to complete.
-        const retryingEmptyDocument = isDocumentEmptyResolved === true;
-        const retryAttempt = retryingEmptyDocument
-          ? await handleCreateDocument(documentId, false, isCurrentRequest)
-          : await handleOpenDocument(documentId, loadOptions, isCurrentRequest);
-
-        if (retryAttempt !== 'retryable' || !isCurrentRequest()) {
-          return;
-        }
-
-        retryLoadTimerRef.current = null;
-
-        if (retryCount >= MAX_RETRIES) {
-          // Empty documents already attempted server creation on every retry.
-          // Stop here so a permanently rejected row cannot keep issuing an
-          // orphan-creation request every two seconds while the modal is open.
-          if (retryingEmptyDocument) {
-            Log.warn('[DatabaseRowSubDocument] max retries reached; row document creation rejected', {
-              rowId,
-              documentId,
-              retryCount,
-            });
-            return;
-          }
-
-          // For non-empty documents, make one final create attempt after the
-          // bounded load retries. The server doc_state remains the only source
-          // of the default document structure.
-          const localHasContent = await hasLocalDocContent(documentId);
-
-          if (!isCurrentRequest()) return;
-
-          if (localHasContent) {
-            Log.debug(
-              '[DatabaseRowSubDocument] max retries reached; local content found, creating server doc before binding',
-              {
-                rowId,
-                documentId,
-                retryCount,
-              }
-            );
-          }
-
-          Log.debug('[DatabaseRowSubDocument] max retries reached; creating document', {
-            rowId,
-            documentId,
-            retryCount,
-          });
-          const createAttempt = await handleCreateDocument(documentId, true, isCurrentRequest);
-
-          if (createAttempt === 'retryable' && isCurrentRequest()) {
-            Log.warn('[DatabaseRowSubDocument] final row document creation attempt rejected', {
-              rowId,
-              documentId,
-              retryCount,
-            });
-          }
-
-          return;
-        }
-
-        scheduleRetry(loadOptions);
-      }, 2000); // Reduced from 5000ms to 2000ms for faster response
+        // Re-evaluate server existence on every attempt. An empty-content flag or an exhausted
+        // read retry budget must never turn a temporary failure into a repair/create request.
+        void openRowDocument();
+      }, 2000);
     };
 
-    void (async () => {
+    const openRowDocument = async () => {
+      if (!isCurrentRequest() || deniedDocumentIdRef.current === documentId) return;
+
       // Skip if doc is already loaded - prevents reloading when meta changes
       if (docReadyRef.current && loadedDocumentIdRef.current === documentId && doc) {
         Log.debug('[DatabaseRowSubDocument] skipping effect - doc already loaded', {
@@ -888,35 +826,9 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         return;
       }
 
-      if (isDocumentEmptyResolved) {
-        // Skip if doc is already loaded
-        if (docReadyRef.current && loadedDocumentIdRef.current === documentId) {
-          Log.debug('[DatabaseRowSubDocument] row meta says empty but doc already loaded, skipping', {
-            rowId,
-            documentId,
-          });
-          return;
-        }
-
-        // Document is empty, but the editor must still bind to a server-side
-        // collab before accepting edits. Otherwise a paste-and-close flow can
-        // enqueue the first update before the orphaned collab exists, then a
-        // fast reopen loads the still-empty server state over the local cache.
-        Log.debug('[DatabaseRowSubDocument] row meta says empty; creating row doc before opening editor', {
-          rowId,
-          documentId,
-        });
-        const createAttempt = await handleCreateDocument(documentId, false, isCurrentRequest);
-
-        if (createAttempt === 'retryable' && isCurrentRequest()) {
-          scheduleRetry();
-        }
-
-        return;
-      }
-
-      // meta.isEmptyDocument is false - document should exist on server
-      // If checkIfRowDocumentExists is not available, try to load directly.
+      // Empty content does not imply a missing server document. Check existence for both
+      // states so reopening an empty document can read it without taking the repair write path.
+      // Without an existence check, creation still confirms server readiness before binding.
       if (!checkIfRowDocumentExists) {
         const localHasContent = await hasLocalDocContent(documentId);
 
@@ -929,13 +841,11 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           });
         }
 
-        void (async () => {
-          const createAttempt = await handleCreateDocument(documentId, true, isCurrentRequest);
+        const createAttempt = await handleCreateDocument(documentId, true, isCurrentRequest);
 
-          if (createAttempt === 'retryable' && isCurrentRequest()) {
-            scheduleRetry();
-          }
-        })();
+        if (createAttempt === 'retryable' && isCurrentRequest()) {
+          scheduleRetry();
+        }
 
         return;
       }
@@ -960,10 +870,8 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
             return;
           }
 
-          // A positive existence check means the collab object is already
-          // present. Do one read attempt, then repair its row-document
-          // registration and open the returned state instead of waiting
-          // through the duplication-oriented backoff loop.
+          // The server handles legacy recovery during reads. Temporary failures stay within
+          // the read retry budget instead of sending an explicit create/repair request.
           const loadAttempt = await handleOpenDocument(
             documentId,
             CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS,
@@ -971,15 +879,21 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           );
 
           if (loadAttempt === 'retryable' && isCurrentRequest()) {
-            Log.debug('[DatabaseRowSubDocument] repairing row document after load failure', {
-              rowId,
-              documentId,
-            });
-            const repairAttempt = await handleCreateDocument(documentId, true, isCurrentRequest);
+            scheduleRetry();
+          }
 
-            if (repairAttempt === 'retryable' && isCurrentRequest()) {
-              scheduleRetry(CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS);
-            }
+          return;
+        }
+
+        if (isDocumentEmptyResolved || retryCount >= MAX_RETRIES) {
+          // A local document alone cannot admit edits: paste-and-close must wait until its
+          // server collab exists. Missing empty documents are created without the upload retry.
+          // Nonempty documents may still be uploading. Create only if the final existence
+          // check still confirms absence after the bounded retry window.
+          const createAttempt = await handleCreateDocument(documentId, !isDocumentEmptyResolved, isCurrentRequest);
+
+          if (createAttempt === 'retryable' && isCurrentRequest()) {
+            scheduleRetry();
           }
 
           return;
@@ -1006,7 +920,9 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         });
         scheduleRetry();
       }
-    })();
+    };
+
+    void openRowDocument();
 
     return () => {
       cancelled = true;

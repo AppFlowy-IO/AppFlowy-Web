@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { getScrollParent } from '@/components/global-comment/utils';
 import { Log } from '@/utils/log';
 
+import { navigateCalendar } from '../calendarNavigation';
 import { CalendarViewType } from '../types';
 
 import type { CalendarApi } from '@fullcalendar/core';
@@ -85,10 +86,10 @@ export function useScrollNavigation(currentView: CalendarViewType, calendarApi: 
 
     if (direction === 'down') {
       Log.debug('📅 Scroll Navigation: Moving to next month');
-      calendarApi?.next();
+      navigateCalendar(calendarApi, 1);
     } else {
       Log.debug('📅 Scroll Navigation: Moving to previous month');
-      calendarApi?.prev();
+      navigateCalendar(calendarApi, -1);
     }
 
     // Reset accumulator after navigation

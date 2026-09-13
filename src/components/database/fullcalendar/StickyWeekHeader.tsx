@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 
 import { useDatabaseContext } from '@/application/database-yjs';
 
-import { CalendarViewType } from './types';
+import { CalendarViewType, isTimeGridView } from './types';
 
 /**
  * Interface for header cell data
@@ -56,7 +56,7 @@ export function StickyWeekHeader({
 
   // Check if we should show the time slot column
   const showTimeSlotColumn = useMemo(() => {
-    return currentView === CalendarViewType.TIME_GRID_WEEK;
+    return isTimeGridView(currentView);
   }, [currentView]);
 
   if (!visible || headerCells?.length === 0) {
@@ -117,7 +117,9 @@ export function StickyWeekHeader({
                       cell.isWeekend ? 'fc-day-weekend' : ''
                     }`}
                     style={{
-                      width: showTimeSlotColumn ? 'calc((100% - var(--fc-timegrid-axis-width)) / 7)' : '14.285714%', // Adjust width if time column is shown
+                      width: showTimeSlotColumn
+                        ? `calc((100% - var(--fc-timegrid-axis-width)) / ${headerCells.length})`
+                        : '14.285714%',
                       height: '32px',
                       minHeight: '32px',
                       maxHeight: '32px',

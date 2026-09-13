@@ -2137,6 +2137,9 @@
       "disableTwoWayRelationDescription": "The reciprocal property will be removed from the related database."
     },
     "rollup": {
+      "filterModeAny": "Any",
+      "filterModeNone": "None",
+      "filterModeEvery": "Every",
       "relation": "Relation",
       "title": "Rollup properties",
       "targetProperty": "Target property",
@@ -2871,12 +2874,16 @@
         "day": "Day",
         "week": "Week",
         "month": "Month",
-        "year": "Year"
+        "year": "Year",
+        "period": "period"
       }
     },
     "week": "Week",
     "month": "Month",
     "multiMonth": "Multi-month",
+    "numberOfDays": "Number of days",
+    "dayCount_one": "{{count}} day",
+    "dayCount_other": "{{count}} days",
     "mobileEventScreen": {
       "emptyTitle": "No events yet",
       "emptyBody": "Press the plus button to create an event on this day."
@@ -2914,6 +2921,7 @@
   },
   "search": {
     "label": "Search",
+    "clear": "Clear search",
     "sidebarSearchIcon": "Search and quickly jump to a page",
     "placeholder": {
       "actions": "Search actions..."

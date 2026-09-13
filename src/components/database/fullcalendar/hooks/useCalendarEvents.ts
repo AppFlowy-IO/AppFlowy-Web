@@ -8,7 +8,7 @@ import { useCalendarLayoutSetting, useCreateCalendarEvent, useUpdateStartEndTime
 import { Log } from '@/utils/log';
 import { correctAllDayEndForStorage, dateToUnixTimestamp } from '@/utils/time';
 
-import { CalendarViewType } from '../types';
+import { isTimeGridView } from '../types';
 
 /**
  * Custom hook to handle calendar event interactions (drag, resize, create)
@@ -121,7 +121,7 @@ export function useCalendarEvents() {
         let endTimestamp = dateToUnixTimestamp(correctedEndDate);
 
         // For week view time grid selections, default to 1-hour events only for small selections (clicks or short drags)
-        if (selectInfo.view.type === CalendarViewType.TIME_GRID_WEEK && !selectInfo.allDay) {
+        if (isTimeGridView(selectInfo.view.type) && !selectInfo.allDay) {
           const selectionDuration = selectInfo.end.getTime() - selectInfo.start.getTime();
           const thirtyMinutesInMs = 30 * 60 * 1000; // 30 minutes in milliseconds
           

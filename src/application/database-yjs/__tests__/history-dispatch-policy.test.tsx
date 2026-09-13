@@ -1,7 +1,7 @@
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
 import * as Y from 'yjs';
 
+import { updateCalendarLayoutSetting } from '@/application/database-yjs/calendar-layout';
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import {
@@ -16,17 +16,18 @@ import {
   useNewPropertyDispatch,
   useSwitchPropertyType,
   useUpdateCellDispatch,
+  useUpdateDatabaseLayout,
   useUpdateRelationDatabaseId,
   useUpdateRowMetaDispatch,
 } from '@/application/database-yjs/dispatch';
-import { useUpdateRelationTypeOption } from '@/application/database-yjs/dispatch/relation';
 import { useDeleteGroupColumnDispatch as useDeleteGroupColumnDispatchModule } from '@/application/database-yjs/dispatch/group';
+import { useUpdateRelationTypeOption } from '@/application/database-yjs/dispatch/relation';
 import {
   useMoveCardDispatch as useMoveCardDispatchModule,
   useUpdateRowMetaDispatch as useUpdateRowMetaDispatchModule,
 } from '@/application/database-yjs/dispatch/row';
-import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
+import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { FORM_DECIDED_SENTINEL, FORM_INCLUDED, FORM_ORDER } from '@/application/database-yjs/form-questions';
 import {
   createDatabaseHistoryGroup,
@@ -35,8 +36,6 @@ import {
   useDatabaseHistory,
 } from '@/application/database-yjs/history';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
-import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
-import { AFConfigContext } from '@/components/main/app.hooks';
 import {
   DatabaseViewLayout,
   YDatabase,
@@ -56,8 +55,12 @@ import {
   YMapFieldTypeOption,
   YSharedRoot,
 } from '@/application/types';
+import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
+import { AFConfigContext } from '@/components/main/app.hooks';
 
 import { createRowDoc } from './test-helpers';
+
+import type { ReactNode } from 'react';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
@@ -700,6 +703,100 @@ describe('database history production dispatch policies', () => {
     expect(secondFieldSettings.has(createdFieldId)).toBe(true);
     expect(fixture.view.get(YjsDatabaseKey.layout_settings)).toBeDefined();
   });
+
+  it.each(['missing', 'invalid type'])(
+    'repairs a %s calendar date field without resetting shared view settings',
+    async (fieldState) => {
+      const invalidFieldId = 'invalid-date';
+      const fixture = createFixture(fieldState === 'missing' ? [] : [[invalidFieldId, createField(invalidFieldId, FieldType.RichText)]]);
+      const createdRowDoc = new Y.Doc() as YDoc;
+      const createRow = jest.fn().mockResolvedValue(createdRowDoc);
+
+      fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Calendar);
+      updateCalendarLayoutSetting(fixture.view, {
+        fieldId: invalidFieldId,
+        layout: 1,
+        numberOfDays: 8,
+        firstDayOfWeek: 1,
+        showWeekends: false,
+        showWeekNumbers: true,
+      });
+      const layouts = fixture.view.get(YjsDatabaseKey.layout_settings);
+      const calendar = layouts.get('2');
+      const board = new Y.Map([['hide_ungrouped_column', true]]);
+
+      calendar.set('future_option', 'preserved');
+      layouts.set('1', board);
+      const before = calendar.toJSON();
+      const hook = renderHook(useCreateCalendarEvent, {
+        wrapper: createWrapper(fixture.databaseDoc, {}, { createRow }),
+      });
+
+      await act(async () => {
+        await hook.result.current({ startTimestamp: '100', endTimestamp: '200', includeTime: true });
+      });
+      const repairedFieldId = calendar.get(YjsDatabaseKey.field_id);
+
+      expect(repairedFieldId).not.toBe(invalidFieldId);
+      expect(fixture.fields.get(repairedFieldId).get(YjsDatabaseKey.type)).toBe(FieldType.DateTime);
+      expect(fixture.view.get(YjsDatabaseKey.layout_settings)).toBe(layouts);
+      expect(layouts.get('2')).toBe(calendar);
+      expect(layouts.get('1')).toBe(board);
+      expect(calendar.toJSON()).toEqual({ ...before, field_id: repairedFieldId });
+      expect(fixture.rowOrders).toHaveLength(1);
+      expect(getCellData(createdRowDoc, repairedFieldId)).toBe('100');
+      const history = getOrCreateDatabaseHistoryManager(fixture.databaseDoc);
+
+      void act(() => history.undo());
+      expect(calendar.toJSON()).toEqual(before);
+      expect(layouts.get('1')).toBe(board);
+      expect(fixture.rowOrders).toHaveLength(0);
+    }
+  );
+
+  it.each([FieldType.CreatedTime, FieldType.LastEditedTime])(
+    'retains a valid system timestamp field (%s) during layout conversion and event creation',
+    async (fieldType) => {
+      const fixture = createFixture([[fieldId, createField(fieldId, fieldType)]]);
+      const createdRowDoc = new Y.Doc() as YDoc;
+      const createRow = jest.fn().mockResolvedValue(createdRowDoc);
+
+      updateCalendarLayoutSetting(fixture.view, {
+        fieldId,
+        layout: 1,
+        numberOfDays: 8,
+        firstDayOfWeek: 1,
+        showWeekends: false,
+        showWeekNumbers: true,
+      });
+      const layouts = fixture.view.get(YjsDatabaseKey.layout_settings);
+      const calendar = layouts.get('2');
+
+      calendar.set('future_option', 'preserved');
+      const before = calendar.toJSON();
+      const hook = renderHook(
+        () => ({
+          createEvent: useCreateCalendarEvent(),
+          updateLayout: useUpdateDatabaseLayout(viewId),
+        }),
+        { wrapper: createWrapper(fixture.databaseDoc, {}, { createRow }) }
+      );
+
+      act(() => hook.result.current.updateLayout(DatabaseViewLayout.Calendar));
+      await act(async () => {
+        await hook.result.current.createEvent({ startTimestamp: '100', endTimestamp: '200', includeTime: true });
+      });
+
+      expect(fixture.view.get(YjsDatabaseKey.layout_settings)).toBe(layouts);
+      expect(layouts.get('2')).toBe(calendar);
+      expect(calendar.toJSON()).toEqual(before);
+      expect(Array.from(fixture.fields.keys())).toEqual([fieldId]);
+      expect(fixture.fields.get(fieldId).get(YjsDatabaseKey.type)).toBe(fieldType);
+      expect(fixture.view.get(YjsDatabaseKey.field_orders).toJSON()).toEqual([{ id: fieldId }]);
+      expect(fixture.rowOrders).toHaveLength(1);
+      expect(createRow).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it('skips relation target changes in the legacy relation hook', () => {
     const fixture = createFixture([[fieldId, createRelationField(fieldId)]]);
