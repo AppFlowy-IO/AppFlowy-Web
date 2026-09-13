@@ -143,6 +143,9 @@ test.describe('Timeline dependencies and progress', () => {
 
     await chooseTimelineSettingsOption(page, 'timeline-dependency-field-rel-deps');
     await expect(page.locator('[data-testid="timeline-arrow"]')).toHaveCount(1, { timeout: 15_000 });
+    // This spec asserts frappe's move_dependencies behaviour ("keep the time
+    // between items"); the default "only when dates overlap" is covered by BDD.
+    await chooseTimelineSettingsOption(page, 'timeline-shift-1');
 
     await chooseTimelineSettingsOption(page, 'timeline-progress-field-num-progress');
     await expect(page.getByTestId(`timeline-progress-${designId}`)).toHaveAttribute('style', /width: 40%/, {
