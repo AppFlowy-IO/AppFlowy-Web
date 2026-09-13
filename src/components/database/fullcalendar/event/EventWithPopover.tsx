@@ -138,7 +138,11 @@ export const EventWithPopover = memo((props: EventWithPopoverProps) => {
   const navigateToRow = useNavigateToRow();
   const draft = draftContext?.draft;
 
-  if (draftContext && props.event.extendedProps.isDraft && draft?.id === props.event.id) {
+  if (props.event.extendedProps.isDraft) {
+    // FullCalendar removes its React portal after the draft context updates.
+    // A stale segment must not mount live row observers for a discarded ID.
+    if (!draftContext || draft?.id !== props.event.id) return null;
+
     return (
       <DatabaseContext.Provider value={draft.context}>
         <DraftEventWithPopover

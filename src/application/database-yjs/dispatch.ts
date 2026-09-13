@@ -36,10 +36,6 @@ import { deleteReciprocalRelationField } from '@/application/database-yjs/dispat
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { normalizeCreatedDatabaseFeedView, updateCreatesExactFeedView } from '@/application/database-yjs/feed-layout';
 import {
-  normalizeCreatedDatabaseFeedView,
-  updateCreatesExactFeedView,
-} from '@/application/database-yjs/feed-layout';
-import {
   getFieldName,
   NumberFormat,
   parseChecklistData,
