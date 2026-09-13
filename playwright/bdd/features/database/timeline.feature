@@ -44,6 +44,10 @@ Feature: Timeline view interactions
     When I press undo
     Then the "Build" bar is back where it started
 
+  Scenario: A dropped bar stays where it landed while the row data catches up
+    When I drag the "Design" bar 9 columns later while sampling its position
+    Then the "Design" bar never painted back where it started after landing 9 columns later
+
   Scenario: The end handle resizes a bar and Escape cancels a drag in progress
     When I drag the end handle of "Design" 2 columns later
     Then the "Design" bar grew by 2 columns

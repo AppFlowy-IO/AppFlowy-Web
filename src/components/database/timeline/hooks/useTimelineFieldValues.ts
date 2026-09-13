@@ -1,8 +1,8 @@
-import debounce from 'lodash-es/debounce';
 import { useEffect, useState } from 'react';
 import * as Y from 'yjs';
 
 import { getCell, useFieldSelector, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
+import { createLocalFirstObserver } from '@/application/database-yjs/local-first-observer';
 import { YDatabaseCell, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 const EMPTY = new Map<string, never>();
@@ -41,13 +41,14 @@ export function useTimelineFieldValues<T>(
     };
 
     read();
-    const debounced = debounce(read, 150);
+    // A released progress handle re-reads at once; remote bursts stay debounced.
+    const observer = createLocalFirstObserver(read, 150);
     const docs = rowOrders.map((row) => rows[row.id]).filter(Boolean);
 
-    docs.forEach((doc) => doc.getMap(YjsEditorKey.data_section).observeDeep(debounced));
+    docs.forEach((doc) => doc.getMap(YjsEditorKey.data_section).observeDeep(observer));
     return () => {
-      debounced.cancel();
-      docs.forEach((doc) => doc.getMap(YjsEditorKey.data_section).unobserveDeep(debounced));
+      observer.cancel();
+      docs.forEach((doc) => doc.getMap(YjsEditorKey.data_section).unobserveDeep(observer));
     };
   }, [field, clock, fieldId, parse, rowOrders, rows]);
 

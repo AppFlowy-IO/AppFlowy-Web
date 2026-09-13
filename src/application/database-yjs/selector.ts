@@ -47,6 +47,7 @@ import {
   parseFilter,
 } from '@/application/database-yjs/filter';
 import { DEFAULT_GALLERY_LAYOUT_SETTINGS } from '@/application/database-yjs/gallery-layout';
+import { createLocalFirstObserver } from '@/application/database-yjs/local-first-observer';
 import {
   areGroupRowsHydrated,
   getGroupColumns,
@@ -1982,10 +1983,9 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
         orderedIdSet.add(column.id);
       }
     });
-    const orderedIds =
-      numberPolicy
-        ? orderNumberGroupIds(persistedAndDerivedIds, groupingFieldId, numberPolicy)
-        : persistedAndDerivedIds;
+    const orderedIds = numberPolicy
+      ? orderNumberGroupIds(persistedAndDerivedIds, groupingFieldId, numberPolicy)
+      : persistedAndDerivedIds;
 
     // Seed-only docs may lag a Desktop edit indefinitely because background
     // grouping hydration deliberately does not bind realtime for offscreen
@@ -2011,8 +2011,9 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
         metadataGroupIdSet.add(column.id);
       }
     });
-    const orderedMetadataGroupIds =
-      numberPolicy ? orderNumberGroupIds(metadataGroupIds, groupingFieldId, numberPolicy) : metadataGroupIds;
+    const orderedMetadataGroupIds = numberPolicy
+      ? orderNumberGroupIds(metadataGroupIds, groupingFieldId, numberPolicy)
+      : metadataGroupIds;
 
     const collapsedValue = group.get(YjsDatabaseKey.collapsed_group_ids) as unknown;
     const collapsedIds = new Set(
@@ -2085,7 +2086,8 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
       const automaticallyHidden =
         ready &&
         groupRows.length === 0 &&
-        (hideEmptyGroups || (id !== currentFieldId && isDynamicDatabaseGroupFieldType(fieldType) && !numberPolicy?.retainsEmptyGroups));
+        (hideEmptyGroups ||
+          (id !== currentFieldId && isDynamicDatabaseGroupFieldType(fieldType) && !numberPolicy?.retainsEmptyGroups));
 
       return {
         id,
@@ -3249,23 +3251,25 @@ export function useDateFieldEventsSelector(fieldId: string) {
 
     observerEvent();
 
-    const debouncedObserverEvent = debounce(observerEvent, 150);
+    // The user's own edits (a dropped calendar or timeline bar) re-read at
+    // once; remote bursts stay debounced.
+    const rowObserver = createLocalFirstObserver(observerEvent, 150);
 
     // for every row
     rowOrders?.forEach((row) => {
       const rowDoc = rows?.[row.id];
 
       if (!rowDoc) return;
-      rowDoc.getMap(YjsEditorKey.data_section).observeDeep(debouncedObserverEvent);
+      rowDoc.getMap(YjsEditorKey.data_section).observeDeep(rowObserver);
     });
 
     return () => {
-      debouncedObserverEvent.cancel();
+      rowObserver.cancel();
       rowOrders?.forEach((row) => {
         const rowDoc = rows?.[row.id];
 
         if (!rowDoc) return;
-        rowDoc.getMap(YjsEditorKey.data_section).unobserveDeep(debouncedObserverEvent);
+        rowDoc.getMap(YjsEditorKey.data_section).unobserveDeep(rowObserver);
       });
     };
   }, [field, fieldClock, rowOrders, rows, fieldId, primaryFieldId, primaryField, primaryFieldClock, ensureRow]);

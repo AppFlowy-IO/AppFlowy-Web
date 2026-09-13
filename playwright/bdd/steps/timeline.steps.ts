@@ -3,9 +3,18 @@ import { createBdd } from 'playwright-bdd';
 
 import { DatabaseViewLayout } from '../../../src/application/types';
 import { FieldType } from '../../../src/application/database-yjs/database.type';
-import { getCurrentDatabaseInfo, setRelationCellDirect, waitForDatabaseTestContext } from '../../support/relation-test-helpers';
+import {
+  getCurrentDatabaseInfo,
+  setRelationCellDirect,
+  waitForDatabaseTestContext,
+} from '../../support/relation-test-helpers';
 import { closeRowDetailWithEscape } from '../../support/row-detail-helpers';
-import { CalendarSelectors, DatabaseViewSelectors, RowDetailSelectors, TimelineSelectors } from '../../support/selectors';
+import {
+  CalendarSelectors,
+  DatabaseViewSelectors,
+  RowDetailSelectors,
+  TimelineSelectors,
+} from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import {
   activeViewRowIds,
@@ -15,6 +24,8 @@ import {
   chooseTimelineZoom,
   clickRowCanvas,
   dragBarBy,
+  readBarSamples,
+  startBarSampler,
   dragHandleBy,
   expectBarWidth,
   expectBarX,
@@ -84,14 +95,17 @@ async function visibleCanvas(page: Page) {
   return { left: view.x + TIMELINE_SIDEBAR_WIDTH, right: view.x + view.width };
 }
 
-Given('a cloud calendar with {string} today and {string} in {int} days', async ({ page, request, $testInfo }, first, second, offset) => {
-  $testInfo.setTimeout(240_000);
-  await loginAndCreateCalendarWithRows(page, request, generateRandomEmail(), [
-    { title: first, offsetDays: 0 },
-    { title: second, offsetDays: offset },
-  ]);
-  scenarios.set(page, { rowIds: [], rowIdByTitle: new Map(), before: new Map() });
-});
+Given(
+  'a cloud calendar with {string} today and {string} in {int} days',
+  async ({ page, request, $testInfo }, first, second, offset) => {
+    $testInfo.setTimeout(240_000);
+    await loginAndCreateCalendarWithRows(page, request, generateRandomEmail(), [
+      { title: first, offsetDays: 0 },
+      { title: second, offsetDays: offset },
+    ]);
+    scenarios.set(page, { rowIds: [], rowIdByTitle: new Map(), before: new Map() });
+  }
+);
 
 Given('a Timeline view is added from the view menu', async ({ page }) => {
   await addTimelineView(page, 2);
@@ -171,15 +185,21 @@ When('I step the timeline earlier {int} times', async ({ page }, times) => {
 Then('the {string} bar is off screen to the left with a left pill', async ({ page }, title) => {
   const canvas = await visibleCanvas(page);
 
-  await expect.poll(async () => (await barBox(page, title)).x + (await barBox(page, title)).width, { timeout: 10_000 }).toBeLessThan(canvas.left);
-  await expect(TimelineSelectors.row(page, rowId(page, title)).locator('[data-testid="timeline-offscreen-left"]')).toBeVisible();
+  await expect
+    .poll(async () => (await barBox(page, title)).x + (await barBox(page, title)).width, { timeout: 10_000 })
+    .toBeLessThan(canvas.left);
+  await expect(
+    TimelineSelectors.row(page, rowId(page, title)).locator('[data-testid="timeline-offscreen-left"]')
+  ).toBeVisible();
 });
 
 Then('the {string} bar is off screen to the right with a right pill', async ({ page }, title) => {
   const canvas = await visibleCanvas(page);
 
   await expect.poll(async () => (await barBox(page, title)).x, { timeout: 10_000 }).toBeGreaterThan(canvas.right);
-  await expect(TimelineSelectors.row(page, rowId(page, title)).locator('[data-testid="timeline-offscreen-right"]')).toBeVisible();
+  await expect(
+    TimelineSelectors.row(page, rowId(page, title)).locator('[data-testid="timeline-offscreen-right"]')
+  ).toBeVisible();
 });
 
 When('I click the left off-screen pill', async ({ page }) => {
@@ -217,6 +237,31 @@ When('I drag the {string} bar {int} columns earlier', async ({ page }, title, co
 Then('the {string} bar moved {int} columns later', async ({ page }, title, columns) => {
   await expectBarX(page, title, before(page, title).x + columns * MONTH_COLUMN_WIDTH);
 });
+
+When('I drag the {string} bar {int} columns later while sampling its position', async ({ page }, title, columns) => {
+  await remember(page, 'Design', 'Build');
+  await startBarSampler(page, title);
+  await dragBarBy(page, title, columns * MONTH_COLUMN_WIDTH);
+  // Long enough to cover the selectors' 150 ms remote debounce, which is where a snap-back would show.
+  await page.waitForTimeout(400);
+});
+
+Then(
+  'the {string} bar never painted back where it started after landing {int} columns later',
+  async ({ page }, title, columns) => {
+    const origin = Math.round(before(page, title).x);
+    const target = Math.round(origin + columns * MONTH_COLUMN_WIDTH);
+    const samples = await readBarSamples(page);
+    // Frames before the pointer crossed the drag threshold still show the origin.
+    const firstMoved = samples.findIndex((left) => left !== origin);
+
+    expect(firstMoved, `bar never moved: ${samples.join(',')}`).toBeGreaterThanOrEqual(0);
+    // Once it moved, no later frame may show the origin again: that would be
+    // the bar snapping back while the row data caught up.
+    expect(samples.slice(firstMoved), `bar snapped back after the drop: ${samples.join(',')}`).not.toContain(origin);
+    await expectBarX(page, title, target);
+  }
+);
 
 When('I press undo', async ({ page }) => {
   await page.keyboard.press('Control+z');
@@ -480,12 +525,18 @@ Given('{string} also has a {string} field {int} days later', async ({ page }, ti
   }, days);
 
   // Every row needs a value on the new field so the rows stay dated; Design keeps today.
-  await setTextCellDirect(page, rowId(page, 'Design'), 'date-ship', FieldType.DateTime, await page.evaluate(() => {
-    const date = new Date();
+  await setTextCellDirect(
+    page,
+    rowId(page, 'Design'),
+    'date-ship',
+    FieldType.DateTime,
+    await page.evaluate(() => {
+      const date = new Date();
 
-    date.setHours(0, 0, 0, 0);
-    return String(Math.floor(date.getTime() / 1000));
-  }));
+      date.setHours(0, 0, 0, 0);
+      return String(Math.floor(date.getTime() / 1000));
+    })
+  );
   await setTextCellDirect(page, other, 'date-ship', FieldType.DateTime, timestamp);
   state.before.set('Design', design);
 });
@@ -513,7 +564,10 @@ When('I choose Monday as the timeline week start', async ({ page }) => {
 Then('the timeline quarter labels fall on Mondays', async ({ page }) => {
   // Quarter labels sit on week starts; the first week of each month carries the
   // month name ("Oct 5"), which is enough to resolve the weekday unambiguously.
-  const labels = await TimelineSelectors.header(page).locator('span').filter({ hasText: /^[A-Z][a-z]{2} \d{1,2}$/ }).allTextContents();
+  const labels = await TimelineSelectors.header(page)
+    .locator('span')
+    .filter({ hasText: /^[A-Z][a-z]{2} \d{1,2}$/ })
+    .allTextContents();
   const year = new Date().getFullYear();
 
   expect(labels.length).toBeGreaterThan(0);

@@ -25,7 +25,10 @@ function isoDate(offsetDays: number) {
 
   date.setHours(0, 0, 0, 0);
   date.setDate(date.getDate() + offsetDays);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(
+    2,
+    '0'
+  )}`;
 }
 
 /** Create an all-day row through the calendar's placeholder editor. */
@@ -84,6 +87,38 @@ export async function dragBy(page: Page, x: number, y: number, dx: number) {
   await page.mouse.up();
 }
 
+/**
+ * Record the left edge of a bar on every animation frame until `readBarSamples`
+ * is called, so a test can prove a dropped bar never paints at its old dates
+ * while the row data catches up.
+ */
+export async function startBarSampler(page: Page, title: string) {
+  await page.evaluate((title) => {
+    const win = window as unknown as { __TIMELINE_BAR_SAMPLES__?: number[]; __TIMELINE_BAR_SAMPLER__?: number };
+    const samples: number[] = [];
+    const sample = () => {
+      const bar = Array.from(document.querySelectorAll('[data-testid^="timeline-bar-"]')).find((element) =>
+        element.textContent?.includes(title)
+      );
+
+      if (bar) samples.push(Math.round(bar.getBoundingClientRect().left));
+      win.__TIMELINE_BAR_SAMPLER__ = requestAnimationFrame(sample);
+    };
+
+    win.__TIMELINE_BAR_SAMPLES__ = samples;
+    win.__TIMELINE_BAR_SAMPLER__ = requestAnimationFrame(sample);
+  }, title);
+}
+
+export async function readBarSamples(page: Page): Promise<number[]> {
+  return page.evaluate(() => {
+    const win = window as unknown as { __TIMELINE_BAR_SAMPLES__?: number[]; __TIMELINE_BAR_SAMPLER__?: number };
+
+    if (win.__TIMELINE_BAR_SAMPLER__) cancelAnimationFrame(win.__TIMELINE_BAR_SAMPLER__);
+    return win.__TIMELINE_BAR_SAMPLES__ ?? [];
+  });
+}
+
 export async function dragBarBy(page: Page, title: string, dx: number) {
   const box = await barBox(page, title);
 
@@ -111,7 +146,12 @@ export async function activeViewRowIds(page: Page): Promise<string[]> {
     const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: any }).__TEST_DATABASE_CONTEXT__;
     const database = ctx.databaseDoc.getMap('data').get('database');
 
-    return database.get('views').get(ctx.activeViewId).get('row_orders').toArray().map((row: { id: string }) => row.id);
+    return database
+      .get('views')
+      .get(ctx.activeViewId)
+      .get('row_orders')
+      .toArray()
+      .map((row: { id: string }) => row.id);
   });
 }
 
