@@ -36,12 +36,15 @@ export interface ImportUploadTask {
 export enum CreateImportTaskType {
   Notion = 'Notion',
   Workspace = 'Workspace',
+  Confluence = 'Confluence',
 }
 
-export interface CreateNotionImportTaskPayload {
+export interface CreateZipImportTaskPayload {
   content_length: number;
   md5_base64: string;
 }
+
+export type CreateNotionImportTaskPayload = CreateZipImportTaskPayload;
 
 function toImportUploadTask(data: CreateImportTaskRaw): ImportUploadTask {
   return {
@@ -77,7 +80,25 @@ export async function createNotionImportTask(
   parentViewId: string,
   payload: CreateNotionImportTaskPayload
 ): Promise<ImportUploadTask> {
-  const url = `/api/import/${encodeURIComponent(workspaceId)}/notion`;
+  return createZipImportTask(workspaceId, parentViewId, 'notion', payload);
+}
+
+/** Create a Confluence HTML export import under the selected page. */
+export async function createConfluenceImportTask(
+  workspaceId: string,
+  parentViewId: string,
+  payload: CreateZipImportTaskPayload
+): Promise<ImportUploadTask> {
+  return createZipImportTask(workspaceId, parentViewId, 'confluence', payload);
+}
+
+async function createZipImportTask(
+  workspaceId: string,
+  parentViewId: string,
+  source: 'notion' | 'confluence',
+  payload: CreateZipImportTaskPayload
+): Promise<ImportUploadTask> {
+  const url = `/api/import/${encodeURIComponent(workspaceId)}/${source}`;
 
   return executeAPIRequest<CreateImportTaskRaw>(() =>
     getAxios()?.post<APIResponse<CreateImportTaskRaw>>(url, payload, {

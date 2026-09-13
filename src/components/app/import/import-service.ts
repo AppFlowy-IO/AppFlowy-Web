@@ -4,6 +4,7 @@ import { getCollab, updateCollab } from '@/application/services/js-services/http
 import {
   cancelDatabaseCsvImportTask,
   cancelImportTask,
+  createConfluenceImportTask,
   createDatabaseCsvImportTask,
   createNotionImportTask,
   getDatabaseCsvImportStatus,
@@ -89,7 +90,7 @@ export interface ImportCsvResult {
   viewId: string;
 }
 
-export interface ImportNotionInput {
+export interface ImportZipInput {
   workspaceId: string;
   parentViewId: string;
   file: File;
@@ -97,9 +98,12 @@ export interface ImportNotionInput {
   signal?: AbortSignal;
 }
 
-export interface ImportNotionResult {
+export interface ImportZipResult {
   taskId: string;
 }
+
+export type ImportNotionInput = ImportZipInput;
+export type ImportNotionResult = ImportZipResult;
 
 export class ImportAbortError extends Error {
   constructor() {
@@ -254,13 +258,25 @@ export async function importCsvFilesAsDatabases(input: ImportCsvBatchInput): Pro
  * The server processes the imported workspace asynchronously after upload.
  */
 export async function importNotionZipToView(input: ImportNotionInput): Promise<ImportNotionResult> {
+  return importZipToView(input, createNotionImportTask);
+}
+
+/** Upload a Confluence HTML export ZIP for asynchronous import under the selected view. */
+export async function importConfluenceZipToView(input: ImportZipInput): Promise<ImportZipResult> {
+  return importZipToView(input, createConfluenceImportTask);
+}
+
+async function importZipToView(
+  input: ImportZipInput,
+  createTask: typeof createNotionImportTask
+): Promise<ImportZipResult> {
   const { workspaceId, parentViewId, file, onProgress, signal } = input;
 
   throwIfAborted(signal);
   const md5_base64 = await calculateMd5(file);
 
   throwIfAborted(signal);
-  const task = await createNotionImportTask(workspaceId, parentViewId, {
+  const task = await createTask(workspaceId, parentViewId, {
     content_length: file.size,
     md5_base64,
   });
@@ -273,6 +289,7 @@ export async function importNotionZipToView(input: ImportNotionInput): Promise<I
       await uploadImportFile(task.presignedUrl, file, onProgress ?? noopProgress, signal);
     }
 
+    throwIfAborted(signal);
     return { taskId: task.taskId };
   } catch (err) {
     void cancelImportTask(task.taskId).catch(noop);
