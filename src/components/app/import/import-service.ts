@@ -16,7 +16,6 @@ import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert
 import { deleteBlock, getBlock, getChildrenArray, getPageId } from '@/application/slate-yjs/utils/yjs';
 import { DatabaseCsvImportLayout, DatabaseCsvImportMode, Types, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { parsedBlockToSlateElement } from '@/components/app/import/markdown-to-blocks';
-import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
 // Import failures arrive either as `Error`s or as `{ code, message }` rejections from the
 // HTTP layer; `getErrorMessage` normalises both.
 import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
@@ -44,9 +43,13 @@ export function stripFileExtension(name: string): string {
  * The page must already exist (created via PageService.add by the caller).
  */
 export async function populateDocumentWithMarkdown(workspaceId: string, viewId: string, file: File): Promise<void> {
-  // Fetch the file text and the (empty) page collab in parallel — they're independent
-  // and the markdown parse is much cheaper than either round trip.
-  const [text, collab] = await Promise.all([file.text(), getCollab(workspaceId, viewId, Types.Document)]);
+  // ZIP and CSV imports do not need the Markdown parser. Load it only for Markdown,
+  // alongside the independent file and empty-page reads.
+  const [text, collab, { parseMarkdown }] = await Promise.all([
+    file.text(),
+    getCollab(workspaceId, viewId, Types.Document),
+    import('@/components/editor/parsers/markdown-parser'),
+  ]);
   const blocks = parseMarkdown(text);
 
   if (blocks.length === 0) return;

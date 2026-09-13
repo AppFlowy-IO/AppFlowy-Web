@@ -157,7 +157,13 @@ export async function uploadImportFileMultipart(
 
   const bytesUploaded = new Array<number>(partCount).fill(0);
   const completedParts: { e_tag: string; part_number: number }[] = [];
-  let aborted = false;
+  // One failure ends the entire upload. Give sibling requests their own shared
+  // controller so cleanup does not abort the caller's controller or a later retry.
+  const uploadController = new AbortController();
+  const abortUpload = () => uploadController.abort();
+
+  if (signal?.aborted) abortUpload();
+  else signal?.addEventListener('abort', abortUpload, { once: true });
 
   const reportProgress = () => {
     const total = bytesUploaded.reduce((sum, b) => sum + b, 0);
@@ -166,7 +172,7 @@ export async function uploadImportFileMultipart(
   };
 
   const uploadPart = async (i: number) => {
-    if (aborted) return;
+    if (uploadController.signal.aborted) return;
 
     const partInfo = multipart.part_presigned_urls[i];
     const start = (partInfo.part_number - 1) * partSize;
@@ -175,7 +181,7 @@ export async function uploadImportFileMultipart(
 
     const resp = await axios.put(partInfo.presigned_url, blob, {
       validateStatus: () => true,
-      signal,
+      signal: uploadController.signal,
       headers: {
         'Content-Type': 'application/zip',
       },
@@ -186,7 +192,6 @@ export async function uploadImportFileMultipart(
     });
 
     if (resp.status < 200 || resp.status >= 300) {
-      aborted = true;
       return Promise.reject({
         code: -1,
         message: `Multipart upload failed for part ${partInfo.part_number}. ${resp.statusText}`,
@@ -196,7 +201,6 @@ export async function uploadImportFileMultipart(
     const eTag = (resp.headers['etag'] as string | undefined)?.replace(/"/g, '');
 
     if (!eTag) {
-      aborted = true;
       return Promise.reject({
         code: -1,
         message: `Missing ETag in response for part ${partInfo.part_number}`,
@@ -209,29 +213,38 @@ export async function uploadImportFileMultipart(
   // Upload parts with limited concurrency
   const queue = Array.from({ length: partCount }, (_, i) => i);
   const workers = Array.from({ length: Math.min(MAX_CONCURRENCY, partCount) }, async () => {
-    // `signal` cancels the in-flight PUTs; this check stops the workers from picking up new
-    // parts once the caller has given up, so a cancelled upload winds down instead of
-    // grinding through the rest of the queue.
-    while (queue.length > 0 && !aborted && !signal?.aborted) {
+    // Stop taking queued parts when the caller cancels or a sibling request fails.
+    while (queue.length > 0 && !uploadController.signal.aborted) {
       const idx = queue.shift()!;
 
       await uploadPart(idx);
     }
   });
 
-  await Promise.all(workers);
+  try {
+    await Promise.all(workers);
 
-  // Never finalise an upload the caller cancelled — the parts are incomplete.
-  if (signal?.aborted) {
-    return Promise.reject({ code: -1, message: 'Multipart upload cancelled' });
+    if (uploadController.signal.aborted) {
+      throw new Error('Multipart upload cancelled');
+    }
+
+    await completeImportMultipart(
+      {
+        s3_key: multipart.s3_key,
+        upload_id: multipart.upload_id,
+        parts: completedParts.sort((a, b) => a.part_number - b.part_number),
+      },
+      uploadController.signal
+    );
+  } catch (error) {
+    abortUpload();
+    // Let every request settle before callers cancel the server task or retry.
+    // Promise.all alone rejects immediately while other uploads keep running.
+    await Promise.allSettled(workers);
+    throw error;
+  } finally {
+    signal?.removeEventListener('abort', abortUpload);
   }
-
-  // Complete the multipart upload on the server
-  await completeImportMultipart({
-    s3_key: multipart.s3_key,
-    upload_id: multipart.upload_id,
-    parts: completedParts.sort((a, b) => a.part_number - b.part_number),
-  });
 }
 
 export async function cancelImportTask(taskId: string) {
@@ -240,14 +253,17 @@ export async function cancelImportTask(taskId: string) {
   return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url));
 }
 
-async function completeImportMultipart(data: {
-  s3_key: string;
-  upload_id: string;
-  parts: { e_tag: string; part_number: number }[];
-}) {
+async function completeImportMultipart(
+  data: {
+    s3_key: string;
+    upload_id: string;
+    parts: { e_tag: string; part_number: number }[];
+  },
+  signal?: AbortSignal
+) {
   const url = `/api/import/complete-multipart`;
 
-  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, data));
+  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, data, { signal }));
 }
 
 export async function createDatabaseCsvImportTask(
