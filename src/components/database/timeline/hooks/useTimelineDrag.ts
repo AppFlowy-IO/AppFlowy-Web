@@ -7,13 +7,25 @@
  * delta into a snapped date (or percent) delta on every move, and only commit
  * on pointer-up when the pointer actually travelled. Dates are computed from
  * the origin dates rather than from pixels so a bar never drifts across
- * repeated drags. Like frappe's `move_dependencies`, rows that depend on the
- * dragged one ("followers") shift with it, and a bar cannot start before its
- * dependencies do.
+ * repeated drags. Rows that depend on the dragged one ("followers") move with
+ * it according to Notion's "Shift dependents" setting: only as far as needed
+ * to avoid overlapping (default), by the same distance like frappe's
+ * `move_dependencies`, or not at all. Unless shifting is off, a bar cannot
+ * start before its dependencies do.
  */
 import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react';
 
-import { columnIndexOf, dateToX, snapDate, TimelineGeometry, xToDate } from '../scale/geometry';
+import { TimelineDependencyShift } from '@/application/database-yjs';
+
+import {
+  calendarDaysBetween,
+  columnIndexOf,
+  dateToX,
+  snapDate,
+  startOfDay,
+  TimelineGeometry,
+  xToDate,
+} from '../scale/geometry';
 
 export type TimelineDragMode = 'move' | 'resize-start' | 'resize-end' | 'progress';
 
@@ -24,11 +36,17 @@ export interface TimelineDragSpan {
   /** Exclusive bar end (the day after the last covered day for all-day rows). */
   endExclusive: Date;
   allDay: boolean;
+  /** For followers: the rows it depends on, limited to the dragged bar and other followers. */
+  predecessors?: string[];
 }
 
 export interface TimelineDragOrigin extends TimelineDragSpan {
-  /** Rows that shift with this one when it moves or its end moves. */
+  /** Rows that depend (transitively) on this one, in dependency order. */
   followers?: TimelineDragSpan[];
+  /** How followers move; defaults to Notion's "only when dates overlap". */
+  shift?: TimelineDependencyShift;
+  /** Shifted followers never land on a Saturday or Sunday. */
+  avoidWeekends?: boolean;
   /** Earliest start allowed, e.g. the latest start among its dependencies. */
   minStart?: Date;
   /** Current 0–100 progress, required for the progress mode. */
@@ -83,6 +101,98 @@ function shiftSpan(geometry: TimelineGeometry, span: TimelineDragSpan, deltaPx: 
   return { rowId: span.rowId, allDay: span.allDay, start, endExclusive };
 }
 
+function isWeekend(date: Date): boolean {
+  const day = date.getDay();
+
+  return day === 0 || day === 6;
+}
+
+/** Same time of day on the next Monday when `date` falls on a weekend. */
+function skipWeekend(date: Date): Date {
+  if (!isWeekend(date)) return date;
+  const next = new Date(date.getTime());
+
+  while (isWeekend(next)) next.setDate(next.getDate() + 1);
+  return next;
+}
+
+/** Move a span so it starts at `start`, keeping its length (calendar days for all-day rows). */
+function moveSpanTo(span: TimelineDragSpan, start: Date): TimelineDragSpan {
+  const endExclusive = new Date(start.getTime());
+
+  if (span.allDay) endExclusive.setDate(endExclusive.getDate() + calendarDaysBetween(span.start, span.endExclusive));
+  else endExclusive.setTime(start.getTime() + (span.endExclusive.getTime() - span.start.getTime()));
+
+  return { ...span, start, endExclusive };
+}
+
+/**
+ * Notion's "Shift only when dates overlap": every follower moves just far
+ * enough to start once the bars it depends on end, cascading through the
+ * follower chain. Followers whose dependencies did not move stay put.
+ */
+function resolveOverlaps(
+  movedRoot: TimelineDragSpan,
+  followers: TimelineDragSpan[],
+  avoidWeekends: boolean
+): TimelineDragSpan[] {
+  const current = new Map<string, TimelineDragSpan>([[movedRoot.rowId, movedRoot]]);
+
+  followers.forEach((follower) => current.set(follower.rowId, follower));
+
+  // Followers arrive in breadth-first order, which is not always topological;
+  // iterate to a fixed point (bounded, so cycles terminate).
+  for (let pass = 0; pass <= followers.length; pass += 1) {
+    let changed = false;
+
+    followers.forEach((follower) => {
+      const span = current.get(follower.rowId) ?? follower;
+      let required = 0;
+
+      (follower.predecessors ?? []).forEach((predecessorId) => {
+        const predecessor = current.get(predecessorId);
+
+        if (predecessor) required = Math.max(required, predecessor.endExclusive.getTime());
+      });
+      if (required <= span.start.getTime()) return;
+      let start = new Date(required);
+
+      // An all-day follower starts on the first whole day after its dependency.
+      if (span.allDay && startOfDay(start).getTime() !== start.getTime()) {
+        start = startOfDay(start);
+        start.setDate(start.getDate() + 1);
+      }
+
+      if (avoidWeekends) start = skipWeekend(start);
+      current.set(follower.rowId, moveSpanTo(span, start));
+      changed = true;
+    });
+    if (!changed) break;
+  }
+
+  return followers.map((follower) => current.get(follower.rowId) ?? follower);
+}
+
+function shiftFollowers(
+  geometry: TimelineGeometry,
+  drag: TimelineDragOrigin,
+  movedRoot: TimelineDragSpan,
+  deltaPx: number
+): TimelineDragSpan[] {
+  const followers = drag.followers ?? [];
+  const shift = drag.shift ?? TimelineDependencyShift.OverlapOnly;
+
+  if (followers.length === 0 || shift === TimelineDependencyShift.Never) return [];
+  if (shift === TimelineDependencyShift.OverlapOnly)
+    return resolveOverlaps(movedRoot, followers, drag.avoidWeekends === true);
+
+  return followers.map((follower) => {
+    const shifted = shiftSpan(geometry, follower, deltaPx);
+
+    return drag.avoidWeekends && isWeekend(shifted.start) ? moveSpanTo(shifted, skipWeekend(shifted.start)) : shifted;
+  });
+}
+
 /** Pure delta application, exported for tests. */
 export function applyDragDelta(
   geometry: TimelineGeometry,
@@ -91,8 +201,9 @@ export function applyDragDelta(
 ): TimelineDragPreview {
   const { preset } = geometry;
   const snapMs = preset.snapMinutes * 60_000;
-  const followers = drag.followers ?? [];
   const base = { rowId: drag.rowId, mode: drag.mode, allDay: drag.allDay };
+  // With shifting off a dependent may be dragged anywhere, as in Notion.
+  const minStart = drag.shift === TimelineDependencyShift.Never ? undefined : drag.minStart;
 
   if (drag.mode === 'progress') {
     const width = dateToX(geometry, drag.endExclusive) - dateToX(geometry, drag.start);
@@ -106,24 +217,20 @@ export function applyDragDelta(
     let moved = shiftSpan(geometry, drag, deltaPx);
     let effectiveDelta = deltaPx;
 
-    if (drag.minStart && moved.start < drag.minStart) {
+    if (minStart && moved.start < minStart) {
       // Clamp to the dependency and re-derive the pixel delta so followers
       // keep the offset the bar actually travelled.
-      effectiveDelta = dateToX(geometry, drag.minStart) - dateToX(geometry, drag.start);
+      effectiveDelta = dateToX(geometry, minStart) - dateToX(geometry, drag.start);
       moved = shiftSpan(geometry, drag, effectiveDelta);
     }
 
-    return {
-      ...base,
-      ...moved,
-      followers: followers.map((follower) => shiftSpan(geometry, follower, effectiveDelta)),
-    };
+    return { ...base, ...moved, followers: shiftFollowers(geometry, drag, moved, effectiveDelta) };
   }
 
   if (drag.mode === 'resize-start') {
     let start = shiftDate(geometry, drag.start, deltaPx);
 
-    if (drag.minStart && start < drag.minStart) start = drag.minStart;
+    if (minStart && start < minStart) start = minStart;
     if (drag.endExclusive.getTime() - start.getTime() < snapMs) start = new Date(drag.endExclusive.getTime() - snapMs);
 
     return { ...base, start, endExclusive: drag.endExclusive, followers: [] };
@@ -133,13 +240,9 @@ export function applyDragDelta(
 
   if (endExclusive.getTime() - drag.start.getTime() < snapMs) endExclusive = new Date(drag.start.getTime() + snapMs);
   const effectiveDelta = dateToX(geometry, endExclusive) - dateToX(geometry, drag.endExclusive);
+  const resized = { rowId: drag.rowId, allDay: drag.allDay, start: drag.start, endExclusive };
 
-  return {
-    ...base,
-    start: drag.start,
-    endExclusive,
-    followers: followers.map((follower) => shiftSpan(geometry, follower, effectiveDelta)),
-  };
+  return { ...base, ...resized, followers: shiftFollowers(geometry, drag, resized, effectiveDelta) };
 }
 
 function samePreview(a: TimelineDragPreview | null, b: TimelineDragPreview): boolean {

@@ -46,6 +46,11 @@ interface TimelineBarProps {
   hoverDisabled?: boolean;
   /** User-preference time formatter, owned by the view so bars don't subscribe individually. */
   formatTime: (date: Date) => string;
+  /** A dependency field is bound: show the connector handle and accept link drops. */
+  linkable?: boolean;
+  /** Another bar's connector is being dragged over this one. */
+  linkTarget?: boolean;
+  onLinkPointerDown?: (event: ReactPointerEvent<HTMLElement>) => void;
   onOpen?: (rowId: string) => void;
   onPointerDown?: (event: ReactPointerEvent<HTMLElement>, mode: TimelineDragMode) => void;
 }
@@ -100,6 +105,9 @@ export const TimelineBar = memo(
     progressPreview,
     hoverDisabled,
     formatTime,
+    linkable,
+    linkTarget,
+    onLinkPointerDown,
     onOpen,
     onPointerDown,
   }: TimelineBarProps) => {
@@ -145,7 +153,7 @@ export const TimelineBar = memo(
           'transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick',
           editable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
           highlighted && (row.allDay ? 'bg-other-colors-filled-event-hover' : 'bg-fill-content-hover'),
-          highlighted && 'ring-1 ring-fill-theme-thick',
+          (highlighted || linkTarget) && 'ring-1 ring-fill-theme-thick',
           'py-0 pl-1 pr-1'
         )}
       >
@@ -200,8 +208,10 @@ export const TimelineBar = memo(
           width: rect.width,
         }}
         data-testid={`timeline-bar-${rowId}`}
+        data-timeline-bar={rowId}
         data-dragging={dragging ? 'true' : undefined}
         data-selected={selected ? 'true' : undefined}
+        data-link-target={linkTarget ? 'true' : undefined}
       >
         {iconOnly ? (
           <div
@@ -245,6 +255,21 @@ export const TimelineBar = memo(
             >
               <span className='h-3 w-0.5 rounded-full bg-fill-theme-thick opacity-0 transition-opacity group-hover/bar:opacity-100' />
             </div>
+            {linkable ? (
+              <button
+                type='button'
+                tabIndex={-1}
+                aria-label={t('timeline.linkHandle', { defaultValue: 'Drag to add a dependency' })}
+                title={t('timeline.linkHandle', { defaultValue: 'Drag to add a dependency' })}
+                data-testid={`timeline-link-${rowId}`}
+                className='absolute top-1/2 z-[3] flex h-4 w-4 -translate-y-1/2 cursor-crosshair items-center justify-center opacity-0 transition-opacity focus-visible:opacity-100 group-hover/bar:opacity-100'
+                style={{ left: '100%', marginLeft: 2 }}
+                onPointerDown={onLinkPointerDown}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <span className='h-2.5 w-2.5 rounded-full border-2 border-fill-theme-thick bg-background-primary' />
+              </button>
+            ) : null}
             {showProgress && !iconOnly ? (
               <div
                 aria-hidden

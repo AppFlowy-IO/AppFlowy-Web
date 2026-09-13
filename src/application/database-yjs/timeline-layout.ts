@@ -9,13 +9,14 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 
-import { TimelineLayout, TimelineLayoutSetting } from './database.type';
+import { TimelineDependencyShift, TimelineLayout, TimelineLayoutSetting } from './database.type';
 
 /** Layout-settings key for `DatabaseViewLayout.Timeline`. */
 export const TIMELINE_LAYOUT_KEY = '8';
 
 export const DEFAULT_TIMELINE_LAYOUT = TimelineLayout.Month;
 export const DEFAULT_TIMELINE_SHOW_TABLE = true;
+export const DEFAULT_TIMELINE_DEPENDENCY_SHIFT = TimelineDependencyShift.OverlapOnly;
 
 function integer(value: unknown, min: number, max: number): number | undefined {
   if (typeof value !== 'number' && typeof value !== 'bigint') return undefined;
@@ -42,6 +43,12 @@ export function readTimelineLayoutSetting(
     ?.get(TIMELINE_LAYOUT_KEY);
   const layout = integer(setting?.get(YjsDatabaseKey.layout_ty), TimelineLayout.Hours, TimelineLayout.Year);
   const showTable = setting?.get(YjsDatabaseKey.show_table);
+  const avoidWeekends = setting?.get(YjsDatabaseKey.avoid_weekends);
+  const dependencyShift = integer(
+    setting?.get(YjsDatabaseKey.dependency_shift_ty),
+    TimelineDependencyShift.OverlapOnly,
+    TimelineDependencyShift.Never
+  );
   const weekday =
     integer(setting?.get(YjsDatabaseKey.first_day_of_week_v2), 0, 6) ??
     integer(setting?.get(YjsDatabaseKey.first_day_of_week), 0, 6);
@@ -52,7 +59,10 @@ export function readTimelineLayoutSetting(
     showTable: typeof showTable === 'boolean' ? showTable : DEFAULT_TIMELINE_SHOW_TABLE,
     firstDayOfWeek: weekday ?? firstDayOfWeek,
     use24Hour,
+    endFieldId: setting?.get(YjsDatabaseKey.end_field_id) ?? '',
     dependencyFieldId: setting?.get(YjsDatabaseKey.dependency_field_id) ?? '',
+    dependencyShift: dependencyShift ?? DEFAULT_TIMELINE_DEPENDENCY_SHIFT,
+    avoidWeekends: typeof avoidWeekends === 'boolean' ? avoidWeekends : false,
     progressFieldId: setting?.get(YjsDatabaseKey.progress_field_id) ?? '',
   };
 }
@@ -98,6 +108,14 @@ export function updateTimelineLayoutSetting(view: YDatabaseView, settings: Timel
     if (settings.progressFieldId) setting.set(YjsDatabaseKey.progress_field_id, settings.progressFieldId);
     else setting.delete(YjsDatabaseKey.progress_field_id);
   }
+
+  if (settings.endFieldId !== undefined) {
+    if (settings.endFieldId) setting.set(YjsDatabaseKey.end_field_id, settings.endFieldId);
+    else setting.delete(YjsDatabaseKey.end_field_id);
+  }
+
+  if (settings.dependencyShift !== undefined) setting.set(YjsDatabaseKey.dependency_shift_ty, settings.dependencyShift);
+  if (settings.avoidWeekends !== undefined) setting.set(YjsDatabaseKey.avoid_weekends, settings.avoidWeekends);
 }
 
 /**

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import {
   FieldType,
   parseRelationTypeOption,
+  TimelineDependencyShift,
   useDatabase,
   useDatabaseFields,
   usePropertiesSelector,
@@ -27,6 +28,21 @@ import {
 import { Switch } from '@/components/ui/switch';
 
 const DATE_FIELD_TYPES = [FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime];
+
+// Notion's "Shift dependents" choices, in its order.
+const SHIFT_OPTIONS = [
+  {
+    value: TimelineDependencyShift.OverlapOnly,
+    labelKey: 'timeline.settings.shiftOverlapOnly',
+    fallback: 'Only when dates overlap',
+  },
+  {
+    value: TimelineDependencyShift.MaintainGap,
+    labelKey: 'timeline.settings.shiftMaintainGap',
+    fallback: 'Keep the time between items',
+  },
+  { value: TimelineDependencyShift.Never, labelKey: 'timeline.settings.shiftNever', fallback: 'Never' },
+];
 
 function TimelineLayoutSettings() {
   const { t } = useTranslation();
@@ -111,7 +127,9 @@ function TimelineLayoutSettings() {
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent className={'appflowy-scroller max-h-[70vh] max-w-[240px] overflow-y-auto'}>
-          <DropdownMenuLabel>{t('timeline.settings.layoutDateField', { defaultValue: 'Timeline by' })}</DropdownMenuLabel>
+          <DropdownMenuLabel>
+            {t('timeline.settings.layoutDateField', { defaultValue: 'Timeline by' })}
+          </DropdownMenuLabel>
           {dateProperties.map((property) => (
             <DropdownMenuItem
               key={property.id}
@@ -151,6 +169,40 @@ function TimelineLayoutSettings() {
             (dependencyFieldId) => updateSetting({ dependencyFieldId })
           )}
 
+          {setting.dependencyFieldId ? (
+            <>
+              <DropdownMenuLabel>
+                {t('timeline.settings.shiftDependents', { defaultValue: 'Shift dependents' })}
+              </DropdownMenuLabel>
+              {SHIFT_OPTIONS.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  className={'w-full'}
+                  data-testid={`timeline-shift-${option.value}`}
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    updateSetting({ dependencyShift: option.value });
+                  }}
+                >
+                  {t(option.labelKey, { defaultValue: option.fallback })}
+                  {setting.dependencyShift === option.value && <DropdownMenuItemTick />}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuItem
+                className={'w-full'}
+                data-testid='timeline-avoid-weekends'
+                disabled={setting.dependencyShift === TimelineDependencyShift.Never}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  updateSetting({ avoidWeekends: !setting.avoidWeekends });
+                }}
+              >
+                {t('timeline.settings.avoidWeekends', { defaultValue: 'Avoid weekends' })}
+                <Switch className={'ml-auto'} checked={setting.avoidWeekends} />
+              </DropdownMenuItem>
+            </>
+          ) : null}
+
           <DropdownMenuSeparator />
 
           {renderOptionalField(
@@ -163,7 +215,9 @@ function TimelineLayoutSettings() {
 
           <DropdownMenuSeparator />
 
-          <DropdownMenuLabel>{t('timeline.settings.firstDayOfWeek', { defaultValue: 'Start week on' })}</DropdownMenuLabel>
+          <DropdownMenuLabel>
+            {t('timeline.settings.firstDayOfWeek', { defaultValue: 'Start week on' })}
+          </DropdownMenuLabel>
           {weekDays.map((day) => (
             <DropdownMenuItem
               key={day.value}

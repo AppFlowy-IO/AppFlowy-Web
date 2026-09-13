@@ -4361,6 +4361,12 @@
       "unsupportedTitle": "This timeline has no date property",
       "unsupportedHint": "Add a date property to the database, or pick one in the timeline settings.",
       "dependencies": "Dependencies",
+      "shiftDependents": "Shift dependents",
+      "shiftOverlapOnly": "Only when dates overlap",
+      "shiftMaintainGap": "Keep the time between items",
+      "shiftNever": "Never",
+      "avoidWeekends": "Avoid weekends",
+      "endDateField": "End date",
       "progress": "Progress"
     },
     "zoom": {
@@ -4383,6 +4389,7 @@
       "progress": "{{percent}}% complete"
     },
     "dependencyBlocked": "Cannot start before its dependencies",
+    "linkHandle": "Drag to add a dependency",
     "openRow": "Open"
   }
 }

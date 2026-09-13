@@ -44,6 +44,12 @@ interface TimelineRowProps {
   onEmptyClick?: (row: TimelineRowModel, x: number) => void;
   /** A table row was dropped on this one (undefined = reordering disabled). */
   onDropRow?: (sourceRowId: string, targetRowId: string, edge: Edge) => void;
+  /** A dependency field is bound, so bars offer a connector handle. */
+  linkable?: boolean;
+  /** A connector is being dragged over this row's bar. */
+  linkTarget?: boolean;
+  /** The connector handle was pressed: start a link drag from this row. */
+  onLinkPointerDown?: (event: ReactPointerEvent<HTMLElement>, row: TimelineRowModel, rect: BarRect) => void;
 }
 
 function OffscreenPill({
@@ -100,6 +106,9 @@ export const TimelineRow = memo(
     onBarPointerDown,
     onEmptyClick,
     onDropRow,
+    linkable,
+    linkTarget,
+    onLinkPointerDown,
   }: TimelineRowProps) => {
     const { t } = useTranslation();
     const rowRef = useRef<HTMLDivElement | null>(null);
@@ -183,6 +192,9 @@ export const TimelineRow = memo(
               progressPreview={progressPreview}
               hoverDisabled={anyDragging}
               formatTime={formatTime}
+              linkable={linkable}
+              linkTarget={linkTarget}
+              onLinkPointerDown={onLinkPointerDown ? (event) => onLinkPointerDown(event, row, rect) : undefined}
               onOpen={onOpen}
               onPointerDown={handleBarPointerDown}
             />

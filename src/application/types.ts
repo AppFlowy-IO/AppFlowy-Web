@@ -668,6 +668,12 @@ export enum YjsDatabaseKey {
   dependency_field_id = 'dependency_field_id',
   /// Timeline layout setting: Number field (0–100) drawn as a progress fill.
   progress_field_id = 'progress_field_id',
+  /// Timeline layout setting: second date field supplying each bar's end.
+  end_field_id = 'end_field_id',
+  /// Timeline layout setting: how dependents move with a dragged bar (`TimelineDependencyShift`).
+  dependency_shift_ty = 'dependency_shift_ty',
+  /// Timeline layout setting: shifted dependents skip Saturdays and Sundays.
+  avoid_weekends = 'avoid_weekends',
   icon = 'icon',
   is_inline = 'is_inline',
   embedded = 'embedded',
@@ -1004,7 +1010,12 @@ export interface YDatabaseBoardLayoutSetting extends Y.Map<unknown> {
 export interface YDatabaseCalendarLayoutSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.field_id): string;
   get(
-    key: YjsDatabaseKey.first_day_of_week | YjsDatabaseKey.first_day_of_week_v2 | YjsDatabaseKey.layout_ty | YjsDatabaseKey.day_count | YjsDatabaseKey.number_of_days
+    key:
+      | YjsDatabaseKey.first_day_of_week
+      | YjsDatabaseKey.first_day_of_week_v2
+      | YjsDatabaseKey.layout_ty
+      | YjsDatabaseKey.day_count
+      | YjsDatabaseKey.number_of_days
   ): number | bigint | null | undefined;
 
   get(key: YjsDatabaseKey.show_week_numbers | YjsDatabaseKey.show_weekends): boolean;
@@ -1014,11 +1025,17 @@ export interface YDatabaseCalendarLayoutSetting extends Y.Map<unknown> {
 /// the timeline-only `show_table` and optional field bindings.
 export interface YDatabaseTimelineLayoutSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.field_id): string;
-  get(key: YjsDatabaseKey.dependency_field_id | YjsDatabaseKey.progress_field_id): string | undefined;
   get(
-    key: YjsDatabaseKey.layout_ty | YjsDatabaseKey.first_day_of_week | YjsDatabaseKey.first_day_of_week_v2
+    key: YjsDatabaseKey.dependency_field_id | YjsDatabaseKey.progress_field_id | YjsDatabaseKey.end_field_id
+  ): string | undefined;
+  get(
+    key:
+      | YjsDatabaseKey.layout_ty
+      | YjsDatabaseKey.first_day_of_week
+      | YjsDatabaseKey.first_day_of_week_v2
+      | YjsDatabaseKey.dependency_shift_ty
   ): number | bigint | null | undefined;
-  get(key: YjsDatabaseKey.show_table): boolean | undefined;
+  get(key: YjsDatabaseKey.show_table | YjsDatabaseKey.avoid_weekends): boolean | undefined;
 }
 
 export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {

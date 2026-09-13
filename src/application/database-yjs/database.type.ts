@@ -33,7 +33,9 @@ export enum FieldType {
 export const ATTRIBUTION_FIELD_TYPES = [FieldType.CreatedBy, FieldType.LastEditedBy] as const;
 
 export function isAttributionFieldType(fieldType: FieldType | undefined): boolean {
-  return fieldType !== undefined && ATTRIBUTION_FIELD_TYPES.includes(fieldType as (typeof ATTRIBUTION_FIELD_TYPES)[number]);
+  return (
+    fieldType !== undefined && ATTRIBUTION_FIELD_TYPES.includes(fieldType as (typeof ATTRIBUTION_FIELD_TYPES)[number])
+  );
 }
 
 export const AI_FIELD_TYPES = [FieldType.Summary, FieldType.Translate] as const;
@@ -117,6 +119,16 @@ export enum TimelineLayout {
   Year = 6,
 }
 
+/** Notion's "Shift dependents" options, stored as `dependency_shift_ty`. */
+export enum TimelineDependencyShift {
+  /** Move a dependent only as far as needed to start after the bar it depends on. */
+  OverlapOnly = 0,
+  /** Move dependents by the same distance, preserving the gap between items. */
+  MaintainGap = 1,
+  /** Never move dependents automatically. */
+  Never = 2,
+}
+
 export interface TimelineLayoutSetting {
   /// DateTime field plotted on the timeline.
   fieldId: string;
@@ -126,8 +138,14 @@ export interface TimelineLayoutSetting {
   firstDayOfWeek: number;
   /** User preference, read like the calendar does so hour labels match. */
   use24Hour: boolean;
+  /// Optional second date field supplying each bar's end ("separate start and end dates").
+  endFieldId: string;
   /// Relation field (pointing at this database) whose linked rows are the row's dependencies.
   dependencyFieldId: string;
+  /// How dependents move when the bar they depend on is dragged.
+  dependencyShift: TimelineDependencyShift;
+  /// Shifted dependents never land on a Saturday or Sunday.
+  avoidWeekends: boolean;
   /// Number field holding 0–100 progress drawn as a fill inside the bar.
   progressFieldId: string;
 }
@@ -152,9 +170,9 @@ export enum RowMetaKey {
 export interface RowMeta {
   documentId: string;
   cover: {
-    data: string,
-    cover_type: RowCoverType,
-    offset?: number,
+    data: string;
+    cover_type: RowCoverType;
+    offset?: number;
   } | null;
   icon: string;
   isEmptyDocument: boolean;
@@ -169,7 +187,7 @@ export enum AITranslateLanguage {
   Spanish,
   Portuguese,
   Standard_Arabic,
-  Simplified_Chinese
+  Simplified_Chinese,
 }
 
 export enum RowCommentKey {
@@ -191,5 +209,5 @@ export enum DateGroupCondition {
   Day = 1,
   Week = 2,
   Month = 3,
-  Year = 4
+  Year = 4,
 }

@@ -18,6 +18,7 @@ import {
   usePrimaryFieldId,
 } from '@/application/database-yjs';
 import { useUpdateAnyCellDispatch, useUpdateStartEndTimeCell } from '@/application/database-yjs/dispatch/cell';
+import { useUpdateRelationCellDispatch } from '@/application/database-yjs/dispatch/relation';
 import { useNewRowDispatch, useReorderRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { useUpdateTimelineSetting } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
@@ -44,6 +45,7 @@ import {
 } from './constants';
 import { useScrollWindow } from './hooks/useScrollWindow';
 import { TimelineDragMode, TimelineDragPreview, TimelineDragSpan, useTimelineDrag } from './hooks/useTimelineDrag';
+import { useTimelineLinkDrag } from './hooks/useTimelineLinkDrag';
 import { parseProgressPercent, parseRelationRowIds, useTimelineFieldValues } from './hooks/useTimelineFieldValues';
 import { useTimelinePermissions } from './hooks/useTimelinePermissions';
 import { useTimelineRange } from './hooks/useTimelineRange';
@@ -54,6 +56,7 @@ import {
   buildHeaderSegments,
   calendarDaysBetween,
   dateToX,
+  BarRect,
   getBarRect,
   getBarSpan,
   getSpanRect,
@@ -272,8 +275,12 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
       if (!permissions.editable || !row.start) return;
       const span = getBarSpan(row.start, row.end, row.allDay);
       const byId = new Map(rowsRef.current.map((candidate) => [candidate.rowId, candidate] as const));
-      // Dependents move with the bar (frappe's `move_dependencies`).
-      const followers: TimelineDragSpan[] = collectDependents(row.rowId, graph).flatMap((dependentId) => {
+      // Dependents move with the bar per the "Shift dependents" setting; each
+      // carries the dependencies it has inside the moving set so "only when
+      // overlapping" can cascade through the chain.
+      const dependentIds = collectDependents(row.rowId, graph);
+      const movingSet = new Set([row.rowId, ...dependentIds]);
+      const followers: TimelineDragSpan[] = dependentIds.flatMap((dependentId) => {
         const dependent = byId.get(dependentId);
 
         if (!dependent?.start) return [];
@@ -282,6 +289,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
             rowId: dependent.rowId,
             allDay: dependent.allDay,
             ...getBarSpan(dependent.start, dependent.end, dependent.allDay),
+            predecessors: (graph.predecessors.get(dependentId) ?? []).filter((id) => movingSet.has(id)),
           },
         ];
       });
@@ -302,13 +310,15 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
           allDay: row.allDay,
           ...span,
           followers,
+          shift: setting.dependencyShift,
+          avoidWeekends: setting.avoidWeekends,
           minStart,
           progress: progressValues.get(row.rowId) ?? 0,
         },
         mode
       );
     },
-    [graph, permissions.editable, progressValues, startDrag]
+    [graph, permissions.editable, progressValues, setting.avoidWeekends, setting.dependencyShift, startDrag]
   );
 
   const handleEmptyClick = useCallback(
@@ -333,6 +343,40 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   });
 
   const rowIndexById = useMemo(() => new Map(rows.map((row, index) => [row.rowId, index] as const)), [rows]);
+
+  const updateRelationCell = useUpdateRelationCellDispatch();
+  const graphRef = useRef(graph);
+
+  graphRef.current = graph;
+  // Dropping a bar's connector on another bar makes the target depend on the
+  // source: the source row id is appended to the target's relation cell.
+  const handleLinkCommit = useCallback(
+    (sourceRowId: string, targetRowId: string) => {
+      const current = graphRef.current;
+
+      if (!setting.dependencyFieldId || sourceRowId === targetRowId) return;
+      if (current.predecessors.get(targetRowId)?.includes(sourceRowId)) return;
+      // Refuse a link that would close a cycle (the source already depends on the target).
+      if (collectDependents(targetRowId, current).includes(sourceRowId)) return;
+      void updateRelationCell(targetRowId, setting.dependencyFieldId, { insertedRowIds: [sourceRowId] }).catch(
+        () => undefined
+      );
+    },
+    [setting.dependencyFieldId, updateRelationCell]
+  );
+  const { link, startLink } = useTimelineLinkDrag({ scrollerRef, sidebarWidth, onCommit: handleLinkCommit });
+  const handleLinkPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLElement>, row: TimelineRowModel, rect: BarRect) => {
+      const index = rowIndexById.get(row.rowId);
+
+      if (index === undefined) return;
+      startLink(event, row.rowId, {
+        x: rect.left + rect.width,
+        y: index * TIMELINE_ROW_HEIGHT + TIMELINE_ROW_HEIGHT / 2,
+      });
+    },
+    [rowIndexById, startLink]
+  );
   // Base rects only change with the data or the scale; a drag overlays the few
   // rows it moves so every other row keeps its rect reference (and its memo).
   const baseRects = useMemo(
@@ -488,8 +532,9 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
             />
             <TimelineGrid columns={columns} left={sidebarWidth} todayX={todayX} showToday={showToday} />
 
-            {graph.predecessors.size > 0 ? (
+            {graph.predecessors.size > 0 || link ? (
               <TimelineArrows
+                pending={link}
                 rowIds={rowIds}
                 rects={rects}
                 graph={graph}
@@ -544,6 +589,9 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                     onBarPointerDown={handleBarPointerDown}
                     onEmptyClick={handleEmptyClick}
                     onDropRow={permissions.editable ? handleDropRow : undefined}
+                    linkable={permissions.editable && Boolean(setting.dependencyFieldId)}
+                    linkTarget={link?.targetRowId === row.rowId}
+                    onLinkPointerDown={handleLinkPointerDown}
                   />
                 </div>
               );

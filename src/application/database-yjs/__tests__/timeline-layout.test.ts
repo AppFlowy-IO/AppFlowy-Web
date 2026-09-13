@@ -2,7 +2,7 @@ import * as Y from 'yjs';
 
 import { YDatabase, YDatabaseView, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
-import { TimelineLayout } from '../database.type';
+import { TimelineDependencyShift, TimelineLayout } from '../database.type';
 import {
   createTimelineLayoutStore,
   initializeTimelineLayoutSetting,
@@ -36,7 +36,10 @@ test('missing setting falls back to month scale, docked table, and the user week
     layout: TimelineLayout.Month,
     showTable: true,
     firstDayOfWeek: 1,
+    endFieldId: '',
     dependencyFieldId: '',
+    dependencyShift: TimelineDependencyShift.OverlapOnly,
+    avoidWeekends: false,
     progressFieldId: '',
     use24Hour: false,
   });
@@ -81,7 +84,10 @@ test('integers written by the server as BigInt decode like web numbers', () => {
     layout: TimelineLayout.Quarter,
     showTable: false,
     firstDayOfWeek: 1,
+    endFieldId: '',
     dependencyFieldId: '',
+    dependencyShift: TimelineDependencyShift.OverlapOnly,
+    avoidWeekends: false,
     progressFieldId: '',
     use24Hour: false,
   });
@@ -102,6 +108,35 @@ test('dependency and progress bindings are optional keys that an empty id remove
 
   expect(setting.has(YjsDatabaseKey.dependency_field_id)).toBe(false);
   expect(setting.get(YjsDatabaseKey.progress_field_id)).toBe('num');
+});
+
+test('dependency shift, avoid-weekends and the end field round-trip like the calendar keys', () => {
+  const { doc, view, database } = createFixture();
+
+  doc.transact(() =>
+    updateTimelineLayoutSetting(view, {
+      fieldId: 'date',
+      endFieldId: 'date-end',
+      dependencyShift: TimelineDependencyShift.MaintainGap,
+      avoidWeekends: true,
+    })
+  );
+  expect(readTimelineLayoutSetting(database, 'timeline', 0, false)).toMatchObject({
+    endFieldId: 'date-end',
+    dependencyShift: TimelineDependencyShift.MaintainGap,
+    avoidWeekends: true,
+  });
+  const setting = view.get(YjsDatabaseKey.layout_settings).get(TIMELINE_LAYOUT_KEY);
+
+  expect(setting.get(YjsDatabaseKey.dependency_shift_ty)).toBe(1);
+  doc.transact(() =>
+    updateTimelineLayoutSetting(view, { endFieldId: '', dependencyShift: 99 as TimelineDependencyShift })
+  );
+  expect(setting.has(YjsDatabaseKey.end_field_id)).toBe(false);
+  // Out-of-range wire values fall back to Notion's default.
+  expect(readTimelineLayoutSetting(database, 'timeline', 0, false).dependencyShift).toBe(
+    TimelineDependencyShift.OverlapOnly
+  );
 });
 
 test('the store notifies on remote changes only for this view and tolerates bad values', () => {
@@ -129,7 +164,10 @@ test('the store notifies on remote changes only for this view and tolerates bad 
     layout: TimelineLayout.Quarter,
     showTable: false,
     firstDayOfWeek: 1,
+    endFieldId: '',
     dependencyFieldId: '',
+    dependencyShift: TimelineDependencyShift.OverlapOnly,
+    avoidWeekends: false,
     progressFieldId: '',
     use24Hour: false,
   });

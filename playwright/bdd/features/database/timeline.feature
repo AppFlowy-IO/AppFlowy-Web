@@ -75,8 +75,9 @@ Feature: Timeline view interactions
     When I show the timeline table
     Then the timeline table lists 3 rows
 
-  Scenario: Dependencies draw arrows, dependents follow the dragged bar, and a bar cannot start before its dependency
+  Scenario: Dependencies draw arrows, dependents keep their gap, and a bar cannot start before its dependency
     Given "Build" depends on "Design" through a relation field
+    And dependents shift with "Keep the time between items"
     Then the timeline draws 1 dependency arrow
     When I drag the "Design" bar 2 columns later
     Then the "Build" bar moved 2 columns later
@@ -159,9 +160,42 @@ Feature: Timeline view interactions
 
   Scenario: Extending a bar's end pushes its dependents along
     Given "Build" depends on "Design" through a relation field
+    And dependents shift with "Keep the time between items"
     When I drag the end handle of "Design" 3 columns later
     Then the "Design" bar grew by 3 columns
     And the "Build" bar moved 3 columns later
+
+  Scenario: By default dependents shift only when dates overlap
+    Given "Build" depends on "Design" through a relation field
+    When I drag the "Design" bar 1 columns later
+    Then the "Build" bar is back where it started
+    When I drag the "Design" bar 2 columns later
+    Then the "Build" bar moved 2 columns later
+    When I drag the end handle of "Design" 2 columns later
+    Then the "Build" bar moved 2 columns later
+
+  Scenario: With shifting off, dependents stay put and a bar may precede its dependency
+    Given "Build" depends on "Design" through a relation field
+    And dependents shift with "Never"
+    When I drag the "Design" bar 3 columns later
+    Then the "Build" bar is back where it started
+    When I drag the "Build" bar 6 columns earlier
+    Then the "Build" bar starts 7 columns before the "Design" bar
+
+  Scenario: Avoid weekends moves a shifted dependent to the next Monday
+    Given "Build" depends on "Design" through a relation field
+    And dependents avoid weekends
+    When I drag the "Design" bar so that "Build" would land on a Saturday
+    Then the "Build" bar starts on the following Monday
+
+  Scenario: Dragging a bar's connector onto another bar adds a dependency
+    Given a relation field is bound as the dependency field
+    Then the timeline draws 0 dependency arrow
+    When I drag the connector of "Design" onto the "Build" bar
+    Then the timeline draws 1 dependency arrow
+    And "Build" depends on "Design"
+    When I drag the connector of "Build" onto the "Design" bar
+    Then the timeline draws 1 dependency arrow
 
   Scenario: The table's hover gutter inserts, duplicates and deletes rows
     When I click the hover "+" of the table row "Design"

@@ -57,6 +57,8 @@ interface TimelineScenario {
   rowIdByTitle: Map<string, string>;
   /** Bar boxes captured right before the last drag, keyed by title. */
   before: Map<string, BarBox>;
+  /** Columns "Design" was dragged in the avoid-weekends scenario. */
+  weekendShift?: number;
 }
 
 const scenarios = new WeakMap<Page, TimelineScenario>();
@@ -413,6 +415,98 @@ Given('{string} depends on {string} through a relation field', async ({ page }, 
   });
   await setRelationCellDirect(page, 'rel-deps', dependentIndex, [rowId(page, dependency)]);
   await chooseTimelineSettingsOption(page, 'timeline-dependency-field-rel-deps');
+});
+
+Given('a relation field is bound as the dependency field', async ({ page }) => {
+  const { databaseId } = await getCurrentDatabaseInfo(page);
+
+  await injectFieldDirect(page, {
+    fieldId: 'rel-deps',
+    name: 'Blocked by',
+    fieldType: FieldType.Relation,
+    typeOption: { database_id: databaseId, is_two_way: false, source_limit: 0, target_limit: 0 },
+  });
+  await chooseTimelineSettingsOption(page, 'timeline-dependency-field-rel-deps');
+});
+
+const SHIFT_OPTION: Record<string, number> = {
+  'Only when dates overlap': 0,
+  'Keep the time between items': 1,
+  Never: 2,
+};
+
+Given('dependents shift with {string}', async ({ page }, option) => {
+  await chooseTimelineSettingsOption(page, `timeline-shift-${SHIFT_OPTION[option]}`);
+});
+
+Given('dependents avoid weekends', async ({ page }) => {
+  await chooseTimelineSettingsOption(page, 'timeline-avoid-weekends');
+});
+
+Then('the {string} bar starts {int} columns before the {string} bar', async ({ page }, title, columns, other) => {
+  await expectBarX(page, title, (await barBox(page, other)).x - columns * MONTH_COLUMN_WIDTH);
+});
+
+/**
+ * "Design" is today and "Build" two days later. Move Design so its end lands on
+ * a Saturday: the pushed Build would start there, so avoid-weekends must put
+ * it on Monday instead. `columns` is at least 2 so Build actually overlaps.
+ */
+When('I drag the {string} bar so that {string} would land on a Saturday', async ({ page }, title, follower) => {
+  await remember(page, 'Design', 'Build');
+  const today = new Date().getDay();
+  let columns = (12 - today) % 7; // (today + 1 + columns) % 7 === 6
+
+  if (columns < 2) columns += 7;
+  scenario(page).weekendShift = columns;
+  await dragBarBy(page, title, columns * MONTH_COLUMN_WIDTH);
+  await expect(TimelineSelectors.barByTitle(page, follower)).toBeVisible();
+});
+
+Then('the {string} bar starts on the following Monday', async ({ page }, title) => {
+  const columns = scenario(page).weekendShift ?? 0;
+
+  // Saturday = the day after Design's new last day, Monday two days on; Build began on day 2.
+  await expectBarX(page, title, before(page, title).x + (columns + 3 - 2) * MONTH_COLUMN_WIDTH);
+});
+
+When('I drag the connector of {string} onto the {string} bar', async ({ page }, source, target) => {
+  const sourceBar = TimelineSelectors.barByTitle(page, source);
+  const targetBox = await barBox(page, target);
+
+  await sourceBar.hover();
+  const handle = sourceBar.locator('[data-testid^="timeline-link-"]');
+  const handleBox = await handle.boundingBox();
+
+  if (!handleBox) throw new Error('Link handle is not visible');
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 12 });
+  await expect(page.getByTestId('timeline-link-preview')).toBeVisible();
+  await page.mouse.up();
+});
+
+Then('{string} depends on {string}', async ({ page }, dependent, dependency) => {
+  const dependentId = rowId(page, dependent);
+  const dependencyId = rowId(page, dependency);
+
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          async ({ dependentId }) => {
+            const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: any }).__TEST_DATABASE_CONTEXT__;
+            const rowDoc = ctx.rowMap?.[dependentId] ?? (await ctx.ensureRow(dependentId));
+            const cell = rowDoc.getMap('data').get('data').get('cells').get('rel-deps');
+            const data = cell?.get('data');
+
+            return data?.toArray ? data.toArray() : data ?? [];
+          },
+          { dependentId }
+        ),
+      { timeout: 10_000 }
+    )
+    .toContain(dependencyId);
 });
 
 Then('the timeline draws {int} dependency arrow', async ({ page }, count) => {

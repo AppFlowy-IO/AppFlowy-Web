@@ -1,4 +1,4 @@
-import { TimelineLayout } from '@/application/database-yjs';
+import { TimelineDependencyShift, TimelineLayout } from '@/application/database-yjs';
 
 import { applyDragDelta } from '../hooks/useTimelineDrag';
 import { buildDependencyGraph, collectDependents, dependencyArrowPath } from '../scale/dependencies';
@@ -85,10 +85,12 @@ describe('applyDragDelta with dependencies and progress', () => {
     endExclusive: local(2020, 11, day + days),
   });
 
-  test('moving a bar shifts its followers by the same snapped delta', () => {
+  const keepGap = { shift: TimelineDependencyShift.MaintainGap };
+
+  test('"maintain gap" moves followers by the same snapped delta', () => {
     const preview = applyDragDelta(
       geometry,
-      { ...span('a', 5, 3), mode: 'move', followers: [span('b', 9, 2), span('c', 12, 1)] },
+      { ...span('a', 5, 3), mode: 'move', ...keepGap, followers: [span('b', 9, 2), span('c', 12, 1)] },
       columnWidth * 2 + 5
     );
 
@@ -103,7 +105,7 @@ describe('applyDragDelta with dependencies and progress', () => {
   test('a bar cannot move or start before its dependencies, and followers only travel the clamped distance', () => {
     const move = applyDragDelta(
       geometry,
-      { ...span('b', 10, 2), mode: 'move', minStart: local(2020, 11, 8), followers: [span('c', 14, 1)] },
+      { ...span('b', 10, 2), mode: 'move', ...keepGap, minStart: local(2020, 11, 8), followers: [span('c', 14, 1)] },
       -columnWidth * 5
     );
 
@@ -121,10 +123,10 @@ describe('applyDragDelta with dependencies and progress', () => {
     expect(resize.followers).toEqual([]);
   });
 
-  test('extending the end pushes followers along; shrinking pulls them back', () => {
+  test('"maintain gap": extending the end pushes followers along; shrinking pulls them back', () => {
     const grow = applyDragDelta(
       geometry,
-      { ...span('a', 5, 3), mode: 'resize-end', followers: [span('b', 9, 2)] },
+      { ...span('a', 5, 3), mode: 'resize-end', ...keepGap, followers: [span('b', 9, 2)] },
       columnWidth * 2
     );
 
@@ -133,13 +135,92 @@ describe('applyDragDelta with dependencies and progress', () => {
 
     const shrink = applyDragDelta(
       geometry,
-      { ...span('a', 5, 3), mode: 'resize-end', followers: [span('b', 9, 2)] },
+      { ...span('a', 5, 3), mode: 'resize-end', ...keepGap, followers: [span('b', 9, 2)] },
       -columnWidth * 10
     );
 
     // Never shorter than one snap unit; followers move by the effective delta.
     expect(shrink.endExclusive).toEqual(local(2020, 11, 6));
     expect(shrink.followers[0].start).toEqual(local(2020, 11, 7));
+  });
+
+  test('"only when overlapping" (default) moves a follower just past its dependency and cascades', () => {
+    // a: Nov 5–7, b (depends on a): Nov 9–10, c (depends on b): Nov 11
+    const followers = [
+      { ...span('b', 9, 2), predecessors: ['a'] },
+      { ...span('c', 11, 1), predecessors: ['b'] },
+    ];
+    const small = applyDragDelta(geometry, { ...span('a', 5, 3), mode: 'move', followers }, columnWidth);
+
+    // a now ends Nov 9 (exclusive): b still starts on the 9th, nothing overlaps.
+    expect(small.followers.map((follower) => follower.start)).toEqual([local(2020, 11, 9), local(2020, 11, 11)]);
+
+    const big = applyDragDelta(geometry, { ...span('a', 5, 3), mode: 'move', followers }, columnWidth * 4);
+
+    // a: Nov 9–11 → b must start on the 12th (2 days → ends 14th) → c on the 14th.
+    expect(big.followers.map((follower) => [follower.start, follower.endExclusive])).toEqual([
+      [local(2020, 11, 12), local(2020, 11, 14)],
+      [local(2020, 11, 14), local(2020, 11, 15)],
+    ]);
+
+    // Moving earlier never pulls followers back.
+    const earlier = applyDragDelta(geometry, { ...span('a', 5, 3), mode: 'move', followers }, -columnWidth * 3);
+
+    expect(earlier.followers.map((follower) => follower.start)).toEqual([local(2020, 11, 9), local(2020, 11, 11)]);
+  });
+
+  test('"only when overlapping" also applies when the end handle grows into a follower', () => {
+    const grow = applyDragDelta(
+      geometry,
+      { ...span('a', 5, 3), mode: 'resize-end', followers: [{ ...span('b', 9, 2), predecessors: ['a'] }] },
+      columnWidth * 3
+    );
+
+    expect(grow.endExclusive).toEqual(local(2020, 11, 11));
+    expect(grow.followers[0].start).toEqual(local(2020, 11, 11));
+  });
+
+  test('"never" leaves followers alone and lets a dependent be dragged before its dependency', () => {
+    const preview = applyDragDelta(
+      geometry,
+      {
+        ...span('b', 10, 2),
+        mode: 'move',
+        shift: TimelineDependencyShift.Never,
+        minStart: local(2020, 11, 8),
+        followers: [{ ...span('c', 14, 1), predecessors: ['b'] }],
+      },
+      -columnWidth * 5
+    );
+
+    expect(preview.start).toEqual(local(2020, 11, 5));
+    expect(preview.followers).toEqual([]);
+  });
+
+  test('avoid weekends pushes a shifted follower to the next Monday', () => {
+    // Nov 2020: the 14th is a Saturday, the 16th a Monday.
+    const overlap = applyDragDelta(
+      geometry,
+      {
+        ...span('a', 5, 3),
+        mode: 'move',
+        avoidWeekends: true,
+        followers: [{ ...span('b', 9, 2), predecessors: ['a'] }],
+      },
+      columnWidth * 6
+    );
+
+    // a: Nov 11–13 → b would start Saturday the 14th → Monday the 16th.
+    expect(overlap.followers[0].start).toEqual(local(2020, 11, 16));
+    expect(overlap.followers[0].endExclusive).toEqual(local(2020, 11, 18));
+
+    const gap = applyDragDelta(
+      geometry,
+      { ...span('a', 5, 3), mode: 'move', ...keepGap, avoidWeekends: true, followers: [span('b', 9, 2)] },
+      columnWidth * 5
+    );
+
+    expect(gap.followers[0].start).toEqual(local(2020, 11, 16));
   });
 
   test('progress drags convert pixels to a clamped whole percent and never touch dates', () => {
