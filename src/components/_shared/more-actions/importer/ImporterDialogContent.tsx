@@ -9,23 +9,44 @@ import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs'
 
 const ZIP_ACCEPT = '.zip,application/zip,application/x-zip,application/x-zip-compressed';
 
-type ImportSource = 'appflowy' | 'notion';
+const IMPORT_SOURCES = {
+  appflowy: {
+    taskType: FileService.CreateImportTaskType.Workspace,
+    label: 'web.importFromAppFlowy',
+    placeholder: 'web.dropAppFlowyFile',
+  },
+  notion: {
+    taskType: FileService.CreateImportTaskType.Notion,
+    label: 'web.importFromNotion',
+    placeholder: 'web.dropNotionFile',
+  },
+  confluence: {
+    taskType: FileService.CreateImportTaskType.Confluence,
+    label: 'web.importFromConfluence',
+    placeholder: 'web.dropConfluenceFile',
+  },
+} as const;
+
+type ImportSource = keyof typeof IMPORT_SOURCES;
 
 function ImporterDialogContent({ source, onSuccess }: { source?: string; onSuccess: () => void }) {
   const { t } = useTranslation();
-  const [value, setValue] = React.useState<ImportSource>(source === 'appflowy' ? 'appflowy' : 'notion');
+  const [value, setValue] = React.useState<ImportSource>(
+    source === 'appflowy' || source === 'confluence' ? source : 'notion'
+  );
   const [progress, setProgress] = React.useState<number>(0);
   const [isError, setIsError] = React.useState<boolean>(false);
+  const [isUploading, setIsUploading] = React.useState(false);
 
   const handleUpload = useCallback(
     async (file: File) => {
+      if (isUploading) return;
+      setIsUploading(true);
+      setProgress(0);
       setIsError(false);
       try {
-        const taskType =
-          value === 'appflowy' ? FileService.CreateImportTaskType.Workspace : FileService.CreateImportTaskType.Notion;
-
         await FileService.importFile(file, {
-          taskType,
+          taskType: IMPORT_SOURCES[value].taskType,
           onProgress: setProgress,
         });
         onSuccess();
@@ -33,72 +54,56 @@ function ImporterDialogContent({ source, onSuccess }: { source?: string; onSucce
       } catch (e: any) {
         notify.error(e.message);
         setIsError(true);
+      } finally {
+        setIsUploading(false);
       }
     },
-    [onSuccess, value]
+    [isUploading, onSuccess, value]
   );
-
-  const isUploading = !isError && progress < 1 && progress > 0;
 
   return (
     <div className={'flex flex-col gap-8'}>
+      <p className='text-sm text-text-secondary'>{t('web.importCreatesWorkspace')}</p>
       <ViewTabs
         className={'border-b border-border-primary'}
         onChange={(_e, newValue) => setValue(newValue)}
         value={value}
+        variant='scrollable'
+        scrollButtons='auto'
+        allowScrollButtonsMobile
       >
-        <ViewTab value={'appflowy'} label={t('web.importFromAppFlowy')} />
-        <ViewTab value={'notion'} label={t('web.importFromNotion')} />
+        {Object.entries(IMPORT_SOURCES).map(([source, config]) => (
+          <ViewTab key={source} value={source} label={t(config.label)} disabled={isUploading} />
+        ))}
       </ViewTabs>
       <div className={'p-2 pb-0'}>
-        <TabPanel
-          className={'flex min-w-[480px] max-w-full flex-col gap-2 overflow-hidden max-sm:w-full max-sm:min-w-[80vw]'}
-          index={'appflowy'}
-          value={value}
-        >
-          <FileDropzone
-            accept={ZIP_ACCEPT}
-            multiple={false}
-            onChange={(files) => {
-              if (!files.length) return;
-              void handleUpload(files[0]);
-            }}
-            disabled={isUploading}
-            placeholder={t('web.dropAppFlowyFile')}
-            loading={isUploading}
-          />
-          {progress > 0 && (
-            <LinearProgress
-              variant='determinate'
-              color={isError ? 'error' : progress === 1 ? 'success' : 'primary'}
-              value={progress * 100}
+        {Object.entries(IMPORT_SOURCES).map(([source, config]) => (
+          <TabPanel
+            key={source}
+            className={'flex min-w-[480px] max-w-full flex-col gap-2 overflow-hidden max-sm:w-full max-sm:min-w-[80vw]'}
+            index={source}
+            value={value}
+          >
+            <FileDropzone
+              accept={ZIP_ACCEPT}
+              multiple={false}
+              onChange={(files) => {
+                if (!files.length) return;
+                void handleUpload(files[0]);
+              }}
+              disabled={isUploading}
+              placeholder={t(config.placeholder)}
+              loading={isUploading}
             />
-          )}
-        </TabPanel>
-        <TabPanel
-          className={'flex min-w-[480px] max-w-full flex-col gap-2 overflow-hidden max-sm:w-full max-sm:min-w-[80vw]'}
-          index={'notion'}
-          value={value}
-        >
-          <FileDropzone
-            accept={ZIP_ACCEPT}
-            multiple={false}
-            onChange={(files) => {
-              if (!files.length) return;
-              void handleUpload(files[0]);
-            }}
-            disabled={isUploading}
-            placeholder={t('web.dropNotionFile')}
-            loading={isUploading}
-          />
-          {progress > 0 && (
-            <LinearProgress
-              variant='determinate'
-              color={isError ? 'error' : progress === 1 ? 'success' : 'primary'}
-              value={progress * 100}
-            />
-          )}
-        </TabPanel>
+            {progress > 0 && (
+              <LinearProgress
+                variant='determinate'
+                color={isError ? 'error' : !isUploading && progress === 1 ? 'success' : 'primary'}
+                value={progress * 100}
+              />
+            )}
+          </TabPanel>
+        ))}
       </div>
     </div>
   );

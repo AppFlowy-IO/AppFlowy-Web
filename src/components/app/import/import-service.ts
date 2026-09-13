@@ -4,6 +4,7 @@ import { getCollab, updateCollab } from '@/application/services/js-services/http
 import {
   cancelDatabaseCsvImportTask,
   cancelImportTask,
+  createConfluenceImportTask,
   createDatabaseCsvImportTask,
   createNotionImportTask,
   getDatabaseCsvImportStatus,
@@ -15,7 +16,6 @@ import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert
 import { deleteBlock, getBlock, getChildrenArray, getPageId } from '@/application/slate-yjs/utils/yjs';
 import { DatabaseCsvImportLayout, DatabaseCsvImportMode, Types, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { parsedBlockToSlateElement } from '@/components/app/import/markdown-to-blocks';
-import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
 // Import failures arrive either as `Error`s or as `{ code, message }` rejections from the
 // HTTP layer; `getErrorMessage` normalises both.
 import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
@@ -43,9 +43,13 @@ export function stripFileExtension(name: string): string {
  * The page must already exist (created via PageService.add by the caller).
  */
 export async function populateDocumentWithMarkdown(workspaceId: string, viewId: string, file: File): Promise<void> {
-  // Fetch the file text and the (empty) page collab in parallel — they're independent
-  // and the markdown parse is much cheaper than either round trip.
-  const [text, collab] = await Promise.all([file.text(), getCollab(workspaceId, viewId, Types.Document)]);
+  // ZIP and CSV imports do not need the Markdown parser. Load it only for Markdown,
+  // alongside the independent file and empty-page reads.
+  const [text, collab, { parseMarkdown }] = await Promise.all([
+    file.text(),
+    getCollab(workspaceId, viewId, Types.Document),
+    import('@/components/editor/parsers/markdown-parser'),
+  ]);
   const blocks = parseMarkdown(text);
 
   if (blocks.length === 0) return;
@@ -89,7 +93,7 @@ export interface ImportCsvResult {
   viewId: string;
 }
 
-export interface ImportNotionInput {
+export interface ImportZipInput {
   workspaceId: string;
   parentViewId: string;
   file: File;
@@ -97,9 +101,12 @@ export interface ImportNotionInput {
   signal?: AbortSignal;
 }
 
-export interface ImportNotionResult {
+export interface ImportZipResult {
   taskId: string;
 }
+
+export type ImportNotionInput = ImportZipInput;
+export type ImportNotionResult = ImportZipResult;
 
 export class ImportAbortError extends Error {
   constructor() {
@@ -254,13 +261,25 @@ export async function importCsvFilesAsDatabases(input: ImportCsvBatchInput): Pro
  * The server processes the imported workspace asynchronously after upload.
  */
 export async function importNotionZipToView(input: ImportNotionInput): Promise<ImportNotionResult> {
+  return importZipToView(input, createNotionImportTask);
+}
+
+/** Upload a Confluence HTML export ZIP for asynchronous import under the selected view. */
+export async function importConfluenceZipToView(input: ImportZipInput): Promise<ImportZipResult> {
+  return importZipToView(input, createConfluenceImportTask);
+}
+
+async function importZipToView(
+  input: ImportZipInput,
+  createTask: typeof createNotionImportTask
+): Promise<ImportZipResult> {
   const { workspaceId, parentViewId, file, onProgress, signal } = input;
 
   throwIfAborted(signal);
   const md5_base64 = await calculateMd5(file);
 
   throwIfAborted(signal);
-  const task = await createNotionImportTask(workspaceId, parentViewId, {
+  const task = await createTask(workspaceId, parentViewId, {
     content_length: file.size,
     md5_base64,
   });
@@ -273,6 +292,7 @@ export async function importNotionZipToView(input: ImportNotionInput): Promise<I
       await uploadImportFile(task.presignedUrl, file, onProgress ?? noopProgress, signal);
     }
 
+    throwIfAborted(signal);
     return { taskId: task.taskId };
   } catch (err) {
     void cancelImportTask(task.taskId).catch(noop);

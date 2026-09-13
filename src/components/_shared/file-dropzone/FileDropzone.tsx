@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -19,8 +19,10 @@ function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loadi
   const { t } = useTranslation();
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isDisabled = Boolean(disabled || loading);
 
   const handleFiles = (files: FileList) => {
+    if (isDisabled) return;
     const fileArray = Array.from(files);
 
     if (onChange) {
@@ -36,6 +38,7 @@ function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loadi
     event.preventDefault();
     event.stopPropagation();
     setDragging(false);
+    if (isDisabled) return;
 
     const toastError = () => toast.error(t('document.plugins.file.noImages'));
 
@@ -67,6 +70,7 @@ function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loadi
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
+    if (isDisabled) return;
     setDragging(true);
   };
 
@@ -77,6 +81,7 @@ function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loadi
   };
 
   const handleClick = () => {
+    if (isDisabled) return;
     fileInputRef.current?.click();
   };
 
@@ -91,33 +96,34 @@ function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loadi
     <div className='relative h-full'>
       <div
         data-testid='file-dropzone'
-        className='flex h-full min-h-[294px] w-full cursor-pointer flex-col justify-center rounded-[8px] bg-surface-primary px-4 text-center outline-dashed outline-2 outline-border-primary hover:bg-surface-primary-hover'
+        className='h-full'
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onClick={handleClick}
-        style={{
-          borderColor: dragging ? 'var(--border-theme-thick)' : undefined,
-          backgroundColor: dragging ? 'var(--fill-info-light)' : undefined,
-          pointerEvents: disabled || loading ? 'none' : undefined,
-          cursor: disabled ? 'not-allowed' : loading ? 'wait' : undefined,
-        }}
       >
-        <div
-          className={
-            'flex items-center justify-center whitespace-pre-wrap break-words text-center text-sm text-text-primary'
-          }
+        <button
+          type='button'
+          disabled={isDisabled}
+          onClick={handleClick}
+          className='flex h-full min-h-[294px] w-full cursor-pointer flex-col justify-center rounded-[8px] bg-surface-primary px-4 text-center outline-dashed outline-2 outline-border-primary hover:bg-surface-primary-hover focus-visible:outline focus-visible:outline-border-theme-thick'
+          style={{
+            backgroundColor: dragging ? 'var(--fill-info-light)' : undefined,
+            outlineColor: dragging ? 'var(--border-theme-thick)' : undefined,
+            cursor: disabled ? 'not-allowed' : loading ? 'wait' : undefined,
+          }}
         >
-          {placeholder || (
-            <>
-              <span>{t('document.plugins.file.fileUploadHint')}</span>
-              click to <span className='text-text-action'>{t('document.plugins.file.fileUploadHintSuffix')}</span>
-            </>
-          )}
-        </div>
+          <span className='flex items-center justify-center whitespace-pre-wrap break-words text-center text-sm text-text-primary'>
+            {placeholder || (
+              <>
+                <span>{t('document.plugins.file.fileUploadHint')}</span>
+                click to <span className='text-text-action'>{t('document.plugins.file.fileUploadHintSuffix')}</span>
+              </>
+            )}
+          </span>
+        </button>
         <input
           type='file'
-          disabled={disabled || loading}
+          disabled={isDisabled}
           ref={fileInputRef}
           style={{ display: 'none' }}
           accept={accept}
@@ -129,9 +135,7 @@ function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loadi
         <div className='bg-surface-primary/80 absolute inset-0 flex items-center justify-center rounded-[8px] backdrop-blur-sm'>
           <div className='flex flex-col items-center gap-3'>
             <Progress variant='primary' value={progress} />
-            {progress !== undefined && (
-              <span className='text-sm text-text-secondary'>{Math.round(progress)}%</span>
-            )}
+            {progress !== undefined && <span className='text-sm text-text-secondary'>{Math.round(progress)}%</span>}
           </div>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { Dialog } from '@mui/material';
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { SettingMenuItem } from '@/application/types';
@@ -32,6 +32,18 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
     }
   }, [search, setSearch, onRequestOpen]);
 
+  const handleImport = useCallback(() => {
+    // Reuse the workspace importer after closing Settings so only one dialog owns focus.
+    onClose();
+    setSearch((prev) => {
+      const next = new URLSearchParams(prev);
+
+      next.set('action', 'import');
+      next.set('source', 'appflowy');
+      return next;
+    });
+  }, [onClose, setSearch]);
+
   return (
     <Dialog
       classes={{
@@ -46,7 +58,7 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
         {selectedItem === SettingMenuItem.ACCOUNT && <AccountAppPanel />}
         {selectedItem === SettingMenuItem.PROFILE && <ProfilePanel />}
         {selectedItem === SettingMenuItem.MEMBERS && <MembersPanel />}
-        {selectedItem === SettingMenuItem.MANAGE_DATA && <ManageDataPanel />}
+        {selectedItem === SettingMenuItem.MANAGE_DATA && <ManageDataPanel onImport={handleImport} />}
       </div>
     </Dialog>
   );

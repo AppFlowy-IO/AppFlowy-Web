@@ -1758,6 +1758,9 @@ export interface SpaceInfo {
   /** The created time of the space view (timestamp). */
   space_created_at?: number;
 
+  /** Whether this space retains a home document at its own view ID. */
+  has_space_home_page?: boolean;
+
   /** The space icon. If not set, uses the default icon. */
   space_icon?: string;
 
