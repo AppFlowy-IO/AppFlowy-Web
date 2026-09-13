@@ -59,6 +59,8 @@ interface TimelineScenario {
   before: Map<string, BarBox>;
   /** Columns "Design" was dragged in the avoid-weekends scenario. */
   weekendShift?: number;
+  /** Docked table width before a table column was added. */
+  sidebarWidthBefore?: number;
 }
 
 const scenarios = new WeakMap<Page, TimelineScenario>();
@@ -557,6 +559,70 @@ Then('the {string} due date is {int} days from today', async ({ page }, title, d
 
   stored.setHours(0, 0, 0, 0);
   expect(stored.getTime()).toBe(localMidnightOffset(days).getTime());
+});
+
+// --- Table properties and calculations --------------------------------------
+
+const TABLE_FIELD_ID: Record<string, string> = { Progress: 'num-progress', Due: 'due' };
+
+async function toggleTableColumn(page: Page, name: string) {
+  await page.getByTestId('database-actions-settings').click();
+  const settingsTrigger = TimelineSelectors.settingsTrigger(page);
+
+  await settingsTrigger.click();
+  const nestedTrigger = page.getByTestId('timeline-table-properties-trigger');
+  const from = await settingsTrigger.boundingBox();
+  const to = await nestedTrigger.boundingBox();
+
+  if (!from || !to) throw new Error('Timeline settings menu is not open');
+  // Travel Radix's grace area instead of teleporting the pointer, which would
+  // close the settings submenu before the nested trigger can open.
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 25 });
+  await nestedTrigger.click();
+  await page.getByTestId(`timeline-table-field-${TABLE_FIELD_ID[name]}`).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+}
+
+When('I show {string} as a table column', async ({ page }, name) => {
+  scenario(page).sidebarWidthBefore = (await TimelineSelectors.sidebarCells(page).first().boundingBox())?.width;
+  await toggleTableColumn(page, name);
+});
+
+When('I hide the {string} table column', async ({ page }, name) => {
+  await toggleTableColumn(page, name);
+});
+
+Then('the table has a {string} column reading {int} for {string}', async ({ page }, name, value, title) => {
+  const fieldId = TABLE_FIELD_ID[name];
+
+  await expect(page.getByTestId(`timeline-table-header-${fieldId}`)).toContainText(name);
+  await expect(page.getByTestId(`timeline-table-cell-${rowId(page, title)}-${fieldId}`)).toContainText(String(value));
+});
+
+Then('the docked table is {int} px wider', async ({ page }, delta) => {
+  const before = scenario(page).sidebarWidthBefore ?? 0;
+
+  await expect
+    .poll(async () => (await TimelineSelectors.sidebarCells(page).first().boundingBox())?.width ?? 0)
+    .toBe(before + delta);
+});
+
+When('I set the {string} column calculation to {string}', async ({ page }, name, calculation) => {
+  await page.getByTestId(`timeline-calculation-${TABLE_FIELD_ID[name]}`).click();
+  await page.getByRole('menuitem', { name: calculation, exact: true }).click();
+});
+
+Then('the {string} column calculation reads {string}', async ({ page }, name, text) => {
+  await expect(page.getByTestId(`timeline-calculation-${TABLE_FIELD_ID[name]}`)).toContainText(text, {
+    timeout: 10_000,
+  });
+});
+
+Then('the table has no {string} column', async ({ page }, name) => {
+  await expect(page.getByTestId(`timeline-table-header-${TABLE_FIELD_ID[name]}`)).toHaveCount(0);
 });
 
 Then('the timeline draws {int} dependency arrow', async ({ page }, count) => {

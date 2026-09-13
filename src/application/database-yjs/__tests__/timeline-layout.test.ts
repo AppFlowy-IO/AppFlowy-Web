@@ -41,6 +41,7 @@ test('missing setting falls back to month scale, docked table, and the user week
     dependencyShift: TimelineDependencyShift.OverlapOnly,
     avoidWeekends: false,
     progressFieldId: '',
+    tableFieldIds: [],
     use24Hour: false,
   });
 });
@@ -89,6 +90,7 @@ test('integers written by the server as BigInt decode like web numbers', () => {
     dependencyShift: TimelineDependencyShift.OverlapOnly,
     avoidWeekends: false,
     progressFieldId: '',
+    tableFieldIds: [],
     use24Hour: false,
   });
 });
@@ -133,6 +135,10 @@ test('dependency shift, avoid-weekends and the end field round-trip like the cal
     updateTimelineLayoutSetting(view, { endFieldId: '', dependencyShift: 99 as TimelineDependencyShift })
   );
   expect(setting.has(YjsDatabaseKey.end_field_id)).toBe(false);
+  doc.transact(() => updateTimelineLayoutSetting(view, { tableFieldIds: ['num', 'sel'] }));
+  expect(readTimelineLayoutSetting(database, 'timeline', 0, false).tableFieldIds).toEqual(['num', 'sel']);
+  doc.transact(() => updateTimelineLayoutSetting(view, { tableFieldIds: [] }));
+  expect(setting.has(YjsDatabaseKey.table_field_ids)).toBe(false);
   // Out-of-range wire values fall back to Notion's default.
   expect(readTimelineLayoutSetting(database, 'timeline', 0, false).dependencyShift).toBe(
     TimelineDependencyShift.OverlapOnly
@@ -169,6 +175,7 @@ test('the store notifies on remote changes only for this view and tolerates bad 
     dependencyShift: TimelineDependencyShift.OverlapOnly,
     avoidWeekends: false,
     progressFieldId: '',
+    tableFieldIds: [],
     use24Hour: false,
   });
 

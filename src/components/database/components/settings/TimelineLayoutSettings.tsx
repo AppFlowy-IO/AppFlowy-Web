@@ -8,6 +8,7 @@ import {
   TimelineDependencyShift,
   useDatabase,
   useDatabaseFields,
+  usePrimaryFieldId,
   usePropertiesSelector,
   useTimelineLayoutSetting,
 } from '@/application/database-yjs';
@@ -56,6 +57,12 @@ function TimelineLayoutSettings() {
   const dateProperties = useMemo(
     () => allProperties.filter((property) => DATE_FIELD_TYPES.includes(property.type)),
     [allProperties]
+  );
+  // Every non-primary property may become a table column (the title is always the first column).
+  const primaryFieldId = usePrimaryFieldId();
+  const tableProperties = useMemo(
+    () => allProperties.filter((property) => property.id !== primaryFieldId),
+    [allProperties, primaryFieldId]
   );
   // Notion's "separate start and end dates": any other date field can end the bar.
   const endDateProperties = useMemo(
@@ -173,6 +180,46 @@ function TimelineLayoutSettings() {
             {t('timeline.settings.showTable', { defaultValue: 'Show table' })}
             <Switch className={'ml-auto'} checked={setting.showTable} />
           </DropdownMenuItem>
+
+          {/* Notion configures the table's columns separately from the bar's properties. */}
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger data-testid='timeline-table-properties-trigger'>
+              {t('timeline.settings.tableProperties', { defaultValue: 'Table properties' })}
+              <span className='ml-auto text-xs text-text-tertiary'>{setting.tableFieldIds.length}</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuSubContent className={'appflowy-scroller max-h-[450px] max-w-[240px] overflow-y-auto'}>
+                {tableProperties.map((property) => {
+                  const shown = setting.tableFieldIds.includes(property.id);
+
+                  return (
+                    <DropdownMenuItem
+                      key={property.id}
+                      className={'w-full'}
+                      data-testid={`timeline-table-field-${property.id}`}
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        updateSetting({
+                          tableFieldIds: shown
+                            ? setting.tableFieldIds.filter((id) => id !== property.id)
+                            : // Keep the view's property order rather than click order.
+                              tableProperties
+                                .filter(
+                                  (candidate) =>
+                                    candidate.id === property.id || setting.tableFieldIds.includes(candidate.id)
+                                )
+                                .map((candidate) => candidate.id),
+                        });
+                      }}
+                    >
+                      <FieldDisplay fieldId={property.id} />
+                      <Switch className={'ml-auto'} checked={shown} />
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
 
           <DropdownMenuSeparator />
 

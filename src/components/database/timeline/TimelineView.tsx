@@ -13,6 +13,7 @@ import {
   useDatabaseContext,
   useDatabaseViewId,
   useFieldSelector,
+  useDatabaseFields,
   useFieldsSelector,
   useNavigateToRow,
   usePrimaryFieldId,
@@ -26,6 +27,8 @@ import { ReactComponent as CollapseIcon } from '@/assets/icons/double_arrow_left
 import { ReactComponent as ExpandIcon } from '@/assets/icons/double_arrow_right.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useAIEnabled } from '@/components/app/app.hooks';
+import { FieldDisplay } from '@/components/database/components/field';
+import { GridCalculateRowCell } from '@/components/database/components/grid/grid-cell/GridCalculateRowCell';
 import { type Edge } from '@/components/database/components/drag-and-drop/useRowDnd';
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks/useTimeFormat';
 import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
@@ -41,6 +44,7 @@ import {
   TIMELINE_HEADER_HEIGHT,
   TIMELINE_ROW_HEIGHT,
   TIMELINE_SIDEBAR_WIDTH,
+  TIMELINE_TABLE_COLUMN_WIDTH,
   TIMELINE_TODAY_ANCHOR,
 } from './constants';
 import { useScrollWindow } from './hooks/useScrollWindow';
@@ -123,7 +127,15 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const localOverride = permissions.readOnly && localSetting?.viewId === viewId ? localSetting : undefined;
   const layout = localOverride?.layout ?? setting.layout;
   const showSidebar = localOverride?.showTable ?? setting.showTable;
-  const sidebarWidth = showSidebar ? TIMELINE_SIDEBAR_WIDTH : TIMELINE_COLLAPSED_SIDEBAR_WIDTH;
+  // Only columns whose field still exists are shown, in the setting's order.
+  const databaseFields = useDatabaseFields();
+  const tableFieldIds = useMemo(
+    () => setting.tableFieldIds.filter((fieldId) => fieldId !== primaryFieldId && databaseFields?.has(fieldId)),
+    [databaseFields, primaryFieldId, setting.tableFieldIds]
+  );
+  const sidebarWidth = showSidebar
+    ? TIMELINE_SIDEBAR_WIDTH + tableFieldIds.length * TIMELINE_TABLE_COLUMN_WIDTH
+    : TIMELINE_COLLAPSED_SIDEBAR_WIDTH;
 
   const { rows, emptyEvents, rowOrders, hasEndField } = useTimelineRows(showSidebar);
   const reorderRow = useReorderRowDispatch();
@@ -459,8 +471,8 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     void newRow({ tailing: true, openAfterCreate: true }).catch(() => undefined);
   }, [newRow]);
 
-  const bodyHeight =
-    virtualizer.getTotalSize() + (permissions.readOnly ? 0 : TIMELINE_ROW_HEIGHT) + TIMELINE_BOTTOM_PADDING;
+  const footerRows = (permissions.readOnly ? 0 : 1) + (showSidebar ? 1 : 0);
+  const bodyHeight = virtualizer.getTotalSize() + footerRows * TIMELINE_ROW_HEIGHT + TIMELINE_BOTTOM_PADDING;
   const virtualItems = virtualizer.getVirtualItems();
   const firstVisibleIndex = virtualItems[0]?.index ?? 0;
   const lastVisibleIndex = virtualItems[virtualItems.length - 1]?.index ?? -1;
@@ -503,7 +515,21 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
               // 40px hover gutter when the table is editable.
               style={{ width: sidebarWidth, paddingLeft: showSidebar ? (permissions.editable ? 44 : 12) : undefined }}
             >
-              {showSidebar ? <span className='truncate text-sm text-text-secondary'>{primaryFieldName}</span> : null}
+              {showSidebar ? (
+                <span className='min-w-0 flex-1 basis-0 truncate text-sm text-text-secondary'>{primaryFieldName}</span>
+              ) : null}
+              {showSidebar
+                ? tableFieldIds.map((fieldId) => (
+                    <div
+                      key={fieldId}
+                      className='flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2 text-sm text-text-secondary'
+                      style={{ width: TIMELINE_TABLE_COLUMN_WIDTH }}
+                      data-testid={`timeline-table-header-${fieldId}`}
+                    >
+                      <FieldDisplay fieldId={fieldId} className='min-w-0 [&_svg]:h-4 [&_svg]:w-4' />
+                    </div>
+                  ))
+                : null}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -594,6 +620,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                     anyDragging={dragging}
                     formatTime={formatTimeDisplay}
                     rowOrders={rowOrders}
+                    tableFieldIds={tableFieldIds}
                     onOpen={handleOpen}
                     onSelect={setSelectedRowId}
                     onScrollTo={handleScrollToX}
@@ -634,6 +661,37 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                 >
                   <PlusIcon aria-hidden className='h-5 w-5' />
                   {showSidebar ? t('grid.row.newRow', { defaultValue: 'New row' }) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {showSidebar ? (
+              // Calculations footer under the table, one cell per column, as in the grid.
+              <div
+                className='absolute left-0 z-[2] flex w-full'
+                style={{
+                  top: virtualizer.getTotalSize() + (permissions.readOnly ? 0 : TIMELINE_ROW_HEIGHT),
+                  height: TIMELINE_ROW_HEIGHT,
+                }}
+                data-testid='timeline-calculations'
+              >
+                <div
+                  className='sticky left-0 z-10 flex h-full shrink-0 border-b border-r border-border-primary bg-background-primary text-sm'
+                  style={{ width: sidebarWidth }}
+                >
+                  <div className='min-w-0 flex-1 basis-0' data-testid={`timeline-calculation-${primaryFieldId}`}>
+                    {primaryFieldId ? <GridCalculateRowCell fieldId={primaryFieldId} rowOrders={rowOrders} /> : null}
+                  </div>
+                  {tableFieldIds.map((fieldId) => (
+                    <div
+                      key={fieldId}
+                      className='shrink-0 border-l border-border-primary'
+                      style={{ width: TIMELINE_TABLE_COLUMN_WIDTH }}
+                      data-testid={`timeline-calculation-${fieldId}`}
+                    >
+                      <GridCalculateRowCell fieldId={fieldId} rowOrders={rowOrders} />
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : null}

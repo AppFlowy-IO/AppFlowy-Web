@@ -148,6 +148,8 @@ export interface TimelineLayoutSetting {
   avoidWeekends: boolean;
   /// Number field holding 0–100 progress drawn as a fill inside the bar.
   progressFieldId: string;
+  /// Properties shown as columns of the docked table, in order (separate from bar chips).
+  tableFieldIds: string[];
 }
 
 export interface CalendarLayoutSetting {

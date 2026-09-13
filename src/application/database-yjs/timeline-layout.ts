@@ -18,6 +18,16 @@ export const DEFAULT_TIMELINE_LAYOUT = TimelineLayout.Month;
 export const DEFAULT_TIMELINE_SHOW_TABLE = true;
 export const DEFAULT_TIMELINE_DEPENDENCY_SHIFT = TimelineDependencyShift.OverlapOnly;
 
+const EMPTY_IDS: string[] = [];
+
+/** A plain array of ids as Yjs / Yrs hand it back, or nothing. */
+function idList(value: unknown): string[] {
+  if (!Array.isArray(value)) return EMPTY_IDS;
+  const ids = value.filter((id): id is string => typeof id === 'string' && id !== '');
+
+  return ids.length === 0 ? EMPTY_IDS : ids;
+}
+
 function integer(value: unknown, min: number, max: number): number | undefined {
   if (typeof value !== 'number' && typeof value !== 'bigint') return undefined;
   const number = Number(value);
@@ -64,6 +74,7 @@ export function readTimelineLayoutSetting(
     dependencyShift: dependencyShift ?? DEFAULT_TIMELINE_DEPENDENCY_SHIFT,
     avoidWeekends: typeof avoidWeekends === 'boolean' ? avoidWeekends : false,
     progressFieldId: setting?.get(YjsDatabaseKey.progress_field_id) ?? '',
+    tableFieldIds: idList(setting?.get(YjsDatabaseKey.table_field_ids)),
   };
 }
 
@@ -116,6 +127,10 @@ export function updateTimelineLayoutSetting(view: YDatabaseView, settings: Timel
 
   if (settings.dependencyShift !== undefined) setting.set(YjsDatabaseKey.dependency_shift_ty, settings.dependencyShift);
   if (settings.avoidWeekends !== undefined) setting.set(YjsDatabaseKey.avoid_weekends, settings.avoidWeekends);
+  if (settings.tableFieldIds !== undefined) {
+    if (settings.tableFieldIds.length > 0) setting.set(YjsDatabaseKey.table_field_ids, [...settings.tableFieldIds]);
+    else setting.delete(YjsDatabaseKey.table_field_ids);
+  }
 }
 
 /**
@@ -155,10 +170,15 @@ export function createTimelineLayoutStore(
       use24Hour
     );
   let snapshot = read();
+  const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((id, index) => id === b[index]);
   const getSnapshot = () => {
     const next = read();
 
-    if ((Object.keys(next) as (keyof TimelineLayoutSetting)[]).some((key) => next[key] !== snapshot[key]))
+    if (
+      (Object.keys(next) as (keyof TimelineLayoutSetting)[]).some((key) =>
+        key === 'tableFieldIds' ? !sameIds(next.tableFieldIds, snapshot.tableFieldIds) : next[key] !== snapshot[key]
+      )
+    )
       snapshot = next;
     return snapshot;
   };

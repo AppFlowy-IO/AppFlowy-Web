@@ -36,6 +36,8 @@ interface TimelineRowProps {
   formatTime: (date: Date) => string;
   /** View-ordered rows for the table's insert / reorder actions. */
   rowOrders: Row[];
+  /** Properties shown as table columns after the title. */
+  tableFieldIds: string[];
   onOpen?: (rowId: string) => void;
   onSelect?: (rowId: string | null) => void;
   onScrollTo?: (x: number) => void;
@@ -100,6 +102,7 @@ export const TimelineRow = memo(
     anyDragging,
     formatTime,
     rowOrders,
+    tableFieldIds,
     onOpen,
     onSelect,
     onScrollTo,
@@ -149,6 +152,7 @@ export const TimelineRow = memo(
             editable={editable}
             selected={selected}
             rowOrders={rowOrders}
+            tableFieldIds={tableFieldIds}
             dropTargetRef={rowRef}
             onOpen={onOpen}
             onSelect={onSelect}

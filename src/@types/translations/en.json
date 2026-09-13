@@ -4367,6 +4367,7 @@
       "shiftNever": "Never",
       "avoidWeekends": "Avoid weekends",
       "endDateField": "End date",
+      "tableProperties": "Table properties",
       "progress": "Progress"
     },
     "zoom": {

@@ -5,6 +5,7 @@ import { Row, useRowMetaSelector } from '@/application/database-yjs';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/expand.svg';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import { type Edge, useRowDnd } from '@/components/database/components/drag-and-drop/useRowDnd';
+import { CardField } from '@/components/database/components/field/CardField';
 import { GalleryRowIcon } from '@/components/database/gallery/GalleryRowIcon';
 import { ListRowActions } from '@/components/database/list/ListRowActions';
 import { useListHasSorts } from '@/components/database/list/ListSortState';
@@ -12,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
+import { TIMELINE_TABLE_COLUMN_WIDTH } from './constants';
 import { TimelineRowModel } from './hooks/useTimelineRows';
 
 export const TIMELINE_ROW_DRAG_TYPE = 'database-timeline-row';
@@ -23,6 +25,8 @@ interface TimelineSidebarRowProps {
   selected?: boolean;
   /** View-ordered rows, needed by "insert above". */
   rowOrders: Row[];
+  /** Properties shown as columns after the title. */
+  tableFieldIds: string[];
   /** The whole timeline row, so a drop anywhere along it counts. */
   dropTargetRef: MutableRefObject<HTMLDivElement | null>;
   onOpen?: (rowId: string) => void;
@@ -42,6 +46,7 @@ export const TimelineSidebarRow = memo(
     editable,
     selected,
     rowOrders,
+    tableFieldIds,
     dropTargetRef,
     onOpen,
     onSelect,
@@ -90,7 +95,7 @@ export const TimelineSidebarRow = memo(
         )}
         <button
           type='button'
-          className='flex min-w-0 flex-1 items-center gap-2 truncate rounded-200 px-1 py-0.5 text-left hover:bg-fill-content-hover'
+          className='flex min-w-0 flex-1 basis-0 items-center gap-2 truncate rounded-200 px-1 py-0.5 text-left hover:bg-fill-content-hover'
           onClick={() => {
             if (dnd.ignoreClickRef.current) return;
             onSelect?.(row.rowId);
@@ -119,6 +124,16 @@ export const TimelineSidebarRow = memo(
           </TooltipTrigger>
           <TooltipContent>{t('timeline.openRow', { defaultValue: 'Open' })}</TooltipContent>
         </Tooltip>
+        {tableFieldIds.map((fieldId) => (
+          <div
+            key={fieldId}
+            className='flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2'
+            style={{ width: TIMELINE_TABLE_COLUMN_WIDTH }}
+            data-testid={`timeline-table-cell-${row.rowId}-${fieldId}`}
+          >
+            <CardField rowId={row.rowId} fieldId={fieldId} />
+          </div>
+        ))}
         {dnd.closestEdge ? <DropRowIndicator edge={dnd.closestEdge} /> : null}
         {dnd.clearSortsDialog}
       </div>

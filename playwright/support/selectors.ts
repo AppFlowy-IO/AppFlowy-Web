@@ -338,8 +338,7 @@ export const DatabaseFeedSelectors = {
   creatorByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-creator-${rowId}`),
   coverByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-cover-${rowId}`),
   documentPreviewByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-document-preview-${rowId}`),
-  documentPreviewToggleByRowId: (page: Page, rowId: string) =>
-    page.getByTestId(`feed-document-preview-toggle-${rowId}`),
+  documentPreviewToggleByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-document-preview-toggle-${rowId}`),
   actionsByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-actions-${rowId}`),
   moreButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-more-${rowId}`),
   reactionButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-reaction-button-${rowId}`),
@@ -757,7 +756,8 @@ export const CalendarSelectors = {
   monthViewOption: (page: Page) => page.getByRole('menuitemradio', { name: /^Month(?:\s|$)/ }),
   weekViewOption: (page: Page) => page.getByRole('menuitemradio', { name: /^Week(?:\s|$)/ }),
   numberOfDaysMenu: (page: Page) => page.getByRole('menuitem', { name: 'Number of days', exact: true }),
-  customDayOption: (page: Page, days: number) => page.getByRole('menuitemradio', { name: new RegExp(`^${days} days(?:\\s|$)`) }),
+  customDayOption: (page: Page, days: number) =>
+    page.getByRole('menuitemradio', { name: new RegExp(`^${days} days(?:\\s|$)`) }),
   title: (page: Page) => page.getByTestId('calendar-title'),
   dayCell: (page: Page) => page.locator('.fc-daygrid-day'),
   dayCellByDate: (page: Page, dateStr: string) => page.locator(`[data-date="${dateStr}"]`),
@@ -881,7 +881,8 @@ export const TimelineSelectors = {
   todayLine: (page: Page) => page.getByTestId('timeline-today-line'),
   bars: (page: Page) => page.locator('[data-testid^="timeline-bar-"]'),
   bar: (page: Page, rowId: string) => page.getByTestId(`timeline-bar-${rowId}`),
-  barByTitle: (page: Page, title: string) => page.locator('[data-testid^="timeline-bar-"]').filter({ hasText: title }).first(),
+  barByTitle: (page: Page, title: string) =>
+    page.locator('[data-testid^="timeline-bar-"]').filter({ hasText: title }).first(),
   barButton: (page: Page, title: string) =>
     page.locator('[data-testid^="timeline-bar-"]').filter({ hasText: title }).first().locator('[role="button"]'),
   handleStart: (page: Page, rowId: string) => page.getByTestId(`timeline-handle-start-${rowId}`),
@@ -892,6 +893,7 @@ export const TimelineSelectors = {
   hoverCard: (page: Page) => page.getByRole('tooltip').getByTestId('timeline-bar-hover-card'),
   row: (page: Page, rowId: string) => page.getByTestId(`timeline-row-${rowId}`),
   sidebarRows: (page: Page) => page.locator('[data-testid^="timeline-sidebar-row-"]'),
+  sidebarCells: (page: Page) => page.locator('[data-testid^="timeline-sidebar-cell-"]'),
   sidebarRow: (page: Page, rowId: string) => page.getByTestId(`timeline-sidebar-row-${rowId}`),
   openRow: (page: Page, rowId: string) => page.getByTestId(`timeline-open-row-${rowId}`),
   emptyRows: (page: Page) => page.locator('[data-testid^="timeline-row-empty-"]'),

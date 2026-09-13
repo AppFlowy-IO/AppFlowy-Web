@@ -229,3 +229,13 @@ Feature: Timeline view interactions
     And the "Design" due date is 5 days from today
     When I choose no timeline end date field
     Then the "Design" bar spans 1 columns
+
+  Scenario: Table properties add columns with a calculations footer
+    Given "Design" has a progress field at 40 percent
+    When I show "Progress" as a table column
+    Then the table has a "Progress" column reading 40 for "Design"
+    And the docked table is 140 px wider
+    When I set the "Progress" column calculation to "Sum"
+    Then the "Progress" column calculation reads "Sum40"
+    When I hide the "Progress" table column
+    Then the table has no "Progress" column

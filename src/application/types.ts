@@ -674,6 +674,8 @@ export enum YjsDatabaseKey {
   dependency_shift_ty = 'dependency_shift_ty',
   /// Timeline layout setting: shifted dependents skip Saturdays and Sundays.
   avoid_weekends = 'avoid_weekends',
+  /// Timeline layout setting: properties shown as columns of the docked table.
+  table_field_ids = 'table_field_ids',
   icon = 'icon',
   is_inline = 'is_inline',
   embedded = 'embedded',
@@ -1036,6 +1038,7 @@ export interface YDatabaseTimelineLayoutSetting extends Y.Map<unknown> {
       | YjsDatabaseKey.dependency_shift_ty
   ): number | bigint | null | undefined;
   get(key: YjsDatabaseKey.show_table | YjsDatabaseKey.avoid_weekends): boolean | undefined;
+  get(key: YjsDatabaseKey.table_field_ids): unknown;
 }
 
 export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
