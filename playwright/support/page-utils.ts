@@ -190,11 +190,20 @@ export async function insertLinkedDatabaseViaSlash(
   page: Page,
   docViewId: string,
   dbName: string,
-  layout: 'Feed' | 'Gallery' | 'Grid' | 'List' = 'Grid'
+  layout: 'Feed' | 'Gallery' | 'Grid' | 'List' | 'Timeline' = 'Grid'
 ): Promise<void> {
   const editor = page.locator(`#editor-${docViewId}`);
   await expect(editor).toBeVisible({ timeout: 15000 });
-  const blockType = layout === 'List' ? 'list' : layout === 'Gallery' ? 'gallery' : layout === 'Feed' ? 'feed' : 'grid';
+  const blockType =
+    layout === 'List'
+      ? 'list'
+      : layout === 'Gallery'
+      ? 'gallery'
+      : layout === 'Feed'
+      ? 'feed'
+      : layout === 'Timeline'
+      ? 'timeline'
+      : 'grid';
   const initialBlockCount = await editor.locator(BlockSelectors.blockSelector(blockType)).count();
   let lastError: unknown;
 
@@ -213,6 +222,8 @@ export async function insertLinkedDatabaseViaSlash(
           ? 'linkedGallery'
           : layout === 'Feed'
           ? 'linkedFeed'
+          : layout === 'Timeline'
+          ? 'linkedTimeline'
           : 'linkedGrid';
 
       await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName(slashMenuKey)).first().click({ force: true });

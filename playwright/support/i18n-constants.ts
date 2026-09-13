@@ -28,6 +28,8 @@ export const SlashMenuNames = {
   linkedKanban: 'Linked Kanban',
   calendar: 'Calendar',
   linkedCalendar: 'Linked Calendar',
+  timeline: 'Timeline',
+  linkedTimeline: 'Linked Timeline',
   quote: 'Quote',
   divider: 'Divider',
   table: 'Table',

@@ -38,6 +38,7 @@ export enum BlockType {
   GridBlock = 'grid',
   BoardBlock = 'board',
   CalendarBlock = 'calendar',
+  TimelineBlock = 'timeline',
   ListBlock = 'list',
   ChartBlock = 'chart',
   DatabaseGalleryBlock = 'gallery',

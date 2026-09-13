@@ -2375,6 +2375,8 @@
         "linkedKanban": "Linked Kanban",
         "calendar": "Calendar",
         "linkedCalendar": "Linked Calendar",
+        "timeline": "Timeline",
+        "linkedTimeline": "Linked Timeline",
         "quote": "Quote",
         "divider": "Divider",
         "table": "Table",
@@ -4348,6 +4350,7 @@
   },
   "timeline": {
     "menuName": "Timeline",
+    "referencedTimelinePrefix": "View of",
     "settings": {
       "name": "Timeline settings",
       "layoutDateField": "Timeline by",
