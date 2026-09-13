@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import { ViewLayout } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { ReactComponent as ConfluenceIcon } from '@/assets/icons/confluence.svg';
 import { ReactComponent as DatabaseIcon } from '@/assets/icons/database.svg';
 import { ReactComponent as NotionIcon } from '@/assets/icons/notion.svg';
 import { ReactComponent as TextIcon } from '@/assets/icons/text.svg';
@@ -12,6 +13,7 @@ import { useAppOperations, useCurrentWorkspaceId, useOpenPageModal, useToView } 
 import {
   ImportAbortError,
   ImportCsvBatchItem,
+  importConfluenceZipToView,
   importCsvFilesAsDatabases,
   importNotionZipToView,
   populateDocumentWithMarkdown,
@@ -20,7 +22,7 @@ import {
 
 const MARKDOWN_ACCEPT = '.md,.markdown,.txt,text/markdown,text/plain';
 const CSV_ACCEPT = '.csv,text/csv';
-const NOTION_ACCEPT = '.zip,application/zip,application/x-zip,application/x-zip-compressed';
+const ZIP_ACCEPT = '.zip,application/zip,application/x-zip,application/x-zip-compressed';
 
 // Enough failed names to be actionable in a toast without turning it into a wall of text.
 const MAX_REPORTED_FAILURES = 3;
@@ -30,7 +32,8 @@ const MAX_REPORTED_FAILURES = 3;
 // Toasts render plain text, so there is nothing to escape for.
 const RAW_INTERPOLATION = { interpolation: { escapeValue: false } };
 
-type ImportFormat = 'markdown' | 'csv' | 'notion';
+type ZipImportFormat = 'notion' | 'confluence';
+type ImportFormat = 'markdown' | 'csv' | ZipImportFormat;
 
 interface CsvProgress {
   current: number;
@@ -55,6 +58,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
   const markdownInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const notionInputRef = useRef<HTMLInputElement>(null);
+  const confluenceInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   // Abort any in-flight import on unmount so polling doesn't keep running
@@ -79,10 +83,10 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
     onOpenChange(false);
   }, [active, onOpenChange]);
 
-  // A CSV batch and a Notion zip upload can both run for minutes, so the close button doubles as
+  // A CSV batch and a ZIP upload can both run for minutes, so the close button doubles as
   // a cancel for them and keeps whatever already imported. Markdown blocks the button instead:
   // it is two round trips, and its page already exists by the time the upload starts.
-  const cancellable = active === 'csv' || active === 'notion';
+  const cancellable = active === 'csv' || active === 'notion' || active === 'confluence';
   const closeDisabled = active !== null && !cancellable;
 
   // The button doubles as the cancel control during a batch, so it has to say so.
@@ -203,23 +207,27 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
     [workspaceId, parentViewId, toView, close, t]
   );
 
-  const handleNotion = useCallback(
-    async (file: File) => {
+  const handleZip = useCallback(
+    async (file: File, source: ZipImportFormat) => {
       if (!workspaceId) return;
       const controller = new AbortController();
 
       abortRef.current?.abort();
       abortRef.current = controller;
-      setActive('notion');
+      setActive(source);
       try {
-        await importNotionZipToView({
+        const importZip = source === 'confluence' ? importConfluenceZipToView : importNotionZipToView;
+
+        await importZip({
           workspaceId,
           parentViewId,
           file,
           signal: controller.signal,
         });
 
-        toast.success(t('importPanel.notionImportStarted'));
+        toast.success(
+          t(source === 'confluence' ? 'importPanel.confluenceImportStarted' : 'importPanel.notionImportStarted')
+        );
         close();
         // eslint-disable-next-line
       } catch (e: any) {
@@ -258,9 +266,19 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
       const file = event.target.files?.[0];
 
       event.target.value = '';
-      if (file) void handleNotion(file);
+      if (file) void handleZip(file, 'notion');
     },
-    [handleNotion]
+    [handleZip]
+  );
+
+  const onConfluencePicked = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+
+      event.target.value = '';
+      if (file) void handleZip(file, 'confluence');
+    },
+    [handleZip]
   );
 
   return (
@@ -335,6 +353,18 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
             <span className='text-sm'>{t('importPanel.notionZip')}</span>
             {active === 'notion' ? <CircularProgress size={14} className='ml-auto' /> : null}
           </button>
+
+          <button
+            type='button'
+            disabled={!!active}
+            onClick={() => confluenceInputRef.current?.click()}
+            className='flex items-center gap-3 rounded-300 bg-fill-content px-4 py-3 text-left text-text-primary hover:bg-fill-content-hover disabled:opacity-60'
+            data-testid='import-confluence'
+          >
+            <ConfluenceIcon className='h-5 w-5 shrink-0 text-icon-primary' />
+            <span className='text-sm'>{t('importPanel.confluenceZip')}</span>
+            {active === 'confluence' ? <CircularProgress size={14} className='ml-auto' /> : null}
+          </button>
         </div>
 
         {/* The visible counter sits inside a disabled button, which assistive tech skips, so the
@@ -365,10 +395,18 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
         <input
           ref={notionInputRef}
           type='file'
-          accept={NOTION_ACCEPT}
+          accept={ZIP_ACCEPT}
           className='hidden'
           data-testid='import-notion-input'
           onChange={onNotionPicked}
+        />
+        <input
+          ref={confluenceInputRef}
+          type='file'
+          accept={ZIP_ACCEPT}
+          className='hidden'
+          data-testid='import-confluence-input'
+          onChange={onConfluencePicked}
         />
       </div>
     </Dialog>

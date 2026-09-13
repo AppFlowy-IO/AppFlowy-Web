@@ -202,6 +202,8 @@
     "documentFromV010": "来自 v0.1.0 的文档",
     "databaseFromV010": "来自 v0.1.0 的数据库",
     "notionZip": "Notion 导出的 Zip 文件",
+    "confluenceZip": "Confluence HTML 导出文件 (.zip)",
+    "confluenceImportStarted": "Confluence 导入已开始。完成后，页面将显示在此视图中。",
     "csv": "CSV",
     "database": "数据库"
   },
@@ -1963,6 +1965,10 @@
     "saveThisPage": "使用此模板创建"
   },
   "web": {
+    "importSuccessMessage": "导入完成后我们会通知你。请从工作区切换器中选择新工作区，查看导入的页面。",
+    "importCreatesWorkspace": "每次导入都会创建一个新工作区。",
+    "importFromConfluence": "从 Confluence 导入",
+    "dropConfluenceFile": "将 Confluence HTML 导出文件 (.zip) 拖放到此处上传，或点击浏览",
     "continueWithGoogle": "使用 Google 账户登录",
     "continueWithGithub": "使用 GitHub 账户登录",
     "continueWithDiscord": "使用 Discord 账户登录"

@@ -282,6 +282,7 @@
     "documentFromV010": "Document from v0.1.0",
     "databaseFromV010": "Database from v0.1.0",
     "notionZip": "Notion Exported Zip File",
+    "confluenceZip": "Confluence HTML Export (.zip)",
     "csv": "CSV",
     "database": "Database",
     "success": "Imported successfully",
@@ -290,6 +291,7 @@
     "partialSuccess_one": "Imported {{success}} of {{count}} file",
     "partialSuccess_other": "Imported {{success}} of {{count}} files",
     "notionImportStarted": "Notion import started. Pages will appear in this view when ready.",
+    "confluenceImportStarted": "Confluence import started. Pages will appear in this view when ready.",
     "failed": "Import failed",
     "failedFile": "Could not import {{name}}: {{reason}}",
     "failedFiles": "Could not import: {{names}}",
@@ -870,7 +872,7 @@
       "description": "Manage your AppFlowy workspace data",
       "importWorkspace": {
         "title": "Import your workspace",
-        "tooltip": "Import your workspace from an AppFlowy backup ZIP file",
+        "tooltip": "Create a new workspace from an AppFlowy backup, Notion export, or Confluence HTML export ZIP file",
         "button": "Import",
         "success": "Import started. We will send a confirmation email once the import is complete.",
         "failed": "Failed to import workspace"
@@ -3624,12 +3626,15 @@
     "importNotion": "Import from Notion",
     "importWorkspace": "Import workspace",
     "importFromAppFlowy": "Import from AppFlowy",
+    "importCreatesWorkspace": "Each import creates a new workspace.",
+    "importFromConfluence": "Import from Confluence",
     "importFromNotion": "Import from Notion",
     "import": "Import",
     "importSuccess": "Uploaded successfully",
-    "importSuccessMessage": "We'll notify you when the import is complete. After that, you can view your imported pages in the sidebar.",
+    "importSuccessMessage": "We'll notify you when the import is complete. Select the new workspace from the workspace switcher to view your imported pages.",
     "importFailed": "Import failed, please check the file format",
     "dropNotionFile": "Drop your Notion zip file here to upload, or click to browse",
+    "dropConfluenceFile": "Drop your Confluence HTML export (.zip) here to upload, or click to browse",
     "dropAppFlowyFile": "Drop your AppFlowy zip file here to upload, or click to browse",
     "error": {
       "pageNameIsEmpty": "The page name is empty, please try another one"
