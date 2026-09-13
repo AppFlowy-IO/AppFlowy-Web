@@ -1,3 +1,4 @@
+import { ReactComponent as TimelineSvg } from '@/assets/icons/timeline.svg';
 import DOMPurify from 'dompurify';
 import React, { useEffect, useMemo } from 'react';
 
@@ -157,6 +158,8 @@ function PageIcon({
       return <ListSvg data-testid='list-view-icon' className={className} />;
     case ViewLayout.Gallery:
       return <GallerySvg data-testid='gallery-view-icon' className={className} />;
+    case ViewLayout.Timeline:
+      return <TimelineSvg data-testid='timeline-view-icon' className={className} />;
     case ViewLayout.Feed:
       return <FeedSvg data-testid='feed-view-icon' className={className} />;
     case ViewLayout.Form:

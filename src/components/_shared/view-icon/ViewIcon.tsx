@@ -1,3 +1,4 @@
+import { ReactComponent as TimelineSvg } from '@/assets/icons/timeline.svg';
 import { useMemo } from 'react';
 
 import { ViewLayout } from '@/application/types';
@@ -61,6 +62,8 @@ export function ViewIcon ({ layout, size, className }: {
       return <ListSvg className={iconClassName} />;
     case ViewLayout.Gallery:
       return <GallerySvg className={iconClassName} />;
+    case ViewLayout.Timeline:
+      return <TimelineSvg className={iconClassName} />;
     case ViewLayout.Feed:
       return <FeedSvg className={iconClassName} />;
     case ViewLayout.Form:

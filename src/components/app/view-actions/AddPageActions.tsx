@@ -257,6 +257,12 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         },
       },
       {
+        label: t('timeline.menuName'),
+        icon: <ViewIcon layout={ViewLayout.Timeline} size='small' />,
+        testId: 'add-timeline-button',
+        onSelect: () => { void handleAddPage(ViewLayout.Timeline, t('document.plugins.database.newDatabase')); },
+      },
+      {
         label: t('feed.menuName'),
         icon: <ViewIcon layout={ViewLayout.Feed} size={'small'} />,
         testId: 'add-feed-button',

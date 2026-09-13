@@ -164,6 +164,7 @@ export enum ViewLayout {
   List = 6,
   Gallery = 7,
   Feed = 8,
+  Timeline = 10,
 }
 
 export interface View {

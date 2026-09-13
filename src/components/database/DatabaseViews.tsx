@@ -25,6 +25,7 @@ import {
   shouldScrollEmbeddedDatabaseViewport,
   shouldUseFixedDatabaseViewport,
 } from '@/components/database/layout';
+import { TimelineGroupingProvider } from '@/components/database/timeline/TimelineGroupingContext';
 import { ListGroupingProvider } from '@/components/database/list/ListGroupingContext';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { cn } from '@/lib/utils';
@@ -40,6 +41,7 @@ import { Log } from '@/utils/log';
 
 import DatabaseConditionsPanel from 'src/components/database/components/conditions/DatabaseConditions';
 
+const Timeline = lazy(() => import('@/components/database/timeline/Timeline'));
 const List = lazy(() => import('@/components/database/list/List'));
 const Gallery = lazy(() => import('@/components/database/gallery'));
 const Feed = lazy(() => import('@/components/database/feed'));
@@ -347,6 +349,8 @@ function DatabaseViews({
         return <Grid />;
       case DatabaseViewLayout.Board:
         return <Board />;
+      case DatabaseViewLayout.Timeline:
+        return <Timeline key={activeViewId} />;
       case DatabaseViewLayout.Calendar:
         return <Calendar key={activeViewId} />;
       case DatabaseViewLayout.Chart:
@@ -481,6 +485,9 @@ function DatabaseViews({
   switch (effectiveLayout) {
     case DatabaseViewLayout.Grid:
       groupedContent = <GridGroupingProvider>{content}</GridGroupingProvider>;
+      break;
+    case DatabaseViewLayout.Timeline:
+      groupedContent = <TimelineGroupingProvider>{content}</TimelineGroupingProvider>;
       break;
     case DatabaseViewLayout.List:
       groupedContent = <ListGroupingProvider>{content}</ListGroupingProvider>;

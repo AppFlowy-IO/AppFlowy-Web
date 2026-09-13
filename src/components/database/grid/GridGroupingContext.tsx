@@ -15,7 +15,7 @@ export function useGridGrouping() {
   return grouping;
 }
 
-export function useSyncGridGroupingMetadata(grouping: GridGrouping) {
+export function useSyncGridGroupingMetadata(grouping: GridGrouping, enabled = true) {
   const syncGroupColumns = useSyncGridGroupColumnsDispatch(grouping.groupId);
   const metadataGroupIdsRef = useRef(grouping.metadataGroupIds ?? grouping.activeGroupIds);
   const metadataInitializationGroupRef = useRef(grouping.metadataInitializationGroup);
@@ -28,7 +28,7 @@ export function useSyncGridGroupingMetadata(grouping: GridGrouping) {
   }, [grouping.activeGroupIds, grouping.metadataGroupIds, grouping.metadataInitializationGroup]);
 
   useEffect(() => {
-    if (!grouping.isGrouped || !grouping.ready || !hasMetadataGroupIds) return;
+    if (!enabled || !grouping.isGrouped || !grouping.ready || !hasMetadataGroupIds) return;
 
     // activeGroupIds may include values read only from stale seed docs. The
     // selector exposes a separate persisted-plus-live list for shared writes.
@@ -38,6 +38,7 @@ export function useSyncGridGroupingMetadata(grouping: GridGrouping) {
 
     if (initializationGroup) consumeLocalGridGroupInitialization(initializationGroup);
   }, [
+    enabled,
     grouping.isGrouped,
     grouping.metadataSyncKey,
     grouping.ready,

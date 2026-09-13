@@ -11,6 +11,7 @@ import GridSettings from './GridSettings';
 
 import type { ComponentType, ReactNode } from 'react';
 
+const TimelineSettings = lazy(() => import('@/components/database/components/settings/TimelineSettings'));
 const GallerySettings = lazy(() => import('@/components/database/components/settings/GallerySettings'));
 
 const SETTINGS_BY_LAYOUT: Partial<Record<DatabaseViewLayout, ComponentType<{ children: ReactNode }>>> = {
@@ -23,6 +24,14 @@ const SETTINGS_BY_LAYOUT: Partial<Record<DatabaseViewLayout, ComponentType<{ chi
 };
 
 function Settings({ children, layout }: { children: ReactNode; layout: DatabaseViewLayout }) {
+  if (layout === DatabaseViewLayout.Timeline) {
+    return (
+      <Suspense fallback={children}>
+        <TimelineSettings>{children}</TimelineSettings>
+      </Suspense>
+    );
+  }
+
   if (layout === DatabaseViewLayout.Gallery) {
     return (
       <Suspense fallback={children}>

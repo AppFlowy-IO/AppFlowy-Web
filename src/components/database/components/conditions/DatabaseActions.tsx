@@ -114,12 +114,13 @@ export function DatabaseActions() {
   const { canOpen, isOpening, openDatabaseAsPage } = useOpenDatabaseAsPage({ fallbackViewId: databasePageId });
 
   const showSorts = [
+    DatabaseViewLayout.Timeline,
     DatabaseViewLayout.Grid,
     DatabaseViewLayout.List,
     DatabaseViewLayout.Gallery,
     DatabaseViewLayout.Feed,
   ].includes(layout);
-  const showSearch = layout === DatabaseViewLayout.Gallery || layout === DatabaseViewLayout.Feed;
+  const showSearch = [DatabaseViewLayout.Gallery, DatabaseViewLayout.Feed, DatabaseViewLayout.Timeline].includes(layout);
   const showTemplates = [
     DatabaseViewLayout.Grid,
     DatabaseViewLayout.Board,

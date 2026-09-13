@@ -8,11 +8,14 @@ const DATABASE_LAYOUTS = new Set<ViewLayout>([
   ViewLayout.List,
   ViewLayout.Gallery,
   ViewLayout.Feed,
+  ViewLayout.Timeline,
 ]);
 
 /** Map each database view layout to its cross-client document block type. */
 export function getDatabaseBlockTypeForLayout(layout: ViewLayout): BlockType | null {
   switch (layout) {
+    // Timeline uses the generic database block; its view owns the native layout.
+    case ViewLayout.Timeline:
     case ViewLayout.Grid:
       return BlockType.GridBlock;
     case ViewLayout.List:

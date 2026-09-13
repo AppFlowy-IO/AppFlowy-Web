@@ -119,6 +119,8 @@ export const DatabaseTabItem = memo(
           return 'List';
         case DatabaseViewLayout.Gallery:
           return 'Gallery';
+        case DatabaseViewLayout.Timeline:
+          return t('timeline.menuName');
         case DatabaseViewLayout.Feed:
           return 'Feed';
         case DatabaseViewLayout.Form:
@@ -146,6 +148,8 @@ export const DatabaseTabItem = memo(
         ? ViewLayout.List
         : databaseLayout === DatabaseViewLayout.Gallery
         ? ViewLayout.Gallery
+        : databaseLayout === DatabaseViewLayout.Timeline
+        ? ViewLayout.Timeline
         : databaseLayout === DatabaseViewLayout.Feed
         ? ViewLayout.Feed
         : databaseLayout === DatabaseViewLayout.Form

@@ -142,6 +142,11 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
           {t('chart.menuName')}
         </DropdownMenuItem>
 
+        <DropdownMenuItem data-testid='add-timeline-view-option' onSelect={() => void handleAddView(DatabaseViewLayout.Timeline, t('timeline.menuName'))}>
+          <ViewIcon layout={ViewLayout.Timeline} size='small' />
+          {t('timeline.menuName')}
+        </DropdownMenuItem>
+
         {FORM_VIEW_CREATION_ENABLED && (
           <DropdownMenuItem
             data-testid='add-form-view-option'
