@@ -625,6 +625,94 @@ Then('the table has no {string} column', async ({ page }, name) => {
   await expect(page.getByTestId(`timeline-table-header-${TABLE_FIELD_ID[name]}`)).toHaveCount(0);
 });
 
+// --- Grouping ---------------------------------------------------------------
+
+const STATUS_OPTIONS = [
+  { id: 'opt-doing', name: 'Doing', color: 'Purple' },
+  { id: 'opt-done', name: 'Done', color: 'Green' },
+];
+
+function groupHeader(page: Page, name: string) {
+  return page.locator('[data-testid^="timeline-group-"]:not([data-testid^="timeline-group-new-row-"])').filter({
+    has: page.locator('[data-testid^="list-group-header-"]').filter({ hasText: name }),
+  });
+}
+
+Given(
+  'a {string} select field where {string} is {string} and {string} is {string}',
+  async ({ page }, name, firstTitle, firstValue, secondTitle, secondValue) => {
+    await injectFieldDirect(page, {
+      fieldId: 'status',
+      name,
+      fieldType: FieldType.SingleSelect,
+      typeOption: { content: JSON.stringify({ options: STATUS_OPTIONS, disable_color: false }) },
+    });
+    for (const [title, value] of [
+      [firstTitle, firstValue],
+      [secondTitle, secondValue],
+    ]) {
+      const option = STATUS_OPTIONS.find((candidate) => candidate.name === value);
+
+      if (!option) throw new Error(`Unknown option ${value}`);
+      await setTextCellDirect(page, rowId(page, title), 'status', FieldType.SingleSelect, option.id);
+    }
+  }
+);
+
+When('I group the timeline by {string}', async ({ page }, name) => {
+  await page.getByTestId('database-actions-settings').click();
+  await page.getByTestId('timeline-group-settings-trigger').click();
+  await page.locator('[data-testid^="timeline-group-by-field-"]').filter({ hasText: name }).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-testid^="list-group-header-"]').first()).toBeVisible({ timeout: 15_000 });
+});
+
+Then('the timeline shows groups {string} with {int} row each', async ({ page }, list, count) => {
+  for (const name of list.split(',').map((item: string) => item.trim())) {
+    const header = groupHeader(page, name);
+
+    await expect(header).toHaveCount(1);
+    await expect(header.getByTestId('list-group-row-count')).toHaveText(String(count));
+  }
+});
+
+When('I collapse the timeline group {string}', async ({ page }, name) => {
+  await groupHeader(page, name).getByTestId('list-group-collapse-toggle').click();
+});
+
+When('I expand the timeline group {string}', async ({ page }, name) => {
+  await groupHeader(page, name).getByTestId('list-group-collapse-toggle').click();
+});
+
+Then('the table does not list {string}', async ({ page }, title) => {
+  await expect(TimelineSelectors.sidebarRows(page).filter({ hasText: title })).toHaveCount(0);
+});
+
+When('I add a row from the timeline group {string} footer', async ({ page }, name) => {
+  const option = STATUS_OPTIONS.find((candidate) => candidate.name === name);
+
+  if (!option) throw new Error(`Unknown option ${name}`);
+  await page.getByTestId(`timeline-group-new-row-${option.id}`).click();
+  // The new row opens in its detail modal; close it to see the table.
+  await closeRowDetailWithEscape(page);
+});
+
+Then('the timeline group {string} has {int} rows', async ({ page }, name, count) => {
+  await expect(groupHeader(page, name).getByTestId('list-group-row-count')).toHaveText(String(count), {
+    timeout: 15_000,
+  });
+});
+
+When('I remove the timeline grouping', async ({ page }) => {
+  await page.locator('[data-testid="list-group-actions"]').first().click();
+  await page.getByTestId('list-remove-grouping').click();
+});
+
+Then('the timeline has no group headers', async ({ page }) => {
+  await expect(page.locator('[data-testid^="list-group-header-"]')).toHaveCount(0, { timeout: 15_000 });
+});
+
 Then('the timeline draws {int} dependency arrow', async ({ page }, count) => {
   await expect(TimelineSelectors.arrows(page)).toHaveCount(count, { timeout: 15_000 });
 });

@@ -136,6 +136,7 @@ import {
   YDatabaseGridLayoutSetting,
   YDatabaseLayoutSettings,
   YDatabaseListLayoutSetting,
+  YDatabaseTimelineLayoutSetting,
   YDatabaseRow,
   YDatabaseRowOrders,
   YDatabaseSort,
@@ -1040,10 +1041,13 @@ function getOrCreateBoardLayoutSetting(view: YDatabaseView) {
   return layoutSetting;
 }
 
+/** Layouts whose grouping options live under `layout_settings[String(layout)]`. */
+export type GroupableDatabaseLayout = DatabaseViewLayout.Grid | DatabaseViewLayout.List | DatabaseViewLayout.Timeline;
+
 function getOrCreateDatabaseGroupingLayoutSetting(
   view: YDatabaseView,
-  layout: DatabaseViewLayout.Grid | DatabaseViewLayout.List
-): YDatabaseGridLayoutSetting | YDatabaseListLayoutSetting {
+  layout: GroupableDatabaseLayout
+): YDatabaseGridLayoutSetting | YDatabaseListLayoutSetting | YDatabaseTimelineLayoutSetting {
   let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
 
   if (!layoutSettings) {
@@ -1051,7 +1055,12 @@ function getOrCreateDatabaseGroupingLayoutSetting(
     view.set(YjsDatabaseKey.layout_settings, layoutSettings);
   }
 
-  let layoutSetting = layout === DatabaseViewLayout.List ? layoutSettings.get('4') : layoutSettings.get('0');
+  let layoutSetting =
+    layout === DatabaseViewLayout.List
+      ? layoutSettings.get('4')
+      : layout === DatabaseViewLayout.Timeline
+      ? layoutSettings.get('8')
+      : layoutSettings.get('0');
 
   if (!layoutSetting) {
     layoutSetting = new Y.Map() as YDatabaseGridLayoutSetting | YDatabaseListLayoutSetting;
@@ -1061,7 +1070,7 @@ function getOrCreateDatabaseGroupingLayoutSetting(
   return layoutSetting;
 }
 
-export function useToggleDatabaseHideEmptyGroups(layout: DatabaseViewLayout.Grid | DatabaseViewLayout.List) {
+export function useToggleDatabaseHideEmptyGroups(layout: GroupableDatabaseLayout) {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
@@ -1088,6 +1097,10 @@ export function useToggleGridHideEmptyGroups() {
 
 export function useToggleListHideEmptyGroups() {
   return useToggleDatabaseHideEmptyGroups(DatabaseViewLayout.List);
+}
+
+export function useToggleTimelineHideEmptyGroups() {
+  return useToggleDatabaseHideEmptyGroups(DatabaseViewLayout.Timeline);
 }
 
 export function useSetDatabaseGroupVisibilityDispatch(groupId?: string, fieldId?: string) {

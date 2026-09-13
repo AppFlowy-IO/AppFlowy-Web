@@ -49,6 +49,7 @@ import {
 } from './constants';
 import { useScrollWindow } from './hooks/useScrollWindow';
 import { TimelineDragMode, TimelineDragPreview, TimelineDragSpan, useTimelineDrag } from './hooks/useTimelineDrag';
+import { useTimelineItems } from './hooks/useTimelineItems';
 import { useTimelineLinkDrag } from './hooks/useTimelineLinkDrag';
 import { parseProgressPercent, parseRelationRowIds, useTimelineFieldValues } from './hooks/useTimelineFieldValues';
 import { useTimelinePermissions } from './hooks/useTimelinePermissions';
@@ -74,6 +75,8 @@ import { TimelineBarDragLabel } from './TimelineBar';
 import { TimelineToolbar } from './TimelineToolbar';
 import { TimelineGrid } from './TimelineGrid';
 import { TimelineHeader } from './TimelineHeader';
+import { TimelineGroupFooter, TimelineGroupRow } from './TimelineGroupRow';
+import { useTimelineGrouping } from './TimelineGroupingContext';
 import { TimelineRow } from './TimelineRow';
 
 // Calendar cards carry only the title; a timeline bar adds chips solely for
@@ -138,6 +141,11 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     : TIMELINE_COLLAPSED_SIDEBAR_WIDTH;
 
   const { rows, emptyEvents, rowOrders, hasEndField } = useTimelineRows(showSidebar);
+  const grouping = useTimelineGrouping();
+  // Rows, or group headers / rows / "+ New" footers when the view is grouped.
+  const items = useTimelineItems(rows, grouping, permissions.editable);
+  // Bars and arrows are addressed by item index; non-row items carry no id.
+  const itemRowIds = useMemo(() => items.map((item) => (item.kind === 'row' ? item.row.rowId : '')), [items]);
   const reorderRow = useReorderRowDispatch();
   // Same reorder semantics as the List view: drop above / below a row, then
   // tell the view which row now precedes the moved one.
@@ -357,15 +365,22 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   );
 
   const virtualizer = useVirtualizer({
-    count: rows.length,
+    count: items.length,
     getScrollElement: () => scrollerRef.current,
     estimateSize: () => TIMELINE_ROW_HEIGHT,
     overscan: 8,
     scrollMargin: TIMELINE_HEADER_HEIGHT,
-    getItemKey: (index) => rows[index]?.rowId ?? index,
+    getItemKey: (index) => items[index]?.key ?? index,
   });
 
-  const rowIndexById = useMemo(() => new Map(rows.map((row, index) => [row.rowId, index] as const)), [rows]);
+  const rowIndexById = useMemo(() => {
+    const map = new Map<string, number>();
+
+    items.forEach((item, index) => {
+      if (item.kind === 'row') map.set(item.row.rowId, index);
+    });
+    return map;
+  }, [items]);
 
   const updateRelationCell = useUpdateRelationCellDispatch();
   const graphRef = useRef(graph);
@@ -403,8 +418,13 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   // Base rects only change with the data or the scale; a drag overlays the few
   // rows it moves so every other row keeps its rect reference (and its memo).
   const baseRects = useMemo(
-    () => rows.map((row) => (row.start ? getBarRect(geometry, row.start, row.end, row.allDay) : null)),
-    [geometry, rows]
+    () =>
+      items.map((item) =>
+        item.kind === 'row' && item.row.start
+          ? getBarRect(geometry, item.row.start, item.row.end, item.row.allDay)
+          : null
+      ),
+    [geometry, items]
   );
   const rects = useMemo(() => {
     if (!preview || preview.mode === 'progress') return baseRects;
@@ -471,7 +491,9 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     void newRow({ tailing: true, openAfterCreate: true }).catch(() => undefined);
   }, [newRow]);
 
-  const footerRows = (permissions.readOnly ? 0 : 1) + (showSidebar ? 1 : 0);
+  // Grouped views create rows from their group footers instead of one global footer.
+  const showNewRowFooter = !permissions.readOnly && !grouping.isGrouped;
+  const footerRows = (showNewRowFooter ? 1 : 0) + (showSidebar ? 1 : 0);
   const bodyHeight = virtualizer.getTotalSize() + footerRows * TIMELINE_ROW_HEIGHT + TIMELINE_BOTTOM_PADDING;
   const virtualItems = virtualizer.getVirtualItems();
   const firstVisibleIndex = virtualItems[0]?.index ?? 0;
@@ -572,7 +594,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
             {graph.predecessors.size > 0 || link ? (
               <TimelineArrows
                 pending={link}
-                rowIds={rowIds}
+                rowIds={itemRowIds}
                 rects={rects}
                 graph={graph}
                 firstVisibleIndex={firstVisibleIndex}
@@ -584,9 +606,42 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
             ) : null}
 
             {virtualItems.map((virtualRow) => {
-              const row = rows[virtualRow.index];
+              const item = items[virtualRow.index];
 
-              if (!row) return null;
+              if (!item) return null;
+              if (item.kind !== 'row') {
+                return (
+                  <div
+                    key={virtualRow.key}
+                    className='absolute left-0 top-0 z-[2] w-full'
+                    style={{
+                      height: virtualRow.size,
+                      transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
+                    }}
+                  >
+                    {item.kind === 'group' ? (
+                      <TimelineGroupRow
+                        group={item.group}
+                        fieldId={grouping.fieldId}
+                        fieldName={grouping.fieldName}
+                        fieldType={grouping.fieldType}
+                        groupConfigId={grouping.groupId}
+                        sidebarWidth={sidebarWidth}
+                        showSidebar={showSidebar}
+                      />
+                    ) : (
+                      <TimelineGroupFooter
+                        group={item.group}
+                        fieldId={grouping.fieldId}
+                        sidebarWidth={sidebarWidth}
+                        showSidebar={showSidebar}
+                      />
+                    )}
+                  </div>
+                );
+              }
+
+              const { row } = item;
               const isDragged = preview?.rowId === row.rowId;
               const rect = rects[virtualRow.index];
               // Booleans, not pixels, so a scroll frame only re-renders rows whose pill state flips.
@@ -626,7 +681,9 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                     onScrollTo={handleScrollToX}
                     onBarPointerDown={handleBarPointerDown}
                     onEmptyClick={handleEmptyClick}
-                    onDropRow={permissions.editable ? handleDropRow : undefined}
+                    onDropRow={permissions.editable && !grouping.isGrouped ? handleDropRow : undefined}
+                    groupFieldId={grouping.isGrouped ? grouping.fieldId : undefined}
+                    groupId={item.groupId}
                     linkable={permissions.editable && Boolean(setting.dependencyFieldId)}
                     linkTarget={link?.targetRowId === row.rowId}
                     onLinkPointerDown={handleLinkPointerDown}
@@ -635,7 +692,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
               );
             })}
 
-            {!permissions.readOnly ? (
+            {showNewRowFooter ? (
               <div
                 className='absolute left-0 z-[2] flex w-full'
                 style={{ top: virtualizer.getTotalSize(), height: TIMELINE_ROW_HEIGHT }}
@@ -670,7 +727,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
               <div
                 className='absolute left-0 z-[2] flex w-full'
                 style={{
-                  top: virtualizer.getTotalSize() + (permissions.readOnly ? 0 : TIMELINE_ROW_HEIGHT),
+                  top: virtualizer.getTotalSize() + (showNewRowFooter ? TIMELINE_ROW_HEIGHT : 0),
                   height: TIMELINE_ROW_HEIGHT,
                 }}
                 data-testid='timeline-calculations'

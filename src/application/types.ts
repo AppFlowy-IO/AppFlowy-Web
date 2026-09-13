@@ -1037,7 +1037,9 @@ export interface YDatabaseTimelineLayoutSetting extends Y.Map<unknown> {
       | YjsDatabaseKey.first_day_of_week_v2
       | YjsDatabaseKey.dependency_shift_ty
   ): number | bigint | null | undefined;
-  get(key: YjsDatabaseKey.show_table | YjsDatabaseKey.avoid_weekends): boolean | undefined;
+  get(
+    key: YjsDatabaseKey.show_table | YjsDatabaseKey.avoid_weekends | YjsDatabaseKey.hide_empty_groups
+  ): boolean | undefined;
   get(key: YjsDatabaseKey.table_field_ids): unknown;
 }
 

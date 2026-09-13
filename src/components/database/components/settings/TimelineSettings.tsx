@@ -4,6 +4,7 @@ import { DatabaseViewLayout } from '@/application/types';
 import Layout from '@/components/database/components/settings/Layout';
 import Properties from '@/components/database/components/settings/Properties';
 import TimelineLayoutSettings from '@/components/database/components/settings/TimelineLayoutSettings';
+import TimelineSettingGroup from '@/components/database/components/settings/TimelineSettingGroup';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +28,7 @@ function TimelineSettings({ children }: { children: React.ReactNode }) {
           <Properties />
           <Layout currentLayout={DatabaseViewLayout.Timeline} />
           <TimelineLayoutSettings />
+          <TimelineSettingGroup />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

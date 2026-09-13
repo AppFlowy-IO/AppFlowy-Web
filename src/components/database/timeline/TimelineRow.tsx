@@ -38,6 +38,9 @@ interface TimelineRowProps {
   rowOrders: Row[];
   /** Properties shown as table columns after the title. */
   tableFieldIds: string[];
+  /** When grouped: the group field and this row's group, so inserts land in the same group. */
+  groupFieldId?: string;
+  groupId?: string;
   onOpen?: (rowId: string) => void;
   onSelect?: (rowId: string | null) => void;
   onScrollTo?: (x: number) => void;
@@ -103,6 +106,8 @@ export const TimelineRow = memo(
     formatTime,
     rowOrders,
     tableFieldIds,
+    groupFieldId,
+    groupId,
     onOpen,
     onSelect,
     onScrollTo,
@@ -153,6 +158,8 @@ export const TimelineRow = memo(
             selected={selected}
             rowOrders={rowOrders}
             tableFieldIds={tableFieldIds}
+            groupFieldId={groupFieldId}
+            groupId={groupId}
             dropTargetRef={rowRef}
             onOpen={onOpen}
             onSelect={onSelect}

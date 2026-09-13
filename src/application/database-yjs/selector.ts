@@ -1775,7 +1775,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const inlineRowOrders = getInlineViewRowOrders(database);
   const { cachedRowDocs, getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(
     Boolean(fieldId),
-    `${layout === DatabaseViewLayout.List ? 'list' : 'grid'}-grouping`
+    `${layout === DatabaseViewLayout.List ? 'list' : layout === DatabaseViewLayout.Timeline ? 'timeline' : 'grid'}-grouping`
   );
   const groupingRows = useMemo(() => {
     const next = { ...cachedRowDocs };
@@ -2027,6 +2027,8 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     const layoutSetting =
       layout === DatabaseViewLayout.List
         ? view?.get(YjsDatabaseKey.layout_settings)?.get('4')
+        : layout === DatabaseViewLayout.Timeline
+        ? view?.get(YjsDatabaseKey.layout_settings)?.get('8')
         : view?.get(YjsDatabaseKey.layout_settings)?.get('0');
     const storedHideEmpty = layoutSetting?.get(YjsDatabaseKey.hide_empty_groups);
     const hideEmptyGroups = storedHideEmpty === undefined ? true : Boolean(storedHideEmpty);
@@ -2192,6 +2194,10 @@ export function useGridGroupingSelector(): GridGrouping {
 
 export function useListGroupingSelector(): DatabaseGrouping {
   return useDatabaseGroupingSelector(DatabaseViewLayout.List);
+}
+
+export function useTimelineGroupingSelector(): DatabaseGrouping {
+  return useDatabaseGroupingSelector(DatabaseViewLayout.Timeline);
 }
 
 /**

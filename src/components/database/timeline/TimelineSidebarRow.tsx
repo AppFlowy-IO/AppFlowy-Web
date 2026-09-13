@@ -27,6 +27,9 @@ interface TimelineSidebarRowProps {
   rowOrders: Row[];
   /** Properties shown as columns after the title. */
   tableFieldIds: string[];
+  /** When grouped: inserted rows inherit this group's value. */
+  groupFieldId?: string;
+  groupId?: string;
   /** The whole timeline row, so a drop anywhere along it counts. */
   dropTargetRef: MutableRefObject<HTMLDivElement | null>;
   onOpen?: (rowId: string) => void;
@@ -47,6 +50,8 @@ export const TimelineSidebarRow = memo(
     selected,
     rowOrders,
     tableFieldIds,
+    groupFieldId,
+    groupId,
     dropTargetRef,
     onOpen,
     onSelect,
@@ -89,6 +94,8 @@ export const TimelineSidebarRow = memo(
             reorderable={Boolean(onDropRow)}
             rowId={row.rowId}
             rowOrders={rowOrders}
+            groupFieldId={groupFieldId}
+            groupId={groupId}
           />
         ) : (
           <div className='w-2 shrink-0' />

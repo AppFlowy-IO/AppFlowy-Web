@@ -26,6 +26,7 @@ import {
   shouldUseFixedDatabaseViewport,
 } from '@/components/database/layout';
 import { ListGroupingProvider } from '@/components/database/list/ListGroupingContext';
+import { TimelineGroupingProvider } from '@/components/database/timeline/TimelineGroupingContext';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { cn } from '@/lib/utils';
 import {
@@ -487,6 +488,9 @@ function DatabaseViews({
       break;
     case DatabaseViewLayout.List:
       groupedContent = <ListGroupingProvider>{content}</ListGroupingProvider>;
+      break;
+    case DatabaseViewLayout.Timeline:
+      groupedContent = <TimelineGroupingProvider>{content}</TimelineGroupingProvider>;
       break;
   }
 

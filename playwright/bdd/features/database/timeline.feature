@@ -239,3 +239,18 @@ Feature: Timeline view interactions
     Then the "Progress" column calculation reads "Sum40"
     When I hide the "Progress" table column
     Then the table has no "Progress" column
+
+  Scenario: Grouping by a select field stacks the rows under group headers
+    Given a "Status" select field where "Design" is "Doing" and "Build" is "Done"
+    When I group the timeline by "Status"
+    Then the timeline shows groups "Doing, Done" with 1 row each
+    And the timeline shows 2 bars
+    When I collapse the timeline group "Doing"
+    Then the timeline shows 1 bars
+    And the table does not list "Design"
+    When I expand the timeline group "Doing"
+    And I add a row from the timeline group "Done" footer
+    Then the timeline group "Done" has 2 rows
+    When I remove the timeline grouping
+    Then the timeline has no group headers
+    And the table lists "Design, Build, Untitled" in that order
