@@ -125,7 +125,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const showSidebar = localOverride?.showTable ?? setting.showTable;
   const sidebarWidth = showSidebar ? TIMELINE_SIDEBAR_WIDTH : TIMELINE_COLLAPSED_SIDEBAR_WIDTH;
 
-  const { rows, emptyEvents, rowOrders } = useTimelineRows(showSidebar);
+  const { rows, emptyEvents, rowOrders, hasEndField } = useTimelineRows(showSidebar);
   const reorderRow = useReorderRowDispatch();
   // Same reorder semantics as the List view: drop above / below a row, then
   // tell the view which row now precedes the moved one.
@@ -204,6 +204,17 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     (rowId: string, start: Date, endExclusive: Date, allDay: boolean, keepSingle: boolean, historyGroup?: object) => {
       const history = historyGroup ? { historyGroup } : undefined;
 
+      if (hasEndField) {
+        // Separate start and end fields: the start cell and the end cell each
+        // hold a single date, written as one undo group.
+        const group = history ?? { historyGroup: {} };
+        const end = allDay ? correctAllDayEndForStorage(endExclusive) : endExclusive;
+
+        updateStartEnd(rowId, setting.fieldId, dateToUnixTimestamp(start), undefined, allDay, group);
+        if (!keepSingle) updateStartEnd(rowId, setting.endFieldId, dateToUnixTimestamp(end), undefined, allDay, group);
+        return;
+      }
+
       if (allDay) {
         const singleDay = calendarDaysBetween(start, endExclusive) <= 1;
         const end = singleDay ? undefined : dateToUnixTimestamp(correctAllDayEndForStorage(endExclusive));
@@ -221,7 +232,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
         history
       );
     },
-    [setting.fieldId, updateStartEnd]
+    [hasEndField, setting.endFieldId, setting.fieldId, updateStartEnd]
   );
 
   const rowsRef = useRef(rows);

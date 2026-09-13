@@ -214,3 +214,18 @@ Feature: Timeline view interactions
     Then the table lists "Build, Design" in that order
     When I press undo
     Then the table lists "Design, Build" in that order
+
+  Scenario: Separate start and end date fields plot one bar and are written together
+    Given a "Due" date field where "Design" is due in 3 days
+    When I choose "Due" as the timeline end date field
+    Then the "Design" bar spans 4 columns
+    When I drag the "Design" bar 1 columns later
+    Then the "Design" bar moved 1 columns later
+    And the "Design" bar spans 4 columns
+    When I press undo
+    Then the "Design" bar is back where it started
+    When I drag the end handle of "Design" 2 columns later
+    Then the "Design" bar spans 6 columns
+    And the "Design" due date is 5 days from today
+    When I choose no timeline end date field
+    Then the "Design" bar spans 1 columns

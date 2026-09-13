@@ -57,6 +57,11 @@ function TimelineLayoutSettings() {
     () => allProperties.filter((property) => DATE_FIELD_TYPES.includes(property.type)),
     [allProperties]
   );
+  // Notion's "separate start and end dates": any other date field can end the bar.
+  const endDateProperties = useMemo(
+    () => dateProperties.filter((property) => property.id !== setting.fieldId),
+    [dateProperties, setting.fieldId]
+  );
   // Only relations that point back at this database can express dependencies.
   const dependencyProperties = useMemo(
     () =>
@@ -144,6 +149,16 @@ function TimelineLayoutSettings() {
               {setting.fieldId === property.id && <DropdownMenuItemTick />}
             </DropdownMenuItem>
           ))}
+
+          <DropdownMenuSeparator />
+
+          {renderOptionalField(
+            t('timeline.settings.endDateField', { defaultValue: 'End date' }),
+            'timeline-end-field',
+            endDateProperties,
+            setting.endFieldId,
+            (endFieldId) => updateSetting({ endFieldId })
+          )}
 
           <DropdownMenuSeparator />
 

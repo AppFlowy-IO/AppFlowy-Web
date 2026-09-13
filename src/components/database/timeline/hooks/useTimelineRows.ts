@@ -21,7 +21,7 @@ export interface TimelineRowModel {
  */
 export function useTimelineRows(includeUndated: boolean) {
   const rowOrders = useRowOrdersSelector();
-  const { events, emptyEvents } = useTimelineEventsSelector();
+  const { events, emptyEvents, hasEndField } = useTimelineEventsSelector();
 
   const rows = useMemo<TimelineRowModel[]>(() => {
     const byRowId = new Map<string, CalendarEvent>();
@@ -57,5 +57,5 @@ export function useTimelineRows(includeUndated: boolean) {
     return result;
   }, [events, emptyEvents, includeUndated, rowOrders]);
 
-  return { rows, emptyEvents, rowOrders: rowOrders ?? EMPTY_ROW_ORDERS };
+  return { rows, emptyEvents, rowOrders: rowOrders ?? EMPTY_ROW_ORDERS, hasEndField };
 }

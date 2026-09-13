@@ -509,6 +509,56 @@ Then('{string} depends on {string}', async ({ page }, dependent, dependency) => 
     .toContain(dependencyId);
 });
 
+// --- Separate start and end date fields ------------------------------------
+
+function localMidnightOffset(days: number): Date {
+  const date = new Date();
+
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+Given('a {string} date field where {string} is due in {int} days', async ({ page }, name, title, days) => {
+  await injectFieldDirect(page, { fieldId: 'due', name, fieldType: FieldType.DateTime });
+  await setTextCellDirect(
+    page,
+    rowId(page, title),
+    'due',
+    FieldType.DateTime,
+    String(Math.floor(localMidnightOffset(days).getTime() / 1000))
+  );
+});
+
+When('I choose {string} as the timeline end date field', async ({ page }, _name) => {
+  await chooseTimelineSettingsOption(page, 'timeline-end-field-due');
+});
+
+When('I choose no timeline end date field', async ({ page }) => {
+  await chooseTimelineSettingsOption(page, 'timeline-end-field-none');
+});
+
+Then('the {string} bar spans {int} columns', async ({ page }, title, columns) => {
+  await expectBarWidth(page, title, columns * MONTH_COLUMN_WIDTH);
+});
+
+Then('the {string} due date is {int} days from today', async ({ page }, title, days) => {
+  const id = rowId(page, title);
+  const seconds = await page.evaluate(
+    async ({ id }) => {
+      const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: any }).__TEST_DATABASE_CONTEXT__;
+      const rowDoc = ctx.rowMap?.[id] ?? (await ctx.ensureRow(id));
+
+      return Number(rowDoc.getMap('data').get('data').get('cells').get('due')?.get('data'));
+    },
+    { id }
+  );
+  const stored = new Date(seconds * 1000);
+
+  stored.setHours(0, 0, 0, 0);
+  expect(stored.getTime()).toBe(localMidnightOffset(days).getTime());
+});
+
 Then('the timeline draws {int} dependency arrow', async ({ page }, count) => {
   await expect(TimelineSelectors.arrows(page)).toHaveCount(count, { timeout: 15_000 });
 });

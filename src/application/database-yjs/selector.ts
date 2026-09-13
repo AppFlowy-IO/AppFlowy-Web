@@ -3121,10 +3121,38 @@ export function useCalendarEventsSelector() {
   return useDateFieldEventsSelector(setting?.fieldId || '');
 }
 
+/**
+ * Rows plotted on the timeline. With Notion's "separate start and end dates"
+ * (`endFieldId` set) each bar runs from the start field's date to the end
+ * field's date; a row whose end is missing or earlier than its start is a
+ * single-unit bar, and a row without a start is undated.
+ */
 export function useTimelineEventsSelector() {
   const setting = useTimelineLayoutSetting();
+  const startFieldId = setting?.fieldId || '';
+  const endFieldId = setting?.endFieldId && setting.endFieldId !== startFieldId ? setting.endFieldId : '';
+  const starts = useDateFieldEventsSelector(startFieldId);
+  const ends = useDateFieldEventsSelector(endFieldId);
+  const { field: endField } = useFieldSelector(endFieldId);
+  const endFieldType = endField ? (Number(endField.get(YjsDatabaseKey.type)) as FieldType) : null;
+  const hasEndField =
+    endFieldId !== '' &&
+    endFieldType !== null &&
+    [FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime].includes(endFieldType);
 
-  return useDateFieldEventsSelector(setting?.fieldId || '');
+  const events = useMemo(() => {
+    if (!hasEndField) return starts.events;
+    const endByRow = new Map(ends.events.map((event) => [event.rowId, event] as const));
+
+    return starts.events.map((event) => {
+      const end = endByRow.get(event.rowId)?.start;
+
+      if (!end || !event.start || end < event.start) return { ...event, end: undefined, isRange: false };
+      return { ...event, end, isRange: true };
+    });
+  }, [ends.events, hasEndField, starts.events]);
+
+  return { events, emptyEvents: starts.emptyEvents, hasEndField };
 }
 
 /**
