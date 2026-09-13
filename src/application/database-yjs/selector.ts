@@ -2025,6 +2025,8 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     const layoutSetting =
       layout === DatabaseViewLayout.List
         ? view?.get(YjsDatabaseKey.layout_settings)?.get('4')
+        : layout === DatabaseViewLayout.Timeline
+        ? view?.get(YjsDatabaseKey.layout_settings)?.get('8')
         : view?.get(YjsDatabaseKey.layout_settings)?.get('0');
     const storedHideEmpty = layoutSetting?.get(YjsDatabaseKey.hide_empty_groups);
     const hideEmptyGroups = storedHideEmpty === undefined ? true : Boolean(storedHideEmpty);

@@ -61,6 +61,7 @@ function MobileOutlineWithCover({
       case ViewLayout.Grid:
       case ViewLayout.List:
       case ViewLayout.Gallery:
+      case ViewLayout.Timeline:
       case ViewLayout.Feed:
         return {
           iconClassName: 'text-[#8263FF]',

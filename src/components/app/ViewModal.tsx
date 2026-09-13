@@ -429,6 +429,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       case ViewLayout.Grid:
       case ViewLayout.Board:
       case ViewLayout.Calendar:
+      case ViewLayout.Timeline:
       case ViewLayout.Chart:
       case ViewLayout.List:
       case ViewLayout.Gallery:

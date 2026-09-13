@@ -52,6 +52,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
+import { ReactComponent as TimelineIcon } from '@/assets/icons/timeline.svg';
 // import { ReactComponent as AIWriterIcon } from '@/assets/slash_menu_icon_ai_writer.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/add_emoji.svg';
 import { ReactComponent as AddPageIcon } from '@/assets/icons/add_to_page.svg';
@@ -1464,6 +1465,14 @@ export function SlashPanel({
         onClick: () => {
           void handleOpenLinkedDatabasePicker(ViewLayout.Gallery, 'linkedGallery');
         },
+      },
+      {
+        label: t('timeline.menuName'),
+        key: 'timeline',
+        icon: <TimelineIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['timeline', 'gantt', 'schedule', 'roadmap'],
+        onClick: () => { void createInlineDatabase(ViewLayout.Timeline); },
       },
       {
         label: t('feed.menuName'),

@@ -36,10 +36,6 @@ import { deleteReciprocalRelationField } from '@/application/database-yjs/dispat
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { normalizeCreatedDatabaseFeedView, updateCreatesExactFeedView } from '@/application/database-yjs/feed-layout';
 import {
-  normalizeCreatedDatabaseFeedView,
-  updateCreatesExactFeedView,
-} from '@/application/database-yjs/feed-layout';
-import {
   getFieldName,
   NumberFormat,
   parseChecklistData,
@@ -82,6 +78,7 @@ import {
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
 import type { DatabaseHistoryAction } from '@/application/database-yjs/history';
+import { updateTimelineSettings } from '@/application/database-yjs/timeline-layout';
 import {
   initializeListLayoutSetting,
   normalizeCreatedDatabaseListView,
@@ -2747,6 +2744,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.List]: ViewLayout.List,
         [DatabaseViewLayout.Gallery]: ViewLayout.Gallery,
         [DatabaseViewLayout.Feed]: ViewLayout.Feed,
+        [DatabaseViewLayout.Timeline]: ViewLayout.Timeline,
         [DatabaseViewLayout.Form]: ViewLayout.Form,
       };
       const layoutToName: Record<DatabaseViewLayout, string> = {
@@ -2757,6 +2755,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.List]: 'List',
         [DatabaseViewLayout.Gallery]: 'Gallery',
         [DatabaseViewLayout.Feed]: 'Feed',
+        [DatabaseViewLayout.Timeline]: 'Timeline',
         [DatabaseViewLayout.Form]: 'Form builder',
       };
       const viewLayout = layoutToViewLayout[layout];
@@ -3194,6 +3193,18 @@ export function useUpdateDatabaseLayout(viewId: string) {
               }
 
               initializeBoardLayoutSetting(view);
+            }
+
+            if (layout === DatabaseViewLayout.Timeline) {
+              const configuredId = view.get(YjsDatabaseKey.layout_settings)?.get('8')?.get('field_id');
+              const dateField = getValidCalendarField(
+                database, fieldOrders, typeof configuredId === 'string' ? configuredId : undefined
+              )
+                ?? enhanceCalendarLayoutByFieldExists(fieldOrders);
+              const fieldId = dateField?.get(YjsDatabaseKey.id);
+
+              if (!fieldId) throw new Error('Date field not found');
+              updateTimelineSettings(view, { fieldId });
             }
 
             if (layout === DatabaseViewLayout.Calendar) {

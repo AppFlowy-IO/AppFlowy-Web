@@ -29,6 +29,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         value: DatabaseViewLayout.Board,
         label: t('board.menuName'),
       },
+      { value: DatabaseViewLayout.Timeline, label: t('timeline.menuName') },
       {
         value: DatabaseViewLayout.Calendar,
         label: t('calendar.menuName'),

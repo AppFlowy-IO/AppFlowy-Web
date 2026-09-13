@@ -506,6 +506,7 @@ export enum ViewLayout {
   /// value (7) — they're distinct enums and the mapping between them
   /// lives in `dispatch.ts`.
   Form = 9,
+  Timeline = 10,
 }
 
 export enum YjsEditorKey {
@@ -891,6 +892,7 @@ export enum DatabaseViewLayout {
   /// Matches `DatabaseLayout::Form = 7` in
   /// `libs/collab/src/database/views/layout.rs`.
   Form = 7,
+  Timeline = 8,
 }
 
 export interface YDatabaseView extends Y.Map<unknown> {
@@ -972,6 +974,9 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 
   // DatabaseViewLayout.Gallery
   get(key: '5'): YDatabaseGalleryLayoutSetting;
+
+  // DatabaseViewLayout.Timeline
+  get(key: '8'): Y.Map<unknown>;
 }
 
 export interface YDatabaseGridLayoutSetting extends Y.Map<unknown> {
@@ -1262,6 +1267,7 @@ export const layoutMap = {
   [ViewLayout.Gallery]: 'gallery',
   [ViewLayout.Feed]: 'feed',
   [ViewLayout.Form]: 'form',
+  [ViewLayout.Timeline]: 'timeline',
 };
 
 export const databaseLayoutMap = {
@@ -1273,6 +1279,7 @@ export const databaseLayoutMap = {
   [DatabaseViewLayout.Gallery]: 'gallery',
   [DatabaseViewLayout.Feed]: 'feed',
   [DatabaseViewLayout.Form]: 'form',
+  [DatabaseViewLayout.Timeline]: 'timeline',
 };
 
 export enum FontLayout {

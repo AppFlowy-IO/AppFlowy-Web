@@ -9,7 +9,7 @@ import {
 } from './selectors';
 import { signInAndWaitForApp } from './auth-flow-helpers';
 
-export type DatabaseViewType = 'Grid' | 'Board' | 'Calendar' | 'Chart' | 'List' | 'Gallery' | 'Feed';
+export type DatabaseViewType = 'Grid' | 'Board' | 'Calendar' | 'Chart' | 'List' | 'Gallery' | 'Feed' | 'Timeline';
 
 interface CreateDatabaseViewOptions {
   appReadyWaitMs?: number;
@@ -104,6 +104,8 @@ export async function createDatabaseView(
     await AddPageSelectors.addListButton(page).click({ force: true });
   } else if (viewType === 'Gallery') {
     await AddPageSelectors.addGalleryButton(page).click({ force: true });
+  } else if (viewType === 'Timeline') {
+    await page.getByTestId('add-timeline-button').click();
   } else if (viewType === 'Feed') {
     await AddPageSelectors.addFeedButton(page).click({ force: true });
   }
