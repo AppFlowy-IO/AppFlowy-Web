@@ -506,6 +506,9 @@ export enum ViewLayout {
   /// value (7) — they're distinct enums and the mapping between them
   /// lives in `dispatch.ts`.
   Form = 9,
+  /// Folder-side layout value for timeline views. Matches
+  /// `ViewLayout::Timeline = 10` in `libs/collab/src/folder/view.rs`.
+  Timeline = 10,
 }
 
 export enum YjsEditorKey {
@@ -658,6 +661,12 @@ export enum YjsDatabaseKey {
   show_weekends = 'show_weekends',
   layout_ty = 'layout_ty',
   day_count = 'day_count',
+  /// Timeline layout setting: whether the property table is docked on the left.
+  show_table = 'show_table',
+  /// Timeline layout setting: Relation field (to this database) drawn as dependency arrows.
+  dependency_field_id = 'dependency_field_id',
+  /// Timeline layout setting: Number field (0–100) drawn as a progress fill.
+  progress_field_id = 'progress_field_id',
   icon = 'icon',
   is_inline = 'is_inline',
   embedded = 'embedded',
@@ -891,6 +900,9 @@ export enum DatabaseViewLayout {
   /// Matches `DatabaseLayout::Form = 7` in
   /// `libs/collab/src/database/views/layout.rs`.
   Form = 7,
+  /// Matches `DatabaseLayout::Timeline = 8` in
+  /// `libs/collab/src/database/views/layout.rs`.
+  Timeline = 8,
 }
 
 export interface YDatabaseView extends Y.Map<unknown> {
@@ -972,6 +984,9 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 
   // DatabaseViewLayout.Gallery
   get(key: '5'): YDatabaseGalleryLayoutSetting;
+
+  // DatabaseViewLayout.Timeline
+  get(key: '8'): YDatabaseTimelineLayoutSetting;
 }
 
 export interface YDatabaseGridLayoutSetting extends Y.Map<unknown> {
@@ -992,6 +1007,17 @@ export interface YDatabaseCalendarLayoutSetting extends Y.Map<unknown> {
   ): number | bigint | null | undefined;
 
   get(key: YjsDatabaseKey.show_week_numbers | YjsDatabaseKey.show_weekends): boolean;
+}
+
+/// Same keys as the calendar setting (`layout_ty`, `first_day_of_week_v2`) plus
+/// the timeline-only `show_table` and optional field bindings.
+export interface YDatabaseTimelineLayoutSetting extends Y.Map<unknown> {
+  get(key: YjsDatabaseKey.field_id): string;
+  get(key: YjsDatabaseKey.dependency_field_id | YjsDatabaseKey.progress_field_id): string | undefined;
+  get(
+    key: YjsDatabaseKey.layout_ty | YjsDatabaseKey.first_day_of_week | YjsDatabaseKey.first_day_of_week_v2
+  ): number | bigint | null | undefined;
+  get(key: YjsDatabaseKey.show_table): boolean | undefined;
 }
 
 export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
@@ -1262,6 +1288,7 @@ export const layoutMap = {
   [ViewLayout.Gallery]: 'gallery',
   [ViewLayout.Feed]: 'feed',
   [ViewLayout.Form]: 'form',
+  [ViewLayout.Timeline]: 'timeline',
 };
 
 export const databaseLayoutMap = {
@@ -1273,6 +1300,7 @@ export const databaseLayoutMap = {
   [DatabaseViewLayout.Gallery]: 'gallery',
   [DatabaseViewLayout.Feed]: 'feed',
   [DatabaseViewLayout.Form]: 'form',
+  [DatabaseViewLayout.Timeline]: 'timeline',
 };
 
 export enum FontLayout {

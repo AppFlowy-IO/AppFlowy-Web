@@ -6,6 +6,11 @@ import * as Y from 'yjs';
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { CalendarLayoutUpdate, updateCalendarLayoutSetting } from '@/application/database-yjs/calendar-layout';
+import {
+  initializeTimelineLayoutSetting,
+  TimelineLayoutUpdate,
+  updateTimelineLayoutSetting,
+} from '@/application/database-yjs/timeline-layout';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -35,10 +40,6 @@ import {
 import { deleteReciprocalRelationField } from '@/application/database-yjs/dispatch/relation';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { normalizeCreatedDatabaseFeedView, updateCreatesExactFeedView } from '@/application/database-yjs/feed-layout';
-import {
-  normalizeCreatedDatabaseFeedView,
-  updateCreatesExactFeedView,
-} from '@/application/database-yjs/feed-layout';
 import {
   getFieldName,
   NumberFormat,
@@ -2748,6 +2749,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Gallery]: ViewLayout.Gallery,
         [DatabaseViewLayout.Feed]: ViewLayout.Feed,
         [DatabaseViewLayout.Form]: ViewLayout.Form,
+        [DatabaseViewLayout.Timeline]: ViewLayout.Timeline,
       };
       const layoutToName: Record<DatabaseViewLayout, string> = {
         [DatabaseViewLayout.Grid]: 'Grid',
@@ -2758,6 +2760,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Gallery]: 'Gallery',
         [DatabaseViewLayout.Feed]: 'Feed',
         [DatabaseViewLayout.Form]: 'Form builder',
+        [DatabaseViewLayout.Timeline]: 'Timeline',
       };
       const viewLayout = layoutToViewLayout[layout];
       const name = layoutToName[layout];
@@ -3209,6 +3212,21 @@ export function useUpdateDatabaseLayout(viewId: string) {
               }
 
               initializeCalendarLayoutSetting(view, fieldId);
+            }
+
+            if (layout === DatabaseViewLayout.Timeline) {
+              const timelineSetting = view.get(YjsDatabaseKey.layout_settings)?.get('8');
+              const configuredFieldId = timelineSetting?.get(YjsDatabaseKey.field_id);
+              const configuredField = getValidCalendarField(database, fieldOrders, configuredFieldId);
+              const dateField: YDatabaseField | undefined =
+                configuredField ?? enhanceCalendarLayoutByFieldExists(fieldOrders);
+              const fieldId = dateField?.get(YjsDatabaseKey.id);
+
+              if (!fieldId) {
+                throw new Error(`Date field not found`);
+              }
+
+              initializeTimelineLayoutSetting(view, fieldId);
             }
 
             if (layout === DatabaseViewLayout.List) {
@@ -4955,6 +4973,23 @@ export function useUpdateCalendarSetting() {
 
       if (readOnly || !view) return;
       executeOperations(sharedRoot, [() => updateCalendarLayoutSetting(view, settings)], 'updateCalendarSetting');
+    },
+    [sharedRoot, viewId, readOnly]
+  );
+}
+
+export function useUpdateTimelineSetting() {
+  const viewId = useDatabaseViewId();
+  const readOnly = useReadOnly();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (settings: TimelineLayoutUpdate) => {
+      const database = sharedRoot.get(YjsEditorKey.database);
+      const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+
+      if (readOnly || !view) return;
+      executeOperations(sharedRoot, [() => updateTimelineLayoutSetting(view, settings)], 'updateTimelineSetting');
     },
     [sharedRoot, viewId, readOnly]
   );

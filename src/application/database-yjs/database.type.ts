@@ -104,6 +104,34 @@ export enum CalendarLayout {
   DayLayout = 2,
 }
 
+/// Timeline scale presets, finest to coarsest, stored under `layout_ty` like
+/// `CalendarLayout`. Wire values match `TimelineLayout` in
+/// `libs/collab/src/database/views/layout_settings.rs`.
+export enum TimelineLayout {
+  Hours = 0,
+  Day = 1,
+  Week = 2,
+  BiWeek = 3,
+  Month = 4,
+  Quarter = 5,
+  Year = 6,
+}
+
+export interface TimelineLayoutSetting {
+  /// DateTime field plotted on the timeline.
+  fieldId: string;
+  layout: TimelineLayout;
+  /// Whether the property table is docked to the left of the canvas.
+  showTable: boolean;
+  firstDayOfWeek: number;
+  /** User preference, read like the calendar does so hour labels match. */
+  use24Hour: boolean;
+  /// Relation field (pointing at this database) whose linked rows are the row's dependencies.
+  dependencyFieldId: string;
+  /// Number field holding 0–100 progress drawn as a fill inside the bar.
+  progressFieldId: string;
+}
+
 export interface CalendarLayoutSetting {
   fieldId: string;
   firstDayOfWeek: number;

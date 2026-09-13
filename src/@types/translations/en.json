@@ -4345,5 +4345,41 @@
     "revertedDialogTitle": "Page Restored",
     "revertedDialogDescription": "This page was restored to a previous version from another device.",
     "revertedDismiss": "Got it"
+  },
+  "timeline": {
+    "menuName": "Timeline",
+    "settings": {
+      "name": "Timeline settings",
+      "layoutDateField": "Timeline by",
+      "firstDayOfWeek": "Start week on",
+      "showTable": "Show table",
+      "noDateTitle": "No date",
+      "noDatePopoverTitle": "Drag or click to assign a date",
+      "unsupportedTitle": "This timeline has no date property",
+      "unsupportedHint": "Add a date property to the database, or pick one in the timeline settings.",
+      "dependencies": "Dependencies",
+      "progress": "Progress"
+    },
+    "zoom": {
+      "hours": "Hours",
+      "day": "Day",
+      "week": "Week",
+      "biWeek": "Bi-week",
+      "month": "Month",
+      "quarter": "Quarter",
+      "year": "Year"
+    },
+    "today": "Today",
+    "previous": "Earlier",
+    "next": "Later",
+    "scrollToBar": "Scroll to item",
+    "newRow": "New",
+    "popup": {
+      "duration_one": "{{count}} day",
+      "duration_other": "{{count}} days",
+      "progress": "{{percent}}% complete"
+    },
+    "dependencyBlocked": "Cannot start before its dependencies",
+    "openRow": "Open"
   }
 }

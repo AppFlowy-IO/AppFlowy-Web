@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { FORM_VIEW_CREATION_ENABLED } from '@/application/constants';
+import { FORM_VIEW_CREATION_ENABLED, TIMELINE_VIEW_ENABLED } from '@/application/constants';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
@@ -132,6 +132,18 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
           <ViewIcon layout={ViewLayout.Calendar} size={'small'} />
           {t('calendar.menuName')}
         </DropdownMenuItem>
+
+        {TIMELINE_VIEW_ENABLED && (
+          <DropdownMenuItem
+            data-testid='add-timeline-view-button'
+            onClick={() => {
+              void handleAddView(DatabaseViewLayout.Timeline, t('timeline.menuName', { defaultValue: 'Timeline' }));
+            }}
+          >
+            <ViewIcon layout={ViewLayout.Timeline} size={'small'} />
+            {t('timeline.menuName', { defaultValue: 'Timeline' })}
+          </DropdownMenuItem>
+        )}
 
         <DropdownMenuItem
           onClick={() => {

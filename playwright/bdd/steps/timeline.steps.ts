@@ -1,0 +1,574 @@
+import { expect, type Page } from '@playwright/test';
+import { createBdd } from 'playwright-bdd';
+
+import { DatabaseViewLayout } from '../../../src/application/types';
+import { FieldType } from '../../../src/application/database-yjs/database.type';
+import { getCurrentDatabaseInfo, setRelationCellDirect, waitForDatabaseTestContext } from '../../support/relation-test-helpers';
+import { closeRowDetailWithEscape } from '../../support/row-detail-helpers';
+import { CalendarSelectors, DatabaseViewSelectors, RowDetailSelectors, TimelineSelectors } from '../../support/selectors';
+import { generateRandomEmail } from '../../support/test-config';
+import {
+  activeViewRowIds,
+  addTimelineView,
+  barBox,
+  chooseTimelineSettingsOption,
+  chooseTimelineZoom,
+  clickRowCanvas,
+  dragBarBy,
+  dragHandleBy,
+  expectBarWidth,
+  expectBarX,
+  injectFieldDirect,
+  loginAndCreateCalendarWithRows,
+  MONTH_COLUMN_WIDTH,
+  readProgressPercent,
+  setTextCellDirect,
+  TIMELINE_SIDEBAR_WIDTH,
+  TimelineLayout,
+  type BarBox,
+} from '../../support/timeline-test-helpers';
+
+const { Given, When, Then } = createBdd();
+
+const ZOOM_BY_NAME: Record<string, TimelineLayout> = {
+  Hours: TimelineLayout.Hours,
+  Day: TimelineLayout.Day,
+  Week: TimelineLayout.Week,
+  'Bi-week': TimelineLayout.BiWeek,
+  Month: TimelineLayout.Month,
+  Quarter: TimelineLayout.Quarter,
+  Year: TimelineLayout.Year,
+};
+
+interface TimelineScenario {
+  /** Row ids in view order; index 0 is the first Background row. */
+  rowIds: string[];
+  rowIdByTitle: Map<string, string>;
+  /** Bar boxes captured right before the last drag, keyed by title. */
+  before: Map<string, BarBox>;
+}
+
+const scenarios = new WeakMap<Page, TimelineScenario>();
+
+function scenario(page: Page): TimelineScenario {
+  const state = scenarios.get(page);
+
+  if (!state) throw new Error('Add a Timeline view before using timeline steps');
+  return state;
+}
+
+function rowId(page: Page, title: string): string {
+  const id = scenario(page).rowIdByTitle.get(title);
+
+  if (!id) throw new Error(`Unknown timeline row "${title}"`);
+  return id;
+}
+
+async function remember(page: Page, ...titles: string[]) {
+  const state = scenario(page);
+
+  for (const title of titles) state.before.set(title, await barBox(page, title));
+}
+
+function before(page: Page, title: string): BarBox {
+  const box = scenario(page).before.get(title);
+
+  if (!box) throw new Error(`No remembered position for "${title}"`);
+  return box;
+}
+
+async function visibleCanvas(page: Page) {
+  const view = await TimelineSelectors.view(page).boundingBox();
+
+  if (!view) throw new Error('Timeline view is not visible');
+  return { left: view.x + TIMELINE_SIDEBAR_WIDTH, right: view.x + view.width };
+}
+
+Given('a cloud calendar with {string} today and {string} in {int} days', async ({ page, request, $testInfo }, first, second, offset) => {
+  $testInfo.setTimeout(240_000);
+  await loginAndCreateCalendarWithRows(page, request, generateRandomEmail(), [
+    { title: first, offsetDays: 0 },
+    { title: second, offsetDays: offset },
+  ]);
+  scenarios.set(page, { rowIds: [], rowIdByTitle: new Map(), before: new Map() });
+});
+
+Given('a Timeline view is added from the view menu', async ({ page }) => {
+  await addTimelineView(page, 2);
+  await waitForDatabaseTestContext(page);
+  const state = scenario(page);
+
+  state.rowIds = await activeViewRowIds(page);
+  // Background rows were created in order, so they map onto the view order.
+  const titles = await TimelineSelectors.sidebarRows(page).allTextContents();
+
+  titles.forEach((title, index) => state.rowIdByTitle.set(title.trim(), state.rowIds[index]));
+});
+
+Then('the timeline shows bars for {string} and {string}', async ({ page }, first, second) => {
+  await expect(TimelineSelectors.bars(page)).toHaveCount(2);
+  await expect(TimelineSelectors.barByTitle(page, first)).toBeVisible();
+  await expect(TimelineSelectors.barByTitle(page, second)).toBeVisible();
+});
+
+Then('the timeline header marks today and draws the today line', async ({ page }) => {
+  await expect(TimelineSelectors.headerToday(page)).toBeVisible();
+  await expect(TimelineSelectors.todayLine(page)).toBeVisible();
+});
+
+Then('the timeline title shows the current month', async ({ page }) => {
+  const month = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+  await expect(TimelineSelectors.title(page)).toHaveText(month);
+});
+
+Then('the timeline scale reads {string}', async ({ page }, scale) => {
+  await expect(TimelineSelectors.zoomTrigger(page)).toHaveText(new RegExp(scale));
+});
+
+Then('the timeline table lists {string} and {string}', async ({ page }, first, second) => {
+  await expect(TimelineSelectors.sidebarRows(page)).toHaveCount(2);
+  await expect(TimelineSelectors.sidebarRows(page).filter({ hasText: first })).toBeVisible();
+  await expect(TimelineSelectors.sidebarRows(page).filter({ hasText: second })).toBeVisible();
+});
+
+When('I choose the {string} timeline scale', async ({ page }, scale) => {
+  const layout = ZOOM_BY_NAME[scale];
+
+  if (layout === undefined) throw new Error(`Unknown scale "${scale}"`);
+  await chooseTimelineZoom(page, layout);
+});
+
+Then('the timeline header cells show weekday names', async ({ page }) => {
+  // Calendar-style week header: "Mon 15", or "Thu Oct 1" on the first of a month.
+  await expect(TimelineSelectors.headerToday(page)).toHaveText(/^[A-Z][a-z]{2} (?:[A-Z][a-z]{2} )?\d{1,2}$/);
+});
+
+Then('the timeline still shows {int} bars', async ({ page }, count) => {
+  await expect(TimelineSelectors.bars(page)).toHaveCount(count);
+});
+
+When('I reload the timeline', async ({ page }) => {
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(TimelineSelectors.view(page)).toBeVisible({ timeout: 30_000 });
+  await expect(TimelineSelectors.bars(page)).toHaveCount(2, { timeout: 15_000 });
+});
+
+When('I step the timeline later {int} times', async ({ page }, times) => {
+  for (let i = 0; i < times; i += 1) {
+    await TimelineSelectors.stepNext(page).click();
+    await page.waitForTimeout(400);
+  }
+});
+
+When('I step the timeline earlier {int} times', async ({ page }, times) => {
+  for (let i = 0; i < times; i += 1) {
+    await TimelineSelectors.stepPrevious(page).click();
+    await page.waitForTimeout(400);
+  }
+});
+
+Then('the {string} bar is off screen to the left with a left pill', async ({ page }, title) => {
+  const canvas = await visibleCanvas(page);
+
+  await expect.poll(async () => (await barBox(page, title)).x + (await barBox(page, title)).width, { timeout: 10_000 }).toBeLessThan(canvas.left);
+  await expect(TimelineSelectors.row(page, rowId(page, title)).locator('[data-testid="timeline-offscreen-left"]')).toBeVisible();
+});
+
+Then('the {string} bar is off screen to the right with a right pill', async ({ page }, title) => {
+  const canvas = await visibleCanvas(page);
+
+  await expect.poll(async () => (await barBox(page, title)).x, { timeout: 10_000 }).toBeGreaterThan(canvas.right);
+  await expect(TimelineSelectors.row(page, rowId(page, title)).locator('[data-testid="timeline-offscreen-right"]')).toBeVisible();
+});
+
+When('I click the left off-screen pill', async ({ page }) => {
+  await TimelineSelectors.offscreenLeft(page).first().click();
+});
+
+Then('the {string} bar is visible', async ({ page }, title) => {
+  await expect
+    .poll(
+      async () => {
+        const canvas = await visibleCanvas(page);
+        const box = await barBox(page, title);
+
+        return box.x >= canvas.left && box.x + box.width <= canvas.right;
+      },
+      { timeout: 10_000 }
+    )
+    .toBe(true);
+});
+
+When('I click the timeline Today button', async ({ page }) => {
+  await TimelineSelectors.today(page).click();
+});
+
+When('I drag the {string} bar {int} columns later', async ({ page }, title, columns) => {
+  await remember(page, 'Design', 'Build');
+  await dragBarBy(page, title, columns * MONTH_COLUMN_WIDTH);
+});
+
+When('I drag the {string} bar {int} columns earlier', async ({ page }, title, columns) => {
+  await remember(page, 'Design', 'Build');
+  await dragBarBy(page, title, -columns * MONTH_COLUMN_WIDTH);
+});
+
+Then('the {string} bar moved {int} columns later', async ({ page }, title, columns) => {
+  await expectBarX(page, title, before(page, title).x + columns * MONTH_COLUMN_WIDTH);
+});
+
+When('I press undo', async ({ page }) => {
+  await page.keyboard.press('Control+z');
+});
+
+Then('the {string} bar is back where it started', async ({ page }, title) => {
+  const box = before(page, title);
+
+  await expectBarX(page, title, box.x);
+  await expectBarWidth(page, title, box.width);
+});
+
+When('I drag the end handle of {string} {int} columns later', async ({ page }, title, columns) => {
+  await remember(page, 'Design', 'Build');
+  await dragHandleBy(page, TimelineSelectors.handleEnd(page, rowId(page, title)), columns * MONTH_COLUMN_WIDTH);
+});
+
+Then('the {string} bar grew by {int} columns', async ({ page }, title, columns) => {
+  await expectBarWidth(page, title, before(page, title).width + columns * MONTH_COLUMN_WIDTH);
+});
+
+Then('the header highlights nothing once the drag ends', async ({ page }) => {
+  await expect(TimelineSelectors.headerHighlight(page)).toHaveCount(0);
+  await expect(TimelineSelectors.dragLabel(page)).toHaveCount(0);
+});
+
+When('I start dragging the {string} bar and press Escape', async ({ page }, title) => {
+  await remember(page, title);
+  const box = before(page, title);
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (let step = 1; step <= 4; step += 1) await page.mouse.move(x + step * MONTH_COLUMN_WIDTH, y);
+  // Mid-drag the header echoes the span and the bar shows its date label.
+  await expect(TimelineSelectors.headerHighlight(page)).toBeVisible();
+  await expect(TimelineSelectors.dragLabel(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+});
+
+When('I hover the {string} bar', async ({ page }, title) => {
+  const box = await barBox(page, title);
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+});
+
+Then('the timeline hover card shows {string} with a one day duration', async ({ page }, title) => {
+  const card = TimelineSelectors.hoverCard(page);
+
+  await expect(card).toBeVisible({ timeout: 5_000 });
+  await expect(card).toContainText(title);
+  await expect(card).toContainText('1 day');
+});
+
+When('I click the table row {string}', async ({ page }, title) => {
+  await TimelineSelectors.sidebarRow(page, rowId(page, title)).click();
+});
+
+Then('the {string} row and bar are selected', async ({ page }, title) => {
+  const id = rowId(page, title);
+
+  await expect(TimelineSelectors.row(page, id)).toHaveAttribute('data-selected', 'true');
+  await expect(TimelineSelectors.bar(page, id)).toHaveAttribute('data-selected', 'true');
+});
+
+When('I click the empty canvas of the {string} row', async ({ page }, title) => {
+  // Far right of the visible canvas, well clear of any bar.
+  const view = await TimelineSelectors.view(page).boundingBox();
+  const rowBox = await TimelineSelectors.row(page, rowId(page, title)).boundingBox();
+
+  if (!view || !rowBox) throw new Error('Timeline row is not visible');
+  await page.mouse.click(view.x + view.width - 60, rowBox.y + rowBox.height / 2);
+});
+
+Then('no timeline row is selected', async ({ page }) => {
+  await expect(page.locator('[data-testid^="timeline-row-"][data-selected="true"]')).toHaveCount(0);
+});
+
+When('I open the table row {string}', async ({ page }, title) => {
+  const id = rowId(page, title);
+
+  await TimelineSelectors.sidebarRow(page, id).hover();
+  await TimelineSelectors.openRow(page, id).click();
+});
+
+Then('the row detail for {string} opens', async ({ page }, title) => {
+  await expect(RowDetailSelectors.titleInput(page)).toBeVisible();
+  await expect(RowDetailSelectors.titleInput(page)).toHaveText(title);
+  await closeRowDetailWithEscape(page);
+});
+
+When('I add a new timeline row', async ({ page }) => {
+  await TimelineSelectors.newRow(page).click();
+  await expect(TimelineSelectors.sidebarRows(page)).toHaveCount(3, { timeout: 15_000 });
+  await closeRowDetailWithEscape(page);
+  const state = scenario(page);
+
+  state.rowIds = await activeViewRowIds(page);
+});
+
+Then('the timeline table lists {int} rows and the No Date button reads {string}', async ({ page }, count, text) => {
+  await expect(TimelineSelectors.sidebarRows(page)).toHaveCount(count);
+  await expect(TimelineSelectors.noDateButton(page)).toContainText(text);
+});
+
+When("I click the undated row's canvas", async ({ page }) => {
+  const emptyRow = TimelineSelectors.emptyRows(page).first();
+  const testId = await emptyRow.getAttribute('data-testid');
+  const id = testId?.replace('timeline-row-empty-', '');
+
+  if (!id) throw new Error('No undated row to date');
+  await clickRowCanvas(page, id);
+});
+
+Then('the timeline shows {int} bars and no No Date button', async ({ page }, count) => {
+  await expect(TimelineSelectors.bars(page)).toHaveCount(count, { timeout: 10_000 });
+  await expect(TimelineSelectors.noDateButton(page)).toHaveCount(0);
+});
+
+When('I hide the timeline table', async ({ page }) => {
+  await TimelineSelectors.toggleTable(page).click();
+});
+
+When('I show the timeline table', async ({ page }) => {
+  await TimelineSelectors.toggleTable(page).click();
+});
+
+Then('the timeline table is hidden and {int} bars remain', async ({ page }, count) => {
+  await expect(TimelineSelectors.sidebarRows(page)).toHaveCount(0);
+  await expect(TimelineSelectors.bars(page)).toHaveCount(count);
+});
+
+Then('the timeline table lists {int} rows', async ({ page }, count) => {
+  await expect(TimelineSelectors.sidebarRows(page)).toHaveCount(count);
+});
+
+Given('{string} depends on {string} through a relation field', async ({ page }, dependent, dependency) => {
+  const { databaseId } = await getCurrentDatabaseInfo(page);
+  const state = scenario(page);
+  const dependentIndex = state.rowIds.indexOf(rowId(page, dependent));
+
+  await injectFieldDirect(page, {
+    fieldId: 'rel-deps',
+    name: 'Blocked by',
+    fieldType: FieldType.Relation,
+    typeOption: { database_id: databaseId, is_two_way: false, source_limit: 0, target_limit: 0 },
+  });
+  await setRelationCellDirect(page, 'rel-deps', dependentIndex, [rowId(page, dependency)]);
+  await chooseTimelineSettingsOption(page, 'timeline-dependency-field-rel-deps');
+});
+
+Then('the timeline draws {int} dependency arrow', async ({ page }, count) => {
+  await expect(TimelineSelectors.arrows(page)).toHaveCount(count, { timeout: 15_000 });
+});
+
+Then('the {string} bar starts where the {string} bar starts', async ({ page }, title, other) => {
+  await expectBarX(page, title, (await barBox(page, other)).x);
+});
+
+Given('{string} has a progress field at {int} percent', async ({ page }, title, percent) => {
+  await injectFieldDirect(page, {
+    fieldId: 'num-progress',
+    name: 'Progress',
+    fieldType: FieldType.Number,
+    typeOption: { format: 0 },
+  });
+  await setTextCellDirect(page, rowId(page, title), 'num-progress', FieldType.Number, String(percent));
+  await chooseTimelineSettingsOption(page, 'timeline-progress-field-num-progress');
+});
+
+Then('the {string} bar shows {int} percent progress', async ({ page }, title, percent) => {
+  await expect.poll(() => readProgressPercent(page, rowId(page, title)), { timeout: 15_000 }).toBe(percent);
+});
+
+Then('the timeline hover card for {string} mentions {string}', async ({ page }, title, text) => {
+  const box = await barBox(page, title);
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(TimelineSelectors.hoverCard(page)).toContainText(text, { timeout: 5_000 });
+});
+
+When('I drag the progress handle of {string} halfway across the bar', async ({ page }, title) => {
+  const box = await barBox(page, title);
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await dragHandleBy(page, TimelineSelectors.handleProgress(page, rowId(page, title)), box.width / 2);
+});
+
+Then('the {string} bar shows more than {int} percent progress', async ({ page }, title, percent) => {
+  await expect.poll(() => readProgressPercent(page, rowId(page, title)), { timeout: 10_000 }).toBeGreaterThan(percent);
+});
+
+// ---------------------------------------------------------------------------
+// Scales, redo, pills, No Date list, keyboard, settings, layout, empty state
+// ---------------------------------------------------------------------------
+
+const LAYOUT_BY_NAME: Record<string, DatabaseViewLayout> = {
+  Grid: DatabaseViewLayout.Grid,
+  Board: DatabaseViewLayout.Board,
+  Calendar: DatabaseViewLayout.Calendar,
+  Timeline: DatabaseViewLayout.Timeline,
+};
+
+Then('the timeline header has labels', async ({ page }) => {
+  // Cell presets label columns; the Year preset labels month segments instead.
+  const labelled = TimelineSelectors.header(page).locator('span').filter({ hasText: /\S/ });
+
+  await expect(labelled.first()).toBeVisible();
+  expect(await labelled.count()).toBeGreaterThan(0);
+});
+
+When('I press redo', async ({ page }) => {
+  await page.keyboard.press('Control+Shift+z');
+});
+
+When('I click the right off-screen pill', async ({ page }) => {
+  await TimelineSelectors.offscreenRight(page).first().click();
+});
+
+When('I open the No Date list', async ({ page }) => {
+  await TimelineSelectors.noDateButton(page).click();
+});
+
+Then('the No Date list shows {int} undated row', async ({ page }, count) => {
+  await expect(page.getByTestId('no-date-row')).toHaveCount(count);
+});
+
+When('I close the No Date list', async ({ page }) => {
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('no-date-row')).toHaveCount(0);
+});
+
+When('I focus the {string} bar and press Enter', async ({ page }, title) => {
+  await TimelineSelectors.barButton(page, title).focus();
+  await page.keyboard.press('Enter');
+});
+
+When('I double-click the table row {string}', async ({ page }, title) => {
+  await TimelineSelectors.sidebarRow(page, rowId(page, title)).dblclick();
+});
+
+Given('{string} also has a {string} field {int} days later', async ({ page }, title, fieldName, days) => {
+  const state = scenario(page);
+
+  await injectFieldDirect(page, {
+    fieldId: 'date-ship',
+    name: fieldName,
+    fieldType: FieldType.DateTime,
+    typeOption: { date_format: 0, time_format: 0, timezone_id: '' },
+  });
+  const design = await barBox(page, 'Design');
+  const other = rowId(page, title);
+  const timestamp = await page.evaluate((offsetDays) => {
+    const date = new Date();
+
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() + offsetDays);
+    return String(Math.floor(date.getTime() / 1000));
+  }, days);
+
+  // Every row needs a value on the new field so the rows stay dated; Design keeps today.
+  await setTextCellDirect(page, rowId(page, 'Design'), 'date-ship', FieldType.DateTime, await page.evaluate(() => {
+    const date = new Date();
+
+    date.setHours(0, 0, 0, 0);
+    return String(Math.floor(date.getTime() / 1000));
+  }));
+  await setTextCellDirect(page, other, 'date-ship', FieldType.DateTime, timestamp);
+  state.before.set('Design', design);
+});
+
+When('I choose {string} as the timeline date field', async ({ page }, fieldName) => {
+  await page.getByTestId('database-actions-settings').click();
+  await TimelineSelectors.settingsTrigger(page).click();
+  await page.locator('[data-testid^="timeline-date-field-"]').filter({ hasText: fieldName }).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+});
+
+Then('the {string} bar sits {int} days after the {string} bar', async ({ page }, title, days, other) => {
+  await expectBarX(page, title, (await barBox(page, other)).x + days * MONTH_COLUMN_WIDTH);
+});
+
+When('I toggle the table from the timeline settings', async ({ page }) => {
+  await chooseTimelineSettingsOption(page, 'timeline-show-table');
+});
+
+When('I choose Monday as the timeline week start', async ({ page }) => {
+  await chooseTimelineSettingsOption(page, 'timeline-first-day-1');
+});
+
+Then('the timeline quarter labels fall on Mondays', async ({ page }) => {
+  // Quarter labels sit on week starts; the first week of each month carries the
+  // month name ("Oct 5"), which is enough to resolve the weekday unambiguously.
+  const labels = await TimelineSelectors.header(page).locator('span').filter({ hasText: /^[A-Z][a-z]{2} \d{1,2}$/ }).allTextContents();
+  const year = new Date().getFullYear();
+
+  expect(labels.length).toBeGreaterThan(0);
+  for (const label of labels) {
+    const [monthName, day] = label.trim().split(' ');
+    const month = new Date(`${monthName} 1, ${year}`).getMonth();
+
+    expect(new Date(year, month, Number(day)).getDay()).toBe(1);
+  }
+});
+
+When('I switch to the {string} view tab', async ({ page }, name) => {
+  await DatabaseViewSelectors.viewTab(page).filter({ hasText: name }).first().click();
+});
+
+When('I change the view layout to {string}', async ({ page }, name) => {
+  const layout = LAYOUT_BY_NAME[name];
+
+  if (layout === undefined) throw new Error(`Unknown layout "${name}"`);
+  await page.getByTestId('database-actions-settings').click();
+  await DatabaseViewSelectors.layoutSettingsTrigger(page).hover();
+  await expect(DatabaseViewSelectors.layoutOption(page, layout)).toBeVisible({ timeout: 10_000 });
+  await DatabaseViewSelectors.layoutOption(page, layout).click();
+  if (layout === DatabaseViewLayout.Timeline) {
+    await expect(TimelineSelectors.view(page)).toBeVisible({ timeout: 30_000 });
+    await waitForDatabaseTestContext(page);
+  }
+});
+
+Then('the calendar view is shown', async ({ page }) => {
+  await expect(CalendarSelectors.calendarContainer(page).first()).toBeVisible({ timeout: 30_000 });
+  await expect(TimelineSelectors.view(page)).toHaveCount(0);
+});
+
+When("the timeline's date field is deleted from the database", async ({ page }) => {
+  await page.evaluate(() => {
+    const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: any }).__TEST_DATABASE_CONTEXT__;
+    const doc = ctx.databaseDoc;
+    const database = doc.getMap('data').get('database');
+    const view = database.get('views').get(ctx.activeViewId);
+    const fieldId = view.get('layout_settings').get('8').get('field_id');
+
+    doc.transact(() => {
+      database.get('fields').delete(fieldId);
+      database.get('views').forEach((candidate: any) => {
+        const orders = candidate.get('field_orders');
+        const index = orders.toArray().findIndex((order: { id: string }) => order.id === fieldId);
+
+        if (index >= 0) orders.delete(index, 1);
+        candidate.get('field_settings').delete(fieldId);
+      });
+    });
+  });
+});
+
+Then('the timeline explains that it has no date property', async ({ page }) => {
+  await expect(page.getByTestId('timeline-unsupported')).toBeVisible({ timeout: 15_000 });
+});

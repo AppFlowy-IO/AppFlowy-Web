@@ -13,6 +13,7 @@ import {
 
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { createCalendarLayoutStore } from '@/application/database-yjs/calendar-layout';
+import { createTimelineLayoutStore } from '@/application/database-yjs/timeline-layout';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
@@ -3114,7 +3115,22 @@ export interface CalendarEvent {
 
 export function useCalendarEventsSelector() {
   const setting = useCalendarLayoutSetting();
-  const fieldId = setting?.fieldId || '';
+
+  return useDateFieldEventsSelector(setting?.fieldId || '');
+}
+
+export function useTimelineEventsSelector() {
+  const setting = useTimelineLayoutSetting();
+
+  return useDateFieldEventsSelector(setting?.fieldId || '');
+}
+
+/**
+ * Rows plotted on a date-typed field. Rows without a value (or not yet loaded)
+ * land in `emptyEvents`; ranges keep `isRange` so consumers can tell a real end
+ * date from the synthetic 30-minute one.
+ */
+export function useDateFieldEventsSelector(fieldId: string) {
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
   const primaryFieldId = usePrimaryFieldId();
   const { field: primaryField, clock: primaryFieldClock } = useFieldSelector(primaryFieldId || '');
@@ -3267,6 +3283,21 @@ export function useCalendarLayoutSetting() {
   const viewId = useDatabaseViewId();
   const store = useMemo(
     () => createCalendarLayoutStore(databaseDoc, viewId, startWeekOn, timeFormat === TimeFormat.TwentyFourHour),
+    [databaseDoc, viewId, startWeekOn, timeFormat]
+  );
+
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+}
+
+export function useTimelineLayoutSetting() {
+  const currentUser = useCurrentUser();
+  const startWeekOn = Number(currentUser?.metadata?.[MetadataKey.StartWeekOn] || 0);
+  const timeFormat = currentUser?.metadata?.[MetadataKey.TimeFormat] || TimeFormat.TwelveHour;
+  const { databaseDoc } = useDatabaseContext();
+
+  const viewId = useDatabaseViewId();
+  const store = useMemo(
+    () => createTimelineLayoutStore(databaseDoc, viewId, startWeekOn, timeFormat === TimeFormat.TwentyFourHour),
     [databaseDoc, viewId, startWeekOn, timeFormat]
   );
 
