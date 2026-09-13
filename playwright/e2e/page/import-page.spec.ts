@@ -13,12 +13,13 @@ import { generateRandomEmail } from '../../support/test-config';
 /**
  * Import — BDD scenarios for the sidebar "+" → Import flow.
  *
- * Two formats are supported:
+ * Four formats are supported:
  *   - Text & Markdown — fully client-side: parses MD locally, creates an empty
  *     Document via PageService.add, fetches its collab, mutates the Y.Doc,
  *     and PUTs the encoded update back.
  *   - CSV — server flow: createDatabaseCsvImportTask → upload to presigned
  *     URL → poll status until Completed (mocked here for hermetic tests).
+ *   - Notion and Confluence — upload exported ZIP files and queue a server import.
  *
  * The dialog is owned by Outline.tsx (a persistent ancestor) so it survives
  * the dropdown unmount that happens when the Import menu item is clicked.
@@ -70,6 +71,61 @@ test.describe('Feature: Import', () => {
       await expect(ImportSelectors.markdownButton(page)).toBeVisible();
       await expect(ImportSelectors.csvButton(page)).toBeVisible();
     });
+  });
+
+  test('Scenario: Import buttons open native file choosers with the expected file types', async ({ page, request }) => {
+    await signInAndWaitForApp(page, request, testEmail);
+    await page.evaluate(() => {
+      delete (window as Window & { Cypress?: boolean }).Cypress;
+    });
+    await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
+    await openImportDialogFromAddMenu(page);
+
+    const formats = [
+      { format: 'markdown', accept: '.md,.markdown,.txt,text/markdown,text/plain', multiple: false },
+      { format: 'csv', accept: '.csv,text/csv', multiple: true },
+      {
+        format: 'notion',
+        accept: '.zip,application/zip,application/x-zip,application/x-zip-compressed',
+        multiple: false,
+      },
+      {
+        format: 'confluence',
+        accept: '.zip,application/zip,application/x-zip,application/x-zip-compressed',
+        multiple: false,
+      },
+    ];
+
+    for (const { format, accept, multiple } of formats) {
+      await test.step(`Clicking ${format} requests a native file chooser`, async () => {
+        // Waiting for a browser chooser catches regressions that directly
+        // assigning files to the hidden input cannot detect.
+        const [chooser] = await Promise.all([
+          page.waitForEvent('filechooser', { timeout: 10000 }),
+          page.getByTestId(`import-${format}`).click(),
+        ]);
+
+        expect(await chooser.element().getAttribute('data-testid')).toBe(`import-${format}-input`);
+        expect(await chooser.element().getAttribute('accept')).toBe(accept);
+        expect(chooser.isMultiple()).toBe(multiple);
+        await chooser.setFiles([]);
+        await expect(ImportSelectors.dialog(page)).toBeVisible();
+      });
+    }
+
+    for (const key of ['Enter', 'Space']) {
+      await test.step(`${key} opens the Confluence native file chooser`, async () => {
+        const button = page.getByTestId('import-confluence');
+
+        await button.focus();
+        const [chooser] = await Promise.all([page.waitForEvent('filechooser', { timeout: 10000 }), button.press(key)]);
+
+        expect(await chooser.element().getAttribute('data-testid')).toBe('import-confluence-input');
+        expect(chooser.isMultiple()).toBe(false);
+        await chooser.setFiles([]);
+        await expect(ImportSelectors.dialog(page)).toBeVisible();
+      });
+    }
   });
 
   test('Scenario: Importing a Markdown file creates a Document page with the file content', async ({
