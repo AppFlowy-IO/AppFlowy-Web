@@ -872,7 +872,7 @@
       "description": "Manage your AppFlowy workspace data",
       "importWorkspace": {
         "title": "Import your workspace",
-        "tooltip": "Import your workspace from an AppFlowy backup ZIP file",
+        "tooltip": "Create a new workspace from an AppFlowy backup, Notion export, or Confluence HTML export ZIP file",
         "button": "Import",
         "success": "Import started. We will send a confirmation email once the import is complete.",
         "failed": "Failed to import workspace"
@@ -3626,11 +3626,12 @@
     "importNotion": "Import from Notion",
     "importWorkspace": "Import workspace",
     "importFromAppFlowy": "Import from AppFlowy",
+    "importCreatesWorkspace": "Each import creates a new workspace.",
     "importFromConfluence": "Import from Confluence",
     "importFromNotion": "Import from Notion",
     "import": "Import",
     "importSuccess": "Uploaded successfully",
-    "importSuccessMessage": "We'll notify you when the import is complete. After that, you can view your imported pages in the sidebar.",
+    "importSuccessMessage": "We'll notify you when the import is complete. Select the new workspace from the workspace switcher to view your imported pages.",
     "importFailed": "Import failed, please check the file format",
     "dropNotionFile": "Drop your Notion zip file here to upload, or click to browse",
     "dropConfluenceFile": "Drop your Confluence HTML export (.zip) here to upload, or click to browse",

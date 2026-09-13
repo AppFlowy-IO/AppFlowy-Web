@@ -1965,6 +1965,8 @@
     "saveThisPage": "使用此模板创建"
   },
   "web": {
+    "importSuccessMessage": "导入完成后我们会通知你。请从工作区切换器中选择新工作区，查看导入的页面。",
+    "importCreatesWorkspace": "每次导入都会创建一个新工作区。",
     "importFromConfluence": "从 Confluence 导入",
     "dropConfluenceFile": "将 Confluence HTML 导出文件 (.zip) 拖放到此处上传，或点击浏览",
     "continueWithGoogle": "使用 Google 账户登录",

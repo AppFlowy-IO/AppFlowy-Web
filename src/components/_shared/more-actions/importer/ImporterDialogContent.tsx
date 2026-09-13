@@ -63,6 +63,7 @@ function ImporterDialogContent({ source, onSuccess }: { source?: string; onSucce
 
   return (
     <div className={'flex flex-col gap-8'}>
+      <p className='text-sm text-text-secondary'>{t('web.importCreatesWorkspace')}</p>
       <ViewTabs
         className={'border-b border-border-primary'}
         onChange={(_e, newValue) => setValue(newValue)}
