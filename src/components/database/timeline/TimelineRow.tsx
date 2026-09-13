@@ -1,13 +1,10 @@
-import { memo, MouseEvent, PointerEvent as ReactPointerEvent, useCallback } from 'react';
+import { memo, MouseEvent, PointerEvent as ReactPointerEvent, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Column, useRowMetaSelector } from '@/application/database-yjs';
+import { Column, Row } from '@/application/database-yjs';
 import { ReactComponent as ArrowLeft } from '@/assets/icons/arrow_left.svg';
 import { ReactComponent as ArrowRight } from '@/assets/icons/arrow_right.svg';
-import { ReactComponent as ExpandIcon } from '@/assets/icons/expand.svg';
-import { GalleryRowIcon } from '@/components/database/gallery/GalleryRowIcon';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { type Edge } from '@/components/database/components/drag-and-drop/useRowDnd';
 import { cn } from '@/lib/utils';
 
 import { TIMELINE_ROW_HEIGHT } from './constants';
@@ -15,6 +12,7 @@ import { TimelineDragMode } from './hooks/useTimelineDrag';
 import { TimelineRowModel } from './hooks/useTimelineRows';
 import { BarRect } from './scale/geometry';
 import { TimelineBar, TimelineBarDragLabel } from './TimelineBar';
+import { TimelineSidebarRow } from './TimelineSidebarRow';
 
 interface TimelineRowProps {
   row: TimelineRowModel;
@@ -36,12 +34,16 @@ interface TimelineRowProps {
   anyDragging?: boolean;
   /** User-preference time formatter shared by all bars. */
   formatTime: (date: Date) => string;
+  /** View-ordered rows for the table's insert / reorder actions. */
+  rowOrders: Row[];
   onOpen?: (rowId: string) => void;
   onSelect?: (rowId: string | null) => void;
   onScrollTo?: (x: number) => void;
   onBarPointerDown?: (event: ReactPointerEvent<HTMLElement>, row: TimelineRowModel, mode: TimelineDragMode) => void;
   /** An undated row's canvas was clicked at canvas pixel `x`. */
   onEmptyClick?: (row: TimelineRowModel, x: number) => void;
+  /** A table row was dropped on this one (undefined = reordering disabled). */
+  onDropRow?: (sourceRowId: string, targetRowId: string, edge: Edge) => void;
 }
 
 function OffscreenPill({
@@ -91,15 +93,16 @@ export const TimelineRow = memo(
     progressPreview,
     anyDragging,
     formatTime,
+    rowOrders,
     onOpen,
     onSelect,
     onScrollTo,
     onBarPointerDown,
     onEmptyClick,
+    onDropRow,
   }: TimelineRowProps) => {
     const { t } = useTranslation();
-    const meta = useRowMetaSelector(row.rowId);
-    const icon = meta?.icon ?? '';
+    const rowRef = useRef<HTMLDivElement | null>(null);
     const showLeftPill = rect !== null && offscreenLeft;
     const showRightPill = rect !== null && offscreenRight;
     const canAssignDate = editable && rect === null;
@@ -125,52 +128,32 @@ export const TimelineRow = memo(
 
     return (
       <div
+        ref={rowRef}
         className='group/row flex h-full w-full'
         data-testid={`timeline-row-${row.rowId}`}
         data-selected={selected ? 'true' : undefined}
       >
-        <div
-          className={cn(
-            'sticky left-0 z-10 flex h-full shrink-0 items-center gap-1 overflow-hidden border-b border-r border-border-primary bg-background-primary text-sm text-text-primary',
-            selected && 'bg-fill-theme-select'
-          )}
-          style={{ width: sidebarWidth }}
-        >
-          {showSidebar ? (
-            <>
-              <button
-                type='button'
-                className='ml-2 flex min-w-0 flex-1 items-center gap-2 truncate rounded-200 px-1 py-0.5 text-left hover:bg-fill-content-hover'
-                onClick={() => onSelect?.(row.rowId)}
-                onDoubleClick={() => onOpen?.(row.rowId)}
-                data-testid={`timeline-sidebar-row-${row.rowId}`}
-              >
-                {icon ? <GalleryRowIcon icon={icon} /> : null}
-                <span className='truncate'>
-                  {row.title || t('grid.row.titlePlaceholder', { defaultValue: 'Untitled' })}
-                </span>
-              </button>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant='ghost'
-                    size='icon-sm'
-                    className='mr-1 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/row:opacity-100'
-                    aria-label={t('timeline.openRow', { defaultValue: 'Open' })}
-                    data-testid={`timeline-open-row-${row.rowId}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onOpen?.(row.rowId);
-                    }}
-                  >
-                    <ExpandIcon aria-hidden className='h-4 w-4' />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t('timeline.openRow', { defaultValue: 'Open' })}</TooltipContent>
-              </Tooltip>
-            </>
-          ) : null}
-        </div>
+        {showSidebar ? (
+          <TimelineSidebarRow
+            row={row}
+            width={sidebarWidth}
+            editable={editable}
+            selected={selected}
+            rowOrders={rowOrders}
+            dropTargetRef={rowRef}
+            onOpen={onOpen}
+            onSelect={onSelect}
+            onDropRow={onDropRow}
+          />
+        ) : (
+          <div
+            className={cn(
+              'sticky left-0 z-10 h-full shrink-0 border-b border-r border-border-primary bg-background-primary',
+              selected && 'bg-fill-theme-select'
+            )}
+            style={{ width: sidebarWidth }}
+          />
+        )}
 
         <div
           className={cn(

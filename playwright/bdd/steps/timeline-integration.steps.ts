@@ -122,30 +122,61 @@ Then('the document contains a timeline block titled {string}', async ({ page }, 
   await expect(block).toContainText(title);
 });
 
+/**
+ * Publish through the Share popover. Under parallel test load the popover can
+ * be torn down by an outline refresh right after it opens, so the whole
+ * open → Publish tab → confirm sequence is retried until a publish request
+ * actually leaves the page.
+ */
+async function publishCurrentPage(page: Page): Promise<string> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await ShareSelectors.shareButton(page).click({ force: true });
+    const popover = ShareSelectors.sharePopover(page);
+
+    await expect(popover).toBeVisible({ timeout: 10_000 });
+    await popover.getByText('Publish', { exact: true }).click({ force: true });
+    const publishButton = ShareSelectors.publishConfirmButton(page);
+
+    await expect(publishButton).toBeEnabled({ timeout: 15_000 });
+    const response = page
+      .waitForResponse(
+        (candidate) => candidate.request().method() === 'POST' && new URL(candidate.url()).pathname.endsWith('/publish'),
+        { timeout: 20_000 }
+      )
+      .then((res) => ({ res }))
+      .catch(() => ({ timeout: true as const }));
+    const publishError = page.locator('[data-sonner-toast][data-type="error"]').last();
+    const errorPromise = publishError
+      .waitFor({ state: 'visible', timeout: 20_000 })
+      .then(async () => ({ error: (await publishError.innerText()).trim() }))
+      .catch(() => ({ timeout: true as const }));
+
+    await publishButton.click({ force: true });
+    const result = await Promise.race([response, errorPromise]);
+
+    if ('error' in result) throw new Error(`Publishing failed: ${result.error}`);
+    if ('timeout' in result) {
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+      continue;
+    }
+
+    expect(result.res.ok(), `Publishing failed with HTTP ${result.res.status()}`).toBeTruthy();
+    await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 30_000 });
+    const namespace = ((await ShareSelectors.publishNamespace(page).textContent()) ?? '').trim();
+    const publishName = (await ShareSelectors.publishNameInput(page).inputValue()).trim();
+
+    expect(namespace).not.toBe('');
+    expect(publishName).not.toBe('');
+    await page.keyboard.press('Escape');
+    return `${new URL(page.url()).origin}/${namespace}/${publishName}`;
+  }
+
+  throw new Error('The publish request never left the page');
+}
+
 When('I publish the timeline page', async ({ page }) => {
-  await ShareSelectors.shareButton(page).click({ force: true });
-  const popover = ShareSelectors.sharePopover(page);
-
-  await expect(popover).toBeVisible({ timeout: 10_000 });
-  await popover.getByText('Publish', { exact: true }).click({ force: true });
-  const publishButton = ShareSelectors.publishConfirmButton(page);
-
-  await expect(publishButton).toBeEnabled({ timeout: 15_000 });
-  const response = page.waitForResponse(
-    (candidate) => candidate.request().method() === 'POST' && new URL(candidate.url()).pathname.endsWith('/publish'),
-    { timeout: 60_000 }
-  );
-
-  await publishButton.click({ force: true });
-  expect((await response).ok()).toBeTruthy();
-  await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 30_000 });
-  const namespace = ((await ShareSelectors.publishNamespace(page).textContent()) ?? '').trim();
-  const publishName = (await ShareSelectors.publishNameInput(page).inputValue()).trim();
-
-  expect(namespace).not.toBe('');
-  expect(publishName).not.toBe('');
-  state(page).publishedUrl = `${new URL(page.url()).origin}/${namespace}/${publishName}`;
-  await page.keyboard.press('Escape');
+  state(page).publishedUrl = await publishCurrentPage(page);
 });
 
 When('a visitor opens the published timeline', async ({ page, browser }) => {
@@ -176,4 +207,8 @@ Then('the visitor sees the {string} and {string} bars without editing controls',
   await expect(TimelineSelectors.barByTitle(visitor, second)).toBeVisible();
   await expect(visitor.getByTestId('timeline-new-row')).toHaveCount(0);
   await expect(visitor.locator('[data-testid^="timeline-handle-"]')).toHaveCount(0);
+  // The table's hover gutter (insert / menu / drag handle) is editor-only.
+  await visitor.locator('[data-testid^="timeline-sidebar-cell-"]').first().hover();
+  await expect(visitor.locator('[data-testid^="list-row-actions-"]')).toHaveCount(0);
+  await expect(visitor.getByTestId('row-accessory-button')).toHaveCount(0);
 });

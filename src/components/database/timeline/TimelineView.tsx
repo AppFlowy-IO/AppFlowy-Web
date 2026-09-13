@@ -1,3 +1,5 @@
+import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
+import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import dayjs from 'dayjs';
 import { PointerEvent as ReactPointerEvent, useCallback, useMemo, useRef, useState } from 'react';
@@ -16,13 +18,14 @@ import {
   usePrimaryFieldId,
 } from '@/application/database-yjs';
 import { useUpdateAnyCellDispatch, useUpdateStartEndTimeCell } from '@/application/database-yjs/dispatch/cell';
-import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
+import { useNewRowDispatch, useReorderRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { useUpdateTimelineSetting } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as CollapseIcon } from '@/assets/icons/double_arrow_left.svg';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/double_arrow_right.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useAIEnabled } from '@/components/app/app.hooks';
+import { type Edge } from '@/components/database/components/drag-and-drop/useRowDnd';
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks/useTimeFormat';
 import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
 import { Button } from '@/components/ui/button';
@@ -119,7 +122,30 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const showSidebar = localOverride?.showTable ?? setting.showTable;
   const sidebarWidth = showSidebar ? TIMELINE_SIDEBAR_WIDTH : TIMELINE_COLLAPSED_SIDEBAR_WIDTH;
 
-  const { rows, emptyEvents } = useTimelineRows(showSidebar);
+  const { rows, emptyEvents, rowOrders } = useTimelineRows(showSidebar);
+  const reorderRow = useReorderRowDispatch();
+  // Same reorder semantics as the List view: drop above / below a row, then
+  // tell the view which row now precedes the moved one.
+  const handleDropRow = useCallback(
+    (sourceRowId: string, targetRowId: string, closestEdgeOfTarget: Edge) => {
+      const startIndex = rowOrders.findIndex((row) => row.id === sourceRowId);
+      const indexOfTarget = rowOrders.findIndex((row) => row.id === targetRowId);
+
+      if (startIndex < 0 || indexOfTarget < 0) return;
+      const finishIndex = getReorderDestinationIndex({
+        axis: 'vertical',
+        closestEdgeOfTarget,
+        indexOfTarget,
+        startIndex,
+      });
+
+      if (finishIndex === startIndex) return;
+      const nextRows = reorder({ finishIndex, list: rowOrders, startIndex });
+
+      reorderRow(sourceRowId, nextRows[finishIndex - 1]?.id);
+    },
+    [reorderRow, rowOrders]
+  );
   const relations = useTimelineFieldValues(setting.dependencyFieldId, parseRelationRowIds);
   const progressValues = useTimelineFieldValues(setting.progressFieldId, parseProgressPercent);
   const rowIds = useMemo(() => rows.map((row) => row.rowId), [rows]);
@@ -416,9 +442,11 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
               className={cn(
                 // Grid-style header cell: the primary field name plus the table toggle.
                 'sticky left-0 z-30 flex h-full shrink-0 items-center border-b border-r border-border-primary bg-background-primary',
-                showSidebar ? 'justify-between pl-2 pr-1' : 'justify-center'
+                showSidebar ? 'justify-between pr-1' : 'justify-center'
               )}
-              style={{ width: sidebarWidth }}
+              // Line the field name up with the row titles, which sit after the
+              // 40px hover gutter when the table is editable.
+              style={{ width: sidebarWidth, paddingLeft: showSidebar ? (permissions.editable ? 44 : 12) : undefined }}
             >
               {showSidebar ? <span className='truncate text-sm text-text-secondary'>{primaryFieldName}</span> : null}
               <Tooltip>
@@ -509,11 +537,13 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                     progressPreview={isDragged && preview?.mode === 'progress' ? preview.progress : undefined}
                     anyDragging={dragging}
                     formatTime={formatTimeDisplay}
+                    rowOrders={rowOrders}
                     onOpen={handleOpen}
                     onSelect={setSelectedRowId}
                     onScrollTo={handleScrollToX}
                     onBarPointerDown={handleBarPointerDown}
                     onEmptyClick={handleEmptyClick}
+                    onDropRow={permissions.editable ? handleDropRow : undefined}
                   />
                 </div>
               );
@@ -530,9 +560,9 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                   // Same treatment as the grid's "+ New row" footer.
                   className={cn(
                     'sticky left-0 z-10 flex h-full shrink-0 cursor-pointer items-center gap-1.5 border-b border-r border-border-primary bg-fill-content text-sm font-medium text-text-secondary hover:bg-fill-content-hover',
-                    showSidebar ? 'px-3' : 'justify-center'
+                    showSidebar ? 'pr-3' : 'justify-center'
                   )}
-                  style={{ width: sidebarWidth }}
+                  style={{ width: sidebarWidth, paddingLeft: showSidebar ? 40 : undefined }}
                   data-testid='timeline-new-row'
                   aria-label={t('grid.row.newRow', { defaultValue: 'New row' })}
                   onClick={handleNewRow}

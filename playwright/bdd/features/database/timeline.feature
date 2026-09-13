@@ -162,3 +162,21 @@ Feature: Timeline view interactions
     When I drag the end handle of "Design" 3 columns later
     Then the "Design" bar grew by 3 columns
     And the "Build" bar moved 3 columns later
+
+  Scenario: The table's hover gutter inserts, duplicates and deletes rows
+    When I click the hover "+" of the table row "Design"
+    Then the table lists "Design, Untitled, Build" in that order
+    When I open the row menu of the table row "Build" and choose "Insert above"
+    Then the table lists "Design, Untitled, Untitled, Build" in that order
+    When I open the row menu of the table row "Build" and choose "Duplicate"
+    Then the table lists "Design, Untitled, Untitled, Build, Build" in that order
+    And the timeline shows 3 bars
+    When I open the row menu of the last table row and choose "Delete"
+    Then the table lists "Design, Untitled, Untitled, Build" in that order
+    And the timeline shows 2 bars
+
+  Scenario: Dragging a row's handle reorders the table
+    When I drag the table row "Build" above "Design"
+    Then the table lists "Build, Design" in that order
+    When I press undo
+    Then the table lists "Design, Build" in that order

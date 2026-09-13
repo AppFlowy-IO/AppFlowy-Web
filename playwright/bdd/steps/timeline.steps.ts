@@ -626,3 +626,81 @@ When("the timeline's date field is deleted from the database", async ({ page }) 
 Then('the timeline explains that it has no date property', async ({ page }) => {
   await expect(page.getByTestId('timeline-unsupported')).toBeVisible({ timeout: 15_000 });
 });
+
+// --- Table row actions (Notion's hover gutter) -------------------------------
+
+function sidebarCell(page: Page, title: string) {
+  return page.locator('[data-testid^="timeline-sidebar-cell-"]').filter({ hasText: title }).first();
+}
+
+async function sidebarTitles(page: Page): Promise<string[]> {
+  const titles = await TimelineSelectors.sidebarRows(page).allInnerTexts();
+
+  return titles.map((title) => title.trim());
+}
+
+When('I click the hover {string} of the table row {string}', async ({ page }, _plus, title) => {
+  const cell = sidebarCell(page, title);
+
+  await cell.hover();
+  await cell.locator('[data-testid^="list-row-add-below-"]').click();
+});
+
+const ROW_MENU_ITEM: Record<string, string> = {
+  'Insert above': 'row-menu-insert-above',
+  'Insert below': 'row-menu-insert-below',
+  Duplicate: 'row-menu-duplicate',
+  Delete: 'row-menu-delete',
+};
+
+async function chooseRowMenuItem(page: Page, cell: ReturnType<Page['locator']>, action: string) {
+  await cell.hover();
+  await cell.getByTestId('row-accessory-button').click();
+  await page.getByTestId('list-row-action-menu').getByTestId(ROW_MENU_ITEM[action]).click();
+  if (action === 'Delete') {
+    await page.getByTestId('delete-row-confirm-button').click();
+    await expect(page.getByTestId('delete-row-confirm-button')).toHaveCount(0);
+  }
+}
+
+When('I open the row menu of the table row {string} and choose {string}', async ({ page }, title, action) => {
+  await chooseRowMenuItem(page, sidebarCell(page, title), action);
+});
+
+When('I open the row menu of the last table row and choose {string}', async ({ page }, action) => {
+  await chooseRowMenuItem(page, page.locator('[data-testid^="timeline-sidebar-cell-"]').last(), action);
+});
+
+Then('the table lists {string} in that order', async ({ page }, list) => {
+  const expected = list.split(',').map((title: string) => title.trim().replace(/^"|"$/g, ''));
+
+  await expect.poll(() => sidebarTitles(page), { timeout: 15_000 }).toEqual(expected);
+});
+
+Then('the timeline shows {int} bars', async ({ page }, count) => {
+  await expect(TimelineSelectors.bars(page)).toHaveCount(count, { timeout: 15_000 });
+});
+
+When('I drag the table row {string} above {string}', async ({ page }, source, target) => {
+  const sourceCell = sidebarCell(page, source);
+  const targetCell = sidebarCell(page, target);
+
+  await sourceCell.hover();
+  const handle = sourceCell.getByTestId('row-accessory-button');
+  const handleBox = await handle.boundingBox();
+  const targetBox = await targetCell.boundingBox();
+
+  if (!handleBox || !targetBox) throw new Error('Row handle or target is not visible');
+  const start = { x: handleBox.x + handleBox.width / 2, y: handleBox.y + handleBox.height / 2 };
+  // Aim at the top quarter of the target so the closest edge resolves to "top".
+  const end = { x: targetBox.x + 60, y: targetBox.y + Math.min(targetBox.height * 0.15, 5) };
+
+  await page.mouse.move(start.x, start.y, { steps: 10 });
+  await page.mouse.down();
+  await page.waitForTimeout(100);
+  await page.mouse.move(start.x + 6, start.y - 4, { steps: 5 });
+  await page.waitForTimeout(100);
+  await page.mouse.move(end.x, end.y, { steps: 20 });
+  await page.waitForTimeout(200);
+  await page.mouse.up();
+});

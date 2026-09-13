@@ -2,6 +2,8 @@ import { FieldType, useFieldSelector, useTimelineLayoutSetting } from '@/applica
 import { YjsDatabaseKey } from '@/application/types';
 
 import { TimelineUnsupported } from './TimelineUnsupported';
+import { ListSortSubscription } from '@/components/database/list/ListSortState';
+
 import { TimelineView } from './TimelineView';
 
 const DATE_FIELD_TYPES = [FieldType.DateTime, FieldType.CreatedTime, FieldType.LastEditedTime];
@@ -15,7 +17,12 @@ export function Timeline() {
     return <TimelineUnsupported />;
   }
 
-  return <TimelineView setting={setting} />;
+  // One sort subscription for every row's insert / reorder confirmation.
+  return (
+    <ListSortSubscription>
+      <TimelineView setting={setting} />
+    </ListSortSubscription>
+  );
 }
 
 export default Timeline;

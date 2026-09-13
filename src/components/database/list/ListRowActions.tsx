@@ -190,7 +190,14 @@ export function ListRowActions({
                 aria-label={reorderable ? `${t('tooltip.dragRow')}. ${t('tooltip.openMenu')}` : t('tooltip.openMenu')}
                 className='h-[30px] w-5 rounded-[4px] p-[3px] text-icon-secondary focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
                 data-testid='row-accessory-button'
-                onClick={(event) => event.stopPropagation()}
+                // Radix opens on pointer-down and cancels that event, which
+                // keeps the browser from ever starting a native drag on the
+                // same handle. Leave pointer-down alone and open on click.
+                onPointerDownCapture={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setMenuOpen((open) => !open);
+                }}
                 size='icon-sm'
                 title={reorderable ? `${t('tooltip.dragRow')} · ${t('tooltip.openMenu')}` : t('tooltip.openMenu')}
                 type='button'

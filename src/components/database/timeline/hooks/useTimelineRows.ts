@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 
-import { CalendarEvent, useRowOrdersSelector, useTimelineEventsSelector } from '@/application/database-yjs';
+import { CalendarEvent, Row, useRowOrdersSelector, useTimelineEventsSelector } from '@/application/database-yjs';
+
+const EMPTY_ROW_ORDERS: Row[] = [];
 
 export interface TimelineRowModel {
   rowId: string;
@@ -55,5 +57,5 @@ export function useTimelineRows(includeUndated: boolean) {
     return result;
   }, [events, emptyEvents, includeUndated, rowOrders]);
 
-  return { rows, emptyEvents };
+  return { rows, emptyEvents, rowOrders: rowOrders ?? EMPTY_ROW_ORDERS };
 }
