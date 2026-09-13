@@ -1,6 +1,7 @@
 import i18next, { i18n } from 'i18next';
 
 import en from '@/@types/translations/en.json';
+import zh from '@/@types/translations/zh-CN.json';
 
 /**
  * `ImportDialog` reports counts through i18next plurals. Those only resolve when the option is
@@ -14,7 +15,7 @@ async function createI18n(lng: string): Promise<i18n> {
   await instance.init({
     lng,
     fallbackLng: 'en',
-    resources: { en: { translation: en } },
+    resources: { en: { translation: en }, 'zh-CN': { translation: zh } },
   });
 
   return instance;
@@ -59,6 +60,21 @@ describe('import panel count strings', () => {
 
   it('announces progress with words rather than a bare ratio', () => {
     expect(t('importPanel.importingProgress', { current: 2, total: 7 })).toBe('Importing file 2 of 7');
+  });
+
+  it('identifies Confluence HTML exports and reports background import status', async () => {
+    expect(t('importPanel.confluenceZip')).toBe('Confluence HTML Export (.zip)');
+    expect(t('web.dropConfluenceFile')).toBe(
+      'Drop your Confluence HTML export (.zip) here to upload, or click to browse'
+    );
+    expect(t('importPanel.confluenceImportStarted')).toBe(
+      'Confluence import started. Pages will appear in this view when ready.'
+    );
+
+    const chinese = await createI18n('zh-CN');
+
+    expect(chinese.t('importPanel.confluenceZip')).toBe('Confluence HTML 导出文件 (.zip)');
+    expect(chinese.t('web.importFromConfluence')).toBe('从 Confluence 导入');
   });
 
   it('picks a locale-specific plural form where one exists', async () => {

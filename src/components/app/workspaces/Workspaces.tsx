@@ -94,7 +94,7 @@ export function Workspaces() {
   const [, setSearchParams] = useSearchParams();
 
   const handleOpenImport = useCallback(
-    (source: 'notion' | 'appflowy') => {
+    (source: 'notion' | 'appflowy' | 'confluence') => {
       setSearchParams((prev) => {
         prev.set('action', 'import');
         prev.set('source', source);
@@ -212,16 +212,10 @@ export function Workspaces() {
                   <div className={'flex-1 text-left'}>{t('web.importWorkspace')}</div>
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
-                  <DropdownMenuItem
-                    data-testid='import-from-appflowy'
-                    onSelect={() => handleOpenImport('appflowy')}
-                  >
+                  <DropdownMenuItem data-testid='import-from-appflowy' onSelect={() => handleOpenImport('appflowy')}>
                     <div className={'flex-1 text-left'}>{t('web.importFromAppFlowy')}</div>
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    data-testid='import-from-notion'
-                    onSelect={() => handleOpenImport('notion')}
-                  >
+                  <DropdownMenuItem data-testid='import-from-notion' onSelect={() => handleOpenImport('notion')}>
                     <div className={'flex-1 text-left'}>{t('web.importFromNotion')}</div>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -237,6 +231,9 @@ export function Workspaces() {
                       </TooltipTrigger>
                       <TooltipContent>{t('workspace.learnMore')}</TooltipContent>
                     </Tooltip>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem data-testid='import-from-confluence' onSelect={() => handleOpenImport('confluence')}>
+                    <div className={'flex-1 text-left'}>{t('web.importFromConfluence')}</div>
                   </DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
