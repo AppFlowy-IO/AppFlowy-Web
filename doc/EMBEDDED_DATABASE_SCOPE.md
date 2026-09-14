@@ -87,6 +87,12 @@ Logs are `/tmp/appflowy-web-embedded-scope-final-unit.log`,
 `/tmp/appflowy-web-embedded-scope-browser.log`. Browser tests used a temporary Vite instance on
 localhost port 3100, proxying to the local Cloud instance on port 8000 and GoTrue on port 9999.
 
+The CI configuration serves the web app and API on separate origins. Persisted-state checks must
+use `TestConfig.apiUrl` with authenticated Playwright requests; relative browser fetches hit the
+web HTML fallback when there is no API proxy. This failure was reproduced with web port 3100
+and API port 8000. All four browser cases passed after correction with two workers and no API
+proxy; the rerun log is `/tmp/appflowy-web-pr557-separate-origin-green.log`.
+
 The fixes prevent new client-side scope mistakes. They do not rewrite previously rejected
 operations, repair inconsistent production metadata, or prove that an older deployed web bundle
 already contains these changes.

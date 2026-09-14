@@ -1,11 +1,12 @@
 import { expect, type Page, test } from '@playwright/test';
 import * as Y from 'yjs';
 
+import { assertSuccessfulAppFlowyResponse } from '../../../support/appflowy-response';
 import { signUpAndLoginWithPasswordViaUi } from '../../../support/auth-flow-helpers';
 import { insertInlineGridViaSlash } from '../../../support/duplicate-test-helpers';
 import { createDocumentPageAndNavigate } from '../../../support/page-utils';
 import { DatabaseViewSelectors, PageSelectors } from '../../../support/selectors';
-import { generateRandomEmail } from '../../../support/test-config';
+import { generateRandomEmail, TestConfig } from '../../../support/test-config';
 
 type FolderView = {
   view_id: string;
@@ -23,19 +24,25 @@ function workspaceId(page: Page): string {
 }
 
 async function readServerData<T>(page: Page, path: string): Promise<T> {
-  return page.evaluate(async (apiPath) => {
-    const token = JSON.parse(localStorage.getItem('token') || '{}').access_token;
-    const response = await fetch(apiPath, {
-      headers: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache' },
-    });
-    const body = await response.json();
+  const token = await page.evaluate(() => JSON.parse(localStorage.getItem('token') || '{}').access_token);
 
-    if (!response.ok || body.code !== 0) {
-      throw new Error(`Scope verification failed: HTTP ${response.status}, code ${body.code}`);
-    }
+  if (!token) throw new Error('Scope verification requires an authenticated session');
 
-    return body.data;
-  }, path);
+  // CI serves the web app and Cloud API on separate origins. Read persisted
+  // state from the configured API, independently of the browser's web host.
+  const response = await page.request.get(new URL(path, TestConfig.apiUrl).toString(), {
+    headers: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache' },
+  });
+  const bodyText = await response.text();
+
+  assertSuccessfulAppFlowyResponse({
+    bodyText,
+    ok: response.ok(),
+    operation: 'Read persisted database scope',
+    status: response.status(),
+  });
+
+  return JSON.parse(bodyText).data as T;
 }
 
 async function expectPersistedEmbeddedScope(page: Page, viewId: string, documentId: string): Promise<void> {
