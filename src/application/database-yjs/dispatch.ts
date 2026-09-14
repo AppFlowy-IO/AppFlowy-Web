@@ -34,7 +34,6 @@ import {
 } from '@/application/database-yjs/database.type';
 import { deleteReciprocalRelationField } from '@/application/database-yjs/dispatch/relation';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
-import { normalizeCreatedDatabaseFeedView, updateCreatesExactFeedView } from '@/application/database-yjs/feed-layout';
 import {
   getFieldName,
   NumberFormat,
@@ -3545,6 +3544,7 @@ export function useSwitchPropertyType() {
                   FieldType.Media,
                   FieldType.Translate,
                   FieldType.Rollup,
+                  FieldType.Formula,
                 ].includes(fieldType)
               ) {
                 // Ensure the type option map is created
@@ -3588,6 +3588,9 @@ export function useSwitchPropertyType() {
                     newTypeOption.set(YjsDatabaseKey.calculation_type, CalculationType.Count);
                     newTypeOption.set(YjsDatabaseKey.show_as, RollupDisplayMode.Calculated);
                     newTypeOption.set(YjsDatabaseKey.condition_value, '');
+                  } else if (fieldType === FieldType.Formula) {
+                    newTypeOption.set(YjsDatabaseKey.formula, '');
+                    newTypeOption.set(YjsDatabaseKey.format, NumberFormat.Num);
                   }
 
                   typeOptionMap.set(String(fieldType), newTypeOption);
@@ -4571,6 +4574,78 @@ export function useUpdateRollupTypeOption(fieldId: string) {
           },
         ],
         'updateRollupTypeOption'
+      );
+    },
+    [database, fieldId, sharedRoot]
+  );
+}
+
+export function useUpdateFormulaTypeOption(fieldId: string) {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (updates: {
+      /** Storage-form expression (property references as prop("<field_id>")). */
+      formula?: string;
+      format?: NumberFormat;
+      visualization_type?: RollupShowAsType;
+      visualization_color?: string;
+      visualization_divisor?: number;
+      visualization_show_number?: boolean;
+    }) => {
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+            if (!field) {
+              throw new Error(`Field not found`);
+            }
+
+            let typeOptionMap = field.get(YjsDatabaseKey.type_option);
+
+            if (!typeOptionMap) {
+              typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+              field.set(YjsDatabaseKey.type_option, typeOptionMap);
+            }
+
+            let typeOption = typeOptionMap.get(String(FieldType.Formula));
+
+            if (!typeOption) {
+              typeOption = new Y.Map() as YMapFieldTypeOption;
+              typeOptionMap.set(String(FieldType.Formula), typeOption);
+            }
+
+            if (updates.formula !== undefined) {
+              typeOption.set(YjsDatabaseKey.formula, updates.formula);
+            }
+
+            if (updates.format !== undefined) {
+              typeOption.set(YjsDatabaseKey.format, updates.format);
+            }
+
+            if (updates.visualization_type !== undefined) {
+              typeOption.set(YjsDatabaseKey.rollup_show_as_type, updates.visualization_type);
+            }
+
+            if (updates.visualization_color !== undefined) {
+              typeOption.set(YjsDatabaseKey.rollup_show_as_color, updates.visualization_color);
+            }
+
+            if (updates.visualization_divisor !== undefined) {
+              typeOption.set(YjsDatabaseKey.rollup_show_as_divisor, updates.visualization_divisor);
+            }
+
+            if (updates.visualization_show_number !== undefined) {
+              typeOption.set(YjsDatabaseKey.rollup_show_as_show_number, updates.visualization_show_number);
+            }
+
+            field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+          },
+        ],
+        'updateFormulaTypeOption'
       );
     },
     [database, fieldId, sharedRoot]

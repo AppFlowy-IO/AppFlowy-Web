@@ -34,6 +34,12 @@ import { EnhancedBigStats } from '@/application/database-yjs/fields/number/Enhan
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { RollupFilterMetadata, RollupFilterMode } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
+import {
+  evaluateFormulaForRow,
+  formulaPredicateFieldType,
+  formulaResultToDateCell,
+  formulaResultToNumberText,
+} from '@/application/database-yjs/formula/filter';
 import type { RollupCellValue } from '@/application/database-yjs/rollup/cache';
 import {
   parseRollupFilterMetadata,
@@ -233,7 +239,11 @@ function hasListFilterContent(content: unknown) {
 function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField) {
   const actualType = Number(field.get(YjsDatabaseKey.type));
   const fieldType =
-    actualType === FieldType.Rollup ? rollupPredicateType(parseFilter(actualType, filter), field) : actualType;
+    actualType === FieldType.Rollup
+      ? rollupPredicateType(parseFilter(actualType, filter), field)
+      : actualType === FieldType.Formula
+      ? formulaPredicateFieldType(field)
+      : actualType;
   const condition = Number(filter.get(YjsDatabaseKey.condition));
   const content = filter.get(YjsDatabaseKey.content);
 
@@ -843,7 +853,9 @@ export function filterBy(
     if (!field || !isDataFilterEffective(node, field)) return null;
 
     const fieldType = Number(field.get(YjsDatabaseKey.type));
-    const filterValue = parseFilter(fieldType, node);
+    // A formula filters with the vocabulary of its result type.
+    const formulaPredicateType = fieldType === FieldType.Formula ? formulaPredicateFieldType(field, fields) : undefined;
+    const filterValue = parseFilter(formulaPredicateType ?? fieldType, node);
     const condition = Number(filterValue.condition);
     const rawContent = filterValue.content;
     const content = typeof rawContent === 'string' ? rawContent : '';
@@ -865,6 +877,21 @@ export function filterBy(
       const snapshot = getRowConditionSnapshot(rowMeta);
 
       if (!snapshot) return false;
+
+      if (fieldType === FieldType.Formula) {
+        const result = evaluateFormulaForRow(field, fieldId, fields, snapshot.row, rowId);
+
+        switch (formulaPredicateType) {
+          case FieldType.Number:
+            return numberFilterCheck(formulaResultToNumberText(result), content, condition);
+          case FieldType.Checkbox:
+            return checkboxFilterCheck(result.rawBoolean ? 'Yes' : 'No', condition);
+          case FieldType.DateTime:
+            return dateFilterCheck(formulaResultToDateCell(result), filterValue as DateFilter);
+          default:
+            return textFilterCheck(result.error ? '' : result.text, content, condition);
+        }
+      }
 
       const cellData = getConditionCellData(snapshot, fieldId, field);
 
@@ -1465,6 +1492,9 @@ export function getDefaultFilterCondition(
       if (predicateType === FieldType.Media) return { condition: 1, content: '' }; // MediaIsNotEmpty
       return defaultRollupPredicate(predicateType);
     }
+
+    case FieldType.Formula:
+      return getDefaultFilterCondition(field ? formulaPredicateFieldType(field) : FieldType.RichText, field);
 
     case FieldType.Relation:
       return {

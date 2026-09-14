@@ -2,7 +2,13 @@ import { isNaN } from 'lodash-es';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { currencyFormaterMap, FieldType, parseNumberTypeOptions, useFieldSelector } from '@/application/database-yjs';
+import {
+  currencyFormaterMap,
+  FieldType,
+  parseFormulaTypeOption,
+  parseNumberTypeOptions,
+  useFieldSelector,
+} from '@/application/database-yjs';
 import { CalculationType } from '@/application/database-yjs/database.type';
 import EnhancedBigStats from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { YjsDatabaseKey } from '@/application/types';
@@ -29,12 +35,15 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
 
   const format = useMemo(
-    () =>
-      field && Number(field?.get(YjsDatabaseKey.type)) === FieldType.Number
-        ? parseNumberTypeOptions(field).format
-        : undefined,
+    () => {
+      if (!field) return undefined;
+      if (fieldType === FieldType.Number) return parseNumberTypeOptions(field).format;
+      // Number-typed formulas carry their own number format.
+      if (fieldType === FieldType.Formula) return parseFormulaTypeOption(field).format;
+      return undefined;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [field, clock],
+    [field, fieldType, clock],
   );
   const [num, setNum] = useState<string>();
 

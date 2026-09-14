@@ -10,6 +10,7 @@ export * from './checklist';
 export * from './relation';
 export * from './rollup';
 export * from './person';
+export * from './formula';
 
 export function getFieldName (fieldType: FieldType) {
   switch (fieldType) {
@@ -51,6 +52,8 @@ export function getFieldName (fieldType: FieldType) {
       return 'Time';
     case FieldType.Rollup:
       return 'Rollup';
+    case FieldType.Formula:
+      return 'Formula';
     default:
       return 'Text';
   }

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType, FieldVisibility, useFieldSelector, useFieldVisibility } from '@/application/database-yjs';
@@ -18,6 +18,7 @@ import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
 import { ReactComponent as ShowIcon } from '@/assets/icons/show.svg';
 import DataTimePropertyMenuContent from '@/components/database/components/property/date/DataTimePropertyMenuContent';
 import DeletePropertyConfirm from '@/components/database/components/property/DeletePropertyConfirm';
+import FormulaPropertyMenuContent from '@/components/database/components/property/formula/FormulaPropertyMenuContent';
 import FileMediaPropertyMenuContent from '@/components/database/components/property/media/FileMediaPropertyMenuContent';
 import NumberPropertyMenuContent from '@/components/database/components/property/number/NumberPropertyMenuContent';
 import PropertyProfile from '@/components/database/components/property/PropertyProfile';
@@ -41,6 +42,12 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Log } from '@/utils/log';
 
+const FormulaEditorDialog = lazy(() =>
+  import('@/components/database/components/property/formula/FormulaEditorDialog').then(
+    ({ FormulaEditorDialog: Component }) => ({ default: Component })
+  )
+);
+
 function PropertyMenu({
   fieldId,
   open,
@@ -63,6 +70,7 @@ function PropertyMenu({
   const { t } = useTranslation();
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [relationDialogOpen, setRelationDialogOpen] = useState(false);
+  const [formulaDialogOpen, setFormulaDialogOpen] = useState(false);
   const switchType = useSwitchPropertyType();
   const updatePropertyName = useUpdatePropertyNameDispatch(fieldId);
   const updateRelationTypeOption = useUpdateRelationTypeOption(fieldId);
@@ -72,6 +80,13 @@ function PropertyMenu({
   const handleRequestRelation = useCallback(() => {
     onOpenChange?.(false);
     setRelationDialogOpen(true);
+  }, [onOpenChange]);
+
+  // The editor is a dialog owned here, not by the menu content: the content
+  // unmounts when the dropdown closes, and the dialog must outlive it.
+  const handleRequestFormula = useCallback(() => {
+    onOpenChange?.(false);
+    setFormulaDialogOpen(true);
   }, [onOpenChange]);
 
   const handleCreateRelation = useCallback(
@@ -153,10 +168,12 @@ function PropertyMenu({
         return <TranslatePropertyMenuContext {...props} />;
       case FieldType.Rollup:
         return <RollupPropertyMenuContent {...props} />;
+      case FieldType.Formula:
+        return <FormulaPropertyMenuContent {...props} onRequestEditor={handleRequestFormula} />;
       default:
         return null;
     }
-  }, [fieldId, type]);
+  }, [fieldId, type, handleRequestFormula]);
 
   if (isEditingDisabled) {
     return children ? <>{children}</> : null;
@@ -180,7 +197,11 @@ function PropertyMenu({
               <TooltipContent side={'bottom'}>{t('grid.field.switchPrimaryFieldTooltip')}</TooltipContent>
             </Tooltip>
           ) : (
-            <PropertySelectTrigger fieldId={fieldId} onRequestRelation={handleRequestRelation} />
+            <PropertySelectTrigger
+              fieldId={fieldId}
+              onRequestRelation={handleRequestRelation}
+              onRequestFormula={handleRequestFormula}
+            />
           )}
 
           {propertyContent}
@@ -221,6 +242,11 @@ function PropertyMenu({
         onOpenChange={setRelationDialogOpen}
         onCreate={handleCreateRelation}
       />
+      {formulaDialogOpen ? (
+        <Suspense fallback={null}>
+          <FormulaEditorDialog fieldId={fieldId} open={formulaDialogOpen} onOpenChange={setFormulaDialogOpen} />
+        </Suspense>
+      ) : null}
     </>
   );
 }

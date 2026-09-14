@@ -240,6 +240,7 @@ export function ListCell({
     case FieldType.Person:
     case FieldType.Relation:
     case FieldType.Rollup:
+    case FieldType.Formula:
       return (
         <div
           className={cn(

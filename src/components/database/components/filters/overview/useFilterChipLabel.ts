@@ -17,6 +17,7 @@ import {
   SelectOptionFilterCondition,
 } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { TextFilterCondition } from '@/application/database-yjs/fields/text/text.type';
+import { formulaPredicateFieldType } from '@/application/database-yjs/formula/filter';
 import {
   resolvedRollupTarget,
   rollupPredicateType,
@@ -361,6 +362,9 @@ function buildChipLabel(
             })} ${label.description}`.trim(),
           };
     }
+
+    case FieldType.Formula:
+      return buildChipLabel(filter, field, dateFormat, t, formulaPredicateFieldType(field));
 
     case FieldType.Media:
       return {

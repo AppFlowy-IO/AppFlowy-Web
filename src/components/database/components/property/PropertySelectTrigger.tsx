@@ -34,6 +34,7 @@ const properties = [
   FieldType.LastEditedBy,
   FieldType.Relation,
   FieldType.Rollup,
+  FieldType.Formula,
   FieldType.Summary,
   FieldType.Translate,
   FieldType.Person,
@@ -47,10 +48,13 @@ export function PropertySelectTrigger({
   fieldId,
   disabled,
   onRequestRelation,
+  onRequestFormula,
 }: {
   fieldId: string;
   disabled?: boolean;
   onRequestRelation?: () => void;
+  /** Called after a switch to Formula so the host can open the editor right away. */
+  onRequestFormula?: () => void;
 }) {
   const { field } = useFieldSelector(fieldId);
   const type = Number(field?.get(YjsDatabaseKey.type)) as unknown as FieldType;
@@ -91,6 +95,9 @@ export function PropertySelectTrigger({
       [FieldType.LastEditedBy]: t('tooltip.lastEditedByField'),
       [FieldType.Relation]: t('tooltip.relationField'),
       [FieldType.Rollup]: t('tooltip.rollupField', { defaultValue: 'Rollup' }),
+      [FieldType.Formula]: t('tooltip.formulaField', {
+        defaultValue: 'Compute a value from other properties with a formula',
+      }),
       [FieldType.Summary]: t('tooltip.AISummaryField'),
       [FieldType.Translate]: t('tooltip.AITranslateField'),
       [FieldType.Media]: t('tooltip.mediaField'),
@@ -131,6 +138,13 @@ export function PropertySelectTrigger({
                             e.preventDefault();
                             setOpen(false);
                             onRequestRelation?.();
+                            return;
+                          }
+
+                          if (property === FieldType.Formula && onRequestFormula && type !== FieldType.Formula) {
+                            e.preventDefault();
+                            setOpen(false);
+                            void handleSelect(property).then(() => onRequestFormula());
                             return;
                           }
 

@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CalculationType, FieldType, useFieldType } from '@/application/database-yjs';
+import { useFormulaResultType } from '@/application/database-yjs/selector';
 import { ICalculationCell } from '@/components/database/components/grid/grid-calculation-cell/CalculationCell';
 import {
   DropdownMenu,
@@ -19,6 +20,9 @@ function CalcationMenu ({ calculation, fieldId, open, onOpenChange, onClear, onC
   onChangeType: (type: CalculationType) => void;
 }) {
   const fieldType = useFieldType(fieldId);
+  const formulaResultType = useFormulaResultType(fieldId);
+  // A number-typed formula offers the full numeric calculations, like a Number column.
+  const isNumericFormula = fieldType === FieldType.Formula && formulaResultType === 'number';
   const { t } = useTranslation();
 
   const isCheckbox = fieldType === FieldType.Checkbox;
@@ -81,6 +85,7 @@ function CalcationMenu ({ calculation, fieldId, open, onOpenChange, onClear, onC
     ];
 
     const filteredCalculationTypes = calculationTypes.filter((c: CalculationType) => {
+      if (isNumericFormula) return true;
       switch (fieldType) {
         case FieldType.Number:
           return true;
@@ -95,7 +100,7 @@ function CalcationMenu ({ calculation, fieldId, open, onOpenChange, onClear, onC
       value: c,
       label: getLabel(c),
     }));
-  }, [fieldType, getLabel]);
+  }, [fieldType, getLabel, isNumericFormula]);
 
   return (
     <DropdownMenu

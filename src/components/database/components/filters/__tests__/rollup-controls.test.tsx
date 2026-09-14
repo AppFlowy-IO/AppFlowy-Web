@@ -59,7 +59,10 @@ jest.mock('@/application/database-yjs/context', () => ({
   useDatabase: () => mockDatabase,
   useReadOnly: () => mockReadOnly,
 }));
-jest.mock('@/application/database-yjs/selector', () => ({ useFieldSelector: () => ({ field: mockField }) }));
+jest.mock('@/application/database-yjs/selector', () => ({
+  useFieldSelector: () => ({ field: mockField }),
+  useFormulaResultType: () => 'any',
+}));
 jest.mock('@/application/database-yjs/dispatch', () => ({
   ...jest.requireActual('@/application/database-yjs/dispatch'),
   useRemoveAdvancedFilterAndRebuild: () => mockNoop,

@@ -27,5 +27,6 @@ export {
   useUpdateDateTimeFieldFormat,
   useUpdateRelationDatabaseId,
   useUpdateRollupTypeOption,
+  useUpdateFormulaTypeOption,
   useUpdateFileMediaTypeOption,
 } from '../dispatch';

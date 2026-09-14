@@ -14,7 +14,7 @@ import {
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { createCalendarLayoutStore } from '@/application/database-yjs/calendar-layout';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
-import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
+import { DateTimeCell, FormulaCell, RollupCell } from '@/application/database-yjs/cell.type';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { DEFAULT_FIELD_WRAP, getCell, MIN_COLUMN_WIDTH } from '@/application/database-yjs/const';
 import {
@@ -28,10 +28,16 @@ import {
 } from '@/application/database-yjs/context';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import {
+  compileFormula,
+  evaluateFormulaCell,
+  FormulaType,
   getDateCellStr,
   getFieldDateTimeFormats,
   getTypeOptions,
+  parseFormulaTypeOption,
+  parseFormulaVisualizationOption,
   parsePersonTypeOptions,
+  readFormulaSchema,
   parseRelationTypeOption,
   parseRollupTypeOption,
   parseRollupVisualizationOption,
@@ -91,6 +97,7 @@ import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-ob
 import { sortBy } from '@/application/database-yjs/sort';
 import {
   DatabaseViewLayout,
+  DateFormat,
   FieldId,
   GalleryCardPreview,
   GalleryCardSize,
@@ -116,7 +123,7 @@ import {
 import { MetadataKey } from '@/application/user-metadata';
 import { canonicalizeUserUid } from '@/application/user-uid';
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
-import { useCurrentUser } from '@/components/main/app.hooks';
+import { useCurrentUser, useCurrentUserOptional } from '@/components/main/app.hooks';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
 import { ChartLayoutSettings } from './chart.type';
@@ -131,6 +138,7 @@ import {
   RollupDisplayMode,
   SortCondition,
 } from './database.type';
+import { useDatabaseFieldsVersion } from './hooks/useDatabaseFieldsVersion';
 import { useRelativeDateFilterRefresh } from './hooks/useRelativeDateFilterRefresh';
 
 import type { Transaction, YEvent } from 'yjs';
@@ -3039,6 +3047,102 @@ function useRollupCellValue({
   } as RollupCell;
 }
 
+/**
+ * Formula cells are computed synchronously from the row's own cells, so the
+ * value is derived during render and re-derived when the row's cells, the row
+ * meta (created/edited time and actor) or any field in the schema changes —
+ * other formulas, select option names and number formats all live on fields.
+ */
+export function useFormulaCellValue({
+  row,
+  field,
+  rowId,
+  fieldId,
+  fieldClock,
+}: {
+  row?: YDatabaseRow;
+  field?: YDatabaseField;
+  rowId: string;
+  fieldId: string;
+  fieldClock: number;
+}): FormulaCell | undefined {
+  const fields = useDatabaseFields();
+  const fieldsVersion = useDatabaseFieldsVersion();
+  // Optional: cell hooks also render in embeds and tests without the app shell.
+  const currentUser = useCurrentUserOptional();
+  const [rowClock, setRowClock] = useState(0);
+  const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const isFormula = fieldType === FieldType.Formula;
+
+  useEffect(() => {
+    if (!isFormula || !row) return;
+    const bump = () => setRowClock((prev) => prev + 1);
+    const cells = row.get(YjsDatabaseKey.cells);
+
+    row.observe(bump);
+    cells?.observeDeep(bump);
+
+    return () => {
+      row.unobserve(bump);
+      cells?.unobserveDeep(bump);
+    };
+  }, [isFormula, row]);
+
+  return useMemo(() => {
+    if (!isFormula || !row || !field) return undefined;
+    // Recompute when the row or any field mutates even though the Yjs handles are stable.
+    void rowClock;
+    void fieldClock;
+    void fieldsVersion;
+    const typeOption = parseFormulaTypeOption(field);
+    const result = evaluateFormulaCell({
+      schema: readFormulaSchema(fields),
+      field,
+      fieldId,
+      row,
+      rowId,
+      format: {
+        numberFormat: typeOption.format,
+        dateFormat: currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat | undefined,
+        timeFormat: currentUser?.metadata?.[MetadataKey.TimeFormat] as TimeFormat | undefined,
+      },
+    });
+
+    return {
+      createdAt: 0,
+      lastModified: 0,
+      fieldType: FieldType.Formula,
+      data: result.text,
+      resultType: result.resultType,
+      rawNumeric: result.rawNumeric,
+      rawBoolean: result.rawBoolean,
+      rawDate: result.rawDate,
+      error: result.error,
+      isBlank: typeOption.formula.trim() === '',
+      numberFormat: typeOption.format,
+      visualization: parseFormulaVisualizationOption(typeOption),
+    };
+  }, [isFormula, row, field, rowClock, fieldClock, fieldsVersion, fields, fieldId, rowId, currentUser]);
+}
+
+/**
+ * Static result type of a formula field (`number`, `text`, `boolean`, `date`,
+ * a list type, `empty` for a blank expression or `any` when it is invalid).
+ * Filters, sorts, the Calculate footer and the property menu key off this.
+ */
+export function useFormulaResultType(fieldId: string): FormulaType {
+  const fields = useDatabaseFields();
+  const fieldsVersion = useDatabaseFieldsVersion();
+  const { field, clock } = useFieldSelector(fieldId);
+
+  return useMemo(() => {
+    void fieldsVersion;
+    void clock;
+    if (!field || Number(field.get(YjsDatabaseKey.type)) !== FieldType.Formula) return 'any';
+    return compileFormula(parseFormulaTypeOption(field).formula, readFormulaSchema(fields), fieldId).resultType;
+  }, [field, fields, fieldId, fieldsVersion, clock]);
+}
+
 export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: string }) {
   const { row } = useRowDataSelector(rowId);
   const cells = row?.get(YjsDatabaseKey.cells);
@@ -3047,6 +3151,7 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
   const [clock, setClock] = useState<number>(0);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const rollupCell = useRollupCellValue({ row, field, rowId, fieldId, fieldClock });
+  const formulaCell = useFormulaCellValue({ row, field, rowId, fieldId, fieldClock });
 
   // Parse during render rather than from an effect, and key on the field type
   // read from the doc rather than on a clock. Callers pick their cell component
@@ -3097,6 +3202,10 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
 
   if (fieldType === FieldType.Rollup) {
     return rollupCell;
+  }
+
+  if (fieldType === FieldType.Formula) {
+    return formulaCell;
   }
 
   return cellValue;
@@ -3416,7 +3525,10 @@ export const useRowMetaSelector = (rowId: string) => {
 export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
   const [cells, setCells] = useState<Map<string, unknown> | null>(null);
   const rowMap = useRowMap();
+  const fields = useDatabaseFields();
+  const fieldsVersion = useDatabaseFieldsVersion();
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
+  const isFormula = Number(field?.get(YjsDatabaseKey.type)) === FieldType.Formula;
 
   useEffect(() => {
     if (!rows || !rowMap) {
@@ -3437,6 +3549,20 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
 
       const cells = databaseRow.get(YjsDatabaseKey.cells);
       const getCellValue = () => {
+        // A formula column has no stored cell; the footer calculates over the
+        // evaluated results (numbers stay numeric so Sum/Average work).
+        if (isFormula && field) {
+          const result = evaluateFormulaCell({
+            schema: readFormulaSchema(fields),
+            field,
+            fieldId,
+            row: databaseRow,
+            rowId: row.id,
+          });
+
+          return result.rawNumeric ?? result.text;
+        }
+
         const cell = databaseRow.get(YjsDatabaseKey.cells)?.get(fieldId);
 
         return cell ? parseYDatabaseCellToCell(cell, field).data : '';
@@ -3467,7 +3593,7 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
         unobserverEvent();
       });
     };
-  }, [rows, rowMap, fieldId, field, fieldClock]);
+  }, [rows, rowMap, fieldId, field, fieldClock, fields, fieldsVersion, isFormula]);
 
   return {
     cells,
