@@ -90,33 +90,20 @@ async function insertTableViaSlashCommand(page: Page) {
 }
 
 async function clickAddRowButton(page: Page, tableIndex = 0) {
-  // Use evaluate to directly call click — avoids pointer interception issues
-  await page.evaluate((idx) => {
-    const tables = document.querySelectorAll('.simple-table');
-    const btn = tables[idx]?.querySelector('.simple-table-add-row-btn') as HTMLElement;
-
-    btn?.click();
-  }, tableIndex);
+  await getTable(page, tableIndex).hover();
+  await getTable(page, tableIndex).locator('.simple-table-add-row-btn').click();
   await page.waitForTimeout(500);
 }
 
 async function clickAddColumnButton(page: Page, tableIndex = 0) {
-  await page.evaluate((idx) => {
-    const tables = document.querySelectorAll('.simple-table');
-    const btn = tables[idx]?.querySelector('.simple-table-add-col-btn') as HTMLElement;
-
-    btn?.click();
-  }, tableIndex);
+  await getTable(page, tableIndex).hover();
+  await getTable(page, tableIndex).locator('.simple-table-add-col-btn').click();
   await page.waitForTimeout(500);
 }
 
 async function clickAddCornerButton(page: Page, tableIndex = 0) {
-  await page.evaluate((idx) => {
-    const tables = document.querySelectorAll('.simple-table');
-    const btn = tables[idx]?.querySelector('.simple-table-add-corner-btn') as HTMLElement;
-
-    btn?.click();
-  }, tableIndex);
+  await getTable(page, tableIndex).hover();
+  await getTable(page, tableIndex).locator('.simple-table-add-corner-btn').click();
   await page.waitForTimeout(500);
 }
 
@@ -361,6 +348,11 @@ test.describe('SimpleTable', () => {
     await insertTableViaSlashCommand(page);
     expect(await getRowCount(page)).toBe(2);
 
+    const scrollContainer = getTable(page).locator('.simple-table-scroll-container');
+
+    expect(await scrollContainer.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false);
+    await expect(page.locator('[data-block-type="simple_table"] + [data-block-type="paragraph"]')).toBeVisible();
+
     await clickAddRowButton(page);
 
     expect(await getRowCount(page)).toBe(3);
@@ -378,10 +370,37 @@ test.describe('SimpleTable', () => {
   test('should add row and column via corner button', async ({ page }) => {
     await insertTableViaSlashCommand(page);
 
+    const scrollContainer = getTable(page).locator('.simple-table-scroll-container');
+
+    expect(await scrollContainer.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false);
+    await expect(page.locator('[data-block-type="simple_table"] + [data-block-type="paragraph"]')).toBeVisible();
+
     await clickAddCornerButton(page);
 
     expect(await getRowCount(page)).toBe(3);
     expect(await getColCount(page)).toBe(3);
+  });
+
+  test('should keep bottom add buttons clickable when the table overflows horizontally', async ({ page }) => {
+    await insertTableViaSlashCommand(page);
+
+    for (let i = 0; i < 4; i++) {
+      await clickAddColumnButton(page);
+    }
+
+    const table = getTable(page);
+    const scrollContainer = table.locator('.simple-table-scroll-container');
+
+    await expect(table.locator('tr:first-child td')).toHaveCount(6);
+    expect(await scrollContainer.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
+    await expect(page.locator('[data-block-type="simple_table"] + [data-block-type="paragraph"]')).toBeVisible();
+
+    await clickAddRowButton(page);
+    await expect(table.locator('tr')).toHaveCount(3);
+
+    await clickAddCornerButton(page);
+    await expect(table.locator('tr')).toHaveCount(4);
+    await expect(table.locator('tr:first-child td')).toHaveCount(7);
   });
 
   test('should delete row via context menu', async ({ page }) => {
