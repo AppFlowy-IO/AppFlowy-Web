@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 
 import { FieldType, Filter, useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { FilterType } from '@/application/database-yjs/database.type';
+import { predicateFieldTypeForResult } from '@/application/database-yjs/formula/filter';
+import { useFormulaResultType } from '@/application/database-yjs/selector';
 import {
   useRemoveAdvancedFilterAndRebuild,
   useUpdateAdvancedFilter,
@@ -50,7 +52,11 @@ export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPane
 
   // Not memoized: `field` is a Yjs map with a stable identity that mutates in
   // place, so a [field]-keyed memo would go stale after in-place field edits.
-  const fieldType: FieldType | null = field ? (Number(field.get(YjsDatabaseKey.type)) as FieldType) : null;
+  const actualType: FieldType | null = field ? (Number(field.get(YjsDatabaseKey.type)) as FieldType) : null;
+  const formulaResultType = useFormulaResultType(filter.fieldId);
+  // A formula uses the conditions and value input of its result type.
+  const fieldType: FieldType | null =
+    actualType === FieldType.Formula ? predicateFieldTypeForResult(formulaResultType) : actualType;
 
   const handleRemove = useCallback(() => {
     removeFilter(filter.id);

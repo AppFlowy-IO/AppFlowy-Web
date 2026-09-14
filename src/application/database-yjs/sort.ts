@@ -5,6 +5,8 @@ import {
   getRowConditionSnapshot,
 } from '@/application/database-yjs/condition-value-cache';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields';
+import { FormulaFieldSchema, readFormulaSchema } from '@/application/database-yjs/fields/formula';
+import { evaluateFormulaForRow, formulaPredicateFieldType } from '@/application/database-yjs/formula/filter';
 import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { Row } from '@/application/database-yjs/selector';
 import { RowId, YDatabaseFields, YDatabaseSorts, YDoc, YjsDatabaseKey } from '@/application/types';
@@ -59,6 +61,10 @@ export function sortBy(
 
   // Prepare sort data, pre-calculate all values to avoid multiple calculations
   const rollupNumericCache = new Map<string, boolean>();
+  const formulaPredicateCache = new Map<string, FieldType>();
+  // Formula sorts evaluate every row; read the schema once for the pass.
+  let formulaSchema: FormulaFieldSchema[] | undefined;
+  const getFormulaSchema = () => (formulaSchema ??= readFormulaSchema(fields));
   const sortData = rows.map((row) => {
     const values = sortArray.map((sort) => {
       const fieldId = sort.get(YjsDatabaseKey.field_id);
@@ -67,6 +73,38 @@ export function sortBy(
 
       const field = fields.get(fieldId);
       const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+      // Formulas sort by their evaluated result, ordered like the native type
+      // of that result (numbers numerically, dates chronologically, ...).
+      if (fieldType === FieldType.Formula) {
+        const predicateType =
+          formulaPredicateCache.get(fieldId) ??
+          (() => {
+            const type = formulaPredicateFieldType(field, fields);
+
+            formulaPredicateCache.set(fieldId, type);
+            return type;
+          })();
+        const defaultData = defaultValueForSort(predicateType, Number(sort.get(YjsDatabaseKey.condition)));
+        const snapshot = getRowConditionSnapshot(rowMetas[row.id]);
+
+        if (!snapshot) return defaultData;
+        const result = evaluateFormulaForRow(field, fieldId, getFormulaSchema(), snapshot.row, row.id);
+
+        if (result.error) return defaultData;
+
+        switch (predicateType) {
+          case FieldType.Number:
+            return result.rawNumeric !== undefined && Number.isFinite(result.rawNumeric) ? result.rawNumeric : defaultData;
+          case FieldType.DateTime:
+            return result.rawDate ? result.rawDate.start : defaultData;
+          case FieldType.Checkbox:
+            return Boolean(result.rawBoolean);
+          default:
+            return result.text || defaultData;
+        }
+      }
+
       const isRollupNumeric =
         fieldType === FieldType.Rollup
           ? rollupNumericCache.get(fieldId) ??
