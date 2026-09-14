@@ -28,6 +28,7 @@ export { parseFormula } from './parser';
 export type { FormulaFunctionSpec, FormulaFunctionCategory, FormulaFunctionExample, FormulaParam } from './registry';
 export {
   readFormulaSchema,
+  readFormulaSchemaForVersion,
   formulaSchemaSignature,
   resolveFormulaField,
   toDisplayExpression,

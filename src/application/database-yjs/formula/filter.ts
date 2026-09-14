@@ -4,6 +4,7 @@ import {
   compileFormula,
   evaluateFormulaCell,
   FormulaCellResult,
+  FormulaFieldSchema,
   FormulaType,
   parseFormulaTypeOption,
   readFormulaSchema,
@@ -56,15 +57,18 @@ export function predicateFieldTypeForResult(resultType: FormulaType): FieldType 
   }
 }
 
-/** Evaluates a formula for a row inside filter/sort passes (no React). */
+/**
+ * Evaluates a formula for a row inside filter/sort passes (no React). Build
+ * `schema` once per pass with `readFormulaSchema`, not once per row.
+ */
 export function evaluateFormulaForRow(
   field: YDatabaseField,
   fieldId: string,
-  fields: YDatabaseFields,
+  schema: FormulaFieldSchema[],
   row: YDatabaseRow,
   rowId: string
 ): FormulaCellResult {
-  return evaluateFormulaCell({ schema: readFormulaSchema(fields), field, fieldId, row, rowId });
+  return evaluateFormulaCell({ schema, field, fieldId, row, rowId });
 }
 
 /** A date result shaped like a Date cell so the date filter predicates apply unchanged. */

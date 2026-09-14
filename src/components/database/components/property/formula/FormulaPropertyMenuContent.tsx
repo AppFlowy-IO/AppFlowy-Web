@@ -7,10 +7,11 @@ import { useUpdateFormulaTypeOption } from '@/application/database-yjs/dispatch'
 import {
   parseFormulaTypeOption,
   parseFormulaVisualizationOption,
-  readFormulaSchema,
+  readFormulaSchemaForVersion,
   toDisplayExpression,
 } from '@/application/database-yjs/fields/formula';
 import { formats } from '@/application/database-yjs/fields/number/format';
+import { useDatabaseFieldsVersion } from '@/application/database-yjs/hooks/useDatabaseFieldsVersion';
 import { useFieldSelector, useFormulaResultType } from '@/application/database-yjs/selector';
 import { ReactComponent as FormulaIcon } from '@/assets/icons/formula.svg';
 import { RollupVisualizationSettings } from '@/components/database/components/property/rollup/RollupVisualizationSettings';
@@ -45,9 +46,11 @@ export function FormulaPropertyMenuContent({
     void clock;
     return field ? parseFormulaTypeOption(field) : null;
   }, [field, clock]);
+  // Referenced properties can be renamed while the menu is open.
+  const fieldsVersion = useDatabaseFieldsVersion();
   const expressionPreview = useMemo(
-    () => (typeOption ? toDisplayExpression(typeOption.formula, readFormulaSchema(fields)) : ''),
-    [typeOption, fields]
+    () => (typeOption ? toDisplayExpression(typeOption.formula, readFormulaSchemaForVersion(fields, fieldsVersion)) : ''),
+    [typeOption, fields, fieldsVersion]
   );
   const [formatSearch, setFormatSearch] = useState('');
   const [formatOpen, setFormatOpen] = useState(false);

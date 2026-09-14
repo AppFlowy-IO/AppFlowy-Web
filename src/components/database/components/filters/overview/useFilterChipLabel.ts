@@ -17,7 +17,7 @@ import {
   SelectOptionFilterCondition,
 } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { TextFilterCondition } from '@/application/database-yjs/fields/text/text.type';
-import { formulaPredicateFieldType } from '@/application/database-yjs/formula/filter';
+import { predicateFieldTypeForResult } from '@/application/database-yjs/formula/filter';
 import {
   resolvedRollupTarget,
   rollupPredicateType,
@@ -25,7 +25,7 @@ import {
   subscribeRollupTarget,
   rollupTargetSnapshot,
 } from '@/application/database-yjs/rollup/filter';
-import { useFieldSelector } from '@/application/database-yjs/selector';
+import { useFieldSelector, useFormulaResultType } from '@/application/database-yjs/selector';
 import { DateFormat, YDatabaseField, YjsDatabaseKey } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -315,6 +315,8 @@ export function useFilterChipLabel(filter: Filter | null): FilterChipLabel & { f
   // The field is returned alongside the label so chip components don't attach
   // a second useFieldSelector subscription on the same field.
   const { field } = useFieldSelector(filter?.fieldId ?? '');
+  // Live result type: a formula's wording follows edits to the fields it reads.
+  const formulaResultType = useFormulaResultType(filter?.fieldId ?? '');
 
   useSyncExternalStore(
     useCallback((listener) => subscribeRollupTarget(field, listener), [field]),
@@ -327,7 +329,9 @@ export function useFilterChipLabel(filter: Filter | null): FilterChipLabel & { f
   // a stable identity, so a useMemo keyed on it would serve stale labels after
   // field-config edits (e.g. renaming a select option). useFieldSelector
   // re-renders us via its internal clock; the label is cheap string assembly.
-  return { ...buildChipLabel(filter, field, dateFormat, t), field };
+  const label = buildChipLabel(filter, field, dateFormat, t, undefined, predicateFieldTypeForResult(formulaResultType));
+
+  return { ...label, field };
 }
 
 function buildChipLabel(
@@ -335,7 +339,8 @@ function buildChipLabel(
   field: YDatabaseField | undefined,
   dateFormat: string,
   t: Translate,
-  typeOverride?: FieldType
+  typeOverride?: FieldType,
+  formulaPredicateType: FieldType = FieldType.RichText
 ): FilterChipLabel {
   if (!filter || !field) return { description: '', hasContent: false };
 
@@ -364,7 +369,7 @@ function buildChipLabel(
     }
 
     case FieldType.Formula:
-      return buildChipLabel(filter, field, dateFormat, t, formulaPredicateFieldType(field));
+      return buildChipLabel(filter, field, dateFormat, t, formulaPredicateType);
 
     case FieldType.Media:
       return {

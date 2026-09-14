@@ -38,6 +38,7 @@ import {
   parseFormulaVisualizationOption,
   parsePersonTypeOptions,
   readFormulaSchema,
+  readFormulaSchemaForVersion,
   parseRelationTypeOption,
   parseRollupTypeOption,
   parseRollupVisualizationOption,
@@ -3067,12 +3068,16 @@ export function useFormulaCellValue({
   fieldClock: number;
 }): FormulaCell | undefined {
   const fields = useDatabaseFields();
-  const fieldsVersion = useDatabaseFieldsVersion();
-  // Optional: cell hooks also render in embeds and tests without the app shell.
-  const currentUser = useCurrentUserOptional();
-  const [rowClock, setRowClock] = useState(0);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const isFormula = fieldType === FieldType.Formula;
+  // Every cell runs this hook; only formula cells watch the schema, so other
+  // cells do not re-render when any field is renamed or reconfigured.
+  const fieldsVersion = useDatabaseFieldsVersion(isFormula);
+  // Optional: cell hooks also render in embeds and tests without the app shell.
+  const currentUser = useCurrentUserOptional();
+  const dateFormat = currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat | undefined;
+  const timeFormat = currentUser?.metadata?.[MetadataKey.TimeFormat] as TimeFormat | undefined;
+  const [rowClock, setRowClock] = useState(0);
 
   useEffect(() => {
     if (!isFormula || !row) return;
@@ -3096,16 +3101,13 @@ export function useFormulaCellValue({
     void fieldsVersion;
     const typeOption = parseFormulaTypeOption(field);
     const result = evaluateFormulaCell({
-      schema: readFormulaSchema(fields),
+      // Shared by all formula cells rendering the same fields version.
+      schema: readFormulaSchemaForVersion(fields, fieldsVersion),
       field,
       fieldId,
       row,
       rowId,
-      format: {
-        numberFormat: typeOption.format,
-        dateFormat: currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat | undefined,
-        timeFormat: currentUser?.metadata?.[MetadataKey.TimeFormat] as TimeFormat | undefined,
-      },
+      format: { numberFormat: typeOption.format, dateFormat, timeFormat },
     });
 
     return {
@@ -3122,14 +3124,9 @@ export function useFormulaCellValue({
       numberFormat: typeOption.format,
       visualization: parseFormulaVisualizationOption(typeOption),
     };
-  }, [isFormula, row, field, rowClock, fieldClock, fieldsVersion, fields, fieldId, rowId, currentUser]);
+  }, [isFormula, row, field, rowClock, fieldClock, fieldsVersion, fields, fieldId, rowId, dateFormat, timeFormat]);
 }
 
-/**
- * Static result type of a formula field (`number`, `text`, `boolean`, `date`,
- * a list type, `empty` for a blank expression or `any` when it is invalid).
- * Filters, sorts, the Calculate footer and the property menu key off this.
- */
 /**
  * The field type whose calculations a column uses: a formula calculates like
  * a Number column when it returns numbers and like a Checkbox column when it
@@ -3145,17 +3142,27 @@ export function useCalculationFieldType(fieldId: string): FieldType {
   return FieldType.Formula;
 }
 
+/**
+ * Static result type of a formula field (`number`, `text`, `boolean`, `date`,
+ * a list type, `empty` for a blank expression or `any` when it is invalid).
+ * Filters, sorts, the Calculate footer and the property menu key off this.
+ */
 export function useFormulaResultType(fieldId: string): FormulaType {
   const fields = useDatabaseFields();
-  const fieldsVersion = useDatabaseFieldsVersion();
   const { field, clock } = useFieldSelector(fieldId);
+  const isFormula = Number(field?.get(YjsDatabaseKey.type)) === FieldType.Formula;
+  // Footers and filter menus call this for every column; only formulas depend on other fields.
+  const fieldsVersion = useDatabaseFieldsVersion(isFormula);
 
   return useMemo(() => {
-    void fieldsVersion;
     void clock;
-    if (!field || Number(field.get(YjsDatabaseKey.type)) !== FieldType.Formula) return 'any';
-    return compileFormula(parseFormulaTypeOption(field).formula, readFormulaSchema(fields), fieldId).resultType;
-  }, [field, fields, fieldId, fieldsVersion, clock]);
+    if (!field || !isFormula) return 'any';
+    return compileFormula(
+      parseFormulaTypeOption(field).formula,
+      readFormulaSchemaForVersion(fields, fieldsVersion),
+      fieldId
+    ).resultType;
+  }, [field, isFormula, fields, fieldId, fieldsVersion, clock]);
 }
 
 export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: string }) {
@@ -3541,9 +3548,10 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
   const [cells, setCells] = useState<Map<string, unknown> | null>(null);
   const rowMap = useRowMap();
   const fields = useDatabaseFields();
-  const fieldsVersion = useDatabaseFieldsVersion();
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
   const isFormula = Number(field?.get(YjsDatabaseKey.type)) === FieldType.Formula;
+  // Only a formula column recalculates when another field changes.
+  const fieldsVersion = useDatabaseFieldsVersion(isFormula);
 
   useEffect(() => {
     if (!rows || !rowMap) {
@@ -3553,6 +3561,7 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
 
     const nextCells = new Map<string, unknown>();
     const unobserveCells: Array<() => void> = [];
+    const formulaSchema = isFormula ? readFormulaSchema(fields) : [];
 
     rows.forEach((row) => {
       const rowDoc = rowMap?.[row.id];
@@ -3568,7 +3577,7 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
         // evaluated results (numbers stay numeric so Sum/Average work).
         if (isFormula && field) {
           const result = evaluateFormulaCell({
-            schema: readFormulaSchema(fields),
+            schema: formulaSchema,
             field,
             fieldId,
             row: databaseRow,

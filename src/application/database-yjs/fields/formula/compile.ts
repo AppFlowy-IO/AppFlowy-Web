@@ -90,7 +90,12 @@ export function compileFormula(
   try {
     return remember(key, { ast, resultType: inferFormulaType(ast, { getPropType }) });
   } catch (error) {
-    return remember(key, { ast, resultType: 'any', error: error as FormulaError });
+    const failed: CompiledFormula = { ast, resultType: 'any', error: error as FormulaError };
+
+    // A nested compile can fail only because of the chain that led to it (the
+    // depth cap), which the cache key does not capture; keep those uncached so
+    // the same formula compiled on its own is not reported as too deep.
+    return visiting.size > 0 ? failed : remember(key, failed);
   }
 }
 

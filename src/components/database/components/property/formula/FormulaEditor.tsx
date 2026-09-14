@@ -1,7 +1,7 @@
-import { KeyboardEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { KeyboardEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useDatabaseFields, useRowMap } from '@/application/database-yjs/context';
+import { useDatabase, useDatabaseFields, useDatabaseView, useRowMap } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import {
@@ -14,11 +14,12 @@ import {
   FormulaFunctionSpec,
   formulaTypeOfFieldType,
   parseFormulaTypeOption,
-  readFormulaSchema,
+  readFormulaSchemaForVersion,
   typeToString,
 } from '@/application/database-yjs/fields/formula';
 import { useDatabaseFieldsVersion } from '@/application/database-yjs/hooks/useDatabaseFieldsVersion';
-import { useFieldSelector, usePrimaryFieldId, useRowOrdersSelector } from '@/application/database-yjs/selector';
+import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
+import { Row, useFieldSelector, usePrimaryFieldId } from '@/application/database-yjs/selector';
 import { YDatabaseRow, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as WarningSvg } from '@/assets/icons/warning.svg';
@@ -48,8 +49,6 @@ export interface FormulaEditorProps {
   /** Row to preview with initially (the cell the editor was opened from). */
   initialPreviewRowId?: string;
   onSubmit?: () => void;
-  /** Reports whether the draft currently compiles, so the host can gate its Done button. */
-  onValidityChange?: (valid: boolean) => void;
   /** Reports whether the suggestion popup is open, so the host lets Escape close only the popup. */
   onAutocompleteOpenChange?: (open: boolean) => void;
 }
@@ -100,10 +99,7 @@ function useSchema() {
   const fields = useDatabaseFields();
   const fieldsVersion = useDatabaseFieldsVersion();
 
-  return useMemo(() => {
-    void fieldsVersion;
-    return readFormulaSchema(fields);
-  }, [fields, fieldsVersion]);
+  return readFormulaSchemaForVersion(fields, fieldsVersion);
 }
 
 export function FormulaEditor({
@@ -112,15 +108,23 @@ export function FormulaEditor({
   onChange,
   initialPreviewRowId,
   onSubmit,
-  onValidityChange,
   onAutocompleteOpenChange,
 }: FormulaEditorProps) {
   const { t } = useTranslation();
   const schema = useSchema();
   const { field } = useFieldSelector(fieldId);
   const rowMap = useRowMap();
-  const rows = useRowOrdersSelector();
+  const database = useDatabase();
+  const view = useDatabaseView();
   const primaryFieldId = usePrimaryFieldId();
+  // Row ids in view order, read once. The picker does not need the live
+  // sort/filter pipeline useRowOrdersSelector would run while the editor is open.
+  const rowIds = useMemo(() => {
+    const rowOrders = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as Row[] | undefined;
+    const canonical = getInlineViewRowOrders(database)?.toJSON() as Row[] | undefined;
+
+    return (materializeVisibleRowOrders(rowOrders, canonical) ?? []).map((row) => row.id);
+  }, [database, view]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
   const [search, setSearch] = useState('');
@@ -145,19 +149,19 @@ export function FormulaEditor({
   // point into the visible text rather than the id-rewritten storage form.
   const compiled = useMemo(() => compileFormula(value, schema, fieldId), [value, schema, fieldId]);
 
-  useEffect(() => {
-    onValidityChange?.(!compiled.error);
-  }, [compiled.error, onValidityChange]);
-
-  // Preview rows: the visible row order, capped, labelled by their primary cell.
+  // Preview rows: the view's row order, capped, labelled by their primary cell.
+  // The row the editor was opened from is always offered, even past the cap.
   const previewRows = useMemo(() => {
     const primaryField = primaryFieldId ? schema.find((entry) => entry.id === primaryFieldId)?.field : undefined;
+    const ids = rowIds.slice(0, PREVIEW_ROW_LIMIT);
 
-    return (rows ?? [])
-      .filter((row) => !row.is_deleted)
-      .slice(0, PREVIEW_ROW_LIMIT)
-      .map((row, index) => {
-        const rowDoc = rowMap?.[row.id];
+    if (initialPreviewRowId && !ids.includes(initialPreviewRowId) && rowIds.includes(initialPreviewRowId)) {
+      ids.unshift(initialPreviewRowId);
+    }
+
+    return ids
+      .map((id) => {
+        const rowDoc = rowMap?.[id];
         const databaseRow = rowDoc?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as
           | YDatabaseRow
           | undefined;
@@ -165,13 +169,14 @@ export function FormulaEditor({
         const label = primaryCell && primaryField ? decodeCellToText(primaryCell, primaryField).trim() : '';
 
         return {
-          id: row.id,
+          id,
           row: databaseRow,
-          label: label || t('grid.formula.untitledRow', { defaultValue: 'Row {{index}}', index: index + 1 }),
+          label:
+            label || t('grid.formula.untitledRow', { defaultValue: 'Row {{index}}', index: rowIds.indexOf(id) + 1 }),
         };
       })
       .filter((entry) => entry.row);
-  }, [rows, rowMap, primaryFieldId, schema, t]);
+  }, [rowIds, rowMap, primaryFieldId, schema, initialPreviewRowId, t]);
 
   const previewRow = previewRows.find((entry) => entry.id === previewRowId) ?? previewRows[0];
 
@@ -207,12 +212,20 @@ export function FormulaEditor({
     textarea.setSelectionRange(pending, pending);
   }, [value]);
 
+  // Latest draft for callbacks that must stay stable (catalogue, docs examples).
+  const valueRef = useRef(value);
+
+  useLayoutEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
   const insertAtCaret = useCallback(
     (text: string, caretOffset: number, replaceFrom?: number) => {
+      const current = valueRef.current;
       const textarea = textareaRef.current;
-      const start = replaceFrom ?? textarea?.selectionStart ?? value.length;
+      const start = replaceFrom ?? textarea?.selectionStart ?? current.length;
       const end = textarea?.selectionEnd ?? start;
-      const next = value.slice(0, start) + text + value.slice(end);
+      const next = current.slice(0, start) + text + current.slice(end);
       const nextCaret = start + caretOffset;
 
       pendingCaretRef.current = nextCaret;
@@ -220,7 +233,7 @@ export function FormulaEditor({
       setCaret(nextCaret);
       setSuggestionsDismissed(true);
     },
-    [onChange, value]
+    [onChange]
   );
 
   const currentWord = useMemo(() => {
@@ -282,6 +295,8 @@ export function FormulaEditor({
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      // Enter and Tab confirm an IME composition; never treat them as editor commands.
+      if (event.nativeEvent.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
         event.preventDefault();
         onSubmit?.();
@@ -330,8 +345,9 @@ export function FormulaEditor({
     if (textarea) setCaret(textarea.selectionStart);
   }, []);
 
-  // Keep the textarea as tall as its content so the highlight overlay lines up.
-  useEffect(() => {
+  // Keep the textarea as tall as its content so the highlight overlay lines up;
+  // measure before paint so a multi-line formula does not open short and jump.
+  useLayoutEffect(() => {
     const textarea = textareaRef.current;
 
     if (!textarea) return;
@@ -351,45 +367,31 @@ export function FormulaEditor({
   // ---- catalogue -------------------------------------------------------
 
   const normalizedSearch = search.trim().toLowerCase();
-  const catalogueProperties = referenceableFields.filter(
-    (entry) => !normalizedSearch || entry.name.toLowerCase().includes(normalizedSearch)
+  const catalogue = useMemo(
+    () => ({
+      properties: referenceableFields.filter(
+        (entry) => !normalizedSearch || entry.name.toLowerCase().includes(normalizedSearch)
+      ),
+      builtins: FORMULA_BUILTINS.filter((spec) => !normalizedSearch || spec.name.toLowerCase().includes(normalizedSearch)),
+      functions: FORMULA_FUNCTIONS.filter(
+        (spec) => !normalizedSearch || spec.name.toLowerCase().includes(normalizedSearch)
+      ),
+    }),
+    [referenceableFields, normalizedSearch]
   );
-  const catalogueBuiltins = FORMULA_BUILTINS.filter(
-    (spec) => !normalizedSearch || spec.name.toLowerCase().includes(normalizedSearch)
-  );
-  const catalogueFunctions = FORMULA_FUNCTIONS.filter(
-    (spec) => !normalizedSearch || spec.name.toLowerCase().includes(normalizedSearch)
-  );
-  const catalogueIsEmpty =
-    catalogueProperties.length === 0 && catalogueBuiltins.length === 0 && catalogueFunctions.length === 0;
 
-  const docsItem: FormulaDocsItem | null =
-    (suggestions.length > 0 ? toDocsItem(suggestions[activeSuggestion] ?? suggestions[0]) : null) ??
-    selected ??
-    (catalogueProperties[0] ? { kind: 'property', entry: catalogueProperties[0] } : null) ??
-    (catalogueFunctions[0] ? { kind: 'function', spec: catalogueFunctions[0] } : null);
+  const activeSuggestionItem = suggestions.length > 0 ? suggestions[activeSuggestion] ?? suggestions[0] : undefined;
+  const docsItem = useMemo<FormulaDocsItem | null>(
+    () =>
+      (activeSuggestionItem ? toDocsItem(activeSuggestionItem) : null) ??
+      selected ??
+      (catalogue.properties[0] ? { kind: 'property', entry: catalogue.properties[0] } : null) ??
+      (catalogue.functions[0] ? { kind: 'function', spec: catalogue.functions[0] } : null),
+    [activeSuggestionItem, selected, catalogue]
+  );
+  const insertDocsExample = useCallback((text: string) => insertAtCaret(text, text.length), [insertAtCaret]);
 
   const segments = useMemo(() => highlightFormula(value), [value]);
-
-  const renderCatalogueItem = (item: FormulaDocsItem, key: string, label: React.ReactNode, onPick: () => void) => (
-    <button
-      key={key}
-      type={'button'}
-      data-testid={`formula-catalogue-${key}`}
-      className={cn(
-        'flex h-8 w-full items-center gap-2 rounded-300 px-2 text-left text-sm text-text-primary hover:bg-fill-content-hover',
-        selected && sameDocsItem(selected, item) && 'bg-fill-content-hover'
-      )}
-      onMouseEnter={() => setSelected(item)}
-      onFocus={() => setSelected(item)}
-      onClick={() => {
-        setSelected(item);
-        onPick();
-      }}
-    >
-      {label}
-    </button>
-  );
 
   return (
     <div className={'flex min-h-0 flex-col gap-3'} data-testid={'formula-editor'}>
@@ -442,7 +444,7 @@ export function FormulaEditor({
           >
             {suggestions.map((suggestion, index) => (
               <button
-                key={`${suggestion.kind}-${suggestionLabel(suggestion)}`}
+                key={suggestion.kind === 'property' ? `property-${suggestion.entry.id}` : `${suggestion.kind}-${suggestionLabel(suggestion)}`}
                 type={'button'}
                 role={'option'}
                 aria-selected={index === activeSuggestion}
@@ -510,76 +512,138 @@ export function FormulaEditor({
       ) : null}
 
       <div className={'grid min-h-[280px] grid-cols-1 gap-3 border-t border-border-primary pt-3 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)]'}>
-        <div className={'flex min-h-0 flex-col gap-1'}>
-          <SearchInput
-            placeholder={t('search.label', { defaultValue: 'Search' })}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            data-testid={'formula-catalogue-search'}
-          />
-          <div className={'appflowy-scroller max-h-[320px] min-h-0 overflow-y-auto pr-1'} data-testid={'formula-catalogue'}>
-            {catalogueIsEmpty ? (
-              <div className={'px-2 py-3 text-sm text-text-tertiary'}>{t('grid.rollup.noResult', { defaultValue: 'No result' })}</div>
-            ) : null}
-            {catalogueProperties.length > 0 ? (
-              <div className={'mb-2'}>
-                <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
-                  {t('grid.formula.properties', { defaultValue: 'Properties' })}
-                </div>
-                {catalogueProperties.map((entry) =>
-                  renderCatalogueItem(
-                    { kind: 'property', entry },
-                    `property-${entry.id}`,
-                    <>
-                      <FieldTypeIcon type={entry.type} className={'h-4 w-4 shrink-0 text-icon-secondary'} />
-                      <span className={'truncate'}>{entry.name}</span>
-                    </>,
-                    () => {
-                      const { text, caretOffset } = suggestionInsertion({ kind: 'property', entry });
-
-                      insertAtCaret(text, caretOffset);
-                    }
-                  )
-                )}
-              </div>
-            ) : null}
-            {catalogueBuiltins.length > 0 ? (
-              <div className={'mb-2'}>
-                <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
-                  {t('grid.formula.builtins', { defaultValue: 'Built-ins' })}
-                </div>
-                {catalogueBuiltins.map((spec) =>
-                  renderCatalogueItem(
-                    { kind: 'builtin', spec },
-                    `builtin-${spec.name}`,
-                    <span className={'truncate font-mono'}>{spec.name}</span>,
-                    () => insertAtCaret(spec.insert, spec.insert.length)
-                  )
-                )}
-              </div>
-            ) : null}
-            {catalogueFunctions.length > 0 ? (
-              <div>
-                <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
-                  {t('grid.formula.functions', { defaultValue: 'Functions' })}
-                </div>
-                {catalogueFunctions.map((spec) =>
-                  renderCatalogueItem(
-                    { kind: 'function', spec },
-                    `function-${spec.name}`,
-                    <span className={'truncate font-mono'}>{spec.name}()</span>,
-                    () => insertAtCaret(`${spec.name}()`, spec.name.length + 1)
-                  )
-                )}
-              </div>
-            ) : null}
-          </div>
-        </div>
-        <FormulaDocsPanel item={docsItem} onInsert={(text) => insertAtCaret(text, text.length)} />
+        <FormulaCatalogue
+          search={search}
+          onSearchChange={setSearch}
+          properties={catalogue.properties}
+          builtins={catalogue.builtins}
+          functions={catalogue.functions}
+          selected={selected}
+          onSelect={setSelected}
+          onInsert={insertAtCaret}
+        />
+        <FormulaDocsPanel item={docsItem} onInsert={insertDocsExample} />
       </div>
     </div>
   );
 }
+
+interface FormulaCatalogueProps {
+  search: string;
+  onSearchChange: (search: string) => void;
+  properties: FormulaFieldSchema[];
+  builtins: FormulaBuiltinSpec[];
+  functions: FormulaFunctionSpec[];
+  selected: FormulaDocsItem | null;
+  onSelect: (item: FormulaDocsItem) => void;
+  onInsert: (text: string, caretOffset: number) => void;
+}
+
+/**
+ * The searchable list of properties, built-ins and functions. Memoized with
+ * stable props so typing in the formula does not re-render ~80 buttons.
+ */
+const FormulaCatalogue = memo(function FormulaCatalogue({
+  search,
+  onSearchChange,
+  properties,
+  builtins,
+  functions,
+  selected,
+  onSelect,
+  onInsert,
+}: FormulaCatalogueProps) {
+  const { t } = useTranslation();
+  const isEmpty = properties.length === 0 && builtins.length === 0 && functions.length === 0;
+
+  const renderItem = (item: FormulaDocsItem, key: string, label: React.ReactNode, onPick: () => void) => (
+    <button
+      key={key}
+      type={'button'}
+      data-testid={`formula-catalogue-${key}`}
+      className={cn(
+        'flex h-8 w-full items-center gap-2 rounded-300 px-2 text-left text-sm text-text-primary hover:bg-fill-content-hover',
+        selected && sameDocsItem(selected, item) && 'bg-fill-content-hover'
+      )}
+      onMouseEnter={() => onSelect(item)}
+      onFocus={() => onSelect(item)}
+      onClick={() => {
+        onSelect(item);
+        onPick();
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className={'flex min-h-0 flex-col gap-1'}>
+      <SearchInput
+        placeholder={t('search.label', { defaultValue: 'Search' })}
+        value={search}
+        onChange={(event) => onSearchChange(event.target.value)}
+        data-testid={'formula-catalogue-search'}
+      />
+      <div className={'appflowy-scroller max-h-[320px] min-h-0 overflow-y-auto pr-1'} data-testid={'formula-catalogue'}>
+        {isEmpty ? (
+          <div className={'px-2 py-3 text-sm text-text-tertiary'}>{t('grid.rollup.noResult', { defaultValue: 'No result' })}</div>
+        ) : null}
+        {properties.length > 0 ? (
+          <div className={'mb-2'}>
+            <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
+              {t('grid.formula.properties', { defaultValue: 'Properties' })}
+            </div>
+            {properties.map((entry) =>
+              renderItem(
+                { kind: 'property', entry },
+                `property-${entry.id}`,
+                <>
+                  <FieldTypeIcon type={entry.type} className={'h-4 w-4 shrink-0 text-icon-secondary'} />
+                  <span className={'truncate'}>{entry.name}</span>
+                </>,
+                () => {
+                  const { text, caretOffset } = suggestionInsertion({ kind: 'property', entry });
+
+                  onInsert(text, caretOffset);
+                }
+              )
+            )}
+          </div>
+        ) : null}
+        {builtins.length > 0 ? (
+          <div className={'mb-2'}>
+            <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
+              {t('grid.formula.builtins', { defaultValue: 'Built-ins' })}
+            </div>
+            {builtins.map((spec) =>
+              renderItem(
+                { kind: 'builtin', spec },
+                `builtin-${spec.name}`,
+                <span className={'truncate font-mono'}>{spec.name}</span>,
+                () => onInsert(spec.insert, spec.insert.length)
+              )
+            )}
+          </div>
+        ) : null}
+        {functions.length > 0 ? (
+          <div>
+            <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
+              {t('grid.formula.functions', { defaultValue: 'Functions' })}
+            </div>
+            {functions.map((spec) =>
+              renderItem(
+                { kind: 'function', spec },
+                `function-${spec.name}`,
+                <span className={'truncate font-mono'}>{spec.name}()</span>,
+                () => onInsert(`${spec.name}()`, spec.name.length + 1)
+              )
+            )}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+});
 
 function sameDocsItem(a: FormulaDocsItem, b: FormulaDocsItem) {
   if (a.kind !== b.kind) return false;

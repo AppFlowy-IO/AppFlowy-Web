@@ -102,6 +102,21 @@ const CURRENCY_CODES: Record<string, string> = {
   zar: 'ZAR',
 };
 
+const numberFormatters = new Map<string, Intl.NumberFormat>();
+
+/** Intl.NumberFormat is costly to build and formulas format once per row. */
+function numberFormatter(options: Intl.NumberFormatOptions): Intl.NumberFormat {
+  const key = JSON.stringify(options);
+  let formatter = numberFormatters.get(key);
+
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('en-US', options);
+    numberFormatters.set(key, formatter);
+  }
+
+  return formatter;
+}
+
 export function formatNumberWithStyle(value: number, style: string, decimals?: number): string {
   const key = style.trim().toLowerCase();
   const fractionDigits =
@@ -111,11 +126,11 @@ export function formatNumberWithStyle(value: number, style: string, decimals?: n
 
   switch (key) {
     case 'commas':
-      return new Intl.NumberFormat('en-US', { maximumFractionDigits: 10, ...digits }).format(value);
+      return numberFormatter({ maximumFractionDigits: 10, ...digits }).format(value);
     case 'percent':
-      return new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 10, ...digits }).format(value);
+      return numberFormatter({ style: 'percent', maximumFractionDigits: 10, ...digits }).format(value);
     case 'humanize':
-      return new Intl.NumberFormat('en-US', {
+      return numberFormatter({
         notation: 'compact',
         maximumFractionDigits: fractionDigits ?? 1,
         ...digits,
@@ -125,7 +140,7 @@ export function formatNumberWithStyle(value: number, style: string, decimals?: n
 
       if (!currency) throw new FormulaError(`Unknown number format "${style}"`);
       try {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency, ...digits }).format(value);
+        return numberFormatter({ style: 'currency', currency, ...digits }).format(value);
       } catch {
         throw new FormulaError(`Unknown number format "${style}"`);
       }

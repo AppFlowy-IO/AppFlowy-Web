@@ -25,7 +25,8 @@ import {
 
 import { clearFormulaCompileCache, compileFormula } from '../compile';
 import { evaluateFormulaCell } from '../evaluate';
-import { readFormulaSchema, toDisplayExpression, toStorageExpression } from '../schema';
+import { FORMULA_MAX_DEPTH } from '../formula.type';
+import { readFormulaSchema, readFormulaSchemaForVersion, toDisplayExpression, toStorageExpression } from '../schema';
 
 /**
  * Builds a database `fields` map inside one Y.Doc, so every field has the map
@@ -313,6 +314,51 @@ describe('formula expression storage', () => {
 
     expect(storage).toBe('prop("f-q")');
     expect(toDisplayExpression(storage, schema)).toBe('prop("Say \\"hi\\"")');
+  });
+
+  it('resolves ids before names and the first of duplicate names', () => {
+    const fields = createFields([
+      { id: 'a', name: 'b', type: FieldType.Number },
+      { id: 'b', name: 'Other', type: FieldType.Number },
+      { id: 'dup-1', name: 'Dup', type: FieldType.Number },
+      { id: 'dup-2', name: 'Dup', type: FieldType.Number },
+    ]);
+    const schema = readFormulaSchema(fields);
+
+    expect(toStorageExpression('prop("b") + prop("Dup")', schema)).toBe('prop("b") + prop("dup-1")');
+  });
+});
+
+describe('formula schema caches', () => {
+  it('shares one schema per fields version', () => {
+    const fields = createFields([{ id: 'f-price', name: 'Price', type: FieldType.Number }]);
+    const first = readFormulaSchemaForVersion(fields, 1);
+
+    expect(readFormulaSchemaForVersion(fields, 1)).toBe(first);
+    fields.get('f-price')?.set(YjsDatabaseKey.name, 'Cost');
+    const next = readFormulaSchemaForVersion(fields, 2);
+
+    expect(next).not.toBe(first);
+    expect(next[0].name).toBe('Cost');
+  });
+
+  it('does not cache a depth error reached through a longer chain', () => {
+    clearFormulaCompileCache();
+    const chainLength = FORMULA_MAX_DEPTH + 2;
+    const fields = createFields(
+      Array.from({ length: chainLength }, (_, index) => ({
+        id: `f-${index}`,
+        name: `F${index}`,
+        type: FieldType.Formula,
+        typeOption: { expression: index === chainLength - 1 ? '1' : `prop("f-${index + 1}") + 1` },
+      }))
+    );
+    const schema = readFormulaSchema(fields);
+    const deepest = `f-${FORMULA_MAX_DEPTH - 1}`;
+
+    expect(compileFormula('prop("f-1") + 1', schema, 'f-0').error?.message).toMatch(/levels deep|invalid formula/);
+    // On its own the formula near the end of the chain is within the limit.
+    expect(compileFormula(`prop("f-${FORMULA_MAX_DEPTH}") + 1`, schema, deepest).error).toBeUndefined();
   });
 });
 

@@ -5,6 +5,7 @@ import {
   getRowConditionSnapshot,
 } from '@/application/database-yjs/condition-value-cache';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields';
+import { FormulaFieldSchema, readFormulaSchema } from '@/application/database-yjs/fields/formula';
 import { evaluateFormulaForRow, formulaPredicateFieldType } from '@/application/database-yjs/formula/filter';
 import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { Row } from '@/application/database-yjs/selector';
@@ -61,6 +62,9 @@ export function sortBy(
   // Prepare sort data, pre-calculate all values to avoid multiple calculations
   const rollupNumericCache = new Map<string, boolean>();
   const formulaPredicateCache = new Map<string, FieldType>();
+  // Formula sorts evaluate every row; read the schema once for the pass.
+  let formulaSchema: FormulaFieldSchema[] | undefined;
+  const getFormulaSchema = () => (formulaSchema ??= readFormulaSchema(fields));
   const sortData = rows.map((row) => {
     const values = sortArray.map((sort) => {
       const fieldId = sort.get(YjsDatabaseKey.field_id);
@@ -85,7 +89,7 @@ export function sortBy(
         const snapshot = getRowConditionSnapshot(rowMetas[row.id]);
 
         if (!snapshot) return defaultData;
-        const result = evaluateFormulaForRow(field, fieldId, fields, snapshot.row, row.id);
+        const result = evaluateFormulaForRow(field, fieldId, getFormulaSchema(), snapshot.row, row.id);
 
         if (result.error) return defaultData;
 

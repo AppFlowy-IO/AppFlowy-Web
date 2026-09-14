@@ -30,6 +30,7 @@ import {
   TextFilter,
   TextFilterCondition,
 } from '@/application/database-yjs/fields';
+import { FormulaFieldSchema, readFormulaSchema } from '@/application/database-yjs/fields/formula';
 import { EnhancedBigStats } from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { RollupFilterMetadata, RollupFilterMode } from '@/application/database-yjs/fields/rollup/rollup.type';
@@ -824,6 +825,10 @@ export function filterBy(
 
   if (filterArray.length === 0 || Object.keys(rowMetas).length === 0 || fields.size === 0) return rows;
 
+  // Formula filters evaluate every row; read the schema once for the pass.
+  let formulaSchema: FormulaFieldSchema[] | undefined;
+  const getFormulaSchema = () => (formulaSchema ??= readFormulaSchema(fields));
+
   const compileFilterPredicate = (filterNode: YDatabaseFilter): ((row: Row) => boolean) | null => {
     if (!filterNode || typeof filterNode !== 'object') {
       return null;
@@ -883,7 +888,7 @@ export function filterBy(
       if (!snapshot) return false;
 
       if (fieldType === FieldType.Formula) {
-        const result = evaluateFormulaForRow(field, fieldId, fields, snapshot.row, rowId);
+        const result = evaluateFormulaForRow(field, fieldId, getFormulaSchema(), snapshot.row, rowId);
 
         switch (formulaPredicateType) {
           case FieldType.Number:

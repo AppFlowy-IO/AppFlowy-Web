@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType, FieldVisibility, useFieldSelector, useFieldVisibility } from '@/application/database-yjs';
@@ -82,12 +82,20 @@ function PropertyMenu({
     setRelationDialogOpen(true);
   }, [onOpenChange]);
 
+  // Hosts pass `onOpenChange` inline; read it through a ref so the formula
+  // callback (and the menu content memoized on it) stays stable.
+  const onOpenChangeRef = useRef(onOpenChange);
+
+  useEffect(() => {
+    onOpenChangeRef.current = onOpenChange;
+  }, [onOpenChange]);
+
   // The editor is a dialog owned here, not by the menu content: the content
   // unmounts when the dropdown closes, and the dialog must outlive it.
   const handleRequestFormula = useCallback(() => {
-    onOpenChange?.(false);
+    onOpenChangeRef.current?.(false);
     setFormulaDialogOpen(true);
-  }, [onOpenChange]);
+  }, []);
 
   const handleCreateRelation = useCallback(
     async (result: RelationCreationResult) => {

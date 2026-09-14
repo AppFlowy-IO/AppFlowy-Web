@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType } from '@/application/database-yjs/database.type';
@@ -67,7 +68,7 @@ function propertyExamples(entry: FormulaFieldSchema): FormulaFunctionExample[] {
   }
 }
 
-export function FormulaDocsPanel({
+function FormulaDocsPanelContent({
   item,
   onInsert,
 }: {
@@ -142,3 +143,6 @@ export function FormulaDocsPanel({
     </div>
   );
 }
+
+/** Memoized: the editor re-renders on every keystroke, the docs only when the item changes. */
+export const FormulaDocsPanel = memo(FormulaDocsPanelContent);

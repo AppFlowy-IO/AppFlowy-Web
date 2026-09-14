@@ -27,11 +27,66 @@ export function readFormulaSchema(fields?: YDatabaseFields): FormulaFieldSchema[
   return schema;
 }
 
+const schemaCache = new WeakMap<YDatabaseFields, { version: number; schema: FormulaFieldSchema[] }>();
+
+/**
+ * `readFormulaSchema` shared by every caller that reads the same fields
+ * version (e.g. all formula cells of a grid render), so the schema is built
+ * once per fields change instead of once per cell.
+ */
+export function readFormulaSchemaForVersion(fields: YDatabaseFields | undefined, version: number): FormulaFieldSchema[] {
+  if (!fields) return [];
+  const cached = schemaCache.get(fields);
+
+  if (cached && cached.version === version) return cached.schema;
+  const schema = readFormulaSchema(fields);
+
+  schemaCache.set(fields, { version, schema });
+  return schema;
+}
+
+/*
+ * A schema array is a snapshot: callers re-read it after fields change. The
+ * derived signature and lookup maps are cached per array so evaluating a
+ * formula for every row of a filter or sort pass does not rebuild them.
+ */
+const signatureCache = new WeakMap<FormulaFieldSchema[], string>();
+const indexCache = new WeakMap<
+  FormulaFieldSchema[],
+  { byId: Map<string, FormulaFieldSchema>; byName: Map<string, FormulaFieldSchema> }
+>();
+
 /** Changes whenever a field is added, removed, renamed, retyped or reconfigured. */
 export function formulaSchemaSignature(schema: FormulaFieldSchema[]): string {
-  return schema
-    .map((entry) => `${entry.id}:${entry.type}:${entry.name}:${entry.field.get(YjsDatabaseKey.last_modified) ?? ''}`)
-    .join('|');
+  let signature = signatureCache.get(schema);
+
+  if (signature === undefined) {
+    signature = schema
+      .map((entry) => `${entry.id}:${entry.type}:${entry.name}:${entry.field.get(YjsDatabaseKey.last_modified) ?? ''}`)
+      .join('|');
+    signatureCache.set(schema, signature);
+  }
+
+  return signature;
+}
+
+function schemaIndex(schema: FormulaFieldSchema[]) {
+  let index = indexCache.get(schema);
+
+  if (!index) {
+    const byId = new Map<string, FormulaFieldSchema>();
+    const byName = new Map<string, FormulaFieldSchema>();
+
+    schema.forEach((entry) => {
+      byId.set(entry.id, entry);
+      // The first field with a name wins, matching a front-to-back search.
+      if (!byName.has(entry.name)) byName.set(entry.name, entry);
+    });
+    index = { byId, byName };
+    indexCache.set(schema, index);
+  }
+
+  return index;
 }
 
 /**
@@ -39,7 +94,9 @@ export function formulaSchemaSignature(schema: FormulaFieldSchema[]): string {
  * typed formulas use names, so both are accepted (ids win over names).
  */
 export function resolveFormulaField(schema: FormulaFieldSchema[], ref: string): FormulaFieldSchema | undefined {
-  return schema.find((entry) => entry.id === ref) ?? schema.find((entry) => entry.name === ref);
+  const { byId, byName } = schemaIndex(schema);
+
+  return byId.get(ref) ?? byName.get(ref);
 }
 
 function quote(value: string): string {
@@ -95,5 +152,5 @@ export function toStorageExpression(displaySource: string, schema: FormulaFieldS
 
 /** Storage form → editor form: `prop("<id>")` becomes `prop("Price")`. Unknown ids are kept. */
 export function toDisplayExpression(storageSource: string, schema: FormulaFieldSchema[]): string {
-  return rewritePropRefs(storageSource, (ref) => schema.find((entry) => entry.id === ref)?.name);
+  return rewritePropRefs(storageSource, (ref) => schemaIndex(schema).byId.get(ref)?.name);
 }

@@ -66,14 +66,17 @@ export function PropertySelectTrigger({
     [aiEnabled]
   );
 
-  const handleSelect = async (property: FieldType) => {
-    if (disabled) return;
-    if (!aiEnabled && isAIFieldType(property)) return;
+  /** Resolves to whether the field switched to `property`. */
+  const handleSelect = async (property: FieldType): Promise<boolean> => {
+    if (disabled) return false;
+    if (!aiEnabled && isAIFieldType(property)) return false;
 
     try {
       await switchType(fieldId, property);
+      return true;
     } catch (error) {
       Log.warn('[PropertySelectTrigger] Failed to switch field type', { fieldId, property, error });
+      return false;
     }
   };
 
@@ -144,7 +147,10 @@ export function PropertySelectTrigger({
                           if (property === FieldType.Formula && onRequestFormula && type !== FieldType.Formula) {
                             e.preventDefault();
                             setOpen(false);
-                            void handleSelect(property).then(() => onRequestFormula());
+                            // Only open the editor on a field that actually became a formula.
+                            void handleSelect(property).then((switched) => {
+                              if (switched) onRequestFormula();
+                            });
                             return;
                           }
 

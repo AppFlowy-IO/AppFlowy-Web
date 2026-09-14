@@ -3415,10 +3415,6 @@ function collectDatabaseRowIds(database: YDatabase, loadedRows: Record<RowId, YD
   return Array.from(rowIds);
 }
 
-function rowIdForSwitch(rowMap: Record<RowId, YDoc>, rowDoc: YDoc): RowId {
-  return Object.keys(rowMap).find((rowId) => rowMap[rowId] === rowDoc) ?? '';
-}
-
 /**
  * Writes a formula's evaluated value into a real cell when the field leaves
  * Formula. Number, date and checkbox results become native cells of the new
@@ -3817,6 +3813,8 @@ export function useSwitchPropertyType() {
 
               rows.forEach((row) => {
                 const rowDoc = resolvedRowMap[row];
+                // `row` is shadowed by the database row inside the action below.
+                const switchRowId = row;
 
                 if (!rowDoc) {
                   return;
@@ -3887,7 +3885,7 @@ export function useSwitchPropertyType() {
                         cell,
                         fieldId,
                         fieldType,
-                        formulaResults.get(rowIdForSwitch(resolvedRowMap, rowDoc))
+                        formulaResults.get(switchRowId)
                       );
                       return;
                     }
