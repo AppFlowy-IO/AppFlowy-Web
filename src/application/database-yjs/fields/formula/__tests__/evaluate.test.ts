@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 
 import { FieldType, FilterType, SortCondition } from '@/application/database-yjs/database.type';
 import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
-import { filterBy } from '@/application/database-yjs/filter';
+import { filterBy, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import { formulaPredicateFieldType } from '@/application/database-yjs/formula/filter';
 import { Row } from '@/application/database-yjs/selector';
 import { sortBy } from '@/application/database-yjs/sort';
@@ -373,6 +373,9 @@ describe('formula filters and sorts', () => {
     expect(formulaPredicateFieldType(fields.get('f-label'), fields)).toBe(FieldType.RichText);
     expect(formulaPredicateFieldType(fields.get('f-flag'), fields)).toBe(FieldType.Checkbox);
     expect(formulaPredicateFieldType(fields.get('f-next'), fields)).toBe(FieldType.DateTime);
+    // Persisted on the filter (rollup_target_ty) so the server can rebuild the variant.
+    expect(resolveRollupFilterTargetFieldType(FieldType.Formula, fields.get('f-double'))).toBe(FieldType.Number);
+    expect(resolveRollupFilterTargetFieldType(FieldType.Formula, fields.get('f-next'))).toBe(FieldType.DateTime);
   });
 
   it('filters number, text, boolean and date results', () => {

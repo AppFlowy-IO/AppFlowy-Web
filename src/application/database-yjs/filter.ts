@@ -505,6 +505,10 @@ export interface FilterDraft {
 }
 
 export function resolveRollupFilterTargetFieldType(fieldType: FieldType, field?: YDatabaseField): FieldType | undefined {
+  // A formula filter is evaluated with the vocabulary of the formula's result
+  // type. Persisting it in the same slot lets the server (which cannot
+  // evaluate formulas) rebuild the right filter variant.
+  if (fieldType === FieldType.Formula) return field ? formulaPredicateFieldType(field) : FieldType.RichText;
   if (fieldType !== FieldType.Rollup) return undefined;
 
   // Desktop persists the evaluated filter variant, not the Rollup's raw target
