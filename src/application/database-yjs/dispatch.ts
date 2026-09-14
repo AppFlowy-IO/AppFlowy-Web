@@ -142,7 +142,7 @@ import {
   YMapFieldTypeOption,
   YSharedRoot,
 } from '@/application/types';
-import { isDatabaseContainer } from '@/application/view-utils';
+import { isDatabaseContainer, isEmbeddedDatabaseViewWithoutChildren, isEmbeddedView } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
@@ -2779,13 +2779,14 @@ export function useAddDatabaseView() {
         return getLastChildViewId(view) ?? fallbackViewId;
       };
 
-      const { tabsParentViewId, prevViewId } = await (async (): Promise<{
+      const { tabsParentViewId, prevViewId, embedded } = await (async (): Promise<{
         tabsParentViewId: string;
         prevViewId?: string;
+        embedded: boolean;
       }> => {
         // Best-effort: fall back to previous behavior if meta lookup isn't available.
         if (!loadViewMeta) {
-          return { tabsParentViewId: databasePageId };
+          return { tabsParentViewId: databasePageId, embedded: isDocumentBlock ?? false };
         }
 
         const safeLoadViewMeta = async (viewId: string): Promise<View | null> => {
@@ -2796,20 +2797,28 @@ export function useAddDatabaseView() {
           }
         };
 
-        const currentMeta = await safeLoadViewMeta(requestViewId);
+        // A child lookup can fail while the page's container is still available.
+        // Resolve that known identity before falling back to presentation state.
+        const currentMeta =
+          (await safeLoadViewMeta(requestViewId)) ??
+          (requestViewId !== databasePageId ? await safeLoadViewMeta(databasePageId) : null);
 
-        // If the current view itself is a container, attach under it.
-        if (currentMeta && isDatabaseContainer(currentMeta)) {
+        // Scope belongs to the saved container, even when an embedded database
+        // is opened full-page or a standalone database is shown in a document.
+        // Legacy linked leaves may carry a container marker without children.
+        if (isDatabaseContainer(currentMeta) && !isEmbeddedDatabaseViewWithoutChildren(currentMeta)) {
           return {
             tabsParentViewId: currentMeta.view_id,
             prevViewId: getInsertionPrevViewId(currentMeta),
+            embedded: isEmbeddedView(currentMeta),
           };
         }
 
         const parentId = currentMeta?.parent_view_id;
+        const embedded = isEmbeddedView(currentMeta) || (isDocumentBlock ?? false);
 
         if (!parentId) {
-          return { tabsParentViewId: databasePageId };
+          return { tabsParentViewId: databasePageId, embedded };
         }
 
         // If parent is a database container, attach under the container (Scenario 4).
@@ -2819,14 +2828,16 @@ export function useAddDatabaseView() {
           return {
             tabsParentViewId: parentId,
             prevViewId: getInsertionPrevViewId(parentMeta),
+            embedded: isEmbeddedView(parentMeta),
           };
         }
 
         // Embedded databases without a container attach under the document (Scenario 3).
-        if (isDocumentBlock) {
+        if (embedded) {
           return {
             tabsParentViewId: parentId,
             prevViewId: getInsertionPrevViewId(parentMeta, currentMeta?.view_id),
+            embedded,
           };
         }
 
@@ -2837,6 +2848,7 @@ export function useAddDatabaseView() {
         return {
           tabsParentViewId: databasePageId,
           prevViewId: getInsertionPrevViewId(databasePageMeta),
+          embedded,
         };
       })();
 
@@ -2854,7 +2866,7 @@ export function useAddDatabaseView() {
         database_id: databaseId,
         layout: viewLayout,
         name: nameOverride ?? name,
-        embedded: isDocumentBlock ?? false,
+        embedded,
       });
 
       if (requiresIsolatedValidation) {
