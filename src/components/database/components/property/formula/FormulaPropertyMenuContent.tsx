@@ -36,11 +36,15 @@ export function FormulaPropertyMenuContent({
   onRequestEditor: () => void;
 }) {
   const { t } = useTranslation();
-  const { field } = useFieldSelector(fieldId);
+  const { field, clock } = useFieldSelector(fieldId);
   const fields = useDatabaseFields();
   const resultType = useFormulaResultType(fieldId);
   const updateFormulaTypeOption = useUpdateFormulaTypeOption(fieldId);
-  const typeOption = useMemo(() => (field ? parseFormulaTypeOption(field) : null), [field]);
+  // The field map keeps its identity across edits; `clock` re-reads it after a change.
+  const typeOption = useMemo(() => {
+    void clock;
+    return field ? parseFormulaTypeOption(field) : null;
+  }, [field, clock]);
   const expressionPreview = useMemo(
     () => (typeOption ? toDisplayExpression(typeOption.formula, readFormulaSchema(fields)) : ''),
     [typeOption, fields]
@@ -91,6 +95,7 @@ export function FormulaPropertyMenuContent({
                 <DropdownMenuSubContent className={'appflowy-scroller max-h-[450px] max-w-[240px] overflow-y-auto pt-0'}>
                   <div className={'sticky top-0 z-[1] flex flex-col bg-surface-primary pt-2'}>
                     <SearchInput
+                      data-testid={'formula-number-format-search'}
                       placeholder={t('searchLabel')}
                       value={formatSearch}
                       onChange={(event) => setFormatSearch(event.target.value)}

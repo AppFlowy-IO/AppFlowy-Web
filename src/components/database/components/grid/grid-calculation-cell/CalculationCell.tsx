@@ -11,6 +11,7 @@ import {
 } from '@/application/database-yjs';
 import { CalculationType } from '@/application/database-yjs/database.type';
 import EnhancedBigStats from '@/application/database-yjs/fields/number/EnhancedBigStats';
+import { useCalculationFieldType } from '@/application/database-yjs/selector';
 import { YjsDatabaseKey } from '@/application/types';
 import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -33,6 +34,8 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
   const { field, clock } = useFieldSelector(fieldId);
 
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  // Labels follow the type the column calculates as (a boolean formula counts checked/unchecked).
+  const calculationFieldType = useCalculationFieldType(fieldId);
 
   const format = useMemo(
     () => {
@@ -62,7 +65,7 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
       case CalculationType.Sum:
         return t('grid.calculationTypeLabel.sum');
       case CalculationType.CountEmpty: {
-        if (fieldType === FieldType.Checkbox) {
+        if (calculationFieldType === FieldType.Checkbox) {
           return t('grid.calculationTypeLabel.countUncheckedShort');
         }
 
@@ -74,7 +77,7 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
       }
 
       case CalculationType.CountNonEmpty: {
-        if (fieldType === FieldType.Checkbox) {
+        if (calculationFieldType === FieldType.Checkbox) {
           return t('grid.calculationTypeLabel.countCheckedShort');
         }
 
@@ -90,7 +93,7 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
       default:
         return '';
     }
-  }, [cell, fieldType, t]);
+  }, [cell, fieldType, calculationFieldType, t]);
 
   const isCount = useMemo(() => {
     if (!cell) return false;

@@ -3130,6 +3130,21 @@ export function useFormulaCellValue({
  * a list type, `empty` for a blank expression or `any` when it is invalid).
  * Filters, sorts, the Calculate footer and the property menu key off this.
  */
+/**
+ * The field type whose calculations a column uses: a formula calculates like
+ * a Number column when it returns numbers and like a Checkbox column when it
+ * returns booleans; every other field uses its own type.
+ */
+export function useCalculationFieldType(fieldId: string): FieldType {
+  const fieldType = useFieldType(fieldId);
+  const resultType = useFormulaResultType(fieldId);
+
+  if (fieldType !== FieldType.Formula) return fieldType;
+  if (resultType === 'number') return FieldType.Number;
+  if (resultType === 'boolean') return FieldType.Checkbox;
+  return FieldType.Formula;
+}
+
 export function useFormulaResultType(fieldId: string): FormulaType {
   const fields = useDatabaseFields();
   const fieldsVersion = useDatabaseFieldsVersion();

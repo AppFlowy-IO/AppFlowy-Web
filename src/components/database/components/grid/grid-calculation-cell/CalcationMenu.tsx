@@ -1,8 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { CalculationType, FieldType, useFieldType } from '@/application/database-yjs';
-import { useFormulaResultType } from '@/application/database-yjs/selector';
+import { CalculationType, FieldType } from '@/application/database-yjs';
+import { useCalculationFieldType } from '@/application/database-yjs/selector';
 import { ICalculationCell } from '@/components/database/components/grid/grid-calculation-cell/CalculationCell';
 import {
   DropdownMenu,
@@ -19,10 +19,8 @@ function CalcationMenu ({ calculation, fieldId, open, onOpenChange, onClear, onC
   onClear: () => void;
   onChangeType: (type: CalculationType) => void;
 }) {
-  const fieldType = useFieldType(fieldId);
-  const formulaResultType = useFormulaResultType(fieldId);
-  // A number-typed formula offers the full numeric calculations, like a Number column.
-  const isNumericFormula = fieldType === FieldType.Formula && formulaResultType === 'number';
+  // Formulas calculate like the native type of their result.
+  const fieldType = useCalculationFieldType(fieldId);
   const { t } = useTranslation();
 
   const isCheckbox = fieldType === FieldType.Checkbox;
@@ -85,7 +83,6 @@ function CalcationMenu ({ calculation, fieldId, open, onOpenChange, onClear, onC
     ];
 
     const filteredCalculationTypes = calculationTypes.filter((c: CalculationType) => {
-      if (isNumericFormula) return true;
       switch (fieldType) {
         case FieldType.Number:
           return true;
@@ -100,7 +97,7 @@ function CalcationMenu ({ calculation, fieldId, open, onOpenChange, onClear, onC
       value: c,
       label: getLabel(c),
     }));
-  }, [fieldType, getLabel, isNumericFormula]);
+  }, [fieldType, getLabel]);
 
   return (
     <DropdownMenu
@@ -128,6 +125,7 @@ function CalcationMenu ({ calculation, fieldId, open, onOpenChange, onClear, onC
           <DropdownMenuItem
             key={option.value}
             className={'w-full'}
+            data-testid={`calculation-option-${option.value}`}
             onSelect={() => {
               onChangeType(option.value);
             }}

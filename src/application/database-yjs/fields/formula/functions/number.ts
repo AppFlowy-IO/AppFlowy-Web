@@ -58,12 +58,16 @@ function binary(
   };
 }
 
+/**
+ * Notion rounds like JavaScript's Math.round: halves go toward +infinity, so
+ * round(2.5) = 3 and round(-2.5) = -2.
+ */
 export function roundTo(value: number, decimals: number): number {
   const factor = 10 ** Math.max(0, Math.min(15, Math.trunc(decimals)));
   // Offset the float representation error so 1.005 rounds to 1.01, not 1.
-  const scaled = Number((Math.abs(value) * factor).toPrecision(15));
+  const scaled = Number((value * factor).toPrecision(15));
 
-  return (Math.sign(value) * Math.round(scaled)) / factor;
+  return Math.round(scaled) / factor;
 }
 
 const CURRENCY_CODES: Record<string, string> = {

@@ -112,6 +112,7 @@ function PropertyMenu({
   const operations = useMemo(
     () => [
       {
+        testId: visibility === FieldVisibility.AlwaysHidden ? 'show' : 'hide',
         label: visibility === FieldVisibility.AlwaysHidden ? t('grid.field.show') : t('grid.field.hide'),
         icon: visibility === FieldVisibility.AlwaysHidden ? <ShowIcon /> : <HideIcon />,
         onSelect: () => {
@@ -124,6 +125,7 @@ function PropertyMenu({
         },
       },
       {
+        testId: 'duplicate',
         label: t('grid.field.duplicate'),
         icon: <DuplicateIcon />,
         disabled: isPrimary,
@@ -132,6 +134,7 @@ function PropertyMenu({
         },
       },
       {
+        testId: 'delete',
         label: t('grid.field.delete'),
         icon: <DeleteIcon />,
         disabled: isPrimary,
@@ -209,6 +212,7 @@ function PropertyMenu({
           <DropdownMenuGroup>
             {operations.map((operation) => (
               <DropdownMenuItem
+                data-testid={`property-menu-${operation.testId}`}
                 disabled={operation.disabled}
                 onSelect={operation.onSelect}
                 key={operation.label}

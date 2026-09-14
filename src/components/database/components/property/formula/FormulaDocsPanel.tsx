@@ -23,7 +23,7 @@ function Snippet({ source }: { source: string }) {
   return (
     <code className={'whitespace-pre-wrap break-words font-mono text-xs'}>
       {highlightFormula(source).map((segment, index) => (
-        <span key={index} className={HIGHLIGHT_CLASS[segment.kind]}>
+        <span key={index} className={HIGHLIGHT_CLASS[segment.kind]} data-highlight={segment.kind}>
           {segment.text}
         </span>
       ))}

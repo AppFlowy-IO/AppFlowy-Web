@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabaseFields } from '@/application/database-yjs/context';
@@ -39,6 +39,12 @@ export function FormulaEditorDialog({
   }, [field, fields]);
   const [draft, setDraft] = useState(savedExpression);
   const [valid, setValid] = useState(true);
+  // Radix handles Escape in the capture phase, before the textarea can close
+  // its suggestion popup; keep the dialog open while that popup is showing.
+  const autocompleteOpenRef = useRef(false);
+  const handleAutocompleteOpenChange = useCallback((open: boolean) => {
+    autocompleteOpenRef.current = open;
+  }, []);
 
   // Re-seed the draft each time the dialog opens so a cancelled edit is dropped.
   useEffect(() => {
@@ -59,6 +65,9 @@ export function FormulaEditorDialog({
         data-testid={'formula-editor-dialog'}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
+        onEscapeKeyDown={(event) => {
+          if (autocompleteOpenRef.current) event.preventDefault();
+        }}
       >
         <div className={'flex items-center gap-3 pr-10'}>
           <DialogTitle className={'text-base font-medium'}>
@@ -87,6 +96,7 @@ export function FormulaEditorDialog({
             initialPreviewRowId={rowId}
             onSubmit={handleSave}
             onValidityChange={setValid}
+            onAutocompleteOpenChange={handleAutocompleteOpenChange}
           />
         </div>
       </DialogContent>

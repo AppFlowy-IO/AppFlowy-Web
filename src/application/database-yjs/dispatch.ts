@@ -34,13 +34,17 @@ import {
 } from '@/application/database-yjs/database.type';
 import { deleteReciprocalRelationField } from '@/application/database-yjs/dispatch/relation';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
+import { normalizeCreatedDatabaseFeedView, updateCreatesExactFeedView } from '@/application/database-yjs/feed-layout';
 import {
+  evaluateFormulaCell,
+  FormulaCellResult,
   getFieldName,
   NumberFormat,
   parseChecklistData,
   parseSelectOptionTypeOptions,
   SelectOption,
   SelectOptionColor,
+  readFormulaSchema,
   SelectTypeOption,
 } from '@/application/database-yjs/fields';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
@@ -97,7 +101,7 @@ import {
 } from '@/application/database-yjs/rollup/filter';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
-import { useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
+import { useCalculationFieldType, useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
 import { deleteCollabDB } from '@/application/db';
 import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import {
@@ -116,6 +120,7 @@ import {
   YDatabaseCalculations,
   YDatabaseCalendarLayoutSetting,
   YDatabaseCell,
+  YDatabaseCells,
   YDatabaseChartLayoutSetting,
   YDatabaseField,
   YDatabaseFieldOrders,
@@ -1437,7 +1442,7 @@ export function useBulkDeleteRowDispatch() {
 export function useCalculateFieldDispatch(fieldId: string) {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
-  const fieldType = useFieldType(fieldId);
+  const fieldType = useCalculationFieldType(fieldId);
 
   return useCallback(
     (cells: Map<string, unknown>) => {
@@ -3410,8 +3415,74 @@ function collectDatabaseRowIds(database: YDatabase, loadedRows: Record<RowId, YD
   return Array.from(rowIds);
 }
 
+function rowIdForSwitch(rowMap: Record<RowId, YDoc>, rowDoc: YDoc): RowId {
+  return Object.keys(rowMap).find((rowId) => rowMap[rowId] === rowDoc) ?? '';
+}
+
+/**
+ * Writes a formula's evaluated value into a real cell when the field leaves
+ * Formula. Number, date and checkbox results become native cells of the new
+ * type when it matches; everything else is stored as text and converted by the
+ * normal cell transforms. Empty and failed results clear the cell.
+ */
+function materializeFormulaResult(
+  cells: YDatabaseCells,
+  existing: YDatabaseCell | undefined,
+  fieldId: FieldId,
+  targetType: FieldType,
+  result: FormulaCellResult | undefined
+) {
+  if (!result || result.error || result.value.type === 'empty' || (result.text === '' && !result.rawDate)) {
+    cells.delete(fieldId);
+    return;
+  }
+
+  const cell = existing ?? (new Y.Map() as YDatabaseCell);
+  const now = String(dayjs().unix());
+
+  if (!existing) {
+    cells.set(fieldId, cell);
+    cell.set(YjsDatabaseKey.created_at, now);
+  }
+
+  Array.from(cell.keys()).forEach((key) => {
+    if (key !== YjsDatabaseKey.created_at) cell.delete(key);
+  });
+  cell.set(YjsDatabaseKey.last_modified, now);
+
+  if (targetType === FieldType.Number && result.rawNumeric !== undefined) {
+    cell.set(YjsDatabaseKey.field_type, FieldType.Number);
+    cell.set(YjsDatabaseKey.data, String(result.rawNumeric));
+    return;
+  }
+
+  if (targetType === FieldType.DateTime && result.rawDate) {
+    cell.set(YjsDatabaseKey.field_type, FieldType.DateTime);
+    cell.set(YjsDatabaseKey.data, String(result.rawDate.start));
+    cell.set(YjsDatabaseKey.include_time, result.rawDate.includeTime);
+    if (result.rawDate.end !== undefined) {
+      cell.set(YjsDatabaseKey.end_timestamp, String(result.rawDate.end));
+      cell.set(YjsDatabaseKey.is_range, true);
+    }
+
+    return;
+  }
+
+  if (targetType === FieldType.Checkbox && result.rawBoolean !== undefined) {
+    cell.set(YjsDatabaseKey.field_type, FieldType.Checkbox);
+    cell.set(YjsDatabaseKey.data, result.rawBoolean ? 'Yes' : 'No');
+    return;
+  }
+
+  cell.set(YjsDatabaseKey.field_type, FieldType.RichText);
+  cell.set(YjsDatabaseKey.data, result.text);
+}
+
 function fieldSwitchRequiresEveryRow(sourceType: FieldType, targetType: FieldType): boolean {
   if (sourceType === targetType) return false;
+
+  // Leaving Formula materializes every row's evaluated value into its cell.
+  if (sourceType === FieldType.Formula) return true;
 
   if (sourceType === FieldType.CreatedTime || sourceType === FieldType.LastEditedTime) {
     return true;
@@ -3512,6 +3583,20 @@ export function useSwitchPropertyType() {
           fieldBefore && oldFieldTypeBefore === FieldType.Relation && fieldType !== FieldType.Relation
             ? parseRelationTypeOption(fieldBefore)
             : null;
+        // Like Notion, converting a formula keeps what it displayed. Evaluate
+        // every row while the field is still a formula.
+        const formulaResults = new Map<RowId, FormulaCellResult>();
+
+        if (fieldBefore && oldFieldTypeBefore === FieldType.Formula) {
+          const schema = readFormulaSchema(database.get(YjsDatabaseKey.fields));
+
+          rows.forEach((rowId) => {
+            const row = getFieldSwitchDatabaseRow(resolvedRowMap[rowId]);
+
+            if (!row) return;
+            formulaResults.set(rowId, evaluateFormulaCell({ schema, field: fieldBefore, fieldId, row, rowId }));
+          });
+        }
 
         executeOperations(
           sharedRoot,
@@ -3629,6 +3714,7 @@ export function useSwitchPropertyType() {
                       break;
 
                     case FieldType.RichText:
+                    case FieldType.Formula:
                       {
                         const names = new Set(options.map((option) => option.name));
 
@@ -3636,7 +3722,10 @@ export function useSwitchPropertyType() {
                           const rowDoc = resolvedRowMap[rowId];
 
                           if (!rowDoc) return;
-                          const data = getFieldSwitchCellData(rowDoc, fieldId, field);
+                          const data =
+                            oldFieldType === FieldType.Formula
+                              ? formulaResults.get(rowId)?.text
+                              : getFieldSwitchCellData(rowDoc, fieldId, field);
 
                           if (typeof data !== 'string') return;
                           data.split(',').forEach((item) => {
@@ -3789,6 +3878,17 @@ export function useSwitchPropertyType() {
                       );
                       materialized.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 
+                      return;
+                    }
+
+                    if (oldFieldType === FieldType.Formula) {
+                      materializeFormulaResult(
+                        cells,
+                        cell,
+                        fieldId,
+                        fieldType,
+                        formulaResults.get(rowIdForSwitch(resolvedRowMap, rowDoc))
+                      );
                       return;
                     }
 

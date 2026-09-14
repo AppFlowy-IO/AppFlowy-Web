@@ -13,8 +13,8 @@ import {
   FormulaFieldSchema,
   FormulaFunctionSpec,
   formulaTypeOfFieldType,
+  parseFormulaTypeOption,
   readFormulaSchema,
-  toStorageExpression,
   typeToString,
 } from '@/application/database-yjs/fields/formula';
 import { useDatabaseFieldsVersion } from '@/application/database-yjs/hooks/useDatabaseFieldsVersion';
@@ -50,6 +50,8 @@ export interface FormulaEditorProps {
   onSubmit?: () => void;
   /** Reports whether the draft currently compiles, so the host can gate its Done button. */
   onValidityChange?: (valid: boolean) => void;
+  /** Reports whether the suggestion popup is open, so the host lets Escape close only the popup. */
+  onAutocompleteOpenChange?: (open: boolean) => void;
 }
 
 type Suggestion =
@@ -111,6 +113,7 @@ export function FormulaEditor({
   initialPreviewRowId,
   onSubmit,
   onValidityChange,
+  onAutocompleteOpenChange,
 }: FormulaEditorProps) {
   const { t } = useTranslation();
   const schema = useSchema();
@@ -121,7 +124,8 @@ export function FormulaEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
   const [search, setSearch] = useState('');
-  const [hovered, setHovered] = useState<FormulaDocsItem | null>(null);
+  // The catalogue item whose docs are showing. It stays after the pointer
+  // leaves so its examples can be reached and inserted.
   const [selected, setSelected] = useState<FormulaDocsItem | null>(null);
   const [activeSuggestion, setActiveSuggestion] = useState(0);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
@@ -137,8 +141,9 @@ export function FormulaEditor({
     [schema, fieldId]
   );
 
-  const storageExpression = useMemo(() => toStorageExpression(value, schema), [value, schema]);
-  const compiled = useMemo(() => compileFormula(storageExpression, schema, fieldId), [storageExpression, schema, fieldId]);
+  // Compile what the user typed (names resolve like ids) so error positions
+  // point into the visible text rather than the id-rewritten storage form.
+  const compiled = useMemo(() => compileFormula(value, schema, fieldId), [value, schema, fieldId]);
 
   useEffect(() => {
     onValidityChange?.(!compiled.error);
@@ -173,14 +178,16 @@ export function FormulaEditor({
   const preview = useMemo(() => {
     if (!field || !previewRow?.row || compiled.error) return null;
     return evaluateFormulaExpression({
-      expression: storageExpression,
+      expression: value,
       schema,
       field,
       fieldId,
       row: previewRow.row,
       rowId: previewRow.id,
+      // Preview the value the way the cell shows it.
+      format: { numberFormat: parseFormulaTypeOption(field).format },
     });
-  }, [field, previewRow, compiled.error, storageExpression, schema, fieldId]);
+  }, [field, previewRow, compiled.error, value, schema, fieldId]);
 
   const errorMessage = compiled.error?.displayMessage ?? preview?.error;
 
@@ -251,6 +258,12 @@ export function FormulaEditor({
     setActiveSuggestion(0);
   }, [suggestions.length, currentWord.query]);
 
+  const autocompleteOpen = suggestions.length > 0;
+
+  useEffect(() => {
+    onAutocompleteOpenChange?.(autocompleteOpen);
+  }, [autocompleteOpen, onAutocompleteOpenChange]);
+
   const acceptSuggestion = useCallback(
     (suggestion: Suggestion) => {
       const { text, caretOffset } = suggestionInsertion(suggestion);
@@ -288,7 +301,8 @@ export function FormulaEditor({
           return;
         }
 
-        if (event.key === 'Enter' || event.key === 'Tab') {
+        // Shift+Enter always adds a line, even while suggestions are showing.
+        if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') {
           event.preventDefault();
           acceptSuggestion(suggestions[activeSuggestion] ?? suggestions[0]);
           return;
@@ -350,7 +364,6 @@ export function FormulaEditor({
     catalogueProperties.length === 0 && catalogueBuiltins.length === 0 && catalogueFunctions.length === 0;
 
   const docsItem: FormulaDocsItem | null =
-    hovered ??
     (suggestions.length > 0 ? toDocsItem(suggestions[activeSuggestion] ?? suggestions[0]) : null) ??
     selected ??
     (catalogueProperties[0] ? { kind: 'property', entry: catalogueProperties[0] } : null) ??
@@ -367,8 +380,7 @@ export function FormulaEditor({
         'flex h-8 w-full items-center gap-2 rounded-300 px-2 text-left text-sm text-text-primary hover:bg-fill-content-hover',
         selected && sameDocsItem(selected, item) && 'bg-fill-content-hover'
       )}
-      onMouseEnter={() => setHovered(item)}
-      onMouseLeave={() => setHovered((current) => (current && sameDocsItem(current, item) ? null : current))}
+      onMouseEnter={() => setSelected(item)}
       onFocus={() => setSelected(item)}
       onClick={() => {
         setSelected(item);
@@ -390,7 +402,7 @@ export function FormulaEditor({
           )}
         >
           {segments.map((segment, index) => (
-            <span key={index} className={HIGHLIGHT_CLASS[segment.kind]}>
+            <span key={index} className={HIGHLIGHT_CLASS[segment.kind]} data-highlight={segment.kind}>
               {segment.text}
             </span>
           ))}
@@ -511,7 +523,7 @@ export function FormulaEditor({
             ) : null}
             {catalogueProperties.length > 0 ? (
               <div className={'mb-2'}>
-                <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'}>
+                <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
                   {t('grid.formula.properties', { defaultValue: 'Properties' })}
                 </div>
                 {catalogueProperties.map((entry) =>
@@ -533,7 +545,7 @@ export function FormulaEditor({
             ) : null}
             {catalogueBuiltins.length > 0 ? (
               <div className={'mb-2'}>
-                <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'}>
+                <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
                   {t('grid.formula.builtins', { defaultValue: 'Built-ins' })}
                 </div>
                 {catalogueBuiltins.map((spec) =>
@@ -548,7 +560,7 @@ export function FormulaEditor({
             ) : null}
             {catalogueFunctions.length > 0 ? (
               <div>
-                <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'}>
+                <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
                   {t('grid.formula.functions', { defaultValue: 'Functions' })}
                 </div>
                 {catalogueFunctions.map((spec) =>

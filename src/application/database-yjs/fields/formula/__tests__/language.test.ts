@@ -196,7 +196,8 @@ describe('formula language: functions', () => {
     expect(run('round(3.14159, 2)')).toEqual(num(3.14));
     expect(run('round(1.005, 2)')).toEqual(num(1.01));
     expect(run('round(2.5)')).toEqual(num(3));
-    expect(run('round(-2.5)')).toEqual(num(-3));
+    expect(run('round(-2.5)')).toEqual(num(-2));
+    expect(run('round(-7.25, 1)')).toEqual(num(-7.2));
     expect(run('sqrt(16) + cbrt(27) + log10(1000) + log2(8)')).toEqual(num(13));
     expect(run('exp(0) + ln(e())')).toEqual(num(2));
     expect(run('min(3, 1, 2) + max([3, 1, 2])')).toEqual(num(4));

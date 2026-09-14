@@ -86,6 +86,7 @@ export function GridCalculateRowCell ({ fieldId }: GridCalculateRowCellProps) {
         if (readOnly) return;
         setOpen(true);
       }}
+      data-testid={`grid-calculate-cell-${fieldId}`}
       className={cn(!readOnly && 'hover:cursor-pointer hover:bg-fill-content-hover', 'w-full relative h-full flex items-center justify-end')}
     >
       {!calculation && isHovered ? <div className={'flex items-center gap-1.5 text-text-secondary text-sm px-2'}>
