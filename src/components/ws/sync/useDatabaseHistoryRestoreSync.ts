@@ -6,14 +6,16 @@ import * as Y from 'yjs';
 import { ERROR_CODE } from '@/application/constants';
 import { invalidateDatabaseBlobAfterRestore, prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
-import { captureDatabaseStorageFence, db, deleteCollabDB, openCollabDB, openRowCollabDBWithProvider } from '@/application/db';
+import { captureDatabaseStorageFence, db, deleteCollabDB, openCollabDB, openRowCollabDBWithProvider,
+  readDatabaseIdFromRowCache } from '@/application/db';
+import { DATABASE_RESTORE_MARKER_PREFIX } from '@/application/db/database-storage-fence';
 import { getDatabaseRestoreState } from '@/application/services/domains/database-history';
 import { cacheCanonicalRowDoc, getCachedDatabaseRowIds, getCachedRowDatabaseId,
   invalidateDatabaseRowCache } from '@/application/services/js-services/cache';
 import { defaultConfig } from '@/application/services/js-services/http/cloud-config';
 import { getCollab } from '@/application/services/js-services/http/collab-api';
 import { bindSyncContext, SyncContext } from '@/application/services/js-services/sync-protocol';
-import { deleteOutboxByObjectId } from '@/application/sync-outbox';
+import { deleteOutboxByObjectId, startDrainAll } from '@/application/sync-outbox';
 import { Types, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { notification } from '@/proto/messages';
 import { Log } from '@/utils/log';
@@ -58,6 +60,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     root?: SyncContext;
   }>());
   const retryTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const deferredSync = useRef(new Set<string>());
   const restoreHints = useRef(new Set<string>());
   const sessionActive = useRef(true);
   const retryReset = useRef<(databaseId: string) => Promise<boolean>>();
@@ -87,6 +90,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       const contexts = [...refs.registeredContexts.current.values()];
       const root = refs.registeredContexts.current.get(databaseId);
       const rowIds = new Set([...persistedRows.map((row) => row.row_id), ...getCachedDatabaseRowIds(databaseId),
+        ...[...rowDatabases.current].filter(([, parentId]) => parentId === databaseId).map(([rowId]) => rowId),
         ...(root ? databaseRowIds(root.doc) : [])]);
 
       for (const context of contexts) {
@@ -231,7 +235,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
   }, []);
 
   const tracker = useMemo(() => new DatabaseRestoreTracker(
-    `af_database_restore:v1:${defaultConfig.baseURL}:${userId}:${deps.workspaceId}:`,
+    `${DATABASE_RESTORE_MARKER_PREFIX}v1:${defaultConfig.baseURL}:${userId}:${deps.workspaceId}:`,
     async (databaseId) => {
       const witness = await captureDatabaseStorageFence(databaseId, { required: true });
       const state = await getDatabaseRestoreState(deps.workspaceId, databaseId);
@@ -265,6 +269,9 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       databaseId = record?.row_key.split('_rows_')[0];
     }
 
+    // Modern rows need not have a legacy row_key index. A socket owner or a
+    // restarted tab can recover their parent from the shared snapshot and tail.
+    if (!databaseId) databaseId = await readDatabaseIdFromRowCache(objectId);
     if (databaseId) rowDatabases.current.set(objectId, databaseId);
     return databaseId;
   }, []);
@@ -280,6 +287,9 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     if (!databaseId || resetting.current.has(databaseId)) return false;
     try {
       const unchanged = await tracker.check(databaseId);
+
+      if (!sessionActive.current || current.refs.isDisposedRef.current ||
+          latest.current.workspaceId !== current.workspaceId || latest.current.userId !== current.userId) return false;
       const retryKey = `${current.userId}:${current.workspaceId}:${databaseId}`;
       const retryTimer = retryTimers.current.get(retryKey);
 
@@ -287,16 +297,24 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       retryTimers.current.delete(retryKey);
       restoreHints.current.delete(retryKey);
 
-      if (!unchanged) {
+      // A failed guard may have dropped the only manifest exchange. Recover
+      // once per database even when its restore marker has not changed, and
+      // consume this before binding because outgoing frames verify again.
+      const resumeDeferredSync = deferredSync.current.delete(retryKey);
+
+      if (!unchanged || resumeDeferredSync) {
         for (const context of current.refs.registeredContexts.current.values()) {
-          if (context.doc.guid === databaseId || rowDatabases.current.get(context.doc.guid) === databaseId) {
+          if (context.doc.guid === databaseId || (context.collabType === Types.DatabaseRow &&
+              (rowDatabases.current.get(context.doc.guid) || getCachedRowDatabaseId(context.doc.guid) ||
+                context.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)?.get(YjsDatabaseKey.database_id)) === databaseId)) {
             bindSyncContext(context);
           }
         }
 
-        return false;
+        startDrainAll();
       }
 
+      if (!unchanged) return false;
       const marker = tracker.marker(databaseId) ?? nilMarker;
 
       if (expectedMarker !== undefined && expectedMarker !== marker) {
@@ -329,7 +347,13 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
         if (timer !== undefined) clearTimeout(timer);
         retryTimers.current.delete(retryKey);
         restoreHints.current.delete(retryKey);
+        deferredSync.current.delete(retryKey);
         return false;
+      }
+
+      if (sessionActive.current && !current.refs.isDisposedRef.current &&
+          latest.current.workspaceId === current.workspaceId && latest.current.userId === current.userId) {
+        deferredSync.current.add(retryKey);
       }
 
       const hasActiveContext = [...current.refs.registeredContexts.current.values()].some((context) =>
@@ -363,6 +387,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
   useEffect(() => {
     const timers = retryTimers.current;
     const hints = restoreHints.current;
+    const deferred = deferredSync.current;
 
     sessionActive.current = true;
     return () => {
@@ -370,6 +395,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
       hints.clear();
+      deferred.clear();
     };
   }, [deps.workspaceId, userId]);
 

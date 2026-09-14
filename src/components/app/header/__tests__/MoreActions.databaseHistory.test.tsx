@@ -1,6 +1,6 @@
 // eslint-disable-next-line import/no-unresolved
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import { getDatabaseIdFromWorkspaceCatalog } from '@/application/services/domains/view';
@@ -120,4 +120,43 @@ test('legacy modal catalog lookup uses its effective view rather than the backgr
   fireEvent.click(await screen.findByTestId('more-page-database-history'));
   expect(await screen.findByTestId('database-modal')).toHaveTextContent('legacy-modal-database');
   expect(getDatabaseIdFromWorkspaceCatalog).toHaveBeenCalledWith('workspace', 'modal-view');
+});
+
+test('equivalent metadata refreshes preserve an open legacy history session and its catalog lookup', async () => {
+  mockModalInOutline = false;
+  const metadata = { ...mockModalView, extra: null };
+
+  jest.mocked(getDatabaseIdFromWorkspaceCatalog).mockResolvedValue('legacy-modal-database');
+  const { rerender } = render(<MoreActions viewId='modal-view' viewMetadata={metadata} />);
+
+  fireEvent.click(screen.getByText('Open menu'));
+  fireEvent.click(await screen.findByTestId('more-page-database-history'));
+  const modal = await screen.findByTestId('database-modal');
+
+  expect(getDatabaseIdFromWorkspaceCatalog).toHaveBeenCalledTimes(1);
+  rerender(<MoreActions viewId='modal-view' viewMetadata={{ ...metadata, name: 'Renamed database' }} />);
+  await act(async () => { await Promise.resolve(); });
+  expect(screen.getByTestId('database-modal')).toBe(modal);
+  expect(getDatabaseIdFromWorkspaceCatalog).toHaveBeenCalledTimes(1);
+});
+
+test('changing the lookup view discards its old catalog identity and ignores a stale response', async () => {
+  mockModalInOutline = false;
+  let finishOldLookup!: (id: string) => void;
+
+  jest.mocked(getDatabaseIdFromWorkspaceCatalog)
+    .mockImplementationOnce(() => new Promise((resolve) => { finishOldLookup = resolve; }))
+    .mockResolvedValueOnce('second-database');
+  const { rerender } = render(<MoreActions viewId='modal-view' viewMetadata={{ ...mockModalView, extra: null }} />);
+
+  fireEvent.click(screen.getByText('Open menu'));
+  rerender(<MoreActions viewId='second-view' viewMetadata={{ ...mockModalView, view_id: 'second-view', extra: null }} />);
+  fireEvent.click(await screen.findByTestId('more-page-database-history'));
+  const modal = await screen.findByTestId('database-modal');
+
+  expect(modal).toHaveTextContent('second-database');
+  await act(async () => finishOldLookup('old-database'));
+  expect(screen.getByTestId('database-modal')).toBe(modal);
+  expect(modal).toHaveTextContent('second-database');
+  expect(getDatabaseIdFromWorkspaceCatalog).toHaveBeenCalledTimes(2);
 });

@@ -23,10 +23,12 @@ import {
   workspaceMemberProfileSchema,
   WorkspaceMemberProfileTable,
 } from '@/application/db/tables/workspace_member_profiles';
-import { YDoc } from '@/application/types';
+import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
 import {
+  DATABASE_CACHE_EPOCH_PREFIX,
+  DATABASE_RESTORE_MARKER_PREFIX,
   DatabaseStorageGenerationChangedError,
   type DatabaseStorageFence,
   databaseStorageFenceObjectId,
@@ -595,6 +597,23 @@ async function readSharedCollabRecordsForSync(name: string): Promise<{
   });
 }
 
+/** Resolve rows owned by another tab without opening a provider or binding sync. */
+export async function readDatabaseIdFromRowCache(rowId: string): Promise<string | undefined> {
+  const { snapshot, updates } = await readSharedCollabRecordsForSync(rowId);
+  const doc = new Y.Doc();
+
+  try {
+    if (snapshot?.update) Y.applyUpdate(doc, snapshot.update);
+    for (const record of updates) Y.applyUpdate(doc, record.update);
+    const row = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row);
+    const databaseId = row instanceof Y.Map ? row.get(YjsDatabaseKey.database_id) : undefined;
+
+    return typeof databaseId === 'string' && databaseId.length > 0 ? databaseId : undefined;
+  } finally {
+    doc.destroy();
+  }
+}
+
 class CollabProviderDisposedError extends Error {
   constructor(name: string) {
     super(`Collab provider was disposed while opening: ${name}`);
@@ -677,6 +696,8 @@ class SharedIndexeddbPersistence {
   private _destroyed = false;
   private _listeners = new Map<string, Set<(...args: unknown[]) => void>>();
   private _pendingWrite: Promise<void> = Promise.resolve();
+  // Keep the queue usable for later edits without losing an earlier failure.
+  private _persistenceError?: { error: unknown };
   private _updatesSinceCompact = 0;
   private _storageEpoch: string | null = null;
   private _storageRetired = false;
@@ -735,6 +756,7 @@ class SharedIndexeddbPersistence {
 
       this._updatesSinceCompact = updates.length;
     } catch (error) {
+      this._persistenceError ??= { error };
       Log.warn('[DB] failed to sync shared collab IndexedDB data', { name: this.name, error });
     } finally {
       if (!this._destroyed) {
@@ -785,7 +807,7 @@ class SharedIndexeddbPersistence {
           return true;
         });
 
-        if (!persisted) return;
+        if (!persisted) throw new DatabaseStorageGenerationChangedError();
         this._updatesSinceCompact += 1;
 
         if (this._updatesSinceCompact >= SHARED_COLLAB_COMPACT_UPDATE_THRESHOLD) {
@@ -793,6 +815,7 @@ class SharedIndexeddbPersistence {
         }
       })
       .catch((error) => {
+        this._persistenceError ??= { error };
         Log.warn('[DB] failed to persist shared collab update', { name: this.name, error });
       });
   };
@@ -813,6 +836,7 @@ class SharedIndexeddbPersistence {
     this._pendingWrite = this._pendingWrite
       .then(() => this.compact())
       .catch((error) => {
+        this._persistenceError ??= { error };
         Log.warn('[DB] failed to compact shared collab updates', { name: this.name, error });
       });
   }
@@ -890,6 +914,15 @@ class SharedIndexeddbPersistence {
     }
 
     this._updatesSinceCompact = await db.collab_updates.where('objectId').equals(this.name).count();
+  }
+
+  /** Confirm durability without changing best-effort provider cleanup. */
+  async whenPersisted(): Promise<void> {
+    await this.whenSynced;
+    await this._pendingWrite;
+    if (this._persistenceError) throw this._persistenceError.error;
+    if (this._storageRetired) throw new DatabaseStorageGenerationChangedError();
+    if (this._destroyed) throw new CollabProviderDisposedError(this.name);
   }
 
   async destroy() {
@@ -1517,6 +1550,13 @@ export function getCachedProviderDoc(name: string): YDoc | undefined {
   return providerCache.get(name)?.doc ?? rowProviderCache.get(name)?.doc;
 }
 
+/** The canonical row provider owns the durability result for its live document. */
+export function getCachedRowProvider(name: string): SharedIndexeddbPersistence | undefined {
+  const entry = rowProviderCache.get(name);
+
+  return entry && !entry.disposed ? entry.provider as SharedIndexeddbPersistence : undefined;
+}
+
 function removeLocalStorageKeysByPrefix(prefix: string) {
   if (typeof localStorage === 'undefined') return;
 
@@ -1533,7 +1573,7 @@ function removeLocalStorageKeysByPrefix(prefix: string) {
   keysToRemove.forEach((key) => localStorage.removeItem(key));
 }
 
-function clearBlobRidCheckpointsForDeletedDatabases(results: Array<{ name: string; deleted: boolean }>) {
+function clearDatabaseCheckpointsForDeletedDatabases(results: Array<{ name: string; deleted: boolean }>) {
   if (typeof localStorage === 'undefined') return;
 
   const sharedCacheDeleted = results.some(({ name, deleted }) => deleted && name === db.name);
@@ -1541,6 +1581,11 @@ function clearBlobRidCheckpointsForDeletedDatabases(results: Array<{ name: strin
 
   if (sharedCacheDeleted || allDatabasesDeleted) {
     removeLocalStorageKeysByPrefix(DATABASE_BLOB_RID_PREFIX);
+    // The synchronous shadow and committed restore markers describe the cache
+    // that was just deleted. Reopening must discover and reload its generation.
+    // Pending server restore jobs have separate keys and must survive this reset.
+    removeLocalStorageKeysByPrefix(DATABASE_CACHE_EPOCH_PREFIX);
+    removeLocalStorageKeysByPrefix(DATABASE_RESTORE_MARKER_PREFIX);
     return;
   }
 
@@ -1613,7 +1658,7 @@ export async function clearData() {
     const results = await Promise.all(databases.map(deleteDatabase));
 
     try {
-      clearBlobRidCheckpointsForDeletedDatabases(results);
+      clearDatabaseCheckpointsForDeletedDatabases(results);
     } catch {
       // Ignore localStorage failures (private mode/quota).
     }
@@ -1629,7 +1674,7 @@ export const __dbTestUtils = {
   SharedIndexeddbPersistence,
   deleteSharedCollabData,
   createCachedProviderEntry,
-  clearBlobRidCheckpointsForDeletedDatabases,
+  clearDatabaseCheckpointsForDeletedDatabases,
   deleteIndexedDBDatabase,
   destroyProviderEntry,
   readSharedCollabRecordsForSync,

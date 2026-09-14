@@ -257,6 +257,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
             missingUpdate: result.missingUpdate,
             serverStateVector: result.serverStateVector,
             collabVersion: result.collabVersion,
+            databaseRestoreId: item.databaseRestoreId,
             messageId: result.messageId,
           },
           item.version,

@@ -474,6 +474,27 @@ describe('AppSyncLayer per-message churn', () => {
     expect(stableSyncValue.applyHttpFullSyncResult).toHaveBeenCalledTimes(2);
   });
 
+  it('retains the request restore generation when applying an HTTP response', async () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+    const databaseRestoreId = '33333333-3333-4333-8333-333333333333';
+
+    mockCollabFullSyncBatch.mockResolvedValue([{
+      objectId: 'object-1', collabType: 1, missingUpdate: new Uint8Array(),
+      serverStateVector: new Uint8Array([0]), messageId: { timestamp: 1, counter: 0 },
+    }]);
+    renderLayer();
+    const leaderConfig = outboxMock.configureDrain.mock.calls.at(-1)?.[0];
+
+    await leaderConfig.slowSync({
+      objectId: 'object-1', collabType: 1, version: 'version-1', databaseRestoreId,
+      stateVector: new Uint8Array([0]), docState: new Uint8Array([9]),
+    }, new AbortController().signal);
+    expect(stableSyncValue.applyHttpFullSyncResult).toHaveBeenCalledTimes(2);
+    expect(stableSyncValue.applyHttpFullSyncResult).toHaveBeenCalledWith(
+      expect.objectContaining({ databaseRestoreId }), 'version-1', expect.any(AbortSignal)
+    );
+  });
+
   it('treats a different authoritative server version without a RID as confirmed supersession', async () => {
     const outboxMock = jest.requireMock('@/application/sync-outbox');
 

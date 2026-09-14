@@ -70,7 +70,12 @@ export function useCollabMessageHandler(
       if (beforeApply && (message.update || message.syncRequest) &&
           (message.collabType === Types.Database || message.collabType === Types.DatabaseRow)) {
         const contextBeforeCheck = refs.registeredContexts.current.get(objectId);
-        const allowed = await beforeApply(objectId, message.collabType, message.update?.databaseRestoreId ?? undefined);
+        // Legacy update bytes belong to the pre-restore generation. Only a
+        // state-vector request may discover the current generation without one.
+        const marker = message.update
+          ? message.update.databaseRestoreId ?? '00000000-0000-0000-0000-000000000000'
+          : undefined;
+        const allowed = await beforeApply(objectId, message.collabType, marker);
 
         if (!allowed || isApplyCancelled(options) || contextBeforeCheck !== refs.registeredContexts.current.get(objectId)) return false;
       }

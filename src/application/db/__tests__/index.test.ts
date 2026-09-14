@@ -6,6 +6,8 @@ import {
   db,
   captureDatabaseStorageFence,
   publishWithDatabaseStorageFence,
+  readDatabaseIdFromRowCache,
+  getCachedRowProvider,
   rotateDatabaseStorageFence,
 } from '@/application/db';
 import { type CollabSnapshotRecord, type CollabUpdateRecord } from '@/application/db/tables/collab_storage';
@@ -104,6 +106,38 @@ describe('collab IndexedDB persistence internals', () => {
     expect(between.mock.calls[0][0][0]).toBe('row-1');
     expect(between.mock.calls[0][1][0]).toBe('row-1');
     expect(result).toEqual({ snapshot, updates: [updateRecord], storageEpoch: null });
+  });
+
+  it.each(['snapshot', 'tail', 'snapshot and tail', 'empty'])('recovers a row parent from shared %s without a live provider', async (source) => {
+    const rowId = 'unopened-row';
+    const doc = new Y.Doc({ guid: rowId });
+    const row = new Y.Map();
+
+    doc.getMap('data').set('data', row);
+    const base = Y.encodeStateAsUpdate(doc);
+    const before = Y.encodeStateVector(doc);
+
+    row.set('database_id', 'parent-database');
+    const full = Y.encodeStateAsUpdate(doc);
+    const delta = Y.encodeStateAsUpdate(doc, before);
+    const snapshot = source === 'snapshot' ? full : source === 'snapshot and tail' ? base : undefined;
+    const updates = source === 'tail' ? [full] : source === 'snapshot and tail' ? [delta] : [];
+    const transaction = jest.spyOn(db, 'transaction').mockImplementation((async (...args: unknown[]) =>
+      (args[args.length - 1] as () => Promise<unknown>)()) as never);
+
+    jest.spyOn(db.collab_snapshots, 'get').mockResolvedValue(snapshot ? {
+      objectId: rowId, update: snapshot, stateVector: before, updatedAt: 1, byteLength: snapshot.byteLength,
+    } : undefined);
+    jest.spyOn(db.collab_updates, 'where').mockReturnValue({ between: () => ({ toArray: async () =>
+      updates.map((update) => ({ objectId: rowId, update, createdAt: 1, byteLength: update.byteLength })) }) } as never);
+    const add = jest.spyOn(db.collab_updates, 'add');
+
+    expect(await readDatabaseIdFromRowCache(rowId)).toBe(source === 'empty' ? undefined : 'parent-database');
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.mock.calls[0][0]).toBe('r');
+    expect(add).not.toHaveBeenCalled();
+    expect(getCachedRowProvider(rowId)).toBeUndefined();
+    doc.destroy();
   });
 
   it('prevents an old tab provider from persisting after an authoritative epoch change', async () => {
@@ -349,7 +383,7 @@ describe('collab IndexedDB persistence internals', () => {
     localStorage.setItem('af_database_blob_rid:database-2', JSON.stringify({ timestamp: 3, seqNo: 4 }));
     localStorage.setItem('unrelated-key', 'keep');
 
-    __dbTestUtils.clearBlobRidCheckpointsForDeletedDatabases([{ name: db.name, deleted: true }]);
+    __dbTestUtils.clearDatabaseCheckpointsForDeletedDatabases([{ name: db.name, deleted: true }]);
 
     expect(localStorage.getItem('af_database_blob_rid:database-1')).toBeNull();
     expect(localStorage.getItem('af_database_blob_rid:database-2')).toBeNull();

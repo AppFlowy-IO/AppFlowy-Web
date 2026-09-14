@@ -9,6 +9,7 @@ import {
   publishWithDatabaseStorageFence,
   deleteCollabDB,
   getCachedProviderDoc,
+  getCachedRowProvider,
   openCollabDBWithProvider,
   openRowCollabDBWithProvider,
 } from '@/application/db';
@@ -853,7 +854,16 @@ async function applyCollabUpdate(
       bytes: state.bytes.length,
       ...afterState,
     });
-    return;
+    if (!options?.useSharedRowStorage) return;
+    const provider = getCachedRowProvider(objectId);
+
+    if (provider?.doc === cachedDoc) {
+      await provider.whenPersisted();
+      return;
+    }
+
+    // A seed-only document has no provider to confirm its write. Persist the
+    // server bytes through shared storage before advancing the checkpoint.
   }
 
   Log.debug('[Database] applyCollabUpdate opening IndexedDB for write (NO CACHED DOC)', {
@@ -882,6 +892,7 @@ async function applyCollabUpdate(
     const applyStartedAt = Date.now();
 
     withDatabaseStorageFence(doc, options?.storageFence, () => applyYDoc(doc, state.bytes, state.encoderVersion));
+    if ('whenPersisted' in provider) await provider.whenPersisted();
 
     const afterState = inspectDocRowData(doc, objectId);
 

@@ -351,6 +351,7 @@ export const useSync = (
                 // zero-length buffer.
                 payload: hasMissingUpdate ? result.missingUpdate : new Uint8Array([0, 0]),
                 version,
+                databaseRestoreId: result.databaseRestoreId,
                 messageId: result.messageId,
               },
             };

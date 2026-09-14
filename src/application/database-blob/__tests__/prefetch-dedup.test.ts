@@ -35,6 +35,7 @@ jest.mock('@/application/db', () => ({
   ),
   deleteCollabDB: jest.fn(),
   getCachedProviderDoc: jest.fn(),
+  getCachedRowProvider: jest.fn(),
   openCollabDBWithProvider: jest.fn(),
   openRowCollabDBWithProvider: jest.fn(),
 }));
@@ -242,7 +243,7 @@ describe('database blob prefetch deduplication', () => {
     }));
     mockedOpenRowCollabDB.mockResolvedValue({
       doc: { destroy: jest.fn() },
-      provider: { destroy: jest.fn().mockResolvedValue(undefined) },
+      provider: { destroy: jest.fn().mockResolvedValue(undefined), whenPersisted: jest.fn().mockResolvedValue(undefined) },
     } as unknown as Awaited<ReturnType<typeof openRowCollabDBWithProvider>>);
   });
 
@@ -294,7 +295,7 @@ describe('database blob prefetch deduplication', () => {
     const databaseId = 'database-cross-tab-new-provider';
     const deferredOpen = createDeferred<Awaited<ReturnType<typeof openRowCollabDBWithProvider>>>();
     const doc = { destroy: jest.fn() };
-    const provider = { destroy: jest.fn().mockResolvedValue(undefined) };
+    const provider = { destroy: jest.fn().mockResolvedValue(undefined), whenPersisted: jest.fn().mockResolvedValue(undefined) };
 
     databaseIds.add(databaseId);
     mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 91, seqNo: 1 }));
@@ -693,7 +694,7 @@ describe('database blob prefetch deduplication', () => {
     const databaseId = 'database-reset-open-fence';
     const deferredOpen = createDeferred<Awaited<ReturnType<typeof openRowCollabDBWithProvider>>>();
     const doc = { destroy: jest.fn() };
-    const provider = { destroy: jest.fn().mockResolvedValue(undefined) };
+    const provider = { destroy: jest.fn().mockResolvedValue(undefined), whenPersisted: jest.fn().mockResolvedValue(undefined) };
 
     databaseIds.add(databaseId);
     mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 17, seqNo: 1 }));
@@ -872,7 +873,7 @@ describe('database blob prefetch deduplication', () => {
     mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 500, seqNo: 4 }));
     mockedOpenRowCollabDB.mockResolvedValueOnce({
       doc: { destroy: jest.fn() },
-      provider: { destroy: jest.fn().mockResolvedValue(undefined) },
+      provider: { destroy: jest.fn().mockResolvedValue(undefined), whenPersisted: jest.fn().mockResolvedValue(undefined) },
     } as unknown as Awaited<ReturnType<typeof openRowCollabDBWithProvider>>);
 
     await prefetchDatabaseBlobDiff(workspaceId, databaseId);

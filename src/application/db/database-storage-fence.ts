@@ -17,7 +17,8 @@ export type DatabaseStorageFence = {
   nonDurable?: boolean;
 };
 
-const CACHE_EPOCH_PREFIX = 'af_database_blob_epoch:';
+export const DATABASE_CACHE_EPOCH_PREFIX = 'af_database_blob_epoch:';
+export const DATABASE_RESTORE_MARKER_PREFIX = 'af_database_restore:';
 const applyingFences = new WeakMap<YDoc, DatabaseStorageFence>();
 
 export function databaseStorageFenceObjectId(databaseId: string): string {
@@ -26,7 +27,7 @@ export function databaseStorageFenceObjectId(databaseId: string): string {
 
 export function readDatabaseCacheEpoch(databaseId: string): string | null | undefined {
   try {
-    return localStorage.getItem(`${CACHE_EPOCH_PREFIX}${databaseId}`);
+    return localStorage.getItem(`${DATABASE_CACHE_EPOCH_PREFIX}${databaseId}`);
   } catch {
     // Synchronous seed readers must fail closed when cross-tab fencing is unavailable.
     return undefined;
@@ -34,7 +35,7 @@ export function readDatabaseCacheEpoch(databaseId: string): string | null | unde
 }
 
 export function publishDatabaseCacheEpoch(databaseId: string, epoch: string): void {
-  localStorage.setItem(`${CACHE_EPOCH_PREFIX}${databaseId}`, epoch);
+  localStorage.setItem(`${DATABASE_CACHE_EPOCH_PREFIX}${databaseId}`, epoch);
 }
 
 export function isDatabaseStorageFenceCurrent(fence: DatabaseStorageFence): boolean {

@@ -62,6 +62,8 @@ export interface HttpFullSyncResult {
   missingUpdate: Uint8Array;
   serverStateVector: Uint8Array;
   collabVersion?: string;
+  /** Restore generation captured with the request bytes. */
+  databaseRestoreId?: string;
   messageId?: collab.IRid;
 }
 

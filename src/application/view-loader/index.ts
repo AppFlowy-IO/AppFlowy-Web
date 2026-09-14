@@ -12,7 +12,8 @@
 
 import * as Y from 'yjs';
 
-import { deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { captureDatabaseStorageFence, deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { isDatabaseStorageFenceCurrent, withDatabaseStorageFence } from '@/application/db/database-storage-fence';
 import { getOrCreateRowSubDoc, hasCollabCache } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
 import { fetchDatabaseCollab, fetchPageCollab, fetchRowDocumentCollab } from '@/application/services/js-services/fetch';
@@ -145,9 +146,17 @@ async function mergeLegacyDatabaseViewCache(viewId: string, databaseId: string, 
     return false;
   }
 
+  const storageFence = await captureDatabaseStorageFence(databaseId);
+
+  // View-keyed caches predate restore generations, just like legacy row caches.
+  // They must never contribute bytes to an authoritative restored root.
+  if (storageFence.epoch !== null || typeof storageFence.cacheEpoch === 'string' ||
+      !isDatabaseStorageFenceCurrent(storageFence) ||
+      (targetDoc.databaseRestoreId && targetDoc.databaseRestoreId !== '00000000-0000-0000-0000-000000000000')) return false;
   const { doc: legacyDoc, provider } = await openCollabDBWithProvider(viewId, { skipCache: true });
 
   try {
+    if (!isDatabaseStorageFenceCurrent(storageFence)) return false;
     if (!hasCollabCache(legacyDoc)) {
       return false;
     }
@@ -170,7 +179,7 @@ async function mergeLegacyDatabaseViewCache(viewId: string, databaseId: string, 
       return false;
     }
 
-    applyYDoc(targetDoc, missingUpdate);
+    withDatabaseStorageFence(targetDoc, storageFence, () => applyYDoc(targetDoc, missingUpdate));
     void enqueueOutboxUpdate({
       objectId: databaseId,
       collabType: Types.Database,

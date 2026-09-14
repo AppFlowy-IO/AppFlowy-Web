@@ -8,8 +8,9 @@ import * as Y from 'yjs';
 import { invalidateDatabaseBlobAfterRestore, prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { captureDatabaseStorageFence, db, deleteCollabDB, openCollabDB, openRowCollabDBWithProvider } from '@/application/db';
 import { getDatabaseRestoreState } from '@/application/services/domains/database-history';
+import { getCachedRowDatabaseId } from '@/application/services/js-services/cache';
 import { getCollab } from '@/application/services/js-services/http/collab-api';
-import { deleteOutboxByObjectId } from '@/application/sync-outbox';
+import { deleteOutboxByObjectId, startDrainAll } from '@/application/sync-outbox';
 import { Types, YDoc } from '@/application/types';
 
 import { SyncRefs } from '../syncRefs';
@@ -21,15 +22,16 @@ jest.mock('@/application/database-blob', () => ({
 jest.mock('@/application/db', () => ({
   db: { rows: { where: jest.fn(), filter: jest.fn() }, sync_outbox: { where: jest.fn() } }, deleteCollabDB: jest.fn(),
   openCollabDB: jest.fn(), openRowCollabDBWithProvider: jest.fn(), captureDatabaseStorageFence: jest.fn(),
+  readDatabaseIdFromRowCache: jest.fn(),
 }));
 jest.mock('@/application/services/domains/database-history', () => ({ getDatabaseRestoreState: jest.fn() }));
 jest.mock('@/application/services/js-services/http/collab-api', () => ({ getCollab: jest.fn() }));
 jest.mock('@/application/services/js-services/http/cloud-config', () => ({ defaultConfig: { baseURL: 'server' } }));
 jest.mock('@/application/services/js-services/cache', () => ({
   cacheCanonicalRowDoc: jest.fn(), getCachedDatabaseRowIds: () => ['row'],
-  getCachedRowDatabaseId: () => 'database', invalidateDatabaseRowCache: jest.fn(),
+  getCachedRowDatabaseId: jest.fn(() => 'database'), invalidateDatabaseRowCache: jest.fn(),
 }));
-jest.mock('@/application/sync-outbox', () => ({ deleteOutboxByObjectId: jest.fn() }));
+jest.mock('@/application/sync-outbox', () => ({ deleteOutboxByObjectId: jest.fn(), startDrainAll: jest.fn() }));
 
 function fixture() {
   const root: YDoc = new Y.Doc({ guid: 'database' });
@@ -68,11 +70,41 @@ function fixture() {
 beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(deleteOutboxByObjectId).mockReset();
+  jest.mocked(getCachedRowDatabaseId).mockReturnValue('database');
   localStorage.clear();
   jest.mocked(captureDatabaseStorageFence).mockResolvedValue({ databaseId: 'database', epoch: null, cacheEpoch: null });
   jest.mocked(db.rows.where).mockReturnValue({ startsWith: () => ({ toArray: async () => [{ row_id: 'row' }] }) } as never);
   jest.mocked(deleteCollabDB).mockResolvedValue(true);
   jest.mocked(getDatabaseRestoreState).mockResolvedValue({ database_restore_id: 'restore-new', version: 'same-version' });
+});
+
+test.each([null, 'restore-current'])('verifies an unopened follower row in generation %s using its durable parent', async (marker) => {
+  const f = fixture();
+  const readParent = jest.requireMock('@/application/db').readDatabaseIdFromRowCache as jest.Mock;
+
+  f.contexts.clear();
+  jest.mocked(getCachedRowDatabaseId).mockReturnValue(undefined);
+  jest.mocked(db.rows.filter).mockReturnValue({ first: async () => undefined } as never);
+  readParent.mockResolvedValue('database');
+  jest.mocked(getDatabaseRestoreState).mockResolvedValue({ database_restore_id: marker, version: null });
+  if (marker) localStorage.setItem('af_database_restore:v1:server:user:workspace:database', marker);
+  const expectedMarker = marker ?? '00000000-0000-0000-0000-000000000000';
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }));
+
+  expect(await result.current.ensureDatabaseRestoreCurrent('follower-row', Types.DatabaseRow,
+    expectedMarker)).toBe(true);
+  expect(getDatabaseRestoreState).toHaveBeenCalledWith('workspace', 'database');
+  expect(readParent).toHaveBeenCalledWith('follower-row');
+  expect(f.register).not.toHaveBeenCalled();
+  expect(openRowCollabDBWithProvider).not.toHaveBeenCalled();
+  expect(await result.current.ensureDatabaseRestoreCurrent('follower-row', Types.DatabaseRow,
+    expectedMarker)).toBe(true);
+  expect(readParent).toHaveBeenCalledTimes(1);
+  unmount();
 });
 
 test('same-version restore replaces root and rows, clears old queues, and preserves row Documents', async () => {
@@ -143,6 +175,51 @@ test('a failed reload retains owners and automatically retries after its context
   expect(f.contexts.get('row')?.doc).toBe(f.nextRow);
   expect(f.register.mock.calls.filter(([value]) => value.doc.guid === 'database')).toHaveLength(2);
   expect(f.refs.resettingObjectIds.current.size).toBe(0);
+  jest.useRealTimers();
+});
+
+test.each(['timer', 'incoming guard'])('resumes deferred sync after an unchanged marker recovers through %s', async (recovery) => {
+  jest.useFakeTimers();
+  const f = fixture();
+
+  jest.mocked(getDatabaseRestoreState).mockRejectedValueOnce(new Error('Temporary outage'))
+    .mockResolvedValue({ database_restore_id: null, version: 'same-version' });
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }));
+
+  await act(async () => {
+    expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database)).toBe(false);
+  });
+  expect(f.contexts.get('database')?.emit).not.toHaveBeenCalled();
+  expect(startDrainAll).not.toHaveBeenCalled();
+  await act(async () => {
+    if (recovery === 'timer') jest.advanceTimersByTime(5000);
+    else await Promise.all([
+      result.current.ensureDatabaseRestoreCurrent('database', Types.Database),
+      result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow),
+    ]);
+  });
+
+  for (const objectId of ['database', 'row']) {
+    expect(f.contexts.get(objectId)?.emit).toHaveBeenCalledTimes(1);
+    expect(f.contexts.get(objectId)?.emit).toHaveBeenCalledWith(expect.objectContaining({
+      collabMessage: expect.objectContaining({ objectId, syncRequest: expect.any(Object) }),
+    }));
+  }
+
+  expect(f.contexts.get('row-document')?.emit).not.toHaveBeenCalled();
+  expect(startDrainAll).toHaveBeenCalledTimes(1);
+  expect(invalidateDatabaseBlobAfterRestore).not.toHaveBeenCalled();
+  await act(async () => {
+    await result.current.ensureDatabaseRestoreCurrent('database', Types.Database);
+    jest.advanceTimersByTime(15000);
+  });
+  expect(startDrainAll).toHaveBeenCalledTimes(1);
+  expect(f.contexts.get('database')?.emit).toHaveBeenCalledTimes(1);
+  unmount();
   jest.useRealTimers();
 });
 
@@ -376,4 +453,30 @@ test('a verification failure resolving after session disposal cannot schedule a 
   await act(async () => { jest.advanceTimersByTime(15000); });
   expect(getDatabaseRestoreState).toHaveBeenCalledTimes(1);
   jest.useRealTimers();
+});
+
+test('a successful recovery cannot restart sync after the session is disposed', async () => {
+  const f = fixture();
+  let recover!: (state: { database_restore_id: null; version: null }) => void;
+
+  jest.mocked(getDatabaseRestoreState).mockRejectedValueOnce(new Error('Temporary outage'))
+    .mockReturnValueOnce(new Promise((resolve) => { recover = resolve; }));
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }));
+
+  await result.current.ensureDatabaseRestoreCurrent('database', Types.Database);
+  let verification!: Promise<boolean>;
+
+  await act(async () => {
+    verification = result.current.ensureDatabaseRestoreCurrent('database', Types.Database);
+  });
+  unmount();
+  recover({ database_restore_id: null, version: null });
+  expect(await verification).toBe(false);
+  expect(f.contexts.get('database')?.emit).not.toHaveBeenCalled();
+  expect(f.contexts.get('row')?.emit).not.toHaveBeenCalled();
+  expect(startDrainAll).not.toHaveBeenCalled();
 });

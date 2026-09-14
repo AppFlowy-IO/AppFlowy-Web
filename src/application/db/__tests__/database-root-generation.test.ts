@@ -1,7 +1,8 @@
 import * as Y from 'yjs';
 
-import { db, deleteCollabDB, openCollabDBWithProvider } from '@/application/db';
-import { publishDatabaseCacheEpoch } from '@/application/db/database-storage-fence';
+import { __dbTestUtils, db, deleteCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { publishDatabaseCacheEpoch, readDatabaseCacheEpoch } from '@/application/db/database-storage-fence';
+import { DatabaseRestoreTracker } from '@/components/ws/sync/databaseRestoreState';
 
 const mockStores = new Map<string, Uint8Array>();
 const mockNames: string[] = [];
@@ -87,6 +88,51 @@ describe('database root storage generations', () => {
       name: 'DatabaseStorageGenerationChangedError',
     });
     expect(mockNames).toEqual([]);
+  });
+
+  it.each([false, true])('reopens and rediscovers a restored database after cache clearing (blocked root: %s)', async (blockedRoot) => {
+    const markerPrefix = 'af_database_restore:v1:server:user:workspace:';
+    const pendingKey = 'af_database_history_restore:v1:server:user:workspace:database';
+    const pendingJob = JSON.stringify({ version: 'version', idempotencyKey: 'key', jobId: 'job' });
+
+    publishDatabaseCacheEpoch('database', 'R');
+    localStorage.setItem(`${markerPrefix}database`, 'R');
+    localStorage.setItem(pendingKey, pendingJob);
+    localStorage.setItem('theme', 'dark');
+    // IndexedDB has been deleted; its localStorage shadow must be retired too.
+    jest.mocked(db.collab_custom.get).mockResolvedValue(undefined);
+    __dbTestUtils.clearDatabaseCheckpointsForDeletedDatabases([
+      { name: db.name, deleted: true },
+      { name: 'database:database-restore:R', deleted: !blockedRoot },
+    ]);
+
+    expect(readDatabaseCacheEpoch('database')).toBeNull();
+    expect(localStorage.getItem(`${markerPrefix}database`)).toBeNull();
+    expect(localStorage.getItem(pendingKey)).toBe(pendingJob);
+    expect(localStorage.getItem('theme')).toBe('dark');
+    const reopened = await openCollabDBWithProvider('database', { skipCache: true });
+    const reset = jest.fn().mockResolvedValue(undefined);
+    const tracker = new DatabaseRestoreTracker(markerPrefix,
+      async () => ({ database_restore_id: 'R', version: 'version' }), reset, localStorage);
+
+    expect(await tracker.check('database')).toBe(false);
+    expect(reset).toHaveBeenCalledWith('database', { database_restore_id: 'R', version: 'version' });
+    await reopened.provider.destroy();
+    reopened.doc.destroy();
+  });
+
+  it('preserves restore markers when the shared cache could not be deleted', () => {
+    const markerKey = 'af_database_restore:v1:server:user:workspace:database';
+
+    publishDatabaseCacheEpoch('database', 'R');
+    localStorage.setItem(markerKey, 'R');
+    __dbTestUtils.clearDatabaseCheckpointsForDeletedDatabases([
+      { name: db.name, deleted: false },
+      { name: 'database:database-restore:R', deleted: true },
+    ]);
+
+    expect(readDatabaseCacheEpoch('database')).toBe('R');
+    expect(localStorage.getItem(markerKey)).toBe('R');
   });
 
   it('initializes two same-generation roots without deleting their shared namespace for missing version metadata', async () => {

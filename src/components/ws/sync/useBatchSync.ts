@@ -99,17 +99,20 @@ export function useBatchSync(
 
   databaseHistoryEnabledRef.current = options?.databaseHistoryEnabled;
   const guardedBatchSync = useCallback(async (workspaceId: string, items: Parameters<typeof collabFullSyncBatch>[1]) => {
-    const admitted: typeof items = [];
+    const beforeSend = beforeSendRef.current;
+    const historyEnabled = databaseHistoryEnabledRef.current;
 
-    for (const item of items) {
+    // Concurrent guards share the tracker's in-flight check for each database,
+    // while every row still verifies the generation captured with its bytes.
+    const checkedItems = await Promise.all(items.map(async (item) => {
       const marker = item.databaseRestoreId ??
         (item.collabType === Types.Database || item.collabType === Types.DatabaseRow
           ? '00000000-0000-0000-0000-000000000000' : undefined);
 
-      if (!beforeSendRef.current || await beforeSendRef.current(item.objectId, item.collabType, marker)) {
-        admitted.push(databaseHistoryEnabledRef.current ? { ...item, databaseRestoreId: marker } : item);
-      }
-    }
+      if (beforeSend && !await beforeSend(item.objectId, item.collabType, marker)) return null;
+      return historyEnabled ? { ...item, databaseRestoreId: marker } : item;
+    }));
+    const admitted = checkedItems.filter((item): item is typeof items[number] => item !== null);
 
     return admitted.length ? collabFullSyncBatch(workspaceId, admitted) : [];
   }, []);
@@ -242,25 +245,28 @@ export function useBatchSync(
 
   const applyFullSyncResults = useCallback(async (results: Awaited<ReturnType<typeof collabFullSyncBatch>>,
     requestedItems?: Parameters<typeof collabFullSyncBatch>[1]) => {
-    for (const result of results) {
-      const requested = requestedItems?.find((item) => item.objectId === result.objectId);
+    const requestedByObjectId = new Map(requestedItems?.map((item) => [item.objectId, item]));
+    const beforeSend = beforeSendRef.current;
 
-      if (beforeSendRef.current && !await beforeSendRef.current(result.objectId, result.collabType,
+    await Promise.all(results.map(async (result) => {
+      const requested = requestedByObjectId.get(result.objectId);
+
+      if (beforeSend && !await beforeSend(result.objectId, result.collabType,
         requested?.databaseRestoreId ?? (result.collabType === Types.Database || result.collabType === Types.DatabaseRow
-          ? '00000000-0000-0000-0000-000000000000' : undefined))) continue;
+          ? '00000000-0000-0000-0000-000000000000' : undefined))) return;
       if (result.error) {
         Log.warn('[sync] HTTP full-sync result error', {
           objectId: result.objectId,
           collabType: result.collabType,
           error: result.error,
         });
-        continue;
+        return;
       }
 
       const missingUpdate = result.missingUpdate;
 
       if (!missingUpdate || missingUpdate.byteLength <= EMPTY_YJS_UPDATE_MAX_BYTES) {
-        continue;
+        return;
       }
 
       const context = refs.registeredContexts.current.get(result.objectId);
@@ -269,7 +275,7 @@ export function useBatchSync(
         Log.debug('[sync] HTTP full-sync missing update skipped: context not registered', {
           objectId: result.objectId,
         });
-        continue;
+        return;
       }
 
       try {
@@ -298,7 +304,7 @@ export function useBatchSync(
           error,
         });
       }
-    }
+    }));
   }, [refs]);
 
   const runBackgroundHttpSync = useCallback(async () => {

@@ -9,6 +9,8 @@ interface PendingRestore {
   version: string;
   idempotencyKey: string;
   jobId?: string;
+  /** Persisted before sending so an interrupted enqueue cannot become a new job. */
+  enqueueUncertain: boolean;
 }
 
 export function databaseHistoryError(error: unknown): string {
@@ -20,7 +22,9 @@ function readPending(key: string): PendingRestore | null {
     const value = JSON.parse(localStorage.getItem(key) || 'null') as PendingRestore | null;
 
     return value && typeof value.version === 'string' && typeof value.idempotencyKey === 'string' &&
-      (value.jobId === undefined || typeof value.jobId === 'string') ? value : null;
+      (value.jobId === undefined || typeof value.jobId === 'string')
+      // Older saved intents may already have reached the server.
+      ? { ...value, enqueueUncertain: value.enqueueUncertain !== false } : null;
   } catch {
     return null;
   }
@@ -70,7 +74,7 @@ export function useDatabaseHistoryRestore({
 
   const start = useCallback((version: string) => {
     if (pending || loadedStorageKey !== storageKey) return;
-    const next = { version, idempotencyKey: uuid() };
+    const next = { version, idempotencyKey: uuid(), enqueueUncertain: false };
 
     try {
       // Persist before sending: a lost enqueue response must reuse the same key.
@@ -93,7 +97,14 @@ export function useDatabaseHistoryRestore({
       let backoff = 1_000;
 
       while (!signal.aborted) {
+        const wasEnqueueUncertain = current.enqueueUncertain;
+
         try {
+          if (!current.jobId) {
+            current.enqueueUncertain = true;
+            localStorage.setItem(storageKey, JSON.stringify(current));
+          }
+
           const nextJob = current.jobId
             ? await getDatabaseRestoreJob(workspaceId, databaseId, current.jobId, signal)
             : await startDatabaseRestore(workspaceId, databaseId, current.version, current.idempotencyKey, signal);
@@ -134,10 +145,30 @@ export function useDatabaseHistoryRestore({
           setError(databaseHistoryError(failure));
           const details = failure as { httpStatus?: number; retryAfterSecs?: number };
 
-          // Keep the saved job/key for an explicit reopen after authentication or
-          // permissions recover. Do not turn an inaccessible job into a new restore.
+          // Release an intent only after a definitive first enqueue rejection.
+          // Accepted jobs, lost responses, and interrupted enqueues retain their
+          // identity even if a later request cannot find/access the job.
           if (details.httpStatus && details.httpStatus >= 400 && details.httpStatus < 500 &&
-              details.httpStatus !== 408 && details.httpStatus !== 409 && details.httpStatus !== 429) return;
+              details.httpStatus !== 408 && details.httpStatus !== 409 && details.httpStatus !== 429) {
+            if (!current.jobId && !wasEnqueueUncertain) {
+              try {
+                if (details.httpStatus === 401 || details.httpStatus === 403) {
+                  // Reopen after authentication/permissions recover with this key.
+                  current.enqueueUncertain = false;
+                  localStorage.setItem(storageKey, JSON.stringify(current));
+                } else {
+                  localStorage.removeItem(storageKey);
+                  setPending(null);
+                  setJob(null);
+                }
+              } catch (storageError) {
+                setError(databaseHistoryError(storageError));
+              }
+            }
+
+            return;
+          }
+
           backoff = details.retryAfterSecs !== undefined
             ? Math.max(1_000, details.retryAfterSecs * 1_000)
             : Math.min(backoff * 2, 30_000);

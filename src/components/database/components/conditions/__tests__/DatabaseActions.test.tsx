@@ -162,6 +162,26 @@ describe('DatabaseActions template support', () => {
     expect(screen.getByTestId('database-actions-search')).toBeTruthy();
   });
 
+  it.each([
+    [DatabaseViewLayout.Grid, false],
+    [DatabaseViewLayout.Board, false],
+    [DatabaseViewLayout.List, false],
+    [DatabaseViewLayout.Calendar, false],
+    [DatabaseViewLayout.Chart, false],
+    [DatabaseViewLayout.Gallery, true],
+    [DatabaseViewLayout.Feed, true],
+  ])('historical layout %s exposes search only when it consumes the query', (layout, searchable) => {
+    mockUseReadOnly.mockReturnValue(true);
+    mockUseDatabaseViewLayout.mockReturnValue(layout);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'historical-view', isDocumentBlock: false, dataSource: { type: 'history' },
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(<DatabaseActions />);
+
+    expect(Boolean(screen.queryByTestId('database-actions-search'))).toBe(searchable);
+  });
+
   it('matches the editable Gallery action order and accessible labels', () => {
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Gallery);
     mockUseDatabaseContext.mockReturnValue({

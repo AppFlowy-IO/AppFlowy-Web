@@ -136,7 +136,7 @@ function MoreActions({
   const user = useCurrentUserOptional();
   const sync = useSyncInternalOptional();
   const reloadDatabaseAfterRestore = sync?.reloadDatabaseAfterRestore;
-  const [databaseId, setDatabaseId] = useState<string>();
+  const [catalogDatabase, setCatalogDatabase] = useState<{ workspaceId: string; viewId: string; databaseId: string }>();
   const aiEnabled = useAIEnabled();
   const { selectionMode, onOpenSelectionMode } = useAIChatContext();
   const [hasMessages, setHasMessages] = useState(false);
@@ -209,23 +209,27 @@ function MoreActions({
   const isDatabasePage = !!view && isDatabaseLayout(view.layout) && (rowId === undefined || rowId === null);
   const showDatabaseHistory = databaseHistoryEnabled && isDatabasePage && !!reloadDatabaseAfterRestore && !!user?.uid;
   const showHistory = (pageHistoryEnabled && view?.layout === ViewLayout.Document) || showDatabaseHistory;
+  const historyActive = showDatabaseHistory && (open || historyOpen);
+  const lookupViewId = activeViewId || viewId;
+  const metadataDatabaseId = getDatabaseIdFromExtra(activeView) || getDatabaseIdFromExtra(view);
+  const databaseId = metadataDatabaseId || (
+    catalogDatabase?.workspaceId === workspaceId && catalogDatabase?.viewId === lookupViewId
+      ? catalogDatabase.databaseId : undefined
+  );
 
   useEffect(() => {
-    setDatabaseId(undefined);
-    if (!showDatabaseHistory || !workspaceId || (!open && !historyOpen)) return;
+    if (!historyActive || !workspaceId || metadataDatabaseId) return;
     let cancelled = false;
-    const metadataId = getDatabaseIdFromExtra(activeView) || getDatabaseIdFromExtra(view);
 
-    if (metadataId) {
-      setDatabaseId(metadataId);
-      return;
-    }
-
-    void getDatabaseIdFromWorkspaceCatalog(workspaceId, activeViewId || viewId)
-      .then((id) => { if (!cancelled && id) setDatabaseId(id); })
+    // Menu-to-history transitions and refreshed view objects keep the same
+    // lookup identity, so an open preview retains its selection and row store.
+    void getDatabaseIdFromWorkspaceCatalog(workspaceId, lookupViewId)
+      .then((id) => {
+        if (!cancelled && id) setCatalogDatabase({ workspaceId, viewId: lookupViewId, databaseId: id });
+      })
       .catch(() => { /* An unresolved identity must not fall back to the folder ID. */ });
     return () => { cancelled = true; };
-  }, [showDatabaseHistory, workspaceId, open, historyOpen, activeView, activeViewId, view, viewId]);
+  }, [historyActive, workspaceId, lookupViewId, metadataDatabaseId]);
 
   const eventEmitter = useEventEmitter();
   const isDocument = view?.layout === ViewLayout.Document;
