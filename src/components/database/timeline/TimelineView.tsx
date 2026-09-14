@@ -267,9 +267,11 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     [hasEndField, setting.endFieldId, setting.fieldId, updateStartEnd]
   );
 
-  const rowsRef = useRef(rows);
+  // Row lookups by id (bar press followers, editor titles) without rescans.
+  const rowById = useMemo(() => new Map(rows.map((row) => [row.rowId, row] as const)), [rows]);
+  const rowByIdRef = useRef(rowById);
 
-  rowsRef.current = rows;
+  rowByIdRef.current = rowById;
 
   const handleDragCommit = useCallback(
     (preview: TimelineDragPreview) => {
@@ -281,7 +283,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
         return;
       }
 
-      const byId = new Map(rowsRef.current.map((candidate) => [candidate.rowId, candidate] as const));
+      const byId = rowByIdRef.current;
       const row = byId.get(preview.rowId);
       // A timed row without an end keeps its synthetic length only while moving.
       const keepSingle = Boolean(row && !row.isRange && preview.mode === 'move');
@@ -322,7 +324,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     (event: ReactPointerEvent<HTMLElement>, row: TimelineRowModel, mode: TimelineDragMode) => {
       if (!permissions.editable || !row.start) return;
       const span = getBarSpan(row.start, row.end, row.allDay);
-      const byId = new Map(rowsRef.current.map((candidate) => [candidate.rowId, candidate] as const));
+      const byId = rowByIdRef.current;
       // Dependents move with the bar per the "Shift dependents" setting; each
       // carries the dependencies it has inside the moving set so "only when
       // overlapping" can cascade through the chain.
@@ -498,10 +500,12 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     writeLink(selectedLink.predecessorId, selectedLink.successorId, 'remove');
     setSelectedLink(null);
   }, [selectedLink, selectedLinkKey, setting.dependencyLinks, updateSetting, writeLink]);
-  const rowTitle = useCallback(
-    (rowId: string) => rowsRef.current.find((row) => row.rowId === rowId)?.title || t('grid.row.titlePlaceholder'),
-    [t]
-  );
+  const editorTitles = useMemo(() => {
+    if (!selectedLink) return null;
+    const titleOf = (rowId: string) => rowById.get(rowId)?.title || t('grid.row.titlePlaceholder');
+
+    return { predecessor: titleOf(selectedLink.predecessorId), successor: titleOf(selectedLink.successorId) };
+  }, [rowById, selectedLink, t]);
   const handleLinkPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>, row: TimelineRowModel, rect: BarRect) => {
       const index = rowIndexById.get(row.rowId);
@@ -630,7 +634,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
               className={cn(
                 // Grid-style header cell: the primary field name plus the table toggle.
                 'sticky left-0 z-30 flex h-full shrink-0 items-center border-b border-r border-border-primary bg-background-primary',
-                showSidebar ? 'justify-between pr-1' : 'justify-center'
+                showSidebar ? 'justify-between' : 'justify-center'
               )}
               // Line the field name up with the row titles, which sit after the
               // 40px hover gutter when the table is editable.
@@ -656,6 +660,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                   <Button
                     variant='ghost'
                     size='icon-sm'
+                    className={showSidebar ? 'mx-0.5 shrink-0' : undefined}
                     aria-label={t('timeline.settings.showTable', { defaultValue: 'Show table' })}
                     aria-pressed={showSidebar}
                     data-testid='timeline-toggle-table'
@@ -705,12 +710,12 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                 selectedKey={selectedLinkKey}
               />
             ) : null}
-            {selectedLink && selectedLinkMeta ? (
+            {selectedLink && selectedLinkMeta && editorTitles ? (
               <TimelineLinkEditor
                 selection={editorSelection}
                 link={selectedLinkMeta}
-                predecessorTitle={rowTitle(selectedLink.predecessorId)}
-                successorTitle={rowTitle(selectedLink.successorId)}
+                predecessorTitle={editorTitles.predecessor}
+                successorTitle={editorTitles.successor}
                 readOnly={!permissions.editable}
                 onChange={handleLinkChange}
                 onRemove={handleLinkRemove}
@@ -863,6 +868,8 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                       <GridCalculateRowCell fieldId={fieldId} rowOrders={rowOrders} />
                     </div>
                   ))}
+                  {/* Same trailing control slot as the header toggle and the rows' open button. */}
+                  <div aria-hidden className='w-7 shrink-0' />
                 </div>
               </div>
             ) : null}

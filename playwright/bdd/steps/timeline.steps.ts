@@ -613,6 +613,18 @@ Then('the docked table is {int} px wider', async ({ page }, delta) => {
     .toBe(before + delta);
 });
 
+Then('the {string} column header, cells and calculation line up', async ({ page }, name) => {
+  const fieldId = TABLE_FIELD_ID[name];
+  const header = await page.getByTestId(`timeline-table-header-${fieldId}`).boundingBox();
+  const cell = await page.getByTestId(`timeline-table-cell-${rowId(page, 'Design')}-${fieldId}`).boundingBox();
+  const calculation = await page.getByTestId(`timeline-calculation-${fieldId}`).boundingBox();
+
+  if (!header || !cell || !calculation) throw new Error(`Column ${name} is not fully rendered`);
+  expect(cell.x).toBeCloseTo(header.x, 0);
+  expect(calculation.x).toBeCloseTo(header.x, 0);
+  expect(cell.width).toBeCloseTo(header.width, 0);
+});
+
 When('I set the {string} column calculation to {string}', async ({ page }, name, calculation) => {
   await page.getByTestId(`timeline-calculation-${TABLE_FIELD_ID[name]}`).click();
   await page.getByRole('menuitem', { name: calculation, exact: true }).click();

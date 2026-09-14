@@ -57,8 +57,12 @@ export function useTimelineLinkDrag({ scrollerRef, sidebarWidth, onCommit }: Use
     [scrollerRef, sidebarWidth]
   );
 
+  // Listeners are bound once per drag (a boolean dependency); every move only
+  // updates the preview state, so nothing is re-registered per pointer event.
+  const dragging = link !== null;
+
   useEffect(() => {
-    if (!link) return;
+    if (!dragging) return;
 
     const handleMove = (event: PointerEvent) => {
       const active = activeRef.current;
@@ -109,7 +113,7 @@ export function useTimelineLinkDrag({ scrollerRef, sidebarWidth, onCommit }: Use
       window.removeEventListener('pointercancel', handleCancel);
       window.removeEventListener('keydown', handleKey, true);
     };
-  }, [link, onCommit, toCanvas]);
+  }, [dragging, onCommit, toCanvas]);
 
   /** Begin on the handle's pointer-down; `from` is the source bar's right edge in canvas coordinates. */
   const startLink = useCallback(

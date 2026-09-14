@@ -113,12 +113,24 @@ export const TimelineSidebarRow = memo(
           {icon ? <GalleryRowIcon icon={icon} /> : null}
           <span className='truncate'>{row.title || t('grid.row.titlePlaceholder', { defaultValue: 'Untitled' })}</span>
         </button>
+        {tableFieldIds.map((fieldId) => (
+          <div
+            key={fieldId}
+            className='flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2'
+            style={{ width: TIMELINE_TABLE_COLUMN_WIDTH }}
+            data-testid={`timeline-table-cell-${row.rowId}-${fieldId}`}
+          >
+            <CardField rowId={row.rowId} fieldId={fieldId} />
+          </div>
+        ))}
+        {/* Trailing control slot, the same width as the header's table toggle, so
+            the property columns line up with their headers. */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant='ghost'
               size='icon-sm'
-              className='mr-1 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/list-row:opacity-100'
+              className='mx-0.5 shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/list-row:opacity-100'
               aria-label={t('timeline.openRow', { defaultValue: 'Open' })}
               data-testid={`timeline-open-row-${row.rowId}`}
               onClick={(event) => {
@@ -131,16 +143,6 @@ export const TimelineSidebarRow = memo(
           </TooltipTrigger>
           <TooltipContent>{t('timeline.openRow', { defaultValue: 'Open' })}</TooltipContent>
         </Tooltip>
-        {tableFieldIds.map((fieldId) => (
-          <div
-            key={fieldId}
-            className='flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2'
-            style={{ width: TIMELINE_TABLE_COLUMN_WIDTH }}
-            data-testid={`timeline-table-cell-${row.rowId}-${fieldId}`}
-          >
-            <CardField rowId={row.rowId} fieldId={fieldId} />
-          </div>
-        ))}
         {dnd.closestEdge ? <DropRowIndicator edge={dnd.closestEdge} /> : null}
         {dnd.clearSortsDialog}
       </div>

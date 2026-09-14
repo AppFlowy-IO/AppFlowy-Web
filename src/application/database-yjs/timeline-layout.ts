@@ -59,6 +59,7 @@ function linkMap(value: unknown): Record<string, TimelineDependencyLink> {
 }
 
 function sameLinks(a: Record<string, TimelineDependencyLink>, b: Record<string, TimelineDependencyLink>) {
+  if (a === b) return true;
   const keys = Object.keys(a);
 
   return (
@@ -250,7 +251,8 @@ export function createTimelineLayoutStore(
       use24Hour
     );
   let snapshot = read();
-  const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((id, index) => id === b[index]);
+  const sameIds = (a: string[], b: string[]) =>
+    a === b || (a.length === b.length && a.every((id, index) => id === b[index]));
   const getSnapshot = () => {
     const next = read();
 
