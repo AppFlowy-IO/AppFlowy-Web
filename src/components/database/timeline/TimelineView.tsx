@@ -17,6 +17,7 @@ import {
   useDatabaseViewId,
   useFieldSelector,
   useDatabaseFields,
+  useDatabaseView,
   useFieldsSelector,
   useNavigateToRow,
   usePrimaryFieldId,
@@ -24,7 +25,12 @@ import {
 import { useUpdateAnyCellDispatch, useUpdateStartEndTimeCell } from '@/application/database-yjs/dispatch/cell';
 import { useUpdateRelationCellDispatch } from '@/application/database-yjs/dispatch/relation';
 import { useSetUpTimelineDependenciesDispatch } from '@/application/database-yjs/dispatch/timeline-dependencies';
-import { useNewRowDispatch, useReorderRowDispatch } from '@/application/database-yjs/dispatch/row';
+import {
+  useDuplicateRowDispatch,
+  useNewRowDispatch,
+  useReorderRowDispatch,
+} from '@/application/database-yjs/dispatch/row';
+import { getGroupRowCellsData } from '@/application/database-yjs/group-row';
 import { useUpdateTimelineSetting } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as CollapseIcon } from '@/assets/icons/double_arrow_left.svg';
@@ -82,7 +88,7 @@ import { TimelineGrid } from './TimelineGrid';
 import { TimelineHeader } from './TimelineHeader';
 import { TimelineGroupFooter, TimelineGroupRow } from './TimelineGroupRow';
 import { useTimelineGrouping } from './TimelineGroupingContext';
-import { TimelineRow } from './TimelineRow';
+import { TimelineRow, TimelineRowActions } from './TimelineRow';
 
 // Calendar cards carry only the title; a timeline bar adds chips solely for
 // properties the user set to "always shown" in this view's Properties menu.
@@ -152,6 +158,38 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   // Bars and arrows are addressed by item index; non-row items carry no id.
   const itemRowIds = useMemo(() => items.map((item) => (item.kind === 'row' ? item.row.rowId : '')), [items]);
   const reorderRow = useReorderRowDispatch();
+  // The row gutter's actions, created once here rather than by every row:
+  // their dispatch hooks subscribe to the whole database context, and the
+  // values are only read inside click handlers.
+  const duplicateRow = useDuplicateRowDispatch();
+  const databaseView = useDatabaseView();
+  // Everything the actions read at click time lives in a ref, so the actions
+  // object itself never changes and never invalidates the memoized rows.
+  const rowActionsDepsRef = useRef({ rowOrders, newRow, duplicateRow, databaseFields, databaseView });
+
+  rowActionsDepsRef.current = { rowOrders, newRow, duplicateRow, databaseFields, databaseView };
+  const rowActions = useMemo<TimelineRowActions>(() => {
+    const cells = (groupFieldId?: string, groupId?: string) => {
+      const deps = rowActionsDepsRef.current;
+
+      return getGroupRowCellsData(deps.databaseFields, groupFieldId, groupId, deps.databaseView);
+    };
+
+    return {
+      addAbove: (rowId, groupFieldId, groupId) => {
+        const deps = rowActionsDepsRef.current;
+        const index = deps.rowOrders.findIndex((row) => row.id === rowId);
+
+        return deps.newRow({
+          beforeRowId: index > 0 ? deps.rowOrders[index - 1]?.id : undefined,
+          cellsData: cells(groupFieldId, groupId),
+        });
+      },
+      addBelow: (rowId, groupFieldId, groupId) =>
+        rowActionsDepsRef.current.newRow({ beforeRowId: rowId, cellsData: cells(groupFieldId, groupId) }),
+      duplicate: (rowId) => rowActionsDepsRef.current.duplicateRow(rowId),
+    };
+  }, []);
   // Same reorder semantics as the List view: drop above / below a row, then
   // tell the view which row now precedes the moved one.
   const handleDropRow = useCallback(
@@ -792,7 +830,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                     progressPreview={isDragged && preview?.mode === 'progress' ? preview.progress : undefined}
                     anyDragging={dragging}
                     formatTime={formatTimeDisplay}
-                    rowOrders={rowOrders}
+                    rowActions={rowActions}
                     tableFieldIds={tableFieldIds}
                     onOpen={handleOpen}
                     onSelect={setSelectedRowId}

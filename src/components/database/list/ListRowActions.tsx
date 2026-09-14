@@ -26,81 +26,41 @@ import { useListHasSorts } from './ListSortState';
 
 export const getListGroupCellsData = getGroupRowCellsData;
 
-function useListRowActions({
-  groupFieldId,
-  groupId,
-  rowId,
-  rowOrders,
-}: {
-  groupFieldId?: string;
-  groupId?: string;
-  rowId: string;
-  rowOrders: Row[];
-}) {
-  const fields = useDatabaseFields();
-  const view = useDatabaseView();
-  const createRow = useNewRowDispatch();
-  const duplicateRow = useDuplicateRowDispatch();
-  const [loadingAction, setLoadingAction] = useState<'above' | 'below' | 'duplicate' | null>(null);
-
-  const addBelow = useCallback(async () => {
-    setLoadingAction('below');
-    try {
-      await createRow({ beforeRowId: rowId, cellsData: getListGroupCellsData(fields, groupFieldId, groupId, view) });
-    } finally {
-      setLoadingAction(null);
-    }
-  }, [createRow, fields, groupFieldId, groupId, rowId, view]);
-
-  const addAbove = useCallback(async () => {
-    const rowIndex = rowOrders.findIndex((row) => row.id === rowId);
-    const previousRowId = rowIndex > 0 ? rowOrders[rowIndex - 1]?.id : undefined;
-
-    setLoadingAction('above');
-    try {
-      await createRow({
-        beforeRowId: previousRowId,
-        cellsData: getListGroupCellsData(fields, groupFieldId, groupId, view),
-      });
-    } finally {
-      setLoadingAction(null);
-    }
-  }, [createRow, fields, groupFieldId, groupId, rowId, rowOrders, view]);
-
-  const duplicate = useCallback(async () => {
-    setLoadingAction('duplicate');
-    try {
-      await duplicateRow(rowId);
-    } finally {
-      setLoadingAction(null);
-    }
-  }, [duplicateRow, rowId]);
-
-  return { addAbove, addBelow, duplicate, loadingAction };
+/** The row-creation callbacks a gutter menu needs; how they are produced is the caller's business. */
+export interface RowActionCallbacks {
+  addAbove: () => Promise<unknown>;
+  addBelow: () => Promise<unknown>;
+  duplicate: () => Promise<unknown>;
 }
 
-export function ListRowActions({
+/**
+ * The hover `+` / `⋮⋮` gutter with its menu, loading and confirmation state.
+ * Takes the row's callbacks as props so a view rendering many rows can create
+ * the dispatch hooks once and hand each row a bound closure, instead of every
+ * row subscribing to the database context on its own.
+ */
+export function RowActionsMenu({
   dragHandleRef,
-  groupFieldId,
-  groupId,
   reorderable,
   rowId,
-  rowOrders,
-}: {
+  addAbove,
+  addBelow,
+  duplicate,
+}: RowActionCallbacks & {
   dragHandleRef?: (element: HTMLDivElement | null) => void;
-  groupFieldId?: string;
-  groupId?: string;
   reorderable: boolean;
   rowId: string;
-  rowOrders: Row[];
 }) {
   const { t } = useTranslation();
-  const { addAbove, addBelow, duplicate, loadingAction } = useListRowActions({
-    groupFieldId,
-    groupId,
-    rowId,
-    rowOrders,
-  });
+  const [loadingAction, setLoadingAction] = useState<'above' | 'below' | 'duplicate' | null>(null);
+  const run = useCallback(async (kind: 'above' | 'below' | 'duplicate', action: () => Promise<unknown>) => {
+    setLoadingAction(kind);
+    try {
+      await action();
+    } finally {
+      setLoadingAction(null);
+    }
+  }, []);
   const hasSorts = useListHasSorts();
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -127,21 +87,21 @@ export function ListRowActions({
         label: t('grid.row.insertRecordAbove'),
         icon: UpIcon,
         loading: loadingAction === 'above',
-        run: () => runAfterSortCheck(() => void addAbove()),
+        run: () => runAfterSortCheck(() => void run('above', addAbove)),
       },
       {
         testId: 'row-menu-insert-below',
         label: t('grid.row.insertRecordBelow'),
         icon: PlusIcon,
         loading: loadingAction === 'below',
-        run: () => runAfterSortCheck(() => void addBelow()),
+        run: () => runAfterSortCheck(() => void run('below', addBelow)),
       },
       {
         testId: 'row-menu-duplicate',
         label: t('grid.row.duplicate'),
         icon: DuplicateIcon,
         loading: loadingAction === 'duplicate',
-        run: () => void duplicate(),
+        run: () => void run('duplicate', duplicate),
       },
       {
         testId: 'row-menu-delete',
@@ -152,7 +112,7 @@ export function ListRowActions({
         destructive: true,
       },
     ],
-    [addAbove, addBelow, duplicate, loadingAction, runAfterSortCheck, t]
+    [addAbove, addBelow, duplicate, loadingAction, run, runAfterSortCheck, t]
   );
 
   return (
@@ -168,7 +128,7 @@ export function ListRowActions({
           loading={loadingAction === 'above' || loadingAction === 'below'}
           onClick={(event) => {
             event.stopPropagation();
-            runAfterSortCheck(() => void addBelow());
+            runAfterSortCheck(() => void run('below', addBelow));
           }}
           size='icon-sm'
           tabIndex={-1}
@@ -250,6 +210,54 @@ export function ListRowActions({
       ) : null}
       {deleteOpen ? <DeleteRowConfirm onClose={() => setDeleteOpen(false)} open rowIds={[rowId]} /> : null}
     </>
+  );
+}
+
+/** The List view's gutter: the same menu, with each row creating its own dispatches. */
+export function ListRowActions({
+  dragHandleRef,
+  groupFieldId,
+  groupId,
+  reorderable,
+  rowId,
+  rowOrders,
+}: {
+  dragHandleRef?: (element: HTMLDivElement | null) => void;
+  groupFieldId?: string;
+  groupId?: string;
+  reorderable: boolean;
+  rowId: string;
+  rowOrders: Row[];
+}) {
+  const fields = useDatabaseFields();
+  const view = useDatabaseView();
+  const createRow = useNewRowDispatch();
+  const duplicateRow = useDuplicateRowDispatch();
+
+  const addBelow = useCallback(
+    () => createRow({ beforeRowId: rowId, cellsData: getListGroupCellsData(fields, groupFieldId, groupId, view) }),
+    [createRow, fields, groupFieldId, groupId, rowId, view]
+  );
+  const addAbove = useCallback(() => {
+    const rowIndex = rowOrders.findIndex((row) => row.id === rowId);
+    const previousRowId = rowIndex > 0 ? rowOrders[rowIndex - 1]?.id : undefined;
+
+    return createRow({
+      beforeRowId: previousRowId,
+      cellsData: getListGroupCellsData(fields, groupFieldId, groupId, view),
+    });
+  }, [createRow, fields, groupFieldId, groupId, rowId, rowOrders, view]);
+  const duplicate = useCallback(() => duplicateRow(rowId), [duplicateRow, rowId]);
+
+  return (
+    <RowActionsMenu
+      dragHandleRef={dragHandleRef}
+      reorderable={reorderable}
+      rowId={rowId}
+      addAbove={addAbove}
+      addBelow={addBelow}
+      duplicate={duplicate}
+    />
   );
 }
 

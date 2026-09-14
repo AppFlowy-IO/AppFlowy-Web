@@ -1,13 +1,13 @@
-import { memo, MutableRefObject, useRef } from 'react';
+import { memo, MutableRefObject, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Row, useRowMetaSelector } from '@/application/database-yjs';
+import { useRowMetaSelector } from '@/application/database-yjs';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/expand.svg';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import { type Edge, useRowDnd } from '@/components/database/components/drag-and-drop/useRowDnd';
 import { CardField } from '@/components/database/components/field/CardField';
 import { GalleryRowIcon } from '@/components/database/gallery/GalleryRowIcon';
-import { ListRowActions } from '@/components/database/list/ListRowActions';
+import { RowActionsMenu } from '@/components/database/list/ListRowActions';
 import { useListHasSorts } from '@/components/database/list/ListSortState';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 
 import { TIMELINE_TABLE_COLUMN_WIDTH } from './constants';
 import { TimelineRowModel } from './hooks/useTimelineRows';
+import type { TimelineRowActions } from './TimelineRow';
 
 export const TIMELINE_ROW_DRAG_TYPE = 'database-timeline-row';
 
@@ -23,8 +24,8 @@ interface TimelineSidebarRowProps {
   width: number;
   editable: boolean;
   selected?: boolean;
-  /** View-ordered rows, needed by "insert above". */
-  rowOrders: Row[];
+  /** The gutter's insert / duplicate actions, owned by the view. */
+  rowActions: TimelineRowActions;
   /** Properties shown as columns after the title. */
   tableFieldIds: string[];
   /** When grouped: inserted rows inherit this group's value. */
@@ -48,7 +49,7 @@ export const TimelineSidebarRow = memo(
     width,
     editable,
     selected,
-    rowOrders,
+    rowActions,
     tableFieldIds,
     groupFieldId,
     groupId,
@@ -63,6 +64,16 @@ export const TimelineSidebarRow = memo(
     const cellRef = useRef<HTMLDivElement | null>(null);
     const dragHandleRef = useRef<HTMLDivElement | null>(null);
     const hasSorts = useListHasSorts();
+    // Bound per row so the shared menu needs no row-level dispatch hooks.
+    const addAbove = useCallback(
+      () => rowActions.addAbove(row.rowId, groupFieldId, groupId),
+      [groupFieldId, groupId, row.rowId, rowActions]
+    );
+    const addBelow = useCallback(
+      () => rowActions.addBelow(row.rowId, groupFieldId, groupId),
+      [groupFieldId, groupId, row.rowId, rowActions]
+    );
+    const duplicate = useCallback(() => rowActions.duplicate(row.rowId), [row.rowId, rowActions]);
     const dnd = useRowDnd({
       dragHandleRef,
       dropTargetRef,
@@ -87,15 +98,15 @@ export const TimelineSidebarRow = memo(
         data-testid={`timeline-sidebar-cell-${row.rowId}`}
       >
         {editable ? (
-          <ListRowActions
+          <RowActionsMenu
             dragHandleRef={(element) => {
               dragHandleRef.current = element;
             }}
             reorderable={Boolean(onDropRow)}
             rowId={row.rowId}
-            rowOrders={rowOrders}
-            groupFieldId={groupFieldId}
-            groupId={groupId}
+            addAbove={addAbove}
+            addBelow={addBelow}
+            duplicate={duplicate}
           />
         ) : (
           <div className='w-2 shrink-0' />

@@ -1,7 +1,7 @@
 import { memo, MouseEvent, PointerEvent as ReactPointerEvent, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Column, Row } from '@/application/database-yjs';
+import { Column } from '@/application/database-yjs';
 import { ReactComponent as ArrowLeft } from '@/assets/icons/arrow_left.svg';
 import { ReactComponent as ArrowRight } from '@/assets/icons/arrow_right.svg';
 import { type Edge } from '@/components/database/components/drag-and-drop/useRowDnd';
@@ -13,6 +13,13 @@ import { TimelineRowModel } from './hooks/useTimelineRows';
 import { BarRect } from './scale/geometry';
 import { TimelineBar, TimelineBarDragLabel } from './TimelineBar';
 import { TimelineSidebarRow } from './TimelineSidebarRow';
+
+/** Row-creation actions shared by every table row; the view owns the dispatches. */
+export interface TimelineRowActions {
+  addAbove: (rowId: string, groupFieldId?: string, groupId?: string) => Promise<unknown>;
+  addBelow: (rowId: string, groupFieldId?: string, groupId?: string) => Promise<unknown>;
+  duplicate: (rowId: string) => Promise<unknown>;
+}
 
 interface TimelineRowProps {
   row: TimelineRowModel;
@@ -34,8 +41,8 @@ interface TimelineRowProps {
   anyDragging?: boolean;
   /** User-preference time formatter shared by all bars. */
   formatTime: (date: Date) => string;
-  /** View-ordered rows for the table's insert / reorder actions. */
-  rowOrders: Row[];
+  /** The table gutter's insert / duplicate actions. */
+  rowActions: TimelineRowActions;
   /** Properties shown as table columns after the title. */
   tableFieldIds: string[];
   /** When grouped: the group field and this row's group, so inserts land in the same group. */
@@ -106,7 +113,7 @@ export const TimelineRow = memo(
     progressPreview,
     anyDragging,
     formatTime,
-    rowOrders,
+    rowActions,
     tableFieldIds,
     groupFieldId,
     groupId,
@@ -132,6 +139,14 @@ export const TimelineRow = memo(
         onBarPointerDown?.(event, row, mode);
       },
       [onBarPointerDown, onSelect, row]
+    );
+    // Stable per row so a row re-render (scroll pill, drag state) doesn't
+    // re-render the memoized bar.
+    const handleLinkPointerDown = useCallback(
+      (event: ReactPointerEvent<HTMLElement>) => {
+        if (rect) onLinkPointerDown?.(event, row, rect);
+      },
+      [onLinkPointerDown, rect, row]
     );
 
     const handleCanvasClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -160,7 +175,7 @@ export const TimelineRow = memo(
             width={sidebarWidth}
             editable={editable}
             selected={selected}
-            rowOrders={rowOrders}
+            rowActions={rowActions}
             tableFieldIds={tableFieldIds}
             groupFieldId={groupFieldId}
             groupId={groupId}
@@ -209,7 +224,7 @@ export const TimelineRow = memo(
               formatTime={formatTime}
               linkable={linkable}
               linkTarget={linkTarget}
-              onLinkPointerDown={onLinkPointerDown ? (event) => onLinkPointerDown(event, row, rect) : undefined}
+              onLinkPointerDown={onLinkPointerDown ? handleLinkPointerDown : undefined}
               onOpen={onOpen}
               onPointerDown={handleBarPointerDown}
             />
