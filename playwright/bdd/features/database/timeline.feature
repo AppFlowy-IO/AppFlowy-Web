@@ -61,6 +61,7 @@ Feature: Timeline view interactions
     And the hover card starts at the "Design" bar and clears the docked table
     When I click the table row "Build"
     Then the "Build" row and bar are selected
+    And the selected "Build" table row stays opaque
     When I click the empty canvas of the "Build" row
     Then no timeline row is selected
     When I open the table row "Build"

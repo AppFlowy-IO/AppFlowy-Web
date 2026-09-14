@@ -91,7 +91,10 @@ export const TimelineSidebarRow = memo(
         className={cn(
           // `group/list-row` reveals the shared row actions on hover, as in the List view.
           'group/list-row sticky left-0 z-10 flex h-full shrink-0 items-center overflow-hidden border-b border-r border-border-primary bg-background-primary text-sm text-text-primary',
-          selected && 'bg-fill-theme-select',
+          // The selection tint is translucent: paint it over the opaque
+          // background rather than instead of it, or the bar and arrows
+          // scrolled under the docked table show through.
+          selected && 'before:pointer-events-none before:absolute before:inset-0 before:bg-fill-theme-select',
           dnd.dragging && 'opacity-40'
         )}
         style={{ width }}

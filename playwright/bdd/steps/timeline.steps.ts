@@ -356,6 +356,18 @@ Then('the {string} row and bar are selected', async ({ page }, title) => {
   await expect(TimelineSelectors.bar(page, id)).toHaveAttribute('data-selected', 'true');
 });
 
+Then('the selected {string} table row stays opaque', async ({ page }, title) => {
+  // A translucent selection tint would let a bar scrolled under the docked
+  // table show through; the cell itself must keep an opaque background.
+  const background = await page
+    .getByTestId(`timeline-sidebar-cell-${rowId(page, title)}`)
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  // `rgb(...)` is opaque; `rgba(r, g, b, a)` only when a is 1.
+  const alpha = background.startsWith('rgba(') ? Number(background.slice(5, -1).split(',')[3]) : 1;
+
+  expect(alpha, `background ${background} must be opaque`).toBe(1);
+});
+
 When('I click the empty canvas of the {string} row', async ({ page }, title) => {
   // Far right of the visible canvas, well clear of any bar.
   const view = await TimelineSelectors.view(page).boundingBox();

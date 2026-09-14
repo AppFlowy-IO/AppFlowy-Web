@@ -191,7 +191,7 @@ export const TimelineRow = memo(
           <div
             className={cn(
               'sticky left-0 z-10 h-full shrink-0 border-b border-r border-border-primary bg-background-primary',
-              selected && 'bg-fill-theme-select'
+              selected && 'before:pointer-events-none before:absolute before:inset-0 before:bg-fill-theme-select'
             )}
             style={{ width: sidebarWidth }}
           />
