@@ -32,6 +32,9 @@ import {
   injectFieldDirect,
   loginAndCreateCalendarWithRows,
   MONTH_COLUMN_WIDTH,
+  pressAndMoveBar,
+  readRowWrites,
+  startCountingRowWrites,
   readProgressPercent,
   setTextCellDirect,
   TIMELINE_SIDEBAR_WIDTH,
@@ -715,10 +718,6 @@ Then('the timeline has no group headers', async ({ page }) => {
 
 // --- Dependency setup, direction and link editing ---------------------------
 
-Then('the {string} bar starts {int} columns after the {string} bar', async ({ page }, title, columns, other) => {
-  await expectBarX(page, title, (await barBox(page, other)).x + columns * MONTH_COLUMN_WIDTH);
-});
-
 When('I set up dependencies from the timeline settings', async ({ page }) => {
   await chooseTimelineSettingsOption(page, 'timeline-set-up-dependencies');
 });
@@ -821,6 +820,43 @@ When('I set the link lag to {int} days', async ({ page }, days) => {
 When('I remove the dependency from the link editor', async ({ page }) => {
   await page.getByTestId('timeline-link-remove').click();
   await expect(page.getByTestId('timeline-link-editor')).toHaveCount(0);
+});
+
+// --- Writes happen only on drop ----------------------------------------------
+
+When('I start counting writes to {string} and {string}', async ({ page }, first, second) => {
+  await startCountingRowWrites(page, [rowId(page, first), rowId(page, second)]);
+});
+
+When('I press the {string} bar and move it {int} columns later without releasing', async ({ page }, title, columns) => {
+  await remember(page, 'Design', 'Build');
+  await pressAndMoveBar(page, title, columns * MONTH_COLUMN_WIDTH);
+});
+
+Then('the {string} and {string} bars have moved {int} columns on screen', async ({ page }, first, second, columns) => {
+  for (const title of [first, second]) {
+    await expectBarX(page, title, before(page, title).x + columns * MONTH_COLUMN_WIDTH);
+  }
+});
+
+Then('no writes have reached {string} or {string}', async ({ page }, first, second) => {
+  // Give any stray write time to land before asserting nothing did.
+  await page.waitForTimeout(500);
+  const writes = await readRowWrites(page);
+
+  expect(writes[rowId(page, first)]).toBe(0);
+  expect(writes[rowId(page, second)]).toBe(0);
+});
+
+When('I release the pointer', async ({ page }) => {
+  await page.mouse.up();
+});
+
+Then('writes have reached {string} and {string}', async ({ page }, first, second) => {
+  await expect.poll(async () => (await readRowWrites(page))[rowId(page, first)], { timeout: 10_000 }).toBeGreaterThan(0);
+  await expect
+    .poll(async () => (await readRowWrites(page))[rowId(page, second)], { timeout: 10_000 })
+    .toBeGreaterThan(0);
 });
 
 Then('the timeline draws {int} dependency arrow', async ({ page }, count) => {

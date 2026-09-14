@@ -115,24 +115,21 @@ describe('applyDragDelta with dependencies and progress', () => {
     ]);
   });
 
-  test('a bar cannot move or start before its dependencies, and followers only travel the clamped distance', () => {
+  test('a dependent may be dragged over or before its dependency; only its own followers move', () => {
     const move = applyDragDelta(
       geometry,
-      { ...span('b', 10, 2), mode: 'move', ...keepGap, minStart: local(2020, 11, 8), followers: [span('c', 14, 1)] },
+      { ...span('b', 10, 2), mode: 'move', ...keepGap, followers: [span('c', 14, 1)] },
       -columnWidth * 5
     );
 
-    expect(move.start).toEqual(local(2020, 11, 8));
-    expect(move.endExclusive).toEqual(local(2020, 11, 10));
-    expect(move.followers[0].start).toEqual(local(2020, 11, 12));
+    // No clamp: the bar lands where it is dropped and its follower keeps the gap.
+    expect(move.start).toEqual(local(2020, 11, 5));
+    expect(move.endExclusive).toEqual(local(2020, 11, 7));
+    expect(move.followers[0].start).toEqual(local(2020, 11, 9));
 
-    const resize = applyDragDelta(
-      geometry,
-      { ...span('b', 10, 2), mode: 'resize-start', minStart: local(2020, 11, 8) },
-      -columnWidth * 5
-    );
+    const resize = applyDragDelta(geometry, { ...span('b', 10, 2), mode: 'resize-start' }, -columnWidth * 5);
 
-    expect(resize.start).toEqual(local(2020, 11, 8));
+    expect(resize.start).toEqual(local(2020, 11, 5));
     expect(resize.followers).toEqual([]);
   });
 
@@ -193,14 +190,13 @@ describe('applyDragDelta with dependencies and progress', () => {
     expect(grow.followers[0].start).toEqual(local(2020, 11, 11));
   });
 
-  test('"never" leaves followers alone and lets a dependent be dragged before its dependency', () => {
+  test('"never" leaves followers alone', () => {
     const preview = applyDragDelta(
       geometry,
       {
         ...span('b', 10, 2),
         mode: 'move',
         shift: TimelineDependencyShift.Never,
-        minStart: local(2020, 11, 8),
         followers: [{ ...span('c', 14, 1), predecessors: [fs('b')] }],
       },
       -columnWidth * 5
@@ -308,23 +304,6 @@ describe('dependency direction and per-link metadata', () => {
 
     // a now starts on the 9th; b only has to start with it, not after it.
     expect(startToStart.followers[0].start).toEqual(local(2020, 11, 9));
-  });
-
-  test('end-type links bound a moved bar through minEnd', () => {
-    const span = (rowId: string, day: number, days: number) => ({
-      rowId,
-      allDay: true,
-      start: local(2020, 11, day),
-      endExclusive: local(2020, 11, day + days),
-    });
-    const preview = applyDragDelta(
-      geometry,
-      { ...span('b', 12, 2), mode: 'move', minEnd: local(2020, 11, 10) },
-      -columnWidth * 8
-    );
-
-    // The 2-day bar may not end before the 10th, so it stops at the 8th.
-    expect(preview.start).toEqual(local(2020, 11, 8));
   });
 });
 

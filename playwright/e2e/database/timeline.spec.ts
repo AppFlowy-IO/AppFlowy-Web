@@ -170,13 +170,14 @@ test.describe('Timeline dependencies and progress', () => {
     await expect.poll(async () => (await barBox(page, 'Design')).box.x, { timeout: 10_000 }).toBeCloseTo(designBefore.box.x, 0);
     await expect(page.locator('[data-testid="timeline-arrow"]')).toHaveCount(1);
 
-    // A finish-to-start dependent cannot be dragged before its dependency ends
-    // (Design is one day long, so Build stops one column after Design starts).
+    // As in Notion, a dependent is never clamped by its dependency: dragged six
+    // columns earlier from two days after Design, Build lands four columns before it.
     await dragBy(page, buildBefore.box.x + buildBefore.box.width / 2, buildBefore.box.y + buildBefore.box.height / 2, -columnWidth * 6);
     // Compare against Design's live position: the drag may auto-scroll the canvas.
     await expect
       .poll(async () => (await barBox(page, 'Build')).box.x - (await barBox(page, 'Design')).box.x, { timeout: 10_000 })
-      .toBeCloseTo(columnWidth, 0);
+      .toBeCloseTo(-columnWidth * 4, 0);
+    await expect(page.locator('[data-testid="timeline-arrow"]')).toHaveCount(1);
 
     // Resize Design to three days so the progress handle has room, then drag it.
     const endHandle = page.getByTestId(`timeline-handle-end-${designId}`);

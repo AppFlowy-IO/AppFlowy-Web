@@ -265,3 +265,40 @@ export async function clickRowCanvas(page: Page, rowId: string, offset = 120) {
   if (!rowBox || !viewBox) throw new Error('Timeline row is not visible');
   await page.mouse.click(viewBox.x + TIMELINE_SIDEBAR_WIDTH + offset, rowBox.y + rowBox.height / 2);
 }
+
+/** Count Yjs updates applied to the given row docs from now on (see `readRowWrites`). */
+export async function startCountingRowWrites(page: Page, rowIds: string[]) {
+  await page.evaluate(async (rowIds) => {
+    const win = window as unknown as { __TEST_DATABASE_CONTEXT__: any; __ROW_WRITES__?: Record<string, number> };
+    const ctx = win.__TEST_DATABASE_CONTEXT__;
+    const counts: Record<string, number> = {};
+
+    for (const rowId of rowIds) {
+      const rowDoc = ctx.rowMap?.[rowId] ?? (await ctx.ensureRow(rowId));
+
+      counts[rowId] = 0;
+      rowDoc.on('update', () => {
+        counts[rowId] += 1;
+      });
+    }
+
+    win.__ROW_WRITES__ = counts;
+  }, rowIds);
+}
+
+export async function readRowWrites(page: Page): Promise<Record<string, number>> {
+  return page.evaluate(() => (window as unknown as { __ROW_WRITES__?: Record<string, number> }).__ROW_WRITES__ ?? {});
+}
+
+/** Press a bar and travel `dx` pixels in steps, leaving the pointer down. */
+export async function pressAndMoveBar(page: Page, title: string, dx: number) {
+  const box = await barBox(page, title);
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (let step = 1; step <= 6; step += 1) {
+    await page.mouse.move(x + (dx * step) / 6, y);
+  }
+}

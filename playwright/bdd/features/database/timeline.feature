@@ -75,7 +75,7 @@ Feature: Timeline view interactions
     When I show the timeline table
     Then the timeline table lists 3 rows
 
-  Scenario: Dependencies draw arrows, dependents keep their gap, and a bar cannot start before its dependency
+  Scenario: Dependencies draw arrows, dependents keep their gap, and a dependent may be dragged over its dependency
     Given "Build" depends on "Design" through a relation field
     And dependents shift with "Keep the time between items"
     Then the timeline draws 1 dependency arrow
@@ -85,7 +85,8 @@ Feature: Timeline view interactions
     Then the "Build" bar is back where it started
     And the "Design" bar is back where it started
     When I drag the "Build" bar 6 columns earlier
-    Then the "Build" bar starts 1 columns after the "Design" bar
+    Then the "Build" bar starts 4 columns before the "Design" bar
+    And the timeline draws 1 dependency arrow
 
   Scenario: A progress field renders a fill that the progress handle drags
     Given "Design" has a progress field at 40 percent
@@ -174,7 +175,7 @@ Feature: Timeline view interactions
     When I drag the end handle of "Design" 2 columns later
     Then the "Build" bar moved 2 columns later
 
-  Scenario: With shifting off, dependents stay put and a bar may precede its dependency
+  Scenario: With shifting off, dependents stay put
     Given "Build" depends on "Design" through a relation field
     And dependents shift with "Never"
     When I drag the "Design" bar 3 columns later
@@ -290,3 +291,14 @@ Feature: Timeline view interactions
     When I click the arrow from "Design" to "Build"
     And I remove the dependency from the link editor
     Then the timeline draws 0 dependency arrow
+
+  Scenario: Dragging a bar with dependents writes nothing until it is dropped
+    Given "Build" depends on "Design" through a relation field
+    And dependents shift with "Keep the time between items"
+    When I start counting writes to "Design" and "Build"
+    And I press the "Design" bar and move it 3 columns later without releasing
+    Then the "Design" and "Build" bars have moved 3 columns on screen
+    And no writes have reached "Design" or "Build"
+    When I release the pointer
+    Then writes have reached "Design" and "Build"
+    And the "Build" bar moved 3 columns later

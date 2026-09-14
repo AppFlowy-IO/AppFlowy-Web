@@ -10,7 +10,6 @@ import {
   isAIFieldType,
   TimelineDependencyDirection,
   TimelineDependencyLink,
-  TimelineDependencyType,
   TimelineLayoutSetting,
   timelineLinkKey,
   TimelineLayout,
@@ -54,7 +53,6 @@ import {
 } from './constants';
 import { useScrollWindow } from './hooks/useScrollWindow';
 import {
-  constraintStart,
   TimelineDragMode,
   TimelineDragPreview,
   TimelineDragSpan,
@@ -345,34 +343,6 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
           },
         ];
       });
-      // A bar cannot violate its links: start-type links bound its start,
-      // end-type links its end (each including the link's lag).
-      const dragged = { rowId: row.rowId, allDay: row.allDay, ...span };
-      let minStart: Date | undefined;
-      let minEnd: Date | undefined;
-
-      (graph.predecessors.get(row.rowId) ?? []).forEach((predecessorId) => {
-        const predecessor = byId.get(predecessorId);
-
-        if (!predecessor?.start) return;
-        const link = linkOf(graph, predecessorId, row.rowId);
-        const predecessorSpan = {
-          rowId: predecessorId,
-          allDay: predecessor.allDay,
-          ...getBarSpan(predecessor.start, predecessor.end, predecessor.allDay),
-        };
-        const earliestStart = constraintStart(link, predecessorSpan, dragged);
-        const endType =
-          link.type === TimelineDependencyType.FinishToFinish || link.type === TimelineDependencyType.StartToFinish;
-
-        if (endType) {
-          const earliestEnd = new Date(earliestStart.getTime() + (span.endExclusive.getTime() - span.start.getTime()));
-
-          if (!minEnd || earliestEnd > minEnd) minEnd = earliestEnd;
-        } else if (!minStart || earliestStart > minStart) {
-          minStart = earliestStart;
-        }
-      });
 
       startDrag(
         event,
@@ -383,8 +353,6 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
           followers,
           shift: setting.dependencyShift,
           avoidWeekends: setting.avoidWeekends,
-          minStart,
-          minEnd,
           progress: progressValues.get(row.rowId) ?? 0,
         },
         mode

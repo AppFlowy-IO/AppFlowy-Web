@@ -10,8 +10,9 @@
  * repeated drags. Rows that depend on the dragged one ("followers") move with
  * it according to Notion's "Shift dependents" setting: only as far as needed
  * to avoid overlapping (default), by the same distance like frappe's
- * `move_dependencies`, or not at all. Unless shifting is off, a bar cannot
- * start before its dependencies do.
+ * `move_dependencies`, or not at all. The dragged bar itself is never
+ * constrained by its own dependencies, as in Notion: it lands where it is
+ * dropped and the arrow re-routes.
  */
 import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react';
 
@@ -52,10 +53,6 @@ export interface TimelineDragOrigin extends TimelineDragSpan {
   shift?: TimelineDependencyShift;
   /** Shifted followers never land on a Saturday or Sunday. */
   avoidWeekends?: boolean;
-  /** Earliest start allowed by the bar's start-type links (finish/start-to-start). */
-  minStart?: Date;
-  /** Earliest end allowed by the bar's end-type links (finish/start-to-finish). */
-  minEnd?: Date;
   /** Current 0–100 progress, required for the progress mode. */
   progress?: number;
 }
@@ -237,8 +234,6 @@ export function applyDragDelta(
   const { preset } = geometry;
   const snapMs = preset.snapMinutes * 60_000;
   const base = { rowId: drag.rowId, mode: drag.mode, allDay: drag.allDay };
-  // With shifting off a dependent may be dragged anywhere, as in Notion.
-  const minStart = drag.shift === TimelineDependencyShift.Never ? undefined : drag.minStart;
 
   if (drag.mode === 'progress') {
     const width = dateToX(geometry, drag.endExclusive) - dateToX(geometry, drag.start);
@@ -249,38 +244,21 @@ export function applyDragDelta(
   }
 
   if (drag.mode === 'move') {
-    let moved = shiftSpan(geometry, drag, deltaPx);
-    let effectiveDelta = deltaPx;
-    // Moving keeps the length, so an end-type link bounds the start too.
-    const minEnd = drag.shift === TimelineDependencyShift.Never ? undefined : drag.minEnd;
-    const endFloor = minEnd
-      ? new Date(minEnd.getTime() - (drag.endExclusive.getTime() - drag.start.getTime()))
-      : undefined;
-    const floor = !minStart ? endFloor : !endFloor || minStart > endFloor ? minStart : endFloor;
+    const moved = shiftSpan(geometry, drag, deltaPx);
 
-    if (floor && moved.start < floor) {
-      // Clamp to the dependency and re-derive the pixel delta so followers
-      // keep the offset the bar actually travelled.
-      effectiveDelta = dateToX(geometry, floor) - dateToX(geometry, drag.start);
-      moved = shiftSpan(geometry, drag, effectiveDelta);
-    }
-
-    return { ...base, ...moved, followers: shiftFollowers(geometry, drag, moved, effectiveDelta) };
+    return { ...base, ...moved, followers: shiftFollowers(geometry, drag, moved, deltaPx) };
   }
 
   if (drag.mode === 'resize-start') {
     let start = shiftDate(geometry, drag.start, deltaPx);
 
-    if (minStart && start < minStart) start = minStart;
     if (drag.endExclusive.getTime() - start.getTime() < snapMs) start = new Date(drag.endExclusive.getTime() - snapMs);
 
     return { ...base, start, endExclusive: drag.endExclusive, followers: [] };
   }
 
   let endExclusive = shiftDate(geometry, drag.endExclusive, deltaPx);
-  const minEnd = drag.shift === TimelineDependencyShift.Never ? undefined : drag.minEnd;
 
-  if (minEnd && endExclusive < minEnd) endExclusive = minEnd;
   if (endExclusive.getTime() - drag.start.getTime() < snapMs) endExclusive = new Date(drag.start.getTime() + snapMs);
   const effectiveDelta = dateToX(geometry, endExclusive) - dateToX(geometry, drag.endExclusive);
   const resized = { rowId: drag.rowId, allDay: drag.allDay, start: drag.start, endExclusive };
