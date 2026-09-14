@@ -39,6 +39,8 @@ interface TimelineRowProps {
   progressPreview?: number;
   /** Any drag is in progress somewhere on the canvas. */
   anyDragging?: boolean;
+  /** The scroller the hover card stays inside (right of the docked table). */
+  hoverCardBoundary?: Element | null;
   /** User-preference time formatter shared by all bars. */
   formatTime: (date: Date) => string;
   /** The table gutter's insert / duplicate actions. */
@@ -112,6 +114,7 @@ export const TimelineRow = memo(
     progress,
     progressPreview,
     anyDragging,
+    hoverCardBoundary,
     formatTime,
     rowActions,
     tableFieldIds,
@@ -221,6 +224,8 @@ export const TimelineRow = memo(
               progress={progress}
               progressPreview={progressPreview}
               hoverDisabled={anyDragging}
+              hoverCardBoundary={hoverCardBoundary}
+              hoverCardInset={sidebarWidth}
               formatTime={formatTime}
               linkable={linkable}
               linkTarget={linkTarget}

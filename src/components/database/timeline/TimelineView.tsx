@@ -111,7 +111,14 @@ function dragLabelFor(preview: TimelineDragPreview): TimelineBarDragLabel {
 
 export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const { t } = useTranslation();
-  const scrollerRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // The element itself, as state, so rows rendered before the scroller
+  // mounted still get it as their hover-card boundary.
+  const [scrollerEl, setScrollerEl] = useState<HTMLDivElement | null>(null);
+  const attachScroller = useCallback((element: HTMLDivElement | null) => {
+    scrollerRef.current = element;
+    setScrollerEl(element);
+  }, []);
   const { isDocumentBlock, variant, paddingStart, paddingEnd } = useDatabaseContext();
   const fixedViewport = shouldUseFixedDatabaseViewport({ isDocumentBlock, variant });
   const updateSetting = useUpdateTimelineSetting();
@@ -661,7 +668,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
         emptyEvents={emptyEvents}
       />
       <div
-        ref={scrollerRef}
+        ref={attachScroller}
         onScroll={handleScroll}
         className={cn('appflowy-scroller relative w-full overflow-auto', fixedViewport ? 'h-full min-h-0 flex-1' : '')}
         style={fixedViewport ? undefined : { maxHeight: '75vh' }}
@@ -829,6 +836,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                     progress={setting.progressFieldId ? progressValues.get(row.rowId) ?? 0 : undefined}
                     progressPreview={isDragged && preview?.mode === 'progress' ? preview.progress : undefined}
                     anyDragging={dragging}
+                    hoverCardBoundary={scrollerEl}
                     formatTime={formatTimeDisplay}
                     rowActions={rowActions}
                     tableFieldIds={tableFieldIds}

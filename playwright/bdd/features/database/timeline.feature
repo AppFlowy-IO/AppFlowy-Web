@@ -58,6 +58,7 @@ Feature: Timeline view interactions
   Scenario: Hovering shows the card; table rows select and open
     When I hover the "Design" bar
     Then the timeline hover card shows "Design" with a one day duration
+    And the hover card starts at the "Design" bar and clears the docked table
     When I click the table row "Build"
     Then the "Build" row and bar are selected
     When I click the empty canvas of the "Build" row

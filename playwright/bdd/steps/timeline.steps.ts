@@ -325,6 +325,26 @@ Then('the timeline hover card shows {string} with a one day duration', async ({ 
   await expect(card).toContainText('1 day');
 });
 
+Then('the hover card starts at the {string} bar and clears the docked table', async ({ page }, title) => {
+  // The tooltip role also carries a visually hidden copy; measure the
+  // positioned content, once its enter animation (a zoom from 95%) is done.
+  const content = page
+    .locator('[data-slot="tooltip-content"]')
+    .filter({ has: page.getByTestId('timeline-bar-hover-card') });
+
+  await expect(content).toBeVisible();
+  await page.waitForTimeout(300);
+  const card = await content.boundingBox();
+  const bar = await barBox(page, title);
+  const table = await TimelineSelectors.sidebarRow(page, rowId(page, title)).boundingBox();
+
+  if (!card || !table) throw new Error('hover card and table row must be visible');
+  // Aligned to the bar's start (like Notion), above it, and never over the table cells.
+  expect(Math.abs(card.x - bar.x)).toBeLessThanOrEqual(2);
+  expect(card.y + card.height).toBeLessThanOrEqual(bar.y + 1);
+  expect(card.x).toBeGreaterThanOrEqual(table.x + table.width - 1);
+});
+
 When('I click the table row {string}', async ({ page }, title) => {
   await TimelineSelectors.sidebarRow(page, rowId(page, title)).click();
 });

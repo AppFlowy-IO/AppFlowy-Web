@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import { memo, PointerEvent as ReactPointerEvent } from 'react';
+import { memo, PointerEvent as ReactPointerEvent, ReactNode, useLayoutEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Column } from '@/application/database-yjs';
@@ -44,6 +44,12 @@ interface TimelineBarProps {
   progressPreview?: number;
   /** Suppresses the hover card, e.g. during any drag. */
   hoverDisabled?: boolean;
+  /**
+   * The element the hover card stays inside, and how much of its left edge
+   * the docked table covers: the card must never sit over the table cells.
+   */
+  hoverCardBoundary?: Element | null;
+  hoverCardInset?: number;
   /** User-preference time formatter, owned by the view so bars don't subscribe individually. */
   formatTime: (date: Date) => string;
   /** A dependency field is bound: show the connector handle and accept link drops. */
@@ -53,6 +59,39 @@ interface TimelineBarProps {
   onLinkPointerDown?: (event: ReactPointerEvent<HTMLElement>) => void;
   onOpen?: (rowId: string) => void;
   onPointerDown?: (event: ReactPointerEvent<HTMLElement>, mode: TimelineDragMode) => void;
+}
+
+/**
+ * The tooltip content, kept clear of the docked table: the viewport stays
+ * the collision boundary (so the card still sits above the bar), padded on
+ * the left up to the table's right edge. Mounted only while the card is
+ * open, so the one layout read happens per opening, not per render.
+ */
+function BarHoverCardContent({
+  boundary,
+  inset,
+  children,
+}: {
+  boundary?: Element | null;
+  inset: number;
+  children: ReactNode;
+}) {
+  const [leftPadding, setLeftPadding] = useState(0);
+
+  useLayoutEffect(() => {
+    setLeftPadding(boundary ? boundary.getBoundingClientRect().left + inset : 0);
+  }, [boundary, inset]);
+
+  return (
+    <TooltipContent
+      side='top'
+      align='start'
+      className='text-xs'
+      collisionPadding={{ left: leftPadding, top: 0, right: 0, bottom: 0 }}
+    >
+      {children}
+    </TooltipContent>
+  );
 }
 
 /** frappe-style hover card: title, dates and duration (plus progress when bound). */
@@ -104,6 +143,8 @@ export const TimelineBar = memo(
     progress,
     progressPreview,
     hoverDisabled,
+    hoverCardBoundary,
+    hoverCardInset = 0,
     formatTime,
     linkable,
     linkTarget,
@@ -229,9 +270,9 @@ export const TimelineBar = memo(
         <Tooltip delayDuration={350} disableHoverableContent>
           <TooltipTrigger asChild>{bar}</TooltipTrigger>
           {hoverDisabled ? null : (
-            <TooltipContent side='top' align='start' className='text-xs'>
+            <BarHoverCardContent boundary={hoverCardBoundary} inset={hoverCardInset}>
               <BarHoverCard row={row} progress={progress} />
-            </TooltipContent>
+            </BarHoverCardContent>
           )}
         </Tooltip>
 
