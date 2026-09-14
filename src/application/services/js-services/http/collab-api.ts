@@ -1,5 +1,6 @@
 import { toBase64 } from 'lib0/buffer';
 
+import { ERROR_CODE } from '@/application/constants';
 import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
 import { RowDocumentSourcePayload, RowId, Types, User, View } from '@/application/types';
 import { database_blob } from '@/proto/database_blob';
@@ -394,6 +395,8 @@ export async function getPageCollab(workspaceId: string, viewId: string) {
   };
 }
 
+const ROW_REGISTRATION_RETRY_DELAYS_MS = [250, 500, 1000, 2000];
+
 export async function duplicateRowDocument(
   workspaceId: string,
   databaseId: string,
@@ -403,12 +406,34 @@ export async function duplicateRowDocument(
 ): Promise<void> {
   const url = `/api/workspace/${workspaceId}/database/${databaseId}/row/${sourceRowId}/duplicate-document`;
 
-  await executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url, {
-      new_row_id: newRowId,
-      client_doc_state_b64: clientDocStateB64,
-    })
-  );
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await executeAPIVoidRequest(() =>
+        getAxios()?.post<APIResponse>(url, {
+          new_row_id: newRowId,
+          client_doc_state_b64: clientDocStateB64,
+        })
+      );
+      return;
+    } catch (error) {
+      const apiError = error as APIError | null;
+      const delay = ROW_REGISTRATION_RETRY_DELAYS_MS[attempt];
+
+      // The sync batch can return before realtime sync registers the new row's
+      // database membership in PostgreSQL.
+      // This specific rejection happens before the server enqueues a copy, so
+      // it is safe to retry while the new row's registration catches up.
+      if (
+        delay === undefined ||
+        apiError?.code !== ERROR_CODE.INVALID_REQUEST ||
+        !apiError.message?.includes(`new_row_id ${newRowId} does not belong to database ${databaseId}`)
+      ) {
+        throw error;
+      }
+
+      await new Promise<void>((resolve) => setTimeout(resolve, delay));
+    }
+  }
 }
 
 export async function databaseBlobDiff(

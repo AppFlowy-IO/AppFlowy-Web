@@ -25,6 +25,7 @@ export const ERROR_CODE = {
   RECORD_ALREADY_EXISTS: -3,
   RECORD_DELETED: -4,
   RETRY_LATER: -5,
+  INVALID_REQUEST: 1008,
 
   // Auth & permissions
   NOT_LOGGED_IN: 1011,
