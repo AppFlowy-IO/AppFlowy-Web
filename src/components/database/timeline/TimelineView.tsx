@@ -471,6 +471,12 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
 
   const selectedLinkKey = selectedLink ? timelineLinkKey(selectedLink.predecessorId, selectedLink.successorId) : '';
   const selectedLinkMeta = selectedLink ? linkOf(graph, selectedLink.predecessorId, selectedLink.successorId) : null;
+  // Canvas → body coordinates for the popover anchor; stable across scroll frames.
+  const editorSelection = useMemo(
+    () => (selectedLink ? { ...selectedLink, x: selectedLink.x + sidebarWidth, y: selectedLink.y } : null),
+    [selectedLink, sidebarWidth]
+  );
+  const closeLinkEditor = useCallback(() => setSelectedLink(null), []);
   const handleLinkChange = useCallback(
     (next: TimelineDependencyLink) => {
       if (!selectedLink) return;
@@ -701,14 +707,14 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
             ) : null}
             {selectedLink && selectedLinkMeta ? (
               <TimelineLinkEditor
-                selection={{ ...selectedLink, x: selectedLink.x + sidebarWidth, y: selectedLink.y }}
+                selection={editorSelection}
                 link={selectedLinkMeta}
                 predecessorTitle={rowTitle(selectedLink.predecessorId)}
                 successorTitle={rowTitle(selectedLink.successorId)}
                 readOnly={!permissions.editable}
                 onChange={handleLinkChange}
                 onRemove={handleLinkRemove}
-                onClose={() => setSelectedLink(null)}
+                onClose={closeLinkEditor}
               />
             ) : null}
 

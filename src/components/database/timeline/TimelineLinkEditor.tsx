@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { TimelineDependencyLink, TimelineDependencyType } from '@/application/database-yjs';
@@ -53,7 +53,7 @@ interface TimelineLinkEditorProps {
  * start-to-start / finish), its lag in days (negative = lead) and removal.
  * Anchored at the click point inside the canvas body.
  */
-export function TimelineLinkEditor({
+export const TimelineLinkEditor = memo(function TimelineLinkEditor({
   selection,
   link,
   predecessorTitle,
@@ -65,10 +65,14 @@ export function TimelineLinkEditor({
 }: TimelineLinkEditorProps) {
   const { t } = useTranslation();
   const [lagText, setLagText] = useState(String(link.lag));
+  // The draft follows the stored lag (another link selected, or a remote
+  // edit) — adjusted during render rather than in an effect.
+  const [shownLag, setShownLag] = useState(link.lag);
 
-  useEffect(() => {
+  if (shownLag !== link.lag) {
+    setShownLag(link.lag);
     setLagText(String(link.lag));
-  }, [link.lag, selection?.predecessorId, selection?.successorId]);
+  }
 
   const commitLag = () => {
     const lag = Math.trunc(Number(lagText));
@@ -164,4 +168,4 @@ export function TimelineLinkEditor({
       </PopoverContent>
     </Popover>
   );
-}
+});

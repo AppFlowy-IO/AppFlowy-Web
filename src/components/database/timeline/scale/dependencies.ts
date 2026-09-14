@@ -37,11 +37,11 @@ export interface BuildDependencyGraphOptions {
   links?: Record<string, TimelineDependencyLink>;
 }
 
-function pushUnique(map: Map<string, string[]>, key: string, value: string) {
-  const list = map.get(key) ?? [];
+function push(map: Map<string, string[]>, key: string, value: string) {
+  const list = map.get(key);
 
-  if (!list.includes(value)) list.push(value);
-  map.set(key, list);
+  if (list) list.push(value);
+  else map.set(key, [value]);
 }
 
 /** Build both directions of the graph, ignoring links to rows outside the view. */
@@ -54,16 +54,20 @@ export function buildDependencyGraph(
   const predecessors = new Map<string, string[]>();
   const dependents = new Map<string, string[]>();
   const listsSuccessors = options.direction === TimelineDependencyDirection.Blocking;
+  // A cell may repeat an id; each edge is recorded once.
+  const seen = new Set<string>();
 
   rowIds.forEach((rowId) => {
-    const linked = (relations.get(rowId) ?? []).filter((id) => id !== rowId && known.has(id));
-
-    linked.forEach((other) => {
+    (relations.get(rowId) ?? []).forEach((other) => {
+      if (other === rowId || !known.has(other)) return;
       // A "Blocking" field lists the rows this one precedes; flip the edge.
       const [predecessor, successor] = listsSuccessors ? [rowId, other] : [other, rowId];
+      const edge = timelineLinkKey(predecessor, successor);
 
-      pushUnique(predecessors, successor, predecessor);
-      pushUnique(dependents, predecessor, successor);
+      if (seen.has(edge)) return;
+      seen.add(edge);
+      push(predecessors, successor, predecessor);
+      push(dependents, predecessor, successor);
     });
   });
 

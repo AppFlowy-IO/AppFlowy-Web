@@ -27,6 +27,10 @@ export const DEFAULT_TIMELINE_DEPENDENCY_SHIFT = TimelineDependencyShift.Overlap
 
 const EMPTY_IDS: string[] = [];
 const EMPTY_LINKS: Record<string, TimelineDependencyLink> = {};
+// `getSnapshot` re-reads the setting on every subscriber render. Yjs hands the
+// same object back until the key is rewritten, so parse each stored value once.
+const parsedLinks = new WeakMap<object, Record<string, TimelineDependencyLink>>();
+const parsedIds = new WeakMap<object, string[]>();
 
 /**
  * Per-link metadata as stored (a plain map of `{ ty, lag }` records). Unknown
@@ -34,6 +38,9 @@ const EMPTY_LINKS: Record<string, TimelineDependencyLink> = {};
  */
 function linkMap(value: unknown): Record<string, TimelineDependencyLink> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return EMPTY_LINKS;
+  const cached = parsedLinks.get(value);
+
+  if (cached) return cached;
   const result: Record<string, TimelineDependencyLink> = {};
 
   Object.entries(value as Record<string, unknown>).forEach(([key, raw]) => {
@@ -45,7 +52,10 @@ function linkMap(value: unknown): Record<string, TimelineDependencyLink> {
     result[key] = { type: type ?? TimelineDependencyType.FinishToStart, lag: Number.isFinite(lag) ? lag : 0 };
   });
 
-  return Object.keys(result).length === 0 ? EMPTY_LINKS : result;
+  const links = Object.keys(result).length === 0 ? EMPTY_LINKS : result;
+
+  parsedLinks.set(value, links);
+  return links;
 }
 
 function sameLinks(a: Record<string, TimelineDependencyLink>, b: Record<string, TimelineDependencyLink>) {
@@ -60,9 +70,14 @@ function sameLinks(a: Record<string, TimelineDependencyLink>, b: Record<string, 
 /** A plain array of ids as Yjs / Yrs hand it back, or nothing. */
 function idList(value: unknown): string[] {
   if (!Array.isArray(value)) return EMPTY_IDS;
-  const ids = value.filter((id): id is string => typeof id === 'string' && id !== '');
+  const cached = parsedIds.get(value);
 
-  return ids.length === 0 ? EMPTY_IDS : ids;
+  if (cached) return cached;
+  const filtered = value.filter((id): id is string => typeof id === 'string' && id !== '');
+  const ids = filtered.length === 0 ? EMPTY_IDS : filtered;
+
+  parsedIds.set(value, ids);
+  return ids;
 }
 
 function integer(value: unknown, min: number, max: number): number | undefined {
