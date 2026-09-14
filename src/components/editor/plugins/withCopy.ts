@@ -1,27 +1,54 @@
-import { Element, Node, Range } from 'slate';
+import { Element, Node, Range, Text } from 'slate';
 import { ReactEditor } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
-import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
+import { isEmbedBlockTypes, TEXT_BLOCK_TYPES } from '@/application/slate-yjs/command/const';
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
-import { BlockType } from '@/application/types';
+import { BlockType, YjsEditorKey } from '@/application/types';
 import { stripInlineCommentIds } from '@/components/editor/clipboard/inline-comment-metadata';
 
 export const clipboardFormatKey = 'x-appflowy-fragment';
 
-function setFragmentDataWithoutCommentIds(
+function setCopiedFragmentData(
   editor: ReactEditor,
   setFragmentData: ReactEditor['setFragmentData'],
-  data: Pick<DataTransfer, 'getData' | 'setData'>
+  data: Pick<DataTransfer, 'getData' | 'setData'>,
+  fragment: Node[]
 ) {
   const getFragment = editor.getFragment;
 
-  editor.getFragment = () => stripInlineCommentIds(getFragment.call(editor));
+  // Slate reads this fragment for both the custom MIME data and its HTML attribute.
+  editor.getFragment = () => fragment;
   try {
     setFragmentData(data as DataTransfer);
   } finally {
     editor.getFragment = getFragment;
   }
+}
+
+function unwrapUnselectedTextBlockAncestors(nodes: Node[]): Node[] {
+  return nodes.flatMap((node) => {
+    if (!Element.isElement(node)) return [node];
+
+    const children = unwrapUnselectedTextBlockAncestors(node.children);
+    const hasOwnText = node.children.some(
+      (child) => Text.isText(child) || (Element.isElement(child) && child.type === YjsEditorKey.text)
+    );
+
+    // Slate keeps ancestors of selected descendants, but removes their unselected
+    // text wrappers. Unwrap those ancestors before paste can turn them into empty
+    // headings/lists. A selected empty wrapper still counts as content. Table
+    // cells intentionally have no text wrapper and must retain their structure.
+    if (
+      TEXT_BLOCK_TYPES.includes(node.type as BlockType) &&
+      node.type !== BlockType.SimpleTableCellBlock &&
+      !hasOwnText
+    ) {
+      return children;
+    }
+
+    return [{ ...node, children }];
+  });
 }
 
 export const withCopy = (editor: ReactEditor) => {
@@ -52,20 +79,15 @@ export const withCopy = (editor: ReactEditor) => {
       return;
     }
 
-    // Check if selection spans table cells — if so, produce TSV output
-    const fragment = editor.getFragment();
+    const fragment = stripInlineCommentIds(unwrapUnselectedTextBlockAncestors(editor.getFragment()));
     const tsvText = fragmentToTSV(fragment);
 
+    setCopiedFragmentData(editor, setFragmentData, data, fragment);
+
     if (tsvText !== null) {
-      // Override the default copy with TSV-formatted text
-      setFragmentDataWithoutCommentIds(editor, setFragmentData, data);
-
       // Override the plain text with tab-separated values
-      (data as DataTransfer).setData('text/plain', tsvText);
-      return;
+      data.setData('text/plain', tsvText);
     }
-
-    setFragmentDataWithoutCommentIds(editor, setFragmentData, data);
   };
 
   return editor;
@@ -84,36 +106,34 @@ function fragmentToTSV(fragment: Node[]): string | null {
   if (fragment.length === 0) return null;
 
   // Case 1: Fragment contains SimpleTableCellBlock nodes directly
-  const allCells = fragment.every(n =>
-    Element.isElement(n) && n.type === BlockType.SimpleTableCellBlock
-  );
+  const allCells = fragment.every((n) => Element.isElement(n) && n.type === BlockType.SimpleTableCellBlock);
 
   if (allCells && fragment.length > 1) {
-    const texts = fragment.map(n => Node.string(n));
+    const texts = fragment.map((n) => Node.string(n));
 
     return texts.join('\t');
   }
 
   // Case 2: Fragment contains SimpleTableRowBlock nodes
-  const allRows = fragment.every(n =>
-    Element.isElement(n) && n.type === BlockType.SimpleTableRowBlock
-  );
+  const allRows = fragment.every((n) => Element.isElement(n) && n.type === BlockType.SimpleTableRowBlock);
 
   if (allRows) {
-    const rows = fragment.map(rowNode => {
+    const rows = fragment.map((rowNode) => {
       const cells = (rowNode as Element).children || [];
 
-      return cells.map(cell => Node.string(cell)).join('\t');
+      return cells.map((cell) => Node.string(cell)).join('\t');
     });
 
     return rows.join('\n');
   }
 
   // Case 3: Fragment contains a mix — check if any are table-related
-  const tableTypes: string[] = [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock];
-  const hasTableContent = fragment.some(n =>
-    Element.isElement(n) && tableTypes.includes(n.type as string)
-  );
+  const tableTypes: string[] = [
+    BlockType.SimpleTableBlock,
+    BlockType.SimpleTableRowBlock,
+    BlockType.SimpleTableCellBlock,
+  ];
+  const hasTableContent = fragment.some((n) => Element.isElement(n) && tableTypes.includes(n.type as string));
 
   if (hasTableContent) {
     // Extract all text, treating table structure as TSV
