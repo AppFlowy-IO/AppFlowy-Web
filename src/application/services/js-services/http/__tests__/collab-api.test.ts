@@ -1,4 +1,5 @@
 import { Blob as NodeBlob } from 'node:buffer';
+import { TextDecoder, TextEncoder } from 'node:util';
 import {
   CompressionStream as NodeCompressionStream,
   DecompressionStream as NodeDecompressionStream,
@@ -9,11 +10,12 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 
 import { collab } from '@/proto/messages';
 import { database_blob } from '@/proto/database_blob';
-import { getAxios } from '@/application/services/js-services/http/core';
+import { executeAPIRequest, getAxios } from '@/application/services/js-services/http/core';
 
 import {
   collabFullSyncBatch,
   databaseBlobDiff,
+  getPageCollab,
   getSlowSyncUploadTimeoutMs,
   SLOW_SYNC_PROBE_TIMEOUT_MS,
 } from '../collab-api';
@@ -30,6 +32,45 @@ jest.mock('@/application/services/js-services/http/core', () => ({
 }));
 
 const mockGetAxios = getAxios as unknown as jest.Mock;
+
+describe('getPageCollab', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.mocked(executeAPIRequest).mockImplementation(async (request) => {
+      const response = await request();
+
+      return response.data.data;
+    });
+  });
+
+  it.each([undefined, { includeRows: true }])('preserves full row responses with options %p', async (options) => {
+    const get = jest.fn().mockResolvedValue({
+      data: { data: { data: { encoded_collab: [1, 2], row_data: { 'row-id': [3, 4] } } } },
+    });
+
+    mockGetAxios.mockReturnValue({ get });
+
+    const result = await getPageCollab('workspace-id', 'view-id', options);
+
+    expect(get).toHaveBeenCalledWith('/api/workspace/workspace-id/page-view/view-id', undefined);
+    expect(result).toMatchObject({ data: new Uint8Array([1, 2]), rows: { 'row-id': [3, 4] } });
+  });
+
+  it('opts out of row snapshots without changing the authorized page-view route', async () => {
+    const get = jest.fn().mockResolvedValue({
+      data: { data: { data: { encoded_collab: [1, 2], row_data: {} } } },
+    });
+
+    mockGetAxios.mockReturnValue({ get });
+
+    const result = await getPageCollab('workspace-id', 'view-id', { includeRows: false });
+
+    expect(get).toHaveBeenCalledWith('/api/workspace/workspace-id/page-view/view-id', {
+      params: { include_rows: false },
+    });
+    expect(result).toMatchObject({ data: new Uint8Array([1, 2]), rows: {} });
+  });
+});
 
 function installStalledGzipTransform(name: 'CompressionStream' | 'DecompressionStream') {
   let markStarted!: () => void;
@@ -364,8 +405,51 @@ describe('collabFullSyncBatch', () => {
 });
 
 describe('databaseBlobDiff', () => {
+  const originalTextDecoder = globalThis.TextDecoder;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    Object.defineProperty(globalThis, 'TextDecoder', { configurable: true, value: TextDecoder });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, 'TextDecoder', { configurable: true, value: originalTextDecoder });
+  });
+
+  it.each([1079, 1012])(
+    'preserves HTTP-200 JSON application error %s instead of decoding it as protobuf',
+    async (code) => {
+      const post = jest.fn().mockResolvedValue({
+        status: 200,
+        data: new Uint8Array(
+          new TextEncoder().encode(JSON.stringify({ code, message: 'Request declined', retry_after_secs: 2 }))
+        ).buffer,
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+      });
+
+      mockGetAxios.mockReturnValue({ post });
+      await expect(databaseBlobDiff('workspace', 'database', { version: 3 })).rejects.toEqual({
+        code,
+        message: 'Request declined',
+        httpStatus: 200,
+        retryAfterSecs: 2,
+      });
+      expect(post).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('preserves an HTTP overload and passes cancellation to the transport', async () => {
+    const controller = new AbortController();
+    const post = jest.fn().mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 429, data: new Uint8Array(), headers: {} },
+    });
+
+    mockGetAxios.mockReturnValue({ post });
+    await expect(
+      databaseBlobDiff('workspace', 'database', { version: 3 }, { signal: controller.signal })
+    ).rejects.toMatchObject({ code: 429, httpStatus: 429 });
+    expect(post.mock.calls[0][2].signal).toBe(controller.signal);
   });
 
   it('round-trips a paged protobuf request and response', async () => {
