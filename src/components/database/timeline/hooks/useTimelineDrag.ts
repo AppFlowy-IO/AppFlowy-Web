@@ -287,6 +287,10 @@ export function useTimelineDrag({ geometry, scrollerRef, sidebarWidth, onCommit,
   const geometryRef = useRef(geometry);
   const lastClientXRef = useRef(0);
   const autoScrollFrameRef = useRef(0);
+  // The browser fires a click after the pointer-up that ends a drag (on the
+  // common ancestor of the press and release targets); it must not be read
+  // as a click on the canvas.
+  const clickAfterDragRef = useRef(false);
 
   geometryRef.current = geometry;
 
@@ -348,6 +352,10 @@ export function useTimelineDrag({ geometry, scrollerRef, sidebarWidth, onCommit,
         return;
       }
 
+      clickAfterDragRef.current = true;
+      window.setTimeout(() => {
+        clickAfterDragRef.current = false;
+      }, 0);
       if (commit && current && current.rowId === drag.rowId) onCommit(current);
     },
     [onClick, onCommit, stopAutoScroll]
@@ -421,5 +429,5 @@ export function useTimelineDrag({ geometry, scrollerRef, sidebarWidth, onCommit,
     [scrollerRef]
   );
 
-  return { preview, dragging: active, startDrag };
+  return { preview, dragging: active, startDrag, clickAfterDragRef };
 }

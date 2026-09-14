@@ -52,12 +52,7 @@ import {
   TIMELINE_TODAY_ANCHOR,
 } from './constants';
 import { useScrollWindow } from './hooks/useScrollWindow';
-import {
-  TimelineDragMode,
-  TimelineDragPreview,
-  TimelineDragSpan,
-  useTimelineDrag,
-} from './hooks/useTimelineDrag';
+import { TimelineDragMode, TimelineDragPreview, TimelineDragSpan, useTimelineDrag } from './hooks/useTimelineDrag';
 import { useTimelineItems } from './hooks/useTimelineItems';
 import { useTimelineLinkDrag } from './hooks/useTimelineLinkDrag';
 import { parseProgressPercent, parseRelationRowIds, useTimelineFieldValues } from './hooks/useTimelineFieldValues';
@@ -79,7 +74,7 @@ import {
   totalWidth,
   xToDate,
 } from './scale/geometry';
-import { TimelineArrows, TimelineLinkSelection } from './TimelineArrows';
+import { hitTestLink, TimelineArrows, TimelineLinkSelection } from './TimelineArrows';
 import { TimelineLinkEditor } from './TimelineLinkEditor';
 import { TimelineBarDragLabel } from './TimelineBar';
 import { TimelineToolbar } from './TimelineToolbar';
@@ -310,7 +305,12 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     [commitSpan, setting.progressFieldId, updateAnyCell]
   );
 
-  const { preview, dragging, startDrag } = useTimelineDrag({
+  const {
+    preview,
+    dragging,
+    startDrag,
+    clickAfterDragRef: clickAfterBarDragRef,
+  } = useTimelineDrag({
     geometry,
     scrollerRef,
     sidebarWidth,
@@ -444,8 +444,31 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     [setUpDependencies, setting.dependencyFieldId, writeLink]
   );
 
-  // Clicking an arrow opens the link editor (type, lag, remove).
+  const {
+    link,
+    startLink,
+    clickAfterDragRef: clickAfterLinkDragRef,
+  } = useTimelineLinkDrag({ scrollerRef, sidebarWidth, onCommit: handleLinkCommit });
+  // Clicking an arrow opens the link editor (type, lag, remove). The arrows
+  // are drawn under the rows, so the row canvas hands its clicks here.
   const [selectedLink, setSelectedLink] = useState<TimelineLinkSelection | null>(null);
+  const arrowsRef = useRef<SVGSVGElement | null>(null);
+  const handleCanvasClick = useCallback(
+    (clientX: number, clientY: number) => {
+      // A drop's trailing click is not a click on the canvas.
+      if (clickAfterBarDragRef.current || clickAfterLinkDragRef.current) return;
+      const hit = hitTestLink(arrowsRef.current, clientX, clientY);
+
+      if (hit) {
+        setSelectedLink(hit);
+        return;
+      }
+
+      setSelectedRowId(null);
+    },
+    [clickAfterBarDragRef, clickAfterLinkDragRef]
+  );
+
   const selectedLinkKey = selectedLink ? timelineLinkKey(selectedLink.predecessorId, selectedLink.successorId) : '';
   const selectedLinkMeta = selectedLink ? linkOf(graph, selectedLink.predecessorId, selectedLink.successorId) : null;
   const handleLinkChange = useCallback(
@@ -473,7 +496,6 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     (rowId: string) => rowsRef.current.find((row) => row.rowId === rowId)?.title || t('grid.row.titlePlaceholder'),
     [t]
   );
-  const { link, startLink } = useTimelineLinkDrag({ scrollerRef, sidebarWidth, onCommit: handleLinkCommit });
   const handleLinkPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>, row: TimelineRowModel, rect: BarRect) => {
       const index = rowIndexById.get(row.rowId);
@@ -673,7 +695,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                 canvasWidth={canvasWidth}
                 bodyHeight={bodyHeight}
                 left={sidebarWidth}
-                onSelectLink={setSelectedLink}
+                svgRef={arrowsRef}
                 selectedKey={selectedLinkKey}
               />
             ) : null}
@@ -766,6 +788,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                     onScrollTo={handleScrollToX}
                     onBarPointerDown={handleBarPointerDown}
                     onEmptyClick={handleEmptyClick}
+                    onCanvasClick={handleCanvasClick}
                     onDropRow={permissions.editable && !grouping.isGrouped ? handleDropRow : undefined}
                     groupFieldId={grouping.isGrouped ? grouping.fieldId : undefined}
                     groupId={item.groupId}

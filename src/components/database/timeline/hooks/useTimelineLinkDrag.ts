@@ -39,6 +39,8 @@ function rowIdUnderPointer(clientX: number, clientY: number): string | null {
 export function useTimelineLinkDrag({ scrollerRef, sidebarWidth, onCommit }: UseTimelineLinkDragOptions) {
   const [link, setLink] = useState<TimelineLinkDrag | null>(null);
   const activeRef = useRef<{ sourceRowId: string; pointerId: number; from: TimelineLinkPoint } | null>(null);
+  /** True for the click the browser fires right after a connector is released. */
+  const clickAfterDragRef = useRef(false);
 
   const toCanvas = useCallback(
     (clientX: number, clientY: number): TimelineLinkPoint => {
@@ -80,6 +82,10 @@ export function useTimelineLinkDrag({ scrollerRef, sidebarWidth, onCommit }: Use
 
       activeRef.current = null;
       setLink(null);
+      clickAfterDragRef.current = true;
+      window.setTimeout(() => {
+        clickAfterDragRef.current = false;
+      }, 0);
       if (target && target !== active.sourceRowId) onCommit(active.sourceRowId, target);
     };
 
@@ -117,5 +123,5 @@ export function useTimelineLinkDrag({ scrollerRef, sidebarWidth, onCommit }: Use
     []
   );
 
-  return { link, startLink };
+  return { link, startLink, clickAfterDragRef };
 }

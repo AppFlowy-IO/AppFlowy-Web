@@ -1,4 +1,4 @@
-import { memo, MouseEvent, useMemo } from 'react';
+import { memo, MutableRefObject, useMemo } from 'react';
 
 import { TIMELINE_BAR_INSET, TIMELINE_ROW_HEIGHT } from './constants';
 import { TimelineLinkDrag } from './hooks/useTimelineLinkDrag';
@@ -11,6 +11,25 @@ export interface TimelineLinkSelection {
   /** Click position in canvas coordinates, where the link editor anchors. */
   x: number;
   y: number;
+}
+
+/**
+ * The link whose stroke lies under a client point, if any. The arrows sit
+ * beneath the rows, so the view calls this from the row canvas's click.
+ */
+export function hitTestLink(svg: SVGSVGElement | null, clientX: number, clientY: number): TimelineLinkSelection | null {
+  if (!svg) return null;
+  const bounds = svg.getBoundingClientRect();
+  const point = new DOMPoint(clientX - bounds.left, clientY - bounds.top);
+
+  for (const path of Array.from(svg.querySelectorAll<SVGPathElement>('path[data-hit-link]'))) {
+    if (!path.isPointInStroke(point)) continue;
+    const [predecessorId, successorId] = (path.dataset.hitLink ?? '').split(':');
+
+    if (predecessorId && successorId) return { predecessorId, successorId, x: point.x, y: point.y };
+  }
+
+  return null;
 }
 
 interface TimelineArrowsProps {
@@ -26,8 +45,8 @@ interface TimelineArrowsProps {
   left: number;
   /** A connector being dragged from a bar's link handle. */
   pending?: TimelineLinkDrag | null;
-  /** Arrows are clickable (editors only): opens the link editor. */
-  onSelectLink?: (selection: TimelineLinkSelection) => void;
+  /** Exposes the SVG so the view can hit-test clicks against the link strokes. */
+  svgRef?: MutableRefObject<SVGSVGElement | null>;
   /** The link currently open in the editor, drawn highlighted. */
   selectedKey?: string;
 }
@@ -47,7 +66,7 @@ export const TimelineArrows = memo(
     bodyHeight,
     left,
     pending,
-    onSelectLink,
+    svgRef,
     selectedKey,
   }: TimelineArrowsProps) => {
     const paths = useMemo(() => {
@@ -88,24 +107,14 @@ export const TimelineArrows = memo(
 
     if (paths.length === 0 && !pending) return null;
 
-    const handleClick = (event: MouseEvent<SVGPathElement>, path: (typeof paths)[number]) => {
-      if (!onSelectLink) return;
-      event.stopPropagation();
-      const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect();
-
-      onSelectLink({
-        predecessorId: path.predecessorId,
-        successorId: path.successorId,
-        x: event.clientX - (bounds?.left ?? 0),
-        y: event.clientY - (bounds?.top ?? 0),
-      });
-    };
-
     return (
-      // Above the bars so links can be clicked; only the strokes take pointer events.
+      // Under the bars (and the sticky table), like Notion: cards cover the
+      // lines, and the table hides them when the canvas scrolls. Clicks on a
+      // line reach the row's canvas, which asks `hitTestLink` about them.
       <svg
+        ref={svgRef}
         aria-hidden
-        className='pointer-events-none absolute top-0 z-[3] text-icon-secondary'
+        className='pointer-events-none absolute top-0 z-[1] text-icon-secondary'
         style={{ left, width: canvasWidth, height: bodyHeight }}
         width={canvasWidth}
         height={bodyHeight}
@@ -121,18 +130,15 @@ export const TimelineArrows = memo(
               data-testid='timeline-arrow'
               data-link={path.key}
             />
-            {onSelectLink ? (
-              <path
-                d={path.d}
-                fill='none'
-                stroke='transparent'
-                strokeWidth={10}
-                className='cursor-pointer'
-                style={{ pointerEvents: 'stroke' }}
-                data-testid={`timeline-arrow-hit-${path.key}`}
-                onClick={(event) => handleClick(event, path)}
-              />
-            ) : null}
+            {/* Wide invisible twin used by isPointInStroke when the canvas is clicked. */}
+            <path
+              d={path.d}
+              fill='none'
+              stroke='transparent'
+              strokeWidth={10}
+              data-testid={`timeline-arrow-hit-${path.key}`}
+              data-hit-link={path.key}
+            />
           </g>
         ))}
         {pending ? (

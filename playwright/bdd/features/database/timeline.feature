@@ -302,3 +302,9 @@ Feature: Timeline view interactions
     When I release the pointer
     Then writes have reached "Design" and "Build"
     And the "Build" bar moved 3 columns later
+
+  Scenario: Dependency lines run under the cards and slide under the docked table
+    Given "Build" depends on "Design" through a relation field
+    Then the dependency line is drawn beneath the row layer
+    When I scroll the canvas so the dependency line sits under the docked table
+    Then the dependency line is hidden behind the docked table

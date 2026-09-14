@@ -47,6 +47,8 @@ interface TimelineRowProps {
   onBarPointerDown?: (event: ReactPointerEvent<HTMLElement>, row: TimelineRowModel, mode: TimelineDragMode) => void;
   /** An undated row's canvas was clicked at canvas pixel `x`. */
   onEmptyClick?: (row: TimelineRowModel, x: number) => void;
+  /** The empty canvas of a dated row was clicked (client coordinates). */
+  onCanvasClick?: (clientX: number, clientY: number) => void;
   /** A table row was dropped on this one (undefined = reordering disabled). */
   onDropRow?: (sourceRowId: string, targetRowId: string, edge: Edge) => void;
   /** A dependency field is bound, so bars offer a connector handle. */
@@ -113,6 +115,7 @@ export const TimelineRow = memo(
     onScrollTo,
     onBarPointerDown,
     onEmptyClick,
+    onCanvasClick,
     onDropRow,
     linkable,
     linkTarget,
@@ -133,8 +136,9 @@ export const TimelineRow = memo(
 
     const handleCanvasClick = (event: MouseEvent<HTMLDivElement>) => {
       if (!canAssignDate) {
-        // Clicking the empty grid clears the selection, as in frappe.
-        onSelect?.(null);
+        // Clicking the empty grid clears the selection (as in frappe) unless a
+        // dependency line runs under the pointer — the view decides.
+        onCanvasClick?.(event.clientX, event.clientY);
         return;
       }
 

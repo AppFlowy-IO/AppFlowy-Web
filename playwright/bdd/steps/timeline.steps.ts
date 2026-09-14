@@ -859,6 +859,69 @@ Then('writes have reached {string} and {string}', async ({ page }, first, second
     .toBeGreaterThan(0);
 });
 
+/** Client point on the first vertical segment of the Design → Build arrow. */
+async function arrowProbePoint(page: Page): Promise<{ x: number; y: number }> {
+  const hit = page.getByTestId(`timeline-arrow-hit-${rowId(page, 'Design')}:${rowId(page, 'Build')}`);
+
+  await expect(hit).toHaveCount(1, { timeout: 15_000 });
+  const d = (await hit.getAttribute('d')) ?? '';
+  const svgBox = await page.getByTestId('timeline-arrows').boundingBox();
+  const match = /^M (\S+) (\S+) (?:V (\S+)|v (\S+))/.exec(d);
+
+  if (!match || !svgBox) throw new Error(`Unexpected arrow path: ${d}`);
+  const x = Number(match[1]);
+  const y = Number(match[2]);
+  const midY = match[3] !== undefined ? (y + Number(match[3])) / 2 : y + Number(match[4]) / 2;
+
+  return { x: svgBox.x + x, y: svgBox.y + midY };
+}
+
+Then('the dependency line is drawn beneath the row layer', async ({ page }) => {
+  const point = await arrowProbePoint(page);
+  const topmost = await page.evaluate(
+    ({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-testid^="timeline-row-"], svg')?.tagName ?? '',
+    point
+  );
+
+  // The row (a div) wins the hit test, not the arrows' SVG.
+  expect(topmost).toBe('DIV');
+});
+
+When('I scroll the canvas so the dependency line sits under the docked table', async ({ page }) => {
+  const point = await arrowProbePoint(page);
+  const view = await TimelineSelectors.view(page).boundingBox();
+
+  if (!view) throw new Error('Timeline is not visible');
+  // Put the line's exit point in the middle of the sticky table column.
+  const delta = point.x - (view.x + TIMELINE_SIDEBAR_WIDTH / 2);
+
+  await TimelineSelectors.view(page)
+    .locator('.appflowy-scroller')
+    .first()
+    .evaluate((scroller, delta) => {
+      scroller.scrollLeft += delta;
+    }, delta);
+  await page.waitForTimeout(300);
+});
+
+Then('the dependency line is hidden behind the docked table', async ({ page }) => {
+  const point = await arrowProbePoint(page);
+  const view = await TimelineSelectors.view(page).boundingBox();
+
+  if (!view) throw new Error('Timeline is not visible');
+  // The arrow's exit point has scrolled under the sticky table…
+  expect(point.x).toBeLessThan(view.x + TIMELINE_SIDEBAR_WIDTH);
+  // …and the table cell, not the line, is what the pointer would hit there.
+  const coveredBy = await page.evaluate(({ x, y }) => {
+    const element = document.elementFromPoint(x, y);
+    const sidebar = element?.closest('[data-testid^="timeline-sidebar-cell-"]');
+
+    return sidebar?.getAttribute('data-testid') ?? '';
+  }, point);
+
+  expect(coveredBy).toMatch(/^timeline-sidebar-cell-/);
+});
+
 Then('the timeline draws {int} dependency arrow', async ({ page }, count) => {
   await expect(TimelineSelectors.arrows(page)).toHaveCount(count, { timeout: 15_000 });
 });
