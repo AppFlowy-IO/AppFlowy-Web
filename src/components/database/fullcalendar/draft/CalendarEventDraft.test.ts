@@ -367,4 +367,67 @@ describe('CalendarEventDraft defaults and properties', () => {
     await draft.commit(async (snapshot) => snapshot.id);
     expect(parseSelectOptionTypeOptions(liveField).options).toEqual([existing, remote, local]);
   });
+
+  it.each(['rejection', 'empty result'])('keeps option edits local after a save %s and merges them on retry', async (failure) => {
+    const { source, database } = fixture();
+    const liveField = database.get(YjsDatabaseKey.fields).get('tags');
+    const existing = { id: 'existing', name: 'Existing', color: 0 };
+    const removed = { id: 'removed', name: 'Remove on save', color: 1 };
+    const renamed = { ...existing, name: 'Renamed' };
+    const added = { id: 'added', name: 'Added', color: 2 };
+    const remote = { id: 'remote', name: 'Concurrent option', color: 3 };
+
+    getTypeOptions(liveField)!.set(YjsDatabaseKey.content, JSON.stringify({ options: [existing, removed] }));
+    const draft = createDraft(source);
+    const localField = draft.database.get(YjsDatabaseKey.fields).get('tags');
+
+    getTypeOptions(localField)!.set(YjsDatabaseKey.content, JSON.stringify({ options: [renamed, added] }));
+    setCell(draft, 'tags', added.id);
+    let optionsDuringSave: ReturnType<typeof parseSelectOptionTypeOptions>['options'];
+    const persist = jest.fn(async (snapshot: CalendarDraftSnapshot) => {
+      if (persist.mock.calls.length > 1) return snapshot.id;
+      optionsDuringSave = parseSelectOptionTypeOptions(liveField).options;
+      // Another client adds an option while this draft's save is pending.
+      getTypeOptions(liveField)!.set(YjsDatabaseKey.content, JSON.stringify({ options: [...optionsDuringSave, remote] }));
+      if (failure === 'empty result') return null;
+      throw new Error('Template duplication failed');
+    });
+
+    await expect(draft.commit(persist)).rejects.toThrow(
+      failure === 'empty result' ? 'could not be saved' : 'Template duplication failed'
+    );
+    expect(optionsDuringSave).toEqual([existing, removed]);
+    expect(parseSelectOptionTypeOptions(liveField).options).toEqual([existing, removed, remote]);
+    expect(draft.savedId).toBeNull();
+    expect(draft.dirty).toBe(true);
+
+    await expect(draft.commit(persist)).resolves.toBe(draft.id);
+    expect(parseSelectOptionTypeOptions(liveField).options).toEqual([renamed, remote, added]);
+  });
+
+  it('publishes option edits when a reciprocal-link failure happens after the row is published', async () => {
+    const { source, database, orders } = fixture();
+    const draft = createDraft(source);
+    const liveField = database.get(YjsDatabaseKey.fields).get('tags');
+    const localField = draft.database.get(YjsDatabaseKey.fields).get('tags');
+    const added = { id: 'added', name: 'Added', color: 2 };
+
+    getTypeOptions(localField)!.set(YjsDatabaseKey.content, JSON.stringify({ options: [added] }));
+    setCell(draft, 'tags', added.id);
+    const persist = jest.fn(async (snapshot: CalendarDraftSnapshot) => {
+      orders.push([{ id: snapshot.id, height: 36 }]);
+      throw new Error('Related row unavailable');
+    });
+
+    await expect(draft.commit(persist)).rejects.toThrow('Related row unavailable');
+    expect(draft.savedId).toBe(draft.id);
+    expect(parseSelectOptionTypeOptions(liveField).options).toEqual([added]);
+    // Subsequent calls must not replay option edits over newer remote changes.
+    const remote = { ...added, name: 'Renamed remotely' };
+
+    getTypeOptions(liveField)!.set(YjsDatabaseKey.content, JSON.stringify({ options: [remote] }));
+    await expect(draft.commit(persist)).resolves.toBe(draft.id);
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(parseSelectOptionTypeOptions(liveField).options).toEqual([remote]);
+  });
 });
