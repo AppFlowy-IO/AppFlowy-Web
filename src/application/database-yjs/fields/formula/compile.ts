@@ -80,7 +80,10 @@ export function compileFormula(
 
     const nested = compileFormula(parseFormulaTypeOption(entry.field).formula, schema, entry.id, chain);
 
-    if (nested.error) throw new FormulaError(`Property "${entry.name}" has an invalid formula`, position);
+    if (nested.error) {
+      throw new FormulaError(`Property "${entry.name}" has an invalid formula: ${nested.error.message}`, position);
+    }
+
     return nested.resultType;
   };
 

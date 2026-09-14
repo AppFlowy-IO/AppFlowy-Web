@@ -236,13 +236,13 @@ function hasListFilterContent(content: unknown) {
     .some(Boolean);
 }
 
-function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField) {
+function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField, fields?: YDatabaseFields) {
   const actualType = Number(field.get(YjsDatabaseKey.type));
   const fieldType =
     actualType === FieldType.Rollup
       ? rollupPredicateType(parseFilter(actualType, filter), field)
       : actualType === FieldType.Formula
-      ? formulaPredicateFieldType(field)
+      ? formulaPredicateFieldType(field, fields)
       : actualType;
   const condition = Number(filter.get(YjsDatabaseKey.condition));
   const content = filter.get(YjsDatabaseKey.content);
@@ -342,7 +342,7 @@ function getEffectiveFilterSnapshot(
   const fieldId = node.get(YjsDatabaseKey.field_id);
   const field = fields.get(fieldId);
 
-  if (!field || !isDataFilterEffective(node, field)) return null;
+  if (!field || !isDataFilterEffective(node, field, fields)) return null;
 
   return {
     filterType,
@@ -850,7 +850,7 @@ export function filterBy(
     const fieldId = node.get(YjsDatabaseKey.field_id);
     const field = fields.get(fieldId);
 
-    if (!field || !isDataFilterEffective(node, field)) return null;
+    if (!field || !isDataFilterEffective(node, field, fields)) return null;
 
     const fieldType = Number(field.get(YjsDatabaseKey.type));
     // A formula filters with the vocabulary of its result type.

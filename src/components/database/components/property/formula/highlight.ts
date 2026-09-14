@@ -26,11 +26,24 @@ export function highlightFormula(source: string): HighlightSegment[] {
 
   const segments: HighlightSegment[] = [];
   let cursor = 0;
+  // Gaps between tokens hold whitespace and comments; comments get their own
+  // segment so surrounding whitespace is not italicised with them.
   const pushGap = (until: number) => {
     if (until <= cursor) return;
     const gap = source.slice(cursor, until);
+    const commentStart = gap.indexOf('/*');
 
-    segments.push({ text: gap, kind: gap.trimStart().startsWith('/*') ? 'comment' : 'plain' });
+    if (commentStart === -1) {
+      segments.push({ text: gap, kind: 'plain' });
+    } else {
+      const closeIndex = gap.indexOf('*/', commentStart + 2);
+      const commentEnd = closeIndex === -1 ? gap.length : closeIndex + 2;
+
+      if (commentStart > 0) segments.push({ text: gap.slice(0, commentStart), kind: 'plain' });
+      segments.push({ text: gap.slice(commentStart, commentEnd), kind: 'comment' });
+      if (commentEnd < gap.length) segments.push({ text: gap.slice(commentEnd), kind: 'plain' });
+    }
+
     cursor = until;
   };
 

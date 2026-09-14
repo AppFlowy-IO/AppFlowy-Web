@@ -1,4 +1,4 @@
-import { KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { KeyboardEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabaseFields, useRowMap } from '@/application/database-yjs/context';
@@ -186,6 +186,20 @@ export function FormulaEditor({
 
   // ---- editing helpers -------------------------------------------------
 
+  // A programmatic value change makes the browser park the caret at the end;
+  // restore the intended position right after React commits the new value.
+  const pendingCaretRef = useRef<number | null>(null);
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    const pending = pendingCaretRef.current;
+
+    if (!textarea || pending === null) return;
+    pendingCaretRef.current = null;
+    textarea.focus();
+    textarea.setSelectionRange(pending, pending);
+  }, [value]);
+
   const insertAtCaret = useCallback(
     (text: string, caretOffset: number, replaceFrom?: number) => {
       const textarea = textareaRef.current;
@@ -194,13 +208,10 @@ export function FormulaEditor({
       const next = value.slice(0, start) + text + value.slice(end);
       const nextCaret = start + caretOffset;
 
+      pendingCaretRef.current = nextCaret;
       onChange(next);
       setCaret(nextCaret);
       setSuggestionsDismissed(true);
-      requestAnimationFrame(() => {
-        textarea?.focus();
-        textarea?.setSelectionRange(nextCaret, nextCaret);
-      });
     },
     [onChange, value]
   );
@@ -248,13 +259,10 @@ export function FormulaEditor({
       const next = value.slice(0, currentWord.start) + text + value.slice(end);
       const nextCaret = currentWord.start + caretOffset;
 
+      pendingCaretRef.current = nextCaret;
       onChange(next);
       setCaret(nextCaret);
       setSuggestionsDismissed(true);
-      requestAnimationFrame(() => {
-        textarea?.focus();
-        textarea?.setSelectionRange(nextCaret, nextCaret);
-      });
     },
     [caret, currentWord.start, onChange, value]
   );
