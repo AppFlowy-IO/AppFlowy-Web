@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import {
   FieldType,
   parseRelationTypeOption,
+  TimelineDependencyDirection,
   TimelineDependencyShift,
   useDatabase,
   useDatabaseFields,
@@ -13,7 +14,9 @@ import {
   useTimelineLayoutSetting,
 } from '@/application/database-yjs';
 import { useUpdateTimelineSetting } from '@/application/database-yjs/dispatch';
+import { useSetUpTimelineDependenciesDispatch } from '@/application/database-yjs/dispatch/timeline-dependencies';
 import { YjsDatabaseKey } from '@/application/types';
+import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as TimelineIcon } from '@/assets/icons/timeline.svg';
 import { FieldDisplay } from '@/components/database/components/field';
 import {
@@ -29,6 +32,12 @@ import {
 import { Switch } from '@/components/ui/switch';
 
 const DATE_FIELD_TYPES = [FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime];
+
+// Which side of the relation the bound field lists.
+const DIRECTION_OPTIONS = [
+  { value: TimelineDependencyDirection.BlockedBy, labelKey: 'timeline.blockedBy', fallback: 'Blocked by' },
+  { value: TimelineDependencyDirection.Blocking, labelKey: 'timeline.blocking', fallback: 'Blocking' },
+];
 
 // Notion's "Shift dependents" choices, in its order.
 const SHIFT_OPTIONS = [
@@ -49,6 +58,7 @@ function TimelineLayoutSettings() {
   const { t } = useTranslation();
   const setting = useTimelineLayoutSetting();
   const updateSetting = useUpdateTimelineSetting();
+  const setUpDependencies = useSetUpTimelineDependenciesDispatch();
   const database = useDatabase();
   const fields = useDatabaseFields();
   const databaseId = database?.get(YjsDatabaseKey.id);
@@ -231,8 +241,41 @@ function TimelineLayoutSettings() {
             (dependencyFieldId) => updateSetting({ dependencyFieldId })
           )}
 
+          {!setting.dependencyFieldId ? (
+            // Notion's one click: creates "Blocked by" / "Blocking" and binds them.
+            <DropdownMenuItem
+              className={'w-full'}
+              data-testid='timeline-set-up-dependencies'
+              title={t('timeline.setUpDependenciesHint', {
+                defaultValue: 'Adds "Blocked by" and "Blocking" properties and draws arrows between linked items.',
+              })}
+              onSelect={(e) => {
+                e.preventDefault();
+                setUpDependencies();
+              }}
+            >
+              <PlusIcon aria-hidden className='h-4 w-4' />
+              {t('timeline.setUpDependencies', { defaultValue: 'Set up dependencies' })}
+            </DropdownMenuItem>
+          ) : null}
+
           {setting.dependencyFieldId ? (
             <>
+              <DropdownMenuLabel>{t('timeline.dependencyDirection', { defaultValue: 'Field lists' })}</DropdownMenuLabel>
+              {DIRECTION_OPTIONS.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  className={'w-full'}
+                  data-testid={`timeline-dependency-direction-${option.value}`}
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    updateSetting({ dependencyDirection: option.value });
+                  }}
+                >
+                  {t(option.labelKey, { defaultValue: option.fallback })}
+                  {setting.dependencyDirection === option.value && <DropdownMenuItemTick />}
+                </DropdownMenuItem>
+              ))}
               <DropdownMenuLabel>
                 {t('timeline.settings.shiftDependents', { defaultValue: 'Shift dependents' })}
               </DropdownMenuLabel>

@@ -9,7 +9,14 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 
-import { TimelineDependencyShift, TimelineLayout, TimelineLayoutSetting } from './database.type';
+import {
+  TimelineDependencyDirection,
+  TimelineDependencyLink,
+  TimelineDependencyShift,
+  TimelineDependencyType,
+  TimelineLayout,
+  TimelineLayoutSetting,
+} from './database.type';
 
 /** Layout-settings key for `DatabaseViewLayout.Timeline`. */
 export const TIMELINE_LAYOUT_KEY = '8';
@@ -19,6 +26,36 @@ export const DEFAULT_TIMELINE_SHOW_TABLE = true;
 export const DEFAULT_TIMELINE_DEPENDENCY_SHIFT = TimelineDependencyShift.OverlapOnly;
 
 const EMPTY_IDS: string[] = [];
+const EMPTY_LINKS: Record<string, TimelineDependencyLink> = {};
+
+/**
+ * Per-link metadata as stored (a plain map of `{ ty, lag }` records). Unknown
+ * types fall back to finish-to-start and lag is clamped to whole days.
+ */
+function linkMap(value: unknown): Record<string, TimelineDependencyLink> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return EMPTY_LINKS;
+  const result: Record<string, TimelineDependencyLink> = {};
+
+  Object.entries(value as Record<string, unknown>).forEach(([key, raw]) => {
+    if (!raw || typeof raw !== 'object') return;
+    const record = raw as { ty?: unknown; lag?: unknown };
+    const type = integer(record.ty, TimelineDependencyType.FinishToStart, TimelineDependencyType.StartToFinish);
+    const lag = typeof record.lag === 'number' || typeof record.lag === 'bigint' ? Math.trunc(Number(record.lag)) : 0;
+
+    result[key] = { type: type ?? TimelineDependencyType.FinishToStart, lag: Number.isFinite(lag) ? lag : 0 };
+  });
+
+  return Object.keys(result).length === 0 ? EMPTY_LINKS : result;
+}
+
+function sameLinks(a: Record<string, TimelineDependencyLink>, b: Record<string, TimelineDependencyLink>) {
+  const keys = Object.keys(a);
+
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every((key) => b[key] !== undefined && a[key].type === b[key].type && a[key].lag === b[key].lag)
+  );
+}
 
 /** A plain array of ids as Yjs / Yrs hand it back, or nothing. */
 function idList(value: unknown): string[] {
@@ -59,6 +96,11 @@ export function readTimelineLayoutSetting(
     TimelineDependencyShift.OverlapOnly,
     TimelineDependencyShift.Never
   );
+  const dependencyDirection = integer(
+    setting?.get(YjsDatabaseKey.dependency_direction),
+    TimelineDependencyDirection.BlockedBy,
+    TimelineDependencyDirection.Blocking
+  );
   const weekday =
     integer(setting?.get(YjsDatabaseKey.first_day_of_week_v2), 0, 6) ??
     integer(setting?.get(YjsDatabaseKey.first_day_of_week), 0, 6);
@@ -71,6 +113,8 @@ export function readTimelineLayoutSetting(
     use24Hour,
     endFieldId: setting?.get(YjsDatabaseKey.end_field_id) ?? '',
     dependencyFieldId: setting?.get(YjsDatabaseKey.dependency_field_id) ?? '',
+    dependencyDirection: dependencyDirection ?? TimelineDependencyDirection.BlockedBy,
+    dependencyLinks: linkMap(setting?.get(YjsDatabaseKey.dependency_links)),
     dependencyShift: dependencyShift ?? DEFAULT_TIMELINE_DEPENDENCY_SHIFT,
     avoidWeekends: typeof avoidWeekends === 'boolean' ? avoidWeekends : false,
     progressFieldId: setting?.get(YjsDatabaseKey.progress_field_id) ?? '',
@@ -126,6 +170,27 @@ export function updateTimelineLayoutSetting(view: YDatabaseView, settings: Timel
   }
 
   if (settings.dependencyShift !== undefined) setting.set(YjsDatabaseKey.dependency_shift_ty, settings.dependencyShift);
+  if (settings.dependencyDirection !== undefined) {
+    setting.set(YjsDatabaseKey.dependency_direction, settings.dependencyDirection);
+  }
+
+  if (settings.dependencyLinks !== undefined) {
+    // Stored as a plain map so Yrs reads it as nested `Any` maps; finish-to-start
+    // links with no lag are the default and need no entry.
+    const entries = Object.entries(settings.dependencyLinks).filter(
+      ([, link]) => link.type !== TimelineDependencyType.FinishToStart || link.lag !== 0
+    );
+
+    if (entries.length > 0) {
+      setting.set(
+        YjsDatabaseKey.dependency_links,
+        Object.fromEntries(entries.map(([key, link]) => [key, { ty: link.type, lag: link.lag }]))
+      );
+    } else {
+      setting.delete(YjsDatabaseKey.dependency_links);
+    }
+  }
+
   if (settings.avoidWeekends !== undefined) setting.set(YjsDatabaseKey.avoid_weekends, settings.avoidWeekends);
   if (settings.tableFieldIds !== undefined) {
     if (settings.tableFieldIds.length > 0) setting.set(YjsDatabaseKey.table_field_ids, [...settings.tableFieldIds]);
@@ -176,7 +241,11 @@ export function createTimelineLayoutStore(
 
     if (
       (Object.keys(next) as (keyof TimelineLayoutSetting)[]).some((key) =>
-        key === 'tableFieldIds' ? !sameIds(next.tableFieldIds, snapshot.tableFieldIds) : next[key] !== snapshot[key]
+        key === 'tableFieldIds'
+          ? !sameIds(next.tableFieldIds, snapshot.tableFieldIds)
+          : key === 'dependencyLinks'
+          ? !sameLinks(next.dependencyLinks, snapshot.dependencyLinks)
+          : next[key] !== snapshot[key]
       )
     )
       snapshot = next;

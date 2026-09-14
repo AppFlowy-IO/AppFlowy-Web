@@ -85,7 +85,7 @@ Feature: Timeline view interactions
     Then the "Build" bar is back where it started
     And the "Design" bar is back where it started
     When I drag the "Build" bar 6 columns earlier
-    Then the "Build" bar starts where the "Design" bar starts
+    Then the "Build" bar starts 1 columns after the "Design" bar
 
   Scenario: A progress field renders a fill that the progress handle drags
     Given "Design" has a progress field at 40 percent
@@ -254,3 +254,39 @@ Feature: Timeline view interactions
     When I remove the timeline grouping
     Then the timeline has no group headers
     And the table lists "Design, Build, Untitled" in that order
+
+  Scenario: Setting up dependencies creates the Blocked by and Blocking properties
+    When I set up dependencies from the timeline settings
+    Then the table has "Blocked by" and "Blocking" columns
+    When I drag the connector of "Design" onto the "Build" bar
+    Then the timeline draws 1 dependency arrow
+    And the "Blocking" cell of "Design" reads "Build"
+    And the "Blocked by" cell of "Build" reads "Design"
+
+  Scenario: The first connector on a bare view sets dependencies up by itself
+    When I drag the connector of "Design" onto the "Build" bar
+    Then the table has "Blocked by" and "Blocking" columns
+    And the timeline draws 1 dependency arrow
+
+  Scenario: Binding the Blocking side keeps the arrow pointing the same way
+    When I set up dependencies from the timeline settings
+    And I drag the connector of "Design" onto the "Build" bar
+    Then the arrow runs from "Design" to "Build"
+    When I bind the "Blocking" property as the dependency field listing "Blocking"
+    Then the timeline draws 1 dependency arrow
+    And the arrow runs from "Design" to "Build"
+
+  Scenario: Clicking an arrow edits the link type and lag, and can remove the dependency
+    Given "Build" depends on "Design" through a relation field
+    When I click the arrow from "Design" to "Build"
+    Then the link editor shows "Design → Build"
+    When I choose the "SS" link type
+    And I drag the "Design" bar 4 columns later
+    Then the "Build" bar moved 2 columns later
+    When I click the arrow from "Design" to "Build"
+    And I set the link lag to 2 days
+    And I drag the "Design" bar 1 columns later
+    Then the "Build" bar moved 3 columns later
+    When I click the arrow from "Design" to "Build"
+    And I remove the dependency from the link editor
+    Then the timeline draws 0 dependency arrow

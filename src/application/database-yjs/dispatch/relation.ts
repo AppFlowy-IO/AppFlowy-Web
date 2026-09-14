@@ -222,7 +222,7 @@ function setRelationTypeOption(field: YDatabaseField, option: RelationTypeOption
   field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 }
 
-function addFieldToAllViews(database: YDatabase, fieldId: FieldId) {
+export function addFieldToAllViews(database: YDatabase, fieldId: FieldId) {
   const views = database.get(YjsDatabaseKey.views);
   const viewIds = Object.keys(views?.toJSON() ?? {});
 

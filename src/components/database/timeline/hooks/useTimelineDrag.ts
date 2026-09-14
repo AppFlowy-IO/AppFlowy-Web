@@ -15,7 +15,7 @@
  */
 import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react';
 
-import { TimelineDependencyShift } from '@/application/database-yjs';
+import { TimelineDependencyLink, TimelineDependencyShift, TimelineDependencyType } from '@/application/database-yjs';
 
 import {
   calendarDaysBetween,
@@ -29,6 +29,11 @@ import {
 
 export type TimelineDragMode = 'move' | 'resize-start' | 'resize-end' | 'progress';
 
+/** A follower's link to one of its predecessors inside the moving set. */
+export interface TimelineDragLink extends TimelineDependencyLink {
+  rowId: string;
+}
+
 export interface TimelineDragSpan {
   rowId: string;
   /** Bar start; a local midnight for all-day rows. */
@@ -36,8 +41,8 @@ export interface TimelineDragSpan {
   /** Exclusive bar end (the day after the last covered day for all-day rows). */
   endExclusive: Date;
   allDay: boolean;
-  /** For followers: the rows it depends on, limited to the dragged bar and other followers. */
-  predecessors?: string[];
+  /** For followers: the links to rows it depends on, limited to the dragged bar and other followers. */
+  predecessors?: TimelineDragLink[];
 }
 
 export interface TimelineDragOrigin extends TimelineDragSpan {
@@ -47,8 +52,10 @@ export interface TimelineDragOrigin extends TimelineDragSpan {
   shift?: TimelineDependencyShift;
   /** Shifted followers never land on a Saturday or Sunday. */
   avoidWeekends?: boolean;
-  /** Earliest start allowed, e.g. the latest start among its dependencies. */
+  /** Earliest start allowed by the bar's start-type links (finish/start-to-start). */
   minStart?: Date;
+  /** Earliest end allowed by the bar's end-type links (finish/start-to-finish). */
+  minEnd?: Date;
   /** Current 0–100 progress, required for the progress mode. */
   progress?: number;
 }
@@ -116,6 +123,34 @@ function skipWeekend(date: Date): Date {
   return next;
 }
 
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * Earliest start of `successor` that satisfies `link` given `predecessor`'s
+ * dates: the classic finish/start-to-start/finish rules plus a lag in days
+ * (negative = lead). End-type links are expressed through the successor's
+ * current length.
+ */
+export function constraintStart(
+  link: TimelineDependencyLink,
+  predecessor: TimelineDragSpan,
+  successor: TimelineDragSpan
+): Date {
+  const lagMs = link.lag * MS_PER_DAY;
+  const duration = successor.endExclusive.getTime() - successor.start.getTime();
+
+  switch (link.type) {
+    case TimelineDependencyType.StartToStart:
+      return new Date(predecessor.start.getTime() + lagMs);
+    case TimelineDependencyType.FinishToFinish:
+      return new Date(predecessor.endExclusive.getTime() + lagMs - duration);
+    case TimelineDependencyType.StartToFinish:
+      return new Date(predecessor.start.getTime() + lagMs - duration);
+    default:
+      return new Date(predecessor.endExclusive.getTime() + lagMs);
+  }
+}
+
 /** Move a span so it starts at `start`, keeping its length (calendar days for all-day rows). */
 function moveSpanTo(span: TimelineDragSpan, start: Date): TimelineDragSpan {
   const endExclusive = new Date(start.getTime());
@@ -149,10 +184,10 @@ function resolveOverlaps(
       const span = current.get(follower.rowId) ?? follower;
       let required = 0;
 
-      (follower.predecessors ?? []).forEach((predecessorId) => {
-        const predecessor = current.get(predecessorId);
+      (follower.predecessors ?? []).forEach((link) => {
+        const predecessor = current.get(link.rowId);
 
-        if (predecessor) required = Math.max(required, predecessor.endExclusive.getTime());
+        if (predecessor) required = Math.max(required, constraintStart(link, predecessor, span).getTime());
       });
       if (required <= span.start.getTime()) return;
       let start = new Date(required);
@@ -216,11 +251,17 @@ export function applyDragDelta(
   if (drag.mode === 'move') {
     let moved = shiftSpan(geometry, drag, deltaPx);
     let effectiveDelta = deltaPx;
+    // Moving keeps the length, so an end-type link bounds the start too.
+    const minEnd = drag.shift === TimelineDependencyShift.Never ? undefined : drag.minEnd;
+    const endFloor = minEnd
+      ? new Date(minEnd.getTime() - (drag.endExclusive.getTime() - drag.start.getTime()))
+      : undefined;
+    const floor = !minStart ? endFloor : !endFloor || minStart > endFloor ? minStart : endFloor;
 
-    if (minStart && moved.start < minStart) {
+    if (floor && moved.start < floor) {
       // Clamp to the dependency and re-derive the pixel delta so followers
       // keep the offset the bar actually travelled.
-      effectiveDelta = dateToX(geometry, minStart) - dateToX(geometry, drag.start);
+      effectiveDelta = dateToX(geometry, floor) - dateToX(geometry, drag.start);
       moved = shiftSpan(geometry, drag, effectiveDelta);
     }
 
@@ -237,7 +278,9 @@ export function applyDragDelta(
   }
 
   let endExclusive = shiftDate(geometry, drag.endExclusive, deltaPx);
+  const minEnd = drag.shift === TimelineDependencyShift.Never ? undefined : drag.minEnd;
 
+  if (minEnd && endExclusive < minEnd) endExclusive = minEnd;
   if (endExclusive.getTime() - drag.start.getTime() < snapMs) endExclusive = new Date(drag.start.getTime() + snapMs);
   const effectiveDelta = dateToX(geometry, endExclusive) - dateToX(geometry, drag.endExclusive);
   const resized = { rowId: drag.rowId, allDay: drag.allDay, start: drag.start, endExclusive };

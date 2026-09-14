@@ -129,6 +129,34 @@ export enum TimelineDependencyShift {
   Never = 2,
 }
 
+/** Which side of the relation the bound dependency field lists, stored as `dependency_direction`. */
+export enum TimelineDependencyDirection {
+  /** The field's cells list the rows this row depends on ("Blocked by"). */
+  BlockedBy = 0,
+  /** The field's cells list the rows that depend on this row ("Blocking"). */
+  Blocking = 1,
+}
+
+/** Classic scheduling link types, stored per link as `ty` in `dependency_links`. */
+export enum TimelineDependencyType {
+  /** The successor starts once the predecessor finishes (default). */
+  FinishToStart = 0,
+  StartToStart = 1,
+  FinishToFinish = 2,
+  StartToFinish = 3,
+}
+
+export interface TimelineDependencyLink {
+  type: TimelineDependencyType;
+  /** Whole days the successor is held after the constraint is met; negative = lead. */
+  lag: number;
+}
+
+/** Key of `dependency_links` for the link from `predecessorId` to `successorId`. */
+export function timelineLinkKey(predecessorId: string, successorId: string) {
+  return `${predecessorId}:${successorId}`;
+}
+
 export interface TimelineLayoutSetting {
   /// DateTime field plotted on the timeline.
   fieldId: string;
@@ -142,6 +170,10 @@ export interface TimelineLayoutSetting {
   endFieldId: string;
   /// Relation field (pointing at this database) whose linked rows are the row's dependencies.
   dependencyFieldId: string;
+  /// Whether `dependencyFieldId` lists predecessors ("Blocked by") or successors ("Blocking").
+  dependencyDirection: TimelineDependencyDirection;
+  /// Per-link type and lag, keyed by `timelineLinkKey`; a missing entry is finish-to-start, no lag.
+  dependencyLinks: Record<string, TimelineDependencyLink>;
   /// How dependents move when the bar they depend on is dragged.
   dependencyShift: TimelineDependencyShift;
   /// Shifted dependents never land on a Saturday or Sunday.

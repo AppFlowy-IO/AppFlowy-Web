@@ -713,6 +713,116 @@ Then('the timeline has no group headers', async ({ page }) => {
   await expect(page.locator('[data-testid^="list-group-header-"]')).toHaveCount(0, { timeout: 15_000 });
 });
 
+// --- Dependency setup, direction and link editing ---------------------------
+
+Then('the {string} bar starts {int} columns after the {string} bar', async ({ page }, title, columns, other) => {
+  await expectBarX(page, title, (await barBox(page, other)).x + columns * MONTH_COLUMN_WIDTH);
+});
+
+When('I set up dependencies from the timeline settings', async ({ page }) => {
+  await chooseTimelineSettingsOption(page, 'timeline-set-up-dependencies');
+});
+
+/** Field id of a docked-table column, found by its header text. */
+async function tableFieldIdByName(page: Page, name: string): Promise<string> {
+  const header = page.locator('[data-testid^="timeline-table-header-"]').filter({ hasText: name }).first();
+
+  await expect(header).toBeVisible({ timeout: 15_000 });
+  const testId = (await header.getAttribute('data-testid')) ?? '';
+
+  return testId.replace('timeline-table-header-', '');
+}
+
+Then('the table has {string} and {string} columns', async ({ page }, first, second) => {
+  await tableFieldIdByName(page, first);
+  await tableFieldIdByName(page, second);
+});
+
+Then('the {string} cell of {string} reads {string}', async ({ page }, column, title, text) => {
+  const fieldId = await tableFieldIdByName(page, column);
+
+  await expect(page.getByTestId(`timeline-table-cell-${rowId(page, title)}-${fieldId}`)).toContainText(text, {
+    timeout: 15_000,
+  });
+});
+
+Then('the arrow runs from {string} to {string}', async ({ page }, from, to) => {
+  await expect(TimelineSelectors.arrows(page)).toHaveCount(1, { timeout: 15_000 });
+  await expect(TimelineSelectors.arrows(page)).toHaveAttribute('data-link', `${rowId(page, from)}:${rowId(page, to)}`);
+});
+
+When('I bind the {string} property as the dependency field listing {string}', async ({ page }, column, direction) => {
+  const fieldId = await tableFieldIdByName(page, column);
+
+  await chooseTimelineSettingsOption(page, `timeline-dependency-field-${fieldId}`);
+  await chooseTimelineSettingsOption(page, `timeline-dependency-direction-${direction === 'Blocking' ? 1 : 0}`);
+});
+
+/** Click on the first vertical segment of an arrow's path, which every route has. */
+async function clickArrow(page: Page, from: string, to: string) {
+  const hit = page.getByTestId(`timeline-arrow-hit-${rowId(page, from)}:${rowId(page, to)}`);
+
+  await expect(hit).toHaveCount(1, { timeout: 15_000 });
+  const d = (await hit.getAttribute('d')) ?? '';
+  const svgBox = await page.getByTestId('timeline-arrows').boundingBox();
+  const tokens = d.split(/\s+/);
+  let x = 0;
+  let y = 0;
+  let point: { x: number; y: number } | null = null;
+
+  for (let i = 0; i < tokens.length && !point; i += 1) {
+    const command = tokens[i];
+
+    if (command === 'M') {
+      x = Number(tokens[i + 1]);
+      y = Number(tokens[i + 2]);
+      i += 2;
+    } else if (command === 'H') {
+      x = Number(tokens[i + 1]);
+      i += 1;
+    } else if (command === 'V') {
+      point = { x, y: (y + Number(tokens[i + 1])) / 2 };
+    } else if (command === 'v') {
+      point = { x, y: y + Number(tokens[i + 1]) / 2 };
+    }
+  }
+
+  if (!point || !svgBox) throw new Error(`No vertical segment found in arrow path: ${d}`);
+  await page.mouse.click(svgBox.x + point.x, svgBox.y + point.y);
+  await expect(page.getByTestId('timeline-link-editor')).toBeVisible({ timeout: 10_000 });
+}
+
+When('I click the arrow from {string} to {string}', async ({ page }, from, to) => {
+  await clickArrow(page, from, to);
+});
+
+Then('the link editor shows {string}', async ({ page }, title) => {
+  await expect(page.getByTestId('timeline-link-editor-title')).toHaveText(title);
+});
+
+const LINK_TYPE_INDEX: Record<string, number> = { FS: 0, SS: 1, FF: 2, SF: 3 };
+
+When('I choose the {string} link type', async ({ page }, type) => {
+  await page.getByTestId(`timeline-link-type-${LINK_TYPE_INDEX[type]}`).click();
+  await expect(page.getByTestId(`timeline-link-type-${LINK_TYPE_INDEX[type]}`)).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('timeline-link-editor')).toHaveCount(0);
+});
+
+When('I set the link lag to {int} days', async ({ page }, days) => {
+  const input = page.getByTestId('timeline-link-lag');
+
+  await input.fill(String(days));
+  await input.press('Enter');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('timeline-link-editor')).toHaveCount(0);
+});
+
+When('I remove the dependency from the link editor', async ({ page }) => {
+  await page.getByTestId('timeline-link-remove').click();
+  await expect(page.getByTestId('timeline-link-editor')).toHaveCount(0);
+});
+
 Then('the timeline draws {int} dependency arrow', async ({ page }, count) => {
   await expect(TimelineSelectors.arrows(page)).toHaveCount(count, { timeout: 15_000 });
 });

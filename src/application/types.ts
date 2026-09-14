@@ -672,6 +672,10 @@ export enum YjsDatabaseKey {
   end_field_id = 'end_field_id',
   /// Timeline layout setting: how dependents move with a dragged bar (`TimelineDependencyShift`).
   dependency_shift_ty = 'dependency_shift_ty',
+  /// Timeline layout setting: which side of the relation `dependency_field_id` lists.
+  dependency_direction = 'dependency_direction',
+  /// Timeline layout setting: per-link type and lag, keyed "predecessor:successor".
+  dependency_links = 'dependency_links',
   /// Timeline layout setting: shifted dependents skip Saturdays and Sundays.
   avoid_weekends = 'avoid_weekends',
   /// Timeline layout setting: properties shown as columns of the docked table.
@@ -1036,11 +1040,12 @@ export interface YDatabaseTimelineLayoutSetting extends Y.Map<unknown> {
       | YjsDatabaseKey.first_day_of_week
       | YjsDatabaseKey.first_day_of_week_v2
       | YjsDatabaseKey.dependency_shift_ty
+      | YjsDatabaseKey.dependency_direction
   ): number | bigint | null | undefined;
   get(
     key: YjsDatabaseKey.show_table | YjsDatabaseKey.avoid_weekends | YjsDatabaseKey.hide_empty_groups
   ): boolean | undefined;
-  get(key: YjsDatabaseKey.table_field_ids): unknown;
+  get(key: YjsDatabaseKey.table_field_ids | YjsDatabaseKey.dependency_links): unknown;
 }
 
 export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {

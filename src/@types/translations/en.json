@@ -4391,6 +4391,21 @@
     },
     "dependencyBlocked": "Cannot start before its dependencies",
     "linkHandle": "Drag to add a dependency",
+    "blockedBy": "Blocked by",
+    "blocking": "Blocking",
+    "setUpDependencies": "Set up dependencies",
+    "setUpDependenciesHint": "Adds \"Blocked by\" and \"Blocking\" properties and draws arrows between linked items.",
+    "dependencyDirection": "Field lists",
+    "link": {
+      "title": "Dependency",
+      "type": "Type",
+      "finishToStart": "Finish to start",
+      "startToStart": "Start to start",
+      "finishToFinish": "Finish to finish",
+      "startToFinish": "Start to finish",
+      "lag": "Lag (days)",
+      "remove": "Remove dependency"
+    },
     "openRow": "Open"
   }
 }

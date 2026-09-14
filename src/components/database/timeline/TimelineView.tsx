@@ -8,7 +8,11 @@ import { useTranslation } from 'react-i18next';
 import {
   FieldVisibility,
   isAIFieldType,
+  TimelineDependencyDirection,
+  TimelineDependencyLink,
+  TimelineDependencyType,
   TimelineLayoutSetting,
+  timelineLinkKey,
   TimelineLayout,
   useDatabaseContext,
   useDatabaseViewId,
@@ -20,6 +24,7 @@ import {
 } from '@/application/database-yjs';
 import { useUpdateAnyCellDispatch, useUpdateStartEndTimeCell } from '@/application/database-yjs/dispatch/cell';
 import { useUpdateRelationCellDispatch } from '@/application/database-yjs/dispatch/relation';
+import { useSetUpTimelineDependenciesDispatch } from '@/application/database-yjs/dispatch/timeline-dependencies';
 import { useNewRowDispatch, useReorderRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { useUpdateTimelineSetting } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
@@ -48,14 +53,20 @@ import {
   TIMELINE_TODAY_ANCHOR,
 } from './constants';
 import { useScrollWindow } from './hooks/useScrollWindow';
-import { TimelineDragMode, TimelineDragPreview, TimelineDragSpan, useTimelineDrag } from './hooks/useTimelineDrag';
+import {
+  constraintStart,
+  TimelineDragMode,
+  TimelineDragPreview,
+  TimelineDragSpan,
+  useTimelineDrag,
+} from './hooks/useTimelineDrag';
 import { useTimelineItems } from './hooks/useTimelineItems';
 import { useTimelineLinkDrag } from './hooks/useTimelineLinkDrag';
 import { parseProgressPercent, parseRelationRowIds, useTimelineFieldValues } from './hooks/useTimelineFieldValues';
 import { useTimelinePermissions } from './hooks/useTimelinePermissions';
 import { useTimelineRange } from './hooks/useTimelineRange';
 import { TimelineRowModel, useTimelineRows } from './hooks/useTimelineRows';
-import { buildDependencyGraph, collectDependents } from './scale/dependencies';
+import { buildDependencyGraph, collectDependents, linkOf } from './scale/dependencies';
 import {
   buildHeaderColumns,
   buildHeaderSegments,
@@ -70,7 +81,8 @@ import {
   totalWidth,
   xToDate,
 } from './scale/geometry';
-import { TimelineArrows } from './TimelineArrows';
+import { TimelineArrows, TimelineLinkSelection } from './TimelineArrows';
+import { TimelineLinkEditor } from './TimelineLinkEditor';
 import { TimelineBarDragLabel } from './TimelineBar';
 import { TimelineToolbar } from './TimelineToolbar';
 import { TimelineGrid } from './TimelineGrid';
@@ -172,7 +184,14 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const relations = useTimelineFieldValues(setting.dependencyFieldId, parseRelationRowIds);
   const progressValues = useTimelineFieldValues(setting.progressFieldId, parseProgressPercent);
   const rowIds = useMemo(() => rows.map((row) => row.rowId), [rows]);
-  const graph = useMemo(() => buildDependencyGraph(rowIds, relations), [relations, rowIds]);
+  const graph = useMemo(
+    () =>
+      buildDependencyGraph(rowIds, relations, {
+        direction: setting.dependencyDirection,
+        links: setting.dependencyLinks,
+      }),
+    [relations, rowIds, setting.dependencyDirection, setting.dependencyLinks]
+  );
   const { geometry, handleScroll, scrollToDate, scrollByColumns } = useTimelineRange({
     layout,
     scrollerRef,
@@ -320,19 +339,40 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
             rowId: dependent.rowId,
             allDay: dependent.allDay,
             ...getBarSpan(dependent.start, dependent.end, dependent.allDay),
-            predecessors: (graph.predecessors.get(dependentId) ?? []).filter((id) => movingSet.has(id)),
+            predecessors: (graph.predecessors.get(dependentId) ?? [])
+              .filter((id) => movingSet.has(id))
+              .map((id) => ({ rowId: id, ...linkOf(graph, id, dependentId) })),
           },
         ];
       });
-      // A bar cannot start before any of its dependencies start.
-      const minStart = (graph.predecessors.get(row.rowId) ?? []).reduce<Date | undefined>((latest, predecessorId) => {
+      // A bar cannot violate its links: start-type links bound its start,
+      // end-type links its end (each including the link's lag).
+      const dragged = { rowId: row.rowId, allDay: row.allDay, ...span };
+      let minStart: Date | undefined;
+      let minEnd: Date | undefined;
+
+      (graph.predecessors.get(row.rowId) ?? []).forEach((predecessorId) => {
         const predecessor = byId.get(predecessorId);
 
-        if (!predecessor?.start) return latest;
-        const predecessorStart = getBarSpan(predecessor.start, predecessor.end, predecessor.allDay).start;
+        if (!predecessor?.start) return;
+        const link = linkOf(graph, predecessorId, row.rowId);
+        const predecessorSpan = {
+          rowId: predecessorId,
+          allDay: predecessor.allDay,
+          ...getBarSpan(predecessor.start, predecessor.end, predecessor.allDay),
+        };
+        const earliestStart = constraintStart(link, predecessorSpan, dragged);
+        const endType =
+          link.type === TimelineDependencyType.FinishToFinish || link.type === TimelineDependencyType.StartToFinish;
 
-        return !latest || predecessorStart > latest ? predecessorStart : latest;
-      }, undefined);
+        if (endType) {
+          const earliestEnd = new Date(earliestStart.getTime() + (span.endExclusive.getTime() - span.start.getTime()));
+
+          if (!minEnd || earliestEnd > minEnd) minEnd = earliestEnd;
+        } else if (!minStart || earliestStart > minStart) {
+          minStart = earliestStart;
+        }
+      });
 
       startDrag(
         event,
@@ -344,6 +384,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
           shift: setting.dependencyShift,
           avoidWeekends: setting.avoidWeekends,
           minStart,
+          minEnd,
           progress: progressValues.get(row.rowId) ?? 0,
         },
         mode
@@ -388,19 +429,81 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   graphRef.current = graph;
   // Dropping a bar's connector on another bar makes the target depend on the
   // source: the source row id is appended to the target's relation cell.
+  // The relation cell that stores a link depends on which side the bound
+  // field lists: "Blocked by" writes the predecessor into the successor's
+  // cell, "Blocking" the successor into the predecessor's.
+  const setUpDependencies = useSetUpTimelineDependenciesDispatch();
+  const writeLink = useCallback(
+    (
+      predecessorId: string,
+      successorId: string,
+      change: 'insert' | 'remove',
+      binding: { fieldId: string; direction: TimelineDependencyDirection } = {
+        fieldId: setting.dependencyFieldId,
+        direction: setting.dependencyDirection,
+      }
+    ) => {
+      if (!binding.fieldId) return;
+      const listsSuccessors = binding.direction === TimelineDependencyDirection.Blocking;
+      const [ownerId, otherId] = listsSuccessors ? [predecessorId, successorId] : [successorId, predecessorId];
+
+      void updateRelationCell(ownerId, binding.fieldId, {
+        [change === 'insert' ? 'insertedRowIds' : 'removedRowIds']: [otherId],
+      }).catch(() => undefined);
+    },
+    [setting.dependencyDirection, setting.dependencyFieldId, updateRelationCell]
+  );
   const handleLinkCommit = useCallback(
     (sourceRowId: string, targetRowId: string) => {
       const current = graphRef.current;
 
-      if (!setting.dependencyFieldId || sourceRowId === targetRowId) return;
+      if (sourceRowId === targetRowId) return;
       if (current.predecessors.get(targetRowId)?.includes(sourceRowId)) return;
       // Refuse a link that would close a cycle (the source already depends on the target).
       if (collectDependents(targetRowId, current).includes(sourceRowId)) return;
-      void updateRelationCell(targetRowId, setting.dependencyFieldId, { insertedRowIds: [sourceRowId] }).catch(
-        () => undefined
-      );
+      if (setting.dependencyFieldId) {
+        writeLink(sourceRowId, targetRowId, 'insert');
+        return;
+      }
+
+      // First connector on a view without dependencies: set the pair up, like Notion.
+      const fieldId = setUpDependencies();
+
+      if (fieldId) {
+        writeLink(sourceRowId, targetRowId, 'insert', { fieldId, direction: TimelineDependencyDirection.BlockedBy });
+      }
     },
-    [setting.dependencyFieldId, updateRelationCell]
+    [setUpDependencies, setting.dependencyFieldId, writeLink]
+  );
+
+  // Clicking an arrow opens the link editor (type, lag, remove).
+  const [selectedLink, setSelectedLink] = useState<TimelineLinkSelection | null>(null);
+  const selectedLinkKey = selectedLink ? timelineLinkKey(selectedLink.predecessorId, selectedLink.successorId) : '';
+  const selectedLinkMeta = selectedLink ? linkOf(graph, selectedLink.predecessorId, selectedLink.successorId) : null;
+  const handleLinkChange = useCallback(
+    (next: TimelineDependencyLink) => {
+      if (!selectedLink) return;
+      updateSetting({
+        dependencyLinks: {
+          ...setting.dependencyLinks,
+          [timelineLinkKey(selectedLink.predecessorId, selectedLink.successorId)]: next,
+        },
+      });
+    },
+    [selectedLink, setting.dependencyLinks, updateSetting]
+  );
+  const handleLinkRemove = useCallback(() => {
+    if (!selectedLink) return;
+    const { [selectedLinkKey]: removed, ...rest } = setting.dependencyLinks;
+
+    void removed;
+    if (selectedLinkKey in setting.dependencyLinks) updateSetting({ dependencyLinks: rest });
+    writeLink(selectedLink.predecessorId, selectedLink.successorId, 'remove');
+    setSelectedLink(null);
+  }, [selectedLink, selectedLinkKey, setting.dependencyLinks, updateSetting, writeLink]);
+  const rowTitle = useCallback(
+    (rowId: string) => rowsRef.current.find((row) => row.rowId === rowId)?.title || t('grid.row.titlePlaceholder'),
+    [t]
   );
   const { link, startLink } = useTimelineLinkDrag({ scrollerRef, sidebarWidth, onCommit: handleLinkCommit });
   const handleLinkPointerDown = useCallback(
@@ -602,6 +705,20 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                 canvasWidth={canvasWidth}
                 bodyHeight={bodyHeight}
                 left={sidebarWidth}
+                onSelectLink={setSelectedLink}
+                selectedKey={selectedLinkKey}
+              />
+            ) : null}
+            {selectedLink && selectedLinkMeta ? (
+              <TimelineLinkEditor
+                selection={{ ...selectedLink, x: selectedLink.x + sidebarWidth, y: selectedLink.y }}
+                link={selectedLinkMeta}
+                predecessorTitle={rowTitle(selectedLink.predecessorId)}
+                successorTitle={rowTitle(selectedLink.successorId)}
+                readOnly={!permissions.editable}
+                onChange={handleLinkChange}
+                onRemove={handleLinkRemove}
+                onClose={() => setSelectedLink(null)}
               />
             ) : null}
 
@@ -684,7 +801,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                     onDropRow={permissions.editable && !grouping.isGrouped ? handleDropRow : undefined}
                     groupFieldId={grouping.isGrouped ? grouping.fieldId : undefined}
                     groupId={item.groupId}
-                    linkable={permissions.editable && Boolean(setting.dependencyFieldId)}
+                    linkable={permissions.editable}
                     linkTarget={link?.targetRowId === row.rowId}
                     onLinkPointerDown={handleLinkPointerDown}
                   />

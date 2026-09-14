@@ -1,7 +1,18 @@
-import { TimelineDependencyShift, TimelineLayout } from '@/application/database-yjs';
+import {
+  TimelineDependencyDirection,
+  TimelineDependencyShift,
+  TimelineDependencyType,
+  TimelineLayout,
+} from '@/application/database-yjs';
 
-import { applyDragDelta } from '../hooks/useTimelineDrag';
-import { buildDependencyGraph, collectDependents, dependencyArrowPath } from '../scale/dependencies';
+import { applyDragDelta, constraintStart } from '../hooks/useTimelineDrag';
+import {
+  buildDependencyGraph,
+  collectDependents,
+  dependencyArrowPath,
+  dependencyLinkPath,
+  linkOf,
+} from '../scale/dependencies';
 import { TimelineGeometry } from '../scale/geometry';
 import { getTimelinePreset } from '../scale/presets';
 
@@ -77,6 +88,8 @@ describe('dependency arrow path', () => {
   });
 });
 
+const fs = (rowId: string, lag = 0) => ({ rowId, type: TimelineDependencyType.FinishToStart, lag });
+
 describe('applyDragDelta with dependencies and progress', () => {
   const span = (rowId: string, day: number, days: number) => ({
     rowId,
@@ -147,8 +160,8 @@ describe('applyDragDelta with dependencies and progress', () => {
   test('"only when overlapping" (default) moves a follower just past its dependency and cascades', () => {
     // a: Nov 5–7, b (depends on a): Nov 9–10, c (depends on b): Nov 11
     const followers = [
-      { ...span('b', 9, 2), predecessors: ['a'] },
-      { ...span('c', 11, 1), predecessors: ['b'] },
+      { ...span('b', 9, 2), predecessors: [fs('a')] },
+      { ...span('c', 11, 1), predecessors: [fs('b')] },
     ];
     const small = applyDragDelta(geometry, { ...span('a', 5, 3), mode: 'move', followers }, columnWidth);
 
@@ -172,7 +185,7 @@ describe('applyDragDelta with dependencies and progress', () => {
   test('"only when overlapping" also applies when the end handle grows into a follower', () => {
     const grow = applyDragDelta(
       geometry,
-      { ...span('a', 5, 3), mode: 'resize-end', followers: [{ ...span('b', 9, 2), predecessors: ['a'] }] },
+      { ...span('a', 5, 3), mode: 'resize-end', followers: [{ ...span('b', 9, 2), predecessors: [fs('a')] }] },
       columnWidth * 3
     );
 
@@ -188,7 +201,7 @@ describe('applyDragDelta with dependencies and progress', () => {
         mode: 'move',
         shift: TimelineDependencyShift.Never,
         minStart: local(2020, 11, 8),
-        followers: [{ ...span('c', 14, 1), predecessors: ['b'] }],
+        followers: [{ ...span('c', 14, 1), predecessors: [fs('b')] }],
       },
       -columnWidth * 5
     );
@@ -205,7 +218,7 @@ describe('applyDragDelta with dependencies and progress', () => {
         ...span('a', 5, 3),
         mode: 'move',
         avoidWeekends: true,
-        followers: [{ ...span('b', 9, 2), predecessors: ['a'] }],
+        followers: [{ ...span('b', 9, 2), predecessors: [fs('a')] }],
       },
       columnWidth * 6
     );
@@ -235,5 +248,127 @@ describe('applyDragDelta with dependencies and progress', () => {
     expect(preview.start).toEqual(origin.start);
     expect(preview.endExclusive).toEqual(origin.endExclusive);
     expect(preview.followers).toEqual([]);
+  });
+});
+
+describe('dependency direction and per-link metadata', () => {
+  test('a "Blocking" field flips the edges and links carry their type and lag', () => {
+    const graph = buildDependencyGraph(['a', 'b'], new Map([['a', ['b']]]), {
+      direction: TimelineDependencyDirection.Blocking,
+      links: { 'a:b': { type: TimelineDependencyType.StartToStart, lag: 3 } },
+    });
+
+    expect(graph.predecessors.get('b')).toEqual(['a']);
+    expect(graph.dependents.get('a')).toEqual(['b']);
+    expect(linkOf(graph, 'a', 'b')).toEqual({ type: TimelineDependencyType.StartToStart, lag: 3 });
+    expect(linkOf(graph, 'b', 'a')).toEqual({ type: TimelineDependencyType.FinishToStart, lag: 0 });
+  });
+
+  test('constraintStart applies each link type and its lag to the successor', () => {
+    const predecessor = { rowId: 'p', allDay: true, start: local(2020, 11, 5), endExclusive: local(2020, 11, 8) };
+    const successor = { rowId: 's', allDay: true, start: local(2020, 11, 1), endExclusive: local(2020, 11, 3) };
+    const at = (type: TimelineDependencyType, lag: number) => constraintStart({ type, lag }, predecessor, successor);
+
+    expect(at(TimelineDependencyType.FinishToStart, 0)).toEqual(local(2020, 11, 8));
+    expect(at(TimelineDependencyType.FinishToStart, 2)).toEqual(local(2020, 11, 10));
+    expect(at(TimelineDependencyType.FinishToStart, -1)).toEqual(local(2020, 11, 7));
+    expect(at(TimelineDependencyType.StartToStart, 0)).toEqual(local(2020, 11, 5));
+    // The successor is two days long: its end must reach the predecessor's end.
+    expect(at(TimelineDependencyType.FinishToFinish, 0)).toEqual(local(2020, 11, 6));
+    expect(at(TimelineDependencyType.StartToFinish, 1)).toEqual(local(2020, 11, 4));
+  });
+
+  test('"only when overlapping" honours lag and start-to-start links when shifting', () => {
+    const span = (rowId: string, day: number, days: number) => ({
+      rowId,
+      allDay: true,
+      start: local(2020, 11, day),
+      endExclusive: local(2020, 11, day + days),
+    });
+    const lagged = applyDragDelta(
+      geometry,
+      { ...span('a', 5, 3), mode: 'move', followers: [{ ...span('b', 9, 2), predecessors: [fs('a', 2)] }] },
+      columnWidth * 2
+    );
+
+    // a: Nov 7–9 → with a 2-day lag b must start on the 12th.
+    expect(lagged.followers[0].start).toEqual(local(2020, 11, 12));
+
+    const startToStart = applyDragDelta(
+      geometry,
+      {
+        ...span('a', 5, 3),
+        mode: 'move',
+        followers: [
+          { ...span('b', 6, 1), predecessors: [{ rowId: 'a', type: TimelineDependencyType.StartToStart, lag: 0 }] },
+        ],
+      },
+      columnWidth * 4
+    );
+
+    // a now starts on the 9th; b only has to start with it, not after it.
+    expect(startToStart.followers[0].start).toEqual(local(2020, 11, 9));
+  });
+
+  test('end-type links bound a moved bar through minEnd', () => {
+    const span = (rowId: string, day: number, days: number) => ({
+      rowId,
+      allDay: true,
+      start: local(2020, 11, day),
+      endExclusive: local(2020, 11, day + days),
+    });
+    const preview = applyDragDelta(
+      geometry,
+      { ...span('b', 12, 2), mode: 'move', minEnd: local(2020, 11, 10) },
+      -columnWidth * 8
+    );
+
+    // The 2-day bar may not end before the 10th, so it stops at the 8th.
+    expect(preview.start).toEqual(local(2020, 11, 8));
+  });
+});
+
+describe('dependencyLinkPath', () => {
+  const options = { rowHeight: 36, barInset: 4 };
+
+  test("finish-to-start delegates to frappe's route", () => {
+    const from = { rect: { left: 0, width: 100 }, index: 0 };
+    const to = { rect: { left: 160, width: 80 }, index: 2 };
+
+    expect(dependencyLinkPath(TimelineDependencyType.FinishToStart, from, to, options)).toBe(
+      dependencyArrowPath(from, to, options)
+    );
+  });
+
+  test('start-to-start leaves and enters the left edges with a right-pointing head', () => {
+    const path = dependencyLinkPath(
+      TimelineDependencyType.StartToStart,
+      { rect: { left: 100, width: 100 }, index: 0 },
+      { rect: { left: 160, width: 80 }, index: 1 },
+      options
+    );
+
+    expect(path.startsWith('M 100 18 H 82 V 54 H 147')).toBe(true);
+    expect(path.endsWith('m -5 -5 l 5 5 l -5 5')).toBe(true);
+  });
+
+  test('finish-to-finish enters the right edge with a left-pointing head, detouring when needed', () => {
+    const direct = dependencyLinkPath(
+      TimelineDependencyType.FinishToFinish,
+      { rect: { left: 100, width: 100 }, index: 0 },
+      { rect: { left: 40, width: 60 }, index: 1 },
+      options
+    );
+
+    expect(direct).toBe('M 200 18 H 218 V 54 H 113 m 5 -5 l -5 5 l 5 5');
+
+    const detour = dependencyLinkPath(
+      TimelineDependencyType.FinishToFinish,
+      { rect: { left: 0, width: 50 }, index: 0 },
+      { rect: { left: 100, width: 100 }, index: 1 },
+      options
+    );
+
+    expect(detour).toBe('M 50 18 H 68 V 36 H 231 V 54 H 213 m 5 -5 l -5 5 l 5 5');
   });
 });

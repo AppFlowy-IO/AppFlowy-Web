@@ -1,9 +1,17 @@
-import { memo, useMemo } from 'react';
+import { memo, MouseEvent, useMemo } from 'react';
 
 import { TIMELINE_BAR_INSET, TIMELINE_ROW_HEIGHT } from './constants';
 import { TimelineLinkDrag } from './hooks/useTimelineLinkDrag';
-import { DependencyGraph, dependencyArrowPath } from './scale/dependencies';
+import { DependencyGraph, dependencyLinkPath, linkOf } from './scale/dependencies';
 import { BarRect } from './scale/geometry';
+
+export interface TimelineLinkSelection {
+  predecessorId: string;
+  successorId: string;
+  /** Click position in canvas coordinates, where the link editor anchors. */
+  x: number;
+  y: number;
+}
 
 interface TimelineArrowsProps {
   rowIds: string[];
@@ -18,6 +26,10 @@ interface TimelineArrowsProps {
   left: number;
   /** A connector being dragged from a bar's link handle. */
   pending?: TimelineLinkDrag | null;
+  /** Arrows are clickable (editors only): opens the link editor. */
+  onSelectLink?: (selection: TimelineLinkSelection) => void;
+  /** The link currently open in the editor, drawn highlighted. */
+  selectedKey?: string;
 }
 
 /**
@@ -35,10 +47,12 @@ export const TimelineArrows = memo(
     bodyHeight,
     left,
     pending,
+    onSelectLink,
+    selectedKey,
   }: TimelineArrowsProps) => {
     const paths = useMemo(() => {
       const indexOf = new Map(rowIds.map((rowId, index) => [rowId, index] as const));
-      const result: { key: string; d: string }[] = [];
+      const result: { key: string; d: string; predecessorId: string; successorId: string }[] = [];
 
       graph.predecessors.forEach((predecessors, rowId) => {
         const toIndex = indexOf.get(rowId);
@@ -56,8 +70,11 @@ export const TimelineArrows = memo(
 
           if (!touchesWindow) return;
           result.push({
-            key: `${predecessor}->${rowId}`,
-            d: dependencyArrowPath(
+            key: `${predecessor}:${rowId}`,
+            predecessorId: predecessor,
+            successorId: rowId,
+            d: dependencyLinkPath(
+              linkOf(graph, predecessor, rowId).type,
               { rect: fromRect, index: fromIndex },
               { rect: toRect, index: toIndex },
               { rowHeight: TIMELINE_ROW_HEIGHT, barInset: TIMELINE_BAR_INSET }
@@ -71,24 +88,52 @@ export const TimelineArrows = memo(
 
     if (paths.length === 0 && !pending) return null;
 
+    const handleClick = (event: MouseEvent<SVGPathElement>, path: (typeof paths)[number]) => {
+      if (!onSelectLink) return;
+      event.stopPropagation();
+      const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect();
+
+      onSelectLink({
+        predecessorId: path.predecessorId,
+        successorId: path.successorId,
+        x: event.clientX - (bounds?.left ?? 0),
+        y: event.clientY - (bounds?.top ?? 0),
+      });
+    };
+
     return (
+      // Above the bars so links can be clicked; only the strokes take pointer events.
       <svg
         aria-hidden
-        className='pointer-events-none absolute top-0 z-[1] text-icon-secondary'
+        className='pointer-events-none absolute top-0 z-[3] text-icon-secondary'
         style={{ left, width: canvasWidth, height: bodyHeight }}
         width={canvasWidth}
         height={bodyHeight}
         data-testid='timeline-arrows'
       >
         {paths.map((path) => (
-          <path
-            key={path.key}
-            d={path.d}
-            fill='none'
-            stroke='currentColor'
-            strokeWidth={1.4}
-            data-testid='timeline-arrow'
-          />
+          <g key={path.key} className={path.key === selectedKey ? 'text-fill-theme-thick' : undefined}>
+            <path
+              d={path.d}
+              fill='none'
+              stroke='currentColor'
+              strokeWidth={path.key === selectedKey ? 2 : 1.4}
+              data-testid='timeline-arrow'
+              data-link={path.key}
+            />
+            {onSelectLink ? (
+              <path
+                d={path.d}
+                fill='none'
+                stroke='transparent'
+                strokeWidth={10}
+                className='cursor-pointer'
+                style={{ pointerEvents: 'stroke' }}
+                data-testid={`timeline-arrow-hit-${path.key}`}
+                onClick={(event) => handleClick(event, path)}
+              />
+            ) : null}
+          </g>
         ))}
         {pending ? (
           <g className='text-fill-theme-thick' data-testid='timeline-link-preview'>

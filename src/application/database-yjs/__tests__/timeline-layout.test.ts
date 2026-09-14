@@ -2,7 +2,12 @@ import * as Y from 'yjs';
 
 import { YDatabase, YDatabaseView, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
-import { TimelineDependencyShift, TimelineLayout } from '../database.type';
+import {
+  TimelineDependencyDirection,
+  TimelineDependencyShift,
+  TimelineDependencyType,
+  TimelineLayout,
+} from '../database.type';
 import {
   createTimelineLayoutStore,
   initializeTimelineLayoutSetting,
@@ -38,6 +43,8 @@ test('missing setting falls back to month scale, docked table, and the user week
     firstDayOfWeek: 1,
     endFieldId: '',
     dependencyFieldId: '',
+    dependencyDirection: TimelineDependencyDirection.BlockedBy,
+    dependencyLinks: {},
     dependencyShift: TimelineDependencyShift.OverlapOnly,
     avoidWeekends: false,
     progressFieldId: '',
@@ -87,6 +94,8 @@ test('integers written by the server as BigInt decode like web numbers', () => {
     firstDayOfWeek: 1,
     endFieldId: '',
     dependencyFieldId: '',
+    dependencyDirection: TimelineDependencyDirection.BlockedBy,
+    dependencyLinks: {},
     dependencyShift: TimelineDependencyShift.OverlapOnly,
     avoidWeekends: false,
     progressFieldId: '',
@@ -172,6 +181,8 @@ test('the store notifies on remote changes only for this view and tolerates bad 
     firstDayOfWeek: 1,
     endFieldId: '',
     dependencyFieldId: '',
+    dependencyDirection: TimelineDependencyDirection.BlockedBy,
+    dependencyLinks: {},
     dependencyShift: TimelineDependencyShift.OverlapOnly,
     avoidWeekends: false,
     progressFieldId: '',
@@ -224,4 +235,32 @@ test('the scale is stored under layout_ty, the key the calendar uses for its mod
 
   expect(setting.get(YjsDatabaseKey.layout_ty)).toBe(TimelineLayout.Quarter);
   expect(setting.has('zoom')).toBe(false);
+});
+
+test('dependency direction and per-link type / lag round-trip; default links need no entry', () => {
+  const { doc, view, database } = createFixture();
+
+  doc.transact(() =>
+    updateTimelineLayoutSetting(view, {
+      fieldId: 'date',
+      dependencyDirection: TimelineDependencyDirection.Blocking,
+      dependencyLinks: {
+        'a:b': { type: TimelineDependencyType.StartToStart, lag: 2 },
+        'b:c': { type: TimelineDependencyType.FinishToStart, lag: 0 },
+        'c:d': { type: TimelineDependencyType.FinishToStart, lag: -1 },
+      },
+    })
+  );
+  const read = readTimelineLayoutSetting(database, 'timeline', 0, false);
+
+  expect(read.dependencyDirection).toBe(TimelineDependencyDirection.Blocking);
+  expect(read.dependencyLinks).toEqual({
+    'a:b': { type: TimelineDependencyType.StartToStart, lag: 2 },
+    'c:d': { type: TimelineDependencyType.FinishToStart, lag: -1 },
+  });
+  const setting = view.get(YjsDatabaseKey.layout_settings).get(TIMELINE_LAYOUT_KEY);
+
+  expect(setting.get(YjsDatabaseKey.dependency_links)).toEqual({ 'a:b': { ty: 1, lag: 2 }, 'c:d': { ty: 0, lag: -1 } });
+  doc.transact(() => updateTimelineLayoutSetting(view, { dependencyLinks: {} }));
+  expect(setting.has(YjsDatabaseKey.dependency_links)).toBe(false);
 });
