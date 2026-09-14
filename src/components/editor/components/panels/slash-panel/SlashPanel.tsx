@@ -6,10 +6,7 @@ import { Editor, Element, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { isDatabaseBlockType } from '@/application/database-block';
-import {
-  createDatabaseFeedPageViaGrid,
-  createLinkedDatabaseFeedView,
-} from '@/application/database-yjs/feed-layout';
+import { createDatabaseFeedPageViaGrid, createLinkedDatabaseFeedView } from '@/application/database-yjs/feed-layout';
 import {
   createDatabaseGalleryPageViaGrid,
   createLinkedDatabaseGalleryView,
@@ -60,6 +57,7 @@ import { ReactComponent as AudioIcon } from '@/assets/icons/audio.svg';
 import { ReactComponent as BoardIcon } from '@/assets/icons/board.svg';
 import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
 import { ReactComponent as CalendarIcon } from '@/assets/icons/calendar.svg';
+import { ReactComponent as TimelineIcon } from '@/assets/icons/timeline.svg';
 import { ReactComponent as CalloutIcon } from '@/assets/icons/callout.svg';
 import { ReactComponent as ChartIcon } from '@/assets/icons/chart.svg';
 import { ReactComponent as ContinueWritingIcon } from '@/assets/icons/continue_writing.svg';
@@ -727,6 +725,10 @@ export function SlashPanel({
               });
             case ViewLayout.Chart:
               return t('document.chart.referencedChartPrefix', {
+                defaultValue: 'View of',
+              });
+            case ViewLayout.Timeline:
+              return t('timeline.referencedTimelinePrefix', {
                 defaultValue: 'View of',
               });
             default:
@@ -1420,6 +1422,28 @@ export function SlashPanel({
         aliases: ['link to calendar', 'referenced calendar', 'ltc'],
         onClick: () => {
           void handleOpenLinkedDatabasePicker(ViewLayout.Calendar, 'linkedCalendar');
+        },
+      },
+      {
+        label: t('document.slashMenu.name.timeline', { defaultValue: 'Timeline' }),
+        key: 'timeline',
+        icon: <TimelineIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['timeline', 'gantt', 'date', 'database', 'schedule'],
+        aliases: ['timeline view', 'gantt'],
+        onClick: () => {
+          void createInlineDatabase(ViewLayout.Timeline);
+        },
+      },
+      {
+        label: t('document.slashMenu.name.linkedTimeline', { defaultValue: 'Linked Timeline' }),
+        key: 'linkedTimeline',
+        icon: <TimelineIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['linked', 'timeline', 'gantt', 'date', 'database'],
+        aliases: ['link to timeline', 'referenced timeline', 'ltt'],
+        onClick: () => {
+          void handleOpenLinkedDatabasePicker(ViewLayout.Timeline, 'linkedTimeline');
         },
       },
       {

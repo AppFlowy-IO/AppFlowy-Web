@@ -210,6 +210,14 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
           void handleAddPage(ViewLayout.Calendar, t('document.plugins.database.newDatabase'));
         },
       },
+      {
+        label: t('timeline.menuName', { defaultValue: 'Timeline' }),
+        icon: <ViewIcon layout={ViewLayout.Timeline} size={'medium'} />,
+        testId: 'add-timeline-page-button',
+        onSelect: () => {
+          void handleAddPage(ViewLayout.Timeline, t('document.plugins.database.newDatabase'));
+        },
+      },
       ...(aiEnabled
         ? [
             {

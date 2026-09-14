@@ -8,6 +8,7 @@ const DATABASE_LAYOUTS = new Set<ViewLayout>([
   ViewLayout.List,
   ViewLayout.Gallery,
   ViewLayout.Feed,
+  ViewLayout.Timeline,
 ]);
 
 /** Map each database view layout to its cross-client document block type. */
@@ -27,6 +28,8 @@ export function getDatabaseBlockTypeForLayout(layout: ViewLayout): BlockType | n
       return BlockType.DatabaseGalleryBlock;
     case ViewLayout.Feed:
       return BlockType.FeedBlock;
+    case ViewLayout.Timeline:
+      return BlockType.TimelineBlock;
     default:
       return null;
   }

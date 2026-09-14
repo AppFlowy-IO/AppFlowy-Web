@@ -6,6 +6,11 @@ import * as Y from 'yjs';
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { CalendarLayoutUpdate, updateCalendarLayoutSetting } from '@/application/database-yjs/calendar-layout';
+import {
+  initializeTimelineLayoutSetting,
+  TimelineLayoutUpdate,
+  updateTimelineLayoutSetting,
+} from '@/application/database-yjs/timeline-layout';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -131,6 +136,7 @@ import {
   YDatabaseGridLayoutSetting,
   YDatabaseLayoutSettings,
   YDatabaseListLayoutSetting,
+  YDatabaseTimelineLayoutSetting,
   YDatabaseRow,
   YDatabaseRowOrders,
   YDatabaseSort,
@@ -1035,10 +1041,13 @@ function getOrCreateBoardLayoutSetting(view: YDatabaseView) {
   return layoutSetting;
 }
 
+/** Layouts whose grouping options live under `layout_settings[String(layout)]`. */
+export type GroupableDatabaseLayout = DatabaseViewLayout.Grid | DatabaseViewLayout.List | DatabaseViewLayout.Timeline;
+
 function getOrCreateDatabaseGroupingLayoutSetting(
   view: YDatabaseView,
-  layout: DatabaseViewLayout.Grid | DatabaseViewLayout.List
-): YDatabaseGridLayoutSetting | YDatabaseListLayoutSetting {
+  layout: GroupableDatabaseLayout
+): YDatabaseGridLayoutSetting | YDatabaseListLayoutSetting | YDatabaseTimelineLayoutSetting {
   let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
 
   if (!layoutSettings) {
@@ -1046,7 +1055,12 @@ function getOrCreateDatabaseGroupingLayoutSetting(
     view.set(YjsDatabaseKey.layout_settings, layoutSettings);
   }
 
-  let layoutSetting = layout === DatabaseViewLayout.List ? layoutSettings.get('4') : layoutSettings.get('0');
+  let layoutSetting =
+    layout === DatabaseViewLayout.List
+      ? layoutSettings.get('4')
+      : layout === DatabaseViewLayout.Timeline
+      ? layoutSettings.get('8')
+      : layoutSettings.get('0');
 
   if (!layoutSetting) {
     layoutSetting = new Y.Map() as YDatabaseGridLayoutSetting | YDatabaseListLayoutSetting;
@@ -1056,7 +1070,7 @@ function getOrCreateDatabaseGroupingLayoutSetting(
   return layoutSetting;
 }
 
-export function useToggleDatabaseHideEmptyGroups(layout: DatabaseViewLayout.Grid | DatabaseViewLayout.List) {
+export function useToggleDatabaseHideEmptyGroups(layout: GroupableDatabaseLayout) {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
@@ -1083,6 +1097,10 @@ export function useToggleGridHideEmptyGroups() {
 
 export function useToggleListHideEmptyGroups() {
   return useToggleDatabaseHideEmptyGroups(DatabaseViewLayout.List);
+}
+
+export function useToggleTimelineHideEmptyGroups() {
+  return useToggleDatabaseHideEmptyGroups(DatabaseViewLayout.Timeline);
 }
 
 export function useSetDatabaseGroupVisibilityDispatch(groupId?: string, fieldId?: string) {
@@ -2744,6 +2762,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Gallery]: ViewLayout.Gallery,
         [DatabaseViewLayout.Feed]: ViewLayout.Feed,
         [DatabaseViewLayout.Form]: ViewLayout.Form,
+        [DatabaseViewLayout.Timeline]: ViewLayout.Timeline,
       };
       const layoutToName: Record<DatabaseViewLayout, string> = {
         [DatabaseViewLayout.Grid]: 'Grid',
@@ -2754,6 +2773,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Gallery]: 'Gallery',
         [DatabaseViewLayout.Feed]: 'Feed',
         [DatabaseViewLayout.Form]: 'Form builder',
+        [DatabaseViewLayout.Timeline]: 'Timeline',
       };
       const viewLayout = layoutToViewLayout[layout];
       const name = layoutToName[layout];
@@ -3205,6 +3225,21 @@ export function useUpdateDatabaseLayout(viewId: string) {
               }
 
               initializeCalendarLayoutSetting(view, fieldId);
+            }
+
+            if (layout === DatabaseViewLayout.Timeline) {
+              const timelineSetting = view.get(YjsDatabaseKey.layout_settings)?.get('8');
+              const configuredFieldId = timelineSetting?.get(YjsDatabaseKey.field_id);
+              const configuredField = getValidCalendarField(database, fieldOrders, configuredFieldId);
+              const dateField: YDatabaseField | undefined =
+                configuredField ?? enhanceCalendarLayoutByFieldExists(fieldOrders);
+              const fieldId = dateField?.get(YjsDatabaseKey.id);
+
+              if (!fieldId) {
+                throw new Error(`Date field not found`);
+              }
+
+              initializeTimelineLayoutSetting(view, fieldId);
             }
 
             if (layout === DatabaseViewLayout.List) {
@@ -4951,6 +4986,23 @@ export function useUpdateCalendarSetting() {
 
       if (readOnly || !view) return;
       executeOperations(sharedRoot, [() => updateCalendarLayoutSetting(view, settings)], 'updateCalendarSetting');
+    },
+    [sharedRoot, viewId, readOnly]
+  );
+}
+
+export function useUpdateTimelineSetting() {
+  const viewId = useDatabaseViewId();
+  const readOnly = useReadOnly();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (settings: TimelineLayoutUpdate) => {
+      const database = sharedRoot.get(YjsEditorKey.database);
+      const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+
+      if (readOnly || !view) return;
+      executeOperations(sharedRoot, [() => updateTimelineLayoutSetting(view, settings)], 'updateTimelineSetting');
     },
     [sharedRoot, viewId, readOnly]
   );
