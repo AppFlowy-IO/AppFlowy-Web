@@ -3,9 +3,9 @@ import { RollupVisualizationOption } from '@/application/database-yjs/fields/rol
 
 import { FormulaType, FormulaValue } from './values';
 
-/** Persisted under `type_option["19"]`. */
+/** Persisted under `type_option["19"]` (stored keys: `expression`, `format`, `__rollup_show_as_*__`). */
 export interface FormulaTypeOption {
-  /** Expression source; property references are stored as prop("<field_id>"). */
+  /** Expression source (stored as `expression`); property references are prop("<field_id>"). */
   formula: string;
   /** Number format applied when the result is a number. */
   format: NumberFormat;

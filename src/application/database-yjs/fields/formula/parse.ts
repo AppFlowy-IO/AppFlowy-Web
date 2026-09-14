@@ -9,11 +9,14 @@ import { getTypeOptions } from '../type_option';
 import { FormulaTypeOption } from './formula.type';
 
 export function parseFormulaTypeOption(field: YDatabaseField): FormulaTypeOption {
-  const raw = getTypeOptions(field, FieldType.Formula)?.toJSON() as Partial<FormulaTypeOption> | undefined;
+  const raw = getTypeOptions(field, FieldType.Formula)?.toJSON() as
+    | (Partial<Omit<FormulaTypeOption, 'formula'>> & { [YjsDatabaseKey.expression]?: unknown })
+    | undefined;
   const format = Number.parseInt(String(raw?.format ?? NumberFormat.Num), 10);
+  const expression = raw?.[YjsDatabaseKey.expression];
 
   return {
-    formula: typeof raw?.[YjsDatabaseKey.formula] === 'string' ? raw[YjsDatabaseKey.formula] : '',
+    formula: typeof expression === 'string' ? expression : '',
     format: NumberFormat[format] === undefined ? NumberFormat.Num : (format as NumberFormat),
     __rollup_show_as_type__:
       raw?.__rollup_show_as_type__ === undefined ? undefined : Number(raw.__rollup_show_as_type__),

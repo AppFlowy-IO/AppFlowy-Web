@@ -3589,7 +3589,7 @@ export function useSwitchPropertyType() {
                     newTypeOption.set(YjsDatabaseKey.show_as, RollupDisplayMode.Calculated);
                     newTypeOption.set(YjsDatabaseKey.condition_value, '');
                   } else if (fieldType === FieldType.Formula) {
-                    newTypeOption.set(YjsDatabaseKey.formula, '');
+                    newTypeOption.set(YjsDatabaseKey.expression, '');
                     newTypeOption.set(YjsDatabaseKey.format, NumberFormat.Num);
                   }
 
@@ -4619,7 +4619,7 @@ export function useUpdateFormulaTypeOption(fieldId: string) {
             }
 
             if (updates.formula !== undefined) {
-              typeOption.set(YjsDatabaseKey.formula, updates.formula);
+              typeOption.set(YjsDatabaseKey.expression, updates.formula);
             }
 
             if (updates.format !== undefined) {

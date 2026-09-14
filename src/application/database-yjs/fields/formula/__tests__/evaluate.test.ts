@@ -134,7 +134,7 @@ function buildFixture(formulas: Record<string, string>, options: { numberFormat?
       id,
       name: id.replace('f-', ''),
       type: FieldType.Formula,
-      typeOption: { formula, format: options.numberFormat ?? NumberFormat.Num },
+      typeOption: { expression: formula, format: options.numberFormat ?? NumberFormat.Num },
     })),
   ]);
 
@@ -276,7 +276,7 @@ describe('formula evaluation over database rows', () => {
         name: 'X',
         type: FieldType.Formula,
         typeOption: {
-          formula:
+          expression:
             'format(prop("f-n") + 1) + "|" + prop("f-t") + "|" + format(empty(prop("f-d"))) + "|" + format(prop("f-m").length())',
         },
       },
@@ -345,10 +345,10 @@ describe('formula filters and sorts', () => {
     { id: 'f-price', name: 'Price', type: FieldType.Number },
     { id: 'f-done', name: 'Done', type: FieldType.Checkbox },
     { id: 'f-due', name: 'Due', type: FieldType.DateTime },
-    { id: 'f-double', name: 'Double', type: FieldType.Formula, typeOption: { formula: 'prop("f-price") * 2' } },
-    { id: 'f-label', name: 'Label', type: FieldType.Formula, typeOption: { formula: 'if(prop("f-done"), "done", "open")' } },
-    { id: 'f-flag', name: 'Flag', type: FieldType.Formula, typeOption: { formula: 'prop("f-price") > 5' } },
-    { id: 'f-next', name: 'Next', type: FieldType.Formula, typeOption: { formula: 'dateAdd(prop("f-due"), 1, "days")' } },
+    { id: 'f-double', name: 'Double', type: FieldType.Formula, typeOption: { expression: 'prop("f-price") * 2' } },
+    { id: 'f-label', name: 'Label', type: FieldType.Formula, typeOption: { expression: 'if(prop("f-done"), "done", "open")' } },
+    { id: 'f-flag', name: 'Flag', type: FieldType.Formula, typeOption: { expression: 'prop("f-price") > 5' } },
+    { id: 'f-next', name: 'Next', type: FieldType.Formula, typeOption: { expression: 'dateAdd(prop("f-due"), 1, "days")' } },
   ]);
   const rows: Row[] = ['row-a', 'row-b', 'row-c'].map((id) => ({ id, height: 0 }));
   const rowMetas: Record<RowId, YDoc> = {
