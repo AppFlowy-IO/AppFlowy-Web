@@ -1,0 +1,45 @@
+name: Upload test artifact
+description: Upload test diagnostics with one retry for artifact service errors
+
+inputs:
+  name:
+    description: Unique artifact name for this test group
+    required: true
+  path:
+    description: Files or directory to upload
+    required: true
+  retention-days:
+    description: Number of days to retain the artifact
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Upload
+      id: first
+      if: ${{ !cancelled() }}
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        if-no-files-found: ignore
+        retention-days: ${{ inputs.retention-days }}
+
+    # Inspect outcome, since continue-on-error changes conclusion to success.
+    # The explicit status check also allows retries after a test step failed.
+    - name: Wait before retry
+      if: ${{ !cancelled() && steps.first.outcome == 'failure' }}
+      shell: bash
+      run: sleep 10
+
+    - name: Retry upload
+      if: ${{ !cancelled() && steps.first.outcome == 'failure' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        if-no-files-found: ignore
+        retention-days: ${{ inputs.retention-days }}
+        # A failed finalization can leave an artifact with this name behind.
+        overwrite: true

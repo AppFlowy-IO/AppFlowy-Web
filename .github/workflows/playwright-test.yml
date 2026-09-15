@@ -370,20 +370,18 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/upload-test-artifact
         with:
           name: playwright-report-${{ matrix.test-group.name }}
           path: playwright-report/
-          if-no-files-found: ignore
           retention-days: 7
 
       - name: Upload test traces
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/upload-test-artifact
         with:
           name: playwright-traces-${{ matrix.test-group.name }}
           path: test-results/
-          if-no-files-found: ignore
           retention-days: 3
 
       - name: Cleanup
