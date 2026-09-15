@@ -7,7 +7,12 @@ import { Role, View, ViewLayout } from '@/application/types';
 import { isSpaceView } from '@/application/view-utils';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
-import { findView, getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
+import {
+  findView,
+  findViewAncestorIds,
+  getOutlineExpands,
+  setOutlineExpands,
+} from '@/components/_shared/outline/utils';
 import DirectoryStructure from '@/components/_shared/skeleton/DirectoryStructure';
 import {
   useAppOutline,
@@ -128,6 +133,7 @@ export function Outline({ width }: { width: number }) {
 
   const loadingViewIdsRef = useRef<Set<string>>(new Set());
   const navigationHydrationInFlightRef = useRef<Set<string>>(new Set());
+  const autoExpandedSelectedPathRef = useRef<Set<string>>(new Set());
   // Selected views that navigation hydration could not place in the outline
   // (not found server-side, or access denied), mapped to a retry-after
   // timestamp. Throttles re-fetching navigation on every `outline` change for
@@ -141,8 +147,12 @@ export function Outline({ width }: { width: number }) {
   const [loadingRevision, setLoadingRevision] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const loadingViewIds = useMemo(() => loadingViewIdsRef.current, [loadingRevision]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [expandViewIds, setExpandViewIds] = React.useState<string[]>(() => Object.keys(getOutlineExpands()));
-  const [pendingAutoLoadIds, setPendingAutoLoadIds] = useState<string[]>(() => Object.keys(getOutlineExpands()));
+  const [expandViewIds, setExpandViewIds] = React.useState<string[]>(() =>
+    Object.keys(getOutlineExpands(currentWorkspaceId))
+  );
+  const [pendingAutoLoadIds, setPendingAutoLoadIds] = useState<string[]>(() =>
+    Object.keys(getOutlineExpands(currentWorkspaceId))
+  );
   const expandViewIdsRef = useRef(expandViewIds);
   const sidebarRevalidationStateRef = useRef(createSidebarOutlineRevalidationScheduleState());
   const rescheduleSidebarRevalidationRef = useRef<() => void>(() => undefined);
@@ -178,7 +188,23 @@ export function Outline({ width }: { width: number }) {
 
   useEffect(() => {
     if (!selectedViewId || !outline || !ensureViewVisibleInOutline) return;
-    if (findView(outline, selectedViewId)) return;
+    if (findView(outline, selectedViewId)) {
+      // The page is already in the outline - e.g. right after a workspace switch, which
+      // navigates to the last-opened page contained in the deep outline - but its ancestors
+      // may be collapsed, which makes the containing space look empty. Expand the chain once
+      // per selected page so a deliberate manual collapse is not fought on later refreshes.
+      const presentAncestorIds = findViewAncestorIds(outline, selectedViewId) ?? [];
+      const autoExpandKey = `${currentWorkspaceId ?? ''}:${selectedViewId}`;
+
+      if (presentAncestorIds.length > 0 && !autoExpandedSelectedPathRef.current.has(autoExpandKey)) {
+        autoExpandedSelectedPathRef.current.add(autoExpandKey);
+        // Persist as well: the workspace-restore effect below rebuilds expandViewIds from
+        // localStorage after mount, which would otherwise clobber this expansion.
+        presentAncestorIds.forEach((id) => setOutlineExpands(id, true, currentWorkspaceId));
+        expandHydratedPath(presentAncestorIds);
+      }
+      return;
+    }
     if (navigationHydrationInFlightRef.current.has(selectedViewId)) return;
     if ((navigationHydrationRetryAfterRef.current.get(selectedViewId) ?? 0) > Date.now()) return;
 
@@ -196,7 +222,7 @@ export function Outline({ width }: { width: number }) {
         }
 
         navigationHydrationRetryAfterRef.current.delete(selectedViewId);
-        ancestorIds.forEach((id) => setOutlineExpands(id, true));
+        ancestorIds.forEach((id) => setOutlineExpands(id, true, currentWorkspaceId));
         expandHydratedPath(ancestorIds);
       })
       .catch((error) => {
@@ -209,7 +235,7 @@ export function Outline({ width }: { width: number }) {
       .finally(() => {
         navigationHydrationInFlightRef.current.delete(selectedViewId);
       });
-  }, [ensureViewVisibleInOutline, expandHydratedPath, outline, selectedViewId]);
+  }, [currentWorkspaceId, ensureViewVisibleInOutline, expandHydratedPath, outline, selectedViewId]);
 
   useEffect(() => {
     sidebarRevalidationStateRef.current = createSidebarOutlineRevalidationScheduleState();
@@ -217,7 +243,7 @@ export function Outline({ width }: { width: number }) {
   }, [outline]);
 
   useEffect(() => {
-    const restoredExpandedIds = Object.keys(getOutlineExpands());
+    const restoredExpandedIds = Object.keys(getOutlineExpands(currentWorkspaceId));
 
     setExpandViewIds(restoredExpandedIds);
     setPendingAutoLoadIds(restoredExpandedIds);
@@ -391,7 +417,7 @@ export function Outline({ width }: { width: number }) {
         const staleSet = new Set(staleIds);
 
         staleIds.forEach((id) => {
-          setOutlineExpands(id, false);
+          setOutlineExpands(id, false, currentWorkspaceId);
           loadingViewIdsRef.current.delete(id);
           autoLoadRetryAfterRef.current.delete(id);
         });
@@ -414,7 +440,7 @@ export function Outline({ width }: { width: number }) {
       .finally(() => {
         unknownIds.forEach((id) => validatingRestoreIdsRef.current.delete(id));
       });
-  }, [outline, pendingAutoLoadIds, loadViewChildrenBatch]);
+  }, [currentWorkspaceId, outline, pendingAutoLoadIds, loadViewChildrenBatch]);
 
   // Drop startup pending ids as soon as they are confirmed loaded.
   useEffect(() => {
@@ -534,10 +560,10 @@ export function Outline({ width }: { width: number }) {
       if (isExpanded) {
         sidebarRevalidationStateRef.current = createSidebarOutlineRevalidationScheduleState();
         rescheduleSidebarRevalidationRef.current();
-        setOutlineExpands(id, true);
+        setOutlineExpands(id, true, currentWorkspaceId);
         setExpandViewIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
       } else {
-        collapsedSubtreeIds.forEach((viewId) => setOutlineExpands(viewId, false));
+        collapsedSubtreeIds.forEach((viewId) => setOutlineExpands(viewId, false, currentWorkspaceId));
         setExpandViewIds((prev) => {
           const next = prev.filter((viewId) => !collapsedSubtreeSet.has(viewId));
 
