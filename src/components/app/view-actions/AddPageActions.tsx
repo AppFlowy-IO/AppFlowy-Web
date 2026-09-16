@@ -21,6 +21,7 @@ import {
 } from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { getErrorMessage } from '@/utils/errors';
 
 function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (view: View) => void }) {
   const { t } = useTranslation();
@@ -145,10 +146,9 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         }
 
         toast.dismiss(loadingToastId);
-        // eslint-disable-next-line
-      } catch (e: any) {
+      } catch (e: unknown) {
         toast.dismiss(loadingToastId);
-        toast.error(e.message);
+        toast.error(getErrorMessage(e, 'Failed to create page'));
       }
     },
     [
@@ -208,6 +208,14 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         icon: <ViewIcon layout={ViewLayout.Calendar} size={'medium'} />,
         onSelect: () => {
           void handleAddPage(ViewLayout.Calendar, t('document.plugins.database.newDatabase'));
+        },
+      },
+      {
+        label: t('timeline.menuName', { defaultValue: 'Timeline' }),
+        icon: <ViewIcon layout={ViewLayout.Timeline} size={'medium'} />,
+        testId: 'add-timeline-page-button',
+        onSelect: () => {
+          void handleAddPage(ViewLayout.Timeline, t('document.plugins.database.newDatabase'));
         },
       },
       ...(aiEnabled

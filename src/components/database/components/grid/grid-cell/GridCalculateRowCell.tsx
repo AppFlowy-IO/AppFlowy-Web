@@ -1,26 +1,29 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useDatabaseView, useFieldCellsByRowsSelector, useReadOnly } from '@/application/database-yjs';
+import { Row, useDatabaseView, useFieldCellsByRowsSelector, useReadOnly } from '@/application/database-yjs';
 import { CalculationType } from '@/application/database-yjs/database.type';
 import { useCalculateFieldDispatch, useClearCalculate, useUpdateCalculate } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as DropdownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { CalculationCell, ICalculationCell } from '@/components/database/components/grid/grid-calculation-cell';
 import CalcationMenu from '@/components/database/components/grid/grid-calculation-cell/CalcationMenu';
-import { useGridContext } from '@/components/database/grid/useGridContext';
+import { GridContext } from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
 
 export interface GridCalculateRowCellProps {
   fieldId: string;
+  /** Rows to calculate over; defaults to the surrounding grid's rows (the timeline passes its own). */
+  rowOrders?: Row[];
 }
 
-export function GridCalculateRowCell ({ fieldId }: GridCalculateRowCellProps) {
+export function GridCalculateRowCell ({ fieldId, rowOrders: rowOrdersProp }: GridCalculateRowCellProps) {
   const databaseView = useDatabaseView();
   const [calculation, setCalculation] = useState<ICalculationCell>();
   const readOnly = useReadOnly();
   const calculate = useCalculateFieldDispatch(fieldId);
-  const { rowOrders } = useGridContext();
+  const gridRowOrders = useContext(GridContext)?.rowOrders;
+  const rowOrders = rowOrdersProp ?? gridRowOrders;
   const { cells } = useFieldCellsByRowsSelector(fieldId, rowOrders);
   const calculations = databaseView?.get(YjsDatabaseKey.calculations);
 

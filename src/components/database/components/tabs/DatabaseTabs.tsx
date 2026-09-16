@@ -21,6 +21,7 @@ import DeleteViewConfirm from '@/components/database/components/tabs/DeleteViewC
 import { useOpenDatabaseAsPage } from '@/components/database/hooks';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { getErrorMessage } from '@/utils/errors';
 
 const TAB_BAR_CLASS_NAME =
   '-mb-[0.5px] flex items-center  text-text-primary flex-col  max-sm:!px-6 min-w-0 overflow-hidden';
@@ -472,7 +473,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
         } catch (error) {
           if (isCurrentDuplicateScope()) {
             toast.error(
-              error instanceof Error ? error.message : t('document.plugins.subPage.errors.failedDuplicatePage')
+              getErrorMessage(error, t('document.plugins.subPage.errors.failedDuplicatePage'))
             );
           }
         } finally {

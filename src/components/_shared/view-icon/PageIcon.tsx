@@ -12,6 +12,7 @@ import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
 import { ReactComponent as ListSvg } from '@/assets/icons/list.svg';
 import { ReactComponent as FormSvg } from '@/assets/icons/edit.svg';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
+import { ReactComponent as TimelineSvg } from '@/assets/icons/timeline.svg';
 import { cn } from '@/lib/utils';
 import { getImageUrl, revokeBlobUrl } from '@/utils/authenticated-image';
 import { renderColor } from '@/utils/color';
@@ -161,6 +162,8 @@ function PageIcon({
       return <FeedSvg data-testid='feed-view-icon' className={className} />;
     case ViewLayout.Form:
       return <FormSvg data-testid='form-view-icon' className={className} />;
+    case ViewLayout.Timeline:
+      return <TimelineSvg data-testid='timeline-view-icon' className={className} />;
     case ViewLayout.Document:
       return <DocumentSvg className={className} />;
     default:

@@ -453,6 +453,7 @@ function DatabaseView(props: DatabaseViewProps) {
       case ViewLayout.Board:
         return <KanbanSkeleton includeTitle={false} />;
       case ViewLayout.Calendar:
+      case ViewLayout.Timeline:
         return <CalendarSkeleton includeTitle={false} />;
       default:
         return <ComponentLoading />;
@@ -470,7 +471,10 @@ function DatabaseView(props: DatabaseViewProps) {
     <div
       key={databasePageId}
       style={{
-        minHeight: viewMeta.layout === ViewLayout.Calendar ? 'calc(100vh - 48px)' : undefined,
+        minHeight:
+          viewMeta.layout === ViewLayout.Calendar || viewMeta.layout === ViewLayout.Timeline
+            ? 'calc(100vh - 48px)'
+            : undefined,
       }}
       className={'relative flex h-full w-full flex-col'}
     >

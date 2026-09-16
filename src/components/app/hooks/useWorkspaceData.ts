@@ -925,6 +925,7 @@ export function useWorkspaceData() {
             ViewLayout.Gallery,
             ViewLayout.Feed,
             ViewLayout.Form,
+            ViewLayout.Timeline,
           ]);
 
           if (firstView) {
@@ -964,6 +965,7 @@ export function useWorkspaceData() {
                   ViewLayout.Gallery,
                   ViewLayout.Feed,
                   ViewLayout.Form,
+                  ViewLayout.Timeline,
                 ]);
 
                 if (firstChild) {

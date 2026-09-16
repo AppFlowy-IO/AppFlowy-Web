@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { FORM_VIEW_CREATION_ENABLED } from '@/application/constants';
+import { FORM_VIEW_CREATION_ENABLED, TIMELINE_VIEW_ENABLED } from '@/application/constants';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
@@ -10,6 +10,7 @@ import { ViewIcon } from '@/components/_shared/view-icon';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
+import { getErrorMessage } from '@/utils/errors';
 
 interface AddViewButtonProps {
   databasePageId: string;
@@ -72,7 +73,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
     } catch (e: unknown) {
       if (isCurrentActionScope()) {
         console.error('[AddViewButton] Error adding view:', e);
-        toast.error(e instanceof Error ? e.message : 'Failed to add view');
+        toast.error(getErrorMessage(e, 'Failed to add view'));
       }
     } finally {
       if (isCurrentActionScope()) {
@@ -132,6 +133,18 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
           <ViewIcon layout={ViewLayout.Calendar} size={'small'} />
           {t('calendar.menuName')}
         </DropdownMenuItem>
+
+        {TIMELINE_VIEW_ENABLED && (
+          <DropdownMenuItem
+            data-testid='add-timeline-view-button'
+            onClick={() => {
+              void handleAddView(DatabaseViewLayout.Timeline, t('timeline.menuName', { defaultValue: 'Timeline' }));
+            }}
+          >
+            <ViewIcon layout={ViewLayout.Timeline} size={'small'} />
+            {t('timeline.menuName', { defaultValue: 'Timeline' })}
+          </DropdownMenuItem>
+        )}
 
         <DropdownMenuItem
           onClick={() => {

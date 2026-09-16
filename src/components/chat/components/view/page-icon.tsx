@@ -8,6 +8,7 @@ import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
 import { ReactComponent as ListIcon } from '@/assets/icons/list.svg';
 import { ReactComponent as DocIcon } from '@/assets/icons/page.svg';
+import { ReactComponent as TimelineIcon } from '@/assets/icons/timeline.svg';
 import { getIcon, renderColor } from '@/components/chat/lib/utils';
 import { View, ViewIconType, ViewLayout } from '@/components/chat/types';
 import { cn } from '@/lib/utils';
@@ -75,6 +76,8 @@ function PageIcon({ view }: { view: View }) {
         return <GalleryIcon className='h-5 w-5' />;
       case ViewLayout.Feed:
         return <FeedIcon className='h-5 w-5' />;
+      case ViewLayout.Timeline:
+        return <TimelineIcon className='h-5 w-5' />;
       default:
         return <DocIcon className='h-5 w-5' />;
     }

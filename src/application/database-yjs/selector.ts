@@ -13,6 +13,7 @@ import {
 
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { createCalendarLayoutStore } from '@/application/database-yjs/calendar-layout';
+import { createTimelineLayoutStore } from '@/application/database-yjs/timeline-layout';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
@@ -46,6 +47,7 @@ import {
   parseFilter,
 } from '@/application/database-yjs/filter';
 import { DEFAULT_GALLERY_LAYOUT_SETTINGS } from '@/application/database-yjs/gallery-layout';
+import { createLocalFirstObserver } from '@/application/database-yjs/local-first-observer';
 import {
   areGroupRowsHydrated,
   getGroupColumns,
@@ -1773,7 +1775,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const inlineRowOrders = getInlineViewRowOrders(database);
   const { cachedRowDocs, getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(
     Boolean(fieldId),
-    `${layout === DatabaseViewLayout.List ? 'list' : 'grid'}-grouping`
+    `${layout === DatabaseViewLayout.List ? 'list' : layout === DatabaseViewLayout.Timeline ? 'timeline' : 'grid'}-grouping`
   );
   const groupingRows = useMemo(() => {
     const next = { ...cachedRowDocs };
@@ -1981,10 +1983,9 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
         orderedIdSet.add(column.id);
       }
     });
-    const orderedIds =
-      numberPolicy
-        ? orderNumberGroupIds(persistedAndDerivedIds, groupingFieldId, numberPolicy)
-        : persistedAndDerivedIds;
+    const orderedIds = numberPolicy
+      ? orderNumberGroupIds(persistedAndDerivedIds, groupingFieldId, numberPolicy)
+      : persistedAndDerivedIds;
 
     // Seed-only docs may lag a Desktop edit indefinitely because background
     // grouping hydration deliberately does not bind realtime for offscreen
@@ -2010,8 +2011,9 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
         metadataGroupIdSet.add(column.id);
       }
     });
-    const orderedMetadataGroupIds =
-      numberPolicy ? orderNumberGroupIds(metadataGroupIds, groupingFieldId, numberPolicy) : metadataGroupIds;
+    const orderedMetadataGroupIds = numberPolicy
+      ? orderNumberGroupIds(metadataGroupIds, groupingFieldId, numberPolicy)
+      : metadataGroupIds;
 
     const collapsedValue = group.get(YjsDatabaseKey.collapsed_group_ids) as unknown;
     const collapsedIds = new Set(
@@ -2025,6 +2027,8 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     const layoutSetting =
       layout === DatabaseViewLayout.List
         ? view?.get(YjsDatabaseKey.layout_settings)?.get('4')
+        : layout === DatabaseViewLayout.Timeline
+        ? view?.get(YjsDatabaseKey.layout_settings)?.get('8')
         : view?.get(YjsDatabaseKey.layout_settings)?.get('0');
     const storedHideEmpty = layoutSetting?.get(YjsDatabaseKey.hide_empty_groups);
     const hideEmptyGroups = storedHideEmpty === undefined ? true : Boolean(storedHideEmpty);
@@ -2084,7 +2088,8 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
       const automaticallyHidden =
         ready &&
         groupRows.length === 0 &&
-        (hideEmptyGroups || (id !== currentFieldId && isDynamicDatabaseGroupFieldType(fieldType) && !numberPolicy?.retainsEmptyGroups));
+        (hideEmptyGroups ||
+          (id !== currentFieldId && isDynamicDatabaseGroupFieldType(fieldType) && !numberPolicy?.retainsEmptyGroups));
 
       return {
         id,
@@ -2189,6 +2194,10 @@ export function useGridGroupingSelector(): GridGrouping {
 
 export function useListGroupingSelector(): DatabaseGrouping {
   return useDatabaseGroupingSelector(DatabaseViewLayout.List);
+}
+
+export function useTimelineGroupingSelector(): DatabaseGrouping {
+  return useDatabaseGroupingSelector(DatabaseViewLayout.Timeline);
 }
 
 /**
@@ -3114,7 +3123,50 @@ export interface CalendarEvent {
 
 export function useCalendarEventsSelector() {
   const setting = useCalendarLayoutSetting();
-  const fieldId = setting?.fieldId || '';
+
+  return useDateFieldEventsSelector(setting?.fieldId || '');
+}
+
+/**
+ * Rows plotted on the timeline. With Notion's "separate start and end dates"
+ * (`endFieldId` set) each bar runs from the start field's date to the end
+ * field's date; a row whose end is missing or earlier than its start is a
+ * single-unit bar, and a row without a start is undated.
+ */
+export function useTimelineEventsSelector() {
+  const setting = useTimelineLayoutSetting();
+  const startFieldId = setting?.fieldId || '';
+  const endFieldId = setting?.endFieldId && setting.endFieldId !== startFieldId ? setting.endFieldId : '';
+  const starts = useDateFieldEventsSelector(startFieldId);
+  const ends = useDateFieldEventsSelector(endFieldId);
+  const { field: endField } = useFieldSelector(endFieldId);
+  const endFieldType = endField ? (Number(endField.get(YjsDatabaseKey.type)) as FieldType) : null;
+  const hasEndField =
+    endFieldId !== '' &&
+    endFieldType !== null &&
+    [FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime].includes(endFieldType);
+
+  const events = useMemo(() => {
+    if (!hasEndField) return starts.events;
+    const endByRow = new Map(ends.events.map((event) => [event.rowId, event] as const));
+
+    return starts.events.map((event) => {
+      const end = endByRow.get(event.rowId)?.start;
+
+      if (!end || !event.start || end < event.start) return { ...event, end: undefined, isRange: false };
+      return { ...event, end, isRange: true };
+    });
+  }, [ends.events, hasEndField, starts.events]);
+
+  return { events, emptyEvents: starts.emptyEvents, hasEndField };
+}
+
+/**
+ * Rows plotted on a date-typed field. Rows without a value (or not yet loaded)
+ * land in `emptyEvents`; ranges keep `isRange` so consumers can tell a real end
+ * date from the synthetic 30-minute one.
+ */
+export function useDateFieldEventsSelector(fieldId: string) {
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
   const primaryFieldId = usePrimaryFieldId();
   const { field: primaryField, clock: primaryFieldClock } = useFieldSelector(primaryFieldId || '');
@@ -3233,23 +3285,25 @@ export function useCalendarEventsSelector() {
 
     observerEvent();
 
-    const debouncedObserverEvent = debounce(observerEvent, 150);
+    // The user's own edits (a dropped calendar or timeline bar) re-read at
+    // once; remote bursts stay debounced.
+    const rowObserver = createLocalFirstObserver(observerEvent, 150);
 
     // for every row
     rowOrders?.forEach((row) => {
       const rowDoc = rows?.[row.id];
 
       if (!rowDoc) return;
-      rowDoc.getMap(YjsEditorKey.data_section).observeDeep(debouncedObserverEvent);
+      rowDoc.getMap(YjsEditorKey.data_section).observeDeep(rowObserver);
     });
 
     return () => {
-      debouncedObserverEvent.cancel();
+      rowObserver.cancel();
       rowOrders?.forEach((row) => {
         const rowDoc = rows?.[row.id];
 
         if (!rowDoc) return;
-        rowDoc.getMap(YjsEditorKey.data_section).unobserveDeep(debouncedObserverEvent);
+        rowDoc.getMap(YjsEditorKey.data_section).unobserveDeep(rowObserver);
       });
     };
   }, [field, fieldClock, rowOrders, rows, fieldId, primaryFieldId, primaryField, primaryFieldClock, ensureRow]);
@@ -3267,6 +3321,21 @@ export function useCalendarLayoutSetting() {
   const viewId = useDatabaseViewId();
   const store = useMemo(
     () => createCalendarLayoutStore(databaseDoc, viewId, startWeekOn, timeFormat === TimeFormat.TwentyFourHour),
+    [databaseDoc, viewId, startWeekOn, timeFormat]
+  );
+
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+}
+
+export function useTimelineLayoutSetting() {
+  const currentUser = useCurrentUser();
+  const startWeekOn = Number(currentUser?.metadata?.[MetadataKey.StartWeekOn] || 0);
+  const timeFormat = currentUser?.metadata?.[MetadataKey.TimeFormat] || TimeFormat.TwelveHour;
+  const { databaseDoc } = useDatabaseContext();
+
+  const viewId = useDatabaseViewId();
+  const store = useMemo(
+    () => createTimelineLayoutStore(databaseDoc, viewId, startWeekOn, timeFormat === TimeFormat.TwentyFourHour),
     [databaseDoc, viewId, startWeekOn, timeFormat]
   );
 

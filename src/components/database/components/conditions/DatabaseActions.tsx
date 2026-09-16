@@ -118,6 +118,7 @@ export function DatabaseActions() {
     DatabaseViewLayout.List,
     DatabaseViewLayout.Gallery,
     DatabaseViewLayout.Feed,
+    DatabaseViewLayout.Timeline,
   ].includes(layout);
   const showSearch = layout === DatabaseViewLayout.Gallery || layout === DatabaseViewLayout.Feed;
   const showTemplates = [
@@ -128,6 +129,7 @@ export function DatabaseActions() {
     DatabaseViewLayout.List,
     DatabaseViewLayout.Gallery,
     DatabaseViewLayout.Feed,
+    DatabaseViewLayout.Timeline,
   ].includes(layout);
   const settingsButton = (
     <Button

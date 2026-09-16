@@ -2377,6 +2377,8 @@
         "linkedKanban": "Linked Kanban",
         "calendar": "Calendar",
         "linkedCalendar": "Linked Calendar",
+        "timeline": "Timeline",
+        "linkedTimeline": "Linked Timeline",
         "quote": "Quote",
         "divider": "Divider",
         "table": "Table",
@@ -4350,5 +4352,64 @@
     "revertedDialogTitle": "Page Restored",
     "revertedDialogDescription": "This page was restored to a previous version from another device.",
     "revertedDismiss": "Got it"
+  },
+  "timeline": {
+    "menuName": "Timeline",
+    "referencedTimelinePrefix": "View of",
+    "settings": {
+      "name": "Timeline settings",
+      "layoutDateField": "Timeline by",
+      "firstDayOfWeek": "Start week on",
+      "showTable": "Show table",
+      "noDateTitle": "No date",
+      "noDatePopoverTitle": "Drag or click to assign a date",
+      "unsupportedTitle": "This timeline has no date property",
+      "unsupportedHint": "Add a date property to the database, or pick one in the timeline settings.",
+      "dependencies": "Dependencies",
+      "shiftDependents": "Shift dependents",
+      "shiftOverlapOnly": "Only when dates overlap",
+      "shiftMaintainGap": "Keep the time between items",
+      "shiftNever": "Never",
+      "avoidWeekends": "Avoid weekends",
+      "endDateField": "End date",
+      "tableProperties": "Table properties",
+      "progress": "Progress"
+    },
+    "zoom": {
+      "hours": "Hours",
+      "day": "Day",
+      "week": "Week",
+      "biWeek": "Bi-week",
+      "month": "Month",
+      "quarter": "Quarter",
+      "year": "Year"
+    },
+    "today": "Today",
+    "previous": "Earlier",
+    "next": "Later",
+    "scrollToBar": "Scroll to item",
+    "newRow": "New",
+    "popup": {
+      "duration_one": "{{count}} day",
+      "duration_other": "{{count}} days",
+      "progress": "{{percent}}% complete"
+    },
+    "linkHandle": "Drag to add a dependency",
+    "blockedBy": "Blocked by",
+    "blocking": "Blocking",
+    "setUpDependencies": "Set up dependencies",
+    "setUpDependenciesHint": "Adds \"Blocked by\" and \"Blocking\" properties and draws arrows between linked items.",
+    "dependencyDirection": "Field lists",
+    "link": {
+      "title": "Dependency",
+      "type": "Type",
+      "finishToStart": "Finish to start",
+      "startToStart": "Start to start",
+      "finishToFinish": "Finish to finish",
+      "startToFinish": "Start to finish",
+      "lag": "Lag (days)",
+      "remove": "Remove dependency"
+    },
+    "openRow": "Open"
   }
 }
