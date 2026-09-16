@@ -10,6 +10,8 @@ export const TIMELINE_SIDEBAR_WIDTH = 280;
 export const TIMELINE_COLLAPSED_SIDEBAR_WIDTH = 32;
 /** Width of each extra property column in the docked table. */
 export const TIMELINE_TABLE_COLUMN_WIDTH = 140;
+/** Width reserved for the table toggle and each row's open button. */
+export const TIMELINE_TABLE_CONTROL_WIDTH = 28;
 /** Vertical inset of a bar inside its row: 36px rows hold the calendar's 22px event chips. */
 export const TIMELINE_BAR_INSET = 7;
 /** Extra blank rows below the last row so the canvas can be scrolled past it. */

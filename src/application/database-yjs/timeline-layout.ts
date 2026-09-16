@@ -27,23 +27,26 @@ export const DEFAULT_TIMELINE_DEPENDENCY_SHIFT = TimelineDependencyShift.Overlap
 
 const EMPTY_IDS: string[] = [];
 const EMPTY_LINKS: Record<string, TimelineDependencyLink> = {};
-// `getSnapshot` re-reads the setting on every subscriber render. Yjs hands the
-// same object back until the key is rewritten, so parse each stored value once.
+// Plain values keep their identity until the key is rewritten. Shared Yjs
+// containers are converted before caching because their contents can change
+// without replacing the container.
 const parsedLinks = new WeakMap<object, Record<string, TimelineDependencyLink>>();
 const parsedIds = new WeakMap<object, string[]>();
 
 /**
- * Per-link metadata as stored (a plain map of `{ ty, lag }` records). Unknown
+ * Per-link metadata in a plain or shared map of `{ ty, lag }` records. Unknown
  * types fall back to finish-to-start and lag is clamped to whole days.
  */
 function linkMap(value: unknown): Record<string, TimelineDependencyLink> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return EMPTY_LINKS;
-  const cached = parsedLinks.get(value);
+  const records = value instanceof Y.Map ? value.toJSON() : value;
+
+  if (!records || typeof records !== 'object' || Array.isArray(records)) return EMPTY_LINKS;
+  const cached = parsedLinks.get(records);
 
   if (cached) return cached;
   const result: Record<string, TimelineDependencyLink> = {};
 
-  Object.entries(value as Record<string, unknown>).forEach(([key, raw]) => {
+  Object.entries(records as Record<string, unknown>).forEach(([key, raw]) => {
     if (!raw || typeof raw !== 'object') return;
     const record = raw as { ty?: unknown; lag?: unknown };
     const type = integer(record.ty, TimelineDependencyType.FinishToStart, TimelineDependencyType.StartToFinish);
@@ -54,7 +57,7 @@ function linkMap(value: unknown): Record<string, TimelineDependencyLink> {
 
   const links = Object.keys(result).length === 0 ? EMPTY_LINKS : result;
 
-  parsedLinks.set(value, links);
+  parsedLinks.set(records, links);
   return links;
 }
 
@@ -68,16 +71,18 @@ function sameLinks(a: Record<string, TimelineDependencyLink>, b: Record<string, 
   );
 }
 
-/** A plain array of ids as Yjs / Yrs hand it back, or nothing. */
+/** Property ids stored as either a plain array or a desktop-authored Y.Array. */
 function idList(value: unknown): string[] {
-  if (!Array.isArray(value)) return EMPTY_IDS;
-  const cached = parsedIds.get(value);
+  const values = value instanceof Y.Array ? value.toArray() : value;
+
+  if (!Array.isArray(values)) return EMPTY_IDS;
+  const cached = parsedIds.get(values);
 
   if (cached) return cached;
-  const filtered = value.filter((id): id is string => typeof id === 'string' && id !== '');
+  const filtered = values.filter((id): id is string => typeof id === 'string' && id !== '');
   const ids = filtered.length === 0 ? EMPTY_IDS : filtered;
 
-  parsedIds.set(value, ids);
+  parsedIds.set(values, ids);
   return ids;
 }
 

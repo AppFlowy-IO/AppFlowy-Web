@@ -264,3 +264,83 @@ test('dependency direction and per-link type / lag round-trip; default links nee
   doc.transact(() => updateTimelineLayoutSetting(view, { dependencyLinks: {} }));
   expect(setting.has(YjsDatabaseKey.dependency_links)).toBe(false);
 });
+
+test('desktop table columns decode from shared arrays and follow remote edits', () => {
+  const desktop = createFixture();
+  const webDoc = new Y.Doc();
+
+  initializeTimelineLayoutSetting(desktop.view, 'date');
+  const setting = desktop.view.get(YjsDatabaseKey.layout_settings).get(TIMELINE_LAYOUT_KEY);
+  const columns = new Y.Array<string>();
+
+  setting.set(YjsDatabaseKey.table_field_ids, columns);
+  columns.push(['blocked-by', 'blocking']);
+  sync(desktop.doc, webDoc);
+
+  const store = createTimelineLayoutStore(webDoc, 'timeline', 0, false);
+  const initial = store.getSnapshot();
+
+  expect(initial.tableFieldIds).toEqual(['blocked-by', 'blocking']);
+  expect(store.getSnapshot()).toBe(initial);
+  const notify = jest.fn();
+  const unsubscribe = store.subscribe(notify);
+
+  desktop.doc.transact(() => {
+    columns.delete(0, 1);
+    columns.push(['owner']);
+  });
+  sync(desktop.doc, webDoc);
+  expect(notify).toHaveBeenCalledTimes(1);
+  expect(store.getSnapshot().tableFieldIds).toEqual(['blocking', 'owner']);
+  expect(initial.tableFieldIds).toEqual(['blocked-by', 'blocking']);
+  expect(store.getSnapshot()).toBe(store.getSnapshot());
+
+  columns.delete(0, columns.length);
+  sync(desktop.doc, webDoc);
+  expect(notify).toHaveBeenCalledTimes(2);
+  expect(store.getSnapshot().tableFieldIds).toEqual([]);
+  unsubscribe();
+});
+
+test('desktop dependency metadata decodes from shared maps and follows nested remote edits', () => {
+  const desktop = createFixture();
+  const webDoc = new Y.Doc();
+
+  initializeTimelineLayoutSetting(desktop.view, 'date');
+  const setting = desktop.view.get(YjsDatabaseKey.layout_settings).get(TIMELINE_LAYOUT_KEY);
+  const links = new Y.Map<Y.Map<number>>();
+
+  setting.set(YjsDatabaseKey.dependency_links, links);
+  sync(desktop.doc, webDoc);
+
+  const store = createTimelineLayoutStore(webDoc, 'timeline', 0, false);
+
+  expect(store.getSnapshot().dependencyLinks).toEqual({});
+  const notify = jest.fn();
+  const unsubscribe = store.subscribe(notify);
+  const link = new Y.Map<number>([
+    ['ty', TimelineDependencyType.StartToStart],
+    ['lag', 2],
+  ]);
+
+  links.set('a:b', link);
+  sync(desktop.doc, webDoc);
+  const initial = store.getSnapshot();
+
+  expect(notify).toHaveBeenCalledTimes(1);
+  expect(initial.dependencyLinks).toEqual({ 'a:b': { type: TimelineDependencyType.StartToStart, lag: 2 } });
+  expect(store.getSnapshot()).toBe(initial);
+
+  link.set('lag', -1);
+  sync(desktop.doc, webDoc);
+  expect(notify).toHaveBeenCalledTimes(2);
+  expect(store.getSnapshot().dependencyLinks).toEqual({ 'a:b': { type: TimelineDependencyType.StartToStart, lag: -1 } });
+  expect(initial.dependencyLinks['a:b'].lag).toBe(2);
+  expect(store.getSnapshot()).toBe(store.getSnapshot());
+
+  links.delete('a:b');
+  sync(desktop.doc, webDoc);
+  expect(notify).toHaveBeenCalledTimes(3);
+  expect(store.getSnapshot().dependencyLinks).toEqual({});
+  unsubscribe();
+});

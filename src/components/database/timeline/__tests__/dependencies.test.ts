@@ -63,6 +63,33 @@ describe('dependency graph', () => {
 describe('dependency arrow path', () => {
   const options = { rowHeight: 36, barInset: 4 };
 
+  test('an upward connector leaves the bar top and enters the target horizontally', () => {
+    const path = dependencyArrowPath(
+      { rect: { left: 36, width: 36 }, index: 2 },
+      { rect: { left: 72, width: 180 }, index: 1 },
+      { rowHeight: 36, barInset: 7 }
+    );
+
+    expect(path.startsWith('M 54 79 ')).toBe(true);
+    expect(path).toContain('V 59 a 5 5 0 0 1 5 -5 H 72');
+    expect(path.endsWith('m -5 -5 l 5 5 l -5 5')).toBe(true);
+  });
+
+  test.each([1, 8, 18])('a narrow predecessor (%ipx) keeps its connector attached', (width) => {
+    const path = dependencyArrowPath(
+      { rect: { left: 36, width }, index: 1 },
+      { rect: { left: 36 + width, width: 180 }, index: 0 },
+      { rowHeight: 36, barInset: 7 }
+    );
+    const [, x, y] = /^M (\S+) (\S+)/.exec(path)!;
+
+    expect(Number(x)).toBeGreaterThanOrEqual(36);
+    expect(Number(x)).toBeLessThanOrEqual(36 + width);
+    expect(Number(y)).toBe(43);
+    expect(path).toContain(`H ${36 + width} m -5 -5`);
+    expect(path).not.toMatch(/a -|NaN|Infinity/);
+  });
+
   test('a successor that starts after the predecessor gets the short two-bend route', () => {
     const path = dependencyArrowPath(
       { rect: { left: 0, width: 100 }, index: 0 },
@@ -70,8 +97,8 @@ describe('dependency arrow path', () => {
       options
     );
 
-    expect(path.startsWith('M 40 32 V ')).toBe(true);
-    expect(path).toContain('L 147 90');
+    expect(path.startsWith('M 50 32 V ')).toBe(true);
+    expect(path).toContain('H 160');
     expect(path.endsWith('m -5 -5 l 5 5 l -5 5')).toBe(true);
   });
 
@@ -82,9 +109,25 @@ describe('dependency arrow path', () => {
       options
     );
 
-    expect(path).toContain('H 42');
+    expect(path).toContain('H 46');
     expect((path.match(/ a /g) ?? []).length).toBe(3);
-    expect(path).toContain('L 47 54');
+    expect(path).toContain('H 60 m -5 -5');
+  });
+
+  test.each([0, 2])('a backward connector from row %i turns away from its source bar', (index) => {
+    const path = dependencyArrowPath(
+      { rect: { left: 100, width: 100 }, index },
+      { rect: { left: 60, width: 50 }, index: 1 },
+      options
+    );
+    const direction = index === 0 ? 1 : -1;
+    const startY = index === 0 ? 32 : 76;
+    const bends = Array.from(path.matchAll(/a \S+ \S+ 0 0 [01] \S+ (\S+)/g));
+
+    expect(path.startsWith(`M 118 ${startY} V ${startY} `)).toBe(true);
+    expect(bends).toHaveLength(3);
+    expect(bends.every((bend) => Number(bend[1]) * direction > 0)).toBe(true);
+    expect(path).toContain('H 60 m -5 -5');
   });
 });
 
@@ -310,7 +353,7 @@ describe('dependency direction and per-link metadata', () => {
 describe('dependencyLinkPath', () => {
   const options = { rowHeight: 36, barInset: 4 };
 
-  test("finish-to-start delegates to frappe's route", () => {
+  test('finish-to-start uses the rounded vertical route', () => {
     const from = { rect: { left: 0, width: 100 }, index: 0 };
     const to = { rect: { left: 160, width: 80 }, index: 2 };
 
@@ -327,7 +370,7 @@ describe('dependencyLinkPath', () => {
       options
     );
 
-    expect(path.startsWith('M 100 18 H 82 V 54 H 147')).toBe(true);
+    expect(path.startsWith('M 100 18 H 82 V 54 H 160')).toBe(true);
     expect(path.endsWith('m -5 -5 l 5 5 l -5 5')).toBe(true);
   });
 
@@ -339,7 +382,7 @@ describe('dependencyLinkPath', () => {
       options
     );
 
-    expect(direct).toBe('M 200 18 H 218 V 54 H 113 m 5 -5 l -5 5 l 5 5');
+    expect(direct).toBe('M 200 18 H 218 V 54 H 100 m 5 -5 l -5 5 l 5 5');
 
     const detour = dependencyLinkPath(
       TimelineDependencyType.FinishToFinish,
@@ -348,6 +391,17 @@ describe('dependencyLinkPath', () => {
       options
     );
 
-    expect(detour).toBe('M 50 18 H 68 V 36 H 231 V 54 H 213 m 5 -5 l -5 5 l 5 5');
+    expect(detour).toBe('M 50 18 H 68 V 36 H 218 V 54 H 200 m 5 -5 l -5 5 l 5 5');
+  });
+
+  test('start-to-finish reaches the right edge with a left-pointing head', () => {
+    const path = dependencyLinkPath(
+      TimelineDependencyType.StartToFinish,
+      { rect: { left: 40, width: 60 }, index: 1 },
+      { rect: { left: 100, width: 100 }, index: 0 },
+      options
+    );
+
+    expect(path).toBe('M 40 54 H 22 V 36 H 218 V 18 H 200 m 5 -5 l -5 5 l 5 5');
   });
 });

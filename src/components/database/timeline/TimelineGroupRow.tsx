@@ -62,9 +62,9 @@ export const TimelineGroupFooter = memo(({ group, fieldId, sidebarWidth, showSid
         tabIndex={0}
         className={cn(
           'sticky left-0 z-10 flex h-full shrink-0 cursor-pointer items-center gap-1.5 overflow-hidden border-b border-r border-border-primary bg-background-primary text-sm text-text-tertiary hover:bg-fill-content-hover',
-          showSidebar ? 'pr-3' : 'justify-center'
+          showSidebar ? 'px-2' : 'justify-center'
         )}
-        style={{ width: sidebarWidth, paddingLeft: showSidebar ? 40 : undefined }}
+        style={{ width: sidebarWidth }}
         data-testid={`timeline-group-new-row-${group.id}`}
         aria-label={t('grid.row.newRow', { defaultValue: 'New row' })}
         onClick={() => void createRow()}

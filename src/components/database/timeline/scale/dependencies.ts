@@ -1,11 +1,11 @@
 /**
  * Dependency graph helpers and the arrow routing between bars.
  *
- * The arrow path is a port of frappe/gantt's `Arrow.calculate_path` (MIT,
- * Copyright (c) 2024 Frappe Technologies Pvt. Ltd.): leave the predecessor
- * from underneath its bar, drop to the successor's row and enter its left
- * edge, looping back with two extra bends when the successor starts before
- * the predecessor ends.
+ * The finish-to-start route is adapted from frappe/gantt's
+ * `Arrow.calculate_path` (MIT, Copyright (c) 2024 Frappe Technologies Pvt.
+ * Ltd.): leave the predecessor toward the successor's row and enter its
+ * left edge, looping along the row boundary when there is too little room
+ * for a direct turn.
  */
 import {
   TimelineDependencyDirection,
@@ -142,8 +142,7 @@ export function dependencyLinkPath(
   const exitX = exit === 'finish' ? from.rect.left + from.rect.width : from.rect.left;
   const exitY = rowMid(from.index);
   const exitClearX = exit === 'finish' ? exitX + padding : exitX - padding;
-  // The head tip sits 13px outside the entered edge, as in the finish-to-start route.
-  const entryX = entry === 'start' ? to.rect.left - 13 : to.rect.left + to.rect.width + 13;
+  const entryX = entry === 'start' ? to.rect.left : to.rect.left + to.rect.width;
   const entryY = rowMid(to.index);
   const entryDir = entry === 'start' ? 1 : -1;
   const head = entry === 'start' ? 'm -5 -5 l 5 5 l -5 5' : 'm 5 -5 l -5 5 l 5 5';
@@ -176,55 +175,49 @@ export function dependencyArrowPath(from: ArrowEndpoint, to: ArrowEndpoint, opti
   const barHeight = rowHeight - barInset * 2;
   const rowTop = (index: number) => index * rowHeight;
 
-  let startX = from.rect.left + from.rect.width / 2;
-
-  // Walk the exit point left until the successor's start is reachable.
-  while (to.rect.left < startX + padding && startX > from.rect.left + padding) {
-    startX -= 10;
-  }
-
-  startX -= 10;
-  const startY = rowTop(from.index) + barInset + barHeight;
-  const endX = to.rect.left - 13;
-  const endY = rowTop(to.index) + rowHeight / 2;
+  // Stay inside even a very narrow bar, while leaving room for the turn.
+  const startX = Math.min(
+    from.rect.left + from.rect.width / 2,
+    Math.max(from.rect.left + padding, to.rect.left - padding)
+  );
   const fromIsBelowTo = from.index > to.index;
+  const direction = fromIsBelowTo ? -1 : 1;
+  const startY = rowTop(from.index) + barInset + (fromIsBelowTo ? 0 : barHeight);
+  const endX = to.rect.left;
+  const endY = rowTop(to.index) + rowHeight / 2;
   const clockwise = fromIsBelowTo ? 1 : 0;
-  let curve = options.curve ?? 5;
-  let curveY = fromIsBelowTo ? -curve : curve;
+  let curve = Math.max(0, options.curve ?? 5);
 
-  if (to.rect.left <= from.rect.left + padding) {
-    let down1 = padding / 2 - curve;
+  if (endX - startX < padding) {
+    // Keep the detour between rows, and fit each bend into the available
+    // clearance so short bars and upward links never double back.
+    const gapY = rowTop(from.index) + (fromIsBelowTo ? 0 : rowHeight);
+    const left = Math.min(startX, endX) - padding;
 
-    if (down1 < 0) {
-      down1 = 0;
-      curve = padding / 2;
-      curveY = fromIsBelowTo ? -curve : curve;
-    }
-
-    const down2 = rowTop(to.index) + barInset + barHeight / 2 - curveY;
-    const left = to.rect.left - padding;
+    curve = Math.min(curve, barInset, (startX - left) / 2, (endX - left) / 2, Math.abs(endY - gapY) / 2);
+    const curveY = direction * curve;
 
     return [
       `M ${startX} ${startY}`,
-      `v ${down1}`,
-      `a ${curve} ${curve} 0 0 1 ${-curve} ${curve}`,
-      `H ${left}`,
+      `V ${gapY - curveY}`,
+      `a ${curve} ${curve} 0 0 ${fromIsBelowTo ? 0 : 1} ${-curve} ${curveY}`,
+      `H ${left + curve}`,
       `a ${curve} ${curve} 0 0 ${clockwise} ${-curve} ${curveY}`,
-      `V ${down2}`,
+      `V ${endY - curveY}`,
       `a ${curve} ${curve} 0 0 ${clockwise} ${curve} ${curveY}`,
-      `L ${endX} ${endY}`,
+      `H ${endX}`,
       'm -5 -5 l 5 5 l -5 5',
     ].join(' ');
   }
 
-  if (endX < startX + curve) curve = endX - startX;
-  const offset = fromIsBelowTo ? endY + curve : endY - curve;
+  curve = Math.min(curve, (endX - startX) / 2, Math.abs(endY - startY));
+  const curveY = direction * curve;
 
   return [
     `M ${startX} ${startY}`,
-    `V ${offset}`,
-    `a ${curve} ${curve} 0 0 ${clockwise} ${curve} ${curve}`,
-    `L ${endX} ${endY}`,
+    `V ${endY - curveY}`,
+    `a ${curve} ${curve} 0 0 ${clockwise} ${curve} ${curveY}`,
+    `H ${endX}`,
     'm -5 -5 l 5 5 l -5 5',
   ].join(' ');
 }

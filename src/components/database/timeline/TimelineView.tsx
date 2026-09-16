@@ -55,6 +55,7 @@ import {
   TIMELINE_ROW_HEIGHT,
   TIMELINE_SIDEBAR_WIDTH,
   TIMELINE_TABLE_COLUMN_WIDTH,
+  TIMELINE_TABLE_CONTROL_WIDTH,
   TIMELINE_TODAY_ANCHOR,
 } from './constants';
 import { useScrollWindow } from './hooks/useScrollWindow';
@@ -735,7 +736,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
             {/* Blank sticky column so overlays never show through below the last table cell. */}
             <div
               aria-hidden
-              className='sticky left-0 z-[1] h-full border-r border-border-primary bg-background-primary'
+              className='sticky left-0 z-[1] h-full bg-background-primary'
               style={{ width: sidebarWidth }}
             />
             <TimelineGrid columns={columns} left={sidebarWidth} todayX={todayX} showToday={showToday} />
@@ -868,9 +869,9 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                   // Same treatment as the grid's "+ New row" footer.
                   className={cn(
                     'sticky left-0 z-10 flex h-full shrink-0 cursor-pointer items-center gap-1.5 border-b border-r border-border-primary bg-fill-content text-sm font-medium text-text-secondary hover:bg-fill-content-hover',
-                    showSidebar ? 'pr-3' : 'justify-center'
+                    showSidebar ? 'px-2' : 'justify-center'
                   )}
-                  style={{ width: sidebarWidth, paddingLeft: showSidebar ? 40 : undefined }}
+                  style={{ width: sidebarWidth }}
                   data-testid='timeline-new-row'
                   aria-label={t('grid.row.newRow', { defaultValue: 'New row' })}
                   onClick={handleNewRow}
@@ -888,7 +889,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
             ) : null}
 
             {showSidebar ? (
-              // Calculations footer under the table, one cell per column, as in the grid.
+              // Borderless like the grid: empty calculation controls appear on hover.
               <div
                 className='absolute left-0 z-[2] flex w-full'
                 style={{
@@ -898,27 +899,35 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                 data-testid='timeline-calculations'
               >
                 <div
-                  className='sticky left-0 z-10 flex h-full shrink-0 border-b border-r border-border-primary bg-background-primary text-sm'
+                  className='sticky left-0 z-10 flex h-full shrink-0 bg-background-primary text-sm'
                   style={{ width: sidebarWidth }}
                 >
                   <div className='min-w-0 flex-1 basis-0' data-testid={`timeline-calculation-${primaryFieldId}`}>
                     {primaryFieldId ? <GridCalculateRowCell fieldId={primaryFieldId} rowOrders={rowOrders} /> : null}
                   </div>
-                  {tableFieldIds.map((fieldId) => (
+                  {tableFieldIds.map((fieldId, index) => (
                     <div
                       key={fieldId}
-                      className='shrink-0 border-l border-border-primary'
-                      style={{ width: TIMELINE_TABLE_COLUMN_WIDTH }}
+                      className='shrink-0'
+                      // The last calculation fills the unused row-control slot;
+                      // earlier property columns stay aligned with their headers.
+                      style={{
+                        width:
+                          TIMELINE_TABLE_COLUMN_WIDTH +
+                          (index === tableFieldIds.length - 1 ? TIMELINE_TABLE_CONTROL_WIDTH : 0),
+                      }}
                       data-testid={`timeline-calculation-${fieldId}`}
                     >
                       <GridCalculateRowCell fieldId={fieldId} rowOrders={rowOrders} />
                     </div>
                   ))}
-                  {/* Same trailing control slot as the header toggle and the rows' open button. */}
-                  <div aria-hidden className='w-7 shrink-0' />
                 </div>
               </div>
             ) : null}
+            {/* Keep the table divider continuous above row and footer backgrounds. */}
+            <div aria-hidden className='pointer-events-none absolute inset-0 z-[3]'>
+              <div className='sticky left-0 h-full border-r border-border-primary' style={{ width: sidebarWidth }} />
+            </div>
           </div>
         </div>
       </div>
