@@ -4355,6 +4355,9 @@
   },
   "timeline": {
     "menuName": "Timeline",
+    "creationRequiresPro": "Creating a Timeline view requires a Pro workspace.",
+    "creationCheckingPlan": "Checking workspace plan…",
+    "creationPlanUnavailable": "Unable to check the workspace plan. Try again.",
     "referencedTimelinePrefix": "View of",
     "settings": {
       "name": "Timeline settings",

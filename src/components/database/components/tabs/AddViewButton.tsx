@@ -3,13 +3,16 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { FORM_VIEW_CREATION_ENABLED, TIMELINE_VIEW_ENABLED } from '@/application/constants';
+import { useDatabaseContext } from '@/application/database-yjs/context';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { ViewIcon } from '@/components/_shared/view-icon';
+import { useTimelineCreationDisabledReason } from '@/components/app/hooks/useTimelineCreationDisabledReason';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getErrorMessage } from '@/utils/errors';
 
 interface AddViewButtonProps {
@@ -24,6 +27,11 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
   const onAddView = useAddDatabaseView();
   const [addLoading, setAddLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { getSubscriptions, workspaceId } = useDatabaseContext();
+  const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
+    workspaceId,
+    enabled: menuOpen,
+  });
   const mountedRef = useRef(true);
   const actionScopeRevisionRef = useRef(0);
   const completionCallbacksRef = useRef({ onAfterAddView, onViewAdded });
@@ -58,6 +66,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
   }, [databasePageId]);
 
   const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
+    if (layout === DatabaseViewLayout.Timeline && timelineDisabledReason) return;
     const actionScopeRevision = actionScopeRevisionRef.current;
     const isCurrentActionScope = () => mountedRef.current && actionScopeRevisionRef.current === actionScopeRevision;
 
@@ -92,6 +101,19 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
       }
     }
   };
+
+  const timelineAction = (
+    <DropdownMenuItem
+      data-testid='add-timeline-view-button'
+      disabled={Boolean(timelineDisabledReason)}
+      onClick={() => {
+        void handleAddView(DatabaseViewLayout.Timeline, t('timeline.menuName', { defaultValue: 'Timeline' }));
+      }}
+    >
+      <ViewIcon layout={ViewLayout.Timeline} size={'small'} />
+      {t('timeline.menuName', { defaultValue: 'Timeline' })}
+    </DropdownMenuItem>
+  );
 
   return (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -134,17 +156,17 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
           {t('calendar.menuName')}
         </DropdownMenuItem>
 
-        {TIMELINE_VIEW_ENABLED && (
-          <DropdownMenuItem
-            data-testid='add-timeline-view-button'
-            onClick={() => {
-              void handleAddView(DatabaseViewLayout.Timeline, t('timeline.menuName', { defaultValue: 'Timeline' }));
-            }}
-          >
-            <ViewIcon layout={ViewLayout.Timeline} size={'small'} />
-            {t('timeline.menuName', { defaultValue: 'Timeline' })}
-          </DropdownMenuItem>
-        )}
+        {TIMELINE_VIEW_ENABLED &&
+          (timelineDisabledReason ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>{timelineAction}</div>
+              </TooltipTrigger>
+              <TooltipContent>{timelineDisabledReason}</TooltipContent>
+            </Tooltip>
+          ) : (
+            timelineAction
+          ))}
 
         <DropdownMenuItem
           onClick={() => {

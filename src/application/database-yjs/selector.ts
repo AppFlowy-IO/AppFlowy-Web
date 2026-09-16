@@ -13,7 +13,6 @@ import {
 
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { createCalendarLayoutStore } from '@/application/database-yjs/calendar-layout';
-import { createTimelineLayoutStore } from '@/application/database-yjs/timeline-layout';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
@@ -47,7 +46,6 @@ import {
   parseFilter,
 } from '@/application/database-yjs/filter';
 import { DEFAULT_GALLERY_LAYOUT_SETTINGS } from '@/application/database-yjs/gallery-layout';
-import { createLocalFirstObserver } from '@/application/database-yjs/local-first-observer';
 import {
   areGroupRowsHydrated,
   getGroupColumns,
@@ -67,7 +65,9 @@ import {
   useBackgroundRowDocLoader,
   useRollupFieldObservers,
 } from '@/application/database-yjs/hooks';
+import { useTimelineRowSource } from '@/application/database-yjs/hooks/TimelineRowValuesProvider';
 import { useTimelineRowValues } from '@/application/database-yjs/hooks/useTimelineRowValues';
+import { createLocalFirstObserver } from '@/application/database-yjs/local-first-observer';
 import { createNumberGroupingPolicy, NumberGroupingPolicy } from '@/application/database-yjs/number-grouping';
 import {
   ensureRelationGroupLabel,
@@ -92,6 +92,7 @@ import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/applicati
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { sortBy } from '@/application/database-yjs/sort';
+import { createTimelineLayoutStore } from '@/application/database-yjs/timeline-layout';
 import {
   DatabaseViewLayout,
   FieldId,
@@ -3142,7 +3143,7 @@ export function useTimelineEventsSelector() {
   const { field: endField, clock: endClock } = useFieldSelector(endFieldId);
   const primaryFieldId = usePrimaryFieldId();
   const { field: primaryField, clock: primaryClock } = useFieldSelector(primaryFieldId || '');
-  const rowOrders = useRowOrdersSelector();
+  const { rowOrders } = useTimelineRowSource();
   const isDateField = (field?: YDatabaseField | null) =>
     field &&
     [FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime].includes(

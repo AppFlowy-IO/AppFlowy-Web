@@ -1,6 +1,5 @@
 import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
 import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import dayjs from 'dayjs';
 import { PointerEvent as ReactPointerEvent, useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -39,7 +38,6 @@ import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import { type Edge } from '@/components/database/components/drag-and-drop/useRowDnd';
 import { FieldDisplay } from '@/components/database/components/field';
-import { GridCalculateRowCell } from '@/components/database/components/grid/grid-cell/GridCalculateRowCell';
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks/useTimeFormat';
 import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
 import { Button } from '@/components/ui/button';
@@ -67,6 +65,7 @@ import { useTimelinePermissions } from './hooks/useTimelinePermissions';
 import { useTimelineRange } from './hooks/useTimelineRange';
 import { useTimelineRects } from './hooks/useTimelineRects';
 import { TimelineRowModel, useTimelineRows } from './hooks/useTimelineRows';
+import { useTimelineVirtualizer } from './hooks/useTimelineVirtualizer';
 import { buildDependencyGraph, collectDependents, linkOf } from './scale/dependencies';
 import {
   buildHeaderColumns,
@@ -81,6 +80,7 @@ import {
 } from './scale/geometry';
 import { hitTestLink, TimelineArrows, TimelineLinkSelection } from './TimelineArrows';
 import { TimelineBarDragLabel } from './TimelineBar';
+import { TimelineCalculation } from './TimelineCalculation';
 import { TimelineGrid } from './TimelineGrid';
 import { useTimelineGrouping } from './TimelineGroupingContext';
 import { TimelineGroupFooter, TimelineGroupRow } from './TimelineGroupRow';
@@ -435,14 +435,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     [commitSpan, geometry, permissions.dateEditable]
   );
 
-  const virtualizer = useVirtualizer({
-    count: items.length,
-    getScrollElement: () => scrollerRef.current,
-    estimateSize: () => TIMELINE_ROW_HEIGHT,
-    overscan: 8,
-    scrollMargin: TIMELINE_HEADER_HEIGHT,
-    getItemKey: (index) => items[index]?.key ?? index,
-  });
+  const virtualizer = useTimelineVirtualizer(items, scrollerRef);
 
   const updateRelationCell = useUpdateRelationCellDispatch();
   const graphRef = useRef(graph);
@@ -870,7 +863,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                   <TimelineTableViewport>
                     <div className='flex h-full bg-background-primary text-sm'>
                       <div className='min-w-0 flex-1 basis-0' data-testid={`timeline-calculation-${primaryFieldId}`}>
-                        {primaryFieldId ? <GridCalculateRowCell fieldId={primaryFieldId} rowOrders={rowOrders} /> : null}
+                        {primaryFieldId ? <TimelineCalculation fieldId={primaryFieldId} /> : null}
                       </div>
                       {tableFieldIds.map((fieldId, index) => (
                         <div
@@ -885,7 +878,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                           }}
                           data-testid={`timeline-calculation-${fieldId}`}
                         >
-                          <GridCalculateRowCell fieldId={fieldId} rowOrders={rowOrders} />
+                          <TimelineCalculation fieldId={fieldId} />
                         </div>
                       ))}
                     </div>

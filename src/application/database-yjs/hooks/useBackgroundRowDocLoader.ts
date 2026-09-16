@@ -23,6 +23,7 @@ const SEED_HYDRATE_BATCH_SIZE = 128;
 type RowDocMap = Record<string, YDoc>;
 type EnsureRow = (rowId: string) => Promise<YDoc | undefined> | void;
 type LoadRowFromSeed = (rowId: string) => Promise<YDoc | undefined>;
+type PeekRowDocFromSeed = (rowId: string) => YDoc | null;
 
 export type BackgroundRowDocChange = {
   added: RowDocMap;
@@ -149,6 +150,7 @@ function releaseOwnedRowDoc(doc: YDoc) {
 type LoaderStore = {
   key: string;
   refCount: number;
+  activeRefCount: number;
   cachedRowDocs: RowDocMap;
   subscribers: Set<() => void>;
   rowDocChangeSubscribers: Set<(change: BackgroundRowDocChange) => void>;
@@ -163,10 +165,14 @@ type LoaderStore = {
   seedHydrateFrame: number | null;
   seedHydrateRun: number;
   seedHydrateActive: boolean;
+  seedHydrateQueue: Set<string>;
+  seedHydratePromise: Promise<void> | null;
+  resolveSeedHydration: (() => void) | null;
   rows: RowDocMap | null | undefined;
   rowOrders: YDatabaseRowOrders | undefined;
   ensureRow: EnsureRow | undefined;
   loadRowFromSeed: LoadRowFromSeed | undefined;
+  peekRowDocFromSeed: PeekRowDocFromSeed | undefined;
 };
 
 const loaderStores = new Map<string, LoaderStore>();
@@ -175,6 +181,7 @@ function createLoaderStore(key: string): LoaderStore {
   return {
     key,
     refCount: 0,
+    activeRefCount: 0,
     cachedRowDocs: {},
     subscribers: new Set(),
     rowDocChangeSubscribers: new Set(),
@@ -189,10 +196,14 @@ function createLoaderStore(key: string): LoaderStore {
     seedHydrateFrame: null,
     seedHydrateRun: 0,
     seedHydrateActive: false,
+    seedHydrateQueue: new Set(),
+    seedHydratePromise: null,
+    resolveSeedHydration: null,
     rows: undefined,
     rowOrders: undefined,
     ensureRow: undefined,
     loadRowFromSeed: undefined,
+    peekRowDocFromSeed: undefined,
   };
 }
 
@@ -255,24 +266,55 @@ function cancelBackgroundRun(store: LoaderStore, runId?: number) {
   clearPendingFlush(store);
 }
 
+function finishSeedHydration(store: LoaderStore) {
+  store.seedHydrateFrame = null;
+  store.seedHydrateActive = false;
+  store.resolveSeedHydration?.();
+  store.resolveSeedHydration = null;
+  store.seedHydratePromise = null;
+}
+
+function cancelSeedHydration(store: LoaderStore) {
+  store.seedHydrateRun += 1;
+  if (store.seedHydrateFrame !== null) cancelAnimationFrame(store.seedHydrateFrame);
+  store.seedHydrateQueue.clear();
+  finishSeedHydration(store);
+}
+
+/** Shared seed docs belong to the database seed cache, never to this loader. */
+function cacheSharedSeedDocs(store: LoaderStore, docs: RowDocMap) {
+  if (Object.keys(docs).length === 0) return;
+  setStoreCachedRowDocs(store, (prev) => {
+    const added: RowDocMap = {};
+
+    Object.entries(docs).forEach(([rowId, doc]) => {
+      if (
+        !hasRowConditionData(doc) ||
+        hasRowConditionData(prev[rowId]) ||
+        hasRowConditionData(store.rows?.[rowId]) ||
+        hasRowConditionData(store.pendingDocs[rowId])
+      )
+        return;
+
+      added[rowId] = doc;
+      store.sharedCachedRowDocIds.add(rowId);
+    });
+    return { added, next: Object.keys(added).length > 0 ? { ...prev, ...added } : prev, removed: {} };
+  });
+}
+
 function destroyStore(store: LoaderStore) {
   cancelBackgroundRun(store);
+  cancelSeedHydration(store);
 
   Object.entries(store.cachedRowDocs).forEach(([rowId, doc]) => {
     disposeStoreDoc(store, rowId, doc);
   });
 
-  store.seedHydrateRun += 1;
-  if (store.seedHydrateFrame !== null) {
-    cancelAnimationFrame(store.seedHydrateFrame);
-  }
-
   store.cachedRowDocs = {};
   store.rowDocChangeSubscribers.clear();
   store.sharedCachedRowDocIds.clear();
   store.cachedRowDocPending.clear();
-  store.seedHydrateFrame = null;
-  store.seedHydrateActive = false;
   loaderStores.delete(store.key);
 }
 
@@ -280,8 +322,8 @@ function destroyStore(store: LoaderStore) {
  * Loads row documents for consumers that need values across the complete view,
  * including sorting, filtering, and Board grouping.
  *
- * Loader state is shared per database view and consumer scope. The scope keeps
- * independently activated consumers from cancelling each other's hydration.
+ * Loader state is shared per database view and consumer scope. Hydration runs
+ * while any consumer is active; scopes keep independently retained caches apart.
  *
  * @param active - Whether this consumer needs complete row data
  * @param scope - Isolates independently activated consumers sharing a view
@@ -307,7 +349,8 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
     store.rowOrders = rowOrders;
     store.ensureRow = ensureRow;
     store.loadRowFromSeed = loadRowFromSeed;
-  }, [ensureRow, loadRowFromSeed, rowOrders, rows, store]);
+    store.peekRowDocFromSeed = peekRowDocFromSeed;
+  }, [ensureRow, loadRowFromSeed, peekRowDocFromSeed, rowOrders, rows, store]);
 
   const subscribeToCachedRowDocs = useCallback(
     (onStoreChange: () => void) => {
@@ -384,16 +427,26 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
   }, [store]);
 
   useEffect(() => {
+    if (store.refCount === 0) loaderStores.set(store.key, store);
     store.refCount += 1;
 
     return () => {
       store.refCount -= 1;
-
-      if (store.refCount <= 0) {
-        destroyStore(store);
-      }
+      if (store.refCount === 0) destroyStore(store);
     };
   }, [store]);
+
+  useEffect(() => {
+    if (!active) return;
+    store.activeRefCount += 1;
+    return () => {
+      store.activeRefCount -= 1;
+      if (store.activeRefCount === 0) {
+        cancelBackgroundRun(store);
+        cancelSeedHydration(store);
+      }
+    };
+  }, [active, store]);
 
   // Clean up cached docs that are now in the main rowMap.
   useEffect(() => {
@@ -419,110 +472,62 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
     }
   }, [rows, store]);
 
-  // Fast path: as soon as seeds are cached in memory, read shared in-memory
-  // row docs without IndexedDB. Hydrate in frame-sized chunks so large
-  // databases do not spend one long task resolving every row.
+  // The bounded seed pass belongs to the shared store. A consumer unmounting
+  // must not cancel hydration while another consumer still needs these rows.
   useEffect(() => {
-    if (!active || !seedsReady || !peekRowDocFromSeed || store.seedHydrateActive) return;
+    if (!active || !seedsReady || !peekRowDocFromSeed) return;
 
-    const rowOrdersData = (rowOrders?.toJSON() as { id: string; is_deleted?: boolean }[] | undefined)?.filter(
-      (row) => !row.is_deleted
-    );
+    const orderedRows = rowOrders?.toArray() as { id: string; is_deleted?: boolean }[] | undefined;
 
-    if (!rowOrdersData) return;
+    if (!orderedRows) return;
+    orderedRows.forEach(({ id, is_deleted }) => {
+      if (!is_deleted && !hasRowConditionData(store.rows?.[id]) && !hasRowConditionData(store.cachedRowDocs[id])) {
+        store.seedHydrateQueue.add(id);
+      }
+    });
+    if (store.seedHydrateActive || store.seedHydrateQueue.size === 0) return;
 
-    const runId = store.seedHydrateRun + 1;
-    let index = 0;
-    let cancelled = false;
+    const runId = ++store.seedHydrateRun;
 
-    store.seedHydrateRun = runId;
     store.seedHydrateActive = true;
-
+    store.seedHydratePromise = new Promise((resolve) => {
+      store.resolveSeedHydration = resolve;
+    });
     const processBatch = () => {
-      if (cancelled || store.seedHydrateRun !== runId) return;
-
+      if (store.seedHydrateRun !== runId) return;
       const additions: RowDocMap = {};
       let processed = 0;
 
-      while (index < rowOrdersData.length && processed < SEED_HYDRATE_BATCH_SIZE) {
-        const rowId = rowOrdersData[index]?.id;
-
-        index += 1;
+      for (const rowId of store.seedHydrateQueue) {
+        if (processed >= SEED_HYDRATE_BATCH_SIZE) break;
+        store.seedHydrateQueue.delete(rowId);
         processed += 1;
-
         if (
-          !rowId ||
-          additions[rowId] ||
           hasRowConditionData(store.rows?.[rowId]) ||
           hasRowConditionData(store.cachedRowDocs[rowId]) ||
           hasRowConditionData(store.pendingDocs[rowId])
-        ) {
+        )
           continue;
-        }
 
-        const doc = peekRowDocFromSeed(rowId);
+        const doc = store.peekRowDocFromSeed?.(rowId);
 
         if (doc) additions[rowId] = doc;
       }
 
-      if (Object.keys(additions).length > 0) {
-        startTransition(() => {
-          setStoreCachedRowDocs(store, (prev) => {
-            let changed = false;
-            const next = { ...prev };
-            const added: RowDocMap = {};
-            const currentRows = store.rows;
-
-            Object.entries(additions).forEach(([rowId, doc]) => {
-              if (
-                hasRowConditionData(next[rowId]) ||
-                hasRowConditionData(currentRows?.[rowId]) ||
-                hasRowConditionData(store.pendingDocs[rowId])
-              ) {
-                return;
-              }
-
-              next[rowId] = doc;
-              added[rowId] = doc;
-              store.sharedCachedRowDocIds.add(rowId);
-              changed = true;
-            });
-            return { added, next: changed ? next : prev, removed: {} };
-          });
-        });
-      }
-
-      if (index < rowOrdersData.length) {
+      startTransition(() => cacheSharedSeedDocs(store, additions));
+      if (store.seedHydrateRun !== runId) return;
+      if (store.seedHydrateQueue.size > 0) {
         store.seedHydrateFrame = requestAnimationFrame(processBatch);
       } else {
-        store.seedHydrateFrame = null;
-        store.seedHydrateActive = false;
+        finishSeedHydration(store);
       }
     };
 
     store.seedHydrateFrame = requestAnimationFrame(processBatch);
-
-    return () => {
-      cancelled = true;
-      store.seedHydrateRun += 1;
-      store.seedHydrateActive = false;
-
-      if (store.seedHydrateFrame !== null) {
-        cancelAnimationFrame(store.seedHydrateFrame);
-        store.seedHydrateFrame = null;
-      }
-    };
   }, [active, seedsReady, peekRowDocFromSeed, store, rowOrders, rowOrderRevision]);
 
-  useEffect(() => {
-    if (active) return;
-    cancelBackgroundRun(store);
-  }, [active, store]);
-
-  // Background loading of complete-view row docs.
-  // Waits for blob prefetch to complete so seeds are available, then uses
-  // loadRowFromSeed (fast, in-memory seed application) for each row.
-  // Falls back to IndexedDB for rows without seeds.
+  // After detached hydration, recover rows absent from the blob through the
+  // main row loader, realtime, or a read-only IndexedDB document.
   useEffect(() => {
     if (!active || !blobPrefetchComplete) return;
 
@@ -580,6 +585,16 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
 
     const loadMissingRow = async (rowId: string) => {
       if (!isRunActive() || hasReadyRowDoc(rowId)) {
+        retryAttempts.delete(rowId);
+        return;
+      }
+
+      // Seeds may arrive while a retry is waiting. Always prefer their shared,
+      // detached document over opening an IndexedDB or live row document.
+      const seedDoc = store.peekRowDocFromSeed?.(rowId);
+
+      if (hasRowConditionData(seedDoc)) {
+        cacheSharedSeedDocs(store, { [rowId]: seedDoc });
         retryAttempts.delete(rowId);
         return;
       }
@@ -692,6 +707,10 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
 
     const drainQueue = async () => {
       while (isRunActive()) {
+        // On a warm mount both readiness flags are already true. Give the
+        // bounded detached pass priority instead of racing it with live opens.
+        while (store.seedHydratePromise && isRunActive()) await store.seedHydratePromise;
+        if (!isRunActive()) break;
         if (store.backgroundQueue.size === 0) {
           await new Promise((resolve) => setTimeout(resolve, 0));
           if (store.backgroundQueue.size === 0 || !isRunActive()) break;
@@ -720,7 +739,7 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
       });
 
     return () => {
-      if (store.refCount <= 0) {
+      if (store.activeRefCount === 0) {
         cancelBackgroundRun(store, runId);
       }
     };

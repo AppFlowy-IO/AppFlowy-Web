@@ -52,6 +52,16 @@ pnpm install
 pnpm run dev
 ```
 
+### Testing Timeline workspace access
+
+Official production builds disable Timeline creation in non-Pro workspaces and show a Pro-workspace
+tooltip in the new-page and database add-view menus. The check uses the current workspace's
+subscription; Team and AI add-ons do not qualify. Self-hosted instances are exempt.
+
+Web development/test mode bypasses this client check. To test creation without Pro, also run a
+debug Cloud server (`debug_assertions` enabled); a release Cloud server still enforces Pro.
+Production-policy tests explicitly disable the development bypass.
+
 
 ## 🚀 Production Mode Setup
 

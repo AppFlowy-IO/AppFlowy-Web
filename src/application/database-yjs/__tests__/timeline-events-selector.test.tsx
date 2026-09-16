@@ -1,9 +1,20 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import * as Y from 'yjs';
 
-import { DatabaseContext, DatabaseContextState, FieldType, useTimelineEventsSelector } from '@/application/database-yjs';
+import {
+  DatabaseContext,
+  DatabaseContextState,
+  FieldType,
+  useTimelineEventsSelector,
+  useRowOrdersSelector,
+} from '@/application/database-yjs';
+import { CalculationType } from '@/application/database-yjs/database.type';
+import { TimelineRowValuesProvider } from '@/application/database-yjs/hooks/TimelineRowValuesProvider';
 import {
   YDatabase,
+  YDatabaseCalculation,
+  YDatabaseCalculations,
   YDatabaseField,
   YDatabaseFields,
   YDatabaseRowOrders,
@@ -19,6 +30,7 @@ import {
   parseRelationRowIds,
   useTimelineFieldValues,
 } from '@/components/database/timeline/hooks/useTimelineFieldValues';
+import { TimelineCalculation } from '@/components/database/timeline/TimelineCalculation';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 import { createRowDoc } from './test-helpers';
@@ -28,6 +40,17 @@ import type { ReactNode } from 'react';
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
 }));
+jest.mock('@/components/database/components/grid/grid-calculation-cell/CalcationMenu', () => ({
+  __esModule: true,
+  default: () => null,
+}));
+jest.mock('@/components/database/components/grid/grid-calculation-cell', () => ({ CalculationCell: () => null }));
+
+function RowValuesScope({ children }: { children: ReactNode }) {
+  const rowOrders = useRowOrdersSelector();
+
+  return <TimelineRowValuesProvider rowOrders={rowOrders}>{children}</TimelineRowValuesProvider>;
+}
 
 const databaseId = 'database-id';
 const viewId = 'view-id';
@@ -110,101 +133,202 @@ function createFixture() {
     workspaceId: 'workspace-id',
   } as DatabaseContextState;
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <AFConfigContext.Provider
-      value={{ isAuthenticated: false, updateCurrentUser: async () => undefined, openLoginModal: () => undefined }}
-    >
-      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
-    </AFConfigContext.Provider>
+    <StrictMode>
+      <AFConfigContext.Provider
+        value={{ isAuthenticated: false, updateCurrentUser: async () => undefined, openLoginModal: () => undefined }}
+      >
+        <DatabaseContext.Provider value={contextValue}>
+          <RowValuesScope>{children}</RowValuesScope>
+        </DatabaseContext.Provider>
+      </AFConfigContext.Provider>
+    </StrictMode>
   );
 
   return { wrapper, timelineSettings, databaseDoc, contextValue, fields, rowOrders };
 }
 
 describe('useTimelineEventsSelector with separate start and end fields', () => {
-  it('hydrates dates, titles, dependencies and progress from seed batches without realtime rows', async () => {
-    const { wrapper, contextValue, fields, rowOrders } = createFixture();
-    const progressField = new Y.Map() as YDatabaseField;
-    const relationField = new Y.Map() as YDatabaseField;
+  it('keeps footer calculations complete during seed loading, row activation and pending row additions', async () => {
+    const { wrapper, contextValue, fields, rowOrders, databaseDoc } = createFixture();
+    const amountField = new Y.Map() as YDatabaseField;
 
-    progressField.set(YjsDatabaseKey.type, FieldType.Number);
-    relationField.set(YjsDatabaseKey.type, FieldType.Relation);
-    fields.set('progress', progressField);
-    fields.set('dependency', relationField);
-    const rowIds = Array.from({ length: 257 }, (_, index) => `seed-${index}`);
+    amountField.set(YjsDatabaseKey.id, 'amount');
+    amountField.set(YjsDatabaseKey.type, FieldType.Number);
+    fields.set('amount', amountField);
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const view = database.get(YjsDatabaseKey.views).get(viewId);
+    const calculations = new Y.Array() as YDatabaseCalculations;
+    const calculation = new Y.Map() as YDatabaseCalculation;
+
+    calculation.set(YjsDatabaseKey.id, 'sum');
+    calculation.set(YjsDatabaseKey.field_id, 'amount');
+    calculation.set(YjsDatabaseKey.type, CalculationType.Sum);
+    calculation.set(YjsDatabaseKey.calculation_value, '60');
+    calculations.push([calculation]);
+    view.set(YjsDatabaseKey.calculations, calculations);
+    const createAmountRow = (id: string, amount: number) =>
+      createRowDoc(id, databaseId, {
+        [START]: { fieldType: FieldType.DateTime, data: String(jan2) },
+        [END]: { fieldType: FieldType.DateTime, data: String(jan2 + DAY) },
+        [PRIMARY]: { fieldType: FieldType.RichText, data: id },
+        amount: { fieldType: FieldType.Number, data: String(amount) },
+      });
     const seeds = Object.fromEntries(
-      rowIds.map((id) => [
-        id,
-        createRowDoc(id, databaseId, {
-          [START]: { fieldType: FieldType.DateTime, data: String(jan2) },
-          [END]: { fieldType: FieldType.DateTime, data: String(jan2 + DAY) },
-          [PRIMARY]: { fieldType: FieldType.RichText, data: `Title ${id}` },
-          progress: { fieldType: FieldType.Number, data: '50' },
-          dependency: { fieldType: FieldType.Relation, data: ['predecessor'] },
-        }),
-      ])
+      ['range', 'backwards', 'open'].map((id, index) => [id, createAmountRow(id, (index + 1) * 10)])
     );
+    const persisted: unknown[] = [];
+    const observeCalculation = () => persisted.push(calculation.get(YjsDatabaseKey.calculation_value));
 
-    rowOrders.delete(0, rowOrders.length);
-    rowOrders.push(rowIds.map((id) => ({ id, height: 36 })));
-    const ensureRow = jest.fn();
-    const parseProgress = jest.fn(parseProgressPercent);
-    const parseRelations = jest.fn(parseRelationRowIds);
-
-    contextValue.rowMap = {};
-    contextValue.ensureRow = ensureRow;
-    contextValue.seedsReady = true;
+    calculation.observeDeep(observeCalculation);
+    contextValue.rowMap = { range: seeds.range };
+    contextValue.ensureRow = jest.fn();
+    contextValue.seedsReady = false;
     contextValue.blobPrefetchComplete = false;
     contextValue.peekRowDocFromSeed = (id) => seeds[id] ?? null;
-    const { result, rerender, unmount } = renderHook(
-      () => ({
-        timeline: useTimelineEventsSelector(),
-        progress: useTimelineFieldValues('progress', parseProgress),
-        dependencies: useTimelineFieldValues('dependency', parseRelations),
-      }),
-      { wrapper }
-    );
+    function TimelineWithFooter() {
+      const { events } = useTimelineEventsSelector();
 
-    await waitFor(() => expect(result.current.timeline.events).toHaveLength(257));
-    expect(ensureRow).not.toHaveBeenCalled();
-    expect(result.current.timeline.events.at(-1)).toMatchObject({
-      rowId: 'seed-256',
-      title: 'Title seed-256',
-      start: new Date(jan2 * 1000),
-      end: new Date((jan2 + DAY) * 1000),
-    });
-    expect(result.current.progress.get('seed-256')).toBe(50);
-    expect(result.current.dependencies.get('seed-256')).toEqual(['predecessor']);
-    // Three arrival batches must never decode the earlier batches again.
-    expect(parseProgress).toHaveBeenCalledTimes(257);
-    expect(parseRelations).toHaveBeenCalledTimes(257);
+      return (
+        <>
+          <div data-testid='timeline-event-count'>{events.length}</div>
+          <TimelineCalculation fieldId='amount' />
+        </>
+      );
+    }
 
-    const live = new Y.Doc({ guid: 'mounted-row' }) as YDoc;
+    const { rerender, unmount } = render(<TimelineWithFooter />, { wrapper });
 
-    contextValue.rowMap = { 'seed-0': live };
-    rerender();
-    expect(result.current.progress.get('seed-0')).toBe(50);
+    expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('60');
+    contextValue.seedsReady = true;
+    rerender(<TimelineWithFooter />);
+    await waitFor(() => expect(screen.getByTestId('timeline-event-count').textContent).toBe('3'));
+    expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('60');
+    expect(persisted).toEqual([]);
+
+    // Scrolling another row into the live map must not change the sum.
+    contextValue.rowMap = { range: seeds.range, backwards: seeds.backwards };
+    rerender(<TimelineWithFooter />);
+    expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('60');
+    expect(contextValue.ensureRow).not.toHaveBeenCalled();
     act(() => {
-      Y.applyUpdate(live, Y.encodeStateAsUpdate(seeds['seed-0']));
-      const row = live.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>;
+      const row = seeds.backwards.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>;
       const cells = row.get(YjsDatabaseKey.cells) as Y.Map<Y.Map<unknown>>;
 
-      cells.get('progress')!.set(YjsDatabaseKey.data, '75');
-      cells.get(PRIMARY)!.set(YjsDatabaseKey.data, 'Mounted title');
+      Y.transact(seeds.backwards, () => cells.get('amount')!.set(YjsDatabaseKey.data, '30'), null, false);
     });
-    await waitFor(() => expect(result.current.progress.get('seed-0')).toBe(75));
-    expect(result.current.timeline.events[0].title).toBe('Mounted title');
-    act(() => {
-      const row = live.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>;
-      const cells = row.get(YjsDatabaseKey.cells) as Y.Map<Y.Map<unknown>>;
+    await waitFor(() => expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('70'));
 
-      Y.transact(live, () => cells.get('progress')!.set(YjsDatabaseKey.data, '80'), null, false);
-    });
-    await waitFor(() => expect(result.current.progress.get('seed-0')).toBe(80));
-    expect(ensureRow).not.toHaveBeenCalled();
+    // A new row order can arrive before its row document is populated.
+    const pending = new Y.Doc() as YDoc;
+
+    contextValue.rowMap = { ...contextValue.rowMap, pending };
+    rerender(<TimelineWithFooter />);
+    act(() => rowOrders.push([{ id: 'pending', height: 36 }]));
+    expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('70');
+    const populated = createAmountRow('pending', 40);
+
+    act(() => Y.applyUpdate(pending, Y.encodeStateAsUpdate(populated)));
+    await waitFor(() => expect(screen.getByTestId('timeline-event-count').textContent).toBe('4'));
+    await waitFor(() => expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('110'));
+    expect(persisted).toEqual(['70', '110']);
     unmount();
-    live.destroy();
+    calculation.unobserveDeep(observeCalculation);
+    pending.destroy();
+    populated.destroy();
     Object.values(seeds).forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
   });
+
+  it.each([false, true])(
+    'hydrates seed batches without realtime rows (prefetch complete: %s)',
+    async (prefetchComplete) => {
+      const { wrapper, contextValue, fields, rowOrders } = createFixture();
+      const progressField = new Y.Map() as YDatabaseField;
+      const relationField = new Y.Map() as YDatabaseField;
+
+      progressField.set(YjsDatabaseKey.type, FieldType.Number);
+      relationField.set(YjsDatabaseKey.type, FieldType.Relation);
+      fields.set('progress', progressField);
+      fields.set('dependency', relationField);
+      const rowIds = Array.from({ length: 257 }, (_, index) => `seed-${index}`);
+      const seeds = Object.fromEntries(
+        rowIds.map((id) => [
+          id,
+          createRowDoc(id, databaseId, {
+            [START]: { fieldType: FieldType.DateTime, data: String(jan2) },
+            [END]: { fieldType: FieldType.DateTime, data: String(jan2 + DAY) },
+            [PRIMARY]: { fieldType: FieldType.RichText, data: `Title ${id}` },
+            progress: { fieldType: FieldType.Number, data: '50' },
+            dependency: { fieldType: FieldType.Relation, data: ['predecessor'] },
+          }),
+        ])
+      );
+
+      rowOrders.delete(0, rowOrders.length);
+      rowOrders.push(rowIds.map((id) => ({ id, height: 36 })));
+      const ensureRow = jest.fn();
+      const loadRowFromSeed = jest.fn(async (id: string) => seeds[id]);
+      const parseProgress = jest.fn(parseProgressPercent);
+      const parseRelations = jest.fn(parseRelationRowIds);
+
+      contextValue.rowMap = {};
+      contextValue.ensureRow = ensureRow;
+      contextValue.seedsReady = true;
+      contextValue.blobPrefetchComplete = prefetchComplete;
+      contextValue.loadRowFromSeed = loadRowFromSeed;
+      contextValue.peekRowDocFromSeed = (id) => seeds[id] ?? null;
+      const { result, rerender, unmount } = renderHook(
+        () => ({
+          timeline: useTimelineEventsSelector(),
+          progress: useTimelineFieldValues('progress', parseProgress),
+          dependencies: useTimelineFieldValues('dependency', parseRelations),
+        }),
+        { wrapper }
+      );
+
+      await waitFor(() => expect(result.current.timeline.events).toHaveLength(257));
+      expect(ensureRow).not.toHaveBeenCalled();
+      expect(loadRowFromSeed).not.toHaveBeenCalled();
+      expect(result.current.timeline.events.at(-1)).toMatchObject({
+        rowId: 'seed-256',
+        title: 'Title seed-256',
+        start: new Date(jan2 * 1000),
+        end: new Date((jan2 + DAY) * 1000),
+      });
+      expect(result.current.progress.get('seed-256')).toBe(50);
+      expect(result.current.dependencies.get('seed-256')).toEqual(['predecessor']);
+      // Three arrival batches must never decode the earlier batches again.
+      expect(parseProgress).toHaveBeenCalledTimes(257);
+      expect(parseRelations).toHaveBeenCalledTimes(257);
+
+      const live = new Y.Doc({ guid: 'mounted-row' }) as YDoc;
+
+      contextValue.rowMap = { 'seed-0': live };
+      rerender();
+      expect(result.current.progress.get('seed-0')).toBe(50);
+      act(() => {
+        Y.applyUpdate(live, Y.encodeStateAsUpdate(seeds['seed-0']));
+        const row = live.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>;
+        const cells = row.get(YjsDatabaseKey.cells) as Y.Map<Y.Map<unknown>>;
+
+        cells.get('progress')!.set(YjsDatabaseKey.data, '75');
+        cells.get(PRIMARY)!.set(YjsDatabaseKey.data, 'Mounted title');
+      });
+      await waitFor(() => expect(result.current.progress.get('seed-0')).toBe(75));
+      expect(result.current.timeline.events[0].title).toBe('Mounted title');
+      act(() => {
+        const row = live.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>;
+        const cells = row.get(YjsDatabaseKey.cells) as Y.Map<Y.Map<unknown>>;
+
+        Y.transact(live, () => cells.get('progress')!.set(YjsDatabaseKey.data, '80'), null, false);
+      });
+      await waitFor(() => expect(result.current.progress.get('seed-0')).toBe(80));
+      expect(ensureRow).not.toHaveBeenCalled();
+      unmount();
+      live.destroy();
+      Object.values(seeds).forEach((doc) => doc.destroy());
+    }
+  );
 
   it('ends each bar at the end field, ignoring ends before the start or missing', async () => {
     const { wrapper } = createFixture();

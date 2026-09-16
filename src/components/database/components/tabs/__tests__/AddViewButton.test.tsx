@@ -21,6 +21,10 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
   useAddDatabaseView: () => mockAddView,
 }));
 
+jest.mock('@/application/database-yjs/context', () => ({
+  useDatabaseContext: () => ({ workspaceId: 'workspace-id' }),
+}));
+
 jest.mock('sonner', () => ({
   toast: { error: jest.fn() },
 }));
