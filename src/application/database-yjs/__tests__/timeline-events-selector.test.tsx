@@ -1,5 +1,4 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import type React from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState, FieldType, useTimelineEventsSelector } from '@/application/database-yjs';
@@ -15,9 +14,16 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
+import {
+  parseProgressPercent,
+  parseRelationRowIds,
+  useTimelineFieldValues,
+} from '@/components/database/timeline/hooks/useTimelineFieldValues';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 import { createRowDoc } from './test-helpers';
+
+import type { ReactNode } from 'react';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
@@ -103,7 +109,7 @@ function createFixture() {
     rowMap,
     workspaceId: 'workspace-id',
   } as DatabaseContextState;
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
+  const wrapper = ({ children }: { children: ReactNode }) => (
     <AFConfigContext.Provider
       value={{ isAuthenticated: false, updateCurrentUser: async () => undefined, openLoginModal: () => undefined }}
     >
@@ -111,10 +117,95 @@ function createFixture() {
     </AFConfigContext.Provider>
   );
 
-  return { wrapper, timelineSettings, databaseDoc };
+  return { wrapper, timelineSettings, databaseDoc, contextValue, fields, rowOrders };
 }
 
 describe('useTimelineEventsSelector with separate start and end fields', () => {
+  it('hydrates dates, titles, dependencies and progress from seed batches without realtime rows', async () => {
+    const { wrapper, contextValue, fields, rowOrders } = createFixture();
+    const progressField = new Y.Map() as YDatabaseField;
+    const relationField = new Y.Map() as YDatabaseField;
+
+    progressField.set(YjsDatabaseKey.type, FieldType.Number);
+    relationField.set(YjsDatabaseKey.type, FieldType.Relation);
+    fields.set('progress', progressField);
+    fields.set('dependency', relationField);
+    const rowIds = Array.from({ length: 257 }, (_, index) => `seed-${index}`);
+    const seeds = Object.fromEntries(
+      rowIds.map((id) => [
+        id,
+        createRowDoc(id, databaseId, {
+          [START]: { fieldType: FieldType.DateTime, data: String(jan2) },
+          [END]: { fieldType: FieldType.DateTime, data: String(jan2 + DAY) },
+          [PRIMARY]: { fieldType: FieldType.RichText, data: `Title ${id}` },
+          progress: { fieldType: FieldType.Number, data: '50' },
+          dependency: { fieldType: FieldType.Relation, data: ['predecessor'] },
+        }),
+      ])
+    );
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 36 })));
+    const ensureRow = jest.fn();
+    const parseProgress = jest.fn(parseProgressPercent);
+    const parseRelations = jest.fn(parseRelationRowIds);
+
+    contextValue.rowMap = {};
+    contextValue.ensureRow = ensureRow;
+    contextValue.seedsReady = true;
+    contextValue.blobPrefetchComplete = false;
+    contextValue.peekRowDocFromSeed = (id) => seeds[id] ?? null;
+    const { result, rerender, unmount } = renderHook(
+      () => ({
+        timeline: useTimelineEventsSelector(),
+        progress: useTimelineFieldValues('progress', parseProgress),
+        dependencies: useTimelineFieldValues('dependency', parseRelations),
+      }),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(result.current.timeline.events).toHaveLength(257));
+    expect(ensureRow).not.toHaveBeenCalled();
+    expect(result.current.timeline.events.at(-1)).toMatchObject({
+      rowId: 'seed-256',
+      title: 'Title seed-256',
+      start: new Date(jan2 * 1000),
+      end: new Date((jan2 + DAY) * 1000),
+    });
+    expect(result.current.progress.get('seed-256')).toBe(50);
+    expect(result.current.dependencies.get('seed-256')).toEqual(['predecessor']);
+    // Three arrival batches must never decode the earlier batches again.
+    expect(parseProgress).toHaveBeenCalledTimes(257);
+    expect(parseRelations).toHaveBeenCalledTimes(257);
+
+    const live = new Y.Doc({ guid: 'mounted-row' }) as YDoc;
+
+    contextValue.rowMap = { 'seed-0': live };
+    rerender();
+    expect(result.current.progress.get('seed-0')).toBe(50);
+    act(() => {
+      Y.applyUpdate(live, Y.encodeStateAsUpdate(seeds['seed-0']));
+      const row = live.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>;
+      const cells = row.get(YjsDatabaseKey.cells) as Y.Map<Y.Map<unknown>>;
+
+      cells.get('progress')!.set(YjsDatabaseKey.data, '75');
+      cells.get(PRIMARY)!.set(YjsDatabaseKey.data, 'Mounted title');
+    });
+    await waitFor(() => expect(result.current.progress.get('seed-0')).toBe(75));
+    expect(result.current.timeline.events[0].title).toBe('Mounted title');
+    act(() => {
+      const row = live.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>;
+      const cells = row.get(YjsDatabaseKey.cells) as Y.Map<Y.Map<unknown>>;
+
+      Y.transact(live, () => cells.get('progress')!.set(YjsDatabaseKey.data, '80'), null, false);
+    });
+    await waitFor(() => expect(result.current.progress.get('seed-0')).toBe(80));
+    expect(ensureRow).not.toHaveBeenCalled();
+    unmount();
+    live.destroy();
+    Object.values(seeds).forEach((doc) => doc.destroy());
+  });
+
   it('ends each bar at the end field, ignoring ends before the start or missing', async () => {
     const { wrapper } = createFixture();
     const { result } = renderHook(() => useTimelineEventsSelector(), { wrapper });

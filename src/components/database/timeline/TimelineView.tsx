@@ -62,7 +62,7 @@ import { useScrollWindow } from './hooks/useScrollWindow';
 import { TimelineDragMode, TimelineDragPreview, TimelineDragSpan, useTimelineDrag } from './hooks/useTimelineDrag';
 import { useTimelineItems } from './hooks/useTimelineItems';
 import { useTimelineLinkDrag } from './hooks/useTimelineLinkDrag';
-import { parseProgressPercent, parseRelationRowIds, useTimelineFieldValues } from './hooks/useTimelineFieldValues';
+import { parseProgressPercent, parseRelationRowIds, serializeTimelineProgressPercent, useTimelineFieldValues } from './hooks/useTimelineFieldValues';
 import { useTimelinePermissions } from './hooks/useTimelinePermissions';
 import { useTimelineRange } from './hooks/useTimelineRange';
 import { TimelineRowModel, useTimelineRows } from './hooks/useTimelineRows';
@@ -322,9 +322,13 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const handleDragCommit = useCallback(
     (preview: TimelineDragPreview) => {
       if (preview.mode === 'progress') {
-        if (setting.progressFieldId && preview.progress !== undefined) {
-          updateAnyCell(preview.rowId, setting.progressFieldId, String(preview.progress));
-        }
+        const progressField = databaseFields?.get(setting.progressFieldId);
+
+        const data = progressField && preview.progress !== undefined
+          ? serializeTimelineProgressPercent(preview.progress, progressField)
+          : undefined;
+
+        if (data !== undefined) updateAnyCell(preview.rowId, setting.progressFieldId, data);
 
         return;
       }
@@ -350,7 +354,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
         );
       });
     },
-    [commitSpan, setting.progressFieldId, updateAnyCell]
+    [commitSpan, databaseFields, setting.progressFieldId, updateAnyCell]
   );
 
   const {
