@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 
 import {
   YDatabase,
+  YDatabaseCells,
   YDatabaseLayoutSettings,
   YDatabaseTimelineLayoutSetting,
   YDatabaseView,
@@ -141,6 +142,37 @@ export function readTimelineLayoutSetting(
     progressFieldId: setting?.get(YjsDatabaseKey.progress_field_id) ?? '',
     tableFieldIds: idList(setting?.get(YjsDatabaseKey.table_field_ids)),
   };
+}
+
+/** Copy metadata for the dependencies carried by a duplicated row's relation cell. */
+export function duplicateTimelineRowDependencyLinks(
+  view: YDatabaseView,
+  cells: YDatabaseCells,
+  sourceRowId: string,
+  copiedRowId: string
+) {
+  const setting = view.get(YjsDatabaseKey.layout_settings)?.get(TIMELINE_LAYOUT_KEY);
+  const dependencyFieldId = setting?.get(YjsDatabaseKey.dependency_field_id);
+
+  if (!setting || !dependencyFieldId) return;
+  const data = cells.get(dependencyFieldId)?.get(YjsDatabaseKey.data);
+  const relatedIds = data instanceof Y.Array ? data.toArray() : Array.isArray(data) ? data : [];
+  const links = linkMap(setting.get(YjsDatabaseKey.dependency_links));
+  const blocking = Number(setting.get(YjsDatabaseKey.dependency_direction)) === TimelineDependencyDirection.Blocking;
+  const additions: Record<string, TimelineDependencyLink> = {};
+
+  for (const relatedId of relatedIds) {
+    if (typeof relatedId !== 'string') continue;
+    const sourceKey = blocking ? `${sourceRowId}:${relatedId}` : `${relatedId}:${sourceRowId}`;
+    const copiedKey = blocking ? `${copiedRowId}:${relatedId}` : `${relatedId}:${copiedRowId}`;
+    const metadata = links[sourceKey];
+
+    if (metadata) additions[copiedKey] = metadata;
+  }
+
+  if (Object.keys(additions).length > 0) {
+    updateTimelineLayoutSetting(view, { dependencyLinks: { ...links, ...additions } });
+  }
 }
 
 export type TimelineLayoutUpdate = Partial<Omit<TimelineLayoutSetting, 'use24Hour'>>;
