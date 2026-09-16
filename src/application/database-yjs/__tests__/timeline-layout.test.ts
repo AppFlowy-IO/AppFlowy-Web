@@ -33,6 +33,21 @@ function sync(source: Y.Doc, target: Y.Doc) {
   Y.applyUpdate(target, Y.encodeStateAsUpdate(source, Y.encodeStateVector(target)), 'remote');
 }
 
+test('changing the start field clears a conflicting end binding', () => {
+  const { database, view } = createFixture();
+
+  initializeTimelineLayoutSetting(view, 'start');
+  updateTimelineLayoutSetting(view, { endFieldId: 'end' });
+  updateTimelineLayoutSetting(view, { fieldId: 'end' });
+  expect(readTimelineLayoutSetting(database, 'timeline', 0, false)).toMatchObject({
+    fieldId: 'end',
+    endFieldId: '',
+  });
+
+  updateTimelineLayoutSetting(view, { endFieldId: 'end' });
+  expect(readTimelineLayoutSetting(database, 'timeline', 0, false).endFieldId).toBe('');
+});
+
 test('missing setting falls back to month scale, docked table, and the user week start', () => {
   const { database } = createFixture();
 

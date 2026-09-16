@@ -222,6 +222,11 @@ export function updateTimelineLayoutSetting(view: YDatabaseView, settings: Timel
     else setting.delete(YjsDatabaseKey.end_field_id);
   }
 
+  // A start-property change can collide with an existing end binding.
+  if (setting.get(YjsDatabaseKey.end_field_id) === setting.get(YjsDatabaseKey.field_id)) {
+    setting.delete(YjsDatabaseKey.end_field_id);
+  }
+
   if (settings.dependencyShift !== undefined) setting.set(YjsDatabaseKey.dependency_shift_ty, settings.dependencyShift);
   if (settings.dependencyDirection !== undefined) {
     setting.set(YjsDatabaseKey.dependency_direction, settings.dependencyDirection);

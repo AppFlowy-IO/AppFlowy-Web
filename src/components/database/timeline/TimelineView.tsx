@@ -22,24 +22,24 @@ import {
   useNavigateToRow,
   usePrimaryFieldId,
 } from '@/application/database-yjs';
+import { useUpdateTimelineSetting } from '@/application/database-yjs/dispatch';
 import { useUpdateAnyCellDispatch, useUpdateStartEndTimeCell } from '@/application/database-yjs/dispatch/cell';
 import { useUpdateRelationCellDispatch } from '@/application/database-yjs/dispatch/relation';
-import { useSetUpTimelineDependenciesDispatch } from '@/application/database-yjs/dispatch/timeline-dependencies';
 import {
   useDuplicateRowDispatch,
   useNewRowDispatch,
   useReorderRowDispatch,
 } from '@/application/database-yjs/dispatch/row';
+import { useSetUpTimelineDependenciesDispatch } from '@/application/database-yjs/dispatch/timeline-dependencies';
 import { getGroupRowCellsData } from '@/application/database-yjs/group-row';
-import { useUpdateTimelineSetting } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as CollapseIcon } from '@/assets/icons/double_arrow_left.svg';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/double_arrow_right.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useAIEnabled } from '@/components/app/app.hooks';
+import { type Edge } from '@/components/database/components/drag-and-drop/useRowDnd';
 import { FieldDisplay } from '@/components/database/components/field';
 import { GridCalculateRowCell } from '@/components/database/components/grid/grid-cell/GridCalculateRowCell';
-import { type Edge } from '@/components/database/components/drag-and-drop/useRowDnd';
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks/useTimeFormat';
 import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
 import { Button } from '@/components/ui/button';
@@ -60,11 +60,12 @@ import {
 } from './constants';
 import { useScrollWindow } from './hooks/useScrollWindow';
 import { TimelineDragMode, TimelineDragPreview, TimelineDragSpan, useTimelineDrag } from './hooks/useTimelineDrag';
+import { parseProgressPercent, parseRelationRowIds, serializeTimelineProgressPercent, useTimelineFieldValues } from './hooks/useTimelineFieldValues';
 import { useTimelineItems } from './hooks/useTimelineItems';
 import { useTimelineLinkDrag } from './hooks/useTimelineLinkDrag';
-import { parseProgressPercent, parseRelationRowIds, serializeTimelineProgressPercent, useTimelineFieldValues } from './hooks/useTimelineFieldValues';
 import { useTimelinePermissions } from './hooks/useTimelinePermissions';
 import { useTimelineRange } from './hooks/useTimelineRange';
+import { useTimelineRects } from './hooks/useTimelineRects';
 import { TimelineRowModel, useTimelineRows } from './hooks/useTimelineRows';
 import { buildDependencyGraph, collectDependents, linkOf } from './scale/dependencies';
 import {
@@ -73,23 +74,21 @@ import {
   calendarDaysBetween,
   dateToX,
   BarRect,
-  getBarRect,
   getBarSpan,
-  getSpanRect,
-  minBarWidth,
   snapDate,
   totalWidth,
   xToDate,
 } from './scale/geometry';
 import { hitTestLink, TimelineArrows, TimelineLinkSelection } from './TimelineArrows';
-import { TimelineLinkEditor } from './TimelineLinkEditor';
 import { TimelineBarDragLabel } from './TimelineBar';
-import { TimelineToolbar } from './TimelineToolbar';
 import { TimelineGrid } from './TimelineGrid';
-import { TimelineHeader } from './TimelineHeader';
-import { TimelineGroupFooter, TimelineGroupRow } from './TimelineGroupRow';
 import { useTimelineGrouping } from './TimelineGroupingContext';
+import { TimelineGroupFooter, TimelineGroupRow } from './TimelineGroupRow';
+import { TimelineHeader } from './TimelineHeader';
+import { TimelineLinkEditor } from './TimelineLinkEditor';
 import { TimelineRow, TimelineRowActions } from './TimelineRow';
+import { TimelineTableProvider, TimelineTableViewport, timelineTableViewportWidth } from './TimelineTable';
+import { TimelineToolbar } from './TimelineToolbar';
 
 // Calendar cards carry only the title; a timeline bar adds chips solely for
 // properties the user set to "always shown" in this view's Properties menu.
@@ -129,7 +128,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const newRow = useNewRowDispatch();
   const navigateToRow = useNavigateToRow();
   const aiEnabled = useAIEnabled();
-  const permissions = useTimelinePermissions(setting.fieldId);
+  const permissions = useTimelinePermissions(setting.fieldId, setting.endFieldId);
   // One subscription to the user's time format, shared by every bar.
   const { formatTimeDisplay } = useTimeFormat();
   const primaryFieldId = usePrimaryFieldId();
@@ -155,9 +154,11 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     () => setting.tableFieldIds.filter((fieldId) => fieldId !== primaryFieldId && databaseFields?.has(fieldId)),
     [databaseFields, primaryFieldId, setting.tableFieldIds]
   );
-  const sidebarWidth = showSidebar
+  const tableContentWidth = showSidebar
     ? TIMELINE_SIDEBAR_WIDTH + tableFieldIds.length * TIMELINE_TABLE_COLUMN_WIDTH
     : TIMELINE_COLLAPSED_SIDEBAR_WIDTH;
+  const scroll = useScrollWindow(scrollerRef);
+  const sidebarWidth = timelineTableViewportWidth(tableContentWidth, scroll.clientWidth);
 
   const { rows, emptyEvents, rowOrders, hasEndField } = useTimelineRows(showSidebar);
   const grouping = useTimelineGrouping();
@@ -165,6 +166,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const items = useTimelineItems(rows, grouping, permissions.editable);
   // Bars and arrows are addressed by item index; non-row items carry no id.
   const itemRowIds = useMemo(() => items.map((item) => (item.kind === 'row' ? item.row.rowId : '')), [items]);
+  const itemGroupIds = useMemo(() => items.map((item) => (item.kind === 'row' ? item.groupId : undefined)), [items]);
   const reorderRow = useReorderRowDispatch();
   // The row gutter's actions, created once here rather than by every row:
   // their dispatch hooks subscribe to the whole database context, and the
@@ -236,7 +238,6 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     scrollerRef,
     sidebarWidth,
   });
-  const scroll = useScrollWindow(scrollerRef);
 
   const fields = useFieldsSelector(CARD_FIELD_VISIBILITIES);
   const propertyFields = useMemo(
@@ -280,6 +281,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
 
   const commitSpan = useCallback(
     (rowId: string, start: Date, endExclusive: Date, allDay: boolean, keepSingle: boolean, historyGroup?: object) => {
+      if (!permissions.dateEditable) return;
       const history = historyGroup ? { historyGroup } : undefined;
 
       if (hasEndField) {
@@ -310,7 +312,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
         history
       );
     },
-    [hasEndField, setting.endFieldId, setting.fieldId, updateStartEnd]
+    [hasEndField, permissions.dateEditable, setting.endFieldId, setting.fieldId, updateStartEnd]
   );
 
   // Row lookups by id (bar press followers, editor titles) without rescans.
@@ -372,7 +374,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
 
   const handleBarPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>, row: TimelineRowModel, mode: TimelineDragMode) => {
-      if (!permissions.editable || !row.start) return;
+      if (!permissions.editable || (mode !== 'progress' && !permissions.dateEditable) || !row.start) return;
       const span = getBarSpan(row.start, row.end, row.allDay);
       const byId = rowByIdRef.current;
       // Dependents move with the bar per the "Shift dependents" setting; each
@@ -410,19 +412,27 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
         mode
       );
     },
-    [graph, permissions.editable, progressValues, setting.avoidWeekends, setting.dependencyShift, startDrag]
+    [
+      graph,
+      permissions.editable,
+      permissions.dateEditable,
+      progressValues,
+      setting.avoidWeekends,
+      setting.dependencyShift,
+      startDrag,
+    ]
   );
 
   const handleEmptyClick = useCallback(
     (row: TimelineRowModel, x: number) => {
-      if (!permissions.editable) return;
+      if (!permissions.dateEditable) return;
       const start = snapDate(geometry.preset, xToDate(geometry, x), 'floor');
       const endExclusive = dayjs(start).add(geometry.preset.snapMinutes, 'minute').toDate();
       const allDay = geometry.preset.unit === 'day';
 
       commitSpan(row.rowId, start, endExclusive, allDay, !allDay);
     },
-    [commitSpan, geometry, permissions.editable]
+    [commitSpan, geometry, permissions.dateEditable]
   );
 
   const virtualizer = useVirtualizer({
@@ -433,15 +443,6 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     scrollMargin: TIMELINE_HEADER_HEIGHT,
     getItemKey: (index) => items[index]?.key ?? index,
   });
-
-  const rowIndexById = useMemo(() => {
-    const map = new Map<string, number>();
-
-    items.forEach((item, index) => {
-      if (item.kind === 'row') map.set(item.row.rowId, index);
-    });
-    return map;
-  }, [items]);
 
   const updateRelationCell = useUpdateRelationCellDispatch();
   const graphRef = useRef(graph);
@@ -557,50 +558,16 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     return { predecessor: titleOf(selectedLink.predecessorId), successor: titleOf(selectedLink.successorId) };
   }, [rowById, selectedLink, t]);
   const handleLinkPointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLElement>, row: TimelineRowModel, rect: BarRect) => {
-      const index = rowIndexById.get(row.rowId);
-
-      if (index === undefined) return;
+    (event: ReactPointerEvent<HTMLElement>, row: TimelineRowModel, rect: BarRect, index: number) => {
       startLink(event, row.rowId, {
         x: rect.left + rect.width,
         y: index * TIMELINE_ROW_HEIGHT + TIMELINE_ROW_HEIGHT / 2,
       });
     },
-    [rowIndexById, startLink]
+    [startLink]
   );
-  // Base rects only change with the data or the scale; a drag overlays the few
-  // rows it moves so every other row keeps its rect reference (and its memo).
-  const baseRects = useMemo(
-    () =>
-      items.map((item) =>
-        item.kind === 'row' && item.row.start
-          ? getBarRect(geometry, item.row.start, item.row.end, item.row.allDay)
-          : null
-      ),
-    [geometry, items]
-  );
-  const rects = useMemo(() => {
-    if (!preview || preview.mode === 'progress') return baseRects;
-    const next = baseRects.slice();
-    const overlay = (span: TimelineDragSpan) => {
-      const index = rowIndexById.get(span.rowId);
-
-      if (index !== undefined && next[index]) {
-        next[index] = getSpanRect(geometry, span, minBarWidth(geometry, span.allDay));
-      }
-    };
-
-    overlay(preview);
-    preview.followers.forEach(overlay);
-    return next;
-  }, [baseRects, geometry, preview, rowIndexById]);
+  const { rects, previewRect } = useTimelineRects(items, geometry, preview);
   const followerIds = useMemo(() => new Set(preview?.followers.map((follower) => follower.rowId) ?? []), [preview]);
-  const previewRect = useMemo(() => {
-    if (!preview) return null;
-    const index = rowIndexById.get(preview.rowId);
-
-    return index === undefined ? null : rects[index];
-  }, [preview, rects, rowIndexById]);
   const dragLabel = useMemo(() => (preview ? dragLabelFor(preview) : undefined), [preview]);
 
   const handleLayoutChange = useCallback(
@@ -643,289 +610,298 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const lastVisibleIndex = virtualItems[virtualItems.length - 1]?.index ?? -1;
 
   return (
-    <div
-      className={cn(
-        'mx-24 flex flex-col max-sm:!mx-6',
-        fixedViewport ? 'h-full min-h-0' : '',
-        dragging && 'select-none'
-      )}
-      // Same inline margins as the calendar: the page's gutters on desktop, or
-      // whatever an embedding document block dictates.
-      style={{ marginLeft: paddingStart, marginRight: paddingEnd }}
-      data-testid='timeline-view'
-    >
-      <TimelineToolbar
-        title={title}
-        layout={layout}
-        onLayoutChange={handleLayoutChange}
-        onToday={handleToday}
-        onStep={handleStep}
-        emptyEvents={emptyEvents}
-      />
+    <TimelineTableProvider contentWidth={tableContentWidth} viewportWidth={sidebarWidth}>
       <div
-        ref={attachScroller}
-        onScroll={handleScroll}
-        className={cn('appflowy-scroller relative w-full overflow-auto', fixedViewport ? 'h-full min-h-0 flex-1' : '')}
-        style={fixedViewport ? undefined : { maxHeight: '75vh' }}
+        className={cn(
+          'mx-24 flex flex-col max-sm:!mx-6',
+          fixedViewport ? 'h-full min-h-0' : '',
+          dragging && 'select-none'
+        )}
+        // Same inline margins as the calendar: the page's gutters on desktop, or
+        // whatever an embedding document block dictates.
+        style={{ marginLeft: paddingStart, marginRight: paddingEnd }}
+        data-testid='timeline-view'
       >
-        <div className='relative' style={{ width: sidebarWidth + canvasWidth, minHeight: '100%' }}>
-          <div className='sticky top-0 z-20 flex bg-background-primary' style={{ height: TIMELINE_HEADER_HEIGHT }}>
-            <div
-              className={cn(
-                // Grid-style header cell: the primary field name plus the table toggle.
-                'sticky left-0 z-30 flex h-full shrink-0 items-center border-b border-r border-border-primary bg-background-primary',
-                showSidebar ? 'justify-between' : 'justify-center'
-              )}
-              // Line the field name up with the row titles, which sit after the
-              // 40px hover gutter when the table is editable.
-              style={{ width: sidebarWidth, paddingLeft: showSidebar ? (permissions.editable ? 44 : 12) : undefined }}
-            >
-              {showSidebar ? (
-                <span className='min-w-0 flex-1 basis-0 truncate text-sm text-text-secondary'>{primaryFieldName}</span>
-              ) : null}
-              {showSidebar
-                ? tableFieldIds.map((fieldId) => (
-                    <div
-                      key={fieldId}
-                      className='flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2 text-sm text-text-secondary'
-                      style={{ width: TIMELINE_TABLE_COLUMN_WIDTH }}
-                      data-testid={`timeline-table-header-${fieldId}`}
-                    >
-                      <FieldDisplay fieldId={fieldId} className='min-w-0 [&_svg]:h-4 [&_svg]:w-4' />
-                    </div>
-                  ))
-                : null}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant='ghost'
-                    size='icon-sm'
-                    className={showSidebar ? 'mx-0.5 shrink-0' : undefined}
-                    aria-label={t('timeline.settings.showTable', { defaultValue: 'Show table' })}
-                    aria-pressed={showSidebar}
-                    data-testid='timeline-toggle-table'
-                    onClick={toggleSidebar}
-                  >
-                    {showSidebar ? (
-                      <CollapseIcon aria-hidden className='h-4 w-4' />
-                    ) : (
-                      <ExpandIcon aria-hidden className='h-4 w-4' />
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t('timeline.settings.showTable', { defaultValue: 'Show table' })}</TooltipContent>
-              </Tooltip>
-            </div>
-            <TimelineHeader
-              mode={geometry.preset.headerMode}
-              segments={segments}
-              columns={columns}
-              canvasWidth={canvasWidth}
-              highlight={previewRect}
-              stickyOffset={sidebarWidth}
-            />
-          </div>
-
-          <div className='relative' style={{ height: bodyHeight }} data-testid='timeline-body'>
-            {/* Blank sticky column so overlays never show through below the last table cell. */}
-            <div
-              aria-hidden
-              className='sticky left-0 z-[1] h-full bg-background-primary'
-              style={{ width: sidebarWidth }}
-            />
-            <TimelineGrid columns={columns} left={sidebarWidth} todayX={todayX} showToday={showToday} />
-
-            {graph.predecessors.size > 0 || link ? (
-              <TimelineArrows
-                pending={link}
-                rowIds={itemRowIds}
-                rects={rects}
-                graph={graph}
-                firstVisibleIndex={firstVisibleIndex}
-                lastVisibleIndex={lastVisibleIndex}
+        <TimelineToolbar
+          title={title}
+          layout={layout}
+          onLayoutChange={handleLayoutChange}
+          onToday={handleToday}
+          onStep={handleStep}
+          emptyEvents={emptyEvents}
+        />
+        <div
+          ref={attachScroller}
+          onScroll={handleScroll}
+          className={cn('appflowy-scroller relative w-full overflow-auto', fixedViewport ? 'h-full min-h-0 flex-1' : '')}
+          style={fixedViewport ? undefined : { maxHeight: '75vh' }}
+        >
+          <div className='relative' style={{ width: sidebarWidth + canvasWidth, minHeight: '100%' }}>
+            <div className='sticky top-0 z-20 flex bg-background-primary' style={{ height: TIMELINE_HEADER_HEIGHT }}>
+              <TimelineTableViewport>
+                <div
+                  className={cn(
+                    // Grid-style header cell: the primary field name plus the table toggle.
+                    'flex h-full items-center border-b border-r border-border-primary bg-background-primary',
+                    showSidebar ? 'justify-between' : 'justify-center'
+                  )}
+                  // Line the field name up with the row titles, which sit after the
+                  // 40px hover gutter when the table is editable.
+                  style={{ paddingLeft: showSidebar ? (permissions.editable ? 44 : 12) : undefined }}
+                >
+                  {showSidebar ? (
+                    <span className='min-w-0 flex-1 basis-0 truncate text-sm text-text-secondary'>
+                      {primaryFieldName}
+                    </span>
+                  ) : null}
+                  {showSidebar
+                    ? tableFieldIds.map((fieldId) => (
+                        <div
+                          key={fieldId}
+                          className='flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2 text-sm text-text-secondary'
+                          style={{ width: TIMELINE_TABLE_COLUMN_WIDTH }}
+                          data-testid={`timeline-table-header-${fieldId}`}
+                        >
+                          <FieldDisplay fieldId={fieldId} className='min-w-0 [&_svg]:h-4 [&_svg]:w-4' />
+                        </div>
+                      ))
+                    : null}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant='ghost'
+                        size='icon-sm'
+                        className={showSidebar ? 'mx-0.5 shrink-0' : undefined}
+                        aria-label={t('timeline.settings.showTable', { defaultValue: 'Show table' })}
+                        aria-pressed={showSidebar}
+                        data-testid='timeline-toggle-table'
+                        onClick={toggleSidebar}
+                      >
+                        {showSidebar ? (
+                          <CollapseIcon aria-hidden className='h-4 w-4' />
+                        ) : (
+                          <ExpandIcon aria-hidden className='h-4 w-4' />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t('timeline.settings.showTable', { defaultValue: 'Show table' })}</TooltipContent>
+                  </Tooltip>
+                </div>
+              </TimelineTableViewport>
+              <TimelineHeader
+                mode={geometry.preset.headerMode}
+                segments={segments}
+                columns={columns}
                 canvasWidth={canvasWidth}
-                bodyHeight={bodyHeight}
-                left={sidebarWidth}
-                svgRef={arrowsRef}
-                selectedKey={selectedLinkKey}
+                highlight={previewRect}
+                stickyOffset={sidebarWidth}
               />
-            ) : null}
-            {selectedLink && selectedLinkMeta && editorTitles ? (
-              <TimelineLinkEditor
-                selection={editorSelection}
-                link={selectedLinkMeta}
-                predecessorTitle={editorTitles.predecessor}
-                successorTitle={editorTitles.successor}
-                readOnly={!permissions.editable}
-                onChange={handleLinkChange}
-                onRemove={handleLinkRemove}
-                onClose={closeLinkEditor}
+            </div>
+
+            <div className='relative' style={{ height: bodyHeight }} data-testid='timeline-body'>
+              {/* Blank sticky column so overlays never show through below the last table cell. */}
+              <div
+                aria-hidden
+                className='sticky left-0 z-[1] h-full bg-background-primary'
+                style={{ width: sidebarWidth }}
               />
-            ) : null}
+              <TimelineGrid columns={columns} left={sidebarWidth} todayX={todayX} showToday={showToday} />
 
-            {virtualItems.map((virtualRow) => {
-              const item = items[virtualRow.index];
+              {graph.predecessors.size > 0 || link ? (
+                <TimelineArrows
+                  pending={link}
+                  rowIds={itemRowIds}
+                  groupIds={itemGroupIds}
+                  rects={rects}
+                  graph={graph}
+                  firstVisibleIndex={firstVisibleIndex}
+                  lastVisibleIndex={lastVisibleIndex}
+                  canvasWidth={canvasWidth}
+                  bodyHeight={bodyHeight}
+                  left={sidebarWidth}
+                  svgRef={arrowsRef}
+                  selectedKey={selectedLinkKey}
+                />
+              ) : null}
+              {selectedLink && selectedLinkMeta && editorTitles ? (
+                <TimelineLinkEditor
+                  selection={editorSelection}
+                  link={selectedLinkMeta}
+                  predecessorTitle={editorTitles.predecessor}
+                  successorTitle={editorTitles.successor}
+                  readOnly={!permissions.editable}
+                  onChange={handleLinkChange}
+                  onRemove={handleLinkRemove}
+                  onClose={closeLinkEditor}
+                />
+              ) : null}
 
-              if (!item) return null;
-              if (item.kind !== 'row') {
+              {virtualItems.map((virtualRow) => {
+                const item = items[virtualRow.index];
+
+                if (!item) return null;
+                if (item.kind !== 'row') {
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      className='absolute left-0 top-0 z-[2] w-full'
+                      style={{
+                        height: virtualRow.size,
+                        transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
+                      }}
+                    >
+                      {item.kind === 'group' ? (
+                        <TimelineGroupRow
+                          group={item.group}
+                          fieldId={grouping.fieldId}
+                          fieldName={grouping.fieldName}
+                          fieldType={grouping.fieldType}
+                          groupConfigId={grouping.groupId}
+                          sidebarWidth={sidebarWidth}
+                          showSidebar={showSidebar}
+                        />
+                      ) : (
+                        <TimelineGroupFooter
+                          group={item.group}
+                          fieldId={grouping.fieldId}
+                          sidebarWidth={sidebarWidth}
+                          showSidebar={showSidebar}
+                        />
+                      )}
+                    </div>
+                  );
+                }
+
+                const { row } = item;
+                const isDragged = preview?.rowId === row.rowId;
+                const rect = rects[virtualRow.index];
+                // Booleans, not pixels, so a scroll frame only re-renders rows whose pill state flips.
+                const offscreenLeft = rect !== null && !isDragged && rect.left < viewLeft;
+                const offscreenRight = rect !== null && !isDragged && rect.left + rect.width > viewRight;
+
                 return (
                   <div
                     key={virtualRow.key}
-                    className='absolute left-0 top-0 z-[2] w-full'
+                    className={cn('absolute left-0 top-0 w-full', isDragged ? 'z-[3]' : 'z-[2]')}
                     style={{
                       height: virtualRow.size,
                       transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
                     }}
                   >
-                    {item.kind === 'group' ? (
-                      <TimelineGroupRow
-                        group={item.group}
-                        fieldId={grouping.fieldId}
-                        fieldName={grouping.fieldName}
-                        fieldType={grouping.fieldType}
-                        groupConfigId={grouping.groupId}
-                        sidebarWidth={sidebarWidth}
-                        showSidebar={showSidebar}
-                      />
-                    ) : (
-                      <TimelineGroupFooter
-                        group={item.group}
-                        fieldId={grouping.fieldId}
-                        sidebarWidth={sidebarWidth}
-                        showSidebar={showSidebar}
-                      />
-                    )}
+                    <TimelineRow
+                      row={row}
+                      rowIndex={virtualRow.index}
+                      rect={rect}
+                      offscreenLeft={offscreenLeft}
+                      offscreenRight={offscreenRight}
+                      sidebarWidth={sidebarWidth}
+                      showSidebar={showSidebar}
+                      propertyFields={propertyFields}
+                      editable={permissions.editable}
+                      dateEditable={permissions.dateEditable}
+                      selected={selectedRowId === row.rowId}
+                      dragging={isDragged}
+                      following={followerIds.has(row.rowId)}
+                      dragLabel={isDragged ? dragLabel : undefined}
+                      progress={setting.progressFieldId ? progressValues.get(row.rowId) ?? 0 : undefined}
+                      progressPreview={isDragged && preview?.mode === 'progress' ? preview.progress : undefined}
+                      anyDragging={dragging}
+                      hoverCardBoundary={scrollerEl}
+                      formatTime={formatTimeDisplay}
+                      rowActions={rowActions}
+                      tableFieldIds={tableFieldIds}
+                      onOpen={handleOpen}
+                      onSelect={setSelectedRowId}
+                      onScrollTo={handleScrollToX}
+                      onBarPointerDown={handleBarPointerDown}
+                      onEmptyClick={handleEmptyClick}
+                      onCanvasClick={handleCanvasClick}
+                      onDropRow={permissions.editable && !grouping.isGrouped ? handleDropRow : undefined}
+                      groupFieldId={grouping.isGrouped ? grouping.fieldId : undefined}
+                      groupId={item.groupId}
+                      linkable={permissions.editable}
+                      linkTarget={link?.targetRowId === row.rowId}
+                      onLinkPointerDown={handleLinkPointerDown}
+                    />
                   </div>
                 );
-              }
+              })}
 
-              const { row } = item;
-              const isDragged = preview?.rowId === row.rowId;
-              const rect = rects[virtualRow.index];
-              // Booleans, not pixels, so a scroll frame only re-renders rows whose pill state flips.
-              const offscreenLeft = rect !== null && !isDragged && rect.left < viewLeft;
-              const offscreenRight = rect !== null && !isDragged && rect.left + rect.width > viewRight;
-
-              return (
+              {showNewRowFooter ? (
                 <div
-                  key={virtualRow.key}
-                  className={cn('absolute left-0 top-0 w-full', isDragged ? 'z-[3]' : 'z-[2]')}
-                  style={{
-                    height: virtualRow.size,
-                    transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
-                  }}
+                  className='absolute left-0 z-[2] flex w-full'
+                  style={{ top: virtualizer.getTotalSize(), height: TIMELINE_ROW_HEIGHT }}
                 >
-                  <TimelineRow
-                    row={row}
-                    rect={rect}
-                    offscreenLeft={offscreenLeft}
-                    offscreenRight={offscreenRight}
-                    sidebarWidth={sidebarWidth}
-                    showSidebar={showSidebar}
-                    propertyFields={propertyFields}
-                    editable={permissions.editable}
-                    selected={selectedRowId === row.rowId}
-                    dragging={isDragged}
-                    following={followerIds.has(row.rowId)}
-                    dragLabel={isDragged ? dragLabel : undefined}
-                    progress={setting.progressFieldId ? progressValues.get(row.rowId) ?? 0 : undefined}
-                    progressPreview={isDragged && preview?.mode === 'progress' ? preview.progress : undefined}
-                    anyDragging={dragging}
-                    hoverCardBoundary={scrollerEl}
-                    formatTime={formatTimeDisplay}
-                    rowActions={rowActions}
-                    tableFieldIds={tableFieldIds}
-                    onOpen={handleOpen}
-                    onSelect={setSelectedRowId}
-                    onScrollTo={handleScrollToX}
-                    onBarPointerDown={handleBarPointerDown}
-                    onEmptyClick={handleEmptyClick}
-                    onCanvasClick={handleCanvasClick}
-                    onDropRow={permissions.editable && !grouping.isGrouped ? handleDropRow : undefined}
-                    groupFieldId={grouping.isGrouped ? grouping.fieldId : undefined}
-                    groupId={item.groupId}
-                    linkable={permissions.editable}
-                    linkTarget={link?.targetRowId === row.rowId}
-                    onLinkPointerDown={handleLinkPointerDown}
-                  />
-                </div>
-              );
-            })}
-
-            {showNewRowFooter ? (
-              <div
-                className='absolute left-0 z-[2] flex w-full'
-                style={{ top: virtualizer.getTotalSize(), height: TIMELINE_ROW_HEIGHT }}
-              >
-                <div
-                  role='button'
-                  tabIndex={0}
-                  // Same treatment as the grid's "+ New row" footer.
-                  className={cn(
-                    'sticky left-0 z-10 flex h-full shrink-0 cursor-pointer items-center gap-1.5 border-b border-r border-border-primary bg-fill-content text-sm font-medium text-text-secondary hover:bg-fill-content-hover',
-                    showSidebar ? 'px-2' : 'justify-center'
-                  )}
-                  style={{ width: sidebarWidth }}
-                  data-testid='timeline-new-row'
-                  aria-label={t('grid.row.newRow', { defaultValue: 'New row' })}
-                  onClick={handleNewRow}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      handleNewRow();
-                    }
-                  }}
-                >
-                  <PlusIcon aria-hidden className='h-5 w-5' />
-                  {showSidebar ? t('grid.row.newRow', { defaultValue: 'New row' }) : null}
-                </div>
-              </div>
-            ) : null}
-
-            {showSidebar ? (
-              // Borderless like the grid: empty calculation controls appear on hover.
-              <div
-                className='absolute left-0 z-[2] flex w-full'
-                style={{
-                  top: virtualizer.getTotalSize() + (showNewRowFooter ? TIMELINE_ROW_HEIGHT : 0),
-                  height: TIMELINE_ROW_HEIGHT,
-                }}
-                data-testid='timeline-calculations'
-              >
-                <div
-                  className='sticky left-0 z-10 flex h-full shrink-0 bg-background-primary text-sm'
-                  style={{ width: sidebarWidth }}
-                >
-                  <div className='min-w-0 flex-1 basis-0' data-testid={`timeline-calculation-${primaryFieldId}`}>
-                    {primaryFieldId ? <GridCalculateRowCell fieldId={primaryFieldId} rowOrders={rowOrders} /> : null}
+                  <div
+                    role='button'
+                    tabIndex={0}
+                    // Same treatment as the grid's "+ New row" footer.
+                    className={cn(
+                      'sticky left-0 z-10 flex h-full shrink-0 cursor-pointer items-center gap-1.5 border-b border-r border-border-primary bg-fill-content text-sm font-medium text-text-secondary hover:bg-fill-content-hover',
+                      showSidebar ? 'px-2' : 'justify-center'
+                    )}
+                    style={{ width: sidebarWidth }}
+                    data-testid='timeline-new-row'
+                    aria-label={t('grid.row.newRow', { defaultValue: 'New row' })}
+                    onClick={handleNewRow}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleNewRow();
+                      }
+                    }}
+                  >
+                    <PlusIcon aria-hidden className='h-5 w-5' />
+                    {showSidebar ? t('grid.row.newRow', { defaultValue: 'New row' }) : null}
                   </div>
-                  {tableFieldIds.map((fieldId, index) => (
-                    <div
-                      key={fieldId}
-                      className='shrink-0'
-                      // The last calculation fills the unused row-control slot;
-                      // earlier property columns stay aligned with their headers.
-                      style={{
-                        width:
-                          TIMELINE_TABLE_COLUMN_WIDTH +
-                          (index === tableFieldIds.length - 1 ? TIMELINE_TABLE_CONTROL_WIDTH : 0),
-                      }}
-                      data-testid={`timeline-calculation-${fieldId}`}
-                    >
-                      <GridCalculateRowCell fieldId={fieldId} rowOrders={rowOrders} />
-                    </div>
-                  ))}
                 </div>
+              ) : null}
+
+              {showSidebar ? (
+                // Borderless like the grid: empty calculation controls appear on hover.
+                <div
+                  className='absolute left-0 z-[2] flex w-full'
+                  style={{
+                    top: virtualizer.getTotalSize() + (showNewRowFooter ? TIMELINE_ROW_HEIGHT : 0),
+                    height: TIMELINE_ROW_HEIGHT,
+                  }}
+                  data-testid='timeline-calculations'
+                >
+                  <TimelineTableViewport>
+                    <div className='flex h-full bg-background-primary text-sm'>
+                      <div className='min-w-0 flex-1 basis-0' data-testid={`timeline-calculation-${primaryFieldId}`}>
+                        {primaryFieldId ? <GridCalculateRowCell fieldId={primaryFieldId} rowOrders={rowOrders} /> : null}
+                      </div>
+                      {tableFieldIds.map((fieldId, index) => (
+                        <div
+                          key={fieldId}
+                          className='shrink-0'
+                          // The last calculation fills the unused row-control slot;
+                          // earlier property columns stay aligned with their headers.
+                          style={{
+                            width:
+                              TIMELINE_TABLE_COLUMN_WIDTH +
+                              (index === tableFieldIds.length - 1 ? TIMELINE_TABLE_CONTROL_WIDTH : 0),
+                          }}
+                          data-testid={`timeline-calculation-${fieldId}`}
+                        >
+                          <GridCalculateRowCell fieldId={fieldId} rowOrders={rowOrders} />
+                        </div>
+                      ))}
+                    </div>
+                  </TimelineTableViewport>
+                </div>
+              ) : null}
+              {/* Keep the table divider continuous above row and footer backgrounds. */}
+              <div aria-hidden className='pointer-events-none absolute inset-0 z-[3]'>
+                <div className='sticky left-0 h-full border-r border-border-primary' style={{ width: sidebarWidth }} />
               </div>
-            ) : null}
-            {/* Keep the table divider continuous above row and footer backgrounds. */}
-            <div aria-hidden className='pointer-events-none absolute inset-0 z-[3]'>
-              <div className='sticky left-0 h-full border-r border-border-primary' style={{ width: sidebarWidth }} />
             </div>
           </div>
         </div>
+        <TimelineTableViewport scrollbar />
       </div>
-    </div>
+    </TimelineTableProvider>
   );
 }
 
