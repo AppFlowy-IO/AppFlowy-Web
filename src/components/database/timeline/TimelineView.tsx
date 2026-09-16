@@ -231,7 +231,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
       }),
     [relations, rowIds, setting.dependencyDirection, setting.dependencyLinks]
   );
-  const { geometry, handleScroll, scrollToDate, scrollByColumns } = useTimelineRange({
+  const { geometry, handleScroll, scrollToDate, scrollToX, scrollByColumns } = useTimelineRange({
     layout,
     scrollerRef,
     sidebarWidth,
@@ -616,17 +616,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     (direction: -1 | 1) => scrollByColumns(direction * geometry.preset.stepColumns),
     [geometry.preset.stepColumns, scrollByColumns]
   );
-  const handleScrollToX = useCallback(
-    (x: number) => {
-      const scroller = scrollerRef.current;
-
-      if (!scroller) return;
-      const visible = Math.max(0, scroller.clientWidth - sidebarWidth);
-
-      scroller.scrollTo({ left: Math.max(0, x - TIMELINE_TODAY_ANCHOR * visible), behavior: 'smooth' });
-    },
-    [sidebarWidth]
-  );
+  const handleScrollToX = useCallback((x: number) => scrollToX(x, TIMELINE_TODAY_ANCHOR), [scrollToX]);
   const toggleSidebar = useCallback(() => {
     if (permissions.readOnly) {
       setLocalSetting((prev) =>
