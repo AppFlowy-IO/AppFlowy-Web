@@ -113,21 +113,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       resetPlans.current.set(planKey, plan);
     }
 
-    // A failed attempt may already have rebuilt some consumers. Use those
-    // replacement contexts and their current owners on retry, while retaining
-    // the original entries for consumers whose row rebuild never completed.
-    plan.affected = plan.affected.map((context) => {
-      const current = refs.registeredContexts.current.get(context.doc.guid);
-
-      if (!current || current === context) return context;
-      plan!.owners.set(current.doc.guid, {
-        count: Math.max(1, refs.contextRefCounts.current.get(current.doc.guid) || 0),
-        cleanup: refs.pendingCleanups.current.has(current.doc.guid),
-      });
-      if (current.collabType === Types.Database) plan!.root = current;
-      return current;
-    });
-    const { objectIds, affected, owners, root } = plan;
+    const { objectIds, owners } = plan;
     const restoreId = state.database_restore_id ?? nilMarker;
     const storageFence = { databaseId, epoch: restoreId, cacheEpoch: restoreId };
     let completed = false;
@@ -139,14 +125,53 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       // tab must re-read authority if another restore already advanced storage.
       await invalidateDatabaseBlobAfterRestore(databaseId, restoreId, state.storageEpoch ?? null);
       assertSession();
+
+      // Invalidation can wait for a prefetch while consumers register or change
+      // ownership. Capture them immediately before teardown, retaining entries
+      // whose replacement failed on an earlier attempt and is still pending.
+      const affectedById = new Map(plan.affected.map((context) => [context.doc.guid, context]));
+      const knownObjectIds = new Set(objectIds);
+      const currentRoot = refs.registeredContexts.current.get(databaseId);
+
+      for (const rowId of [...getCachedDatabaseRowIds(databaseId), ...(currentRoot ? databaseRowIds(currentRoot.doc) : [])]) {
+        knownObjectIds.add(rowId);
+      }
+
+      for (const context of refs.registeredContexts.current.values()) {
+        const objectId = context.doc.guid;
+
+        if (objectId !== databaseId) {
+          if (context.collabType !== Types.DatabaseRow) continue;
+          const parentId = rowDatabases.current.get(objectId) || getCachedRowDatabaseId(objectId) ||
+            context.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)?.get(YjsDatabaseKey.database_id);
+
+          if (!knownObjectIds.has(objectId) && parentId !== databaseId) continue;
+        }
+
+        knownObjectIds.add(objectId);
+        affectedById.set(objectId, context);
+        owners.set(objectId, {
+          count: Math.max(1, refs.contextRefCounts.current.get(objectId) || 0),
+          cleanup: refs.pendingCleanups.current.has(objectId),
+        });
+      }
+
+      objectIds.length = 0;
+      for (const objectId of knownObjectIds) {
+        objectIds.push(objectId);
+        refs.resettingObjectIds.current.add(objectId);
+        if (objectId !== databaseId) rowDatabases.current.set(objectId, databaseId);
+      }
+
+      const affected = [...affectedById.values()];
+
+      plan.affected = affected;
+      plan.root = currentRoot ?? plan.root;
       // Retire old asynchronous row opens before any canonical provider is replaced.
       invalidateDatabaseRowCache(databaseId);
-      if (root) getOrCreateDatabaseHistoryManager(root.doc).clear();
+      if (plan.root) getOrCreateDatabaseHistoryManager(plan.root.doc).clear();
       for (const objectId of objectIds) {
-        const current = refs.registeredContexts.current.get(objectId);
-
         unregister(objectId, { flushPending: false });
-        if (current && !affected.includes(current)) current.doc.destroy();
       }
 
       const discardStoredCollabs = async (ids: string[]) => {
@@ -360,10 +385,10 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
         context.doc.guid === databaseId || (context.collabType === Types.DatabaseRow &&
           (rowDatabases.current.get(context.doc.guid) || getCachedRowDatabaseId(context.doc.guid) ||
             context.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)?.get(YjsDatabaseKey.database_id)) === databaseId));
-      // Publication can temporarily fence the first marker read, before a reset
-      // plan exists. Retain that hint so passive tabs retry even without edits,
-      // reconnect, or another incoming root frame to rediscover the restore.
-      const needsRetry = hasActiveContext || restoreHints.current.has(retryKey) || resetPlans.current.has(retryKey);
+      // Pre-send checks can block an outbox owned by another tab, with no local
+      // context or restore hint. Its deferred sync still needs a retry to drain.
+      const needsRetry = deferredSync.current.has(retryKey) || hasActiveContext ||
+        restoreHints.current.has(retryKey) || resetPlans.current.has(retryKey);
 
       if (needsRetry && sessionActive.current && !current.refs.isDisposedRef.current &&
           latest.current.workspaceId === current.workspaceId && latest.current.userId === current.userId &&

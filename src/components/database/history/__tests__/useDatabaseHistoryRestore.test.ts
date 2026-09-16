@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 
+import { ERROR_CODE } from '@/application/constants';
 import type { DatabaseRestoreJob } from '@/application/database-history.type';
 import { getDatabaseRestoreJob, startDatabaseRestore } from '@/application/services/domains/database-history';
 
@@ -19,9 +20,11 @@ const job = (state: string): DatabaseRestoreJob => ({
 });
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  jest.resetAllMocks();
   localStorage.clear();
 });
+
+afterEach(() => jest.useRealTimers());
 
 test('persists before enqueue and reloads only after checkpoint-bearing success', async () => {
   jest.mocked(startDatabaseRestore).mockImplementation(async () => {
@@ -80,10 +83,18 @@ test('refuses to claim success if the server omits the mandatory recovery versio
   expect(localStorage.length).toBe(1);
 });
 
-test('a lost enqueue response retries with the persisted idempotency key and server delay', async () => {
+test.each([
+  { httpStatus: 503 },
+  { code: ERROR_CODE.RETRY_LATER },
+  { code: ERROR_CODE.RECORD_ALREADY_EXISTS },
+  { code: ERROR_CODE.REQUEST_TIMEOUT },
+  { code: ERROR_CODE.SERVICE_TEMPORARY_UNAVAILABLE },
+  { code: ERROR_CODE.TOO_MANY_REQUESTS },
+  { code: -1 },
+])('an uncertain enqueue (%j) retries with the persisted idempotency key and server delay', async (details) => {
   jest.useFakeTimers();
   jest.mocked(startDatabaseRestore)
-    .mockRejectedValueOnce({ message: 'Try again', httpStatus: 503, retryAfterSecs: 3 })
+    .mockRejectedValueOnce({ message: 'Try again', ...details, retryAfterSecs: 3 })
     .mockResolvedValueOnce(job('succeeded'));
   const onRestored = jest.fn().mockResolvedValue(undefined);
   const { result } = renderHook(() => useDatabaseHistoryRestore({
@@ -117,9 +128,13 @@ test('remounting after a reload polls the accepted job and cannot enqueue a dupl
   expect(getDatabaseRestoreJob).toHaveBeenCalledTimes(1);
 });
 
-test.each([400, 404])('a definitive enqueue rejection (%s) allows another version after reopening', async (httpStatus) => {
+test.each([
+  { httpStatus: 400 }, { httpStatus: 404 }, { code: 404 },
+  { code: ERROR_CODE.RECORD_NOT_FOUND }, { code: ERROR_CODE.RECORD_DELETED },
+  { code: ERROR_CODE.WORKSPACE_NOT_FOUND }, { code: ERROR_CODE.FEATURE_NOT_AVAILABLE },
+])('a definitive enqueue rejection (%j) allows another version after reopening', async (details) => {
   jest.mocked(startDatabaseRestore)
-    .mockRejectedValueOnce({ message: 'Version is unavailable', httpStatus })
+    .mockRejectedValueOnce({ message: 'Version is unavailable', ...details })
     .mockResolvedValueOnce(job('succeeded'));
   const props = { open: true, userId: 'user', workspaceId: 'w', databaseId: 'd', onRestored: jest.fn().mockResolvedValue(undefined) };
   const first = renderHook(() => useDatabaseHistoryRestore(props));
@@ -141,9 +156,12 @@ test.each([400, 404])('a definitive enqueue rejection (%s) allows another versio
   reopened.unmount();
 });
 
-test.each([401, 403])('authentication/permission rejection (%s) preserves an intent for reopening', async (httpStatus) => {
+test.each([
+  { httpStatus: 401 }, { httpStatus: 403 },
+  { code: ERROR_CODE.NOT_LOGGED_IN }, { code: ERROR_CODE.NOT_HAS_PERMISSION }, { code: ERROR_CODE.USER_UNAUTHORIZED },
+])('authentication/permission rejection (%j) preserves an intent for reopening', async (details) => {
   jest.mocked(startDatabaseRestore)
-    .mockRejectedValueOnce({ message: 'Access denied', httpStatus })
+    .mockRejectedValueOnce({ message: 'Access denied', ...details })
     .mockResolvedValueOnce(job('succeeded'));
   const { result, rerender } = renderHook(({ open }) => useDatabaseHistoryRestore({
     open, userId: 'user', workspaceId: 'w', databaseId: 'd', onRestored: jest.fn().mockResolvedValue(undefined),
@@ -153,6 +171,7 @@ test.each([401, 403])('authentication/permission rejection (%s) preserves an int
   await waitFor(() => expect(result.current.error).toBe('Access denied'));
   expect(result.current.isRestoring).toBe(true);
   expect(localStorage.length).toBe(1);
+  expect(JSON.parse(localStorage.getItem(localStorage.key(0)!)!).enqueueUncertain).toBe(false);
   rerender({ open: false });
   rerender({ open: true });
   await waitFor(() => expect(result.current.completed).toBe(1));
@@ -160,12 +179,16 @@ test.each([401, 403])('authentication/permission rejection (%s) preserves an int
     .toBe(jest.mocked(startDatabaseRestore).mock.calls[0][3]);
 });
 
-test.each([403, 404])('an inaccessible accepted job (%s) remains pending and resumes without another enqueue', async (httpStatus) => {
+test.each([
+  { httpStatus: 403 }, { httpStatus: 404 },
+  { code: ERROR_CODE.NOT_HAS_PERMISSION }, { code: ERROR_CODE.RECORD_NOT_FOUND },
+])('an inaccessible accepted job (%j) remains pending and resumes without another enqueue', async (details) => {
+  jest.useFakeTimers();
   const key = 'af_database_history_restore:v1:server:user:w:d';
 
   localStorage.setItem(key, JSON.stringify({ version: 'version', idempotencyKey: 'original-key', jobId: 'job' }));
   jest.mocked(getDatabaseRestoreJob)
-    .mockRejectedValueOnce({ message: 'Job inaccessible', httpStatus })
+    .mockRejectedValueOnce({ message: 'Job inaccessible', ...details })
     .mockResolvedValueOnce(job('succeeded'));
   const { result, rerender } = renderHook(({ open }) => useDatabaseHistoryRestore({
     open, userId: 'user', workspaceId: 'w', databaseId: 'd', onRestored: jest.fn().mockResolvedValue(undefined),
@@ -174,21 +197,26 @@ test.each([403, 404])('an inaccessible accepted job (%s) remains pending and res
   await waitFor(() => expect(result.current.error).toBe('Job inaccessible'));
   expect(result.current.isRestoring).toBe(true);
   expect(JSON.parse(localStorage.getItem(key)!).jobId).toBe('job');
+  await act(async () => { jest.advanceTimersByTime(30_000); });
+  expect(getDatabaseRestoreJob).toHaveBeenCalledTimes(1);
   act(() => result.current.start('another-version'));
   expect(startDatabaseRestore).not.toHaveBeenCalled();
   rerender({ open: false });
   rerender({ open: true });
   await waitFor(() => expect(result.current.completed).toBe(1));
   expect(startDatabaseRestore).not.toHaveBeenCalled();
+  jest.useRealTimers();
 });
 
-test('an interrupted enqueue remains uncertain across remount and a later 404', async () => {
+test.each([{ httpStatus: 404 }, { code: ERROR_CODE.RECORD_NOT_FOUND }])(
+  'an interrupted enqueue remains uncertain across remount and a later rejection (%j)', async (details) => {
+  jest.useFakeTimers();
   const key = 'af_database_history_restore:v1:server:user:w:d';
   let finishEnqueue!: (value: DatabaseRestoreJob) => void;
 
   jest.mocked(startDatabaseRestore)
     .mockImplementationOnce(() => new Promise((resolve) => { finishEnqueue = resolve; }))
-    .mockRejectedValueOnce({ message: 'Version not found', httpStatus: 404 });
+    .mockRejectedValueOnce({ message: 'Version not found', ...details });
   const props = { open: true, userId: 'user', workspaceId: 'w', databaseId: 'd', onRestored: jest.fn() };
   const first = renderHook(() => useDatabaseHistoryRestore(props));
 
@@ -202,10 +230,12 @@ test('an interrupted enqueue remains uncertain across remount and a later 404', 
   expect(reopened.result.current.isRestoring).toBe(true);
   expect(jest.mocked(startDatabaseRestore).mock.calls[1][3])
     .toBe(jest.mocked(startDatabaseRestore).mock.calls[0][3]);
+  await act(async () => { jest.advanceTimersByTime(30_000); });
   act(() => reopened.result.current.start('another-version'));
   expect(startDatabaseRestore).toHaveBeenCalledTimes(2);
   await act(async () => finishEnqueue(job('queued')));
   reopened.unmount();
+  jest.useRealTimers();
 });
 
 test('legacy saved enqueue intents are treated as uncertain when a retry is rejected', async () => {

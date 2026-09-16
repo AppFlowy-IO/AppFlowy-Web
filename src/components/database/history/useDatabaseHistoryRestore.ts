@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { v4 as uuid } from 'uuid';
 
+import { ERROR_CODE } from '@/application/constants';
 import type { DatabaseRestoreJob } from '@/application/database-history.type';
 import { getDatabaseRestoreJob, startDatabaseRestore } from '@/application/services/domains/database-history';
 import { defaultConfig } from '@/application/services/js-services/http/cloud-config';
@@ -12,6 +13,14 @@ interface PendingRestore {
   /** Persisted before sending so an interrupted enqueue cannot become a new job. */
   enqueueUncertain: boolean;
 }
+
+const accessDeniedCodes = new Set<number>([
+  ERROR_CODE.NOT_LOGGED_IN, ERROR_CODE.NOT_HAS_PERMISSION, ERROR_CODE.USER_UNAUTHORIZED,
+]);
+const rejectedRestoreCodes = new Set<number>([
+  ERROR_CODE.RECORD_NOT_FOUND, ERROR_CODE.RECORD_DELETED,
+  ERROR_CODE.WORKSPACE_NOT_FOUND, ERROR_CODE.FEATURE_NOT_AVAILABLE,
+]);
 
 export function databaseHistoryError(error: unknown): string {
   return error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error);
@@ -143,16 +152,22 @@ export function useDatabaseHistoryRestore({
         } catch (failure) {
           if (signal.aborted) return;
           setError(databaseHistoryError(failure));
-          const details = failure as { httpStatus?: number; retryAfterSecs?: number };
+          const details = failure as { code?: number; httpStatus?: number; retryAfterSecs?: number } | null;
+          // API envelopes expose a code without an HTTP status. Keep unknown,
+          // conflict, timeout, and rate-limit responses uncertain and retryable.
+          const status = details?.httpStatus ?? details?.code ?? 0;
+          const code = details?.code ?? 0;
+          const accessDenied = status === 401 || status === 403 || accessDeniedCodes.has(code);
+          const definitivelyRejected = accessDenied || rejectedRestoreCodes.has(code) ||
+            (status >= 400 && status < 500 && status !== 408 && status !== 409 && status !== 429);
 
           // Release an intent only after a definitive first enqueue rejection.
           // Accepted jobs, lost responses, and interrupted enqueues retain their
           // identity even if a later request cannot find/access the job.
-          if (details.httpStatus && details.httpStatus >= 400 && details.httpStatus < 500 &&
-              details.httpStatus !== 408 && details.httpStatus !== 409 && details.httpStatus !== 429) {
+          if (definitivelyRejected) {
             if (!current.jobId && !wasEnqueueUncertain) {
               try {
-                if (details.httpStatus === 401 || details.httpStatus === 403) {
+                if (accessDenied) {
                   // Reopen after authentication/permissions recover with this key.
                   current.enqueueUncertain = false;
                   localStorage.setItem(storageKey, JSON.stringify(current));
@@ -169,7 +184,7 @@ export function useDatabaseHistoryRestore({
             return;
           }
 
-          backoff = details.retryAfterSecs !== undefined
+          backoff = details?.retryAfterSecs !== undefined
             ? Math.max(1_000, details.retryAfterSecs * 1_000)
             : Math.min(backoff * 2, 30_000);
         }
