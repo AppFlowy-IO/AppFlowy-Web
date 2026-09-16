@@ -553,6 +553,19 @@ describe('AddPageActions', () => {
     expect(mockToView).toHaveBeenCalledWith('chat-id');
   });
 
+  it('shows the workspace plan error without navigating when Timeline creation is rejected', async () => {
+    const message = 'Creating a Timeline view requires an active Pro plan for this workspace.';
+
+    mockAddPage.mockRejectedValueOnce({ code: 1090, message });
+    renderActions(view({ view_id: 'space-id', extra: { is_space: true } }));
+    fireEvent.click(screen.getByTestId('add-timeline-page-button'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    expect(toast.dismiss).toHaveBeenCalled();
+    expect(mockToView).not.toHaveBeenCalled();
+    expect(mockOpenPageModal).not.toHaveBeenCalled();
+  });
+
   it('does not initialize or navigate to an AI chat when page creation fails', async () => {
     mockAddPage.mockRejectedValueOnce(new Error('create failed'));
 

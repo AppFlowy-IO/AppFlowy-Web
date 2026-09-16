@@ -10,6 +10,7 @@ import { ViewIcon } from '@/components/_shared/view-icon';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
+import { getErrorMessage } from '@/utils/errors';
 
 interface AddViewButtonProps {
   databasePageId: string;
@@ -72,7 +73,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
     } catch (e: unknown) {
       if (isCurrentActionScope()) {
         console.error('[AddViewButton] Error adding view:', e);
-        toast.error(e instanceof Error ? e.message : 'Failed to add view');
+        toast.error(getErrorMessage(e, 'Failed to add view'));
       }
     } finally {
       if (isCurrentActionScope()) {

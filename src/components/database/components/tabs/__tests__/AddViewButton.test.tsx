@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { toast } from 'sonner';
 
 import { DatabaseViewLayout } from '@/application/types';
 import { AddViewButton } from '@/components/database/components/tabs/AddViewButton';
@@ -71,6 +72,30 @@ describe('AddViewButton', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('shows the server plan error and finishes loading without selecting a new view', async () => {
+    const onViewAdded = jest.fn();
+    const onAfterAddView = jest.fn();
+    const message = 'Creating a Timeline view requires an active Pro plan for this workspace.';
+
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockAddView.mockRejectedValueOnce({ code: 1090, message });
+    render(
+      <MemoryRouter>
+        <AddViewButton
+          databasePageId='database-page-id'
+          onAfterAddView={onAfterAddView}
+          onViewAdded={onViewAdded}
+        />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByTestId('add-timeline-view-button'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    expect(onViewAdded).not.toHaveBeenCalled();
+    expect(onAfterAddView).toHaveBeenCalledTimes(1);
   });
 
   it('creates an enabled List view and selects it', async () => {
