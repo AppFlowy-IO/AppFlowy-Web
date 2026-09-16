@@ -19,6 +19,11 @@ import { Log } from '@/utils/log';
 
 import { createDatabaseBlobDiffPageStage, type DatabaseBlobDiffPageStage } from './page-stage';
 import {
+  throwIfDatabaseBlobAborted,
+  waitForDatabaseBlobRetry,
+  withDatabaseBlobBackpressureRetry,
+} from './request-retry';
+import {
   createDatabaseRowDocSeed,
   invalidateDatabaseRowDocSeedGeneration,
   type DatabaseRowDocSeed,
@@ -43,6 +48,9 @@ type PrefetchOptions = {
 };
 
 type SharedPrefetchEntry = {
+  abortController: AbortController;
+  /** A terminal page walk must finish committing before a replacement starts. */
+  fetching: boolean;
   priorityRowIds: Set<string>;
   /** Rows reset after this prefetch started must not consume its stale snapshot. */
   invalidatedRowIds: Set<string>;
@@ -125,10 +133,6 @@ function findSharedPrefetchEntry(
 
 function sharedPrefetchEntryMatchesDatabase(sharedKey: string, databaseId: string) {
   return sharedKey.includes(`:${databaseId}:`) || sharedKey.endsWith(`:${databaseId}`);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function retryDelayMs(retryAfterSecs?: number | null): number {
@@ -423,6 +427,12 @@ export function clearDatabaseRowDocSeedCache(databaseId: string) {
       entry.onSeedsReadyCallbacks.clear();
 
       if (entry.promise && !entry.settled) {
+        // A terminal walk may still persist its committed seeds. Cancel only
+        // provisional network work when no view retains this database.
+        if (entry.fetching && (rowDocSeedCacheRetainCounts.get(databaseId) ?? 0) === 0) {
+          entry.abortController.abort();
+        }
+
         clearSharedPrefetchEntryAfterSettle(databaseId, key, entry);
         hasUnsettledPrefetch = true;
       }
@@ -1060,6 +1070,7 @@ async function fetchReadyDiff(
   options: {
     cachedRid: DatabaseBlobRowRid | null;
     forceFullSync?: boolean;
+    signal: AbortSignal;
   }
 ): Promise<FetchDiffResult> {
   const cachedRid = options.cachedRid;
@@ -1098,7 +1109,10 @@ async function fetchReadyDiff(
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         const attemptStartedAt = Date.now();
-        const diff = await databaseBlobDiff(workspaceId, databaseId, request);
+        const diff = await withDatabaseBlobBackpressureRetry(
+          () => databaseBlobDiff(workspaceId, databaseId, request, { signal: options.signal }),
+          options.signal
+        );
 
         Log.debug('[Database] blob diff page response', {
           databaseId,
@@ -1187,6 +1201,7 @@ async function fetchReadyDiff(
           }
 
           if (!page.hasMore) {
+            throwIfDatabaseBlobAborted(options.signal);
             return { diff, ready: true, stagedPages };
           }
 
@@ -1225,7 +1240,7 @@ async function fetchReadyDiff(
           message: diff.message ?? null,
         });
 
-        await sleep(delayMs);
+        await waitForDatabaseBlobRetry(delayMs, options.signal);
       }
     }
   } catch (error) {
@@ -1245,7 +1260,10 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
       existingEntry.reuseSettled && existingEntry.settled && existingEntry.hasCompleteSeedSet
     );
 
-    if (!existingEntry.settled || canReuseSettledFullSeed || canReuseSettledSeed) {
+    if (
+      !existingEntry.abortController.signal.aborted &&
+      (!existingEntry.settled || canReuseSettledFullSeed || canReuseSettledSeed)
+    ) {
       applyPrefetchOptions(existingEntry, options);
 
       if (canReuseSettledSeed && !options?.reuseSettled) {
@@ -1267,6 +1285,8 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
   const outboxSession = getCurrentOutboxSession(workspaceId);
   const cachedRid = options?.forceFullSync ? null : readCachedRid(databaseId);
   const entry: SharedPrefetchEntry = {
+    abortController: new AbortController(),
+    fetching: true,
     priorityRowIds: new Set(),
     invalidatedRowIds: new Set(),
     onSeedsReadyCallbacks: new Set(),
@@ -1300,9 +1320,12 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
     const { diff, ready, stagedPages } = await fetchReadyDiff(workspaceId, databaseId, {
       cachedRid,
       forceFullSync: options?.forceFullSync,
+      signal: entry.abortController.signal,
     });
 
+    entry.fetching = false;
     if (!ready) {
+      throwIfDatabaseBlobAborted(entry.abortController.signal);
       notifySeedsReady(entry);
       return diff;
     }
@@ -1316,6 +1339,9 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
     }
 
     try {
+      // Cancellation can race the terminal response's promise continuation.
+      // Once replay starts, retain this entry until its seeds and RID commit.
+      throwIfDatabaseBlobAborted(entry.abortController.signal);
       if (pageCount === 0) {
         throw new Error('database blob diff paging protocol error: Ready walk did not stage any pages');
       }

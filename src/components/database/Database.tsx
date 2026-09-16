@@ -1,6 +1,7 @@
 import EventEmitter from 'events';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { APP_EVENTS } from '@/application/constants';
 import {
@@ -10,6 +11,7 @@ import {
   releaseDatabaseRowDocSeedCache,
   retainDatabaseRowDocSeedCache,
 } from '@/application/database-blob';
+import { isDatabaseBlobBackpressure } from '@/application/database-blob/request-retry';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@/application/database-yjs/history';
@@ -240,6 +242,7 @@ export interface Database2Props {
 }
 
 function Database(props: Database2Props) {
+  const { t } = useTranslation();
   const {
     doc,
     createRow,
@@ -287,6 +290,7 @@ function Database(props: Database2Props) {
   const rowMapRef = useRef(rowMap);
   const pendingRowDocsRef = useRef<Map<RowId, Promise<YDoc | undefined>>>(new Map());
   const prefetchPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
+  const activePrefetchKeyRef = useRef<string | null>(null);
   const blobPrefetchPromiseRef = useRef<Promise<void> | null>(null);
   const localCachePrimedRef = useRef(false);
   const rowSyncRegistrationsRef = useRef<Map<string, RowSyncRegistration>>(new Map());
@@ -299,6 +303,7 @@ function Database(props: Database2Props) {
   // Gate that ensureRow awaits. Resolves after batch preload (or immediately in readOnly).
   const seedsGateRef = useRef(createDeferredGate());
   const [blobPrefetchComplete, setBlobPrefetchComplete] = useState(false);
+  const [blobPrefetchBlocked, setBlobPrefetchBlocked] = useState(false);
   const [seedsReady, setSeedsReady] = useState(false);
   const registerRowDocWithHistory = useCallback(
     (rowId: RowId, rowDoc: YDoc) => {
@@ -880,13 +885,15 @@ function Database(props: Database2Props) {
   const ensureBlobPrefetch = useCallback(() => {
     const prefetchGeneration = blobPrefetchGenerationRef.current;
     const gate = seedsGateRef.current;
-    const isCurrentPrefetch = () =>
+    const isCurrentLifecycle = () =>
       blobPrefetchGenerationRef.current === prefetchGeneration && seedsGateRef.current === gate;
 
     // Skip blob prefetch in read-only mode (publish view)
     // The publish API doesn't support blob/diff endpoint
     if (readOnly) {
+      activePrefetchKeyRef.current = null;
       gate.resolve();
+      setBlobPrefetchBlocked(false);
       setBlobPrefetchComplete(true);
       setSeedsReady(true);
       return null;
@@ -901,15 +908,29 @@ function Database(props: Database2Props) {
 
     const forceFullSync = activeViewNeedsFullRowData;
     const prefetchKey = `${databaseId}:${forceFullSync ? 'full' : 'delta'}`;
+    const isCurrentPrefetch = () => isCurrentLifecycle() && activePrefetchKeyRef.current === prefetchKey;
+
+    activePrefetchKeyRef.current = prefetchKey;
     const existingPromise = prefetchPromisesRef.current.get(prefetchKey);
 
     if (existingPromise) {
       blobPrefetchPromiseRef.current = existingPromise;
-      return existingPromise;
+      // Another view mode may have reset readiness or encountered overload.
+      // Restore this mode only after its work succeeds; failures remove the
+      // promise from the map even though their rejection is handled below.
+      return existingPromise.then(() => {
+        if (!isCurrentPrefetch() || prefetchPromisesRef.current.get(prefetchKey) !== existingPromise) return;
+
+        setBlobPrefetchBlocked(false);
+        setBlobPrefetchComplete(true);
+        setSeedsReady(true);
+        runBatchPreload(prefetchGeneration);
+      });
     }
 
     const priorityRowIds = getPriorityRowIds();
 
+    setBlobPrefetchBlocked(false);
     if (forceFullSync) {
       setBlobPrefetchComplete(false);
       setSeedsReady(false);
@@ -933,11 +954,20 @@ function Database(props: Database2Props) {
 
         setBlobPrefetchComplete(true);
       })
-      .catch(() => {
-        if (!isCurrentPrefetch()) return;
+      .catch((error) => {
+        if (!isCurrentLifecycle()) return;
 
         prefetchPromisesRef.current.delete(prefetchKey);
-        gate.resolve(); // Unblock ensureRow on failure
+        if (!isCurrentPrefetch()) return;
+
+        if (isDatabaseBlobBackpressure(error)) {
+          // Opening thousands of individual row syncs would amplify the same
+          // overload. Keep the seed gate closed and let the user retry the batch.
+          setBlobPrefetchBlocked(true);
+          return;
+        }
+
+        gate.resolve(); // Unblock ensureRow on non-admission failure
         setBlobPrefetchComplete(true);
         setSeedsReady(true);
       });
@@ -1322,6 +1352,7 @@ function Database(props: Database2Props) {
     rowMapRef.current = {};
     pendingRowDocsRef.current.clear();
     prefetchPromisesRef.current.clear();
+    activePrefetchKeyRef.current = null;
     // A remote update can hydrate the database id and append row orders in the
     // same Yjs transaction. Carry those markers into the real-id lifecycle;
     // unrelated document/workspace lifecycle changes still start empty.
@@ -1337,6 +1368,7 @@ function Database(props: Database2Props) {
     registerDatabaseHistoryRowDocs(doc, initialRowMap);
     setRowMap(initialRowMap);
     setBlobPrefetchComplete(false);
+    setBlobPrefetchBlocked(false);
     setSeedsReady(false);
 
     return () => {
@@ -1600,8 +1632,16 @@ function Database(props: Database2Props) {
   }
 
   return (
-    <div className={'flex min-h-0 w-full flex-1 justify-center'}>
+    <div className={'flex min-h-0 w-full flex-1 flex-col justify-center'}>
       <DatabaseContextProvider value={mainContextValue}>
+        {blobPrefetchBlocked && !readOnly && (
+          <div role='alert' className='flex items-center justify-center gap-2 p-3 text-sm'>
+            <span>{t('landingPage.serverError.description')}</span>
+            <button type='button' className='underline' onClick={() => void ensureBlobPrefetch()}>
+              {t('landingPage.serverError.retry')}
+            </button>
+          </div>
+        )}
         {rowId ? (
           <DatabaseRow appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
         ) : (

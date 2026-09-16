@@ -252,7 +252,10 @@ async function fetchAndApply(
   if (options.databaseMetadataOnly && options.databaseId) {
     ({ data } = await fetchDatabaseCollab(workspaceId, options.databaseId));
   } else {
-    const pageCollab = await fetchPageCollab(workspaceId, viewId);
+    // This loader only applies the page collab. Database rows have their own
+    // seed/realtime pipeline, so fetching row_data here duplicates that work.
+    // Keep the page-view endpoint to preserve view-specific authorization.
+    const pageCollab = await fetchPageCollab(workspaceId, viewId, { includeRows: false });
 
     data = pageCollab.data;
     rowCount = pageCollab.rows ? Object.keys(pageCollab.rows).length : 0;
