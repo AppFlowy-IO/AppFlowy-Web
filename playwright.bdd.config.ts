@@ -15,6 +15,8 @@ export default defineConfig({
   testMatch: '**/*.spec.js',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
+  // The 5000-row database suite takes minutes to seed; opt in with RUN_LARGE_DATABASE=1.
+  grepInvert: process.env.RUN_LARGE_DATABASE ? undefined : /@large-database/,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI
