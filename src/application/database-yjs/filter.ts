@@ -30,7 +30,7 @@ import {
   TextFilter,
   TextFilterCondition,
 } from '@/application/database-yjs/fields';
-import { FormulaFieldSchema, readFormulaSchema } from '@/application/database-yjs/fields/formula';
+import { FormulaFieldSchema, ReadFieldValueContext, readFormulaSchema } from '@/application/database-yjs/fields/formula';
 import { EnhancedBigStats } from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { RollupFilterMetadata, RollupFilterMode } from '@/application/database-yjs/fields/rollup/rollup.type';
@@ -672,6 +672,8 @@ type FilterOptions = {
   getRollupCellText?: (rowId: string, fieldId: string) => string;
   /** Full rollup result including the raw numeric, for desktop-parity numeric comparison. */
   getRollupCellValue?: (rowId: string, fieldId: string) => RollupCellValue;
+  /** Member names, related titles and rollup results for formula filters. */
+  getFormulaContext?: (rowId: string) => ReadFieldValueContext;
 };
 
 type SelectOptionFilterContext = {
@@ -888,7 +890,14 @@ export function filterBy(
       if (!snapshot) return false;
 
       if (fieldType === FieldType.Formula) {
-        const result = evaluateFormulaForRow(field, fieldId, getFormulaSchema(), snapshot.row, rowId);
+        const result = evaluateFormulaForRow(
+          field,
+          fieldId,
+          getFormulaSchema(),
+          snapshot.row,
+          rowId,
+          options?.getFormulaContext?.(rowId)
+        );
 
         switch (formulaPredicateType) {
           case FieldType.Number:

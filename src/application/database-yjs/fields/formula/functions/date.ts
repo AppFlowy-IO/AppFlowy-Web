@@ -1,7 +1,10 @@
 import dayjs, { ManipulateType, OpUnitType } from 'dayjs';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
+import dayOfYear from 'dayjs/plugin/dayOfYear';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import quarterOfYear from 'dayjs/plugin/quarterOfYear';
+import weekOfYear from 'dayjs/plugin/weekOfYear';
+import weekYear from 'dayjs/plugin/weekYear';
 
 import { asDate, asNumber, asText } from '../coerce';
 import { FormulaError, SourcePosition } from '../errors';
@@ -9,8 +12,11 @@ import { FormulaFunctionSpec } from '../registry';
 import { date, EMPTY, FormulaDate, FormulaValue, num, text } from '../values';
 
 dayjs.extend(advancedFormat);
+dayjs.extend(dayOfYear);
 dayjs.extend(isoWeek);
 dayjs.extend(quarterOfYear);
+dayjs.extend(weekOfYear);
+dayjs.extend(weekYear);
 
 const UNITS: Record<string, ManipulateType> = {
   year: 'year',
@@ -30,6 +36,42 @@ const UNITS: Record<string, ManipulateType> = {
   second: 'second',
   seconds: 'second',
 };
+
+function ordinal(value: number): string {
+  const tens = value % 100;
+  const suffix = tens >= 11 && tens <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][value % 10] ?? 'th';
+
+  return `${value}${suffix}`;
+}
+
+/**
+ * Formats with Notion's Moment-style tokens. dayjs covers most of them; the
+ * ones it lacks (`Y`, day of year, `E`/`e` weekdays) become bracketed literals.
+ */
+export function formatMomentDate(value: dayjs.Dayjs, pattern: string): string {
+  const translated = pattern.replace(/\[[^\]]*]|YYYY|YY|Y|DDDD|DDDo|DDD|Wo|E|e/g, (token) => {
+    switch (token) {
+      case 'Y':
+        return `[${value.year()}]`;
+      case 'DDD':
+        return `[${value.dayOfYear()}]`;
+      case 'DDDD':
+        return `[${String(value.dayOfYear()).padStart(3, '0')}]`;
+      case 'DDDo':
+        return `[${ordinal(value.dayOfYear())}]`;
+      case 'Wo':
+        return `[${ordinal(value.isoWeek())}]`;
+      case 'E':
+        return `[${value.isoWeekday()}]`;
+      case 'e':
+        return `[${value.day()}]`;
+      default:
+        return token;
+    }
+  });
+
+  return value.format(translated);
+}
 
 export const DATE_UNITS = ['years', 'quarters', 'months', 'weeks', 'days', 'hours', 'minutes'];
 
@@ -262,7 +304,7 @@ export const dateFunctions: FormulaFunctionSpec[] = [
     category: 'date',
     signature: 'formatDate(date, format)',
     description:
-      'Formats a date as text. Tokens: YYYY, MM, MMM, MMMM, D, DD, Do, ddd, dddd, H, HH, h, hh, mm, ss, A, Q, W, X, x. Wrap literal text in [brackets].',
+      'Formats a date as text. Tokens: YYYY, Y, MM, MMM, MMMM, D, DD, Do, DDD, ddd, dddd, E, H, HH, h, hh, mm, ss, A, Q, w, wo, W, Wo, X, x. Wrap literal text in [brackets].',
     examples: [
       { expression: 'formatDate(parseDate("2024-03-01"), "MMM D, YYYY")', result: '"Mar 1, 2024"' },
       { expression: 'formatDate(now(), "[Week] W")', result: '"Week 10"' },
@@ -275,7 +317,7 @@ export const dateFunctions: FormulaFunctionSpec[] = [
     impl: ([value, pattern], _ctx, _nodes, position) => {
       const parsed = asDate(value, position);
 
-      return parsed === null ? text('') : text(dayjs(parsed.start).format(asText(pattern)));
+      return parsed === null ? text('') : text(formatMomentDate(dayjs(parsed.start), asText(pattern)));
     },
   },
 ];

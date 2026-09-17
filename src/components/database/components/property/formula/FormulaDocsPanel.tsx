@@ -7,7 +7,7 @@ import {
   FormulaFieldSchema,
   FormulaFunctionExample,
   FormulaFunctionSpec,
-  formulaTypeOfFieldType,
+  formulaTypeOfField,
   typeToString,
 } from '@/application/database-yjs/fields/formula';
 import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
@@ -34,38 +34,51 @@ function Snippet({ source }: { source: string }) {
 
 function propertyExamples(entry: FormulaFieldSchema): FormulaFunctionExample[] {
   const ref = `prop("${entry.name}")`;
+  const type = entry.type === FieldType.Formula ? undefined : formulaTypeOfField(entry);
 
-  switch (entry.type) {
-    case FieldType.Number:
-      return [
-        { expression: ref, result: 'the number' },
-        { expression: `${ref} * 2`, result: 'double the number' },
-      ];
-    case FieldType.Checkbox:
-      return [{ expression: `if(${ref}, "Done", "Open")`, result: '"Done" when checked' }];
-    case FieldType.DateTime:
-    case FieldType.CreatedTime:
-    case FieldType.LastEditedTime:
-      return [
-        { expression: `dateBetween(${ref}, now(), "days")`, result: 'days until the date' },
-        { expression: `formatDate(${ref}, "MMM D")`, result: '"Mar 1"' },
-      ];
-    case FieldType.MultiSelect:
-    case FieldType.Person:
-    case FieldType.Relation:
-    case FieldType.Media:
-    case FieldType.CreatedBy:
-    case FieldType.LastEditedBy:
-      return [
-        { expression: `${ref}.length()`, result: 'number of items' },
-        { expression: `${ref}.join(", ")`, result: 'items as text' },
-      ];
-    default:
-      return [
-        { expression: ref, result: 'the value' },
-        { expression: `${ref}.length()`, result: 'number of characters' },
-      ];
+  if (entry.type === FieldType.Checklist) {
+    return [
+      { expression: ref, result: 'percent of items done' },
+      { expression: `${ref} == 100`, result: 'true when every item is done' },
+    ];
   }
+
+  if (entry.type === FieldType.Time) {
+    return [
+      { expression: ref, result: 'the time in milliseconds' },
+      { expression: `round(${ref} / 60000)`, result: 'the time in minutes' },
+    ];
+  }
+
+  if (type === 'number') {
+    return [
+      { expression: ref, result: 'the number' },
+      { expression: `${ref} * 2`, result: 'double the number' },
+    ];
+  }
+
+  if (type === 'boolean') {
+    return [{ expression: `if(${ref}, "Done", "Open")`, result: '"Done" when checked' }];
+  }
+
+  if (type === 'date') {
+    return [
+      { expression: `dateBetween(${ref}, now(), "days")`, result: 'days until the date' },
+      { expression: `formatDate(${ref}, "MMM D")`, result: '"Mar 1"' },
+    ];
+  }
+
+  if (type !== undefined && typeof type !== 'string') {
+    return [
+      { expression: `${ref}.length()`, result: 'number of items' },
+      { expression: `${ref}.join(", ")`, result: 'items as text' },
+    ];
+  }
+
+  return [
+    { expression: ref, result: 'the value' },
+    { expression: `${ref}.length()`, result: 'number of characters' },
+  ];
 }
 
 function FormulaDocsPanelContent({
@@ -101,7 +114,7 @@ function FormulaDocsPanelContent({
       break;
     case 'property': {
       const type =
-        item.entry.type === FieldType.Formula ? 'formula' : typeToString(formulaTypeOfFieldType(item.entry.type));
+        item.entry.type === FieldType.Formula ? 'formula' : typeToString(formulaTypeOfField(item.entry));
 
       title = (
         <span className={'flex items-center gap-2'}>
@@ -113,6 +126,8 @@ function FormulaDocsPanelContent({
       description = t('grid.formula.propertyDescription', {
         defaultValue: 'Property of type {{type}}.',
         type,
+        // React escapes the text; i18next escaping would show "list&lt;text&gt;".
+        interpolation: { escapeValue: false },
       });
       examples = propertyExamples(item.entry);
       break;

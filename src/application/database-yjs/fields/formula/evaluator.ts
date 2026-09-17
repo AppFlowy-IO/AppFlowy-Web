@@ -97,10 +97,14 @@ export function evaluateFormula(root: FormulaNode, options: EvaluateOptions): Fo
         const right = evaluate(node.right);
 
         switch (node.op) {
-          case '+':
-            if (left.type === 'text' || right.type === 'text') return text(asText(left) + asText(right));
+          case '+': {
+            const numeric = (value: FormulaValue) => value.type === 'number' || value.type === 'empty';
+
+            if (!numeric(left) || !numeric(right)) return text(asText(left) + asText(right));
             if (left.type === 'empty' && right.type === 'empty') return EMPTY;
             return num(asNumber(left, node.position) + asNumber(right, node.position));
+          }
+
           case '-':
             return num(asNumber(left, node.position) - asNumber(right, node.position));
           case '*':

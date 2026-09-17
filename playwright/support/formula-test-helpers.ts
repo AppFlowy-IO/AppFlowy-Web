@@ -21,6 +21,13 @@ export type FormulaInputType =
   | 'Checklist'
   | 'CreatedTime'
   | 'EditedTime'
+  | 'Time'
+  | 'Files'
+  | 'AISummary'
+  | 'AITranslate'
+  | 'Person'
+  | 'CreatedBy'
+  | 'EditedBy'
   | 'Formula';
 
 const INPUT_FIELD_TYPES: Record<FormulaInputType, FieldType> = {
@@ -34,6 +41,13 @@ const INPUT_FIELD_TYPES: Record<FormulaInputType, FieldType> = {
   Checklist: FieldType.Checklist,
   CreatedTime: FieldType.CreatedTime,
   EditedTime: FieldType.LastEditedTime,
+  Time: FieldType.Time,
+  Files: FieldType.Media,
+  AISummary: FieldType.Summary,
+  AITranslate: FieldType.Translate,
+  Person: FieldType.Person,
+  CreatedBy: FieldType.CreatedBy,
+  EditedBy: FieldType.LastEditedBy,
   Formula: FieldType.Formula,
 };
 
@@ -100,13 +114,29 @@ export async function renameField(page: Page, fieldId: string, name: string): Pr
   await expect(GridFieldSelectors.fieldHeader(page, fieldId).last()).toContainText(name, { timeout: 10000 });
 }
 
+/** The web property menu cannot edit these types ("Available on desktop & mobile"). */
+const READ_ONLY_PROPERTY_TYPES = new Set<FormulaInputType>(['CreatedBy', 'EditedBy']);
+
 /** Adds an input column of the given type through the UI and names it. */
 export async function addInputField(page: Page, name: string, type: FormulaInputType): Promise<string> {
   const fieldId = await addFieldWithType(page, INPUT_FIELD_TYPES[type]);
 
   expect(fieldId).not.toBe('');
-  await renameField(page, fieldId, name);
+  if (READ_ONLY_PROPERTY_TYPES.has(type)) {
+    await renameFieldDirect(page, fieldId, name);
+    await expect(GridFieldSelectors.fieldHeader(page, fieldId).last()).toContainText(name, { timeout: 10000 });
+  } else {
+    await renameField(page, fieldId, name);
+  }
+
   return fieldId;
+}
+
+/** The fixture input type that stores cells like the field `type`. */
+export function inputTypeOfField(type: number): FormulaInputType {
+  const match = (Object.keys(INPUT_FIELD_TYPES) as FormulaInputType[]).find((key) => INPUT_FIELD_TYPES[key] === type);
+
+  return match ?? 'Text';
 }
 
 export interface GridFieldInfo {
@@ -170,7 +200,8 @@ export async function ensureRowCount(page: Page, count: number): Promise<void> {
 
 type DirectCell = {
   fieldType: number;
-  data: unknown;
+  /** Stored data; `{ yArray }` is stored as a Y.Array (Relation, Media). */
+  data: string | { yArray: string[] };
   includeTime?: boolean;
   endTimestamp?: string;
   isRange?: boolean;
@@ -206,7 +237,15 @@ async function writeCellDirect(page: Page, fieldId: string, rowIndex: number, ce
         yCell.set('created_at', yCell.get('created_at') || now);
         yCell.set('last_modified', now);
         yCell.set('field_type', cell.fieldType);
-        yCell.set('data', cell.data);
+        if (typeof cell.data === 'string') {
+          yCell.set('data', cell.data);
+        } else {
+          const items = new Y.Array();
+
+          items.push(cell.data.yArray);
+          yCell.set('data', items);
+        }
+
         if (cell.includeTime !== undefined) yCell.set('include_time', cell.includeTime);
         if (cell.endTimestamp !== undefined) yCell.set('end_timestamp', cell.endTimestamp);
         if (cell.isRange !== undefined) yCell.set('is_range', cell.isRange);
@@ -293,7 +332,10 @@ function parseDateSeconds(value: string): { start: number; end?: number; include
 /**
  * Seeds one input column's values. `<empty>` leaves the cell blank. Dates are
  * ISO text (`2024-03-10` or `2024-03-10 09:30`, ranges with `->`); select
- * values are option names (comma separated for multi-select).
+ * values are option names (comma separated for multi-select); files are
+ * comma separated file names; times are what a user types (`1h30m`, `08:30`
+ * or milliseconds). Person, Created by and Edited by columns are filled by
+ * the app or through the UI, so their values must be `<empty>` or `<auto>`.
  */
 export async function seedColumn(
   page: Page,
@@ -353,6 +395,28 @@ export async function seedColumn(
       case 'Checkbox':
         await writeCellDirect(page, fieldId, rowIndex, { fieldType, data: /^(yes|true|1)$/i.test(value) ? 'Yes' : 'No' });
         break;
+      case 'Files':
+        await writeCellDirect(page, fieldId, rowIndex, {
+          fieldType,
+          data: {
+            yArray: value.split(',').map((name, index) =>
+              JSON.stringify({
+                id: `file-${rowIndex}-${index}`,
+                name: name.trim(),
+                url: `https://example.com/${encodeURIComponent(name.trim())}`,
+                file_type: 1,
+                upload_type: 1,
+              })
+            ),
+          },
+        });
+        break;
+      case 'Person':
+      case 'CreatedBy':
+      case 'EditedBy':
+      case 'CreatedTime':
+      case 'EditedTime':
+        throw new Error(`${type} values come from the app; use <empty> or <auto> in the fixture`);
       case 'Select':
       case 'MultiSelect':
         await writeCellDirect(page, fieldId, rowIndex, {

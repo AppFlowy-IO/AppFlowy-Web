@@ -126,11 +126,9 @@ describe('formula language: type checking', () => {
   });
 
   it('rejects mismatched operand and branch types', () => {
-    expectError('1 + "a"', /"\+" expects two numbers or two text values/);
     expectError('if(true, 1, "a")', /branches must have the same type/);
     expectError('true ? 1 : "a"', /must have the same type/);
     expectError('"1" == 1', /Cannot compare text with number/);
-    expectError('not 1', /"not" expects a boolean/);
     expectError('1 ? 2 : 3', /must be a boolean/);
     expectError('upper(1)', /upper\(\) expects text/);
     expectError('dateAdd(now(), "1", "days")', /expects number/);
@@ -142,7 +140,7 @@ describe('formula language: type checking', () => {
     expectError('current', /Unknown variable or function "current"/);
     expectError('prop("Missing")', /Unknown property "Missing"/);
     expectError('if(true, 1)', /if\(\) expects 3 arguments/);
-    expectError('ifs(true, 1)', /ifs\(\) expects condition\/value pairs/);
+    expectError('ifs(true)', /ifs\(\) expects condition\/value pairs/);
     expectError('let(1, 2, 3)', /expects a variable name/);
   });
 });

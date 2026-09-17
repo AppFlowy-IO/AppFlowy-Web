@@ -5,7 +5,7 @@ export type { FormulaNode, BinaryOperator, UnaryOperator } from './ast';
 export { collectPropRefs } from './ast';
 export { FORMULA_BUILTINS } from './builtins';
 export type { FormulaBuiltinSpec } from './builtins';
-export { formulaTypeOfFieldType, readFieldFormulaValue } from './cell-values';
+export { formulaTypeOfField, formulaTypeOfFieldType, readFieldFormulaValue } from './cell-values';
 export type { ReadFieldValueContext } from './cell-values';
 export { inferFormulaType } from './checker';
 export { formatNumberPlain, formatDatePlain } from './coerce';
@@ -25,6 +25,8 @@ export { tokenize } from './lexer';
 export type { Token, TokenKind } from './lexer';
 export { parseFormulaTypeOption, parseFormulaVisualizationOption } from './parse';
 export { parseFormula } from './parser';
+export { collectFormulaExternalReferences, NO_EXTERNAL_REFERENCES } from './references';
+export type { FormulaExternalReferences } from './references';
 export type { FormulaFunctionSpec, FormulaFunctionCategory, FormulaFunctionExample, FormulaParam } from './registry';
 export {
   readFormulaSchema,

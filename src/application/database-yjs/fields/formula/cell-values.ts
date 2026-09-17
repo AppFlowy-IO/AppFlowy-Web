@@ -1,19 +1,24 @@
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, FileMediaCellData } from '@/application/database-yjs/cell.type';
-import { FieldType } from '@/application/database-yjs/database.type';
+import { FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
 import { parseChecklistFlexible } from '@/application/database-yjs/fields/checklist/parse';
-import { parsePersonCellData } from '@/application/database-yjs/fields/person/parse';
+import { parsePersonTypeOptions } from '@/application/database-yjs/fields/person/parse';
+import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
+import { parseTimeStringToMs } from '@/application/database-yjs/fields/text/utils';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
-import { YDatabaseCell, YDatabaseRow, YjsDatabaseKey } from '@/application/types';
+import type { RollupCellValue } from '@/application/database-yjs/rollup/cache';
+import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
+import { YDatabaseCell, YDatabaseField, YDatabaseRow, YjsDatabaseKey } from '@/application/types';
 
 import { FormulaFieldSchema } from './schema';
 import { bool, date, EMPTY, FormulaType, FormulaValue, list, listOf, num, text } from './values';
 
 /**
  * Static formula type of a `prop()` reference to a field of this type.
- * Formula fields are resolved by the compiler (their type is their result).
+ * Formula fields are resolved by the compiler (their type is their result);
+ * a Rollup's type depends on its settings, see `formulaTypeOfField`.
  */
 export function formulaTypeOfFieldType(fieldType: FieldType): FormulaType {
   switch (fieldType) {
@@ -22,6 +27,7 @@ export function formulaTypeOfFieldType(fieldType: FieldType): FormulaType {
     case FieldType.SingleSelect:
     case FieldType.Summary:
     case FieldType.Translate:
+    case FieldType.Rollup:
       return 'text';
     case FieldType.Number:
     case FieldType.Checklist:
@@ -43,6 +49,21 @@ export function formulaTypeOfFieldType(fieldType: FieldType): FormulaType {
     default:
       return 'any';
   }
+}
+
+/** How a Rollup reads in a formula: its number, its text, or its list of values. */
+function rollupFormulaType(field: YDatabaseField): FormulaType {
+  if (isNumericRollupField(field)) return 'number';
+  const showAs = Number(parseRollupTypeOption(field)?.show_as ?? RollupDisplayMode.Calculated);
+
+  return showAs === RollupDisplayMode.OriginalList || showAs === RollupDisplayMode.UniqueList
+    ? listOf('text')
+    : 'text';
+}
+
+/** Static formula type of a `prop()` reference to this field. */
+export function formulaTypeOfField(entry: Pick<FormulaFieldSchema, 'type' | 'field'>): FormulaType {
+  return entry.type === FieldType.Rollup ? rollupFormulaType(entry.field) : formulaTypeOfFieldType(entry.type);
 }
 
 function toMilliseconds(raw: unknown): number | null {
@@ -74,9 +95,46 @@ function selectOptionNames(entry: FormulaFieldSchema, data: unknown): string[] {
     .map((id) => options.find((option) => option.id === id || option.name === id)?.name ?? id);
 }
 
+/** Values that live outside the row document; each resolver is optional. */
 export interface ReadFieldValueContext {
-  /** Display name for a workspace member id, when a resolver is available. */
+  /** Display name of a workspace member by numeric uid (Created by / Last edited by). */
   getUserName?: (uid: string) => string | undefined;
+  /** Display name of a workspace member by person id (Person cells). */
+  getPersonName?: (personId: string) => string | undefined;
+  /** Primary-field title of a related row; undefined while it is not loaded. */
+  getRelatedRowTitle?: (relationField: YDatabaseField, relatedRowId: string) => string | undefined;
+  /** Computed value of this row's cell for a Rollup field; undefined while it is not computed. */
+  getRollupValue?: (rollupFieldId: string) => RollupCellValue | undefined;
+}
+
+/** Form responses store this id for an anonymous respondent. */
+const ANONYMOUS_PERSON_ID = '00000000-0000-0000-0000-000000000000';
+
+function personIds(data: unknown): string[] {
+  if (typeof data !== 'string' || data === '') return [];
+  try {
+    const parsed = JSON.parse(data) as unknown;
+
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rollupValue(entry: FormulaFieldSchema, value: RollupCellValue | undefined): FormulaValue {
+  const type = rollupFormulaType(entry.field);
+
+  if (typeof type !== 'string') {
+    return list((value?.list ?? []).filter((item) => item !== '').map((item) => text(item)));
+  }
+
+  if (type === 'number') {
+    const raw = value?.rawNumeric;
+
+    return raw !== undefined && Number.isFinite(raw) ? num(raw) : EMPTY;
+  }
+
+  return value?.value ? text(value.value) : EMPTY;
 }
 
 /**
@@ -109,14 +167,21 @@ export function readFieldFormulaValue(
       const uid = raw === undefined || raw === null || raw === '' ? null : String(raw);
 
       if (uid === null) return list([]);
-      return list([text(context.getUserName?.(uid) ?? uid)]);
+      // Same fallback as the cell while the member list loads.
+      return list([text(context.getUserName?.(uid) || `User ${uid}`)]);
     }
+
+    case FieldType.Rollup:
+      // Rollups are computed from related rows; they have no stored cell.
+      return rollupValue(entry, context.getRollupValue?.(entry.id));
 
     default:
       break;
   }
 
   if (!cell) {
+    // An untouched checkbox is unchecked, as the cell shows it.
+    if (entry.type === FieldType.Checkbox) return bool(false);
     return entry.type === FieldType.MultiSelect ||
       entry.type === FieldType.Person ||
       entry.type === FieldType.Relation ||
@@ -135,12 +200,18 @@ export function readFieldFormulaValue(
     case FieldType.Translate:
       return text(typeof data === 'string' || typeof data === 'number' ? String(data) : '');
 
-    case FieldType.Number:
-    case FieldType.Time: {
+    case FieldType.Number: {
       if (data === undefined || data === null || data === '') return EMPTY;
       const value = Number(data);
 
       return Number.isFinite(value) ? num(value) : EMPTY;
+    }
+
+    case FieldType.Time: {
+      // Milliseconds; typed text such as "1h30m" or "08:30" reads as the cell shows it.
+      const ms = typeof data === 'number' ? data : typeof data === 'string' ? Number(parseTimeStringToMs(data) || NaN) : NaN;
+
+      return Number.isFinite(ms) ? num(ms) : EMPTY;
     }
 
     case FieldType.Checkbox:
@@ -167,13 +238,22 @@ export function readFieldFormulaValue(
     }
 
     case FieldType.Person: {
-      const people = typeof data === 'string' ? parsePersonCellData(entry.field, data) : null;
+      // The cell stores person ids; names come from the workspace members,
+      // then from any names the field itself recorded.
+      const recorded = new Map(parsePersonTypeOptions(entry.field).persons.map((person) => [person.id, person.name]));
 
-      return list((people?.users ?? []).map((user) => text(context.getUserName?.(user.id) ?? user.name ?? user.id)));
+      return list(
+        personIds(data).map((id) =>
+          text(id === ANONYMOUS_PERSON_ID ? 'Anonymous' : context.getPersonName?.(id) || recorded.get(id) || '')
+        )
+      );
     }
 
     case FieldType.Relation:
-      return list(getRelationRowIdsFromCell(cell).map((id) => text(id)));
+      // A relation reads as the titles of the related rows ('' until loaded).
+      return list(
+        getRelationRowIdsFromCell(cell).map((id) => text(context.getRelatedRowTitle?.(entry.field, id) ?? ''))
+      );
 
     case FieldType.Media: {
       const items = Array.isArray(data) ? (data as FileMediaCellData) : [];

@@ -7,6 +7,7 @@ import {
   FormulaFieldSchema,
   FormulaType,
   parseFormulaTypeOption,
+  ReadFieldValueContext,
   readFormulaSchema,
 } from '@/application/database-yjs/fields/formula';
 import { YDatabaseField, YDatabaseFields, YDatabaseRow } from '@/application/types';
@@ -59,16 +60,18 @@ export function predicateFieldTypeForResult(resultType: FormulaType): FieldType 
 
 /**
  * Evaluates a formula for a row inside filter/sort passes (no React). Build
- * `schema` once per pass with `readFormulaSchema`, not once per row.
+ * `schema` once per pass with `readFormulaSchema`, not once per row;
+ * `context` supplies member names, related titles and rollup results.
  */
 export function evaluateFormulaForRow(
   field: YDatabaseField,
   fieldId: string,
   schema: FormulaFieldSchema[],
   row: YDatabaseRow,
-  rowId: string
+  rowId: string,
+  context?: ReadFieldValueContext
 ): FormulaCellResult {
-  return evaluateFormulaCell({ schema, field, fieldId, row, rowId });
+  return evaluateFormulaCell({ ...context, schema, field, fieldId, row, rowId });
 }
 
 /** A date result shaped like a Date cell so the date filter predicates apply unchanged. */

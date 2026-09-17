@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import { createBdd, DataTable } from 'playwright-bdd';
 
 import { waitForGridReady } from '../../support/database-ui-helpers';
@@ -30,6 +30,7 @@ import {
   type FormulaInputType,
   gridCellText,
   inputFieldType,
+  inputTypeOfField,
   lastFieldId,
   NUMBER_FORMAT_IDS,
   openFormulaEditorFromCell,
@@ -49,7 +50,13 @@ import {
   trimRowsDirect,
   typeFormula,
 } from '../../support/formula-test-helpers';
-import { deleteFieldFromGridHeader } from '../../support/relation-test-helpers';
+import {
+  createOneWayRelationField,
+  createRollupCountFieldViaPropertyMenu,
+  deleteFieldFromGridHeader,
+  getCurrentDatabaseInfo,
+  setRelationCellDirect,
+} from '../../support/relation-test-helpers';
 import { openRowDetail } from '../../support/row-detail-helpers';
 import {
   DatabaseFilterSelectors,
@@ -57,6 +64,7 @@ import {
   DatabaseViewSelectors,
   FieldType,
   GridFieldSelectors,
+  PersonSelectors,
   PropertyMenuSelectors,
   RowDetailSelectors,
 } from '../../support/selectors';
@@ -197,9 +205,12 @@ Before({ tags: '@formula' }, async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 Given('a Grid for formula testing with these properties', async ({ page, request }, table: DataTable) => {
+  const rows = table.hashes();
+
+  // Each property is added through the UI; wide fixtures need more time.
+  test.setTimeout(Math.max(test.info().timeout, 120_000 + rows.length * 10_000));
   await loginAndCreateGrid(page, request, generateRandomEmail());
 
-  const rows = table.hashes();
   const rowCount = Math.max(...rows.map((row) => Object.keys(row).filter((key) => /^row \d+$/.test(key)).length));
 
   await ensureRowCount(page, rowCount);
@@ -243,6 +254,83 @@ When('I add these formula properties', async ({ page }, table: DataTable) => {
     state(page).fields.set(row.name, await addFormulaField(page, row.name, row.expression));
   }
 });
+
+When('I add a {string} property named {string}', async ({ page }, type: string, name: string) => {
+  state(page).fields.set(name, await addInputField(page, name, type as FormulaInputType));
+});
+
+// ---------------------------------------------------------------------------
+// Relations, rollups and people
+// ---------------------------------------------------------------------------
+
+Given('a relation property {string} to this database', async ({ page }, name: string) => {
+  const { databaseId } = await getCurrentDatabaseInfo(page);
+
+  state(page).fields.set(name, await createOneWayRelationField(page, { fieldName: name, relatedDatabaseId: databaseId }));
+});
+
+Given(/^row (\d+) of "([^"]*)" links (?:rows? ([\d, ]+)|no rows)$/, async ({ page }, row: string, name: string, rows?: string) => {
+  const ids: string[] = [];
+
+  for (const linked of names(rows ?? '')) ids.push(await rowId(page, Number(linked)));
+  await setRelationCellDirect(page, await fieldId(page, name), Number(row) - 1, ids);
+});
+
+Given('a count rollup {string} over {string}', async ({ page }, name: string, relation: string) => {
+  const { primaryFieldId } = await getCurrentDatabaseInfo(page);
+
+  await closeMenus(page);
+  state(page).fields.set(
+    name,
+    await createRollupCountFieldViaPropertyMenu(page, {
+      fieldName: name,
+      relationFieldId: await fieldId(page, relation),
+      targetFieldId: primaryFieldId,
+    })
+  );
+});
+
+When('I assign myself in row {int} of {string}', async ({ page }, row: number, name: string) => {
+  const cell = await cellOf(page, name, row);
+
+  await closeMenus(page);
+  await cell.evaluate((element) => (element as HTMLElement).click());
+  const option = PersonSelectors.personCellMenu(page).locator('[data-testid^="person-option-"]').first();
+
+  await expect(option).toBeVisible({ timeout: 20000 });
+  await option.click();
+  await closeMenus(page);
+  await expect.poll(() => memberNamesIn(page, name, row), { timeout: 15000 }).not.toBe('');
+});
+
+/** Member names shown in a Person, Created by or Last edited by cell. */
+async function memberNamesIn(page: Page, name: string, row: number): Promise<string> {
+  const cell = await cellOf(page, name, row);
+
+  return cell.evaluate((element) =>
+    Array.from(element.querySelectorAll('span.truncate'))
+      .map((span) => (span.textContent ?? '').trim())
+      .join(', ')
+  );
+}
+
+Then(
+  'row {int} of {string} shows the member names of {string}',
+  async ({ page }, row: number, formula: string, people: string) => {
+    const id = await fieldId(page, formula);
+
+    await expect
+      .poll(
+        async () => {
+          const shown = await memberNamesIn(page, people, row);
+
+          return shown !== '' && (await formulaCellText(page, id, row - 1)) === shown;
+        },
+        { timeout: 20000, message: `${formula} row ${row} should read the names in ${people}` }
+      )
+      .toBe(true);
+  }
+);
 
 // ---------------------------------------------------------------------------
 // Opening and closing the editor
@@ -863,11 +951,13 @@ Then('row {int} of {string} shows a ring', async ({ page }, row: number, name: s
 
 When(/^a collaborator sets row (\d+) of "([^"]*)" to "(.*)"$/, async ({ page }, row: string, name: string, value: string) => {
   const index = Number(row) - 1;
+  const id = await fieldId(page, name);
+  const field = (await readGridFieldsDirect(page)).find((entry) => entry.id === id);
 
   await seedColumn(
     page,
-    await fieldId(page, name),
-    'Text',
+    id,
+    inputTypeOfField(field?.type ?? FieldType.RichText),
     Array.from({ length: index + 1 }, (_, current) => (current === index ? value : '<empty>'))
   );
 });
@@ -1011,7 +1101,11 @@ Then(
 // ---------------------------------------------------------------------------
 
 async function visibleRowNames(page: Page): Promise<string[]> {
-  const cells = DatabaseGridSelectors.dataRowCellsForField(page, await fieldId(page, 'Name'));
+  const nameId = await fieldId(page, 'Name');
+
+  // Columns are virtualized: bring Name back after working on a far column.
+  await revealColumn(page, nameId);
+  const cells = DatabaseGridSelectors.dataRowCellsForField(page, nameId);
   const count = await cells.count();
   const texts: string[] = [];
 

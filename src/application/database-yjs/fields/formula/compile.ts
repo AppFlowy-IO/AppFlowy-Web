@@ -1,7 +1,7 @@
 import { FieldType } from '@/application/database-yjs/database.type';
 
 import { FormulaNode } from './ast';
-import { formulaTypeOfFieldType } from './cell-values';
+import { formulaTypeOfField } from './cell-values';
 import { inferFormulaType } from './checker';
 import { FormulaError, SourcePosition } from './errors';
 import { FORMULA_MAX_DEPTH } from './formula.type';
@@ -69,7 +69,7 @@ export function compileFormula(
     const entry = resolveFormulaField(schema, ref);
 
     if (!entry) throw new FormulaError(`Unknown property "${ref}"`, position);
-    if (entry.type !== FieldType.Formula) return formulaTypeOfFieldType(entry.type);
+    if (entry.type !== FieldType.Formula) return formulaTypeOfField(entry);
     if (chain.has(entry.id)) {
       throw new FormulaError(`Property "${entry.name}" would reference itself`, position);
     }

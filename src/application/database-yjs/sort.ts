@@ -5,7 +5,7 @@ import {
   getRowConditionSnapshot,
 } from '@/application/database-yjs/condition-value-cache';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields';
-import { FormulaFieldSchema, readFormulaSchema } from '@/application/database-yjs/fields/formula';
+import { FormulaFieldSchema, ReadFieldValueContext, readFormulaSchema } from '@/application/database-yjs/fields/formula';
 import { evaluateFormulaForRow, formulaPredicateFieldType } from '@/application/database-yjs/formula/filter';
 import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { Row } from '@/application/database-yjs/selector';
@@ -18,6 +18,8 @@ type SortOptions = {
   getRelationCellText?: (rowId: string, fieldId: string) => string;
   getRollupCellValue?: (rowId: string, fieldId: string) => { value: string; rawNumeric?: number };
   getAttributionName?: (uid: string) => string | undefined;
+  /** Member names, related titles and rollup results for formula sorts. */
+  getFormulaContext?: (rowId: string) => ReadFieldValueContext;
 };
 
 export function sortBy(
@@ -89,7 +91,14 @@ export function sortBy(
         const snapshot = getRowConditionSnapshot(rowMetas[row.id]);
 
         if (!snapshot) return defaultData;
-        const result = evaluateFormulaForRow(field, fieldId, getFormulaSchema(), snapshot.row, row.id);
+        const result = evaluateFormulaForRow(
+          field,
+          fieldId,
+          getFormulaSchema(),
+          snapshot.row,
+          row.id,
+          options?.getFormulaContext?.(row.id)
+        );
 
         if (result.error) return defaultData;
 

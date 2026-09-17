@@ -12,7 +12,7 @@ import {
   FormulaBuiltinSpec,
   FormulaFieldSchema,
   FormulaFunctionSpec,
-  formulaTypeOfFieldType,
+  formulaTypeOfField,
   parseFormulaTypeOption,
   readFormulaSchemaForVersion,
   typeToString,
@@ -140,7 +140,7 @@ export function FormulaEditor({
     () =>
       schema.filter(
         (entry) =>
-          entry.id !== fieldId && (entry.type === FieldType.Formula || formulaTypeOfFieldType(entry.type) !== 'any')
+          entry.id !== fieldId && (entry.type === FieldType.Formula || formulaTypeOfField(entry) !== 'any')
       ),
     [schema, fieldId]
   );

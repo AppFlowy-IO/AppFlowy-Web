@@ -318,13 +318,15 @@ Feature: Formula editor
       | [1, 2].map(current * 2)            | list<number> |
       | if(true, empty(), 3)               | number     |
       | empty()                            | empty      |
-      | prop("Name") + 1                   | any        |
+      | prop("Name") + 1                   | text       |
+      | "Due " + now()                     | text       |
+      | prop("Name") - 1                   | any        |
 
   Scenario: The editor explains errors with their position
     When I start a new formula property
     Then these formulas show these errors
       | expression                  | error                                                             |
-      | 1 + "a"                     | "+" expects two numbers or two text values, got number and text [1,1] |
+      | "a" - 1                     | "-" expects a number, got text [1,1]                              |
       | prop("Price") +             | Unexpected end of formula [1,16]                                  |
       | if(true,\n  1 +             | Unexpected end of formula [2,6]                                   |
       | foo(1)                      | Unknown function "foo" [1,1]                                      |

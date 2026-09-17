@@ -123,8 +123,8 @@ test.describe('Formula field', () => {
     await expect(dialog).toBeVisible({ timeout: 15000 });
     const input = page.getByTestId('formula-editor-input');
 
-    await input.pressSequentially('1 + "a"', { delay: 20 });
-    await expect(page.getByTestId('formula-editor-error')).toContainText('"+" expects two numbers or two text values');
+    await input.pressSequentially('"a" - 1', { delay: 20 });
+    await expect(page.getByTestId('formula-editor-error')).toContainText('"-" expects a number');
     await expect(page.getByTestId('formula-editor-done')).toBeDisabled();
 
     // Autocomplete lists functions as you type and inserts on Enter.

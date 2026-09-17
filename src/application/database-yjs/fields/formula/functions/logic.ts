@@ -71,27 +71,29 @@ export const logicFunctions: FormulaFunctionSpec[] = [
     name: 'ifs',
     category: 'logic',
     signature: 'ifs(condition1, value1, condition2, value2, ..., default)',
-    description: 'Returns the value for the first true condition. An alternative to nested if() calls.',
+    description:
+      'Returns the value for the first true condition. An alternative to nested if() calls. Without a default, no match is empty.',
     examples: [
       { expression: 'ifs(true, 1, true, 2, 3)', result: '1' },
       { expression: 'ifs(false, 1, false, 2, 3)', result: '3' },
+      { expression: 'ifs(false, "Overdue")', result: 'empty' },
     ],
     params: [],
     returnType: 'any',
     lazy: true,
     check: (args, ctx: TypeCheckContext, position) => {
-      if (args.length < 3 || args.length % 2 === 0) {
-        throw new FormulaError('ifs() expects condition/value pairs followed by a default value', position);
+      if (args.length < 2) {
+        throw new FormulaError('ifs() expects condition/value pairs, optionally followed by a default value', position);
       }
 
       const valueNodes: FormulaNode[] = [];
 
-      for (let index = 0; index < args.length - 1; index += 2) {
+      for (let index = 0; index + 1 < args.length; index += 2) {
         requireBooleanish(ctx.infer(args[index]), 'An ifs() condition', args[index]);
         valueNodes.push(args[index + 1]);
       }
 
-      valueNodes.push(args[args.length - 1]);
+      if (args.length % 2 === 1) valueNodes.push(args[args.length - 1]);
       return unifyBranches(
         valueNodes.map((node) => ctx.infer(node)),
         valueNodes,
@@ -99,11 +101,11 @@ export const logicFunctions: FormulaFunctionSpec[] = [
       );
     },
     impl: (_args, ctx, nodes) => {
-      for (let index = 0; index < nodes.length - 1; index += 2) {
+      for (let index = 0; index + 1 < nodes.length; index += 2) {
         if (asBoolean(ctx.evaluate(nodes[index]))) return ctx.evaluate(nodes[index + 1]);
       }
 
-      return ctx.evaluate(nodes[nodes.length - 1]);
+      return nodes.length % 2 === 1 ? ctx.evaluate(nodes[nodes.length - 1]) : EMPTY;
     },
   },
   {

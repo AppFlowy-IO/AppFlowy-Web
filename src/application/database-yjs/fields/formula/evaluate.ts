@@ -106,6 +106,9 @@ export function evaluateFormulaExpression(options: EvaluateFormulaExpressionOpti
       rowId,
       now,
       getUserName: options.getUserName,
+      getPersonName: options.getPersonName,
+      getRelatedRowTitle: options.getRelatedRowTitle,
+      getRollupValue: options.getRollupValue,
       visiting,
     });
 

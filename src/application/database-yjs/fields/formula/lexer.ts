@@ -116,7 +116,8 @@ export function tokenize(source: string): Token[] {
           if (next === undefined) throw new FormulaError('Unterminated string', start);
           const escapes: Record<string, string> = { n: '\n', t: '\t', r: '\r', '\\': '\\', '"': '"', "'": "'" };
 
-          value += escapes[next] ?? next;
+          // Unknown escapes keep their backslash, so regex classes like "\w" survive.
+          value += escapes[next] ?? `\\${next}`;
           advance(2);
           continue;
         }

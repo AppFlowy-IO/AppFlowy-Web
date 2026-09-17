@@ -134,10 +134,7 @@ export function inferFormulaType(root: FormulaNode, options: CheckOptions): Form
           return 'number';
         }
 
-        if (!typesCompatible(operand, 'boolean')) {
-          throw new FormulaError(`"not" expects a boolean, got ${describe(operand)}`, node.operand.position);
-        }
-
+        // Like Notion, `not` negates any value by emptiness: `!0` and `![]` are true.
         return 'boolean';
       }
 
@@ -151,11 +148,8 @@ export function inferFormulaType(root: FormulaNode, options: CheckOptions): Form
             return 'number';
           }
 
-          if (typesCompatible(left, 'text') && typesCompatible(right, 'text')) return 'text';
-          throw new FormulaError(
-            `"+" expects two numbers or two text values, got ${describe(left)} and ${describe(right)}`,
-            node.position
-          );
+          // Anything else is joined as text, as in Notion: `"Due " + now()`, `1 + true`.
+          return 'text';
         }
 
         if (NUMERIC_OPERATORS.has(node.op)) {
