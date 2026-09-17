@@ -3762,9 +3762,13 @@ export const useRowMetaSelector = (rowId: string) => {
   return meta;
 };
 
-export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
-  const [cells, setCells] = useState<Map<string, unknown> | null>(null);
-  const rowMap = useRowMap();
+/**
+ * Evaluates a formula column for footer calculations: numbers stay numeric so
+ * Sum and Average work. Undefined for other fields. The evaluator changes
+ * whenever results can change: the schema, member names, or related titles
+ * and rollup results arriving.
+ */
+export function useFormulaColumnEvaluator(fieldId: string) {
   const fields = useDatabaseFields();
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
   const isFormula = Number(field?.get(YjsDatabaseKey.type)) === FieldType.Formula;
@@ -3772,21 +3776,19 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
   const fieldsVersion = useDatabaseFieldsVersion(isFormula);
   const database = useDatabase();
   const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
-  const formulaReferences = useMemo(() => {
+  const references = useMemo(() => {
     void fieldsVersion;
-    return isFormula && field
-      ? collectFormulaExternalReferences(field, readFormulaSchema(fields))
-      : NO_EXTERNAL_REFERENCES;
+    return isFormula && field ? collectFormulaExternalReferences(field, readFormulaSchema(fields)) : NO_EXTERNAL_REFERENCES;
   }, [isFormula, field, fields, fieldsVersion]);
-  const { users: formulaMembers } = useMentionableUsersWithAutoFetch(formulaReferences.people);
-  const formulaMemberNames = useMemo(() => memberNames(formulaMembers), [formulaMembers]);
+  const { users } = useMentionableUsersWithAutoFetch(references.people);
+  const members = useMemo(() => memberNames(users), [users]);
   // Related titles and rollup results arrive asynchronously; recalculate once they settle.
-  const [formulaExternalRevision, setFormulaExternalRevision] = useState(0);
-  const readsRelatedData = formulaReferences.relations.length > 0 || formulaReferences.rollups.length > 0;
+  const [externalRevision, setExternalRevision] = useState(0);
+  const readsRelatedData = references.relations.length > 0 || references.rollups.length > 0;
 
   useEffect(() => {
     if (!readsRelatedData) return;
-    const bump = debounce(() => setFormulaExternalRevision((revision) => revision + 1), 300);
+    const bump = debounce(() => setExternalRevision((revision) => revision + 1), 300);
     const unsubscribeLabels = subscribeRelationGroupLabels(bump);
     const unsubscribeRollups = subscribeRollupCache(bump);
 
@@ -3797,17 +3799,75 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
     };
   }, [readsRelatedData]);
 
+  return useMemo(() => {
+    if (!isFormula || !field) return undefined;
+    void fieldClock;
+    void fieldsVersion;
+    void externalRevision;
+    const schema = readFormulaSchema(fields);
+    const loaders = { loadView, createRow, getViewIdFromDatabaseId };
+
+    return (rowId: string, row: YDatabaseRow): number | string => {
+      const result = evaluateFormulaCell({
+        ...formulaConditionContext(rowId, {
+          members,
+          loaders,
+          getRollupValue: (_rowId, rollupFieldId) => {
+            const rollupField = fields?.get(rollupFieldId);
+
+            if (!database || !rollupField) return undefined;
+            return readRollupCellSync({
+              baseDoc: databaseDoc,
+              database,
+              rollupField,
+              row,
+              rowId,
+              fieldId: rollupFieldId,
+              ...loaders,
+            });
+          },
+        }),
+        schema,
+        field,
+        fieldId,
+        row,
+        rowId,
+      });
+
+      return result.rawNumeric ?? result.text;
+    };
+  }, [
+    isFormula,
+    field,
+    fieldClock,
+    fieldsVersion,
+    externalRevision,
+    fields,
+    fieldId,
+    members,
+    database,
+    databaseDoc,
+    loadView,
+    createRow,
+    getViewIdFromDatabaseId,
+  ]);
+}
+
+export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
+  const [cells, setCells] = useState<Map<string, unknown> | null>(null);
+  const rowMap = useRowMap();
+  const { field, clock: fieldClock } = useFieldSelector(fieldId);
+  // A formula column has no stored cell; the footer calculates over its results.
+  const evaluateFormula = useFormulaColumnEvaluator(fieldId);
+
   useEffect(() => {
     if (!rows || !rowMap) {
       setCells(null);
       return;
     }
 
-    void formulaExternalRevision;
     const nextCells = new Map<string, unknown>();
     const unobserveCells: Array<() => void> = [];
-    const formulaSchema = isFormula ? readFormulaSchema(fields) : [];
-    const loaders = { loadView, createRow, getViewIdFromDatabaseId };
 
     rows.forEach((row) => {
       const rowDoc = rowMap?.[row.id];
@@ -3819,38 +3879,7 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
 
       const cells = databaseRow.get(YjsDatabaseKey.cells);
       const getCellValue = () => {
-        // A formula column has no stored cell; the footer calculates over the
-        // evaluated results (numbers stay numeric so Sum/Average work).
-        if (isFormula && field) {
-          const result = evaluateFormulaCell({
-            ...formulaConditionContext(row.id, {
-              members: formulaMemberNames,
-              loaders,
-              getRollupValue: (rowId, rollupFieldId) => {
-                const rollupField = fields?.get(rollupFieldId);
-
-                if (!database || !rollupField) return undefined;
-                return readRollupCellSync({
-                  baseDoc: databaseDoc,
-                  database,
-                  rollupField,
-                  row: databaseRow,
-                  rowId,
-                  fieldId: rollupFieldId,
-                  ...loaders,
-                });
-              },
-            }),
-            schema: formulaSchema,
-            field,
-            fieldId,
-            row: databaseRow,
-            rowId: row.id,
-          });
-
-          return result.rawNumeric ?? result.text;
-        }
-
+        if (evaluateFormula) return evaluateFormula(row.id, databaseRow);
         const cell = databaseRow.get(YjsDatabaseKey.cells)?.get(fieldId);
 
         return cell ? parseYDatabaseCellToCell(cell, field).data : '';
@@ -3881,23 +3910,7 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
         unobserverEvent();
       });
     };
-  }, [
-    rows,
-    rowMap,
-    fieldId,
-    field,
-    fieldClock,
-    fields,
-    fieldsVersion,
-    isFormula,
-    formulaExternalRevision,
-    formulaMemberNames,
-    database,
-    databaseDoc,
-    loadView,
-    createRow,
-    getViewIdFromDatabaseId,
-  ]);
+  }, [rows, rowMap, fieldId, field, fieldClock, evaluateFormula]);
 
   return {
     cells,
