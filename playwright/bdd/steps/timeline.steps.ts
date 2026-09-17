@@ -1030,7 +1030,7 @@ Then('the timeline header has labels', async ({ page }) => {
 });
 
 When('I press redo', async ({ page }) => {
-  await page.keyboard.press('Control+Shift+z');
+  await page.keyboard.press('ControlOrMeta+Shift+z');
 });
 
 When('I click the right off-screen pill', async ({ page }) => {
