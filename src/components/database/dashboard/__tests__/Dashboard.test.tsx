@@ -36,6 +36,9 @@ jest.mock('@atlaskit/pragmatic-drag-and-drop-auto-scroll/element', () => ({
 
 jest.mock('../global-filters', () => ({
   GlobalFilterBar: () => <div data-testid='global-filter-bar-stub' />,
+}));
+
+jest.mock('../global-filters/GlobalFilterButton', () => ({
   GlobalFilterButton: () => <button data-testid='global-filter-button-stub' type='button' />,
 }));
 

@@ -63,6 +63,8 @@ jest.mock('@/components/database/components/template', () => ({
 }));
 
 jest.mock('@/components/database/dashboard/DashboardActions', () => ({
+  __esModule: true,
+  default: () => <div data-testid='dashboard-toolbar' />,
   DashboardActions: () => <div data-testid='dashboard-toolbar' />,
 }));
 
@@ -334,7 +336,7 @@ describe('DatabaseActions in dashboards', () => {
     );
   }
 
-  it('replaces the view conditions of a dashboard with its own toolbar and keeps Settings', () => {
+  it('replaces the view conditions of a dashboard with its own toolbar and keeps Settings', async () => {
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Dashboard);
     mockUseDatabaseContext.mockReturnValue({
       activeViewId: 'dashboard-view',
@@ -342,6 +344,8 @@ describe('DatabaseActions in dashboards', () => {
     } as ReturnType<typeof useDatabaseContext>);
 
     render(<DatabaseActions />);
+    // The dashboard toolbar is loaded lazily.
+    await screen.findByTestId('dashboard-toolbar');
 
     expect(toolbarTestIds()).toEqual(['database-actions-settings', 'dashboard-toolbar']);
     expect(
@@ -353,7 +357,7 @@ describe('DatabaseActions in dashboards', () => {
     expect(screen.getByTestId('database-actions').getAttribute('data-dashboard-widget')).toBeNull();
   });
 
-  it('still offers the dashboard toolbar (global filters) to read-only viewers', () => {
+  it('still offers the dashboard toolbar (global filters) to read-only viewers', async () => {
     mockUseReadOnly.mockReturnValue(true);
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Dashboard);
     mockUseDatabaseContext.mockReturnValue({
@@ -362,6 +366,7 @@ describe('DatabaseActions in dashboards', () => {
     } as ReturnType<typeof useDatabaseContext>);
 
     render(<DatabaseActions />);
+    await screen.findByTestId('dashboard-toolbar');
 
     expect(toolbarTestIds()).toEqual(['dashboard-toolbar']);
   });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabaseContext, useDatabaseViewLayout, useReadOnly } from '@/application/database-yjs';
@@ -13,10 +13,13 @@ import FiltersButton from '@/components/database/components/conditions/FiltersBu
 import SortsButton from '@/components/database/components/conditions/SortsButton';
 import Settings from '@/components/database/components/settings/Settings';
 import { DatabaseTemplateButton } from '@/components/database/components/template';
-import { DashboardActions } from '@/components/database/dashboard/DashboardActions';
 import { useOpenDatabaseAsPage } from '@/components/database/hooks';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+
+// Only dashboards render it, so its global filter editor stays out of every
+// other view's bundle.
+const DashboardActions = lazy(() => import('@/components/database/dashboard/DashboardActions'));
 
 function DatabaseSearchAction() {
   const { t } = useTranslation();
@@ -203,7 +206,11 @@ export function DatabaseActions() {
           <DatabaseTemplateButton compact={showSearch} />
         </div>
       ) : null}
-      {isDashboard ? <DashboardActions /> : null}
+      {isDashboard ? (
+        <Suspense fallback={null}>
+          <DashboardActions />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

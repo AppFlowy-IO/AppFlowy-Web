@@ -4,7 +4,7 @@ import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { Button } from '@/components/ui/button';
 
 import { useDashboardContextOptional } from './DashboardContext';
-import { GlobalFilterButton } from './global-filters';
+import { GlobalFilterButton } from './global-filters/GlobalFilterButton';
 
 /**
  * Dashboard toolbar in the database tab bar: the global filter button (for
