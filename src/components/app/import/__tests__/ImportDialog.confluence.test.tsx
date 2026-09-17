@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import {
   ImportAbortError,
   importConfluenceZipToView,
+  importCsvFilesAsDatabases,
   importNotionZipToView,
 } from '@/components/app/import/import-service';
 import ImportDialog from '@/components/app/import/ImportDialog';
@@ -65,9 +66,9 @@ describe('ImportDialog Confluence import', () => {
     click.mockRestore();
   });
 
-  it('imports the selected ZIP into the current workspace and parent and reports the queued import', async () => {
+  it.each(['html', 'csv'])('imports a %s export ZIP into the current workspace and parent', async (format) => {
     const { onOpenChange } = renderDialog();
-    const file = pickFile();
+    const file = pickFile(new File(['confluence export'], `space.${format}.zip`, { type: 'application/zip' }));
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
 
@@ -78,6 +79,8 @@ describe('ImportDialog Confluence import', () => {
       file,
       signal: expect.any(AbortSignal),
     });
+    expect(importConfluence.mock.calls[0][0].file).toBe(file);
+    expect(importCsvFilesAsDatabases).not.toHaveBeenCalled();
     expect(importNotionZipToView).not.toHaveBeenCalled();
     expect(toast.success).toHaveBeenCalledWith('importPanel.confluenceImportStarted');
     expect(toast.error).not.toHaveBeenCalled();
