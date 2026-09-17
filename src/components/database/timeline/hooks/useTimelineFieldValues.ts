@@ -1,58 +1,32 @@
-import { useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import * as Y from 'yjs';
 
-import { getCell, useFieldSelector, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
-import { createLocalFirstObserver } from '@/application/database-yjs/local-first-observer';
-import { YDatabaseCell, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { getCell, useFieldSelector } from '@/application/database-yjs';
+import { FieldType } from '@/application/database-yjs/database.type';
+import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
+import { parseNumberTypeOptions } from '@/application/database-yjs/fields/number/parse';
+import { useTimelineRowValues } from '@/application/database-yjs/hooks/useTimelineRowValues';
+import { YDatabaseCell, YDatabaseField, YDoc, YjsDatabaseKey } from '@/application/types';
 
-const EMPTY = new Map<string, never>();
-
-/**
- * One parsed cell value per row for `fieldId`, refreshed when any row doc
- * changes. Rows without a cell (or not yet loaded) are absent from the map.
- */
+/** One parsed value per row, including detached offscreen seed documents. */
 export function useTimelineFieldValues<T>(
   fieldId: string,
-  parse: (cell: YDatabaseCell) => T | undefined
+  parse: (cell: YDatabaseCell, field: YDatabaseField) => T | undefined
 ): Map<string, T> {
   const { field, clock } = useFieldSelector(fieldId);
-  const rowOrders = useRowOrdersSelector();
-  const rows = useRowMap();
-  const [values, setValues] = useState<Map<string, T>>(EMPTY);
+  const parseRow = useCallback(
+    (rowId: string, doc: YDoc) => {
+      // Y.Map identity stays stable when the property format changes.
+      void clock;
+      if (!field || !fieldId) return undefined;
+      const cell = getCell(rowId, fieldId, { [rowId]: doc });
 
-  useEffect(() => {
-    if (!field || !fieldId || !rowOrders || !rows) {
-      setValues(EMPTY);
-      return;
-    }
+      return cell ? parse(cell, field) : undefined;
+    },
+    [field, clock, fieldId, parse]
+  );
 
-    const read = () => {
-      const next = new Map<string, T>();
-
-      rowOrders.forEach((row) => {
-        const cell = getCell(row.id, fieldId, rows);
-
-        if (!cell) return;
-        const value = parse(cell);
-
-        if (value !== undefined) next.set(row.id, value);
-      });
-      setValues(next);
-    };
-
-    read();
-    // A released progress handle re-reads at once; remote bursts stay debounced.
-    const observer = createLocalFirstObserver(read, 150);
-    const docs = rowOrders.map((row) => rows[row.id]).filter(Boolean);
-
-    docs.forEach((doc) => doc.getMap(YjsEditorKey.data_section).observeDeep(observer));
-    return () => {
-      observer.cancel();
-      docs.forEach((doc) => doc.getMap(YjsEditorKey.data_section).unobserveDeep(observer));
-    };
-  }, [field, clock, fieldId, parse, rowOrders, rows]);
-
-  return values;
+  return useTimelineRowValues(parseRow);
 }
 
 /** Row ids linked through a Relation cell. */
@@ -64,11 +38,19 @@ export function parseRelationRowIds(cell: YDatabaseCell): string[] | undefined {
   return undefined;
 }
 
-/** A Number cell clamped to 0–100, the way frappe-gantt reads task progress. */
-export function parseProgressPercent(cell: YDatabaseCell): number | undefined {
+/** Progress always uses display percent; Percentage cells store fractions. */
+export function parseProgressPercent(cell: YDatabaseCell, field: YDatabaseField): number | undefined {
+  if (Number(field.get(YjsDatabaseKey.type)) !== FieldType.Number) return undefined;
   const raw = cell.get(YjsDatabaseKey.data);
   const value = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw.replace(/[^0-9.-]/g, '')) : NaN;
 
   if (!Number.isFinite(value)) return undefined;
-  return Math.min(100, Math.max(0, value));
+  const percent = parseNumberTypeOptions(field).format === NumberFormat.Percent ? value * 100 : value;
+
+  return Math.min(100, Math.max(0, percent));
+}
+
+export function serializeTimelineProgressPercent(percent: number, field: YDatabaseField): string | undefined {
+  if (Number(field.get(YjsDatabaseKey.type)) !== FieldType.Number) return undefined;
+  return String(parseNumberTypeOptions(field).format === NumberFormat.Percent ? percent / 100 : percent);
 }

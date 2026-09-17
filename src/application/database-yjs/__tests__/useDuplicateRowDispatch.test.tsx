@@ -4,12 +4,18 @@ import { ReactNode } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
-import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
+import {
+  FieldType,
+  RowMetaKey,
+  TimelineDependencyDirection,
+  TimelineDependencyType,
+} from '@/application/database-yjs/database.type';
 import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
 import {
   RowId,
   YDatabase,
+  YDatabaseCell,
   YDatabaseField,
   YDatabaseRow,
   YDatabaseView,
@@ -17,6 +23,8 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
+
+import { readTimelineLayoutSetting, updateTimelineLayoutSetting } from '../timeline-layout';
 
 import { createCell, createRowDoc } from './test-helpers';
 
@@ -140,6 +148,64 @@ function createWrapper({
 }
 
 describe('useDuplicateRowDispatch', () => {
+  it.each([TimelineDependencyDirection.BlockedBy, TimelineDependencyDirection.Blocking])(
+    'copies custom dependency metadata for direction %s in every saved view',
+    async (direction) => {
+      const databaseDoc = createDatabaseDoc();
+      const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+      const views = database.get(YjsDatabaseKey.views);
+      const secondView = new Y.Map() as YDatabaseView;
+      const orders = new Y.Array<{ id: RowId; height: number }>();
+
+      orders.push([{ id: sourceRowId, height: 36 }]);
+      secondView.set(YjsDatabaseKey.row_orders, orders);
+      views.set('other-view', secondView);
+      const referenceRowDoc = createReferenceRowDoc({ isEmptyDocument: true });
+      const sourceRow = referenceRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+      const relation = createField('dependency');
+
+      relation.set(YjsDatabaseKey.type, FieldType.Relation);
+      database.get(YjsDatabaseKey.fields).set('dependency', relation);
+      const relationCell = new Y.Map() as YDatabaseCell;
+
+      relationCell.set(YjsDatabaseKey.field_type, FieldType.Relation);
+      relationCell.set(YjsDatabaseKey.data, ['related']);
+      sourceRow.get(YjsDatabaseKey.cells).set('dependency', relationCell);
+      const edge = (id: string) =>
+        direction === TimelineDependencyDirection.Blocking ? `${id}:related` : `related:${id}`;
+      const metadata = { type: TimelineDependencyType.StartToFinish, lag: -3 };
+
+      views.forEach((view) =>
+        updateTimelineLayoutSetting(view, {
+          dependencyFieldId: 'dependency',
+          dependencyDirection: direction,
+          dependencyLinks: { [edge(sourceRowId)]: metadata, 'unrelated:edge': { ...metadata, lag: 8 } },
+        })
+      );
+      const createdRows = new Map<string, YDoc>();
+      const { result } = renderHook(() => useDuplicateRowDispatch(), {
+        wrapper: createWrapper({ databaseDoc, referenceRowDoc, createdRows, duplicateRowDocument: jest.fn() }),
+      });
+      let copiedId = '';
+
+      await act(async () => {
+        copiedId = await result.current(sourceRowId);
+      });
+      for (const id of [viewId, 'other-view']) {
+        expect(readTimelineLayoutSetting(database, id, 0, false).dependencyLinks).toEqual({
+          [edge(sourceRowId)]: metadata,
+          [edge(copiedId)]: metadata,
+          'unrelated:edge': { ...metadata, lag: 8 },
+        });
+      }
+
+      const copiedDoc = createdRows.get(getRowKey(databaseDocId, copiedId)) as YDoc;
+      const copied = copiedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+      expect(copied.get(YjsDatabaseKey.cells).get('dependency').get(YjsDatabaseKey.data)).toEqual(['related']);
+    }
+  );
+
   it('preserves a lazy cell raw value and stored type', async () => {
     const databaseDoc = createDatabaseDoc();
     const referenceRowDoc = createReferenceRowDoc({ storedFieldType: FieldType.MultiSelect });

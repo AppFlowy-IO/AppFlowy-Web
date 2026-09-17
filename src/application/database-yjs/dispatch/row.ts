@@ -53,6 +53,7 @@ import {
   templateDecorationsNeedResolution,
 } from '@/application/database-yjs/template';
 import { decodeTemplateDocumentSnapshot, encodeTemplateDocument } from '@/application/database-yjs/template/document';
+import { duplicateTimelineRowDependencyLinks } from '@/application/database-yjs/timeline-layout';
 import { deleteCollabDB, getCachedProviderDoc, openCollabDB } from '@/application/db';
 import {
   ensureRowDocumentView,
@@ -917,6 +918,7 @@ export function useDuplicateRowDispatch() {
             throw new Error(`Row orders not found`);
           }
 
+          duplicateTimelineRowDependencyLinks(view, referenceCells, referenceRowId, rowId);
           const row = {
             id: rowId,
             height: 36,

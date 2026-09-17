@@ -31,7 +31,7 @@ export function useTimelineItems(
       group.rows.forEach(({ id }) => {
         const row = byId.get(id);
 
-        if (row) items.push({ kind: 'row', key: id, row, groupId: group.id });
+        if (row) items.push({ kind: 'row', key: `row:${group.id}:${id}`, row, groupId: group.id });
       });
       if (withFooters) items.push({ kind: 'footer', key: `footer:${group.id}`, group });
     });

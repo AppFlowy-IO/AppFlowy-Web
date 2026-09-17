@@ -69,7 +69,7 @@ test.describe('Timeline view', () => {
       .toBeCloseTo(design.box.width + columnWidth * 2, 0);
 
     // Undo restores the original length through the database history scope.
-    await page.keyboard.press('Control+z');
+    await page.keyboard.press('ControlOrMeta+z');
     await expect
       .poll(async () => (await barBox(page, 'Design review')).box.width, { timeout: 10_000 })
       .toBeCloseTo(design.box.width, 0);
@@ -165,7 +165,7 @@ test.describe('Timeline dependencies and progress', () => {
       .poll(async () => (await barBox(page, 'Build')).box.x, { timeout: 10_000 })
       .toBeCloseTo(buildBefore.box.x + columnWidth * 2, 0);
     // One undo reverts both bars together.
-    await page.keyboard.press('Control+z');
+    await page.keyboard.press('ControlOrMeta+z');
     await expect.poll(async () => (await barBox(page, 'Build')).box.x, { timeout: 10_000 }).toBeCloseTo(buildBefore.box.x, 0);
     await expect.poll(async () => (await barBox(page, 'Design')).box.x, { timeout: 10_000 }).toBeCloseTo(designBefore.box.x, 0);
     await expect(page.locator('[data-testid="timeline-arrow"]')).toHaveCount(1);

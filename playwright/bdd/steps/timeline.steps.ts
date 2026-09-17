@@ -271,7 +271,7 @@ Then(
 );
 
 When('I press undo', async ({ page }) => {
-  await page.keyboard.press('Control+z');
+  await page.keyboard.press('ControlOrMeta+z');
 });
 
 Then('the {string} bar is back where it started', async ({ page }, title) => {

@@ -234,6 +234,7 @@ export class DatabaseHistoryManager {
   private subscribers = new Set<HistorySubscriber>();
   private replaying: 'undo' | 'redo' | null = null;
   private replayedEntries: DatabaseHistoryStackEntry[] = [];
+  private pendingActions = new Set<() => void>();
 
   constructor(readonly databaseDoc: YDoc) {
     this.registerDatabaseDoc(databaseDoc);
@@ -241,7 +242,7 @@ export class DatabaseHistoryManager {
 
   canUndo() {
     this.pruneStacks();
-    return this.undoStack.length > 0;
+    return this.pendingActions.size > 0 || this.undoStack.length > 0;
   }
 
   canRedo() {
@@ -250,6 +251,7 @@ export class DatabaseHistoryManager {
   }
 
   clear() {
+    this.cancelPendingActions();
     this.sources.forEach((source) => source.clear());
     this.undoStack = [];
     this.redoStack = [];
@@ -257,11 +259,34 @@ export class DatabaseHistoryManager {
   }
 
   undo() {
+    // A prepared edit has no Yjs writes yet. Undo cancels it before it can
+    // commit, including when there are no earlier stack entries.
+    if (this.cancelPendingActions()) {
+      this.notify();
+      return null;
+    }
+
     return this.replay('undo');
   }
 
   redo() {
+    this.cancelPendingActions();
     return this.replay('redo');
+  }
+
+  registerPendingAction(cancel: () => void) {
+    this.pendingActions.add(cancel);
+    this.notify();
+    return () => {
+      if (this.pendingActions.delete(cancel)) this.notify();
+    };
+  }
+
+  private cancelPendingActions() {
+    if (this.pendingActions.size === 0) return false;
+    this.pendingActions.forEach((cancel) => cancel());
+    this.pendingActions.clear();
+    return true;
   }
 
   getSnapshot() {

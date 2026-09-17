@@ -27,10 +27,12 @@ interface TimelineRowProps {
   /** The bar lies (partly) beyond the visible canvas on that side. */
   offscreenLeft: boolean;
   offscreenRight: boolean;
+  rowIndex: number;
   sidebarWidth: number;
   showSidebar: boolean;
   propertyFields: Column[];
   editable: boolean;
+  dateEditable: boolean;
   selected?: boolean;
   dragging?: boolean;
   following?: boolean;
@@ -65,7 +67,12 @@ interface TimelineRowProps {
   /** A connector is being dragged over this row's bar. */
   linkTarget?: boolean;
   /** The connector handle was pressed: start a link drag from this row. */
-  onLinkPointerDown?: (event: ReactPointerEvent<HTMLElement>, row: TimelineRowModel, rect: BarRect) => void;
+  onLinkPointerDown?: (
+    event: ReactPointerEvent<HTMLElement>,
+    row: TimelineRowModel,
+    rect: BarRect,
+    index: number
+  ) => void;
 }
 
 function OffscreenPill({
@@ -100,6 +107,7 @@ function OffscreenPill({
 export const TimelineRow = memo(
   ({
     row,
+    rowIndex,
     rect,
     offscreenLeft,
     offscreenRight,
@@ -107,6 +115,7 @@ export const TimelineRow = memo(
     showSidebar,
     propertyFields,
     editable,
+    dateEditable,
     selected,
     dragging,
     following,
@@ -135,7 +144,7 @@ export const TimelineRow = memo(
     const rowRef = useRef<HTMLDivElement | null>(null);
     const showLeftPill = rect !== null && offscreenLeft;
     const showRightPill = rect !== null && offscreenRight;
-    const canAssignDate = editable && rect === null;
+    const canAssignDate = dateEditable && rect === null;
     const handleBarPointerDown = useCallback(
       (event: ReactPointerEvent<HTMLElement>, mode: TimelineDragMode) => {
         onSelect?.(row.rowId);
@@ -147,9 +156,9 @@ export const TimelineRow = memo(
     // re-render the memoized bar.
     const handleLinkPointerDown = useCallback(
       (event: ReactPointerEvent<HTMLElement>) => {
-        if (rect) onLinkPointerDown?.(event, row, rect);
+        if (rect) onLinkPointerDown?.(event, row, rect, rowIndex);
       },
-      [onLinkPointerDown, rect, row]
+      [onLinkPointerDown, rect, row, rowIndex]
     );
 
     const handleCanvasClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -175,7 +184,6 @@ export const TimelineRow = memo(
         {showSidebar ? (
           <TimelineSidebarRow
             row={row}
-            width={sidebarWidth}
             editable={editable}
             selected={selected}
             rowActions={rowActions}
@@ -217,6 +225,7 @@ export const TimelineRow = memo(
               rect={rect}
               propertyFields={propertyFields}
               editable={editable}
+              dateEditable={dateEditable}
               selected={selected}
               dragging={dragging}
               following={following}

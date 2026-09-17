@@ -5,6 +5,7 @@ import { TimelineLayout } from '../../src/application/database-yjs/database.type
 import { calendarDraftEditor, calendarDraftTitle } from './calendar-placeholder-helpers';
 import { loginAndCreateCalendar } from './calendar-test-helpers';
 import { DatabaseViewSelectors, TimelineSelectors } from './selectors';
+import { mockProSubscription } from './subscription-test-helpers';
 
 /** Column width of the Month preset (`TIMELINE_SCALE_PRESETS[Month].columnWidth`). */
 export const MONTH_COLUMN_WIDTH = 36;
@@ -46,13 +47,14 @@ export async function createCalendarEvent(page: Page, offsetDays: number, title:
   await expect(calendarDraftEditor(page)).toHaveCount(0);
 }
 
-/** Sign in, create a calendar database, and add the given all-day rows. */
+/** Sign in to a Pro workspace fixture, create a calendar, and add the given all-day rows. */
 export async function loginAndCreateCalendarWithRows(
   page: Page,
   request: APIRequestContext,
   email: string,
   rows: { title: string; offsetDays: number }[]
 ) {
+  await mockProSubscription(page);
   await loginAndCreateCalendar(page, request, email);
   for (const row of rows) {
     await createCalendarEvent(page, row.offsetDays, row.title);
@@ -61,11 +63,16 @@ export async function loginAndCreateCalendarWithRows(
   await page.waitForTimeout(1500);
 }
 
-/** Add a Timeline view from the view tabs' + menu and wait for it to render. */
+/** Add a Timeline view and select Month for the day-based interaction fixtures. */
 export async function addTimelineView(page: Page, expectedBars: number) {
   await DatabaseViewSelectors.addViewButton(page).click();
+  await expect(TimelineSelectors.addViewOption(page)).toBeEnabled();
   await TimelineSelectors.addViewOption(page).click();
   await expect(TimelineSelectors.view(page)).toBeVisible({ timeout: 30_000 });
+  // Server versions can initialize the saved scale to Hours. These fixtures
+  // drag all-day bars by MONTH_COLUMN_WIDTH, so select their scale explicitly.
+  await chooseTimelineZoom(page, TimelineLayout.Month);
+  await expect(TimelineSelectors.zoomTrigger(page)).toHaveText('Month');
   await expect(TimelineSelectors.bars(page)).toHaveCount(expectedBars, { timeout: 15_000 });
 }
 
