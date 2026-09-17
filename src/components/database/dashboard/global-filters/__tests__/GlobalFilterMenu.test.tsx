@@ -5,21 +5,34 @@ import { DashboardGlobalFilter, DashboardLayoutUpdate, DashboardRow } from '@/ap
 import { FieldType } from '@/application/database-yjs/database.type';
 import { SelectOptionFilterCondition } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { YDoc } from '@/application/types';
-import type { DashboardContextValue } from '@/components/database/dashboard/DashboardContext';
+import type {
+  DashboardContextValue,
+  DashboardFiltersContextValue,
+  DashboardSourcesContextValue,
+} from '@/components/database/dashboard/DashboardContext';
 
 import { GlobalFilterMenu } from '../GlobalFilterMenu';
 
 import { createSourceDoc, option } from './source-doc.fixture';
 
-let mockContext: DashboardContextValue | null = null;
+/** The three dashboard contexts, served from one object. */
+type MockDashboard = DashboardContextValue & DashboardFiltersContextValue & DashboardSourcesContextValue;
 
-jest.mock('@/components/database/dashboard/DashboardContext', () => ({
-  useDashboardContext: () => {
+let mockContext: MockDashboard | null = null;
+
+jest.mock('@/components/database/dashboard/DashboardContext', () => {
+  const required = () => {
     if (!mockContext) throw new Error('DashboardContext is not provided');
     return mockContext;
-  },
-  useDashboardContextOptional: () => mockContext,
-}));
+  };
+
+  return {
+    useDashboardContext: required,
+    useDashboardFilters: required,
+    useDashboardSources: required,
+    useDashboardContextOptional: () => mockContext,
+  };
+});
 
 jest.mock('@/components/main/app.hooks', () => ({
   useCurrentUserOptional: () => undefined,
@@ -105,8 +118,9 @@ function Harness({ canEdit, isEditing, initial, onPersist, onLocal, onClose = je
     dashboardViewId: 'dashboard-view',
     hostDatabaseId: 'db-host',
     hostViewIds: ['view-host', 'dashboard-view'],
-    setting: { rows, globalFilters: persisted, showWidgetTitles: true },
     rows,
+    showWidgetTitles: true,
+    globalFilters: persisted,
     effectiveGlobalFilters: local ?? persisted,
     localGlobalFilters: local,
     setLocalGlobalFilters: (filters) => {
@@ -257,8 +271,9 @@ describe('GlobalFilterMenu', () => {
         dashboardViewId: 'dashboard-view',
         hostDatabaseId: 'db-host',
         hostViewIds: [],
-        setting: { rows, globalFilters: [], showWidgetTitles: true },
         rows,
+        showWidgetTitles: true,
+        globalFilters: [],
         effectiveGlobalFilters: local ?? [],
         localGlobalFilters: local,
         setLocalGlobalFilters: (filters) => {

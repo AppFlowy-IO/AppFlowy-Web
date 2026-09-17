@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
@@ -53,7 +53,51 @@ function withPatch(filter: DashboardGlobalFilter, patch: Partial<DashboardGlobal
   return changed ? { ...filter, ...patch } : filter;
 }
 
-function TargetRow({
+/**
+ * The filter name. Owns the debounced draft, so typing re-renders only this
+ * input instead of the whole editor.
+ */
+const GlobalFilterNameInput = memo(function GlobalFilterNameInput({
+  filterId,
+  name,
+  placeholder,
+  onChange,
+}: {
+  filterId: string;
+  name: string;
+  placeholder: string;
+  onChange: (updater: FilterUpdater) => void;
+}) {
+  const { t } = useTranslation();
+  // Like the view filter updater, a flush without a pending value (no content) is ignored.
+  const updateName = useCallback(
+    ({ content }: { content?: string }) => {
+      if (typeof content !== 'string') return;
+      onChange((current) => withPatch(current, { name: content }));
+    },
+    [onChange]
+  );
+  const { value, updateValue } = useDebouncedFilterInput({
+    content: name,
+    filterId,
+    fieldId: 'name',
+    updateFilter: updateName,
+  });
+
+  return (
+    <Input
+      data-testid='dashboard-global-filter-name'
+      size='sm'
+      value={value}
+      spellCheck={false}
+      placeholder={placeholder}
+      aria-label={t('dashboard.globalFilters.name', { defaultValue: 'Filter name' })}
+      onChange={(event) => updateValue(event.target.value)}
+    />
+  );
+});
+
+const TargetRow = memo(function TargetRow({
   filter,
   source,
   sources,
@@ -142,7 +186,7 @@ function TargetRow({
       </Tooltip>
     </div>
   );
-}
+});
 
 /** Maps one more source database (to its first compatible property). */
 function AddSourceButton({
@@ -187,7 +231,7 @@ function AddSourceButton({
   );
 }
 
-function ConditionSelect({
+const ConditionSelect = memo(function ConditionSelect({
   filter,
   onChange,
 }: {
@@ -270,7 +314,7 @@ function ConditionSelect({
       </DropdownMenu>
     </div>
   );
-}
+});
 
 export interface GlobalFilterEditorProps {
   filter: DashboardGlobalFilter;
@@ -300,27 +344,17 @@ export function GlobalFilterEditor({
   const { t } = useTranslation();
   const typeName = getFieldTypeName(filter.fieldType, t);
   const untitled = t('untitled', { defaultValue: 'Untitled' });
-  const mapped = getMappedSources(filter, sources, (databaseId) => sourceNames[databaseId] || untitled);
-  const addable = getAddableSources(filter, sources);
-  const primaryField = getPrimaryTargetField(filter, sources);
-  // Like the view filter updater, a flush without a pending value (no content) is ignored.
-  const updateName = useCallback(
-    ({ content }: { content?: string }) => {
-      if (typeof content !== 'string') return;
-      onChange((current) => withPatch(current, { name: content }));
-    },
-    [onChange]
+  // Memoized so an unloaded source keeps its placeholder object (and its row skips renders).
+  const mapped = useMemo(
+    () => getMappedSources(filter, sources, (databaseId) => sourceNames[databaseId] || untitled),
+    [filter, sources, sourceNames, untitled]
   );
+  const addable = useMemo(() => getAddableSources(filter, sources), [filter, sources]);
+  const primaryField = getPrimaryTargetField(filter, sources);
   const updateContent = useCallback(
     (content: string) => onChange((current) => withPatch(current, { content })),
     [onChange]
   );
-  const { value: name, updateValue: setName } = useDebouncedFilterInput({
-    content: filter.name,
-    filterId: filter.id,
-    fieldId: 'name',
-    updateFilter: updateName,
-  });
   const showContent = !conditionHidesContent(filter.fieldType, filter.condition);
 
   return (
@@ -341,14 +375,11 @@ export function GlobalFilterEditor({
         <span className='truncate text-xs font-medium text-text-tertiary'>{typeName}</span>
       </div>
 
-      <Input
-        data-testid='dashboard-global-filter-name'
-        size='sm'
-        value={name}
-        spellCheck={false}
+      <GlobalFilterNameInput
+        filterId={filter.id}
+        name={filter.name}
         placeholder={primaryField?.name || typeName}
-        aria-label={t('dashboard.globalFilters.name', { defaultValue: 'Filter name' })}
-        onChange={(event) => setName(event.target.value)}
+        onChange={onChange}
       />
 
       <div className='flex flex-col gap-1'>

@@ -1,25 +1,38 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
-import { DashboardGlobalFilter, DashboardLayoutSetting, DashboardRow } from '@/application/database-yjs/dashboard.type';
+import { DashboardGlobalFilter, DashboardRow } from '@/application/database-yjs/dashboard.type';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { SelectOptionFilterCondition } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { TextFilterCondition } from '@/application/database-yjs/fields/text/text.type';
 import { YDoc } from '@/application/types';
-import type { DashboardContextValue } from '@/components/database/dashboard/DashboardContext';
+import type {
+  DashboardContextValue,
+  DashboardFiltersContextValue,
+  DashboardSourcesContextValue,
+} from '@/components/database/dashboard/DashboardContext';
 
 import { GlobalFilterBar, GlobalFilterButton } from '../index';
 
 import { createSourceDoc, option, setFieldOptions } from './source-doc.fixture';
 
-let mockContext: DashboardContextValue | null = null;
+/** The three dashboard contexts, served from one object. */
+type MockDashboard = DashboardContextValue & DashboardFiltersContextValue & DashboardSourcesContextValue;
 
-jest.mock('@/components/database/dashboard/DashboardContext', () => ({
-  useDashboardContext: () => {
+let mockContext: MockDashboard | null = null;
+
+jest.mock('@/components/database/dashboard/DashboardContext', () => {
+  const required = () => {
     if (!mockContext) throw new Error('DashboardContext is not provided');
     return mockContext;
-  },
-  useDashboardContextOptional: () => mockContext,
-}));
+  };
+
+  return {
+    useDashboardContext: required,
+    useDashboardFilters: required,
+    useDashboardSources: required,
+    useDashboardContextOptional: () => mockContext,
+  };
+});
 
 jest.mock('@/components/main/app.hooks', () => ({
   useCurrentUserOptional: () => undefined,
@@ -88,17 +101,17 @@ const nameFilter: DashboardGlobalFilter = {
   targets: { 'db-host': 'host-name' },
 };
 
-function createContext(overrides: Partial<DashboardContextValue> = {}): DashboardContextValue {
-  const globalFilters = overrides.setting?.globalFilters ?? [statusFilter, nameFilter];
-  const setting: DashboardLayoutSetting = { rows, globalFilters, showWidgetTitles: true };
+function createContext(overrides: Partial<MockDashboard> = {}): MockDashboard {
+  const globalFilters = overrides.globalFilters ?? [statusFilter, nameFilter];
   const localGlobalFilters = overrides.localGlobalFilters ?? null;
 
   return {
     dashboardViewId: 'dashboard-view',
     hostDatabaseId: 'db-host',
     hostViewIds: ['view-host', 'dashboard-view'],
-    setting,
     rows,
+    showWidgetTitles: true,
+    globalFilters,
     effectiveGlobalFilters: localGlobalFilters ?? globalFilters,
     localGlobalFilters,
     setLocalGlobalFilters: jest.fn(),
@@ -127,13 +140,14 @@ describe('GlobalFilterBar', () => {
   });
 
   it('is hidden without filters unless the dashboard is being edited', () => {
-    mockContext = createContext({ setting: { rows, globalFilters: [], showWidgetTitles: true } });
+    mockContext = createContext({ globalFilters: [] });
     const { rerender } = render(<GlobalFilterBar />);
 
     expect(screen.queryByTestId('dashboard-global-filter-bar')).toBeNull();
 
     mockContext = { ...mockContext, isEditing: true };
-    rerender(<GlobalFilterBar />);
+    // The mocked context hooks are not reactive and the bar is memoized: remount it.
+    rerender(<GlobalFilterBar key='editing' />);
     expect(screen.getByTestId('dashboard-global-filter-bar')).toBeTruthy();
     expect(screen.getByTestId('dashboard-global-filter-bar-add').textContent).toBe('Add global filter');
   });

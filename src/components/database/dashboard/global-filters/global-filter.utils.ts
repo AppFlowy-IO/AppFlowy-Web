@@ -75,17 +75,22 @@ export function fieldsOfType(source: GlobalFilterSource | undefined, type: Field
   return source ? source.fields.filter((field) => field.type === type) : [];
 }
 
-/** Union of the supported property types present in any source, in picker order. */
-export function getAvailableFieldTypes(sources: GlobalFilterSource[]): FieldType[] {
-  const present = new Set<FieldType>();
+/** Number of sources that have at least one property of each type, in one pass over the fields. */
+export function countSourcesByFieldType(sources: GlobalFilterSource[]): Map<FieldType, number> {
+  const counts = new Map<FieldType, number>();
 
-  sources.forEach((source) => source.fields.forEach((field) => present.add(field.type)));
-  return GLOBAL_FILTER_FIELD_TYPES.filter((type) => present.has(type));
+  sources.forEach((source) => {
+    new Set(source.fields.map((field) => field.type)).forEach((type) => counts.set(type, (counts.get(type) ?? 0) + 1));
+  });
+  return counts;
 }
 
-/** Number of sources that have at least one property of `type`. */
-export function countSourcesWithFieldType(sources: GlobalFilterSource[], type: FieldType): number {
-  return sources.filter((source) => fieldsOfType(source, type).length > 0).length;
+/** Union of the supported property types present in any source, in picker order. */
+export function getAvailableFieldTypes(
+  sources: GlobalFilterSource[],
+  countsByType: ReadonlyMap<FieldType, number> = countSourcesByFieldType(sources)
+): FieldType[] {
+  return GLOBAL_FILTER_FIELD_TYPES.filter((type) => countsByType.has(type));
 }
 
 export function findSourceField(
@@ -189,12 +194,24 @@ export function getMappedSources(
   );
 }
 
-/** Unmapped sources that have a property the filter can be mapped to. */
+/**
+ * Unmapped sources that have a property the filter can be mapped to (what
+ * `getTargetCandidates` offers them), in one pass: the primary property is
+ * resolved once for all sources.
+ */
 export function getAddableSources(filter: DashboardGlobalFilter, sources: GlobalFilterSource[]) {
-  return sources.filter(
-    (source) =>
-      !(source.databaseId in filter.targets) && getTargetCandidates(filter, sources, source.databaseId).length > 0
-  );
+  // An unmapped source is never the primary one, so with a primary mapping an
+  // option type only accepts properties compatible with it.
+  const checksOptions = usesOptionContent(filter.fieldType) && getPrimaryTargetDatabaseId(filter) !== undefined;
+  const primaryField = checksOptions ? getPrimaryTargetField(filter, sources) : undefined;
+
+  return sources.filter((source) => {
+    if (source.databaseId in filter.targets) return false;
+    const fields = fieldsOfType(source, filter.fieldType);
+
+    if (!checksOptions) return fields.length > 0;
+    return primaryField !== undefined && fields.some((field) => areOptionFieldsCompatible(primaryField, field));
+  });
 }
 
 /** Map `databaseId` to its first compatible property (no-op when it has none). */

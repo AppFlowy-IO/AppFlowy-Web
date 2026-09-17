@@ -29,7 +29,7 @@ import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
 import { DASHBOARD_COLUMN_GAP, WIDGET_INLINE_PADDING, WIDGET_MISSING_GRACE_MS } from './constants';
-import { useDashboardContext } from './DashboardContext';
+import { useDashboardContext, useDashboardFilters } from './DashboardContext';
 import { useDashboardUi } from './DashboardUiContext';
 import { useDraggableWidget, useWidgetDropTarget } from './hooks/useDashboardDnd';
 import { useWidgetExtraFilters } from './hooks/useWidgetExtraFilters';
@@ -105,8 +105,8 @@ function WidgetSource({ widget, rowId, rowIndex, index, rowHeight, cardRef, isDr
   const { t } = useTranslation();
   const hostContext = useDatabaseContext();
   const appOperations = useContext(AppOperationsContext);
-  const { hostDatabaseId, rows, setting, isEditing, canEdit, effectiveGlobalFilters, updateRows } =
-    useDashboardContext();
+  const { hostDatabaseId, rows, showWidgetTitles, isEditing, canEdit, updateRows } = useDashboardContext();
+  const { effectiveGlobalFilters } = useDashboardFilters();
   const { openPicker, showLimitMessage, dndInstanceId, acquireSourceDoc } = useDashboardUi();
   const isHost = widget.databaseId === hostDatabaseId;
   const isPublish = hostContext.variant === UIVariant.Publish;
@@ -225,7 +225,7 @@ function WidgetSource({ widget, rowId, rowIndex, index, rowHeight, cardRef, isDr
     [canDuplicate, moveTargets, openPicker, openView, showLimitMessage, updateRows, widget.id]
   );
 
-  const chrome = { isEditing: editing, showWidgetTitles: setting.showWidgetTitles };
+  const chrome = { isEditing: editing, showWidgetTitles };
   const headerHeight = getWidgetHeaderHeight(chrome);
   const viewportHeight = getWidgetViewportHeight(rowHeight, chrome);
 
@@ -240,7 +240,7 @@ function WidgetSource({ widget, rowId, rowIndex, index, rowHeight, cardRef, isDr
       layout,
       isEditing,
       canEdit,
-      showTitle: editing || setting.showWidgetTitles,
+      showTitle: editing || showWidgetTitles,
       headerHeight,
       isDragging,
       setDragHandle,
@@ -259,7 +259,7 @@ function WidgetSource({ widget, rowId, rowIndex, index, rowHeight, cardRef, isDr
       name,
       rowId,
       rowIndex,
-      setting.showWidgetTitles,
+      showWidgetTitles,
       widget,
     ]
   );

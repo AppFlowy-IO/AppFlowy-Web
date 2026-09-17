@@ -12,6 +12,8 @@ import {
   DashboardProvider,
   useDashboardContext,
   useDashboardContextOptional,
+  useDashboardFilters,
+  useDashboardSources,
 } from '@/components/database/dashboard/DashboardContext';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -82,7 +84,16 @@ function renderDashboard(doc: YDoc, initial: Options = {}) {
     );
   };
 
-  const hook = renderHook(() => useDashboardContext(), { wrapper });
+  const hook = renderHook(
+    () => {
+      const layout = useDashboardContext();
+      const filters = useDashboardFilters();
+      const sources = useDashboardSources();
+
+      return { ...layout, ...filters, ...sources, parts: { layout, filters, sources } };
+    },
+    { wrapper }
+  );
   const update = (next: Options) => {
     Object.assign(current, next);
     hook.rerender();
@@ -105,9 +116,10 @@ describe('DashboardProvider', () => {
 
     expect(result.current.dashboardViewId).toBe(DASHBOARD_VIEW_ID);
     expect(result.current.hostDatabaseId).toBe(DATABASE_ID);
-    expect(result.current.setting).toEqual({ rows: ROWS, globalFilters: [GLOBAL_FILTER], showWidgetTitles: true });
-    expect(result.current.rows).toBe(result.current.setting.rows);
-    expect(result.current.effectiveGlobalFilters).toBe(result.current.setting.globalFilters);
+    expect(result.current.rows).toEqual(ROWS);
+    expect(result.current.globalFilters).toEqual([GLOBAL_FILTER]);
+    expect(result.current.showWidgetTitles).toBe(true);
+    expect(result.current.effectiveGlobalFilters).toBe(result.current.globalFilters);
     expect(result.current.localGlobalFilters).toBeNull();
     expect(result.current.canEdit).toBe(true);
     expect(result.current.isEditing).toBe(false);
@@ -136,7 +148,7 @@ describe('DashboardProvider', () => {
       doc.transact(() => updateDashboardLayoutSetting(view, { showWidgetTitles: false }));
     });
 
-    expect(result.current.setting.showWidgetTitles).toBe(false);
+    expect(result.current.showWidgetTitles).toBe(false);
     expect(result.current.rows).toBe(previousRows);
 
     act(() => {
@@ -275,7 +287,7 @@ describe('DashboardProvider', () => {
 
       expect(stored[0]).toEqual(GLOBAL_FILTER);
       expect(stored[1].targets).toEqual({ [DATABASE_ID]: 'status' });
-      expect(result.current.setting.globalFilters[1].targets).toEqual({ [DATABASE_ID]: 'status' });
+      expect(result.current.globalFilters[1].targets).toEqual({ [DATABASE_ID]: 'status' });
       expect(result.current.localGlobalFilters).toEqual([
         { ...shared, content: 'mine', targets: { [DATABASE_ID]: 'status' } },
       ]);
@@ -300,7 +312,7 @@ describe('DashboardProvider', () => {
       expect(updater).not.toHaveBeenCalled();
       expect(updates).not.toHaveBeenCalled();
       expect(result.current.rows).toEqual(ROWS);
-      expect(result.current.setting.showWidgetTitles).toBe(true);
+      expect(result.current.showWidgetTitles).toBe(true);
     });
   });
 
@@ -315,7 +327,7 @@ describe('DashboardProvider', () => {
       globalFilters: [],
       showWidgetTitles: false,
     });
-    expect(result.current.setting.showWidgetTitles).toBe(false);
+    expect(result.current.showWidgetTitles).toBe(false);
   });
 
   it('prefers local global filters without persisting them', () => {
@@ -344,14 +356,52 @@ describe('DashboardProvider', () => {
     doc.transact(() => updateDashboardLayoutSetting(view, { globalFilters: [stale] }));
     const { result } = renderDashboard(doc);
 
-    expect(result.current.setting.globalFilters).toEqual([GLOBAL_FILTER]);
-    expect(result.current.effectiveGlobalFilters).toBe(result.current.setting.globalFilters);
-    expect(result.current.setting.rows).toBe(result.current.rows);
+    expect(result.current.globalFilters).toEqual([GLOBAL_FILTER]);
+    expect(result.current.effectiveGlobalFilters).toBe(result.current.globalFilters);
     // Nothing is written until the filters are edited.
     expect(readDashboardLayoutSetting(database, DASHBOARD_VIEW_ID).globalFilters).toEqual([stale]);
 
     act(() => result.current.setLocalGlobalFilters([{ ...stale, content: 'mine' }]));
     expect(result.current.effectiveGlobalFilters).toEqual([{ ...GLOBAL_FILTER, content: 'mine' }]);
+  });
+
+  it('only changes the context whose part changed', () => {
+    const { doc, view } = createDatabaseDoc();
+    const { result } = renderDashboard(doc);
+    let previous = result.current.parts;
+
+    // A widget exposing its source doc touches the sources only.
+    act(() => result.current.registerSourceDoc('other-database', new Y.Doc() as unknown as YDoc));
+    expect(result.current.parts.layout).toBe(previous.layout);
+    expect(result.current.parts.filters).toBe(previous.filters);
+    expect(result.current.parts.sources).not.toBe(previous.sources);
+    previous = result.current.parts;
+
+    act(() => result.current.registerSourceName('other-database', 'Projects'));
+    expect(result.current.parts.layout).toBe(previous.layout);
+    expect(result.current.parts.filters).toBe(previous.filters);
+    previous = result.current.parts;
+
+    // Filter edits (local or persisted) leave the layout alone.
+    act(() => result.current.setLocalGlobalFilters([{ ...GLOBAL_FILTER, content: 'mine' }]));
+    expect(result.current.parts.layout).toBe(previous.layout);
+    expect(result.current.parts.sources).toBe(previous.sources);
+    expect(result.current.parts.filters).not.toBe(previous.filters);
+    previous = result.current.parts;
+
+    act(() => {
+      doc.transact(() => updateDashboardLayoutSetting(view, { globalFilters: [] }));
+    });
+    expect(result.current.parts.layout).toBe(previous.layout);
+    expect(result.current.parts.sources).toBe(previous.sources);
+    previous = result.current.parts;
+
+    // Layout edits that keep the widget databases leave the filters alone.
+    act(() => result.current.updateRows((rows) => rows.map((row) => ({ ...row, height: 400 }))));
+    act(() => result.current.setEditing(true));
+    expect(result.current.parts.filters).toBe(previous.filters);
+    expect(result.current.parts.sources).toBe(previous.sources);
+    expect(result.current.parts.layout).not.toBe(previous.layout);
   });
 
   describe('source registry', () => {
@@ -419,6 +469,14 @@ describe('useDashboardContext', () => {
     const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
     expect(() => renderHook(() => useDashboardContext())).toThrow('DashboardContext is not provided');
+    spy.mockRestore();
+  });
+
+  it('throws from the filter and source hooks outside a DashboardProvider', () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(() => renderHook(() => useDashboardFilters())).toThrow('DashboardFiltersContext is not provided');
+    expect(() => renderHook(() => useDashboardSources())).toThrow('DashboardSourcesContext is not provided');
     spy.mockRestore();
   });
 

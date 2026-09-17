@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import { ChangeEvent, ReactNode, useCallback, useMemo, useState } from 'react';
+import { ChangeEvent, memo, ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
@@ -324,7 +324,7 @@ function DateContent({ filter, onChange }: ContentProps) {
  * of the property type (text, number string, comma-separated option ids, JSON
  * person ids, JSON date), so it evaluates exactly like a view filter.
  */
-export function GlobalFilterContent({
+export const GlobalFilterContent = memo(function GlobalFilterContent({
   filter,
   primaryField,
   onChange,
@@ -346,6 +346,6 @@ export function GlobalFilterContent({
       if (isDateFieldType(filter.fieldType)) return <DateContent filter={filter} onChange={onChange} />;
       return null;
   }
-}
+});
 
 export default GlobalFilterContent;

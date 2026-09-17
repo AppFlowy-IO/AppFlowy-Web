@@ -2,7 +2,11 @@ import { useCallback, useMemo, useRef } from 'react';
 
 import { dashboardSourceDatabaseIds, sameDashboardGlobalFilters } from '@/application/database-yjs/dashboard-layout';
 import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
-import { useDashboardContext } from '@/components/database/dashboard/DashboardContext';
+import {
+  useDashboardContext,
+  useDashboardFilters,
+  useDashboardSources,
+} from '@/components/database/dashboard/DashboardContext';
 
 import { removeGlobalFilter, replaceGlobalFilter } from './global-filter.utils';
 import { useGlobalFilterSources } from './useGlobalFilterSources';
@@ -22,20 +26,13 @@ type FiltersUpdater = (filters: DashboardGlobalFilter[]) => DashboardGlobalFilte
  * close) never overwrite each other.
  */
 export function useGlobalFilterActions() {
-  const {
-    setting,
-    effectiveGlobalFilters,
-    localGlobalFilters,
-    setLocalGlobalFilters,
-    canEdit,
-    isEditing,
-    updateSetting,
-  } = useDashboardContext();
+  const { canEdit, isEditing, updateSetting } = useDashboardContext();
+  const { globalFilters, effectiveGlobalFilters, localGlobalFilters, setLocalGlobalFilters } = useDashboardFilters();
   const persist = canEdit && isEditing;
-  const persistedRef = useRef(setting.globalFilters);
+  const persistedRef = useRef(globalFilters);
   const localRef = useRef(localGlobalFilters);
 
-  persistedRef.current = setting.globalFilters;
+  persistedRef.current = globalFilters;
   localRef.current = localGlobalFilters;
 
   const setLocal = useCallback(
@@ -114,7 +111,8 @@ export function useGlobalFilterActions() {
 
 /** Source databases of the dashboard's widgets, in widget order, with live property lists. */
 export function useDashboardFilterSources() {
-  const { rows, sourceDocs, sourceNames, hostDatabaseId } = useDashboardContext();
+  const { rows, hostDatabaseId } = useDashboardContext();
+  const { sourceDocs, sourceNames } = useDashboardSources();
   const databaseIds = useMemo(() => dashboardSourceDatabaseIds(rows), [rows]);
 
   return useGlobalFilterSources(sourceDocs, sourceNames, { hostDatabaseId, databaseIds });

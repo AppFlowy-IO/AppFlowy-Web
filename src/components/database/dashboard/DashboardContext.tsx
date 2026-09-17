@@ -13,7 +13,6 @@ import {
 import {
   dashboardSourceDatabaseIds,
   DashboardGlobalFilter,
-  DashboardLayoutSetting,
   DashboardLayoutUpdate,
   DashboardRow,
   readDashboardLayoutSetting,
@@ -30,13 +29,19 @@ import { detachRemovedGlobalFilterSources, GlobalFilterSource } from './global-f
 import { readGlobalFilterSourceFields } from './global-filters/useGlobalFilterSources';
 
 /**
- * Shared state of one dashboard view: the persisted layout, the viewer's
- * unsaved global-filter overrides, the Edit / View mode toggle, and the
- * registry of source-database docs that mounted widgets expose so the global
- * filter editor can list every source's properties.
+ * Shared state of one dashboard view, split by how often it changes so a
+ * consumer only re-renders for what it reads:
  *
- * Mounted by `DatabaseViews` around the dashboard content (tab bar included),
- * so both the toolbar (`DashboardActions`) and the grid read the same value.
+ * - `DashboardContext`: the persisted layout and the Edit / View mode toggle.
+ * - `DashboardFiltersContext`: the global filters and the viewer's unsaved
+ *   overrides.
+ * - `DashboardSourcesContext`: the registry of source-database docs (and
+ *   names) that mounted widgets expose so the global filter editor can list
+ *   every source's properties.
+ *
+ * All three are mounted by `DashboardProvider`, which `DatabaseViews` renders
+ * around the dashboard content (tab bar included), so both the toolbar
+ * (`DashboardActions`) and the grid read the same values.
  */
 export interface DashboardContextValue {
   /** The dashboard's own view id (a view of the host database). */
@@ -45,14 +50,10 @@ export interface DashboardContextValue {
   hostDatabaseId: string;
   /** View ids shown as tabs of the host database (the widget picker offers them first). */
   hostViewIds: string[];
-  /** Persisted snapshot (rows, global filters, widget-title flag). */
-  setting: DashboardLayoutSetting;
+  /** Persisted rows. */
   rows: DashboardRow[];
-  /** Persisted global filters unless the viewer changed them locally. */
-  effectiveGlobalFilters: DashboardGlobalFilter[];
-  /** Unsaved, viewer-only overrides of the global filters (`null` = none). */
-  localGlobalFilters: DashboardGlobalFilter[] | null;
-  setLocalGlobalFilters: (filters: DashboardGlobalFilter[] | null) => void;
+  /** Persisted widget-title flag. */
+  showWidgetTitles: boolean;
   /** Whether the viewer can persist layout / filter changes. */
   canEdit: boolean;
   /** Edit mode is local UI state: never persisted, never synced. */
@@ -62,6 +63,19 @@ export interface DashboardContextValue {
   updateSetting: (update: DashboardLayoutUpdate) => void;
   /** Persist a row transformation computed from the latest rows. */
   updateRows: (updater: (rows: DashboardRow[]) => DashboardRow[]) => void;
+}
+
+export interface DashboardFiltersContextValue {
+  /** Persisted global filters (mappings of databases without a widget left out). */
+  globalFilters: DashboardGlobalFilter[];
+  /** Persisted global filters unless the viewer changed them locally. */
+  effectiveGlobalFilters: DashboardGlobalFilter[];
+  /** Unsaved, viewer-only overrides of the global filters (`null` = none). */
+  localGlobalFilters: DashboardGlobalFilter[] | null;
+  setLocalGlobalFilters: (filters: DashboardGlobalFilter[] | null) => void;
+}
+
+export interface DashboardSourcesContextValue {
   /** Y.Docs of source databases currently mounted by widgets, keyed by database id. */
   sourceDocs: Record<string, YDoc>;
   registerSourceDoc: (databaseId: string, doc: YDoc | null) => void;
@@ -71,19 +85,31 @@ export interface DashboardContextValue {
 }
 
 export const DashboardContext = createContext<DashboardContextValue | null>(null);
+export const DashboardFiltersContext = createContext<DashboardFiltersContextValue | null>(null);
+export const DashboardSourcesContext = createContext<DashboardSourcesContextValue | null>(null);
 
-export function useDashboardContext(): DashboardContextValue {
-  const context = useContext(DashboardContext);
-
-  if (!context) {
-    throw new Error('DashboardContext is not provided');
+function required<T>(value: T | null, name: string): T {
+  if (!value) {
+    throw new Error(`${name} is not provided`);
   }
 
-  return context;
+  return value;
+}
+
+export function useDashboardContext(): DashboardContextValue {
+  return required(useContext(DashboardContext), 'DashboardContext');
 }
 
 export function useDashboardContextOptional(): DashboardContextValue | null {
   return useContext(DashboardContext);
+}
+
+export function useDashboardFilters(): DashboardFiltersContextValue {
+  return required(useContext(DashboardFiltersContext), 'DashboardFiltersContext');
+}
+
+export function useDashboardSources(): DashboardSourcesContextValue {
+  return required(useContext(DashboardSourcesContext), 'DashboardSourcesContext');
 }
 
 const EMPTY_VIEW_IDS: string[] = [];
@@ -127,10 +153,6 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   const globalFilters = useMemo(
     () => detachRemovedGlobalFilterSources(storedGlobalFilters, widgetDatabaseIds),
     [storedGlobalFilters, widgetDatabaseIds]
-  );
-  const setting = useMemo(
-    () => (globalFilters === storedSetting.globalFilters ? storedSetting : { ...storedSetting, globalFilters }),
-    [globalFilters, storedSetting]
   );
   const visibleLocalGlobalFilters = useMemo(
     () => localGlobalFilters && detachRemovedGlobalFilterSources(localGlobalFilters, widgetDatabaseIds),
@@ -223,43 +245,56 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
     setSourceNames((previous) => (previous[databaseId] === name ? previous : { ...previous, [databaseId]: name }));
   }, []);
 
-  const value = useMemo<DashboardContextValue>(
+  const rows = storedSetting.rows;
+  const { showWidgetTitles } = storedSetting;
+
+  const layoutValue = useMemo<DashboardContextValue>(
     () => ({
       dashboardViewId,
       hostDatabaseId,
       hostViewIds,
-      setting,
-      rows: setting.rows,
-      effectiveGlobalFilters: visibleLocalGlobalFilters ?? setting.globalFilters,
-      localGlobalFilters: visibleLocalGlobalFilters,
-      setLocalGlobalFilters,
+      rows,
+      showWidgetTitles,
       canEdit: !readOnly,
       isEditing,
       setEditing,
       updateSetting,
       updateRows,
-      sourceDocs,
-      registerSourceDoc,
-      sourceNames,
-      registerSourceName,
     }),
     [
       dashboardViewId,
       hostDatabaseId,
       hostViewIds,
-      setting,
-      visibleLocalGlobalFilters,
+      rows,
+      showWidgetTitles,
       readOnly,
       isEditing,
       setEditing,
       updateSetting,
       updateRows,
-      sourceDocs,
-      registerSourceDoc,
-      sourceNames,
-      registerSourceName,
     ]
   );
 
-  return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;
+  const filtersValue = useMemo<DashboardFiltersContextValue>(
+    () => ({
+      globalFilters,
+      effectiveGlobalFilters: visibleLocalGlobalFilters ?? globalFilters,
+      localGlobalFilters: visibleLocalGlobalFilters,
+      setLocalGlobalFilters,
+    }),
+    [globalFilters, visibleLocalGlobalFilters]
+  );
+
+  const sourcesValue = useMemo<DashboardSourcesContextValue>(
+    () => ({ sourceDocs, registerSourceDoc, sourceNames, registerSourceName }),
+    [sourceDocs, registerSourceDoc, sourceNames, registerSourceName]
+  );
+
+  return (
+    <DashboardContext.Provider value={layoutValue}>
+      <DashboardFiltersContext.Provider value={filtersValue}>
+        <DashboardSourcesContext.Provider value={sourcesValue}>{children}</DashboardSourcesContext.Provider>
+      </DashboardFiltersContext.Provider>
+    </DashboardContext.Provider>
+  );
 }

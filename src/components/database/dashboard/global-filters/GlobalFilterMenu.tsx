@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
@@ -6,14 +6,14 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import { ReactComponent as ArrowLeftSvg } from '@/assets/icons/alt_arrow_left.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
-import { useDashboardContext } from '@/components/database/dashboard/DashboardContext';
+import { useDashboardSources } from '@/components/database/dashboard/DashboardContext';
 import { Button } from '@/components/ui/button';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
 import { getFieldTypeName, Translate } from './global-filter.conditions';
 import {
-  countSourcesWithFieldType,
+  countSourcesByFieldType,
   createGlobalFilter,
   getAvailableFieldTypes,
   GlobalFilterSource,
@@ -61,16 +61,17 @@ function FilterListItem({
 }
 
 function PropertyTypePicker({
-  sources,
+  types,
+  sourceCountByType,
   onSelect,
   onBack,
 }: {
-  sources: GlobalFilterSource[];
+  types: FieldType[];
+  sourceCountByType: ReadonlyMap<FieldType, number>;
   onSelect: (type: FieldType) => void;
   onBack: () => void;
 }) {
   const { t } = useTranslation();
-  const types = getAvailableFieldTypes(sources);
 
   return (
     <div className='flex flex-col gap-1' data-testid='dashboard-global-filter-property-picker'>
@@ -106,7 +107,7 @@ function PropertyTypePicker({
               <FieldTypeIcon type={type} className='text-icon-secondary' />
               <span className='min-w-0 flex-1 truncate'>{getFieldTypeName(type, t)}</span>
               <span className='shrink-0 text-xs text-text-tertiary'>
-                {sourcesText(t, countSourcesWithFieldType(sources, type))}
+                {sourcesText(t, sourceCountByType.get(type) ?? 0)}
               </span>
             </button>
           ))}
@@ -132,7 +133,7 @@ export interface GlobalFilterMenuProps {
  */
 export function GlobalFilterMenu({ filterId, startWithPicker = false, onClose }: GlobalFilterMenuProps) {
   const { t } = useTranslation();
-  const { sourceNames } = useDashboardContext();
+  const { sourceNames } = useDashboardSources();
   const sources = useDashboardFilterSources();
   const { filters, persist, addFilter, updateFilter, deleteFilter } = useGlobalFilterActions();
   const [screen, setScreen] = useState<MenuScreen>(() => {
@@ -142,7 +143,11 @@ export function GlobalFilterMenu({ filterId, startWithPicker = false, onClose }:
   const closeOnLeave = Boolean(filterId) || startWithPicker;
   const editing = screen.type === 'edit' ? filters.find((filter) => filter.id === screen.filterId) : undefined;
   const missing = screen.type === 'edit' && !editing;
-  const availableTypes = getAvailableFieldTypes(sources);
+  const sourceCountByType = useMemo(() => countSourcesByFieldType(sources), [sources]);
+  const availableTypes = useMemo(
+    () => getAvailableFieldTypes(sources, sourceCountByType),
+    [sources, sourceCountByType]
+  );
 
   const leave = useCallback(() => {
     if (closeOnLeave) {
@@ -153,10 +158,14 @@ export function GlobalFilterMenu({ filterId, startWithPicker = false, onClose }:
     setScreen({ type: 'list' });
   }, [closeOnLeave, onClose]);
 
-  // The filter was deleted (here or by a collaborator).
+  // The filter was deleted (here or by a collaborator). Returning to the list
+  // is decided while rendering, so no empty editor frame is painted.
+  if (missing && !closeOnLeave) setScreen({ type: 'list' });
+
+  // A menu opened on that filter closes instead (a side effect on the parent).
   useEffect(() => {
-    if (missing) leave();
-  }, [leave, missing]);
+    if (missing && closeOnLeave) onClose();
+  }, [closeOnLeave, missing, onClose]);
 
   const handleAdd = useCallback(
     (type: FieldType) => {
@@ -185,7 +194,14 @@ export function GlobalFilterMenu({ filterId, startWithPicker = false, onClose }:
   let body: ReactNode;
 
   if (screen.type === 'pick') {
-    body = <PropertyTypePicker sources={sources} onSelect={handleAdd} onBack={leave} />;
+    body = (
+      <PropertyTypePicker
+        types={availableTypes}
+        sourceCountByType={sourceCountByType}
+        onSelect={handleAdd}
+        onBack={leave}
+      />
+    );
   } else if (screen.type === 'edit') {
     body = editing ? (
       <GlobalFilterEditor

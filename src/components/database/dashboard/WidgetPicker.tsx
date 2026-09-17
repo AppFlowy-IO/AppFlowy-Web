@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import { getErrorMessage } from '@/utils/errors';
 
 import { WIDGET_PICKER_LAYOUTS } from './constants';
-import { useDashboardContext } from './DashboardContext';
+import { useDashboardContext, useDashboardSources } from './DashboardContext';
 import { WidgetPickerRequest } from './DashboardUiContext';
 import { CreateWidgetViewRequest } from './hooks/useCreateWidgetView';
 import { useHostViews } from './hooks/useHostViews';
@@ -92,7 +92,8 @@ function WidgetPickerContent({
   const { t } = useTranslation();
   const hostContext = useDatabaseContext();
   const database = useDatabase();
-  const { hostDatabaseId, dashboardViewId, hostViewIds, rows, sourceNames } = useDashboardContext();
+  const { hostDatabaseId, dashboardViewId, hostViewIds, rows } = useDashboardContext();
+  const { sourceNames } = useDashboardSources();
   const [tab, setTab] = useState<PickerTab>('existing');
   const [query, setQuery] = useState('');
   const [selectedDatabaseId, setSelectedDatabaseId] = useState(hostDatabaseId);

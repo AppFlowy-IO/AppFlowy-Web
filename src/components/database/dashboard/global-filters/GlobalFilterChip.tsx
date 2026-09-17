@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 
 import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
 import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
@@ -11,7 +11,13 @@ import { GlobalFilterMenu } from './GlobalFilterMenu';
 import { useGlobalFilterLabel } from './useGlobalFilterLabel';
 
 /** One dashboard filter in the bar; opens its editor. Styled like a view filter chip. */
-export function GlobalFilterChip({ filter, sources }: { filter: DashboardGlobalFilter; sources: GlobalFilterSource[] }) {
+export const GlobalFilterChip = memo(function GlobalFilterChip({
+  filter,
+  sources,
+}: {
+  filter: DashboardGlobalFilter;
+  sources: GlobalFilterSource[];
+}) {
   const [open, setOpen] = useState(false);
   const { text, active, sourceCount, sourceLabel } = useGlobalFilterLabel(filter, sources);
   const close = useCallback(() => setOpen(false), []);
@@ -71,6 +77,6 @@ export function GlobalFilterChip({ filter, sources }: { filter: DashboardGlobalF
       </PopoverContent>
     </Popover>
   );
-}
+});
 
 export default GlobalFilterChip;

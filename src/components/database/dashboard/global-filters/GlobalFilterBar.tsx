@@ -1,6 +1,7 @@
-import { useCallback, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useDashboardContextOptional } from '@/components/database/dashboard/DashboardContext';
 import { Button } from '@/components/ui/button';
@@ -11,10 +12,22 @@ import { GlobalFilterChip } from './GlobalFilterChip';
 import { GlobalFilterMenu } from './GlobalFilterMenu';
 import { useDashboardFilterSources, useGlobalFilterActions } from './useGlobalFilterActions';
 
+/** The chips; only mounted while there are filters, so an empty bar observes no source database. */
+function GlobalFilterChipList({ filters }: { filters: DashboardGlobalFilter[] }) {
+  const sources = useDashboardFilterSources();
+
+  return (
+    <>
+      {filters.map((filter) => (
+        <GlobalFilterChip key={filter.id} filter={filter} sources={sources} />
+      ))}
+    </>
+  );
+}
+
 function GlobalFilterBarContent({ className }: { className?: string }) {
   const { t } = useTranslation();
   const { filters, hasLocalChanges, canEdit, isEditing, resetLocal, saveForEverybody } = useGlobalFilterActions();
-  const sources = useDashboardFilterSources();
   const [adding, setAdding] = useState(false);
   const closeAdd = useCallback(() => setAdding(false), []);
 
@@ -25,9 +38,7 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
       data-testid='dashboard-global-filter-bar'
       className={cn('flex min-h-[36px] flex-wrap items-center gap-1.5 py-1', className)}
     >
-      {filters.map((filter) => (
-        <GlobalFilterChip key={filter.id} filter={filter} sources={sources} />
-      ))}
+      {filters.length > 0 && <GlobalFilterChipList filters={filters} />}
 
       {isEditing && canEdit && (
         <Popover modal open={adding} onOpenChange={setAdding}>
@@ -91,11 +102,11 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
  * to show (no filters, not editing, no local override). Renders nothing
  * outside a `DashboardProvider`.
  */
-export function GlobalFilterBar({ className }: { className?: string }) {
+export const GlobalFilterBar = memo(function GlobalFilterBar({ className }: { className?: string }) {
   const context = useDashboardContextOptional();
 
   if (!context) return null;
   return <GlobalFilterBarContent className={className} />;
-}
+});
 
 export default GlobalFilterBar;

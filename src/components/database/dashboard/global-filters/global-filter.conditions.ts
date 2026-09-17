@@ -134,6 +134,32 @@ export function getGlobalFilterConditions(
   }
 }
 
+// Condition labels per translator, keyed by condition list (a DateTime list
+// depends on the start / end side), so a chip label is a map lookup instead of
+// a rebuilt list.
+const conditionLabelCache = new WeakMap<Translate, Map<string, Map<number, string>>>();
+
+/** The label `getGlobalFilterConditions` gives `condition` (empty when it is not listed). */
+export function getGlobalFilterConditionText(fieldType: FieldType, condition: number, t: Translate): string {
+  let lists = conditionLabelCache.get(t);
+
+  if (!lists) {
+    lists = new Map();
+    conditionLabelCache.set(t, lists);
+  }
+
+  const key =
+    fieldType === FieldType.DateTime ? `${fieldType}:${isStartDateCondition(condition) ? 'start' : 'end'}` : `${fieldType}`;
+  let labels = lists.get(key);
+
+  if (!labels) {
+    labels = new Map(getGlobalFilterConditions(fieldType, condition, t).map((option) => [option.value, option.text]));
+    lists.set(key, labels);
+  }
+
+  return labels.get(condition) ?? '';
+}
+
 export function isDateFieldType(fieldType: FieldType) {
   return (
     fieldType === FieldType.DateTime || fieldType === FieldType.CreatedTime || fieldType === FieldType.LastEditedTime
@@ -377,10 +403,7 @@ function dateChipDescription(filter: DashboardGlobalFilter, dateFormat: string, 
 }
 
 function conditionText(filter: DashboardGlobalFilter, t: Translate) {
-  return (
-    getGlobalFilterConditions(filter.fieldType, filter.condition, t).find((option) => option.value === filter.condition)
-      ?.text ?? ''
-  );
+  return getGlobalFilterConditionText(filter.fieldType, filter.condition, t);
 }
 
 /**
@@ -457,16 +480,19 @@ export function getGlobalFilterDescription(
   }
 }
 
-/** Chip text: `Name: summary` while the filter narrows widgets, the bare name otherwise. */
+/**
+ * Chip text: `Name: summary` while the filter narrows widgets, the bare name
+ * otherwise. Pass `active` when it is already known (see `isGlobalFilterActive`).
+ */
 export function getGlobalFilterChipText(
   filter: DashboardGlobalFilter,
   description: string,
   fallbackName: string,
-  sources?: GlobalFilterSource[]
+  active: boolean = isGlobalFilterActive(filter)
 ) {
   const name = filter.name.trim() || fallbackName;
 
-  return isGlobalFilterActive(filter, sources) && description ? `${name}: ${description}` : name;
+  return active && description ? `${name}: ${description}` : name;
 }
 
 /** Localized property-type name (same strings as the property type picker). */
