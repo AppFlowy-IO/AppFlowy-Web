@@ -126,12 +126,15 @@ export function normalizeDashboardRows(rows: DashboardRow[]): DashboardRow[] {
       remaining -= 1;
     });
 
-    // Overflowing rows spill into new rows instead of losing widgets.
+    // Overflowing rows spill into new rows instead of losing widgets. Spill
+    // ids derive from the row id so re-reading the same value yields the same
+    // rows (snapshot stores compare ids).
     for (let start = 0; start < widgets.length; start += DASHBOARD_MAX_WIDGETS_PER_ROW) {
       const chunk = widgets.slice(start, start + DASHBOARD_MAX_WIDGETS_PER_ROW);
+      const chunkIndex = start / DASHBOARD_MAX_WIDGETS_PER_ROW;
 
       result.push({
-        id: start === 0 ? row.id : generateDashboardId('r'),
+        id: chunkIndex === 0 ? row.id : `${row.id}:${chunkIndex}`,
         height: clampInteger(
           row.height,
           DASHBOARD_MIN_ROW_HEIGHT,
@@ -155,13 +158,16 @@ function parseRows(value: unknown): DashboardRow[] {
   if (cached) return cached;
   const rows: DashboardRow[] = [];
 
-  raw.forEach((item) => {
+  // Entries without an id get a positional fallback id, never a random one: a
+  // Y.Array value is re-read (and re-parsed) on every snapshot read, and random
+  // ids would make every read look like a layout change.
+  raw.forEach((item, rowIndex) => {
     if (!item || typeof item !== 'object') return;
     const record = item as { id?: unknown; height?: unknown; widgets?: unknown };
     const widgetsRaw = Array.isArray(record.widgets) ? record.widgets : [];
     const widgets: DashboardWidget[] = [];
 
-    widgetsRaw.forEach((widgetRaw) => {
+    widgetsRaw.forEach((widgetRaw, index) => {
       if (!widgetRaw || typeof widgetRaw !== 'object') return;
       const widget = widgetRaw as { id?: unknown; view_id?: unknown; database_id?: unknown; width?: unknown };
       const viewId = nonEmptyString(widget.view_id);
@@ -169,7 +175,7 @@ function parseRows(value: unknown): DashboardRow[] {
 
       if (!viewId || !databaseId) return;
       widgets.push({
-        id: nonEmptyString(widget.id) ?? generateDashboardId('w'),
+        id: nonEmptyString(widget.id) ?? `w:${rowIndex}:${index}`,
         viewId,
         databaseId,
         width: clampInteger(widget.width, 1, DASHBOARD_GRID_COLUMNS, 0),
@@ -177,7 +183,7 @@ function parseRows(value: unknown): DashboardRow[] {
     });
 
     rows.push({
-      id: nonEmptyString(record.id) ?? generateDashboardId('r'),
+      id: nonEmptyString(record.id) ?? `r:${rowIndex}`,
       height: clampInteger(
         record.height,
         DASHBOARD_MIN_ROW_HEIGHT,
@@ -238,7 +244,7 @@ function parseGlobalFilters(value: unknown): DashboardGlobalFilter[] {
   if (cached) return cached;
   const filters: DashboardGlobalFilter[] = [];
 
-  raw.forEach((item) => {
+  raw.forEach((item, index) => {
     if (!item || typeof item !== 'object') return;
     const record = item as {
       id?: unknown;
@@ -254,7 +260,8 @@ function parseGlobalFilters(value: unknown): DashboardGlobalFilter[] {
     if (fieldType < 0) return;
 
     filters.push({
-      id: nonEmptyString(record.id) ?? generateDashboardId('gf'),
+      // Positional, like the row fallback ids (see `parseRows`).
+      id: nonEmptyString(record.id) ?? `gf:${index}`,
       name: typeof record.name === 'string' ? record.name : '',
       fieldType: fieldType as FieldType,
       condition: clampInteger(record.condition, 0, 1000, 0),

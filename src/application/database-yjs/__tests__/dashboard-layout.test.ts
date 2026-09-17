@@ -1,3 +1,5 @@
+import { renderHook } from '@testing-library/react';
+import { useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 
 import { YDatabase, YDatabaseView, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -252,7 +254,9 @@ describe('normalizeDashboardRows', () => {
       ['w4', 'w5'],
     ]);
     expect(result[0].id).toBe('r1');
-    expect(result[1].id).toMatch(/^r:/);
+    // Derived from the source row, so normalizing the same rows twice agrees.
+    expect(result[1].id).toBe('r1:1');
+    expect(normalizeDashboardRows(input).map((item) => item.id)).toEqual(['r1', 'r1:1']);
     expect(result.map((item) => item.height)).toEqual([480, 480]);
     expect(widths(result[0])).toEqual([3, 3, 3, 3]);
     expect(widths(result[1])).toEqual([6, 6]);
@@ -635,6 +639,75 @@ describe('readDashboardLayoutSetting', () => {
 
     expect(rows.map((item) => item.widgets.length)).toEqual([4, 4, 4]);
     rows.forEach((item) => expect(sum(widths(item))).toBe(12));
+  });
+});
+
+/**
+ * Stores the rows / filters as Y types (as a doc decoded from another client
+ * may), with entries that lack ids and a row that must spill. `toJSON()`
+ * returns a fresh array on every read, so the per-value parse cache misses.
+ */
+function storeYArrayBackedSetting(doc: Y.Doc, view: YDatabaseView) {
+  doc.transact(() => {
+    const layouts = new Y.Map();
+    const setting = new Y.Map();
+    const rows = new Y.Array<unknown>();
+    const filters = new Y.Array<unknown>();
+
+    view.set(YjsDatabaseKey.layout_settings, layouts as never);
+    layouts.set(DASHBOARD_LAYOUT_KEY, setting);
+    setting.set(YjsDatabaseKey.dashboard_rows, rows);
+    setting.set(YjsDatabaseKey.dashboard_global_filters, filters);
+    rows.push([
+      {
+        height: 480,
+        widgets: Array.from({ length: 5 }, (_, index) => ({ view_id: `v${index}`, database_id: 'db', width: 3 })),
+      },
+      { id: 'r1', widgets: [{ id: 'w-kept', view_id: 'v5', database_id: 'db', width: 12 }] },
+    ]);
+    filters.push([
+      { name: 'Status', ty: FieldType.RichText, condition: 2, content: 'done', targets: { db: 'status' } },
+    ]);
+  });
+}
+
+describe('fallback ids of Y-backed settings', () => {
+  it('are positional, so reading the same value twice gives equal rows and filters', () => {
+    const { doc, database, view } = createFixture();
+
+    storeYArrayBackedSetting(doc, view);
+    const first = readDashboardLayoutSetting(database, VIEW_ID);
+    const second = readDashboardLayoutSetting(database, VIEW_ID);
+
+    expect(first.rows.map((item) => item.id)).toEqual(['r:0', 'r:0:1', 'r1']);
+    expect(first.rows.map((item) => item.widgets.map((entry) => entry.id))).toEqual([
+      ['w:0:0', 'w:0:1', 'w:0:2', 'w:0:3'],
+      ['w:0:4'],
+      ['w-kept'],
+    ]);
+    expect(first.globalFilters.map((filter) => filter.id)).toEqual(['gf:0']);
+    expect(sameDashboardRows(first.rows, second.rows)).toBe(true);
+    expect(sameDashboardGlobalFilters(first.globalFilters, second.globalFilters)).toBe(true);
+  });
+
+  it('keep the layout store snapshot stable, so useSyncExternalStore settles', () => {
+    const { doc, view } = createFixture();
+
+    storeYArrayBackedSetting(doc, view);
+    const store = createDashboardLayoutStore(doc, VIEW_ID);
+    const snapshot = store.getSnapshot();
+
+    expect(store.getSnapshot()).toBe(snapshot);
+    expect(store.getSnapshot()).toBe(snapshot);
+
+    const renders = jest.fn();
+    const { result } = renderHook(() => {
+      renders();
+      return useSyncExternalStore(store.subscribe, store.getSnapshot);
+    });
+
+    expect(result.current).toBe(snapshot);
+    expect(renders).toHaveBeenCalledTimes(1);
   });
 });
 
