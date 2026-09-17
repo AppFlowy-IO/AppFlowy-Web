@@ -506,7 +506,31 @@ When(
 
       await expect(textQuestion).toBeVisible({ timeout: 10000 });
       await textQuestion.locator('input, textarea').first().fill(value);
-      await PublicFormSelectors.submitButton(respondent).click();
+      const submitButton = PublicFormSelectors.submitButton(respondent);
+
+      // Five rapid responses can exhaust the server's burst allowance. Retry
+      // only transient admission limits, keeping this response's answers and
+      // idempotency key while the UI enforces the server's retry cooldown.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await expect(submitButton).toBeEnabled({ timeout: 15000 });
+        const [response] = await Promise.all([
+          respondent.waitForResponse(
+            (response) =>
+              response.request().method() === 'POST' &&
+              /\/api\/workspace\/public-form\/[^/]+\/submit$/.test(new URL(response.url()).pathname)
+          ),
+          submitButton.click(),
+        ]);
+
+        if (response.status() !== 429) {
+          expect(response.status()).toBe(200);
+          break;
+        }
+
+        expect(await response.json()).toMatchObject({ error: 'rate_limited' });
+        expect(attempt, 'Form submission remained rate-limited after three attempts').toBeLessThan(2);
+      }
+
       await expect(PublicFormSelectors.confirmation(respondent)).toBeVisible({
         timeout: 15000,
       });
@@ -622,12 +646,25 @@ Then('authentication will return to the public form', async ({ page }) => {
 
   const loginUrl = new URL(respondent.url());
   const expectedFormUrl = new URL(state.capturedUrl);
-  const storedRedirectTo = await respondent.evaluate(() => localStorage.getItem('redirectTo'));
+  const { storedRedirectTo, continuation } = await respondent.evaluate(() => ({
+    storedRedirectTo: localStorage.getItem('redirectTo'),
+    continuation: JSON.parse(sessionStorage.getItem('publicFormAuthContinuation') ?? 'null') as {
+      flowId: string;
+      redirectTo: string;
+      expiresAt: number;
+    } | null,
+  }));
 
   expect(loginUrl.pathname).toBe('/login');
   expect(loginUrl.searchParams.get('force')).toBe('true');
   expect(loginUrl.searchParams.has('redirectTo')).toBe(false);
-  expect(storedRedirectTo).toBe(`${expectedFormUrl.pathname}${expectedFormUrl.search}${expectedFormUrl.hash}`);
+  // Form bearer links use an expiring, tab-scoped continuation. The login
+  // URL carries only its opaque flow ID, and persistent storage stays empty.
+  expect(storedRedirectTo).toBeNull();
+  expect(continuation?.flowId).toMatch(/^[a-f0-9]{32}$/);
+  expect(loginUrl.searchParams.get('formAuth')).toBe(continuation?.flowId);
+  expect(continuation?.redirectTo).toBe(`${expectedFormUrl.pathname}${expectedFormUrl.search}${expectedFormUrl.hash}`);
+  expect(continuation?.expiresAt).toBeGreaterThan(Date.now());
 });
 
 Then('the public form shows the closed page', async ({ page }) => {

@@ -12,6 +12,10 @@ const mockAddPage = jest.fn();
 const mockAddView = jest.fn();
 let mockWorkspaceId = '';
 
+jest.mock('@/application/constants', () => ({
+  ...jest.requireActual('@/application/constants'),
+  EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED: true,
+}));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key }),
 }));

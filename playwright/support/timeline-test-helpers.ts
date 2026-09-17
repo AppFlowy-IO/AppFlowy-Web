@@ -5,7 +5,7 @@ import { TimelineLayout } from '../../src/application/database-yjs/database.type
 import { calendarDraftEditor, calendarDraftTitle } from './calendar-placeholder-helpers';
 import { loginAndCreateCalendar } from './calendar-test-helpers';
 import { DatabaseViewSelectors, TimelineSelectors } from './selectors';
-import { mockProSubscription } from './subscription-test-helpers';
+import { grantTestProSubscription, mockProSubscription } from './subscription-test-helpers';
 
 /** Column width of the Month preset (`TIMELINE_SCALE_PRESETS[Month].columnWidth`). */
 export const MONTH_COLUMN_WIDTH = 36;
@@ -56,6 +56,7 @@ export async function loginAndCreateCalendarWithRows(
 ) {
   await mockProSubscription(page);
   await loginAndCreateCalendar(page, request, email);
+  grantTestProSubscription(page);
   for (const row of rows) {
     await createCalendarEvent(page, row.offsetDays, row.title);
   }
@@ -81,6 +82,28 @@ export async function barBox(page: Page, title: string): Promise<BarBox> {
 
   if (!box) throw new Error(`Bar "${title}" is not visible`);
   return box;
+}
+
+/** Leave room for a drag without triggering the canvas's edge autoscroll. */
+export async function fitBarsInCanvas(page: Page, titles: string[], extraRight = 0) {
+  const scroller = TimelineSelectors.view(page).locator('.appflowy-scroller').first();
+  const viewport = await scroller.boundingBox();
+  const table = await page.getByTestId('timeline-table-viewport').first().boundingBox();
+  const boxes = await Promise.all(titles.map((title) => barBox(page, title)));
+
+  if (!viewport || !table) throw new Error('Timeline canvas is not visible');
+  const left = Math.min(...boxes.map((box) => box.x));
+  const right = Math.max(...boxes.map((box) => box.x + box.width)) + extraRight;
+  const visibleLeft = viewport.x + table.width + 40;
+  const visibleRight = viewport.x + viewport.width - 40;
+  const delta = right > visibleRight ? right - visibleRight : Math.min(0, left - visibleLeft);
+
+  if (delta !== 0) {
+    await scroller.evaluate((element, delta) => {
+      element.scrollLeft += delta;
+    }, delta);
+    await expect.poll(async () => (await barBox(page, titles[0])).x).toBeCloseTo(boxes[0].x - delta, 0);
+  }
 }
 
 /** Press, travel `dx` pixels in small steps (crossing the drag threshold), release. */
@@ -127,7 +150,13 @@ export async function readBarSamples(page: Page): Promise<number[]> {
 }
 
 export async function dragBarBy(page: Page, title: string, dx: number) {
-  const box = await barBox(page, title);
+  const bar = TimelineSelectors.barButton(page, title);
+  const label = bar.getByText(title, { exact: true });
+  // Wide bars can have editable property chips at their center. Drag the
+  // title instead; icon-only bars still use the center of the bar itself.
+  const box = (await label.count()) ? await label.boundingBox() : await barBox(page, title);
+
+  if (!box) throw new Error(`Bar "${title}" is not visible`);
 
   await dragBy(page, box.x + box.width / 2, box.y + box.height / 2, dx);
 }

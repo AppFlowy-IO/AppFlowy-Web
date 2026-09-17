@@ -7,6 +7,7 @@ import {
   type BackgroundRowDocChange,
   useBackgroundRowDocLoader,
 } from '@/application/database-yjs/hooks/useBackgroundRowDocLoader';
+import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { YDatabaseRowOrders, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 import { createRowDoc } from '../../__tests__/test-helpers';
@@ -67,6 +68,7 @@ function BackgroundLoader({ scope, suspend = false }: { scope: string; suspend?:
 
 describe('useBackgroundRowDocLoader', () => {
   it('retries realtime hydration even when a detached seed is already readable', async () => {
+    jest.useFakeTimers();
     const { databaseDoc, databaseId, viewId } = createDatabaseFixture();
     const seed = createRowDoc('initial-row', databaseId, {});
     const live = new Y.Doc() as YDoc;
@@ -92,13 +94,24 @@ describe('useBackgroundRowDocLoader', () => {
       wrapper,
     });
 
-    await waitFor(() => expect(result.current.cachedRowDocs['initial-row']).toBe(seed));
-    await waitFor(() => expect(ensureRow).toHaveBeenCalledTimes(2));
-    expect(ensureRow).toHaveBeenLastCalledWith('initial-row');
-    unmount();
-    live.destroy();
-    seed.destroy();
-    databaseDoc.destroy();
+    try {
+      await waitFor(() => expect(result.current.cachedRowDocs['initial-row']).toBe(seed));
+      expect(ensureRow).toHaveBeenCalledTimes(1);
+
+      // The default waitFor timeout equals the first retry delay. Advance the
+      // backoff and the following queue yield without racing the wall clock.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(ROW_SYNC_RETRY_DELAYS_MS[0] + 1);
+      });
+      expect(ensureRow).toHaveBeenCalledTimes(2);
+      expect(ensureRow).toHaveBeenLastCalledWith('initial-row');
+    } finally {
+      unmount();
+      live.destroy();
+      seed.destroy();
+      databaseDoc.destroy();
+      jest.useRealTimers();
+    }
   });
 
   it('stops connecting offscreen rows after the live consumer unmounts', async () => {

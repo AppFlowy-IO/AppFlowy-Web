@@ -2,7 +2,7 @@ import { ReactNode, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { FORM_VIEW_CREATION_ENABLED } from '@/application/constants';
+import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { createDatabaseFeedPageViaGrid } from '@/application/database-yjs/feed-layout';
 import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gallery-layout';
 import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
@@ -44,6 +44,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
   const currentWorkspaceId = useCurrentWorkspaceId();
   const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
     workspaceId: currentWorkspaceId,
+    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
   });
   const lastChildViewId = view.children?.[view.children.length - 1]?.view_id;
   const handleAddPage = useCallback(
@@ -225,16 +226,20 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
           void handleAddPage(ViewLayout.Calendar, t('document.plugins.database.newDatabase'));
         },
       },
-      {
-        label: t('timeline.menuName', { defaultValue: 'Timeline' }),
-        icon: <ViewIcon layout={ViewLayout.Timeline} size={'medium'} />,
-        testId: 'add-timeline-page-button',
-        disabled: Boolean(timelineDisabledReason),
-        tooltip: timelineDisabledReason,
-        onSelect: () => {
-          void handleAddPage(ViewLayout.Timeline, t('document.plugins.database.newDatabase'));
-        },
-      },
+      ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
+        ? [
+            {
+              label: t('timeline.menuName', { defaultValue: 'Timeline' }),
+              icon: <ViewIcon layout={ViewLayout.Timeline} size={'medium'} />,
+              testId: 'add-timeline-page-button',
+              disabled: Boolean(timelineDisabledReason),
+              tooltip: timelineDisabledReason,
+              onSelect: () => {
+                void handleAddPage(ViewLayout.Timeline, t('document.plugins.database.newDatabase'));
+              },
+            },
+          ]
+        : []),
       ...(aiEnabled
         ? [
             {
@@ -255,7 +260,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
           void handleAddPage(ViewLayout.Chart, t('document.plugins.database.newDatabase'));
         },
       },
-      ...(FORM_VIEW_CREATION_ENABLED
+      ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
         ? [
             {
               label: t('form.menuName'),

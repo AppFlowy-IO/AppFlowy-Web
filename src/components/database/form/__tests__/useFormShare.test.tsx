@@ -783,36 +783,74 @@ describe('useFormShare mutations', () => {
     warning.mockRestore();
   });
 
-  it('backs off only between view-not-found attempts, with no delay after the final attempt', async () => {
+  it('rechecks authorization after a transient permission change before minting a share', async () => {
     jest.useFakeTimers();
-    const warning = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const debug = jest.spyOn(console, 'debug').mockImplementation(() => undefined);
 
     try {
-      mockGetFormShare.mockRejectedValue({
-        code: ERROR_CODE.RECORD_NOT_FOUND,
-        message: 'Form view not found',
-      });
+      mockGetFormShare
+        .mockRejectedValueOnce({
+          code: ERROR_CODE.SERVICE_TEMPORARY_UNAVAILABLE,
+          message: 'form authoring permission changed while the request was in flight; retry',
+        })
+        .mockResolvedValueOnce(null);
+      mockMintFormShare.mockResolvedValueOnce(shareInfo('view-a'));
 
       const { result } = renderHook(() => useFormShare());
 
       await act(flushMicrotasks);
-      expect(mockGetFormShare).toHaveBeenCalledTimes(1);
+      expect(result.current.isLoading).toBe(true);
+      expect(mockMintFormShare).not.toHaveBeenCalled();
 
-      for (let attempt = 1; attempt < 5; attempt += 1) {
-        await act(async () => {
-          jest.runOnlyPendingTimers();
-          await flushMicrotasks();
-        });
-      }
+      await act(async () => {
+        jest.runOnlyPendingTimers();
+        await flushMicrotasks();
+      });
 
-      expect(mockGetFormShare).toHaveBeenCalledTimes(5);
-      expect(result.current.error).toBe('Form view not found');
-      expect(jest.getTimerCount()).toBe(0);
+      expect(mockGetFormShare).toHaveBeenCalledTimes(2);
+      expect(mockMintFormShare).toHaveBeenCalledTimes(1);
+      expect(result.current.info?.token).toBe('token-view-a');
+      expect(result.current.error).toBeNull();
     } finally {
-      warning.mockRestore();
       debug.mockRestore();
       jest.useRealTimers();
     }
   });
+
+  it.each([ERROR_CODE.RECORD_NOT_FOUND, ERROR_CODE.SERVICE_TEMPORARY_UNAVAILABLE])(
+    'bounds bootstrap retries for code %s, with no delay after the final attempt',
+    async (code) => {
+      jest.useFakeTimers();
+      const warning = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const debug = jest.spyOn(console, 'debug').mockImplementation(() => undefined);
+
+      try {
+        mockGetFormShare.mockRejectedValue({
+          code,
+          message: 'Form temporarily unavailable',
+        });
+
+        const { result } = renderHook(() => useFormShare());
+
+        await act(flushMicrotasks);
+        expect(mockGetFormShare).toHaveBeenCalledTimes(1);
+
+        for (let attempt = 1; attempt < 5; attempt += 1) {
+          await act(async () => {
+            jest.runOnlyPendingTimers();
+            await flushMicrotasks();
+          });
+        }
+
+        expect(mockGetFormShare).toHaveBeenCalledTimes(5);
+        expect(result.current.error).toBe('Form temporarily unavailable');
+        expect(mockMintFormShare).not.toHaveBeenCalled();
+        expect(jest.getTimerCount()).toBe(0);
+      } finally {
+        warning.mockRestore();
+        debug.mockRestore();
+        jest.useRealTimers();
+      }
+    }
+  );
 });

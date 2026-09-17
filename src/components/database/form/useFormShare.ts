@@ -292,8 +292,12 @@ function validatedShareUrl(info: FormShareInfo | null): string {
   }
 }
 
-function isViewPropagationError(err: unknown): boolean {
+function isBootstrapRetryableError(err: unknown): boolean {
   const e = err as { code?: number; message?: string } | null | undefined;
+
+  // The server asks us to retry when a permission generation changes during
+  // its checks. Start again with GET so every attempt rechecks authorization.
+  if (e?.code === ERROR_CODE.SERVICE_TEMPORARY_UNAVAILABLE) return true;
 
   // RECORD_NOT_FOUND (-2) is the canonical "the cloud doesn't see this view
   // yet" signal. Axios already retries transport failures, so code -1 must be
@@ -765,7 +769,7 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
 
         lastError = outcome.error;
 
-        if (!isViewPropagationError(outcome.error)) {
+        if (!isBootstrapRetryableError(outcome.error)) {
           // Non-transient error (auth, validation, 5xx, etc.) — break out so
           // we don't burn the user's time on a retry loop that cannot help.
           break;

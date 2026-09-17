@@ -33,12 +33,12 @@ const mockUpdatePage = jest.fn();
 const mockFlush = jest.fn();
 const mockScheduleDeferredCleanup = jest.fn();
 const mockMenuSelectPreventDefault = jest.fn();
-let mockFormViewCreationEnabled = false;
+let mockExperimentalDatabaseViewCreationEnabled = false;
 
 jest.mock('@/application/constants', () => ({
   ...jest.requireActual('@/application/constants'),
-  get FORM_VIEW_CREATION_ENABLED() {
-    return mockFormViewCreationEnabled;
+  get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
+    return mockExperimentalDatabaseViewCreationEnabled;
   },
 }));
 
@@ -218,7 +218,7 @@ function createLinkedListUpdate(databaseDoc: YDoc): number[] {
 describe('AddPageActions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockFormViewCreationEnabled = false;
+    mockExperimentalDatabaseViewCreationEnabled = false;
     mockAddPage.mockReset();
     mockAddPage.mockResolvedValue({ view_id: 'chat-id' });
     mockUpdateChatSettings.mockResolvedValue(undefined);
@@ -235,10 +235,11 @@ describe('AddPageActions', () => {
     mockUpdatePage.mockResolvedValue(undefined);
   });
 
-  it('hides Form while form creation is disabled on web', () => {
+  it('hides Form and Timeline while experimental database view creation is disabled on web', () => {
     renderActions(view({ view_id: 'parent-id' }));
 
     expect(screen.queryByTestId('add-form-button')).toBeNull();
+    expect(screen.queryByTestId('add-timeline-page-button')).toBeNull();
     expect(screen.getByTestId('add-grid-button')).toBeTruthy();
     expect(screen.getByTestId('add-list-button')).toBeTruthy();
     expect(mockAddPage).not.toHaveBeenCalled();
@@ -250,7 +251,7 @@ describe('AddPageActions', () => {
       children: [view({ view_id: 'last-child-id' })],
     });
 
-    mockFormViewCreationEnabled = true;
+    mockExperimentalDatabaseViewCreationEnabled = true;
     mockAddPage.mockResolvedValueOnce({ view_id: 'form-view-id', database_id: 'database-id' });
     renderActions(parent);
 
@@ -556,6 +557,7 @@ describe('AddPageActions', () => {
   it('shows the workspace plan error without navigating when Timeline creation is rejected', async () => {
     const message = 'Creating a Timeline view requires an active Pro plan for this workspace.';
 
+    mockExperimentalDatabaseViewCreationEnabled = true;
     mockAddPage.mockRejectedValueOnce({ code: 1090, message });
     renderActions(view({ view_id: 'space-id', extra: { is_space: true } }));
     fireEvent.click(screen.getByTestId('add-timeline-page-button'));

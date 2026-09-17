@@ -76,10 +76,10 @@ export async function addFormViewToTabBar(page: Page): Promise<void> {
  * `form_from_tab_bar.feature` asserts on.
  *
  * NOTE: the `Form` option is only rendered while
- * `FORM_VIEW_CREATION_ENABLED` (src/application/constants.ts) is `true`.
- * Web currently ships with it `false` (legacy Desktop clients cannot open
- * web-created Form views), so the form BDD features are excluded from CI
- * and will fail locally until the flag is flipped back on.
+ * `EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED` (src/application/constants.ts) is `true`.
+ * Normal web builds keep it disabled for compatibility with Desktop versions
+ * before 0.14.4. CI builds enable it explicitly. For local browser tests, start
+ * or build the app with `EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED=true`.
  */
 export async function addFormViewToTabBarRaw(page: Page): Promise<void> {
   const addBtn = DatabaseViewSelectors.addViewButton(page);
@@ -176,9 +176,10 @@ export async function toggleQuestionMenuItem(page: Page, questionIndex: number, 
   // menu surface so we don't match a stray duplicate (e.g. the
   // tab-bar `+` picker if it's still mounted).
   const menu = page.locator('[role="menu"]').first();
+  const role = ['Required', 'Description', 'Long answer'].includes(label) ? 'menuitemcheckbox' : 'menuitem';
 
   await expect(menu).toBeVisible({ timeout: 5000 });
-  await menu.getByRole('menuitem', { name: label }).click();
+  await menu.getByRole(role, { name: label, exact: true }).click();
   // Toggle rows preventDefault — close the dropdown explicitly so the
   // next interaction (e.g. clicking the add-question button) isn't
   // blocked by the menu's outside-click guard.
