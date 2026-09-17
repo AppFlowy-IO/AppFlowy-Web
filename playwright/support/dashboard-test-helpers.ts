@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Yjs values read inside page.evaluate are untyped. */
 /**
  * Dashboard view (DatabaseViewLayout.Dashboard = 9) BDD helpers.
  *
@@ -519,6 +520,7 @@ export async function installDashboardTestBridge(context: BrowserContext) {
       contexts.push(ctx);
       if (contexts.length > 300) contexts.splice(0, contexts.length - 300);
     };
+
     const install = () => {
       Object.defineProperty(win, '__TEST_DATABASE_CONTEXT__', {
         configurable: true,
