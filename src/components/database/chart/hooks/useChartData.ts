@@ -1,5 +1,6 @@
 import dayjs, { Dayjs } from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import * as Y from 'yjs';
 
 import {
   useDatabaseContext,
@@ -784,6 +785,44 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     return map;
   }, [selectOptions]);
 
+  // Row docs are mutated in place: editing a cell the chart reads (a value
+  // typed into a table next to this chart on a dashboard, or a collaborator's
+  // edit) changes neither `rowOrders` nor `rowMetas`. Observe the row data and
+  // bump a clock, at most once per frame, so the derivations below rerun.
+  const [rowDataClock, setRowDataClock] = useState(0);
+
+  useEffect(() => {
+    if (!needsRowDocs || !rowsLoaded || !rowOrders || !rowMetas) return;
+    let frame: number | null = null;
+    const handleChange = (events: Y.YEvent[]) => {
+      const touchesRowData = events.some(
+        (event) =>
+          event.path[0] === YjsEditorKey.database_row ||
+          (event.path.length === 0 && (event as Y.YMapEvent<unknown>).keysChanged?.has(YjsEditorKey.database_row))
+      );
+
+      if (!touchesRowData || frame !== null) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        setRowDataClock((clock) => clock + 1);
+      });
+    };
+
+    const roots = rowOrders.flatMap((row) => {
+      const root = rowMetas[row.id]?.getMap(YjsEditorKey.data_section);
+
+      return root ? [root] : [];
+    });
+
+    roots.forEach((root) => root.observeDeep(handleChange));
+    return () => {
+      roots.forEach((root) => root.unobserveDeep(handleChange));
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+    // `rowIdsKey` stands for `rowOrders`, whose identity changes on unrelated renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsRowDocs, rowsLoaded, rowIdsKey, rowMetas]);
+
   // === Render-time derivation ===
   const isLoading = !rowsLoaded;
 
@@ -794,8 +833,9 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   const numberRowMetas = needsRowDocs ? rowMetas : null;
   const numberChartDataRef = useRef<ChartDataItem[]>(EMPTY_CHART_DATA);
   const numberChartData = useMemo<ChartDataItem[]>(() => {
-    // Yjs mutates field maps in place (Y field renamed or retyped).
+    // Yjs mutates field maps (Y field renamed or retyped) and row docs in place.
     void fieldsClock;
+    void rowDataClock;
 
     if (!isNumberChart || !rowsLoaded) return EMPTY_CHART_DATA;
     const next = computeNumberChartData({
@@ -808,16 +848,17 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     if (chartDataEqual(numberChartDataRef.current, next)) return numberChartDataRef.current;
     numberChartDataRef.current = next;
     return next;
-  }, [isNumberChart, rowsLoaded, aggregationType, yAxisField, rowOrders, numberRowMetas, fieldsClock]);
+  }, [isNumberChart, rowsLoaded, aggregationType, yAxisField, rowOrders, numberRowMetas, fieldsClock, rowDataClock]);
 
   // Pure derivation. Yjs hydrates row docs in micro-batches, so this can
   // recompute many times during a single page load — but downstream chart
   // widgets are wrapped in `React.memo(..., chartDataEqual)`, so re-renders
   // are skipped when the resulting bars are unchanged.
   const groupedChartData = useMemo<ChartDataItem[]>(() => {
-    // Yjs mutates field maps in place, so their identity cannot invalidate this
-    // memo after a schema-only field-type switch.
+    // Yjs mutates field maps and row docs in place, so their identity cannot
+    // invalidate this memo after a schema-only change or a cell edit.
     void fieldsClock;
+    void rowDataClock;
 
     if (isNumberChart || !rowsLoaded) return EMPTY_CHART_DATA;
 
@@ -843,6 +884,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     fieldType,
     fields,
     fieldsClock,
+    rowDataClock,
     optionIdToName,
     colors,
   ]);

@@ -33,7 +33,9 @@ import {
   YDatabaseField,
   YDatabaseFields,
   YDatabaseFieldTypeOption,
+  YDatabaseRow,
   YjsDatabaseKey,
+  YjsEditorKey,
   YMapFieldTypeOption,
 } from '@/application/types';
 
@@ -143,7 +145,7 @@ describe('useChartData Number chart', () => {
     (useRowMap as jest.Mock).mockReturnValue(rowMetas);
     (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow });
 
-    return { amountField, ensureRow };
+    return { amountField, ensureRow, rowMetas };
   }
 
   const baseSettings: ChartLayoutSettings = {
@@ -267,6 +269,27 @@ describe('useChartData Number chart', () => {
     rerender({ settings });
     await waitFor(() => expect(result.current.numberValue).toBe(4));
     expect(result.current.chartData).not.toBe(data);
+  });
+
+  it('recomputes when a summed cell is edited in place', async () => {
+    const settings: ChartLayoutSettings = {
+      ...baseSettings,
+      aggregationType: ChartAggregationType.Sum,
+      yFieldId: amountFieldId,
+    };
+    const { rowMetas } = setup(settings, ['r1', 'r2'], { r1: '10', r2: '5' });
+
+    const { result } = renderHook(() => useChartData({ settings }));
+
+    await waitFor(() => expect(result.current.numberValue).toBe(15));
+
+    act(() => {
+      const row = rowMetas.r1.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+      row.get(YjsDatabaseKey.cells).get(amountFieldId).set(YjsDatabaseKey.data, '40');
+    });
+
+    await waitFor(() => expect(result.current.numberValue).toBe(45));
   });
 
   it('returns a single zero item when no rows match', async () => {
