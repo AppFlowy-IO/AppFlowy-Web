@@ -63,12 +63,16 @@ export async function loginAndCreateCalendarWithRows(
   await page.waitForTimeout(1500);
 }
 
-/** Add a Timeline view from the view tabs' + menu and wait for it to render. */
+/** Add a Timeline view and select Month for the day-based interaction fixtures. */
 export async function addTimelineView(page: Page, expectedBars: number) {
   await DatabaseViewSelectors.addViewButton(page).click();
   await expect(TimelineSelectors.addViewOption(page)).toBeEnabled();
   await TimelineSelectors.addViewOption(page).click();
   await expect(TimelineSelectors.view(page)).toBeVisible({ timeout: 30_000 });
+  // Server versions can initialize the saved scale to Hours. These fixtures
+  // drag all-day bars by MONTH_COLUMN_WIDTH, so select their scale explicitly.
+  await chooseTimelineZoom(page, TimelineLayout.Month);
+  await expect(TimelineSelectors.zoomTrigger(page)).toHaveText('Month');
   await expect(TimelineSelectors.bars(page)).toHaveCount(expectedBars, { timeout: 15_000 });
 }
 
