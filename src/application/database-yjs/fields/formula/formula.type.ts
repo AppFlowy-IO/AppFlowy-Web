@@ -33,6 +33,8 @@ export interface FormulaCellResult {
   rawBoolean?: boolean;
   /** A parse, type or evaluation error message; the cell shows an error state. */
   error?: string;
+  /** A missing reference, including one reached through another formula. */
+  missingPropertyRef?: string;
 }
 
 export interface FormulaCellDisplayOptions {

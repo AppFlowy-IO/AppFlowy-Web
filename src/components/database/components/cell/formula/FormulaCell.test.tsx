@@ -1,5 +1,4 @@
-import { render, screen } from '@testing-library/react';
-
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import dayjs from 'dayjs';
 
 import { FormulaCell as FormulaCellType } from '@/application/database-yjs/cell.type';
@@ -108,6 +107,64 @@ describe('FormulaCell', () => {
     expect(screen.getByTestId('formula-cell-error-r1-f1').textContent).toContain('Error');
   });
 
+  it('explains missing references and provides an edit action without triggering the containing row', async () => {
+    const setEditing = jest.fn();
+    const onRowClick = jest.fn();
+
+    render(
+      <div onClick={onRowClick}>
+        <FormulaCell
+          cell={createCell({
+            data: '',
+            resultType: 'any',
+            rawNumeric: undefined,
+            error: 'Unknown property "deleted-id" [1,1]',
+            missingPropertyRef: 'deleted-id',
+          })}
+          rowId={'r1'}
+          fieldId={'f1'}
+          wrap={false}
+          setEditing={setEditing}
+        />
+      </div>
+    );
+
+    const error = screen.getByTestId('formula-cell-error-r1-f1');
+
+    expect(error.textContent).toBe('Missing property');
+    fireEvent.focus(error);
+    expect(
+      within(await screen.findByRole('tooltip')).getByText(
+        'A property used by this formula is missing. It may have been deleted.'
+      )
+    ).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit formula' }));
+    expect(setEditing).toHaveBeenCalledWith(true);
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('shows the missing-property state without an edit action in a read-only cell', () => {
+    render(
+      <FormulaCell
+        cell={createCell({
+          data: '',
+          resultType: 'any',
+          rawNumeric: undefined,
+          error: 'Unknown property "deleted-id"',
+          missingPropertyRef: 'deleted-id',
+        })}
+        rowId={'r1'}
+        fieldId={'f1'}
+        wrap={false}
+        setEditing={jest.fn()}
+        readOnly
+      />
+    );
+
+    expect(screen.getByTestId('formula-cell-error-r1-f1').textContent).toBe('Missing property');
+    expect(screen.queryByRole('button', { name: 'Edit formula' })).toBeNull();
+  });
+
   it('shows the placeholder only while the formula is blank', () => {
     const { rerender } = render(
       <FormulaCell
@@ -132,7 +189,7 @@ describe('FormulaCell', () => {
     expect(screen.getByTestId('formula-cell-r1-f1').textContent).toBe('');
   });
 
-  it('shows dates in the viewer\'s date and time formats', () => {
+  it("shows dates in the viewer's date and time formats", () => {
     const start = dayjs('2024-03-10T09:30:00').valueOf();
     const cell = createCell({
       resultType: 'date',
@@ -162,7 +219,9 @@ describe('FormulaCell', () => {
   });
 
   it('keeps the stored text for results without dates', () => {
-    render(<FormulaCell cell={createCell({ data: '$42', value: undefined })} rowId={'r1'} fieldId={'f1'} wrap={false} />);
+    render(
+      <FormulaCell cell={createCell({ data: '$42', value: undefined })} rowId={'r1'} fieldId={'f1'} wrap={false} />
+    );
 
     expect(screen.getByTestId('formula-cell-r1-f1').textContent).toBe('$42');
   });

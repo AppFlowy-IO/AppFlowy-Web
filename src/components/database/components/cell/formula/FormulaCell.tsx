@@ -58,6 +58,7 @@ export function FormulaCell({
 }: CellProps<FormulaCellType>) {
   const { t } = useTranslation();
   const value = useFormulaDisplayText(cell);
+  const isMissingProperty = cell?.missingPropertyRef !== undefined;
   const isBoolean = cell?.resultType === 'boolean' && !cell.error;
   const visualization = cell?.visualization;
   const canVisualize =
@@ -84,12 +85,24 @@ export function FormulaCell({
           <span
             className={'flex min-w-0 items-center gap-1 text-text-error'}
             data-testid={`formula-cell-error-${rowId}-${fieldId}`}
+            tabIndex={0}
           >
             <WarningSvg className={'h-4 w-4 shrink-0'} />
-            <span className={'truncate'}>{t('grid.formula.error', { defaultValue: 'Error' })}</span>
+            <span className={'truncate'}>
+              {isMissingProperty
+                ? t('grid.formula.missingProperty', { defaultValue: 'Missing property' })
+                : t('grid.formula.error', { defaultValue: 'Error' })}
+            </span>
           </span>
         </TooltipTrigger>
         <TooltipContent side={'top'} className={'max-w-[320px] whitespace-pre-wrap break-words'}>
+          {isMissingProperty ? (
+            <span>
+              {t('grid.formula.missingPropertyDescription', {
+                defaultValue: 'A property used by this formula is missing. It may have been deleted.',
+              })}
+            </span>
+          ) : null}
           {cell.error}
         </TooltipContent>
       </Tooltip>
@@ -130,6 +143,20 @@ export function FormulaCell({
       )}
     >
       {content}
+      {cell?.error && isMissingProperty && !readOnly && setEditing ? (
+        <button
+          type={'button'}
+          className={'shrink-0 text-xs text-text-action underline'}
+          onMouseDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            setEditing(true);
+          }}
+        >
+          {t('grid.formula.editFormula', { defaultValue: 'Edit formula' })}
+        </button>
+      ) : null}
       {editing && !readOnly ? (
         <Suspense fallback={null}>
           <FormulaEditorDialog fieldId={fieldId} rowId={rowId} open={editing} onOpenChange={handleOpenChange} />

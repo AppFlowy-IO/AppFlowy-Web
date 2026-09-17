@@ -3243,6 +3243,7 @@ export function useFormulaCellValue({
       rawBoolean: result.rawBoolean,
       rawDate: result.rawDate,
       error: result.error,
+      missingPropertyRef: result.missingPropertyRef,
       isBlank: typeOption.formula.trim() === '',
       numberFormat: typeOption.format,
       visualization: parseFormulaVisualizationOption(typeOption),

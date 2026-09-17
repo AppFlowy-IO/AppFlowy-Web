@@ -7,11 +7,14 @@ export interface SourcePosition {
 
 export class FormulaError extends Error {
   readonly position?: SourcePosition;
+  /** Unresolved prop() argument, preserved through dependent formula errors. */
+  readonly missingPropertyRef?: string;
 
-  constructor(message: string, position?: SourcePosition) {
+  constructor(message: string, position?: SourcePosition, missingPropertyRef?: string) {
     super(message);
     this.name = 'FormulaError';
     this.position = position;
+    this.missingPropertyRef = missingPropertyRef;
   }
 
   /** "Unknown function foo. [1,4]" */

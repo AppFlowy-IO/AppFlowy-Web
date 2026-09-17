@@ -1,4 +1,5 @@
 import { FieldType } from '@/application/database-yjs/database.type';
+import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 
 import { FormulaNode } from './ast';
 import { formulaTypeOfField } from './cell-values';
@@ -70,7 +71,19 @@ export function compileFormula(
   const getPropType = (ref: string, position: SourcePosition): FormulaType => {
     const entry = resolveFormulaField(schema, ref);
 
-    if (!entry) throw new FormulaError(`Unknown property "${ref}"`, position);
+    if (!entry) throw new FormulaError(`Unknown property "${ref}"`, position, ref);
+    if (entry.type === FieldType.Rollup) {
+      const relationId = parseRollupTypeOption(entry.field)?.relation_field_id;
+
+      if (relationId && resolveFormulaField(schema, relationId)?.id !== relationId) {
+        throw new FormulaError(
+          `Property "${entry.name}" uses a missing relation property "${relationId}"`,
+          position,
+          relationId
+        );
+      }
+    }
+
     if (entry.type !== FieldType.Formula) return formulaTypeOfField(entry);
     if (chain.has(entry.id)) {
       throw new FormulaError(`Property "${entry.name}" would reference itself`, position);
@@ -83,7 +96,11 @@ export function compileFormula(
     const nested = compileFormula(parseFormulaTypeOption(entry.field).formula, schema, entry.id, chain);
 
     if (nested.error) {
-      throw new FormulaError(`Property "${entry.name}" has an invalid formula: ${nested.error.message}`, position);
+      throw new FormulaError(
+        `Property "${entry.name}" has an invalid formula: ${nested.error.message}`,
+        position,
+        nested.error.missingPropertyRef
+      );
     }
 
     return nested.resultType;

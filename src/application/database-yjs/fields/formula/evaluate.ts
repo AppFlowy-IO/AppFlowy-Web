@@ -97,7 +97,13 @@ function evaluateFormulaExpressionWithCache(
   const compiled = compileFormula(expression, schema, fieldId, options.visiting);
 
   if (compiled.error) {
-    return { value: EMPTY, resultType: 'any', text: '', error: compiled.error.displayMessage };
+    return {
+      value: EMPTY,
+      resultType: 'any',
+      text: '',
+      error: compiled.error.displayMessage,
+      missingPropertyRef: compiled.error.missingPropertyRef,
+    };
   }
 
   if (!compiled.ast) return { value: EMPTY, resultType: 'empty', text: '' };
@@ -109,7 +115,7 @@ function evaluateFormulaExpressionWithCache(
   const getProp = (ref: string, position: SourcePosition): FormulaValue => {
     const entry = resolveFormulaField(schema, ref);
 
-    if (!entry) throw new FormulaError(`Unknown property "${ref}"`, position);
+    if (!entry) throw new FormulaError(`Unknown property "${ref}"`, position, ref);
     if (entry.type !== FieldType.Formula) {
       const value = values.get(entry.id) ?? readFieldFormulaValue(entry, row, options);
 
@@ -142,7 +148,10 @@ function evaluateFormulaExpressionWithCache(
       values
     );
 
-    if (nested.error) throw new FormulaError(`Property "${entry.name}" has an error: ${nested.error}`, position);
+    if (nested.error) {
+      throw new FormulaError(`Property "${entry.name}" has an error: ${nested.error}`, position, nested.missingPropertyRef);
+    }
+
     values.set(entry.id, nested.value);
     return nested.value;
   };
@@ -152,6 +161,12 @@ function evaluateFormulaExpressionWithCache(
 
     return withRaw(value, compiled.resultType, formatFormulaValue(value, formatOptions));
   } catch (error) {
-    return { value: EMPTY, resultType: compiled.resultType, text: '', error: describeError(error) };
+    return {
+      value: EMPTY,
+      resultType: compiled.resultType,
+      text: '',
+      error: describeError(error),
+      missingPropertyRef: error instanceof FormulaError ? error.missingPropertyRef : undefined,
+    };
   }
 }

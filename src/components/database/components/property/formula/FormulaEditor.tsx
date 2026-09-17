@@ -229,6 +229,7 @@ export function FormulaEditor({
   ]);
 
   const errorMessage = compiled.error?.displayMessage ?? preview?.error;
+  const missingPropertyRef = compiled.error?.missingPropertyRef ?? preview?.missingPropertyRef;
 
   // ---- editing helpers -------------------------------------------------
 
@@ -515,7 +516,16 @@ export function FormulaEditor({
         {errorMessage ? (
           <span className={'flex min-w-0 items-center gap-1 text-text-error'} data-testid={'formula-editor-error'}>
             <WarningSvg className={'h-4 w-4 shrink-0'} />
-            <span className={'break-words'}>{errorMessage}</span>
+            <span className={'break-words'}>
+              {missingPropertyRef !== undefined ? (
+                <span className={'block'}>
+                  {t('grid.formula.missingPropertyDescription', {
+                    defaultValue: 'A property used by this formula is missing. It may have been deleted.',
+                  })}
+                </span>
+              ) : null}
+              {errorMessage}
+            </span>
           </span>
         ) : null}
         <span className={'ml-auto rounded-300 bg-fill-secondary px-2 py-0.5 text-text-secondary'} data-testid={'formula-editor-type'}>

@@ -137,6 +137,8 @@ export interface FormulaCell extends Cell {
   rawDate?: { start: number; end?: number; includeTime: boolean };
   /** Parse/type/evaluation error to surface in the cell. */
   error?: string;
+  /** Missing prop() reference, as distinct from other formula errors. */
+  missingPropertyRef?: string;
   /** True when the field has no expression yet. */
   isBlank?: boolean;
   numberFormat?: NumberFormat;
