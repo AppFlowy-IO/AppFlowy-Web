@@ -1,5 +1,4 @@
 import { act, renderHook } from '@testing-library/react';
-import type { ReactNode } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, type DatabaseContextState } from '@/application/database-yjs/context';
@@ -76,6 +75,8 @@ import {
   type YSharedRoot,
 } from '@/application/types';
 import { AFConfigContext } from '@/components/main/app.hooks';
+
+import type { ReactNode } from 'react';
 
 const databaseId = 'database-id';
 const viewId = 'view-id';
@@ -773,7 +774,7 @@ describe('configuration production hooks use database history', () => {
     );
     expect(fixture.layoutSettings.get('2').get(YjsDatabaseKey.field_id)).toBe(numberFieldId);
     expect(fixture.layoutSettings.get('2').get(YjsDatabaseKey.layout_ty)).toBe(CalendarLayout.WeekLayout);
-    expect(fixture.layoutSettings.get('2').get(YjsDatabaseKey.number_of_days)).toBe(5);
+    expect(fixture.layoutSettings.get('2').get(YjsDatabaseKey.day_count)).toBe(5);
 
     act(() => result.current.history.undo());
     expect(fixture.layoutSettings.get('2')).toBeUndefined();

@@ -1,25 +1,30 @@
 import dayjs from 'dayjs';
+import { useCallback, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { FieldType, Filter } from '@/application/database-yjs/database.type';
+import { CheckboxFilterCondition } from '@/application/database-yjs/fields/checkbox/checkbox.type';
+import { ChecklistFilterCondition } from '@/application/database-yjs/fields/checklist/checklist.type';
+import { DateFilter, DateFilterCondition } from '@/application/database-yjs/fields/date/date.type';
+import { toStartDateCondition } from '@/application/database-yjs/fields/date/relativeDate';
+import { NumberFilterCondition } from '@/application/database-yjs/fields/number/number.type';
+import { PersonFilter, PersonFilterCondition } from '@/application/database-yjs/fields/person/person.type';
+import { RelationFilterCondition } from '@/application/database-yjs/fields/relation/relation.type';
+import { RollupFilterMode } from '@/application/database-yjs/fields/rollup/rollup.type';
+import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
 import {
-  CheckboxFilterCondition,
-  ChecklistFilterCondition,
-  DateFilter,
-  DateFilterCondition,
-  FieldType,
-  Filter,
-  NumberFilterCondition,
-  parseSelectOptionTypeOptions,
-  PersonFilter,
-  PersonFilterCondition,
-  RelationFilterCondition,
   SelectOptionFilter,
   SelectOptionFilterCondition,
-  TextFilterCondition,
-  toStartDateCondition,
-  useFieldSelector,
-} from '@/application/database-yjs';
-import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
+} from '@/application/database-yjs/fields/select-option/select_option.type';
+import { TextFilterCondition } from '@/application/database-yjs/fields/text/text.type';
+import {
+  resolvedRollupTarget,
+  rollupPredicateType,
+  rollupListMode,
+  subscribeRollupTarget,
+  rollupTargetSnapshot,
+} from '@/application/database-yjs/rollup/filter';
+import { useFieldSelector } from '@/application/database-yjs/selector';
 import { DateFormat, YDatabaseField, YjsDatabaseKey } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -137,6 +142,12 @@ function selectChipLabel(filter: SelectOptionFilter, field: YDatabaseField, t: T
 
   if (!canAttachContent || optionIds.length === 0) {
     return { description: conditionName, hasContent: false };
+  }
+
+  // A rollup's own options describe its configuration. Until the related
+  // select field resolves, keep the saved selection visible as a count.
+  if (Number(field.get(YjsDatabaseKey.type)) === FieldType.Rollup) {
+    return { description: `${conditionName} (${optionIds.length})`, hasContent: true };
   }
 
   // Selected option names in field option order, matching desktop.
@@ -303,10 +314,13 @@ export function useFilterChipLabel(filter: Filter | null): FilterChipLabel & { f
   // The field is returned alongside the label so chip components don't attach
   // a second useFieldSelector subscription on the same field.
   const { field } = useFieldSelector(filter?.fieldId ?? '');
-  const currentUser = useCurrentUser();
-  const dateFormat = getDateFormat(
-    (currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat) ?? DateFormat.Local
+
+  useSyncExternalStore(
+    useCallback((listener) => subscribeRollupTarget(field, listener), [field]),
+    useCallback(() => rollupTargetSnapshot(field), [field])
   );
+  const currentUser = useCurrentUser();
+  const dateFormat = getDateFormat((currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat) ?? DateFormat.Local);
 
   // Deliberately NOT memoized: `field` is a Yjs map that mutates in place with
   // a stable identity, so a useMemo keyed on it would serve stale labels after
@@ -319,11 +333,12 @@ function buildChipLabel(
   filter: Filter | null,
   field: YDatabaseField | undefined,
   dateFormat: string,
-  t: Translate
+  t: Translate,
+  typeOverride?: FieldType
 ): FilterChipLabel {
   if (!filter || !field) return { description: '', hasContent: false };
 
-  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+  const fieldType = typeOverride ?? (Number(field.get(YjsDatabaseKey.type)) as FieldType);
 
   switch (fieldType) {
     case FieldType.RichText:
@@ -332,10 +347,26 @@ function buildChipLabel(
     case FieldType.Number:
     case FieldType.Time:
       return numberChipLabel(filter.condition as NumberFilterCondition, filter.content ?? '', t);
-    case FieldType.Rollup:
-      return isNumericRollupField(field)
-        ? numberChipLabel(filter.condition as NumberFilterCondition, filter.content ?? '', t)
-        : textChipLabel(filter.condition as TextFilterCondition, filter.content ?? '', t);
+    case FieldType.Rollup: {
+      const type = rollupPredicateType(filter, field);
+      const label = buildChipLabel(filter, resolvedRollupTarget(field) ?? field, dateFormat, t, type);
+      const mode = rollupListMode(filter);
+
+      return mode === undefined
+        ? label
+        : {
+            ...label,
+            description: `${t(`grid.rollup.filterMode${RollupFilterMode[mode]}`, {
+              defaultValue: RollupFilterMode[mode],
+            })} ${label.description}`.trim(),
+          };
+    }
+
+    case FieldType.Media:
+      return {
+        description: t(filter.condition === 0 ? 'grid.textFilter.isEmpty' : 'grid.textFilter.isNotEmpty'),
+        hasContent: true,
+      };
     case FieldType.Checkbox:
       return {
         description:

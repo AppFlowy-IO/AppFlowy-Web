@@ -34,6 +34,7 @@ import {
 import { BlockNode, CalloutNode, DatabaseNode, OutlineNode } from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { copyTextToClipboard } from '@/utils/copy';
+import { getErrorMessage } from '@/utils/errors';
 
 import CalloutIconControl from './CalloutIconControl';
 import CalloutQuickStyleControl from './CalloutQuickStyleControl';
@@ -660,7 +661,7 @@ function ControlsMenu({
                 onClose();
                 Promise.resolve(option.onClick()).catch((error) => {
                   notify.error(
-                    error instanceof Error ? error.message : t('document.plugins.subPage.errors.failedDuplicatePage')
+                    getErrorMessage(error, t('document.plugins.subPage.errors.failedDuplicatePage'))
                   );
                 });
               }}

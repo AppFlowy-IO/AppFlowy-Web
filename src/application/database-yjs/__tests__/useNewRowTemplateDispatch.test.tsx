@@ -6,6 +6,7 @@ import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type'
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { TextFilterCondition } from '@/application/database-yjs/fields';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
+import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
 import { DatabaseRowTemplateStore } from '@/application/database-yjs/template';
 import templateInterop from '@/application/database-yjs/template/__tests__/fixtures/row_template_interop.json';
@@ -16,6 +17,7 @@ import {
   ViewIconType,
   ViewLayout,
   YDatabase,
+  YDatabaseCell,
   YDatabaseField,
   YDatabaseFilter,
   YDatabaseRow,
@@ -142,6 +144,113 @@ function createWrapper(context: DatabaseContextState): ({ children }: { children
 }
 
 describe('useNewRowDispatch database templates', () => {
+  it('retries a published calendar draft with its latest edits and repairs reciprocal links without duplicating it', async () => {
+    const { doc, database } = createDatabaseDoc(DatabaseViewLayout.Calendar);
+    const template = addTemplate(database, { empty: false });
+    const rowId = '40000000-0000-4000-8000-000000000004';
+    const relatedRowId = '50000000-0000-4000-8000-000000000005';
+    const relationFieldId = 'relation-field';
+    const reciprocalFieldId = 'reciprocal-field';
+
+    database.get(YjsDatabaseKey.fields).set(relationFieldId, createRelationField(relationFieldId, {
+      database_id: databaseId,
+      is_two_way: true,
+      reciprocal_field_id: reciprocalFieldId,
+    }));
+    database.get(YjsDatabaseKey.fields).set(reciprocalFieldId, createRelationField(reciprocalFieldId));
+    database.get(YjsDatabaseKey.views).forEach((view) => {
+      view.get(YjsDatabaseKey.row_orders).push([{ id: relatedRowId, height: 36 }]);
+    });
+
+    const draftDoc = new Y.Doc() as YDoc;
+
+    initialDatabaseRow(rowId, databaseId, draftDoc);
+    const cells = rowFrom(draftDoc).get(YjsDatabaseKey.cells);
+    const titleCell = new Y.Map() as YDatabaseCell;
+    const relationCell = new Y.Map() as YDatabaseCell;
+    const relationData = new Y.Array<string>();
+
+    titleCell.set(YjsDatabaseKey.field_type, FieldType.RichText);
+    titleCell.set(YjsDatabaseKey.data, 'Before retry');
+    relationCell.set(YjsDatabaseKey.field_type, FieldType.Relation);
+    relationData.push([relatedRowId]);
+    relationCell.set(YjsDatabaseKey.data, relationData);
+    cells.set(nameFieldId, titleCell);
+    cells.set(relationFieldId, relationCell);
+    const draft = {
+      id: rowId,
+      cells,
+      meta: draftDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>,
+    };
+    const relatedKey = getRowKey(databaseDocId, relatedRowId);
+    const relatedDoc = new Y.Doc({ guid: relatedKey }) as YDoc;
+
+    initialDatabaseRow(relatedRowId, databaseId, relatedDoc);
+    const createdRows = new Map<string, YDoc>([[relatedKey, relatedDoc]]);
+    const sourceDocument = new Y.Doc({ guid: template.docViewId }) as YDoc;
+
+    sourceDocument.getMap(YjsEditorKey.data_section).set(YjsEditorKey.document, new Y.Map());
+    const duplicateRowDocument = jest.fn(async () => undefined);
+    let relatedLoadAttempts = 0;
+    const context: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: doc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createRow: async (key) => {
+        if (key === relatedKey && ++relatedLoadAttempts === 1) {
+          throw new Error('Related row temporarily unavailable');
+        }
+
+        let rowDoc = createdRows.get(key);
+
+        if (!rowDoc) {
+          rowDoc = new Y.Doc({ guid: key }) as YDoc;
+          createdRows.set(key, rowDoc);
+        }
+
+        return rowDoc;
+      },
+      loadRowDocument: async () => sourceDocument,
+      duplicateRowDocument,
+    };
+    const { result } = renderHook(() => useNewRowDispatch(), { wrapper: createWrapper(context) });
+    const request = { draft, templateId: template.templateId, tailing: true, suppressAutoOpen: true };
+
+    await act(async () => {
+      await expect(result.current(request)).rejects.toThrow('Related row temporarily unavailable');
+    });
+
+    const savedDoc = createdRows.get(getRowKey(databaseDocId, rowId)) as YDoc;
+
+    expect(cellData(savedDoc, nameFieldId)).toBe('Before retry');
+    expect(cellData(relatedDoc, reciprocalFieldId)).toBeUndefined();
+    database.get(YjsDatabaseKey.views).forEach((view) => {
+      expect(view.get(YjsDatabaseKey.row_orders).toJSON()).toEqual([
+        { id: relatedRowId, height: 36 },
+        { id: rowId, height: 36 },
+      ]);
+    });
+
+    titleCell.set(YjsDatabaseKey.data, 'Edited after the failed save');
+    await act(async () => {
+      await expect(result.current(request)).resolves.toBe(rowId);
+    });
+
+    expect(cellData(savedDoc, nameFieldId)).toBe('Edited after the failed save');
+    expect((cellData(relatedDoc, reciprocalFieldId) as Y.Array<string>).toArray()).toEqual([rowId]);
+    expect(relatedLoadAttempts).toBe(2);
+    expect(duplicateRowDocument).toHaveBeenCalledTimes(1);
+    database.get(YjsDatabaseKey.views).forEach((view) => {
+      expect(view.get(YjsDatabaseKey.row_orders).toJSON()).toEqual([
+        { id: relatedRowId, height: 36 },
+        { id: rowId, height: 36 },
+      ]);
+    });
+  });
+
   it('writes grouped relation prefills as canonical relation data before reciprocal handling', async () => {
     const { doc, database } = createDatabaseDoc();
     const relationFieldId = 'relation-field-id';

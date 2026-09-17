@@ -446,6 +446,7 @@ export const PublishProvider = ({
             case ViewLayout.List:
             case ViewLayout.Gallery:
             case ViewLayout.Feed:
+            case ViewLayout.Timeline:
               searchParams.set('r', blockId);
               break;
             default:

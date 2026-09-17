@@ -73,8 +73,7 @@ test.describe('Calendar Reschedule Tests (Desktop Parity)', () => {
 
     const targetDay = today.getDate() === 15 ? 16 : 15;
 
-    // Calendar events default to range mode (End date ON).
-    // Disable it so clicking a day changes the single date, not the end date.
+    // If a range is enabled, change the single date rather than its end date.
     const pickerPopover = page.getByTestId('datetime-picker-popover');
     const endDateSwitch = pickerPopover.locator('button[role="switch"]').first();
     if ((await endDateSwitch.getAttribute('data-state')) === 'checked') {

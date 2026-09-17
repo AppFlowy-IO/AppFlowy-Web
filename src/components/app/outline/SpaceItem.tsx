@@ -75,6 +75,8 @@ function SpaceItem({
     if (!view) return null;
     const extra = view?.extra;
     const name = view?.name || '';
+    const hasHomePage = extra?.has_space_home_page === true;
+    const canOpenHomePage = Boolean(hasHomePage && onClickView && !onClickSpace);
 
     return (
       <div
@@ -88,7 +90,12 @@ function SpaceItem({
           if (shouldSuppressClick()) return;
 
           toggleExpand(view.view_id, !isExpanded);
-          onClickSpace?.(view.view_id);
+          // Destination pickers select a space without navigating away from the picker.
+          if (onClickSpace) {
+            onClickSpace(view.view_id);
+          } else if (hasHomePage) {
+            onClickView?.(view.view_id);
+          }
         }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -105,9 +112,20 @@ function SpaceItem({
         />
         <Tooltip title={name} disableInteractive={true}>
           <div className={'flex flex-1 items-center justify-start gap-1 overflow-hidden text-sm'}>
-            <div data-testid='space-name' className={'truncate font-medium'}>
-              {name}
-            </div>
+            {canOpenHomePage ? (
+              <button
+                type='button'
+                data-testid='space-name'
+                aria-expanded={isExpanded}
+                className='truncate rounded-100 text-left font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+              >
+                {name}
+              </button>
+            ) : (
+              <div data-testid='space-name' className={'truncate font-medium'}>
+                {name}
+              </div>
+            )}
 
             {isPrivate && (
               <div className={'min-h-5 min-w-5 text-base text-text-primary opacity-80'}>
@@ -125,6 +143,7 @@ function SpaceItem({
     isExpanded,
     isPrivate,
     onClickSpace,
+    onClickView,
     renderExtra,
     shouldSuppressClick,
     toggleExpand,

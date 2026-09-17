@@ -110,8 +110,7 @@ test.describe('Filter editors (desktop parity)', () => {
   }) => {
     // Given: a grid with a freshly added Rollup column. createRollupField
     // seeds calculation_type=Count (numeric) + show_as=Calculated, so even
-    // without a relation/target picked, isNumericRollupField() returns true
-    // and the filter routes to NumberFilterMenu.
+    // without a relation/target picked, the filter uses numeric controls.
     const email = generateRandomEmail();
 
     await loginAndCreateGrid(page, request, email);
@@ -120,15 +119,13 @@ test.describe('Filter editors (desktop parity)', () => {
     // When: adding a filter on the Rollup column
     await addFilterByFieldName(page, FieldTypeNames[FieldType.Rollup]);
 
-    // Then: the Number-style numeric input renders (proves we hit the numeric
-    // rollup branch in RollupFilterMenu, not the text or option-picker branch).
-    const numberInput = page.getByTestId('text-filter-input');
+    const numberInput = page.getByTestId('advanced-filter-number-input');
 
     await expect(numberInput).toBeVisible({ timeout: TIMEOUT });
 
-    // And: switching to NumberIsEmpty hides the input — the same branch as
-    // the standalone Number editor, confirming we're sharing NumberFilterMenu.
-    await changeFilterCondition(page, NumberFilterCondition.NumberIsEmpty);
+    // Empty calculations use the same controls in simple and advanced filters.
+    await page.getByTestId('filter-condition-selector').click();
+    await page.getByTestId(`filter-condition-${NumberFilterCondition.NumberIsEmpty}`).click();
     await expect(numberInput).toBeHidden({ timeout: TIMEOUT });
   });
 

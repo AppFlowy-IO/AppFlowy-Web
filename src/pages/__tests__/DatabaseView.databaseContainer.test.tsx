@@ -497,6 +497,73 @@ describe('DatabaseView database container', () => {
     expect(metaProps?.name).toBe('New Database');
   });
 
+  it.each([
+    { embedded: false, outlineShell: false },
+    { embedded: true, outlineShell: false },
+    { embedded: true, outlineShell: true },
+  ])('keeps breadcrumb tabs before outline hydration (embedded=$embedded, outline shell=$outlineShell)', ({ embedded, outlineShell }) => {
+    const containerId = 'breadcrumb-container';
+    const children: View[] = ['grid-view', 'calendar-view'].map((viewId) => ({
+      ...createLegacyDatabaseView(viewId, embedded),
+      parent_view_id: containerId,
+      extra: { is_space: false, embedded, database_id: 'db-1' },
+    }));
+    const container: View = {
+      ...createLegacyDatabaseView(containerId, embedded),
+      name: 'Projects calendar',
+      extra: { is_space: false, embedded, database_id: 'db-1', is_database_container: true },
+      children,
+      has_children: true,
+    };
+
+    // The page and breadcrumb metadata load independently from the sidebar's
+    // navigation request. The breadcrumb already has the server's complete tabs.
+    const outlineContainer = { ...container, name: 'Current outline title', children: [] };
+
+    global.__databaseViewTestState = {
+      outline: outlineShell ? [outlineContainer] : [],
+      breadcrumbs: [container, children[0]],
+    };
+    const doc = createDatabaseDoc('db-1', children.map((child) => child.view_id));
+    const views = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database).get(YjsDatabaseKey.views);
+
+    children.forEach((child) => views.get(child.view_id)?.set(YjsDatabaseKey.embedded, embedded));
+
+    render(
+      <MemoryRouter initialEntries={['/app/workspace-id/grid-view']}>
+        <DatabaseView
+          doc={doc}
+          workspaceId='workspace-id'
+          readOnly={false}
+          viewMeta={{
+            viewId: children[0].view_id,
+            parentViewId: containerId,
+            name: 'Grid',
+            layout: ViewLayout.Grid,
+            extra: children[0].extra,
+            workspaceId: 'workspace-id',
+            visibleViewIds: [],
+          }}
+          updatePage={jest.fn()}
+          updatePageIcon={jest.fn()}
+          updatePageName={jest.fn()}
+          onRendered={jest.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    expect(global.__databaseViewTestState?.capturedDatabaseProps).toEqual(
+      expect.objectContaining({
+        databaseName: outlineShell ? outlineContainer.name : container.name,
+        visibleViewIds: children.map((child) => child.view_id),
+        activeViewId: children[0].view_id,
+      })
+    );
+    expect(global.__databaseViewTestState?.capturedViewMetaProps).toEqual(
+      expect.objectContaining({ viewId: containerId, extra: container.extra })
+    );
+  });
+
   it('does not mark a modern database child as legacy while its parent hierarchy is unresolved', () => {
     const gridViewId = 'modern-grid-view-id';
     const getDatabaseContainerUpgradeStatus = jest.fn();

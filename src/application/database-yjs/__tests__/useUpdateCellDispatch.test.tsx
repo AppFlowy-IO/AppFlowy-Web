@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState, FieldType } from '@/application/database-yjs';
 import { useUpdateCellDispatch, useUpdateStartEndTimeCell } from '@/application/database-yjs/dispatch';
+import { useUpdateStartEndTimeCells } from '@/application/database-yjs/dispatch/cell';
 import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import {
   RowId,
@@ -285,5 +286,138 @@ describe('useUpdateStartEndTimeCell', () => {
       expect(cell?.get(YjsDatabaseKey.field_type)).toBe(FieldType.DateTime);
       expect(cell?.get(YjsDatabaseKey.source_field_type)).toBeUndefined();
     });
+  });
+});
+
+describe('grouped date updates', () => {
+  function fixture() {
+    const databaseDoc = createDatabaseDoc(FieldType.DateTime);
+    const root = createRowDoc(rowId, databaseId, {
+      [fieldId]: { fieldType: FieldType.DateTime, data: '100' },
+      end: { fieldType: FieldType.DateTime, data: '200' },
+    });
+    const followerSeed = createRowDoc('follower', databaseId, {
+      [fieldId]: { fieldType: FieldType.DateTime, data: '300' },
+      end: { fieldType: FieldType.DateTime, data: '400' },
+    });
+    const follower = new Y.Doc() as YDoc;
+    let resolveRow!: (doc: YDoc | undefined) => void;
+    const pendingRow = new Promise<YDoc | undefined>((resolve) => {
+      resolveRow = resolve;
+    });
+    const ensureRow = jest.fn(() => pendingRow);
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: { [rowId]: root },
+      ensureRow,
+      workspaceId: 'workspace-id',
+    };
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+    const hook = renderHook(useUpdateStartEndTimeCells, { wrapper: createWrapper(contextValue) });
+    const updates = [
+      { rowId, fieldId, startTimestamp: '110' },
+      { rowId, fieldId: 'end', startTimestamp: '210' },
+      { rowId: 'follower', fieldId, startTimestamp: '310' },
+      { rowId: 'follower', fieldId: 'end', startTimestamp: '410' },
+    ];
+
+    return { ...hook, databaseDoc, root, follower, followerSeed, ensureRow, resolveRow, history, updates };
+  }
+
+  it('waits for every row and its cells, then undoes and redoes all dates together', async () => {
+    const { result, root, follower, followerSeed, ensureRow, resolveRow, history, updates } = fixture();
+    const pending = result.current(updates);
+
+    expect(getCellData(root)).toBe('100');
+    expect(ensureRow).toHaveBeenCalledTimes(1);
+    expect(ensureRow).toHaveBeenCalledWith('follower');
+    await act(async () => {
+      resolveRow(follower);
+    });
+    expect(getCellData(root)).toBe('100');
+    expect(getCellData(follower)).toBeUndefined();
+    await act(async () => {
+      Y.applyUpdate(follower, Y.encodeStateAsUpdate(followerSeed));
+      await pending;
+    });
+    const endValue = (doc: YDoc) =>
+      doc
+        .getMap(YjsEditorKey.data_section)
+        .get(YjsEditorKey.database_row)
+        ?.get(YjsDatabaseKey.cells)
+        .get('end')
+        ?.get(YjsDatabaseKey.data);
+
+    expect([getCellData(root), endValue(root), getCellData(follower), endValue(follower)]).toEqual([
+      '110',
+      '210',
+      '310',
+      '410',
+    ]);
+    act(() => {
+      history.undo();
+    });
+    expect([getCellData(root), endValue(root), getCellData(follower), endValue(follower)]).toEqual([
+      '100',
+      '200',
+      '300',
+      '400',
+    ]);
+    expect(history.canUndo()).toBe(false);
+    expect(history.canRedo()).toBe(true);
+    act(() => {
+      history.redo();
+    });
+    expect([getCellData(root), endValue(root), getCellData(follower), endValue(follower)]).toEqual([
+      '110',
+      '210',
+      '310',
+      '410',
+    ]);
+  });
+
+  it.each(['undo', 'redo', 'clear', 'unmount'] as const)(
+    'cancels the entire pending edit on %s without a late write clearing redo',
+    async (command) => {
+      const { result, unmount, databaseDoc, root, followerSeed, resolveRow, history, updates } = fixture();
+
+      // Leave an earlier action in redo so delayed writes cannot silently erase it.
+      runDatabaseAction(databaseDoc, { type: 'database.test-marker' }, () => {
+        databaseDoc.getMap(YjsEditorKey.data_section).set('marker', true);
+      });
+      history.undo();
+      const pending = result.current(updates);
+
+      expect(history.canUndo()).toBe(true);
+      expect(history.canRedo()).toBe(true);
+      act(() => {
+        if (command === 'unmount') unmount();
+        else history[command]();
+      });
+      await act(async () => {
+        resolveRow(followerSeed);
+        await pending;
+      });
+      expect(getCellData(root)).toBe('100');
+      expect(getCellData(followerSeed)).toBe('300');
+      expect(history.canRedo()).toBe(command === 'undo' || command === 'unmount');
+      expect(history.canUndo()).toBe(command === 'redo');
+    }
+  );
+
+  it('leaves every date unchanged if a follower cannot be hydrated', async () => {
+    const { result, root, followerSeed, resolveRow, history, updates } = fixture();
+    const pending = result.current(updates);
+
+    await act(async () => {
+      resolveRow(undefined);
+      await pending;
+    });
+    expect(getCellData(root)).toBe('100');
+    expect(getCellData(followerSeed)).toBe('300');
+    expect(history.canUndo()).toBe(false);
   });
 });

@@ -65,7 +65,7 @@ export function MoreLinkPopoverContent({
 
   return (
     <>
-      <div className='relative mb-2 px-3 pt-2 text-sm font-medium text-text-title'>
+      <div className='relative mb-2 px-3 pt-2 text-sm font-medium text-text-primary'>
         {dateDisplay}
         <div className='absolute right-1 top-1'>
           <Button variant='ghost' size='icon-sm' onClick={onClose}>
@@ -104,7 +104,7 @@ export function MoreLinkPopoverContent({
               key={seg.event.id}
               className={cn(
                 'fc-event fc-event-draggable fc-popover-event w-full transform transition-all duration-200',
-                hoverEvent === seg.event.extendedProps.rowId && 'event-hovered opacity-50',
+                hoverEvent === seg.event.extendedProps.rowId && 'event-hovered',
                 event.classNames
               )}
               data-row-id={seg.event.extendedProps.rowId}

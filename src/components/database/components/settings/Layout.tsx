@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabaseViewId } from '@/application/database-yjs';
 import { useUpdateDatabaseLayout } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout } from '@/application/types';
@@ -33,6 +34,14 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         value: DatabaseViewLayout.Calendar,
         label: t('calendar.menuName'),
       },
+      ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED || currentLayout === DatabaseViewLayout.Timeline
+        ? [
+            {
+              value: DatabaseViewLayout.Timeline,
+              label: t('timeline.menuName', { defaultValue: 'Timeline' }),
+            },
+          ]
+        : []),
       {
         value: DatabaseViewLayout.Chart,
         label: t('chart.menuName'),
@@ -50,7 +59,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         label: t('feed.menuName'),
       },
     ],
-    [t]
+    [t, currentLayout]
   );
 
   return (
@@ -70,7 +79,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
               className={'w-full'}
               data-testid={`database-layout-option-${option.value}`}
               onSelect={() => {
-                updateLayout(option.value);
+                if (option.value !== currentLayout) updateLayout(option.value);
               }}
             >
               <div className={'flex items-center gap-2'}>{option.label}</div>

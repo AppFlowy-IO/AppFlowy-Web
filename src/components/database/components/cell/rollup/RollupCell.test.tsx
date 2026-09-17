@@ -120,4 +120,45 @@ describe('RollupCell list navigation', () => {
     expect(screen.getByTestId('rollup-ring-visualization').textContent).toBe('25');
     expect(screen.getByLabelText('25%')).toBeTruthy();
   });
+
+  it.each([FieldType.DateTime, FieldType.Person, FieldType.RichText])(
+    'visualizes numeric Count results from source type %s',
+    (targetFieldType) => {
+      render(
+        <RollupCell
+          cell={createCell({
+            data: '2',
+            rawNumeric: 2,
+            targetFieldType,
+            calculationType: CalculationType.Count,
+            showAs: RollupDisplayMode.Calculated,
+            visualization: { type: RollupShowAsType.Bar, color: 'fill-default', divisor: 4, showNumber: true },
+          })}
+          rowId='row'
+          fieldId='rollup'
+          wrap={false}
+        />
+      );
+      expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('50');
+    }
+  );
+
+  it('keeps calculated date results textual even when imported visualization settings exist', () => {
+    render(
+      <RollupCell
+        cell={createCell({
+          data: '2 days',
+          targetFieldType: FieldType.DateTime,
+          calculationType: CalculationType.DateRange,
+          showAs: RollupDisplayMode.Calculated,
+          visualization: { type: RollupShowAsType.Bar, color: 'fill-default', divisor: 4, showNumber: true },
+        })}
+        rowId='row'
+        fieldId='rollup'
+        wrap={false}
+      />
+    );
+    expect(screen.getByText('2 days')).toBeTruthy();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
 });

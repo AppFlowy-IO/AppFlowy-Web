@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DateFilter, DateFilterCondition } from '@/application/database-yjs';
-import { useUpdateAdvancedFilter } from '@/application/database-yjs/dispatch';
 import { DateFormat, TimeFormat } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
 import DateTimeInput from '@/components/database/components/cell/date/DateTimeInput';
@@ -11,6 +10,8 @@ import { useCurrentUser } from '@/components/main/app.hooks';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
+
+import { useFilterValueUpdater } from '../filter-menu/FilterEditorContext';
 
 interface AdvancedDateFilterValueInputProps {
   filter: DateFilter;
@@ -20,7 +21,7 @@ interface AdvancedDateFilterValueInputProps {
 function AdvancedDateFilterValueInput({ filter, disabled }: AdvancedDateFilterValueInputProps) {
   const { t } = useTranslation();
   const currentUser = useCurrentUser();
-  const updateFilter = useUpdateAdvancedFilter();
+  const updateFilter = useFilterValueUpdater();
 
   const weekStartsOn = useMemo(() => {
     const value = Number(currentUser?.metadata?.[MetadataKey.StartWeekOn]) || 0;
@@ -60,8 +61,8 @@ function AdvancedDateFilterValueInput({ filter, disabled }: AdvancedDateFilterVa
       isRange && filterStart
         ? new Date(Number(filterStart) * 1000)
         : filterTimestamp
-          ? new Date(Number(filterTimestamp) * 1000)
-          : undefined;
+        ? new Date(Number(filterTimestamp) * 1000)
+        : undefined;
     const to = isRange && filterEnd ? new Date(Number(filterEnd) * 1000) : undefined;
 
     setDateRange({
@@ -128,7 +129,7 @@ function AdvancedDateFilterValueInput({ filter, disabled }: AdvancedDateFilterVa
     <Popover>
       <PopoverTrigger asChild>
         <button
-          className='flex h-8 w-full items-center gap-1 overflow-hidden rounded-md border border-border-primary bg-transparent px-2 text-left data-[state=open]:border-border-theme-thick disabled:opacity-50'
+          className='flex h-8 w-full items-center gap-1 overflow-hidden rounded-md border border-border-primary bg-transparent px-2 text-left disabled:opacity-50 data-[state=open]:border-border-theme-thick'
           disabled={disabled}
           data-testid='advanced-filter-date-input'
         >

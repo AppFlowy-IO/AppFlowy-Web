@@ -129,6 +129,12 @@
   .simple-table-root-wrapper {
     @apply relative;
     overflow: visible;
+
+    // Reserve space for the absolute bottom controls so the following block
+    // cannot cover their hit targets. Read-only tables have no controls.
+    &:has(> .simple-table-action-buttons-container) {
+      padding-bottom: 18px;
+    }
   }
 
   .simple-table-scroll-container {

@@ -7,14 +7,18 @@
  */
 
 import dayjs from 'dayjs';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import * as Y from 'yjs';
 
 import { AttributionUid, resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { setCellStoredType } from '@/application/database-yjs/cell.field-type';
-import { useDatabaseContext } from '@/application/database-yjs/context';
+import { useDatabase, useDatabaseContext } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { getOrCreateDatabaseHistoryManager, runDatabaseRowAction } from '@/application/database-yjs/history';
+import {
+  getOrCreateDatabaseHistoryManager,
+  runDatabaseHistoryGroup,
+  runDatabaseRowAction,
+} from '@/application/database-yjs/history';
 import type { DatabaseHistoryPolicy } from '@/application/database-yjs/history';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import {
@@ -270,14 +274,26 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
   );
 }
 
-export function useUpdateStartEndTimeCell() {
+/**
+ * Like `useUpdateCellDispatch`, but the row and field are chosen per call so one
+ * hook instance can write several rows (e.g. shifting dependent timeline bars).
+ */
+export function useUpdateAnyCellDispatch() {
   const { databaseDoc, rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
+  const database = useDatabase();
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
-    (rowId: string, fieldId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
+    (rowId: string, fieldId: string, data: CellUpdateData, historyOptions?: CellHistoryOptions) => {
       void (async () => {
+        const field = database?.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+        if (!field) {
+          Log.warn('[useUpdateAnyCellDispatch] Field not found', { rowId, fieldId });
+          return;
+        }
+
         let rowDoc = rowMap?.[rowId];
         let target = rowDoc ? getWritableRowTarget(rowDoc) : null;
 
@@ -287,46 +303,171 @@ export function useUpdateStartEndTimeCell() {
         }
 
         if (!rowDoc || !target) {
-          Log.warn('[useUpdateStartEndTimeCell] Row doc not ready for cell update', { rowId, fieldId });
+          Log.warn('[useUpdateAnyCellDispatch] Row doc not ready for cell update', { rowId, fieldId });
           return;
         }
 
-        const writableTarget = target;
-
         getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
 
-        runDatabaseRowAction(
+        writeCellToRow({
           rowDoc,
-          { type: 'cell.update-date-range', rowId, fieldId, fieldType: FieldType.DateTime },
-          () => {
-            let cell = writableTarget.cells.get(fieldId);
-
-            if (!cell) {
-              cell = new Y.Map() as YDatabaseCell;
-              setCellStoredType(cell, FieldType.DateTime);
-
-              cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-              writableTarget.cells.set(fieldId, cell);
-            }
-
-            cell.set(YjsDatabaseKey.data, startTimestamp);
-            setCellStoredType(cell, FieldType.DateTime);
-            cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-
-            updateDateCell(cell, {
-              data: startTimestamp,
-              endTimestamp,
-              isRange: !!endTimestamp,
-              includeTime: !isAllDay,
-            });
-            touchRowAttribution(writableTarget.row, actorUid);
-          }
-        );
+          row: target.row,
+          cells: target.cells,
+          fieldId,
+          fieldType: Number(field.get(YjsDatabaseKey.type)) as FieldType,
+          rowId,
+          data,
+          historyOptions,
+          actorUid,
+        });
         markCellLocalMutation?.(rowId, fieldId);
       })().catch((error: unknown) => {
-        Log.error('[useUpdateStartEndTimeCell] failed to update cell', { rowId, fieldId, error });
+        Log.error('[useUpdateAnyCellDispatch] failed to update cell', { rowId, fieldId, error });
       });
     },
-    [actorUid, databaseDoc, ensureRow, markCellLocalMutation, rowMap]
+    [actorUid, database, databaseDoc, ensureRow, markCellLocalMutation, rowMap]
+  );
+}
+
+export function useUpdateStartEndTimeCell() {
+  const updateCells = useUpdateStartEndTimeCells();
+
+  return useCallback(
+    (
+      rowId: string,
+      fieldId: string,
+      startTimestamp: string,
+      endTimestamp?: string,
+      isAllDay?: boolean,
+      historyOptions?: CellHistoryOptions
+    ) => {
+      void updateCells([{ rowId, fieldId, startTimestamp, endTimestamp, isAllDay }], historyOptions);
+    },
+    [updateCells]
+  );
+}
+
+export type DateCellUpdate = {
+  rowId: string;
+  fieldId: string;
+  startTimestamp: string;
+  endTimestamp?: string;
+  isAllDay?: boolean;
+};
+
+/** Resolve every writable row before committing a date edit as one undo group. */
+export function useUpdateStartEndTimeCells() {
+  const { databaseDoc, activeViewId, rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
+  const { actions: pendingActions } = useMemo(
+    () => ({ databaseDoc, activeViewId, actions: new Set<() => void>() }),
+    [databaseDoc, activeViewId]
+  );
+
+  useEffect(
+    () => () => {
+      pendingActions.forEach((cancel) => cancel());
+      pendingActions.clear();
+    },
+    [pendingActions]
+  );
+
+  return useCallback(
+    async (updates: readonly DateCellUpdate[], historyOptions?: CellHistoryOptions) => {
+      if (updates.length === 0) return;
+      const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+      const docs = new Map<string, YDoc>();
+      const rowIds = [...new Set(updates.map(({ rowId }) => rowId))];
+      const missingRowIds = rowIds.filter((rowId) => {
+        const doc = rowMap?.[rowId];
+
+        if (!doc || !getWritableRowTarget(doc)) return true;
+        docs.set(rowId, doc);
+        return false;
+      });
+
+      try {
+        if (missingRowIds.length > 0) {
+          let cancelled = false;
+          const finish = history.registerPendingAction(() => {
+            cancelled = true;
+          });
+          const cancel = () => {
+            cancelled = true;
+            finish();
+          };
+
+          pendingActions.add(cancel);
+          try {
+            await Promise.all(
+              missingRowIds.map(async (rowId) => {
+                const doc = (await ensureRow?.(rowId)) ?? rowMap?.[rowId];
+
+                if (!doc || cancelled) return;
+                if (await waitForWritableRowTarget(doc)) docs.set(rowId, doc);
+              })
+            );
+            if (cancelled) return;
+          } finally {
+            pendingActions.delete(cancel);
+            finish();
+          }
+        }
+
+        const targets = new Map<string, WritableRowTarget>();
+
+        // Recheck even rows that were ready initially: their roots may have
+        // changed during hydration. A missing target aborts the whole edit.
+        for (const rowId of rowIds) {
+          const doc = docs.get(rowId);
+          const target = doc ? getWritableRowTarget(doc) : null;
+
+          if (!target) {
+            Log.warn('[useUpdateStartEndTimeCells] Row doc not ready for date edit', { rowId });
+            return;
+          }
+
+          targets.set(rowId, target);
+        }
+
+        runDatabaseHistoryGroup(() => {
+          updates.forEach(({ rowId, fieldId, startTimestamp, endTimestamp, isAllDay }) => {
+            const rowDoc = docs.get(rowId)!;
+            const target = targets.get(rowId)!;
+
+            history.registerRowDoc(rowId, rowDoc);
+            runDatabaseRowAction(
+              rowDoc,
+              { type: 'cell.update-date-range', rowId, fieldId, fieldType: FieldType.DateTime, ...historyOptions },
+              () => {
+                let cell = target.cells.get(fieldId);
+
+                if (!cell) {
+                  cell = new Y.Map() as YDatabaseCell;
+                  setCellStoredType(cell, FieldType.DateTime);
+                  cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
+                  target.cells.set(fieldId, cell);
+                }
+
+                setCellStoredType(cell, FieldType.DateTime);
+                cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+                updateDateCell(cell, {
+                  data: startTimestamp,
+                  endTimestamp,
+                  isRange: !!endTimestamp,
+                  includeTime: !isAllDay,
+                });
+                touchRowAttribution(target.row, actorUid);
+              }
+            );
+            markCellLocalMutation?.(rowId, fieldId);
+          });
+        }, historyOptions?.historyGroup);
+      } catch (error) {
+        Log.error('[useUpdateStartEndTimeCells] failed to update date cells', { error });
+      }
+    },
+    [actorUid, databaseDoc, ensureRow, markCellLocalMutation, pendingActions, rowMap]
   );
 }

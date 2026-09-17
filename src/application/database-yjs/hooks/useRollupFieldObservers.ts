@@ -7,6 +7,7 @@ import {
   useDatabaseFields,
   useDatabaseView,
   useRowMap,
+  useReadOnly,
 } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { parseRelationTypeOption, parseRollupTypeOption } from '@/application/database-yjs/fields';
@@ -17,6 +18,8 @@ import { invalidateRollupCell } from '@/application/database-yjs/rollup/cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { YDatabase, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+
+import { rememberRollupTarget, migrateRollupFilters } from '../rollup/filter';
 
 const ROLLUP_OBSERVER_POOL_SIZE = 4;
 
@@ -30,6 +33,7 @@ const ROLLUP_OBSERVER_POOL_SIZE = 4;
  */
 export function useRollupFieldObservers(onConditionsChange: () => void, rollupWatchVersion: number) {
   const rows = useRowMap();
+  const readOnly = useReadOnly();
   const fields = useDatabaseFields();
   const database = useDatabase();
   const view = useDatabaseView();
@@ -218,6 +222,14 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
             | undefined;
           const targetField = relatedDatabase?.get(YjsDatabaseKey.fields)?.get(rollupOption.target_field_id);
 
+          if (targetField) {
+            rememberRollupTarget(rollupField, targetField);
+            if (!readOnly)
+              database.doc?.transact(() =>
+                migrateRollupFilters(database, rollupFieldId, Number(targetField.get(YjsDatabaseKey.type)))
+              );
+          }
+
           return targetField && Number(targetField.get(YjsDatabaseKey.type)) === FieldType.Relation
             ? parseRelationTypeOption(targetField)
             : null;
@@ -356,5 +368,6 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
     onConditionsChange,
     rollupWatchVersion,
     observerRevision,
+    readOnly,
   ]);
 }

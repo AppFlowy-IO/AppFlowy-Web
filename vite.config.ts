@@ -116,6 +116,9 @@ function linkPreviewApiPlugin() {
 export default defineConfig({
   define: {
     __APPFLOWY_WEB_VERSION__: JSON.stringify(webClientVersion),
+    'process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED': JSON.stringify(
+      process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED ?? 'false'
+    ),
   },
   plugins: [
     react(),

@@ -399,7 +399,11 @@ function RollupPropertyMenuContent({ fieldId, variant = 'field' }: { fieldId: st
         </DropdownMenuSub>
       </DropdownMenuGroup>
 
-      {variant === 'field' && targetField?.type === FieldType.Number ? (
+      {variant === 'field' &&
+      rollupOption.show_as === RollupDisplayMode.Calculated &&
+      ![CalculationType.DateEarliest, CalculationType.DateLatest, CalculationType.DateRange].includes(
+        rollupOption.calculation_type
+      ) ? (
         <RollupVisualizationSettings
           option={visualization}
           calculationType={calculationType}

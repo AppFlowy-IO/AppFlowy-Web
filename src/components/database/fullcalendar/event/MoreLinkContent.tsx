@@ -58,6 +58,7 @@ export function MoreLinkContent({
             }}
           ></PopoverTrigger>
           <PopoverContent
+            className='bg-surface-layer-04'
             side='top'
             sideOffset={-50}
             align='center'

@@ -17,7 +17,7 @@ import { useCallback } from 'react';
 import * as Y from 'yjs';
 
 import { useDatabaseFields, useDatabaseView, useSharedRoot } from '@/application/database-yjs/context';
-import { FilterType, SortCondition } from '@/application/database-yjs/database.type';
+import { FieldType, FilterType, SortCondition } from '@/application/database-yjs/database.type';
 import {
   FilterDraft,
   flattenFilterTree,
@@ -26,8 +26,11 @@ import {
   resolveRollupFilterTargetFieldType,
 } from '@/application/database-yjs/filter';
 import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
+import { newRollupFilterMetadata, rollupConfigurationMatches } from '@/application/database-yjs/rollup/filter';
 import { YDatabaseFilter, YDatabaseFilters, YDatabaseSort, YDatabaseSorts, YjsDatabaseKey } from '@/application/types';
 import { Log } from '@/utils/log';
+
+import { applyFilterUpdate, UpdateFilterParams } from './filter-update';
 
 export function useClearSortingDispatch() {
   const sharedRoot = useSharedRoot();
@@ -306,6 +309,7 @@ export function useAddFilter() {
 
             if (rollupTargetFieldType !== undefined) {
               filter.set(YjsDatabaseKey.rollup_target_type, rollupTargetFieldType);
+              if (field) filter.set(YjsDatabaseKey.rollup_meta, newRollupFilterMetadata(field));
             }
 
             filters.push([filter]);
@@ -355,79 +359,10 @@ export function useRemoveFilter() {
   );
 }
 
-export interface UpdateFilterParams {
-  filterId: string;
-  fieldId?: string;
-  condition?: number;
-  content?: string;
-}
+export type { UpdateFilterParams } from './filter-update';
 
 export function useUpdateFilter() {
-  const view = useDatabaseView();
-  const sharedRoot = useSharedRoot();
-
-  return useCallback(
-    (params: UpdateFilterParams) => {
-      const { filterId, fieldId, condition, content } = params;
-
-      Log.debug('[useUpdateFilter] Updating filter', { filterId, fieldId, condition, content });
-
-      // Guard: view must exist
-      if (!view) {
-        Log.warn('[useUpdateFilter] View is not available');
-        return;
-      }
-
-      // Guard: fieldId is required for filter updates
-      if (!fieldId) {
-        Log.warn('[useUpdateFilter] FieldId is missing', { filterId });
-        return;
-      }
-
-      executeOperations(
-        sharedRoot,
-        [
-          () => {
-            // Get filters array from view
-            const filters = view.get(YjsDatabaseKey.filters);
-
-            if (!filters) {
-              Log.warn('[useUpdateFilter] No filters found in view', { filterId });
-              return;
-            }
-
-            // Find the filter by id
-            const filter = filters.toArray().find((f) => f.get(YjsDatabaseKey.id) === filterId);
-
-            if (!filter) {
-              Log.warn('[useUpdateFilter] Filter not found', { filterId });
-              return;
-            }
-
-            // Update field_id (always required)
-            filter.set(YjsDatabaseKey.field_id, fieldId);
-
-            // Update condition if provided
-            if (condition !== undefined) {
-              filter.set(YjsDatabaseKey.condition, condition);
-            }
-
-            // Update content if provided
-            if (content !== undefined) {
-              filter.set(YjsDatabaseKey.content, content);
-            }
-
-            Log.debug('[useUpdateFilter] Filter updated successfully', {
-              filterId,
-              filter: filter.toJSON(),
-            });
-          },
-        ],
-        'updateFilter'
-      );
-    },
-    [view, sharedRoot]
-  );
+  return useUpdateAdvancedFilter();
 }
 
 // ============================================================================
@@ -658,6 +593,7 @@ export function useAddAdvancedFilter() {
 
             if (rollupTargetFieldType !== undefined) {
               filter.set(YjsDatabaseKey.rollup_target_type, rollupTargetFieldType);
+              if (field) filter.set(YjsDatabaseKey.rollup_meta, newRollupFilterMetadata(field));
             }
 
             children.push([filter]);
@@ -747,29 +683,6 @@ export function useRemoveAdvancedFilter() {
  * Recursively search a filter tree for a Data filter node with the given ID.
  * Returns the Yjs Map if found, null otherwise.
  */
-function findFilterNodeRecursive(node: YDatabaseFilter, targetId: string): YDatabaseFilter | null {
-  if (!node || typeof node.get !== 'function') return null;
-
-  const id = node.get(YjsDatabaseKey.id);
-
-  if (id === targetId) return node;
-
-  const children = node.get(YjsDatabaseKey.children) as YDatabaseFilters | undefined;
-
-  if (!children) return null;
-
-  const arr = typeof children.toArray === 'function' ? children.toArray() : [];
-
-  for (const child of arr) {
-    if (!child || typeof child.get !== 'function') continue;
-    const found = findFilterNodeRecursive(child, targetId);
-
-    if (found) return found;
-  }
-
-  return null;
-}
-
 /**
  * Lightweight in-place filter updater.
  * Searches the entire nested tree (not just root children) to find the target filter.
@@ -785,89 +698,17 @@ export function useUpdateAdvancedFilter() {
 
   return useCallback(
     (params: UpdateFilterParams) => {
-      const { filterId, fieldId, condition, content } = params;
-
-      if (!view) {
-        Log.warn('[useUpdateAdvancedFilter] View is not available');
-        return;
-      }
-
+      if (!view) return;
       executeOperations(
         sharedRoot,
         [
           () => {
-            const filtersArray = view.get(YjsDatabaseKey.filters);
+            const filters = view.get(YjsDatabaseKey.filters);
 
-            if (!filtersArray || filtersArray.length === 0) {
-              Log.warn('[useUpdateAdvancedFilter] No filters found');
-              return;
-            }
-
-            // Search all top-level entries (root group + possible siblings)
-            let filter: YDatabaseFilter | null = null;
-
-            for (let i = 0; i < filtersArray.length; i++) {
-              const entry = filtersArray.get(i);
-
-              if (!entry) continue;
-              filter = findFilterNodeRecursive(entry, filterId);
-              if (filter) break;
-            }
-
-            if (filter) {
-              if (fieldId && filter.get(YjsDatabaseKey.field_id) !== fieldId) {
-                Log.debug('[useUpdateAdvancedFilter] Skipping stale filter update', { filterId, fieldId });
-                return;
-              }
-
-              // Fast path: filter is a Yjs Map — update in-place
-              if (condition !== undefined) {
-                filter.set(YjsDatabaseKey.condition, condition);
-              }
-
-              if (content !== undefined) {
-                filter.set(YjsDatabaseKey.content, content);
-              }
-
-              Log.debug('[useUpdateAdvancedFilter] Updated filter in tree', { filterId });
-              return;
-            }
-
-            // Slow path: filter node is a plain object (from desktop sync).
-            // Flatten the tree, update the matching draft, and rebuild.
-            const currentDrafts = flattenFilterTree(filtersArray, fields);
-            const idx = currentDrafts.findIndex((d) => d.id === filterId);
-
-            if (idx === -1) {
-              Log.warn('[useUpdateAdvancedFilter] Filter not found in tree or drafts', { filterId });
-              return;
-            }
-
-            const draft = { ...currentDrafts[idx] };
-
-            if (fieldId && draft.fieldId !== fieldId) {
-              Log.debug('[useUpdateAdvancedFilter] Skipping stale plain-object filter update', {
-                filterId,
-                fieldId,
-              });
-              return;
-            }
-
-            if (condition !== undefined) draft.condition = condition;
-            if (content !== undefined) draft.content = content;
-
-            currentDrafts[idx] = draft;
-
-            filtersArray.delete(0, filtersArray.length);
-
-            const rootNode = buildFilterTreeFromDrafts(currentDrafts);
-
-            filtersArray.push([rootNode]);
-
-            Log.debug('[useUpdateAdvancedFilter] Rebuilt tree for plain-object filter', { filterId });
+            if (filters) applyFilterUpdate(filters, fields, params);
           },
         ],
-        'updateAdvancedFilter'
+        'updateFilter'
       );
     },
     [view, sharedRoot, fields]
@@ -1002,6 +843,8 @@ function createDataFilterNode(draft: FilterDraft): YDatabaseFilter {
   if (draft.rollupTargetFieldType !== undefined) {
     node.set(YjsDatabaseKey.rollup_target_type, draft.rollupTargetFieldType);
   }
+
+  if (draft.rollupMetadata !== undefined) node.set(YjsDatabaseKey.rollup_meta, { ...draft.rollupMetadata });
 
   if (draft.content !== undefined) {
     node.set(YjsDatabaseKey.content, draft.content);
@@ -1180,6 +1023,7 @@ export function useAddAdvancedFilterAndRebuild() {
               fieldId,
               fieldType,
               rollupTargetFieldType: resolveRollupFilterTargetFieldType(fieldType, field),
+              rollupMetadata: fieldType === FieldType.Rollup ? newRollupFilterMetadata(field) : undefined,
               condition: conditionData.condition,
               content: conditionData.content ?? '',
               operator: defaultOperator,
@@ -1293,10 +1137,19 @@ export function useUpdateAdvancedFilterAndRebuild() {
 
               if (field) {
                 draft.fieldType = Number(field.get(YjsDatabaseKey.type));
-                draft.rollupTargetFieldType = resolveRollupFilterTargetFieldType(draft.fieldType, field);
+                if (currentDrafts[idx].fieldId !== fieldId) {
+                  draft.rollupTargetFieldType = resolveRollupFilterTargetFieldType(draft.fieldType, field);
+                  draft.rollupMetadata =
+                    draft.fieldType === FieldType.Rollup ? newRollupFilterMetadata(field) : undefined;
+                  Object.assign(draft, getDefaultFilterCondition(draft.fieldType, field));
+                  draft.content = draft.content ?? '';
+                }
               }
             }
 
+            if (!rollupConfigurationMatches(draft.rollupMetadata, params.expectedRollupMetadata)) return;
+            if (params.rollupMetadata !== undefined) draft.rollupMetadata = { ...params.rollupMetadata };
+            if (params.rollupTargetFieldType !== undefined) draft.rollupTargetFieldType = params.rollupTargetFieldType;
             if (condition !== undefined) draft.condition = condition;
             if (content !== undefined) draft.content = content;
 

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { FieldType, useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { Cell } from '@/application/database-yjs/cell.type';
 import { YjsDatabaseKey } from '@/application/types';
@@ -8,7 +10,6 @@ import PropertyMenu from '@/components/database/components/property/PropertyMenu
 import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { useTranslation } from 'react-i18next';
 
 function RowPropertyPrimitive({
   fieldId,
@@ -18,6 +19,7 @@ function RowPropertyPrimitive({
   onCellUpdated,
   showPropertyName = true,
   templateStyle = false,
+  disableFieldEditing = false,
 }: {
   fieldId: string;
   rowId: string;
@@ -26,6 +28,7 @@ function RowPropertyPrimitive({
   setActivePropertyId: (id: string | null) => void;
   showPropertyName?: boolean;
   templateStyle?: boolean;
+  disableFieldEditing?: boolean;
 }) {
   const readOnly = useReadOnly();
   const { t } = useTranslation();
@@ -50,7 +53,7 @@ function RowPropertyPrimitive({
       <PropertyMenu
         open={isActive}
         onOpenChange={(status) => {
-          if (status && (readOnly || isEditingDisabled)) {
+          if (status && (readOnly || isEditingDisabled || disableFieldEditing)) {
             return;
           }
 

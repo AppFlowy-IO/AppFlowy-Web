@@ -1,5 +1,4 @@
 import { EventApi, EventContentArg } from '@fullcalendar/core';
-import dayjs from 'dayjs';
 import { useCallback } from 'react';
 
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks';
@@ -27,10 +26,6 @@ export function MonthMultiDayTimedEvent({
   const { formatTimeDisplay } = useTimeFormat();
   const isEventStart = eventInfo.isStart;
   const isEventEnd = eventInfo.isEnd;
-
-  // Check if event is in the past - use end time if available, otherwise start time
-  const eventTime = event.end || event.start;
-  const isPastEvent = eventTime && dayjs(eventTime).isBefore(dayjs(), 'minute');
 
   const handleClick = () => {
     onClick?.(event);
@@ -82,9 +77,7 @@ export function MonthMultiDayTimedEvent({
     <div
       className={cn(
         'event-content relative flex h-full max-h-full min-h-[22px] w-full cursor-pointer flex-col items-center overflow-hidden text-xs font-medium hover:bg-other-colors-filled-event-hover',
-        isPastEvent
-          ? 'bg-other-colors-filled-event/60 text-other-colors-text-event/60'
-          : 'bg-other-colors-filled-event text-other-colors-text-event',
+        'bg-other-colors-filled-event text-other-colors-text-event',
         'transition-shadow duration-200',
         'flex border border-transparent',
         segmentConfig.leftArrow ? 'left-arrow pl-2' : 'pl-1',

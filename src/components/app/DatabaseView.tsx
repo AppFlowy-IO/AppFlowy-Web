@@ -86,7 +86,7 @@ function DatabaseView(props: DatabaseViewProps) {
   const parentViewId = view?.parent_view_id || viewMeta.parentViewId;
 
   // Use hook to determine container view and visible view IDs
-  const { containerView, visibleViewIds } = useContainerVisibleViewIds({
+  const { containerView, visibleViewIds: outlineVisibleViewIds } = useContainerVisibleViewIds({
     view,
     outline,
     parentViewId: viewMeta.parentViewId,
@@ -117,11 +117,21 @@ function DatabaseView(props: DatabaseViewProps) {
   // include the route view's parent (e.g. immediately after refresh while
   // the outline still uses a bounded depth).
   const breadcrumbContainerView = useMemo((): View | undefined => {
-    if (containerView) return undefined;
-    if (viewMeta.extra?.embedded) return undefined;
+    if (containerView && breadcrumbParentView?.view_id !== containerView.view_id) return undefined;
 
+    // A document-owned database's children are embedded too. Its actual parent
+    // container still owns their tabs when the sidebar has not loaded that branch.
+    // A matching breadcrumb can also supply children missing from an outline shell.
     return breadcrumbParentView && isDatabaseContainer(breadcrumbParentView) ? breadcrumbParentView : undefined;
-  }, [breadcrumbParentView, containerView, viewMeta.extra?.embedded]);
+  }, [breadcrumbParentView, containerView]);
+
+  const visibleViewIds = useMemo(() => {
+    if (outlineVisibleViewIds) return outlineVisibleViewIds;
+    if (!breadcrumbContainerView?.children.length) return undefined;
+
+    // Omitting this list makes the database selector hide every embedded tab.
+    return breadcrumbContainerView.children.map((child) => child.view_id);
+  }, [breadcrumbContainerView, outlineVisibleViewIds]);
 
   // Use container view (if present) as the "page meta" view for naming/icon operations.
   const pageView = containerView || breadcrumbContainerView || view;
@@ -473,6 +483,7 @@ function DatabaseView(props: DatabaseViewProps) {
       case ViewLayout.Board:
         return <KanbanSkeleton includeTitle={false} />;
       case ViewLayout.Calendar:
+      case ViewLayout.Timeline:
         return <CalendarSkeleton includeTitle={false} />;
       default:
         return <ComponentLoading />;
@@ -490,7 +501,10 @@ function DatabaseView(props: DatabaseViewProps) {
     <div
       key={databasePageId}
       style={{
-        minHeight: viewMeta.layout === ViewLayout.Calendar ? 'calc(100vh - 48px)' : undefined,
+        minHeight:
+          viewMeta.layout === ViewLayout.Calendar || viewMeta.layout === ViewLayout.Timeline
+            ? 'calc(100vh - 48px)'
+            : undefined,
       }}
       className={'relative flex h-full w-full flex-col'}
     >

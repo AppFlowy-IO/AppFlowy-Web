@@ -80,7 +80,7 @@ function RelationCellMenuContentForTarget({
   const { t } = useTranslation();
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
-  const { navigateToView, loadView, navigateToRow, createRow, bindViewSync } = useDatabaseContext();
+  const { navigateToView, loadView, navigateToRow, createRow, bindViewSync, templateEditingRowId } = useDatabaseContext();
   const [element, setElement] = useState<HTMLElement | null>(null);
   const selectedViewId = selectedView?.view_id;
   const openRelatedRow = useCallback(
@@ -487,12 +487,14 @@ function RelationCellMenuContentForTarget({
   // any non-empty query exposes the create affordance, even when the live
   // results already match. The user shouldn't have to clear partial matches
   // to create a new row that happens to share a substring.
-  const showCreateAndLink = trimmedSearch.length > 0 && !isLoadingRows && !noAccess && primaryFieldId !== null;
+  // Isolated editors may select existing rows, but cannot publish new related
+  // rows before the owning draft or template is committed.
+  const showCreateAndLink = !templateEditingRowId && trimmedSearch.length > 0 && !isLoadingRows && !noAccess && primaryFieldId !== null;
 
   const handleCreateAndLink = useCallback(async () => {
     const targetDoc = targetDocRef.current;
 
-    if (!targetDoc || !primaryFieldId || !trimmedSearch) return;
+    if (templateEditingRowId || !targetDoc || !primaryFieldId || !trimmedSearch) return;
     if (isCreatingRef.current) return;
     isCreatingRef.current = true;
     setIsCreatingAndLinking(true);
@@ -522,7 +524,7 @@ function RelationCellMenuContentForTarget({
       isCreatingRef.current = false;
       setIsCreatingAndLinking(false);
     }
-  }, [actorUid, bindViewSync, createRow, onAddRelationRowId, primaryFieldId, selectedViewId, trimmedSearch]);
+  }, [actorUid, bindViewSync, createRow, onAddRelationRowId, primaryFieldId, selectedViewId, templateEditingRowId, trimmedSearch]);
 
   const renderCreateAndLink = useMemo(() => {
     if (!showCreateAndLink) return null;

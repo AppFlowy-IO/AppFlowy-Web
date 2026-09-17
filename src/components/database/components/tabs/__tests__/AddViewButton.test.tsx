@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { toast } from 'sonner';
 
 import { DatabaseViewLayout } from '@/application/types';
 import { AddViewButton } from '@/components/database/components/tabs/AddViewButton';
@@ -7,17 +8,21 @@ import { AddViewButton } from '@/components/database/components/tabs/AddViewButt
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 const mockAddView = jest.fn();
-let mockFormViewCreationEnabled = false;
+let mockExperimentalDatabaseViewCreationEnabled = false;
 
 jest.mock('@/application/constants', () => ({
   ...jest.requireActual('@/application/constants'),
-  get FORM_VIEW_CREATION_ENABLED() {
-    return mockFormViewCreationEnabled;
+  get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
+    return mockExperimentalDatabaseViewCreationEnabled;
   },
 }));
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
   useAddDatabaseView: () => mockAddView,
+}));
+
+jest.mock('@/application/database-yjs/context', () => ({
+  useDatabaseContext: () => ({ workspaceId: 'workspace-id' }),
 }));
 
 jest.mock('sonner', () => ({
@@ -64,13 +69,38 @@ jest.mock('@/components/ui/tooltip', () => ({
 describe('AddViewButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockFormViewCreationEnabled = false;
+    mockExperimentalDatabaseViewCreationEnabled = false;
     mockAddView.mockResolvedValue('list-view-id');
     jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(300);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('shows the server plan error and finishes loading without selecting a new view', async () => {
+    const onViewAdded = jest.fn();
+    const onAfterAddView = jest.fn();
+    const message = 'Creating a Timeline view requires an active Pro plan for this workspace.';
+
+    mockExperimentalDatabaseViewCreationEnabled = true;
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockAddView.mockRejectedValueOnce({ code: 1090, message });
+    render(
+      <MemoryRouter>
+        <AddViewButton
+          databasePageId='database-page-id'
+          onAfterAddView={onAfterAddView}
+          onViewAdded={onViewAdded}
+        />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByTestId('add-timeline-view-button'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    expect(onViewAdded).not.toHaveBeenCalled();
+    expect(onAfterAddView).toHaveBeenCalledTimes(1);
   });
 
   it('creates an enabled List view and selects it', async () => {
@@ -202,7 +232,7 @@ describe('AddViewButton', () => {
     expect(nextOnAfterAddView).not.toHaveBeenCalled();
   });
 
-  it('hides the Form option while form creation is disabled on web', () => {
+  it('hides Form and Timeline while experimental database view creation is disabled on web', () => {
     render(
       <MemoryRouter>
         <AddViewButton databasePageId='database-page-id' onViewAdded={jest.fn()} />
@@ -210,6 +240,7 @@ describe('AddViewButton', () => {
     );
 
     expect(screen.queryByTestId('add-form-view-option')).toBeNull();
+    expect(screen.queryByTestId('add-timeline-view-button')).toBeNull();
     expect(screen.getByTestId('add-list-view-button')).toBeTruthy();
     expect(mockAddView).not.toHaveBeenCalled();
   });
@@ -217,7 +248,7 @@ describe('AddViewButton', () => {
   it('creates a Form without checking a workspace subscription once form creation is enabled', async () => {
     const onViewAdded = jest.fn();
 
-    mockFormViewCreationEnabled = true;
+    mockExperimentalDatabaseViewCreationEnabled = true;
     mockAddView.mockResolvedValue('form-view-id');
     render(
       <MemoryRouter>

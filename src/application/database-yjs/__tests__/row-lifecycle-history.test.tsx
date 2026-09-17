@@ -1,9 +1,8 @@
 import { act, renderHook } from '@testing-library/react';
-import type { ReactNode } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, type DatabaseContextState } from '@/application/database-yjs/context';
-import { FieldType } from '@/application/database-yjs/database.type';
+import { FieldType, TimelineDependencyType } from '@/application/database-yjs/database.type';
 import {
   useDeleteRowDispatch,
   useDuplicateRowDispatch,
@@ -12,9 +11,11 @@ import {
 } from '@/application/database-yjs/dispatch';
 import { useDatabaseHistory } from '@/application/database-yjs/history';
 import { getRowKey } from '@/application/database-yjs/row_meta';
+import { readTimelineLayoutSetting, updateTimelineLayoutSetting } from '@/application/database-yjs/timeline-layout';
 import {
   DatabaseViewLayout,
   type YDatabase,
+  type YDatabaseCell,
   type YDatabaseField,
   type YDatabaseFields,
   type YDatabaseRow,
@@ -28,6 +29,8 @@ import {
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 import { createCell, createRowDoc } from './test-helpers';
+
+import type { ReactNode } from 'react';
 
 jest.mock('@/application/db', () => ({
   deleteCollabDB: jest.fn(),
@@ -170,6 +173,21 @@ describe('row lifecycle production hooks use database history', () => {
 
   it('duplicates a row and undoes and redoes its insertion', async () => {
     const fixture = createFixture([firstRowId, secondRowId]);
+    const database = fixture.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const view = database.get(YjsDatabaseKey.views).get(viewId);
+    const source = fixture.rowMap[firstRowId]
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database_row) as YDatabaseRow;
+    const relation = new Y.Map() as YDatabaseCell;
+
+    relation.set(YjsDatabaseKey.data, [secondRowId]);
+    relation.set(YjsDatabaseKey.field_type, FieldType.Relation);
+    source.get(YjsDatabaseKey.cells).set('relation', relation);
+    const metadata = { type: TimelineDependencyType.StartToStart, lag: 3 };
+    const originalLinks = { [`${secondRowId}:${firstRowId}`]: metadata };
+
+    updateTimelineLayoutSetting(view, { dependencyFieldId: 'relation', dependencyLinks: originalLinks });
+    const links = () => readTimelineLayoutSetting(database, viewId, 0, false).dependencyLinks;
     const { result } = renderHook(useRowLifecycleHistory, { wrapper: createWrapper(fixture) });
     let duplicatedRowId = '';
 
@@ -182,12 +200,15 @@ describe('row lifecycle production hooks use database history', () => {
     expect(getRowOrderIds(fixture)).toEqual([firstRowId, duplicatedRowId, secondRowId]);
     expect(duplicatedRowDoc).toBeDefined();
     expect(getCellData(duplicatedRowDoc as YDoc)).toBe(`Name for ${firstRowId}`);
+    expect(links()).toEqual({ ...originalLinks, [`${secondRowId}:${duplicatedRowId}`]: metadata });
 
     act(() => result.current.history.undo());
     expect(getRowOrderIds(fixture)).toEqual([firstRowId, secondRowId]);
+    expect(links()).toEqual(originalLinks);
 
     act(() => result.current.history.redo());
     expect(getRowOrderIds(fixture)).toEqual([firstRowId, duplicatedRowId, secondRowId]);
+    expect(links()).toEqual({ ...originalLinks, [`${secondRowId}:${duplicatedRowId}`]: metadata });
   });
 
   it('deletes a row and undoes and redoes its removal', () => {
