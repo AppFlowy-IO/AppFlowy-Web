@@ -2,3 +2,5 @@ services:
   appflowy_cloud:
     environment:
       APPFLOWY_BASE_URL: ${APPFLOWY_BASE_URL}
+      # Share links must open the web app, which CI serves separately from the API.
+      APPFLOWY_WEB_URL: http://localhost:3000

@@ -176,9 +176,10 @@ export async function toggleQuestionMenuItem(page: Page, questionIndex: number, 
   // menu surface so we don't match a stray duplicate (e.g. the
   // tab-bar `+` picker if it's still mounted).
   const menu = page.locator('[role="menu"]').first();
+  const role = ['Required', 'Description', 'Long answer'].includes(label) ? 'menuitemcheckbox' : 'menuitem';
 
   await expect(menu).toBeVisible({ timeout: 5000 });
-  await menu.getByRole('menuitem', { name: label }).click();
+  await menu.getByRole(role, { name: label, exact: true }).click();
   // Toggle rows preventDefault — close the dropdown explicitly so the
   // next interaction (e.g. clicking the add-question button) isn't
   // blocked by the menu's outside-click guard.
