@@ -24,6 +24,7 @@ import {
   chooseTimelineZoom,
   clickRowCanvas,
   dragBarBy,
+  fitBarsInCanvas,
   readBarSamples,
   startBarSampler,
   dragHandleBy,
@@ -246,6 +247,7 @@ Then('the {string} bar moved {int} columns later', async ({ page }, title, colum
 });
 
 When('I drag the {string} bar {int} columns later while sampling its position', async ({ page }, title, columns) => {
+  await fitBarsInCanvas(page, [title], columns * MONTH_COLUMN_WIDTH);
   await remember(page, 'Design', 'Build');
   await startBarSampler(page, title);
   await dragBarBy(page, title, columns * MONTH_COLUMN_WIDTH);
@@ -508,10 +510,11 @@ Then('the {string} bar starts on the following Monday', async ({ page }, title) 
 });
 
 When('I drag the connector of {string} onto the {string} bar', async ({ page }, source, target) => {
+  await fitBarsInCanvas(page, [source, target]);
   const sourceBar = TimelineSelectors.barByTitle(page, source);
-  const targetBox = await barBox(page, target);
 
   await sourceBar.hover();
+  const targetBox = await barBox(page, target);
   const handle = sourceBar.locator('[data-testid^="timeline-link-"]');
   const handleBox = await handle.boundingBox();
 
@@ -1027,7 +1030,7 @@ Then('the timeline header has labels', async ({ page }) => {
 });
 
 When('I press redo', async ({ page }) => {
-  await page.keyboard.press('Control+Shift+z');
+  await page.keyboard.press('ControlOrMeta+Shift+z');
 });
 
 When('I click the right off-screen pill', async ({ page }) => {

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { FORM_VIEW_CREATION_ENABLED, TIMELINE_VIEW_ENABLED } from '@/application/constants';
+import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
@@ -30,7 +30,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
   const { getSubscriptions, workspaceId } = useDatabaseContext();
   const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
     workspaceId,
-    enabled: menuOpen,
+    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && menuOpen,
   });
   const mountedRef = useRef(true);
   const actionScopeRevisionRef = useRef(0);
@@ -156,7 +156,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
           {t('calendar.menuName')}
         </DropdownMenuItem>
 
-        {TIMELINE_VIEW_ENABLED &&
+        {EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED &&
           (timelineDisabledReason ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -177,7 +177,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
           {t('chart.menuName')}
         </DropdownMenuItem>
 
-        {FORM_VIEW_CREATION_ENABLED && (
+        {EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && (
           <DropdownMenuItem
             data-testid='add-form-view-option'
             onClick={() => {

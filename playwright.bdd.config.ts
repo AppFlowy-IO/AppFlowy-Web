@@ -51,7 +51,16 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 },
         launchOptions: {
-          args: ['--disable-gpu-sandbox', '--no-sandbox', '--disable-dev-shm-usage', '--force-device-scale-factor=1'],
+          args: [
+            '--disable-gpu-sandbox',
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--force-device-scale-factor=1',
+            // Respondent contexts share the browser's trust in CI's localhost key.
+            ...(process.env.APPFLOWY_TEST_TLS_SPKI
+              ? [`--ignore-certificate-errors-spki-list=${process.env.APPFLOWY_TEST_TLS_SPKI}`]
+              : []),
+          ],
         },
       },
     },

@@ -861,7 +861,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                   data-testid='timeline-calculations'
                 >
                   <TimelineTableViewport>
-                    <div className='flex h-full bg-background-primary text-sm'>
+                    <div className='flex h-full border-r border-transparent bg-background-primary text-sm'>
                       <div className='min-w-0 flex-1 basis-0' data-testid={`timeline-calculation-${primaryFieldId}`}>
                         {primaryFieldId ? <TimelineCalculation fieldId={primaryFieldId} /> : null}
                       </div>
