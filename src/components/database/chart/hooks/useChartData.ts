@@ -2,17 +2,24 @@ import dayjs, { Dayjs } from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useDatabaseContext, useDatabaseFields, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import {
+  CHART_COLORS,
   ChartAggregationType,
   ChartDataItem,
   ChartLayoutSettings,
+  ChartType,
   isDateGroupableFieldType,
   isGroupableFieldType,
 } from '@/application/database-yjs/chart.type';
-import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { getCell } from '@/application/database-yjs/const';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
-import { parseSelectOptionTypeOptions, SelectOption } from '@/application/database-yjs/fields';
+import {
+  NumberFormat,
+  parseNumberTypeOptions,
+  parseSelectOptionTypeOptions,
+  SelectOption,
+} from '@/application/database-yjs/fields';
 import { safeParseTimestamp } from '@/application/database-yjs/fields/date/utils';
 import {
   YjsDatabaseKey,
@@ -216,7 +223,7 @@ function getCellNumericValue(rowId: string, field: YDatabaseField, rowMetas: Rec
 /**
  * Compute aggregation on an array of values
  */
-function computeAggregation(values: number[], aggregationType: ChartAggregationType): number {
+export function computeAggregation(values: number[], aggregationType: ChartAggregationType): number {
   if (values.length === 0) {
     return 0;
   }
@@ -256,6 +263,57 @@ function computeAggregation(values: number[], aggregationType: ChartAggregationT
     default:
       return values.length;
   }
+}
+
+interface ComputeNumberChartDataInput {
+  settings: ChartLayoutSettings | null;
+  rowOrders: ReadonlyArray<{ id: string }> | null | undefined;
+  rowMetas: Record<RowId, YDoc> | null | undefined;
+  yField: YDatabaseField | null;
+}
+
+/**
+ * Pure transform for the Number (KPI) chart: a single aggregated value over
+ * every row that survived the view's filters (and any dashboard global
+ * filters, which `useRowOrdersSelector` already applied). There is no x-axis
+ * grouping. Count, or a missing / deleted Y field, falls back to the row count
+ * — the same fallback the grouped charts use.
+ *
+ * Returns an empty array while row orders are unavailable, otherwise exactly
+ * one item whose `rowIds` holds every counted row (for drill-down).
+ */
+export function computeNumberChartData({
+  settings,
+  rowOrders,
+  rowMetas,
+  yField,
+}: ComputeNumberChartDataInput): ChartDataItem[] {
+  if (!rowOrders || !rowMetas) {
+    return [];
+  }
+
+  const rowIds = rowOrders.map((row) => row.id);
+  const aggregationType = settings?.aggregationType ?? ChartAggregationType.Count;
+  let value: number;
+
+  if (aggregationType === ChartAggregationType.Count || !yField) {
+    value = rowIds.length;
+  } else {
+    const numericValues = rowIds
+      .map((rowId) => getCellNumericValue(rowId, yField, rowMetas))
+      .filter((v): v is number => v !== null);
+
+    value = computeAggregation(numericValues, aggregationType);
+  }
+
+  return [
+    {
+      label: yField ? String(yField.get(YjsDatabaseKey.name) || '') : '',
+      value,
+      rowIds,
+      color: CHART_COLORS[0],
+    },
+  ];
 }
 
 interface ComputeChartDataInput {
@@ -440,6 +498,14 @@ export interface UseChartDataReturn {
   groupableFields: GroupableField[];
   /** Whether there are any groupable fields in the database */
   hasGroupableFields: boolean;
+  /** Resolved Y field (only when the aggregation needs one and it still exists) */
+  yAxisField: YDatabaseField | null;
+  /** Current name of the Y field, kept fresh across renames */
+  yFieldName: string;
+  /** Number format of the Y field when it is a Number field, otherwise null */
+  yNumberFormat: NumberFormat | null;
+  /** Number chart only: the aggregated value, or null for other chart types / while loading */
+  numberValue: number | null;
 }
 
 const EMPTY_CHART_DATA: ChartDataItem[] = [];
@@ -616,6 +682,23 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
 
   const colors = useChartColors({ fieldType, selectOptions });
 
+  const isNumberChart = settings?.chartType === ChartType.Number;
+  const yFieldId = settings?.aggregationType !== ChartAggregationType.Count ? settings?.yFieldId : undefined;
+  const yAxisField = yFieldId && fields ? fields.get(yFieldId) ?? null : null;
+
+  const { yFieldName, yNumberFormat } = useMemo(() => {
+    void fieldsClock;
+
+    if (!yAxisField) return { yFieldName: '', yNumberFormat: null };
+
+    const yType = Number(yAxisField.get(YjsDatabaseKey.type)) as FieldType;
+
+    return {
+      yFieldName: String(yAxisField.get(YjsDatabaseKey.name) || ''),
+      yNumberFormat: yType === FieldType.Number ? parseNumberTypeOptions(yAxisField, yType).format : null,
+    };
+  }, [yAxisField, fieldsClock]);
+
   const optionIdToName = useMemo(() => {
     const map = new Map<string, string>();
 
@@ -639,6 +722,15 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
 
     if (!rowsLoaded) return EMPTY_CHART_DATA;
 
+    if (isNumberChart) {
+      return computeNumberChartData({
+        settings,
+        rowOrders,
+        rowMetas,
+        yField: yAxisField,
+      });
+    }
+
     return computeChartData({
       settings,
       resolvedXFieldId,
@@ -652,6 +744,8 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     });
   }, [
     rowsLoaded,
+    isNumberChart,
+    yAxisField,
     settings,
     resolvedXFieldId,
     rowOrders,
@@ -664,6 +758,8 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     colors,
   ]);
 
+  const numberValue = isNumberChart && chartData.length > 0 ? chartData[0].value : null;
+
   return {
     chartData,
     isLoading,
@@ -672,6 +768,10 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     fieldType,
     groupableFields,
     hasGroupableFields,
+    yAxisField,
+    yFieldName,
+    yNumberFormat,
+    numberValue,
   };
 }
 

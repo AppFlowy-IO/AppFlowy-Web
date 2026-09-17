@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Editor, Element, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
+import { DASHBOARD_VIEW_ENABLED } from '@/application/constants';
 import { isDatabaseBlockType } from '@/application/database-block';
 import { createDatabaseFeedPageViaGrid, createLinkedDatabaseFeedView } from '@/application/database-yjs/feed-layout';
 import {
@@ -61,6 +62,7 @@ import { ReactComponent as TimelineIcon } from '@/assets/icons/timeline.svg';
 import { ReactComponent as CalloutIcon } from '@/assets/icons/callout.svg';
 import { ReactComponent as ChartIcon } from '@/assets/icons/chart.svg';
 import { ReactComponent as ContinueWritingIcon } from '@/assets/icons/continue_writing.svg';
+import { ReactComponent as DashboardIcon } from '@/assets/icons/dashboard.svg';
 import { ReactComponent as DateIcon } from '@/assets/icons/date.svg';
 import { ReactComponent as DividerIcon } from '@/assets/icons/divider.svg';
 import { ReactComponent as OutlineIcon } from '@/assets/icons/doc.svg';
@@ -729,6 +731,10 @@ export function SlashPanel({
               });
             case ViewLayout.Timeline:
               return t('timeline.referencedTimelinePrefix', {
+                defaultValue: 'View of',
+              });
+            case ViewLayout.Dashboard:
+              return t('dashboard.referencedDashboardPrefix', {
                 defaultValue: 'View of',
               });
             default:
@@ -1446,6 +1452,21 @@ export function SlashPanel({
           void handleOpenLinkedDatabasePicker(ViewLayout.Timeline, 'linkedTimeline');
         },
       },
+      ...(DASHBOARD_VIEW_ENABLED
+        ? [
+            {
+              label: t('document.slashMenu.name.linkedDashboard', { defaultValue: 'Linked Dashboard' }),
+              key: 'linkedDashboard',
+              icon: <DashboardIcon />,
+              group: SlashMenuGroupKey.Database,
+              keywords: ['linked', 'dashboard', 'widgets', 'overview', 'database'],
+              aliases: ['link to dashboard', 'referenced dashboard'],
+              onClick: () => {
+                void handleOpenLinkedDatabasePicker(ViewLayout.Dashboard, 'linkedDashboard');
+              },
+            },
+          ]
+        : []),
       {
         label: t('list.menuName'),
         key: 'list',

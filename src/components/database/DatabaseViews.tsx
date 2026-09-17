@@ -3,7 +3,12 @@ import { flushSync } from 'react-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { toast } from 'sonner';
 
-import { useDatabase, useDatabaseContext, useDatabaseViewsSelector } from '@/application/database-yjs';
+import {
+  DatabaseContext,
+  useDatabase,
+  useDatabaseContext,
+  useDatabaseViewsSelector,
+} from '@/application/database-yjs';
 import { hasAdvancedFilterRoot } from '@/application/database-yjs/filter';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
@@ -15,6 +20,10 @@ import {
 } from '@/components/database/components/conditions/context';
 import { DatabaseSearchProvider } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { DatabaseTabs } from '@/components/database/components/tabs';
+import { WIDGET_CONDITIONS_BAR_HEIGHT, WIDGET_MIN_VIEWPORT_HEIGHT } from '@/components/database/dashboard/constants';
+import { DashboardProvider } from '@/components/database/dashboard/DashboardContext';
+import { WidgetBody } from '@/components/database/dashboard/WidgetBody';
+import { useWidgetContextOptional } from '@/components/database/dashboard/WidgetContext';
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
@@ -45,6 +54,8 @@ const List = lazy(() => import('@/components/database/list/List'));
 const Gallery = lazy(() => import('@/components/database/gallery'));
 const Feed = lazy(() => import('@/components/database/feed'));
 const Timeline = lazy(() => import('@/components/database/timeline'));
+const Dashboard = lazy(() => import('@/components/database/dashboard'));
+const WidgetHeader = lazy(() => import('@/components/database/dashboard/WidgetHeader'));
 const FormBuilderView = lazy(() =>
   import('@/components/database/form/FormBuilderView').then(({ FormBuilderView: Component }) => ({
     default: Component,
@@ -95,7 +106,9 @@ function DatabaseViews({
   onReorderViews?: (movedViewId: string, prevViewId: string | null) => void | Promise<void>;
 }) {
   const { childViews, viewIds } = useDatabaseViewsSelector(databasePageId, visibleViewIds);
-  const { isDocumentBlock, variant } = useDatabaseContext();
+  const databaseContext = useDatabaseContext();
+  const { isDocumentBlock, variant, isDashboardWidget } = databaseContext;
+  const widgetContext = useWidgetContextOptional();
   const database = useDatabase();
   const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
   const views = database?.get(YjsDatabaseKey.views);
@@ -135,6 +148,10 @@ function DatabaseViews({
   }, [hasAuthoritativeVisibleOrder, viewIds, views]);
 
   useEffect(() => {
+    // A dashboard widget shows exactly one view; it must not rewrite the
+    // stored tab order of its (possibly also mounted) source database.
+    if (isDashboardWidget) return;
+
     const isNewDatabase = orderedDatabaseIdRef.current !== databaseId;
     const storedViewIds = readStoredViewOrder(databaseId);
     const previousViewIds = orderedViewIdsRef.current;
@@ -186,7 +203,7 @@ function DatabaseViews({
     orderedViewIdsRef.current = nextViewIds;
     writeStoredViewOrder(databaseId, nextViewIds);
     setOrderedViewIds(nextViewIds);
-  }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder, viewIds]);
+  }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder, isDashboardWidget, viewIds]);
 
   const [conditionsExpanded, setConditionsExpanded] = useState<boolean>(false);
   const toggleExpanded = useCallback(() => {
@@ -363,30 +380,47 @@ function DatabaseViews({
         return <Feed key={activeViewId} />;
       case DatabaseViewLayout.Timeline:
         return <Timeline key={activeViewId} />;
+      case DatabaseViewLayout.Dashboard:
+        // Dashboards never nest: a widget whose view became a dashboard shows
+        // a placeholder rendered by the widget itself.
+        return isDashboardWidget ? null : <Dashboard key={activeViewId} />;
       default:
         return null;
     }
-  }, [activeViewId, effectiveLayout]);
+  }, [activeViewId, effectiveLayout, isDashboardWidget]);
+  // A dashboard widget has a fixed slot: when its filter / sort row is open
+  // the viewport gives that row its height instead of overflowing the card.
+  const viewportHeight =
+    isDashboardWidget && conditionsExpanded && fixedHeight !== undefined
+      ? Math.max(WIDGET_MIN_VIEWPORT_HEIGHT, fixedHeight - WIDGET_CONDITIONS_BAR_HEIGHT)
+      : fixedHeight;
   const shouldUseFixedViewport = shouldUseFixedDatabaseViewport({
-    embeddedHeight: fixedHeight,
+    embeddedHeight: viewportHeight,
     isDocumentBlock,
     variant,
   });
   const shouldAutoShrinkViewport = shouldAutoShrinkDatabaseViewport({
-    embeddedHeight: fixedHeight,
+    embeddedHeight: viewportHeight,
     isDocumentBlock,
     layout: effectiveLayout,
   });
   const viewportStyle = getDatabaseViewportStyle({
-    embeddedHeight: fixedHeight,
+    embeddedHeight: viewportHeight,
     isDocumentBlock,
     layout: effectiveLayout,
   });
   const shouldScrollEmbeddedViewport = shouldScrollEmbeddedDatabaseViewport({
-    embeddedHeight: fixedHeight,
+    embeddedHeight: viewportHeight,
     isDocumentBlock,
     layout: effectiveLayout,
   });
+  const viewportContext = useMemo(
+    () =>
+      viewportHeight === databaseContext.embeddedHeight
+        ? databaseContext
+        : { ...databaseContext, embeddedHeight: viewportHeight },
+    [databaseContext, viewportHeight]
+  );
   const databaseConditionsValue = useMemo(
     () => ({
       expanded: conditionsExpanded,
@@ -430,51 +464,75 @@ function DatabaseViews({
     [setExpanded, setOpenFilterId, setAdvancedMode, setAdvancedPanelOpen, setSortMenuOpen]
   );
 
+  const isDashboardHost = effectiveLayout === DatabaseViewLayout.Dashboard && !isDashboardWidget;
+  const viewport = (
+    <div
+      className={cn(
+        'relative flex w-full flex-col',
+        shouldUseFixedViewport
+          ? shouldAutoShrinkViewport
+            ? shouldScrollEmbeddedViewport
+              ? 'min-h-0 overflow-y-auto overflow-x-hidden'
+              : 'min-h-0 overflow-hidden'
+            : 'h-full min-h-0 flex-1 overflow-hidden'
+          : 'overflow-visible'
+      )}
+      style={viewportStyle}
+    >
+      <div
+        className={cn(
+          'w-full',
+          shouldUseFixedViewport &&
+            (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
+        )}
+        style={viewportStyle}
+      >
+        <Suspense fallback={null}>
+          <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
+        </Suspense>
+      </div>
+    </div>
+  );
+
   const content = (
     <DatabaseSearchProvider activeViewId={activeViewId}>
       <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
         <DatabaseConditionsActionsContext.Provider value={databaseConditionsActions}>
-          <DatabaseTabs
-            viewName={viewName}
-            databasePageId={databasePageId}
-            selectedViewId={activeViewId}
-            setSelectedViewId={handleViewChange}
-            viewIds={displayedViewIds}
-            onViewAddedToDatabase={handleViewAddedToDatabase}
-            onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
-            onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
-            onViewIdsChanged={onViewIdsChanged}
-            onReorderTabs={handleReorderTabs}
-          />
-
-          <DatabaseConditionsPanel />
-
-          <div
-            className={cn(
-              'relative flex w-full flex-col',
-              shouldUseFixedViewport
-                ? shouldAutoShrinkViewport
-                  ? shouldScrollEmbeddedViewport
-                    ? 'min-h-0 overflow-y-auto overflow-x-hidden'
-                    : 'min-h-0 overflow-hidden'
-                  : 'h-full min-h-0 flex-1 overflow-hidden'
-                : 'overflow-visible'
-            )}
-            style={viewportStyle}
-          >
-            <div
-              className={cn(
-                'w-full',
-                shouldUseFixedViewport &&
-                  (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
-              )}
-              style={viewportStyle}
-            >
-              <Suspense fallback={null}>
-                <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
+          {isDashboardWidget ? (
+            <>
+              <Suspense fallback={<div aria-hidden='true' style={{ height: widgetContext?.headerHeight ?? 0 }} />}>
+                <WidgetHeader />
               </Suspense>
-            </div>
-          </div>
+              <WidgetBody>
+                <DatabaseConditionsPanel />
+                {viewportContext === databaseContext ? (
+                  viewport
+                ) : (
+                  <DatabaseContext.Provider value={viewportContext}>{viewport}</DatabaseContext.Provider>
+                )}
+              </WidgetBody>
+            </>
+          ) : (
+            <>
+              <DatabaseTabs
+                viewName={viewName}
+                databasePageId={databasePageId}
+                selectedViewId={activeViewId}
+                setSelectedViewId={handleViewChange}
+                viewIds={displayedViewIds}
+                onViewAddedToDatabase={handleViewAddedToDatabase}
+                onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
+                onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
+                onViewIdsChanged={onViewIdsChanged}
+                onReorderTabs={handleReorderTabs}
+              />
+
+              {/* A dashboard shows its global filters inside the grid instead. */}
+              {isDashboardHost ? null : <DatabaseConditionsPanel />}
+
+              {viewport}
+            </>
+          )}
         </DatabaseConditionsActionsContext.Provider>
       </DatabaseConditionsContext.Provider>
     </DatabaseSearchProvider>
@@ -491,6 +549,14 @@ function DatabaseViews({
       break;
     case DatabaseViewLayout.Timeline:
       groupedContent = <TimelineGroupingProvider>{content}</TimelineGroupingProvider>;
+      break;
+    case DatabaseViewLayout.Dashboard:
+      // The tab bar's toolbar (Edit / Done, global filters) and the grid
+      // share one dashboard state.
+      if (isDashboardHost) {
+        groupedContent = <DashboardProvider viewIds={displayedViewIds}>{content}</DashboardProvider>;
+      }
+
       break;
   }
 

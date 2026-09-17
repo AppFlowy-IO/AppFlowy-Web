@@ -3,6 +3,7 @@ import EventEmitter from 'events';
 import { AxiosInstance } from 'axios';
 import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 
+import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
@@ -93,6 +94,18 @@ export interface DatabaseContextState {
   paddingEnd?: number;
   isDocumentBlock?: boolean;
   embeddedHeight?: number;
+  /**
+   * Set when this database renders inside a dashboard widget: the tab bar is
+   * replaced by the widget header and the viewport is the row height.
+   */
+  isDashboardWidget?: boolean;
+  /**
+   * Dashboard global filters resolved for this database (plain filter nodes in
+   * the persisted view-filter shape). They are AND-ed with the view's own
+   * filters by `useRowOrdersSelector`; a widget without a mapped property
+   * receives none.
+   */
+  extraFilters?: DashboardExtraFilter[];
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;

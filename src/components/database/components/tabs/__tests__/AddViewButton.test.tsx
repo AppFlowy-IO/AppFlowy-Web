@@ -9,11 +9,15 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 const mockAddView = jest.fn();
 let mockFormViewCreationEnabled = false;
+let mockDashboardViewEnabled = true;
 
 jest.mock('@/application/constants', () => ({
   ...jest.requireActual('@/application/constants'),
   get FORM_VIEW_CREATION_ENABLED() {
     return mockFormViewCreationEnabled;
+  },
+  get DASHBOARD_VIEW_ENABLED() {
+    return mockDashboardViewEnabled;
   },
 }));
 
@@ -27,7 +31,8 @@ jest.mock('sonner', () => ({
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => (key === 'form.builderName' ? 'Form builder' : key),
+    t: (key: string, options?: { defaultValue?: string }) =>
+      key === 'form.builderName' ? 'Form builder' : options?.defaultValue ?? key,
   }),
 }));
 
@@ -66,6 +71,7 @@ describe('AddViewButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFormViewCreationEnabled = false;
+    mockDashboardViewEnabled = true;
     mockAddView.mockResolvedValue('list-view-id');
     jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(300);
   });
@@ -140,6 +146,37 @@ describe('AddViewButton', () => {
 
     expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Feed, 'feed.menuName');
     await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('feed-view-id'));
+  });
+
+  it('creates a Dashboard view and selects it', async () => {
+    const onViewAdded = jest.fn();
+
+    mockAddView.mockResolvedValue('dashboard-view-id');
+    render(
+      <MemoryRouter>
+        <AddViewButton databasePageId='database-page-id' onViewAdded={onViewAdded} />
+      </MemoryRouter>
+    );
+
+    const option = screen.getByTestId('add-dashboard-view-button');
+
+    expect(option.textContent).toBe('Dashboard');
+    fireEvent.click(option);
+
+    expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Dashboard, 'Dashboard');
+    await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('dashboard-view-id'));
+  });
+
+  it('hides the Dashboard option while the dashboard view is disabled', () => {
+    mockDashboardViewEnabled = false;
+    render(
+      <MemoryRouter>
+        <AddViewButton databasePageId='database-page-id' onViewAdded={jest.fn()} />
+      </MemoryRouter>
+    );
+
+    expect(screen.queryByTestId('add-dashboard-view-button')).toBeNull();
+    expect(screen.getByTestId('add-timeline-view-button')).toBeTruthy();
   });
 
   it('completes with the latest same-database callbacks and preserves concurrently added view IDs', async () => {

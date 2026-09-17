@@ -449,6 +449,7 @@ function DatabaseView(props: DatabaseViewProps) {
       case ViewLayout.List:
       case ViewLayout.Gallery:
       case ViewLayout.Feed:
+      case ViewLayout.Dashboard:
         return <GridSkeleton includeTitle={false} />;
       case ViewLayout.Board:
         return <KanbanSkeleton includeTitle={false} />;

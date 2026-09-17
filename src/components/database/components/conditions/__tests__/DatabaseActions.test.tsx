@@ -62,6 +62,10 @@ jest.mock('@/components/database/components/template', () => ({
   ),
 }));
 
+jest.mock('@/components/database/dashboard/DashboardActions', () => ({
+  DashboardActions: () => <div data-testid='dashboard-toolbar' />,
+}));
+
 jest.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipContent: () => null,
@@ -314,5 +318,130 @@ describe('DatabaseActions template support', () => {
     rerender(createActions());
     expect(screen.getByTestId('database-actions-search-input').value).toBe('Roadmap');
     expect(screen.getByTestId('database-search-query').textContent).toBe('Roadmap');
+  });
+});
+
+describe('DatabaseActions in dashboards', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUseDatabase.mockReturnValue(undefined);
+    mockUseReadOnly.mockReturnValue(false);
+  });
+
+  function toolbarTestIds() {
+    return Array.from(screen.getByTestId('database-actions').querySelectorAll('[data-testid]')).map((element) =>
+      element.getAttribute('data-testid')
+    );
+  }
+
+  it('replaces the view conditions of a dashboard with its own toolbar and keeps Settings', () => {
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Dashboard);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'dashboard-view',
+      isDocumentBlock: false,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(<DatabaseActions />);
+
+    expect(toolbarTestIds()).toEqual(['database-actions-settings', 'dashboard-toolbar']);
+    expect(
+      screen
+        .getByTestId('database-actions-settings')
+        .closest('[data-database-settings-layout]')
+        ?.getAttribute('data-database-settings-layout')
+    ).toBe(String(DatabaseViewLayout.Dashboard));
+    expect(screen.getByTestId('database-actions').getAttribute('data-dashboard-widget')).toBeNull();
+  });
+
+  it('still offers the dashboard toolbar (global filters) to read-only viewers', () => {
+    mockUseReadOnly.mockReturnValue(true);
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Dashboard);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'dashboard-view',
+      isDocumentBlock: false,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(<DatabaseActions />);
+
+    expect(toolbarTestIds()).toEqual(['dashboard-toolbar']);
+  });
+
+  it('shows the compact filter, sort, open-as-page and settings buttons in a grid widget', () => {
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Grid);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'grid-view',
+      databasePageId: 'grid-view',
+      isDocumentBlock: true,
+      isDashboardWidget: true,
+      navigateToView: jest.fn(),
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(<DatabaseActions />);
+
+    expect(toolbarTestIds()).toEqual([
+      'filters-button',
+      'sorts-button',
+      'database-actions-open-as-page',
+      'database-actions-settings',
+    ]);
+    expect(screen.getByTestId('database-actions').getAttribute('data-dashboard-widget')).toBe('true');
+    expect(screen.getByTestId('database-actions').className).toContain('gap-0.5');
+    expect(screen.getByTestId('filters-button').getAttribute('data-compact')).toBe('true');
+    expect(screen.getByTestId('sorts-button').getAttribute('data-compact')).toBe('true');
+
+    for (const testId of ['database-actions-open-as-page', 'database-actions-settings']) {
+      expect(screen.getByTestId(testId).className).toContain('h-6');
+      expect(screen.getByTestId(testId).className).toContain('w-6');
+    }
+  });
+
+  it('leaves search and the template button out of a gallery widget header', () => {
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Gallery);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'gallery-view',
+      databasePageId: 'gallery-view',
+      isDocumentBlock: true,
+      isDashboardWidget: true,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(
+      <DatabaseSearchProvider activeViewId='gallery-view'>
+        <DatabaseActions />
+      </DatabaseSearchProvider>
+    );
+
+    expect(screen.queryByTestId('database-actions-search')).toBeNull();
+    expect(screen.queryByTestId('database-template-button')).toBeNull();
+    expect(screen.getByTestId('filters-button')).toBeTruthy();
+    expect(screen.getByTestId('database-actions-settings')).toBeTruthy();
+  });
+
+  it('keeps only open-as-page in a read-only widget', () => {
+    mockUseReadOnly.mockReturnValue(true);
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Board);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'board-view',
+      databasePageId: 'board-view',
+      isDocumentBlock: true,
+      isDashboardWidget: true,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(<DatabaseActions />);
+
+    expect(toolbarTestIds()).toEqual(['database-actions-open-as-page']);
+  });
+
+  it('never renders the dashboard toolbar inside a widget', () => {
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Dashboard);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'nested-dashboard',
+      databasePageId: 'nested-dashboard',
+      isDocumentBlock: true,
+      isDashboardWidget: true,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(<DatabaseActions />);
+
+    expect(screen.queryByTestId('dashboard-toolbar')).toBeNull();
   });
 });

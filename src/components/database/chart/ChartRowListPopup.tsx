@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useFieldSelector, usePrimaryFieldId, useRowMap } from '@/application/database-yjs';
-import { ChartDataItem } from '@/application/database-yjs/chart.type';
+import { ChartDataItem, ChartType } from '@/application/database-yjs/chart.type';
 import { getCell } from '@/application/database-yjs/const';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { YjsDatabaseKey } from '@/application/types';
@@ -36,9 +36,11 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
   const rowMetas = useRowMap();
   const primaryFieldId = usePrimaryFieldId();
   const { field: primaryField, clock: primaryFieldClock } = useFieldSelector(primaryFieldId ?? '');
-  const { xAxisField } = useChartContext();
+  const { xAxisField, chartType } = useChartContext();
 
-  const xAxisName = xAxisField ? String(xAxisField.get(YjsDatabaseKey.name) || '') : '';
+  // The Number chart has no x-axis grouping, so there is no category chip.
+  const xAxisName =
+    xAxisField && chartType !== ChartType.Number ? String(xAxisField.get(YjsDatabaseKey.name) || '') : '';
 
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 

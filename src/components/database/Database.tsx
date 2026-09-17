@@ -11,6 +11,7 @@ import {
   retainDatabaseRowDocSeedCache,
 } from '@/application/database-blob';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
+import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
 import { hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@/application/database-yjs/history';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
@@ -195,6 +196,10 @@ export interface Database2Props {
   variant?: UIVariant;
   onRendered?: () => void;
   isDocumentBlock?: boolean;
+  /** Render as a dashboard widget: widget header instead of tabs, viewport = row height. */
+  isDashboardWidget?: boolean;
+  /** Dashboard global filters resolved for this database; AND-ed with the view filters. */
+  extraFilters?: DashboardExtraFilter[];
   paddingStart?: number;
   paddingEnd?: number;
   showActions?: boolean;
@@ -266,6 +271,8 @@ function Database(props: Database2Props) {
     modalRowId,
     isDocumentBlock: _isDocumentBlock,
     embeddedHeight,
+    isDashboardWidget,
+    extraFilters,
     onViewIdsChanged,
     onReorderViews,
     workspaceId,
@@ -1473,6 +1480,8 @@ function Database(props: Database2Props) {
       paddingEnd: props.paddingEnd,
       isDocumentBlock: _isDocumentBlock,
       embeddedHeight,
+      isDashboardWidget,
+      extraFilters,
       navigateToRow: handleOpenRow,
       loadView,
       bindViewSync,
@@ -1522,6 +1531,8 @@ function Database(props: Database2Props) {
       props.paddingEnd,
       _isDocumentBlock,
       embeddedHeight,
+      isDashboardWidget,
+      extraFilters,
       handleOpenRow,
       loadView,
       bindViewSync,

@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { TIMELINE_VIEW_ENABLED } from '@/application/constants';
-import { useDatabaseViewId } from '@/application/database-yjs';
+import { DASHBOARD_VIEW_ENABLED, TIMELINE_VIEW_ENABLED } from '@/application/constants';
+import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
 import { useUpdateDatabaseLayout } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout } from '@/application/types';
 import { ReactComponent as LayoutIcon } from '@/assets/icons/layout.svg';
@@ -19,7 +19,10 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
   const { t } = useTranslation();
 
   const viewId = useDatabaseViewId();
+  const { isDashboardWidget } = useDatabaseContext();
   const updateLayout = useUpdateDatabaseLayout(viewId);
+  // Dashboards never nest, so a widget's view cannot become one.
+  const showDashboard = DASHBOARD_VIEW_ENABLED && !isDashboardWidget;
   const options = useMemo(
     () => [
       {
@@ -58,8 +61,16 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         value: DatabaseViewLayout.Feed,
         label: t('feed.menuName'),
       },
+      ...(showDashboard
+        ? [
+            {
+              value: DatabaseViewLayout.Dashboard,
+              label: t('dashboard.menuName', { defaultValue: 'Dashboard' }),
+            },
+          ]
+        : []),
     ],
-    [t]
+    [t, showDashboard]
   );
 
   return (

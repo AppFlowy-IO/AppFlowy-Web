@@ -39,6 +39,7 @@ export enum BlockType {
   BoardBlock = 'board',
   CalendarBlock = 'calendar',
   TimelineBlock = 'timeline',
+  DashboardBlock = 'dashboard',
   ListBlock = 'list',
   ChartBlock = 'chart',
   DatabaseGalleryBlock = 'gallery',
@@ -510,6 +511,9 @@ export enum ViewLayout {
   /// Folder-side layout value for timeline views. Matches
   /// `ViewLayout::Timeline = 10` in `libs/collab/src/folder/view.rs`.
   Timeline = 10,
+  /// Folder-side layout value for dashboard views. Matches
+  /// `ViewLayout::Dashboard = 11` in `libs/collab/src/folder/view.rs`.
+  Dashboard = 11,
 }
 
 export enum YjsEditorKey {
@@ -680,6 +684,12 @@ export enum YjsDatabaseKey {
   avoid_weekends = 'avoid_weekends',
   /// Timeline layout setting: properties shown as columns of the docked table.
   table_field_ids = 'table_field_ids',
+  /// Dashboard layout setting: rows of widgets (`{ id, height, widgets: [{ id, view_id, database_id, width }] }`).
+  dashboard_rows = 'rows',
+  /// Dashboard layout setting: global filters applied across widgets (`{ id, name, ty, condition, content, targets }`).
+  dashboard_global_filters = 'global_filters',
+  /// Dashboard layout setting: whether widget names render above each widget in View mode.
+  show_widget_titles = 'show_widget_titles',
   icon = 'icon',
   is_inline = 'is_inline',
   embedded = 'embedded',
@@ -916,6 +926,9 @@ export enum DatabaseViewLayout {
   /// Matches `DatabaseLayout::Timeline = 8` in
   /// `libs/collab/src/database/views/layout.rs`.
   Timeline = 8,
+  /// Matches `DatabaseLayout::Dashboard = 9` in
+  /// `libs/collab/src/database/views/layout.rs`.
+  Dashboard = 9,
 }
 
 export interface YDatabaseView extends Y.Map<unknown> {
@@ -1000,6 +1013,9 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 
   // DatabaseViewLayout.Timeline
   get(key: '8'): YDatabaseTimelineLayoutSetting;
+
+  // DatabaseViewLayout.Dashboard
+  get(key: '9'): YDatabaseDashboardLayoutSetting;
 }
 
 export interface YDatabaseGridLayoutSetting extends Y.Map<unknown> {
@@ -1046,6 +1062,13 @@ export interface YDatabaseTimelineLayoutSetting extends Y.Map<unknown> {
     key: YjsDatabaseKey.show_table | YjsDatabaseKey.avoid_weekends | YjsDatabaseKey.hide_empty_groups
   ): boolean | undefined;
   get(key: YjsDatabaseKey.table_field_ids | YjsDatabaseKey.dependency_links): unknown;
+}
+
+/// Dashboard state: `rows` and `global_filters` are plain JSON values (arrays of
+/// objects) so Yrs reads them as nested `Any`; see `dashboard-layout.ts`.
+export interface YDatabaseDashboardLayoutSetting extends Y.Map<unknown> {
+  get(key: YjsDatabaseKey.dashboard_rows | YjsDatabaseKey.dashboard_global_filters): unknown;
+  get(key: YjsDatabaseKey.show_widget_titles): boolean | undefined;
 }
 
 export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
@@ -1317,6 +1340,7 @@ export const layoutMap = {
   [ViewLayout.Feed]: 'feed',
   [ViewLayout.Form]: 'form',
   [ViewLayout.Timeline]: 'timeline',
+  [ViewLayout.Dashboard]: 'dashboard',
 };
 
 export const databaseLayoutMap = {
@@ -1329,6 +1353,7 @@ export const databaseLayoutMap = {
   [DatabaseViewLayout.Feed]: 'feed',
   [DatabaseViewLayout.Form]: 'form',
   [DatabaseViewLayout.Timeline]: 'timeline',
+  [DatabaseViewLayout.Dashboard]: 'dashboard',
 };
 
 export enum FontLayout {

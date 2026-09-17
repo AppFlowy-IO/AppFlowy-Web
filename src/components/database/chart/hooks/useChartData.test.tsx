@@ -25,6 +25,7 @@ jest.mock('./useChartColors', () => ({
 }));
 
 import { useDatabaseContext, useDatabaseFields, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
+import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
 import { ChartAggregationType, ChartLayoutSettings, ChartType } from '@/application/database-yjs/chart.type';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import {
@@ -35,7 +36,6 @@ import {
   YMapFieldTypeOption,
 } from '@/application/types';
 
-import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
 
 import { useChartData } from './useChartData';
 
@@ -113,5 +113,106 @@ describe('useChartData desktop-model field conversion', () => {
         expect.objectContaining({ label: 'Checked', value: 1, rowIds: [rowId] }),
       ]);
     });
+  });
+});
+
+describe('useChartData Number chart', () => {
+  const databaseId = 'number-database';
+  const amountFieldId = 'amount';
+
+  function setup(settings: ChartLayoutSettings, rowIds: string[], amounts: Record<string, string>) {
+    const databaseDoc = new Y.Doc();
+    const fields = databaseDoc.getMap('fields') as YDatabaseFields;
+    const amountField = addField(fields, amountFieldId, FieldType.Number);
+    const rowMetas = Object.fromEntries(
+      rowIds.map((rowId) => [
+        rowId,
+        createRowDoc(
+          rowId,
+          databaseId,
+          amounts[rowId] !== undefined ? { [amountFieldId]: createCell(FieldType.Number, amounts[rowId]) } : {}
+        ),
+      ])
+    );
+
+    (useDatabaseFields as jest.Mock).mockReturnValue(fields);
+    (useRowOrdersSelector as jest.Mock).mockReturnValue(rowIds.map((id) => ({ id })));
+    (useRowMap as jest.Mock).mockReturnValue(rowMetas);
+    (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow: jest.fn().mockResolvedValue(undefined) });
+
+    return { amountField };
+  }
+
+  const baseSettings: ChartLayoutSettings = {
+    chartType: ChartType.Number,
+    xFieldId: '',
+    showEmptyValues: true,
+    aggregationType: ChartAggregationType.Count,
+    cumulative: false,
+    dateCondition: DateGroupCondition.Month,
+    numberFormat: 'auto',
+    titleText: '',
+  };
+
+  it('counts every filtered row without any groupable field', async () => {
+    setup(baseSettings, ['r1', 'r2', 'r3'], {});
+
+    const { result } = renderHook(() => useChartData({ settings: baseSettings }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.hasGroupableFields).toBe(false);
+    expect(result.current.chartData).toHaveLength(1);
+    expect(result.current.chartData[0]).toEqual(expect.objectContaining({ value: 3, rowIds: ['r1', 'r2', 'r3'] }));
+    expect(result.current.numberValue).toBe(3);
+    expect(result.current.yAxisField).toBeNull();
+  });
+
+  it('aggregates the Y field over all rows and ignores empty cells', async () => {
+    const settings: ChartLayoutSettings = {
+      ...baseSettings,
+      aggregationType: ChartAggregationType.Sum,
+      yFieldId: amountFieldId,
+    };
+
+    setup(settings, ['r1', 'r2', 'r3'], { r1: '10', r2: '2.5' });
+
+    const { result } = renderHook(() => useChartData({ settings }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.numberValue).toBe(12.5);
+    expect(result.current.yFieldName).toBe(amountFieldId);
+    expect(result.current.yNumberFormat).toBe(0);
+    expect(result.current.chartData[0].rowIds).toEqual(['r1', 'r2', 'r3']);
+  });
+
+  it('computes the average and falls back to count when the Y field is missing', async () => {
+    const average: ChartLayoutSettings = {
+      ...baseSettings,
+      aggregationType: ChartAggregationType.Average,
+      yFieldId: amountFieldId,
+    };
+
+    setup(average, ['r1', 'r2'], { r1: '4', r2: '8' });
+
+    const { result, rerender } = renderHook(({ settings }) => useChartData({ settings }), {
+      initialProps: { settings: average },
+    });
+
+    await waitFor(() => expect(result.current.numberValue).toBe(6));
+
+    rerender({ settings: { ...average, yFieldId: 'deleted-field' } });
+
+    await waitFor(() => expect(result.current.numberValue).toBe(2));
+    expect(result.current.yAxisField).toBeNull();
+  });
+
+  it('returns a single zero item when no rows match', async () => {
+    setup(baseSettings, [], {});
+
+    const { result } = renderHook(() => useChartData({ settings: baseSettings }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.chartData).toEqual([expect.objectContaining({ value: 0, rowIds: [] })]);
+    expect(result.current.numberValue).toBe(0);
   });
 });

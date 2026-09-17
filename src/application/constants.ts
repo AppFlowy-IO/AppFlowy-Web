@@ -22,6 +22,15 @@ export const FORM_VIEW_CREATION_ENABLED = false;
 export const TIMELINE_VIEW_ENABLED = true;
 
 /**
+ * Gate for offering the Dashboard layout in the add-view and layout menus.
+ *
+ * Creating a Dashboard view goes through the cloud (`ViewLayout::Dashboard = 11`,
+ * `DatabaseLayout::Dashboard = 9`), so this must stay off against a server that
+ * predates those enum values. Existing Dashboard views render regardless.
+ */
+export const DASHBOARD_VIEW_ENABLED = true;
+
+/**
  * Server error codes from AppFlowy Cloud ErrorCode enum.
  * See: libs/app-error/src/lib.rs in AppFlowy-Cloud
  *
