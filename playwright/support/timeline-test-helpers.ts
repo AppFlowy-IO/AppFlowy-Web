@@ -5,7 +5,7 @@ import { TimelineLayout } from '../../src/application/database-yjs/database.type
 import { calendarDraftEditor, calendarDraftTitle } from './calendar-placeholder-helpers';
 import { loginAndCreateCalendar } from './calendar-test-helpers';
 import { DatabaseViewSelectors, TimelineSelectors } from './selectors';
-import { mockProSubscription } from './subscription-test-helpers';
+import { grantTestProSubscription, mockProSubscription } from './subscription-test-helpers';
 
 /** Column width of the Month preset (`TIMELINE_SCALE_PRESETS[Month].columnWidth`). */
 export const MONTH_COLUMN_WIDTH = 36;
@@ -56,6 +56,7 @@ export async function loginAndCreateCalendarWithRows(
 ) {
   await mockProSubscription(page);
   await loginAndCreateCalendar(page, request, email);
+  grantTestProSubscription(page);
   for (const row of rows) {
     await createCalendarEvent(page, row.offsetDays, row.title);
   }

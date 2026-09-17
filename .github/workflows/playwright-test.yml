@@ -270,6 +270,11 @@ jobs:
             exit 1
           )
 
+          # Timeline fixtures seed a Pro entitlement in this job's temporary DB.
+          test_postgres_container=$(docker compose -f docker-compose-web-ci.yml ps -q postgres)
+          test -n "$test_postgres_container"
+          echo "APPFLOWY_TEST_POSTGRES_CONTAINER=$test_postgres_container" >> "$GITHUB_ENV"
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
