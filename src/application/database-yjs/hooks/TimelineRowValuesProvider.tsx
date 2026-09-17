@@ -33,7 +33,7 @@ export function TimelineRowValuesProvider({
   const { databaseDoc } = useDatabaseContext();
   const viewId = useDatabaseViewId();
   const rows = useRowMap() ?? EMPTY_ROWS;
-  const { getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(true, 'timeline');
+  const { getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(true, 'timeline', 'live');
   const scope = useMemo(() => ({ databaseDoc, viewId }), [databaseDoc, viewId]);
   const rowIds = useMemo(() => rowOrders?.map(({ id }) => id), [rowOrders]);
   const value = useMemo(

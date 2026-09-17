@@ -66,6 +66,83 @@ function BackgroundLoader({ scope, suspend = false }: { scope: string; suspend?:
 }
 
 describe('useBackgroundRowDocLoader', () => {
+  it('retries realtime hydration even when a detached seed is already readable', async () => {
+    const { databaseDoc, databaseId, viewId } = createDatabaseFixture();
+    const seed = createRowDoc('initial-row', databaseId, {});
+    const live = new Y.Doc() as YDoc;
+
+    Y.applyUpdate(live, Y.encodeStateAsUpdate(seed));
+    const ensureRow = jest.fn().mockRejectedValueOnce(new Error('temporarily unavailable')).mockResolvedValue(live);
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      databaseDoc,
+      databasePageId: viewId,
+      readOnly: false,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      seedsReady: true,
+      blobPrefetchComplete: true,
+      ensureRow,
+      peekRowDocFromSeed: () => seed,
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { result, unmount } = renderHook(() => useBackgroundRowDocLoader(true, 'seed-sync-retry', 'live'), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current.cachedRowDocs['initial-row']).toBe(seed));
+    await waitFor(() => expect(ensureRow).toHaveBeenCalledTimes(2));
+    expect(ensureRow).toHaveBeenLastCalledWith('initial-row');
+    unmount();
+    live.destroy();
+    seed.destroy();
+    databaseDoc.destroy();
+  });
+
+  it('stops connecting offscreen rows after the live consumer unmounts', async () => {
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const rowIds = Array.from({ length: 25 }, (_, index) => `live-row-${index}`);
+    const docs = Object.fromEntries(rowIds.map((id) => [id, createRowDoc(id, databaseId, {})]));
+    let resolveRows!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      resolveRows = resolve;
+    });
+    const ensureRow = jest.fn(async (id: string) => {
+      await pending;
+      return docs[id];
+    });
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      databaseDoc,
+      databasePageId: viewId,
+      readOnly: false,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      seedsReady: true,
+      blobPrefetchComplete: true,
+      ensureRow,
+      peekRowDocFromSeed: (id) => docs[id] ?? null,
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { unmount } = renderHook(() => useBackgroundRowDocLoader(true, 'live-unmount', 'live'), { wrapper });
+
+    await waitFor(() => expect(ensureRow).toHaveBeenCalledTimes(12));
+    unmount();
+    await act(async () => {
+      resolveRows();
+    });
+    expect(ensureRow).toHaveBeenCalledTimes(12);
+    Object.values(docs).forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
+  });
+
   it('finishes bounded detached hydration before warm-mount fallback loading', async () => {
     const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
     const rowIds = Array.from({ length: 257 }, (_, index) => `warm-row-${index}`);

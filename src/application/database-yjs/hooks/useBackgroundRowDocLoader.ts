@@ -152,6 +152,7 @@ type LoaderStore = {
   refCount: number;
   activeRefCount: number;
   cachedRowDocs: RowDocMap;
+  syncedRowDocs: RowDocMap;
   subscribers: Set<() => void>;
   rowDocChangeSubscribers: Set<(change: BackgroundRowDocChange) => void>;
   sharedCachedRowDocIds: Set<string>;
@@ -183,6 +184,7 @@ function createLoaderStore(key: string): LoaderStore {
     refCount: 0,
     activeRefCount: 0,
     cachedRowDocs: {},
+    syncedRowDocs: {},
     subscribers: new Set(),
     rowDocChangeSubscribers: new Set(),
     sharedCachedRowDocIds: new Set(),
@@ -312,6 +314,7 @@ function destroyStore(store: LoaderStore) {
   });
 
   store.cachedRowDocs = {};
+  store.syncedRowDocs = {};
   store.rowDocChangeSubscribers.clear();
   store.sharedCachedRowDocIds.clear();
   store.cachedRowDocPending.clear();
@@ -327,16 +330,17 @@ function destroyStore(store: LoaderStore) {
  *
  * @param active - Whether this consumer needs complete row data
  * @param scope - Isolates independently activated consumers sharing a view
+ * @param mode - Live consumers also connect seed-backed rows to realtime
  * @returns Cached read-only row docs that are not already in the main row map
  */
-export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions') {
+export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions', mode: 'cached' | 'live' = 'cached') {
   const rows = useRowMap();
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
   const rowOrders = view?.get(YjsDatabaseKey.row_orders);
   const { databaseDoc, ensureRow, loadRowFromSeed, peekRowDocFromSeed, blobPrefetchComplete, seedsReady } =
     useDatabaseContext();
-  const storeKey = `${databaseDoc.guid}:${viewId ?? 'unknown'}:${scope}`;
+  const storeKey = `${databaseDoc.guid}:${viewId ?? 'unknown'}:${scope}:${mode}`;
   const store = useMemo(() => getLoaderStore(storeKey), [storeKey]);
   const [rowOrderRevision, setRowOrderRevision] = useState(0);
 
@@ -538,6 +542,12 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
     if (!rowOrdersData) return;
 
     const hasReadyRowDoc = (rowId: string) => {
+      if (mode === 'live' && store.ensureRow) {
+        const synced = store.syncedRowDocs[rowId];
+
+        return hasRowConditionData(synced) && (!store.rows?.[rowId] || store.rows[rowId] === synced);
+      }
+
       return hasRowConditionData(store.cachedRowDocs[rowId]) || hasRowConditionData(store.rows?.[rowId]);
     };
 
@@ -586,6 +596,26 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
     const loadMissingRow = async (rowId: string) => {
       if (!isRunActive() || hasReadyRowDoc(rowId)) {
         retryAttempts.delete(rowId);
+        return;
+      }
+
+      // Detached seeds render immediately, but only ensureRow acquires the
+      // transport that keeps offscreen Timeline projections up to date.
+      if (mode === 'live' && store.ensureRow) {
+        try {
+          const doc = await store.ensureRow(rowId);
+
+          if (!isRunActive()) return;
+          if (doc) store.syncedRowDocs[rowId] = doc;
+          if (doc && hasRowConditionData(doc)) {
+            retryAttempts.delete(rowId);
+            return;
+          }
+        } catch {
+          // Seeds remain readable while a transient sync failure is retried.
+        }
+
+        if (isRunActive()) await retryMissingRow(rowId);
         return;
       }
 
@@ -745,6 +775,7 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
     };
   }, [
     databaseDoc.guid,
+    mode,
     active,
     blobPrefetchComplete,
     rows,

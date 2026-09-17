@@ -22,7 +22,11 @@ import {
   usePrimaryFieldId,
 } from '@/application/database-yjs';
 import { useUpdateTimelineSetting } from '@/application/database-yjs/dispatch';
-import { useUpdateAnyCellDispatch, useUpdateStartEndTimeCell } from '@/application/database-yjs/dispatch/cell';
+import {
+  DateCellUpdate,
+  useUpdateAnyCellDispatch,
+  useUpdateStartEndTimeCells,
+} from '@/application/database-yjs/dispatch/cell';
 import { useUpdateRelationCellDispatch } from '@/application/database-yjs/dispatch/relation';
 import {
   useDuplicateRowDispatch,
@@ -122,7 +126,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const { isDocumentBlock, variant, paddingStart, paddingEnd } = useDatabaseContext();
   const fixedViewport = shouldUseFixedDatabaseViewport({ isDocumentBlock, variant });
   const updateSetting = useUpdateTimelineSetting();
-  const updateStartEnd = useUpdateStartEndTimeCell();
+  const updateDateCells = useUpdateStartEndTimeCells();
   const updateAnyCell = useUpdateAnyCellDispatch();
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const newRow = useNewRowDispatch();
@@ -279,40 +283,34 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
 
   const handleOpen = useCallback((rowId: string) => navigateToRow?.(rowId), [navigateToRow]);
 
-  const commitSpan = useCallback(
-    (rowId: string, start: Date, endExclusive: Date, allDay: boolean, keepSingle: boolean, historyGroup?: object) => {
-      if (!permissions.dateEditable) return;
-      const history = historyGroup ? { historyGroup } : undefined;
+  const getSpanUpdates = useCallback(
+    (rowId: string, start: Date, endExclusive: Date, allDay: boolean, keepSingle: boolean): DateCellUpdate[] => {
+      if (!permissions.dateEditable) return [];
+      const startUpdate = {
+        rowId,
+        fieldId: setting.fieldId,
+        startTimestamp: dateToUnixTimestamp(start),
+        isAllDay: allDay,
+      };
 
       if (hasEndField) {
-        // Separate start and end fields: the start cell and the end cell each
-        // hold a single date, written as one undo group.
-        const group = history ?? { historyGroup: {} };
         const end = allDay ? correctAllDayEndForStorage(endExclusive) : endExclusive;
 
-        updateStartEnd(rowId, setting.fieldId, dateToUnixTimestamp(start), undefined, allDay, group);
-        if (!keepSingle) updateStartEnd(rowId, setting.endFieldId, dateToUnixTimestamp(end), undefined, allDay, group);
-        return;
+        return keepSingle
+          ? [startUpdate]
+          : [startUpdate, { ...startUpdate, fieldId: setting.endFieldId, startTimestamp: dateToUnixTimestamp(end) }];
       }
 
       if (allDay) {
         const singleDay = calendarDaysBetween(start, endExclusive) <= 1;
         const end = singleDay ? undefined : dateToUnixTimestamp(correctAllDayEndForStorage(endExclusive));
 
-        updateStartEnd(rowId, setting.fieldId, dateToUnixTimestamp(start), end, true, history);
-        return;
+        return [{ ...startUpdate, endTimestamp: end }];
       }
 
-      updateStartEnd(
-        rowId,
-        setting.fieldId,
-        dateToUnixTimestamp(start),
-        keepSingle ? undefined : dateToUnixTimestamp(endExclusive),
-        false,
-        history
-      );
+      return [{ ...startUpdate, endTimestamp: keepSingle ? undefined : dateToUnixTimestamp(endExclusive) }];
     },
-    [hasEndField, permissions.dateEditable, setting.endFieldId, setting.fieldId, updateStartEnd]
+    [hasEndField, permissions.dateEditable, setting.endFieldId, setting.fieldId]
   );
 
   // Row lookups by id (bar press followers, editor titles) without rescans.
@@ -326,9 +324,10 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
       if (preview.mode === 'progress') {
         const progressField = databaseFields?.get(setting.progressFieldId);
 
-        const data = progressField && preview.progress !== undefined
-          ? serializeTimelineProgressPercent(preview.progress, progressField)
-          : undefined;
+        const data =
+          progressField && preview.progress !== undefined
+            ? serializeTimelineProgressPercent(preview.progress, progressField)
+            : undefined;
 
         if (data !== undefined) updateAnyCell(preview.rowId, setting.progressFieldId, data);
 
@@ -339,24 +338,25 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
       const row = byId.get(preview.rowId);
       // A timed row without an end keeps its synthetic length only while moving.
       const keepSingle = Boolean(row && !row.isRange && preview.mode === 'move');
-      // The dragged bar and every follower undo together.
-      const historyGroup = {};
+      const updates = getSpanUpdates(preview.rowId, preview.start, preview.endExclusive, preview.allDay, keepSingle);
 
-      commitSpan(preview.rowId, preview.start, preview.endExclusive, preview.allDay, keepSingle, historyGroup);
       preview.followers.forEach((follower) => {
         const followerRow = byId.get(follower.rowId);
 
-        commitSpan(
-          follower.rowId,
-          follower.start,
-          follower.endExclusive,
-          follower.allDay,
-          Boolean(followerRow && !followerRow.isRange),
-          historyGroup
+        updates.push(
+          ...getSpanUpdates(
+            follower.rowId,
+            follower.start,
+            follower.endExclusive,
+            follower.allDay,
+            Boolean(followerRow && !followerRow.isRange)
+          )
         );
       });
+      // Resolve every live target before the root or any follower is written.
+      void updateDateCells(updates);
     },
-    [commitSpan, databaseFields, setting.progressFieldId, updateAnyCell]
+    [getSpanUpdates, databaseFields, setting.progressFieldId, updateAnyCell, updateDateCells]
   );
 
   const {
@@ -430,9 +430,9 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
       const endExclusive = dayjs(start).add(geometry.preset.snapMinutes, 'minute').toDate();
       const allDay = geometry.preset.unit === 'day';
 
-      commitSpan(row.rowId, start, endExclusive, allDay, !allDay);
+      void updateDateCells(getSpanUpdates(row.rowId, start, endExclusive, allDay, !allDay));
     },
-    [commitSpan, geometry, permissions.dateEditable]
+    [getSpanUpdates, geometry, permissions.dateEditable, updateDateCells]
   );
 
   const virtualizer = useTimelineVirtualizer(items, scrollerRef);
