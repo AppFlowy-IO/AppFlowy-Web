@@ -159,17 +159,44 @@ export function statusOptionId(name: string): string {
   return option.id;
 }
 
-type CellValue = string | number | boolean | { dayOffset: number };
+export type CellValue = string | number | boolean | { dayOffset: number };
 
-interface FieldSpec {
+export interface FieldSpec {
   name: string;
   type: FieldType;
+  /** Select option names; defaults to `STATUS_OPTIONS`. */
+  options?: string[];
 }
 
-interface DatabaseSpec {
+export interface DatabaseSpec {
   fields: FieldSpec[];
   rows: Record<string, CellValue>[];
   privateSpace?: boolean;
+}
+
+const OPTION_COLORS = ['Purple', 'Pink', 'LightPink', 'Orange', 'Yellow', 'Lime', 'Green', 'Aqua', 'Blue'];
+
+/**
+ * A named select option always gets the same id, in every database, so a
+ * global select filter can be mapped across databases that list it.
+ */
+export function namedOptionId(name: string): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  return `uc-opt-${slug}`;
+}
+
+function selectOptionsFor(field: FieldSpec) {
+  if (!field.options) return STATUS_OPTIONS;
+  return field.options.map((name, index) => ({
+    id: namedOptionId(name),
+    name,
+    color: OPTION_COLORS[index % OPTION_COLORS.length],
+  }));
 }
 
 /**
@@ -284,6 +311,8 @@ export interface DashboardWorld {
   dashboardHost?: string;
   /** Label ("Projects Grid", "Tasks Grid #2") → widget. */
   widgets: Record<string, KnownWidget>;
+  /** Views known by their own name (use-case scenarios): name → view id and fixture database name. */
+  viewsByName?: Record<string, { viewId: string; database: string }>;
   member?: MemberActor;
   /** Snapshot taken by a step to compare against later (rows JSON, widths, ...). */
   snapshot?: unknown;
@@ -297,6 +326,11 @@ export function dashboardWorld(page: Page): DashboardWorld {
 
   if (!world) throw new Error('The dashboard fixture workspace has not been prepared');
   return world;
+}
+
+/** Make `world` the scenario world of `page` (for scenarios that build their own fixture). */
+export function registerDashboardWorld(page: Page, world: DashboardWorld) {
+  worlds.set(page, world);
 }
 
 export function peekDashboardWorld(page: Page): DashboardWorld | undefined {
@@ -329,7 +363,17 @@ export function parseViewLabel(label: string): { database: string; layout: strin
   return { database: match[1], layout: match[2] };
 }
 
+/** The fixture database a widget label ("Projects Grid" or a named view) shows. */
+export function databaseForLabel(page: Page, label: string): string {
+  const named = dashboardWorld(page).viewsByName?.[label];
+
+  return named ? named.database : parseViewLabel(label).database;
+}
+
 export function viewIdForLabel(page: Page, label: string): string {
+  const named = dashboardWorld(page).viewsByName?.[label];
+
+  if (named) return named.viewId;
   const { database, layout } = parseViewLabel(label);
   const viewId = fixtureDatabase(page, database).views[layout];
 
@@ -580,11 +624,9 @@ async function createFixtureDatabase(
   request: APIRequestContext,
   world: DashboardWorld,
   name: string,
-  spaceId: string
+  spaceId: string,
+  spec: DatabaseSpec
 ): Promise<FixtureDatabase & { defaultRowIds: string[] }> {
-  const spec = DASHBOARD_FIXTURE_DATABASES[name];
-
-  if (!spec) throw new Error(`Unknown fixture database "${name}"`);
   const token = world.owner.accessToken;
   const created = await apiPost<{ view_id: string; database_id?: string }>(
     request,
@@ -602,7 +644,7 @@ async function createFixtureDatabase(
   for (const field of spec.fields) {
     const typeOptionData =
       field.type === FieldType.SingleSelect
-        ? { content: JSON.stringify({ options: STATUS_OPTIONS, disable_color: false }) }
+        ? { content: JSON.stringify({ options: selectOptionsFor(field), disable_color: false }) }
         : {};
 
     fieldIds[field.name] = await apiPost<string>(request, token, `${base}/fields`, {
@@ -687,8 +729,7 @@ async function pruneTemplateData(
   defaultRowIds: string[]
 ) {
   const ownFieldIds = Object.values(database.fieldIds);
-
-  await page.evaluate(
+  const templateFieldIds = await page.evaluate(
     ({ databaseId, defaultRowIds, ownFieldIds }) => {
       const bridge = (window as any).__DASHBOARD_TEST__;
       const ctx = bridge.byDatabase(databaseId);
@@ -722,6 +763,7 @@ async function pruneTemplateData(
         });
         templateFieldIds.forEach((fieldId) => fields.delete(fieldId));
       });
+      return templateFieldIds;
     },
     { databaseId: database.databaseId, defaultRowIds, ownFieldIds }
   );
@@ -732,11 +774,11 @@ async function pruneTemplateData(
     .poll(
       async () => {
         const rows = await apiGet<{ id: string }[]>(request, world.owner.accessToken, `${base}/row`);
-        const fields = await apiGet<{ name: string }[]>(request, world.owner.accessToken, `${base}/fields`);
+        const fields = await apiGet<{ id: string }[]>(request, world.owner.accessToken, `${base}/fields`);
 
         return (
           rows.every((row) => !defaultRowIds.includes(row.id)) &&
-          fields.every((field) => field.name !== 'Type' && field.name !== 'Done')
+          fields.every((field) => !templateFieldIds.includes(field.id))
         );
       },
       { timeout: FIXTURE_TIMEOUT_MS, message: `waiting for "${database.name}" template data removal to sync` }
@@ -851,10 +893,18 @@ export async function prepareDashboardFixture(
   return world;
 }
 
-/** Create one more fixture database (Backlog, Secrets, ...) and prune its template data. */
-export async function addFixtureDatabase(page: Page, request: APIRequestContext, name: string) {
+/**
+ * Create one more fixture database (Backlog, Secrets, ... or a use-case
+ * database described by `customSpec`) and prune its template data.
+ */
+export async function addFixtureDatabase(
+  page: Page,
+  request: APIRequestContext,
+  name: string,
+  customSpec?: DatabaseSpec
+) {
   const world = dashboardWorld(page);
-  const spec = DASHBOARD_FIXTURE_DATABASES[name];
+  const spec = customSpec ?? DASHBOARD_FIXTURE_DATABASES[name];
 
   if (!spec) throw new Error(`Unknown fixture database "${name}"`);
   let spaceId = world.spaceId;
@@ -870,7 +920,7 @@ export async function addFixtureDatabase(page: Page, request: APIRequestContext,
     spaceId = world.privateSpaceId;
   }
 
-  const { defaultRowIds, ...database } = await createFixtureDatabase(request, world, name, spaceId);
+  const { defaultRowIds, ...database } = await createFixtureDatabase(request, world, name, spaceId, spec);
 
   world.databases[name] = database;
   await page.goto(`/app/${world.workspaceId}/${database.pageId}`, { waitUntil: 'domcontentloaded' });
@@ -1372,6 +1422,65 @@ export async function leaveEditMode(page: Page) {
   if (await DashboardSelectors.editButton(page).isVisible()) return;
   await DashboardSelectors.doneButton(page).click();
   await expect(DashboardSelectors.editButton(page)).toBeVisible();
+}
+
+/**
+ * Open a row page from a widget the way a user would for its layout: the
+ * expand button of a table row, a click on a list row, board card or gallery
+ * card, or the open button of a timeline row.
+ */
+export async function openWidgetRow(scope: Page, widget: Locator, rowId: string) {
+  await expect(widget).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+  const layout = widget.locator(
+    '[data-testid="database-grid"], [data-testid="database-list"], [data-testid="database-gallery"], [data-testid="timeline-view"], .database-board'
+  );
+
+  await expect(layout.first()).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+  const kind = await layout.first().evaluate((element) =>
+    element.classList.contains('database-board') ? 'board' : element.getAttribute('data-testid') ?? ''
+  );
+
+  if (kind === 'database-grid') {
+    const row = widget.getByTestId(`grid-row-${rowId}`);
+
+    await expect(row).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+    await row.hover();
+    const expand = widget.getByTestId('row-expand-button').first();
+
+    await expect(expand).toBeVisible();
+    await expand.click();
+    return;
+  }
+
+  if (kind === 'database-list') {
+    const row = widget.getByTestId(`list-row-${rowId}`);
+
+    await expect(row).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+    await row.getByTestId(`list-primary-cell-${rowId}`).click();
+    return;
+  }
+
+  if (kind === 'database-gallery') {
+    const card = widget.getByTestId(`gallery-card-${rowId}`);
+
+    await expect(card).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+    await card.click();
+    return;
+  }
+
+  if (kind === 'timeline-view') {
+    const row = widget.getByTestId(`timeline-sidebar-row-${rowId}`);
+
+    await expect(row).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+    await row.hover();
+    await widget.getByTestId(`timeline-open-row-${rowId}`).click();
+    return;
+  }
+
+  const card = widget.locator(`[data-card-id*="${rowId}"]`).first();
+
+  await expect(card).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+  await card.click();
 }
 
 /** Assert the exact set of row titles a grid widget shows. */

@@ -190,6 +190,8 @@ Then('the {string} global filter chip shows {int} source(s)', async ({ page }, n
   await expect(DashboardSelectors.globalFilterBar(page)).toBeVisible();
   await expect(chip).toBeVisible(WIDGET_TIMEOUT);
   await expect(chip.getByTestId('dashboard-global-filter-chip-count')).toHaveText(String(count));
+  // A View-mode change stays local to this viewer, so only the chip shows it.
+  if (await DashboardSelectors.globalFilterLocalBadge(page).first().isVisible()) return;
   await expect.poll(async () => Object.keys((await savedFilter(page, name))?.targets ?? {}).length).toBe(count);
 });
 

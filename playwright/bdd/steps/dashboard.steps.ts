@@ -16,6 +16,7 @@ import {
   dashboardSidebarEntry,
   dashboardViewId,
   dashboardWorld,
+  databaseForLabel,
   DatabaseViewLayout,
   dragLocatorBy,
   dragWidgetBeside,
@@ -36,6 +37,7 @@ import {
   openDashboardAsMember,
   openDatabasePage,
   openWidgetPicker,
+  openWidgetRow,
   parseViewLabel,
   persistedRow,
   pickExistingView,
@@ -908,22 +910,20 @@ Then('a drill-down lists exactly one of {string}', async ({ page }, titles: stri
 });
 
 When('I open the {string} row from the {string} widget', async ({ page }, title: string, label: string) => {
-  const widget = widgetLocator(page, label);
-  const rowId = fixtureDatabase(page, parseViewLabel(label).database).rowIds[title];
-  const row = widget.getByTestId(`grid-row-${rowId}`);
+  const rowId = fixtureDatabase(page, databaseForLabel(page, label)).rowIds[title];
 
-  await expect(row).toBeVisible(WIDGET_TIMEOUT);
-  await row.hover();
-  const expand = widget.getByTestId('row-expand-button').first();
-
-  await expect(expand).toBeVisible();
-  await expand.click();
+  expect(rowId, `no "${title}" row behind the "${label}" widget`).toBeTruthy();
+  await openWidgetRow(page, widgetLocator(page, label), rowId);
 });
 
 Then('the row page for {string} is open', async ({ page }, title: string) => {
-  await expect(page.locator('.MuiDialog-paper, [role="dialog"]').filter({ hasText: title }).last()).toBeVisible(
-    WIDGET_TIMEOUT
-  );
+  // A row page carries the row title editor (a chart drill-down lists the title too).
+  const titleInputs = page.locator('.MuiDialog-paper').getByTestId('row-title-input');
+
+  await expect(titleInputs.last()).toBeVisible(WIDGET_TIMEOUT);
+  await expect
+    .poll(() => titleInputs.evaluateAll((inputs) => inputs.map((input) => (input as HTMLTextAreaElement).value)))
+    .toContain(title);
 });
 
 When('I close the row page', async ({ page }) => {
