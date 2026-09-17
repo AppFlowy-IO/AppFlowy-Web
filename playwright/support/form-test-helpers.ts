@@ -76,7 +76,7 @@ export async function addFormViewToTabBar(page: Page): Promise<void> {
  * `form_from_tab_bar.feature` asserts on.
  *
  * NOTE: the `Form` option is only rendered while
- * `FORM_VIEW_CREATION_ENABLED` (src/application/constants.ts) is `true`.
+ * `EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED` (src/application/constants.ts) is `true`.
  * Web currently ships with it `false` (legacy Desktop clients cannot open
  * web-created Form views), so the form BDD features are excluded from CI
  * and will fail locally until the flag is flipped back on.

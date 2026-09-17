@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { TIMELINE_VIEW_ENABLED } from '@/application/constants';
+import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabaseViewId } from '@/application/database-yjs';
 import { useUpdateDatabaseLayout } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout } from '@/application/types';
@@ -34,7 +34,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         value: DatabaseViewLayout.Calendar,
         label: t('calendar.menuName'),
       },
-      ...(TIMELINE_VIEW_ENABLED
+      ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
         ? [
             {
               value: DatabaseViewLayout.Timeline,

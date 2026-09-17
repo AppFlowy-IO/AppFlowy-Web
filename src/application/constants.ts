@@ -3,23 +3,15 @@ export const databasePrefix = 'af_database';
 export const HEADER_HEIGHT = 48;
 
 /**
- * Temporarily hides every "create a Form view" entry point on web.
+ * Controls web creation menus for experimental database views (Form and Timeline).
  *
- * Legacy Desktop clients cannot open workspaces that contain a Form view
- * created by web, so until those clients are upgraded Form views may only be
- * created from Desktop. Flip this back to `true` to restore the menu items.
- * Existing Form views still open and work normally regardless of this flag.
+ * Desktop versions before 0.14.4 have backward-compatibility issues with Form
+ * and Timeline views. For now, only allow creating these views from the Desktop
+ * app; keep their web creation menus disabled until that compatibility constraint
+ * is resolved.
+ * Existing Form and Timeline views still open normally regardless of this flag.
  */
-export const FORM_VIEW_CREATION_ENABLED = false;
-
-/**
- * Gate for offering the Timeline layout in the add-view and layout menus.
- *
- * Creating a Timeline view goes through the cloud (`ViewLayout::Timeline = 10`,
- * `DatabaseLayout::Timeline = 8`), so this must stay off against a server that
- * predates those enum values. Existing Timeline views render regardless.
- */
-export const TIMELINE_VIEW_ENABLED = true;
+export const EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED = false;
 
 /**
  * Server error codes from AppFlowy Cloud ErrorCode enum.
