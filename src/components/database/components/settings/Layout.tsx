@@ -34,7 +34,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         value: DatabaseViewLayout.Calendar,
         label: t('calendar.menuName'),
       },
-      ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
+      ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED || currentLayout === DatabaseViewLayout.Timeline
         ? [
             {
               value: DatabaseViewLayout.Timeline,
@@ -59,7 +59,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         label: t('feed.menuName'),
       },
     ],
-    [t]
+    [t, currentLayout]
   );
 
   return (
@@ -79,7 +79,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
               className={'w-full'}
               data-testid={`database-layout-option-${option.value}`}
               onSelect={() => {
-                updateLayout(option.value);
+                if (option.value !== currentLayout) updateLayout(option.value);
               }}
             >
               <div className={'flex items-center gap-2'}>{option.label}</div>
