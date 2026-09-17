@@ -9,6 +9,8 @@ on:
 
 env:
   CLOUD_VERSION: latest-amd64
+  # Public Form APIs and uploads reject plaintext requests at the backend proxy.
+  APPFLOWY_BASE_URL: https://localhost
   APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: 'true'
   EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED: 'true'
   NODE_VERSION: '24'
@@ -197,6 +199,19 @@ jobs:
           echo '' >> .env
           echo 'APPFLOWY_PAGE_HISTORY_ENABLE=true' >> .env
 
+          # Replace the repository's expired example certificate with a short-lived
+          # localhost certificate. Node trusts this certificate; Chromium pins its
+          # public key so separate respondent contexts can use the same HTTPS API.
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+            -keyout nginx/ssl/private_key.key \
+            -out nginx/ssl/certificate.crt
+          echo "NODE_EXTRA_CA_CERTS=$PWD/nginx/ssl/certificate.crt" >> "$GITHUB_ENV"
+          test_tls_spki=$(openssl x509 -in nginx/ssl/certificate.crt -pubkey -noout | \
+            openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A)
+          echo "APPFLOWY_TEST_TLS_SPKI=$test_tls_spki" >> "$GITHUB_ENV"
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -258,7 +273,7 @@ jobs:
             up -d
 
           echo "Waiting for backend services..."
-          timeout 180 bash -c 'until curl -sf http://localhost/api/health > /dev/null 2>&1; do
+          timeout 180 bash -c 'until curl --cacert nginx/ssl/certificate.crt -sf https://localhost/api/health > /dev/null 2>&1; do
             echo "Waiting for backend... ($(date +%T))"
             sleep 5
           done' && echo "Backend is ready" || (
