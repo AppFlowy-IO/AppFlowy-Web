@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
@@ -79,11 +79,8 @@ const NUMBER_FORMATS: ReadonlyArray<{ value: ChartNumberFormat; labelKey: string
  */
 function NumberChartTitleInput({ value, onCommit }: { value: string; onCommit: (value: string) => void }) {
   const { t } = useTranslation();
+  // The caller keys this input by `value`, so a new stored title starts a fresh draft.
   const [draft, setDraft] = useState(value);
-
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
 
   const commit = useCallback(() => {
     if (draft !== value) onCommit(draft);
@@ -294,7 +291,11 @@ function ChartLayoutSettings() {
 
               <DropdownMenuSeparator />
               <DropdownMenuLabel>{t('chart.number.title', { defaultValue: 'Title' })}</DropdownMenuLabel>
-              <NumberChartTitleInput value={currentTitleText} onCommit={handleTitleCommit} />
+              <NumberChartTitleInput
+                key={currentTitleText}
+                value={currentTitleText}
+                onCommit={handleTitleCommit}
+              />
 
               <DropdownMenuSeparator />
             </>

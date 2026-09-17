@@ -1,13 +1,14 @@
 import { Dialog, DialogContent, DialogTitle } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useFieldSelector, usePrimaryFieldId, useRowMap } from '@/application/database-yjs';
+import { useDatabaseContext, useFieldSelector, usePrimaryFieldId, useRowMap } from '@/application/database-yjs';
 import { ChartDataItem, ChartType } from '@/application/database-yjs/chart.type';
 import { getCell } from '@/application/database-yjs/const';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { ensureRowsWithConcurrency } from '@/components/database/chart/hooks/useChartData';
 import { useChartContext } from '@/components/database/chart/useChartContext';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,7 @@ interface RowItem {
 export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProps) {
   const { t } = useTranslation();
   const rowMetas = useRowMap();
+  const { ensureRow } = useDatabaseContext();
   const primaryFieldId = usePrimaryFieldId();
   const { field: primaryField, clock: primaryFieldClock } = useFieldSelector(primaryFieldId ?? '');
   const { xAxisField, chartType } = useChartContext();
@@ -43,6 +45,23 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
     xAxisField && chartType !== ChartType.Number ? String(xAxisField.get(YjsDatabaseKey.name) || '') : '';
 
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+
+  // A Number chart that only counts rows never hydrates them, so load the
+  // listed rows that are not open yet (a no-op for grouped charts).
+  useEffect(() => {
+    if (!ensureRow) return;
+    const missing = item.rowIds.filter((rowId) => !rowMetas?.[rowId]);
+
+    if (missing.length === 0) return;
+    let cancelled = false;
+
+    void ensureRowsWithConcurrency(missing, ensureRow, { isCancelled: () => cancelled });
+    return () => {
+      cancelled = true;
+    };
+    // `rowMetas` grows while these rows load; re-running would only restart the pool.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ensureRow, item.rowIds]);
 
   const rows = useMemo<RowItem[]>(() => {
     void primaryFieldClock;

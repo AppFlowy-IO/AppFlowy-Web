@@ -136,12 +136,14 @@ describe('useChartData Number chart', () => {
       ])
     );
 
+    const ensureRow = jest.fn().mockResolvedValue(undefined);
+
     (useDatabaseFields as jest.Mock).mockReturnValue(fields);
     (useRowOrdersSelector as jest.Mock).mockReturnValue(rowIds.map((id) => ({ id })));
     (useRowMap as jest.Mock).mockReturnValue(rowMetas);
-    (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow: jest.fn().mockResolvedValue(undefined) });
+    (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow });
 
-    return { amountField };
+    return { amountField, ensureRow };
   }
 
   const baseSettings: ChartLayoutSettings = {
@@ -205,6 +207,66 @@ describe('useChartData Number chart', () => {
 
     await waitFor(() => expect(result.current.numberValue).toBe(2));
     expect(result.current.yAxisField).toBeNull();
+  });
+
+  it('counts rows without hydrating them', async () => {
+    const { ensureRow } = setup(baseSettings, ['r1', 'r2', 'r3'], {});
+
+    // No row doc is open: the count only needs the row orders.
+    (useRowMap as jest.Mock).mockReturnValue({});
+    const { result } = renderHook(() => useChartData({ settings: baseSettings }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.numberValue).toBe(3);
+    expect(result.current.chartData[0].rowIds).toEqual(['r1', 'r2', 'r3']);
+    expect(ensureRow).not.toHaveBeenCalled();
+  });
+
+  it('hydrates rows once the value aggregates the Y field', async () => {
+    const { ensureRow } = setup(baseSettings, ['r1', 'r2'], { r1: '4', r2: '6' });
+    const { result, rerender } = renderHook(({ settings }) => useChartData({ settings }), {
+      initialProps: { settings: baseSettings },
+    });
+
+    await waitFor(() => expect(result.current.numberValue).toBe(2));
+    expect(ensureRow).not.toHaveBeenCalled();
+
+    rerender({ settings: { ...baseSettings, aggregationType: ChartAggregationType.Sum, yFieldId: amountFieldId } });
+
+    await waitFor(() => expect(result.current.numberValue).toBe(10));
+    expect(ensureRow.mock.calls.map(([rowId]) => rowId).sort()).toEqual(['r1', 'r2']);
+  });
+
+  it('keeps the item identity across title, format, x-axis and equal row-order changes', async () => {
+    const settings: ChartLayoutSettings = {
+      ...baseSettings,
+      aggregationType: ChartAggregationType.Sum,
+      yFieldId: amountFieldId,
+    };
+
+    setup(settings, ['r1', 'r2'], { r1: '4', r2: '6' });
+    const { result, rerender } = renderHook(({ settings: current }) => useChartData({ settings: current }), {
+      initialProps: { settings },
+    });
+
+    await waitFor(() => expect(result.current.numberValue).toBe(10));
+    const data = result.current.chartData;
+
+    rerender({ settings: { ...settings, titleText: 'Revenue', numberFormat: 'compact' } });
+    expect(result.current.chartData).toBe(data);
+
+    rerender({ settings: { ...settings, xFieldId: 'other-field', dateCondition: DateGroupCondition.Year } });
+    expect(result.current.chartData).toBe(data);
+
+    // Yjs hands out a fresh row-order array with the same rows.
+    (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r1' }, { id: 'r2' }]);
+    rerender({ settings });
+    expect(result.current.chartData).toBe(data);
+
+    (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r1' }]);
+    rerender({ settings });
+    await waitFor(() => expect(result.current.numberValue).toBe(4));
+    expect(result.current.chartData).not.toBe(data);
   });
 
   it('returns a single zero item when no rows match', async () => {
