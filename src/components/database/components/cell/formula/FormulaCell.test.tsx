@@ -1,8 +1,14 @@
 import { render, screen } from '@testing-library/react';
 
+import dayjs from 'dayjs';
+
 import { FormulaCell as FormulaCellType } from '@/application/database-yjs/cell.type';
 import { FieldType } from '@/application/database-yjs/database.type';
+import { date, list } from '@/application/database-yjs/fields/formula/values';
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
+import { DateFormat, TimeFormat, User } from '@/application/types';
+import { MetadataKey } from '@/application/user-metadata';
+import { AFConfigContext } from '@/components/main/app.hooks';
 
 import { FormulaCell } from './FormulaCell';
 
@@ -124,6 +130,41 @@ describe('FormulaCell', () => {
       />
     );
     expect(screen.getByTestId('formula-cell-r1-f1').textContent).toBe('');
+  });
+
+  it('shows dates in the viewer\'s date and time formats', () => {
+    const start = dayjs('2024-03-10T09:30:00').valueOf();
+    const cell = createCell({
+      resultType: 'date',
+      rawNumeric: undefined,
+      data: '03/10/2024 9:30 AM',
+      value: list([date({ start, includeTime: true }), date({ start, includeTime: false })]),
+    });
+    const withUser = (metadata: Record<string, unknown>) => (
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: true,
+          currentUser: { metadata } as unknown as User,
+          updateCurrentUser: async () => undefined,
+          openLoginModal: () => undefined,
+        }}
+      >
+        <FormulaCell cell={cell} rowId={'r1'} fieldId={'f1'} wrap={false} />
+      </AFConfigContext.Provider>
+    );
+    const { rerender } = render(
+      withUser({ [MetadataKey.DateFormat]: DateFormat.ISO, [MetadataKey.TimeFormat]: TimeFormat.TwentyFourHour })
+    );
+
+    expect(screen.getByTestId('formula-cell-r1-f1').textContent).toBe('2024-03-10 09:30, 2024-03-10');
+    rerender(withUser({}));
+    expect(screen.getByTestId('formula-cell-r1-f1').textContent).toBe('03/10/2024 9:30 AM, 03/10/2024');
+  });
+
+  it('keeps the stored text for results without dates', () => {
+    render(<FormulaCell cell={createCell({ data: '$42', value: undefined })} rowId={'r1'} fieldId={'f1'} wrap={false} />);
+
+    expect(screen.getByTestId('formula-cell-r1-f1').textContent).toBe('$42');
   });
 
   it('mounts the (lazy) editor dialog while editing', async () => {

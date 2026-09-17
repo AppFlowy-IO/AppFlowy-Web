@@ -2,7 +2,7 @@ import React from 'react';
 import * as Y from 'yjs';
 
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
-import type { FormulaType } from '@/application/database-yjs/fields/formula/values';
+import type { FormulaType, FormulaValue } from '@/application/database-yjs/fields/formula/values';
 import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
 import { RollupVisualizationOption } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { DateFormat, FieldId, RowId, TimeFormat } from '@/application/types';
@@ -126,8 +126,10 @@ export interface RollupCell extends Cell {
 
 export interface FormulaCell extends Cell {
   fieldType: FieldType.Formula;
-  /** Display text with the field's number/date formatting applied. */
+  /** Result as text, with the field's number format and the default date format. */
   data: string;
+  /** The evaluated value; the cell shows its dates in the viewer's date and time formats. */
+  value?: FormulaValue;
   /** Static result type of the expression: text, number, boolean, date, list<...>, empty or any. */
   resultType: FormulaType;
   rawNumeric?: number;

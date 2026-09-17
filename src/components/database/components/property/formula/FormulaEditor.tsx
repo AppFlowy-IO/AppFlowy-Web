@@ -116,7 +116,8 @@ export function FormulaEditor({
     return (materializeVisibleRowOrders(rowOrders, canonical) ?? []).map((row) => row.id);
   }, [database, view]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [caret, setCaret] = useState(0);
+  // The editor opens with the caret after the saved formula.
+  const [caret, setCaret] = useState(() => value.length);
   const [search, setSearch] = useState('');
   // The catalogue item whose docs are showing. It stays after the pointer
   // leaves so its examples can be reached and inserted.
@@ -396,7 +397,6 @@ export function FormulaEditor({
     if (!textarea) return;
     textarea.focus();
     textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-    setCaret(textarea.value.length);
   }, []);
 
   // ---- catalogue -------------------------------------------------------

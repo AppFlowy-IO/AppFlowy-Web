@@ -1,13 +1,17 @@
-import { lazy, Suspense, useCallback } from 'react';
+import { lazy, Suspense, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CellProps, FormulaCell as FormulaCellType } from '@/application/database-yjs/cell.type';
+import { formatFormulaValue, FormulaValue } from '@/application/database-yjs/fields/formula';
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
+import { DateFormat, TimeFormat } from '@/application/types';
+import { MetadataKey } from '@/application/user-metadata';
 import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
 import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
 import { ReactComponent as WarningSvg } from '@/assets/icons/warning.svg';
 import { ShowAsVisualization } from '@/components/database/components/cell/rollup/ShowAsVisualization';
 import { getRollupVisualizationColor } from '@/components/database/components/property/rollup/visualization';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -16,6 +20,24 @@ const FormulaEditorDialog = lazy(() =>
     ({ FormulaEditorDialog: Component }) => ({ default: Component })
   )
 );
+
+function containsDate(value: FormulaValue): boolean {
+  return value.type === 'date' || (value.type === 'list' && value.items.some(containsDate));
+}
+
+/** The result text with dates in the viewer's formats; only formula cells read the user. */
+function useFormulaDisplayText(cell?: FormulaCellType): string {
+  // Optional: cells also render in embeds and tests without the app shell.
+  const currentUser = useCurrentUserOptional();
+  const dateFormat = currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat | undefined;
+  const timeFormat = currentUser?.metadata?.[MetadataKey.TimeFormat] as TimeFormat | undefined;
+
+  return useMemo(() => {
+    if (!cell) return '';
+    if (cell.error || !cell.value || !containsDate(cell.value)) return cell.data ?? '';
+    return formatFormulaValue(cell.value, { numberFormat: cell.numberFormat, dateFormat, timeFormat });
+  }, [cell, dateFormat, timeFormat]);
+}
 
 export function formulaVisualizationRatio(rawNumeric: number, divisor: number) {
   if (!Number.isFinite(rawNumeric) || rawNumeric <= 0) return 0;
@@ -35,7 +57,7 @@ export function FormulaCell({
   isCardCell,
 }: CellProps<FormulaCellType>) {
   const { t } = useTranslation();
-  const value = cell?.data ?? '';
+  const value = useFormulaDisplayText(cell);
   const isBoolean = cell?.resultType === 'boolean' && !cell.error;
   const visualization = cell?.visualization;
   const canVisualize =

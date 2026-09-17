@@ -32,6 +32,7 @@ import {
   compileFormula,
   evaluateFormulaCell,
   FormulaExternalReferences,
+  FormulaFieldSchema,
   FormulaType,
   getDateCellStr,
   getFieldDateTimeFormats,
@@ -111,7 +112,6 @@ import { sortBy } from '@/application/database-yjs/sort';
 import { createTimelineLayoutStore } from '@/application/database-yjs/timeline-layout';
 import {
   DatabaseViewLayout,
-  DateFormat,
   FieldId,
   GalleryCardPreview,
   GalleryCardSize,
@@ -137,7 +137,7 @@ import {
 import { MetadataKey } from '@/application/user-metadata';
 import { canonicalizeUserUid } from '@/application/user-uid';
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
-import { useCurrentUser, useCurrentUserOptional } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
 import { ChartLayoutSettings } from './chart.type';
@@ -2231,6 +2231,33 @@ export function useTimelineGroupingSelector(): DatabaseGrouping {
   return useDatabaseGroupingSelector(DatabaseViewLayout.Timeline);
 }
 
+/** Formula fields the view's sorts and effective filters refer to. */
+function conditionFormulaFields(
+  fields: YDatabaseFields | undefined,
+  sorts: YDatabaseSorts | undefined,
+  filters: YDatabaseFilters | undefined
+): YDatabaseField[] {
+  if (!fields || !(sorts?.length || filters?.length)) return [];
+  return Array.from(getConditionFieldIds(sorts, filters, fields))
+    .map((fieldId) => fields.get(fieldId))
+    .filter((field): field is YDatabaseField => Number(field?.get(YjsDatabaseKey.type)) === FieldType.Formula);
+}
+
+/** What the given formula conditions read from outside the rows. */
+function formulaConditionExternalReferences(
+  formulas: YDatabaseField[],
+  schema: FormulaFieldSchema[]
+): FormulaExternalReferences {
+  if (formulas.length === 0) return NO_EXTERNAL_REFERENCES;
+  const references = formulas.map((field) => collectFormulaExternalReferences(field, schema));
+
+  return {
+    people: references.some((entry) => entry.people),
+    relations: references.flatMap((entry) => entry.relations),
+    rollups: references.flatMap((entry) => entry.rollups),
+  };
+}
+
 /**
  * Hook to get sorted and filtered row orders.
  *
@@ -2242,28 +2269,6 @@ export function useTimelineGroupingSelector(): DatabaseGrouping {
  * - Applying sorts and filters to row orders
  * - Observing data changes to trigger re-computation
  */
-/** What the view's formula sorts and filters read from outside the rows. */
-function formulaConditionExternalReferences(
-  fields: YDatabaseFields | undefined,
-  sorts: YDatabaseSorts | undefined,
-  filters: YDatabaseFilters | undefined
-): FormulaExternalReferences {
-  if (!fields || !(sorts?.length || filters?.length)) return NO_EXTERNAL_REFERENCES;
-  const formulas = Array.from(getConditionFieldIds(sorts, filters, fields))
-    .map((fieldId) => fields.get(fieldId))
-    .filter((field): field is YDatabaseField => Number(field?.get(YjsDatabaseKey.type)) === FieldType.Formula);
-
-  if (formulas.length === 0) return NO_EXTERNAL_REFERENCES;
-  const schema = readFormulaSchema(fields);
-  const references = formulas.map((field) => collectFormulaExternalReferences(field, schema));
-
-  return {
-    people: references.some((entry) => entry.people),
-    relations: references.flatMap((entry) => entry.relations),
-    rollups: references.flatMap((entry) => entry.rollups),
-  };
-}
-
 export function useRowOrdersSelector() {
   const rows = useRowMap();
   const view = useDatabaseView();
@@ -2292,7 +2297,22 @@ export function useRowOrdersSelector() {
       return fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy;
     }) ?? false;
   // Formula conditions can read member names, related titles and rollups.
-  const formulaConditionReferences = formulaConditionExternalReferences(fields, sorts, filters);
+  const conditionFormulas = conditionFormulaFields(fields, sorts, filters);
+  const conditionFormulaKey = conditionFormulas.map((field) => String(field.get(YjsDatabaseKey.id))).join(',');
+  // Their references change with the formulas' expressions (and the fields they reach).
+  const conditionFieldsVersion = useDatabaseFieldsVersion(conditionFormulaKey !== '');
+  const formulaConditionReferences = useMemo(
+    () => {
+      void conditionFieldsVersion;
+      const formulas = conditionFormulaKey
+        .split(',')
+        .map((fieldId) => fields?.get(fieldId))
+        .filter((field): field is YDatabaseField => Boolean(field));
+
+      return formulaConditionExternalReferences(formulas, readFormulaSchemaForVersion(fields, conditionFieldsVersion));
+    },
+    [fields, conditionFormulaKey, conditionFieldsVersion]
+  );
   const { users: conditionMentionableUsers } = useMentionableUsersWithAutoFetch(
     hasAttributionSort || formulaConditionReferences.people
   );
@@ -3150,10 +3170,8 @@ export function useFormulaCellValue({
   // Every cell runs this hook; only formula cells watch the schema, so other
   // cells do not re-render when any field is renamed or reconfigured.
   const fieldsVersion = useDatabaseFieldsVersion(isFormula);
-  // Optional: cell hooks also render in embeds and tests without the app shell.
-  const currentUser = useCurrentUserOptional();
-  const dateFormat = currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat | undefined;
-  const timeFormat = currentUser?.metadata?.[MetadataKey.TimeFormat] as TimeFormat | undefined;
+  // The viewer's date and time formats are applied by FormulaCell, so the
+  // cells of other fields do not re-render when the user record changes.
   const [rowClock, setRowClock] = useState(0);
   // Shared by all formula cells rendering the same fields version.
   const schema = useMemo(() => readFormulaSchemaForVersion(fields, fieldsVersion), [fields, fieldsVersion]);
@@ -3196,7 +3214,7 @@ export function useFormulaCellValue({
       fieldId,
       row,
       rowId,
-      format: { numberFormat: typeOption.format, dateFormat, timeFormat },
+      format: { numberFormat: typeOption.format },
     });
 
     return {
@@ -3204,6 +3222,7 @@ export function useFormulaCellValue({
       lastModified: 0,
       fieldType: FieldType.Formula,
       data: result.text,
+      value: result.value,
       resultType: result.resultType,
       rawNumeric: result.rawNumeric,
       rawBoolean: result.rawBoolean,
@@ -3213,7 +3232,7 @@ export function useFormulaCellValue({
       numberFormat: typeOption.format,
       visualization: parseFormulaVisualizationOption(typeOption),
     };
-  }, [isFormula, row, field, rowClock, fieldClock, readRevision, readContext, schema, fieldId, rowId, dateFormat, timeFormat]);
+  }, [isFormula, row, field, rowClock, fieldClock, readRevision, readContext, schema, fieldId, rowId]);
 }
 
 /**
