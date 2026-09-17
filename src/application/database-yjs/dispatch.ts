@@ -6,6 +6,11 @@ import * as Y from 'yjs';
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { CalendarLayoutUpdate, updateCalendarLayoutSetting } from '@/application/database-yjs/calendar-layout';
+import {
+  initializeTimelineLayoutSetting,
+  TimelineLayoutUpdate,
+  updateTimelineLayoutSetting,
+} from '@/application/database-yjs/timeline-layout';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -135,6 +140,7 @@ import {
   YDatabaseGridLayoutSetting,
   YDatabaseLayoutSettings,
   YDatabaseListLayoutSetting,
+  YDatabaseTimelineLayoutSetting,
   YDatabaseRow,
   YDatabaseRowOrders,
   YDatabaseSort,
@@ -146,7 +152,7 @@ import {
   YMapFieldTypeOption,
   YSharedRoot,
 } from '@/application/types';
-import { isDatabaseContainer } from '@/application/view-utils';
+import { isDatabaseContainer, isEmbeddedDatabaseViewWithoutChildren, isEmbeddedView } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
@@ -1039,10 +1045,13 @@ function getOrCreateBoardLayoutSetting(view: YDatabaseView) {
   return layoutSetting;
 }
 
+/** Layouts whose grouping options live under `layout_settings[String(layout)]`. */
+export type GroupableDatabaseLayout = DatabaseViewLayout.Grid | DatabaseViewLayout.List | DatabaseViewLayout.Timeline;
+
 function getOrCreateDatabaseGroupingLayoutSetting(
   view: YDatabaseView,
-  layout: DatabaseViewLayout.Grid | DatabaseViewLayout.List
-): YDatabaseGridLayoutSetting | YDatabaseListLayoutSetting {
+  layout: GroupableDatabaseLayout
+): YDatabaseGridLayoutSetting | YDatabaseListLayoutSetting | YDatabaseTimelineLayoutSetting {
   let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
 
   if (!layoutSettings) {
@@ -1050,7 +1059,12 @@ function getOrCreateDatabaseGroupingLayoutSetting(
     view.set(YjsDatabaseKey.layout_settings, layoutSettings);
   }
 
-  let layoutSetting = layout === DatabaseViewLayout.List ? layoutSettings.get('4') : layoutSettings.get('0');
+  let layoutSetting =
+    layout === DatabaseViewLayout.List
+      ? layoutSettings.get('4')
+      : layout === DatabaseViewLayout.Timeline
+      ? layoutSettings.get('8')
+      : layoutSettings.get('0');
 
   if (!layoutSetting) {
     layoutSetting = new Y.Map() as YDatabaseGridLayoutSetting | YDatabaseListLayoutSetting;
@@ -1060,7 +1074,7 @@ function getOrCreateDatabaseGroupingLayoutSetting(
   return layoutSetting;
 }
 
-export function useToggleDatabaseHideEmptyGroups(layout: DatabaseViewLayout.Grid | DatabaseViewLayout.List) {
+export function useToggleDatabaseHideEmptyGroups(layout: GroupableDatabaseLayout) {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
@@ -1087,6 +1101,10 @@ export function useToggleGridHideEmptyGroups() {
 
 export function useToggleListHideEmptyGroups() {
   return useToggleDatabaseHideEmptyGroups(DatabaseViewLayout.List);
+}
+
+export function useToggleTimelineHideEmptyGroups() {
+  return useToggleDatabaseHideEmptyGroups(DatabaseViewLayout.Timeline);
 }
 
 export function useSetDatabaseGroupVisibilityDispatch(groupId?: string, fieldId?: string) {
@@ -2748,6 +2766,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Gallery]: ViewLayout.Gallery,
         [DatabaseViewLayout.Feed]: ViewLayout.Feed,
         [DatabaseViewLayout.Form]: ViewLayout.Form,
+        [DatabaseViewLayout.Timeline]: ViewLayout.Timeline,
       };
       const layoutToName: Record<DatabaseViewLayout, string> = {
         [DatabaseViewLayout.Grid]: 'Grid',
@@ -2758,6 +2777,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Gallery]: 'Gallery',
         [DatabaseViewLayout.Feed]: 'Feed',
         [DatabaseViewLayout.Form]: 'Form builder',
+        [DatabaseViewLayout.Timeline]: 'Timeline',
       };
       const viewLayout = layoutToViewLayout[layout];
       const name = layoutToName[layout];
@@ -2783,13 +2803,14 @@ export function useAddDatabaseView() {
         return getLastChildViewId(view) ?? fallbackViewId;
       };
 
-      const { tabsParentViewId, prevViewId } = await (async (): Promise<{
+      const { tabsParentViewId, prevViewId, embedded } = await (async (): Promise<{
         tabsParentViewId: string;
         prevViewId?: string;
+        embedded: boolean;
       }> => {
         // Best-effort: fall back to previous behavior if meta lookup isn't available.
         if (!loadViewMeta) {
-          return { tabsParentViewId: databasePageId };
+          return { tabsParentViewId: databasePageId, embedded: isDocumentBlock ?? false };
         }
 
         const safeLoadViewMeta = async (viewId: string): Promise<View | null> => {
@@ -2800,20 +2821,28 @@ export function useAddDatabaseView() {
           }
         };
 
-        const currentMeta = await safeLoadViewMeta(requestViewId);
+        // A child lookup can fail while the page's container is still available.
+        // Resolve that known identity before falling back to presentation state.
+        const currentMeta =
+          (await safeLoadViewMeta(requestViewId)) ??
+          (requestViewId !== databasePageId ? await safeLoadViewMeta(databasePageId) : null);
 
-        // If the current view itself is a container, attach under it.
-        if (currentMeta && isDatabaseContainer(currentMeta)) {
+        // Scope belongs to the saved container, even when an embedded database
+        // is opened full-page or a standalone database is shown in a document.
+        // Legacy linked leaves may carry a container marker without children.
+        if (isDatabaseContainer(currentMeta) && !isEmbeddedDatabaseViewWithoutChildren(currentMeta)) {
           return {
             tabsParentViewId: currentMeta.view_id,
             prevViewId: getInsertionPrevViewId(currentMeta),
+            embedded: isEmbeddedView(currentMeta),
           };
         }
 
         const parentId = currentMeta?.parent_view_id;
+        const embedded = isEmbeddedView(currentMeta) || (isDocumentBlock ?? false);
 
         if (!parentId) {
-          return { tabsParentViewId: databasePageId };
+          return { tabsParentViewId: databasePageId, embedded };
         }
 
         // If parent is a database container, attach under the container (Scenario 4).
@@ -2823,14 +2852,16 @@ export function useAddDatabaseView() {
           return {
             tabsParentViewId: parentId,
             prevViewId: getInsertionPrevViewId(parentMeta),
+            embedded: isEmbeddedView(parentMeta),
           };
         }
 
         // Embedded databases without a container attach under the document (Scenario 3).
-        if (isDocumentBlock) {
+        if (embedded) {
           return {
             tabsParentViewId: parentId,
             prevViewId: getInsertionPrevViewId(parentMeta, currentMeta?.view_id),
+            embedded,
           };
         }
 
@@ -2841,6 +2872,7 @@ export function useAddDatabaseView() {
         return {
           tabsParentViewId: databasePageId,
           prevViewId: getInsertionPrevViewId(databasePageMeta),
+          embedded,
         };
       })();
 
@@ -2858,7 +2890,7 @@ export function useAddDatabaseView() {
         database_id: databaseId,
         layout: viewLayout,
         name: nameOverride ?? name,
-        embedded: isDocumentBlock ?? false,
+        embedded,
       });
 
       if (requiresIsolatedValidation) {
@@ -3209,6 +3241,21 @@ export function useUpdateDatabaseLayout(viewId: string) {
               }
 
               initializeCalendarLayoutSetting(view, fieldId);
+            }
+
+            if (layout === DatabaseViewLayout.Timeline) {
+              const timelineSetting = view.get(YjsDatabaseKey.layout_settings)?.get('8');
+              const configuredFieldId = timelineSetting?.get(YjsDatabaseKey.field_id);
+              const configuredField = getValidCalendarField(database, fieldOrders, configuredFieldId);
+              const dateField: YDatabaseField | undefined =
+                configuredField ?? enhanceCalendarLayoutByFieldExists(fieldOrders);
+              const fieldId = dateField?.get(YjsDatabaseKey.id);
+
+              if (!fieldId) {
+                throw new Error(`Date field not found`);
+              }
+
+              initializeTimelineLayoutSetting(view, fieldId);
             }
 
             if (layout === DatabaseViewLayout.List) {
@@ -5126,6 +5173,23 @@ export function useUpdateCalendarSetting() {
 
       if (readOnly || !view) return;
       executeOperations(sharedRoot, [() => updateCalendarLayoutSetting(view, settings)], 'updateCalendarSetting');
+    },
+    [sharedRoot, viewId, readOnly]
+  );
+}
+
+export function useUpdateTimelineSetting() {
+  const viewId = useDatabaseViewId();
+  const readOnly = useReadOnly();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (settings: TimelineLayoutUpdate) => {
+      const database = sharedRoot.get(YjsEditorKey.database);
+      const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+
+      if (readOnly || !view) return;
+      executeOperations(sharedRoot, [() => updateTimelineLayoutSetting(view, settings)], 'updateTimelineSetting');
     },
     [sharedRoot, viewId, readOnly]
   );

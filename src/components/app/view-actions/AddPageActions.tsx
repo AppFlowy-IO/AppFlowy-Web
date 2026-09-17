@@ -19,23 +19,38 @@ import {
   useScheduleDeferredCleanup,
   useToView,
 } from '@/components/app/app.hooks';
+import { useTimelineCreationDisabledReason } from '@/components/app/hooks/useTimelineCreationDisabledReason';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { getErrorMessage } from '@/utils/errors';
 
 function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (view: View) => void }) {
   const { t } = useTranslation();
-  const { addPage, bindViewSync, createDatabaseView, deletePage, deleteTrash, loadView, loadViewMeta, updatePage } =
-    useAppOperations();
+  const {
+    addPage,
+    bindViewSync,
+    createDatabaseView,
+    deletePage,
+    deleteTrash,
+    getSubscriptions,
+    loadView,
+    loadViewMeta,
+    updatePage,
+  } = useAppOperations();
   const openPageModal = useOpenPageModal();
   const scheduleDeferredCleanup = useScheduleDeferredCleanup();
   const toView = useToView();
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
+  const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
+    workspaceId: currentWorkspaceId,
+  });
   const lastChildViewId = view.children?.[view.children.length - 1]?.view_id;
   const handleAddPage = useCallback(
     async (layout: ViewLayout, name?: string) => {
       if (!addPage) return;
       if (layout === ViewLayout.AIChat && !aiEnabled) return;
+      if (layout === ViewLayout.Timeline && timelineDisabledReason) return;
       const loadingToastId = toast.loading(t('document.creating'));
 
       try {
@@ -145,10 +160,9 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         }
 
         toast.dismiss(loadingToastId);
-        // eslint-disable-next-line
-      } catch (e: any) {
+      } catch (e: unknown) {
         toast.dismiss(loadingToastId);
-        toast.error(e.message);
+        toast.error(getErrorMessage(e, 'Failed to create page'));
       }
     },
     [
@@ -165,6 +179,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
       openPageModal,
       scheduleDeferredCleanup,
       t,
+      timelineDisabledReason,
       toView,
       updatePage,
       view,
@@ -208,6 +223,16 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         icon: <ViewIcon layout={ViewLayout.Calendar} size={'medium'} />,
         onSelect: () => {
           void handleAddPage(ViewLayout.Calendar, t('document.plugins.database.newDatabase'));
+        },
+      },
+      {
+        label: t('timeline.menuName', { defaultValue: 'Timeline' }),
+        icon: <ViewIcon layout={ViewLayout.Timeline} size={'medium'} />,
+        testId: 'add-timeline-page-button',
+        disabled: Boolean(timelineDisabledReason),
+        tooltip: timelineDisabledReason,
+        onSelect: () => {
+          void handleAddPage(ViewLayout.Timeline, t('document.plugins.database.newDatabase'));
         },
       },
       ...(aiEnabled
@@ -273,7 +298,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         },
       },
     ],
-    [aiEnabled, handleAddPage, t, onImportClick, view]
+    [aiEnabled, handleAddPage, t, onImportClick, timelineDisabledReason, view]
   );
 
   return (

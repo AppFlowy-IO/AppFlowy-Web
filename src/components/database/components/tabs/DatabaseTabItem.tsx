@@ -123,6 +123,8 @@ export const DatabaseTabItem = memo(
           return 'Feed';
         case DatabaseViewLayout.Form:
           return 'Form builder';
+        case DatabaseViewLayout.Timeline:
+          return 'Timeline';
         default:
           return t('untitled');
       }
@@ -150,6 +152,8 @@ export const DatabaseTabItem = memo(
         ? ViewLayout.Feed
         : databaseLayout === DatabaseViewLayout.Form
         ? ViewLayout.Form
+        : databaseLayout === DatabaseViewLayout.Timeline
+        ? ViewLayout.Timeline
         : ViewLayout.Grid;
 
     // Build minimal View object from YDatabaseView for actions menu

@@ -13,6 +13,15 @@ export const HEADER_HEIGHT = 48;
 export const FORM_VIEW_CREATION_ENABLED = false;
 
 /**
+ * Gate for offering the Timeline layout in the add-view and layout menus.
+ *
+ * Creating a Timeline view goes through the cloud (`ViewLayout::Timeline = 10`,
+ * `DatabaseLayout::Timeline = 8`), so this must stay off against a server that
+ * predates those enum values. Existing Timeline views render regardless.
+ */
+export const TIMELINE_VIEW_ENABLED = true;
+
+/**
  * Server error codes from AppFlowy Cloud ErrorCode enum.
  * See: libs/app-error/src/lib.rs in AppFlowy-Cloud
  *

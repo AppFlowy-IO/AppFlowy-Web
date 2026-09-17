@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 
 import { getListGroupCellsData } from './ListRowActions';
 
-function useCreateListGroupRow(groupFieldId?: string, groupId?: string, openAfterCreate = false) {
+export function useCreateListGroupRow(groupFieldId?: string, groupId?: string, openAfterCreate = false) {
   const fields = useDatabaseFields();
   const view = useDatabaseView();
   const createRow = useNewRowDispatch();
@@ -41,12 +41,15 @@ export function ListGroupHeader({
   fieldType,
   group,
   groupConfigId,
+  className,
 }: {
   fieldId?: string;
   fieldName?: string;
   fieldType?: FieldType;
   group: GridGroup;
   groupConfigId?: string;
+  /** Overrides the List's height and gutter, e.g. for the timeline's 36px rows. */
+  className?: string;
 }) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
@@ -61,7 +64,10 @@ export function ListGroupHeader({
 
   return (
     <div
-      className='group/list-group-header flex h-11 min-w-0 items-center pl-10 pr-1 text-sm text-text-primary'
+      className={cn(
+        'group/list-group-header flex min-w-0 items-center pr-1 text-sm text-text-primary',
+        className ?? 'h-11 pl-10'
+      )}
       data-group-id={group.id}
       data-testid={`list-group-header-${group.id}`}
     >

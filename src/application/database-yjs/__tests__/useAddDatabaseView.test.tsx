@@ -175,6 +175,218 @@ function getDatabase(databaseDoc: YDoc): Y.Map<unknown> {
 }
 
 describe('useAddDatabaseView', () => {
+  it.each([
+    { embedded: true, isDocumentBlock: false, activeChild: true },
+    { embedded: true, isDocumentBlock: false, activeChild: false },
+    { embedded: false, isDocumentBlock: true, activeChild: true },
+    { embedded: false, isDocumentBlock: true, activeChild: false },
+  ])(
+    'creates Calendar with saved container scope $embedded despite document presentation $isDocumentBlock (active child: $activeChild)',
+    async ({ embedded, isDocumentBlock, activeChild }) => {
+      const databaseId = 'database-id';
+      const containerId = 'container-id';
+      const gridId = 'grid-id';
+      const grid = createView({
+        view_id: gridId,
+        layout: ViewLayout.Grid,
+        parent_view_id: containerId,
+        extra: { is_space: false, embedded },
+      });
+      const container = createView({
+        view_id: containerId,
+        layout: ViewLayout.Grid,
+        extra: { is_space: false, is_database_container: true, embedded },
+        children: [grid],
+      });
+      const createDatabaseView = jest.fn().mockResolvedValue({
+        view_id: 'calendar-id',
+        database_id: databaseId,
+      });
+      const contextValue: DatabaseContextState = {
+        readOnly: false,
+        databaseDoc: createDatabaseDoc(databaseId),
+        databasePageId: containerId,
+        activeViewId: activeChild ? gridId : containerId,
+        rowMap: {},
+        workspaceId: 'workspace-id',
+        createDatabaseView,
+        loadViewMeta: jest.fn(async (viewId: string) => (viewId === containerId ? container : grid)),
+        isDocumentBlock,
+      };
+      const { result } = renderHook(() => useAddDatabaseView(), {
+        wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+      });
+
+      await act(async () => {
+        await result.current(DatabaseViewLayout.Calendar);
+      });
+
+      expect(createDatabaseView).toHaveBeenCalledWith(
+        activeChild ? gridId : containerId,
+        expect.objectContaining({ parent_view_id: containerId, embedded, layout: ViewLayout.Calendar })
+      );
+    }
+  );
+
+  it('resolves the known container when the active child metadata cannot be loaded', async () => {
+    const containerId = 'container-id';
+    const activeViewId = 'grid-id';
+    const precedingViewId = 'board-id';
+    const container = createView({
+      view_id: containerId,
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, is_database_container: true, embedded: true },
+      children: [precedingViewId, activeViewId].map((viewId) =>
+        createView({ view_id: viewId, layout: ViewLayout.Grid, parent_view_id: containerId })
+      ),
+    });
+    const loadViewMeta = jest.fn(async (viewId: string) => {
+      if (viewId === containerId) return container;
+      throw new Error('Child metadata unavailable');
+    });
+    const createDatabaseView = jest.fn().mockResolvedValue({ view_id: 'calendar-id', database_id: 'database-id' });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: createDatabaseDoc('database-id'),
+      databasePageId: containerId,
+      activeViewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      loadViewMeta,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await act(async () => {
+      await result.current(DatabaseViewLayout.Calendar, 'Calendar', { insertBeforeViewId: activeViewId });
+    });
+
+    expect(createDatabaseView).toHaveBeenCalledWith(
+      activeViewId,
+      expect.objectContaining({
+        parent_view_id: containerId,
+        prev_view_id: precedingViewId,
+        embedded: true,
+      })
+    );
+    expect(loadViewMeta).toHaveBeenCalledWith(containerId);
+  });
+
+  it.each([false, true])(
+    'keeps a containerless embedded view under its document when opened full-page (legacy container marker: %s)',
+    async (legacyContainerMarker) => {
+      const linkedView = createView({
+        view_id: 'linked-view-id',
+        layout: ViewLayout.Grid,
+        parent_view_id: 'document-id',
+        extra: { is_space: false, embedded: true, is_database_container: legacyContainerMarker },
+      });
+      const document = createView({
+        view_id: 'document-id',
+        layout: ViewLayout.Document,
+        children: [linkedView],
+      });
+      const createDatabaseView = jest.fn().mockResolvedValue({ view_id: 'calendar-id', database_id: 'database-id' });
+      const contextValue: DatabaseContextState = {
+        readOnly: false,
+        databaseDoc: createDatabaseDoc('database-id'),
+        databasePageId: linkedView.view_id,
+        activeViewId: linkedView.view_id,
+        rowMap: {},
+        workspaceId: 'workspace-id',
+        createDatabaseView,
+        loadViewMeta: jest.fn(async (viewId: string) => (viewId === document.view_id ? document : linkedView)),
+        isDocumentBlock: false,
+      };
+      const { result } = renderHook(() => useAddDatabaseView(), {
+        wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+      });
+
+      await act(async () => {
+        await result.current(DatabaseViewLayout.Calendar);
+      });
+
+      expect(createDatabaseView).toHaveBeenCalledWith(
+        linkedView.view_id,
+        expect.objectContaining({ parent_view_id: document.view_id, embedded: true })
+      );
+    }
+  );
+
+  it('duplicates an embedded Calendar opened full-page without changing its persisted scope', async () => {
+    const databaseId = 'database-id';
+    const sourceViewId = 'calendar-id';
+    const duplicatedViewId = 'calendar-copy-id';
+    const databaseDoc = createDatabaseDoc(databaseId);
+
+    addExistingGridView(databaseDoc, sourceViewId);
+    const views = getDatabase(databaseDoc).get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+    const sourceView = views.get(sourceViewId)!;
+
+    sourceView.set(YjsDatabaseKey.layout, DatabaseViewLayout.Calendar);
+    sourceView.set(YjsDatabaseKey.embedded, true);
+    const sourceMeta = createView({
+      view_id: sourceViewId,
+      layout: ViewLayout.Calendar,
+      parent_view_id: 'container-id',
+      extra: { is_space: false, embedded: true },
+    });
+    const containerMeta = createView({
+      view_id: 'container-id',
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, is_database_container: true, embedded: true },
+      children: [sourceMeta],
+    });
+    const createDatabaseView = jest.fn(async (_viewId: string, payload: { embedded?: boolean }) => {
+      if (!payload.embedded) throw new Error('linked database view embedded state must match its container');
+      const remoteDoc = new Y.Doc();
+
+      Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(databaseDoc));
+      const remoteDatabase = remoteDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as Y.Map<unknown>;
+      const remoteViews = remoteDatabase.get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+      const duplicate = new Y.Map<unknown>();
+
+      duplicate.set(YjsDatabaseKey.id, duplicatedViewId);
+      duplicate.set(YjsDatabaseKey.layout, DatabaseViewLayout.Calendar);
+      duplicate.set(YjsDatabaseKey.embedded, payload.embedded);
+      duplicate.set(YjsDatabaseKey.field_orders, new Y.Array());
+      remoteViews.set(duplicatedViewId, duplicate);
+      return {
+        view_id: duplicatedViewId,
+        database_id: databaseId,
+        database_update: Array.from(Y.encodeStateAsUpdate(remoteDoc, Y.encodeStateVector(databaseDoc))),
+      };
+    });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: containerMeta.view_id,
+      activeViewId: sourceViewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      loadViewMeta: jest.fn(async (viewId: string) => (viewId === sourceViewId ? sourceMeta : containerMeta)),
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useDuplicateDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await act(async () => {
+      await expect(result.current(sourceViewId, 'Calendar (Copy)')).resolves.toBe(duplicatedViewId);
+    });
+
+    expect(createDatabaseView).toHaveBeenCalledWith(
+      sourceViewId,
+      expect.objectContaining({ parent_view_id: containerMeta.view_id, embedded: true })
+    );
+    expect(views.get(duplicatedViewId)?.get(YjsDatabaseKey.embedded)).toBe(true);
+    expect(sourceView.get(YjsDatabaseKey.embedded)).toBe(true);
+  });
+
   it('rejects Form creation before calling the server without canonical write permission', async () => {
     const databaseDoc = createDatabaseDoc('database-id');
     const createDatabaseView = jest.fn();

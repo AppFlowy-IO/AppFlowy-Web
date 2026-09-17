@@ -205,6 +205,7 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
       case ViewLayout.Board:
         return <KanbanSkeleton includeTitle={false} />;
       case ViewLayout.Calendar:
+      case ViewLayout.Timeline:
         return <CalendarSkeleton includeTitle={false} />;
       default:
         return <ComponentLoading />;

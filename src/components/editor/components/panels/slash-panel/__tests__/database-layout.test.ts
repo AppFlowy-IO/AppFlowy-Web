@@ -11,14 +11,16 @@ describe('slash menu database layout plumbing', () => {
     ['Board', ViewLayout.Board, BlockType.BoardBlock],
     ['Calendar', ViewLayout.Calendar, BlockType.CalendarBlock],
     ['Chart', ViewLayout.Chart, BlockType.ChartBlock],
+    ['Timeline', ViewLayout.Timeline, BlockType.TimelineBlock],
   ])('maps %s to its database block type', (_name, layout, blockType) => {
     expect(getDatabaseBlockTypeForLayout(layout)).toBe(blockType);
   });
 
-  it('allows List, Gallery, and Feed databases in the linked database picker', () => {
+  it('allows List, Gallery, Feed and Timeline databases in the linked database picker', () => {
     expect(isSlashMenuDatabaseLayout(ViewLayout.List)).toBe(true);
     expect(isSlashMenuDatabaseLayout(ViewLayout.Gallery)).toBe(true);
     expect(isSlashMenuDatabaseLayout(ViewLayout.Feed)).toBe(true);
+    expect(isSlashMenuDatabaseLayout(ViewLayout.Timeline)).toBe(true);
   });
 
   it('rejects non-database layouts', () => {

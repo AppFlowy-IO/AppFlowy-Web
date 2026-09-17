@@ -239,7 +239,7 @@ interface DatabaseSettingGroupProps {
   setAllVisibility: (groupIds: string[], visible: boolean) => void;
   updateDateCondition: (condition: DateGroupCondition) => void;
   updateNumberConfiguration: (configuration: NumberGroupConfiguration) => void;
-  testIdPrefix: 'grid' | 'list';
+  testIdPrefix: 'grid' | 'list' | 'timeline';
 }
 
 export function DatabaseSettingGroup({

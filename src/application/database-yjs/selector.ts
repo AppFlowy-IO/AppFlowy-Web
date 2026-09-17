@@ -80,6 +80,9 @@ import {
   useBackgroundRowDocLoader,
   useRollupFieldObservers,
 } from '@/application/database-yjs/hooks';
+import { useTimelineRowSource } from '@/application/database-yjs/hooks/TimelineRowValuesProvider';
+import { useTimelineRowValues } from '@/application/database-yjs/hooks/useTimelineRowValues';
+import { createLocalFirstObserver } from '@/application/database-yjs/local-first-observer';
 import { createNumberGroupingPolicy, NumberGroupingPolicy } from '@/application/database-yjs/number-grouping';
 import {
   ensureRelationGroupLabel,
@@ -104,6 +107,7 @@ import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/applicati
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { sortBy } from '@/application/database-yjs/sort';
+import { createTimelineLayoutStore } from '@/application/database-yjs/timeline-layout';
 import {
   DatabaseViewLayout,
   DateFormat,
@@ -1801,7 +1805,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const inlineRowOrders = getInlineViewRowOrders(database);
   const { cachedRowDocs, getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(
     Boolean(fieldId),
-    `${layout === DatabaseViewLayout.List ? 'list' : 'grid'}-grouping`
+    `${layout === DatabaseViewLayout.List ? 'list' : layout === DatabaseViewLayout.Timeline ? 'timeline' : 'grid'}-grouping`
   );
   const groupingRows = useMemo(() => {
     const next = { ...cachedRowDocs };
@@ -2009,10 +2013,9 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
         orderedIdSet.add(column.id);
       }
     });
-    const orderedIds =
-      numberPolicy
-        ? orderNumberGroupIds(persistedAndDerivedIds, groupingFieldId, numberPolicy)
-        : persistedAndDerivedIds;
+    const orderedIds = numberPolicy
+      ? orderNumberGroupIds(persistedAndDerivedIds, groupingFieldId, numberPolicy)
+      : persistedAndDerivedIds;
 
     // Seed-only docs may lag a Desktop edit indefinitely because background
     // grouping hydration deliberately does not bind realtime for offscreen
@@ -2038,8 +2041,9 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
         metadataGroupIdSet.add(column.id);
       }
     });
-    const orderedMetadataGroupIds =
-      numberPolicy ? orderNumberGroupIds(metadataGroupIds, groupingFieldId, numberPolicy) : metadataGroupIds;
+    const orderedMetadataGroupIds = numberPolicy
+      ? orderNumberGroupIds(metadataGroupIds, groupingFieldId, numberPolicy)
+      : metadataGroupIds;
 
     const collapsedValue = group.get(YjsDatabaseKey.collapsed_group_ids) as unknown;
     const collapsedIds = new Set(
@@ -2053,6 +2057,8 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     const layoutSetting =
       layout === DatabaseViewLayout.List
         ? view?.get(YjsDatabaseKey.layout_settings)?.get('4')
+        : layout === DatabaseViewLayout.Timeline
+        ? view?.get(YjsDatabaseKey.layout_settings)?.get('8')
         : view?.get(YjsDatabaseKey.layout_settings)?.get('0');
     const storedHideEmpty = layoutSetting?.get(YjsDatabaseKey.hide_empty_groups);
     const hideEmptyGroups = storedHideEmpty === undefined ? true : Boolean(storedHideEmpty);
@@ -2112,7 +2118,8 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
       const automaticallyHidden =
         ready &&
         groupRows.length === 0 &&
-        (hideEmptyGroups || (id !== currentFieldId && isDynamicDatabaseGroupFieldType(fieldType) && !numberPolicy?.retainsEmptyGroups));
+        (hideEmptyGroups ||
+          (id !== currentFieldId && isDynamicDatabaseGroupFieldType(fieldType) && !numberPolicy?.retainsEmptyGroups));
 
       return {
         id,
@@ -2217,6 +2224,10 @@ export function useGridGroupingSelector(): GridGrouping {
 
 export function useListGroupingSelector(): DatabaseGrouping {
   return useDatabaseGroupingSelector(DatabaseViewLayout.List);
+}
+
+export function useTimelineGroupingSelector(): DatabaseGrouping {
+  return useDatabaseGroupingSelector(DatabaseViewLayout.Timeline);
 }
 
 /**
@@ -3320,7 +3331,122 @@ export interface CalendarEvent {
 
 export function useCalendarEventsSelector() {
   const setting = useCalendarLayoutSetting();
-  const fieldId = setting?.fieldId || '';
+
+  return useDateFieldEventsSelector(setting?.fieldId || '');
+}
+
+/**
+ * Rows plotted on the timeline. With Notion's "separate start and end dates"
+ * (`endFieldId` set) each bar runs from the start field's date to the end
+ * field's date; a row whose end is missing or earlier than its start is a
+ * single-unit bar, and a row without a start is undated.
+ */
+export function useTimelineEventsSelector() {
+  const setting = useTimelineLayoutSetting();
+  const startFieldId = setting?.fieldId || '';
+  const endFieldId = setting?.endFieldId && setting.endFieldId !== startFieldId ? setting.endFieldId : '';
+  const { field: startField, clock: startClock } = useFieldSelector(startFieldId);
+  const { field: endField, clock: endClock } = useFieldSelector(endFieldId);
+  const primaryFieldId = usePrimaryFieldId();
+  const { field: primaryField, clock: primaryClock } = useFieldSelector(primaryFieldId || '');
+  const { rowOrders } = useTimelineRowSource();
+  const isDateField = (field?: YDatabaseField | null) =>
+    field &&
+    [FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime].includes(
+      Number(field.get(YjsDatabaseKey.type))
+    );
+  const hasStartField = Boolean(isDateField(startField));
+  const hasEndField = Boolean(endFieldId && isDateField(endField));
+  const parseRow = useCallback(
+    (rowId: string, doc: YDoc): CalendarEvent | undefined => {
+      // Y.Map identity stays stable when field formats change.
+      void startClock;
+      void endClock;
+      void primaryClock;
+      if (!startField || !hasStartField || !primaryFieldId) return undefined;
+      const docs = { [rowId]: doc };
+      const primaryCell = getCell(rowId, primaryFieldId, docs);
+      const title = primaryCell && primaryField ? decodeCellToText(primaryCell, primaryField) : '';
+      const row = (doc.getMap(YjsEditorKey.data_section) as YSharedRoot).get(YjsEditorKey.database_row);
+
+      if (!row) return undefined;
+      const getDate = (timestamp: string) =>
+        dayjs(timestamp.length === 10 ? Number(timestamp) * 1000 : timestamp).toDate();
+      const readDate = (field: YDatabaseField, fieldId: string): CalendarEvent => {
+        const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+        const cell = getCell(rowId, fieldId, docs);
+        const value = cell ? (parseYDatabaseCellToCell(cell, field) as DateTimeCell) : undefined;
+        const event: CalendarEvent = { id: rowId, rowId, title, allDay: !value?.includeTime };
+        const timestamp =
+          fieldType === FieldType.CreatedTime
+            ? row.get(YjsDatabaseKey.created_at)?.toString()
+            : fieldType === FieldType.LastEditedTime
+            ? row.get(YjsDatabaseKey.last_modified)?.toString()
+            : value?.data;
+
+        if (!timestamp) return event;
+        event.start = getDate(timestamp);
+        if (fieldType === FieldType.DateTime) {
+          event.isRange = Boolean(value?.isRange);
+          event.end =
+            value?.endTimestamp && value.isRange
+              ? getDate(value.endTimestamp)
+              : dayjs(event.start).add(30, 'minute').toDate();
+        }
+
+        return event;
+      };
+
+      const event = readDate(startField, startFieldId);
+
+      if (event.start && hasEndField && endField) {
+        const end = readDate(endField, endFieldId).start;
+
+        event.end = end && end >= event.start ? end : undefined;
+        event.isRange = Boolean(event.end);
+      }
+
+      return event;
+    },
+    [
+      endClock,
+      endField,
+      endFieldId,
+      hasEndField,
+      hasStartField,
+      primaryClock,
+      primaryField,
+      primaryFieldId,
+      startClock,
+      startField,
+      startFieldId,
+    ]
+  );
+  const values = useTimelineRowValues(parseRow);
+  const { events, emptyEvents } = useMemo(() => {
+    const events: CalendarEvent[] = [];
+    const emptyEvents: CalendarEvent[] = [];
+
+    if (hasStartField && primaryFieldId) {
+      (rowOrders ?? []).forEach(({ id }) => {
+        const event = values.get(id) ?? { id, rowId: id, title: '', allDay: true };
+
+        (event.start ? events : emptyEvents).push(event);
+      });
+    }
+
+    return { events, emptyEvents };
+  }, [hasStartField, primaryFieldId, rowOrders, values]);
+
+  return { events, emptyEvents, hasEndField };
+}
+
+/**
+ * Rows plotted on a date-typed field. Rows without a value (or not yet loaded)
+ * land in `emptyEvents`; ranges keep `isRange` so consumers can tell a real end
+ * date from the synthetic 30-minute one.
+ */
+export function useDateFieldEventsSelector(fieldId: string) {
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
   const primaryFieldId = usePrimaryFieldId();
   const { field: primaryField, clock: primaryFieldClock } = useFieldSelector(primaryFieldId || '');
@@ -3439,23 +3565,25 @@ export function useCalendarEventsSelector() {
 
     observerEvent();
 
-    const debouncedObserverEvent = debounce(observerEvent, 150);
+    // The user's own edits (a dropped calendar or timeline bar) re-read at
+    // once; remote bursts stay debounced.
+    const rowObserver = createLocalFirstObserver(observerEvent, 150);
 
     // for every row
     rowOrders?.forEach((row) => {
       const rowDoc = rows?.[row.id];
 
       if (!rowDoc) return;
-      rowDoc.getMap(YjsEditorKey.data_section).observeDeep(debouncedObserverEvent);
+      rowDoc.getMap(YjsEditorKey.data_section).observeDeep(rowObserver);
     });
 
     return () => {
-      debouncedObserverEvent.cancel();
+      rowObserver.cancel();
       rowOrders?.forEach((row) => {
         const rowDoc = rows?.[row.id];
 
         if (!rowDoc) return;
-        rowDoc.getMap(YjsEditorKey.data_section).unobserveDeep(debouncedObserverEvent);
+        rowDoc.getMap(YjsEditorKey.data_section).unobserveDeep(rowObserver);
       });
     };
   }, [field, fieldClock, rowOrders, rows, fieldId, primaryFieldId, primaryField, primaryFieldClock, ensureRow]);
@@ -3473,6 +3601,21 @@ export function useCalendarLayoutSetting() {
   const viewId = useDatabaseViewId();
   const store = useMemo(
     () => createCalendarLayoutStore(databaseDoc, viewId, startWeekOn, timeFormat === TimeFormat.TwentyFourHour),
+    [databaseDoc, viewId, startWeekOn, timeFormat]
+  );
+
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+}
+
+export function useTimelineLayoutSetting() {
+  const currentUser = useCurrentUser();
+  const startWeekOn = Number(currentUser?.metadata?.[MetadataKey.StartWeekOn] || 0);
+  const timeFormat = currentUser?.metadata?.[MetadataKey.TimeFormat] || TimeFormat.TwelveHour;
+  const { databaseDoc } = useDatabaseContext();
+
+  const viewId = useDatabaseViewId();
+  const store = useMemo(
+    () => createTimelineLayoutStore(databaseDoc, viewId, startWeekOn, timeFormat === TimeFormat.TwentyFourHour),
     [databaseDoc, viewId, startWeekOn, timeFormat]
   );
 

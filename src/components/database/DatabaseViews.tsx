@@ -26,6 +26,7 @@ import {
   shouldUseFixedDatabaseViewport,
 } from '@/components/database/layout';
 import { ListGroupingProvider } from '@/components/database/list/ListGroupingContext';
+import { TimelineGroupingProvider } from '@/components/database/timeline/TimelineGroupingContext';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { cn } from '@/lib/utils';
 import {
@@ -43,6 +44,7 @@ import DatabaseConditionsPanel from 'src/components/database/components/conditio
 const List = lazy(() => import('@/components/database/list/List'));
 const Gallery = lazy(() => import('@/components/database/gallery'));
 const Feed = lazy(() => import('@/components/database/feed'));
+const Timeline = lazy(() => import('@/components/database/timeline'));
 const FormBuilderView = lazy(() =>
   import('@/components/database/form/FormBuilderView').then(({ FormBuilderView: Component }) => ({
     default: Component,
@@ -359,6 +361,8 @@ function DatabaseViews({
         return <Gallery key={activeViewId} />;
       case DatabaseViewLayout.Feed:
         return <Feed key={activeViewId} />;
+      case DatabaseViewLayout.Timeline:
+        return <Timeline key={activeViewId} />;
       default:
         return null;
     }
@@ -484,6 +488,9 @@ function DatabaseViews({
       break;
     case DatabaseViewLayout.List:
       groupedContent = <ListGroupingProvider>{content}</ListGroupingProvider>;
+      break;
+    case DatabaseViewLayout.Timeline:
+      groupedContent = <TimelineGroupingProvider>{content}</TimelineGroupingProvider>;
       break;
   }
 

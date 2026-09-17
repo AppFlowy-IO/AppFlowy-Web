@@ -338,8 +338,7 @@ export const DatabaseFeedSelectors = {
   creatorByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-creator-${rowId}`),
   coverByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-cover-${rowId}`),
   documentPreviewByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-document-preview-${rowId}`),
-  documentPreviewToggleByRowId: (page: Page, rowId: string) =>
-    page.getByTestId(`feed-document-preview-toggle-${rowId}`),
+  documentPreviewToggleByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-document-preview-toggle-${rowId}`),
   actionsByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-actions-${rowId}`),
   moreButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-more-${rowId}`),
   reactionButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-reaction-button-${rowId}`),
@@ -757,7 +756,8 @@ export const CalendarSelectors = {
   monthViewOption: (page: Page) => page.getByRole('menuitemradio', { name: /^Month(?:\s|$)/ }),
   weekViewOption: (page: Page) => page.getByRole('menuitemradio', { name: /^Week(?:\s|$)/ }),
   numberOfDaysMenu: (page: Page) => page.getByRole('menuitem', { name: 'Number of days', exact: true }),
-  customDayOption: (page: Page, days: number) => page.getByRole('menuitemradio', { name: new RegExp(`^${days} days(?:\\s|$)`) }),
+  customDayOption: (page: Page, days: number) =>
+    page.getByRole('menuitemradio', { name: new RegExp(`^${days} days(?:\\s|$)`) }),
   title: (page: Page) => page.getByTestId('calendar-title'),
   dayCell: (page: Page) => page.locator('.fc-daygrid-day'),
   dayCellByDate: (page: Page, dateStr: string) => page.locator(`[data-date="${dateStr}"]`),
@@ -865,4 +865,49 @@ export const AvatarUiSelectors = {
 export const RevertedDialogSelectors = {
   dialog: (page: Page) => page.getByTestId('reverted-dialog'),
   confirmButton: (page: Page) => page.getByTestId('reverted-dialog-confirm'),
+};
+
+/**
+ * Timeline view selectors
+ */
+export const TimelineSelectors = {
+  view: (page: Page) => page.getByTestId('timeline-view'),
+  header: (page: Page) => page.getByTestId('timeline-header'),
+  toolbar: (page: Page) => page.getByTestId('timeline-toolbar'),
+  title: (page: Page) => page.getByTestId('timeline-title'),
+  headerToday: (page: Page) => page.getByTestId('timeline-header-today'),
+  headerSegments: (page: Page) => page.getByTestId('timeline-header-segment'),
+  headerHighlight: (page: Page) => page.getByTestId('timeline-header-highlight'),
+  todayLine: (page: Page) => page.getByTestId('timeline-today-line'),
+  bars: (page: Page) => page.locator('[data-testid^="timeline-bar-"]'),
+  bar: (page: Page, rowId: string) => page.getByTestId(`timeline-bar-${rowId}`),
+  barByTitle: (page: Page, title: string) =>
+    page.locator('[data-testid^="timeline-bar-"]').filter({ hasText: title }).first(),
+  barButton: (page: Page, title: string) =>
+    page.locator('[data-testid^="timeline-bar-"]').filter({ hasText: title }).first().locator('[role="button"]'),
+  handleStart: (page: Page, rowId: string) => page.getByTestId(`timeline-handle-start-${rowId}`),
+  handleEnd: (page: Page, rowId: string) => page.getByTestId(`timeline-handle-end-${rowId}`),
+  handleProgress: (page: Page, rowId: string) => page.getByTestId(`timeline-handle-progress-${rowId}`),
+  progressFill: (page: Page, rowId: string) => page.getByTestId(`timeline-progress-${rowId}`),
+  dragLabel: (page: Page) => page.getByTestId('timeline-drag-label'),
+  hoverCard: (page: Page) => page.getByRole('tooltip').getByTestId('timeline-bar-hover-card'),
+  row: (page: Page, rowId: string) => page.getByTestId(`timeline-row-${rowId}`),
+  sidebarRows: (page: Page) => page.locator('[data-testid^="timeline-sidebar-row-"]'),
+  sidebarCells: (page: Page) => page.locator('[data-testid^="timeline-sidebar-cell-"]'),
+  sidebarRow: (page: Page, rowId: string) => page.getByTestId(`timeline-sidebar-row-${rowId}`),
+  openRow: (page: Page, rowId: string) => page.getByTestId(`timeline-open-row-${rowId}`),
+  emptyRows: (page: Page) => page.locator('[data-testid^="timeline-row-empty-"]'),
+  offscreenLeft: (page: Page) => page.getByTestId('timeline-offscreen-left'),
+  offscreenRight: (page: Page) => page.getByTestId('timeline-offscreen-right'),
+  arrows: (page: Page) => page.locator('[data-testid="timeline-arrow"]'),
+  zoomTrigger: (page: Page) => page.getByTestId('timeline-zoom-trigger'),
+  zoomOption: (page: Page, zoom: number) => page.getByTestId(`timeline-zoom-${zoom}`),
+  today: (page: Page) => page.getByTestId('timeline-today'),
+  stepPrevious: (page: Page) => page.getByTestId('timeline-step-previous'),
+  stepNext: (page: Page) => page.getByTestId('timeline-step-next'),
+  toggleTable: (page: Page) => page.getByTestId('timeline-toggle-table'),
+  newRow: (page: Page) => page.getByTestId('timeline-new-row'),
+  noDateButton: (page: Page) => page.locator('.no-date-button'),
+  settingsTrigger: (page: Page) => page.getByTestId('timeline-settings-trigger'),
+  addViewOption: (page: Page) => page.getByTestId('add-timeline-view-button'),
 };

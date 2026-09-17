@@ -67,6 +67,7 @@ function MobileOutlineWithCover({
           bgColor: isDark ? '#8B80AD33' : '#F5F4FFFF',
         };
       case ViewLayout.Calendar:
+      case ViewLayout.Timeline:
         return {
           iconClassName: 'text-[#FD9D44]',
           bgColor: isDark ? '#A68B7733' : '#FFF7F0FF',
