@@ -214,11 +214,13 @@ Then('the dashboard view tab shows the dashboard icon', async ({ page }) => {
   await expect(DashboardSelectors.viewIcon(tab)).toBeVisible();
 });
 
-Then('the dashboard sidebar entry shows the dashboard icon', async ({ page }) => {
+// Like desktop, the sidebar marks every view under a database page with a dot
+// rather than its layout icon; the layout icon lives on the view tab.
+Then('the dashboard is listed in the sidebar under its database', async ({ page }) => {
   const entry = await dashboardSidebarEntry(page);
 
   await expect(entry).toBeVisible(WIDGET_TIMEOUT);
-  await expect(DashboardSelectors.viewIcon(entry)).toBeVisible();
+  await expect(entry.getByTestId('database-view-dot')).toBeVisible();
 });
 
 When('I click the dashboard Done button', async ({ page }) => {

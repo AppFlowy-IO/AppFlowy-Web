@@ -36,6 +36,7 @@ const FIXTURE_TIMEOUT_MS = 45_000;
 const WIDGET_TIMEOUT_MS = 30_000;
 const ACCESS_LEVEL_READ_ONLY = 10;
 const ACCESS_LEVEL_READ_AND_WRITE = 30;
+const ACCESS_LEVEL_FULL = 50;
 const SPACE_PERMISSION_PUBLIC = 0;
 const SPACE_PERMISSION_PRIVATE = 1;
 /** Folder `ViewLayout.Grid`; database pages are created as grids and get extra views through the tab bar. */
@@ -395,6 +396,22 @@ export async function apiPost<T>(request: APIRequestContext, token: string, path
 
   if (!response.ok() || body?.code !== 0) {
     throw new Error(`API POST ${path} failed: HTTP ${response.status()} ${text}`);
+  }
+
+  return body.data as T;
+}
+
+export async function apiPatch<T>(request: APIRequestContext, token: string, path: string, data: unknown): Promise<T> {
+  const response = await request.patch(`${TestConfig.apiUrl}${path}`, {
+    headers: apiHeaders(token),
+    data: typeof data === 'string' ? data : JSON.stringify(data),
+    failOnStatusCode: false,
+  });
+  const text = await response.text();
+  const body = parseJson<ApiEnvelope<T>>(text);
+
+  if (!response.ok() || body?.code !== 0) {
+    throw new Error(`API PATCH ${path} failed: HTTP ${response.status()} ${text}`);
   }
 
   return body.data as T;
@@ -1052,6 +1069,18 @@ export async function readServerDashboardSetting(
   };
 }
 
+/**
+ * JSON with object keys sorted. The server stores these values as Yrs `Any`
+ * maps, which re-encode object keys in arbitrary order; arrays keep theirs.
+ */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) =>
+    item && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
+      : item
+  );
+}
+
 /** Wait until the server holds the same rows and global filters as the browser. */
 export async function waitForDashboardSync(page: Page, request: APIRequestContext) {
   const local = await readDashboardSetting(page);
@@ -1063,8 +1092,8 @@ export async function waitForDashboardSync(page: Page, request: APIRequestContex
 
         return (
           remote !== null &&
-          JSON.stringify(remote.rows) === JSON.stringify(local.rows) &&
-          JSON.stringify(remote.global_filters) === JSON.stringify(local.global_filters)
+          canonicalJson(remote.rows) === canonicalJson(local.rows) &&
+          canonicalJson(remote.global_filters) === canonicalJson(local.global_filters)
         );
       },
       { timeout: FIXTURE_TIMEOUT_MS, message: 'waiting for the dashboard layout to reach the server' }
@@ -1143,8 +1172,18 @@ export async function seedDashboardWidgets(page: Page, layout: { row: number; la
       };
     });
 
+  // A dashboard that opened in Edit mode only because it was empty returns to
+  // View mode when widgets arrive without the picker (they could be a stale
+  // cache catching up). A scenario that was editing keeps editing, like a user
+  // who then clicks Edit.
+  const wasEditing = await DashboardSelectors.doneButton(page).isVisible();
+
   await writeDashboardSetting(page, { rows });
   await expect(DashboardSelectors.widgets(page)).toHaveCount(layout.length, { timeout: WIDGET_TIMEOUT_MS });
+  if (wasEditing) {
+    await expect(DashboardSelectors.editButton(page).or(DashboardSelectors.doneButton(page))).toBeVisible();
+    await enterEditMode(page);
+  }
 }
 
 /**
@@ -1230,11 +1269,22 @@ async function widgetGrip(page: Page, widget: Locator) {
 }
 
 export async function dragWidgetBeside(page: Page, source: Locator, target: Locator, side: 'left' | 'right') {
+  // Measure both ends in one scroll position: centre the source first (a
+  // later scroll would move the grip), then drop on the visible part of the
+  // target, which may be in the next row below.
+  await source.evaluate((element) => element.scrollIntoView({ block: 'center' }));
   const grip = await widgetGrip(page, source);
-  const { box } = await centerOf(target);
+  const box = await target.boundingBox();
+
+  if (!box) throw new Error('Drop target widget is not rendered');
+  const viewportHeight = page.viewportSize()?.height ?? 900;
+  const top = Math.max(box.y, 60);
+  const bottom = Math.min(box.y + box.height, viewportHeight - 10);
+
+  if (bottom - top < 24) throw new Error('Drop target widget is not on screen with the dragged widget');
   const x = side === 'left' ? box.x + box.width * 0.15 : box.x + box.width * 0.85;
 
-  await dragFromTo(page, grip, { x, y: box.y + box.height / 2 });
+  await dragFromTo(page, grip, { x, y: (top + bottom) / 2 });
 }
 
 /** Drop into the gap between two rendered rows (a drop there creates a new row). */
@@ -1460,6 +1510,20 @@ export async function inviteDashboardMember(
     const uid = await findMemberUid(request, world.owner.accessToken, world.workspaceId, email);
     const level = access === 'read-only' ? ACCESS_LEVEL_READ_ONLY : ACCESS_LEVEL_READ_AND_WRITE;
 
+    // Private spaces have no roster (access to them is granted per page), so
+    // the fixture space becomes a custom space: explicit members only, all at
+    // `level`, and no access for everyone else in the workspace.
+    await apiPatch<unknown>(
+      request,
+      world.owner.accessToken,
+      `/api/workspace/${world.workspaceId}/spaces/${world.spaceId}/permission`,
+      {
+        visibility: 'custom',
+        owner_access_level: ACCESS_LEVEL_FULL,
+        member_default_access_level: level,
+        everyone_else_access_level: null,
+      }
+    );
     // Raw JSON keeps the 64-bit uid exact.
     await apiPost<unknown>(
       request,

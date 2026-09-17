@@ -1,7 +1,13 @@
 import dayjs, { Dayjs } from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { useDatabaseContext, useDatabaseFields, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
+import {
+  useDatabaseContext,
+  useDatabaseFields,
+  useDatabaseView,
+  useRowMap,
+  useRowOrdersSelector,
+} from '@/application/database-yjs';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import {
   CHART_COLORS,
@@ -528,6 +534,27 @@ const EMPTY_ROW_ORDERS_GRACE_MS = 300;
 const ROW_LOAD_CONCURRENCY = 16;
 
 /**
+ * Order fields by the view's `field_orders`; fields the view does not list
+ * keep their relative order after the listed ones.
+ */
+export function sortByFieldOrder<T extends { id: string }>(
+  items: T[],
+  fieldOrders: { toArray: () => { id?: unknown }[] } | undefined
+): T[] {
+  if (!fieldOrders || items.length < 2) return items;
+  const position = new Map<string, number>();
+
+  fieldOrders.toArray().forEach((order, index) => {
+    if (typeof order?.id === 'string' && !position.has(order.id)) position.set(order.id, index);
+  });
+
+  return items
+    .map((item, index) => ({ item, index, rank: position.get(item.id) ?? Number.MAX_SAFE_INTEGER }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(({ item }) => item);
+}
+
+/**
  * Hook for computing chart data from database rows. The transform is pure and
  * lives in `useMemo`, so React re-derives only when its inputs actually
  * change — no `useState` / `useEffect` / `setTimeout` round-trip.
@@ -551,6 +578,18 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     fields.observeDeep(onChange);
     return () => fields.unobserveDeep(onChange);
   }, [fields]);
+
+  // The default X axis follows the view's property order (desktop's
+  // `select_chart_group_field`), so reordering columns can change it.
+  const fieldOrders = useDatabaseView()?.get(YjsDatabaseKey.field_orders);
+
+  useEffect(() => {
+    if (!fieldOrders) return;
+    const onChange = () => setFieldsClock((c) => c + 1);
+
+    fieldOrders.observe(onChange);
+    return () => fieldOrders.unobserve(onChange);
+  }, [fieldOrders]);
 
   // Stable string representation of the row order. Yjs often returns a fresh
   // array reference even when the contents are unchanged, so we depend on the
@@ -648,9 +687,11 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
         });
       }
     });
-    return result;
+    // `fields` is a Y.Map whose iteration order depends on how the doc was
+    // built, so rank by the view's property order instead.
+    return sortByFieldOrder(result, fieldOrders);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, fieldsClock]);
+  }, [fields, fieldOrders, fieldsClock]);
 
   const hasGroupableFields = groupableFields.length > 0;
 

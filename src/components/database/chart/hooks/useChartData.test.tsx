@@ -12,6 +12,7 @@ jest.mock('@/application/database-yjs', () => {
     ...actual,
     useDatabaseContext: jest.fn(),
     useDatabaseFields: jest.fn(),
+    useDatabaseView: jest.fn(() => undefined),
     useRowMap: jest.fn(),
     useRowOrdersSelector: jest.fn(),
   };
@@ -37,7 +38,7 @@ import {
 } from '@/application/types';
 
 
-import { useChartData } from './useChartData';
+import { sortByFieldOrder, useChartData } from './useChartData';
 
 function addField(
   fields: YDatabaseFields,
@@ -214,5 +215,26 @@ describe('useChartData Number chart', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.chartData).toEqual([expect.objectContaining({ value: 0, rowIds: [] })]);
     expect(result.current.numberValue).toBe(0);
+  });
+});
+
+describe('sortByFieldOrder', () => {
+  const orders = (ids: string[]) => ({ toArray: () => ids.map((id) => ({ id })) });
+
+  it('ranks groupable fields by the view property order', () => {
+    const fields = [{ id: 'due' }, { id: 'urgent' }, { id: 'status' }];
+
+    expect(sortByFieldOrder(fields, orders(['name', 'status', 'estimate', 'due', 'urgent'])).map((f) => f.id)).toEqual([
+      'status',
+      'due',
+      'urgent',
+    ]);
+  });
+
+  it('keeps unlisted fields after listed ones in their original order', () => {
+    const fields = [{ id: 'b' }, { id: 'x' }, { id: 'a' }, { id: 'y' }];
+
+    expect(sortByFieldOrder(fields, orders(['a', 'b'])).map((f) => f.id)).toEqual(['a', 'b', 'x', 'y']);
+    expect(sortByFieldOrder(fields, undefined)).toBe(fields);
   });
 });

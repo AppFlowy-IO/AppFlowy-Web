@@ -37,6 +37,7 @@ Feature: Number chart widgets
     Given the fixture also has the "Backlog" database
     And "Backlog" also has a "Chart" view
     And the "Backlog" chart is a Number chart using "Count"
+    And the "Projects" chart is a Number chart using "Count"
     And I added a dashboard to "Projects"
     And the dashboard has these widgets:
       | row | widget         |

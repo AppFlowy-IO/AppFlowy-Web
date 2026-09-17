@@ -15,10 +15,10 @@ Feature: Dashboard view creation
     And the active dashboard tab is named "Dashboard"
     And the dashboard layout setting exists with 0 widgets
 
-  Scenario: The dashboard tab and its sidebar entry show the dashboard icon
+  Scenario: The dashboard tab shows the dashboard icon and the sidebar lists the dashboard
     When I add a dashboard to "Projects" from the view tab menu
     Then the dashboard view tab shows the dashboard icon
-    And the dashboard sidebar entry shows the dashboard icon
+    And the dashboard is listed in the sidebar under its database
 
   Scenario: The layout switcher turns an existing view into a dashboard
     Given "Projects" also has a "Board" view
