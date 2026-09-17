@@ -502,6 +502,44 @@ export async function signInFixtureAccount(request: APIRequestContext, email: st
  * pages get it too.
  */
 export async function installDashboardTestBridge(context: BrowserContext) {
+  // A busy dev server sometimes fails a lazy module fetch and the app shows one
+  // of its error screens; reload as a user would (a few times per tab). Only a
+  // recorded module fetch failure counts: those screens also catch real render
+  // errors, which must fail the scenario.
+  await context.addInitScript(() => {
+    const key = '__dashboard_test_chunk_reloads__';
+    const chunkFailure =
+      /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed/;
+    let chunkFailed = false;
+    const note = (value: unknown) => {
+      const text = value instanceof Error ? value.message : String(value);
+
+      if (chunkFailure.test(text)) chunkFailed = true;
+    };
+
+    window.addEventListener('error', (event) => note(event.error ?? event.message));
+    window.addEventListener('unhandledrejection', (event) => note(event.reason));
+    // The route boundary, the app boundary and the element fallback.
+    const errorScreens = ['Couldn’t load this page', 'Something went wrong', 'SomethingError'];
+    const timer = window.setInterval(() => {
+      if (!chunkFailed) return;
+      const text = document.body?.innerText ?? '';
+
+      if (!errorScreens.some((screen) => text.includes(screen))) return;
+
+      window.clearInterval(timer);
+      try {
+        const reloads = Number(window.sessionStorage.getItem(key) ?? '0');
+
+        if (reloads >= 3) return;
+        window.sessionStorage.setItem(key, String(reloads + 1));
+      } catch {
+        return;
+      }
+
+      window.location.reload();
+    }, 500);
+  });
   await context.addInitScript(() => {
     type BridgeContext = { databaseDoc?: { guid?: string; getMap: (name: string) => any } };
     const win = window as unknown as Record<string, unknown> & { Cypress?: boolean };
@@ -824,7 +862,12 @@ interface WorkspaceDatabaseEntry {
 }
 
 /** The folder views of a database, as the widget picker lists them. */
-export async function listFolderViews(request: APIRequestContext, token: string, workspaceId: string, databaseId: string) {
+export async function listFolderViews(
+  request: APIRequestContext,
+  token: string,
+  workspaceId: string,
+  databaseId: string
+) {
   const databases = await apiGet<WorkspaceDatabaseEntry[]>(request, token, `/api/workspace/${workspaceId}/database`);
 
   return databases.find((database) => database.id === databaseId)?.views ?? [];
@@ -1438,9 +1481,11 @@ export async function openWidgetRow(scope: Page, widget: Locator, rowId: string)
   );
 
   await expect(layout.first()).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
-  const kind = await layout.first().evaluate((element) =>
-    element.classList.contains('database-board') ? 'board' : element.getAttribute('data-testid') ?? ''
-  );
+  const kind = await layout
+    .first()
+    .evaluate((element) =>
+      element.classList.contains('database-board') ? 'board' : element.getAttribute('data-testid') ?? ''
+    );
 
   if (kind === 'database-grid') {
     const row = widget.getByTestId(`grid-row-${rowId}`);
