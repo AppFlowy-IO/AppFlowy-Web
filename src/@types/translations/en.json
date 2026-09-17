@@ -4432,6 +4432,7 @@
   },
   "dashboard": {
     "menuName": "Dashboard",
+    "creationRequiresPro": "Creating a Dashboard view requires a Pro workspace.",
     "referencedDashboardPrefix": "View of",
     "edit": "Edit",
     "done": "Done",
