@@ -83,7 +83,7 @@ export async function createNotionImportTask(
   return createZipImportTask(workspaceId, parentViewId, 'notion', payload);
 }
 
-/** Create a Confluence HTML export import under the selected page. */
+/** Create a Confluence HTML or CSV space-export import under the selected page. */
 export async function createConfluenceImportTask(
   workspaceId: string,
   parentViewId: string,

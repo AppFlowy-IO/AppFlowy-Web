@@ -55,9 +55,9 @@ describe('ImporterDialogContent', () => {
     });
   });
 
-  it('lets users select Confluence and asks for an HTML export ZIP', async () => {
+  it.each(['html', 'csv'])('lets users select Confluence and upload a %s export ZIP', async (format) => {
     const onSuccess = jest.fn();
-    const file = new File(['confluence'], 'space.html.zip', { type: 'application/zip' });
+    const file = new File(['confluence export'], `space.${format}.zip`, { type: 'application/zip' });
 
     render(<ImporterDialogContent onSuccess={onSuccess} />);
     fireEvent.click(screen.getByRole('tab', { name: 'web.importFromConfluence' }));
@@ -70,6 +70,28 @@ describe('ImporterDialogContent', () => {
       taskType: FileService.CreateImportTaskType.Confluence,
       onProgress: expect.any(Function),
     });
+    expect(importFile).toHaveBeenCalledTimes(1);
+    expect(importFile.mock.calls[0][0]).toBe(file);
+  });
+
+  it('accepts a dropped CSV space ZIP without a MIME type through the Confluence tab', async () => {
+    const onSuccess = jest.fn();
+    const file = new File(['confluence csv export'], 'space.csv.zip');
+    const clearData = jest.fn();
+
+    render(<ImporterDialogContent source='confluence' onSuccess={onSuccess} />);
+    fireEvent.drop(screen.getByTestId('file-dropzone'), {
+      dataTransfer: { files: [file], clearData },
+    });
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(importFile).toHaveBeenCalledTimes(1);
+    expect(importFile).toHaveBeenCalledWith(file, {
+      taskType: FileService.CreateImportTaskType.Confluence,
+      onProgress: expect.any(Function),
+    });
+    expect(importFile.mock.calls[0][0]).toBe(file);
+    expect(clearData).toHaveBeenCalledTimes(1);
   });
 
   it('keeps controls disabled through preparation and finalization, then allows retry after failure', async () => {

@@ -88,6 +88,25 @@ pnpm install
 pnpm run dev
 ```
 
+## Confluence import formats
+
+The Confluence import option accepts single-space HTML and CSV export ZIPs. Choose it from a
+page's import dialog to add content below that page, or from **Settings → Manage data → Import**
+to create a workspace. Upload the complete export ZIP, including its attachments. The separate
+CSV option imports ordinary CSV files as databases.
+
+The web client uploads both export formats through the existing Confluence task APIs. AppFlowy
+Cloud detects the archive format and converts the content. CSV exports require the native CSV
+importer in [Cloud PR #1188](https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/pull/1188);
+servers with only the HTML importer cannot process CSV exports. Site backup ZIPs are unsupported.
+
+For a real export sample, download XWiki's unmodified
+[csv-RJTest.zip](https://github.com/xwiki-contrib/confluence/blob/7e8f8fc4ebd7cb735c233c4c3fa124c45102f9e1/confluence-xml/src/test/resources/confluencexml/csv-RJTest.zip).
+The backend fixture test verifies 19 imported documents, page relationships, internal links,
+and the current spreadsheet attachment. Web regressions cover selection, drag-and-drop,
+Confluence routing, and preserving the original file through single and multipart uploads;
+archive decoding is tested by the backend.
+
 ## 🔗 Additional Resources
 
 - **[AppFlowy Cloud Repository](https://github.com/AppFlowy-IO/AppFlowy-Cloud)** - Backend setup and configuration
