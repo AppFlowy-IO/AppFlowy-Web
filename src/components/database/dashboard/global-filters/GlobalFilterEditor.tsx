@@ -38,10 +38,11 @@ import {
   getPrimaryTargetField,
   getTargetCandidates,
   GlobalFilterSource,
+  GlobalFilterTargetShape,
   removeGlobalFilterTarget,
   setGlobalFilterTarget,
 } from './global-filter.utils';
-import { GlobalFilterContent } from './GlobalFilterContent';
+import { GlobalFilterContent, GlobalFilterValue } from './GlobalFilterContent';
 
 type FilterUpdater = (filter: DashboardGlobalFilter) => DashboardGlobalFilter;
 
@@ -103,7 +104,7 @@ const TargetRow = memo(function TargetRow({
   sources,
   onChange,
 }: {
-  filter: DashboardGlobalFilter;
+  filter: GlobalFilterTargetShape;
   source: GlobalFilterSource;
   sources: GlobalFilterSource[];
   onChange: (updater: FilterUpdater) => void;
@@ -232,20 +233,22 @@ function AddSourceButton({
 }
 
 const ConditionSelect = memo(function ConditionSelect({
-  filter,
+  fieldType,
+  condition: currentCondition,
   onChange,
 }: {
-  filter: DashboardGlobalFilter;
+  fieldType: FieldType;
+  condition: number;
   onChange: (updater: FilterUpdater) => void;
 }) {
   const { t } = useTranslation();
   const conditions = useMemo(
-    () => getGlobalFilterConditions(filter.fieldType, filter.condition, t),
-    [filter.condition, filter.fieldType, t]
+    () => getGlobalFilterConditions(fieldType, currentCondition, t),
+    [currentCondition, fieldType, t]
   );
-  const selected = conditions.find((condition) => condition.value === filter.condition);
-  const showSide = filter.fieldType === FieldType.DateTime;
-  const isStart = isStartDateCondition(filter.condition);
+  const selected = conditions.find((condition) => condition.value === currentCondition);
+  const showSide = fieldType === FieldType.DateTime;
+  const isStart = isStartDateCondition(currentCondition);
   const sides = [
     { start: true, text: t('grid.dateFilter.startDate') },
     { start: false, text: t('grid.dateFilter.endDate') },
@@ -290,7 +293,7 @@ const ConditionSelect = memo(function ConditionSelect({
             size='sm'
             className={triggerClassName}
             data-testid='dashboard-global-filter-condition'
-            data-condition={filter.condition}
+            data-condition={currentCondition}
           >
             <span className='truncate'>{selected?.text ?? ''}</span>
             <ArrowDownSvg className='h-4 w-4 shrink-0 text-icon-secondary' />
@@ -306,7 +309,7 @@ const ConditionSelect = memo(function ConditionSelect({
                 onSelect={() => onChange((current) => applyConditionChange(current, condition.value))}
               >
                 {condition.text}
-                {condition.value === filter.condition && <DropdownMenuItemTick />}
+                {condition.value === currentCondition && <DropdownMenuItemTick />}
               </DropdownMenuItem>
             ))}
           </DropdownMenuGroup>
@@ -342,15 +345,23 @@ export function GlobalFilterEditor({
   onBack,
 }: GlobalFilterEditorProps) {
   const { t } = useTranslation();
-  const typeName = getFieldTypeName(filter.fieldType, t);
+  const { id, fieldType, condition, content, targets } = filter;
+  // The parts below the name input, split out so saving the name (debounced)
+  // re-renders none of the rows and controls.
+  const shape = useMemo<GlobalFilterTargetShape>(() => ({ fieldType, targets }), [fieldType, targets]);
+  const value = useMemo<GlobalFilterValue>(
+    () => ({ id, fieldType, condition, content }),
+    [id, fieldType, condition, content]
+  );
+  const typeName = getFieldTypeName(fieldType, t);
   const untitled = t('untitled', { defaultValue: 'Untitled' });
   // Memoized so an unloaded source keeps its placeholder object (and its row skips renders).
   const mapped = useMemo(
-    () => getMappedSources(filter, sources, (databaseId) => sourceNames[databaseId] || untitled),
-    [filter, sources, sourceNames, untitled]
+    () => getMappedSources(shape, sources, (databaseId) => sourceNames[databaseId] || untitled),
+    [shape, sources, sourceNames, untitled]
   );
-  const addable = useMemo(() => getAddableSources(filter, sources), [filter, sources]);
-  const primaryField = getPrimaryTargetField(filter, sources);
+  const addable = useMemo(() => getAddableSources(shape, sources), [shape, sources]);
+  const primaryField = useMemo(() => getPrimaryTargetField(shape, sources), [shape, sources]);
   const updateContent = useCallback(
     (content: string) => onChange((current) => withPatch(current, { content })),
     [onChange]
@@ -395,14 +406,14 @@ export function GlobalFilterEditor({
           </p>
         )}
         {mapped.map((source) => (
-          <TargetRow key={source.databaseId} filter={filter} source={source} sources={sources} onChange={onChange} />
+          <TargetRow key={source.databaseId} filter={shape} source={source} sources={sources} onChange={onChange} />
         ))}
         {addable.length > 0 && <AddSourceButton addable={addable} sources={sources} onChange={onChange} />}
       </div>
 
       <div className='flex flex-col gap-1 border-t border-border-primary pt-2'>
-        <ConditionSelect filter={filter} onChange={onChange} />
-        {showContent && <GlobalFilterContent filter={filter} primaryField={primaryField} onChange={updateContent} />}
+        <ConditionSelect fieldType={fieldType} condition={condition} onChange={onChange} />
+        {showContent && <GlobalFilterContent filter={value} primaryField={primaryField} onChange={updateContent} />}
       </div>
 
       <div className='flex items-center justify-between gap-2 border-t border-border-primary pt-2'>

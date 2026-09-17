@@ -29,6 +29,8 @@ import {
   sameDashboardGlobalFilters,
   sameDashboardRows,
   setDashboardRowHeight,
+  shareDashboardGlobalFilters,
+  shareDashboardRows,
   updateDashboardLayoutSetting,
 } from '../dashboard-layout';
 import {
@@ -665,9 +667,7 @@ function storeYArrayBackedSetting(doc: Y.Doc, view: YDatabaseView) {
       },
       { id: 'r1', widgets: [{ id: 'w-kept', view_id: 'v5', database_id: 'db', width: 12 }] },
     ]);
-    filters.push([
-      { name: 'Status', ty: FieldType.RichText, condition: 2, content: 'done', targets: { db: 'status' } },
-    ]);
+    filters.push([{ name: 'Status', ty: FieldType.RichText, condition: 2, content: 'done', targets: { db: 'status' } }]);
   });
 }
 
@@ -708,6 +708,106 @@ describe('fallback ids of Y-backed settings', () => {
 
     expect(result.current).toBe(snapshot);
     expect(renders).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('structural sharing of layout snapshots', () => {
+  const statusFilter: DashboardGlobalFilter = {
+    id: 'gf:status',
+    name: 'Status',
+    fieldType: FieldType.SingleSelect,
+    condition: 0,
+    content: 'todo',
+    targets: { 'db-host': 'status', 'db-other': 'stage' },
+  };
+  const ownerFilter: DashboardGlobalFilter = {
+    id: 'gf:owner',
+    name: 'Owner',
+    fieldType: FieldType.RichText,
+    condition: 0,
+    content: 'ann',
+    targets: { 'db-host': 'owner' },
+  };
+
+  it('keeps every unchanged row and widget of the previous rows', () => {
+    const previous = [row('r1', [widget('w1', 6), widget('w2', 6)]), row('r2', [widget('w3')])];
+    const next = [
+      row('r1', [widget('w1', 4), widget('w2', 8)]),
+      row('r2', [widget('w3')], 480),
+      row('r3', [widget('w4')]),
+    ];
+    const shared = shareDashboardRows(previous, next);
+
+    expect(shared).toEqual(next);
+    // Resized widgets are new; the moved-height row keeps its unchanged widget.
+    expect(shared[0]).not.toBe(previous[0]);
+    expect(shared[0].widgets[0]).not.toBe(previous[0].widgets[0]);
+    expect(shared[1]).not.toBe(previous[1]);
+    expect(shared[1].widgets[0]).toBe(previous[1].widgets[0]);
+    expect(shared[2]).toBe(next[2]);
+    expect(
+      shareDashboardRows(
+        previous,
+        previous.map((item) => ({ ...item, widgets: [...item.widgets] }))
+      )
+    ).toBe(previous);
+  });
+
+  it('keeps a widget that moved to another row', () => {
+    const previous = [row('r1', [widget('w1', 6), widget('w2', 6)]), row('r2', [widget('w3')])];
+    const next = [row('r1', [widget('w1')]), row('r2', [widget('w3', 6), widget('w2', 6)])];
+    const shared = shareDashboardRows(previous, next);
+
+    expect(shared[1].widgets[1]).toBe(previous[0].widgets[1]);
+    expect(shared[0].widgets[0]).not.toBe(previous[0].widgets[0]);
+  });
+
+  it('keeps every unchanged filter, and the targets of a renamed one', () => {
+    const previous = [statusFilter, ownerFilter];
+    const renamed = { ...statusFilter, name: 'Stage', targets: { ...statusFilter.targets } };
+    const shared = shareDashboardGlobalFilters(previous, [
+      renamed,
+      { ...ownerFilter, targets: { ...ownerFilter.targets } },
+    ]);
+
+    expect(shared[0]).toEqual(renamed);
+    expect(shared[0].targets).toBe(statusFilter.targets);
+    expect(shared[1]).toBe(ownerFilter);
+
+    const reordered = { ...statusFilter, targets: { 'db-other': 'stage', 'db-host': 'status' } };
+
+    // Target order is meaningful (the first mapping is the primary one).
+    expect(shareDashboardGlobalFilters(previous, [reordered, ownerFilter])[0].targets).toBe(reordered.targets);
+    expect(shareDashboardGlobalFilters(previous, [{ ...statusFilter }, { ...ownerFilter }])).toBe(previous);
+  });
+
+  it('lets the layout store hand out the untouched rows of a changed layout', () => {
+    const { doc, view } = createFixture();
+
+    doc.transact(() =>
+      updateDashboardLayoutSetting(view, {
+        rows: [row('r1', [widget('w1')]), row('r2', [widget('w2')])],
+        globalFilters: [statusFilter, ownerFilter],
+      })
+    );
+    const store = createDashboardLayoutStore(doc, VIEW_ID);
+    const before = store.getSnapshot();
+
+    doc.transact(() =>
+      updateDashboardLayoutSetting(view, {
+        rows: [row('r1', [widget('w1')], 480), row('r2', [widget('w2')])],
+        globalFilters: [statusFilter, { ...ownerFilter, content: 'bob' }],
+      })
+    );
+    const after = store.getSnapshot();
+
+    expect(after.rows).not.toBe(before.rows);
+    expect(after.rows[0].height).toBe(480);
+    expect(after.rows[0].widgets[0]).toBe(before.rows[0].widgets[0]);
+    expect(after.rows[1]).toBe(before.rows[1]);
+    expect(after.globalFilters[0]).toBe(before.globalFilters[0]);
+    expect(after.globalFilters[1].content).toBe('bob');
+    expect(after.globalFilters[1].targets).toBe(before.globalFilters[1].targets);
   });
 });
 

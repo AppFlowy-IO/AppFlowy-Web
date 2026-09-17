@@ -56,10 +56,7 @@ const CHART_TYPES = [
  */
 function isPremiumChartType(type: ChartType): boolean {
   return (
-    type === ChartType.HorizontalBar ||
-    type === ChartType.Line ||
-    type === ChartType.Donut ||
-    type === ChartType.Number
+    type === ChartType.HorizontalBar || type === ChartType.Line || type === ChartType.Donut || type === ChartType.Number
   );
 }
 
@@ -79,8 +76,15 @@ const NUMBER_FORMATS: ReadonlyArray<{ value: ChartNumberFormat; labelKey: string
  */
 function NumberChartTitleInput({ value, onCommit }: { value: string; onCommit: (value: string) => void }) {
   const { t } = useTranslation();
-  // The caller keys this input by `value`, so a new stored title starts a fresh draft.
   const [draft, setDraft] = useState(value);
+  const [previousValue, setPreviousValue] = useState(value);
+
+  // Follow a new stored title (a save, undo, a collaborator) during render,
+  // keeping the same input (and its focus). An unsaved draft is kept.
+  if (value !== previousValue) {
+    setPreviousValue(value);
+    if (draft === previousValue) setDraft(value);
+  }
 
   const commit = useCallback(() => {
     if (draft !== value) onCommit(draft);
@@ -157,10 +161,11 @@ function ChartLayoutSettings() {
   // Y-axis candidates: Number / Checkbox / DateTime (matches desktop's
   // `_filterYAxisFields`). Used for any aggregation other than Count.
   const yFieldCandidates = useMemo(() => {
-    return allProperties.filter((property) =>
-      property.type === FieldType.Number
-      || property.type === FieldType.Checkbox
-      || property.type === FieldType.DateTime
+    return allProperties.filter(
+      (property) =>
+        property.type === FieldType.Number ||
+        property.type === FieldType.Checkbox ||
+        property.type === FieldType.DateTime
     );
   }, [allProperties]);
 
@@ -189,19 +194,22 @@ function ChartLayoutSettings() {
   // - switching to Count clears yFieldId
   // - switching to anything else auto-picks the first y-field candidate when
   //   no yFieldId is set yet
-  const handleAggregationSelect = useCallback((type: ChartAggregationType) => {
-    if (type === ChartAggregationType.Count) {
-      updateChartSetting({ aggregationType: type, yFieldId: '' });
-      return;
-    }
+  const handleAggregationSelect = useCallback(
+    (type: ChartAggregationType) => {
+      if (type === ChartAggregationType.Count) {
+        updateChartSetting({ aggregationType: type, yFieldId: '' });
+        return;
+      }
 
-    if (!currentYFieldId && yFieldCandidates.length > 0) {
-      updateChartSetting({ aggregationType: type, yFieldId: yFieldCandidates[0].id });
-      return;
-    }
+      if (!currentYFieldId && yFieldCandidates.length > 0) {
+        updateChartSetting({ aggregationType: type, yFieldId: yFieldCandidates[0].id });
+        return;
+      }
 
-    updateChartSetting({ aggregationType: type });
-  }, [currentYFieldId, yFieldCandidates, updateChartSetting]);
+      updateChartSetting({ aggregationType: type });
+    },
+    [currentYFieldId, yFieldCandidates, updateChartSetting]
+  );
 
   const handleTitleCommit = useCallback(
     (titleText: string) => {
@@ -217,7 +225,7 @@ function ChartLayoutSettings() {
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
-        <ChartIcon className="h-4 w-4" />
+        <ChartIcon className='h-4 w-4' />
         {t('grid.settings.chartSettings', 'Chart settings')}
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
@@ -250,7 +258,7 @@ function ChartLayoutSettings() {
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel>{t('chart.number.property', { defaultValue: 'Property' })}</DropdownMenuLabel>
                   {yFieldCandidates.length === 0 ? (
-                    <div className="px-2 py-2 text-xs text-text-secondary">
+                    <div className='px-2 py-2 text-xs text-text-secondary'>
                       {t('chart.noNumberFields', 'No number fields available')}
                     </div>
                   ) : (
@@ -291,11 +299,7 @@ function ChartLayoutSettings() {
 
               <DropdownMenuSeparator />
               <DropdownMenuLabel>{t('chart.number.title', { defaultValue: 'Title' })}</DropdownMenuLabel>
-              <NumberChartTitleInput
-                key={currentTitleText}
-                value={currentTitleText}
-                onCommit={handleTitleCommit}
-              />
+              <NumberChartTitleInput value={currentTitleText} onCommit={handleTitleCommit} />
 
               <DropdownMenuSeparator />
             </>
@@ -304,7 +308,7 @@ function ChartLayoutSettings() {
               {/* X-Axis (matches desktop's first section) */}
               <DropdownMenuLabel>{t('chart.xAxis', 'X-Axis')}</DropdownMenuLabel>
               {groupableFields.length === 0 ? (
-                <div className="px-2 py-2 text-xs text-text-secondary">
+                <div className='px-2 py-2 text-xs text-text-secondary'>
                   {t('chart.noGroupableFields', 'No groupable fields available')}
                 </div>
               ) : (
@@ -368,7 +372,7 @@ function ChartLayoutSettings() {
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel>{t('chart.yAxis', 'Y-Axis')}</DropdownMenuLabel>
                   {yFieldCandidates.length === 0 ? (
-                    <div className="px-2 py-2 text-xs text-text-secondary">
+                    <div className='px-2 py-2 text-xs text-text-secondary'>
                       {t('chart.noNumberFields', 'No number fields available')}
                     </div>
                   ) : (
@@ -432,11 +436,7 @@ function ChartLayoutSettings() {
                 key={type}
                 className={'w-full'}
                 data-testid={testId}
-                aria-label={
-                  locked
-                    ? `${label} (${t('chart.upgradeRequired', 'Upgrade Required')})`
-                    : undefined
-                }
+                aria-label={locked ? `${label} (${t('chart.upgradeRequired', 'Upgrade Required')})` : undefined}
                 onSelect={(e) => {
                   e.preventDefault();
 
@@ -451,7 +451,7 @@ function ChartLayoutSettings() {
                 <span>{label}</span>
                 {locked && (
                   <CrownIcon
-                    className="ml-auto h-4 w-4 text-icon-warning-thick"
+                    className='ml-auto h-4 w-4 text-icon-warning-thick'
                     aria-label={t('chart.upgradeRequired', 'Upgrade Required')}
                   />
                 )}

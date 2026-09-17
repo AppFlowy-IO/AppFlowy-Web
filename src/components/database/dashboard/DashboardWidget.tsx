@@ -1,9 +1,19 @@
 import { DropIndicator } from '@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box';
-import { memo, RefObject, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  RefObject,
+  Suspense,
+  useCallback,
+  useContext,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { APP_EVENTS } from '@/application/constants';
-import { useDatabaseContext } from '@/application/database-yjs';
 import {
   duplicateDashboardWidget,
   moveDashboardWidget,
@@ -29,8 +39,8 @@ import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
 import { DASHBOARD_COLUMN_GAP, WIDGET_INLINE_PADDING, WIDGET_MISSING_GRACE_MS } from './constants';
-import { useDashboardContext, useDashboardFilters } from './DashboardContext';
-import { useDashboardUi } from './DashboardUiContext';
+import { useDashboardFilters } from './DashboardContext';
+import { useDashboardHost, useDashboardUi } from './DashboardUiContext';
 import { useDraggableWidget, useWidgetDropTarget } from './hooks/useDashboardDnd';
 import { useWidgetExtraFilters } from './hooks/useWidgetExtraFilters';
 import { useDelayedFlag, useWidgetViewSnapshot } from './hooks/useWidgetViewSnapshot';
@@ -38,7 +48,7 @@ import { databaseLayoutToViewLayout, getLayoutLabel, getWidgetHeaderHeight, getW
 import { canDuplicateWidget, getWidgetMoveTargets, WidgetMoveDirection } from './widget-moves';
 import { getWidgetStatus } from './widget-status';
 import { WidgetBody } from './WidgetBody';
-import { WidgetContext, WidgetContextValue } from './WidgetContext';
+import { WidgetActions, WidgetContext, WidgetContextValue } from './WidgetContext';
 import { WidgetHeaderFrame } from './WidgetHeader';
 import { WidgetPlaceholder } from './WidgetPlaceholder';
 
@@ -47,29 +57,46 @@ const MISSING_DATABASE_GRACE_MS = 10000;
 
 const noop = () => undefined;
 
+// Widgets re-render for their own chrome (title, Edit mode, drag state); the
+// nested database only when one of its props changes.
+const WidgetDatabase = memo(Database);
+
 interface MetaOverride {
   name: string;
   icon: ViewIcon | null;
 }
 
+function sameIcon(a: ViewIcon | null, b: ViewIcon | null) {
+  return a === b || (a !== null && b !== null && a.ty === b.ty && a.value === b.value);
+}
+
 /** Folder name / icon of the widget's view, following renames. */
 function useWidgetViewMeta(viewId: string) {
-  const { loadViewMeta, eventEmitter } = useDatabaseContext();
+  const { loadViewMeta, eventEmitter } = useDashboardHost();
   const { viewMeta } = useViewMeta({ viewId, loadViewMeta, ignoreMetaErrors: true });
   const [override, setOverride] = useState<MetaOverride | null>(null);
 
   useEffect(() => {
     if (!eventEmitter) return;
 
+    // The outline reloads on every sidebar expand and folder sync: keep the
+    // current override unless the name or icon really changed.
+    const apply = (view: View) => {
+      const icon = view.icon ?? null;
+
+      setOverride((current) =>
+        current && current.name === view.name && sameIcon(current.icon, icon) ? current : { name: view.name, icon }
+      );
+    };
+
     const handleViewChanged = (view: View) => {
-      if (view.view_id !== viewId) return;
-      setOverride({ name: view.name, icon: view.icon ?? null });
+      if (view.view_id === viewId) apply(view);
     };
 
     const handleOutlineLoaded = (outline: View[]) => {
       const view = findView(outline, viewId);
 
-      if (view) setOverride({ name: view.name, icon: view.icon ?? null });
+      if (view) apply(view);
     };
 
     eventEmitter.on(APP_EVENTS.VIEW_META_CHANGED, handleViewChanged);
@@ -87,27 +114,46 @@ function useWidgetViewMeta(viewId: string) {
   };
 }
 
-interface WidgetSourceProps {
+interface WidgetChromeProps {
+  isEditing: boolean;
+  canEdit: boolean;
+  showWidgetTitles: boolean;
+  isDragging: boolean;
+}
+
+interface WidgetSourceProps extends WidgetChromeProps {
   widget: DashboardWidgetData;
   rowId: string;
   rowIndex: number;
   index: number;
   rowHeight: number;
   cardRef: RefObject<HTMLDivElement>;
-  isDragging: boolean;
 }
 
 /**
  * Loads the widget's source database and renders it (or a placeholder).
- * Keyed by view + database so switching the view resets every loader.
+ * Keyed by view + database so switching the view resets every loader. Reads
+ * only stable dashboard contexts (and the global filters): layout changes
+ * elsewhere on the dashboard never re-render it.
  */
-function WidgetSource({ widget, rowId, rowIndex, index, rowHeight, cardRef, isDragging }: WidgetSourceProps) {
+const WidgetSource = memo(function WidgetSource({
+  widget,
+  rowId,
+  rowIndex,
+  index,
+  rowHeight,
+  cardRef,
+  isDragging,
+  isEditing,
+  canEdit,
+  showWidgetTitles,
+}: WidgetSourceProps) {
   const { t } = useTranslation();
-  const hostContext = useDatabaseContext();
+  const hostContext = useDashboardHost();
   const appOperations = useContext(AppOperationsContext);
-  const { hostDatabaseId, rows, showWidgetTitles, isEditing, canEdit, updateRows } = useDashboardContext();
   const { effectiveGlobalFilters } = useDashboardFilters();
-  const { openPicker, showLimitMessage, dndInstanceId, acquireSourceDoc } = useDashboardUi();
+  const { hostDatabaseId, openPicker, showLimitMessage, dndInstanceId, acquireSourceDoc, getRows, updateRows } =
+    useDashboardUi();
   const isHost = widget.databaseId === hostDatabaseId;
   const isPublish = hostContext.variant === UIVariant.Publish;
   const editing = isEditing && canEdit;
@@ -197,15 +243,14 @@ function WidgetSource({ widget, rowId, rowIndex, index, rowHeight, cardRef, isDr
     }
   }, [getViewIdFromDatabaseId, navigateToView, widget.databaseId, widget.viewId]);
 
-  const moveTargets = useMemo(() => getWidgetMoveTargets(rows, widget.id), [rows, widget.id]);
-  const canDuplicate = canDuplicateWidget(rows, widget.id);
-
-  const actions = useMemo(
+  // What the menu can do is computed by the menu while it is open, so the
+  // actions never change with the layout.
+  const actions = useMemo<WidgetActions>(
     () => ({
       open: () => void openView(),
       changeView: () => openPicker({ mode: 'replace', widgetId: widget.id }),
       duplicate: () => {
-        if (!canDuplicate) {
+        if (!canDuplicateWidget(getRows(), widget.id)) {
           showLimitMessage('dashboard');
           return;
         }
@@ -219,10 +264,8 @@ function WidgetSource({ widget, rowId, rowIndex, index, rowHeight, cardRef, isDr
 
           return placement ? moveDashboardWidget(current, widget.id, placement) : current;
         }),
-      canDuplicate,
-      moveTargets,
     }),
-    [canDuplicate, moveTargets, openPicker, openView, showLimitMessage, updateRows, widget.id]
+    [getRows, openPicker, openView, showLimitMessage, updateRows, widget.id]
   );
 
   const chrome = { isEditing: editing, showWidgetTitles };
@@ -301,14 +344,15 @@ function WidgetSource({ widget, rowId, rowIndex, index, rowHeight, cardRef, isDr
   } = hostContext;
 
   // Only the host's app-level services are forwarded (not its row map or
-  // lifecycle-bound helpers), so host row churn never re-renders widgets.
+  // lifecycle-bound helpers): `DashboardHostContext` keeps them stable, so
+  // host row churn never re-renders widgets.
   const renderDatabase = useCallback(
     (permissions: EmbeddedDatabasePermissions) => {
       if (!doc) return null;
 
       return (
         <Suspense fallback={<WidgetPlaceholder reason='loading' />}>
-          <Database
+          <WidgetDatabase
             activeViewId={widget.viewId}
             addPage={addPage}
             bindViewSync={bindViewSync}
@@ -421,9 +465,9 @@ function WidgetSource({ widget, rowId, rowIndex, index, rowHeight, cardRef, isDr
       )}
     </WidgetContext.Provider>
   );
-}
+});
 
-interface DashboardWidgetProps {
+interface DashboardWidgetProps extends WidgetChromeProps {
   widget: DashboardWidgetData;
   rowId: string;
   rowIndex: number;
@@ -445,13 +489,19 @@ export const DashboardWidget = memo(function DashboardWidget({
   index,
   span,
   height,
+  isEditing,
+  canEdit,
+  showWidgetTitles,
+  isDragging,
 }: DashboardWidgetProps) {
   const { t } = useTranslation();
   const cardRef = useRef<HTMLDivElement>(null);
-  const { isEditing, canEdit } = useDashboardContext();
-  const { dndInstanceId, draggingWidgetId, getRows } = useDashboardUi();
+  const { dndInstanceId, getRows } = useDashboardUi();
   const editing = isEditing && canEdit;
-  const isDragging = draggingWidgetId === widget.id;
+  // The card follows a row-height drag on every pointer move; the nested
+  // database (whose viewport height derives from it) catches up when React
+  // has time, instead of re-rendering on every pixel.
+  const contentHeight = useDeferredValue(height);
   const indicator = useWidgetDropTarget({
     elementRef: cardRef,
     widgetId: widget.id,
@@ -482,13 +532,16 @@ export const DashboardWidget = memo(function DashboardWidget({
         )}
       >
         <WidgetSource
+          canEdit={canEdit}
           cardRef={cardRef}
           index={index}
           isDragging={isDragging}
+          isEditing={isEditing}
           key={`${widget.databaseId}:${widget.viewId}`}
-          rowHeight={height}
+          rowHeight={contentHeight}
           rowId={rowId}
           rowIndex={rowIndex}
+          showWidgetTitles={showWidgetTitles}
           widget={widget}
         />
       </div>

@@ -1,5 +1,5 @@
 import { DropIndicator } from '@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box';
-import { Fragment, useRef } from 'react';
+import { Fragment, memo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { countDashboardWidgets } from '@/application/database-yjs/dashboard-layout';
@@ -13,13 +13,14 @@ import { DASHBOARD_EDGE_DROP_ZONE_HEIGHT, DASHBOARD_EDIT_ROW_GAP, DASHBOARD_ROW_
 import { useDashboardContext } from './DashboardContext';
 import { DashboardLimitMessage } from './DashboardLimitMessage';
 import { DashboardRow } from './DashboardRow';
-import { useDashboardUi } from './DashboardUiContext';
+import { useDashboardDraggingWidgetId, useDashboardUi } from './DashboardUiContext';
 import { useRowGapDropTarget } from './hooks/useDashboardDnd';
 import { useStackedLayout } from './hooks/useStackedLayout';
 
 function RowGapDropZone({ rowIndex, height }: { rowIndex: number; height: number }) {
   const ref = useRef<HTMLDivElement>(null);
-  const { dndInstanceId, getRows, draggingWidgetId } = useDashboardUi();
+  const { dndInstanceId, getRows } = useDashboardUi();
+  const draggingWidgetId = useDashboardDraggingWidgetId();
   const active = useRowGapDropTarget({
     elementRef: ref,
     rowIndex,
@@ -100,7 +101,7 @@ export function AddWidgetButton({ onAdd, className }: { onAdd: () => void; class
  * above the first / below the last) are drop zones that create a new row, and
  * an "Add widget" button follows the last row.
  */
-export function DashboardGrid() {
+export const DashboardGrid = memo(function DashboardGrid() {
   const { rows, isEditing, canEdit } = useDashboardContext();
   const { openPicker } = useDashboardUi();
   const gridRef = useRef<HTMLDivElement>(null);
@@ -130,6 +131,6 @@ export function DashboardGrid() {
       ) : null}
     </div>
   );
-}
+});
 
 export default DashboardGrid;

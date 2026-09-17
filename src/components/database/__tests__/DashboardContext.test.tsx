@@ -13,6 +13,7 @@ import {
   useDashboardContext,
   useDashboardContextOptional,
   useDashboardFilters,
+  useDashboardSourceRegistry,
   useDashboardSources,
 } from '@/components/database/dashboard/DashboardContext';
 
@@ -89,8 +90,9 @@ function renderDashboard(doc: YDoc, initial: Options = {}) {
       const layout = useDashboardContext();
       const filters = useDashboardFilters();
       const sources = useDashboardSources();
+      const registry = useDashboardSourceRegistry();
 
-      return { ...layout, ...filters, ...sources, parts: { layout, filters, sources } };
+      return { ...layout, ...filters, ...sources, parts: { layout, filters, sources, registry } };
     },
     { wrapper }
   );
@@ -346,6 +348,47 @@ describe('DashboardProvider', () => {
     expect(result.current.effectiveGlobalFilters).toEqual([GLOBAL_FILTER]);
   });
 
+  it('drops a local override that a concurrent change made identical to the persisted filters', () => {
+    const { doc, view } = createDatabaseDoc();
+    const { result } = renderDashboard(doc);
+    const local = [{ ...GLOBAL_FILTER, content: 'todo' }];
+
+    act(() => result.current.setLocalGlobalFilters(local));
+    expect(result.current.localGlobalFilters).toBe(local);
+
+    // A collaborator saves the same change: nothing is left to save.
+    act(() => {
+      doc.transact(() => updateDashboardLayoutSetting(view, { globalFilters: local }));
+    });
+    expect(result.current.localGlobalFilters).toBeNull();
+    expect(result.current.effectiveGlobalFilters).toBe(result.current.globalFilters);
+
+    // The dropped override never comes back with a later change.
+    act(() => {
+      doc.transact(() => updateDashboardLayoutSetting(view, { globalFilters: [GLOBAL_FILTER] }));
+    });
+    expect(result.current.localGlobalFilters).toBeNull();
+    expect(result.current.effectiveGlobalFilters).toEqual([GLOBAL_FILTER]);
+  });
+
+  it('drops a local override that only differed by a removed widget', () => {
+    const { doc } = createDatabaseDoc();
+    const { result } = renderDashboard(doc);
+
+    // The viewer maps the filter to the second widget's database too.
+    act(() =>
+      result.current.setLocalGlobalFilters([
+        { ...GLOBAL_FILTER, targets: { ...GLOBAL_FILTER.targets, 'other-database': 'stage' } },
+      ])
+    );
+    expect(result.current.localGlobalFilters).not.toBeNull();
+
+    // An editor removes that widget: the override now equals the saved filters.
+    act(() => result.current.updateRows((rows) => rows.map((row) => ({ ...row, widgets: row.widgets.slice(0, 1) }))));
+    expect(result.current.localGlobalFilters).toBeNull();
+    expect(result.current.effectiveGlobalFilters).toEqual([GLOBAL_FILTER]);
+  });
+
   it('ignores global filter mappings of databases without a widget', () => {
     const { doc, database, view } = createDatabaseDoc();
     const stale: DashboardGlobalFilter = {
@@ -380,6 +423,8 @@ describe('DashboardProvider', () => {
     act(() => result.current.registerSourceName('other-database', 'Projects'));
     expect(result.current.parts.layout).toBe(previous.layout);
     expect(result.current.parts.filters).toBe(previous.filters);
+    // Components that only register sources never re-render for it.
+    expect(result.current.parts.registry).toBe(previous.registry);
     previous = result.current.parts;
 
     // Filter edits (local or persisted) leave the layout alone.

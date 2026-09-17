@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ReactNode, useState } from 'react';
 
+import { DASHBOARD_MAX_WIDGETS, DashboardRow, DashboardWidget } from '@/application/database-yjs/dashboard.type';
 import { ViewLayout } from '@/application/types';
 
+import { DashboardContext, DashboardContextValue } from '../DashboardContext';
 import { NO_WIDGET_MOVES, WidgetMoveTargets } from '../widget-moves';
 import { WidgetActions, WidgetContext, WidgetContextValue } from '../WidgetContext';
 import { WidgetHeaderFrame } from '../WidgetHeader';
@@ -37,9 +39,37 @@ function createActions(overrides: Partial<WidgetActions> = {}): WidgetActions {
     duplicate: jest.fn(),
     remove: jest.fn(),
     move: jest.fn(),
-    canDuplicate: true,
-    moveTargets: ALL_MOVES,
     ...overrides,
+  };
+}
+
+const widget = (id: string): DashboardWidget => ({ id, viewId: `view-${id}`, databaseId: 'db', width: 4 });
+const row = (id: string, widgetIds: string[]): DashboardRow => ({ id, height: 360, widgets: widgetIds.map(widget) });
+
+/** `w1` sits in the middle of a shared row between two other rows: every move is possible. */
+const MOVABLE_ROWS = [row('r0', ['x']), row('r1', ['a', 'w1', 'b']), row('r2', ['y'])];
+/** `w1` is the only widget: no move is possible. */
+const LONE_ROWS = [row('r1', ['w1'])];
+/** A full dashboard (`w1` included): duplicating is refused. */
+const FULL_ROWS = Array.from({ length: DASHBOARD_MAX_WIDGETS / 4 }, (_, rowIndex) =>
+  row(
+    `r${rowIndex}`,
+    Array.from({ length: 4 }, (_, index) => (rowIndex === 0 && index === 0 ? 'w1' : `f${rowIndex}-${index}`))
+  )
+);
+
+function createDashboardContext(rows: DashboardRow[]): DashboardContextValue {
+  return {
+    dashboardViewId: 'dashboard',
+    hostDatabaseId: 'db',
+    hostViewIds: [],
+    rows,
+    showWidgetTitles: true,
+    canEdit: true,
+    isEditing: true,
+    setEditing: jest.fn(),
+    updateSetting: jest.fn(),
+    updateRows: jest.fn(),
   };
 }
 
@@ -63,8 +93,12 @@ function createContext(overrides: Partial<WidgetContextValue> = {}): WidgetConte
   };
 }
 
-function withContext(value: WidgetContextValue, children: ReactNode) {
-  return <WidgetContext.Provider value={value}>{children}</WidgetContext.Provider>;
+function withContext(value: WidgetContextValue, children: ReactNode, rows: DashboardRow[] = MOVABLE_ROWS) {
+  return (
+    <DashboardContext.Provider value={createDashboardContext(rows)}>
+      <WidgetContext.Provider value={value}>{children}</WidgetContext.Provider>
+    </DashboardContext.Provider>
+  );
 }
 
 function ControlledMenu({ initialOpen = true }: { initialOpen?: boolean }) {
@@ -206,9 +240,9 @@ describe('WidgetMenu', () => {
   });
 
   it('ignores disabled entries', () => {
-    const actions = createActions({ moveTargets: NO_WIDGET_MOVES });
+    const actions = createActions();
 
-    render(withContext(createContext({ actions }), <ControlledMenu />));
+    render(withContext(createContext({ actions, index: 0 }), <ControlledMenu />, LONE_ROWS));
 
     for (const testId of ['move-left', 'move-right', 'move-up', 'move-down']) {
       const item = screen.getByTestId(`dashboard-widget-menu-${testId}`);
@@ -221,9 +255,9 @@ describe('WidgetMenu', () => {
   });
 
   it('lets Duplicate at the widget limit run, so the limit message can be shown', () => {
-    const actions = createActions({ canDuplicate: false });
+    const actions = createActions();
 
-    render(withContext(createContext({ actions }), <ControlledMenu />));
+    render(withContext(createContext({ actions, index: 0 }), <ControlledMenu />, FULL_ROWS));
     const item = screen.getByTestId('dashboard-widget-menu-duplicate');
 
     expect(item.getAttribute('aria-disabled')).toBeNull();
@@ -231,6 +265,16 @@ describe('WidgetMenu', () => {
     expect(item.getAttribute('title')).toBe('Dashboards support up to {{count}} widgets.');
     fireEvent.click(item);
     expect(actions.duplicate).toHaveBeenCalledTimes(1);
+  });
+
+  it('follows a layout change while it is open', () => {
+    const context = createContext();
+    const { rerender } = render(withContext(context, <ControlledMenu />));
+
+    expect(screen.getByTestId('dashboard-widget-menu-move-left').getAttribute('aria-disabled')).toBeNull();
+    rerender(withContext(context, <ControlledMenu />, LONE_ROWS));
+    expect(screen.getByTestId('dashboard-widget-menu-move-left').getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByTestId('dashboard-widget-menu-move-down').getAttribute('aria-disabled')).toBe('true');
   });
 
   it('offers only "Open view" to viewers', () => {

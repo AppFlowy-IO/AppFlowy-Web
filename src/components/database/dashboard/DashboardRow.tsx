@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 
 import { DASHBOARD_COLUMN_GAP, DASHBOARD_EDIT_ROW_GAP, DASHBOARD_ROW_GAP } from './constants';
 import { useDashboardContext } from './DashboardContext';
-import { useDashboardUi } from './DashboardUiContext';
+import { useDashboardDraggingWidgetId, useDashboardUi } from './DashboardUiContext';
 import { DashboardWidget } from './DashboardWidget';
 import { useRowHeightResize } from './hooks/useRowHeightResize';
 import { applyWidthPreview, useWidthResize } from './hooks/useWidthResize';
@@ -43,8 +43,9 @@ interface DashboardRowProps {
  */
 export const DashboardRow = memo(function DashboardRow({ row, rowIndex, stacked }: DashboardRowProps) {
   const { t } = useTranslation();
-  const { rows, isEditing, canEdit, updateRows } = useDashboardContext();
-  const { openPicker, showLimitMessage, draggingWidgetId } = useDashboardUi();
+  const { rows, isEditing, canEdit, showWidgetTitles, updateRows } = useDashboardContext();
+  const { openPicker, showLimitMessage } = useDashboardUi();
+  const draggingWidgetId = useDashboardDraggingWidgetId();
   const editing = isEditing && canEdit;
   const gridRef = useRef<HTMLDivElement>(null);
   const getRowElement = useCallback(() => gridRef.current, []);
@@ -130,11 +131,15 @@ export const DashboardRow = memo(function DashboardRow({ row, rowIndex, stacked 
       >
         {row.widgets.map((widget, index) => (
           <DashboardWidget
+            canEdit={canEdit}
             height={rowHeight}
             index={index}
+            isDragging={draggingWidgetId === widget.id}
+            isEditing={isEditing}
             key={widget.id}
             rowId={row.id}
             rowIndex={rowIndex}
+            showWidgetTitles={showWidgetTitles}
             span={stacked ? DASHBOARD_GRID_COLUMNS : widths[index]}
             widget={widget}
           />
@@ -153,7 +158,8 @@ export const DashboardRow = memo(function DashboardRow({ row, rowIndex, stacked 
                 aria-valuemin={1}
                 aria-valuenow={boundary.width}
                 className={cn(
-                  'group/handle absolute bottom-0 top-0 z-10 flex -translate-x-1/2 cursor-col-resize justify-center outline-none',
+                  // `touch-none`: a touch pan would cancel the pointer drag.
+                  'group/handle absolute bottom-0 top-0 z-10 flex -translate-x-1/2 cursor-col-resize touch-none justify-center outline-none',
                   isDraggingWidget && 'pointer-events-none'
                 )}
                 data-active={active ? 'true' : undefined}
@@ -208,7 +214,7 @@ export const DashboardRow = memo(function DashboardRow({ row, rowIndex, stacked 
           aria-valuemin={DASHBOARD_MIN_ROW_HEIGHT}
           aria-valuenow={rowHeight}
           className={cn(
-            'group/height absolute inset-x-0 top-full z-10 flex cursor-row-resize items-center justify-center outline-none',
+            'group/height absolute inset-x-0 top-full z-10 flex cursor-row-resize touch-none items-center justify-center outline-none',
             isDraggingWidget && 'pointer-events-none'
           )}
           data-active={heightResize.preview !== null ? 'true' : undefined}

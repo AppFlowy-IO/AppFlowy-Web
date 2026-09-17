@@ -1,4 +1,4 @@
-import { KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { KeyboardEvent, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -116,22 +116,33 @@ function WidgetPickerContent({
     request.mode === 'replace' ? findDashboardWidget(rows, request.widgetId)?.widget.viewId : undefined;
   const hostDatabaseName = sourceNames[hostDatabaseId] ?? '';
 
-  const fallbackName = (layout: ViewLayout) => {
-    const label = getLayoutLabel(layout);
+  const fallbackName = useCallback(
+    (layout: ViewLayout) => {
+      const label = getLayoutLabel(layout);
 
-    return t(label.key, { defaultValue: label.defaultValue });
-  };
+      return t(label.key, { defaultValue: label.defaultValue });
+    },
+    [t]
+  );
 
-  const groups = buildWidgetPickerGroups({
-    hostDatabaseId,
-    hostDatabaseName,
-    hostViews,
-    hostTabViewIds: hostViewIds,
-    catalog,
-    excludeViewIds: [dashboardViewId],
-    query,
-    fallbackName,
-  });
+  // The input follows every keystroke; the (workspace-sized) option lists
+  // follow the query when React has time.
+  const deferredQuery = useDeferredValue(query);
+
+  const groups = useMemo(
+    () =>
+      buildWidgetPickerGroups({
+        hostDatabaseId,
+        hostDatabaseName,
+        hostViews,
+        hostTabViewIds: hostViewIds,
+        catalog,
+        excludeViewIds: [dashboardViewId],
+        query: deferredQuery,
+        fallbackName,
+      }),
+    [catalog, dashboardViewId, deferredQuery, fallbackName, hostDatabaseId, hostDatabaseName, hostViewIds, hostViews]
+  );
 
   const databases = useMemo(() => {
     const all = buildWidgetPickerDatabases({
@@ -140,12 +151,12 @@ function WidgetPickerContent({
       hostPrimaryViewId: hostContext.activeViewId,
       catalog: canCreateInOtherDatabases ? catalog : [],
     });
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = deferredQuery.trim().toLowerCase();
 
     return normalizedQuery
       ? all.filter((entry) => entry.isHost || entry.name.toLowerCase().includes(normalizedQuery))
       : all;
-  }, [canCreateInOtherDatabases, catalog, hostContext.activeViewId, hostDatabaseId, hostDatabaseName, query]);
+  }, [canCreateInOtherDatabases, catalog, deferredQuery, hostContext.activeViewId, hostDatabaseId, hostDatabaseName]);
 
   const selectedDatabase: WidgetPickerDatabase =
     databases.find((entry) => entry.databaseId === selectedDatabaseId) ?? databases[0];

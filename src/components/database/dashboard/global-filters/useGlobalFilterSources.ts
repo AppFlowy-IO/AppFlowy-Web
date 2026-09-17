@@ -236,6 +236,31 @@ export interface UseGlobalFilterSourcesOptions {
 
 const NO_FIELD_LISTS: GlobalFilterSourceField[][] = [];
 
+interface SourceEntry {
+  databaseId: string;
+  doc: YDoc;
+}
+
+const NO_ENTRIES: SourceEntry[] = [];
+const NO_SOURCES: GlobalFilterSource[] = [];
+
+function sameEntries(a: SourceEntry[], b: SourceEntry[]) {
+  return (
+    a.length === b.length &&
+    a.every((entry, index) => entry.databaseId === b[index].databaseId && entry.doc === b[index].doc)
+  );
+}
+
+function sameSources(a: GlobalFilterSource[], b: GlobalFilterSource[]) {
+  return (
+    a.length === b.length &&
+    a.every(
+      (source, index) =>
+        source.databaseId === b[index].databaseId && source.name === b[index].name && source.fields === b[index].fields
+    )
+  );
+}
+
 /**
  * Live property lists of the source databases a dashboard's widgets expose.
  * Sources that are not mounted yet are skipped until their doc registers.
@@ -250,20 +275,26 @@ export function useGlobalFilterSources(
   const { t } = useTranslation();
   const orderKey = databaseIds?.join('\n');
 
-  // The listed, mounted sources in display order.
+  // The listed, mounted sources in display order. Registering a source that is
+  // not listed (or re-registering the same doc) keeps the previous list, so
+  // the subscription and every consumer stay put.
+  const entriesRef = useRef(NO_ENTRIES);
   const entries = useMemo(() => {
     const ids = orderKey !== undefined ? orderKey.split('\n').filter(Boolean) : Object.keys(sourceDocs);
     const ordered =
       orderKey === undefined && hostDatabaseId && ids.includes(hostDatabaseId)
         ? [hostDatabaseId, ...ids.filter((id) => id !== hostDatabaseId)]
         : ids;
-
-    return ordered.flatMap((databaseId) => {
+    const next = ordered.flatMap((databaseId) => {
       const doc = sourceDocs[databaseId];
 
       return doc ? [{ databaseId, doc }] : [];
     });
+
+    return sameEntries(next, entriesRef.current) ? entriesRef.current : next;
   }, [sourceDocs, hostDatabaseId, orderKey]);
+
+  entriesRef.current = entries;
 
   const subscribe = useCallback(
     (notify: () => void) => {
@@ -287,20 +318,26 @@ export function useGlobalFilterSources(
 
   const fieldLists = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  return useMemo(
-    () =>
-      entries.map(({ databaseId }, index) => {
-        const fallbackName =
-          databaseId === hostDatabaseId
-            ? t('dashboard.picker.thisDatabase', { defaultValue: 'This database' })
-            : t('untitled', { defaultValue: 'Untitled' });
+  // Kept while every source keeps its name and property list (a name
+  // registered for another database changes nothing here).
+  const sourcesRef = useRef(NO_SOURCES);
+  const sources = useMemo(() => {
+    const next = entries.map(({ databaseId }, index) => {
+      const fallbackName =
+        databaseId === hostDatabaseId
+          ? t('dashboard.picker.thisDatabase', { defaultValue: 'This database' })
+          : t('untitled', { defaultValue: 'Untitled' });
 
-        return {
-          databaseId,
-          name: sourceNames[databaseId] || fallbackName,
-          fields: fieldLists[index],
-        };
-      }),
-    [entries, fieldLists, hostDatabaseId, sourceNames, t]
-  );
+      return {
+        databaseId,
+        name: sourceNames[databaseId] || fallbackName,
+        fields: fieldLists[index],
+      };
+    });
+
+    return sameSources(next, sourcesRef.current) ? sourcesRef.current : next;
+  }, [entries, fieldLists, hostDatabaseId, sourceNames, t]);
+
+  sourcesRef.current = sources;
+  return sources;
 }

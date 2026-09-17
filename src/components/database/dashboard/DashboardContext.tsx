@@ -1,14 +1,4 @@
-import {
-  createContext,
-  ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   dashboardSourceDatabaseIds,
@@ -16,6 +6,7 @@ import {
   DashboardLayoutUpdate,
   DashboardRow,
   readDashboardLayoutSetting,
+  sameDashboardGlobalFilters,
   sameDashboardRows,
   useDashboardLayoutSetting,
   useDatabaseContext,
@@ -38,8 +29,10 @@ import { readGlobalFilterSourceFields } from './global-filters/useGlobalFilterSo
  * - `DashboardSourcesContext`: the registry of source-database docs (and
  *   names) that mounted widgets expose so the global filter editor can list
  *   every source's properties.
+ * - `DashboardSourceRegistryContext`: only the (stable) registration
+ *   callbacks, for components that register sources without reading them.
  *
- * All three are mounted by `DashboardProvider`, which `DatabaseViews` renders
+ * All four are mounted by `DashboardProvider`, which `DatabaseViews` renders
  * around the dashboard content (tab bar included), so both the toolbar
  * (`DashboardActions`) and the grid read the same values.
  */
@@ -70,7 +63,10 @@ export interface DashboardFiltersContextValue {
   globalFilters: DashboardGlobalFilter[];
   /** Persisted global filters unless the viewer changed them locally. */
   effectiveGlobalFilters: DashboardGlobalFilter[];
-  /** Unsaved, viewer-only overrides of the global filters (`null` = none). */
+  /**
+   * Unsaved, viewer-only overrides of the global filters (`null` = none, also
+   * when the override no longer differs from the persisted filters).
+   */
   localGlobalFilters: DashboardGlobalFilter[] | null;
   setLocalGlobalFilters: (filters: DashboardGlobalFilter[] | null) => void;
 }
@@ -84,9 +80,15 @@ export interface DashboardSourcesContextValue {
   registerSourceName: (databaseId: string, name: string) => void;
 }
 
+export type DashboardSourceRegistryContextValue = Pick<
+  DashboardSourcesContextValue,
+  'registerSourceDoc' | 'registerSourceName'
+>;
+
 export const DashboardContext = createContext<DashboardContextValue | null>(null);
 export const DashboardFiltersContext = createContext<DashboardFiltersContextValue | null>(null);
 export const DashboardSourcesContext = createContext<DashboardSourcesContextValue | null>(null);
+export const DashboardSourceRegistryContext = createContext<DashboardSourceRegistryContextValue | null>(null);
 
 function required<T>(value: T | null, name: string): T {
   if (!value) {
@@ -112,6 +114,11 @@ export function useDashboardSources(): DashboardSourcesContextValue {
   return required(useContext(DashboardSourcesContext), 'DashboardSourcesContext');
 }
 
+/** The registration callbacks alone: never re-renders when a source registers. */
+export function useDashboardSourceRegistry(): DashboardSourceRegistryContextValue {
+  return required(useContext(DashboardSourceRegistryContext), 'DashboardSourceRegistryContext');
+}
+
 const EMPTY_VIEW_IDS: string[] = [];
 
 function hasDetachedTargets(filters: DashboardGlobalFilter[], widgetDatabaseIds: ReadonlySet<string>) {
@@ -135,6 +142,18 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
 
   const [isEditing, setEditingState] = useState(false);
   const [localGlobalFilters, setLocalGlobalFilters] = useState<DashboardGlobalFilter[] | null>(null);
+  const [stateViewId, setStateViewId] = useState(dashboardViewId);
+
+  // Switching to another dashboard view (the provider stays mounted) leaves
+  // Edit mode and drops the local filters. Reset during render, so the next
+  // view's first render (and the Edit-mode request a freshly mounted, empty
+  // `Dashboard` makes) never sees the previous view's state.
+  if (stateViewId !== dashboardViewId) {
+    setStateViewId(dashboardViewId);
+    setEditingState(false);
+    setLocalGlobalFilters(null);
+  }
+
   const [sourceDocs, setSourceDocs] = useState<Record<string, YDoc>>(() => ({ [hostDatabaseId]: databaseDoc }));
   const [sourceNames, setSourceNames] = useState<Record<string, string>>({});
   const sourceDocsRef = useRef(sourceDocs);
@@ -154,26 +173,28 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
     () => detachRemovedGlobalFilterSources(storedGlobalFilters, widgetDatabaseIds),
     [storedGlobalFilters, widgetDatabaseIds]
   );
-  const visibleLocalGlobalFilters = useMemo(
-    () => localGlobalFilters && detachRemovedGlobalFilterSources(localGlobalFilters, widgetDatabaseIds),
-    [localGlobalFilters, widgetDatabaseIds]
-  );
+  const visibleLocalGlobalFilters = useMemo(() => {
+    if (!localGlobalFilters) return null;
+    const visible = detachRemovedGlobalFilterSources(localGlobalFilters, widgetDatabaseIds);
+
+    return sameDashboardGlobalFilters(visible, globalFilters) ? null : visible;
+  }, [globalFilters, localGlobalFilters, widgetDatabaseIds]);
+
+  // An override that a concurrent change made identical to the persisted
+  // filters (a removed widget, the same edit saved by a collaborator) has
+  // nothing left to save: drop it rather than let it resurface stale later.
+  if (localGlobalFilters && !visibleLocalGlobalFilters) {
+    setLocalGlobalFilters(null);
+  }
+
   const viewIdsKey = viewIds?.join(',') ?? '';
   // Stable identity while the tab list is unchanged.
   const hostViewIds = useMemo(() => (viewIdsKey ? viewIdsKey.split(',') : EMPTY_VIEW_IDS), [viewIdsKey]);
 
-  // Losing write access (or switching views) leaves Edit mode.
+  // Losing write access leaves Edit mode.
   useEffect(() => {
     if (readOnly) setEditingState(false);
   }, [readOnly]);
-
-  // A layout effect: it must run before the (passive) mount effect with which
-  // a freshly mounted `Dashboard` may request Edit mode for an empty layout,
-  // and before paint, so the next view never flashes the previous mode.
-  useLayoutEffect(() => {
-    setEditingState(false);
-    setLocalGlobalFilters(null);
-  }, [dashboardViewId]);
 
   useEffect(() => {
     setSourceDocs((previous) =>
@@ -290,10 +311,17 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
     [sourceDocs, registerSourceDoc, sourceNames, registerSourceName]
   );
 
+  const registryValue = useMemo<DashboardSourceRegistryContextValue>(
+    () => ({ registerSourceDoc, registerSourceName }),
+    [registerSourceDoc, registerSourceName]
+  );
+
   return (
     <DashboardContext.Provider value={layoutValue}>
       <DashboardFiltersContext.Provider value={filtersValue}>
-        <DashboardSourcesContext.Provider value={sourcesValue}>{children}</DashboardSourcesContext.Provider>
+        <DashboardSourceRegistryContext.Provider value={registryValue}>
+          <DashboardSourcesContext.Provider value={sourcesValue}>{children}</DashboardSourcesContext.Provider>
+        </DashboardSourceRegistryContext.Provider>
       </DashboardFiltersContext.Provider>
     </DashboardContext.Provider>
   );

@@ -1,4 +1,4 @@
-import { ComponentType, Fragment, ReactNode, SVGProps } from 'react';
+import { ComponentType, Fragment, ReactNode, SVGProps, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DASHBOARD_MAX_WIDGETS } from '@/application/database-yjs/dashboard.type';
@@ -19,7 +19,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
-import { WidgetMoveDirection } from './widget-moves';
+import { useDashboardContext } from './DashboardContext';
+import { canDuplicateWidget, getWidgetMoveTargets, WidgetMoveDirection, WidgetMoveTargets } from './widget-moves';
 import { useWidgetContext, WidgetActions } from './WidgetContext';
 
 export type WidgetMenuEntryId =
@@ -67,7 +68,11 @@ export function buildWidgetMenuEntries({
   editing,
   canDuplicate,
   moveTargets,
-}: Pick<WidgetActions, 'canDuplicate' | 'moveTargets'> & { editing: boolean }): WidgetMenuEntry[] {
+}: {
+  editing: boolean;
+  canDuplicate: boolean;
+  moveTargets: WidgetMoveTargets;
+}): WidgetMenuEntry[] {
   const entries: WidgetMenuEntry[] = [
     { id: 'open', group: 'navigate', labelKey: 'dashboard.widget.open', defaultLabel: 'Open view', disabled: false },
   ];
@@ -150,20 +155,59 @@ interface WidgetMenuProps {
   children: ReactNode;
 }
 
-/** Options of one dashboard widget (header "…" button or right-click). */
-export function WidgetMenu({ open, onOpenChange, children }: WidgetMenuProps) {
+/**
+ * The entries of an open menu. Mounted only while the menu is open, so only
+ * an open menu follows the dashboard layout.
+ */
+function WidgetMenuItems() {
   const { t } = useTranslation();
-  const { actions, isEditing, canEdit } = useWidgetContext();
-  const entries = buildWidgetMenuEntries({
-    editing: isEditing && canEdit,
-    canDuplicate: actions.canDuplicate,
-    moveTargets: actions.moveTargets,
-  });
+  const { actions, isEditing, canEdit, widget } = useWidgetContext();
+  const { rows } = useDashboardContext();
+  const editing = isEditing && canEdit;
+  const entries = useMemo(
+    () =>
+      buildWidgetMenuEntries({
+        editing,
+        canDuplicate: canDuplicateWidget(rows, widget.id),
+        moveTargets: getWidgetMoveTargets(rows, widget.id),
+      }),
+    [editing, rows, widget.id]
+  );
   const limitText = t('dashboard.widgetLimit', {
     count: DASHBOARD_MAX_WIDGETS,
     defaultValue: 'Dashboards support up to {{count}} widgets.',
   });
 
+  return (
+    <>
+      {entries.map((entry, index) => {
+        const Icon = ENTRY_ICONS[entry.id];
+        const previous = entries[index - 1];
+
+        return (
+          <Fragment key={entry.id}>
+            {previous && previous.group !== entry.group ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuItem
+              className={cn(entry.limitReached && 'text-text-tertiary')}
+              data-limit-reached={entry.limitReached ? 'true' : undefined}
+              data-testid={`dashboard-widget-menu-${entry.id}`}
+              disabled={entry.disabled}
+              onSelect={() => runEntry(entry.id, actions)}
+              title={entry.limitReached ? limitText : undefined}
+              variant={entry.group === 'danger' ? 'destructive' : 'default'}
+            >
+              <Icon aria-hidden='true' />
+              <span>{t(entry.labelKey, { defaultValue: entry.defaultLabel })}</span>
+            </DropdownMenuItem>
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+/** Options of one dashboard widget (header "…" button or right-click). */
+export function WidgetMenu({ open, onOpenChange, children }: WidgetMenuProps) {
   return (
     <DropdownMenu modal={false} onOpenChange={onOpenChange} open={open}>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
@@ -175,28 +219,7 @@ export function WidgetMenu({ open, onOpenChange, children }: WidgetMenuProps) {
         onCloseAutoFocus={(event) => event.preventDefault()}
         side='bottom'
       >
-        {entries.map((entry, index) => {
-          const Icon = ENTRY_ICONS[entry.id];
-          const previous = entries[index - 1];
-
-          return (
-            <Fragment key={entry.id}>
-              {previous && previous.group !== entry.group ? <DropdownMenuSeparator /> : null}
-              <DropdownMenuItem
-                className={cn(entry.limitReached && 'text-text-tertiary')}
-                data-limit-reached={entry.limitReached ? 'true' : undefined}
-                data-testid={`dashboard-widget-menu-${entry.id}`}
-                disabled={entry.disabled}
-                onSelect={() => runEntry(entry.id, actions)}
-                title={entry.limitReached ? limitText : undefined}
-                variant={entry.group === 'danger' ? 'destructive' : 'default'}
-              >
-                <Icon aria-hidden='true' />
-                <span>{t(entry.labelKey, { defaultValue: entry.defaultLabel })}</span>
-              </DropdownMenuItem>
-            </Fragment>
-          );
-        })}
+        <WidgetMenuItems />
       </DropdownMenuContent>
     </DropdownMenu>
   );

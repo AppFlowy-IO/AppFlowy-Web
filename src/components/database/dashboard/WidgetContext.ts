@@ -3,18 +3,21 @@ import { createContext, useContext } from 'react';
 import { DashboardWidget } from '@/application/database-yjs/dashboard.type';
 import { ViewIcon, ViewLayout } from '@/application/types';
 
-import { WidgetMoveDirection, WidgetMoveTargets } from './widget-moves';
+import { WidgetMoveDirection } from './widget-moves';
 
+/**
+ * What a widget's options menu does. Stable per widget: which entries are
+ * enabled is read from the rows by the menu itself while it is open.
+ */
 export interface WidgetActions {
   /** Navigate to the widget's view (falls back to the source database page). */
   open: () => void;
-  /** Open the widget picker in replace mode. */
+  /** Open the widget picker in replace mode (explains the limit when full). */
   changeView: () => void;
+  /** Duplicate next to the widget, or show the widget limit when the dashboard is full. */
   duplicate: () => void;
   remove: () => void;
   move: (direction: WidgetMoveDirection) => void;
-  canDuplicate: boolean;
-  moveTargets: WidgetMoveTargets;
 }
 
 /**

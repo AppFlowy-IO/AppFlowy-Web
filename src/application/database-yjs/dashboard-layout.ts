@@ -368,17 +368,12 @@ export function initializeDashboardLayoutSetting(view: YDatabaseView) {
     setting.set(YjsDatabaseKey.dashboard_global_filters, []);
 }
 
+function sameWidget(a: DashboardWidget, b: DashboardWidget) {
+  return a.id === b.id && a.viewId === b.viewId && a.databaseId === b.databaseId && a.width === b.width;
+}
+
 function sameWidgets(a: DashboardWidget[], b: DashboardWidget[]) {
-  return (
-    a.length === b.length &&
-    a.every(
-      (widget, index) =>
-        widget.id === b[index].id &&
-        widget.viewId === b[index].viewId &&
-        widget.databaseId === b[index].databaseId &&
-        widget.width === b[index].width
-    )
-  );
+  return a.length === b.length && a.every((widget, index) => sameWidget(widget, b[index]));
 }
 
 export function sameDashboardRows(a: DashboardRow[], b: DashboardRow[]) {
@@ -392,25 +387,72 @@ export function sameDashboardRows(a: DashboardRow[], b: DashboardRow[]) {
   );
 }
 
-export function sameDashboardGlobalFilters(a: DashboardGlobalFilter[], b: DashboardGlobalFilter[]) {
+function sameGlobalFilterTargets(a: Record<string, string>, b: Record<string, string>) {
   if (a === b) return true;
-  if (a.length !== b.length) return false;
+  const keys = Object.keys(a);
+  const otherKeys = Object.keys(b);
 
-  return a.every((filter, index) => {
-    const other = b[index];
-    const targetKeys = Object.keys(filter.targets);
-    const otherKeys = Object.keys(other.targets);
+  // Order matters: the first mapping is the primary one.
+  return keys.length === otherKeys.length && keys.every((key, index) => key === otherKeys[index] && a[key] === b[key]);
+}
 
-    // Order matters: the first mapping is the primary one.
-    return (
-      filter.id === other.id &&
-      filter.name === other.name &&
-      filter.fieldType === other.fieldType &&
-      filter.condition === other.condition &&
-      filter.content === other.content &&
-      targetKeys.length === otherKeys.length &&
-      targetKeys.every((key, keyIndex) => key === otherKeys[keyIndex] && filter.targets[key] === other.targets[key])
-    );
+function sameGlobalFilter(a: DashboardGlobalFilter, b: DashboardGlobalFilter) {
+  return (
+    a === b ||
+    (a.id === b.id &&
+      a.name === b.name &&
+      a.fieldType === b.fieldType &&
+      a.condition === b.condition &&
+      a.content === b.content &&
+      sameGlobalFilterTargets(a.targets, b.targets))
+  );
+}
+
+export function sameDashboardGlobalFilters(a: DashboardGlobalFilter[], b: DashboardGlobalFilter[]) {
+  return a === b || (a.length === b.length && a.every((filter, index) => sameGlobalFilter(filter, b[index])));
+}
+
+/**
+ * `next`, reusing every row and widget of `previous` that did not change, so
+ * memoized rows and widgets skip the render when another part of the layout
+ * changes.
+ */
+export function shareDashboardRows(previous: DashboardRow[], next: DashboardRow[]): DashboardRow[] {
+  if (sameDashboardRows(previous, next)) return previous;
+  const previousRows = new Map(previous.map((row): [string, DashboardRow] => [row.id, row]));
+  const previousWidgets = new Map(
+    previous.flatMap((row) => row.widgets.map((widget): [string, DashboardWidget] => [widget.id, widget]))
+  );
+
+  return next.map((row) => {
+    const widgets = row.widgets.map((widget) => {
+      const kept = previousWidgets.get(widget.id);
+
+      return kept && sameWidget(kept, widget) ? kept : widget;
+    });
+    const kept = previousRows.get(row.id);
+
+    if (kept && kept.height === row.height && sameWidgets(kept.widgets, widgets)) return kept;
+    return widgets.every((widget, index) => widget === row.widgets[index]) ? row : { ...row, widgets };
+  });
+}
+
+/** `next`, reusing every unchanged filter (and unchanged `targets`) of `previous`. */
+export function shareDashboardGlobalFilters(
+  previous: DashboardGlobalFilter[],
+  next: DashboardGlobalFilter[]
+): DashboardGlobalFilter[] {
+  if (sameDashboardGlobalFilters(previous, next)) return previous;
+  const previousFilters = new Map(previous.map((filter): [string, DashboardGlobalFilter] => [filter.id, filter]));
+
+  return next.map((filter) => {
+    const kept = previousFilters.get(filter.id);
+
+    if (!kept) return filter;
+    if (sameGlobalFilter(kept, filter)) return kept;
+    return kept.targets !== filter.targets && sameGlobalFilterTargets(kept.targets, filter.targets)
+      ? { ...filter, targets: kept.targets }
+      : filter;
   });
 }
 
@@ -428,10 +470,8 @@ export function createDashboardLayoutStore(databaseDoc: Y.Doc, viewId: string) {
       next.showWidgetTitles !== snapshot.showWidgetTitles
     ) {
       snapshot = {
-        rows: sameDashboardRows(next.rows, snapshot.rows) ? snapshot.rows : next.rows,
-        globalFilters: sameDashboardGlobalFilters(next.globalFilters, snapshot.globalFilters)
-          ? snapshot.globalFilters
-          : next.globalFilters,
+        rows: shareDashboardRows(snapshot.rows, next.rows),
+        globalFilters: shareDashboardGlobalFilters(snapshot.globalFilters, next.globalFilters),
         showWidgetTitles: next.showWidgetTitles,
       };
     }

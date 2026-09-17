@@ -15,6 +15,9 @@ export interface GlobalFilterSourceField {
   options: SelectOption[];
 }
 
+/** The part of a global filter that decides which properties it maps to. */
+export type GlobalFilterTargetShape = Pick<DashboardGlobalFilter, 'fieldType' | 'targets'>;
+
 /** A database whose widgets a global filter can reach. */
 export interface GlobalFilterSource {
   databaseId: string;
@@ -103,12 +106,12 @@ export function findSourceField(
 }
 
 /** The first mapped source: its field defines the options select content refers to. */
-export function getPrimaryTargetDatabaseId(filter: DashboardGlobalFilter): string | undefined {
+export function getPrimaryTargetDatabaseId(filter: GlobalFilterTargetShape): string | undefined {
   return Object.keys(filter.targets)[0];
 }
 
 export function getPrimaryTargetField(
-  filter: DashboardGlobalFilter,
+  filter: GlobalFilterTargetShape,
   sources: GlobalFilterSource[]
 ): GlobalFilterSourceField | undefined {
   const databaseId = getPrimaryTargetDatabaseId(filter);
@@ -155,7 +158,7 @@ export function areOptionFieldsCompatible(primary: GlobalFilterSourceField, cand
 
 /** The properties of `databaseId` the filter may be mapped to. */
 export function getTargetCandidates(
-  filter: DashboardGlobalFilter,
+  filter: GlobalFilterTargetShape,
   sources: GlobalFilterSource[],
   databaseId: string
 ): GlobalFilterSourceField[] {
@@ -180,7 +183,7 @@ export function getTargetCandidates(
  * from the dashboard) is listed without properties so it can still be removed.
  */
 export function getMappedSources(
-  filter: DashboardGlobalFilter,
+  filter: GlobalFilterTargetShape,
   sources: GlobalFilterSource[],
   fallbackName: (databaseId: string) => string
 ): GlobalFilterSource[] {
@@ -199,7 +202,7 @@ export function getMappedSources(
  * `getTargetCandidates` offers them), in one pass: the primary property is
  * resolved once for all sources.
  */
-export function getAddableSources(filter: DashboardGlobalFilter, sources: GlobalFilterSource[]) {
+export function getAddableSources(filter: GlobalFilterTargetShape, sources: GlobalFilterSource[]) {
   // An unmapped source is never the primary one, so with a primary mapping an
   // option type only accepts properties compatible with it.
   const checksOptions = usesOptionContent(filter.fieldType) && getPrimaryTargetDatabaseId(filter) !== undefined;

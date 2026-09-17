@@ -14,11 +14,13 @@ import { DashboardWidgetPlacement } from '@/application/database-yjs/dashboard.t
 import { UIVariant } from '@/application/types';
 
 import { DASHBOARD_DEFAULT_INLINE_PADDING, DASHBOARD_LIMIT_MESSAGE_DURATION } from './constants';
-import { useDashboardContext, useDashboardSources } from './DashboardContext';
+import { useDashboardContext, useDashboardSourceRegistry } from './DashboardContext';
 import { DashboardEmptyState } from './DashboardEmptyState';
 import { DashboardGrid } from './DashboardGrid';
 import { DashboardLimitMessage } from './DashboardLimitMessage';
 import {
+  DashboardDraggingContext,
+  DashboardHostContext,
   DashboardLimitReason,
   DashboardUiContext,
   DashboardUiContextValue,
@@ -27,6 +29,7 @@ import {
 import { GlobalFilterBar } from './global-filters';
 import { CreateWidgetViewRequest, useCreateWidgetView } from './hooks/useCreateWidgetView';
 import { useDashboardDndMonitor } from './hooks/useDashboardDnd';
+import { useDashboardHostServices } from './hooks/useDashboardHostServices';
 import { useSourceDocRegistry } from './hooks/useSourceDocRegistry';
 import { useWorkspaceDatabases } from './hooks/useWorkspaceDatabases';
 import { getCatalogDatabaseName } from './picker-options';
@@ -38,7 +41,8 @@ import { WidgetPicker } from './WidgetPicker';
 export function Dashboard() {
   const { paddingStart, paddingEnd, workspaceId, variant } = useDatabaseContext();
   const { rows, isEditing, canEdit, setEditing, updateRows, hostDatabaseId } = useDashboardContext();
-  const { registerSourceDoc, registerSourceName } = useDashboardSources();
+  const { registerSourceDoc, registerSourceName } = useDashboardSourceRegistry();
+  const hostServices = useDashboardHostServices();
   const editing = isEditing && canEdit;
   const [pickerRequest, setPickerRequest] = useState<WidgetPickerRequest | null>(null);
   const [limitMessage, setLimitMessage] = useState<{ reason: DashboardLimitReason; key: number } | null>(null);
@@ -108,10 +112,13 @@ export function Dashboard() {
     if (!editing) setPickerRequest(null);
   }, [editing]);
 
-  // Name every source database for the global-filter editor.
+  // Name every source database for the global-filter editor. Keyed by the
+  // source ids, so resizing or moving widgets never walks the catalog.
+  const sourceIdsKey = dashboardSourceDatabaseIds(rows, hostDatabaseId).join('\n');
+
   useEffect(() => {
     if (catalog.length === 0) return;
-    const sourceIds = new Set(dashboardSourceDatabaseIds(rows, hostDatabaseId));
+    const sourceIds = new Set(sourceIdsKey.split('\n'));
 
     catalog.forEach((database) => {
       if (!sourceIds.has(database.database_id)) return;
@@ -119,7 +126,7 @@ export function Dashboard() {
 
       if (name) registerSourceName(database.database_id, name);
     });
-  }, [catalog, hostDatabaseId, registerSourceName, rows]);
+  }, [catalog, registerSourceName, sourceIdsKey]);
 
   // Bring a freshly added widget into view once it is rendered.
   useEffect(() => {
@@ -228,14 +235,15 @@ export function Dashboard() {
 
   const uiValue = useMemo<DashboardUiContextValue>(
     () => ({
+      hostDatabaseId,
       openPicker,
       showLimitMessage,
       dndInstanceId,
-      draggingWidgetId,
       getRows,
+      updateRows,
       acquireSourceDoc,
     }),
-    [acquireSourceDoc, dndInstanceId, draggingWidgetId, getRows, openPicker, showLimitMessage]
+    [acquireSourceDoc, dndInstanceId, getRows, hostDatabaseId, openPicker, showLimitMessage, updateRows]
   );
 
   const handleAddFirstWidget = useCallback(
@@ -244,41 +252,45 @@ export function Dashboard() {
   );
 
   return (
-    <DashboardUiContext.Provider value={uiValue}>
-      <div
-        className='relative flex h-full min-h-0 w-full flex-1 flex-col overflow-y-auto overflow-x-hidden'
-        data-dragging={draggingWidgetId ? 'true' : undefined}
-        data-editing={editing ? 'true' : 'false'}
-        data-testid='dashboard-view'
-        ref={scrollRef}
-      >
-        <div
-          className='flex w-full flex-col gap-3 pb-10 pt-3 max-sm:!px-6'
-          style={getDashboardInlinePadding({
-            paddingStart: paddingStart ?? DASHBOARD_DEFAULT_INLINE_PADDING,
-            paddingEnd: paddingEnd ?? DASHBOARD_DEFAULT_INLINE_PADDING,
-            editing,
-          })}
-        >
-          <GlobalFilterBar />
-          {limitMessage ? (
-            // Sticky, so the message stays in sight wherever the add was refused.
-            <div className='pointer-events-none sticky top-2 z-30' key={limitMessage.key}>
-              <DashboardLimitMessage className='pointer-events-auto' reason={limitMessage.reason} />
+    <DashboardHostContext.Provider value={hostServices}>
+      <DashboardUiContext.Provider value={uiValue}>
+        <DashboardDraggingContext.Provider value={draggingWidgetId}>
+          <div
+            className='relative flex h-full min-h-0 w-full flex-1 flex-col overflow-y-auto overflow-x-hidden'
+            data-dragging={draggingWidgetId ? 'true' : undefined}
+            data-editing={editing ? 'true' : 'false'}
+            data-testid='dashboard-view'
+            ref={scrollRef}
+          >
+            <div
+              className='flex w-full flex-col gap-3 pb-10 pt-3 max-sm:!px-6'
+              style={getDashboardInlinePadding({
+                paddingStart: paddingStart ?? DASHBOARD_DEFAULT_INLINE_PADDING,
+                paddingEnd: paddingEnd ?? DASHBOARD_DEFAULT_INLINE_PADDING,
+                editing,
+              })}
+            >
+              <GlobalFilterBar />
+              {limitMessage ? (
+                // Sticky, so the message stays in sight wherever the add was refused.
+                <div className='pointer-events-none sticky top-2 z-30' key={limitMessage.key}>
+                  <DashboardLimitMessage className='pointer-events-auto' reason={limitMessage.reason} />
+                </div>
+              ) : null}
+              {rows.length === 0 ? <DashboardEmptyState onAddWidget={handleAddFirstWidget} /> : <DashboardGrid />}
             </div>
-          ) : null}
-          {rows.length === 0 ? <DashboardEmptyState onAddWidget={handleAddFirstWidget} /> : <DashboardGrid />}
-        </div>
-      </div>
-      <WidgetPicker
-        canCreateInOtherDatabases={canCreateInOtherDatabases}
-        createView={handleCreateView}
-        onClose={() => setPickerRequest(null)}
-        onPick={handlePick}
-        request={editing ? pickerRequest : null}
-      />
-      {bridge}
-    </DashboardUiContext.Provider>
+          </div>
+          <WidgetPicker
+            canCreateInOtherDatabases={canCreateInOtherDatabases}
+            createView={handleCreateView}
+            onClose={() => setPickerRequest(null)}
+            onPick={handlePick}
+            request={editing ? pickerRequest : null}
+          />
+          {bridge}
+        </DashboardDraggingContext.Provider>
+      </DashboardUiContext.Provider>
+    </DashboardHostContext.Provider>
   );
 }
 

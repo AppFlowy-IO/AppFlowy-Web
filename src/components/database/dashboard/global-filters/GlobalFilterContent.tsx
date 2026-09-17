@@ -38,8 +38,11 @@ const CONTENT_TEST_ID = 'dashboard-global-filter-content';
 // Same rule as the view number filter: optional minus, digits, one decimal point.
 const NUMBER_INPUT_PATTERN = /^-?\d*\.?\d*$/;
 
+/** What a value control reads: everything but the name and the mappings. */
+export type GlobalFilterValue = Pick<DashboardGlobalFilter, 'id' | 'fieldType' | 'condition' | 'content'>;
+
 interface ContentProps {
-  filter: DashboardGlobalFilter;
+  filter: GlobalFilterValue;
   onChange: (content: string) => void;
 }
 
