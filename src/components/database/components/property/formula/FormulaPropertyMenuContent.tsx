@@ -55,7 +55,8 @@ export function FormulaPropertyMenuContent({
   const [formatSearch, setFormatSearch] = useState('');
   const [formatOpen, setFormatOpen] = useState(false);
   const selectedFormat = formats.find((item) => item.value === typeOption?.format);
-  const filteredFormats = formats.filter((item) => item.label.toLowerCase().includes(formatSearch.toLowerCase()));
+  const formatQuery = formatSearch.toLowerCase();
+  const filteredFormats = formats.filter((item) => item.label.toLowerCase().includes(formatQuery));
   const isNumber = resultType === 'number';
 
   return (

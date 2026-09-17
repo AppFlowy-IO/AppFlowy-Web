@@ -5,6 +5,7 @@ import { useDatabase, useDatabaseFields, useDatabaseView, useRowMap } from '@/ap
 import { FieldType } from '@/application/database-yjs/database.type';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import {
+  collectExpressionExternalReferences,
   compileFormula,
   evaluateFormulaExpression,
   FORMULA_BUILTINS,
@@ -13,10 +14,12 @@ import {
   FormulaFieldSchema,
   FormulaFunctionSpec,
   formulaTypeOfField,
+  NO_EXTERNAL_REFERENCES,
   parseFormulaTypeOption,
   readFormulaSchemaForVersion,
   typeToString,
 } from '@/application/database-yjs/fields/formula';
+import { useFormulaReadContext } from '@/application/database-yjs/formula/read-context';
 import { useDatabaseFieldsVersion } from '@/application/database-yjs/hooks/useDatabaseFieldsVersion';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { Row, useFieldSelector, usePrimaryFieldId } from '@/application/database-yjs/selector';
@@ -53,10 +56,8 @@ export interface FormulaEditorProps {
   onAutocompleteOpenChange?: (open: boolean) => void;
 }
 
-type Suggestion =
-  | { kind: 'function'; spec: FormulaFunctionSpec }
-  | { kind: 'property'; entry: FormulaFieldSchema }
-  | { kind: 'builtin'; spec: FormulaBuiltinSpec };
+/** An autocomplete suggestion is a documented item: a function, property or built-in. */
+type Suggestion = FormulaDocsItem;
 
 function suggestionLabel(suggestion: Suggestion): string {
   switch (suggestion.kind) {
@@ -81,17 +82,6 @@ function suggestionInsertion(suggestion: Suggestion): { text: string; caretOffse
 
     case 'builtin':
       return { text: suggestion.spec.insert, caretOffset: suggestion.spec.insert.length };
-  }
-}
-
-function toDocsItem(suggestion: Suggestion): FormulaDocsItem {
-  switch (suggestion.kind) {
-    case 'function':
-      return { kind: 'function', spec: suggestion.spec };
-    case 'property':
-      return { kind: 'property', entry: suggestion.entry };
-    case 'builtin':
-      return { kind: 'builtin', spec: suggestion.spec };
   }
 }
 
@@ -131,7 +121,9 @@ export function FormulaEditor({
   // The catalogue item whose docs are showing. It stays after the pointer
   // leaves so its examples can be reached and inserted.
   const [selected, setSelected] = useState<FormulaDocsItem | null>(null);
-  const [activeSuggestion, setActiveSuggestion] = useState(0);
+  // The highlighted suggestion belongs to the word it was picked for; typing
+  // another word starts again at the first suggestion.
+  const [activeState, setActiveState] = useState({ word: '', index: 0 });
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [previewRowId, setPreviewRowId] = useState<string | undefined>(initialPreviewRowId);
 
@@ -153,9 +145,10 @@ export function FormulaEditor({
   // The row the editor was opened from is always offered, even past the cap.
   const previewRows = useMemo(() => {
     const primaryField = primaryFieldId ? schema.find((entry) => entry.id === primaryFieldId)?.field : undefined;
+    const positions = new Map(rowIds.map((id, index) => [id, index + 1]));
     const ids = rowIds.slice(0, PREVIEW_ROW_LIMIT);
 
-    if (initialPreviewRowId && !ids.includes(initialPreviewRowId) && rowIds.includes(initialPreviewRowId)) {
+    if (initialPreviewRowId && !ids.includes(initialPreviewRowId) && positions.has(initialPreviewRowId)) {
       ids.unshift(initialPreviewRowId);
     }
 
@@ -172,27 +165,66 @@ export function FormulaEditor({
           id,
           row: databaseRow,
           label:
-            label || t('grid.formula.untitledRow', { defaultValue: 'Row {{index}}', index: rowIds.indexOf(id) + 1 }),
+            label || t('grid.formula.untitledRow', { defaultValue: 'Row {{index}}', index: positions.get(id) }),
         };
       })
       .filter((entry) => entry.row);
   }, [rowIds, rowMap, primaryFieldId, schema, initialPreviewRowId, t]);
 
   const previewRow = previewRows.find((entry) => entry.id === previewRowId) ?? previewRows[0];
+  const previewDatabaseRow = previewRow?.row;
+  const previewId = previewRow?.id ?? '';
+
+  // The preview follows edits to its row, like the cell does.
+  const [previewClock, setPreviewClock] = useState(0);
+
+  useEffect(() => {
+    if (!previewDatabaseRow) return;
+    const bump = () => setPreviewClock((clock) => clock + 1);
+
+    previewDatabaseRow.observeDeep(bump);
+    return () => previewDatabaseRow.unobserveDeep(bump);
+  }, [previewDatabaseRow]);
+
+  // Names, related titles and rollups the draft reads, loaded like the cell's.
+  const previewReferences = useMemo(
+    () => (compiled.error ? NO_EXTERNAL_REFERENCES : collectExpressionExternalReferences(value, schema, fieldId)),
+    [compiled.error, value, schema, fieldId]
+  );
+  const { context: previewContext, revision: previewRevision } = useFormulaReadContext({
+    references: previewReferences,
+    row: previewDatabaseRow,
+    rowId: previewId,
+    rowClock: previewClock,
+  });
 
   const preview = useMemo(() => {
-    if (!field || !previewRow?.row || compiled.error) return null;
+    if (!field || !previewDatabaseRow || compiled.error) return null;
+    void previewClock;
+    void previewRevision;
     return evaluateFormulaExpression({
+      ...previewContext,
       expression: value,
       schema,
       field,
       fieldId,
-      row: previewRow.row,
-      rowId: previewRow.id,
+      row: previewDatabaseRow,
+      rowId: previewId,
       // Preview the value the way the cell shows it.
       format: { numberFormat: parseFormulaTypeOption(field).format },
     });
-  }, [field, previewRow, compiled.error, value, schema, fieldId]);
+  }, [
+    field,
+    previewDatabaseRow,
+    previewId,
+    previewClock,
+    previewRevision,
+    previewContext,
+    compiled.error,
+    value,
+    schema,
+    fieldId,
+  ]);
 
   const errorMessage = compiled.error?.displayMessage ?? preview?.error;
 
@@ -267,9 +299,12 @@ export function FormulaEditor({
     return matches.slice(0, AUTOCOMPLETE_LIMIT);
   }, [currentWord.query, suggestionsDismissed, referenceableFields]);
 
-  useEffect(() => {
-    setActiveSuggestion(0);
-  }, [suggestions.length, currentWord.query]);
+  const activeSuggestion =
+    activeState.word === currentWord.query && activeState.index < suggestions.length ? activeState.index : 0;
+  const setActiveSuggestion = useCallback(
+    (index: number) => setActiveState({ word: currentWord.query, index }),
+    [currentWord.query]
+  );
 
   const autocompleteOpen = suggestions.length > 0;
 
@@ -306,13 +341,13 @@ export function FormulaEditor({
       if (suggestions.length > 0) {
         if (event.key === 'ArrowDown') {
           event.preventDefault();
-          setActiveSuggestion((index) => (index + 1) % suggestions.length);
+          setActiveSuggestion((activeSuggestion + 1) % suggestions.length);
           return;
         }
 
         if (event.key === 'ArrowUp') {
           event.preventDefault();
-          setActiveSuggestion((index) => (index - 1 + suggestions.length) % suggestions.length);
+          setActiveSuggestion((activeSuggestion - 1 + suggestions.length) % suggestions.length);
           return;
         }
 
@@ -336,7 +371,7 @@ export function FormulaEditor({
         insertAtCaret('  ', 2);
       }
     },
-    [acceptSuggestion, activeSuggestion, insertAtCaret, onSubmit, suggestions]
+    [acceptSuggestion, activeSuggestion, insertAtCaret, onSubmit, setActiveSuggestion, suggestions]
   );
 
   const syncCaret = useCallback(() => {
@@ -381,14 +416,16 @@ export function FormulaEditor({
   );
 
   const activeSuggestionItem = suggestions.length > 0 ? suggestions[activeSuggestion] ?? suggestions[0] : undefined;
-  const docsItem = useMemo<FormulaDocsItem | null>(
-    () =>
-      (activeSuggestionItem ? toDocsItem(activeSuggestionItem) : null) ??
-      selected ??
-      (catalogue.properties[0] ? { kind: 'property', entry: catalogue.properties[0] } : null) ??
-      (catalogue.functions[0] ? { kind: 'function', spec: catalogue.functions[0] } : null),
-    [activeSuggestionItem, selected, catalogue]
-  );
+  const nextDocsItem =
+    activeSuggestionItem ??
+    selected ??
+    (catalogue.properties[0] ? ({ kind: 'property', entry: catalogue.properties[0] } as const) : null) ??
+    (catalogue.functions[0] ? ({ kind: 'function', spec: catalogue.functions[0] } as const) : null);
+  // Keep one object per documented item (and schema) so the memoized panel
+  // skips keystrokes that do not change what it documents.
+  const docsKey = nextDocsItem ? docsItemKey(nextDocsItem) : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const docsItem = useMemo<FormulaDocsItem | null>(() => nextDocsItem, [docsKey, schema]);
   const insertDocsExample = useCallback((text: string) => insertAtCaret(text, text.length), [insertAtCaret]);
 
   const segments = useMemo(() => highlightFormula(value), [value]);
@@ -541,7 +578,9 @@ interface FormulaCatalogueProps {
 
 /**
  * The searchable list of properties, built-ins and functions. Memoized with
- * stable props so typing in the formula does not re-render ~80 buttons.
+ * stable props so typing in the formula does not re-render ~80 buttons, and
+ * each row is memoized so hovering re-renders only the rows whose selection
+ * changed.
  */
 const FormulaCatalogue = memo(function FormulaCatalogue({
   search,
@@ -555,26 +594,21 @@ const FormulaCatalogue = memo(function FormulaCatalogue({
 }: FormulaCatalogueProps) {
   const { t } = useTranslation();
   const isEmpty = properties.length === 0 && builtins.length === 0 && functions.length === 0;
-
-  const renderItem = (item: FormulaDocsItem, key: string, label: React.ReactNode, onPick: () => void) => (
-    <button
-      key={key}
-      type={'button'}
-      data-testid={`formula-catalogue-${key}`}
-      className={cn(
-        'flex h-8 w-full items-center gap-2 rounded-300 px-2 text-left text-sm text-text-primary hover:bg-fill-content-hover',
-        selected && sameDocsItem(selected, item) && 'bg-fill-content-hover'
-      )}
-      onMouseEnter={() => onSelect(item)}
-      onFocus={() => onSelect(item)}
-      onClick={() => {
-        onSelect(item);
-        onPick();
-      }}
-    >
-      {label}
-    </button>
-  );
+  const selectedKey = selected ? docsItemKey(selected) : '';
+  const sections: Array<{ title: string; items: FormulaDocsItem[] }> = [
+    {
+      title: t('grid.formula.properties', { defaultValue: 'Properties' }),
+      items: properties.map((entry) => ({ kind: 'property', entry })),
+    },
+    {
+      title: t('grid.formula.builtins', { defaultValue: 'Built-ins' }),
+      items: builtins.map((spec) => ({ kind: 'builtin', spec })),
+    },
+    {
+      title: t('grid.formula.functions', { defaultValue: 'Functions' }),
+      items: functions.map((spec) => ({ kind: 'function', spec })),
+    },
+  ];
 
   return (
     <div className={'flex min-h-0 flex-col gap-1'}>
@@ -588,69 +622,86 @@ const FormulaCatalogue = memo(function FormulaCatalogue({
         {isEmpty ? (
           <div className={'px-2 py-3 text-sm text-text-tertiary'}>{t('grid.rollup.noResult', { defaultValue: 'No result' })}</div>
         ) : null}
-        {properties.length > 0 ? (
-          <div className={'mb-2'}>
-            <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
-              {t('grid.formula.properties', { defaultValue: 'Properties' })}
-            </div>
-            {properties.map((entry) =>
-              renderItem(
-                { kind: 'property', entry },
-                `property-${entry.id}`,
-                <>
-                  <FieldTypeIcon type={entry.type} className={'h-4 w-4 shrink-0 text-icon-secondary'} />
-                  <span className={'truncate'}>{entry.name}</span>
-                </>,
-                () => {
-                  const { text, caretOffset } = suggestionInsertion({ kind: 'property', entry });
+        {sections.map((section, index) =>
+          section.items.length > 0 ? (
+            <div key={section.title} className={index < sections.length - 1 ? 'mb-2' : undefined}>
+              <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
+                {section.title}
+              </div>
+              {section.items.map((item) => {
+                const key = docsItemKey(item);
 
-                  onInsert(text, caretOffset);
-                }
-              )
-            )}
-          </div>
-        ) : null}
-        {builtins.length > 0 ? (
-          <div className={'mb-2'}>
-            <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
-              {t('grid.formula.builtins', { defaultValue: 'Built-ins' })}
+                return (
+                  <FormulaCatalogueItem
+                    key={key}
+                    itemKey={key}
+                    item={item}
+                    isSelected={key === selectedKey}
+                    onSelect={onSelect}
+                    onInsert={onInsert}
+                  />
+                );
+              })}
             </div>
-            {builtins.map((spec) =>
-              renderItem(
-                { kind: 'builtin', spec },
-                `builtin-${spec.name}`,
-                <span className={'truncate font-mono'}>{spec.name}</span>,
-                () => onInsert(spec.insert, spec.insert.length)
-              )
-            )}
-          </div>
-        ) : null}
-        {functions.length > 0 ? (
-          <div>
-            <div className={'px-2 py-1 text-xs font-medium text-text-tertiary'} data-testid={'formula-catalogue-section'}>
-              {t('grid.formula.functions', { defaultValue: 'Functions' })}
-            </div>
-            {functions.map((spec) =>
-              renderItem(
-                { kind: 'function', spec },
-                `function-${spec.name}`,
-                <span className={'truncate font-mono'}>{spec.name}()</span>,
-                () => onInsert(`${spec.name}()`, spec.name.length + 1)
-              )
-            )}
-          </div>
-        ) : null}
+          ) : null
+        )}
       </div>
     </div>
   );
 });
 
-function sameDocsItem(a: FormulaDocsItem, b: FormulaDocsItem) {
-  if (a.kind !== b.kind) return false;
-  if (a.kind === 'property' && b.kind === 'property') return a.entry.id === b.entry.id;
-  if (a.kind === 'function' && b.kind === 'function') return a.spec.name === b.spec.name;
-  if (a.kind === 'builtin' && b.kind === 'builtin') return a.spec.name === b.spec.name;
-  return false;
+const FormulaCatalogueItem = memo(function FormulaCatalogueItem({
+  itemKey,
+  item,
+  isSelected,
+  onSelect,
+  onInsert,
+}: {
+  itemKey: string;
+  item: FormulaDocsItem;
+  isSelected: boolean;
+  onSelect: (item: FormulaDocsItem) => void;
+  onInsert: (text: string, caretOffset: number) => void;
+}) {
+  return (
+    <button
+      type={'button'}
+      data-testid={`formula-catalogue-${itemKey}`}
+      className={cn(
+        'flex h-8 w-full items-center gap-2 rounded-300 px-2 text-left text-sm text-text-primary hover:bg-fill-content-hover',
+        isSelected && 'bg-fill-content-hover'
+      )}
+      onMouseEnter={() => onSelect(item)}
+      onFocus={() => onSelect(item)}
+      onClick={() => {
+        const { text, caretOffset } = suggestionInsertion(item);
+
+        onSelect(item);
+        onInsert(text, caretOffset);
+      }}
+    >
+      {item.kind === 'property' ? (
+        <>
+          <FieldTypeIcon type={item.entry.type} className={'h-4 w-4 shrink-0 text-icon-secondary'} />
+          <span className={'truncate'}>{item.entry.name}</span>
+        </>
+      ) : (
+        <span className={'truncate font-mono'}>{suggestionLabel(item)}</span>
+      )}
+    </button>
+  );
+});
+
+/** Stable identity of a documented item; also its catalogue test id. */
+function docsItemKey(item: FormulaDocsItem): string {
+  switch (item.kind) {
+    case 'property':
+      return `property-${item.entry.id}`;
+    case 'function':
+      return `function-${item.spec.name}`;
+    case 'builtin':
+      return `builtin-${item.spec.name}`;
+  }
 }
 
 export default FormulaEditor;

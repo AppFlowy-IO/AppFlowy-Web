@@ -25,7 +25,12 @@ export { tokenize } from './lexer';
 export type { Token, TokenKind } from './lexer';
 export { parseFormulaTypeOption, parseFormulaVisualizationOption } from './parse';
 export { parseFormula } from './parser';
-export { collectFormulaExternalReferences, NO_EXTERNAL_REFERENCES } from './references';
+export {
+  collectExpressionExternalReferences,
+  collectFormulaExternalReferences,
+  formulaExternalReferencesKey,
+  NO_EXTERNAL_REFERENCES,
+} from './references';
 export type { FormulaExternalReferences } from './references';
 export type { FormulaFunctionSpec, FormulaFunctionCategory, FormulaFunctionExample, FormulaParam } from './registry';
 export {

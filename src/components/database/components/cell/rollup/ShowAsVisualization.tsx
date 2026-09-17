@@ -1,5 +1,8 @@
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
 
+const RING_RADIUS = 6.5;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
 /**
  * The "Show as" Bar / Ring rendering shared by Rollup and Formula cells.
  * `ratio` is already clamped to [0, 1]; `color` is a resolved CSS color.
@@ -41,9 +44,6 @@ export function ShowAsVisualization({
     );
   }
 
-  const radius = 6.5;
-  const circumference = 2 * Math.PI * radius;
-
   return (
     <div className={'flex items-center gap-2'} data-testid={`${testIdPrefix}-ring-visualization`}>
       {showValue ? <span>{value}</span> : null}
@@ -53,16 +53,16 @@ export function ShowAsVisualization({
         role={'img'}
         aria-label={`${Math.round(ratio * 100)}%`}
       >
-        <circle cx={'8'} cy={'8'} r={radius} fill={'none'} stroke={'var(--fill-secondary)'} strokeWidth={'3'} />
+        <circle cx={'8'} cy={'8'} r={RING_RADIUS} fill={'none'} stroke={'var(--fill-secondary)'} strokeWidth={'3'} />
         <circle
           cx={'8'}
           cy={'8'}
-          r={radius}
+          r={RING_RADIUS}
           fill={'none'}
           stroke={color}
           strokeWidth={'3'}
           strokeLinecap={'round'}
-          strokeDasharray={`${ratio * circumference} ${circumference}`}
+          strokeDasharray={`${ratio * RING_CIRCUMFERENCE} ${RING_CIRCUMFERENCE}`}
         />
       </svg>
     </div>

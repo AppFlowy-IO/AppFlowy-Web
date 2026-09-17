@@ -57,8 +57,9 @@ import {
 } from '@/application/database-yjs/filter';
 import {
   formulaConditionContext,
+  formulaRowContext,
   memberNames,
-  useFormulaCellReadContext,
+  useFormulaReadContext,
 } from '@/application/database-yjs/formula/read-context';
 import { DEFAULT_GALLERY_LAYOUT_SETTINGS } from '@/application/database-yjs/gallery-layout';
 import {
@@ -3156,10 +3157,12 @@ export function useFormulaCellValue({
   const [rowClock, setRowClock] = useState(0);
   // Shared by all formula cells rendering the same fields version.
   const schema = useMemo(() => readFormulaSchemaForVersion(fields, fieldsVersion), [fields, fieldsVersion]);
-  const { context: readContext, revision: readRevision } = useFormulaCellReadContext({
-    enabled: isFormula,
-    field,
-    schema,
+  const references = useMemo(() => {
+    void fieldClock;
+    return isFormula && field ? collectFormulaExternalReferences(field, schema) : NO_EXTERNAL_REFERENCES;
+  }, [isFormula, field, fieldClock, schema]);
+  const { context: readContext, revision: readRevision } = useFormulaReadContext({
+    references,
     row,
     rowId,
     rowClock,
@@ -3809,24 +3812,7 @@ export function useFormulaColumnEvaluator(fieldId: string) {
 
     return (rowId: string, row: YDatabaseRow): number | string => {
       const result = evaluateFormulaCell({
-        ...formulaConditionContext(rowId, {
-          members,
-          loaders,
-          getRollupValue: (_rowId, rollupFieldId) => {
-            const rollupField = fields?.get(rollupFieldId);
-
-            if (!database || !rollupField) return undefined;
-            return readRollupCellSync({
-              baseDoc: databaseDoc,
-              database,
-              rollupField,
-              row,
-              rowId,
-              fieldId: rollupFieldId,
-              ...loaders,
-            });
-          },
-        }),
+        ...formulaRowContext(rowId, row, { members, database, baseDoc: databaseDoc, loaders }),
         schema,
         field,
         fieldId,

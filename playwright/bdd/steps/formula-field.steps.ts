@@ -332,6 +332,27 @@ Then(
   }
 );
 
+Then(
+  'the formula preview shows the member names of {string} in row {int}',
+  async ({ page }, people: string, row: number) => {
+    const shown = await memberNamesIn(page, people, row);
+
+    expect(shown).not.toBe('');
+    await expect(page.getByTestId('formula-preview-value')).toHaveText(shown);
+  }
+);
+
+Then(
+  'row {int} of {string} reads the member names of {string}',
+  async ({ page }, row: number, name: string, people: string) => {
+    const id = await fieldId(page, name);
+    const shown = await memberNamesIn(page, people, row);
+
+    expect(shown).not.toBe('');
+    await expect.poll(() => gridCellText(page, id, row - 1), { timeout: 15000 }).toBe(shown);
+  }
+);
+
 // ---------------------------------------------------------------------------
 // Opening and closing the editor
 // ---------------------------------------------------------------------------

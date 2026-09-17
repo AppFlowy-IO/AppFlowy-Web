@@ -34,7 +34,11 @@ import { formulaTypeOfField, ReadFieldValueContext } from '../cell-values';
 import { clearFormulaCompileCache, compileFormula } from '../compile';
 import { evaluateFormulaCell } from '../evaluate';
 import { FormulaCellResult } from '../formula.type';
-import { collectFormulaExternalReferences } from '../references';
+import {
+  collectExpressionExternalReferences,
+  collectFormulaExternalReferences,
+  NO_EXTERNAL_REFERENCES,
+} from '../references';
 import { readFormulaSchema } from '../schema';
 import { typeToString } from '../values';
 
@@ -602,6 +606,28 @@ describe('formula external references', () => {
       relations: [],
       rollups: [],
     });
+  });
+
+  it('resolves names in a draft like ids', () => {
+    const { schema } = buildDatabase({ budget: 'prop("f-rollup-sum") * 2' });
+    const references = collectExpressionExternalReferences(
+      'prop("budget") + prop("Projects").length() + prop("Owner").length()',
+      schema,
+      'formula-probe'
+    );
+
+    expect(references.people).toBe(true);
+    expect(references.relations.map((entry) => entry.id)).toEqual(['f-relation']);
+    expect(references.rollups.map((entry) => entry.id)).toEqual(['f-rollup-sum']);
+  });
+
+  it('ignores ids that only appear in text', () => {
+    const { schema } = buildDatabase({});
+
+    expect(collectExpressionExternalReferences('"f-person f-relation" + prop("Title")', schema)).toBe(
+      NO_EXTERNAL_REFERENCES
+    );
+    expect(collectExpressionExternalReferences('prop("Owner"', schema)).toBe(NO_EXTERNAL_REFERENCES);
   });
 
   it('stops at formula cycles', () => {

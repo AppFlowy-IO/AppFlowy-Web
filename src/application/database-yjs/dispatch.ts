@@ -61,6 +61,7 @@ import { createDateTimeField } from '@/application/database-yjs/fields/text/util
 import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
+import { formulaRowContext, memberNames } from '@/application/database-yjs/formula/read-context';
 import {
   initializeGalleryLayoutSetting,
   normalizeCreatedDatabaseGalleryView,
@@ -154,6 +155,7 @@ import {
 } from '@/application/types';
 import { isDatabaseContainer, isEmbeddedDatabaseViewWithoutChildren, isEmbeddedView } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
+import { peekMentionableUsers } from '@/components/database/components/cell/person/useMentionableUsers';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
@@ -3591,7 +3593,8 @@ export function useSwitchPropertyType() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
-  const { databaseDoc, loadView, getViewIdFromDatabaseId, bindViewSync, ensureRow } = useDatabaseContext();
+  const { databaseDoc, loadView, getViewIdFromDatabaseId, bindViewSync, ensureRow, createRow, workspaceId } =
+    useDatabaseContext();
 
   return useCallback(
     (fieldId: string, fieldType: FieldType) => {
@@ -3632,12 +3635,25 @@ export function useSwitchPropertyType() {
 
         if (fieldBefore && oldFieldTypeBefore === FieldType.Formula) {
           const schema = readFormulaSchema(database.get(YjsDatabaseKey.fields));
+          // Names, related titles and rollups as the cells showed them.
+          const members = memberNames(peekMentionableUsers(workspaceId));
+          const loaders = { loadView, createRow, getViewIdFromDatabaseId };
 
           rows.forEach((rowId) => {
             const row = getFieldSwitchDatabaseRow(resolvedRowMap[rowId]);
 
             if (!row) return;
-            formulaResults.set(rowId, evaluateFormulaCell({ schema, field: fieldBefore, fieldId, row, rowId }));
+            formulaResults.set(
+              rowId,
+              evaluateFormulaCell({
+                ...formulaRowContext(rowId, row, { members, database, baseDoc: databaseDoc, loaders }),
+                schema,
+                field: fieldBefore,
+                fieldId,
+                row,
+                rowId,
+              })
+            );
           });
         }
 
@@ -4014,7 +4030,18 @@ export function useSwitchPropertyType() {
         throw error;
       });
     },
-    [bindViewSync, database, databaseDoc, ensureRow, getViewIdFromDatabaseId, loadView, sharedRoot, rowMap]
+    [
+      bindViewSync,
+      createRow,
+      database,
+      databaseDoc,
+      ensureRow,
+      getViewIdFromDatabaseId,
+      loadView,
+      sharedRoot,
+      rowMap,
+      workspaceId,
+    ]
   );
 }
 

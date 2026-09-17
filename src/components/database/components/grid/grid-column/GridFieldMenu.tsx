@@ -155,7 +155,7 @@ function GridFieldMenu({
         ? [
             {
               testId: 'filter',
-        label: t('grid.settings.filter'),
+              label: t('grid.settings.filter'),
               icon: <FilterIcon />,
               onSelect: handleCreateFilter,
             },

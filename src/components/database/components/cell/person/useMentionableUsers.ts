@@ -32,6 +32,14 @@ function getMemoryCachedUsers(workspaceId: string | undefined): MentionablePerso
   return isMemoryCacheValid(cached) ? cached.users : EMPTY_USERS;
 }
 
+/**
+ * The last member list loaded for a workspace, however old. For one-off reads
+ * outside React (e.g. keeping member names when a formula is converted).
+ */
+export function peekMentionableUsers(workspaceId: string | undefined): readonly MentionablePerson[] {
+  return (workspaceId && cache.get(workspaceId)?.users) || EMPTY_USERS;
+}
+
 /** Build one lossless UID index per shared member-list snapshot. */
 export function getMentionableUserIndex(
   users: readonly MentionablePerson[]

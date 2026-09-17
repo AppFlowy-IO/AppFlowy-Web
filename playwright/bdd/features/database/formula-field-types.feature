@@ -158,6 +158,30 @@ Feature: Formulas read every property type
       | ƒ count  | 0     |
       | ƒ rollup | 0     |
 
+  Scenario: The editor preview and a conversion keep related titles and member names
+    Given a relation property "Linked" to this database
+    And row 1 of "Linked" links rows 2
+    When I add a "CreatedBy" property named "Author"
+    And I add these formula properties
+      | name     | expression                 |
+      | ƒ titles | prop("Linked").join(" + ") |
+      | ƒ author | prop("Author").first()     |
+    Then the formula properties show these values for row 1
+      | name     | value     |
+      | ƒ titles | Blank row |
+    When I open the formula editor of "ƒ titles" by clicking its cell in row 1
+    Then the formula preview shows "Blank row"
+    When I close the formula editor with "the Cancel button"
+    And I open the formula editor of "ƒ author" by clicking its cell in row 1
+    Then the formula preview shows the member names of "Author" in row 1
+    When I close the formula editor with "the Cancel button"
+    And I switch the property "ƒ titles" to "Text"
+    And I switch the property "ƒ author" to "Text"
+    Then the "ƒ titles" cells read in order
+      | Blank row |
+      |           |
+    And row 1 of "ƒ author" reads the member names of "Author"
+
   Scenario: People read as member names
     When I add a "Person" property named "Owner"
     And I add a "CreatedBy" property named "Author"

@@ -1,20 +1,19 @@
 /**
  * Formula values that live outside the row document: member names, related
- * row titles and rollup results. Cells, filters, sorts and footers all read
- * them through a `ReadFieldValueContext` built here.
+ * row titles and rollup results. Cells, the editor preview, filters, sorts,
+ * footers and type conversion all read them through a
+ * `ReadFieldValueContext` built here.
  */
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs/context';
 import {
-  collectFormulaExternalReferences,
-  FormulaFieldSchema,
-  NO_EXTERNAL_REFERENCES,
+  FormulaExternalReferences,
+  formulaExternalReferencesKey,
   ReadFieldValueContext,
 } from '@/application/database-yjs/fields/formula';
 import {
   ensureRelationGroupLabel,
-  getRelationGroupLabelRevision,
   readRelationGroupLabel,
   retainRelationGroupLabels,
   subscribeRelationGroupLabels,
@@ -23,12 +22,14 @@ import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/c
 import {
   invalidateRollupCell,
   readRollupCell,
+  readRollupCellSync,
   RollupCellValue,
   subscribeRollupCell,
 } from '@/application/database-yjs/rollup/cache';
 import {
   LoadViewOptions,
   MentionablePerson,
+  YDatabase,
   YDatabaseField,
   YDatabaseRow,
   YDoc,
@@ -113,49 +114,73 @@ export function formulaConditionContext(
   };
 }
 
-const noopSubscribe = () => () => undefined;
-const zeroRevision = () => 0;
+/**
+ * `formulaConditionContext` for one row whose rollups are read straight from
+ * the rollup cache (footers and type conversion).
+ */
+export function formulaRowContext(
+  rowId: string,
+  row: YDatabaseRow,
+  options: { members?: MemberNames; database?: YDatabase; baseDoc: YDoc; loaders: RelatedRowLoaders }
+): ReadFieldValueContext {
+  const { members, database, baseDoc, loaders } = options;
+
+  return formulaConditionContext(rowId, {
+    members,
+    loaders,
+    getRollupValue: database
+      ? (_rowId, fieldId) => {
+          const rollupField = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+          return rollupField
+            ? readRollupCellSync({ baseDoc, database, rollupField, row, rowId, fieldId, ...loaders })
+            : undefined;
+        }
+      : undefined,
+  });
+}
+
+type RelatedRow = { relationField: YDatabaseField; relatedRowId: string };
+
+const noopUnsubscribe = () => undefined;
 
 /**
- * The read context of one formula cell. It loads only what the formula
- * reaches (directly or through other formulas) and re-renders the cell when
- * a member list, related title or rollup result arrives.
+ * The read context of one formula evaluation (a cell or the editor preview).
+ * It loads only what `references` reach and returns a `revision` that changes
+ * when a member list, one of this row's related titles or a rollup result
+ * arrives. Pass `NO_EXTERNAL_REFERENCES` when there is nothing to load.
  */
-export function useFormulaCellReadContext({
-  enabled,
-  field,
-  schema,
+export function useFormulaReadContext({
+  references: nextReferences,
   row,
   rowId,
   rowClock,
 }: {
-  enabled: boolean;
-  field?: YDatabaseField;
-  schema: FormulaFieldSchema[];
+  references: FormulaExternalReferences;
   row?: YDatabaseRow;
   rowId: string;
   /** Bumps when the row's cells change. */
   rowClock: number;
-}): { context: ReadFieldValueContext; revision: number } {
+}): { context: ReadFieldValueContext; revision: string } {
   const database = useDatabase();
   const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
-  const references = useMemo(
-    () => (enabled && field ? collectFormulaExternalReferences(field, schema) : NO_EXTERNAL_REFERENCES),
-    [enabled, field, schema]
-  );
+  // Recomputed references to the same fields keep one identity, so a draft
+  // being typed does not re-subscribe on every keystroke.
+  const referencesKey = formulaExternalReferencesKey(nextReferences);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const references = useMemo(() => nextReferences, [referencesKey]);
+  const loadersRef = useRef<RelatedRowLoaders>({ loadView, createRow, getViewIdFromDatabaseId });
+
+  useEffect(() => {
+    loadersRef.current = { loadView, createRow, getViewIdFromDatabaseId };
+  }, [loadView, createRow, getViewIdFromDatabaseId]);
 
   // Member names (Person, Created by, Last edited by).
   const { users } = useMentionableUsersWithAutoFetch(references.people);
   const members = useMemo(() => memberNames(users), [users]);
 
-  // Related row titles.
-  const hasRelations = references.relations.length > 0;
-  const labelRevision = useSyncExternalStore(
-    hasRelations ? subscribeRelationGroupLabels : noopSubscribe,
-    hasRelations ? getRelationGroupLabelRevision : zeroRevision,
-    hasRelations ? getRelationGroupLabelRevision : zeroRevision
-  );
-  const relatedRows = useMemo(() => {
+  // Related row titles: re-render only when one of this row's titles changes.
+  const relatedRows = useMemo<RelatedRow[]>(() => {
     void rowClock;
     const cells = row?.get(YjsDatabaseKey.cells);
 
@@ -166,18 +191,30 @@ export function useFormulaCellReadContext({
       }))
     );
   }, [references.relations, row, rowClock]);
+  const subscribeTitles = useCallback(
+    (notify: () => void) => {
+      if (relatedRows.length === 0) return noopUnsubscribe;
+      return subscribeRelationGroupLabels(() => {
+        // An edited title is invalidated, not replaced: look it up again. A
+        // fresh cached title makes this a no-op.
+        relatedRows.forEach((key) => ensureRelationGroupLabel({ ...key, ...loadersRef.current }));
+        notify();
+      });
+    },
+    [relatedRows]
+  );
+  const getTitles = useCallback(
+    () => relatedRows.map((key) => readRelationGroupLabel(key)).join(''),
+    [relatedRows]
+  );
+  const titles = useSyncExternalStore(subscribeTitles, getTitles, getTitles);
 
   useEffect(() => {
     if (relatedRows.length === 0) return;
+    relatedRows.forEach((key) => ensureRelationGroupLabel({ ...key, ...loadersRef.current }));
     // Keep this row's titles out of the label cache's eviction.
     return retainRelationGroupLabels(relatedRows);
   }, [relatedRows]);
-
-  useEffect(() => {
-    // A title past its TTL is looked up again once the revision moves.
-    void labelRevision;
-    relatedRows.forEach((key) => ensureRelationGroupLabel({ ...key, loadView, createRow, getViewIdFromDatabaseId }));
-  }, [relatedRows, labelRevision, loadView, createRow, getViewIdFromDatabaseId]);
 
   // Rollup results.
   const [rollupValues, setRollupValues] = useState<Record<string, RollupCellValue>>({});
@@ -201,9 +238,7 @@ export function useFormulaCellReadContext({
         row,
         rowId,
         fieldId: entry.id,
-        loadView,
-        createRow,
-        getViewIdFromDatabaseId,
+        ...loadersRef.current,
       }).then(apply);
       return subscribeRollupCell(cellId, apply);
     });
@@ -212,8 +247,10 @@ export function useFormulaCellReadContext({
       cancelled = true;
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
-  }, [references.rollups, database, row, rowId, rowClock, databaseDoc, loadView, createRow, getViewIdFromDatabaseId]);
+  }, [references.rollups, database, row, rowId, rowClock, databaseDoc]);
 
+  const hasRelations = references.relations.length > 0;
+  const hasRollups = references.rollups.length > 0;
   const context = useMemo<ReadFieldValueContext>(
     () => ({
       getUserName: members.getUserName,
@@ -221,10 +258,10 @@ export function useFormulaCellReadContext({
       getRelatedRowTitle: hasRelations
         ? (relationField, relatedRowId) => readRelationGroupLabel({ relationField, relatedRowId }) || undefined
         : undefined,
-      getRollupValue: references.rollups.length > 0 ? (fieldId) => rollupValues[fieldId] : undefined,
+      getRollupValue: hasRollups ? (fieldId) => rollupValues[fieldId] : undefined,
     }),
-    [members, hasRelations, references.rollups.length, rollupValues]
+    [members, hasRelations, hasRollups, rollupValues]
   );
 
-  return { context, revision: labelRevision };
+  return { context, revision: titles };
 }
