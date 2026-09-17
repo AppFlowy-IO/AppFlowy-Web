@@ -99,13 +99,6 @@ export interface DatabaseContextState {
    * replaced by the widget header and the viewport is the row height.
    */
   isDashboardWidget?: boolean;
-  /**
-   * Dashboard global filters resolved for this database (plain filter nodes in
-   * the persisted view-filter shape). They are AND-ed with the view's own
-   * filters by `useRowOrdersSelector`; a widget without a mapped property
-   * receives none.
-   */
-  extraFilters?: DashboardExtraFilter[];
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;
@@ -161,6 +154,17 @@ export interface DatabaseContextState {
 }
 
 export const DatabaseContext = createContext<DatabaseContextState | null>(null);
+
+/**
+ * Dashboard global filters resolved for this database (plain filter nodes in
+ * the persisted view-filter shape). They are AND-ed with the view's own
+ * filters by `useRowOrdersSelector`; a widget without a mapped property
+ * receives none. Kept out of `DatabaseContext` so a filter change only
+ * re-renders the row selectors, not every database context consumer.
+ */
+export const DatabaseExtraFiltersContext = createContext<DashboardExtraFilter[] | undefined>(undefined);
+
+export const useDatabaseExtraFilters = () => useContext(DatabaseExtraFiltersContext);
 
 export const useDatabaseContext = () => {
   const context = useContext(DatabaseContext);

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { useDashboardLayoutSetting, useReadOnly, useUpdateDashboardSetting } from '@/application/database-yjs';
+import { useDashboardShowWidgetTitles, useReadOnly, useUpdateDashboardSetting } from '@/application/database-yjs';
 import { DatabaseViewLayout } from '@/application/types';
 import { ReactComponent as ShowIcon } from '@/assets/icons/show.svg';
 import Layout from '@/components/database/components/settings/Layout';
@@ -25,7 +25,7 @@ import type { ReactNode } from 'react';
 function DashboardSettings({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
-  const { showWidgetTitles } = useDashboardLayoutSetting();
+  const showWidgetTitles = useDashboardShowWidgetTitles();
   const updateSetting = useUpdateDashboardSetting();
 
   return (

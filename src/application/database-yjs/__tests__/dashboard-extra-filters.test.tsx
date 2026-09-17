@@ -5,6 +5,7 @@ import * as Y from 'yjs';
 import {
   DatabaseContext,
   DatabaseContextState,
+  DatabaseExtraFiltersContext,
   FieldType,
   FilterType,
   TextFilterCondition,
@@ -151,10 +152,13 @@ function renderRowOrders(fixture: Fixture, initialExtraFilters?: DashboardExtraF
       rowMap: fixture.rowMap,
       workspaceId: 'workspace-id',
       isDashboardWidget: true,
-      extraFilters: current.extraFilters,
     };
 
-    return <DatabaseContext.Provider value={value}>{children}</DatabaseContext.Provider>;
+    return (
+      <DatabaseContext.Provider value={value}>
+        <DatabaseExtraFiltersContext.Provider value={current.extraFilters}>{children}</DatabaseExtraFiltersContext.Provider>
+      </DatabaseContext.Provider>
+    );
   };
 
   const hook = renderHook(() => useRowOrdersSelector(), { wrapper });

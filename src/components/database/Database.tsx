@@ -11,6 +11,7 @@ import {
   retainDatabaseRowDocSeedCache,
 } from '@/application/database-blob';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
+import { DatabaseExtraFiltersContext } from '@/application/database-yjs/context';
 import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
 import { hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@/application/database-yjs/history';
@@ -1481,7 +1482,6 @@ function Database(props: Database2Props) {
       isDocumentBlock: _isDocumentBlock,
       embeddedHeight,
       isDashboardWidget,
-      extraFilters,
       navigateToRow: handleOpenRow,
       loadView,
       bindViewSync,
@@ -1532,7 +1532,6 @@ function Database(props: Database2Props) {
       _isDocumentBlock,
       embeddedHeight,
       isDashboardWidget,
-      extraFilters,
       handleOpenRow,
       loadView,
       bindViewSync,
@@ -1611,42 +1610,44 @@ function Database(props: Database2Props) {
   }
 
   return (
-    <div className={'flex min-h-0 w-full flex-1 justify-center'}>
-      <DatabaseContextProvider value={mainContextValue}>
-        {rowId ? (
-          <DatabaseRow appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
-        ) : (
-          <div
-            className={cn(
-              'appflowy-database relative flex w-full select-text flex-col',
-              shouldUseFixedViewport ? 'min-h-0 flex-1 overflow-hidden' : 'overflow-visible'
-            )}
-          >
-            <DatabaseViews
-              visibleViewIds={visibleViewIds}
-              databasePageId={databasePageId}
-              viewName={databaseName}
-              onChangeView={onChangeView}
-              onViewAdded={onViewAdded}
-              activeViewId={activeViewId}
-              fixedHeight={embeddedHeight}
-              onViewIdsChanged={onViewIdsChanged}
-              onReorderViews={onReorderViews}
-            />
-          </div>
-        )}
-      </DatabaseContextProvider>
-      {modalState.rowId && modalContextValue && (
-        <DatabaseContextProvider value={modalContextValue}>
-          <DatabaseRowModal
-            rowId={modalState.rowId}
-            open={Boolean(modalState.rowId)}
-            openPage={onOpenRowPage}
-            onOpenChange={handleModalOpenChange}
-          />
+    <DatabaseExtraFiltersContext.Provider value={extraFilters}>
+      <div className={'flex min-h-0 w-full flex-1 justify-center'}>
+        <DatabaseContextProvider value={mainContextValue}>
+          {rowId ? (
+            <DatabaseRow appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
+          ) : (
+            <div
+              className={cn(
+                'appflowy-database relative flex w-full select-text flex-col',
+                shouldUseFixedViewport ? 'min-h-0 flex-1 overflow-hidden' : 'overflow-visible'
+              )}
+            >
+              <DatabaseViews
+                visibleViewIds={visibleViewIds}
+                databasePageId={databasePageId}
+                viewName={databaseName}
+                onChangeView={onChangeView}
+                onViewAdded={onViewAdded}
+                activeViewId={activeViewId}
+                fixedHeight={embeddedHeight}
+                onViewIdsChanged={onViewIdsChanged}
+                onReorderViews={onReorderViews}
+              />
+            </div>
+          )}
         </DatabaseContextProvider>
-      )}
-    </div>
+        {modalState.rowId && modalContextValue && (
+          <DatabaseContextProvider value={modalContextValue}>
+            <DatabaseRowModal
+              rowId={modalState.rowId}
+              open={Boolean(modalState.rowId)}
+              openPage={onOpenRowPage}
+              onOpenChange={handleModalOpenChange}
+            />
+          </DatabaseContextProvider>
+        )}
+      </div>
+    </DatabaseExtraFiltersContext.Provider>
   );
 }
 

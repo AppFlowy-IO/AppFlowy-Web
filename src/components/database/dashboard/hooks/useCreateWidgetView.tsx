@@ -112,7 +112,6 @@ export function useCreateWidgetView(): {
           // The new view is a regular tab of the other database.
           isDocumentBlock: false,
           isDashboardWidget: false,
-          extraFilters: undefined,
         };
 
         return (

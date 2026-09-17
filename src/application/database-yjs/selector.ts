@@ -21,6 +21,7 @@ import { DEFAULT_FIELD_WRAP, getCell, MIN_COLUMN_WIDTH } from '@/application/dat
 import {
   useDatabase,
   useDatabaseContext,
+  useDatabaseExtraFilters,
   useDatabaseFields,
   useDatabaseView,
   useDatabaseViewId,
@@ -2232,8 +2233,8 @@ export function useRowOrdersSelector() {
     loadRowFromSeed,
     blobPrefetchComplete,
     seedsReady,
-    extraFilters,
   } = useDatabaseContext();
+  const extraFilters = useDatabaseExtraFilters();
   // Dashboard global filters ride along with the view's own filters for
   // evaluation and signatures; observers stay on the real Yjs array. A global
   // filter whose mapped field changed type is skipped (read live, so the field
@@ -3361,6 +3362,16 @@ export function useDashboardLayoutSetting() {
   const store = useMemo(() => createDashboardLayoutStore(databaseDoc, viewId), [databaseDoc, viewId]);
 
   return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+}
+
+/** Only the dashboard's widget-title flag: row or filter edits do not re-render the caller. */
+export function useDashboardShowWidgetTitles() {
+  const { databaseDoc } = useDatabaseContext();
+  const viewId = useDatabaseViewId();
+  const store = useMemo(() => createDashboardLayoutStore(databaseDoc, viewId), [databaseDoc, viewId]);
+  const getShowWidgetTitles = useCallback(() => store.getSnapshot().showWidgetTitles, [store]);
+
+  return useSyncExternalStore(store.subscribe, getShowWidgetTitles, getShowWidgetTitles);
 }
 
 export function getPrimaryFieldId(database: YDatabase) {

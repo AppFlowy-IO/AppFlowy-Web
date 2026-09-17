@@ -15,11 +15,7 @@ jest.mock('react-i18next', () => ({
 }));
 
 jest.mock('@/application/database-yjs', () => ({
-  useDashboardLayoutSetting: () => ({
-    rows: [],
-    globalFilters: [],
-    showWidgetTitles: mockShowWidgetTitles,
-  }),
+  useDashboardShowWidgetTitles: () => mockShowWidgetTitles,
   useReadOnly: () => mockReadOnly,
   useUpdateDashboardSetting: () => mockUpdateSetting,
 }));
