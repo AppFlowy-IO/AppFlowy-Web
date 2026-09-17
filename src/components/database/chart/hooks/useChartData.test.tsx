@@ -33,14 +33,14 @@ import {
   YDatabaseField,
   YDatabaseFields,
   YDatabaseFieldTypeOption,
+  YDatabaseCell,
   YDatabaseRow,
   YjsDatabaseKey,
   YjsEditorKey,
   YMapFieldTypeOption,
 } from '@/application/types';
 
-
-import { sortByFieldOrder, useChartData } from './useChartData';
+import { sortByFieldOrder, touchesChartedRowData, useChartData } from './useChartData';
 
 function addField(
   fields: YDatabaseFields,
@@ -292,6 +292,66 @@ describe('useChartData Number chart', () => {
     await waitFor(() => expect(result.current.numberValue).toBe(45));
   });
 
+  it('recomputes when the summed cell is first filled in', async () => {
+    const settings: ChartLayoutSettings = {
+      ...baseSettings,
+      aggregationType: ChartAggregationType.Sum,
+      yFieldId: amountFieldId,
+    };
+    const { rowMetas } = setup(settings, ['r1', 'r2'], { r1: '10' });
+
+    const { result } = renderHook(() => useChartData({ settings }));
+
+    await waitFor(() => expect(result.current.numberValue).toBe(10));
+
+    act(() => {
+      const row = rowMetas.r2.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+      const cell = new Y.Map() as YDatabaseCell;
+
+      cell.set(YjsDatabaseKey.field_type, FieldType.Number);
+      cell.set(YjsDatabaseKey.data, '7');
+      row.get(YjsDatabaseKey.cells).set(amountFieldId, cell);
+    });
+
+    await waitFor(() => expect(result.current.numberValue).toBe(17));
+  });
+
+  it('does not recompute for edits the chart does not read', async () => {
+    const settings: ChartLayoutSettings = {
+      ...baseSettings,
+      aggregationType: ChartAggregationType.Sum,
+      yFieldId: amountFieldId,
+    };
+    const { rowMetas } = setup(settings, ['r1'], { r1: '10' });
+    const nextFrame = () => act(() => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())));
+    let renders = 0;
+
+    const { result } = renderHook(() => {
+      renders += 1;
+      return useChartData({ settings });
+    });
+
+    await waitFor(() => expect(result.current.numberValue).toBe(10));
+    await nextFrame();
+    const settled = renders;
+    const row = rowMetas.r1.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+    act(() => {
+      const notes = new Y.Map() as YDatabaseCell;
+
+      row.get(YjsDatabaseKey.cells).set('notes', notes);
+      notes.set(YjsDatabaseKey.data, 'unrelated');
+      row.set(YjsDatabaseKey.last_modified, '99');
+    });
+    await nextFrame();
+    expect(renders).toBe(settled);
+
+    act(() => {
+      row.get(YjsDatabaseKey.cells).get(amountFieldId).set(YjsDatabaseKey.data, '12');
+    });
+    await waitFor(() => expect(result.current.numberValue).toBe(12));
+  });
+
   it('returns a single zero item when no rows match', async () => {
     setup(baseSettings, [], {});
 
@@ -300,6 +360,39 @@ describe('useChartData Number chart', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.chartData).toEqual([expect.objectContaining({ value: 0, rowIds: [] })]);
     expect(result.current.numberValue).toBe(0);
+  });
+});
+
+describe('touchesChartedRowData', () => {
+  const event = (path: string[], keys: string[] = []) => ({
+    path,
+    changes: { keys: new Map(keys.map((key) => [key, {}])) },
+  });
+  const row = YjsEditorKey.database_row;
+  const cells = YjsDatabaseKey.cells;
+  const watched = { fieldIds: new Set(['amount']), rowTimes: false };
+
+  it('reacts to the row or its cells map being replaced', () => {
+    expect(touchesChartedRowData(event([], [row]), watched)).toBe(true);
+    expect(touchesChartedRowData(event([], ['meta']), watched)).toBe(false);
+    expect(touchesChartedRowData(event([row], [cells]), watched)).toBe(true);
+  });
+
+  it('reacts to watched cells only', () => {
+    expect(touchesChartedRowData(event([row, cells], ['amount']), watched)).toBe(true);
+    expect(touchesChartedRowData(event([row, cells], ['notes']), watched)).toBe(false);
+    expect(touchesChartedRowData(event([row, cells, 'amount'], [YjsDatabaseKey.data]), watched)).toBe(true);
+    expect(touchesChartedRowData(event([row, cells, 'notes', YjsDatabaseKey.data]), watched)).toBe(false);
+    expect(touchesChartedRowData(event(['meta', cells, 'amount']), watched)).toBe(false);
+  });
+
+  it('reacts to row timestamps only when grouping by them', () => {
+    expect(touchesChartedRowData(event([row], [YjsDatabaseKey.last_modified]), watched)).toBe(false);
+    expect(touchesChartedRowData(event([row], [YjsDatabaseKey.height]), watched)).toBe(false);
+    expect(touchesChartedRowData(event([row], [YjsDatabaseKey.last_modified]), { ...watched, rowTimes: true })).toBe(
+      true
+    );
+    expect(touchesChartedRowData(event([row], [YjsDatabaseKey.created_at]), { ...watched, rowTimes: true })).toBe(true);
   });
 });
 

@@ -107,6 +107,38 @@ function bucketDate(date: Dayjs, condition: DateGroupCondition): GroupValue {
   }
 }
 
+function isFieldId(value: string | null | undefined): value is string {
+  return Boolean(value);
+}
+
+/**
+ * Whether a row-doc change (observed from the row's data section) can change
+ * what the chart reads: a watched cell, the cells map or row itself being
+ * replaced, or (when grouping by created / edited time) the row timestamps.
+ */
+export function touchesChartedRowData(
+  event: { path: Array<string | number>; changes: { keys: ReadonlyMap<string, unknown> } },
+  watched: { fieldIds: ReadonlySet<string>; rowTimes: boolean }
+): boolean {
+  const { path } = event;
+
+  // Map events only down to the cells map; a cell's own content is deeper.
+  if (path.length === 0) return event.changes.keys.has(YjsEditorKey.database_row);
+  if (path[0] !== YjsEditorKey.database_row) return false;
+  if (path.length === 1) {
+    const { keys } = event.changes;
+
+    return (
+      keys.has(YjsDatabaseKey.cells) ||
+      (watched.rowTimes && (keys.has(YjsDatabaseKey.created_at) || keys.has(YjsDatabaseKey.last_modified)))
+    );
+  }
+
+  if (path[1] !== YjsDatabaseKey.cells) return false;
+  if (path.length === 2) return [...event.changes.keys.keys()].some((fieldId) => watched.fieldIds.has(fieldId));
+  return watched.fieldIds.has(String(path[2]));
+}
+
 /**
  * Get cell value for grouping (x-axis field)
  */
@@ -789,17 +821,24 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   // typed into a table next to this chart on a dashboard, or a collaborator's
   // edit) changes neither `rowOrders` nor `rowMetas`. Observe the row data and
   // bump a clock, at most once per frame, so the derivations below rerun.
+  // Only the cells the chart reads count (edits in other columns, row height
+  // or the last-modified stamp do not), read from a ref so a settings change
+  // never re-subscribes.
   const [rowDataClock, setRowDataClock] = useState(0);
+  const xFieldType = isNumberChart ? null : fieldType;
+  const watchedRef = useRef({ fieldIds: new Set<string>(), rowTimes: false });
+
+  watchedRef.current = {
+    fieldIds: new Set([isNumberChart ? null : resolvedXFieldId, yAxisField ? yFieldId : null].filter(isFieldId)),
+    // CreatedTime / LastEditedTime groups read the row's own timestamps.
+    rowTimes: xFieldType === FieldType.CreatedTime || xFieldType === FieldType.LastEditedTime,
+  };
 
   useEffect(() => {
     if (!needsRowDocs || !rowsLoaded || !rowOrders || !rowMetas) return;
     let frame: number | null = null;
     const handleChange = (events: Y.YEvent[]) => {
-      const touchesRowData = events.some(
-        (event) =>
-          event.path[0] === YjsEditorKey.database_row ||
-          (event.path.length === 0 && (event as Y.YMapEvent<unknown>).keysChanged?.has(YjsEditorKey.database_row))
-      );
+      const touchesRowData = events.some((event) => touchesChartedRowData(event, watchedRef.current));
 
       if (!touchesRowData || frame !== null) return;
       frame = window.requestAnimationFrame(() => {
@@ -825,6 +864,10 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
 
   // === Render-time derivation ===
   const isLoading = !rowsLoaded;
+  // The same ids keep the same array: filtered and sorted views re-emit
+  // `rowOrders` after unrelated changes, and cell edits bump `rowDataClock`.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stableRowOrders = useMemo(() => rowOrders, [rowOrdersReady, rowIdsKey]);
 
   // The Number chart depends only on the aggregation, the Y field and the rows
   // (row docs only when it aggregates the Y field), so title / number format /
@@ -840,7 +883,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     if (!isNumberChart || !rowsLoaded) return EMPTY_CHART_DATA;
     const next = computeNumberChartData({
       settings: { aggregationType },
-      rowOrders,
+      rowOrders: stableRowOrders,
       rowMetas: numberRowMetas,
       yField: yAxisField,
     });
@@ -848,7 +891,16 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     if (chartDataEqual(numberChartDataRef.current, next)) return numberChartDataRef.current;
     numberChartDataRef.current = next;
     return next;
-  }, [isNumberChart, rowsLoaded, aggregationType, yAxisField, rowOrders, numberRowMetas, fieldsClock, rowDataClock]);
+  }, [
+    isNumberChart,
+    rowsLoaded,
+    aggregationType,
+    yAxisField,
+    stableRowOrders,
+    numberRowMetas,
+    fieldsClock,
+    rowDataClock,
+  ]);
 
   // Pure derivation. Yjs hydrates row docs in micro-batches, so this can
   // recompute many times during a single page load — but downstream chart
@@ -865,7 +917,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     return computeChartData({
       settings,
       resolvedXFieldId,
-      rowOrders,
+      rowOrders: stableRowOrders,
       rowMetas,
       xAxisField,
       fieldType,
@@ -878,7 +930,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     isNumberChart,
     settings,
     resolvedXFieldId,
-    rowOrders,
+    stableRowOrders,
     rowMetas,
     xAxisField,
     fieldType,
