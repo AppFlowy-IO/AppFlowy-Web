@@ -11,6 +11,7 @@ import {
   SlashCommandSelectors,
   TimelineSelectors,
 } from '../../support/selectors';
+import { mockProSubscription } from '../../support/subscription-test-helpers';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const { Given, When, Then, After } = createBdd();
@@ -52,6 +53,7 @@ async function addTimelinePage(page: Page) {
 
 Given('I am signed in to a fresh workspace', async ({ page, request, $testInfo }) => {
   $testInfo.setTimeout(240_000);
+  await mockProSubscription(page);
   await signInAndWaitForApp(page, request, generateRandomEmail());
   await expect(page).toHaveURL(/\/app/, { timeout: 30_000 });
   await page.waitForTimeout(3000);

@@ -34,6 +34,7 @@ import {
   LoadViewMeta,
   RowId,
   SearchMentions,
+  Subscription,
   UIVariant,
   UpdatePagePayload,
   View,
@@ -201,6 +202,7 @@ export interface Database2Props {
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
+  getSubscriptions?: () => Promise<Subscription[]>;
   searchMentions?: SearchMentions;
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
   embeddedHeight?: number;
@@ -1496,6 +1498,7 @@ function Database(props: Database2Props) {
       eventEmitter: props.eventEmitter,
       getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
       loadDatabaseRelations,
+      getSubscriptions: props.getSubscriptions,
       searchMentions,
       loadViews: loadViews ? loadViewsForContext : undefined,
       variant: props.variant,
@@ -1545,6 +1548,7 @@ function Database(props: Database2Props) {
       props.eventEmitter,
       props.getViewIdFromDatabaseId,
       loadDatabaseRelations,
+      props.getSubscriptions,
       searchMentions,
       loadViews,
       loadViewsForContext,
