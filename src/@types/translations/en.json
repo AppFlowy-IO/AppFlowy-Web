@@ -282,7 +282,7 @@
     "documentFromV010": "Document from v0.1.0",
     "databaseFromV010": "Database from v0.1.0",
     "notionZip": "Notion Exported Zip File",
-    "confluenceZip": "Confluence HTML Export (.zip)",
+    "confluenceZip": "Confluence HTML or CSV (.zip)",
     "csv": "CSV",
     "database": "Database",
     "success": "Imported successfully",
@@ -872,7 +872,7 @@
       "description": "Manage your AppFlowy workspace data",
       "importWorkspace": {
         "title": "Import your workspace",
-        "tooltip": "Create a new workspace from an AppFlowy backup, Notion export, or Confluence HTML export ZIP file",
+        "tooltip": "Create a new workspace from an AppFlowy backup, Notion export, or Confluence space export (HTML or CSV ZIP)",
         "button": "Import",
         "success": "Import started. We will send a confirmation email once the import is complete.",
         "failed": "Failed to import workspace"
@@ -3637,7 +3637,7 @@
     "importSuccessMessage": "We'll notify you when the import is complete. Select the new workspace from the workspace switcher to view your imported pages.",
     "importFailed": "Import failed, please check the file format",
     "dropNotionFile": "Drop your Notion zip file here to upload, or click to browse",
-    "dropConfluenceFile": "Drop your Confluence HTML export (.zip) here to upload, or click to browse",
+    "dropConfluenceFile": "Drop your Confluence HTML or CSV space export (.zip) here to upload, or click to browse",
     "dropAppFlowyFile": "Drop your AppFlowy zip file here to upload, or click to browse",
     "error": {
       "pageNameIsEmpty": "The page name is empty, please try another one"
@@ -4370,6 +4370,9 @@
   },
   "timeline": {
     "menuName": "Timeline",
+    "creationRequiresPro": "Creating a Timeline view requires a Pro workspace.",
+    "creationCheckingPlan": "Checking workspace plan…",
+    "creationPlanUnavailable": "Unable to check the workspace plan. Try again.",
     "referencedTimelinePrefix": "View of",
     "settings": {
       "name": "Timeline settings",

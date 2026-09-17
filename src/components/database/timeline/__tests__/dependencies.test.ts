@@ -24,6 +24,34 @@ const geometry: TimelineGeometry = {
 };
 const { columnWidth } = geometry.preset;
 
+test.each([-2, 0, 1])('moving a timed bar by %i days preserves its time and duration', (days) => {
+  const preview = applyDragDelta(
+    geometry,
+    {
+      rowId: 'a',
+      start: new Date(2020, 10, 5, 9, 7, 12),
+      endExclusive: new Date(2020, 10, 5, 10, 7, 12),
+      allDay: false,
+      mode: 'move',
+      shift: TimelineDependencyShift.MaintainGap,
+      followers: [
+        {
+          rowId: 'b',
+          start: new Date(2020, 10, 7, 14, 15),
+          endExclusive: new Date(2020, 10, 7, 14, 45),
+          allDay: false,
+        },
+      ],
+    },
+    columnWidth * (days + 0.1)
+  );
+
+  expect(preview.start).toEqual(new Date(2020, 10, 5 + days, 9, 7, 12));
+  expect(preview.endExclusive).toEqual(new Date(2020, 10, 5 + days, 10, 7, 12));
+  expect(preview.followers[0].start).toEqual(new Date(2020, 10, 7 + days, 14, 15));
+  expect(preview.followers[0].endExclusive).toEqual(new Date(2020, 10, 7 + days, 14, 45));
+});
+
 describe('dependency graph', () => {
   const rows = ['a', 'b', 'c', 'd'];
   const relations = new Map<string, string[]>([

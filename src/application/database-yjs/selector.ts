@@ -13,7 +13,6 @@ import {
 
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { createCalendarLayoutStore } from '@/application/database-yjs/calendar-layout';
-import { createTimelineLayoutStore } from '@/application/database-yjs/timeline-layout';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
@@ -50,7 +49,6 @@ import {
   parseFilter,
 } from '@/application/database-yjs/filter';
 import { DEFAULT_GALLERY_LAYOUT_SETTINGS } from '@/application/database-yjs/gallery-layout';
-import { createLocalFirstObserver } from '@/application/database-yjs/local-first-observer';
 import {
   areGroupRowsHydrated,
   getGroupColumns,
@@ -70,6 +68,9 @@ import {
   useBackgroundRowDocLoader,
   useRollupFieldObservers,
 } from '@/application/database-yjs/hooks';
+import { useTimelineRowSource } from '@/application/database-yjs/hooks/TimelineRowValuesProvider';
+import { useTimelineRowValues } from '@/application/database-yjs/hooks/useTimelineRowValues';
+import { createLocalFirstObserver } from '@/application/database-yjs/local-first-observer';
 import { createNumberGroupingPolicy, NumberGroupingPolicy } from '@/application/database-yjs/number-grouping';
 import {
   ensureRelationGroupLabel,
@@ -94,6 +95,7 @@ import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/applicati
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { sortBy } from '@/application/database-yjs/sort';
+import { createTimelineLayoutStore } from '@/application/database-yjs/timeline-layout';
 import {
   DatabaseViewLayout,
   FieldId,
@@ -3150,28 +3152,100 @@ export function useTimelineEventsSelector() {
   const setting = useTimelineLayoutSetting();
   const startFieldId = setting?.fieldId || '';
   const endFieldId = setting?.endFieldId && setting.endFieldId !== startFieldId ? setting.endFieldId : '';
-  const starts = useDateFieldEventsSelector(startFieldId);
-  const ends = useDateFieldEventsSelector(endFieldId);
-  const { field: endField } = useFieldSelector(endFieldId);
-  const endFieldType = endField ? (Number(endField.get(YjsDatabaseKey.type)) as FieldType) : null;
-  const hasEndField =
-    endFieldId !== '' &&
-    endFieldType !== null &&
-    [FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime].includes(endFieldType);
+  const { field: startField, clock: startClock } = useFieldSelector(startFieldId);
+  const { field: endField, clock: endClock } = useFieldSelector(endFieldId);
+  const primaryFieldId = usePrimaryFieldId();
+  const { field: primaryField, clock: primaryClock } = useFieldSelector(primaryFieldId || '');
+  const { rowOrders } = useTimelineRowSource();
+  const isDateField = (field?: YDatabaseField | null) =>
+    field &&
+    [FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime].includes(
+      Number(field.get(YjsDatabaseKey.type))
+    );
+  const hasStartField = Boolean(isDateField(startField));
+  const hasEndField = Boolean(endFieldId && isDateField(endField));
+  const parseRow = useCallback(
+    (rowId: string, doc: YDoc): CalendarEvent | undefined => {
+      // Y.Map identity stays stable when field formats change.
+      void startClock;
+      void endClock;
+      void primaryClock;
+      if (!startField || !hasStartField || !primaryFieldId) return undefined;
+      const docs = { [rowId]: doc };
+      const primaryCell = getCell(rowId, primaryFieldId, docs);
+      const title = primaryCell && primaryField ? decodeCellToText(primaryCell, primaryField) : '';
+      const row = (doc.getMap(YjsEditorKey.data_section) as YSharedRoot).get(YjsEditorKey.database_row);
 
-  const events = useMemo(() => {
-    if (!hasEndField) return starts.events;
-    const endByRow = new Map(ends.events.map((event) => [event.rowId, event] as const));
+      if (!row) return undefined;
+      const getDate = (timestamp: string) =>
+        dayjs(timestamp.length === 10 ? Number(timestamp) * 1000 : timestamp).toDate();
+      const readDate = (field: YDatabaseField, fieldId: string): CalendarEvent => {
+        const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+        const cell = getCell(rowId, fieldId, docs);
+        const value = cell ? (parseYDatabaseCellToCell(cell, field) as DateTimeCell) : undefined;
+        const event: CalendarEvent = { id: rowId, rowId, title, allDay: !value?.includeTime };
+        const timestamp =
+          fieldType === FieldType.CreatedTime
+            ? row.get(YjsDatabaseKey.created_at)?.toString()
+            : fieldType === FieldType.LastEditedTime
+            ? row.get(YjsDatabaseKey.last_modified)?.toString()
+            : value?.data;
 
-    return starts.events.map((event) => {
-      const end = endByRow.get(event.rowId)?.start;
+        if (!timestamp) return event;
+        event.start = getDate(timestamp);
+        if (fieldType === FieldType.DateTime) {
+          event.isRange = Boolean(value?.isRange);
+          event.end =
+            value?.endTimestamp && value.isRange
+              ? getDate(value.endTimestamp)
+              : dayjs(event.start).add(30, 'minute').toDate();
+        }
 
-      if (!end || !event.start || end < event.start) return { ...event, end: undefined, isRange: false };
-      return { ...event, end, isRange: true };
-    });
-  }, [ends.events, hasEndField, starts.events]);
+        return event;
+      };
 
-  return { events, emptyEvents: starts.emptyEvents, hasEndField };
+      const event = readDate(startField, startFieldId);
+
+      if (event.start && hasEndField && endField) {
+        const end = readDate(endField, endFieldId).start;
+
+        event.end = end && end >= event.start ? end : undefined;
+        event.isRange = Boolean(event.end);
+      }
+
+      return event;
+    },
+    [
+      endClock,
+      endField,
+      endFieldId,
+      hasEndField,
+      hasStartField,
+      primaryClock,
+      primaryField,
+      primaryFieldId,
+      startClock,
+      startField,
+      startFieldId,
+    ]
+  );
+  const values = useTimelineRowValues(parseRow);
+  const { events, emptyEvents } = useMemo(() => {
+    const events: CalendarEvent[] = [];
+    const emptyEvents: CalendarEvent[] = [];
+
+    if (hasStartField && primaryFieldId) {
+      (rowOrders ?? []).forEach(({ id }) => {
+        const event = values.get(id) ?? { id, rowId: id, title: '', allDay: true };
+
+        (event.start ? events : emptyEvents).push(event);
+      });
+    }
+
+    return { events, emptyEvents };
+  }, [hasStartField, primaryFieldId, rowOrders, values]);
+
+  return { events, emptyEvents, hasEndField };
 }
 
 /**

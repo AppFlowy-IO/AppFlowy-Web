@@ -66,6 +66,234 @@ function BackgroundLoader({ scope, suspend = false }: { scope: string; suspend?:
 }
 
 describe('useBackgroundRowDocLoader', () => {
+  it('retries realtime hydration even when a detached seed is already readable', async () => {
+    const { databaseDoc, databaseId, viewId } = createDatabaseFixture();
+    const seed = createRowDoc('initial-row', databaseId, {});
+    const live = new Y.Doc() as YDoc;
+
+    Y.applyUpdate(live, Y.encodeStateAsUpdate(seed));
+    const ensureRow = jest.fn().mockRejectedValueOnce(new Error('temporarily unavailable')).mockResolvedValue(live);
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      databaseDoc,
+      databasePageId: viewId,
+      readOnly: false,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      seedsReady: true,
+      blobPrefetchComplete: true,
+      ensureRow,
+      peekRowDocFromSeed: () => seed,
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { result, unmount } = renderHook(() => useBackgroundRowDocLoader(true, 'seed-sync-retry', 'live'), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current.cachedRowDocs['initial-row']).toBe(seed));
+    await waitFor(() => expect(ensureRow).toHaveBeenCalledTimes(2));
+    expect(ensureRow).toHaveBeenLastCalledWith('initial-row');
+    unmount();
+    live.destroy();
+    seed.destroy();
+    databaseDoc.destroy();
+  });
+
+  it('stops connecting offscreen rows after the live consumer unmounts', async () => {
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const rowIds = Array.from({ length: 25 }, (_, index) => `live-row-${index}`);
+    const docs = Object.fromEntries(rowIds.map((id) => [id, createRowDoc(id, databaseId, {})]));
+    let resolveRows!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      resolveRows = resolve;
+    });
+    const ensureRow = jest.fn(async (id: string) => {
+      await pending;
+      return docs[id];
+    });
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      databaseDoc,
+      databasePageId: viewId,
+      readOnly: false,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      seedsReady: true,
+      blobPrefetchComplete: true,
+      ensureRow,
+      peekRowDocFromSeed: (id) => docs[id] ?? null,
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { unmount } = renderHook(() => useBackgroundRowDocLoader(true, 'live-unmount', 'live'), { wrapper });
+
+    await waitFor(() => expect(ensureRow).toHaveBeenCalledTimes(12));
+    unmount();
+    await act(async () => {
+      resolveRows();
+    });
+    expect(ensureRow).toHaveBeenCalledTimes(12);
+    Object.values(docs).forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
+  });
+
+  it('finishes bounded detached hydration before warm-mount fallback loading', async () => {
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const rowIds = Array.from({ length: 257 }, (_, index) => `warm-row-${index}`);
+    const seedDocs = Object.fromEntries(rowIds.map((id) => [id, createRowDoc(id, databaseId, {})]));
+    const loadRowFromSeed = jest.fn(async (id: string) => seedDocs[id]);
+    const ensureRow = jest.fn();
+    const peekRowDocFromSeed = jest.fn((id: string) => seedDocs[id] ?? null);
+    const changes: BackgroundRowDocChange[] = [];
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    const contextValue = {
+      activeViewId: viewId,
+      databaseDoc,
+      databasePageId: viewId,
+      readOnly: false,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      seedsReady: true,
+      blobPrefetchComplete: true,
+      loadRowFromSeed,
+      ensureRow,
+      peekRowDocFromSeed,
+    } as DatabaseContextState;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { result, unmount } = renderHook(
+      () => {
+        const { cachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(true, 'warm-detached');
+
+        useEffect(
+          () => subscribeToCachedRowDocChanges((change) => changes.push(change)),
+          [subscribeToCachedRowDocChanges]
+        );
+        return cachedRowDocs;
+      },
+      { wrapper }
+    );
+
+    await waitFor(() => expect(Object.keys(result.current)).toHaveLength(257));
+    expect(changes.map(({ added }) => Object.keys(added).length)).toEqual([128, 128, 1]);
+    expect(peekRowDocFromSeed).toHaveBeenCalledTimes(257);
+    expect(loadRowFromSeed).not.toHaveBeenCalled();
+    expect(ensureRow).not.toHaveBeenCalled();
+    unmount();
+    expect(Object.values(seedDocs).every((doc) => !doc.isDestroyed)).toBe(true);
+    Object.values(seedDocs).forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
+  });
+
+  it('keeps fallback loading active when an inactive consumer shares its scope', async () => {
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const rowIds = Array.from({ length: 25 }, (_, index) => `remote-row-${index}`);
+    const remoteDocs = Object.fromEntries(rowIds.map((id) => [id, createRowDoc(id, databaseId, {})]));
+    const loadRowFromSeed = jest.fn(async () => undefined);
+    const ensureRow = jest.fn(async (id: string) => remoteDocs[id]);
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    const contextValue = {
+      activeViewId: viewId,
+      databaseDoc,
+      databasePageId: viewId,
+      readOnly: false,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      seedsReady: false,
+      blobPrefetchComplete: true,
+      loadRowFromSeed,
+      ensureRow,
+    } as DatabaseContextState;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { unmount } = renderHook(
+      () => {
+        useBackgroundRowDocLoader(true, 'mixed-consumers');
+        useBackgroundRowDocLoader(false, 'mixed-consumers');
+      },
+      { wrapper }
+    );
+
+    await waitFor(() => expect(ensureRow).toHaveBeenCalledTimes(25));
+    expect(new Set(ensureRow.mock.calls.map(([id]) => id)).size).toBe(25);
+    unmount();
+    Object.values(remoteDocs).forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
+  });
+
+  it('continues the shared seed pass after its initiating consumer unmounts', () => {
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const rowIds = Array.from({ length: 129 }, (_, index) => `shared-row-${index}`);
+    const seedDocs = Object.fromEntries(rowIds.map((id) => [id, createRowDoc(id, databaseId, {})]));
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    const requestFrame = jest.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    });
+    const cancelFrame = jest.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      frames.delete(id);
+    });
+    const flushFrame = () => {
+      const [id, callback] = frames.entries().next().value!;
+
+      frames.delete(id);
+      void act(() => callback(0));
+    };
+
+    let latestRows: Record<string, YDoc> = {};
+    const Consumer = () => {
+      latestRows = useBackgroundRowDocLoader(true, 'shared-seed-owner').cachedRowDocs;
+      return null;
+    };
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    const contextValue = {
+      activeViewId: viewId,
+      databaseDoc,
+      databasePageId: viewId,
+      readOnly: false,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      seedsReady: true,
+      blobPrefetchComplete: false,
+      peekRowDocFromSeed: (id: string) => seedDocs[id] ?? null,
+    } as DatabaseContextState;
+    const tree = (showOwner: boolean) => (
+      <DatabaseContext.Provider value={contextValue}>
+        {showOwner && <Consumer key='owner' />}
+        <Consumer key='survivor' />
+      </DatabaseContext.Provider>
+    );
+    const { rerender, unmount } = render(tree(true));
+
+    flushFrame();
+    expect(Object.keys(latestRows)).toHaveLength(128);
+    rerender(tree(false));
+    expect(frames.size).toBe(1);
+    flushFrame();
+    expect(Object.keys(latestRows)).toHaveLength(129);
+    unmount();
+    requestFrame.mockRestore();
+    cancelFrame.mockRestore();
+    expect(Object.values(seedDocs).every((doc) => !doc.isDestroyed)).toBe(true);
+    Object.values(seedDocs).forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
+  });
+
   it('publishes seed hydration as bounded row-document deltas', async () => {
     const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
     const rowIds = Array.from({ length: 129 }, (_, index) => `seed-row-${index}`);

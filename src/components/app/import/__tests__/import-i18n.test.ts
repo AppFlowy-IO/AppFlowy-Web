@@ -62,10 +62,13 @@ describe('import panel count strings', () => {
     expect(t('importPanel.importingProgress', { current: 2, total: 7 })).toBe('Importing file 2 of 7');
   });
 
-  it('identifies Confluence HTML exports and reports background import status', async () => {
-    expect(t('importPanel.confluenceZip')).toBe('Confluence HTML Export (.zip)');
+  it('identifies Confluence HTML and CSV space exports and reports background import status', async () => {
+    expect(t('importPanel.confluenceZip')).toBe('Confluence HTML or CSV (.zip)');
     expect(t('web.dropConfluenceFile')).toBe(
-      'Drop your Confluence HTML export (.zip) here to upload, or click to browse'
+      'Drop your Confluence HTML or CSV space export (.zip) here to upload, or click to browse'
+    );
+    expect(t('settings.manageData.importWorkspace.tooltip')).toBe(
+      'Create a new workspace from an AppFlowy backup, Notion export, or Confluence space export (HTML or CSV ZIP)'
     );
     expect(t('importPanel.confluenceImportStarted')).toBe(
       'Confluence import started. Pages will appear in this view when ready.'
@@ -73,7 +76,10 @@ describe('import panel count strings', () => {
 
     const chinese = await createI18n('zh-CN');
 
-    expect(chinese.t('importPanel.confluenceZip')).toBe('Confluence HTML 导出文件 (.zip)');
+    expect(chinese.t('importPanel.confluenceZip')).toBe('Confluence HTML 或 CSV (.zip)');
+    expect(chinese.t('web.dropConfluenceFile')).toBe(
+      '将 Confluence HTML 或 CSV 空间导出文件 (.zip) 拖放到此处上传，或点击浏览'
+    );
     expect(chinese.t('web.importFromConfluence')).toBe('从 Confluence 导入');
   });
 

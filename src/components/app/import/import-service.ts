@@ -264,7 +264,7 @@ export async function importNotionZipToView(input: ImportNotionInput): Promise<I
   return importZipToView(input, createNotionImportTask);
 }
 
-/** Upload a Confluence HTML export ZIP for asynchronous import under the selected view. */
+/** Upload a Confluence HTML or CSV space-export ZIP; the server detects its format. */
 export async function importConfluenceZipToView(input: ImportZipInput): Promise<ImportZipResult> {
   return importZipToView(input, createConfluenceImportTask);
 }

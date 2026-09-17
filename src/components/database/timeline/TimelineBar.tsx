@@ -21,6 +21,15 @@ const CONTENT_GAP = 4;
 const HANDLE_WIDTH = 8;
 const PROGRESS_HANDLE_SIZE = 10;
 
+function isNestedControl(target: EventTarget | null, bar: HTMLElement) {
+  if (!(target instanceof Element)) return false;
+  const control = target.closest(
+    '[data-timeline-control], button, a, input, select, textarea, [role="button"], [role="checkbox"], [contenteditable="true"]'
+  );
+
+  return control !== null && control !== bar;
+}
+
 export interface TimelineBarDragLabel {
   side: 'start' | 'end';
   text: string;
@@ -32,6 +41,7 @@ interface TimelineBarProps {
   /** Non-primary properties shown as chips after the title. */
   propertyFields: Column[];
   editable: boolean;
+  dateEditable?: boolean;
   selected?: boolean;
   /** This bar is the one being dragged; its rect is the live preview. */
   dragging?: boolean;
@@ -136,6 +146,7 @@ export const TimelineBar = memo(
     rect,
     propertyFields,
     editable,
+    dateEditable = editable,
     selected,
     dragging,
     following,
@@ -171,14 +182,25 @@ export const TimelineBar = memo(
         tabIndex={0}
         aria-pressed={selected}
         onPointerDown={(event) => {
-          if (editable) onPointerDown?.(event, 'move');
+          if (isNestedControl(event.target, event.currentTarget)) {
+            event.stopPropagation();
+            return;
+          }
+
+          if (editable && dateEditable) onPointerDown?.(event, 'move');
         }}
         onClick={(event) => {
           event.stopPropagation();
+          if (isNestedControl(event.target, event.currentTarget)) return;
           // With editing on, the drag hook turns a still press into the open action.
-          if (!editable) onOpen?.(rowId);
+          if (!editable || !dateEditable) onOpen?.(rowId);
         }}
         onKeyDown={(event) => {
+          if (isNestedControl(event.target, event.currentTarget)) {
+            event.stopPropagation();
+            return;
+          }
+
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
             onOpen?.(rowId);
@@ -192,7 +214,7 @@ export const TimelineBar = memo(
             ? 'bg-other-colors-filled-event text-other-colors-text-event hover:bg-other-colors-filled-event-hover'
             : 'time-event-content text-text-primary hover:bg-fill-content-hover',
           'transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick',
-          editable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
+          editable && dateEditable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
           highlighted && (row.allDay ? 'bg-other-colors-filled-event-hover' : 'bg-fill-content-hover'),
           (highlighted || linkTarget) && 'ring-1 ring-fill-theme-thick',
           'py-0 pl-1 pr-1'
@@ -228,7 +250,11 @@ export const TimelineBar = memo(
                 {iconOnly
                   ? null
                   : propertyFields.map((field) => (
-                      <span key={field.fieldId} className='flex shrink-0 items-center whitespace-nowrap'>
+                      <span
+                        key={field.fieldId}
+                        data-timeline-control
+                        className='flex shrink-0 items-center whitespace-nowrap'
+                      >
                         <CardField rowId={rowId} fieldId={field.fieldId} />
                       </span>
                     ))}
@@ -278,24 +304,28 @@ export const TimelineBar = memo(
 
         {editable ? (
           <>
-            <div
-              aria-hidden
-              data-testid={`timeline-handle-start-${rowId}`}
-              className='absolute inset-y-0 left-0 z-[1] flex cursor-ew-resize items-center justify-center'
-              style={{ width: HANDLE_WIDTH }}
-              onPointerDown={(event) => onPointerDown?.(event, 'resize-start')}
-            >
-              <span className='h-3 w-0.5 rounded-full bg-fill-theme-thick opacity-0 transition-opacity group-hover/bar:opacity-100' />
-            </div>
-            <div
-              aria-hidden
-              data-testid={`timeline-handle-end-${rowId}`}
-              className='absolute inset-y-0 right-0 z-[1] flex cursor-ew-resize items-center justify-center'
-              style={{ width: HANDLE_WIDTH }}
-              onPointerDown={(event) => onPointerDown?.(event, 'resize-end')}
-            >
-              <span className='h-3 w-0.5 rounded-full bg-fill-theme-thick opacity-0 transition-opacity group-hover/bar:opacity-100' />
-            </div>
+            {dateEditable ? (
+              <>
+                <div
+                  aria-hidden
+                  data-testid={`timeline-handle-start-${rowId}`}
+                  className='absolute inset-y-0 left-0 z-[1] flex cursor-ew-resize items-center justify-center'
+                  style={{ width: HANDLE_WIDTH }}
+                  onPointerDown={(event) => onPointerDown?.(event, 'resize-start')}
+                >
+                  <span className='h-3 w-0.5 rounded-full bg-fill-theme-thick opacity-0 transition-opacity group-hover/bar:opacity-100' />
+                </div>
+                <div
+                  aria-hidden
+                  data-testid={`timeline-handle-end-${rowId}`}
+                  className='absolute inset-y-0 right-0 z-[1] flex cursor-ew-resize items-center justify-center'
+                  style={{ width: HANDLE_WIDTH }}
+                  onPointerDown={(event) => onPointerDown?.(event, 'resize-end')}
+                >
+                  <span className='h-3 w-0.5 rounded-full bg-fill-theme-thick opacity-0 transition-opacity group-hover/bar:opacity-100' />
+                </div>
+              </>
+            ) : null}
             {linkable ? (
               <button
                 type='button'

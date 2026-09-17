@@ -144,6 +144,11 @@ export function useTimelineRange({ layout, scrollerRef, sidebarWidth }: UseTimel
     [scrollToDate, scrollerRef]
   );
 
+  const scrollToX = useCallback(
+    (x: number, anchor = 0) => scrollToDate(xToDate(geometryRef.current, x), anchor),
+    [scrollToDate]
+  );
+
   /** Call from the scroller's scroll handler to grow the range near the edges. */
   const handleScroll = useCallback(() => {
     const scroller = scrollerRef.current;
@@ -191,5 +196,5 @@ export function useTimelineRange({ layout, scrollerRef, sidebarWidth }: UseTimel
     scroller.scrollLeft = Math.max(0, x);
   }, [geometry, scrollerRef, sidebarWidth]);
 
-  return { geometry, handleScroll, scrollToDate, scrollByColumns };
+  return { geometry, handleScroll, scrollToDate, scrollToX, scrollByColumns };
 }

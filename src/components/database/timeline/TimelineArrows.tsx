@@ -34,6 +34,7 @@ export function hitTestLink(svg: SVGSVGElement | null, clientX: number, clientY:
 
 interface TimelineArrowsProps {
   rowIds: string[];
+  groupIds?: (string | undefined)[];
   rects: (BarRect | null)[];
   graph: DependencyGraph;
   /** Rows currently rendered; arrows touching them are drawn. */
@@ -58,6 +59,7 @@ interface TimelineArrowsProps {
 export const TimelineArrows = memo(
   ({
     rowIds,
+    groupIds,
     rects,
     graph,
     firstVisibleIndex,
@@ -70,40 +72,60 @@ export const TimelineArrows = memo(
     selectedKey,
   }: TimelineArrowsProps) => {
     const paths = useMemo(() => {
-      const indexOf = new Map(rowIds.map((rowId, index) => [rowId, index] as const));
-      const result: { key: string; d: string; predecessorId: string; successorId: string }[] = [];
+      const indicesOf = new Map<string, number[]>();
+
+      rowIds.forEach((rowId, index) => {
+        if (!rowId || !rects[index]) return;
+        const indices = indicesOf.get(rowId) ?? [];
+
+        indices.push(index);
+        indicesOf.set(rowId, indices);
+      });
+      const result: { key: string; linkKey: string; d: string; predecessorId: string; successorId: string }[] = [];
 
       graph.predecessors.forEach((predecessors, rowId) => {
-        const toIndex = indexOf.get(rowId);
-        const toRect = toIndex === undefined ? null : rects[toIndex];
+        const toIndices = indicesOf.get(rowId) ?? [];
 
-        if (toIndex === undefined || !toRect) return;
         predecessors.forEach((predecessor) => {
-          const fromIndex = indexOf.get(predecessor);
-          const fromRect = fromIndex === undefined ? null : rects[fromIndex];
+          const fromIndices = indicesOf.get(predecessor) ?? [];
 
-          if (fromIndex === undefined || !fromRect) return;
-          const touchesWindow =
-            (fromIndex >= firstVisibleIndex && fromIndex <= lastVisibleIndex) ||
-            (toIndex >= firstVisibleIndex && toIndex <= lastVisibleIndex);
+          if (fromIndices.length === 0) return;
+          toIndices.forEach((toIndex) => {
+            // Prefer the occurrence in this group. For cross-group links, use
+            // the nearest occurrence, so one dependency never fans out into
+            // every combination of duplicated rows.
+            const fromIndex = fromIndices.reduce((nearest, candidate) => {
+              const nearestGroup = groupIds?.[nearest] === groupIds?.[toIndex];
+              const candidateGroup = groupIds?.[candidate] === groupIds?.[toIndex];
 
-          if (!touchesWindow) return;
-          result.push({
-            key: `${predecessor}:${rowId}`,
-            predecessorId: predecessor,
-            successorId: rowId,
-            d: dependencyLinkPath(
-              linkOf(graph, predecessor, rowId).type,
-              { rect: fromRect, index: fromIndex },
-              { rect: toRect, index: toIndex },
-              { rowHeight: TIMELINE_ROW_HEIGHT, barInset: TIMELINE_BAR_INSET }
-            ),
+              if (nearestGroup !== candidateGroup) return candidateGroup ? candidate : nearest;
+              return Math.abs(candidate - toIndex) < Math.abs(nearest - toIndex) ? candidate : nearest;
+            });
+            const fromRect = rects[fromIndex];
+            const toRect = rects[toIndex];
+            const touchesWindow =
+              (fromIndex >= firstVisibleIndex && fromIndex <= lastVisibleIndex) ||
+              (toIndex >= firstVisibleIndex && toIndex <= lastVisibleIndex);
+
+            if (!fromRect || !toRect || !touchesWindow) return;
+            result.push({
+              key: `${predecessor}:${rowId}:${fromIndex}:${toIndex}`,
+              linkKey: `${predecessor}:${rowId}`,
+              predecessorId: predecessor,
+              successorId: rowId,
+              d: dependencyLinkPath(
+                linkOf(graph, predecessor, rowId).type,
+                { rect: fromRect, index: fromIndex },
+                { rect: toRect, index: toIndex },
+                { rowHeight: TIMELINE_ROW_HEIGHT, barInset: TIMELINE_BAR_INSET }
+              ),
+            });
           });
         });
       });
 
       return result;
-    }, [firstVisibleIndex, graph, lastVisibleIndex, rects, rowIds]);
+    }, [firstVisibleIndex, graph, groupIds, lastVisibleIndex, rects, rowIds]);
 
     if (paths.length === 0 && !pending) return null;
 
@@ -121,14 +143,14 @@ export const TimelineArrows = memo(
         data-testid='timeline-arrows'
       >
         {paths.map((path) => (
-          <g key={path.key} className={path.key === selectedKey ? 'text-fill-theme-thick' : undefined}>
+          <g key={path.key} className={path.linkKey === selectedKey ? 'text-fill-theme-thick' : undefined}>
             <path
               d={path.d}
               fill='none'
               stroke='currentColor'
-              strokeWidth={path.key === selectedKey ? 2 : 1.4}
+              strokeWidth={path.linkKey === selectedKey ? 2 : 1.4}
               data-testid='timeline-arrow'
-              data-link={path.key}
+              data-link={path.linkKey}
             />
             {/* Wide invisible twin used by isPointInStroke when the canvas is clicked. */}
             <path
@@ -136,8 +158,8 @@ export const TimelineArrows = memo(
               fill='none'
               stroke='transparent'
               strokeWidth={10}
-              data-testid={`timeline-arrow-hit-${path.key}`}
-              data-hit-link={path.key}
+              data-testid={`timeline-arrow-hit-${path.linkKey}`}
+              data-hit-link={path.linkKey}
             />
           </g>
         ))}

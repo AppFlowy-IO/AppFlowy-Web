@@ -22,6 +22,7 @@ jest.mock('@/application/services/js-services/http/import-api', () => ({
 import {
   cancelImportTask,
   createConfluenceImportTask,
+  createDatabaseCsvImportTask,
   createNotionImportTask,
   uploadImportFile,
   uploadImportFileMultipart,
@@ -40,8 +41,8 @@ const cancelTask = cancelImportTask as jest.Mock;
 const WORKSPACE_ID = 'workspace-1';
 const PARENT_VIEW_ID = 'parent-view-1';
 
-function zipFile(): File {
-  return new File(['zip-bytes'], 'export.zip', { type: 'application/zip' });
+function zipFile(name = 'export.zip'): File {
+  return new File(['zip-bytes'], name, { type: 'application/zip' });
 }
 
 describe.each([
@@ -68,29 +69,34 @@ describe.each([
     createTask.mockResolvedValue({ taskId: 'task-1', presignedUrl: 'https://s3.test/zip', multipart: null });
   });
 
-  it('creates the selected source task and uploads the exact file to its destination', async () => {
-    const file = zipFile();
-    const onProgress = jest.fn();
+  it.each(_source === 'Confluence' ? ['space.html.zip', 'space.csv.zip'] : ['export.zip'])(
+    'creates the selected source task and uploads the original %s to its destination',
+    async (fileName) => {
+      const file = zipFile(fileName);
+      const onProgress = jest.fn();
 
-    await expect(
-      importToView({
-        workspaceId: WORKSPACE_ID,
-        parentViewId: PARENT_VIEW_ID,
-        file,
-        onProgress,
-      })
-    ).resolves.toEqual({ taskId: 'task-1' });
+      await expect(
+        importToView({
+          workspaceId: WORKSPACE_ID,
+          parentViewId: PARENT_VIEW_ID,
+          file,
+          onProgress,
+        })
+      ).resolves.toEqual({ taskId: 'task-1' });
 
-    expect(calculateMd5).toHaveBeenCalledWith(file);
-    expect(createTask).toHaveBeenCalledWith(WORKSPACE_ID, PARENT_VIEW_ID, {
-      content_length: file.size,
-      md5_base64: 'md5-base64',
-    });
-    expect(otherCreateTask).not.toHaveBeenCalled();
-    expect(uploadSingle).toHaveBeenCalledWith('https://s3.test/zip', file, onProgress, undefined);
-    expect(uploadMultipart).not.toHaveBeenCalled();
-    expect(cancelTask).not.toHaveBeenCalled();
-  });
+      expect(calculateMd5).toHaveBeenCalledWith(file);
+      expect(createTask).toHaveBeenCalledWith(WORKSPACE_ID, PARENT_VIEW_ID, {
+        content_length: file.size,
+        md5_base64: 'md5-base64',
+      });
+      expect(otherCreateTask).not.toHaveBeenCalled();
+      expect(createDatabaseCsvImportTask).not.toHaveBeenCalled();
+      expect(uploadSingle).toHaveBeenCalledWith('https://s3.test/zip', file, onProgress, undefined);
+      expect(uploadSingle.mock.calls[0][1]).toBe(file);
+      expect(uploadMultipart).not.toHaveBeenCalled();
+      expect(cancelTask).not.toHaveBeenCalled();
+    }
+  );
 
   it('does not create a task when cancelled before upload preparation', async () => {
     const controller = new AbortController();
@@ -135,10 +141,18 @@ describe.each([
     createTask.mockResolvedValue({ taskId: 'task-1', presignedUrl: 'https://s3.test/zip', multipart });
 
     const controller = new AbortController();
+    const file = zipFile(_source === 'Confluence' ? 'space.csv.zip' : 'export.zip');
 
-    await importZip(controller.signal);
+    await importToView({
+      workspaceId: WORKSPACE_ID,
+      parentViewId: PARENT_VIEW_ID,
+      file,
+      signal: controller.signal,
+    });
 
-    expect(uploadMultipart).toHaveBeenCalledWith(expect.anything(), multipart, expect.any(Function), controller.signal);
+    expect(uploadMultipart).toHaveBeenCalledWith(file, multipart, expect.any(Function), controller.signal);
+    expect(uploadMultipart.mock.calls[0][0]).toBe(file);
+    expect(createDatabaseCsvImportTask).not.toHaveBeenCalled();
     expect(uploadSingle).not.toHaveBeenCalled();
   });
 
