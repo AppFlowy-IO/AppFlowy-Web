@@ -30,7 +30,6 @@ import {
   insertLinkedDatabaseViaSlash,
 } from '../../support/page-utils';
 import { testLog } from '../../support/test-helpers';
-import { getSlashMenuItemName } from '../../support/i18n-constants';
 
 test.describe('Move Page Restrictions', () => {
   const spaceName = 'General';
@@ -207,9 +206,9 @@ test.describe('Move Page Restrictions', () => {
     await page.keyboard.type('/');
 
     await expect(SlashCommandSelectors.slashPanel(page)).toBeVisible();
-    await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('grid'))
-      .first()
-      .click({ force: true });
+    // Wait for the menu to settle before clicking; a forced click can miss
+    // Grid while the panel is opening and scrolling the item into view.
+    await page.getByTestId('slash-menu-grid').click();
 
     // Creating an embedded database opens its ViewModal. Close it explicitly
     // before interacting with the sidebar; a forced sidebar click while the
