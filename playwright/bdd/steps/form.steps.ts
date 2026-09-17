@@ -622,12 +622,25 @@ Then('authentication will return to the public form', async ({ page }) => {
 
   const loginUrl = new URL(respondent.url());
   const expectedFormUrl = new URL(state.capturedUrl);
-  const storedRedirectTo = await respondent.evaluate(() => localStorage.getItem('redirectTo'));
+  const { storedRedirectTo, continuation } = await respondent.evaluate(() => ({
+    storedRedirectTo: localStorage.getItem('redirectTo'),
+    continuation: JSON.parse(sessionStorage.getItem('publicFormAuthContinuation') ?? 'null') as {
+      flowId: string;
+      redirectTo: string;
+      expiresAt: number;
+    } | null,
+  }));
 
   expect(loginUrl.pathname).toBe('/login');
   expect(loginUrl.searchParams.get('force')).toBe('true');
   expect(loginUrl.searchParams.has('redirectTo')).toBe(false);
-  expect(storedRedirectTo).toBe(`${expectedFormUrl.pathname}${expectedFormUrl.search}${expectedFormUrl.hash}`);
+  // Form bearer links use an expiring, tab-scoped continuation. The login
+  // URL carries only its opaque flow ID, and persistent storage stays empty.
+  expect(storedRedirectTo).toBeNull();
+  expect(continuation?.flowId).toMatch(/^[a-f0-9]{32}$/);
+  expect(loginUrl.searchParams.get('formAuth')).toBe(continuation?.flowId);
+  expect(continuation?.redirectTo).toBe(`${expectedFormUrl.pathname}${expectedFormUrl.search}${expectedFormUrl.hash}`);
+  expect(continuation?.expiresAt).toBeGreaterThan(Date.now());
 });
 
 Then('the public form shows the closed page', async ({ page }) => {
