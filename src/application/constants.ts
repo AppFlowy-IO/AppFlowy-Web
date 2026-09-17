@@ -10,8 +10,11 @@ export const HEADER_HEIGHT = 48;
  * app; keep their web creation menus disabled until that compatibility constraint
  * is resolved.
  * Existing Form and Timeline views still open normally regardless of this flag.
+ * CI builds opt in with EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED=true so
+ * Form and Timeline creation remain covered by browser tests.
  */
-export const EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED = false;
+export const EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED =
+  process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED === 'true';
 
 /**
  * Server error codes from AppFlowy Cloud ErrorCode enum.

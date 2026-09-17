@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '../../../src/application/constants';
 import { getCurrentDatabaseInfo, setRelationCellDirect, waitForDatabaseTestContext } from '../../support/relation-test-helpers';
 import { closeRowDetailWithEscape } from '../../support/row-detail-helpers';
 import { TimelineSelectors } from '../../support/selectors';
@@ -22,11 +21,6 @@ import {
 const SCREENSHOT_DIR = process.env.TIMELINE_SCREENSHOT_DIR;
 const BARS = '[data-testid^="timeline-bar-"]';
 const SIDEBAR_ROWS = '[data-testid^="timeline-sidebar-row-"]';
-
-test.skip(
-  !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
-  'Timeline creation is limited to Desktop while clients before 0.14.4 have compatibility issues.'
-);
 
 async function barBox(page: Page, title: string) {
   return { bar: TimelineSelectors.barByTitle(page, title), box: await sharedBarBox(page, title) };

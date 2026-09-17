@@ -10,6 +10,7 @@ on:
 env:
   CLOUD_VERSION: latest-amd64
   APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: 'true'
+  EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED: 'true'
   NODE_VERSION: '24'
   PNPM_VERSION: '10.9.0'
 
@@ -100,6 +101,14 @@ jobs:
           - name: 'database-bdd'
             spec: 'playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js'
             description: 'Database row and undo/redo BDD workflows'
+            bdd: 'true'
+            shard: ''
+          - name: 'form-timeline-bdd'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/form/
+              playwright/.features-gen/playwright/bdd/features/database/timeline.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/timeline-integration.feature.spec.js
+            description: 'Form and Timeline creation and interactions'
             bdd: 'true'
             shard: ''
           - name: 'gallery-bdd'

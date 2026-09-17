@@ -77,9 +77,9 @@ export async function addFormViewToTabBar(page: Page): Promise<void> {
  *
  * NOTE: the `Form` option is only rendered while
  * `EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED` (src/application/constants.ts) is `true`.
- * Web currently ships with it `false` (legacy Desktop clients cannot open
- * web-created Form views), so the form BDD features are excluded from CI
- * and will fail locally until the flag is flipped back on.
+ * Normal web builds keep it disabled for compatibility with Desktop versions
+ * before 0.14.4. CI builds enable it explicitly. For local browser tests, start
+ * or build the app with `EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED=true`.
  */
 export async function addFormViewToTabBarRaw(page: Page): Promise<void> {
   const addBtn = DatabaseViewSelectors.addViewButton(page);
