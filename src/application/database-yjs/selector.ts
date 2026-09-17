@@ -62,6 +62,8 @@ import {
   memberNames,
   useFormulaReadContext,
 } from '@/application/database-yjs/formula/read-context';
+import { useFormulaClock } from '@/application/database-yjs/formula/clock';
+import { FormulaRowSources, useFormulaRelationTitles } from '@/application/database-yjs/formula/useFormulaRelationTitles';
 import { DEFAULT_GALLERY_LAYOUT_SETTINGS } from '@/application/database-yjs/gallery-layout';
 import {
   areGroupRowsHydrated,
@@ -228,6 +230,11 @@ function getComputedConditionFieldIds(sorts?: YDatabaseSorts, filters?: YDatabas
       relationFieldIds.add(fieldId);
     } else if (fieldType === FieldType.Rollup) {
       rollupFieldIds.add(fieldId);
+    } else if (fieldType === FieldType.Formula) {
+      const references = collectFormulaExternalReferences(fields.get(fieldId), readFormulaSchema(fields));
+
+      references.relations.forEach((entry) => relationFieldIds.add(entry.id));
+      references.rollups.forEach((entry) => rollupFieldIds.add(entry.id));
     }
   });
 
@@ -699,7 +706,7 @@ export function useFilterSelector(filterId: string) {
 
       const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 
-      setFilterValue(parseFilter(fieldType, filter));
+      setFilterValue(parseFilter(fieldType, filter, fields));
     };
 
     observerEvent();
@@ -827,7 +834,7 @@ export function useAdvancedFiltersSelector() {
           },
         };
 
-        const parsed = parseFilter(ft, proxy as Parameters<typeof parseFilter>[1]);
+        const parsed = parseFilter(ft, proxy as Parameters<typeof parseFilter>[1], fields);
 
         return {
           ...parsed,
@@ -843,9 +850,11 @@ export function useAdvancedFiltersSelector() {
 
     observerEvent();
     filtersArray.observeDeep(observerEvent);
+    fields.observeDeep(observerEvent);
 
     return () => {
       filtersArray.unobserveDeep(observerEvent);
+      fields.unobserveDeep(observerEvent);
     };
   }, [fields, filtersArray]);
 
@@ -958,14 +967,16 @@ export function useAdvancedFilterSelector(filterId: string) {
             get: (key: string) => (foundFilter as Record<string, unknown>)[key],
           };
 
-      setFilterValue(parseFilter(fieldType, filterProxy as Parameters<typeof parseFilter>[1]));
+      setFilterValue(parseFilter(fieldType, filterProxy as Parameters<typeof parseFilter>[1], fields));
     };
 
     observerEvent();
     filtersArray.observeDeep(observerEvent);
+    fields.observeDeep(observerEvent);
 
     return () => {
       filtersArray.unobserveDeep(observerEvent);
+      fields.unobserveDeep(observerEvent);
     };
   }, [fields, filterId, filtersArray]);
 
@@ -2252,6 +2263,7 @@ function formulaConditionExternalReferences(
   const references = formulas.map((field) => collectFormulaExternalReferences(field, schema));
 
   return {
+    clock: references.some((entry) => entry.clock),
     people: references.some((entry) => entry.people),
     relations: references.flatMap((entry) => entry.relations),
     rollups: references.flatMap((entry) => entry.rollups),
@@ -2331,6 +2343,7 @@ export function useRowOrdersSelector() {
   const attributionNameGetter = useCallback((uid: string) => attributionNameByUid.get(uid), [attributionNameByUid]);
   const conditionMembers = useMemo(() => memberNames(conditionMentionableUsers), [conditionMentionableUsers]);
   const conditionReadsRelatedTitles = formulaConditionReferences.relations.length > 0;
+  const formulaClock = useFormulaClock(formulaConditionReferences.clock);
 
   const [rowOrdersState, setRowOrdersState] = useState<{
     rows?: Row[];
@@ -2370,6 +2383,8 @@ export function useRowOrdersSelector() {
   }, [cachedRowDocs, rows]);
   const rowDocsForConditions = useDeferredValue(rowDocsForConditionsRaw);
   const rowDocsForConditionsRef = useRef(rowDocsForConditions);
+
+  useFormulaRelationTitles(formulaConditionReferences.relations, { rows: rowDocsForConditions });
 
   useEffect(() => {
     rowDocsForConditionsRef.current = rowDocsForConditions;
@@ -2688,7 +2703,7 @@ export function useRowOrdersSelector() {
   // Trigger computation when dependencies change
   useEffect(() => {
     onConditionsChange();
-  }, [conditionLoadRevision, onConditionsChange]);
+  }, [conditionLoadRevision, onConditionsChange, formulaClock]);
 
   // Subscribe to relation/rollup cache changes
   useEffect(() => {
@@ -2840,7 +2855,7 @@ export function useRowOrdersSelector() {
   ]);
 
   // Set up rollup field observers (extracted hook)
-  useRollupFieldObservers(onConditionsChange, rollupWatchVersion);
+  useRollupFieldObservers(onConditionsChange, rollupWatchVersion, { rows: rowDocsForConditions });
   useRelativeDateFilterRefresh(filters, fields, onConditionsChange);
 
   const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
@@ -3790,8 +3805,9 @@ export const useRowMetaSelector = (rowId: string) => {
  * whenever results can change: the schema, member names, or related titles
  * and rollup results arriving.
  */
-export function useFormulaColumnEvaluator(fieldId: string) {
+export function useFormulaColumnEvaluator(fieldId: string, rowSources?: FormulaRowSources) {
   const fields = useDatabaseFields();
+  const rowMap = useRowMap();
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
   const isFormula = Number(field?.get(YjsDatabaseKey.type)) === FieldType.Formula;
   // Only a formula column recalculates when another field changes.
@@ -3802,11 +3818,22 @@ export function useFormulaColumnEvaluator(fieldId: string) {
     void fieldsVersion;
     return isFormula && field ? collectFormulaExternalReferences(field, readFormulaSchema(fields)) : NO_EXTERNAL_REFERENCES;
   }, [isFormula, field, fields, fieldsVersion]);
+
+  useFormulaRelationTitles(references.relations, rowSources ?? { rows: rowMap });
+  const clock = useFormulaClock(references.clock);
   const { users } = useMentionableUsersWithAutoFetch(references.people);
   const members = useMemo(() => memberNames(users), [users]);
   // Related titles and rollup results arrive asynchronously; recalculate once they settle.
   const [externalRevision, setExternalRevision] = useState(0);
   const readsRelatedData = references.relations.length > 0 || references.rollups.length > 0;
+  const rollupFieldIds = useMemo(() => references.rollups.map((entry) => entry.id), [references]);
+  const refreshRollups = useCallback(() => setExternalRevision((revision) => revision + 1), []);
+
+  useRollupFieldObservers(refreshRollups, fieldsVersion, {
+    ...rowSources,
+    rollupFieldIds,
+    observeConditions: false,
+  });
 
   useEffect(() => {
     if (!readsRelatedData) return;
@@ -3826,6 +3853,7 @@ export function useFormulaColumnEvaluator(fieldId: string) {
     void fieldClock;
     void fieldsVersion;
     void externalRevision;
+    void clock;
     const schema = readFormulaSchema(fields);
     const loaders = { loadView, createRow, getViewIdFromDatabaseId };
 
@@ -3847,6 +3875,7 @@ export function useFormulaColumnEvaluator(fieldId: string) {
     fieldClock,
     fieldsVersion,
     externalRevision,
+    clock,
     fields,
     fieldId,
     members,
@@ -3863,7 +3892,8 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
   const rowMap = useRowMap();
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
   // A formula column has no stored cell; the footer calculates over its results.
-  const evaluateFormula = useFormulaColumnEvaluator(fieldId);
+  const rowIds = useMemo(() => rows?.map(({ id }) => id) ?? [], [rows]);
+  const evaluateFormula = useFormulaColumnEvaluator(fieldId, { rows: rowMap, rowIds });
 
   useEffect(() => {
     if (!rows || !rowMap) {
@@ -3901,10 +3931,13 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
       };
 
       nextCells.set(row.id, getCellValue());
-      cells?.observeDeep(observerEvent);
+      // Formula inputs include created/edited timestamps and actors on the row.
+      const observed = evaluateFormula ? databaseRow : cells;
+
+      observed?.observeDeep(observerEvent);
 
       unobserveCells.push(() => {
-        cells?.unobserveDeep(observerEvent);
+        observed?.unobserveDeep(observerEvent);
       });
     });
 

@@ -23,8 +23,10 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 
+import * as cellValues from '../cell-values';
 import { clearFormulaCompileCache, compileFormula } from '../compile';
 import { evaluateFormulaCell } from '../evaluate';
+import * as evaluator from '../evaluator';
 import { FORMULA_MAX_DEPTH } from '../formula.type';
 import { readFormulaSchema, readFormulaSchemaForVersion, toDisplayExpression, toStorageExpression } from '../schema';
 
@@ -174,6 +176,38 @@ beforeEach(() => {
 });
 
 describe('formula evaluation over database rows', () => {
+  it('evaluates shared dependencies once and discards their values between row evaluations', () => {
+    const formulas = Object.fromEntries(
+      Array.from({ length: 13 }, (_, index) => [
+        `cached-${index}`,
+        index === 0 ? 'prop("f-price")' : `prop("cached-${index - 1}") + prop("cached-${index - 1}")`,
+      ])
+    );
+    const { fields, schema, row, evaluate } = buildFixture(formulas);
+    const priceCell = row.get(YjsDatabaseKey.cells).get('f-price');
+    const read = jest.spyOn(cellValues, 'readFieldFormulaValue');
+    const evaluateAst = jest.spyOn(evaluator, 'evaluateFormula');
+
+    try {
+      priceCell.set(YjsDatabaseKey.data, '1');
+      expect(evaluate('cached-12').rawNumeric).toBe(4096);
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(evaluateAst).toHaveBeenCalledTimes(13);
+      read.mockClear();
+      priceCell.set(YjsDatabaseKey.data, '2');
+      expect(evaluate('cached-12').rawNumeric).toBe(8192);
+      expect(read).toHaveBeenCalledTimes(1);
+      const second = createRow('row-2', { 'f-price': { type: FieldType.Number, data: '3' } });
+
+      expect(evaluateFormulaCell({
+        schema, field: fields.get('cached-12'), fieldId: 'cached-12', row: second.row, rowId: 'row-2',
+      }).rawNumeric).toBe(12288);
+    } finally {
+      read.mockRestore();
+      evaluateAst.mockRestore();
+    }
+  });
+
   it('reads every supported property type from the row', () => {
     const { evaluate } = buildFixture({
       'f-total': 'prop("f-price") * prop("f-qty")',
@@ -288,6 +322,25 @@ describe('formula evaluation over database rows', () => {
       evaluateFormulaCell({ schema: readFormulaSchema(fields), field: fields.get('f-x'), fieldId: 'f-x', row, rowId: 'row-empty' })
     ).toMatchObject({ text: '1||true|0' });
   });
+
+  it.each(['prop("Title") + 2 + 3', 'let(title, prop("Title"), title + 2 + 3)', 'prop("Copy") + 2 + 3'])(
+    'concatenates untouched and stored blank text consistently: %s',
+    (expression) => {
+      const fields = createFields([
+        { id: 'title', name: 'Title', type: FieldType.RichText },
+        { id: 'copy', name: 'Copy', type: FieldType.Formula, typeOption: { expression: 'prop("Title")' } },
+        { id: 'result', name: 'Result', type: FieldType.Formula, typeOption: { expression } },
+      ]);
+      const schema = readFormulaSchema(fields);
+
+      for (const cells of [{}, { title: { type: FieldType.RichText, data: '' } }]) {
+        const { row } = createRow('blank', cells);
+
+        expect(evaluateFormulaCell({ schema, field: fields.get('result'), fieldId: 'result', row, rowId: 'blank' }))
+          .toMatchObject({ resultType: 'text', text: '23' });
+      }
+    }
+  );
 });
 
 describe('formula expression storage', () => {
@@ -326,10 +379,37 @@ describe('formula expression storage', () => {
     const schema = readFormulaSchema(fields);
 
     expect(toStorageExpression('prop("b") + prop("Dup")', schema)).toBe('prop("b") + prop("dup-1")');
+    const stored = 'prop("a") + prop("b") + prop("dup-1") + prop("dup-2")';
+
+    expect(toStorageExpression(toDisplayExpression(stored, schema), schema)).toBe(stored);
   });
 });
 
 describe('formula schema caches', () => {
+  it('invalidates inferred types when a dependency changes within the same second', () => {
+    const fields = createFields([
+      { id: 'a', name: 'A', type: FieldType.Formula, typeOption: { expression: '1' } },
+      { id: 'b', name: 'B', type: FieldType.Formula, typeOption: { expression: 'prop("a")' } },
+    ]);
+
+    fields.get('a').set(YjsDatabaseKey.last_modified, '1700000000');
+    expect(compileFormula('prop("a")', readFormulaSchema(fields), 'b').resultType).toBe('number');
+    fields.get('a').get(YjsDatabaseKey.type_option)?.get(String(FieldType.Formula))?.set(YjsDatabaseKey.expression, '"text"');
+    expect(compileFormula('prop("a")', readFormulaSchema(fields), 'b').resultType).toBe('text');
+  });
+
+  it('rejects a cyclic editor draft after its dependency was cached', () => {
+    const fields = createFields([
+      { id: 'a', name: 'A', type: FieldType.Formula, typeOption: { expression: '1' } },
+      { id: 'b', name: 'B', type: FieldType.Formula, typeOption: { expression: 'prop("a") + 1' } },
+    ]);
+    const schema = readFormulaSchema(fields);
+
+    expect(compileFormula('prop("a") + 1', schema, 'b').error).toBeUndefined();
+    expect(compileFormula('prop("b")', schema, 'a').error?.message).toMatch(/reference itself/);
+    expect(compileFormula('prop("a") + 1', schema, 'b').error).toBeUndefined();
+  });
+
   it('shares one schema per fields version', () => {
     const fields = createFields([{ id: 'f-price', name: 'Price', type: FieldType.Number }]);
     const first = readFormulaSchemaForVersion(fields, 1);

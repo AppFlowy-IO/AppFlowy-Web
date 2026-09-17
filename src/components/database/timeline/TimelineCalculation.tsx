@@ -3,14 +3,16 @@ import { useCallback } from 'react';
 import { getCell, useFieldSelector, useFormulaColumnEvaluator } from '@/application/database-yjs';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { useTimelineRowValuesSnapshot } from '@/application/database-yjs/hooks/useTimelineRowValues';
+import { useTimelineRowSource } from '@/application/database-yjs/hooks/TimelineRowValuesProvider';
 import { YDatabaseRow, YDoc, YjsEditorKey } from '@/application/types';
 import { GridCalculateRowCellWithValues } from '@/components/database/components/grid/grid-cell/GridCalculateRowCell';
 
 /** Calculations use the same detached/live row source as the timeline bars. */
 export function TimelineCalculation({ fieldId }: { fieldId: string }) {
   const { field, clock } = useFieldSelector(fieldId);
+  const rowSource = useTimelineRowSource();
   // A formula column has no stored cell; calculate over its results.
-  const evaluateFormula = useFormulaColumnEvaluator(fieldId);
+  const evaluateFormula = useFormulaColumnEvaluator(fieldId, rowSource);
   const parse = useCallback(
     (rowId: string, doc: YDoc) => {
       // Type options can change without replacing the Y.Map field object.

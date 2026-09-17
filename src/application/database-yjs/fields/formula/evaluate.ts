@@ -58,13 +58,23 @@ function withRaw(value: FormulaValue, resultType: FormulaCellResult['resultType'
  * Never throws: parse, type and runtime failures come back as `error`.
  */
 export function evaluateFormulaCell(options: EvaluateFormulaCellOptions): FormulaCellResult {
+  return evaluateFormulaCellWithCache(options, new Map());
+}
+
+function evaluateFormulaCellWithCache(
+  options: EvaluateFormulaCellOptions,
+  values: Map<string, FormulaValue>
+): FormulaCellResult {
   const typeOption = parseFormulaTypeOption(options.field);
 
-  return evaluateFormulaExpression({
-    ...options,
-    expression: typeOption.formula,
-    format: { numberFormat: typeOption.format, ...options.format },
-  });
+  return evaluateFormulaExpressionWithCache(
+    {
+      ...options,
+      expression: typeOption.formula,
+      format: { numberFormat: typeOption.format, ...options.format },
+    },
+    values
+  );
 }
 
 export interface EvaluateFormulaExpressionOptions extends EvaluateFormulaCellOptions {
@@ -74,6 +84,14 @@ export interface EvaluateFormulaExpressionOptions extends EvaluateFormulaCellOpt
 
 /** Evaluates an arbitrary expression as if it were `field`'s formula (used for live previews). */
 export function evaluateFormulaExpression(options: EvaluateFormulaExpressionOptions): FormulaCellResult {
+  return evaluateFormulaExpressionWithCache(options, new Map());
+}
+
+/** Share raw property values only within this synchronous evaluation of one row. */
+function evaluateFormulaExpressionWithCache(
+  options: EvaluateFormulaExpressionOptions,
+  values: Map<string, FormulaValue>
+): FormulaCellResult {
   const { schema, fieldId, row, rowId, now, expression } = options;
   const formatOptions: FormulaFormatOptions = { ...options.format };
   const compiled = compileFormula(expression, schema, fieldId, options.visiting);
@@ -92,27 +110,40 @@ export function evaluateFormulaExpression(options: EvaluateFormulaExpressionOpti
     const entry = resolveFormulaField(schema, ref);
 
     if (!entry) throw new FormulaError(`Unknown property "${ref}"`, position);
-    if (entry.type !== FieldType.Formula) return readFieldFormulaValue(entry, row, options);
+    if (entry.type !== FieldType.Formula) {
+      const value = values.get(entry.id) ?? readFieldFormulaValue(entry, row, options);
+
+      values.set(entry.id, value);
+      return value;
+    }
+
     if (visiting.has(entry.id)) throw new FormulaError(`Property "${entry.name}" would reference itself`, position);
     if (visiting.size >= FORMULA_MAX_DEPTH) {
       throw new FormulaError(`Formulas can only reference each other ${FORMULA_MAX_DEPTH} levels deep`, position);
     }
 
-    const nested = evaluateFormulaCell({
-      schema,
-      field: entry.field,
-      fieldId: entry.id,
-      row,
-      rowId,
-      now,
-      getUserName: options.getUserName,
-      getPersonName: options.getPersonName,
-      getRelatedRowTitle: options.getRelatedRowTitle,
-      getRollupValue: options.getRollupValue,
-      visiting,
-    });
+    const cached = values.get(entry.id);
+
+    if (cached !== undefined) return cached;
+    const nested = evaluateFormulaCellWithCache(
+      {
+        schema,
+        field: entry.field,
+        fieldId: entry.id,
+        row,
+        rowId,
+        now,
+        getUserName: options.getUserName,
+        getPersonName: options.getPersonName,
+        getRelatedRowTitle: options.getRelatedRowTitle,
+        getRollupValue: options.getRollupValue,
+        visiting,
+      },
+      values
+    );
 
     if (nested.error) throw new FormulaError(`Property "${entry.name}" has an error: ${nested.error}`, position);
+    values.set(entry.id, nested.value);
     return nested.value;
   };
 

@@ -7,6 +7,7 @@ import {
   FormulaFieldSchema,
   FormulaFunctionExample,
   FormulaFunctionSpec,
+  formulaPropertyReference,
   formulaTypeOfField,
   typeToString,
 } from '@/application/database-yjs/fields/formula';
@@ -32,8 +33,8 @@ function Snippet({ source }: { source: string }) {
   );
 }
 
-function propertyExamples(entry: FormulaFieldSchema): FormulaFunctionExample[] {
-  const ref = `prop("${entry.name}")`;
+function propertyExamples(entry: FormulaFieldSchema, schema: FormulaFieldSchema[]): FormulaFunctionExample[] {
+  const ref = formulaPropertyReference(entry.id, schema);
   const type = entry.type === FieldType.Formula ? undefined : formulaTypeOfField(entry);
 
   if (entry.type === FieldType.Checklist) {
@@ -83,9 +84,11 @@ function propertyExamples(entry: FormulaFieldSchema): FormulaFunctionExample[] {
 
 function FormulaDocsPanelContent({
   item,
+  schema,
   onInsert,
 }: {
   item: FormulaDocsItem | null;
+  schema: FormulaFieldSchema[];
   onInsert: (text: string) => void;
 }) {
   const { t } = useTranslation();
@@ -122,14 +125,14 @@ function FormulaDocsPanelContent({
           <span className={'truncate'}>{item.entry.name}</span>
         </span>
       );
-      signature = `prop("${item.entry.name}")`;
+      signature = formulaPropertyReference(item.entry.id, schema);
       description = t('grid.formula.propertyDescription', {
         defaultValue: 'Property of type {{type}}.',
         type,
         // React escapes the text; i18next escaping would show "list&lt;text&gt;".
         interpolation: { escapeValue: false },
       });
-      examples = propertyExamples(item.entry);
+      examples = propertyExamples(item.entry, schema);
       break;
     }
   }

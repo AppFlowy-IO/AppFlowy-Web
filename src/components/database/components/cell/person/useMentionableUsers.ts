@@ -40,6 +40,22 @@ export function peekMentionableUsers(workspaceId: string | undefined): readonly 
   return (workspaceId && cache.get(workspaceId)?.users) || EMPTY_USERS;
 }
 
+/** Await names before persisting a derived value; a cold cache is not an empty member list. */
+export async function loadMentionableUsers(workspaceId: string | undefined): Promise<readonly MentionablePerson[]> {
+  if (!workspaceId) throw new Error('A workspace is required to resolve formula member names');
+  const cached = cache.get(workspaceId);
+
+  if (isMemoryCacheValid(cached)) return cached.users;
+  const { users, fresh } = await loadFromDiskDeduplicated(workspaceId);
+
+  if (fresh) {
+    cache.set(workspaceId, { users, timestamp: Date.now() });
+    return users;
+  }
+
+  return refreshFromApi(workspaceId);
+}
+
 /** Build one lossless UID index per shared member-list snapshot. */
 export function getMentionableUserIndex(
   users: readonly MentionablePerson[]

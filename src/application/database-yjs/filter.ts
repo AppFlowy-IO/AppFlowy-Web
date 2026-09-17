@@ -63,8 +63,10 @@ import {
 import { canonicalizeUserUid } from '@/application/user-uid';
 import { isAfterOneDay, isTimestampBefore, isTimestampBetweenRange, isTimestampInSameDay } from '@/utils/time';
 
-export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
+export function parseFilter(storedFieldType: FieldType, filter: YDatabaseFilter, fields?: YDatabaseFields) {
   const fieldId = filter.get(YjsDatabaseKey.field_id);
+  const field = fields?.get(fieldId);
+  const fieldType = storedFieldType === FieldType.Formula && field ? formulaPredicateFieldType(field, fields) : storedFieldType;
   const filterType = Number(filter.get(YjsDatabaseKey.filter_type));
   const id = filter.get(YjsDatabaseKey.id);
   const content = filter.get(YjsDatabaseKey.content);

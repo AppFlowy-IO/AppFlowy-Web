@@ -61,9 +61,10 @@ export function formulaSchemaSignature(schema: FormulaFieldSchema[]): string {
   let signature = signatureCache.get(schema);
 
   if (signature === undefined) {
-    signature = schema
-      .map((entry) => `${entry.id}:${entry.type}:${entry.name}:${entry.field.get(YjsDatabaseKey.last_modified) ?? ''}`)
-      .join('|');
+    // last_modified has second resolution; multiple edits can share it.
+    signature = JSON.stringify(
+      schema.map((entry) => [entry.id, entry.type, entry.name, entry.field.get(YjsDatabaseKey.type_option)?.toJSON()])
+    );
     signatureCache.set(schema, signature);
   }
 
@@ -150,7 +151,16 @@ export function toStorageExpression(displaySource: string, schema: FormulaFieldS
   return rewritePropRefs(displaySource, (ref) => resolveFormulaField(schema, ref)?.id);
 }
 
-/** Storage form → editor form: `prop("<id>")` becomes `prop("Price")`. Unknown ids are kept. */
+/** Use names only when resolving them again preserves the referenced field. */
 export function toDisplayExpression(storageSource: string, schema: FormulaFieldSchema[]): string {
-  return rewritePropRefs(storageSource, (ref) => schemaIndex(schema).byId.get(ref)?.name);
+  return rewritePropRefs(storageSource, (ref) => {
+    const entry = schemaIndex(schema).byId.get(ref);
+
+    return entry && resolveFormulaField(schema, entry.name)?.id === entry.id ? entry.name : undefined;
+  });
+}
+
+/** Insert the selected property, using its name only when it resolves back to that ID. */
+export function formulaPropertyReference(fieldId: string, schema: FormulaFieldSchema[]): string {
+  return toDisplayExpression(`prop(${quote(fieldId)})`, schema);
 }

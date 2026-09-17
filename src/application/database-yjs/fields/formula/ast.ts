@@ -75,3 +75,21 @@ export function collectPropRefs(node: FormulaNode, out: string[] = []): string[]
 
   return out;
 }
+
+/** Whether this expression directly reads the wall clock. */
+export function formulaUsesClock(node: FormulaNode): boolean {
+  switch (node.kind) {
+    case 'call':
+      return node.name === 'now' || node.name === 'today' || node.args.some(formulaUsesClock);
+    case 'list':
+      return node.items.some(formulaUsesClock);
+    case 'unary':
+      return formulaUsesClock(node.operand);
+    case 'binary':
+      return formulaUsesClock(node.left) || formulaUsesClock(node.right);
+    case 'conditional':
+      return formulaUsesClock(node.test) || formulaUsesClock(node.then) || formulaUsesClock(node.else);
+    default:
+      return false;
+  }
+}

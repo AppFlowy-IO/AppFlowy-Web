@@ -41,6 +41,7 @@ import { deleteReciprocalRelationField } from '@/application/database-yjs/dispat
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { normalizeCreatedDatabaseFeedView, updateCreatesExactFeedView } from '@/application/database-yjs/feed-layout';
 import {
+  collectFormulaExternalReferences,
   evaluateFormulaCell,
   FormulaCellResult,
   getFieldName,
@@ -50,6 +51,7 @@ import {
   SelectOption,
   SelectOptionColor,
   readFormulaSchema,
+  ReadFieldValueContext,
   SelectTypeOption,
 } from '@/application/database-yjs/fields';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
@@ -61,7 +63,7 @@ import { createDateTimeField } from '@/application/database-yjs/fields/text/util
 import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
-import { formulaRowContext, memberNames } from '@/application/database-yjs/formula/read-context';
+import { resolveFormulaRowContext } from '@/application/database-yjs/formula/materialize';
 import {
   initializeGalleryLayoutSetting,
   normalizeCreatedDatabaseGalleryView,
@@ -155,7 +157,6 @@ import {
 } from '@/application/types';
 import { isDatabaseContainer, isEmbeddedDatabaseViewWithoutChildren, isEmbeddedView } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
-import { peekMentionableUsers } from '@/components/database/components/cell/person/useMentionableUsers';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
@@ -3616,7 +3617,7 @@ export function useSwitchPropertyType() {
 
       const rowIds = collectDatabaseRowIds(database, rowMap);
 
-      const performSwitch = (resolvedRowMap: Record<RowId, YDoc>) => {
+      const performSwitch = (resolvedRowMap: Record<RowId, YDoc>, formulaContexts?: Map<RowId, ReadFieldValueContext>) => {
         const rows = Object.keys(resolvedRowMap);
 
         // Capture the relation option before the switch so we can clean up the
@@ -3635,9 +3636,6 @@ export function useSwitchPropertyType() {
 
         if (fieldBefore && oldFieldTypeBefore === FieldType.Formula) {
           const schema = readFormulaSchema(database.get(YjsDatabaseKey.fields));
-          // Names, related titles and rollups as the cells showed them.
-          const members = memberNames(peekMentionableUsers(workspaceId));
-          const loaders = { loadView, createRow, getViewIdFromDatabaseId };
 
           rows.forEach((rowId) => {
             const row = getFieldSwitchDatabaseRow(resolvedRowMap[rowId]);
@@ -3646,7 +3644,7 @@ export function useSwitchPropertyType() {
             formulaResults.set(
               rowId,
               evaluateFormulaCell({
-                ...formulaRowContext(rowId, row, { members, database, baseDoc: databaseDoc, loaders }),
+                ...formulaContexts?.get(rowId),
                 schema,
                 field: fieldBefore,
                 fieldId,
@@ -3985,8 +3983,16 @@ export function useSwitchPropertyType() {
 
       const requiresEveryRow = fieldSwitchRequiresEveryRow(sourceType, fieldType);
       const everyRowIsLoaded = rowIds.every((rowId) => Boolean(getFieldSwitchDatabaseRow(rowMap[rowId])));
+      const formulaReferences =
+        sourceType === FieldType.Formula
+          ? collectFormulaExternalReferences(field, readFormulaSchema(database.get(YjsDatabaseKey.fields)))
+          : undefined;
+      const requiresExternalValues = Boolean(
+        formulaReferences &&
+          (formulaReferences.people || formulaReferences.relations.length || formulaReferences.rollups.length)
+      );
 
-      if (!requiresEveryRow || everyRowIsLoaded) {
+      if ((!requiresEveryRow || everyRowIsLoaded) && !requiresExternalValues) {
         performSwitch(rowMap);
         return Promise.resolve();
       }
@@ -3997,6 +4003,7 @@ export function useSwitchPropertyType() {
       const loadRowsAndSwitch = async () => {
         let resolvedRowMap = rowMap;
         let rowSetIsStable = false;
+        const formulaContexts = new Map<RowId, ReadFieldValueContext>();
 
         while (!rowSetIsStable) {
           const latestRowIds = collectDatabaseRowIds(database, resolvedRowMap);
@@ -4007,18 +4014,68 @@ export function useSwitchPropertyType() {
             ensureRow,
           });
 
+          let inputsChanged = false;
+          const changed = () => {
+            inputsChanged = true;
+          };
+
+          const fields = database.get(YjsDatabaseKey.fields);
+          const formulaField = fields?.get(fieldId);
+          const loadedRows = Object.entries(resolvedRowMap).flatMap(([rowId, doc]) => {
+            const row = getFieldSwitchDatabaseRow(doc);
+
+            return row ? [{ rowId, row }] : [];
+          });
+
+          if (sourceType === FieldType.Formula && formulaField) {
+            const references = collectFormulaExternalReferences(formulaField, readFormulaSchema(fields));
+
+            fields?.observeDeep(changed);
+            loadedRows.forEach(({ row }) => row.observeDeep(changed));
+            try {
+              // Bound row fan-out while awaiting all external inputs before any writes.
+              for (let index = 0; index < loadedRows.length; index += FIELD_SWITCH_ROW_LOAD_CONCURRENCY) {
+                await Promise.all(
+                  loadedRows.slice(index, index + FIELD_SWITCH_ROW_LOAD_CONCURRENCY).map(async ({ rowId, row }) => {
+                    formulaContexts.set(
+                      rowId,
+                      await resolveFormulaRowContext({
+                        references,
+                        row,
+                        rowId,
+                        database,
+                        baseDoc: databaseDoc,
+                        workspaceId,
+                        loaders: { loadView, createRow, getViewIdFromDatabaseId },
+                      })
+                    );
+                  })
+                );
+              }
+            } finally {
+              fields?.unobserveDeep(changed);
+              loadedRows.forEach(({ row }) => row.unobserveDeep(changed));
+            }
+          }
+
           if (!isCurrentFieldSwitchRequest(database, fieldId, requestVersion)) {
             throw new Error('Field-type switch was superseded by a newer request');
+          }
+
+          if (Number(fields?.get(fieldId)?.get(YjsDatabaseKey.type)) !== sourceType) {
+            throw new Error('Field type changed while preparing the conversion');
           }
 
           // No await occurs between this stability check and performSwitch, so
           // another Yjs event cannot insert an unprocessed row before commit.
           const stableRowIds = collectDatabaseRowIds(database, resolvedRowMap);
 
-          rowSetIsStable = stableRowIds.every((rowId) => Boolean(getFieldSwitchDatabaseRow(resolvedRowMap[rowId])));
+          rowSetIsStable =
+            !inputsChanged &&
+            stableRowIds.every((rowId) => Boolean(getFieldSwitchDatabaseRow(resolvedRowMap[rowId])));
         }
 
-        performSwitch(resolvedRowMap);
+        performSwitch(resolvedRowMap, formulaContexts);
       };
 
       return loadRowsAndSwitch().catch((error: unknown) => {

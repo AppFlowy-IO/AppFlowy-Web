@@ -37,6 +37,7 @@ export {
   readFormulaSchema,
   readFormulaSchemaForVersion,
   formulaSchemaSignature,
+  formulaPropertyReference,
   resolveFormulaField,
   toDisplayExpression,
   toStorageExpression,

@@ -106,6 +106,7 @@ const listeners = new Set<() => void>();
 // during sorting and filtering, so folding both into one counter would make
 // every one of those resolutions invalidate every grouped view's memo.
 const groupLabelListeners = new Set<() => void>();
+const groupLabelKeyListeners = new Map<string, Set<() => void>>();
 const relatedDocCache = new Map<string, Promise<YDoc | null>>();
 let lastPruneAt = 0;
 let groupLabelRevision = 0;
@@ -132,8 +133,12 @@ function emit() {
   listeners.forEach((cb) => cb());
 }
 
-function emitGroupLabels() {
+function emitGroupLabels(labelIds: Iterable<string>) {
   groupLabelRevision += 1;
+  for (const labelId of labelIds) {
+    groupLabelKeyListeners.get(labelId)?.forEach((cb) => cb());
+  }
+
   groupLabelListeners.forEach((cb) => cb());
 }
 
@@ -203,7 +208,7 @@ function observeGroupLabelRow(rowDoc: YDoc, primaryFieldId: string, labelId: str
     labelIds.forEach((id) => {
       bumpGroupLabelGeneration(id);
     });
-    emitGroupLabels();
+    emitGroupLabels(labelIds);
   });
 }
 
@@ -405,6 +410,21 @@ export function getRelationGroupLabelRevision() {
   return groupLabelRevision;
 }
 
+/** Subscribe only to the title this consumer reads, including invalidation. */
+export function subscribeRelationGroupLabel(context: RelationGroupLabelKey, cb: () => void) {
+  const labelId = getGroupLabelId(context);
+
+  if (!labelId) return () => undefined;
+  const subscribers = groupLabelKeyListeners.get(labelId) ?? new Set<() => void>();
+
+  subscribers.add(cb);
+  groupLabelKeyListeners.set(labelId, subscribers);
+  return () => {
+    subscribers.delete(cb);
+    if (subscribers.size === 0) groupLabelKeyListeners.delete(labelId);
+  };
+}
+
 export function invalidateRelationCell(cellId: string) {
   bumpGeneration(cellId);
 }
@@ -499,7 +519,7 @@ export function ensureRelationGroupLabel(context: RelationGroupLabelContext): vo
         // A TTL revalidation that confirms the same title must not wake
         // subscribers; re-rendering every grouped view on an unchanged
         // value is exactly the churn this cache exists to avoid.
-        if (changed) emitGroupLabels();
+        if (changed) emitGroupLabels([labelId]);
       }
 
       return value;

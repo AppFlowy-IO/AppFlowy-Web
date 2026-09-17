@@ -12,11 +12,13 @@ import {
   formulaExternalReferencesKey,
   ReadFieldValueContext,
 } from '@/application/database-yjs/fields/formula';
+import { useFormulaClock } from '@/application/database-yjs/formula/clock';
+import { useRollupFieldObservers } from '@/application/database-yjs/hooks/useRollupFieldObservers';
 import {
   ensureRelationGroupLabel,
   readRelationGroupLabel,
   retainRelationGroupLabels,
-  subscribeRelationGroupLabels,
+  subscribeRelationGroupLabel,
 } from '@/application/database-yjs/relation/cache';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import {
@@ -169,6 +171,7 @@ export function useFormulaReadContext({
   const referencesKey = formulaExternalReferencesKey(nextReferences);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const references = useMemo(() => nextReferences, [referencesKey]);
+  const clock = useFormulaClock(references.clock);
   const loadersRef = useRef<RelatedRowLoaders>({ loadView, createRow, getViewIdFromDatabaseId });
 
   useEffect(() => {
@@ -180,57 +183,67 @@ export function useFormulaReadContext({
   const members = useMemo(() => memberNames(users), [users]);
 
   // Related row titles: re-render only when one of this row's titles changes.
-  const relatedRows = useMemo<RelatedRow[]>(() => {
+  const relatedRowIdsKey = useMemo(() => {
     void rowClock;
     const cells = row?.get(YjsDatabaseKey.cells);
 
-    return references.relations.flatMap((entry) =>
-      getRelationRowIdsFromCell(cells?.get(entry.id)).map((relatedRowId) => ({
+    return JSON.stringify(references.relations.map((entry) => getRelationRowIdsFromCell(cells?.get(entry.id))));
+  }, [references.relations, row, rowClock]);
+  const relatedRows = useMemo<RelatedRow[]>(() => {
+    const idsByField: string[][] = JSON.parse(relatedRowIdsKey);
+
+    return references.relations.flatMap((entry, index) =>
+      idsByField[index].map((relatedRowId) => ({
         relationField: entry.field,
         relatedRowId,
       }))
     );
-  }, [references.relations, row, rowClock]);
-  const subscribeTitles = useCallback(
-    (notify: () => void) => {
-      if (relatedRows.length === 0) return noopUnsubscribe;
-      return subscribeRelationGroupLabels(() => {
-        // An edited title is invalidated, not replaced: look it up again. A
-        // fresh cached title makes this a no-op.
-        relatedRows.forEach((key) => ensureRelationGroupLabel({ ...key, ...loadersRef.current }));
-        notify();
-      });
-    },
-    [relatedRows]
-  );
-  const getTitles = useCallback(
-    () => relatedRows.map((key) => readRelationGroupLabel(key)).join(''),
-    [relatedRows]
-  );
-  const titles = useSyncExternalStore(subscribeTitles, getTitles, getTitles);
+  }, [references.relations, relatedRowIdsKey]);
+  const titleStore = useMemo(() => {
+    const values = relatedRows.map((key) => readRelationGroupLabel(key));
+    let revision = 0;
 
-  useEffect(() => {
-    if (relatedRows.length === 0) return;
-    relatedRows.forEach((key) => ensureRelationGroupLabel({ ...key, ...loadersRef.current }));
-    // Keep this row's titles out of the label cache's eviction.
-    return retainRelationGroupLabels(relatedRows);
+    return {
+      // Snapshot reads stay constant-time as individual titles arrive.
+      getSnapshot: () => revision,
+      subscribe: (notify: () => void) => {
+        if (relatedRows.length === 0) return noopUnsubscribe;
+        const release = retainRelationGroupLabels(relatedRows);
+        const unsubscribes = relatedRows.map((key, index) => {
+          const refresh = () => {
+            // Only a changed title needs another lookup after invalidation.
+            ensureRelationGroupLabel({ ...key, ...loadersRef.current });
+            const value = readRelationGroupLabel(key);
+
+            if (value === values[index]) return;
+            values[index] = value;
+            revision += 1;
+            notify();
+          };
+
+          const unsubscribe = subscribeRelationGroupLabel(key, refresh);
+
+          // Close the render-to-subscribe gap and start cold lookups.
+          refresh();
+          return unsubscribe;
+        });
+
+        return () => {
+          unsubscribes.forEach((unsubscribe) => unsubscribe());
+          release();
+        };
+      },
+    };
   }, [relatedRows]);
+  const titles = useSyncExternalStore(titleStore.subscribe, titleStore.getSnapshot, titleStore.getSnapshot);
 
   // Rollup results.
   const [rollupValues, setRollupValues] = useState<Record<string, RollupCellValue>>({});
-
-  useEffect(() => {
-    if (!database || !row || references.rollups.length === 0) return;
-    let cancelled = false;
-    const unsubscribes = references.rollups.map((entry) => {
-      const cellId = `${rowId}:${entry.id}`;
-      const apply = (value: RollupCellValue) => {
-        if (cancelled) return;
-        setRollupValues((previous) => (previous[entry.id] === value ? previous : { ...previous, [entry.id]: value }));
-      };
-
-      // The row changed: its relation may point at other rows now.
-      if (rowClock > 0) invalidateRollupCell(cellId);
+  const rollupFieldIds = useMemo(() => references.rollups.map((entry) => entry.id), [references.rollups]);
+  const observedRows = useMemo(() => (row?.doc ? { [rowId]: row.doc as YDoc } : {}), [row, rowId]);
+  const refreshRollups = useCallback(() => {
+    if (!database || !row) return;
+    references.rollups.forEach((entry) => {
       void readRollupCell({
         baseDoc: databaseDoc,
         database,
@@ -239,15 +252,41 @@ export function useFormulaReadContext({
         rowId,
         fieldId: entry.id,
         ...loadersRef.current,
-      }).then(apply);
+      }).catch((error: unknown) => console.error('[Formula] Failed to refresh rollup', error));
+    });
+  }, [database, databaseDoc, row, rowId, references.rollups]);
+
+  // The observer tracks relation membership; unrelated row edits need no reload.
+  useRollupFieldObservers(refreshRollups, 0, {
+    rows: observedRows,
+    rollupFieldIds,
+    observeConditions: false,
+  });
+
+  useEffect(() => {
+    if (!database || !row || references.rollups.length === 0) return;
+    let cancelled = false;
+
+    setRollupValues({});
+    const unsubscribes = references.rollups.map((entry) => {
+      const cellId = `${rowId}:${entry.id}`;
+      const apply = (value: RollupCellValue) => {
+        if (cancelled) return;
+        setRollupValues((previous) => (previous[entry.id] === value ? previous : { ...previous, [entry.id]: value }));
+      };
+
+      // Both row contents and field options can change what this cell reads.
+      invalidateRollupCell(cellId);
       return subscribeRollupCell(cellId, apply);
     });
+
+    refreshRollups();
 
     return () => {
       cancelled = true;
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
-  }, [references.rollups, database, row, rowId, rowClock, databaseDoc]);
+  }, [references.rollups, database, row, rowId, databaseDoc, refreshRollups]);
 
   const hasRelations = references.relations.length > 0;
   const hasRollups = references.rollups.length > 0;
@@ -263,5 +302,5 @@ export function useFormulaReadContext({
     [members, hasRelations, hasRollups, rollupValues]
   );
 
-  return { context, revision: titles };
+  return { context, revision: `${clock}:${titles}` };
 }

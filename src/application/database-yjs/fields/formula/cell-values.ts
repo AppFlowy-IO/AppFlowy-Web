@@ -182,6 +182,9 @@ export function readFieldFormulaValue(
   if (!cell) {
     // An untouched checkbox is unchecked, as the cell shows it.
     if (entry.type === FieldType.Checkbox) return bool(false);
+    // Keep blank text typed, so addition concatenates just as it does for a
+    // stored empty string (including through variables and other formulas).
+    if (formulaTypeOfField(entry) === 'text') return text('');
     return entry.type === FieldType.MultiSelect ||
       entry.type === FieldType.Person ||
       entry.type === FieldType.Relation ||
@@ -223,7 +226,7 @@ export function readFieldFormulaValue(
     case FieldType.SingleSelect: {
       const [name] = selectOptionNames(entry, data);
 
-      return name === undefined ? EMPTY : text(name);
+      return text(name ?? '');
     }
 
     case FieldType.MultiSelect:

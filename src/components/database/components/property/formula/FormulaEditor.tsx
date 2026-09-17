@@ -13,6 +13,7 @@ import {
   FormulaBuiltinSpec,
   FormulaFieldSchema,
   FormulaFunctionSpec,
+  formulaPropertyReference,
   formulaTypeOfField,
   NO_EXTERNAL_REFERENCES,
   parseFormulaTypeOption,
@@ -70,12 +71,12 @@ function suggestionLabel(suggestion: Suggestion): string {
   }
 }
 
-function suggestionInsertion(suggestion: Suggestion): { text: string; caretOffset: number } {
+function suggestionInsertion(suggestion: Suggestion, schema: FormulaFieldSchema[]): { text: string; caretOffset: number } {
   switch (suggestion.kind) {
     case 'function':
       return { text: `${suggestion.spec.name}()`, caretOffset: suggestion.spec.name.length + 1 };
     case 'property': {
-      const text = `prop("${suggestion.entry.name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`;
+      const text = formulaPropertyReference(suggestion.entry.id, schema);
 
       return { text, caretOffset: text.length };
     }
@@ -315,7 +316,7 @@ export function FormulaEditor({
 
   const acceptSuggestion = useCallback(
     (suggestion: Suggestion) => {
-      const { text, caretOffset } = suggestionInsertion(suggestion);
+      const { text, caretOffset } = suggestionInsertion(suggestion, schema);
       const textarea = textareaRef.current;
       const end = textarea?.selectionEnd ?? caret;
       const next = value.slice(0, currentWord.start) + text + value.slice(end);
@@ -326,7 +327,7 @@ export function FormulaEditor({
       setCaret(nextCaret);
       setSuggestionsDismissed(true);
     },
-    [caret, currentWord.start, onChange, value]
+    [caret, currentWord.start, onChange, value, schema]
   );
 
   const handleKeyDown = useCallback(
@@ -550,6 +551,7 @@ export function FormulaEditor({
 
       <div className={'grid min-h-[280px] grid-cols-1 gap-3 border-t border-border-primary pt-3 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)]'}>
         <FormulaCatalogue
+          schema={schema}
           search={search}
           onSearchChange={setSearch}
           properties={catalogue.properties}
@@ -559,13 +561,14 @@ export function FormulaEditor({
           onSelect={setSelected}
           onInsert={insertAtCaret}
         />
-        <FormulaDocsPanel item={docsItem} onInsert={insertDocsExample} />
+        <FormulaDocsPanel item={docsItem} schema={schema} onInsert={insertDocsExample} />
       </div>
     </div>
   );
 }
 
 interface FormulaCatalogueProps {
+  schema: FormulaFieldSchema[];
   search: string;
   onSearchChange: (search: string) => void;
   properties: FormulaFieldSchema[];
@@ -583,6 +586,7 @@ interface FormulaCatalogueProps {
  * changed.
  */
 const FormulaCatalogue = memo(function FormulaCatalogue({
+  schema,
   search,
   onSearchChange,
   properties,
@@ -633,6 +637,7 @@ const FormulaCatalogue = memo(function FormulaCatalogue({
 
                 return (
                   <FormulaCatalogueItem
+                    schema={schema}
                     key={key}
                     itemKey={key}
                     item={item}
@@ -651,12 +656,14 @@ const FormulaCatalogue = memo(function FormulaCatalogue({
 });
 
 const FormulaCatalogueItem = memo(function FormulaCatalogueItem({
+  schema,
   itemKey,
   item,
   isSelected,
   onSelect,
   onInsert,
 }: {
+  schema: FormulaFieldSchema[];
   itemKey: string;
   item: FormulaDocsItem;
   isSelected: boolean;
@@ -674,7 +681,7 @@ const FormulaCatalogueItem = memo(function FormulaCatalogueItem({
       onMouseEnter={() => onSelect(item)}
       onFocus={() => onSelect(item)}
       onClick={() => {
-        const { text, caretOffset } = suggestionInsertion(item);
+        const { text, caretOffset } = suggestionInsertion(item, schema);
 
         onSelect(item);
         onInsert(text, caretOffset);

@@ -48,7 +48,9 @@ export function compileFormula(
 
   if (source === '') return { ast: null, resultType: 'empty' };
 
-  const key = `${formulaSchemaSignature(schema)}\n${fieldId ?? ''}\n${source}`;
+  // A cached dependency must still be checked against an editor draft's
+  // ancestry, which can differ from the saved formula's ancestry.
+  const key = JSON.stringify([formulaSchemaSignature(schema), fieldId, [...visiting].sort(), source]);
   const cached = cache.get(key);
 
   if (cached) return cached;
@@ -92,10 +94,7 @@ export function compileFormula(
   } catch (error) {
     const failed: CompiledFormula = { ast, resultType: 'any', error: error as FormulaError };
 
-    // A nested compile can fail only because of the chain that led to it (the
-    // depth cap), which the cache key does not capture; keep those uncached so
-    // the same formula compiled on its own is not reported as too deep.
-    return visiting.size > 0 ? failed : remember(key, failed);
+    return remember(key, failed);
   }
 }
 
