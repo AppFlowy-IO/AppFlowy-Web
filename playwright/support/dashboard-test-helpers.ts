@@ -19,6 +19,7 @@ import { DatabaseViewLayout, Types } from '../../src/application/types';
 
 import { AuthTestUtils } from './auth-utils';
 import { mockProSubscription } from './chart-test-helpers';
+import { grantWorkspaceProSubscription } from './subscription-test-helpers';
 import { ensurePageExpandedByViewId, expandSpaceByName } from './page-utils';
 import { ChartSettingsSelectors, DatabaseViewSelectors, SidebarSelectors, TimelineSelectors } from './selectors';
 import { setupPageErrorHandling, TestConfig } from './test-config';
@@ -919,6 +920,9 @@ export async function prepareDashboardFixture(
     '/api/user/workspace'
   );
   const workspaceId = workspaces.visiting_workspace.workspace_id;
+
+  // Hosted release servers (CI) refuse Dashboard creation without a Pro plan.
+  grantWorkspaceProSubscription(workspaceId);
   const spaceName = `Dashboards ${runId}`;
   const world: DashboardWorld = {
     runId,

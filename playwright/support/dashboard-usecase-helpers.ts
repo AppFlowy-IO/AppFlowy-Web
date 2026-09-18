@@ -19,6 +19,7 @@ import { TextFilterCondition } from '../../src/application/database-yjs/fields/t
 import { Types } from '../../src/application/types';
 
 import { mockProSubscription } from './chart-test-helpers';
+import { grantWorkspaceProSubscription } from './subscription-test-helpers';
 import {
   addFixtureDatabase,
   apiGet,
@@ -187,6 +188,9 @@ export async function prepareUseCaseWorkspace(page: Page, request: APIRequestCon
     '/api/user/workspace'
   );
   const workspaceId = workspaces.visiting_workspace.workspace_id;
+
+  // Hosted release servers (CI) refuse Dashboard creation without a Pro plan.
+  grantWorkspaceProSubscription(workspaceId);
   const world: DashboardWorld = {
     runId: uuidv4().slice(0, 8),
     owner,
