@@ -180,7 +180,7 @@ export function Workspaces() {
               <div
                 ref={workspaceListScrollRef}
                 data-testid='workspace-list'
-                className={'appflowy-scroller max-h-[200px] flex-1 overflow-y-auto overflow-x-hidden'}
+                className={'appflowy-visible-scrollbar max-h-[320px] flex-1 overflow-y-auto overflow-x-hidden'}
               >
                 <WorkspaceList
                   defaultWorkspaces={userWorkspaceInfo?.workspaces}
