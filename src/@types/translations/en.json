@@ -4437,6 +4437,7 @@
     "edit": "Edit",
     "done": "Done",
     "addWidget": "Add widget",
+    "insertRowBelow": "Insert a row below",
     "addRow": "Add row",
     "emptyTitle": "Build your dashboard",
     "emptyHint": "Add widgets to show charts, tables, boards and more from any database.",

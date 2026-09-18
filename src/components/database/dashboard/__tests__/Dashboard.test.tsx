@@ -188,6 +188,12 @@ function rowAddButton(rowId: string) {
     .find((button) => button.getAttribute('data-row-id') === rowId) as HTMLElement;
 }
 
+function rowInsertButton(rowId: string) {
+  return screen
+    .getAllByTestId('dashboard-insert-row-button')
+    .find((button) => button.getAttribute('data-row-id') === rowId) as HTMLElement;
+}
+
 function visibleAddWidgetButton() {
   return screen.getByTestId('dashboard-add-widget-button');
 }
@@ -337,6 +343,35 @@ describe('Dashboard', () => {
 
       expect(screen.queryByTestId('dashboard-width-handle')).toBeNull();
       expect(screen.queryByTestId('dashboard-add-widget-button')).toBeNull();
+    });
+
+    it('inserts a new row below a row from its edge control', () => {
+      const { persistedRows } = renderDashboard(makeRows(['a', 'b'], ['c']));
+
+      fireEvent.click(screen.getByTestId('dashboard-edit-button'));
+      fireEvent.click(rowInsertButton('r1'));
+
+      expect(JSON.parse(screen.getByTestId('dashboard-widget-picker').getAttribute('data-placement') ?? '{}')).toEqual({
+        type: 'new_row',
+        rowIndex: 1,
+      });
+
+      fireEvent.click(screen.getByTestId('pick-tasks'));
+
+      expect(persistedRows().map((row) => row.widgets.map((item) => item.viewId))).toEqual([
+        ['view-a', 'view-b'],
+        ['tasks-view'],
+        ['view-c'],
+      ]);
+      expect(persistedRows()[1].widgets[0].width).toBe(12);
+    });
+
+    it('disables the insert-row control when the dashboard is full', () => {
+      renderDashboard(makeRows(['a', 'b', 'c', 'd'], ['e', 'f', 'g', 'h'], ['i', 'j', 'k', 'l']));
+
+      fireEvent.click(screen.getByTestId('dashboard-edit-button'));
+
+      expect((rowInsertButton('r1') as HTMLButtonElement).disabled).toBe(true);
     });
 
     it('adds a widget into a row and splits the row evenly', () => {

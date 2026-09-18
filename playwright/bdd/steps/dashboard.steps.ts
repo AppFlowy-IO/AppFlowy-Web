@@ -492,6 +492,17 @@ When(
   }
 );
 
+When(
+  'I add the {string} view through the insert-row control of dashboard row {int}',
+  async ({ page }, label: string, rowIndex: number) => {
+    const row = await persistedRow(page, rowIndex);
+
+    await DashboardSelectors.row(page, row.id).hover();
+    await openWidgetPicker(page, DashboardSelectors.insertRowButton(page, row.id));
+    await pickExistingView(page, viewIdForLabel(page, label));
+  }
+);
+
 Then('dashboard row {int} holds {string}', async ({ page }, rowIndex: number, labels: string) => {
   const expected = splitList(labels);
 

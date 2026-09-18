@@ -65,6 +65,8 @@ export const DashboardSelectors = {
   addWidgetButton: (page: Page) => page.getByTestId('dashboard-add-widget-button'),
   addWidgetRowButton: (page: Page, rowId: string) =>
     page.locator(`[data-testid="dashboard-add-widget-row-button"][data-row-id="${rowId}"]`),
+  insertRowButton: (page: Page, rowId: string) =>
+    page.locator(`[data-testid="dashboard-insert-row-button"][data-row-id="${rowId}"]`),
   picker: (page: Page) => page.getByTestId('dashboard-widget-picker'),
   pickerSearch: (page: Page) => page.getByTestId('dashboard-widget-picker-search'),
   pickerOption: (page: Page, viewId: string) =>

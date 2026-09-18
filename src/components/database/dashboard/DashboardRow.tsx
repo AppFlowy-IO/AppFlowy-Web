@@ -14,6 +14,7 @@ import {
   DASHBOARD_MIN_ROW_HEIGHT,
   DashboardRow as DashboardRowData,
 } from '@/application/database-yjs/dashboard.type';
+import { ReactComponent as ArrowDownIcon } from '@/assets/icons/arrow_down.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -28,6 +29,12 @@ import { applyWidthPreview, useWidthResize } from './hooks/useWidthResize';
 import { getColumnBoundaryOffset } from './utils';
 
 const HEIGHT_HANDLE_SIZE = 12;
+
+// Notion's row controls: round, tinted buttons at both edges of a row that
+// show while the row is hovered (or one of them has focus).
+const EDGE_CONTROL_CLASS =
+  'absolute top-1/2 -translate-y-1/2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100 has-[[data-state=open]]:opacity-100';
+const EDGE_BUTTON_CLASS = 'rounded-full bg-fill-theme-select text-fill-theme-thick';
 
 interface DashboardRowProps {
   row: DashboardRowData;
@@ -93,10 +100,28 @@ export const DashboardRow = memo(function DashboardRow({ row, rowIndex, stacked 
       })
     : null;
 
+  const insertLabel = t('dashboard.insertRowBelow', { defaultValue: 'Insert a row below' });
+  // A new row needs one free widget slot; the row itself may be full.
+  const insertButton = (
+    <Button
+      aria-label={insertLabel}
+      className={EDGE_BUTTON_CLASS}
+      data-row-id={row.id}
+      data-testid='dashboard-insert-row-button'
+      disabled={dashboardFull}
+      onClick={() => openPicker({ mode: 'add', placement: { type: 'new_row', rowIndex: rowIndex + 1 } })}
+      size='icon-sm'
+      type='button'
+      variant='ghost'
+    >
+      <ArrowDownIcon aria-hidden='true' className='h-4 w-4' />
+    </Button>
+  );
+
   const addButton = (
     <Button
       aria-label={t('dashboard.addWidget', { defaultValue: 'Add widget' })}
-      className='text-icon-secondary'
+      className={EDGE_BUTTON_CLASS}
       data-row-id={row.id}
       data-testid='dashboard-add-widget-row-button'
       disabled={Boolean(addDisabledReason)}
@@ -184,7 +209,32 @@ export const DashboardRow = memo(function DashboardRow({ row, rowIndex, stacked 
         : null}
 
       {editing && !stacked ? (
-        <div className='absolute left-full top-1/2 ml-1 -translate-y-1/2'>
+        <div className={cn(EDGE_CONTROL_CLASS, 'right-full mr-1')}>
+          {dashboardFull ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className='inline-flex' onClick={() => showLimitMessage('dashboard')}>
+                  {insertButton}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side='right'>
+                {t('dashboard.widgetLimit', {
+                  count: DASHBOARD_MAX_WIDGETS,
+                  defaultValue: 'Dashboards support up to {{count}} widgets.',
+                })}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>{insertButton}</TooltipTrigger>
+              <TooltipContent side='right'>{insertLabel}</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      ) : null}
+
+      {editing && !stacked ? (
+        <div className={cn(EDGE_CONTROL_CLASS, 'left-full ml-1')}>
           {addDisabledReason ? (
             <Tooltip>
               <TooltipTrigger asChild>

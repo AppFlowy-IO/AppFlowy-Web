@@ -15,6 +15,13 @@ Feature: Dashboard layout editing
       | 1   | Notes Grid    |
       | 2   | Tasks Grid #2 |
 
+  Scenario: The insert-row control starts a new row below a row
+    When I add the "Projects Grid" view through the insert-row control of dashboard row 1
+    Then dashboard row 1 holds "Projects Grid, Tasks Grid, Notes Grid"
+    And dashboard row 2 holds "Projects Grid"
+    And dashboard row 3 holds "Tasks Grid #2"
+    And every dashboard row spans 12 columns
+
   Scenario: Dragging a widget within its row reorders the row
     When I drag the "Projects Grid" widget onto the right side of the "Notes Grid" widget
     Then dashboard row 1 holds "Tasks Grid, Notes Grid, Projects Grid"
