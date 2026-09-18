@@ -23,13 +23,10 @@ function RollupFilterMenu({ filter }: { filter: TextFilter | NumberFilter }) {
   return filter.rollupMetadata ? <RollupFilterMenuBody filter={filter} /> : <LegacyRollupFilterMenu filter={filter} />;
 }
 
+// Desktop parity: the Any / None / Every picker and the condition live in the
+// editor header, next to the field name, instead of on a row of their own.
 function RollupFilterMenuBody({ filter }: { filter: TextFilter | NumberFilter }) {
-  return (
-    <div className='flex w-[340px] max-w-[calc(100vw-32px)] flex-col gap-2 p-2'>
-      <FieldMenuTitle filterId={filter.id} fieldId={filter.fieldId} renderConditionSelect={null} />
-      <RollupFilterControls filter={filter} />
-    </div>
-  );
+  return <RollupFilterControls filter={filter} layout='menu' />;
 }
 
 function LegacyRollupFilterMenu({ filter }: { filter: TextFilter | NumberFilter }) {
