@@ -329,6 +329,15 @@ export function ValueInput({ filter, fieldType, field, disabled }: ValueInputPro
   return null;
 }
 
+// A condition without a value (e.g. "is empty"). The advanced row keeps an empty
+// slot so its columns stay aligned; the compact editor stacks the value below
+// its header and renders nothing instead.
+function EmptyValueSlot() {
+  const collapse = useFilterEditorContext()?.collapseEmptyValue;
+
+  return collapse ? null : <div className='min-w-0 flex-[7]' />;
+}
+
 // Text Value Input — uses lightweight in-place updater (no tree rebuild on every keystroke)
 function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: boolean }) {
   const { t } = useTranslation();
@@ -352,7 +361,7 @@ function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: b
     [updateValue]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[7]' />;
+  if (!showInput) return <EmptyValueSlot />;
 
   return (
     <div className='min-w-0 flex-[7]'>
@@ -418,7 +427,7 @@ function RelationValueInput({ filter, disabled }: { filter: Filter; disabled?: b
     [filter.id, filter.fieldId, updateFilter]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[7]' />;
+  if (!showInput) return <EmptyValueSlot />;
 
   return (
     <div className='min-w-0 flex-[7]'>
@@ -477,7 +486,7 @@ function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled
     [updateValue]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[7]' />;
+  if (!showInput) return <EmptyValueSlot />;
 
   return (
     <div className='min-w-0 flex-[7]'>
@@ -508,7 +517,7 @@ function DateValueInput({ filter, disabled }: { filter: DateFilter; disabled?: b
     ].includes(filter.condition);
   }, [filter.condition]);
 
-  if (!showInput) return <div className='min-w-0 flex-[7]' />;
+  if (!showInput) return <EmptyValueSlot />;
 
   return (
     <div className='min-w-0 flex-[7]'>
@@ -554,7 +563,7 @@ function SelectOptionValueInput({ filter, disabled }: { filter: SelectOptionFilt
     [filter.id, filter.fieldId, updateFilter]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[7]' />;
+  if (!showInput) return <EmptyValueSlot />;
 
   return (
     <div className='min-w-0 flex-[7]'>
@@ -745,7 +754,7 @@ function PersonValueInput({
     return `${selectedUserIds.length} selected`;
   }, [mentionableUserOptions, selectedUserIds, t]);
 
-  if (!showInput) return <div className='min-w-0 flex-[7]' />;
+  if (!showInput) return <EmptyValueSlot />;
 
   return (
     <div className='min-w-0 flex-[7]'>

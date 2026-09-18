@@ -273,6 +273,24 @@ test('compact editor inlines the mode, endpoint and condition in its header abov
   expect(screen.getByTestId('rollup-filter-mode')).toBeTruthy();
 });
 
+test('a condition without a value collapses in the compact editor and keeps its slot in the advanced row', () => {
+  const node = setup();
+
+  node.set(K.condition, 6); // TextIsEmpty
+  const mounted = render(<Harness />);
+
+  expect(screen.queryByTestId('advanced-filter-text-input')).toBeNull();
+  expect(screen.getByTestId('rollup-filter-value').childNodes).toHaveLength(0);
+
+  mounted.unmount();
+  render(<Harness advanced />);
+  const slot = screen.getByTestId('rollup-filter-controls').lastElementChild;
+
+  expect(screen.queryByTestId('advanced-filter-text-input')).toBeNull();
+  expect(slot?.tagName).toBe('DIV');
+  expect(slot?.childNodes).toHaveLength(0);
+});
+
 test.each([false, true])(
   'simple/advanced=%s select search preserves hidden and unresolved IDs and repeated choices',
   async (advanced) => {

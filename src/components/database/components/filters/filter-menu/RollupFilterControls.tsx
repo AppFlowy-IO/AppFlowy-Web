@@ -33,6 +33,8 @@ import { cn } from '@/lib/utils';
 import { FilterEditorContext } from './FilterEditorContext';
 
 const ROLLUP_FILTER_MODES = [RollupFilterMode.Any, RollupFilterMode.None, RollupFilterMode.Every];
+// Whether the date predicate reads the end date: Start, then End.
+const ROLLUP_DATE_ENDPOINTS = [false, true];
 
 /**
  * Rollup predicate controls, shared by both filter surfaces:
@@ -73,7 +75,11 @@ export default function RollupFilterControls({
     },
     [expectedMetadata, readOnly, updateFilter]
   );
-  const context = useMemo(() => ({ field: targetField?.field, updateFilter: update }), [targetField?.field, update]);
+  const inline = layout === 'menu';
+  const context = useMemo(
+    () => ({ field: targetField?.field, updateFilter: update, collapseEmptyValue: inline }),
+    [inline, targetField?.field, update]
+  );
   // An old editor may flush a delayed value on unmount. Its metadata is checked by
   // the writer against the live rule, including source IDs and calculation type.
   const configurationKey = JSON.stringify([
@@ -87,7 +93,6 @@ export default function RollupFilterControls({
     expectedMetadata.rollup_calculation_type,
   ]);
   const endDate = isEndDateCondition(filter.condition);
-  const inline = layout === 'menu';
 
   const selects = (
     <>
@@ -116,7 +121,7 @@ export default function RollupFilterControls({
         <RollupOptionSelect
           testId='rollup-filter-date-endpoint'
           value={endDate}
-          options={[false, true].map((end) => ({
+          options={ROLLUP_DATE_ENDPOINTS.map((end) => ({
             value: end,
             text: t(end ? 'grid.dateFilter.end' : 'grid.dateFilter.start', { defaultValue: end ? 'End' : 'Start' }),
           }))}
@@ -153,8 +158,10 @@ export default function RollupFilterControls({
       {inline ? (
         <div className='flex flex-col' data-testid='rollup-filter-controls'>
           <FieldMenuTitle filterId={filter.id} fieldId={filter.fieldId} renderConditionSelect={selects} />
-          {/* Conditions without a value render an empty placeholder; it must not leave a gap. */}
-          <div className='flex min-w-0 [&>*]:mt-1 [&>:empty]:hidden'>{valueInput}</div>
+          {/* A condition without a value renders nothing here, so the row drops its spacing too. */}
+          <div className='flex min-w-0 pt-1 empty:hidden' data-testid='rollup-filter-value'>
+            {valueInput}
+          </div>
         </div>
       ) : (
         <div className='flex min-w-0 flex-[14] flex-wrap items-center gap-1.5' data-testid='rollup-filter-controls'>
