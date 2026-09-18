@@ -24,6 +24,11 @@ type FiltersUpdater = (filters: DashboardGlobalFilter[]) => DashboardGlobalFilte
  * publishes the override. Updates are computed from the latest lists so
  * several writes in one event (for example two debounced inputs flushing on
  * close) never overwrite each other.
+ *
+ * "Save for everybody" publishes the override as the whole filter list, a
+ * snapshot like every dashboard layout write (last writer wins): a change a
+ * collaborator saved to the same filters in the meantime is replaced, and a
+ * filter they added while the override was open is dropped from it.
  */
 export function useGlobalFilterActions() {
   const { canEdit, isEditing, updateSetting } = useDashboardContext();

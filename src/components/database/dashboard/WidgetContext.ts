@@ -1,6 +1,5 @@
 import { createContext, useContext } from 'react';
 
-import { DashboardWidget } from '@/application/database-yjs/dashboard.type';
 import { ViewIcon, ViewLayout } from '@/application/types';
 
 import { WidgetMoveDirection } from './widget-moves';
@@ -22,13 +21,12 @@ export interface WidgetActions {
 
 /**
  * Per-widget state shared between the card (`DashboardWidget`) and the header
- * that `DatabaseViews` renders inside the widget's nested database tree.
+ * that `DatabaseViews` renders inside the widget's nested database tree. Only
+ * what a consumer reads: the widget's position is not here, so a move or a
+ * resize elsewhere on the dashboard never re-renders the nested shell.
  */
 export interface WidgetContextValue {
-  widget: DashboardWidget;
-  rowId: string;
-  rowIndex: number;
-  index: number;
+  widgetId: string;
   /** Resolved view name (folder name, else the database view name). */
   name: string;
   icon: ViewIcon | null;

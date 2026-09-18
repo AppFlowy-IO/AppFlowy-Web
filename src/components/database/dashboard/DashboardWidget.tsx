@@ -123,9 +123,6 @@ interface WidgetChromeProps {
 
 interface WidgetSourceProps extends WidgetChromeProps {
   widget: DashboardWidgetData;
-  rowId: string;
-  rowIndex: number;
-  index: number;
   rowHeight: number;
   cardRef: RefObject<HTMLDivElement>;
 }
@@ -138,9 +135,6 @@ interface WidgetSourceProps extends WidgetChromeProps {
  */
 const WidgetSource = memo(function WidgetSource({
   widget,
-  rowId,
-  rowIndex,
-  index,
   rowHeight,
   cardRef,
   isDragging,
@@ -274,10 +268,7 @@ const WidgetSource = memo(function WidgetSource({
 
   const contextValue = useMemo<WidgetContextValue>(
     () => ({
-      widget,
-      rowId,
-      rowIndex,
-      index,
+      widgetId: widget.id,
       name,
       icon: meta.icon,
       layout,
@@ -294,16 +285,13 @@ const WidgetSource = memo(function WidgetSource({
       canEdit,
       editing,
       headerHeight,
-      index,
       isDragging,
       isEditing,
       layout,
       meta.icon,
       name,
-      rowId,
-      rowIndex,
       showWidgetTitles,
-      widget,
+      widget.id,
     ]
   );
 
@@ -469,9 +457,6 @@ const WidgetSource = memo(function WidgetSource({
 
 interface DashboardWidgetProps extends WidgetChromeProps {
   widget: DashboardWidgetData;
-  rowId: string;
-  rowIndex: number;
-  index: number;
   /** Grid columns the card spans (12 when the dashboard is stacked). */
   span: number;
   /** Row height in CSS px (includes a live resize preview). */
@@ -484,9 +469,6 @@ interface DashboardWidgetProps extends WidgetChromeProps {
  */
 export const DashboardWidget = memo(function DashboardWidget({
   widget,
-  rowId,
-  rowIndex,
-  index,
   span,
   height,
   isEditing,
@@ -534,13 +516,10 @@ export const DashboardWidget = memo(function DashboardWidget({
         <WidgetSource
           canEdit={canEdit}
           cardRef={cardRef}
-          index={index}
           isDragging={isDragging}
           isEditing={isEditing}
           key={`${widget.databaseId}:${widget.viewId}`}
           rowHeight={contentHeight}
-          rowId={rowId}
-          rowIndex={rowIndex}
           showWidgetTitles={showWidgetTitles}
           widget={widget}
         />

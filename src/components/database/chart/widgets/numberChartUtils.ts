@@ -48,6 +48,20 @@ export interface FormatNumberChartValueOptions {
  * - `auto` follows the Y field's number format (currency / percent) for value
  *   aggregations; counts and non-Number fields use a grouped decimal.
  */
+// Built once: `Intl.NumberFormat` construction is far costlier than `format`.
+const PERCENT_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'percent',
+  maximumFractionDigits: MAX_FRACTION_DIGITS,
+});
+const COMPACT_FORMATTER = new Intl.NumberFormat('en-US', {
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+const DECIMAL_FORMATTER = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: MAX_FRACTION_DIGITS,
+  useGrouping: true,
+});
+
 export function formatNumberChartValue(
   value: number,
   { numberFormat, aggregationType, fieldNumberFormat }: FormatNumberChartValueOptions
@@ -56,16 +70,10 @@ export function formatNumberChartValue(
 
   switch (numberFormat) {
     case 'percent':
-      return new Intl.NumberFormat('en-US', {
-        style: 'percent',
-        maximumFractionDigits: MAX_FRACTION_DIGITS,
-      }).format(value);
+      return PERCENT_FORMATTER.format(value);
 
     case 'compact':
-      return new Intl.NumberFormat('en-US', {
-        notation: 'compact',
-        maximumFractionDigits: 1,
-      }).format(value);
+      return COMPACT_FORMATTER.format(value);
 
     case 'auto':
     default: {
@@ -80,10 +88,7 @@ export function formatNumberChartValue(
         return currencyFormaterMap[fieldNumberFormat](value);
       }
 
-      return new Intl.NumberFormat('en-US', {
-        maximumFractionDigits: MAX_FRACTION_DIGITS,
-        useGrouping: true,
-      }).format(roundTo(value, MAX_FRACTION_DIGITS));
+      return DECIMAL_FORMATTER.format(roundTo(value, MAX_FRACTION_DIGITS));
     }
   }
 }

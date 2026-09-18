@@ -154,6 +154,10 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
     setLocalGlobalFilters(null);
   }
 
+  // Losing write access leaves Edit mode, also during render: no frame ever
+  // shows Edit-mode chrome to a viewer.
+  if (readOnly && isEditing) setEditingState(false);
+
   const [sourceDocs, setSourceDocs] = useState<Record<string, YDoc>>(() => ({ [hostDatabaseId]: databaseDoc }));
   const [sourceNames, setSourceNames] = useState<Record<string, string>>({});
   const sourceDocsRef = useRef(sourceDocs);
@@ -190,11 +194,6 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   const viewIdsKey = viewIds?.join(',') ?? '';
   // Stable identity while the tab list is unchanged.
   const hostViewIds = useMemo(() => (viewIdsKey ? viewIdsKey.split(',') : EMPTY_VIEW_IDS), [viewIdsKey]);
-
-  // Losing write access leaves Edit mode.
-  useEffect(() => {
-    if (readOnly) setEditingState(false);
-  }, [readOnly]);
 
   useEffect(() => {
     setSourceDocs((previous) =>

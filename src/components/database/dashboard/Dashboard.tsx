@@ -26,7 +26,7 @@ import {
   DashboardUiContextValue,
   WidgetPickerRequest,
 } from './DashboardUiContext';
-import { GlobalFilterBar } from './global-filters';
+import { GlobalFilterBar } from './global-filters/GlobalFilterBar';
 import { CreateWidgetViewRequest, useCreateWidgetView } from './hooks/useCreateWidgetView';
 import { useDashboardDndMonitor } from './hooks/useDashboardDnd';
 import { useDashboardHostServices } from './hooks/useDashboardHostServices';

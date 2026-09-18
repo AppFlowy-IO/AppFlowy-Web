@@ -1,5 +1,5 @@
 import { Dialog, DialogContent, DialogTitle } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabaseContext, useFieldSelector, usePrimaryFieldId, useRowMap } from '@/application/database-yjs';
@@ -47,36 +47,46 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
   // A Number chart that only counts rows never hydrates them, so load the
-  // listed rows that are not open yet (a no-op for grouped charts).
+  // listed rows that are not open yet (a no-op for grouped charts). The list
+  // is rebuilt once when the pool finishes, not for every row that arrives:
+  // each arrival replaces the row map, and decoding every listed row again
+  // per arrival is quadratic in the category size.
+  const [loadedRevision, setLoadedRevision] = useState(0);
+  const rowMetasRef = useRef(rowMetas);
+
+  rowMetasRef.current = rowMetas;
+
   useEffect(() => {
     if (!ensureRow) return;
-    const missing = item.rowIds.filter((rowId) => !rowMetas?.[rowId]);
+    const missing = item.rowIds.filter((rowId) => !rowMetasRef.current?.[rowId]);
 
     if (missing.length === 0) return;
     let cancelled = false;
 
-    void ensureRowsWithConcurrency(missing, ensureRow, { isCancelled: () => cancelled });
+    void ensureRowsWithConcurrency(missing, ensureRow, { isCancelled: () => cancelled }).then(() => {
+      if (!cancelled) setLoadedRevision((revision) => revision + 1);
+    });
     return () => {
       cancelled = true;
     };
-    // `rowMetas` grows while these rows load; re-running would only restart the pool.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ensureRow, item.rowIds]);
 
   const rows = useMemo<RowItem[]>(() => {
     void primaryFieldClock;
+    void loadedRevision;
+    const currentRowMetas = rowMetasRef.current;
 
     return item.rowIds.map((rowId) => {
-      if (!rowMetas || !primaryFieldId || !primaryField) {
+      if (!currentRowMetas || !primaryFieldId || !primaryField) {
         return { id: rowId, primaryValue: '' };
       }
 
-      const cell = getCell(rowId, primaryFieldId, rowMetas);
+      const cell = getCell(rowId, primaryFieldId, currentRowMetas);
 
       if (!cell) return { id: rowId, primaryValue: '' };
       return { id: rowId, primaryValue: decodeCellToText(cell, primaryField) };
     });
-  }, [item.rowIds, rowMetas, primaryFieldId, primaryField, primaryFieldClock]);
+  }, [item.rowIds, loadedRevision, primaryFieldId, primaryField, primaryFieldClock]);
 
   return (
     <>

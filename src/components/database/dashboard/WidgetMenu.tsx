@@ -161,17 +161,17 @@ interface WidgetMenuProps {
  */
 function WidgetMenuItems() {
   const { t } = useTranslation();
-  const { actions, isEditing, canEdit, widget } = useWidgetContext();
+  const { actions, isEditing, canEdit, widgetId } = useWidgetContext();
   const { rows } = useDashboardContext();
   const editing = isEditing && canEdit;
   const entries = useMemo(
     () =>
       buildWidgetMenuEntries({
         editing,
-        canDuplicate: canDuplicateWidget(rows, widget.id),
-        moveTargets: getWidgetMoveTargets(rows, widget.id),
+        canDuplicate: canDuplicateWidget(rows, widgetId),
+        moveTargets: getWidgetMoveTargets(rows, widgetId),
       }),
-    [editing, rows, widget.id]
+    [editing, rows, widgetId]
   );
   const limitText = t('dashboard.widgetLimit', {
     count: DASHBOARD_MAX_WIDGETS,

@@ -133,12 +133,9 @@ export const DashboardRow = memo(function DashboardRow({ row, rowIndex, stacked 
           <DashboardWidget
             canEdit={canEdit}
             height={rowHeight}
-            index={index}
             isDragging={draggingWidgetId === widget.id}
             isEditing={isEditing}
             key={widget.id}
-            rowId={row.id}
-            rowIndex={rowIndex}
             showWidgetTitles={showWidgetTitles}
             span={stacked ? DASHBOARD_GRID_COLUMNS : widths[index]}
             widget={widget}

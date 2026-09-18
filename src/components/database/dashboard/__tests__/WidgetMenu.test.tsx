@@ -75,10 +75,7 @@ function createDashboardContext(rows: DashboardRow[]): DashboardContextValue {
 
 function createContext(overrides: Partial<WidgetContextValue> = {}): WidgetContextValue {
   return {
-    widget: { id: 'w1', viewId: 'view-1', databaseId: 'db', width: 6 },
-    rowId: 'r1',
-    rowIndex: 0,
-    index: 1,
+    widgetId: 'w1',
     name: 'Tasks Grid',
     icon: null,
     layout: ViewLayout.Grid,
@@ -242,7 +239,7 @@ describe('WidgetMenu', () => {
   it('ignores disabled entries', () => {
     const actions = createActions();
 
-    render(withContext(createContext({ actions, index: 0 }), <ControlledMenu />, LONE_ROWS));
+    render(withContext(createContext({ actions }), <ControlledMenu />, LONE_ROWS));
 
     for (const testId of ['move-left', 'move-right', 'move-up', 'move-down']) {
       const item = screen.getByTestId(`dashboard-widget-menu-${testId}`);
@@ -257,7 +254,7 @@ describe('WidgetMenu', () => {
   it('lets Duplicate at the widget limit run, so the limit message can be shown', () => {
     const actions = createActions();
 
-    render(withContext(createContext({ actions, index: 0 }), <ControlledMenu />, FULL_ROWS));
+    render(withContext(createContext({ actions }), <ControlledMenu />, FULL_ROWS));
     const item = screen.getByTestId('dashboard-widget-menu-duplicate');
 
     expect(item.getAttribute('aria-disabled')).toBeNull();
