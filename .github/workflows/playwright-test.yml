@@ -101,7 +101,10 @@ jobs:
             bdd: 'false'
             shard: '3/3'
           - name: 'database-bdd'
-            spec: 'playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/embedded-grid-bottom-rows.feature.spec.js
             description: 'Database row and undo/redo BDD workflows'
             bdd: 'true'
             shard: ''
