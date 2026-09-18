@@ -145,7 +145,7 @@ describe('useWidgetViewSnapshot', () => {
   it('reports nothing without a doc', () => {
     const { result } = renderHook(() => useWidgetViewSnapshot(null, 'view'));
 
-    expect(result.current).toEqual({ hasDatabase: false, exists: false, name: '', layout: null });
+    expect(result.current).toEqual({ hasDatabase: false, exists: false, view: undefined, name: '', layout: null });
   });
 
   it('follows the database arriving and the view changing', () => {
@@ -159,7 +159,7 @@ describe('useWidgetViewSnapshot', () => {
     act(() => {
       views = addDatabase(doc);
     });
-    expect(result.current).toEqual({ hasDatabase: true, exists: false, name: '', layout: null });
+    expect(result.current).toEqual({ hasDatabase: true, exists: false, view: undefined, name: '', layout: null });
 
     let view!: YDatabaseView;
 
@@ -169,6 +169,7 @@ describe('useWidgetViewSnapshot', () => {
     expect(result.current).toEqual({
       hasDatabase: true,
       exists: true,
+      view,
       name: 'Tasks',
       layout: DatabaseViewLayout.Board,
     });

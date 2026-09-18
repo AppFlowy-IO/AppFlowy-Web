@@ -1,9 +1,11 @@
 import * as Y from 'yjs';
 
-import { FilterType } from '@/application/database-yjs/database.type';
+import { FieldType, FilterType } from '@/application/database-yjs/database.type';
 import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
 import { createViewConditionsOverlay, readOverlayConditions } from '@/application/database-yjs/view-conditions-overlay';
-import { YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+
+import { viewConditionsYrsDelta, viewConditionsYrsInitial } from './fixtures/view-conditions-yrs';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
@@ -53,6 +55,123 @@ function sortMap(id: string, fieldId = 'name') {
 }
 
 describe('createViewConditionsOverlay', () => {
+  it('mirrors native Yrs maps without rewriting equivalent values and saves them with undo', () => {
+    const doc = new Y.Doc() as YDoc;
+
+    Y.applyUpdate(doc, Uint8Array.from(Buffer.from(viewConditionsYrsInitial, 'base64')), 'remote');
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const view = database.get(YjsDatabaseKey.views).get('view-1');
+    const sourceFilters = view.get(YjsDatabaseKey.filters);
+    const sourceSorts = view.get(YjsDatabaseKey.sorts);
+    const updates = jest.fn();
+
+    getOrCreateDatabaseHistoryManager(doc);
+    doc.on('update', updates);
+    const overlay = createViewConditionsOverlay(view);
+    const filters = overlay.view.get(YjsDatabaseKey.filters);
+    const sorts = overlay.view.get(YjsDatabaseKey.sorts);
+    const firstFilter = filters.get(0);
+    const firstSort = sorts.get(0);
+
+    expect(firstFilter.toJSON()).toMatchObject({ condition: '1', ty: '10', filter_type: '2' });
+    expect(firstSort.get(YjsDatabaseKey.condition)).toBe('1');
+    expect(sourceFilters.get(0).get(YjsDatabaseKey.condition)).toBe(BigInt(1));
+    expect(sourceSorts.get(0).get(YjsDatabaseKey.condition)).toBe(BigInt(1));
+    expect(overlay.isDirty()).toBe(false);
+    expect(updates).not.toHaveBeenCalled();
+
+    // A clean reset compares the native BigInts with their cloned strings as equal.
+    overlay.reset();
+    expect(filters.get(0)).toBe(firstFilter);
+    expect(sorts.get(0)).toBe(firstSort);
+
+    Y.applyUpdate(doc, Uint8Array.from(Buffer.from(viewConditionsYrsDelta, 'base64')), 'remote');
+    expect(filters.get(0).get(YjsDatabaseKey.condition)).toBe('0');
+    expect(sorts.get(0).get(YjsDatabaseKey.condition)).toBe('0');
+    expect(overlay.isDirty()).toBe(false);
+
+    filters.get(0).set(YjsDatabaseKey.condition, 1);
+    overlay.reset();
+    expect(filters.get(0).get(YjsDatabaseKey.condition)).toBe('0');
+    expect(overlay.isDirty()).toBe(false);
+
+    filters.get(0).set(YjsDatabaseKey.condition, 1);
+    sorts.get(0).set(YjsDatabaseKey.condition, 1);
+    expect(sourceFilters.get(0).get(YjsDatabaseKey.condition)).toBe(BigInt(0));
+    expect(sourceSorts.get(0).get(YjsDatabaseKey.condition)).toBe(BigInt(0));
+    overlay.commit();
+    expect(sourceFilters.get(0).get(YjsDatabaseKey.condition)).toBe(1);
+    expect(sourceSorts.get(0).get(YjsDatabaseKey.condition)).toBe(1);
+    expect(overlay.isDirty()).toBe(false);
+
+    getOrCreateDatabaseHistoryManager(doc).undo();
+    expect(sourceFilters.get(0).get(YjsDatabaseKey.condition)).toBe(BigInt(0));
+    expect(sourceSorts.get(0).get(YjsDatabaseKey.condition)).toBe(BigInt(0));
+    expect(filters.get(0).get(YjsDatabaseKey.condition)).toBe('0');
+    expect(sorts.get(0).get(YjsDatabaseKey.condition)).toBe('0');
+    overlay.destroy();
+    doc.destroy();
+  });
+
+  it.each([YjsDatabaseKey.filters, YjsDatabaseKey.sorts])(
+    'preserves BigInt %s in plain records through mirroring, reset, save, and undo',
+    (key) => {
+      const { doc, view } = createRealView();
+      const source = view.get(key) as Y.Array<Record<string, unknown>>;
+      // Yrs stores these entries as plain Any maps with BigInt enum values.
+      const condition = {
+        id: 'native-condition',
+        field_id: 'status',
+        condition: BigInt(1),
+        ...(key === YjsDatabaseKey.filters
+          ? { filter_type: BigInt(FilterType.Data), ty: BigInt(FieldType.SingleSelect), content: '[]' }
+          : {}),
+      };
+      const replaceCondition = (target: Y.Array<Record<string, unknown>>, value: typeof condition) => {
+        target.doc!.transact(() => {
+          target.delete(0, target.length);
+          target.push([value]);
+        });
+      };
+
+      source.push([condition]);
+      const overlay = createViewConditionsOverlay(view);
+      const local = overlay.view.get(key) as Y.Array<Record<string, unknown>>;
+      const listener = jest.fn();
+
+      overlay.subscribe(listener);
+      expect(local.toJSON()).toEqual(source.toJSON());
+      expect(local.get(0).condition).toBe(BigInt(1));
+      expect(overlay.isDirty()).toBe(false);
+
+      // A synced native update is mirrored without becoming a viewer edit.
+      replaceCondition(source, { ...condition, condition: BigInt(0) });
+      expect(local.get(0).condition).toBe(BigInt(0));
+      expect(listener).not.toHaveBeenCalled();
+
+      replaceCondition(local, condition);
+      expect(overlay.isDirty()).toBe(true);
+      expect(source.get(0).condition).toBe(BigInt(0));
+
+      overlay.reset();
+      expect(overlay.isDirty()).toBe(false);
+      expect(local.toJSON()).toEqual(source.toJSON());
+
+      replaceCondition(local, condition);
+      overlay.commit();
+      expect(overlay.isDirty()).toBe(false);
+      expect(source.get(0).condition).toBe(BigInt(1));
+      expect(local.toJSON()).toEqual(source.toJSON());
+
+      getOrCreateDatabaseHistoryManager(doc).undo();
+      expect(source.get(0).condition).toBe(BigInt(0));
+      expect(local.toJSON()).toEqual(source.toJSON());
+
+      overlay.destroy();
+      doc.destroy();
+    }
+  );
+
   it('starts as a copy of the real filters and sorts and forwards every other key', () => {
     const { view, filters, sorts } = createRealView();
 

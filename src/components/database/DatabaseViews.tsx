@@ -3,12 +3,7 @@ import { flushSync } from 'react-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { toast } from 'sonner';
 
-import {
-  DatabaseContext,
-  useDatabase,
-  useDatabaseContext,
-  useDatabaseViewsSelector,
-} from '@/application/database-yjs';
+import { DatabaseContext, useDatabase, useDatabaseContext, useDatabaseViewsSelector } from '@/application/database-yjs';
 import { hasAdvancedFilterRoot } from '@/application/database-yjs/filter';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
@@ -482,8 +477,7 @@ function DatabaseViews({
       <div
         className={cn(
           'w-full',
-          shouldUseFixedViewport &&
-            (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
+          shouldUseFixedViewport && (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
         )}
         style={viewportStyle}
       >
@@ -505,11 +499,7 @@ function DatabaseViews({
               </Suspense>
               <WidgetBody>
                 <DatabaseConditionsPanel />
-                {viewportContext === databaseContext ? (
-                  viewport
-                ) : (
-                  <DatabaseContext.Provider value={viewportContext}>{viewport}</DatabaseContext.Provider>
-                )}
+                <DatabaseContext.Provider value={viewportContext}>{viewport}</DatabaseContext.Provider>
               </WidgetBody>
             </>
           ) : (

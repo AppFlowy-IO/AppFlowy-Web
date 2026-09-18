@@ -116,7 +116,7 @@ function createContext(overrides: Partial<MockDashboard> = {}): MockDashboard {
     localGlobalFilters,
     setLocalGlobalFilters: jest.fn(),
     localWidgetChanges: 0,
-    registerViewOverlay: jest.fn(),
+    getViewOverlay: jest.fn(),
     resetViewOverlays: jest.fn(),
     commitViewOverlays: jest.fn(),
     canEdit: true,

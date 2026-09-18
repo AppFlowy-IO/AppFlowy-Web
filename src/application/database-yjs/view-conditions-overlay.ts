@@ -20,8 +20,10 @@ import { YDatabaseView, YjsDatabaseKey, YSharedRoot } from '@/application/types'
 export interface ViewConditionsOverlay {
   /** The proxy to hand to the nested database in place of the real view. */
   view: YDatabaseView;
-  /** The real view the overlay was created for. */
+  /** The current real view, including any replacement received from sync. */
   realView: YDatabaseView;
+  /** Follow a replacement of the same source view, retaining private conditions. */
+  rebind: (view: YDatabaseView) => void;
   isDirty: () => boolean;
   /** Notifies on every dirty-state change. */
   subscribe: (listener: () => void) => () => void;
@@ -38,6 +40,9 @@ const OVERLAY_KEYS: ReadonlySet<string> = new Set([YjsDatabaseKey.filters, YjsDa
 type Plain = Record<string, unknown>;
 
 function cloneInto(value: unknown): unknown {
+  // Yjs can decode native BigInt values but cannot insert them into shared types.
+  if (typeof value === 'bigint') return value.toString();
+
   if (value instanceof Y.Map) {
     const map = new Y.Map();
 
@@ -61,10 +66,14 @@ function replaceContents(target: Y.Array<unknown>, source: Y.Array<unknown> | un
 }
 
 function sameContents(a: Y.Array<unknown>, b: Y.Array<unknown> | undefined) {
-  return JSON.stringify(a.toJSON()) === JSON.stringify(b?.toJSON() ?? []);
+  // Compare native integers with the string values used when cloning them into Yjs.
+  const replacer = (_key: string, value: unknown) => (typeof value === 'bigint' ? value.toString() : value);
+
+  return JSON.stringify(a.toJSON(), replacer) === JSON.stringify(b?.toJSON() ?? [], replacer);
 }
 
-export function createViewConditionsOverlay(realView: YDatabaseView): ViewConditionsOverlay {
+export function createViewConditionsOverlay(initialView: YDatabaseView): ViewConditionsOverlay {
+  let realView = initialView;
   const localDoc = new Y.Doc();
   const local = localDoc.getMap('view');
 
@@ -132,33 +141,51 @@ export function createViewConditionsOverlay(realView: YDatabaseView): ViewCondit
   attachReal();
   mirror();
 
-  const view = new Proxy(realView, {
-    get(target, property, receiver) {
-      if (property === 'get') {
-        return (key: string) => (OVERLAY_KEYS.has(key) ? localArray(key) : target.get(key as YjsDatabaseKey.name));
-      }
+  const createProxy = () =>
+    new Proxy(realView, {
+      get(target, property, receiver) {
+        if (property === 'get') {
+          return (key: string) => (OVERLAY_KEYS.has(key) ? localArray(key) : target.get(key as YjsDatabaseKey.name));
+        }
 
-      if (property === 'set') {
-        return (key: string, value: unknown) => {
-          if (!OVERLAY_KEYS.has(key)) return target.set(key, value);
-          // Integrate the given array into the local doc, so a caller that
-          // keeps pushing into it (Yjs' usual "create, set, fill" pattern)
-          // writes to the viewer's copy.
-          localDoc.transact(() => local.set(key, value));
-          return value;
-        };
-      }
+        if (property === 'set') {
+          return (key: string, value: unknown) => {
+            if (!OVERLAY_KEYS.has(key)) return target.set(key, value);
+            // Integrate the given array into the local doc, so a caller that
+            // keeps pushing into it (Yjs' usual "create, set, fill" pattern)
+            // writes to the viewer's copy.
+            localDoc.transact(() => local.set(key, value));
+            return value;
+          };
+        }
 
-      const value = Reflect.get(target, property, receiver);
+        const value = Reflect.get(target, property, receiver);
 
-      // Yjs methods must run against the real map, not the proxy.
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  });
+        // Yjs methods must run against the real map, not the proxy.
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+
+  let view = createProxy();
 
   return {
-    view,
-    realView,
+    get view() {
+      return view;
+    },
+    get realView() {
+      return realView;
+    },
+    rebind(nextView) {
+      if (destroyed || nextView === realView) return;
+      realView.unobserve(onRealViewChange);
+      realView = nextView;
+      // A new proxy makes selectors resubscribe to the replacement's row
+      // orders and settings; the local filter/sort arrays keep their identity.
+      view = createProxy();
+      realView.observe(onRealViewChange);
+      attachReal();
+      onRealChange();
+    },
     isDirty: () => dirty,
     subscribe(listener) {
       listeners.add(listener);

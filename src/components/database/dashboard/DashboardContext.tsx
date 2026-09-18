@@ -15,10 +15,10 @@ import {
   useUpdateDashboardSetting,
 } from '@/application/database-yjs';
 import { YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
-import type { ViewConditionsOverlay } from '@/application/database-yjs/view-conditions-overlay';
 
-import { detachRemovedGlobalFilterSources, GlobalFilterSource } from './global-filters/global-filter.utils';
 import { readGlobalFilterSourceFields } from './global-filters/global-filter.source-fields';
+import { detachRemovedGlobalFilterSources, GlobalFilterSource } from './global-filters/global-filter.utils';
+import { DashboardViewOverlays, useDashboardViewOverlays } from './hooks/useDashboardViewOverlays';
 
 /**
  * Shared state of one dashboard view, split by how often it changes so a
@@ -59,7 +59,7 @@ export interface DashboardContextValue {
   updateRows: (updater: (rows: DashboardRow[]) => DashboardRow[]) => void;
 }
 
-export interface DashboardFiltersContextValue {
+export interface DashboardFiltersContextValue extends DashboardViewOverlays {
   /** Persisted global filters (mappings of databases without a widget left out). */
   globalFilters: DashboardGlobalFilter[];
   /** Persisted global filters unless the viewer changed them locally. */
@@ -70,14 +70,6 @@ export interface DashboardFiltersContextValue {
    */
   localGlobalFilters: DashboardGlobalFilter[] | null;
   setLocalGlobalFilters: (filters: DashboardGlobalFilter[] | null) => void;
-  /** Widgets whose View-mode filters / sorts the viewer changed locally. */
-  localWidgetChanges: number;
-  /** A View-mode widget registers the overlay its nested database edits. */
-  registerViewOverlay: (widgetId: string, overlay: ViewConditionsOverlay | null) => void;
-  /** Drop every widget's local filters / sorts. */
-  resetViewOverlays: () => void;
-  /** Write every widget's local filters / sorts to its view. */
-  commitViewOverlays: () => void;
 }
 
 export interface DashboardSourcesContextValue {
@@ -167,40 +159,10 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   // shows Edit-mode chrome to a viewer.
   if (readOnly && isEditing) setEditingState(false);
 
-  // View-mode widget overlays (see `view-conditions-overlay.ts`), keyed by widget id.
-  const overlaysRef = useRef(new Map<string, { overlay: ViewConditionsOverlay; unsubscribe: () => void }>());
-  const [localWidgetChanges, setLocalWidgetChanges] = useState(0);
-  const recountWidgetChanges = useCallback(() => {
-    let dirty = 0;
-
-    overlaysRef.current.forEach(({ overlay }) => {
-      if (overlay.isDirty()) dirty += 1;
-    });
-    setLocalWidgetChanges(dirty);
-  }, []);
-  const registerViewOverlay = useCallback(
-    (widgetId: string, overlay: ViewConditionsOverlay | null) => {
-      const current = overlaysRef.current.get(widgetId);
-
-      if (current?.overlay === overlay) return;
-      current?.unsubscribe();
-      overlaysRef.current.delete(widgetId);
-      if (overlay) {
-        overlaysRef.current.set(widgetId, { overlay, unsubscribe: overlay.subscribe(recountWidgetChanges) });
-      }
-
-      recountWidgetChanges();
-    },
-    [recountWidgetChanges]
+  const { localWidgetChanges, getViewOverlay, resetViewOverlays, commitViewOverlays } = useDashboardViewOverlays(
+    dashboardViewId,
+    storedSetting.rows
   );
-  const resetViewOverlays = useCallback(() => {
-    overlaysRef.current.forEach(({ overlay }) => overlay.reset());
-    recountWidgetChanges();
-  }, [recountWidgetChanges]);
-  const commitViewOverlays = useCallback(() => {
-    overlaysRef.current.forEach(({ overlay }) => overlay.commit());
-    recountWidgetChanges();
-  }, [recountWidgetChanges]);
 
   const [sourceDocs, setSourceDocs] = useState<Record<string, YDoc>>(() => ({ [hostDatabaseId]: databaseDoc }));
   const [sourceNames, setSourceNames] = useState<Record<string, string>>({});
@@ -346,18 +308,11 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
       localGlobalFilters: visibleLocalGlobalFilters,
       setLocalGlobalFilters,
       localWidgetChanges,
-      registerViewOverlay,
+      getViewOverlay,
       resetViewOverlays,
       commitViewOverlays,
     }),
-    [
-      globalFilters,
-      visibleLocalGlobalFilters,
-      localWidgetChanges,
-      registerViewOverlay,
-      resetViewOverlays,
-      commitViewOverlays,
-    ]
+    [globalFilters, visibleLocalGlobalFilters, localWidgetChanges, getViewOverlay, resetViewOverlays, commitViewOverlays]
   );
 
   const sourcesValue = useMemo<DashboardSourcesContextValue>(
