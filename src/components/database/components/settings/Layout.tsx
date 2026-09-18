@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { DASHBOARD_VIEW_ENABLED, TIMELINE_VIEW_ENABLED } from '@/application/constants';
+import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
 import { useUpdateDatabaseLayout } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout } from '@/application/types';
@@ -21,8 +21,11 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
   const viewId = useDatabaseViewId();
   const { isDashboardWidget } = useDatabaseContext();
   const updateLayout = useUpdateDatabaseLayout(viewId);
-  // Dashboards never nest, so a widget's view cannot become one.
-  const showDashboard = DASHBOARD_VIEW_ENABLED && !isDashboardWidget;
+  // Dashboards never nest, so a widget's view cannot become one. Like
+  // Timeline, an existing dashboard keeps its option while creation is off.
+  const showDashboard =
+    (EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED || currentLayout === DatabaseViewLayout.Dashboard) &&
+    !isDashboardWidget;
   const options = useMemo(
     () => [
       {
@@ -37,7 +40,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         value: DatabaseViewLayout.Calendar,
         label: t('calendar.menuName'),
       },
-      ...(TIMELINE_VIEW_ENABLED
+      ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED || currentLayout === DatabaseViewLayout.Timeline
         ? [
             {
               value: DatabaseViewLayout.Timeline,
@@ -70,7 +73,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
           ]
         : []),
     ],
-    [t, showDashboard]
+    [t, currentLayout, showDashboard]
   );
 
   return (
@@ -90,7 +93,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
               className={'w-full'}
               data-testid={`database-layout-option-${option.value}`}
               onSelect={() => {
-                updateLayout(option.value);
+                if (option.value !== currentLayout) updateLayout(option.value);
               }}
             >
               <div className={'flex items-center gap-2'}>{option.label}</div>

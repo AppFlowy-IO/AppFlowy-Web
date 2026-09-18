@@ -8,16 +8,12 @@ import { AddViewButton } from '@/components/database/components/tabs/AddViewButt
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 const mockAddView = jest.fn();
-let mockFormViewCreationEnabled = false;
-let mockDashboardViewEnabled = true;
+let mockExperimentalDatabaseViewCreationEnabled = false;
 
 jest.mock('@/application/constants', () => ({
   ...jest.requireActual('@/application/constants'),
-  get FORM_VIEW_CREATION_ENABLED() {
-    return mockFormViewCreationEnabled;
-  },
-  get DASHBOARD_VIEW_ENABLED() {
-    return mockDashboardViewEnabled;
+  get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
+    return mockExperimentalDatabaseViewCreationEnabled;
   },
 }));
 
@@ -74,8 +70,7 @@ jest.mock('@/components/ui/tooltip', () => ({
 describe('AddViewButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockFormViewCreationEnabled = false;
-    mockDashboardViewEnabled = true;
+    mockExperimentalDatabaseViewCreationEnabled = false;
     mockAddView.mockResolvedValue('list-view-id');
     jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(300);
   });
@@ -89,15 +84,12 @@ describe('AddViewButton', () => {
     const onAfterAddView = jest.fn();
     const message = 'Creating a Timeline view requires an active Pro plan for this workspace.';
 
+    mockExperimentalDatabaseViewCreationEnabled = true;
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     mockAddView.mockRejectedValueOnce({ code: 1090, message });
     render(
       <MemoryRouter>
-        <AddViewButton
-          databasePageId='database-page-id'
-          onAfterAddView={onAfterAddView}
-          onViewAdded={onViewAdded}
-        />
+        <AddViewButton databasePageId='database-page-id' onAfterAddView={onAfterAddView} onViewAdded={onViewAdded} />
       </MemoryRouter>
     );
 
@@ -155,6 +147,7 @@ describe('AddViewButton', () => {
   it('creates a Dashboard view and selects it', async () => {
     const onViewAdded = jest.fn();
 
+    mockExperimentalDatabaseViewCreationEnabled = true;
     mockAddView.mockResolvedValue('dashboard-view-id');
     render(
       <MemoryRouter>
@@ -169,18 +162,6 @@ describe('AddViewButton', () => {
 
     expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Dashboard, 'Dashboard');
     await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('dashboard-view-id'));
-  });
-
-  it('hides the Dashboard option while the dashboard view is disabled', () => {
-    mockDashboardViewEnabled = false;
-    render(
-      <MemoryRouter>
-        <AddViewButton databasePageId='database-page-id' onViewAdded={jest.fn()} />
-      </MemoryRouter>
-    );
-
-    expect(screen.queryByTestId('add-dashboard-view-button')).toBeNull();
-    expect(screen.getByTestId('add-timeline-view-button')).toBeTruthy();
   });
 
   it('completes with the latest same-database callbacks and preserves concurrently added view IDs', async () => {
@@ -268,7 +249,7 @@ describe('AddViewButton', () => {
     expect(nextOnAfterAddView).not.toHaveBeenCalled();
   });
 
-  it('hides the Form option while form creation is disabled on web', () => {
+  it('hides Form, Timeline and Dashboard while experimental database view creation is disabled on web', () => {
     render(
       <MemoryRouter>
         <AddViewButton databasePageId='database-page-id' onViewAdded={jest.fn()} />
@@ -276,6 +257,8 @@ describe('AddViewButton', () => {
     );
 
     expect(screen.queryByTestId('add-form-view-option')).toBeNull();
+    expect(screen.queryByTestId('add-timeline-view-button')).toBeNull();
+    expect(screen.queryByTestId('add-dashboard-view-button')).toBeNull();
     expect(screen.getByTestId('add-list-view-button')).toBeTruthy();
     expect(mockAddView).not.toHaveBeenCalled();
   });
@@ -283,7 +266,7 @@ describe('AddViewButton', () => {
   it('creates a Form without checking a workspace subscription once form creation is enabled', async () => {
     const onViewAdded = jest.fn();
 
-    mockFormViewCreationEnabled = true;
+    mockExperimentalDatabaseViewCreationEnabled = true;
     mockAddView.mockResolvedValue('form-view-id');
     render(
       <MemoryRouter>

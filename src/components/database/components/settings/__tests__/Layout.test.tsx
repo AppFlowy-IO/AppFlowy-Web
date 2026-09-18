@@ -1,73 +1,96 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { type ReactNode } from 'react';
 
 import { DatabaseViewLayout } from '@/application/types';
-import Layout from '@/components/database/components/settings/Layout';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+
+import Layout from '../Layout';
 
 const mockUpdateLayout = jest.fn();
+let mockCreationEnabled = false;
 let mockIsDashboardWidget = false;
 
-jest.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
-  }),
-}));
-
 jest.mock('@/application/constants', () => ({
-  DASHBOARD_VIEW_ENABLED: true,
-  TIMELINE_VIEW_ENABLED: true,
+  get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
+    return mockCreationEnabled;
+  },
 }));
-
 jest.mock('@/application/database-yjs', () => ({
   useDatabaseContext: () => ({ isDashboardWidget: mockIsDashboardWidget }),
   useDatabaseViewId: () => 'view-id',
 }));
-
-jest.mock('@/application/database-yjs/dispatch', () => ({
-  useUpdateDatabaseLayout: () => mockUpdateLayout,
+jest.mock('@/application/database-yjs/dispatch', () => ({ useUpdateDatabaseLayout: () => mockUpdateLayout }));
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key }),
 }));
 
-jest.mock('@/assets/icons/layout.svg', () => ({
-  ReactComponent: () => null,
-}));
+async function openLayout(currentLayout: DatabaseViewLayout) {
+  render(
+    <DropdownMenu defaultOpen>
+      <DropdownMenuTrigger>Settings</DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <Layout currentLayout={currentLayout} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+  const trigger = await screen.findByTestId('database-layout-settings-trigger');
 
-// Render the submenu inline so the options are reachable without driving Radix.
-jest.mock('@/components/ui/dropdown-menu', () => {
-  const Passthrough = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
+  fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+  await screen.findByTestId(`database-layout-option-${DatabaseViewLayout.Grid}`);
+  return trigger;
+}
 
-  return {
-    DropdownMenuItem: ({
-      children,
-      onSelect,
-      'data-testid': testId,
-    }: {
-      children?: ReactNode;
-      onSelect?: () => void;
-      'data-testid'?: string;
-    }) => (
-      <button data-testid={testId} onClick={onSelect} type='button'>
-        {children}
-      </button>
-    ),
-    DropdownMenuItemTick: () => <span data-testid='layout-tick' />,
-    DropdownMenuPortal: Passthrough,
-    DropdownMenuSub: Passthrough,
-    DropdownMenuSubContent: Passthrough,
-    DropdownMenuSubTrigger: ({ children }: { children?: ReactNode }) => (
-      <div data-testid='database-layout-settings-trigger'>{children}</div>
-    ),
-  };
-});
-
-describe('Layout', () => {
+describe('database Layout', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    mockCreationEnabled = false;
     mockIsDashboardWidget = false;
+    mockUpdateLayout.mockClear();
   });
 
-  it('offers the Dashboard layout for a database view', () => {
-    render(<Layout currentLayout={DatabaseViewLayout.Grid} />);
+  it('hides Timeline and Dashboard conversion when web creation is disabled', async () => {
+    await openLayout(DatabaseViewLayout.Grid);
 
+    expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`)).toBeNull();
+    expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`)).toBeNull();
+  });
+
+  it('keeps the current Timeline label and selected option without rewriting its layout', async () => {
+    const trigger = await openLayout(DatabaseViewLayout.Timeline);
+    const currentOption = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`);
+
+    expect(trigger.textContent).toContain('Timeline');
+    expect(currentOption.querySelector('[data-slot="dropdown-menu-tick"]')).not.toBeNull();
+    fireEvent.click(currentOption);
+    expect(mockUpdateLayout).not.toHaveBeenCalled();
+  });
+
+  it('keeps the current Dashboard label and selected option while creation is disabled', async () => {
+    const trigger = await openLayout(DatabaseViewLayout.Dashboard);
+    const currentOption = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`);
+
+    expect(trigger.textContent).toContain('Dashboard');
+    expect(currentOption.querySelector('[data-slot="dropdown-menu-tick"]')).not.toBeNull();
+    fireEvent.click(currentOption);
+    expect(mockUpdateLayout).not.toHaveBeenCalled();
+  });
+
+  it('allows an existing Timeline to switch to a supported layout', async () => {
+    await openLayout(DatabaseViewLayout.Timeline);
+    fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Grid}`));
+
+    expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Grid);
+  });
+
+  it('allows Timeline conversion when web creation is enabled', async () => {
+    mockCreationEnabled = true;
+    await openLayout(DatabaseViewLayout.Grid);
+    fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`));
+
+    expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Timeline);
+  });
+
+  it('allows Dashboard conversion when web creation is enabled', async () => {
+    mockCreationEnabled = true;
+    await openLayout(DatabaseViewLayout.Grid);
     const option = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`);
 
     expect(option.textContent).toContain('Dashboard');
@@ -75,18 +98,12 @@ describe('Layout', () => {
     expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Dashboard);
   });
 
-  it('shows the current Dashboard layout in the trigger', () => {
-    render(<Layout currentLayout={DatabaseViewLayout.Dashboard} />);
-
-    expect(screen.getByTestId('database-layout-settings-trigger').textContent).toContain('Dashboard');
-  });
-
-  it('hides the Dashboard layout inside a dashboard widget', () => {
+  it('never offers the Dashboard layout inside a dashboard widget', async () => {
+    mockCreationEnabled = true;
     mockIsDashboardWidget = true;
-    render(<Layout currentLayout={DatabaseViewLayout.Grid} />);
+    await openLayout(DatabaseViewLayout.Grid);
 
     expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`)).toBeNull();
     expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`)).toBeTruthy();
-    expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Grid}`)).toBeTruthy();
   });
 });

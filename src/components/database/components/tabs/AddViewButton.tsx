@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { DASHBOARD_VIEW_ENABLED, FORM_VIEW_CREATION_ENABLED, TIMELINE_VIEW_ENABLED } from '@/application/constants';
+import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
@@ -30,12 +30,12 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
   const { getSubscriptions, workspaceId } = useDatabaseContext();
   const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
     workspaceId,
-    enabled: menuOpen,
+    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && menuOpen,
   });
   // The server applies the same Pro policy to Dashboard views.
   const dashboardDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
     workspaceId,
-    enabled: menuOpen && DASHBOARD_VIEW_ENABLED,
+    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && menuOpen,
     requiresProMessage: t('dashboard.creationRequiresPro', {
       defaultValue: 'Creating a Dashboard view requires a Pro workspace.',
     }),
@@ -178,7 +178,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
           {t('calendar.menuName')}
         </DropdownMenuItem>
 
-        {TIMELINE_VIEW_ENABLED &&
+        {EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED &&
           (timelineDisabledReason ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -190,7 +190,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
             timelineAction
           ))}
 
-        {DASHBOARD_VIEW_ENABLED &&
+        {EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED &&
           (dashboardDisabledReason ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -211,7 +211,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
           {t('chart.menuName')}
         </DropdownMenuItem>
 
-        {FORM_VIEW_CREATION_ENABLED && (
+        {EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && (
           <DropdownMenuItem
             data-testid='add-form-view-option'
             onClick={() => {

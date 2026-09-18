@@ -3,32 +3,20 @@ export const databasePrefix = 'af_database';
 export const HEADER_HEIGHT = 48;
 
 /**
- * Temporarily hides every "create a Form view" entry point on web.
+ * Controls web creation menus for experimental database views (Form, Timeline
+ * and Dashboard).
  *
- * Legacy Desktop clients cannot open workspaces that contain a Form view
- * created by web, so until those clients are upgraded Form views may only be
- * created from Desktop. Flip this back to `true` to restore the menu items.
- * Existing Form views still open and work normally regardless of this flag.
+ * Desktop versions before 0.14.4 have backward-compatibility issues with Form,
+ * Timeline and Dashboard views. For now, only allow creating these views from
+ * the Desktop app; keep their web creation menus disabled until that
+ * compatibility constraint is resolved.
+ * Existing Form, Timeline and Dashboard views still open normally regardless of
+ * this flag.
+ * CI builds opt in with EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED=true so
+ * Form, Timeline and Dashboard creation remain covered by browser tests.
  */
-export const FORM_VIEW_CREATION_ENABLED = false;
-
-/**
- * Gate for offering the Timeline layout in the add-view and layout menus.
- *
- * Creating a Timeline view goes through the cloud (`ViewLayout::Timeline = 10`,
- * `DatabaseLayout::Timeline = 8`), so this must stay off against a server that
- * predates those enum values. Existing Timeline views render regardless.
- */
-export const TIMELINE_VIEW_ENABLED = true;
-
-/**
- * Gate for offering the Dashboard layout in the add-view and layout menus.
- *
- * Creating a Dashboard view goes through the cloud (`ViewLayout::Dashboard = 11`,
- * `DatabaseLayout::Dashboard = 9`), so this must stay off against a server that
- * predates those enum values. Existing Dashboard views render regardless.
- */
-export const DASHBOARD_VIEW_ENABLED = true;
+export const EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED =
+  process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED === 'true';
 
 /**
  * Server error codes from AppFlowy Cloud ErrorCode enum.
@@ -90,28 +78,28 @@ export const ERROR_CODE = {
 export const APP_EVENTS = {
   // App lifecycle events
   OUTLINE_LOADED: 'outline-loaded',
-  OUTLINE_EXPAND_PATH: 'outline-expand-path',            // Reveal an already hydrated sidebar path
-  TRASH_UPDATED: 'trash-updated',                     // Fresh workspace trash payload accepted by app state
+  OUTLINE_EXPAND_PATH: 'outline-expand-path', // Reveal an already hydrated sidebar path
+  TRASH_UPDATED: 'trash-updated', // Fresh workspace trash payload accepted by app state
   RECONNECT_WEBSOCKET: 'reconnect-websocket',
   WEBSOCKET_STATUS: 'websocket-status',
-  
+
   // Workspace notification events
-  USER_PROFILE_CHANGED: 'user-profile-changed',           // User name/email updated
-  PERMISSION_CHANGED: 'permission-changed',               // Object access permissions changed  
-  SECTION_CHANGED: 'section-changed',                     // Workspace sections updated (recent views, etc.)
-  SHARE_VIEWS_CHANGED: 'share-views-changed',             // View sharing settings changed
-  VIEW_ACCESS_REVOKED: 'view-access-revoked',             // Current user lost access to a view; local cache evicted
-  VIEW_ACCESS_RESTORED: 'view-access-restored',           // Current user regained access to a view; permission gate reset
+  USER_PROFILE_CHANGED: 'user-profile-changed', // User name/email updated
+  PERMISSION_CHANGED: 'permission-changed', // Object access permissions changed
+  SECTION_CHANGED: 'section-changed', // Workspace sections updated (recent views, etc.)
+  SHARE_VIEWS_CHANGED: 'share-views-changed', // View sharing settings changed
+  VIEW_ACCESS_REVOKED: 'view-access-revoked', // Current user lost access to a view; local cache evicted
+  VIEW_ACCESS_RESTORED: 'view-access-restored', // Current user regained access to a view; permission gate reset
   MENTIONABLE_PERSON_LIST_CHANGED: 'mentionable-person-list-changed', // Team member changes
-  SERVER_LIMIT_CHANGED: 'server-limit-changed',           // Billing/feature limits updated
+  SERVER_LIMIT_CHANGED: 'server-limit-changed', // Billing/feature limits updated
   WORKSPACE_MEMBER_PROFILE_CHANGED: 'workspace-member-profile-changed', // Workspace member profile updated
-  FOLDER_OUTLINE_CHANGED: 'folder-outline-changed',       // Workspace folder outline diff (sidebar refresh)
-  FOLDER_VIEW_CHANGED: 'folder-view-changed',             // Granular folder view change (sidebar update)
-  VIEW_META_CHANGED: 'view-meta-changed',                 // Parsed view metadata update for loaded views outside the outline
-  INBOX_NOTIFICATION: 'inbox-notification',               // Inbox notification push for notification center refresh
-  INLINE_COMMENT_CHANGED: 'inline-comment-changed',       // Document inline comment created, resolved, or deleted
-  COLLAB_DOC_RESET: 'collab-doc-reset',                   // Collab version reset replaced active Y.Doc instance
+  FOLDER_OUTLINE_CHANGED: 'folder-outline-changed', // Workspace folder outline diff (sidebar refresh)
+  FOLDER_VIEW_CHANGED: 'folder-view-changed', // Granular folder view change (sidebar update)
+  VIEW_META_CHANGED: 'view-meta-changed', // Parsed view metadata update for loaded views outside the outline
+  INBOX_NOTIFICATION: 'inbox-notification', // Inbox notification push for notification center refresh
+  INLINE_COMMENT_CHANGED: 'inline-comment-changed', // Document inline comment created, resolved, or deleted
+  COLLAB_DOC_RESET: 'collab-doc-reset', // Collab version reset replaced active Y.Doc instance
 
   // Editor events
-  FIND_AND_REPLACE: 'find-and-replace',                   // Open the in-document find & replace panel for a view
+  FIND_AND_REPLACE: 'find-and-replace', // Open the in-document find & replace panel for a view
 };
