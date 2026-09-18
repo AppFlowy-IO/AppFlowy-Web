@@ -6,7 +6,7 @@ import SortsButton from '@/components/database/components/conditions/SortsButton
 jest.mock('@/application/database-yjs', () => ({
   FieldType: { Person: 7, Rollup: 10 },
   useFiltersSelector: () => [],
-  useReadOnly: () => false,
+  useConditionsReadOnly: () => false,
   useSortsSelector: () => [],
 }));
 

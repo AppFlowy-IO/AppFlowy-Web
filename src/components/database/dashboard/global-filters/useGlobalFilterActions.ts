@@ -32,7 +32,15 @@ type FiltersUpdater = (filters: DashboardGlobalFilter[]) => DashboardGlobalFilte
  */
 export function useGlobalFilterActions() {
   const { canEdit, isEditing, updateSetting } = useDashboardContext();
-  const { globalFilters, effectiveGlobalFilters, localGlobalFilters, setLocalGlobalFilters } = useDashboardFilters();
+  const {
+    globalFilters,
+    effectiveGlobalFilters,
+    localGlobalFilters,
+    setLocalGlobalFilters,
+    localWidgetChanges,
+    resetViewOverlays,
+    commitViewOverlays,
+  } = useDashboardFilters();
   const persist = canEdit && isEditing;
   const persistedRef = useRef(globalFilters);
   const localRef = useRef(localGlobalFilters);
@@ -89,20 +97,28 @@ export function useGlobalFilterActions() {
     [commit]
   );
 
-  const resetLocal = useCallback(() => setLocal(null), [setLocal]);
+  const resetLocal = useCallback(() => {
+    setLocal(null);
+    resetViewOverlays();
+  }, [resetViewOverlays, setLocal]);
 
+  // Publishes the global-filter override and every widget's local filters / sorts.
   const saveForEverybody = useCallback(() => {
     const local = localRef.current;
 
-    if (!canEdit || !local) return;
-    persistedRef.current = local;
-    updateSetting({ globalFilters: local });
-    setLocal(null);
-  }, [canEdit, setLocal, updateSetting]);
+    if (!canEdit) return;
+    if (local) {
+      persistedRef.current = local;
+      updateSetting({ globalFilters: local });
+      setLocal(null);
+    }
+
+    commitViewOverlays();
+  }, [canEdit, commitViewOverlays, setLocal, updateSetting]);
 
   return {
     filters: effectiveGlobalFilters,
-    hasLocalChanges: localGlobalFilters !== null,
+    hasLocalChanges: localGlobalFilters !== null || localWidgetChanges > 0,
     canEdit,
     isEditing,
     persist,

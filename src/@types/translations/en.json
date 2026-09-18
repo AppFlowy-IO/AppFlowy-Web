@@ -2399,6 +2399,7 @@
         "askAIAnything": "Ask AI Anything",
         "feed": "Feed",
         "linkedFeed": "Linked Feed",
+        "dashboard": "Dashboard",
         "linkedDashboard": "Linked Dashboard"
       },
       "linkedDatabase": {

@@ -7,6 +7,7 @@ import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { isDatabaseBlockType } from '@/application/database-block';
+import { createDatabaseDashboardPageViaGrid } from '@/application/database-yjs/dashboard-page';
 import { createDatabaseFeedPageViaGrid, createLinkedDatabaseFeedView } from '@/application/database-yjs/feed-layout';
 import {
   createDatabaseGalleryPageViaGrid,
@@ -498,6 +499,23 @@ export function SlashPanel({
                   updatePage,
                 });
               })()
+            : layout === ViewLayout.Dashboard
+            ? await (() => {
+                if (!loadView || !bindViewSync || !deletePage || !createDatabaseView) {
+                  throw new Error('Dashboard creation is not available right now');
+                }
+
+                return createDatabaseDashboardPageViaGrid({
+                  parentViewId: documentId,
+                  name,
+                  addPage,
+                  loadView,
+                  bindViewSync,
+                  createDatabaseView,
+                  deletePage,
+                  scheduleDeferredCleanup,
+                });
+              })()
             : layout === ViewLayout.Feed
             ? await (() => {
                 if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
@@ -571,6 +589,7 @@ export function SlashPanel({
     [
       addPage,
       bindViewSync,
+      createDatabaseView,
       deletePage,
       documentId,
       editor,
@@ -1452,6 +1471,18 @@ export function SlashPanel({
         aliases: ['link to timeline', 'referenced timeline', 'ltt'],
         onClick: () => {
           void handleOpenLinkedDatabasePicker(ViewLayout.Timeline, 'linkedTimeline');
+        },
+      },
+      {
+        label: t('document.slashMenu.name.dashboard', { defaultValue: 'Dashboard' }),
+        key: 'dashboard',
+        disabled: !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
+        icon: <DashboardIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['dashboard', 'dash', 'widgets', 'overview', 'kpi', 'database'],
+        aliases: ['dashboard view', 'dash'],
+        onClick: () => {
+          void createInlineDatabase(ViewLayout.Dashboard);
         },
       },
       {

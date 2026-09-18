@@ -5,7 +5,7 @@ import {
   FieldType,
   SortCondition,
   useFieldSelector,
-  useReadOnly,
+  useConditionsReadOnly,
   useSortSelector,
   useSortsSelector,
 } from '@/application/database-yjs';
@@ -52,7 +52,7 @@ export function Sorts () {
   const deleteAllSorts = useClearSortingDispatch();
   const [openPropertiesMenu, setOpenPropertiesMenu] = useState(false);
 
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const rollupSortableIds = useRollupSortableIds();
   const propertyFilter = useCallback(
     (property: { id: string; type: FieldType }) => {

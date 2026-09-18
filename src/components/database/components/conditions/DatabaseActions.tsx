@@ -1,7 +1,12 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useDatabaseContext, useDatabaseViewLayout, useReadOnly } from '@/application/database-yjs';
+import {
+  useDatabaseContext,
+  useDatabaseViewLayout,
+  useConditionsReadOnly,
+  useReadOnly,
+} from '@/application/database-yjs';
 import { DatabaseViewLayout } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/full_screen.svg';
@@ -113,6 +118,8 @@ export function DatabaseActions() {
 
   const layout = useDatabaseViewLayout() as DatabaseViewLayout;
   const readOnly = useReadOnly();
+  // Filters and sorts stay usable in a View-mode dashboard widget (local to the viewer).
+  const conditionsReadOnly = useConditionsReadOnly();
   const conditionsContext = useConditionsContext();
   const { activeViewId, isDocumentBlock, databasePageId, isDashboardWidget } = useDatabaseContext();
   const { canOpen, isOpening, openDatabaseAsPage } = useOpenDatabaseAsPage({ fallbackViewId: databasePageId });
@@ -158,7 +165,7 @@ export function DatabaseActions() {
     </Button>
   );
 
-  if (readOnly && !isDocumentBlock && !showSearch && !isDashboard) return null;
+  if (readOnly && conditionsReadOnly && !isDocumentBlock && !showSearch && !isDashboard) return null;
 
   return (
     <div
@@ -166,8 +173,8 @@ export function DatabaseActions() {
       data-dashboard-widget={isDashboardWidget ? 'true' : undefined}
       data-testid='database-actions'
     >
-      {!readOnly && showFilters ? <FiltersButton {...conditionsContext} compact={compact} /> : null}
-      {!readOnly && showSorts ? <SortsButton {...conditionsContext} compact={compact} /> : null}
+      {!conditionsReadOnly && showFilters ? <FiltersButton {...conditionsContext} compact={compact} /> : null}
+      {!conditionsReadOnly && showSorts ? <SortsButton {...conditionsContext} compact={compact} /> : null}
       {isDocumentBlock && (
         <Tooltip>
           <TooltipTrigger asChild>

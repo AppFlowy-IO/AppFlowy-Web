@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import { useReadOnly } from '@/application/database-yjs/context';
+import { useConditionsReadOnly } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { useUpdateAdvancedFilter, UpdateFilterParams } from '@/application/database-yjs/dispatch/sort-filter';
 import { NumberFilter } from '@/application/database-yjs/fields/number/number.type';
@@ -61,7 +61,7 @@ function RollupSelectOptionFilter({
   expectedMetadata?: RollupFilterMetadata;
 }) {
   const updateFilter = useUpdateAdvancedFilter();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const update = useCallback(
     (params: UpdateFilterParams) => {
       if (readOnly) return;

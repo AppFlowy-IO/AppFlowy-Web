@@ -9,12 +9,18 @@ import {
 
 import { DatabaseActions } from '../DatabaseActions';
 
-jest.mock('@/application/database-yjs', () => ({
-  useDatabase: jest.fn(),
-  useDatabaseContext: jest.fn(),
-  useDatabaseViewLayout: jest.fn(),
-  useReadOnly: jest.fn(),
-}));
+jest.mock('@/application/database-yjs', () => {
+  const useReadOnly = jest.fn();
+
+  return {
+    useDatabase: jest.fn(),
+    useDatabaseContext: jest.fn(),
+    useDatabaseViewLayout: jest.fn(),
+    useReadOnly,
+    // Outside a dashboard widget the conditions follow the real read-only flag.
+    useConditionsReadOnly: () => useReadOnly(),
+  };
+});
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -152,7 +158,12 @@ describe('DatabaseActions template support', () => {
     expect(screen.getByTestId('filters-button').getAttribute('data-compact')).toBe('true');
     expect(screen.getByTestId('sorts-button').getAttribute('data-compact')).toBe('true');
     expect(screen.getByTestId('database-actions-search')).toBeTruthy();
-    expect(screen.getByTestId('database-actions-settings').closest('[data-database-settings-layout]')?.getAttribute('data-database-settings-layout')).toBe(String(DatabaseViewLayout.Feed));
+    expect(
+      screen
+        .getByTestId('database-actions-settings')
+        .closest('[data-database-settings-layout]')
+        ?.getAttribute('data-database-settings-layout')
+    ).toBe(String(DatabaseViewLayout.Feed));
     expect(screen.getByTestId('database-template-button')).toBeTruthy();
   });
 

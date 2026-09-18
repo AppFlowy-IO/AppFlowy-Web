@@ -311,6 +311,18 @@ describe('WidgetHeaderFrame', () => {
     await waitFor(() => expect(screen.getByTestId('dashboard-widget-menu')).toBeTruthy());
   });
 
+  it('opens the widget menu from the title, in both modes', async () => {
+    const { unmount } = render(withContext(createContext(), <WidgetHeaderFrame />));
+
+    fireEvent.click(screen.getByTestId('dashboard-widget-title-button'));
+    expect(await screen.findByTestId('dashboard-widget-menu')).toBeTruthy();
+    unmount();
+
+    render(withContext(createContext({ isEditing: false }), <WidgetHeaderFrame />));
+    fireEvent.click(screen.getByTestId('dashboard-widget-title-button'));
+    expect(await screen.findByTestId('dashboard-widget-menu')).toBeTruthy();
+  });
+
   it('opens the widget menu on right-click', async () => {
     render(withContext(createContext(), <WidgetHeaderFrame />));
 

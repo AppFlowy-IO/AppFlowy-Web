@@ -45,6 +45,17 @@ Feature: Dashboard widgets
     When I choose "open" in the "Tasks Grid" widget menu
     Then the "Tasks Grid" view is open outside the dashboard
 
+  Scenario: Change view swaps the widget's view in place from its title menu
+    Given the dashboard has these widgets:
+      | row | widget        |
+      | 1   | Projects Grid |
+      | 1   | Tasks Grid    |
+    When I change the "Projects Grid" widget to the "Notes Grid" view from its title menu
+    Then the dashboard shows 2 widgets
+    And dashboard row 1 has 1 widgets showing the "Notes Grid" view
+    And dashboard row 1 has 1 widgets showing the "Tasks Grid" view
+    And the widths of dashboard row 1 are "6, 6"
+
   Scenario: Duplicate places a copy of the widget next to it
     Given the dashboard has these widgets:
       | row | widget        |

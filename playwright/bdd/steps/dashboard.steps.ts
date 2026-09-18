@@ -43,6 +43,7 @@ import {
   pickExistingView,
   prepareDashboardFixture,
   readDashboardSetting,
+  readViewConditions,
   readDatabaseViews,
   reloadDashboard,
   renderedRows,
@@ -55,8 +56,16 @@ import {
   waitForDatabaseContext,
   widgetLocator,
 } from '../../support/dashboard-test-helpers';
+import { selectFilterOption } from '../../support/filter-test-helpers';
+import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from '../../support/page-utils';
 import { closeRowDetailWithEscape } from '../../support/row-detail-helpers';
-import { DatabaseGridSelectors, DatabaseViewSelectors } from '../../support/selectors';
+import {
+  DatabaseFilterSelectors,
+  DatabaseGridSelectors,
+  DatabaseViewSelectors,
+  EditorSelectors,
+  SlashCommandSelectors,
+} from '../../support/selectors';
 
 const { Given, When, Then, Before, After } = createBdd();
 
@@ -101,6 +110,67 @@ async function expectLimitMessage(page: Page, reason: 'dashboard' | 'row', count
 
 Given('the dashboard fixture workspace is ready', async ({ page, request }) => {
   await prepareDashboardFixture(page, request);
+});
+
+// ---------------------------------------------------------------------------
+// Slash menu: a new dashboard, or a linked dashboard, inside a document.
+// ---------------------------------------------------------------------------
+
+const documentViewIds = new WeakMap<Page, string>();
+
+function documentViewId(page: Page) {
+  const viewId = documentViewIds.get(page);
+
+  if (!viewId) throw new Error('No document is being edited');
+  return viewId;
+}
+
+function dashboardBlock(page: Page) {
+  return page.locator(`#editor-${documentViewId(page)} [data-block-type="dashboard"]`);
+}
+
+Given('I am editing a new document in the fixture workspace', async ({ page }) => {
+  documentViewIds.set(page, await createDocumentPageAndNavigate(page));
+});
+
+When('I insert a Dashboard through the slash menu', async ({ page }) => {
+  const editor = EditorSelectors.firstEditor(page);
+
+  await editor.click({ force: true });
+  await page.keyboard.type('/');
+  await expect(SlashCommandSelectors.slashPanel(page)).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId('slash-menu-dashboard').click();
+});
+
+Then('the dashboard opens in the page modal', async ({ page }) => {
+  const dialog = page.locator('[role="dialog"]').last();
+
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  await expect(dialog.getByTestId('dashboard-view')).toBeVisible({ timeout: 30_000 });
+});
+
+When('I close the dashboard page modal', async ({ page }) => {
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0, { timeout: 10_000 });
+});
+
+Then('the document contains a dashboard block', async ({ page }) => {
+  const block = dashboardBlock(page);
+
+  await expect(block).toHaveCount(1, { timeout: 15_000 });
+  await expect(block.getByTestId('dashboard-view')).toBeVisible({ timeout: 30_000 });
+});
+
+When('I link the {string} database as a dashboard through the slash menu', async ({ page }, name: string) => {
+  await insertLinkedDatabaseViaSlash(page, documentViewId(page), name, 'Dashboard');
+});
+
+Then('the document contains a dashboard block titled {string}', async ({ page }, title: string) => {
+  const block = dashboardBlock(page);
+
+  await expect(block).toHaveCount(1, { timeout: 15_000 });
+  await expect(block.getByTestId('dashboard-view')).toBeVisible({ timeout: 30_000 });
+  await expect(block).toContainText(title);
 });
 
 Given('the fixture also has the {string} database', async ({ page, request }, name: string) => {
@@ -422,6 +492,22 @@ Then('the {string} widget header shows its view name', async ({ page }, label: s
   if (name) await expect(title).toContainText(name);
 });
 
+When(
+  'I change the {string} widget to the {string} view from its title menu',
+  async ({ page }, label: string, nextLabel: string) => {
+    const widget = widgetLocator(page, label);
+    const before = JSON.stringify((await readDashboardSetting(page)).rows);
+
+    // Clicking the title opens the widget menu, like right-clicking it.
+    await widget.hover();
+    await widget.getByTestId('dashboard-widget-title-button').click();
+    await expect(DashboardSelectors.widgetMenu(page)).toBeVisible();
+    await DashboardSelectors.widgetMenuItem(page, 'change-view').click();
+    await pickExistingView(page, viewIdForLabel(page, nextLabel));
+    await expect.poll(async () => JSON.stringify((await readDashboardSetting(page)).rows)).not.toBe(before);
+  }
+);
+
 When('I choose {string} in the {string} widget menu', async ({ page }, action: string, label: string) => {
   const before = await readDashboardSetting(page);
 
@@ -637,6 +723,57 @@ Then(
     await expect(widget).not.toContainText('Salary review');
   }
 );
+
+// ---------------------------------------------------------------------------
+// A widget's own filters in View mode (local to the viewer until saved).
+// ---------------------------------------------------------------------------
+
+async function addWidgetSelectFilter(scope: Page, widget: Locator, field: string, option: string) {
+  await widget.hover();
+  const filterButton = widget.getByTestId('database-actions-filter');
+
+  await expect(filterButton).toBeVisible(WIDGET_TIMEOUT);
+  // With no filter yet, the button opens the property list straight away.
+  await filterButton.click();
+  const property = DatabaseFilterSelectors.propertyItemByName(scope, field);
+
+  await expect(property).toBeVisible({ timeout: 10_000 });
+  await property.click();
+  await selectFilterOption(scope, option);
+  await scope.keyboard.press('Escape');
+}
+
+When(
+  'I add a {string} is {string} filter inside the {string} widget',
+  async ({ page }, field: string, option: string, label: string) => {
+    await addWidgetSelectFilter(page, DashboardSelectors.widget(page, knownWidget(page, label).id), field, option);
+  }
+);
+
+When(
+  'the member adds a {string} is {string} filter inside the {string} widget',
+  async ({ page }, field: string, option: string, label: string) => {
+    const member = memberPage(page);
+
+    await addWidgetSelectFilter(member, DashboardSelectors.widget(member, knownWidget(page, label).id), field, option);
+  }
+);
+
+Then('I see the {string} widget with {int} rows', async ({ page }, label: string, count: number) => {
+  const widget = DashboardSelectors.widget(page, knownWidget(page, label).id);
+
+  await expect(gridDataRows(widget)).toHaveCount(count, WIDGET_TIMEOUT);
+});
+
+Then('the dashboard shows the local changes badge', async ({ page }) => {
+  await expect(DashboardSelectors.globalFilterLocalBadge(page).first()).toBeVisible(WIDGET_TIMEOUT);
+});
+
+Then('the {string} view has {int} saved filters', async ({ page }, label: string, count: number) => {
+  const viewId = viewIdForLabel(page, label);
+
+  await expect.poll(async () => (await readViewConditions(page, viewId)).filters.length, WIDGET_TIMEOUT).toBe(count);
+});
 
 Then('the member sees the {string} widget with {int} rows', async ({ page }, label: string, count: number) => {
   const widget = DashboardSelectors.widget(memberPage(page), knownWidget(page, label).id);

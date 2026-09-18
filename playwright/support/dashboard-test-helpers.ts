@@ -1122,6 +1122,28 @@ export interface PersistedDashboardSetting {
 }
 
 /** The dashboard setting as the browser's host database doc holds it. */
+/** The saved (server-visible) filters and sorts of a database view, as plain objects. */
+export async function readViewConditions(
+  page: Page,
+  viewId: string
+): Promise<{ filters: Record<string, unknown>[]; sorts: Record<string, unknown>[] }> {
+  const conditions = await page.evaluate((id) => {
+    const bridge = (window as any).__DASHBOARD_TEST__;
+    const ctx = bridge?.byView(id);
+
+    if (!ctx) return null;
+    const view = ctx.databaseDoc.getMap('data').get('database').get('views').get(id);
+
+    return {
+      filters: bridge.plain(view?.get('filters')) ?? [],
+      sorts: bridge.plain(view?.get('sorts')) ?? [],
+    };
+  }, viewId);
+
+  if (!conditions) throw new Error(`view ${viewId} is not open in the browser`);
+  return conditions;
+}
+
 export async function readDashboardSetting(
   page: Page,
   viewId = dashboardViewId(page)

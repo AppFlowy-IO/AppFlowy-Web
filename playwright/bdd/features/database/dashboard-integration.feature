@@ -36,6 +36,18 @@ Feature: Dashboard widget integration
     When I click the first bar of the "Projects Chart" widget
     Then a drill-down lists exactly one of "Website launch, Mobile app, API cleanup"
 
+  Scenario: The slash menu embeds a new dashboard in a document
+    Given I am editing a new document in the fixture workspace
+    When I insert a Dashboard through the slash menu
+    Then the dashboard opens in the page modal
+    When I close the dashboard page modal
+    Then the document contains a dashboard block
+
+  Scenario: The slash menu links an existing database as a dashboard
+    Given I am editing a new document in the fixture workspace
+    When I link the "Projects" database as a dashboard through the slash menu
+    Then the document contains a dashboard block titled "View of Projects"
+
   Scenario: A table widget opens a row page
     Given I added a dashboard to "Projects"
     And the dashboard has these widgets:

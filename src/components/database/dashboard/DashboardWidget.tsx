@@ -24,7 +24,17 @@ import {
   DashboardWidget as DashboardWidgetData,
 } from '@/application/database-yjs/dashboard.type';
 import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot/database-yjs-render-bridge';
-import { UIVariant, View, ViewIcon, ViewLayout, YDoc } from '@/application/types';
+import { createViewConditionsOverlay, ViewConditionsOverlay } from '@/application/database-yjs/view-conditions-overlay';
+import {
+  UIVariant,
+  View,
+  ViewIcon,
+  ViewLayout,
+  YDatabase,
+  YDoc,
+  YjsDatabaseKey,
+  YjsEditorKey,
+} from '@/application/types';
 import { findView } from '@/components/_shared/outline/utils';
 import { AppOperationsContext } from '@/components/app/contexts/AppOperationsContext';
 import { Database } from '@/components/database';
@@ -145,7 +155,7 @@ const WidgetSource = memo(function WidgetSource({
   const { t } = useTranslation();
   const hostContext = useDashboardHost();
   const appOperations = useContext(AppOperationsContext);
-  const { effectiveGlobalFilters } = useDashboardFilters();
+  const { effectiveGlobalFilters, registerViewOverlay } = useDashboardFilters();
   const { hostDatabaseId, openPicker, showLimitMessage, dndInstanceId, acquireSourceDoc, getRows, updateRows } =
     useDashboardUi();
   const isHost = widget.databaseId === hostDatabaseId;
@@ -197,6 +207,30 @@ const WidgetSource = memo(function WidgetSource({
   });
 
   const hasSourceDatabase = Boolean(doc) && snapshot.hasDatabase;
+
+  // In View mode the widget's filters and sorts are the viewer's own copy
+  // (Notion keeps them local until "Save for everybody"); Edit mode configures
+  // the real view. Published dashboards stay read-only.
+  const realView = useMemo(() => {
+    if (!doc || !snapshot.exists || isPublish) return undefined;
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
+
+    return database?.get(YjsDatabaseKey.views)?.get(widget.viewId);
+  }, [doc, snapshot.exists, isPublish, widget.viewId]);
+  const [overlay, setOverlay] = useState<ViewConditionsOverlay | null>(null);
+
+  useEffect(() => {
+    if (!realView) return;
+    const created = createViewConditionsOverlay(realView);
+
+    setOverlay(created);
+    registerViewOverlay(widget.id, created);
+    return () => {
+      registerViewOverlay(widget.id, null);
+      created.destroy();
+      setOverlay((current) => (current === created ? null : current));
+    };
+  }, [realView, registerViewOverlay, widget.id]);
 
   // Expose the source doc to the global-filter editor while the widget shows it.
   useEffect(() => {
@@ -394,6 +428,7 @@ const WidgetSource = memo(function WidgetSource({
             updatePage={updatePage}
             uploadFile={uploadFile}
             variant={variant}
+            viewConditionsOverlay={editing ? undefined : overlay?.view}
             visibleViewIds={visibleViewIds}
             workspaceId={workspaceId}
           />
@@ -428,6 +463,8 @@ const WidgetSource = memo(function WidgetSource({
       name,
       navigateToView,
       openPageModal,
+      overlay,
+      editing,
       scheduleDeferredCleanup,
       searchMentions,
       updatePage,

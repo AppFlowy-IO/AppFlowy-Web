@@ -17,17 +17,31 @@ interface WidgetHeaderFrameProps {
   actions?: ReactNode;
 }
 
-function WidgetTitle({ className }: { className?: string }) {
+/** The icon and name; clicking it opens the widget menu, like Notion. */
+function WidgetTitle({ className, onOpenMenu }: { className?: string; onOpenMenu: () => void }) {
   const { t } = useTranslation();
   const { name, icon, layout } = useWidgetContext();
 
   return (
-    <div className={cn('flex min-w-0 flex-1 items-center gap-1.5', className)}>
+    <button
+      aria-label={t('dashboard.widget.menu', { defaultValue: 'Widget options' })}
+      className={cn(
+        'flex min-w-0 flex-1 items-center gap-1.5 rounded-200 text-left outline-none',
+        'hover:text-text-primary focus-visible:ring-1 focus-visible:ring-border-theme-thick',
+        className
+      )}
+      data-testid='dashboard-widget-title-button'
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpenMenu();
+      }}
+      type='button'
+    >
       <PageIcon className='!h-5 !w-5 shrink-0 text-base leading-[1.3rem]' iconSize={16} view={{ icon, layout }} />
       <span className='truncate' data-testid='dashboard-widget-title' title={name}>
         {name || t('untitled')}
       </span>
-    </div>
+    </button>
   );
 }
 
@@ -53,6 +67,7 @@ export function WidgetHeaderFrame({ actions }: WidgetHeaderFrameProps) {
     event.stopPropagation();
     setMenuOpen(true);
   }, []);
+  const openMenu = useCallback(() => setMenuOpen(true), []);
 
   if (editing) {
     return (
@@ -68,7 +83,7 @@ export function WidgetHeaderFrame({ actions }: WidgetHeaderFrameProps) {
         title={t('dashboard.widget.dragHandle', { defaultValue: 'Drag to move' })}
       >
         <DragIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-tertiary' />
-        <WidgetTitle />
+        <WidgetTitle onOpenMenu={openMenu} />
         {actions ? <div className='flex shrink-0 items-center'>{actions}</div> : null}
         <WidgetMenu onOpenChange={setMenuOpen} open={menuOpen}>
           <Button
@@ -120,7 +135,7 @@ export function WidgetHeaderFrame({ actions }: WidgetHeaderFrameProps) {
       onContextMenu={handleContextMenu}
       style={{ height: WIDGET_TITLE_HEIGHT }}
     >
-      <WidgetTitle />
+      <WidgetTitle onOpenMenu={openMenu} />
       {actions ? (
         <div
           className={cn(

@@ -13,6 +13,33 @@ Feature: Dashboard View and Edit modes
       | 1   | Projects Grid |
       | 1   | Tasks Grid    |
 
+  Scenario: A View-mode widget filter is local until reload
+    When I reload the dashboard
+    And I add a "Status" is "Done" filter inside the "Projects Grid" widget
+    Then I see the "Projects Grid" widget with 1 rows
+    And the dashboard shows the local changes badge
+    And the "Projects Grid" view has 0 saved filters
+    When I reload the dashboard
+    Then I see the "Projects Grid" widget with 3 rows
+
+  Scenario: Save for everybody persists a View-mode widget filter
+    When I reload the dashboard
+    And I add a "Status" is "Done" filter inside the "Projects Grid" widget
+    And I save the global filters for everybody
+    Then no global filter shows the local changes badge
+    And the "Projects Grid" view has 1 saved filters
+    When I wait for the dashboard layout to reach the server
+    And I reload the dashboard
+    Then I see the "Projects Grid" widget with 1 rows
+
+  Scenario: A read-only member can filter a widget locally
+    Given a workspace member with "read-only" access to the dashboard space
+    When the member opens the dashboard
+    And the member adds a "Status" is "Done" filter inside the "Projects Grid" widget
+    Then the member sees the local changes badge without a Save for everybody button
+    And the member sees the "Projects Grid" widget with 1 rows
+    And the "Projects Grid" view has 0 saved filters
+
   Scenario: A dashboard opens in View mode
     When I reload the dashboard
     Then the dashboard is in View mode

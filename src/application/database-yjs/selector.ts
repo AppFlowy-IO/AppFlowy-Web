@@ -593,9 +593,7 @@ export function useDatabaseIdFromField(fieldId: string) {
 }
 
 export function useFiltersSelector() {
-  const database = useDatabase();
-  const viewId = useDatabaseViewId();
-  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const view = useDatabaseView();
   const filterOrders = view?.get(YjsDatabaseKey.filters);
   const [filters, setFilters] = useState<ConditionReference[]>([]);
 
@@ -648,9 +646,8 @@ export function useFiltersSelector() {
 
 export function useFilterSelector(filterId: string) {
   const database = useDatabase();
-  const viewId = useDatabaseViewId();
   const fields = database?.get(YjsDatabaseKey.fields);
-  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const view = useDatabaseView();
   const filter = view
     ?.get(YjsDatabaseKey.filters)
     ?.toArray()
@@ -947,9 +944,7 @@ export function useAdvancedFilterSelector(filterId: string) {
 }
 
 export function useSortsSelector() {
-  const database = useDatabase();
-  const viewId = useDatabaseViewId();
-  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const view = useDatabaseView();
   const sortOrders = view?.get(YjsDatabaseKey.sorts);
   const [sorts, setSorts] = useState<ConditionReference[]>([]);
 
@@ -993,11 +988,8 @@ export interface Sort {
 }
 
 export function useSortSelector(sortId: SortId) {
-  const database = useDatabase();
-  const viewId = useDatabaseViewId();
   const [sortValue, setSortValue] = useState<Sort | null>(null);
-  const views = database?.get(YjsDatabaseKey.views);
-  const view = views?.get(viewId);
+  const view = useDatabaseView();
   const sort = view
     ?.get(YjsDatabaseKey.sorts)
     ?.toArray()
@@ -1780,7 +1772,9 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const inlineRowOrders = getInlineViewRowOrders(database);
   const { cachedRowDocs, getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(
     Boolean(fieldId),
-    `${layout === DatabaseViewLayout.List ? 'list' : layout === DatabaseViewLayout.Timeline ? 'timeline' : 'grid'}-grouping`
+    `${
+      layout === DatabaseViewLayout.List ? 'list' : layout === DatabaseViewLayout.Timeline ? 'timeline' : 'grid'
+    }-grouping`
   );
   const groupingRows = useMemo(() => {
     const next = { ...cachedRowDocs };

@@ -33,6 +33,7 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
   YSharedRoot,
+  YDatabaseView,
 } from '@/application/types';
 import { DefaultTimeSetting, MetadataKey } from '@/application/user-metadata';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -163,6 +164,15 @@ export const DatabaseContext = createContext<DatabaseContextState | null>(null);
  * re-renders the row selectors, not every database context consumer.
  */
 export const DatabaseExtraFiltersContext = createContext<DashboardExtraFilter[] | undefined>(undefined);
+
+/**
+ * A viewer's local stand-in for the active view (see
+ * `view-conditions-overlay.ts`): its filters and sorts are a private copy,
+ * everything else is the real view. Set by a dashboard widget in View mode.
+ */
+export const DatabaseViewOverlayContext = createContext<YDatabaseView | undefined>(undefined);
+
+export const useDatabaseViewOverlay = () => useContext(DatabaseViewOverlayContext);
 
 export const useDatabaseExtraFilters = () => useContext(DatabaseExtraFiltersContext);
 
@@ -440,12 +450,26 @@ export const useReadOnly = () => {
   return context?.readOnly === undefined ? true : context?.readOnly;
 };
 
+/**
+ * Read-only for the filter / sort controls. A view overlay makes them
+ * editable for everyone: the changes stay with the viewer (Notion lets
+ * view-only users use a dashboard widget's filters and sorts).
+ */
+export const useConditionsReadOnly = () => {
+  const readOnly = useReadOnly();
+  const overlay = useDatabaseViewOverlay();
+
+  return readOnly && !overlay;
+};
+
 export const useDatabaseView = () => {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
+  const overlay = useDatabaseViewOverlay();
   const views = database?.get(YjsDatabaseKey.views);
+  const view = viewId ? views?.get(viewId) : undefined;
 
-  return viewId ? views?.get(viewId) : undefined;
+  return overlay && view ? overlay : view;
 };
 
 export function useDatabaseFields() {
