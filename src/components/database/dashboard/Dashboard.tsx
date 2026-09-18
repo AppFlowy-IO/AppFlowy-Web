@@ -94,7 +94,11 @@ export function Dashboard() {
 
   const acquireSourceDoc = useSourceDocRegistry(registerSourceDoc, hostDatabaseId);
   const { createView, canCreateInOtherDatabases, bridge } = useCreateWidgetView();
-  const { databases: catalog } = useWorkspaceDatabases(workspaceId, variant !== UIVariant.Publish);
+  // The catalog only names other databases in the global-filter editor, and it
+  // is refetched on every folder change: leave it off while every widget shows
+  // the host database (its name has a fallback).
+  const hasOtherDatabases = rows.some((row) => row.widgets.some((widget) => widget.databaseId !== hostDatabaseId));
+  const { databases: catalog } = useWorkspaceDatabases(workspaceId, variant !== UIVariant.Publish && hasOtherDatabases);
 
   const showLimitMessage = useCallback((reason: DashboardLimitReason) => {
     setLimitMessage((current) => ({ reason, key: (current?.key ?? 0) + 1 }));

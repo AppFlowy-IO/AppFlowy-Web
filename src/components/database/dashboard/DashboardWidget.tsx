@@ -174,7 +174,8 @@ const WidgetSource = memo(function WidgetSource({
     workspaceId,
     viewId: widget.viewId,
     databaseId: widget.databaseId,
-    hasDatabase: trackDeletion && snapshot.hasDatabase,
+    // The probe only needs the ids: it runs alongside the doc load.
+    hasDatabase: trackDeletion,
     eventEmitter,
     notFound: loadFailed,
     setNotFound,
@@ -295,6 +296,15 @@ const WidgetSource = memo(function WidgetSource({
     ]
   );
 
+  // The host's permissions are those of its database, which is the widget's.
+  const hostPermissions = useMemo<EmbeddedDatabasePermissions>(
+    () => ({
+      readOnly: hostContext.readOnly,
+      canWrite: hostContext.canWrite ?? !hostContext.readOnly,
+      canShare: hostContext.canShare ?? false,
+    }),
+    [hostContext.canShare, hostContext.canWrite, hostContext.readOnly]
+  );
   const extraFilters = useWidgetExtraFilters(effectiveGlobalFilters, widget.databaseId);
   const visibleViewIds = useMemo(() => [widget.viewId], [widget.viewId]);
   const createRow = appOperations?.createRow ?? hostContext.createRow;
@@ -430,9 +440,27 @@ const WidgetSource = memo(function WidgetSource({
     ]
   );
 
+  // The placeholder and the database render inside the permission resolver,
+  // so the source permission probe starts with the doc load instead of after
+  // it (and after the deletion probe): the nested database then mounts with
+  // its real permissions and starts its row prefetch at once.
+  const renderContent = (permissions: EmbeddedDatabasePermissions) =>
+    status === 'ready' ? (
+      renderDatabase(permissions)
+    ) : (
+      <>
+        <WidgetHeaderFrame />
+        <WidgetBody>
+          <WidgetPlaceholder onRemove={editing && status !== 'loading' ? actions.remove : undefined} reason={status} />
+        </WidgetBody>
+      </>
+    );
+
   return (
     <WidgetContext.Provider value={contextValue}>
-      {status === 'ready' ? (
+      {isHost ? (
+        renderContent(hostPermissions)
+      ) : (
         <EmbeddedDatabasePermissionsResolver
           inheritedReadOnly={hostContext.readOnly}
           publishCanShare={hostContext.canShare}
@@ -441,15 +469,8 @@ const WidgetSource = memo(function WidgetSource({
           sourceViewId={widget.viewId}
           variant={hostContext.variant}
         >
-          {renderDatabase}
+          {renderContent}
         </EmbeddedDatabasePermissionsResolver>
-      ) : (
-        <>
-          <WidgetHeaderFrame />
-          <WidgetBody>
-            <WidgetPlaceholder onRemove={editing && status !== 'loading' ? actions.remove : undefined} reason={status} />
-          </WidgetBody>
-        </>
       )}
     </WidgetContext.Provider>
   );

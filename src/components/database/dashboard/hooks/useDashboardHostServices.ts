@@ -13,7 +13,7 @@ type ServiceFunctionKey = {
 
 type ServiceFunctions = Pick<DashboardHostServices, ServiceFunctionKey>;
 
-const FUNCTION_KEYS: readonly ServiceFunctionKey[] = [
+const FUNCTION_KEYS = [
   'addPage',
   'bindViewSync',
   'checkIfRowDocumentExists',
@@ -37,7 +37,14 @@ const FUNCTION_KEYS: readonly ServiceFunctionKey[] = [
   'searchMentions',
   'updatePage',
   'uploadFile',
-];
+] as const satisfies readonly ServiceFunctionKey[];
+
+// Compile-time check: a function-typed service added to `DashboardHostServices`
+// must be listed above, or widgets would silently get `undefined` for it.
+type MissingServiceFunctionKey = Exclude<ServiceFunctionKey, (typeof FUNCTION_KEYS)[number]>;
+const EVERY_SERVICE_FUNCTION_LISTED: [MissingServiceFunctionKey] extends [never] ? true : never = true;
+
+void EVERY_SERVICE_FUNCTION_LISTED;
 
 type AnyFunction = (...args: unknown[]) => unknown;
 

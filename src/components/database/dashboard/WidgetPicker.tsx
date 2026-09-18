@@ -1,4 +1,4 @@
-import { KeyboardEvent, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { KeyboardEvent, memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -43,6 +43,90 @@ function moveFocus(container: HTMLElement | null, current: Element | null, step:
 
   items[next]?.focus();
 }
+
+interface PickerGroupListProps {
+  groups: WidgetPickerGroup[];
+  currentViewId: string | undefined;
+  creating: boolean;
+  onPick: (viewId: string, databaseId: string) => void;
+}
+
+/**
+ * The "Existing views" options. Memoized so a keystroke in the search input
+ * re-renders only the input: the list follows the deferred query, and a
+ * large workspace lists every view of every database here.
+ */
+const PickerGroupList = memo(function PickerGroupList({
+  groups,
+  currentViewId,
+  creating,
+  onPick,
+}: PickerGroupListProps) {
+  const { t } = useTranslation();
+  const firstOtherIndex = groups.findIndex((group) => !group.isHost);
+
+  return (
+    <>
+      {groups.map((group, index) => (
+        <div
+          // Off-screen groups skip layout and paint until scrolled to.
+          className='[contain-intrinsic-size:auto_200px] [content-visibility:auto]'
+          data-database-id={group.databaseId}
+          data-testid='dashboard-widget-picker-group'
+          key={group.databaseId}
+        >
+          {index === firstOtherIndex ? (
+            <div className='mt-2 px-2 py-1 text-xs font-semibold uppercase text-text-tertiary'>
+              {t('dashboard.picker.otherDatabases', { defaultValue: 'Other databases' })}
+            </div>
+          ) : null}
+          <div className='flex items-center gap-1 px-2 py-1 text-xs font-medium text-text-tertiary'>
+            <span className='truncate'>
+              {group.isHost
+                ? t('dashboard.picker.thisDatabase', { defaultValue: 'This database' })
+                : group.name || t('untitled')}
+            </span>
+            {group.isHost && group.name ? <span className='truncate text-text-quaternary'>· {group.name}</span> : null}
+          </div>
+          {group.options.map((option) => {
+            const selected = option.viewId === currentViewId;
+            const label = getLayoutLabel(option.layout);
+
+            return (
+              <button
+                aria-pressed={selected}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-300 px-2 py-1.5 text-left text-sm text-text-primary outline-none',
+                  'hover:bg-fill-content-hover focus-visible:bg-fill-content-hover',
+                  'disabled:cursor-not-allowed disabled:opacity-60',
+                  selected && 'bg-fill-theme-select'
+                )}
+                data-database-id={option.databaseId}
+                data-picker-focusable='true'
+                data-testid='dashboard-widget-picker-option'
+                data-view-id={option.viewId}
+                disabled={creating}
+                key={option.viewId}
+                onClick={() => onPick(option.viewId, option.databaseId)}
+                type='button'
+              >
+                <PageIcon
+                  className='!h-5 !w-5 shrink-0'
+                  iconSize={16}
+                  view={{ icon: option.icon, layout: option.layout }}
+                />
+                <span className='min-w-0 flex-1 truncate'>{option.name}</span>
+                <span className='shrink-0 text-xs text-text-tertiary'>
+                  {t(label.key, { defaultValue: label.defaultValue })}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </>
+  );
+});
 
 interface WidgetPickerProps {
   request: WidgetPickerRequest | null;
@@ -213,56 +297,6 @@ function WidgetPickerContent({
       ? t('dashboard.picker.changeViewTitle', { defaultValue: 'Change view' })
       : t('dashboard.picker.title', { defaultValue: 'Add widget' });
 
-  const renderGroup = (group: WidgetPickerGroup, showOtherHeading: boolean) => (
-    <div data-database-id={group.databaseId} data-testid='dashboard-widget-picker-group' key={group.databaseId}>
-      {showOtherHeading ? (
-        <div className='mt-2 px-2 py-1 text-xs font-semibold uppercase text-text-tertiary'>
-          {t('dashboard.picker.otherDatabases', { defaultValue: 'Other databases' })}
-        </div>
-      ) : null}
-      <div className='flex items-center gap-1 px-2 py-1 text-xs font-medium text-text-tertiary'>
-        <span className='truncate'>
-          {group.isHost
-            ? t('dashboard.picker.thisDatabase', { defaultValue: 'This database' })
-            : group.name || t('untitled')}
-        </span>
-        {group.isHost && group.name ? <span className='truncate text-text-quaternary'>· {group.name}</span> : null}
-      </div>
-      {group.options.map((option) => {
-        const selected = option.viewId === currentViewId;
-        const label = getLayoutLabel(option.layout);
-
-        return (
-          <button
-            aria-pressed={selected}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-300 px-2 py-1.5 text-left text-sm text-text-primary outline-none',
-              'hover:bg-fill-content-hover focus-visible:bg-fill-content-hover',
-              'disabled:cursor-not-allowed disabled:opacity-60',
-              selected && 'bg-fill-theme-select'
-            )}
-            data-database-id={option.databaseId}
-            data-picker-focusable='true'
-            data-testid='dashboard-widget-picker-option'
-            data-view-id={option.viewId}
-            disabled={creating}
-            key={option.viewId}
-            onClick={() => onPick(option.viewId, option.databaseId)}
-            type='button'
-          >
-            <PageIcon className='!h-5 !w-5 shrink-0' iconSize={16} view={{ icon: option.icon, layout: option.layout }} />
-            <span className='min-w-0 flex-1 truncate'>{option.name}</span>
-            <span className='shrink-0 text-xs text-text-tertiary'>
-              {t(label.key, { defaultValue: label.defaultValue })}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-
-  const firstOtherIndex = groups.findIndex((group) => !group.isHost);
-
   // Closing mid-creation would leave the new view without its widget.
   const keepOpenWhileCreating = (event: Event) => {
     if (creating) event.preventDefault();
@@ -312,7 +346,7 @@ function WidgetPickerContent({
             ref={tab === 'existing' ? listRef : undefined}
             role='listbox'
           >
-            {groups.map((group, index) => renderGroup(group, index === firstOtherIndex))}
+            <PickerGroupList creating={creating} currentViewId={currentViewId} groups={groups} onPick={onPick} />
             {loading ? (
               <div className='flex items-center justify-center py-3'>
                 <Progress variant='inherit' />

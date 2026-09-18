@@ -99,8 +99,10 @@ jest.mock('../WidgetPicker', () => ({
     ) : null,
 }));
 
+const mockUseWorkspaceDatabases = jest.fn(() => ({ databases: [], loading: false, error: null }));
+
 jest.mock('../hooks/useWorkspaceDatabases', () => ({
-  useWorkspaceDatabases: () => ({ databases: [], loading: false, error: null }),
+  useWorkspaceDatabases: (workspaceId: string, enabled: boolean) => mockUseWorkspaceDatabases(workspaceId, enabled),
 }));
 
 const mockCreateView = jest.fn<Promise<string>, [CreateWidgetViewRequest]>();
@@ -287,6 +289,15 @@ describe('Dashboard', () => {
   });
 
   describe('a dashboard with widgets', () => {
+    it('loads the workspace catalog only when a widget shows another database', () => {
+      const { writeRows } = renderDashboard(makeRows(['a', 'b']));
+
+      expect(mockUseWorkspaceDatabases).toHaveBeenLastCalledWith('workspace-id', false);
+
+      writeRows([{ id: 'r1', height: 360, widgets: [widget('a'), { ...widget('n'), databaseId: 'notes-db' }] }]);
+      expect(mockUseWorkspaceDatabases).toHaveBeenLastCalledWith('workspace-id', true);
+    });
+
     it('opens in View mode without editing controls', () => {
       renderDashboard(makeRows(['a', 'b'], ['c']));
 

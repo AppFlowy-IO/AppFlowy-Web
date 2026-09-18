@@ -722,17 +722,24 @@ async function createFixtureDatabase(
   };
 }
 
-/** Wait until the browser shows a database page whose doc belongs to `databaseId`. */
+/**
+ * Wait until the browser shows a database page whose doc belongs to
+ * `databaseId`. A reload in between (the test bridge reloads after a failed
+ * module fetch on a cold dev server) destroys the evaluation context; that
+ * only means "not yet".
+ */
 export async function waitForDatabaseContext(page: Page, databaseId: string) {
   await expect
     .poll(
       () =>
-        page.evaluate((id) => {
-          const bridge = (window as unknown as { __DASHBOARD_TEST__?: { byDatabase: (id: string) => unknown } })
-            .__DASHBOARD_TEST__;
+        page
+          .evaluate((id) => {
+            const bridge = (window as unknown as { __DASHBOARD_TEST__?: { byDatabase: (id: string) => unknown } })
+              .__DASHBOARD_TEST__;
 
-          return Boolean(bridge?.byDatabase(id)) && Boolean((window as unknown as { Y?: unknown }).Y);
-        }, databaseId),
+            return Boolean(bridge?.byDatabase(id)) && Boolean((window as unknown as { Y?: unknown }).Y);
+          }, databaseId)
+          .catch(() => false),
       { timeout: FIXTURE_TIMEOUT_MS, message: `waiting for database ${databaseId} to mount` }
     )
     .toBe(true);

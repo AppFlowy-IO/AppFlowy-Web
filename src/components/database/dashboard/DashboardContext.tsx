@@ -17,7 +17,7 @@ import {
 import { YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 
 import { detachRemovedGlobalFilterSources, GlobalFilterSource } from './global-filters/global-filter.utils';
-import { readGlobalFilterSourceFields } from './global-filters/useGlobalFilterSources';
+import { readGlobalFilterSourceFields } from './global-filters/global-filter.source-fields';
 
 /**
  * Shared state of one dashboard view, split by how often it changes so a
