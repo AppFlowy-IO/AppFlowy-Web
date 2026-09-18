@@ -118,6 +118,7 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/auth/auth-regressions.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/app/sidebar-drop-indicator.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/editor/database-row-page-mention.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/tab-return-scroll.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-relation-prefill.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-row-detail-no-stacking.feature.spec.js
