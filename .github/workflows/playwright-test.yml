@@ -101,7 +101,11 @@ jobs:
             bdd: 'false'
             shard: '3/3'
           - name: 'database-bdd'
-            spec: 'playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/embedded-grid-bottom-rows.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/grid-row-handle.feature.spec.js
             description: 'Database row and undo/redo BDD workflows'
             bdd: 'true'
             shard: ''
@@ -118,6 +122,7 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/auth/auth-regressions.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/app/sidebar-drop-indicator.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/editor/database-row-page-mention.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/tab-return-scroll.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-relation-prefill.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-row-detail-no-stacking.feature.spec.js

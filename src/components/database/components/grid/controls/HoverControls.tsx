@@ -111,29 +111,44 @@ export function HoverControls({
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <Tooltip disableHoverableContent>
               <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
+                <DropdownMenuTrigger
+                  asChild
+                  onPointerDownCapture={(event) => {
+                    // Radix opens on pointer-down and prevents the native drag.
+                    // Keep the browser default and open only after a completed click.
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    if (event.button === 0 && !event.ctrlKey) setMenuOpen((open) => !open);
+                  }}
+                >
                   <Button
+                    asChild
                     aria-label={canDrag ? `${t('tooltip.dragRow')}. ${t('tooltip.openMenu')}` : t('tooltip.openMenu')}
                     className='text-icon-secondary focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
                     data-testid='row-accessory-button'
                     size='icon-sm'
-                    type='button'
                     variant='ghost'
                   >
-                    <DragIcon aria-hidden='true' className='h-5 w-5' />
+                    {/* Firefox will not start an ancestor's native drag from a button. */}
+                    <div role='button' tabIndex={0}>
+                      <DragIcon aria-hidden='true' className='h-5 w-5' />
+                    </div>
                   </Button>
                 </DropdownMenuTrigger>
               </TooltipTrigger>
-              <TooltipContent>
-                {canDrag ? (
-                  <>
-                    {t('tooltip.dragRow')}
-                    <TooltipShortcut>{t('tooltip.openMenu')}</TooltipShortcut>
-                  </>
-                ) : (
-                  t('tooltip.openMenu')
-                )}
-              </TooltipContent>
+              {!menuOpen && (
+                <TooltipContent>
+                  {canDrag ? (
+                    <>
+                      {t('tooltip.dragRow')}
+                      <TooltipShortcut>{t('tooltip.openMenu')}</TooltipShortcut>
+                    </>
+                  ) : (
+                    t('tooltip.openMenu')
+                  )}
+                </TooltipContent>
+              )}
             </Tooltip>
             <RowMenu
               groupFieldId={groupFieldId}

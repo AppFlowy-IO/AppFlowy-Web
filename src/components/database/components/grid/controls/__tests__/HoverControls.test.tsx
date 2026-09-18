@@ -63,7 +63,7 @@ describe('HoverControls accessibility', () => {
     const trigger = screen.getByRole('button', { name: 'Open menu' });
     const controls = trigger.parentElement?.parentElement;
 
-    expect(trigger.getAttribute('tabindex')).toBeNull();
+    expect(trigger.tabIndex).toBe(0);
     expect(trigger.className).toContain('focus-visible:ring-1');
     expect(controls?.className).toContain('focus-within:!opacity-100');
 
@@ -74,5 +74,18 @@ describe('HoverControls accessibility', () => {
 
     await waitFor(() => expect(screen.getByTestId('mock-row-menu-item')).toBeTruthy());
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('preserves native pointer-down behavior and opens the menu only on click', async () => {
+    render(<HoverControls rowId='row-a' rowKey='row-a' state={{ type: GridDragState.IDLE }} />);
+    const trigger = screen.getByRole('button', { name: 'Drag row. Open menu' });
+
+    expect(fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })).toBe(true);
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    fireEvent.click(trigger, { button: 0, ctrlKey: false });
+
+    await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
   });
 });
