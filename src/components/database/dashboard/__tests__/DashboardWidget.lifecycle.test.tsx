@@ -7,7 +7,12 @@ import { moveDashboardWidget, updateDashboardLayoutSetting } from '@/application
 import { DashboardRow } from '@/application/database-yjs/dashboard.type';
 import { DatabaseViewLayout, YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
-import { DashboardProvider, useDashboardContext, useDashboardFilters } from '../DashboardContext';
+import {
+  DashboardProvider,
+  useDashboardContext,
+  useDashboardFilters,
+  useDashboardLocalWidgetChanges,
+} from '../DashboardContext';
 import { DashboardGrid } from '../DashboardGrid';
 import { DashboardHostContext, DashboardUiContext } from '../DashboardUiContext';
 
@@ -74,7 +79,8 @@ function makeView(rowIds = ['first']) {
 
 function TestDashboard() {
   const { rows, updateRows } = useDashboardContext();
-  const { localWidgetChanges, resetViewOverlays, commitViewOverlays } = useDashboardFilters();
+  const { resetViewOverlays, commitViewOverlays } = useDashboardFilters();
+  const localWidgetChanges = useDashboardLocalWidgetChanges();
 
   return (
     <DashboardUiContext.Provider

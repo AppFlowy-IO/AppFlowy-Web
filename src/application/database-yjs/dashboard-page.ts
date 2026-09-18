@@ -45,6 +45,9 @@ export async function createDatabaseDashboardPageViaGrid(params: {
     prev_view_id: params.prevViewId,
   });
   let syncOwnerDoc: YDoc | null = null;
+  // The dashboard tab is a sibling page of the grid under the document, so a
+  // failure after it exists must remove it as well.
+  let createdDashboardViewId: string | null = null;
 
   try {
     if (!response.database_id) throw new Error('The server did not return a database ID for the new dashboard');
@@ -73,6 +76,10 @@ export async function createDatabaseDashboardPageViaGrid(params: {
       embedded: true,
     });
 
+    if (dashboardResponse.view_id && dashboardResponse.view_id !== gridViewId) {
+      createdDashboardViewId = dashboardResponse.view_id;
+    }
+
     if (
       !dashboardResponse.view_id ||
       existingViewIds.has(dashboardResponse.view_id) ||
@@ -98,13 +105,14 @@ export async function createDatabaseDashboardPageViaGrid(params: {
 
     return { ...response, view_id: dashboardResponse.view_id };
   } catch (error) {
-    try {
-      await params.deletePage(response.view_id);
-    } catch (cleanupError) {
-      Log.warn('[Dashboard creation] failed to remove the partially created database', {
-        viewId: response.view_id,
-        error: cleanupError,
-      });
+    const partial = createdDashboardViewId ? [createdDashboardViewId, response.view_id] : [response.view_id];
+
+    for (const viewId of partial) {
+      try {
+        await params.deletePage(viewId);
+      } catch (cleanupError) {
+        Log.warn('[Dashboard creation] failed to remove a partially created page', { viewId, error: cleanupError });
+      }
     }
 
     throw error;

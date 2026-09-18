@@ -3,7 +3,13 @@ import { flushSync } from 'react-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { toast } from 'sonner';
 
-import { DatabaseContext, useDatabase, useDatabaseContext, useDatabaseViewsSelector } from '@/application/database-yjs';
+import {
+  DatabaseContext,
+  useDatabase,
+  useDatabaseContext,
+  useDatabaseView,
+  useDatabaseViewsSelector,
+} from '@/application/database-yjs';
 import { hasAdvancedFilterRoot } from '@/application/database-yjs/filter';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
@@ -214,15 +220,16 @@ function DatabaseViews({
   const [advancedPanelOpen, setAdvancedPanelOpen] = useState(false);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
 
+  // The active view as this database edits it: in a View-mode dashboard
+  // widget that is the viewer's overlay, whose filters may differ from the
+  // shared view's (a widget remounts when it moves to another row).
+  const conditionsView = useDatabaseView();
+
   // Auto-detect advanced mode on mount/view change and auto-expand when filters exist
   useEffect(() => {
-    if (!activeViewId || !views) return;
+    if (!conditionsView) return;
 
-    const view = views.get(activeViewId);
-
-    if (!view) return;
-
-    const filters = view.get(YjsDatabaseKey.filters);
+    const filters = conditionsView.get(YjsDatabaseKey.filters);
 
     if (!filters || filters.length === 0) {
       setAdvancedMode(false);
@@ -233,7 +240,7 @@ function DatabaseViews({
     setConditionsExpanded(true);
 
     setAdvancedMode(hasAdvancedFilterRoot(filters));
-  }, [activeViewId, views]);
+  }, [conditionsView]);
 
   // Get active view from selector state, or directly from Yjs if not yet in state
   // This handles the race condition when a new view is created but selector hasn't updated yet

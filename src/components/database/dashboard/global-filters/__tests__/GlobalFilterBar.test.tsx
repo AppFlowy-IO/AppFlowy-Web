@@ -31,6 +31,7 @@ jest.mock('@/components/database/dashboard/DashboardContext', () => {
     useDashboardFilters: required,
     useDashboardSources: required,
     useDashboardContextOptional: () => mockContext,
+    useDashboardLocalWidgetChanges: () => 0,
   };
 });
 
@@ -115,7 +116,6 @@ function createContext(overrides: Partial<MockDashboard> = {}): MockDashboard {
     effectiveGlobalFilters: localGlobalFilters ?? globalFilters,
     localGlobalFilters,
     setLocalGlobalFilters: jest.fn(),
-    localWidgetChanges: 0,
     getViewOverlay: jest.fn(),
     resetViewOverlays: jest.fn(),
     commitViewOverlays: jest.fn(),

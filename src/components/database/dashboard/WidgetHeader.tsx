@@ -24,7 +24,7 @@ function WidgetTitle({ className, onOpenMenu }: { className?: string; onOpenMenu
 
   return (
     <button
-      aria-label={t('dashboard.widget.menu', { defaultValue: 'Widget options' })}
+      aria-haspopup='menu'
       className={cn(
         'flex min-w-0 flex-1 items-center gap-1.5 rounded-200 text-left outline-none',
         'hover:text-text-primary focus-visible:ring-1 focus-visible:ring-border-theme-thick',

@@ -20,10 +20,11 @@ import {
   useDatabase,
   useDatabaseContext,
   useDatabaseFields,
+  useDatabaseSelectedView,
   useDatabaseView,
   useDatabaseViewId,
-  useRowMap,
   useReadOnly,
+  useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
 import { initializeDashboardLayoutSetting, updateDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
@@ -318,6 +319,9 @@ function generateGroupByField(field: YDatabaseField) {
 
 export function useGroupByFieldDispatch() {
   const view = useDatabaseView();
+  // Grouping writes the shared view; in a View-mode dashboard widget `view`
+  // is the viewer's overlay for filters, so the filter cleanup reads the real one.
+  const sharedView = useDatabaseSelectedView(useDatabaseViewId());
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
 
@@ -356,7 +360,7 @@ export function useGroupByFieldDispatch() {
             if (!supportsOptionalGrouping) {
               // Board keeps its existing behavior: a field cannot simultaneously
               // act as the grouping source and as a filter.
-              const filters = view.get(YjsDatabaseKey.filters);
+              const filters = (sharedView ?? view).get(YjsDatabaseKey.filters);
               const filterIndex = filters
                 ?.toArray()
                 .findIndex((filter) => filter.get(YjsDatabaseKey.field_id) === fieldId);
@@ -393,7 +397,7 @@ export function useGroupByFieldDispatch() {
         'groupByField'
       );
     },
-    [database, sharedRoot, view]
+    [database, sharedRoot, sharedView, view]
   );
 }
 

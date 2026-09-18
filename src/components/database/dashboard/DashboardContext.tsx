@@ -59,7 +59,9 @@ export interface DashboardContextValue {
   updateRows: (updater: (rows: DashboardRow[]) => DashboardRow[]) => void;
 }
 
-export interface DashboardFiltersContextValue extends DashboardViewOverlays {
+// The dirty count lives in its own context: every widget reads this one, and
+// only the filter bar needs the count.
+export interface DashboardFiltersContextValue extends Omit<DashboardViewOverlays, 'localWidgetChanges'> {
   /** Persisted global filters (mappings of databases without a widget left out). */
   globalFilters: DashboardGlobalFilter[];
   /** Persisted global filters unless the viewer changed them locally. */
@@ -90,6 +92,8 @@ export const DashboardContext = createContext<DashboardContextValue | null>(null
 export const DashboardFiltersContext = createContext<DashboardFiltersContextValue | null>(null);
 export const DashboardSourcesContext = createContext<DashboardSourcesContextValue | null>(null);
 export const DashboardSourceRegistryContext = createContext<DashboardSourceRegistryContextValue | null>(null);
+/** Widgets whose View-mode filters / sorts the viewer changed locally. */
+export const DashboardLocalWidgetChangesContext = createContext(0);
 
 function required<T>(value: T | null, name: string): T {
   if (!value) {
@@ -113,6 +117,10 @@ export function useDashboardFilters(): DashboardFiltersContextValue {
 
 export function useDashboardSources(): DashboardSourcesContextValue {
   return required(useContext(DashboardSourcesContext), 'DashboardSourcesContext');
+}
+
+export function useDashboardLocalWidgetChanges(): number {
+  return useContext(DashboardLocalWidgetChangesContext);
 }
 
 /** The registration callbacks alone: never re-renders when a source registers. */
@@ -307,12 +315,11 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
       effectiveGlobalFilters: visibleLocalGlobalFilters ?? globalFilters,
       localGlobalFilters: visibleLocalGlobalFilters,
       setLocalGlobalFilters,
-      localWidgetChanges,
       getViewOverlay,
       resetViewOverlays,
       commitViewOverlays,
     }),
-    [globalFilters, visibleLocalGlobalFilters, localWidgetChanges, getViewOverlay, resetViewOverlays, commitViewOverlays]
+    [globalFilters, visibleLocalGlobalFilters, getViewOverlay, resetViewOverlays, commitViewOverlays]
   );
 
   const sourcesValue = useMemo<DashboardSourcesContextValue>(
@@ -328,9 +335,11 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   return (
     <DashboardContext.Provider value={layoutValue}>
       <DashboardFiltersContext.Provider value={filtersValue}>
-        <DashboardSourceRegistryContext.Provider value={registryValue}>
-          <DashboardSourcesContext.Provider value={sourcesValue}>{children}</DashboardSourcesContext.Provider>
-        </DashboardSourceRegistryContext.Provider>
+        <DashboardLocalWidgetChangesContext.Provider value={localWidgetChanges}>
+          <DashboardSourceRegistryContext.Provider value={registryValue}>
+            <DashboardSourcesContext.Provider value={sourcesValue}>{children}</DashboardSourcesContext.Provider>
+          </DashboardSourceRegistryContext.Provider>
+        </DashboardLocalWidgetChangesContext.Provider>
       </DashboardFiltersContext.Provider>
     </DashboardContext.Provider>
   );

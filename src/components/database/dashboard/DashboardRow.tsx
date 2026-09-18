@@ -33,7 +33,7 @@ const HEIGHT_HANDLE_SIZE = 12;
 // Notion's row controls: round, tinted buttons at both edges of a row that
 // show while the row is hovered (or one of them has focus).
 const EDGE_CONTROL_CLASS =
-  'absolute top-1/2 -translate-y-1/2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100 has-[[data-state=open]]:opacity-100';
+  'absolute top-1/2 -translate-y-1/2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100';
 const EDGE_BUTTON_CLASS = 'rounded-full bg-fill-theme-select text-fill-theme-thick';
 
 interface DashboardRowProps {

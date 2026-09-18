@@ -8,6 +8,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from 'react';
@@ -24,7 +25,7 @@ import {
   DashboardWidget as DashboardWidgetData,
 } from '@/application/database-yjs/dashboard.type';
 import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot/database-yjs-render-bridge';
-import { UIVariant, View, ViewIcon, ViewLayout, YDatabaseView, YDoc } from '@/application/types';
+import { UIVariant, View, ViewIcon, ViewLayout, YDoc } from '@/application/types';
 import { findView } from '@/components/_shared/outline/utils';
 import { AppOperationsContext } from '@/components/app/contexts/AppOperationsContext';
 import { Database } from '@/components/database';
@@ -170,15 +171,26 @@ const WidgetSource = memo(function WidgetSource({
   const snapshot = useWidgetViewSnapshot(doc, widget.viewId);
   const meta = useWidgetViewMeta(widget.viewId);
   const trackDeletion = !isHost && !isPublish && Boolean(eventEmitter);
+  // The probe runs from the ids, alongside the doc load. It may only clear
+  // "not found" once the doc is open: a doc the loader gave up on stays a
+  // not-found placeholder (the loader would not retry on its own).
+  const loadedDocRef = useRef(loadedDoc);
+
+  loadedDocRef.current = loadedDoc;
+  const setProbeNotFound = useCallback(
+    (value: boolean) => {
+      if (value || loadedDocRef.current) setNotFound(value);
+    },
+    [setNotFound]
+  );
   const deletionStatus = useDatabaseDeletionStatus({
     workspaceId,
     viewId: widget.viewId,
     databaseId: widget.databaseId,
-    // The probe only needs the ids: it runs alongside the doc load.
     hasDatabase: trackDeletion,
     eventEmitter,
     notFound: loadFailed,
-    setNotFound,
+    setNotFound: setProbeNotFound,
   });
   const effectiveDeletionStatus = trackDeletion ? deletionStatus : 'none';
   const databaseMissing = useDelayedFlag(Boolean(doc) && !snapshot.hasDatabase, MISSING_DATABASE_GRACE_MS);
@@ -201,15 +213,40 @@ const WidgetSource = memo(function WidgetSource({
   // In View mode the widget's filters and sorts are the viewer's own copy
   // (Notion keeps them local until "Save for everybody"); Edit mode configures
   // the real view. Published dashboards stay read-only.
+  // Resolved during render (the store is idempotent per widget id, like
+  // `getDatabaseExternalStore`), so the nested database mounts with the
+  // overlay instead of once without and once with it. The dashboard retains
+  // private conditions across row moves and releases them only when the
+  // widget is removed or points to another source.
   const realView = snapshot.view;
-  const [overlayView, setOverlayView] = useState<YDatabaseView>();
+  const [overlayRevision, refreshOverlay] = useReducer((revision: number) => revision + 1, 0);
+  const overlayView = useMemo(
+    () =>
+      isPublish || !doc || !hasSourceDatabase
+        ? undefined
+        : getViewOverlay({ id: widget.id, databaseId: widget.databaseId, viewId: widget.viewId }, realView),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- overlayRevision re-asks the store after a StrictMode remount
+    [
+      doc,
+      getViewOverlay,
+      hasSourceDatabase,
+      isPublish,
+      overlayRevision,
+      realView,
+      widget.databaseId,
+      widget.id,
+      widget.viewId,
+    ]
+  );
 
+  // StrictMode's simulated unmount clears the dashboard's store between this
+  // render and the effects; take the store's fresh copy when it differs.
   useEffect(() => {
-    if (isPublish || !doc || !hasSourceDatabase) return;
-    setOverlayView(getViewOverlay({ id: widget.id, databaseId: widget.databaseId, viewId: widget.viewId }, realView));
-    // The dashboard retains private conditions across row moves and releases
-    // them only when the widget is removed or points to another source.
-  }, [doc, getViewOverlay, hasSourceDatabase, isPublish, realView, widget.databaseId, widget.id, widget.viewId]);
+    if (!overlayView) return;
+    const current = getViewOverlay({ id: widget.id, databaseId: widget.databaseId, viewId: widget.viewId }, realView);
+
+    if (current !== overlayView) refreshOverlay();
+  }, [getViewOverlay, overlayView, realView, widget.databaseId, widget.id, widget.viewId]);
 
   // Expose the source doc to the global-filter editor while the widget shows it.
   useEffect(() => {

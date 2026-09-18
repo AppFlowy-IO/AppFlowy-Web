@@ -31,6 +31,7 @@ jest.mock('@/components/database/dashboard/DashboardContext', () => {
     useDashboardFilters: required,
     useDashboardSources: required,
     useDashboardContextOptional: () => mockContext,
+    useDashboardLocalWidgetChanges: () => 0,
   };
 });
 

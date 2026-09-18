@@ -5,6 +5,7 @@ import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type
 import {
   useDashboardContext,
   useDashboardFilters,
+  useDashboardLocalWidgetChanges,
   useDashboardSources,
 } from '@/components/database/dashboard/DashboardContext';
 
@@ -37,10 +38,10 @@ export function useGlobalFilterActions() {
     effectiveGlobalFilters,
     localGlobalFilters,
     setLocalGlobalFilters,
-    localWidgetChanges,
     resetViewOverlays,
     commitViewOverlays,
   } = useDashboardFilters();
+  const localWidgetChanges = useDashboardLocalWidgetChanges();
   const persist = canEdit && isEditing;
   const persistedRef = useRef(globalFilters);
   const localRef = useRef(localGlobalFilters);

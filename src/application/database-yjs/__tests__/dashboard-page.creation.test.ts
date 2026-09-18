@@ -125,6 +125,19 @@ describe('createDatabaseDashboardPageViaGrid', () => {
     expect(params.scheduleDeferredCleanup).toHaveBeenCalledWith(databaseDoc.guid);
   });
 
+  it('removes the dashboard page too when it exists but its metadata is invalid', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+    const params = createParams(databaseDoc);
+
+    // The view was created, but for another database: the sidebar page must not stay behind.
+    params.createDatabaseView.mockResolvedValue({ view_id: DASHBOARD_VIEW_ID, database_id: 'other-database' });
+
+    await expect(createDatabaseDashboardPageViaGrid(params)).rejects.toThrow(
+      'The server returned invalid metadata for the new Dashboard view'
+    );
+    expect(params.deletePage.mock.calls.map(([viewId]) => viewId)).toEqual([DASHBOARD_VIEW_ID, GRID_VIEW_ID]);
+  });
+
   it('removes the new database when adding the dashboard view fails', async () => {
     const databaseDoc = createGridDatabaseDoc();
     const params = createParams(databaseDoc);
