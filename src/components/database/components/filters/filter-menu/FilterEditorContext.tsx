@@ -6,6 +6,8 @@ import { YDatabaseField } from '@/application/types';
 export const FilterEditorContext = createContext<{
   field?: YDatabaseField;
   updateFilter: (params: UpdateFilterParams) => void;
+  /** Render nothing, instead of an aligned empty slot, for a condition that takes no value. */
+  collapseEmptyValue?: boolean;
 } | null>(null);
 
 export const useFilterEditorContext = () => useContext(FilterEditorContext);

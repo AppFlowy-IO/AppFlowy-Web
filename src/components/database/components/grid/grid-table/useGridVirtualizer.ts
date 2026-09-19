@@ -39,6 +39,10 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
 
     if (!parentRef.current || !scrollElement) return null;
 
+    // An embedded grid starts at the origin of its own scrollable content.
+    // Its scrollTop moves the viewport; it is not space before the first row.
+    if (scrollElement === parentRef.current) return 0;
+
     const parentRect = parentRef.current.getBoundingClientRect();
     const scrollRect = scrollElement.getBoundingClientRect();
 

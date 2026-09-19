@@ -67,6 +67,7 @@ function FieldMenuTitle({
   return (
     <div className={'flex items-center gap-1'}>
       <span
+        title={fieldName}
         className={cn(
           'truncate whitespace-nowrap text-xs font-medium text-text-tertiary',
           nameMaxWidthClassName ?? 'max-w-[150px]'
