@@ -1,10 +1,11 @@
 import { expect } from '@jest/globals';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as Y from 'yjs';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { useDatabasePageSelection } from '@/application/database-yjs/database-page-state';
 import { View, ViewLayout, ViewMetaProps, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
 import DatabaseView from '@/components/app/DatabaseView';
@@ -16,6 +17,7 @@ declare global {
         outline?: View[];
         breadcrumbs?: View[];
         capturedDatabaseProps?: unknown;
+        renderedDatabaseProps?: unknown[];
         capturedViewMetaProps?: unknown;
         refreshOutline?: jest.Mock;
         ensureViewVisibleInOutline?: jest.Mock;
@@ -63,6 +65,7 @@ jest.mock('@/components/database', () => ({
     global.__databaseViewTestState = {
       ...(global.__databaseViewTestState || {}),
       capturedDatabaseProps: props,
+      renderedDatabaseProps: [...(global.__databaseViewTestState?.renderedDatabaseProps || []), props],
     };
     return null;
   },
@@ -130,11 +133,107 @@ function createParentView(child: View): View {
   };
 }
 
+function HeaderSelection({ workspaceId, routeId }: { workspaceId: string; routeId: string }) {
+  const tabViewId = new URLSearchParams(useLocation().search).get('v');
+  const selected = useDatabasePageSelection(workspaceId, routeId, tabViewId);
+
+  return <output data-testid='header-selection'>{selected}</output>;
+}
+
 describe('DatabaseView database container', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
     global.__databaseViewTestState = undefined;
+  });
+
+  it.each(['container', 'standalone', 'missing folder views', 'surviving selection'])(
+    'reconciles the selected tab as the restored root renders: %s',
+    (scenario) => {
+      const removed = createLegacyDatabaseView('removed-view');
+      const surviving = createLegacyDatabaseView('surviving-view');
+      const container: View = {
+        ...createParentView(removed), view_id: 'container', layout: ViewLayout.Grid,
+        extra: { is_database_container: true },
+        children: scenario === 'missing folder views' ? [removed] : [removed, surviving],
+      };
+
+      removed.parent_view_id = 'container';
+      surviving.parent_view_id = 'container';
+      global.__databaseViewTestState = { outline: scenario === 'standalone' ? [] : [container] };
+      const previous = createDatabaseDoc('database', ['removed-view', 'surviving-view']);
+      const restored = createDatabaseDoc('database', scenario === 'surviving selection'
+        ? ['removed-view', 'surviving-view'] : ['surviving-view']);
+
+      restored.databaseRestoreId = '33333333-3333-4333-8333-333333333333';
+      const viewMeta: ViewMetaProps = {
+        viewId: 'removed-view', name: 'Database', layout: ViewLayout.Grid,
+        workspaceId: 'workspace', visibleViewIds: [],
+      };
+      const Location = () => <output data-testid='location'>{useLocation().search}</output>;
+      const page = (doc: YDoc) => (
+        <MemoryRouter initialEntries={['/app/workspace/removed-view?v=removed-view&keep=1']}>
+          <Location />
+          <HeaderSelection workspaceId='workspace' routeId='removed-view' />
+          <DatabaseView isRouteView doc={doc} workspaceId='workspace' readOnly viewMeta={viewMeta}
+            updatePage={jest.fn()} updatePageIcon={jest.fn()} updatePageName={jest.fn()} />
+        </MemoryRouter>
+      );
+      const { rerender, unmount } = render(page(previous));
+
+      rerender(page(restored));
+      const expectedView = scenario === 'surviving selection' ? 'removed-view' : 'surviving-view';
+      const renders = global.__databaseViewTestState?.renderedDatabaseProps as
+        Array<{ doc: YDoc; activeViewId?: string; visibleViewIds?: string[] }>;
+
+      expect(renders.filter((props) => props.doc === restored).every((props) => props.activeViewId === expectedView)).toBe(true);
+      expect(global.__databaseViewTestState?.capturedDatabaseProps).toEqual(expect.objectContaining({ activeViewId: expectedView }));
+      expect(screen.getByTestId('location').textContent).toBe(`?v=${expectedView}&keep=1`);
+      expect(screen.getByTestId('header-selection').textContent).toBe(expectedView);
+
+      if (scenario === 'standalone') {
+        const props = global.__databaseViewTestState?.capturedDatabaseProps as { onChangeView: (id: string) => void };
+
+        act(() => {
+          restored.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)
+            .get(YjsDatabaseKey.views).set('created-after-restore', new Y.Map());
+          props.onChangeView('created-after-restore');
+        });
+        expect(global.__databaseViewTestState?.capturedDatabaseProps).toEqual(expect.objectContaining({ activeViewId: 'created-after-restore' }));
+        expect(screen.getByTestId('location').textContent).toBe('?v=created-after-restore&keep=1');
+        expect(screen.getByTestId('header-selection').textContent).toBe('created-after-restore');
+      }
+
+      unmount();
+      previous.destroy();
+      restored.destroy();
+    }
+  );
+
+  it('does not let a modal database replace the routed header selection and clears it on departure', () => {
+    const routeDoc = createDatabaseDoc('route-db', ['route-tab']);
+    const modalDoc = createDatabaseDoc('modal-db', ['modal-tab']);
+    const page = (showRoute: boolean) => (
+      <MemoryRouter initialEntries={['/app/workspace/route-tab']}>
+        <HeaderSelection workspaceId='workspace' routeId='route-tab' />
+        {showRoute && <DatabaseView isRouteView doc={routeDoc} workspaceId='workspace' readOnly
+          viewMeta={{ viewId: 'route-tab', name: 'Route', layout: ViewLayout.Grid,
+            workspaceId: 'workspace', visibleViewIds: [] }}
+          updatePage={jest.fn()} updatePageIcon={jest.fn()} updatePageName={jest.fn()} />}
+        <DatabaseView doc={modalDoc} workspaceId='workspace' readOnly
+          viewMeta={{ viewId: 'modal-tab', name: 'Modal', layout: ViewLayout.Grid,
+            workspaceId: 'workspace', visibleViewIds: [] }}
+          updatePage={jest.fn()} updatePageIcon={jest.fn()} updatePageName={jest.fn()} />
+      </MemoryRouter>
+    );
+    const { rerender, unmount } = render(page(true));
+
+    expect(screen.getByTestId('header-selection').textContent).toBe('route-tab');
+    rerender(page(false));
+    expect(screen.getByTestId('header-selection').textContent).toBe('');
+    unmount();
+    routeDoc.destroy();
+    modalDoc.destroy();
   });
 
   it('uses container for page meta and container children for visibleViewIds', () => {
@@ -468,8 +567,10 @@ describe('DatabaseView database container', () => {
     children.forEach((child) => views.get(child.view_id)?.set(YjsDatabaseKey.embedded, embedded));
 
     render(
-      <MemoryRouter initialEntries={['/app/workspace-id/grid-view']}>
+      <MemoryRouter initialEntries={['/app/workspace-id/grid-view?v=missing-view']}>
+        <HeaderSelection workspaceId='workspace-id' routeId='grid-view' />
         <DatabaseView
+          isRouteView
           doc={doc}
           workspaceId='workspace-id'
           readOnly={false}
@@ -497,6 +598,7 @@ describe('DatabaseView database container', () => {
         activeViewId: children[0].view_id,
       })
     );
+    expect(screen.getByTestId('header-selection').textContent).toBe(children[0].view_id);
     expect(global.__databaseViewTestState?.capturedViewMetaProps).toEqual(
       expect.objectContaining({ viewId: containerId, extra: container.extra })
     );

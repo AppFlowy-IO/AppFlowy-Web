@@ -613,6 +613,31 @@ describe('useSync version-gated message handling', () => {
     doc.destroy();
   });
 
+  it('carries the captured database restore generation into HTTP update frames', async () => {
+    const objectId = '44444444-4444-4444-8444-444444444446';
+    const doc = createDoc(objectId);
+    const restoreId = '33333333-3333-4333-8333-333333333333';
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const { result, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Database });
+    });
+    mockedHandleMessage.mockClear();
+    await act(async () => {
+      await result.current.applyHttpFullSyncResult({
+        objectId, collabType: Types.Database, missingUpdate: new Uint8Array([0, 0]),
+        serverStateVector: new Uint8Array([0]), databaseRestoreId: restoreId,
+      });
+    });
+    expect(mockedHandleMessage).toHaveBeenCalledWith(expect.objectContaining({ doc }), expect.objectContaining({
+      update: expect.objectContaining({ databaseRestoreId: restoreId }),
+    }));
+    unmount();
+    doc.destroy();
+  });
+
   it('accepts a no-RID HTTP result when an authoritative version supersedes the local doc', async () => {
     const ws = createWs();
     const bc = createBroadcastChannel();

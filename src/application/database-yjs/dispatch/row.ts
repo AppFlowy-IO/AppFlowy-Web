@@ -41,6 +41,7 @@ import {
   registerDatabaseHistoryRowDoc,
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { createNumberGroupingPolicy } from '@/application/database-yjs/number-grouping';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
@@ -299,6 +300,8 @@ export function useDeleteRowDispatch() {
 
   return useCallback(
     (rowId: string) => {
+      if (sharedRoot.doc && isDatabaseHistoryDocumentImmutable(sharedRoot.doc as YDoc)) return;
+
       executeOperationWithAllViews(
         sharedRoot,
         database,
@@ -332,6 +335,8 @@ export function useBulkDeleteRowDispatch() {
 
   return useCallback(
     (rowIds: string[], historyGroup?: object) => {
+      if (sharedRoot.doc && isDatabaseHistoryDocumentImmutable(sharedRoot.doc as YDoc)) return;
+
       executeOperationWithAllViews(
         sharedRoot,
         database,
@@ -577,6 +582,8 @@ export function useNewRowDispatch() {
       /** Open the new row after it and any template document have been materialized. */
       openAfterCreate?: boolean;
     }) => {
+      if (isDatabaseHistoryDocumentImmutable(databaseDoc)) return null;
+
       if (!currentView) {
         throw new Error('Current view not found');
       }

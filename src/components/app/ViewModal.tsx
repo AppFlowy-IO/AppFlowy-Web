@@ -389,6 +389,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
               }}
               onDeleted={handleClose}
               viewId={effectiveViewId}
+              viewMetadata={resolvedView}
             />
           )}
 
@@ -399,7 +400,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         </div>
       </div>
     );
-  }, [effectiveViewId, handleClose, movePageOpen, outline, t, toView]);
+  }, [effectiveViewId, handleClose, movePageOpen, outline, resolvedView, t, toView]);
 
   // Check if view is in shareWithMe and determine readonly status.
   // `resolvedView` includes the server-fetched fallback, so locked pages opened

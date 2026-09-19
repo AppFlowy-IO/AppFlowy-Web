@@ -32,6 +32,10 @@ export interface AuthInternalContextType {
   isAuthenticated: boolean;
   /** Whether page history (version snapshots) is enabled for the current workspace plan. */
   enablePageHistory?: boolean;
+  /** Requires preview, checkpoint-required restore jobs, and restore synchronization support. */
+  enableDatabaseHistory?: boolean;
+  /** Server capabilities are known, including a legacy server with no server-info endpoint. */
+  databaseHistoryCapabilityLoaded?: boolean;
   /** Whether server-backed AI features are enabled for this deployment/workspace. */
   aiEnabled?: boolean;
   /** Maximum raw Yjs update accepted by the realtime WebSocket lane. */
@@ -39,7 +43,7 @@ export interface AuthInternalContextType {
   /** Maximum raw Yjs update accepted by the opt-in HTTP slow lane. */
   maxSlowSyncUpdateBytes?: number;
   /**
-   * Whether the server-info request that owns the sync limits completed.
+   * Whether the server-info request that owns the sync limits succeeded.
    * `false` is distinct from an older server successfully omitting the
    * optional limit fields.
    */

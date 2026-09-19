@@ -5,14 +5,14 @@ import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import { FullScreenLoading } from '@/components/_shared/FullScreenLoading';
 import { findView } from '@/components/_shared/outline/utils';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { AFConfigContext } from '@/components/main/app.hooks';
 import {
   DATABASE_TAB_VIEW_ID_QUERY_PARAM,
   resolveSidebarHighlightedViewIds,
   resolveSidebarSelectedViewId,
 } from '@/components/app/hooks/resolveSidebarSelectedViewId';
+import { AFConfigContext } from '@/components/main/app.hooks';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 
 import { AppEventEmitterContext } from './contexts/AppEventEmitterContext';
 import { AppNavigationContext } from './contexts/AppNavigationContext';
@@ -168,6 +168,11 @@ export function usePageHistoryEnabled(): boolean {
 
   // Fail open: if context isn't available (e.g. publish pages), default to true
   return context?.enablePageHistory ?? true;
+}
+
+/** Database history fails closed on older or unavailable servers. */
+export function useDatabaseHistoryEnabled(): boolean {
+  return useContext(AuthInternalContext)?.enableDatabaseHistory === true;
 }
 
 /**

@@ -1,14 +1,12 @@
 import * as Y from 'yjs';
 
-import {
-  type DatabaseRowDocSeed,
-  isDatabaseRowDocSeedCurrent,
-} from '@/application/database-blob/row-seed-fence';
+import { type DatabaseRowDocSeed, isDatabaseRowDocSeedCurrent } from '@/application/database-blob/row-seed-fence';
 import { installLegacyCellFieldTypeNormalizer } from '@/application/database-yjs/cell.field-type';
 import { invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { migrateDatabaseFieldTypes } from '@/application/database-yjs/migrations/rollup_fieldtype';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
+  captureDatabaseStorageFence,
   closeCollabDB,
   collabIndexedDBExists,
   db,
@@ -18,6 +16,7 @@ import {
   openCollabDBWithProvider,
   openRowCollabDBWithProvider,
 } from '@/application/db';
+import { isDatabaseStorageFenceCurrent, withDatabaseStorageFence } from '@/application/db/database-storage-fence';
 import { Fetcher, StrategyType } from '@/application/services/js-services/cache/types';
 import {
   DatabaseId,
@@ -476,6 +475,26 @@ let rowFastLogCount = 0;
 
 const rowDocs = new Map<string, RowDocEntry>();
 const pendingRowDocEntries = new Map<string, Promise<RowDocEntry>>();
+const rowDatabaseIds = new Map<string, string>();
+const rowRestoreGenerations = new Map<string, number>();
+
+export function getCachedRowDatabaseId(rowId: string): string | undefined {
+  return rowDatabaseIds.get(rowId);
+}
+
+export function getCachedDatabaseRowIds(databaseId: string): string[] {
+  return [...rowDatabaseIds].filter(([, id]) => id === databaseId).map(([rowId]) => rowId);
+}
+
+/** Retire outstanding opens before the restore coordinator deletes row storage. */
+export function invalidateDatabaseRowCache(databaseId: string): void {
+  for (const rowId of getCachedDatabaseRowIds(databaseId)) {
+    rowRestoreGenerations.set(rowId, (rowRestoreGenerations.get(rowId) || 0) + 1);
+    pendingRowDocEntries.delete(rowId);
+    rowDocs.delete(rowId);
+  }
+}
+
 const appliedSeedBytesByDoc = new WeakMap<YDoc, WeakSet<Uint8Array>>();
 const ROW_KEY_SEPARATOR = '_rows_';
 const LEGACY_ROW_BACKFILL_MARKER_PREFIX = 'legacy-row-backfill:';
@@ -714,6 +733,18 @@ export async function mergeLegacyRowDocIfExists(
     return false;
   }
 
+  const databaseId = rowKey.slice(0, rowKey.lastIndexOf(ROW_KEY_SEPARATOR));
+  const storageFence = await captureDatabaseStorageFence(databaseId);
+
+  // Legacy databases contain the pre-restore branch. Once R exists, only its
+  // authoritative row snapshot may populate shared storage, even on a retry.
+  if (
+    storageFence.epoch !== null ||
+    typeof storageFence.cacheEpoch === 'string' ||
+    !isDatabaseStorageFenceCurrent(storageFence)
+  )
+    return false;
+
   if (await hasLegacyRowBackfillCompleted(rowObjectId, rowKey)) {
     return false;
   }
@@ -729,6 +760,7 @@ export async function mergeLegacyRowDocIfExists(
   let consumedLegacyCache = false;
 
   try {
+    if (!isDatabaseStorageFenceCurrent(storageFence)) return false;
     if (!hasDatabaseRow(legacyDoc)) {
       return merged;
     }
@@ -736,7 +768,7 @@ export async function mergeLegacyRowDocIfExists(
     consumedLegacyCache = true;
 
     if (hasDatabaseRow(doc)) {
-      merged = mergeLegacyRowDataIntoExistingDoc(doc, legacyDoc);
+      merged = withDatabaseStorageFence(doc, storageFence, () => mergeLegacyRowDataIntoExistingDoc(doc, legacyDoc));
 
       if (merged) {
         invalidateRowConditionCache(doc);
@@ -749,7 +781,9 @@ export async function mergeLegacyRowDocIfExists(
       return merged;
     }
 
-    merged = applyLegacyRowUpdate(doc, legacyDoc, rowKey, rowObjectId);
+    merged = withDatabaseStorageFence(doc, storageFence, () =>
+      applyLegacyRowUpdate(doc, legacyDoc, rowKey, rowObjectId)
+    );
 
     return merged;
   } finally {
@@ -768,6 +802,10 @@ export async function mergeLegacyRowDocIfExists(
 
 async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
   const rowObjectId = getRowObjectId(rowKey);
+  const separator = rowKey.lastIndexOf(ROW_KEY_SEPARATOR);
+
+  if (separator > 0) rowDatabaseIds.set(rowObjectId, rowKey.slice(0, separator));
+  const generation = rowRestoreGenerations.get(rowObjectId) || 0;
   const existing = rowDocs.get(rowObjectId);
 
   if (existing) {
@@ -784,7 +822,12 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
     // providerCache in openCollabDBWithProvider handles provider-level dedup;
     // this map prevents duplicate row doc entry creation while the first open
     // is still awaiting IndexedDB/provider setup.
-    const entry = await _createRowDocEntry(rowKey, rowObjectId);
+    const entry = await _createRowDocEntry(rowKey, rowObjectId, generation);
+
+    if (generation !== (rowRestoreGenerations.get(rowObjectId) || 0)) {
+      entry.doc.destroy();
+      throw new Error('Database row was replaced by a restored version');
+    }
 
     // Post-await race check: another caller may have populated rowDocs.
     const raceWinner = rowDocs.get(rowObjectId);
@@ -807,7 +850,7 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
   }
 }
 
-async function _createRowDocEntry(rowKey: string, rowObjectId: string): Promise<RowDocEntry> {
+async function _createRowDocEntry(rowKey: string, rowObjectId: string, generation: number): Promise<RowDocEntry> {
   const startedAt = Date.now();
   const { doc, provider } = await openRowCollabDBWithProvider(rowObjectId, { awaitSync: false });
 
@@ -848,6 +891,7 @@ async function _createRowDocEntry(rowKey: string, rowObjectId: string): Promise<
       });
   const whenSynced = syncedPromise
     .then(async () => {
+      if (generation !== (rowRestoreGenerations.get(rowObjectId) || 0)) return;
       await mergeLegacyRowDocIfExists(rowKey, rowObjectId, doc);
     })
     .catch((error) => {
@@ -886,7 +930,7 @@ export async function openRowDoc(rowKey: string, seed?: DatabaseRowDocSeed) {
       hasRowDataBeforeSeed: hasRowDataBefore,
     });
 
-    applyYDoc(entry.doc, seed.bytes, seed.encoderVersion);
+    withDatabaseStorageFence(entry.doc, seed.storageFence, () => applyYDoc(entry.doc, seed.bytes, seed.encoderVersion));
     markSeedApplied(entry.doc, seed.bytes);
     invalidateRowConditionCache(entry.doc);
   }
@@ -1103,9 +1147,7 @@ export function trackRowDocEnsure(documentId: string, promise: Promise<boolean>)
  */
 export async function awaitPendingRowDocEnsures(documentIds?: string[]): Promise<void> {
   const ids = documentIds ?? Array.from(pendingRowDocEnsures.keys());
-  const promises = ids
-    .map((id) => pendingRowDocEnsures.get(id))
-    .filter((p): p is Promise<boolean> => p !== undefined);
+  const promises = ids.map((id) => pendingRowDocEnsures.get(id)).filter((p): p is Promise<boolean> => p !== undefined);
 
   if (promises.length > 0) {
     await Promise.allSettled(promises);

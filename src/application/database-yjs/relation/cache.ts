@@ -1,6 +1,7 @@
 import { FieldType } from '@/application/database-yjs/database.type';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
@@ -458,6 +459,10 @@ export function retainRelationGroupLabels(contexts: readonly RelationGroupLabelK
  * mutates module state. Pair it with ensureRelationGroupLabel in an effect.
  */
 export function readRelationGroupLabel(context: RelationGroupLabelKey): string {
+  if (context.relationField.doc && isDatabaseHistoryDocumentImmutable(context.relationField.doc as YDoc)) {
+    return context.relatedRowId;
+  }
+
   const labelId = getGroupLabelId(context);
 
   if (!labelId) return '';
@@ -471,6 +476,8 @@ export function readRelationGroupLabel(context: RelationGroupLabelKey): string {
  * effect rather than during render.
  */
 export function ensureRelationGroupLabel(context: RelationGroupLabelContext): void {
+  if (context.relationField.doc && isDatabaseHistoryDocumentImmutable(context.relationField.doc as YDoc)) return;
+
   pruneCache();
   const labelId = getGroupLabelId(context);
 
@@ -515,6 +522,10 @@ export function ensureRelationGroupLabel(context: RelationGroupLabelContext): vo
 }
 
 export function readRelationCellText(context: RelationComputeContext): string {
+  if (isDatabaseHistoryDocumentImmutable(context.baseDoc)) {
+    return getRelationRowIdsFromCell(context.row.get(YjsDatabaseKey.cells)?.get(context.fieldId)).join(', ');
+  }
+
   pruneCache();
   if (!context.row || !context.relationField || !context.database) return '';
   const cellId = `${context.rowId}:${context.fieldId}`;

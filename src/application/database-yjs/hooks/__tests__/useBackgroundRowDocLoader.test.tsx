@@ -8,6 +8,7 @@ import {
   useBackgroundRowDocLoader,
 } from '@/application/database-yjs/hooks/useBackgroundRowDocLoader';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
+import { openRowCollabDBWithProvider } from '@/application/db';
 import { YDatabaseRowOrders, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 import { createRowDoc } from '../../__tests__/test-helpers';
@@ -67,6 +68,41 @@ function BackgroundLoader({ scope, suspend = false }: { scope: string; suspend?:
 }
 
 describe('useBackgroundRowDocLoader', () => {
+  it.each(['cached', 'live'] as const)('does not load current rows for missing historical rows in %s mode', async (mode) => {
+    const { databaseDoc, viewId } = createDatabaseFixture();
+    const loadRowFromSeed = jest.fn(async () => undefined);
+    const ensureRow = jest.fn(async () => undefined);
+    const openLiveRow = jest.mocked(openRowCollabDBWithProvider);
+
+    openLiveRow.mockClear();
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      databaseDoc,
+      databasePageId: viewId,
+      dataSource: { type: 'history', id: 'history-with-missing-row' },
+      loadRowFromSeed,
+      ensureRow,
+      blobPrefetchComplete: true,
+      seedsReady: true,
+      rowMap: {},
+      readOnly: true,
+      workspaceId: 'workspace-id',
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { unmount } = renderHook(() => useBackgroundRowDocLoader(true, 'missing-history-row', mode), { wrapper });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(loadRowFromSeed).not.toHaveBeenCalled();
+    expect(ensureRow).not.toHaveBeenCalled();
+    expect(openLiveRow).not.toHaveBeenCalled();
+    unmount();
+    databaseDoc.destroy();
+  });
+
   it('retries realtime hydration even when a detached seed is already readable', async () => {
     jest.useFakeTimers();
     const { databaseDoc, databaseId, viewId } = createDatabaseFixture();

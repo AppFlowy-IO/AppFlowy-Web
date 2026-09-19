@@ -1,8 +1,9 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
+import { publishDatabasePageSelection } from '@/application/database-yjs/database-page-state';
 import { PageService, ViewService } from '@/application/services/domains';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { View, ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -33,6 +34,8 @@ import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
 
 type DatabaseViewProps = ViewComponentProps & {
   bindViewSync?: (doc: ViewComponentProps['doc']) => SyncContext | null;
+  /** Only the main page owns the app header's selected database tab. */
+  isRouteView?: boolean;
 };
 
 const DATABASE_CONTAINER_RETRY_DELAYS_MS = [500, 1500, 3000] as const;
@@ -181,19 +184,64 @@ function DatabaseView(props: DatabaseViewProps) {
     };
   }, [pageView, viewMeta]);
 
+  const doc = props.doc;
+  const [, forceUpdate] = useState(0);
+  const dataSection = doc?.getMap(YjsEditorKey.data_section);
+  const database = dataSection?.get(YjsEditorKey.database) as YDatabase | undefined;
+  const databaseViews = database?.get(YjsDatabaseKey.views);
+  const hasRestoreGeneration = Boolean(doc?.databaseRestoreId &&
+    doc.databaseRestoreId !== '00000000-0000-0000-0000-000000000000');
+  const restoredVisibleViewIds = (() => {
+    if (!hasRestoreGeneration || !databaseViews?.size) return visibleViewIds;
+    const surviving = visibleViewIds?.filter((id) => databaseViews.has(id));
+
+    if (surviving?.length) return surviving;
+    // Folder children can all postdate the snapshot. Prefer a restored display
+    // view when none of the folder projection's tab ids survives.
+    const viewIds = Array.from(databaseViews.keys());
+    const displayViews = viewIds.filter((id) => {
+      const view = databaseViews.get(id);
+
+      return !view.get(YjsDatabaseKey.is_inline) && !view.get(YjsDatabaseKey.embedded);
+    });
+
+    return displayViews.length ? displayViews : viewIds;
+  })();
+
   /**
    * The currently active/selected view tab ID (Grid, Board, or Calendar).
    * Comes from URL param 'v', defaults to the route id for direct child-view
    * routes, or the first visible child when the route points at a database
    * container.
    */
-  const activeViewId = useMemo(() => {
-    return resolveActiveDatabaseViewId({
+  const tabViewId = search.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM);
+  // A just-created tab can be in Yjs before folder metadata or the throttled
+  // observer catches up. Keep that valid selection during restore reconciliation.
+  const activeViewId = hasRestoreGeneration && tabViewId && databaseViews?.has(tabViewId)
+    ? tabViewId : resolveActiveDatabaseViewId({
       databasePageId,
-      tabViewId: search.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM),
-      visibleViewIds,
+      tabViewId,
+      visibleViewIds: restoredVisibleViewIds,
     });
-  }, [search, databasePageId, visibleViewIds]);
+
+  useLayoutEffect(() => {
+    if (!props.isRouteView || !props.workspaceId || !databasePageId || !activeViewId) return;
+    return publishDatabasePageSelection({
+      workspaceId: props.workspaceId, databasePageId, tabViewId, activeViewId,
+    });
+  }, [props.isRouteView, props.workspaceId, databasePageId, tabViewId, activeViewId]);
+
+  useLayoutEffect(() => {
+    if (!hasRestoreGeneration || !activeViewId || search.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM) === activeViewId) return;
+    // Render the surviving selection with the replacement root, then reconcile
+    // the route before paint so closing history never reveals a missing layout.
+    setSearch((previous) => {
+      const next = new URLSearchParams(previous);
+
+      next.set(DATABASE_TAB_VIEW_ID_QUERY_PARAM, activeViewId);
+      return next;
+    }, { replace: true });
+  }, [activeViewId, hasRestoreGeneration, search, setSearch]);
 
   const handleChangeView = useCallback(
     (viewId: string) => {
@@ -217,13 +265,6 @@ function DatabaseView(props: DatabaseViewProps) {
 
   const rowId = search.get('r') || undefined;
   const modalRowId = search.get('r-modal') || undefined;
-  const doc = props.doc;
-
-  // State to trigger re-render when Y.js data changes
-  const [, forceUpdate] = useState(0);
-  const dataSection = doc?.getMap(YjsEditorKey.data_section);
-  const database = dataSection?.get(YjsEditorKey.database) as YDatabase | undefined;
-  const databaseViews = database?.get(YjsDatabaseKey.views);
   const resolvedParentView = outlineParentView || breadcrumbParentView;
   const hasKnownNonDatabaseParent =
     parentViewId === workspaceId ||
@@ -374,8 +415,7 @@ function DatabaseView(props: DatabaseViewProps) {
         // Ignore errors from unobserving destroyed Yjs objects
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc?.guid, databasePageId, triggerUpdate]);
+  }, [doc, databasePageId, triggerUpdate]);
 
   // Observe database deep changes when database becomes available
   useEffect(() => {
@@ -518,7 +558,7 @@ function DatabaseView(props: DatabaseViewProps) {
           onChangeView={handleChangeView}
           onOpenRowPage={handleNavigateToRow}
           modalRowId={modalRowId}
-          visibleViewIds={visibleViewIds}
+          visibleViewIds={restoredVisibleViewIds}
           onReorderViews={handleReorderViews}
         />
       </Suspense>

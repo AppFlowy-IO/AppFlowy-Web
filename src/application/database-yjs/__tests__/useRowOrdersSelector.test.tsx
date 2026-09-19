@@ -21,6 +21,7 @@ import {
 } from '@/application/database-yjs/dispatch';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import * as databaseFilter from '@/application/database-yjs/filter';
+import { DatabaseHistoryRowStore } from '@/application/database-yjs/history-row-store';
 import * as rollupCache from '@/application/database-yjs/rollup/cache';
 import * as rowOrderVisibility from '@/application/database-yjs/row-order-visibility';
 import {
@@ -179,6 +180,60 @@ describe('useRowOrdersSelector', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it('filters and sorts every historical row without retaining a full row observer map', async () => {
+    const fixture = createDatabaseFixture();
+    const store = new DatabaseHistoryRowStore('history:conditions');
+    const rows = Array.from({ length: 400 }, (_, i) => ({ id: `row-${i}`, height: 44 }));
+
+    fixture.rowOrders.delete(0, fixture.rowOrders.length);
+    fixture.rowOrders.push(rows);
+    rows.forEach(({ id }, i) => {
+      const doc = createRowDoc(id, databaseId, {
+        [fieldId]: createCell(FieldType.RichText, `${i % 2 === 0 ? 'match' : 'skip'} ${String(i).padStart(3, '0')}`),
+      });
+
+      store.add(id, Y.encodeStateAsUpdate(doc), 1);
+      doc.destroy();
+    });
+    fixture.filters.push([createTextFilter('match')]);
+    const sort = new Y.Map() as YDatabaseSort;
+
+    sort.set(YjsDatabaseKey.id, 'historical-sort');
+    sort.set(YjsDatabaseKey.field_id, fieldId);
+    sort.set(YjsDatabaseKey.condition, SortCondition.Descending);
+    fixture.sorts.push([sort]);
+    const rowObservers: unknown[] = [];
+    const observeDeep = Y.Map.prototype.observeDeep;
+    /* eslint-disable no-invalid-this */
+    const observerSpy = jest.spyOn(Y.Map.prototype, 'observeDeep').mockImplementation(function (callback) {
+      if (this.doc?.guid.startsWith('history:conditions:')) rowObservers.push(this);
+      return observeDeep.call(this, callback);
+    });
+    /* eslint-enable no-invalid-this */
+    const ensureRow = jest.fn();
+    const { result, unmount } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture, {
+        readOnly: true,
+        dataSource: { type: 'history', id: 'history:conditions' },
+        rowMap: store.rows,
+        ensureRow,
+        seedsReady: true,
+        blobPrefetchComplete: true,
+      }),
+    });
+
+    await waitFor(() => expect(result.current).toHaveLength(200));
+    expect(result.current?.map((row) => row.id)).toEqual(rows.filter((_, i) => i % 2 === 0).reverse().map((row) => row.id));
+    expect(rowObservers).toHaveLength(0);
+    expect(ensureRow).not.toHaveBeenCalled();
+    expect(store.cachedDocumentCount).toBeLessThanOrEqual(128);
+    unmount();
+    observerSpy.mockRestore();
+    store.destroy();
+    fixture.databaseDoc.destroy();
+    Object.values(fixture.rowMap).forEach((doc) => doc.destroy());
   });
 
   it('does not expose stale row order after a filter is applied', async () => {

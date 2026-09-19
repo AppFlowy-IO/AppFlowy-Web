@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
-import { useBoardLayoutSettings, useGroupsSelector } from '@/application/database-yjs';
+import { useBoardLayoutSettings, useGroupsSelector, useReadOnly } from '@/application/database-yjs';
 import { useMoveCardDispatch, useNewRowDispatch } from '@/application/database-yjs/dispatch';
 
 // --- Actions context (stable — callbacks only) ---
@@ -78,6 +78,7 @@ export function useBoardSelection() {
 // --- Provider ---
 
 export const BoardProvider = ({ children }: { children: React.ReactNode }) => {
+  const readOnly = useReadOnly();
   const groups = useGroupsSelector();
   const groupId = groups[0];
   const { fieldId } = useBoardLayoutSettings();
@@ -90,7 +91,7 @@ export const BoardProvider = ({ children }: { children: React.ReactNode }) => {
 
   const createCard = useCallback(
     async (columnId: string, beforeCardId?: string) => {
-      if (!fieldId) return null;
+      if (!fieldId || readOnly) return null;
       const cellsData = {
         [fieldId]: columnId,
       };
@@ -104,7 +105,7 @@ export const BoardProvider = ({ children }: { children: React.ReactNode }) => {
       setEditingCardId(`${columnId}/${cardId}`);
       return cardId;
     },
-    [fieldId, onNewCard]
+    [fieldId, onNewCard, readOnly]
   );
 
   const moveCard = useCallback(
@@ -119,11 +120,11 @@ export const BoardProvider = ({ children }: { children: React.ReactNode }) => {
       startColumnId: string;
       finishColumnId: string;
     }) => {
-      if (!fieldId) return;
+      if (!fieldId || readOnly) return;
       onMoveCard({ rowId, beforeRowId, fieldId, startColumnId, finishColumnId });
       setSelectedCardIds([`${finishColumnId}/${rowId}`]);
     },
-    [fieldId, onMoveCard]
+    [fieldId, onMoveCard, readOnly]
   );
 
   const actionsValue = useMemo(

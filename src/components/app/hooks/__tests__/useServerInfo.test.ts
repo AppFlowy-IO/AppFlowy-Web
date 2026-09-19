@@ -91,7 +91,10 @@ it('keeps older responses without version metadata usable and retries unsupporte
   getServerInfo.mockRejectedValueOnce({ code: 404 });
   const { result, unmount } = renderHook(() => useServerInfo(true, 'server-a'));
 
+  expect(result.current.status).toBe('loading');
   await tick();
+  expect(result.current.status).toBe('unsupported');
+  expect(result.current.info).toBeUndefined();
   await tick(30_000);
   expect(getServerInfo).toHaveBeenCalledTimes(1);
   getServerInfo.mockResolvedValue({ enable_page_history: true });
@@ -100,3 +103,19 @@ it('keeps older responses without version metadata usable and retries unsupporte
   expect(result.current.info?.version).toBeUndefined();
   unmount();
 });
+
+it.each([new Error('offline'), { code: 500 }, { code: 401 }])(
+  'does not treat an unresolved server-info failure as legacy support: %p',
+  async (error) => {
+    getServerInfo.mockRejectedValueOnce(error);
+    const { result, unmount } = renderHook(() => useServerInfo(true, 'server-a'));
+
+    await tick();
+    expect(result.current.status).toBe('unavailable');
+    expect(result.current.info).toBeUndefined();
+    await tick(1_000);
+    expect(result.current.status).toBe('available');
+    expect(getServerInfo).toHaveBeenCalledTimes(2);
+    unmount();
+  }
+);

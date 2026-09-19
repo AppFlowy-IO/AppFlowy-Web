@@ -41,7 +41,9 @@ export function useSyncContextLifecycle(
   sendMessage: (message: messages.IMessage) => void,
   postMessage: (message: messages.IMessage) => void,
   onLocalUpdate?: (objectId: string) => void,
-  onManifestSync?: (objectId: string, persisted?: Promise<boolean>) => void
+  onManifestSync?: (objectId: string, persisted?: Promise<boolean>) => void,
+  beforeSend?: (objectId: string, collabType: Types, marker?: string) => Promise<boolean>,
+  prepareContext?: (context: RegisterSyncContext) => void
 ) {
   const cancelDeferredCleanup = useCallback((objectId: string) => {
     const timer = refs.pendingCleanups.current.get(objectId);
@@ -159,6 +161,7 @@ export function useSyncContextLifecycle(
       if (existingContext !== undefined) {
         // If same doc instance, reuse the existing context
         if (existingContext.doc === context.doc) {
+          prepareContext?.(context);
           existingContext.onLocalUpdate = onLocalUpdate;
           existingContext.onManifestSync = onManifestSync;
           const refCount = incrementContextRefCount(context.doc.guid);
@@ -173,9 +176,23 @@ export function useSyncContextLifecycle(
       }
 
       Log.debug(`Registering sync context for objectId ${context.doc.guid} with collabType ${context.collabType}`);
+      prepareContext?.(context);
       context.emit = (message) => {
-        sendMessage(message);
-        postMessage(message);
+        if (!beforeSend || (context.collabType !== Types.Database && context.collabType !== Types.DatabaseRow)) {
+          sendMessage(message);
+          postMessage(message);
+          return;
+        }
+
+        const doc = context.doc;
+        const marker = message.collabMessage?.update?.databaseRestoreId ?? doc.databaseRestoreId ??
+          '00000000-0000-0000-0000-000000000000';
+
+        void beforeSend(doc.guid, context.collabType, marker).then((allowed) => {
+          if (!allowed || refs.registeredContexts.current.get(doc.guid)?.doc !== doc) return;
+          sendMessage(message);
+          postMessage(message);
+        }).catch((error) => Log.warn('[DatabaseHistory] Sync deferred until restore state is available', error));
       };
 
       // SyncContext extends RegisterSyncContext by attaching the emit function and destroy handler
@@ -227,7 +244,7 @@ export function useSyncContextLifecycle(
 
       return syncContext;
     },
-    [refs, sendMessage, postMessage, onLocalUpdate, onManifestSync, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
+    [refs, sendMessage, postMessage, onLocalUpdate, onManifestSync, beforeSend, prepareContext, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
   );
 
   return {

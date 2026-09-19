@@ -585,6 +585,7 @@ function AppPage() {
     return (
       <DatabaseView
         key={viewId}
+        isRouteView
         requestInstance={requestInstance}
         workspaceId={workspaceId}
         doc={docForCurrentView}
