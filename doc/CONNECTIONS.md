@@ -17,10 +17,23 @@ Connection errors remain visible in Settings, including when popups are blocked 
 ## Local provider setup
 
 The callback change does not configure a Google OAuth application. Cloud needs a Google client ID
-and client secret for `google-drive` and/or `google-calendar`. Configure these through the admin
-console's Integrations page, or use a private local copy of Cloud's
-`integrations-providers.example.json` and set `INTEGRATIONS_PROVIDERS_FILE` to its path before
-starting Cloud. Do not commit the populated file. The obsolete `NANGO_INTEGRATIONS_FILE` variable
+and client secret for `google-drive` and/or `google-calendar`.
+
+In AppFlowy Admin, open **Settings → Connections** (`/console/integrations` with the default base
+path). Copy the callback URL into a Google Cloud Web application OAuth client's authorized redirect
+URIs, enable the corresponding Google APIs, then configure each provider with the client ID and
+secret. Keep **Enable connection** checked and save. Each provider needs an entry even when sharing
+the same Google OAuth client. This configures connected accounts separately from Google sign-in.
+
+The admin page saves credentials through `/api/admin/integrations/providers`; Cloud encrypts the
+secret in its database. Leaving the secret blank when editing preserves it. Database entries
+override file configuration, including disabled entries. Removing an entry restores any file
+configuration; disable it instead to prevent new connections. This does not revoke existing grants
+at Google. See the Admin project's `apps/super/docs/connections.md` for setup details.
+
+Alternatively, use a private local copy of Cloud's `integrations-providers.example.json` and set
+`INTEGRATIONS_PROVIDERS_FILE` to its path before starting Cloud. This file is optional when using
+the admin page. Do not commit the populated file. The obsolete `NANGO_INTEGRATIONS_FILE` variable
 does not configure the native integration engine.
 
 Register the callback URI advertised by the admin provider API in the Google OAuth application.
@@ -29,7 +42,8 @@ With `APPFLOWY_BASE_URL=http://localhost:8000`, it is
 
 `GET /api/server-info` with `x-platform: app` reports the configured keys in `data.connections`.
 An empty array means no providers are available. File changes require restarting Cloud; admin
-console changes are picked up by its provider cache. Refresh the Connections panel afterward.
+console changes are picked up by its provider cache (up to 30 seconds across replicas). Refresh the
+Connections panel afterward.
 
 ## Cloud callback requirement
 
