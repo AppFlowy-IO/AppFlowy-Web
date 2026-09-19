@@ -14,7 +14,8 @@ import { BlockType, YjsEditorKey } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { insertDataAfterBlock } from '@/components/ai-chat/utils';
 import { useAIEnabled } from '@/components/app/app.hooks';
-import { AIAssistantProvider, ContextPlaceholder, PromptModalProvider, WriterRequest } from '@/components/chat';
+import { AIAssistantProvider, ContextPlaceholder, PromptModalProvider } from '@/components/chat';
+import { WriterRequest } from '@/components/chat/request/writer-request';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { getScrollParent } from '@/components/global-comment/utils';
 
