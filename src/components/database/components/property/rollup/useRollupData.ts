@@ -45,10 +45,14 @@ function readTargetFields(doc: YDoc | null): TargetFieldOption[] {
   const options: TargetFieldOption[] = [];
 
   fields.forEach((field: YDatabaseField, id: string) => {
+    const type = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+    // Formula results have no stored cells for the rollup evaluator to read.
+    if (type === FieldType.Formula) return;
     options.push({
       id,
       name: field.get(YjsDatabaseKey.name) || '',
-      type: Number(field.get(YjsDatabaseKey.type)) as FieldType,
+      type,
       field,
     });
   });
@@ -282,6 +286,8 @@ export function useRollupData(fieldId: string) {
 
   const selectTargetField = useCallback(
     (target: TargetFieldOption) => {
+      // The schema can change between rendering the picker and clicking an item.
+      if (Number(target.field.get(YjsDatabaseKey.type)) === FieldType.Formula) return;
       relationSelectionRequest.current += 1;
       const currentCalculation = rollupOption.calculation_type as CalculationType;
       const nextCalculation = getAvailableRollupCalculations(target.type).includes(currentCalculation)

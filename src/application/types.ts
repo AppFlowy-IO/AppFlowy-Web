@@ -599,6 +599,10 @@ export enum YjsDatabaseKey {
   rollup_show_as_color = '__rollup_show_as_color__',
   rollup_show_as_divisor = '__rollup_show_as_divisor__',
   rollup_show_as_show_number = '__rollup_show_as_show_number__',
+  // Formula field: the expression source, with property references stored
+  // as prop("<field_id>") so renames never break a formula. Key name matches
+  // the collab crate's FormulaTypeOption (AppFlowy-Cloud-Premium PR #412).
+  expression = 'expression',
   field_orders = 'field_orders',
   field_settings = 'field_settings',
   /// Per-view form-builder map (`form_field_settings` key on each view in
@@ -1256,6 +1260,10 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
   // Number
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.format): string;
+
+  // Formula
+  // eslint-disable-next-line @typescript-eslint/unified-signatures
+  get(key: YjsDatabaseKey.expression): string | undefined;
 
   // AI Translate
   // eslint-disable-next-line @typescript-eslint/unified-signatures

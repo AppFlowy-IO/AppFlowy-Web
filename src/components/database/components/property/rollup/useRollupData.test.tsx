@@ -132,6 +132,27 @@ describe('useRollupData Desktop interactions', () => {
     });
   });
 
+  it('excludes formula targets from the picker and automatic selection, including live type changes', async () => {
+    const fields = relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database).get(YjsDatabaseKey.fields);
+
+    // Amount is first in the related schema; it must not become the default target.
+    fields.get('Amount').set(YjsDatabaseKey.type, FieldType.Formula);
+    const { result, rerender } = renderHook(() => useRollupData('rollup'));
+
+    await act(async () => { await result.current.selectRelationField(result.current.relationFields[0]); });
+    expect(mockUpdateRollupTypeOption).toHaveBeenLastCalledWith(expect.objectContaining({ target_field_id: 'Name' }));
+    fieldClock += 1;
+    rerender();
+    await waitFor(() => expect(result.current.relatedFields.map(({ id }) => id)).toEqual(['Name']));
+    const previousTarget = result.current.relatedFields[0];
+
+    act(() => { fields.get('Name').set(YjsDatabaseKey.type, FieldType.Formula); });
+    expect(result.current.relatedFields).toEqual([]);
+    mockUpdateRollupTypeOption.mockClear();
+    act(() => { result.current.selectTargetField(previousTarget); });
+    expect(mockUpdateRollupTypeOption).not.toHaveBeenCalled();
+  });
+
   it('never exposes fields from the previous relation while the next relation loads', async () => {
     const baseFields = baseDatabase.get(YjsDatabaseKey.fields);
     const secondRelation = createRelationField('relation-b', {

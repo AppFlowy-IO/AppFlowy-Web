@@ -625,7 +625,8 @@
     "personField": "Select a person from your workspace. Useful for assigning tasks or ownership",
     "createdByField": "Automatically records who created the item. This value is read-only",
     "lastEditedByField": "Automatically records who edited the item last. This value is read-only",
-    "timeField": "Add a time value. Useful for tracking duration or specific times"
+    "timeField": "Add a time value. Useful for tracking duration or specific times",
+    "formulaField": "Compute a value from other properties with a formula"
   },
   "sideBar": {
     "closeSidebar": "Close sidebar",
@@ -2008,7 +2009,8 @@
       "optionAlreadyExist": "Option already exists",
       "copiedCreatedAt": "Created at copied to clipboard",
       "copiedUpdatedAt": "Last modified copied to clipboard",
-      "copiedDate": "Date copied to clipboard"
+      "copiedDate": "Date copied to clipboard",
+      "formulaFieldName": "Formula"
     },
     "rowPage": {
       "newField": "Add a new field",
@@ -2245,6 +2247,24 @@
       "networkHint": "Paste a link to embed",
       "uploadError": "Upload failed, please try again",
       "addFileOrMedia": "Add file or media"
+    },
+    "formula": {
+      "title": "Formula",
+      "editFormula": "Edit formula",
+      "placeholder": "Type a formula, e.g. prop(\"Price\") * 2",
+      "dialogDescription": "Write a formula that computes this property from other properties.",
+      "type": "Type",
+      "previewWith": "Preview with",
+      "untitledRow": "Row {{index}}",
+      "properties": "Properties",
+      "builtins": "Built-ins",
+      "functions": "Functions",
+      "propertyDescription": "Property of type {{type}}.",
+      "insertExample": "Insert this example",
+      "error": "Error",
+      "missingProperty": "Missing property",
+      "missingPropertyDescription": "A property used by this formula is missing. It may have been deleted.",
+      "deleteDependencyWarning": "Deleting this property will break the following formulas:"
     }
   },
   "document": {
