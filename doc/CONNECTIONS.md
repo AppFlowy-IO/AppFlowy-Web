@@ -11,7 +11,9 @@ cancels them when the panel closes or the workspace changes. Provider credential
 The panel reads the configured provider keys from `/api/server-info` alongside the account list.
 Existing servers expose those keys only with `x-platform: app`; this request reads just `connections`,
 without adopting native feature flags. Providers absent from that list cannot open an OAuth popup.
-The panel explains their availability and offers Refresh after an administrator enables them.
+The panel explains their availability and always offers Refresh to update accounts and provider
+configuration. Refresh retries failed account-email lookups while reusing successful results;
+unavailable providers use stored account identifiers until they are enabled again.
 Connection errors remain visible in Settings, including when popups are blocked or the network fails.
 
 ## Local provider setup

@@ -15,6 +15,7 @@ import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
 export function useConnections(workspaceId: string) {
   const { t } = useTranslation();
   const [connections, setConnections] = useState<IntegrationConnection[]>([]);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [configuredProviders, setConfiguredProviders] = useState<readonly IntegrationProvider[]>(integrationProviders);
   const [loading, setLoading] = useState(true);
   const [loadFailure, setLoadFailure] = useState<{ error: unknown }>();
@@ -41,6 +42,7 @@ export function useConnections(workspaceId: string) {
       if (!controller.signal.aborted) {
         setConnections(result.filter((connection) => isIntegrationProvider(connection.provider)));
         setConfiguredProviders(configured);
+        setRefreshVersion((version) => version + 1);
       }
     } catch (error) {
       if (!controller.signal.aborted) setLoadFailure({ error });
@@ -155,6 +157,7 @@ export function useConnections(workspaceId: string) {
 
   return {
     connections,
+    refreshVersion,
     configuredProviders,
     loading,
     loadError,

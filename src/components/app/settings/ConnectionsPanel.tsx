@@ -37,6 +37,7 @@ export function ConnectionsPanel({ workspaceId }: { workspaceId: string }) {
   const { t } = useTranslation();
   const {
     connections,
+    refreshVersion,
     configuredProviders,
     loading,
     loadError,
@@ -66,35 +67,37 @@ export function ConnectionsPanel({ workspaceId }: { workspaceId: string }) {
         <p className='mt-1 text-sm text-text-secondary'>{t('settings.connections.description')}</p>
       </div>
       <div className='appflowy-scroller flex-1 overflow-y-auto px-8 py-6'>
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant='outline'
-              disabled={connectDisabled || configuredProviders.length === 0}
-              data-testid='add-connection'
-            >
-              <PlusIcon className='h-4 w-4' />
-              {t('settings.connections.addConnection')}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align='start' container={menuContainer}>
-            {integrationProviders.map((provider) => (
-              <DropdownMenuItem
-                key={provider}
-                onSelect={() => void connect(provider)}
-                disabled={connectDisabled || !configuredProviders.includes(provider)}
+        <div className='flex items-center justify-between gap-3'>
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant='outline'
+                disabled={connectDisabled || configuredProviders.length === 0}
+                data-testid='add-connection'
               >
-                <ProviderLabel provider={provider} />
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+                <PlusIcon className='h-4 w-4' />
+                {t('settings.connections.addConnection')}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='start' container={menuContainer}>
+              {integrationProviders.map((provider) => (
+                <DropdownMenuItem
+                  key={provider}
+                  onSelect={() => void connect(provider)}
+                  disabled={connectDisabled || !configuredProviders.includes(provider)}
+                >
+                  <ProviderLabel provider={provider} />
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant='outline' onClick={() => void reload()} disabled={busy}>
+            {t('settings.connections.refresh')}
+          </Button>
+        </div>
 
         {!loading && !loadError && unavailableProviders.length > 0 && (
-          <div
-            role='status'
-            className='mt-5 flex items-center justify-between gap-4 rounded-lg border border-border-primary p-4 text-sm'
-          >
+          <div role='status' className='mt-5 rounded-lg border border-border-primary p-4 text-sm'>
             <p className='text-text-secondary'>
               {t('settings.connections.providersUnavailable', {
                 providers: unavailableProviders
@@ -102,9 +105,6 @@ export function ConnectionsPanel({ workspaceId }: { workspaceId: string }) {
                   .join(', '),
               })}
             </p>
-            <Button variant='outline' onClick={() => void reload()} disabled={busy}>
-              {t('settings.connections.refresh')}
-            </Button>
           </div>
         )}
 
@@ -165,6 +165,7 @@ export function ConnectionsPanel({ workspaceId }: { workspaceId: string }) {
                   key={connection.id}
                   connection={connection}
                   workspaceId={workspaceId}
+                  refreshVersion={refreshVersion}
                   disabled={busy}
                   canConnect={!loadError && configuredProviders.some((provider) => provider === connection.provider)}
                   menuContainer={menuContainer}
@@ -239,6 +240,7 @@ function ProviderLabel({ provider }: { provider: IntegrationProvider }) {
 function ConnectionRow({
   connection,
   workspaceId,
+  refreshVersion,
   disabled,
   canConnect,
   menuContainer,
@@ -247,6 +249,7 @@ function ConnectionRow({
 }: {
   connection: IntegrationConnection;
   workspaceId: string;
+  refreshVersion: number;
   disabled: boolean;
   canConnect: boolean;
   menuContainer: HTMLDivElement | null;
@@ -254,23 +257,29 @@ function ConnectionRow({
   onDisconnect: (email: string) => void;
 }) {
   const { t } = useTranslation();
-  const [email, setEmail] = useState<string>();
+  const [emailResult, setEmailResult] = useState<{ key: string; email?: string }>();
   const { id, provider } = connection;
+  const emailKey = JSON.stringify([workspaceId, id, provider]);
+  const hasEmailResult = emailResult?.key === emailKey;
 
   useEffect(() => {
+    // Reuse successful lookups (including an empty result), but retry failures
+    // after a refresh or when an administrator enables this provider.
+    if (hasEmailResult || !canConnect) return;
     const controller = new AbortController();
 
     void IntegrationService.getConnectionEmail(workspaceId, { id, provider }, controller.signal)
       .then((result) => {
-        if (!controller.signal.aborted) setEmail(result);
+        if (!controller.signal.aborted) setEmailResult({ key: emailKey, email: result });
       })
       .catch(() => {
         /* The stored account identifier remains available if the provider is offline. */
       });
     return () => controller.abort();
-  }, [id, provider, workspaceId]);
+  }, [id, provider, workspaceId, refreshVersion, emailKey, hasEmailResult, canConnect]);
 
   if (!isIntegrationProvider(provider)) return null;
+  const email = hasEmailResult ? emailResult.email : undefined;
   const account = email || connection.account_identifier || t(`settings.connections.${providers[provider].name}`);
 
   return (

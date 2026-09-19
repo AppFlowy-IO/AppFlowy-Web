@@ -269,6 +269,36 @@ describe('Connections settings', () => {
     expect(api.getConnectionEmail.mock.calls.map(([, connection]) => connection.id)).toEqual(['drive-1', 'calendar-1']);
   });
 
+  it('retries failed account email lookups on Refresh and then reuses the successful result', async () => {
+    api.listConnections.mockResolvedValue([drive]);
+    api.getConnectionEmail.mockRejectedValueOnce(new Error('Provider offline')).mockResolvedValue('actual@example.com');
+    render(<ConnectionsPanel workspaceId='workspace' />);
+    await screen.findByText('stored@example.com');
+    await waitFor(() => expect(api.getConnectionEmail).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await screen.findByText('actual@example.com');
+    expect(api.getConnectionEmail).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(api.listConnections).toHaveBeenCalledTimes(3));
+    expect(api.getConnectionEmail).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('actual@example.com')).toBeTruthy();
+  });
+
+  it('loads account email only after its provider becomes available', async () => {
+    api.listConnections.mockResolvedValue([drive]);
+    api.getConfiguredProviders.mockResolvedValueOnce([]).mockResolvedValue(['google-drive']);
+    api.getConnectionEmail.mockResolvedValue('actual@example.com');
+    render(<ConnectionsPanel workspaceId='workspace' />);
+    await screen.findByText('stored@example.com');
+    expect(api.getConnectionEmail).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await screen.findByText('actual@example.com');
+    expect(api.getConnectionEmail).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves accounts on disconnect failure and removes only the confirmed account on success', async () => {
     api.listConnections.mockResolvedValue([drive, calendar, { ...drive, id: 'unknown', provider: 'unknown-provider' }]);
     api.getConnectionEmail.mockRejectedValue(new Error('Provider offline'));
