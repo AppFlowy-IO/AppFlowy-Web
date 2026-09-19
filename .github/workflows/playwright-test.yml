@@ -117,6 +117,23 @@ jobs:
             description: 'Form and Timeline creation and interactions'
             bdd: 'true'
             shard: ''
+          - name: 'dashboard-bdd'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-creation.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-widgets.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-layout.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-modes.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-global-filters.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-number-chart.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-integration.feature.spec.js
+            description: 'Dashboard view creation, layout editing, widgets, global filters and Number charts'
+            bdd: 'true'
+            shard: ''
+          - name: 'dashboard-usecase-bdd'
+            spec: 'playwright/.features-gen/playwright/bdd/features/database/dashboard-usecases/'
+            description: 'Real-world dashboard scenarios modelled on Notion templates'
+            bdd: 'true'
+            shard: ''
           - name: 'gallery-bdd'
             spec: >-
               playwright/.features-gen/playwright/bdd/features/auth/auth-regressions.feature.spec.js

@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useAdvancedFiltersSelector, useReadOnly } from '@/application/database-yjs';
+import { useAdvancedFiltersSelector, useConditionsReadOnly } from '@/application/database-yjs';
 import { FilterType } from '@/application/database-yjs/database.type';
 import {
   useAddAdvancedFilterAndRebuild,
@@ -30,7 +30,7 @@ import { FilterPanelRow } from './FilterPanelRow';
 export function AdvancedFilterPanel() {
   const { t } = useTranslation();
   const filters = useAdvancedFiltersSelector();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
 
   const addFilter = useAddAdvancedFilterAndRebuild();
   const clearAllFilters = useClearAllFilters();

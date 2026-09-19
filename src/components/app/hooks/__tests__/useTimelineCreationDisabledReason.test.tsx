@@ -59,6 +59,22 @@ describe('Timeline workspace access', () => {
     expect(getSubscriptions).not.toHaveBeenCalled();
   });
 
+  it('uses the caller message for other Pro-only layouts and shares the workspace plan lookup', async () => {
+    const dashboardRequiresPro = 'Creating a Dashboard view requires a Pro workspace.';
+    const getSubscriptions = jest.fn().mockResolvedValue([subscription(SubscriptionPlan.Free)]);
+    const { result } = renderHook(() => ({
+      timeline: useTimelineCreationDisabledReason(getSubscriptions, { workspaceId: 'shared-free' }),
+      dashboard: useTimelineCreationDisabledReason(getSubscriptions, {
+        workspaceId: 'shared-free',
+        requiresProMessage: dashboardRequiresPro,
+      }),
+    }));
+
+    await waitFor(() => expect(result.current.dashboard).toBe(dashboardRequiresPro));
+    expect(result.current.timeline).toBe(requiresPro);
+    expect(getSubscriptions).toHaveBeenCalledTimes(1);
+  });
+
   it('does not reuse the general paid-feature cache which also accepts Team', async () => {
     const getSubscriptions = jest.fn().mockResolvedValue([subscription(SubscriptionPlan.Team)]);
     const { result } = renderHook(() => ({

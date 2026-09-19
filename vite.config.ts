@@ -2,7 +2,7 @@ import react from '@vitejs/plugin-react';
 import type { IncomingMessage, ServerResponse } from 'http';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { defineConfig, type ViteDevServer } from 'vite';
+import { defineConfig, loadEnv, type ViteDevServer } from 'vite';
 import istanbul from 'vite-plugin-istanbul';
 import svgr from 'vite-plugin-svgr';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
@@ -15,6 +15,14 @@ const isDev = process.env.NODE_ENV ? process.env.NODE_ENV === 'development' : tr
 const isProd = process.env.NODE_ENV === 'production';
 const isTest = process.env.NODE_ENV === 'test' || process.env.COVERAGE === 'true';
 const webClientVersion = process.env.APPFLOWY_WEB_VERSION || compatibilityPolicy.reviewed_through_client_version;
+// Vite only exposes `APPFLOWY*` variables from `.env` files to the app; this
+// build-time define also honours `.env`, so a local `pnpm dev` can opt in
+// without exporting the variable in every shell.
+const fileEnv = loadEnv(process.env.NODE_ENV ?? 'development', __dirname, '');
+const experimentalDatabaseViewCreationEnabled =
+  process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED ??
+  fileEnv.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED ??
+  'false';
 
 // Namespace redirect plugin for dev mode - mirrors deploy/server.ts behavior
 function namespaceRedirectPlugin() {
@@ -116,9 +124,7 @@ function linkPreviewApiPlugin() {
 export default defineConfig({
   define: {
     __APPFLOWY_WEB_VERSION__: JSON.stringify(webClientVersion),
-    'process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED': JSON.stringify(
-      process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED ?? 'false'
-    ),
+    'process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED': JSON.stringify(experimentalDatabaseViewCreationEnabled),
   },
   plugins: [
     react(),

@@ -6,6 +6,8 @@ export * from './fields';
 export * from './history';
 export * from './selector';
 export * from './gallery-layout';
+export * from './dashboard.type';
+export * from './dashboard-layout';
 export * from './comment_dispatch';
 export * from './comment_selector';
 export * from './row_reaction_selector';

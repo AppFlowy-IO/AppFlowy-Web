@@ -14,17 +14,21 @@ import {
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { ChartLayoutKeys, ChartNumberFormat } from '@/application/database-yjs/chart.type';
 import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import {
   useDatabase,
   useDatabaseContext,
   useDatabaseFields,
+  useDatabaseSelectedView,
   useDatabaseView,
   useDatabaseViewId,
-  useRowMap,
   useReadOnly,
+  useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
+import { initializeDashboardLayoutSetting, updateDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
+import { DashboardLayoutUpdate } from '@/application/database-yjs/dashboard.type';
 import {
   AITranslateLanguage,
   CalculationType,
@@ -315,6 +319,9 @@ function generateGroupByField(field: YDatabaseField) {
 
 export function useGroupByFieldDispatch() {
   const view = useDatabaseView();
+  // Grouping writes the shared view; in a View-mode dashboard widget `view`
+  // is the viewer's overlay for filters, so the filter cleanup reads the real one.
+  const sharedView = useDatabaseSelectedView(useDatabaseViewId());
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
 
@@ -353,7 +360,7 @@ export function useGroupByFieldDispatch() {
             if (!supportsOptionalGrouping) {
               // Board keeps its existing behavior: a field cannot simultaneously
               // act as the grouping source and as a filter.
-              const filters = view.get(YjsDatabaseKey.filters);
+              const filters = (sharedView ?? view).get(YjsDatabaseKey.filters);
               const filterIndex = filters
                 ?.toArray()
                 .findIndex((filter) => filter.get(YjsDatabaseKey.field_id) === fieldId);
@@ -390,7 +397,7 @@ export function useGroupByFieldDispatch() {
         'groupByField'
       );
     },
-    [database, sharedRoot, view]
+    [database, sharedRoot, sharedView, view]
   );
 }
 
@@ -2763,6 +2770,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Feed]: ViewLayout.Feed,
         [DatabaseViewLayout.Form]: ViewLayout.Form,
         [DatabaseViewLayout.Timeline]: ViewLayout.Timeline,
+        [DatabaseViewLayout.Dashboard]: ViewLayout.Dashboard,
       };
       const layoutToName: Record<DatabaseViewLayout, string> = {
         [DatabaseViewLayout.Grid]: 'Grid',
@@ -2774,6 +2782,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Feed]: 'Feed',
         [DatabaseViewLayout.Form]: 'Form builder',
         [DatabaseViewLayout.Timeline]: 'Timeline',
+        [DatabaseViewLayout.Dashboard]: 'Dashboard',
       };
       const viewLayout = layoutToViewLayout[layout];
       const name = layoutToName[layout];
@@ -3010,6 +3019,17 @@ export function useAddDatabaseView() {
           }
 
           throw new Error('The server did not return the requested Feed database view');
+        }
+      }
+
+      if (layout === DatabaseViewLayout.Dashboard) {
+        // The server writes no dashboard settings; seed the empty rows / global
+        // filters so every reader sees a stable shape from the first render.
+        // Like the other created-tab writes, the seed is not an undo step.
+        const createdView = database?.get(YjsDatabaseKey.views)?.get(response.view_id);
+
+        if (createdView) {
+          databaseDoc.transact(() => initializeDashboardLayoutSetting(createdView), 'initializeDashboardLayout');
         }
       }
 
@@ -3263,6 +3283,10 @@ export function useUpdateDatabaseLayout(viewId: string) {
 
             if (layout === DatabaseViewLayout.Gallery) {
               initializeGalleryLayoutSetting(view);
+            }
+
+            if (layout === DatabaseViewLayout.Dashboard) {
+              initializeDashboardLayoutSetting(view);
             }
 
             if (
@@ -5020,6 +5044,27 @@ export function useUpdateTimelineSetting() {
   );
 }
 
+/**
+ * Patch the dashboard view's layout setting (rows, global filters, widget
+ * titles). Rows are normalized before they are written.
+ */
+export function useUpdateDashboardSetting() {
+  const viewId = useDatabaseViewId();
+  const readOnly = useReadOnly();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (update: DashboardLayoutUpdate) => {
+      const database = sharedRoot.get(YjsEditorKey.database);
+      const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+
+      if (readOnly || !view) return;
+      executeOperations(sharedRoot, [() => updateDashboardLayoutSetting(view, update)], 'updateDashboardSetting');
+    },
+    [sharedRoot, viewId, readOnly]
+  );
+}
+
 // Re-export advanced filter hooks from modular dispatch
 export {
   useEnterAdvancedMode,
@@ -5043,6 +5088,8 @@ export interface ChartLayoutSetting {
   yFieldId?: string;
   cumulative?: boolean;
   dateCondition?: number;
+  numberFormat?: ChartNumberFormat;
+  titleText?: string;
 }
 
 export function useUpdateChartSetting() {
@@ -5099,6 +5146,14 @@ export function useUpdateChartSetting() {
 
             if (settings.dateCondition !== undefined) {
               layoutSetting.set('dateCondition', settings.dateCondition);
+            }
+
+            if (settings.numberFormat !== undefined) {
+              layoutSetting.set(ChartLayoutKeys.numberFormat, settings.numberFormat);
+            }
+
+            if (settings.titleText !== undefined) {
+              layoutSetting.set(ChartLayoutKeys.titleText, settings.titleText);
             }
           },
         ],

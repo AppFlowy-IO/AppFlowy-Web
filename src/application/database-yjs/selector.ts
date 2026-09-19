@@ -20,12 +20,14 @@ import { DEFAULT_FIELD_WRAP, getCell, MIN_COLUMN_WIDTH } from '@/application/dat
 import {
   useDatabase,
   useDatabaseContext,
+  useDatabaseExtraFilters,
   useDatabaseFields,
   useDatabaseView,
   useDatabaseViewId,
   useRow,
   useRowMap,
 } from '@/application/database-yjs/context';
+import { createDashboardLayoutStore } from '@/application/database-yjs/dashboard-layout';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import {
   getDateCellStr,
@@ -39,6 +41,7 @@ import {
   SelectOption,
 } from '@/application/database-yjs/fields';
 import {
+  combineFilters,
   filterBy,
   flattenFilterTree,
   getEffectiveFiltersSnapshot,
@@ -123,7 +126,7 @@ import { useMentionableUsersWithAutoFetch } from '@/components/database/componen
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
-import { ChartLayoutSettings } from './chart.type';
+import { ChartLayoutKeys, ChartLayoutSettings, parseChartNumberFormat } from './chart.type';
 import {
   CalculationType,
   DateGroupCondition,
@@ -590,9 +593,7 @@ export function useDatabaseIdFromField(fieldId: string) {
 }
 
 export function useFiltersSelector() {
-  const database = useDatabase();
-  const viewId = useDatabaseViewId();
-  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const view = useDatabaseView();
   const filterOrders = view?.get(YjsDatabaseKey.filters);
   const [filters, setFilters] = useState<ConditionReference[]>([]);
 
@@ -645,9 +646,8 @@ export function useFiltersSelector() {
 
 export function useFilterSelector(filterId: string) {
   const database = useDatabase();
-  const viewId = useDatabaseViewId();
   const fields = database?.get(YjsDatabaseKey.fields);
-  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const view = useDatabaseView();
   const filter = view
     ?.get(YjsDatabaseKey.filters)
     ?.toArray()
@@ -690,9 +690,7 @@ const DEFAULT_ROOT_INFO = { isHierarchical: false, rootType: null, childCount: 0
  * Returns information about the root filter structure for determining if advanced mode should be enabled
  */
 export function useRootFilterInfo() {
-  const database = useDatabase();
-  const viewId = useDatabaseViewId();
-  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const view = useDatabaseView();
   const filters = view?.get(YjsDatabaseKey.filters);
   const [rootInfo, setRootInfo] = useState<{
     isHierarchical: boolean;
@@ -762,9 +760,8 @@ export function useRootFilterInfo() {
  */
 export function useAdvancedFiltersSelector() {
   const database = useDatabase();
-  const viewId = useDatabaseViewId();
   const fields = database?.get(YjsDatabaseKey.fields);
-  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const view = useDatabaseView();
   const filtersArray = view?.get(YjsDatabaseKey.filters);
   const [filters, setFilters] = useState<Filter[]>([]);
 
@@ -828,9 +825,8 @@ export function useAdvancedFiltersSelector() {
  */
 export function useAdvancedFilterSelector(filterId: string) {
   const database = useDatabase();
-  const viewId = useDatabaseViewId();
   const fields = database?.get(YjsDatabaseKey.fields);
-  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const view = useDatabaseView();
   const filtersArray = view?.get(YjsDatabaseKey.filters);
   const [filterValue, setFilterValue] = useState<Filter | null>(null);
 
@@ -944,9 +940,7 @@ export function useAdvancedFilterSelector(filterId: string) {
 }
 
 export function useSortsSelector() {
-  const database = useDatabase();
-  const viewId = useDatabaseViewId();
-  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const view = useDatabaseView();
   const sortOrders = view?.get(YjsDatabaseKey.sorts);
   const [sorts, setSorts] = useState<ConditionReference[]>([]);
 
@@ -990,11 +984,8 @@ export interface Sort {
 }
 
 export function useSortSelector(sortId: SortId) {
-  const database = useDatabase();
-  const viewId = useDatabaseViewId();
   const [sortValue, setSortValue] = useState<Sort | null>(null);
-  const views = database?.get(YjsDatabaseKey.views);
-  const view = views?.get(viewId);
+  const view = useDatabaseView();
   const sort = view
     ?.get(YjsDatabaseKey.sorts)
     ?.toArray()
@@ -1777,7 +1768,9 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const inlineRowOrders = getInlineViewRowOrders(database);
   const { cachedRowDocs, getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(
     Boolean(fieldId),
-    `${layout === DatabaseViewLayout.List ? 'list' : layout === DatabaseViewLayout.Timeline ? 'timeline' : 'grid'}-grouping`
+    `${
+      layout === DatabaseViewLayout.List ? 'list' : layout === DatabaseViewLayout.Timeline ? 'timeline' : 'grid'
+    }-grouping`
   );
   const groupingRows = useMemo(() => {
     const next = { ...cachedRowDocs };
@@ -2220,7 +2213,7 @@ export function useRowOrdersSelector() {
   const viewId = useDatabaseViewId();
   const sorts = view?.get(YjsDatabaseKey.sorts);
   const fields = useDatabaseFields();
-  const filters = view?.get(YjsDatabaseKey.filters);
+  const viewFilters = view?.get(YjsDatabaseKey.filters);
   const database = useDatabase();
   const inlineRowOrders = getInlineViewRowOrders(database);
   const {
@@ -2233,6 +2226,12 @@ export function useRowOrdersSelector() {
     blobPrefetchComplete,
     seedsReady,
   } = useDatabaseContext();
+  const extraFilters = useDatabaseExtraFilters();
+  // Dashboard global filters ride along with the view's own filters for
+  // evaluation and signatures; observers stay on the real Yjs array. A global
+  // filter whose mapped field changed type is skipped (read live, so the field
+  // observer's recompute picks the change up).
+  const filters = useMemo(() => combineFilters(viewFilters, extraFilters, fields), [viewFilters, extraFilters, fields]);
   const hasAttributionSort =
     sorts?.toArray().some((sort) => {
       const field = fields?.get(sort.get(YjsDatabaseKey.field_id));
@@ -2258,7 +2257,15 @@ export function useRowOrdersSelector() {
   const [rowOrdersState, setRowOrdersState] = useState<{
     rows?: Row[];
     conditionSignature: string;
+    /** The view and the (combined) filters the rows were computed for. */
+    viewId?: string;
+    filters?: YDatabaseFilters;
   }>({ conditionSignature: '' });
+  const publishRows = useCallback(
+    (rows: Row[] | undefined, conditionSignature: string) =>
+      setRowOrdersState({ rows, conditionSignature, viewId, filters }),
+    [filters, viewId]
+  );
   const [rollupWatchVersion, setRollupWatchVersion] = useState(0);
   const [conditionLoadRevision, setConditionLoadRevision] = useState(0);
   // Once filters have been applied successfully, don't revert to unfiltered
@@ -2400,9 +2407,9 @@ export function useRowOrdersSelector() {
     if (currentHasConditions) return false;
 
     filtersAppliedRef.current = false;
-    setRowOrdersState({ rows: originalRowOrders, conditionSignature: conditionStateKey });
+    publishRows(originalRowOrders, conditionStateKey);
     return true;
-  }, [fields, filters, readVisibleRowOrders, sorts, viewId]);
+  }, [fields, filters, publishRows, readVisibleRowOrders, sorts, viewId]);
 
   // Getter for relation cell text (used in sorting/filtering)
   const relationTextGetter = useCallback(
@@ -2514,7 +2521,7 @@ export function useRowOrdersSelector() {
 
     if (!currentHasConditions) {
       filtersAppliedRef.current = false;
-      setRowOrdersState({ rows: originalRowOrders, conditionSignature: conditionStateKey });
+      publishRows(originalRowOrders, conditionStateKey);
       logConditionCompute(originalRowOrders.length, originalRowOrders.length);
 
       return;
@@ -2532,7 +2539,7 @@ export function useRowOrdersSelector() {
       requestMissingConditionRows(unresolvedRows);
 
       if (!filtersAppliedRef.current) {
-        setRowOrdersState({ rows: undefined, conditionSignature: conditionStateKey });
+        publishRows(undefined, conditionStateKey);
       } else {
         // New rows cannot be filtered until their docs load, but removals are
         // authoritative in row_orders. Prune them from the last complete result
@@ -2550,7 +2557,7 @@ export function useRowOrdersSelector() {
             return previousState;
           }
 
-          return { rows: retainedRows, conditionSignature: conditionStateKey };
+          return { ...previousState, rows: retainedRows };
         });
       }
 
@@ -2579,7 +2586,7 @@ export function useRowOrdersSelector() {
     const nextRowOrders = computedRowOrders ?? rowsWithDocs;
 
     filtersAppliedRef.current = true;
-    setRowOrdersState({ rows: nextRowOrders, conditionSignature: conditionStateKey });
+    publishRows(nextRowOrders, conditionStateKey);
     logConditionCompute(rowsWithDocs.length, nextRowOrders.length);
   }, [
     fields,
@@ -2592,6 +2599,7 @@ export function useRowOrdersSelector() {
     rollupValueGetter,
     rollupTextGetter,
     requestMissingConditionRows,
+    publishRows,
     viewId,
   ]);
 
@@ -2667,7 +2675,9 @@ export function useRowOrdersSelector() {
       // Schema changes cannot affect row order when the view has no configured
       // filters or sorts. Avoid serializing every row for unrelated field edits
       // such as renames while an unconditioned Grid view is open.
-      if ((sorts?.length ?? 0) === 0 && (filters?.length ?? 0) === 0) return;
+      // Injected dashboard filters count even while a field-type mismatch hides
+      // them: changing the type back must recompute too.
+      if ((sorts?.length ?? 0) === 0 && (viewFilters?.length ?? 0) === 0 && (extraFilters?.length ?? 0) === 0) return;
 
       refreshConditionFieldIds();
 
@@ -2687,7 +2697,7 @@ export function useRowOrdersSelector() {
     };
 
     sorts?.observeDeep(handleSortFilterChange);
-    filters?.observeDeep(handleSortFilterChange);
+    viewFilters?.observeDeep(handleSortFilterChange);
     fields?.observeDeep(handleFieldChange);
 
     // Keep relation/rollup field IDs updated as schema changes to avoid stale invalidation.
@@ -2724,7 +2734,7 @@ export function useRowOrdersSelector() {
       }
 
       sorts?.unobserveDeep(handleSortFilterChange);
-      filters?.unobserveDeep(handleSortFilterChange);
+      viewFilters?.unobserveDeep(handleSortFilterChange);
       fields?.unobserveDeep(handleFieldChange);
       debouncedChange.cancel();
       observers.forEach((observer, rowId) => {
@@ -2737,6 +2747,8 @@ export function useRowOrdersSelector() {
     inlineRowOrders,
     fields,
     filters,
+    viewFilters,
+    extraFilters,
     sorts,
     rows,
     viewId,
@@ -2750,7 +2762,13 @@ export function useRowOrdersSelector() {
 
   const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
 
-  return rowOrdersState.conditionSignature === liveConditionSignature ? rowOrdersState.rows : undefined;
+  if (rowOrdersState.conditionSignature === liveConditionSignature) return rowOrdersState.rows;
+  // Dashboard global filters arrive through React, not a Yjs observer, so the
+  // render that brings new ones (a new combined list) precedes their recompute
+  // (an effect). Keep this view's last result for that render instead of
+  // flashing the loading state, which unmounts every row and replays chart
+  // animations.
+  return rowOrdersState.viewId === viewId && rowOrdersState.filters !== filters ? rowOrdersState.rows : undefined;
 }
 
 export function useRowDataSelector(rowId: string) {
@@ -3416,6 +3434,25 @@ export function useTimelineLayoutSetting() {
   return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 }
 
+/** Rows, global filters and widget-title flag of the active dashboard view. */
+export function useDashboardLayoutSetting() {
+  const { databaseDoc } = useDatabaseContext();
+  const viewId = useDatabaseViewId();
+  const store = useMemo(() => createDashboardLayoutStore(databaseDoc, viewId), [databaseDoc, viewId]);
+
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+}
+
+/** Only the dashboard's widget-title flag: row or filter edits do not re-render the caller. */
+export function useDashboardShowWidgetTitles() {
+  const { databaseDoc } = useDatabaseContext();
+  const viewId = useDatabaseViewId();
+  const store = useMemo(() => createDashboardLayoutStore(databaseDoc, viewId), [databaseDoc, viewId]);
+  const getShowWidgetTitles = useCallback(() => store.getSnapshot().showWidgetTitles, [store]);
+
+  return useSyncExternalStore(store.subscribe, getShowWidgetTitles, getShowWidgetTitles);
+}
+
 export function getPrimaryFieldId(database: YDatabase) {
   const fields = database?.get(YjsDatabaseKey.fields);
 
@@ -3846,7 +3883,9 @@ function chartSettingsEqual(a: ChartLayoutSettings | null, b: ChartLayoutSetting
     a.aggregationType === b.aggregationType &&
     a.yFieldId === b.yFieldId &&
     a.cumulative === b.cumulative &&
-    a.dateCondition === b.dateCondition
+    a.dateCondition === b.dateCondition &&
+    a.numberFormat === b.numberFormat &&
+    a.titleText === b.titleText
   );
 }
 
@@ -3894,6 +3933,8 @@ export function useChartLayoutSetting(): ChartLayoutSettings | null {
       // undefined-only fallback — `|| 3` would silently coerce Relative back
       // to Month every time the chart loads.
       const dateConditionRaw = chartSettingMap.get('dateCondition');
+      // Number-chart keys aren't part of the typed Yjs setting interface.
+      const untypedChartSettingMap = chartSettingMap as unknown as { get(key: string): unknown };
       const next: ChartLayoutSettings = {
         chartType: Number(chartSettingMap.get('chartType') || 0) as ChartLayoutSettings['chartType'],
         xFieldId: String(chartSettingMap.get('xFieldId') || ''),
@@ -3904,6 +3945,8 @@ export function useChartLayoutSetting(): ChartLayoutSettings | null {
         dateCondition: (dateConditionRaw === undefined || dateConditionRaw === null
           ? DateGroupCondition.Month
           : Number(dateConditionRaw)) as ChartLayoutSettings['dateCondition'],
+        numberFormat: parseChartNumberFormat(untypedChartSettingMap.get(ChartLayoutKeys.numberFormat)),
+        titleText: String(untypedChartSettingMap.get(ChartLayoutKeys.titleText) ?? ''),
       };
 
       setSetting((prev) => (chartSettingsEqual(prev, next) ? prev : next));

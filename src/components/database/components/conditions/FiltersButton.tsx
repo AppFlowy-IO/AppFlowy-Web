@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useFiltersSelector, useReadOnly } from '@/application/database-yjs';
+import { useFiltersSelector, useConditionsReadOnly } from '@/application/database-yjs';
 import { useAddFilter } from '@/application/database-yjs/dispatch';
 import { ReactComponent as FilterIcon } from '@/assets/icons/filter.svg';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
@@ -21,7 +21,7 @@ function FiltersButton({
   expanded?: boolean;
 }) {
   const filters = useFiltersSelector();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const addFilter = useAddFilter();

@@ -15,6 +15,10 @@ jest.mock('@/assets/icons/feed.svg', () => ({
   ReactComponent: (props: React.SVGProps<SVGSVGElement>) => <svg data-testid='feed-view-icon' {...props} />,
 }));
 
+jest.mock('@/assets/icons/dashboard.svg', () => ({
+  ReactComponent: (props: React.SVGProps<SVGSVGElement>) => <svg data-testid='dashboard-view-icon' {...props} />,
+}));
+
 describe('PageIcon', () => {
   it('renders the List layout icon', () => {
     render(<PageIcon view={{ layout: ViewLayout.List }} />);
@@ -32,5 +36,11 @@ describe('PageIcon', () => {
     render(<PageIcon view={{ layout: ViewLayout.Feed }} />);
 
     expect(screen.getByTestId('feed-view-icon')).toBeTruthy();
+  });
+
+  it('renders the Dashboard layout icon', () => {
+    render(<PageIcon view={{ layout: ViewLayout.Dashboard }} />);
+
+    expect(screen.getByTestId('dashboard-view-icon')).toBeTruthy();
   });
 });

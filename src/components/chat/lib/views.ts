@@ -57,6 +57,7 @@ export function hasDatabaseViewChild(view: View): boolean {
       ViewLayout.Gallery,
       ViewLayout.Feed,
       ViewLayout.Timeline,
+      ViewLayout.Dashboard,
     ].includes(view.layout) ||
     (view.layout === ViewLayout.Document && view.children.some((child) => hasDatabaseViewChild(child)))
   );

@@ -20,6 +20,8 @@ const mockCreateRow = jest.fn();
 
 jest.mock('@/application/database-yjs', () => ({
   useDatabaseContext: jest.requireActual('@/application/database-yjs/context').useDatabaseContext,
+  useDatabaseView: jest.requireActual('@/application/database-yjs/context').useDatabaseView,
+  useDatabaseExtraFilters: jest.requireActual('@/application/database-yjs/context').useDatabaseExtraFilters,
   useCalendarLayoutSetting: () => ({ fieldId: 'date' }),
   usePrimaryFieldId: () => 'title',
 }));
