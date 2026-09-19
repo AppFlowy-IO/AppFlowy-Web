@@ -4327,7 +4327,8 @@
       "title": "Rows in \"{{category}}\"",
       "close": "Close",
       "rowCount": "{{count}} rows",
-      "noRows": "No rows in this category"
+      "noRows": "No rows in this category",
+      "showMore": "Show {{count}} more"
     },
     "numberChart": "Number",
     "number": {

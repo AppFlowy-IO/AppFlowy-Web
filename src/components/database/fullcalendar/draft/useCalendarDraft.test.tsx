@@ -2,7 +2,13 @@ import { EventInput } from '@fullcalendar/core';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { useCalendarLayoutSetting, useDatabaseContext, usePrimaryFieldId } from '@/application/database-yjs';
+import {
+  useCalendarLayoutSetting,
+  useDatabaseContext,
+  useDatabaseExtraFilters,
+  useDatabaseView,
+  usePrimaryFieldId,
+} from '@/application/database-yjs';
 import { DatabaseContextState } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
@@ -14,6 +20,8 @@ import { useCalendarDraft } from './useCalendarDraft';
 jest.mock('@/application/database-yjs', () => ({
   useCalendarLayoutSetting: jest.fn(),
   useDatabaseContext: jest.fn(),
+  useDatabaseExtraFilters: jest.fn(),
+  useDatabaseView: jest.fn(),
   usePrimaryFieldId: jest.fn(),
 }));
 jest.mock('@/application/database-yjs/dispatch/row', () => ({ useNewRowDispatch: jest.fn() }));
@@ -66,6 +74,12 @@ beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
   mockContext.mockReturnValue(createContext());
+  (useDatabaseView as jest.Mock).mockImplementation(() =>
+    (sourceDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase)
+      .get(YjsDatabaseKey.views)
+      .get('calendar')
+  );
+  (useDatabaseExtraFilters as jest.Mock).mockReturnValue(undefined);
   (useCalendarLayoutSetting as jest.Mock).mockReturnValue({ fieldId: 'date' });
   (usePrimaryFieldId as jest.Mock).mockReturnValue('title');
   (useNewRowDispatch as jest.Mock).mockReturnValue(mockCreateRow);
@@ -124,6 +138,20 @@ describe('useCalendarDraft handoff', () => {
     expect(result.current.event).toBeNull();
     act(() => { result.current.startDraft(selection); });
     expect(result.current.draft!.id).not.toBe(firstId);
+  });
+
+  it('releases a saved card hidden by a dashboard global filter', async () => {
+    (useDatabaseExtraFilters as jest.Mock).mockReturnValue([
+      { id: 'global', field_id: 'title', filter_type: 2, condition: 2, ty: 0, content: 'Visible' },
+    ]);
+    const { result } = renderHook(() => useCalendarDraft([], []));
+
+    act(() => { result.current.startDraft(selection); });
+    await act(async () => { await result.current.finishDraft(true); });
+    expect(mockCreateRow).toHaveBeenCalledTimes(1);
+    expect(result.current.draft).toBeNull();
+    act(() => { result.current.startDraft(selection); });
+    expect(result.current.draft).not.toBeNull();
   });
 
   it('coalesces repeated selection, dismiss, and submit callbacks while persistence is pending', async () => {

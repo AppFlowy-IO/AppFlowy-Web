@@ -205,9 +205,51 @@ describe('DashboardProvider', () => {
 
       act(() => update({ activeViewId: OTHER_VIEW_ID }));
       expect(result.current.dashboardViewId).toBe(OTHER_VIEW_ID);
-      expect(result.current.isEditing).toBe(false);
       expect(result.current.localGlobalFilters).toBeNull();
       expect(result.current.rows).toEqual([]);
+      // The other dashboard is empty, so it opens in (automatic) Edit mode.
+      expect(result.current.isEditing).toBe(true);
+
+      // Back on a dashboard with widgets: the earlier Edit mode is gone.
+      act(() => update({ activeViewId: DASHBOARD_VIEW_ID }));
+      expect(result.current.isEditing).toBe(false);
+    });
+
+    it('opens an empty dashboard in Edit mode and settles to View mode when widgets arrive', () => {
+      const { doc, view } = createDatabaseDoc();
+
+      doc.transact(() => updateDashboardLayoutSetting(view, { rows: [] }));
+      const { result } = renderDashboard(doc);
+
+      expect(result.current.isEditing).toBe(true);
+      // Widgets from the server sync (or a collaborator), before the editor chose a mode.
+      act(() => doc.transact(() => updateDashboardLayoutSetting(view, { rows: ROWS })));
+      expect(result.current.isEditing).toBe(false);
+      // The automatic mode is settled: emptying the dashboard again keeps View mode.
+      act(() => doc.transact(() => updateDashboardLayoutSetting(view, { rows: [] })));
+      expect(result.current.isEditing).toBe(false);
+    });
+
+    it('keeps the Edit mode the editor chose when widgets arrive', () => {
+      const { doc, view } = createDatabaseDoc();
+
+      doc.transact(() => updateDashboardLayoutSetting(view, { rows: [] }));
+      const { result } = renderDashboard(doc);
+
+      act(() => result.current.setEditing(true));
+      act(() => doc.transact(() => updateDashboardLayoutSetting(view, { rows: ROWS })));
+      expect(result.current.isEditing).toBe(true);
+    });
+
+    it('decides the automatic Edit mode once write access is known', () => {
+      const { doc, view } = createDatabaseDoc();
+
+      doc.transact(() => updateDashboardLayoutSetting(view, { rows: [] }));
+      const { result, update } = renderDashboard(doc, { readOnly: true });
+
+      expect(result.current.isEditing).toBe(false);
+      act(() => update({ readOnly: false }));
+      expect(result.current.isEditing).toBe(true);
     });
 
     it('never persists the edit state', () => {

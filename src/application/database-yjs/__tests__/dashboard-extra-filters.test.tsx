@@ -141,7 +141,11 @@ function createFixture(): Fixture {
  * The wrapper re-reads `current.extraFilters` on every render, so a test can
  * swap the injected filters and call `rerender()`.
  */
-function renderRowOrders(fixture: Fixture, initialExtraFilters?: DashboardExtraFilter[]) {
+function renderRowOrders(
+  fixture: Fixture,
+  initialExtraFilters?: DashboardExtraFilter[],
+  rendered?: (ReturnType<typeof useRowOrdersSelector> | undefined)[]
+) {
   const current: { extraFilters?: DashboardExtraFilter[] } = { extraFilters: initialExtraFilters };
   const wrapper = ({ children }: { children: ReactNode }) => {
     const value: DatabaseContextState = {
@@ -156,12 +160,22 @@ function renderRowOrders(fixture: Fixture, initialExtraFilters?: DashboardExtraF
 
     return (
       <DatabaseContext.Provider value={value}>
-        <DatabaseExtraFiltersContext.Provider value={current.extraFilters}>{children}</DatabaseExtraFiltersContext.Provider>
+        <DatabaseExtraFiltersContext.Provider value={current.extraFilters}>
+          {children}
+        </DatabaseExtraFiltersContext.Provider>
       </DatabaseContext.Provider>
     );
   };
 
-  const hook = renderHook(() => useRowOrdersSelector(), { wrapper });
+  const hook = renderHook(
+    () => {
+      const rows = useRowOrdersSelector();
+
+      rendered?.push(rows);
+      return rows;
+    },
+    { wrapper }
+  );
   const setExtraFilters = (extraFilters?: DashboardExtraFilter[]) => {
     current.extraFilters = extraFilters;
     hook.rerender();
@@ -292,6 +306,24 @@ describe('useRowOrdersSelector with dashboard extra filters', () => {
     await waitFor(() => {
       expect(ids(result.current)).toEqual(['row-c', 'row-a', 'row-b']);
     });
+  });
+
+  it('keeps the last rows while new injected filters recompute, instead of a loading frame', async () => {
+    const fixture = createFixture();
+    const rendered: (ReturnType<typeof useRowOrdersSelector> | undefined)[] = [];
+    const { result, setExtraFilters } = renderRowOrders(fixture, [statusFilter('done')], rendered);
+
+    await waitFor(() => {
+      expect(ids(result.current)).toEqual(['row-c', 'row-a']);
+    });
+    rendered.length = 0;
+
+    act(() => setExtraFilters([statusFilter('todo')]));
+    await waitFor(() => {
+      expect(ids(result.current)).toEqual(['row-b']);
+    });
+    // Every row doc is loaded: nothing needs hydrating, so no render may look like it.
+    expect(rendered).not.toContain(undefined);
   });
 
   it('ignores injected filters that are blank or target unknown fields', async () => {

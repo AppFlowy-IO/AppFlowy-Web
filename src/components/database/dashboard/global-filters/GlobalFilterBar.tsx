@@ -27,7 +27,8 @@ function GlobalFilterChipList({ filters }: { filters: DashboardGlobalFilter[] })
 
 function GlobalFilterBarContent({ className }: { className?: string }) {
   const { t } = useTranslation();
-  const { filters, hasLocalChanges, canEdit, isEditing, resetLocal, saveForEverybody } = useGlobalFilterActions();
+  const { filters, hasLocalChanges, canSave, canEdit, isEditing, resetLocal, saveForEverybody } =
+    useGlobalFilterActions();
   const [adding, setAdding] = useState(false);
   const closeAdd = useCallback(() => setAdding(false), []);
 
@@ -81,7 +82,7 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
           >
             {t('dashboard.globalFilters.reset', { defaultValue: 'Reset' })}
           </Button>
-          {canEdit && (
+          {canSave && (
             <Button
               size='sm'
               className='h-7 px-2'

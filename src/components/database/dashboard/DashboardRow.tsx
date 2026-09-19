@@ -1,11 +1,7 @@
 import { memo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import {
-  countDashboardWidgets,
-  resizeDashboardWidget,
-  setDashboardRowHeight,
-} from '@/application/database-yjs/dashboard-layout';
+import { resizeDashboardWidget, setDashboardRowHeight } from '@/application/database-yjs/dashboard-layout';
 import {
   DASHBOARD_GRID_COLUMNS,
   DASHBOARD_MAX_ROW_HEIGHT,
@@ -21,7 +17,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 
 import { DASHBOARD_COLUMN_GAP, DASHBOARD_EDIT_ROW_GAP, DASHBOARD_ROW_GAP } from './constants';
-import { useDashboardContext } from './DashboardContext';
 import { useDashboardDraggingWidgetId, useDashboardUi } from './DashboardUiContext';
 import { DashboardWidget } from './DashboardWidget';
 import { useRowHeightResize } from './hooks/useRowHeightResize';
@@ -41,6 +36,13 @@ interface DashboardRowProps {
   rowIndex: number;
   /** Narrow dashboards stack every widget on its own line. */
   stacked: boolean;
+  // The dashboard-wide state comes as props, not from `DashboardContext`
+  // (which carries every row): committing one row leaves the others alone.
+  canEdit: boolean;
+  isEditing: boolean;
+  showWidgetTitles: boolean;
+  /** The dashboard holds its maximum number of widgets. */
+  dashboardFull: boolean;
 }
 
 /**
@@ -48,10 +50,17 @@ interface DashboardRowProps {
  * Edit mode adds width handles between widgets, a height handle under the
  * row and an "add widget to this row" button at its right edge.
  */
-export const DashboardRow = memo(function DashboardRow({ row, rowIndex, stacked }: DashboardRowProps) {
+export const DashboardRow = memo(function DashboardRow({
+  row,
+  rowIndex,
+  stacked,
+  canEdit,
+  isEditing,
+  showWidgetTitles,
+  dashboardFull,
+}: DashboardRowProps) {
   const { t } = useTranslation();
-  const { rows, isEditing, canEdit, showWidgetTitles, updateRows } = useDashboardContext();
-  const { openPicker, showLimitMessage } = useDashboardUi();
+  const { openPicker, showLimitMessage, updateRows } = useDashboardUi();
   const draggingWidgetId = useDashboardDraggingWidgetId();
   const editing = isEditing && canEdit;
   const gridRef = useRef<HTMLDivElement>(null);
@@ -77,7 +86,6 @@ export const DashboardRow = memo(function DashboardRow({ row, rowIndex, stacked 
   const widths = applyWidthPreview(row.widgets, widthResize.preview);
   const rowHeight = heightResize.height;
   const rowFull = row.widgets.length >= DASHBOARD_MAX_WIDGETS_PER_ROW;
-  const dashboardFull = countDashboardWidgets(rows) >= DASHBOARD_MAX_WIDGETS;
   const isDraggingWidget = draggingWidgetId !== null;
   const isResizing = widthResize.preview !== null || heightResize.preview !== null;
 

@@ -2,7 +2,6 @@ import {
   DASHBOARD_GRID_COLUMNS,
   DASHBOARD_MAX_ROW_HEIGHT,
   DASHBOARD_MIN_ROW_HEIGHT,
-  DashboardRow,
   DashboardWidget,
 } from '@/application/database-yjs/dashboard.type';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
@@ -123,11 +122,6 @@ export function clampWidthDelta(widgets: DashboardWidget[], index: number, delta
 export function clampRowHeight(height: number) {
   if (!Number.isFinite(height)) return DASHBOARD_MIN_ROW_HEIGHT;
   return Math.min(DASHBOARD_MAX_ROW_HEIGHT, Math.max(DASHBOARD_MIN_ROW_HEIGHT, Math.round(height)));
-}
-
-/** An empty dashboard opens in Edit mode for users who can build it. */
-export function shouldOpenInEditMode({ canEdit, rows }: { canEdit: boolean; rows: DashboardRow[] }) {
-  return canEdit && rows.length === 0;
 }
 
 /**

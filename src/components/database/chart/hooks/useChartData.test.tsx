@@ -172,6 +172,23 @@ describe('useChartData Number chart', () => {
     expect(result.current.yAxisField).toBeNull();
   });
 
+  it('shows the spinner, not an empty tile, while a new filter hydrates its rows', async () => {
+    setup(baseSettings, ['r1', 'r2'], {});
+
+    const { result, rerender } = renderHook(() => useChartData({ settings: baseSettings }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    // The row selector reports nothing until every row can be evaluated.
+    (useRowOrdersSelector as jest.Mock).mockReturnValue(undefined);
+    rerender();
+    expect(result.current.isLoading).toBe(true);
+
+    (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r2' }]);
+    rerender();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.numberValue).toBe(1);
+  });
+
   it('aggregates the Y field over all rows and ignores empty cells', async () => {
     const settings: ChartLayoutSettings = {
       ...baseSettings,

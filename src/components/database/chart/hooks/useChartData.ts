@@ -651,12 +651,15 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   }, [fields]);
 
   // The default X axis follows the view's property order (desktop's
-  // `select_chart_group_field`), so reordering columns can change it.
+  // `select_chart_group_field`), so reordering columns can change it. Its own
+  // clock: only the groupable-field list depends on the order, and the chart
+  // data follows only when the resolved X axis changes.
   const fieldOrders = useDatabaseView()?.get(YjsDatabaseKey.field_orders);
+  const [fieldOrderClock, setFieldOrderClock] = useState(0);
 
   useEffect(() => {
     if (!fieldOrders) return;
-    const onChange = () => setFieldsClock((c) => c + 1);
+    const onChange = () => setFieldOrderClock((c) => c + 1);
 
     fieldOrders.observe(onChange);
     return () => fieldOrders.unobserve(onChange);
@@ -763,7 +766,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     // built, so rank by the view's property order instead.
     return sortByFieldOrder(result, fieldOrders);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, fieldOrders, fieldsClock]);
+  }, [fields, fieldOrders, fieldsClock, fieldOrderClock]);
 
   const hasGroupableFields = groupableFields.length > 0;
 
@@ -863,7 +866,9 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   }, [needsRowDocs, rowsLoaded, rowIdsKey, rowMetas]);
 
   // === Render-time derivation ===
-  const isLoading = !rowsLoaded;
+  // Rows go back to `undefined` while a newly applied filter hydrates them:
+  // show the spinner, not an empty chart.
+  const isLoading = !rowsLoaded || !rowOrdersReady;
   // The same ids keep the same array: filtered and sorted views re-emit
   // `rowOrders` after unrelated changes, and cell edits bump `rowDataClock`.
   // eslint-disable-next-line react-hooks/exhaustive-deps

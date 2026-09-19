@@ -690,9 +690,7 @@ const DEFAULT_ROOT_INFO = { isHierarchical: false, rootType: null, childCount: 0
  * Returns information about the root filter structure for determining if advanced mode should be enabled
  */
 export function useRootFilterInfo() {
-  const database = useDatabase();
-  const viewId = useDatabaseViewId();
-  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const view = useDatabaseView();
   const filters = view?.get(YjsDatabaseKey.filters);
   const [rootInfo, setRootInfo] = useState<{
     isHierarchical: boolean;
@@ -762,9 +760,8 @@ export function useRootFilterInfo() {
  */
 export function useAdvancedFiltersSelector() {
   const database = useDatabase();
-  const viewId = useDatabaseViewId();
   const fields = database?.get(YjsDatabaseKey.fields);
-  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const view = useDatabaseView();
   const filtersArray = view?.get(YjsDatabaseKey.filters);
   const [filters, setFilters] = useState<Filter[]>([]);
 
@@ -828,9 +825,8 @@ export function useAdvancedFiltersSelector() {
  */
 export function useAdvancedFilterSelector(filterId: string) {
   const database = useDatabase();
-  const viewId = useDatabaseViewId();
   const fields = database?.get(YjsDatabaseKey.fields);
-  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const view = useDatabaseView();
   const filtersArray = view?.get(YjsDatabaseKey.filters);
   const [filterValue, setFilterValue] = useState<Filter | null>(null);
 
@@ -2261,7 +2257,15 @@ export function useRowOrdersSelector() {
   const [rowOrdersState, setRowOrdersState] = useState<{
     rows?: Row[];
     conditionSignature: string;
+    /** The view and the (combined) filters the rows were computed for. */
+    viewId?: string;
+    filters?: YDatabaseFilters;
   }>({ conditionSignature: '' });
+  const publishRows = useCallback(
+    (rows: Row[] | undefined, conditionSignature: string) =>
+      setRowOrdersState({ rows, conditionSignature, viewId, filters }),
+    [filters, viewId]
+  );
   const [rollupWatchVersion, setRollupWatchVersion] = useState(0);
   const [conditionLoadRevision, setConditionLoadRevision] = useState(0);
   // Once filters have been applied successfully, don't revert to unfiltered
@@ -2403,9 +2407,9 @@ export function useRowOrdersSelector() {
     if (currentHasConditions) return false;
 
     filtersAppliedRef.current = false;
-    setRowOrdersState({ rows: originalRowOrders, conditionSignature: conditionStateKey });
+    publishRows(originalRowOrders, conditionStateKey);
     return true;
-  }, [fields, filters, readVisibleRowOrders, sorts, viewId]);
+  }, [fields, filters, publishRows, readVisibleRowOrders, sorts, viewId]);
 
   // Getter for relation cell text (used in sorting/filtering)
   const relationTextGetter = useCallback(
@@ -2517,7 +2521,7 @@ export function useRowOrdersSelector() {
 
     if (!currentHasConditions) {
       filtersAppliedRef.current = false;
-      setRowOrdersState({ rows: originalRowOrders, conditionSignature: conditionStateKey });
+      publishRows(originalRowOrders, conditionStateKey);
       logConditionCompute(originalRowOrders.length, originalRowOrders.length);
 
       return;
@@ -2535,7 +2539,7 @@ export function useRowOrdersSelector() {
       requestMissingConditionRows(unresolvedRows);
 
       if (!filtersAppliedRef.current) {
-        setRowOrdersState({ rows: undefined, conditionSignature: conditionStateKey });
+        publishRows(undefined, conditionStateKey);
       } else {
         // New rows cannot be filtered until their docs load, but removals are
         // authoritative in row_orders. Prune them from the last complete result
@@ -2553,7 +2557,7 @@ export function useRowOrdersSelector() {
             return previousState;
           }
 
-          return { rows: retainedRows, conditionSignature: conditionStateKey };
+          return { ...previousState, rows: retainedRows };
         });
       }
 
@@ -2582,7 +2586,7 @@ export function useRowOrdersSelector() {
     const nextRowOrders = computedRowOrders ?? rowsWithDocs;
 
     filtersAppliedRef.current = true;
-    setRowOrdersState({ rows: nextRowOrders, conditionSignature: conditionStateKey });
+    publishRows(nextRowOrders, conditionStateKey);
     logConditionCompute(rowsWithDocs.length, nextRowOrders.length);
   }, [
     fields,
@@ -2595,6 +2599,7 @@ export function useRowOrdersSelector() {
     rollupValueGetter,
     rollupTextGetter,
     requestMissingConditionRows,
+    publishRows,
     viewId,
   ]);
 
@@ -2757,7 +2762,13 @@ export function useRowOrdersSelector() {
 
   const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
 
-  return rowOrdersState.conditionSignature === liveConditionSignature ? rowOrdersState.rows : undefined;
+  if (rowOrdersState.conditionSignature === liveConditionSignature) return rowOrdersState.rows;
+  // Dashboard global filters arrive through React, not a Yjs observer, so the
+  // render that brings new ones (a new combined list) precedes their recompute
+  // (an effect). Keep this view's last result for that render instead of
+  // flashing the loading state, which unmounts every row and replays chart
+  // animations.
+  return rowOrdersState.viewId === viewId && rowOrdersState.filters !== filters ? rowOrdersState.rows : undefined;
 }
 
 export function useRowDataSelector(rowId: string) {

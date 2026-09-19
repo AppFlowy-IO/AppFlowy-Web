@@ -213,8 +213,8 @@ function WidgetPickerContent({
   // follow the query when React has time.
   const deferredQuery = useDeferredValue(query);
 
-  const groups = useMemo(
-    () =>
+  const buildGroups = useCallback(
+    (searchQuery: string) =>
       buildWidgetPickerGroups({
         hostDatabaseId,
         hostDatabaseName,
@@ -222,11 +222,12 @@ function WidgetPickerContent({
         hostTabViewIds: hostViewIds,
         catalog,
         excludeViewIds: [dashboardViewId],
-        query: deferredQuery,
+        query: searchQuery,
         fallbackName,
       }),
-    [catalog, dashboardViewId, deferredQuery, fallbackName, hostDatabaseId, hostDatabaseName, hostViewIds, hostViews]
+    [catalog, dashboardViewId, fallbackName, hostDatabaseId, hostDatabaseName, hostViewIds, hostViews]
   );
+  const groups = useMemo(() => buildGroups(deferredQuery), [buildGroups, deferredQuery]);
 
   const databases = useMemo(() => {
     const all = buildWidgetPickerDatabases({
@@ -283,7 +284,8 @@ function WidgetPickerContent({
     }
 
     if (event.key === 'Enter' && tab === 'existing') {
-      const first = groups[0]?.options[0];
+      // Enter may beat the deferred list: pick from what the input says.
+      const first = (query === deferredQuery ? groups : buildGroups(query))[0]?.options[0];
 
       if (first) {
         event.preventDefault();

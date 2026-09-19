@@ -13,10 +13,11 @@ import {
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { DatabaseExtraFiltersContext, DatabaseViewOverlayContext } from '@/application/database-yjs/context';
 import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
-import { hasEffectiveFilters } from '@/application/database-yjs/filter';
+import { combineFilters, hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@/application/database-yjs/history';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
+import { getOverlayTarget, observeOverlayConditions } from '@/application/database-yjs/view-conditions-overlay';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
@@ -492,13 +493,18 @@ function Database(props: Database2Props) {
     const isGroupedView =
       [DatabaseViewLayout.Grid, DatabaseViewLayout.Board, DatabaseViewLayout.List].includes(layout) &&
       (view?.get(YjsDatabaseKey.groups)?.length ?? 0) > 0;
+    // A dashboard widget filters and sorts with the viewer's private copy and
+    // the dashboard's global filters, which need every row as much as the view's own.
+    const conditionsView =
+      viewConditionsOverlay && view && getOverlayTarget(viewConditionsOverlay) === view ? viewConditionsOverlay : view;
+    const filters = combineFilters(conditionsView?.get(YjsDatabaseKey.filters), extraFilters, fields);
 
     return (
       isGroupedView ||
-      hasEffectiveFilters(view?.get(YjsDatabaseKey.filters), fields) ||
-      (view?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0
+      hasEffectiveFilters(filters, fields) ||
+      (conditionsView?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0
     );
-  }, [doc, activeViewId]);
+  }, [doc, activeViewId, viewConditionsOverlay, extraFilters]);
 
   const activeViewNeedsFullRowData = useSyncExternalStore(
     useCallback(
@@ -509,8 +515,13 @@ function Database(props: Database2Props) {
 
         if (view) {
           view.observeDeep(onStoreChange);
+          const unobserveOverlay = viewConditionsOverlay
+            ? observeOverlayConditions(viewConditionsOverlay, onStoreChange)
+            : undefined;
+
           return () => {
             view.unobserveDeep(onStoreChange);
+            unobserveOverlay?.();
           };
         }
 
@@ -523,7 +534,7 @@ function Database(props: Database2Props) {
 
         return () => undefined;
       },
-      [doc, activeViewId]
+      [doc, activeViewId, viewConditionsOverlay]
     ),
     getActiveViewNeedsFullRowData,
     getActiveViewNeedsFullRowData

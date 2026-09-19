@@ -2,7 +2,12 @@ import * as Y from 'yjs';
 
 import { FieldType, FilterType } from '@/application/database-yjs/database.type';
 import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
-import { createViewConditionsOverlay, readOverlayConditions } from '@/application/database-yjs/view-conditions-overlay';
+import {
+  createViewConditionsOverlay,
+  getOverlayTarget,
+  observeOverlayConditions,
+  readOverlayConditions,
+} from '@/application/database-yjs/view-conditions-overlay';
 import { YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 import { viewConditionsYrsDelta, viewConditionsYrsInitial } from './fixtures/view-conditions-yrs';
@@ -259,6 +264,59 @@ describe('createViewConditionsOverlay', () => {
     expect(readOverlayConditions(overlay).filters.map((filter) => filter.id)).toEqual(['f1']);
     expect(filters.length).toBe(0);
     expect(overlay.isDirty()).toBe(true);
+    overlay.destroy();
+  });
+
+  it('follows the real view again once the viewer undoes their change by hand', () => {
+    const { view, filters } = createRealView();
+    const overlay = createViewConditionsOverlay(view);
+    const local = overlay.view.get(YjsDatabaseKey.filters) as Y.Array<unknown>;
+    const listener = jest.fn();
+
+    overlay.subscribe(listener);
+    local.push([filterMap('mine')]);
+    expect(overlay.isDirty()).toBe(true);
+    local.delete(0, 1);
+    expect(overlay.isDirty()).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    // Clean again, so a collaborator's filter reaches the viewer.
+    filters.push([filterMap('shared')]);
+    expect(readOverlayConditions(overlay).filters.map((filter) => filter.id)).toEqual(['shared']);
+    overlay.destroy();
+  });
+
+  it('gets clean when a collaborator saves the same conditions', () => {
+    const { view, filters } = createRealView();
+    const overlay = createViewConditionsOverlay(view);
+
+    (overlay.view.get(YjsDatabaseKey.filters) as Y.Array<unknown>).push([filterMap('same')]);
+    expect(overlay.isDirty()).toBe(true);
+    filters.push([filterMap('same')]);
+    expect(overlay.isDirty()).toBe(false);
+    overlay.destroy();
+  });
+
+  it('names its real view and reports private condition changes', () => {
+    const { view } = createRealView();
+    const overlay = createViewConditionsOverlay(view);
+    const listener = jest.fn();
+    const stop = observeOverlayConditions(overlay.view, listener);
+
+    expect(getOverlayTarget(overlay.view)).toBe(view);
+    expect(getOverlayTarget(view)).toBe(view);
+    expect(observeOverlayConditions(view, listener)).toEqual(expect.any(Function));
+
+    (overlay.view.get(YjsDatabaseKey.sorts) as Y.Array<unknown>).push([sortMap('mine')]);
+    expect(listener).toHaveBeenCalledTimes(1);
+    stop();
+    (overlay.view.get(YjsDatabaseKey.sorts) as Y.Array<unknown>).delete(0, 1);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    const replacement = createRealView().view;
+
+    overlay.rebind(replacement);
+    expect(getOverlayTarget(overlay.view)).toBe(replacement);
     overlay.destroy();
   });
 });

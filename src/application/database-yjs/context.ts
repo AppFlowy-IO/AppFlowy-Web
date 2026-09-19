@@ -4,6 +4,7 @@ import { AxiosInstance } from 'axios';
 import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 
 import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
+import { getOverlayTarget } from '@/application/database-yjs/view-conditions-overlay';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
@@ -469,7 +470,9 @@ export const useDatabaseView = () => {
   const views = database?.get(YjsDatabaseKey.views);
   const view = viewId ? views?.get(viewId) : undefined;
 
-  return overlay && view ? overlay : view;
+  // Only the view the overlay stands in for: a nested context (the calendar's
+  // draft doc, another database) reads its own view.
+  return overlay && view && getOverlayTarget(overlay) === view ? overlay : view;
 };
 
 export function useDatabaseFields() {

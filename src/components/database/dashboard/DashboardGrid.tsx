@@ -102,11 +102,12 @@ export function AddWidgetButton({ onAdd, className }: { onAdd: () => void; class
  * an "Add widget" button follows the last row.
  */
 export const DashboardGrid = memo(function DashboardGrid() {
-  const { rows, isEditing, canEdit } = useDashboardContext();
+  const { rows, isEditing, canEdit, showWidgetTitles } = useDashboardContext();
   const { openPicker } = useDashboardUi();
   const gridRef = useRef<HTMLDivElement>(null);
   const stacked = useStackedLayout(gridRef);
   const editing = isEditing && canEdit;
+  const dashboardFull = countDashboardWidgets(rows) >= DASHBOARD_MAX_WIDGETS;
 
   return (
     <div
@@ -118,7 +119,15 @@ export const DashboardGrid = memo(function DashboardGrid() {
       {editing ? <RowGapDropZone height={DASHBOARD_EDGE_DROP_ZONE_HEIGHT} rowIndex={0} /> : null}
       {rows.map((row, rowIndex) => (
         <Fragment key={row.id}>
-          <DashboardRow row={row} rowIndex={rowIndex} stacked={stacked} />
+          <DashboardRow
+            canEdit={canEdit}
+            dashboardFull={dashboardFull}
+            isEditing={isEditing}
+            row={row}
+            rowIndex={rowIndex}
+            showWidgetTitles={showWidgetTitles}
+            stacked={stacked}
+          />
           {editing ? (
             <RowGapDropZone height={DASHBOARD_EDIT_ROW_GAP} rowIndex={rowIndex + 1} />
           ) : rowIndex < rows.length - 1 ? (

@@ -6,14 +6,24 @@ import { YDatabaseView } from '@/application/types';
 
 type WidgetSource = Pick<DashboardWidget, 'id' | 'databaseId' | 'viewId'>;
 
-export interface DashboardViewOverlays {
+export interface DashboardLocalWidgetChanges {
   /** Widgets with unsaved private filters or sorts. */
-  localWidgetChanges: number;
-  /** Called from a widget effect; the dashboard owns the returned view's lifetime. */
+  unsaved: number;
+  /** The unsaved ones whose source database the viewer can write. */
+  savable: number;
+}
+
+export interface DashboardViewOverlays extends DashboardLocalWidgetChanges {
+  /**
+   * Called while a widget renders: creates the widget's overlay on first use
+   * and never removes or notifies (stale overlays are released after commit).
+   */
   getViewOverlay: (widget: WidgetSource, view: YDatabaseView | undefined) => YDatabaseView | undefined;
+  /** Whether the viewer can write the widget's source; "Save for everybody" skips the others. */
+  setViewOverlayWritable: (widget: WidgetSource, writable: boolean) => void;
   /** Drop private conditions and follow the shared views again. */
   resetViewOverlays: () => void;
-  /** Save every widget's private conditions to its shared view. */
+  /** Save every writable widget's private conditions to its shared view. */
   commitViewOverlays: () => void;
 }
 
@@ -23,78 +33,94 @@ interface Entry {
   unsubscribe: () => void;
 }
 
-function sameSource(a: WidgetSource, b: WidgetSource) {
-  return a.databaseId === b.databaseId && a.viewId === b.viewId;
-}
+const sourceKey = ({ id, databaseId, viewId }: WidgetSource) => `${id}\n${databaseId}\n${viewId}`;
 
 function createOverlayStore() {
   const entries = new Map<string, Entry>();
+  // Unknown until the widget's permission resolves: fail closed.
+  const writable = new Map<string, boolean>();
   const listeners = new Set<() => void>();
-  let dirtyCount = 0;
+  let unsaved = 0;
+  let savable = 0;
 
   const recount = () => {
-    let next = 0;
+    let nextUnsaved = 0;
+    let nextSavable = 0;
 
-    entries.forEach(({ overlay }) => {
-      if (overlay.isDirty()) next += 1;
+    entries.forEach(({ overlay }, key) => {
+      if (!overlay.isDirty()) return;
+      nextUnsaved += 1;
+      if (writable.get(key)) nextSavable += 1;
     });
-    if (next === dirtyCount) return;
-    dirtyCount = next;
+    if (nextUnsaved === unsaved && nextSavable === savable) return;
+    unsaved = nextUnsaved;
+    savable = nextSavable;
     listeners.forEach((notify) => notify());
   };
 
-  const remove = (id: string, entry: Entry) => {
+  const remove = (key: string, entry: Entry) => {
     entry.unsubscribe();
     entry.overlay.destroy();
-    entries.delete(id);
+    entries.delete(key);
+    writable.delete(key);
   };
 
   return {
-    getSnapshot: () => dirtyCount,
+    getUnsaved: () => unsaved,
+    getSavable: () => savable,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     getViewOverlay: (widget: WidgetSource, view: YDatabaseView | undefined) => {
-      const current = entries.get(widget.id);
+      // A view that is briefly missing keeps the viewer's private conditions.
+      if (!view) return undefined;
+      const key = sourceKey(widget);
+      const current = entries.get(key);
 
-      if (current && view && sameSource(current.source, widget)) {
+      if (current) {
         current.overlay.rebind(view);
         return current.overlay.view;
       }
 
-      if (current) remove(widget.id, current);
-      if (!view) {
-        recount();
-        return undefined;
-      }
-
+      // A new overlay is clean, so the counts are unchanged.
       const overlay = createViewConditionsOverlay(view);
 
-      entries.set(widget.id, { source: widget, overlay, unsubscribe: overlay.subscribe(recount) });
-      recount();
+      entries.set(key, { source: widget, overlay, unsubscribe: overlay.subscribe(recount) });
       return overlay.view;
     },
+    setViewOverlayWritable: (widget: WidgetSource, canWrite: boolean) => {
+      const key = sourceKey(widget);
+
+      if (writable.get(key) === canWrite) return;
+      writable.set(key, canWrite);
+      recount();
+    },
     retain: (rows: DashboardRow[]) => {
-      const widgets = new Map(rows.flatMap((row) => row.widgets.map((widget) => [widget.id, widget] as const)));
+      const keys = new Set(rows.flatMap((row) => row.widgets.map(sourceKey)));
 
-      entries.forEach((entry, id) => {
-        const widget = widgets.get(id);
-
-        if (!widget || !sameSource(entry.source, widget)) remove(id, entry);
+      entries.forEach((entry, key) => {
+        if (!keys.has(key)) remove(key, entry);
       });
       recount();
     },
     resetViewOverlays: () => entries.forEach(({ overlay }) => overlay.reset()),
-    commitViewOverlays: () => entries.forEach(({ overlay }) => overlay.commit()),
+    commitViewOverlays: () =>
+      entries.forEach(({ overlay }, key) => {
+        if (writable.get(key)) overlay.commit();
+      }),
     clear: () => {
-      entries.forEach((entry, id) => remove(id, entry));
+      entries.forEach((entry, key) => remove(key, entry));
       recount();
     },
   };
 }
 
-/** Private conditions outlive row components, but never their dashboard or widget source. */
+/**
+ * Private conditions outlive row components, but never their dashboard or
+ * widget source: a removed widget, or one pointed at another view, releases
+ * its overlay once the new rows are committed.
+ */
 export function useDashboardViewOverlays(dashboardViewId: string, rows: DashboardRow[]): DashboardViewOverlays {
   const [scope, setScope] = useState(() => ({ dashboardViewId, store: createOverlayStore() }));
 
@@ -104,14 +130,17 @@ export function useDashboardViewOverlays(dashboardViewId: string, rows: Dashboar
   }
 
   const { store } = scope;
-  const localWidgetChanges = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const unsaved = useSyncExternalStore(store.subscribe, store.getUnsaved, store.getUnsaved);
+  const savable = useSyncExternalStore(store.subscribe, store.getSavable, store.getSavable);
 
   useEffect(() => store.retain(rows), [rows, store]);
   useEffect(() => () => store.clear(), [store]);
 
   return {
-    localWidgetChanges,
+    unsaved,
+    savable,
     getViewOverlay: store.getViewOverlay,
+    setViewOverlayWritable: store.setViewOverlayWritable,
     resetViewOverlays: store.resetViewOverlays,
     commitViewOverlays: store.commitViewOverlays,
   };

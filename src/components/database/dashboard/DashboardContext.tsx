@@ -18,7 +18,11 @@ import { YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/t
 
 import { readGlobalFilterSourceFields } from './global-filters/global-filter.source-fields';
 import { detachRemovedGlobalFilterSources, GlobalFilterSource } from './global-filters/global-filter.utils';
-import { DashboardViewOverlays, useDashboardViewOverlays } from './hooks/useDashboardViewOverlays';
+import {
+  DashboardLocalWidgetChanges,
+  DashboardViewOverlays,
+  useDashboardViewOverlays,
+} from './hooks/useDashboardViewOverlays';
 
 /**
  * Shared state of one dashboard view, split by how often it changes so a
@@ -59,9 +63,9 @@ export interface DashboardContextValue {
   updateRows: (updater: (rows: DashboardRow[]) => DashboardRow[]) => void;
 }
 
-// The dirty count lives in its own context: every widget reads this one, and
-// only the filter bar needs the count.
-export interface DashboardFiltersContextValue extends Omit<DashboardViewOverlays, 'localWidgetChanges'> {
+// The unsaved counts live in their own context: every widget reads this one,
+// and only the filter bar needs the counts.
+export interface DashboardFiltersContextValue extends Omit<DashboardViewOverlays, keyof DashboardLocalWidgetChanges> {
   /** Persisted global filters (mappings of databases without a widget left out). */
   globalFilters: DashboardGlobalFilter[];
   /** Persisted global filters unless the viewer changed them locally. */
@@ -92,8 +96,10 @@ export const DashboardContext = createContext<DashboardContextValue | null>(null
 export const DashboardFiltersContext = createContext<DashboardFiltersContextValue | null>(null);
 export const DashboardSourcesContext = createContext<DashboardSourcesContextValue | null>(null);
 export const DashboardSourceRegistryContext = createContext<DashboardSourceRegistryContextValue | null>(null);
+const NO_LOCAL_WIDGET_CHANGES: DashboardLocalWidgetChanges = { unsaved: 0, savable: 0 };
+
 /** Widgets whose View-mode filters / sorts the viewer changed locally. */
-export const DashboardLocalWidgetChangesContext = createContext(0);
+export const DashboardLocalWidgetChangesContext = createContext<DashboardLocalWidgetChanges>(NO_LOCAL_WIDGET_CHANGES);
 
 function required<T>(value: T | null, name: string): T {
   if (!value) {
@@ -119,7 +125,7 @@ export function useDashboardSources(): DashboardSourcesContextValue {
   return required(useContext(DashboardSourcesContext), 'DashboardSourcesContext');
 }
 
-export function useDashboardLocalWidgetChanges(): number {
+export function useDashboardLocalWidgetChanges(): DashboardLocalWidgetChanges {
   return useContext(DashboardLocalWidgetChangesContext);
 }
 
@@ -149,28 +155,33 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
     [getDatabase, databaseDoc]
   );
 
-  const [isEditing, setEditingState] = useState(false);
+  // 'auto': a dashboard without widgets has nothing to view, so an editor
+  // starts building it right away (Notion parity); widgets that arrive before
+  // the editor chose a mode (a stale local cache, a collaborator) settle it to
+  // View mode. 'on' / 'off': the editor's choice.
+  const [editMode, setEditMode] = useState<'auto' | 'on' | 'off'>('auto');
   const [localGlobalFilters, setLocalGlobalFilters] = useState<DashboardGlobalFilter[] | null>(null);
   const [stateViewId, setStateViewId] = useState(dashboardViewId);
+  const rows = storedSetting.rows;
 
   // Switching to another dashboard view (the provider stays mounted) leaves
   // Edit mode and drops the local filters. Reset during render, so the next
-  // view's first render (and the Edit-mode request a freshly mounted, empty
-  // `Dashboard` makes) never sees the previous view's state.
+  // view's first render never sees the previous view's state.
   if (stateViewId !== dashboardViewId) {
     setStateViewId(dashboardViewId);
-    setEditingState(false);
+    setEditMode('auto');
     setLocalGlobalFilters(null);
   }
 
-  // Losing write access leaves Edit mode, also during render: no frame ever
-  // shows Edit-mode chrome to a viewer.
-  if (readOnly && isEditing) setEditingState(false);
+  // Derived during render, so no frame shows the wrong mode: losing write
+  // access leaves Edit mode, and the automatic mode is decided once write
+  // access is known.
+  if (readOnly && editMode === 'on') setEditMode('off');
+  if (!readOnly && editMode === 'auto' && rows.length > 0) setEditMode('off');
+  const isEditing = !readOnly && (editMode === 'on' || (editMode === 'auto' && rows.length === 0));
 
-  const { localWidgetChanges, getViewOverlay, resetViewOverlays, commitViewOverlays } = useDashboardViewOverlays(
-    dashboardViewId,
-    storedSetting.rows
-  );
+  const { unsaved, savable, getViewOverlay, setViewOverlayWritable, resetViewOverlays, commitViewOverlays } =
+    useDashboardViewOverlays(dashboardViewId, rows);
 
   const [sourceDocs, setSourceDocs] = useState<Record<string, YDoc>>(() => ({ [hostDatabaseId]: databaseDoc }));
   const [sourceNames, setSourceNames] = useState<Record<string, string>>({});
@@ -217,7 +228,7 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
 
   const setEditing = useCallback(
     (editing: boolean) => {
-      setEditingState(editing && !readOnly);
+      setEditMode(editing && !readOnly ? 'on' : 'off');
     },
     [readOnly]
   );
@@ -279,7 +290,6 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
     setSourceNames((previous) => (previous[databaseId] === name ? previous : { ...previous, [databaseId]: name }));
   }, []);
 
-  const rows = storedSetting.rows;
   const { showWidgetTitles } = storedSetting;
 
   const layoutValue = useMemo<DashboardContextValue>(
@@ -316,11 +326,21 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
       localGlobalFilters: visibleLocalGlobalFilters,
       setLocalGlobalFilters,
       getViewOverlay,
+      setViewOverlayWritable,
       resetViewOverlays,
       commitViewOverlays,
     }),
-    [globalFilters, visibleLocalGlobalFilters, getViewOverlay, resetViewOverlays, commitViewOverlays]
+    [
+      globalFilters,
+      visibleLocalGlobalFilters,
+      getViewOverlay,
+      setViewOverlayWritable,
+      resetViewOverlays,
+      commitViewOverlays,
+    ]
   );
+
+  const localWidgetChanges = useMemo<DashboardLocalWidgetChanges>(() => ({ unsaved, savable }), [unsaved, savable]);
 
   const sourcesValue = useMemo<DashboardSourcesContextValue>(
     () => ({ sourceDocs, registerSourceDoc, sourceNames, registerSourceName }),

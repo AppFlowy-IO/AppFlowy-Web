@@ -24,6 +24,11 @@ interface RowItem {
   primaryValue: string;
 }
 
+// A category can hold every row of a large database (a Number chart that
+// counts rows): list, and load, a page at a time.
+const ROW_PAGE_SIZE = 100;
+const LOADED_ROWS_REFRESH_MS = 200;
+
 /**
  * Drill-down popup showing rows in a chart category. Mirrors desktop's
  * `ChartRowListPopup`: header (label + count), filter chip
@@ -46,11 +51,15 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
 
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
+  const [visibleCount, setVisibleCount] = useState(ROW_PAGE_SIZE);
+  const visibleRowIds = useMemo(() => item.rowIds.slice(0, visibleCount), [item.rowIds, visibleCount]);
+  const hiddenCount = item.rowIds.length - visibleRowIds.length;
+
   // A Number chart that only counts rows never hydrates them, so load the
   // listed rows that are not open yet (a no-op for grouped charts). The list
-  // is rebuilt once when the pool finishes, not for every row that arrives:
-  // each arrival replaces the row map, and decoding every listed row again
-  // per arrival is quadratic in the category size.
+  // is rebuilt at most every LOADED_ROWS_REFRESH_MS while rows arrive, not for
+  // every row: each arrival replaces the row map, and decoding every listed
+  // row again per arrival is quadratic in the page size.
   const [loadedRevision, setLoadedRevision] = useState(0);
   const rowMetasRef = useRef(rowMetas);
 
@@ -58,25 +67,39 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
 
   useEffect(() => {
     if (!ensureRow) return;
-    const missing = item.rowIds.filter((rowId) => !rowMetasRef.current?.[rowId]);
+    const missing = visibleRowIds.filter((rowId) => !rowMetasRef.current?.[rowId]);
 
     if (missing.length === 0) return;
     let cancelled = false;
+    let timer: number | undefined;
+    const rebuild = () => {
+      window.clearTimeout(timer);
+      timer = undefined;
+      setLoadedRevision((revision) => revision + 1);
+    };
 
-    void ensureRowsWithConcurrency(missing, ensureRow, { isCancelled: () => cancelled }).then(() => {
-      if (!cancelled) setLoadedRevision((revision) => revision + 1);
+    const scheduleRebuild = () => {
+      if (timer === undefined) timer = window.setTimeout(rebuild, LOADED_ROWS_REFRESH_MS);
+    };
+
+    void ensureRowsWithConcurrency(missing, ensureRow, {
+      isCancelled: () => cancelled,
+      onLoaded: scheduleRebuild,
+    }).then(() => {
+      if (!cancelled) rebuild();
     });
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [ensureRow, item.rowIds]);
+  }, [ensureRow, visibleRowIds]);
 
   const rows = useMemo<RowItem[]>(() => {
     void primaryFieldClock;
     void loadedRevision;
     const currentRowMetas = rowMetasRef.current;
 
-    return item.rowIds.map((rowId) => {
+    return visibleRowIds.map((rowId) => {
       if (!currentRowMetas || !primaryFieldId || !primaryField) {
         return { id: rowId, primaryValue: '' };
       }
@@ -86,7 +109,7 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
       if (!cell) return { id: rowId, primaryValue: '' };
       return { id: rowId, primaryValue: decodeCellToText(cell, primaryField) };
     });
-  }, [item.rowIds, loadedRevision, primaryFieldId, primaryField, primaryFieldClock]);
+  }, [visibleRowIds, loadedRevision, primaryFieldId, primaryField, primaryFieldClock]);
 
   return (
     <>
@@ -162,6 +185,20 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
                 </button>
               ))
             )}
+            {hiddenCount > 0 ? (
+              <Button
+                className='m-2 self-center'
+                data-testid='chart-row-list-show-more'
+                onClick={() => setVisibleCount((count) => count + ROW_PAGE_SIZE)}
+                size='sm'
+                variant='ghost'
+              >
+                {t('chart.drilldown.showMore', {
+                  count: Math.min(hiddenCount, ROW_PAGE_SIZE),
+                  defaultValue: 'Show {{count}} more',
+                })}
+              </Button>
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>

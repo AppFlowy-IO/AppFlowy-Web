@@ -33,7 +33,7 @@ import { useDashboardHostServices } from './hooks/useDashboardHostServices';
 import { useSourceDocRegistry } from './hooks/useSourceDocRegistry';
 import { useWorkspaceDatabases } from './hooks/useWorkspaceDatabases';
 import { getCatalogDatabaseName } from './picker-options';
-import { getDashboardInlinePadding, shouldOpenInEditMode } from './utils';
+import { getDashboardInlinePadding } from './utils';
 import { resolveAddPlacement } from './widget-moves';
 import { WidgetPicker } from './WidgetPicker';
 
@@ -57,40 +57,9 @@ export function Dashboard() {
 
   const getRows = useCallback(() => rowsRef.current, []);
 
-  // A dashboard without widgets has nothing to view: editors start building
-  // it right away (Notion parity). Decided once per mount (the component is
-  // keyed by view), as soon as write access is known.
-  const openModeDecidedRef = useRef(false);
-  // Set while Edit mode is only on because the layout looked empty. The doc
-  // may come from a stale local cache, so widgets that arrive with the server
-  // sync (before the editor started building) switch back to View mode.
-  const autoEditRef = useRef<'off' | 'requested' | 'active'>('off');
-
-  useEffect(() => {
-    if (openModeDecidedRef.current || !canEdit) return;
-    openModeDecidedRef.current = true;
-    if (shouldOpenInEditMode({ canEdit, rows: rowsRef.current })) {
-      autoEditRef.current = 'requested';
-      setEditing(true);
-    }
-  }, [canEdit, setEditing]);
-
-  useEffect(() => {
-    if (autoEditRef.current === 'off') return;
-    if (editing) {
-      if (rows.length > 0) {
-        autoEditRef.current = 'off';
-        setEditing(false);
-        return;
-      }
-
-      autoEditRef.current = 'active';
-      return;
-    }
-
-    // The editor left Edit mode themselves.
-    if (autoEditRef.current === 'active') autoEditRef.current = 'off';
-  }, [editing, rows, setEditing]);
+  // The picker only makes sense while editing (Edit mode itself, including
+  // the automatic one of an empty dashboard, is derived by DashboardProvider).
+  if (!editing && pickerRequest) setPickerRequest(null);
 
   const acquireSourceDoc = useSourceDocRegistry(registerSourceDoc, hostDatabaseId);
   const { createView, canCreateInOtherDatabases, bridge } = useCreateWidgetView();
@@ -110,11 +79,6 @@ export function Dashboard() {
 
     return () => window.clearTimeout(timeout);
   }, [limitMessage]);
-
-  // The picker only makes sense while editing.
-  useEffect(() => {
-    if (!editing) setPickerRequest(null);
-  }, [editing]);
 
   // Name every source database for the global-filter editor. Keyed by the
   // source ids, so resizing or moving widgets never walks the catalog.
@@ -153,7 +117,7 @@ export function Dashboard() {
     (request: WidgetPickerRequest) => {
       if (!canEdit) return;
       // The editor started building: keep Edit mode whatever the sync brings.
-      autoEditRef.current = 'off';
+      setEditing(true);
 
       if (request.mode === 'add' && !canAddDashboardWidget(rowsRef.current, request.placement)) {
         const dashboardFull = !canAddDashboardWidget(rowsRef.current);
@@ -164,7 +128,7 @@ export function Dashboard() {
 
       setPickerRequest(request);
     },
-    [canEdit, showLimitMessage]
+    [canEdit, setEditing, showLimitMessage]
   );
 
   const applyPick = useCallback(

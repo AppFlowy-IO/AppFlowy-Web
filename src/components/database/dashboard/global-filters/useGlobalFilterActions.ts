@@ -41,7 +41,7 @@ export function useGlobalFilterActions() {
     resetViewOverlays,
     commitViewOverlays,
   } = useDashboardFilters();
-  const localWidgetChanges = useDashboardLocalWidgetChanges();
+  const widgetChanges = useDashboardLocalWidgetChanges();
   const persist = canEdit && isEditing;
   const persistedRef = useRef(globalFilters);
   const localRef = useRef(localGlobalFilters);
@@ -119,7 +119,10 @@ export function useGlobalFilterActions() {
 
   return {
     filters: effectiveGlobalFilters,
-    hasLocalChanges: localGlobalFilters !== null || localWidgetChanges > 0,
+    hasLocalChanges: localGlobalFilters !== null || widgetChanges.unsaved > 0,
+    // Widgets whose source the viewer can only read keep their private
+    // conditions; with nothing else changed there is nothing to save.
+    canSave: canEdit && (localGlobalFilters !== null || widgetChanges.savable > 0),
     canEdit,
     isEditing,
     persist,

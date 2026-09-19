@@ -115,6 +115,29 @@ function useWidgetViewMeta(viewId: string) {
   };
 }
 
+/**
+ * Tells the dashboard whether this widget's source is writable: "Save for
+ * everybody" leaves the private conditions of a read-only source alone.
+ */
+function OverlayWritability({
+  widgetId,
+  databaseId,
+  viewId,
+  canWrite,
+}: {
+  widgetId: string;
+  databaseId: string;
+  viewId: string;
+  canWrite: boolean;
+}) {
+  const { setViewOverlayWritable } = useDashboardFilters();
+
+  useEffect(() => {
+    setViewOverlayWritable({ id: widgetId, databaseId, viewId }, canWrite);
+  }, [canWrite, databaseId, setViewOverlayWritable, viewId, widgetId]);
+  return null;
+}
+
 interface WidgetChromeProps {
   isEditing: boolean;
   canEdit: boolean;
@@ -500,7 +523,15 @@ const WidgetSource = memo(function WidgetSource({
   // its real permissions and starts its row prefetch at once.
   const renderContent = (permissions: EmbeddedDatabasePermissions) =>
     status === 'ready' ? (
-      renderDatabase(permissions)
+      <>
+        <OverlayWritability
+          canWrite={permissions.canWrite}
+          databaseId={widget.databaseId}
+          viewId={widget.viewId}
+          widgetId={widget.id}
+        />
+        {renderDatabase(permissions)}
+      </>
     ) : (
       <>
         <WidgetHeaderFrame />

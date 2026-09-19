@@ -2,7 +2,6 @@ import {
   DASHBOARD_DEFAULT_ROW_HEIGHT,
   DASHBOARD_MAX_ROW_HEIGHT,
   DASHBOARD_MIN_ROW_HEIGHT,
-  DashboardRow,
   DashboardWidget,
 } from '@/application/database-yjs/dashboard.type';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
@@ -24,7 +23,6 @@ import {
   getWidgetHeaderHeight,
   getWidgetViewportHeight,
   pixelsToColumns,
-  shouldOpenInEditMode,
   viewLayoutToDatabaseLayout,
 } from '../utils';
 
@@ -152,14 +150,6 @@ describe('row heights', () => {
 });
 
 describe('dashboard modes and padding', () => {
-  const row: DashboardRow = { id: 'r1', height: 360, widgets: widgets(12) };
-
-  it('opens an empty dashboard in Edit mode for editors only', () => {
-    expect(shouldOpenInEditMode({ canEdit: true, rows: [] })).toBe(true);
-    expect(shouldOpenInEditMode({ canEdit: false, rows: [] })).toBe(false);
-    expect(shouldOpenInEditMode({ canEdit: true, rows: [row] })).toBe(false);
-  });
-
   it('keeps the page padding in View mode', () => {
     expect(getDashboardInlinePadding({ paddingStart: 96, paddingEnd: 12, editing: false })).toEqual({
       paddingLeft: 96,

@@ -13,9 +13,9 @@ import { YDatabaseView, YjsDatabaseKey, YSharedRoot } from '@/application/types'
  * everything else to the real view. Every selector, filter menu and dispatcher
  * keeps working unchanged: they read and write the view they are given.
  *
- * The local arrays mirror the real ones until the viewer changes something
- * ("dirty"); from then on the viewer's version wins until `reset()` or
- * `commit()`.
+ * The local arrays mirror the real ones until the viewer's copy differs from
+ * them ("dirty"); from then on the viewer's version wins until `reset()`,
+ * `commit()`, or the two match again.
  */
 export interface ViewConditionsOverlay {
   /** The proxy to hand to the nested database in place of the real view. */
@@ -36,6 +36,27 @@ export interface ViewConditionsOverlay {
 
 const MIRROR_ORIGIN = { overlay: 'mirror' };
 const OVERLAY_KEYS: ReadonlySet<string> = new Set([YjsDatabaseKey.filters, YjsDatabaseKey.sorts]);
+/** Proxy-only key: the overlay's internals, for `getOverlayTarget` / `observeOverlayConditions`. */
+const OVERLAY_INTERNALS = Symbol('viewConditionsOverlay');
+
+interface OverlayInternals {
+  target: () => YDatabaseView;
+  observe: (listener: () => void) => () => void;
+}
+
+function overlayInternals(view: YDatabaseView): OverlayInternals | undefined {
+  return (view as unknown as Record<symbol, OverlayInternals | undefined>)[OVERLAY_INTERNALS];
+}
+
+/** The real view behind an overlay proxy; any other view is its own target. */
+export function getOverlayTarget(view: YDatabaseView): YDatabaseView {
+  return overlayInternals(view)?.target() ?? view;
+}
+
+/** Observe an overlay proxy's private filters and sorts (a no-op for a real view). */
+export function observeOverlayConditions(view: YDatabaseView, listener: () => void): () => void {
+  return overlayInternals(view)?.observe(listener) ?? (() => undefined);
+}
 
 type Plain = Record<string, unknown>;
 
@@ -102,18 +123,29 @@ export function createViewConditionsOverlay(initialView: YDatabaseView): ViewCon
     }, MIRROR_ORIGIN);
   };
 
-  // Local edits (anything that is not the mirror) make the viewer's copy win.
-  // Deep observation of the map covers the arrays and their replacement.
+  // The viewer's copy wins while it differs from the real view; undoing a
+  // change by hand (adding a filter, then deleting it) follows it again.
+  const differsFromReal = () => [...OVERLAY_KEYS].some((key) => !sameContents(localArray(key), realArray(key)));
+
+  // Local edits are anything that is not the mirror. Deep observation of the
+  // map covers the arrays and their replacement.
   const onLocalChange = (_events: unknown, transaction: Y.Transaction) => {
-    if (transaction.origin !== MIRROR_ORIGIN) setDirty(true);
+    if (transaction.origin !== MIRROR_ORIGIN) setDirty(differsFromReal());
   };
 
   local.observeDeep(onLocalChange);
 
   // The real view keeps feeding the copy while the viewer has no changes.
   let detachReal: (() => void) | null = null;
-  const onRealChange = () => {
+
+  const followReal = () => {
     if (!dirty) mirror();
+  };
+
+  const onRealChange = () => {
+    // A collaborator can make the real view match the viewer's copy.
+    if (dirty) setDirty(differsFromReal());
+    followReal();
   };
 
   const attachReal = () => {
@@ -141,9 +173,18 @@ export function createViewConditionsOverlay(initialView: YDatabaseView): ViewCon
   attachReal();
   mirror();
 
+  const internals: OverlayInternals = {
+    target: () => realView,
+    observe: (listener) => {
+      local.observeDeep(listener);
+      return () => local.unobserveDeep(listener);
+    },
+  };
+
   const createProxy = () =>
     new Proxy(realView, {
       get(target, property, receiver) {
+        if (property === OVERLAY_INTERNALS) return internals;
         if (property === 'get') {
           return (key: string) => (OVERLAY_KEYS.has(key) ? localArray(key) : target.get(key as YjsDatabaseKey.name));
         }
@@ -184,7 +225,9 @@ export function createViewConditionsOverlay(initialView: YDatabaseView): ViewCon
       view = createProxy();
       realView.observe(onRealViewChange);
       attachReal();
-      onRealChange();
+      // Runs while a widget renders: follow the replacement, but leave the
+      // dirty state (and its listeners) to the next real change.
+      followReal();
     },
     isDirty: () => dirty,
     subscribe(listener) {

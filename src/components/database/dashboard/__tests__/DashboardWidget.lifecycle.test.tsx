@@ -80,7 +80,7 @@ function makeView(rowIds = ['first']) {
 function TestDashboard() {
   const { rows, updateRows } = useDashboardContext();
   const { resetViewOverlays, commitViewOverlays } = useDashboardFilters();
-  const localWidgetChanges = useDashboardLocalWidgetChanges();
+  const { unsaved: localWidgetChanges } = useDashboardLocalWidgetChanges();
 
   return (
     <DashboardUiContext.Provider
@@ -233,6 +233,7 @@ it('keeps private conditions through a collaborator moving the widget to another
 
 it.each(['remove', 'replace', 'switch', 'unmount'] as const)('releases private conditions on %s', (action) => {
   const { writeRows, switchDashboard, doc, unmount } = setup(true);
+  const consoleError = jest.spyOn(console, 'error');
 
   editConditions();
   const localDoc = widgetView().get(YjsDatabaseKey.filters).doc!;
@@ -245,6 +246,9 @@ it.each(['remove', 'replace', 'switch', 'unmount'] as const)('releases private c
   else expect(screen.getByTestId('private-changes').textContent).toBe('0');
   expect(destroy).toHaveBeenCalledTimes(1);
   if (action === 'switch') expect(widgetView().get(YjsDatabaseKey.filters).length).toBe(0);
+  // Released after commit: a widget never updates the dashboard while it renders.
+  expect(consoleError.mock.calls.flat().join('\n')).not.toContain('while rendering a different component');
+  consoleError.mockRestore();
   unmount();
   doc.destroy();
 });
