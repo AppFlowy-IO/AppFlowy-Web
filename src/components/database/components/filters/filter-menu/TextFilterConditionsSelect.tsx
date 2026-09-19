@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { TextFilter, TextFilterCondition } from '@/application/database-yjs';
+import { TextFilter, TextFilterCondition } from '@/application/database-yjs/fields/text/text.type';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
 
 function TextFilterConditionsSelect({

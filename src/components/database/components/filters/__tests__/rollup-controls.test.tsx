@@ -88,7 +88,12 @@ jest.mock('@/components/database/components/cell/person/useMentionableUsers', ()
 }));
 jest.mock('@/components/database/components/filters/filter-menu/FieldMenuTitle', () => ({
   __esModule: true,
-  default: () => <span>Rollup</span>,
+  default: ({ renderConditionSelect }: { renderConditionSelect: React.ReactNode }) => (
+    <div data-testid='filter-editor-header'>
+      <span>Rollup</span>
+      {renderConditionSelect}
+    </div>
+  ),
 }));
 jest.mock('@/components/database/components/conditions/PropertiesMenu', () => ({
   __esModule: true,
@@ -246,6 +251,47 @@ test.each<[boolean, FieldType]>([
   render(<Harness advanced={advanced} />);
   expect(screen.getByTestId(inputId).value).toBe(draft);
   expect(screen.getByTestId('rollup-filter-mode').textContent).toBe('Every');
+});
+
+test('compact editor inlines the mode, endpoint and condition in its header above the value', async () => {
+  setup(FieldType.DateTime);
+  const mounted = render(<Harness />);
+  const header = screen.getByTestId('filter-editor-header');
+
+  ['rollup-filter-mode', 'rollup-filter-date-endpoint', 'filter-condition-selector'].forEach((id) =>
+    expect(header.contains(screen.getByTestId(id))).toBe(true)
+  );
+  expect(header.contains(screen.getByTestId('advanced-filter-date-input'))).toBe(false);
+
+  fireEvent.pointerDown(screen.getByTestId('rollup-filter-mode'), { button: 0, ctrlKey: false, pointerType: 'mouse' });
+  const selected = await screen.findByRole('menuitem', { name: 'Any' });
+
+  expect(selected.querySelector('[data-slot="dropdown-menu-tick"]')).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Every' }).querySelector('[data-slot="dropdown-menu-tick"]')).toBeNull();
+
+  // The advanced row keeps its own inline controls and renders no editor header.
+  mounted.unmount();
+  render(<Harness advanced />);
+  expect(screen.queryByTestId('filter-editor-header')).toBeNull();
+  expect(screen.getByTestId('rollup-filter-mode')).toBeTruthy();
+});
+
+test('a condition without a value collapses in the compact editor and keeps its slot in the advanced row', () => {
+  const node = setup();
+
+  node.set(K.condition, 6); // TextIsEmpty
+  const mounted = render(<Harness />);
+
+  expect(screen.queryByTestId('advanced-filter-text-input')).toBeNull();
+  expect(screen.getByTestId('rollup-filter-value').childNodes).toHaveLength(0);
+
+  mounted.unmount();
+  render(<Harness advanced />);
+  const slot = screen.getByTestId('rollup-filter-controls').lastElementChild;
+
+  expect(screen.queryByTestId('advanced-filter-text-input')).toBeNull();
+  expect(slot?.tagName).toBe('DIV');
+  expect(slot?.childNodes).toHaveLength(0);
 });
 
 test.each([false, true])(

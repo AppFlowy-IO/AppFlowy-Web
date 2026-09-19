@@ -39,6 +39,12 @@ export function ViewMetaPreview({
 }: ViewMetaProps) {
   const [cover, setCover] = React.useState<ViewMetaCover | null>(normalizeCover(coverProp));
   const [icon, setIcon] = React.useState<ViewMetaIcon | null>(iconProp || null);
+  const [focusedTitleViewId, setFocusedTitleViewId] = React.useState<string>();
+
+  const handleTitleFocus = useCallback(() => {
+    setFocusedTitleViewId(viewId);
+    onFocus?.();
+  }, [onFocus, viewId]);
 
   useEffect(() => {
     setCover(normalizeCover(coverProp));
@@ -266,7 +272,10 @@ export function ViewMetaPreview({
             {!readOnly && viewId ? (
               <>
                 <TitleEditable
-                  onFocus={onFocus}
+                  // Permission revalidation temporarily mounts the read-only
+                  // title. Restoring edit access must not steal focus or scroll.
+                  autoFocus={focusedTitleViewId !== viewId}
+                  onFocus={handleTitleFocus}
                   viewId={viewId}
                   name={name || ''}
                   onUpdateName={handleUpdateName}
