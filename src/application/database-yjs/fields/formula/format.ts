@@ -1,3 +1,5 @@
+import Big from 'big.js';
+
 import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
 import { stringifyDesktopNumberValue } from '@/application/database-yjs/fields/number/parse';
 import { DateFormat, TimeFormat } from '@/application/types';
@@ -13,10 +15,15 @@ export interface FormulaFormatOptions {
 }
 
 export function formatFormulaNumber(value: number, numberFormat: NumberFormat = NumberFormat.Num): string {
-  if (numberFormat === NumberFormat.Num) return formatNumberPlain(value);
-  const formatted = stringifyDesktopNumberValue(formatNumberPlain(value), numberFormat);
+  const plain = formatNumberPlain(value);
 
-  return formatted || formatNumberPlain(value);
+  if (numberFormat === NumberFormat.Num || !plain) return plain;
+  // Currency input parsing accepts decimal text; exponent digits would become
+  // part of the amount (for example, "1e+21" would be parsed as "121").
+  const decimal = /e/i.test(plain) ? new Big(plain).toFixed() : plain;
+  const formatted = stringifyDesktopNumberValue(decimal, numberFormat);
+
+  return formatted || plain;
 }
 
 export function formatFormulaDate(value: FormulaDate, options: FormulaFormatOptions = {}): string {

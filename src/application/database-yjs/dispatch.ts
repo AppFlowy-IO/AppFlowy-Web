@@ -63,7 +63,7 @@ import { createDateTimeField } from '@/application/database-yjs/fields/text/util
 import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
-import { resolveFormulaRowContext } from '@/application/database-yjs/formula/materialize';
+import { observeFormulaRelatedDocuments, resolveFormulaRowContext } from '@/application/database-yjs/formula/materialize';
 import {
   initializeGalleryLayoutSetting,
   normalizeCreatedDatabaseGalleryView,
@@ -155,6 +155,7 @@ import {
   YMapFieldTypeOption,
   YSharedRoot,
 } from '@/application/types';
+import { MetadataKey } from '@/application/user-metadata';
 import { isDatabaseContainer, isEmbeddedDatabaseViewWithoutChildren, isEmbeddedView } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -3594,6 +3595,9 @@ export function useSwitchPropertyType() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
+  const currentUser = useCurrentUserOptional();
+  const dateFormat = currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat | undefined;
+  const timeFormat = currentUser?.metadata?.[MetadataKey.TimeFormat] as TimeFormat | undefined;
   const { databaseDoc, loadView, getViewIdFromDatabaseId, bindViewSync, ensureRow, createRow, workspaceId } =
     useDatabaseContext();
 
@@ -3650,6 +3654,7 @@ export function useSwitchPropertyType() {
                 fieldId,
                 row,
                 rowId,
+                format: { dateFormat, timeFormat },
               })
             );
           });
@@ -4029,6 +4034,10 @@ export function useSwitchPropertyType() {
 
           if (sourceType === FieldType.Formula && formulaField) {
             const references = collectFormulaExternalReferences(formulaField, readFormulaSchema(fields));
+            const relatedDocuments = observeFormulaRelatedDocuments(
+              { loadView, createRow, getViewIdFromDatabaseId },
+              changed
+            );
 
             fields?.observeDeep(changed);
             loadedRows.forEach(({ row }) => row.observeDeep(changed));
@@ -4046,13 +4055,14 @@ export function useSwitchPropertyType() {
                         database,
                         baseDoc: databaseDoc,
                         workspaceId,
-                        loaders: { loadView, createRow, getViewIdFromDatabaseId },
+                        loaders: relatedDocuments.loaders,
                       })
                     );
                   })
                 );
               }
             } finally {
+              relatedDocuments.dispose();
               fields?.unobserveDeep(changed);
               loadedRows.forEach(({ row }) => row.unobserveDeep(changed));
             }
@@ -4092,11 +4102,13 @@ export function useSwitchPropertyType() {
       createRow,
       database,
       databaseDoc,
+      dateFormat,
       ensureRow,
       getViewIdFromDatabaseId,
       loadView,
       sharedRoot,
       rowMap,
+      timeFormat,
       workspaceId,
     ]
   );

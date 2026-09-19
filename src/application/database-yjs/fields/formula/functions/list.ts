@@ -74,12 +74,13 @@ function iterating(
 
       return resultType(listType, bodyType);
     },
-    impl: (_args, ctx, nodes) => {
+    impl: (_args, ctx, nodes, position) => {
       const items = asList(ctx.evaluate(nodes[0]));
 
-      return run(items, (item, index) =>
-        ctx.withBindings({ current: item, index: num(index) }, () => ctx.evaluate(nodes[1]))
-      );
+      return run(items, (item, index) => {
+        ctx.consumeWork(1, position);
+        return ctx.withBindings({ current: item, index: num(index) }, () => ctx.evaluate(nodes[1]));
+      });
     },
   };
 }
@@ -101,10 +102,7 @@ function sortKey(value: FormulaValue): string | number {
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
-function compareValues(a: FormulaValue, b: FormulaValue): number {
-  const keyA = sortKey(a);
-  const keyB = sortKey(b);
-
+function compareKeys(keyA: string | number, keyB: string | number): number {
   if (typeof keyA === 'number' && typeof keyB === 'number') return keyA - keyB;
   return collator.compare(String(keyA), String(keyB));
 }
@@ -198,7 +196,16 @@ export const listFunctions: FormulaFunctionSpec[] = [
     examples: [{ expression: 'sort([3, 1, 2])', result: '[1, 2, 3]' }],
     params: [{ name: 'list', type: LIST_ANY }],
     returnType: ([listType]) => listOf(elementType(listType)),
-    impl: ([value]) => list([...asList(value)].sort(compareValues)),
+    impl: ([value], ctx, _nodes, position) => {
+      // Compute recursive text keys once; comparisons share the cell's budget.
+      const items = asList(value).map((item) => ({ item, key: sortKey(item) }));
+
+      items.sort((a, b) => {
+        ctx.consumeWork(1, position);
+        return compareKeys(a.key, b.key);
+      });
+      return list(items.map(({ item }) => item));
+    },
   },
   {
     name: 'reverse',
@@ -218,11 +225,12 @@ export const listFunctions: FormulaFunctionSpec[] = [
     examples: [{ expression: 'unique([1, 1, 2])', result: '[1, 2]' }],
     params: [{ name: 'list', type: LIST_ANY }],
     returnType: ([listType]) => listOf(elementType(listType)),
-    impl: ([value]) => {
+    impl: ([value], ctx, _nodes, position) => {
       const result: FormulaValue[] = [];
+      const visit = () => ctx.consumeWork(1, position);
 
       asList(value).forEach((item) => {
-        if (!result.some((existing) => valuesEqual(existing, item))) result.push(item);
+        if (!result.some((existing) => valuesEqual(existing, item, visit))) result.push(item);
       });
 
       return list(result);
@@ -239,7 +247,8 @@ export const listFunctions: FormulaFunctionSpec[] = [
       { name: 'value', type: 'any' },
     ],
     returnType: 'boolean',
-    impl: ([value, needle]) => bool(asList(value).some((item) => valuesEqual(item, needle))),
+    impl: ([value, needle], ctx, _nodes, position) =>
+      bool(asList(value).some((item) => valuesEqual(item, needle, () => ctx.consumeWork(1, position)))),
   },
   {
     name: 'flat',

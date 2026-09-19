@@ -83,7 +83,9 @@ export function formulaResultToDateCell(result: FormulaCellResult): DateTimeCell
     createdAt: 0,
     lastModified: 0,
     data: String(result.rawDate.start),
-    endTimestamp: result.rawDate.end === undefined ? undefined : String(result.rawDate.end),
+    // Desktop date predicates use a single date as both endpoints. Keep this
+    // fallback at the formula boundary; rollup lists preserve missing ends.
+    endTimestamp: String(result.rawDate.end ?? result.rawDate.start),
     isRange: result.rawDate.end !== undefined,
     includeTime: result.rawDate.includeTime,
   };

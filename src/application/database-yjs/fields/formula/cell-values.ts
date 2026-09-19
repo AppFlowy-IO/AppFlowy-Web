@@ -5,6 +5,7 @@ import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
 import { parseChecklistFlexible } from '@/application/database-yjs/fields/checklist/parse';
 import { parsePersonTypeOptions } from '@/application/database-yjs/fields/person/parse';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
+import { parseRollupPersonIds } from '@/application/database-yjs/fields/rollup/person';
 import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
 import { parseTimeStringToMs } from '@/application/database-yjs/fields/text/utils';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
@@ -56,9 +57,7 @@ function rollupFormulaType(field: YDatabaseField): FormulaType {
   if (isNumericRollupField(field)) return 'number';
   const showAs = Number(parseRollupTypeOption(field)?.show_as ?? RollupDisplayMode.Calculated);
 
-  return showAs === RollupDisplayMode.OriginalList || showAs === RollupDisplayMode.UniqueList
-    ? listOf('text')
-    : 'text';
+  return showAs === RollupDisplayMode.OriginalList || showAs === RollupDisplayMode.UniqueList ? listOf('text') : 'text';
 }
 
 /** Static formula type of a `prop()` reference to this field. */
@@ -72,7 +71,7 @@ function toMilliseconds(raw: unknown): number | null {
 
   if (!Number.isFinite(value)) return null;
   // AppFlowy stores unix seconds; tolerate millisecond payloads from imports.
-  return value > 1e12 ? value : value * 1000;
+  return Math.abs(value) > 1e12 ? value : value * 1000;
 }
 
 function dateCellToValue(cell: DateTimeCell | undefined): FormulaValue {
@@ -101,8 +100,8 @@ export interface ReadFieldValueContext {
   getUserName?: (uid: string) => string | undefined;
   /** Display name of a workspace member by person id (Person cells). */
   getPersonName?: (personId: string) => string | undefined;
-  /** Primary-field title of a related row; undefined while it is not loaded. */
-  getRelatedRowTitle?: (relationField: YDatabaseField, relatedRowId: string) => string | undefined;
+  /** Title of a related row; null means deleted, undefined means not loaded yet. */
+  getRelatedRowTitle?: (relationField: YDatabaseField, relatedRowId: string) => string | null | undefined;
   /** Computed value of this row's cell for a Rollup field; undefined while it is not computed. */
   getRollupValue?: (rollupFieldId: string) => RollupCellValue | undefined;
 }
@@ -121,11 +120,37 @@ function personIds(data: unknown): string[] {
   }
 }
 
-function rollupValue(entry: FormulaFieldSchema, value: RollupCellValue | undefined): FormulaValue {
+function rollupValue(
+  entry: FormulaFieldSchema,
+  value: RollupCellValue | undefined,
+  context: ReadFieldValueContext
+): FormulaValue {
   const type = rollupFormulaType(entry.field);
 
   if (typeof type !== 'string') {
-    return list((value?.list ?? []).filter((item) => item !== '').map((item) => text(item)));
+    const items = (value?.list ?? []).filter((item) => item !== '');
+
+    if (value?.targetFieldType === FieldType.Person) {
+      const recorded = value.targetField ? parsePersonTypeOptions(value.targetField).persons : [];
+
+      return list(
+        items
+          .flatMap(parseRollupPersonIds)
+          .map((id) =>
+            text(
+              id === ANONYMOUS_PERSON_ID
+                ? 'Anonymous'
+                : context.getPersonName?.(id) || recorded.find((person) => person.id === id)?.name || id
+            )
+          )
+      );
+    }
+
+    if (value?.targetFieldType === FieldType.CreatedBy || value?.targetFieldType === FieldType.LastEditedBy) {
+      return list(items.flatMap(parseRollupPersonIds).map((uid) => text(context.getUserName?.(uid) || uid)));
+    }
+
+    return list(items.map((item) => text(item)));
   }
 
   if (type === 'number') {
@@ -152,18 +177,20 @@ export function readFieldFormulaValue(
     case FieldType.CreatedTime: {
       const start = toMilliseconds(row.get(YjsDatabaseKey.created_at));
 
-      return start === null ? EMPTY : date({ start, includeTime: true });
+      return start === null || start <= 0 ? EMPTY : date({ start, includeTime: true });
     }
 
     case FieldType.LastEditedTime: {
       const start = toMilliseconds(row.get(YjsDatabaseKey.last_modified));
 
-      return start === null ? EMPTY : date({ start, includeTime: true });
+      return start === null || start <= 0 ? EMPTY : date({ start, includeTime: true });
     }
 
     case FieldType.CreatedBy:
     case FieldType.LastEditedBy: {
-      const raw = row.get(entry.type === FieldType.CreatedBy ? YjsDatabaseKey.created_by : YjsDatabaseKey.last_edited_by);
+      const raw = row.get(
+        entry.type === FieldType.CreatedBy ? YjsDatabaseKey.created_by : YjsDatabaseKey.last_edited_by
+      );
       const uid = raw === undefined || raw === null || raw === '' ? null : String(raw);
 
       if (uid === null) return list([]);
@@ -173,7 +200,7 @@ export function readFieldFormulaValue(
 
     case FieldType.Rollup:
       // Rollups are computed from related rows; they have no stored cell.
-      return rollupValue(entry, context.getRollupValue?.(entry.id));
+      return rollupValue(entry, context.getRollupValue?.(entry.id), context);
 
     default:
       break;
@@ -212,13 +239,16 @@ export function readFieldFormulaValue(
 
     case FieldType.Time: {
       // Milliseconds; typed text such as "1h30m" or "08:30" reads as the cell shows it.
-      const ms = typeof data === 'number' ? data : typeof data === 'string' ? Number(parseTimeStringToMs(data) || NaN) : NaN;
+      const ms =
+        typeof data === 'number' ? data : typeof data === 'string' ? Number(parseTimeStringToMs(data) || NaN) : NaN;
 
       return Number.isFinite(ms) ? num(ms) : EMPTY;
     }
 
     case FieldType.Checkbox:
-      return bool(typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean' ? getChecked(data) : false);
+      return bool(
+        typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean' ? getChecked(data) : false
+      );
 
     case FieldType.DateTime:
       return dateCellToValue(parsed as DateTimeCell);
@@ -253,9 +283,13 @@ export function readFieldFormulaValue(
     }
 
     case FieldType.Relation:
-      // A relation reads as the titles of the related rows ('' until loaded).
+      // Deleted rows are absent; a live row with an empty/unloaded title still counts.
       return list(
-        getRelationRowIdsFromCell(cell).map((id) => text(context.getRelatedRowTitle?.(entry.field, id) ?? ''))
+        getRelationRowIdsFromCell(cell).flatMap((id) => {
+          const title = context.getRelatedRowTitle?.(entry.field, id);
+
+          return title === null ? [] : [text(title ?? '')];
+        })
       );
 
     case FieldType.Media: {

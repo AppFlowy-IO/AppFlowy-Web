@@ -41,9 +41,21 @@ export function FormulaEditorDialog({
   // Hosts mount the dialog only while it is open, so each opening starts from
   // the saved formula and a cancelled draft is dropped with the component.
   // Read the schema fresh here: this runs once, before the version subscription attaches.
-  const [draft, setDraft] = useState(() =>
-    field ? toDisplayExpression(parseFormulaTypeOption(field).formula, readFormulaSchema(fields)) : ''
-  );
+  const [draftState, setDraftState] = useState(() => {
+    const initialSchema = readFormulaSchema(fields);
+
+    return {
+      value: field ? toDisplayExpression(parseFormulaTypeOption(field).formula, initialSchema) : '',
+      schema: initialSchema,
+    };
+  });
+  // Resolve against the schema used to display this draft, before a rename can
+  // give its old name to another field. Preview and save both keep those IDs.
+  const storageExpression = toStorageExpression(draftState.value, draftState.schema);
+  const draft = draftState.schema === schema ? draftState.value : toDisplayExpression(storageExpression, schema);
+
+  if (draftState.schema !== schema) setDraftState({ value: draft, schema });
+  const setDraft = useCallback((value: string) => setDraftState({ value, schema }), [schema]);
   // Derived, not reported back by the editor: the compile cache makes this a lookup.
   const valid = useMemo(() => !compileFormula(draft, schema, fieldId).error, [draft, schema, fieldId]);
   // Radix handles Escape in the capture phase, before the textarea can close
@@ -55,9 +67,9 @@ export function FormulaEditorDialog({
 
   const handleSave = useCallback(() => {
     if (!valid) return;
-    updateFormulaTypeOption({ formula: toStorageExpression(draft, schema) });
+    updateFormulaTypeOption({ formula: storageExpression });
     onOpenChange(false);
-  }, [draft, schema, onOpenChange, updateFormulaTypeOption, valid]);
+  }, [storageExpression, onOpenChange, updateFormulaTypeOption, valid]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -82,7 +94,12 @@ export function FormulaEditorDialog({
             })}
           </DialogDescription>
           <div className={'ml-auto flex items-center gap-2'}>
-            <Button variant={'ghost'} size={'sm'} onClick={() => onOpenChange(false)} data-testid={'formula-editor-cancel'}>
+            <Button
+              variant={'ghost'}
+              size={'sm'}
+              onClick={() => onOpenChange(false)}
+              data-testid={'formula-editor-cancel'}
+            >
               {t('button.cancel')}
             </Button>
             <Button size={'sm'} disabled={!valid} onClick={handleSave} data-testid={'formula-editor-done'}>

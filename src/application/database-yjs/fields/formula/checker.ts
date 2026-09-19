@@ -84,6 +84,13 @@ export function inferFormulaType(root: FormulaNode, options: CheckOptions): Form
   };
 
   const infer = (node: FormulaNode): FormulaType => {
+    const type = inferNode(node);
+
+    node.inferredType = type;
+    return type;
+  };
+
+  const inferNode = (node: FormulaNode): FormulaType => {
     switch (node.kind) {
       case 'number':
         return 'number';

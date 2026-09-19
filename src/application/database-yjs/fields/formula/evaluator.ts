@@ -1,5 +1,6 @@
 import { FormulaNode } from './ast';
-import { asBoolean, asNumber, asText } from './coerce';
+import { FormulaEvaluationBudget } from './budget';
+import { asBoolean, asNumber, asText, asTextWithBudget } from './coerce';
 import { FormulaError, SourcePosition } from './errors';
 import { getFormulaFunction } from './functions';
 import { EvalContext } from './registry';
@@ -9,6 +10,7 @@ export interface EvaluateOptions {
   getProp: (ref: string, position: SourcePosition) => FormulaValue;
   now?: () => number;
   rowId?: string;
+  budget?: FormulaEvaluationBudget;
 }
 
 function compareOrdered(left: FormulaValue, right: FormulaValue, position: SourcePosition): number | null {
@@ -28,6 +30,7 @@ function compareOrdered(left: FormulaValue, right: FormulaValue, position: Sourc
 export function evaluateFormula(root: FormulaNode, options: EvaluateOptions): FormulaValue {
   const scopes: Array<Map<string, FormulaValue>> = [new Map()];
   const now = options.now ?? (() => Date.now());
+  const budget = options.budget ?? new FormulaEvaluationBudget();
 
   const lookup = (name: string): FormulaValue | undefined => {
     for (let index = scopes.length - 1; index >= 0; index -= 1) {
@@ -50,6 +53,8 @@ export function evaluateFormula(root: FormulaNode, options: EvaluateOptions): Fo
       return merged;
     },
     evaluate: (node) => evaluate(node),
+    consumeWork: (amount, position) => budget.consume(amount, position),
+    consumeRegexWork: (amount, position) => budget.consumeRegex(amount, position),
     withBindings: (bindings, body) => {
       scopes.push(new Map(Object.entries(bindings)));
       try {
@@ -61,6 +66,7 @@ export function evaluateFormula(root: FormulaNode, options: EvaluateOptions): Fo
   };
 
   const evaluate = (node: FormulaNode): FormulaValue => {
+    budget.consume(1, node.position);
     switch (node.kind) {
       case 'number':
         return num(node.value);
@@ -96,11 +102,20 @@ export function evaluateFormula(root: FormulaNode, options: EvaluateOptions): Fo
         const left = evaluate(node.left);
         const right = evaluate(node.right);
 
+        // Equality and text concatenation can recursively visit nested lists.
+        if (left.type === 'list') budget.consumeValue(left, node.position);
+        if (right.type === 'list') budget.consumeValue(right, node.position);
+
         switch (node.op) {
           case '+': {
             const numeric = (value: FormulaValue) => value.type === 'number' || value.type === 'empty';
 
-            if (!numeric(left) || !numeric(right)) return text(asText(left) + asText(right));
+            if (node.inferredType === 'text' || !numeric(left) || !numeric(right)) {
+              const consumeWork = (amount: number) => budget.consume(amount, node.position);
+
+              return text(asTextWithBudget(left, consumeWork) + asTextWithBudget(right, consumeWork));
+            }
+
             if (left.type === 'empty' && right.type === 'empty') return EMPTY;
             return num(asNumber(left, node.position) + asNumber(right, node.position));
           }
@@ -148,10 +163,20 @@ export function evaluateFormula(root: FormulaNode, options: EvaluateOptions): Fo
 
         if (!spec) throw new FormulaError(`Unknown function "${node.name}"`, node.position);
         if (spec.lazy) return spec.impl([], ctx, node.args, node.position);
-        return spec.impl(node.args.map(evaluate), ctx, node.args, node.position);
+        const args = node.args.map(evaluate);
+
+        // Eager helpers use native map/reduce/format operations internally.
+        // Charge their inputs, including nested lists, before that work starts.
+        for (const arg of args) budget.consumeValue(arg, node.position);
+        return spec.impl(args, ctx, node.args, node.position);
       }
     }
   };
 
-  return evaluate(root);
+  const value = evaluate(root);
+
+  // A compact expression can return a large tree of shared nested lists.
+  // Bound its traversal before the cell renderer formats it.
+  budget.consumeValue(value, root.position);
+  return value;
 }

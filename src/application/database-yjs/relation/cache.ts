@@ -2,6 +2,7 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
+import { getLiveDatabaseRowIds } from '@/application/database-yjs/relation/row-orders';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
   RowId,
@@ -100,6 +101,11 @@ const groupLabelInflight = new Map<string, Promise<RelationCellValue>>();
 const groupLabelGenerations = new Map<string, number>();
 const retainedGroupLabels = new Map<string, number>();
 const observedGroupLabelDocs = new WeakMap<YDoc, Set<string>>();
+const groupLabelMembership = new Map<string, boolean>();
+const observedGroupLabelDatabases = new WeakMap<
+  YDoc,
+  { labels: Map<string, string>; liveRows: Set<string> | null }
+>();
 const generations = new Map<string, number>();
 const listeners = new Set<() => void>();
 // Group labels get their own channel. Cell text resolves once per relation cell
@@ -210,6 +216,93 @@ function observeGroupLabelRow(rowDoc: YDoc, primaryFieldId: string, labelId: str
     });
     emitGroupLabels(labelIds);
   });
+}
+
+/** Share one membership snapshot/observer across display and conversion reads. */
+function getDatabaseMembership(doc: YDoc) {
+  let observed = observedGroupLabelDatabases.get(doc);
+
+  if (!observed) {
+    const readMembership = () => {
+      const database = getDatabaseFromDoc(doc);
+      const views = database?.get(YjsDatabaseKey.views);
+      const inlineId = database?.get(YjsDatabaseKey.metas)?.get(YjsDatabaseKey.iid);
+
+      // A linked view can hydrate first. Its empty orders cannot prove that
+      // rows in the still-loading canonical inline view have been deleted.
+      if (inlineId && !views?.get(inlineId)?.get(YjsDatabaseKey.row_orders)) return null;
+      if (
+        !inlineId &&
+        Array.from(views?.values() ?? []).some(
+          (view) => view.get(YjsDatabaseKey.is_inline) && !view.get(YjsDatabaseKey.row_orders)
+        )
+      ) {
+        return null;
+      }
+
+      const ids = database ? getLiveDatabaseRowIds(database) : null;
+
+      return ids === null ? null : new Set(ids);
+    };
+
+    const state = { labels: new Map<string, string>(), liveRows: readMembership() };
+
+    observed = state;
+    observedGroupLabelDatabases.set(doc, state);
+    doc.getMap(YjsEditorKey.data_section).observeDeep((events: YEvent[]) => {
+      const membershipChanged = events.some((event) => {
+        const [databaseKey, branch, viewId, property] = event.path;
+
+        if (databaseKey === undefined) return event.changes.keys.has(YjsEditorKey.database);
+        if (databaseKey !== YjsEditorKey.database) return false;
+        if (branch === undefined) {
+          return event.changes.keys.has(YjsDatabaseKey.views) || event.changes.keys.has(YjsDatabaseKey.metas);
+        }
+
+        if (branch === YjsDatabaseKey.metas) return event.changes.keys.has(YjsDatabaseKey.iid);
+        if (branch !== YjsDatabaseKey.views) return false;
+        if (viewId === undefined) return true;
+        if (property === undefined) {
+          return event.changes.keys.has(YjsDatabaseKey.row_orders) || event.changes.keys.has(YjsDatabaseKey.is_inline);
+        }
+
+        return property === YjsDatabaseKey.row_orders;
+      });
+
+      if (!membershipChanged) return;
+      state.liveRows = readMembership();
+      const changed: string[] = [];
+
+      state.labels.forEach((relatedRowId, id) => {
+        const live = state.liveRows?.has(relatedRowId);
+
+        if (groupLabelMembership.get(id) === live) return;
+        if (live === undefined) groupLabelMembership.delete(id);
+        else groupLabelMembership.set(id, live);
+        bumpGroupLabelGeneration(id);
+        changed.push(id);
+      });
+      if (changed.length > 0) emitGroupLabels(changed);
+    });
+  }
+
+  return observed;
+}
+
+/** null means authoritative membership is still loading, not an empty database. */
+export function readRelationMembership(doc: YDoc): ReadonlySet<string> | null {
+  return getDatabaseMembership(doc).liveRows;
+}
+
+function observeGroupLabelDatabase(doc: YDoc, labelId: string, rowId: string): boolean | undefined {
+  const observed = getDatabaseMembership(doc);
+
+  observed.labels.set(labelId, rowId);
+  const live = observed.liveRows?.has(rowId);
+
+  if (live === undefined) groupLabelMembership.delete(labelId);
+  else groupLabelMembership.set(labelId, live);
+  return live;
 }
 
 function pruneCache(now = Date.now()) {
@@ -362,6 +455,7 @@ async function computeRelationGroupLabel(
 
     if (!relatedDoc) return { value: '' };
 
+    if (observeGroupLabelDatabase(relatedDoc, labelId, context.relatedRowId) === false) return { value: '' };
     const relatedDatabase = getDatabaseFromDoc(relatedDoc);
     const primaryFieldId = relatedDatabase ? getPrimaryFieldId(relatedDatabase) : undefined;
     const primaryField = primaryFieldId ? relatedDatabase?.get(YjsDatabaseKey.fields)?.get(primaryFieldId) : undefined;
@@ -480,9 +574,17 @@ export function retainRelationGroupLabels(contexts: readonly RelationGroupLabelK
 export function readRelationGroupLabel(context: RelationGroupLabelKey): string {
   const labelId = getGroupLabelId(context);
 
-  if (!labelId) return '';
+  if (!labelId || groupLabelMembership.get(labelId) === false) return '';
 
   return groupLabelCache.get(labelId)?.value ?? '';
+}
+
+/** Unlike a blank title, a known deleted row is absent from a formula's list. */
+export function readFormulaRelationTitle(context: RelationGroupLabelKey): string | null {
+  const labelId = getGroupLabelId(context);
+
+  if (labelId && groupLabelMembership.get(labelId) === false) return null;
+  return readRelationGroupLabel(context);
 }
 
 /**
@@ -498,6 +600,7 @@ export function ensureRelationGroupLabel(context: RelationGroupLabelContext): vo
 
   const generation = getGroupLabelGeneration(labelId);
   const cached = groupLabelCache.get(labelId);
+  const wasLive = groupLabelMembership.get(labelId);
 
   if (cached && isEntryFresh(cached, generation)) return;
   if (groupLabelInflight.has(labelId)) return;
@@ -509,7 +612,7 @@ export function ensureRelationGroupLabel(context: RelationGroupLabelContext): vo
       const value = await computeRelationGroupLabel(context, labelId);
 
       if (getGroupLabelGeneration(labelId) === generation) {
-        const changed = cached?.value !== value.value;
+        const changed = cached?.value !== value.value || wasLive !== groupLabelMembership.get(labelId);
 
         touchGroupLabelCache(labelId, {
           value: value.value,

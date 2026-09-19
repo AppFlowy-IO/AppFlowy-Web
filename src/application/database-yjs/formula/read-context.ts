@@ -16,7 +16,7 @@ import { useFormulaClock } from '@/application/database-yjs/formula/clock';
 import { useRollupFieldObservers } from '@/application/database-yjs/hooks/useRollupFieldObservers';
 import {
   ensureRelationGroupLabel,
-  readRelationGroupLabel,
+  readFormulaRelationTitle,
   retainRelationGroupLabels,
   subscribeRelationGroupLabel,
 } from '@/application/database-yjs/relation/cache';
@@ -87,9 +87,10 @@ export function relatedRowTitle(
   relationField: YDatabaseField,
   relatedRowId: string,
   loaders: RelatedRowLoaders
-): string | undefined {
-  const title = readRelationGroupLabel({ relationField, relatedRowId });
+): string | null | undefined {
+  const title = readFormulaRelationTitle({ relationField, relatedRowId });
 
+  if (title === null) return null;
   if (!title) ensureRelationGroupLabel({ relationField, relatedRowId, ...loaders });
   return title || undefined;
 }
@@ -200,7 +201,7 @@ export function useFormulaReadContext({
     );
   }, [references.relations, relatedRowIdsKey]);
   const titleStore = useMemo(() => {
-    const values = relatedRows.map((key) => readRelationGroupLabel(key));
+    const values = relatedRows.map((key) => readFormulaRelationTitle(key));
     let revision = 0;
 
     return {
@@ -213,7 +214,7 @@ export function useFormulaReadContext({
           const refresh = () => {
             // Only a changed title needs another lookup after invalidation.
             ensureRelationGroupLabel({ ...key, ...loadersRef.current });
-            const value = readRelationGroupLabel(key);
+            const value = readFormulaRelationTitle(key);
 
             if (value === values[index]) return;
             values[index] = value;
@@ -295,7 +296,7 @@ export function useFormulaReadContext({
       getUserName: members.getUserName,
       getPersonName: members.getPersonName,
       getRelatedRowTitle: hasRelations
-        ? (relationField, relatedRowId) => readRelationGroupLabel({ relationField, relatedRowId }) || undefined
+        ? (relationField, relatedRowId) => readFormulaRelationTitle({ relationField, relatedRowId })
         : undefined,
       getRollupValue: hasRollups ? (fieldId) => rollupValues[fieldId] : undefined,
     }),

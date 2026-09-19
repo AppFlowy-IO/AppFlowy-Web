@@ -113,7 +113,8 @@ export function isEmptyValue(value: FormulaValue): boolean {
   }
 }
 
-export function valuesEqual(a: FormulaValue, b: FormulaValue): boolean {
+export function valuesEqual(a: FormulaValue, b: FormulaValue, visit?: () => void): boolean {
+  visit?.();
   if (a.type === 'empty' || b.type === 'empty') return isEmptyValue(a) && isEmptyValue(b);
   if (a.type !== b.type) return false;
 
@@ -131,7 +132,7 @@ export function valuesEqual(a: FormulaValue, b: FormulaValue): boolean {
     case 'list': {
       const items = (b as typeof a).items;
 
-      return a.items.length === items.length && a.items.every((item, index) => valuesEqual(item, items[index]));
+      return a.items.length === items.length && a.items.every((item, index) => valuesEqual(item, items[index], visit));
     }
 
     default:

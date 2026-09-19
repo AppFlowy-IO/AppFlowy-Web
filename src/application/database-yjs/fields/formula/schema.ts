@@ -106,17 +106,11 @@ function quote(value: string): string {
 
 /**
  * Rewrites every `prop("...")` argument through `map`, leaving the rest of the
- * source (including other strings and comments) untouched. Returns the source
- * unchanged when it cannot be tokenized so an invalid draft is never lost.
+ * source (including other strings and comments) untouched. Completed references
+ * remain bound even while another part of the draft is incomplete.
  */
 function rewritePropRefs(source: string, map: (ref: string) => string | undefined): string {
-  let tokens;
-
-  try {
-    tokens = tokenize(source);
-  } catch {
-    return source;
-  }
+  const tokens = tokenize(source, true);
 
   let output = '';
   let cursor = 0;

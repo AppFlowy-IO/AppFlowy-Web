@@ -1170,26 +1170,28 @@ export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
     case DateFilterCondition.DateStartIsNotEmpty:
       return !!data;
     case DateFilterCondition.DateStartsOn:
+      if (!data) return false;
       return isTimestampInSameDay(data, timestamp.toString());
     case DateFilterCondition.DateEndsOn:
+      if (!endTimestamp) return false;
       return isTimestampInSameDay(endTimestamp, timestamp.toString());
     case DateFilterCondition.DateStartsBefore:
       if (!data) return false;
       return isTimestampBefore(data, timestamp.toString());
     case DateFilterCondition.DateEndsBefore:
-      if (!data) return false;
+      if (!endTimestamp) return false;
       return isTimestampBefore(endTimestamp, timestamp.toString());
     case DateFilterCondition.DateStartsAfter:
       if (!data) return false;
       return isAfterOneDay(data, timestamp.toString());
     case DateFilterCondition.DateEndsAfter:
-      if (!data) return false;
+      if (!endTimestamp) return false;
       return isAfterOneDay(endTimestamp, timestamp.toString());
     case DateFilterCondition.DateStartsOnOrBefore:
       if (!data) return false;
       return isTimestampBefore(data, timestamp.toString()) || isTimestampInSameDay(data, timestamp.toString());
     case DateFilterCondition.DateEndsOnOrBefore:
-      if (!data) return false;
+      if (!endTimestamp) return false;
       return (
         isTimestampBefore(endTimestamp, timestamp.toString()) || isTimestampInSameDay(endTimestamp, timestamp.toString())
       );
@@ -1197,7 +1199,7 @@ export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
       if (!data) return false;
       return isTimestampBefore(timestamp.toString(), data) || isTimestampInSameDay(timestamp.toString(), data);
     case DateFilterCondition.DateEndsOnOrAfter:
-      if (!data) return false;
+      if (!endTimestamp) return false;
       return (
         isTimestampBefore(timestamp.toString(), endTimestamp) || isTimestampInSameDay(timestamp.toString(), endTimestamp)
       );
@@ -1205,7 +1207,7 @@ export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
       if (!data) return false;
       return isTimestampBetweenRange(data, start.toString(), end.toString());
     case DateFilterCondition.DateEndsBetween:
-      if (!data) return false;
+      if (!endTimestamp) return false;
       return isTimestampBetweenRange(endTimestamp, start.toString(), end.toString());
     default:
       return false;

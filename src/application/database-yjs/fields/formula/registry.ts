@@ -30,6 +30,10 @@ export interface EvalContext {
   env: ReadonlyMap<string, FormulaValue>;
   /** Evaluates a sub-expression in this context (lazy functions). */
   evaluate(node: FormulaNode): FormulaValue;
+  /** Charges list work to the shared budget for this cell, including nested evaluations. */
+  consumeWork(amount: number, position: SourcePosition): void;
+  /** Regex estimates use VM steps and share a separate per-cell counter. */
+  consumeRegexWork(amount: number, position: SourcePosition): void;
   /** Evaluates `body` with extra bindings in scope. */
   withBindings<T>(bindings: Record<string, FormulaValue>, body: () => T): T;
 }

@@ -2,6 +2,7 @@ import dayjs from 'dayjs';
 import * as Y from 'yjs';
 
 import { FieldType, FilterType, SortCondition } from '@/application/database-yjs/database.type';
+import { DateFilterCondition } from '@/application/database-yjs/fields/date/date.type';
 import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
 import { filterBy, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import { formulaPredicateFieldType } from '@/application/database-yjs/formula/filter';
@@ -122,14 +123,26 @@ function buildFixture(formulas: Record<string, string>, options: { numberFormat?
     { id: 'f-qty', name: 'Qty', type: FieldType.Number },
     { id: 'f-done', name: 'Done', type: FieldType.Checkbox },
     { id: 'f-due', name: 'Due', type: FieldType.DateTime },
-    { id: 'f-priority', name: 'Priority', type: FieldType.SingleSelect, typeOption: { content: JSON.stringify(selectOptions) } },
+    {
+      id: 'f-priority',
+      name: 'Priority',
+      type: FieldType.SingleSelect,
+      typeOption: { content: JSON.stringify(selectOptions) },
+    },
     { id: 'f-tags', name: 'Tags', type: FieldType.MultiSelect, typeOption: { content: JSON.stringify(selectOptions) } },
     { id: 'f-created', name: 'Created', type: FieldType.CreatedTime },
     {
       id: 'f-people',
       name: 'Owner',
       type: FieldType.Person,
-      typeOption: { content: JSON.stringify({ persons: [{ id: 'u1', name: 'Ada' }, { id: 'u2', name: 'Grace' }] }) },
+      typeOption: {
+        content: JSON.stringify({
+          persons: [
+            { id: 'u1', name: 'Ada' },
+            { id: 'u2', name: 'Grace' },
+          ],
+        }),
+      },
     },
     { id: 'f-check', name: 'Steps', type: FieldType.Checklist },
     { id: 'f-url', name: 'Link', type: FieldType.URL },
@@ -155,7 +168,13 @@ function buildFixture(formulas: Record<string, string>, options: { numberFormat?
       'f-people': { type: FieldType.Person, data: JSON.stringify(['u1', 'u2']) },
       'f-check': {
         type: FieldType.Checklist,
-        data: JSON.stringify({ options: [{ id: 'c1', name: 'a' }, { id: 'c2', name: 'b' }], selected_option_ids: ['c1'] }),
+        data: JSON.stringify({
+          options: [
+            { id: 'c1', name: 'a' },
+            { id: 'c2', name: 'b' },
+          ],
+          selected_option_ids: ['c1'],
+        }),
       },
       'f-url': { type: FieldType.URL, data: 'https://appflowy.io' },
     },
@@ -176,6 +195,54 @@ beforeEach(() => {
 });
 
 describe('formula evaluation over database rows', () => {
+  it('propagates nonfinite results through cached formula dependencies as empty numbers', () => {
+    const { evaluate } = buildFixture({
+      'f-invalid': 'sqrt(-1)',
+      'f-sum': 'prop("f-invalid") + 2',
+      'f-list': 'sum([1, prop("f-invalid"), 2])',
+    });
+
+    expect(evaluate('f-invalid')).toMatchObject({ text: '', resultType: 'number' });
+    expect(evaluate('f-sum').rawNumeric).toBe(2);
+    expect(evaluate('f-list').rawNumeric).toBe(3);
+    expect(evaluate('f-sum').rawNumeric).toBe(2);
+  });
+  it('shares the work limit across referenced formula fields and resets it for the next cell', () => {
+    const heavy = 'repeat("x", 10000).split("").map(index).sum()';
+    const { evaluate } = buildFixture({
+      'f-one': heavy,
+      'f-two': heavy,
+      'f-three': heavy,
+      'f-four': heavy,
+      'f-total': 'prop("f-one") + prop("f-two") + prop("f-three") + prop("f-four")',
+    });
+
+    expect(evaluate('f-one').rawNumeric).toBe(49995000);
+    expect(evaluate('f-total').error).toMatch(/exceeded the work limit/);
+    expect(evaluate('f-one').rawNumeric).toBe(49995000);
+  });
+
+  it('preserves static text typing through empty formula dependencies and cached compilation', () => {
+    const { evaluate } = buildFixture({
+      'f-prefix': 'ifs(false, "prefix")',
+      'f-label': 'prop("f-prefix") + 1 + 2',
+      'f-lookup': 'prop("f-tags").find(false) + 1 + 2',
+    });
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      expect(evaluate('f-label')).toMatchObject({
+        resultType: 'text',
+        text: '12',
+        value: { type: 'text', value: '12' },
+      });
+      expect(evaluate('f-lookup')).toMatchObject({
+        resultType: 'text',
+        text: '12',
+        value: { type: 'text', value: '12' },
+      });
+    }
+  });
+
   it('evaluates shared dependencies once and discards their values between row evaluations', () => {
     const formulas = Object.fromEntries(
       Array.from({ length: 13 }, (_, index) => [
@@ -199,9 +266,15 @@ describe('formula evaluation over database rows', () => {
       expect(read).toHaveBeenCalledTimes(1);
       const second = createRow('row-2', { 'f-price': { type: FieldType.Number, data: '3' } });
 
-      expect(evaluateFormulaCell({
-        schema, field: fields.get('cached-12'), fieldId: 'cached-12', row: second.row, rowId: 'row-2',
-      }).rawNumeric).toBe(12288);
+      expect(
+        evaluateFormulaCell({
+          schema,
+          field: fields.get('cached-12'),
+          fieldId: 'cached-12',
+          row: second.row,
+          rowId: 'row-2',
+        }).rawNumeric
+      ).toBe(12288);
     } finally {
       read.mockRestore();
       evaluateAst.mockRestore();
@@ -319,7 +392,13 @@ describe('formula evaluation over database rows', () => {
     const { row } = createRow('row-empty', {});
 
     expect(
-      evaluateFormulaCell({ schema: readFormulaSchema(fields), field: fields.get('f-x'), fieldId: 'f-x', row, rowId: 'row-empty' })
+      evaluateFormulaCell({
+        schema: readFormulaSchema(fields),
+        field: fields.get('f-x'),
+        fieldId: 'f-x',
+        row,
+        rowId: 'row-empty',
+      })
     ).toMatchObject({ text: '1||true|0' });
   });
 
@@ -336,8 +415,9 @@ describe('formula evaluation over database rows', () => {
       for (const cells of [{}, { title: { type: FieldType.RichText, data: '' } }]) {
         const { row } = createRow('blank', cells);
 
-        expect(evaluateFormulaCell({ schema, field: fields.get('result'), fieldId: 'result', row, rowId: 'blank' }))
-          .toMatchObject({ resultType: 'text', text: '23' });
+        expect(
+          evaluateFormulaCell({ schema, field: fields.get('result'), fieldId: 'result', row, rowId: 'blank' })
+        ).toMatchObject({ resultType: 'text', text: '23' });
       }
     }
   );
@@ -353,11 +433,11 @@ describe('formula expression storage', () => {
     expect(toDisplayExpression(storage, schema)).toBe(display);
   });
 
-  it('keeps unknown references and unparseable drafts untouched', () => {
+  it('keeps unknown references and binds completed references in incomplete drafts', () => {
     const { schema } = buildFixture({});
 
     expect(toStorageExpression('prop("Unknown") + 1', schema)).toBe('prop("Unknown") + 1');
-    expect(toStorageExpression('prop("Price") + "unterminated', schema)).toBe('prop("Price") + "unterminated');
+    expect(toStorageExpression('prop("Price") + "unterminated', schema)).toBe('prop("f-price") + "unterminated');
   });
 
   it('escapes quotes in property names', () => {
@@ -394,7 +474,11 @@ describe('formula schema caches', () => {
 
     fields.get('a').set(YjsDatabaseKey.last_modified, '1700000000');
     expect(compileFormula('prop("a")', readFormulaSchema(fields), 'b').resultType).toBe('number');
-    fields.get('a').get(YjsDatabaseKey.type_option)?.get(String(FieldType.Formula))?.set(YjsDatabaseKey.expression, '"text"');
+    fields
+      .get('a')
+      .get(YjsDatabaseKey.type_option)
+      ?.get(String(FieldType.Formula))
+      ?.set(YjsDatabaseKey.expression, '"text"');
     expect(compileFormula('prop("a")', readFormulaSchema(fields), 'b').resultType).toBe('text');
   });
 
@@ -466,15 +550,116 @@ function createSorts(fieldId: string, condition: SortCondition): YDatabaseSorts 
   return { toArray: () => [sort] } as YDatabaseSorts;
 }
 
+describe('formula date-range end filters', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date('2024-03-13T12:00:00'));
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it.each([DateFilterCondition.DateStartsOn, DateFilterCondition.DateEndsOn])(
+    'distinguishes a valid epoch date from an empty formula for condition %s',
+    (condition) => {
+      const fields = createFields([
+        { id: 'due', name: 'Due', type: FieldType.DateTime },
+        { id: 'formula', name: 'Date', type: FieldType.Formula, typeOption: { expression: 'prop("due")' } },
+      ]);
+      const rows = [
+        { id: 'epoch', height: 0 },
+        { id: 'empty', height: 0 },
+      ];
+      const rowMetas = {
+        epoch: createRow('epoch', { due: { type: FieldType.DateTime, data: '0' } }).doc,
+        empty: createRow('empty', {}).doc,
+      };
+
+      expect(
+        filterBy(rows, createFilter('formula', condition, '{"timestamp":0}'), fields, rowMetas).map((row) => row.id)
+      ).toEqual(['epoch']);
+    }
+  );
+
+  it.each([
+    [DateFilterCondition.DateEndsOn, ['on', 'single']],
+    [DateFilterCondition.DateEndsBefore, ['before', 'last-week']],
+    [DateFilterCondition.DateEndsAfter, ['after', 'next-week']],
+    [DateFilterCondition.DateEndsOnOrBefore, ['before', 'on', 'last-week', 'single']],
+    [DateFilterCondition.DateEndsOnOrAfter, ['on', 'after', 'next-week', 'single']],
+    [DateFilterCondition.DateEndsBetween, ['before', 'on', 'after', 'single']],
+    [DateFilterCondition.DateEndIsEmpty, ['empty']],
+    [DateFilterCondition.DateEndIsNotEmpty, ['before', 'on', 'after', 'last-week', 'next-week', 'single']],
+    [DateFilterCondition.DateEndsToday, ['on', 'single']],
+    [DateFilterCondition.DateEndsYesterday, ['before']],
+    [DateFilterCondition.DateEndsTomorrow, ['after']],
+    [DateFilterCondition.DateEndsThisWeek, ['before', 'on', 'after', 'single']],
+    [DateFilterCondition.DateEndsLastWeek, ['last-week']],
+    [DateFilterCondition.DateEndsNextWeek, ['next-week']],
+  ] as Array<[DateFilterCondition, string[]]>)(
+    'matches the end of a formula range for condition %s',
+    (condition, expected) => {
+      const fields = createFields([
+        { id: 'due', name: 'Due', type: FieldType.DateTime },
+        { id: 'formula', name: 'Range', type: FieldType.Formula, typeOption: { expression: 'prop("due")' } },
+      ]);
+      const ends: Record<string, string> = {
+        before: '2024-03-12',
+        on: '2024-03-13',
+        after: '2024-03-14',
+        'last-week': '2024-03-05',
+        'next-week': '2024-03-20',
+        single: '',
+        empty: '',
+      };
+      const rows = Object.keys(ends).map((id) => ({ id, height: 0 }));
+      const rowMetas = Object.fromEntries(
+        rows.map(({ id }) => [
+          id,
+          createRow(
+            id,
+            id === 'empty'
+              ? {}
+              : {
+                  due: {
+                    type: FieldType.DateTime,
+                    data: String(dayjs(id === 'single' ? '2024-03-13' : '2024-03-01').unix()),
+                    isRange: Boolean(ends[id]),
+                    endTimestamp: ends[id] ? String(dayjs(ends[id]).unix()) : undefined,
+                  },
+                }
+          ).doc,
+        ])
+      );
+      const content = JSON.stringify({
+        timestamp: dayjs('2024-03-13').unix(),
+        start: dayjs('2024-03-12').unix(),
+        end: dayjs('2024-03-14').unix(),
+      });
+
+      expect(filterBy(rows, createFilter('formula', condition, content), fields, rowMetas).map((row) => row.id)).toEqual(
+        expected
+      );
+    }
+  );
+});
+
 describe('formula filters and sorts', () => {
   const fields = createFields([
     { id: 'f-price', name: 'Price', type: FieldType.Number },
     { id: 'f-done', name: 'Done', type: FieldType.Checkbox },
     { id: 'f-due', name: 'Due', type: FieldType.DateTime },
     { id: 'f-double', name: 'Double', type: FieldType.Formula, typeOption: { expression: 'prop("f-price") * 2' } },
-    { id: 'f-label', name: 'Label', type: FieldType.Formula, typeOption: { expression: 'if(prop("f-done"), "done", "open")' } },
+    {
+      id: 'f-label',
+      name: 'Label',
+      type: FieldType.Formula,
+      typeOption: { expression: 'if(prop("f-done"), "done", "open")' },
+    },
     { id: 'f-flag', name: 'Flag', type: FieldType.Formula, typeOption: { expression: 'prop("f-price") > 5' } },
-    { id: 'f-next', name: 'Next', type: FieldType.Formula, typeOption: { expression: 'dateAdd(prop("f-due"), 1, "days")' } },
+    {
+      id: 'f-next',
+      name: 'Next',
+      type: FieldType.Formula,
+      typeOption: { expression: 'dateAdd(prop("f-due"), 1, "days")' },
+    },
   ]);
   const rows: Row[] = ['row-a', 'row-b', 'row-c'].map((id) => ({ id, height: 0 }));
   const rowMetas: Record<RowId, YDoc> = {
@@ -521,21 +706,15 @@ describe('formula filters and sorts', () => {
   });
 
   it('sorts by the evaluated result with the ordering of its type', () => {
-    expect(sortBy(rows, createSorts('f-double', SortCondition.Ascending), fields, rowMetas).map((row) => row.id)).toEqual([
-      'row-a',
-      'row-c',
-      'row-b',
-    ]);
-    expect(sortBy(rows, createSorts('f-double', SortCondition.Descending), fields, rowMetas).map((row) => row.id)).toEqual([
-      'row-b',
-      'row-c',
-      'row-a',
-    ]);
-    expect(sortBy(rows, createSorts('f-label', SortCondition.Ascending), fields, rowMetas).map((row) => row.id)).toEqual([
-      'row-a',
-      'row-b',
-      'row-c',
-    ]);
+    expect(
+      sortBy(rows, createSorts('f-double', SortCondition.Ascending), fields, rowMetas).map((row) => row.id)
+    ).toEqual(['row-a', 'row-c', 'row-b']);
+    expect(
+      sortBy(rows, createSorts('f-double', SortCondition.Descending), fields, rowMetas).map((row) => row.id)
+    ).toEqual(['row-b', 'row-c', 'row-a']);
+    expect(sortBy(rows, createSorts('f-label', SortCondition.Ascending), fields, rowMetas).map((row) => row.id)).toEqual(
+      ['row-a', 'row-b', 'row-c']
+    );
     expect(sortBy(rows, createSorts('f-next', SortCondition.Ascending), fields, rowMetas).map((row) => row.id)).toEqual([
       'row-b',
       'row-c',

@@ -55,7 +55,60 @@ function expectError(source: string, message: RegExp) {
   expect(() => run(source)).toThrow(message);
 }
 
+describe('bounded formula regular expressions', () => {
+  it.each(['test', 'match', 'replace', 'replaceAll'])('bounds pathological patterns in %s', (fn) => {
+    const input = `${'a'.repeat(1000)}!`;
+    const replacement = fn.startsWith('replace') ? ', "x"' : '';
+    const started = performance.now();
+    const result = run(`${fn}(${JSON.stringify(input)}, "^(a+)+$"${replacement})`);
+
+    expect(result).toEqual(fn === 'test' ? bool(false) : fn === 'match' ? list([]) : text(input));
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('rejects unsupported and oversized patterns without native regex fallback', () => {
+    expectError('test("aa", "(a)\\\\1")', /unsupported/);
+    expectError(`test("a", ${JSON.stringify('a'.repeat(4097))})`, /too long/);
+    expectError(`test("a", ${JSON.stringify('a{1000}'.repeat(11))})`, /too complex/);
+    expectError(`test(repeat("aa", 10000).repeat(6), "a")`, /input is too long|work limit/);
+  });
+
+  it('preserves empty matches and JavaScript replacement groups', () => {
+    expect(run('match("baaac", "a*")')).toEqual(list([text(''), text('aaa'), text(''), text('')]));
+    expect(run('replaceAll("baaac", "a*", "-")')).toEqual(text('-b--c-'));
+    expect(run('replaceAll("ab ab", "(?<letter>a)(b)", "$2$<letter>$$$&")')).toEqual(text('ba$ab ba$ab'));
+  });
+
+  it('bounds repeated searches that scan the remaining input', () => {
+    expectError('match(repeat("a", 10000), "a.*b|a")', /too complex|work limit/);
+    expectError('replaceAll(repeat("a", 10000), "a.*b|a", "x")', /too complex|work limit/);
+  });
+});
+
 describe('formula language: parsing and operators', () => {
+  it.each([
+    'ifs(false, "prefix") + 1 + 2',
+    '1 + ifs(false, "suffix") + 2',
+    '["prefix"].at(2) + 1 + 2',
+    'split("", ",").first() + 1 + 2',
+    'prop("Tags").find(false) + 1 + 2',
+    'if(true, empty(), "prefix") + 1 + 2',
+    '(true ? empty() : "prefix") + 1 + 2',
+    'let(prefix, ifs(false, "prefix"), prefix + 1 + 2)',
+    '["prefix"].map(ifs(false, current) + 1 + 2).first()',
+  ])('preserves static text addition for an empty operand: %s', (source) => {
+    expect(typeOf(source)).toBe('text');
+    expect(run(source)).toEqual(text('12'));
+  });
+
+  it('preserves empty values outside text addition and numeric empty addition', () => {
+    expect(run('ifs(false, "prefix")')).toEqual(EMPTY);
+    expect(run('ifs(false, "prefix") + ifs(false, "suffix")')).toEqual(text(''));
+    expect(run('ifs(false, 10) + 1 + 2')).toEqual(num(3));
+    expect(run('[10].at(2) + 1 + 2')).toEqual(num(3));
+    expect(run('empty() + empty()')).toEqual(EMPTY);
+  });
+
   it('evaluates arithmetic with the right precedence and associativity', () => {
     expect(run('1 + 2 * 3')).toEqual(num(7));
     expect(run('(1 + 2) * 3')).toEqual(num(9));
@@ -110,6 +163,47 @@ describe('formula language: parsing and operators', () => {
   });
 });
 
+describe('formula evaluation work limit', () => {
+  it.each([
+    'xs.every(xs.every(xs.every(true)))',
+    'xs.some(xs.some(xs.some(false)))',
+    'xs.map(xs.map(xs.map(current)))',
+    'xs.filter(xs.every(xs.every(true)))',
+    'xs.find(xs.some(xs.some(false)))',
+    'xs.findIndex(xs.some(xs.some(false)))',
+    'xs.map(index).unique()',
+    'xs.map(xs).flat().flat()',
+    'xs.map(xs.map(xs)).join(",")',
+  ])('bounds aggregate nested list work: %s', (body) => {
+    expectError(`let(xs, repeat("x", 2000).split(""), ${body})`, /exceeded the work limit/);
+  });
+
+  it('keeps short-circuiting and gives each evaluation a fresh work budget', () => {
+    const source = 'let(xs, repeat("x", 1000).split(""), xs.every(xs.every(xs.every(true))))';
+
+    expectError(source, /exceeded the work limit/);
+    expect(run('let(xs, repeat("x", 1000).split(""), xs.some(xs.some(xs.some(true))))')).toEqual(bool(true));
+    expect(run(`if(false, ${source}, true)`)).toEqual(bool(true));
+    expect(run('repeat("x", 1000).split("").map(index).sum()')).toEqual(num(499500));
+  });
+
+  it.each([
+    'repeat(repeat("x", 10000), 10000)',
+    'lets(xs, repeat("x", 10000).split(""), part, repeat("x", 10000), xs.map(part).join(""))',
+    'lets(xs, repeat("x", 10000).split(""), part, repeat("x", 10000), format(xs.map(part)))',
+    'lets(xs, repeat("x", 10000).split(""), part, repeat("x", 10000), xs.map(part) + "")',
+    'replaceAll(repeat("x", 100), "x", repeat("y", 10000))',
+    'replace(repeat("x", 10000), "x+", repeat("$&", 100))',
+  ])('bounds text growth before allocating the result: %s', (source) => {
+    expectError(source, /exceeded the work limit/);
+  });
+
+  it('shares regex work across nested list evaluations', () => {
+    expect(run('match(repeat("a", 4300), "a").length()')).toEqual(num(4300));
+    expectError('let(input, repeat("a", 4300), [1, 2].every(input.match("a").length() == 4300))', /too complex/);
+  });
+});
+
 describe('formula language: type checking', () => {
   it('infers result types', () => {
     expect(typeOf('1 + 2')).toBe('number');
@@ -146,6 +240,34 @@ describe('formula language: type checking', () => {
 });
 
 describe('formula language: functions', () => {
+  it.each([
+    ['length("😀")', num(1)],
+    ['length("A😀B")', num(3)],
+    ['length("é")', num(2)],
+    ['split("😀", "").length()', num(1)],
+    ['split("A😀B", "").join("")', text('A😀B')],
+    ['substring("A😀B", 1, 2)', text('😀')],
+    ['substring("A😀B", 2, 1)', text('😀')],
+    ['substring("A😀B", -1, 2)', text('A😀')],
+    ['substring("A😀B", 1.9, 99)', text('😀B')],
+    ['substring("A😀B", 9)', text('')],
+    ['split("你好😀", "").map(current.length()).sum()', num(3)],
+  ])('uses Unicode character indices consistently: %s', (source, expected) => {
+    expect(run(source as string)).toEqual(expected);
+  });
+
+  it.each([
+    ['(1 / 0) + 2', num(2)],
+    ['divide(1, 0) + 2', num(2)],
+    ['sqrt(-1) + 2', num(2)],
+    ['sum([1, 1 / 0, 2])', num(3)],
+    ['mean([1, sqrt(-1), 3])', num(2)],
+    ['[1, 0, 2].map(1 / current).sum()', num(1.5)],
+    ['empty(exp(1000))', bool(true)],
+  ])('coerces nonfinite intermediate numbers consistently: %s', (source, expected) => {
+    expect(run(source as string)).toEqual(expected);
+  });
+
   it('logic', () => {
     expect(run('if(prop("Done"), "Complete", "Incomplete")')).toEqual(text('Complete'));
     expect(run('ifs(false, "a", true, "b", "c")')).toEqual(text('b'));
@@ -239,9 +361,9 @@ describe('formula language: functions', () => {
     expect(run('formatDate(prop("Due"), "Do")')).toEqual(text('10th'));
     expect(run('timestamp(fromTimestamp(1000))')).toEqual(num(1000));
     expect(run('prop("Due") > now()')).toEqual(bool(true));
-    expect(run('dateStart(dateRange(parseDate("2024-01-01"), parseDate("2024-01-05"))) == parseDate("2024-01-01")')).toEqual(
-      bool(true)
-    );
+    expect(
+      run('dateStart(dateRange(parseDate("2024-01-01"), parseDate("2024-01-05"))) == parseDate("2024-01-01")')
+    ).toEqual(bool(true));
     expect(run('formatDate(dateEnd(dateRange(parseDate("2024-01-01"), parseDate("2024-01-05"))), "D")')).toEqual(
       text('5')
     );

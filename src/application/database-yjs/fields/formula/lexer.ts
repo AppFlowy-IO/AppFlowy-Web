@@ -50,7 +50,7 @@ function isDigit(ch: string) {
 }
 
 /** Tokenizes a formula. Whitespace and block comments (slash-star ... star-slash) are skipped. */
-export function tokenize(source: string): Token[] {
+export function tokenize(source: string, allowIncomplete = false): Token[] {
   const tokens: Token[] = [];
   let offset = 0;
   let line = 1;
@@ -80,7 +80,11 @@ export function tokenize(source: string): Token[] {
       const start = position();
       const close = source.indexOf('*/', offset + 2);
 
-      if (close === -1) throw new FormulaError('Unterminated comment', start);
+      if (close === -1) {
+        if (allowIncomplete) return tokens;
+        throw new FormulaError('Unterminated comment', start);
+      }
+
       advance(close + 2 - offset);
       continue;
     }
@@ -102,7 +106,11 @@ export function tokenize(source: string): Token[] {
 
       advance();
       for (;;) {
-        if (offset >= source.length) throw new FormulaError('Unterminated string', start);
+        if (offset >= source.length) {
+          if (allowIncomplete) return tokens;
+          throw new FormulaError('Unterminated string', start);
+        }
+
         const current = source[offset];
 
         if (current === quote) {
@@ -113,7 +121,11 @@ export function tokenize(source: string): Token[] {
         if (current === '\\') {
           const next = source[offset + 1];
 
-          if (next === undefined) throw new FormulaError('Unterminated string', start);
+          if (next === undefined) {
+            if (allowIncomplete) return tokens;
+            throw new FormulaError('Unterminated string', start);
+          }
+
           const escapes: Record<string, string> = { n: '\n', t: '\t', r: '\r', '\\': '\\', '"': '"', "'": "'" };
 
           // Unknown escapes keep their backslash, so regex classes like "\w" survive.
@@ -149,6 +161,12 @@ export function tokenize(source: string): Token[] {
 
       advance(punct.length);
       tokens.push({ kind: 'punct', value: punct, position: start, end: offset });
+      continue;
+    }
+
+    if (allowIncomplete) {
+      tokens.push({ kind: 'punct', value: ch, position: position(), end: offset + 1 });
+      advance();
       continue;
     }
 

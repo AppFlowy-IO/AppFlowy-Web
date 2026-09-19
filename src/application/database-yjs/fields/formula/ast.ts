@@ -1,4 +1,5 @@
 import { SourcePosition } from './errors';
+import { FormulaType } from './values';
 
 export type BinaryOperator =
   | '+'
@@ -17,7 +18,12 @@ export type BinaryOperator =
   | 'or';
 export type UnaryOperator = '-' | 'not';
 
-export type FormulaNode =
+export type FormulaNode = ParsedFormulaNode & {
+  /** Set by the checker; an empty runtime value still retains this expression's type. */
+  inferredType?: FormulaType;
+};
+
+type ParsedFormulaNode =
   | { kind: 'number'; value: number; position: SourcePosition; end: number }
   | { kind: 'string'; value: string; position: SourcePosition; end: number }
   | { kind: 'boolean'; value: boolean; position: SourcePosition; end: number }
@@ -45,32 +51,40 @@ export type FormulaNode =
       end: number;
     };
 
+/** Iterative because invalid expressions can still have a deeply nested AST. */
+function* walkFormulaNodes(root: FormulaNode): Generator<FormulaNode> {
+  const pending = [root];
+
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+
+    yield node;
+    switch (node.kind) {
+      case 'list':
+      case 'call': {
+        const children = node.kind === 'list' ? node.items : node.args;
+
+        for (let index = children.length - 1; index >= 0; index -= 1) pending.push(children[index]);
+        break;
+      }
+
+      case 'unary':
+        pending.push(node.operand);
+        break;
+      case 'binary':
+        pending.push(node.right, node.left);
+        break;
+      case 'conditional':
+        pending.push(node.else, node.then, node.test);
+        break;
+    }
+  }
+}
+
 /** Collects every `prop()` reference in evaluation order (duplicates preserved). */
 export function collectPropRefs(node: FormulaNode, out: string[] = []): string[] {
-  switch (node.kind) {
-    case 'prop':
-      out.push(node.ref);
-      break;
-    case 'list':
-      node.items.forEach((item) => collectPropRefs(item, out));
-      break;
-    case 'call':
-      node.args.forEach((arg) => collectPropRefs(arg, out));
-      break;
-    case 'unary':
-      collectPropRefs(node.operand, out);
-      break;
-    case 'binary':
-      collectPropRefs(node.left, out);
-      collectPropRefs(node.right, out);
-      break;
-    case 'conditional':
-      collectPropRefs(node.test, out);
-      collectPropRefs(node.then, out);
-      collectPropRefs(node.else, out);
-      break;
-    default:
-      break;
+  for (const current of walkFormulaNodes(node)) {
+    if (current.kind === 'prop') out.push(current.ref);
   }
 
   return out;
@@ -78,18 +92,9 @@ export function collectPropRefs(node: FormulaNode, out: string[] = []): string[]
 
 /** Whether this expression directly reads the wall clock. */
 export function formulaUsesClock(node: FormulaNode): boolean {
-  switch (node.kind) {
-    case 'call':
-      return node.name === 'now' || node.name === 'today' || node.args.some(formulaUsesClock);
-    case 'list':
-      return node.items.some(formulaUsesClock);
-    case 'unary':
-      return formulaUsesClock(node.operand);
-    case 'binary':
-      return formulaUsesClock(node.left) || formulaUsesClock(node.right);
-    case 'conditional':
-      return formulaUsesClock(node.test) || formulaUsesClock(node.then) || formulaUsesClock(node.else);
-    default:
-      return false;
+  for (const current of walkFormulaNodes(node)) {
+    if (current.kind === 'call' && (current.name === 'now' || current.name === 'today')) return true;
   }
+
+  return false;
 }

@@ -2,39 +2,13 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType } from '@/application/database-yjs/database.type';
+import { parseRollupPersonIds } from '@/application/database-yjs/fields/rollup/person';
 import { canonicalizeUserUid } from '@/application/user-uid';
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 // Shared storage contract with PersonCell and the cloud form-submission handler.
 const ANONYMOUS_RESPONDENT_ID = '00000000-0000-0000-0000-000000000000';
-
-/** Person cells arrive as joined JSON arrays; decimal attribution IDs must never pass through Number. */
-export function parseRollupPersonIds(raw: string): string[] {
-  const value = raw.trim();
-
-  if (!value) return [];
-  if (/^\d+(?:\s*,\s*\d+)*$/.test(value)) return value.split(',').map((id) => id.trim());
-  const flatten = (item: unknown): string[] | null => {
-    if (typeof item === 'string') return item ? [item] : [];
-    if (!Array.isArray(item)) return null;
-    const children = item.map(flatten);
-
-    return children.some((child) => child === null) ? null : (children as string[][]).flat();
-  };
-
-  for (const candidate of [value, `[${value}]`]) {
-    try {
-      const ids = flatten(JSON.parse(candidate));
-
-      if (ids !== null) return ids;
-    } catch {
-      /* Try the joined-array representation. */
-    }
-  }
-
-  return [value];
-}
 
 export function RollupPersonList({ value, type }: { value: string; type: FieldType }) {
   const { t } = useTranslation();

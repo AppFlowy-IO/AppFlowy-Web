@@ -512,6 +512,60 @@ describe('Person', () => {
 });
 
 describe('Rollup', () => {
+  it.each([
+    { rawNumeric: 0, expected: '0', numeric: 0 },
+    { rawNumeric: -7, expected: '-7', numeric: -7 },
+    { rawNumeric: undefined, expected: '', numeric: undefined },
+    { rawNumeric: NaN, expected: '', numeric: undefined },
+    { rawNumeric: Infinity, expected: '', numeric: undefined },
+    { rawNumeric: -Infinity, expected: '', numeric: undefined },
+  ])(
+    'reads the raw rollup number independently of its formatted text: $rawNumeric',
+    ({ rawNumeric, expected, numeric }) => {
+      const context: ReadFieldValueContext = {
+        getRollupValue: () => ({ value: '$999', rawNumeric }),
+      };
+
+      const result = run('prop("Budget")', filledRow(), context);
+
+      expect(result.text).toBe(expected);
+      expect(result.rawNumeric).toBe(numeric);
+      expect(run('prop("Budget") + 1', filledRow(), context).rawNumeric).toBe((numeric ?? 0) + 1);
+    }
+  );
+
+  it.each([FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy])(
+    'resolves names for people target %s',
+    (targetFieldType) => {
+      const context: ReadFieldValueContext = {
+        ...LOADED,
+        getRollupValue: () => ({
+          value: '',
+          list: targetFieldType === FieldType.Person ? [JSON.stringify([PERSON_ADA, ANONYMOUS]), '[]'] : ['101', '202'],
+          targetFieldType,
+        }),
+      };
+
+      expect(run('prop("Project names").join(", ")', filledRow(), context).text).toBe(
+        targetFieldType === FieldType.Person ? 'Ada Lovelace, Anonymous' : 'Ada Lovelace, Grace Hopper'
+      );
+      expect(run('prop("Project names").includes("Ada Lovelace")', filledRow(), context).rawBoolean).toBe(true);
+    }
+  );
+
+  it.each([RollupDisplayMode.OriginalList, RollupDisplayMode.UniqueList])(
+    'loads members through list rollup mode %s',
+    (showAs) => {
+      const { fields, schema } = buildDatabase({
+        nested: 'prop("f-rollup-list")',
+        probe: 'prop("formula-nested").join(", ")',
+      });
+
+      fields.get('f-rollup-list').get(YjsDatabaseKey.type_option).get(String(FieldType.Rollup)).set('show_as', showAs);
+      expect(collectFormulaExternalReferences(fields.get('formula-probe'), schema).people).toBe(true);
+    }
+  );
+
   it('reads a numeric rollup as a number', () => {
     expect(run('prop("Budget")').rawNumeric).toBe(4200);
     expect(run('prop("Budget") / 2').text).toBe('2100');
@@ -527,6 +581,73 @@ describe('Rollup', () => {
     expect(run('prop("Budget")', filledRow(), {}).text).toBe('');
     expect(run('prop("Budget") + 1', filledRow(), {}).text).toBe('1');
     expect(run('prop("Project names").length()', filledRow(), {}).text).toBe('0');
+  });
+});
+
+describe('persisted formula input boundaries', () => {
+  describe.each([
+    ['Due', 'f-date', FieldType.DateTime],
+    ['Created', 'f-created', FieldType.CreatedTime],
+    ['Edited', 'f-edited', FieldType.LastEditedTime],
+  ] as const)('%s timestamps', (name, fieldId, fieldType) => {
+    it.each([
+      ['1700000000', 1700000000000],
+      ['1700000000000', 1700000000000],
+      ['-1700000000', -1700000000000],
+      ['-1700000000000', -1700000000000],
+      ['0', 0],
+      ['invalid', undefined],
+      ['', undefined],
+    ] as const)('normalizes stored timestamp %s with field-specific empty values', (stored, expected) => {
+      const row = createRow(
+        'timestamp-boundary',
+        { [fieldId]: { type: fieldType, data: stored } },
+        {
+          createdAt: stored,
+          lastModified: stored,
+        }
+      ).row;
+      const result = run(`timestamp(prop("${name}"))`, row);
+
+      expect(result.error).toBeUndefined();
+      // Row metadata reserves nonpositive timestamps for an unset value;
+      // editable Date cells still support the epoch and dates before it.
+      const timestamp =
+        fieldType !== FieldType.DateTime && expected !== undefined && expected <= 0 ? undefined : expected;
+
+      expect(result.rawNumeric).toBe(timestamp);
+      expect(run(`empty(prop("${name}"))`, row).rawBoolean).toBe(timestamp === undefined);
+    });
+  });
+
+  it.each(['NaN', 'Infinity', '-Infinity', 'abc'])('keeps an invalid stored number empty: %s', (stored) => {
+    const row = createRow('invalid-number', { 'f-number': { type: FieldType.Number, data: stored } }).row;
+
+    expect(run('prop("Price")', row)).toMatchObject({ text: '', resultType: 'number' });
+    expect(run('prop("Price") + 1', row).rawNumeric).toBe(1);
+  });
+
+  it.each(['{', '{}', 'null'])('treats malformed people storage as an empty list: %s', (stored) => {
+    const row = createRow('invalid-person', { 'f-person': { type: FieldType.Person, data: stored } }).row;
+
+    expect(run('prop("Owner").length()', row).rawNumeric).toBe(0);
+    expect(run('prop("Owner").join(",")', row).text).toBe('');
+  });
+
+  it.each([
+    ['0', 0],
+    ['0h0m', 0],
+    ['00:00', 0],
+    ['-60000', -60000],
+    ['24:00', undefined],
+    ['1e3', undefined],
+    ['Infinity', undefined],
+  ] as const)('distinguishes zero duration from invalid time: %s', (stored, expected) => {
+    const row = createRow('time-boundary', { 'f-time': { type: FieldType.Time, data: stored } }).row;
+    const result = run('prop("Duration")', row);
+
+    expect(result.rawNumeric).toBe(expected);
+    expect(result.text).toBe(expected === undefined ? '' : String(expected));
   });
 });
 

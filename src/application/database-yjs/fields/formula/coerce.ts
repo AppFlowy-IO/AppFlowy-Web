@@ -51,6 +51,21 @@ export function asText(value: FormulaValue): string {
   }
 }
 
+/** Charge string growth before joining nested lists or copying existing text. */
+export function asTextWithBudget(value: FormulaValue, consumeWork: (amount: number) => void): string {
+  if (value.type === 'list') {
+    const parts = value.items.map((item) => asTextWithBudget(item, consumeWork));
+
+    consumeWork(parts.reduce((length, part) => length + part.length, Math.max(0, parts.length - 1) * 2));
+    return parts.join(', ');
+  }
+
+  const result = asText(value);
+
+  consumeWork(result.length);
+  return result;
+}
+
 export function asBoolean(value: FormulaValue): boolean {
   switch (value.type) {
     case 'boolean':

@@ -1,14 +1,90 @@
-import { asList, asNumber, asText } from '../coerce';
+import { RE2JS } from 're2js';
+
+import { asList, asNumber, asText, asTextWithBudget } from '../coerce';
 import { FormulaError, SourcePosition } from '../errors';
-import { FormulaFunctionSpec } from '../registry';
+import { EvalContext, FormulaFunctionSpec } from '../registry';
 import { bool, EMPTY, FormulaValue, list, listOf, num, text } from '../values';
 
-function compileRegex(pattern: FormulaValue, flags: string, position: SourcePosition): RegExp {
-  try {
-    return new RegExp(asText(pattern), flags);
-  } catch {
-    throw new FormulaError(`Invalid regular expression "${asText(pattern)}"`, position);
+const regexCache = new Map<string, RE2JS | string>();
+
+/** RE2 never backtracks. Also bound compilation, input and per-cell work. */
+function regexMatcher(value: FormulaValue, pattern: FormulaValue, position: SourcePosition, ctx: EvalContext) {
+  const source = asText(pattern);
+  const input = asText(value);
+
+  if (source.length > 4096) throw new FormulaError('The regular expression is too long', position);
+  if (input.length > 100_000) throw new FormulaError('The regular expression input is too long', position);
+  let regex = regexCache.get(source);
+
+  if (!regex) {
+    try {
+      regex = RE2JS.compile(RE2JS.translateRegExp(source), RE2JS.LOOKBEHINDS);
+      if (regex.programSize() > 10_000) regex = 'The regular expression is too complex';
+    } catch {
+      regex = `Invalid regular expression "${source}" (invalid or unsupported syntax)`;
+    }
+
+    // Cache failures too: a bad saved pattern must not be recompiled per row.
+    if (regexCache.size >= 32) regexCache.clear();
+    regexCache.set(source, regex);
   }
+
+  if (typeof regex === 'string') throw new FormulaError(regex, position);
+  const programSize = regex.programSize();
+
+  if (programSize * Math.max(1, input.length) > 2_000_000) {
+    throw new FormulaError('The regular expression is too complex', position);
+  }
+
+  const matcher = regex.matcher(input);
+  let start = 0;
+
+  return {
+    matcher,
+    find: () => {
+      // Each unanchored search can scan the remaining input, even with RE2.
+      // Charge every search so global matching cannot become quadratic.
+      const work = programSize * Math.max(1, input.length - start);
+
+      ctx.consumeRegexWork(work, position);
+      const found = matcher.find();
+
+      if (found) start = matcher.end() + (matcher.start() === matcher.end() ? 1 : 0);
+      return found;
+    },
+  };
+}
+
+function replaceRegex(
+  value: FormulaValue,
+  pattern: FormulaValue,
+  replacement: FormulaValue,
+  all: boolean,
+  position: SourcePosition,
+  ctx: EvalContext
+): FormulaValue {
+  // The engine repeats the searches when applying replacements.
+  const regex = regexMatcher(value, pattern, position, ctx);
+  const replacementText = asText(replacement);
+  const inputLength = asText(value).length;
+  let replacementBound = replacementText.length;
+
+  // Each capture/prefix/suffix token can expand to at most the full input.
+  // Counting even invalid tokens is a conservative bound without duplicating
+  // the engine's replacement semantics.
+  for (let index = 0; index + 1 < replacementText.length; index += 1) {
+    if (replacementText[index] === '$' && /[&`'1-9<]/.test(replacementText[index + 1])) {
+      replacementBound += inputLength;
+    }
+  }
+
+  ctx.consumeWork(inputLength, position);
+  while (regex.find()) {
+    ctx.consumeWork(replacementBound, position);
+    if (!all) break;
+  }
+
+  return text(all ? regex.matcher.replaceAll(replacementText) : regex.matcher.replaceFirst(replacementText));
 }
 
 export const textFunctions: FormulaFunctionSpec[] = [
@@ -16,14 +92,14 @@ export const textFunctions: FormulaFunctionSpec[] = [
     name: 'length',
     category: 'text',
     signature: 'length(text or list)',
-    description: 'Returns the number of characters in a text value, or the number of items in a list.',
+    description: 'Returns the number of Unicode characters in text, or the number of items in a list.',
     examples: [
       { expression: 'length("hello")', result: '5' },
       { expression: '[1, 2, 3].length()', result: '3' },
     ],
     params: [{ name: 'value', type: ['text', listOf('any')] }],
     returnType: 'number',
-    impl: ([value]) => num(value.type === 'list' ? value.items.length : asText(value).length),
+    impl: ([value]) => num(value.type === 'list' ? value.items.length : Array.from(asText(value)).length),
   },
   {
     name: 'substring',
@@ -41,13 +117,15 @@ export const textFunctions: FormulaFunctionSpec[] = [
       { name: 'endIndex', type: 'number', optional: true },
     ],
     returnType: 'text',
-    impl: ([value, start, end], _ctx, _nodes, position) =>
-      text(
-        asText(value).substring(
-          Math.max(0, Math.trunc(asNumber(start, position))),
-          end === undefined ? undefined : Math.max(0, Math.trunc(asNumber(end, position)))
-        )
-      ),
+    impl: ([value, start, end], _ctx, _nodes, position) => {
+      // Use the same character indices as length() and split("") on desktop.
+      const characters = Array.from(asText(value));
+      const clamp = (index: number) => Math.max(0, Math.min(characters.length, Math.trunc(index)));
+      const from = clamp(asNumber(start, position));
+      const to = end === undefined ? characters.length : clamp(asNumber(end, position));
+
+      return text(characters.slice(Math.min(from, to), Math.max(from, to)).join(''));
+    },
   },
   {
     name: 'contains',
@@ -76,7 +154,7 @@ export const textFunctions: FormulaFunctionSpec[] = [
       { name: 'regex', type: 'text' },
     ],
     returnType: 'boolean',
-    impl: ([value, pattern], _ctx, _nodes, position) => bool(compileRegex(pattern, '', position).test(asText(value))),
+    impl: ([value, pattern], ctx, _nodes, position) => bool(regexMatcher(value, pattern, position, ctx).find()),
   },
   {
     name: 'match',
@@ -89,8 +167,13 @@ export const textFunctions: FormulaFunctionSpec[] = [
       { name: 'regex', type: 'text' },
     ],
     returnType: listOf('text'),
-    impl: ([value, pattern], _ctx, _nodes, position) =>
-      list((asText(value).match(compileRegex(pattern, 'g', position)) ?? []).map((item) => text(item))),
+    impl: ([value, pattern], ctx, _nodes, position) => {
+      const regex = regexMatcher(value, pattern, position, ctx);
+      const matches: FormulaValue[] = [];
+
+      while (regex.find()) matches.push(text(regex.matcher.group() ?? ''));
+      return list(matches);
+    },
   },
   {
     name: 'replace',
@@ -104,8 +187,8 @@ export const textFunctions: FormulaFunctionSpec[] = [
       { name: 'replacement', type: 'text' },
     ],
     returnType: 'text',
-    impl: ([value, pattern, replacement], _ctx, _nodes, position) =>
-      text(asText(value).replace(compileRegex(pattern, '', position), asText(replacement))),
+    impl: ([value, pattern, replacement], ctx, _nodes, position) =>
+      replaceRegex(value, pattern, replacement, false, position, ctx),
   },
   {
     name: 'replaceAll',
@@ -119,8 +202,8 @@ export const textFunctions: FormulaFunctionSpec[] = [
       { name: 'replacement', type: 'text' },
     ],
     returnType: 'text',
-    impl: ([value, pattern, replacement], _ctx, _nodes, position) =>
-      text(asText(value).replace(compileRegex(pattern, 'g', position), asText(replacement))),
+    impl: ([value, pattern, replacement], ctx, _nodes, position) =>
+      replaceRegex(value, pattern, replacement, true, position, ctx),
   },
   {
     name: 'lower',
@@ -153,8 +236,13 @@ export const textFunctions: FormulaFunctionSpec[] = [
       { name: 'count', type: 'number' },
     ],
     returnType: 'text',
-    impl: ([value, count], _ctx, _nodes, position) =>
-      text(asText(value).repeat(Math.max(0, Math.min(10_000, Math.trunc(asNumber(count, position)))))),
+    impl: ([value, count], ctx, _nodes, position) => {
+      const source = asText(value);
+      const repetitions = Math.max(0, Math.min(10_000, Math.trunc(asNumber(count, position))));
+
+      ctx.consumeWork(source.length * repetitions, position);
+      return text(source.repeat(repetitions));
+    },
   },
   {
     name: 'trim',
@@ -181,7 +269,9 @@ export const textFunctions: FormulaFunctionSpec[] = [
       const source = asText(value);
 
       if (source === '') return list([]);
-      return list(source.split(asText(separator)).map((item) => text(item)));
+      const delimiter = asText(separator);
+
+      return list((delimiter === '' ? Array.from(source) : source.split(delimiter)).map((item) => text(item)));
     },
   },
   {
@@ -195,7 +285,13 @@ export const textFunctions: FormulaFunctionSpec[] = [
       { name: 'separator', type: 'text' },
     ],
     returnType: 'text',
-    impl: ([value, separator]) => text(asList(value).map(asText).join(asText(separator))),
+    impl: ([value, separator], ctx, _nodes, position) => {
+      const parts = asList(value).map((item) => asTextWithBudget(item, (amount) => ctx.consumeWork(amount, position)));
+      const delimiter = asText(separator);
+
+      ctx.consumeWork(Math.max(0, parts.length - 1) * delimiter.length, position);
+      return text(parts.join(delimiter));
+    },
   },
   {
     name: 'format',
@@ -208,7 +304,8 @@ export const textFunctions: FormulaFunctionSpec[] = [
     ],
     params: [{ name: 'value', type: 'any' }],
     returnType: 'text',
-    impl: ([value]) => text(asText(value)),
+    impl: ([value], ctx, _nodes, position) =>
+      text(asTextWithBudget(value, (amount) => ctx.consumeWork(amount, position))),
   },
   {
     name: 'toNumber',

@@ -19,10 +19,20 @@ export interface CompiledFormula {
   error?: FormulaError;
 }
 
-const cache = new Map<string, CompiledFormula>();
+interface CachedCompilation {
+  result: CompiledFormula;
+  /** Transitive formula references, excluding this expression's own field. */
+  dependencies: Set<string>;
+  /** Longest downstream chain, not including this expression's own field. */
+  depth: number;
+  /** Cycle/depth failures depend on the caller and cannot enter the shared cache. */
+  contextualError?: boolean;
+}
+
+const cache = new Map<string, CachedCompilation>();
 const CACHE_LIMIT = 500;
 
-function remember(key: string, value: CompiledFormula): CompiledFormula {
+function remember(key: string, value: CachedCompilation): CachedCompilation {
   if (cache.size >= CACHE_LIMIT) {
     const oldest = cache.keys().next().value;
 
@@ -31,6 +41,11 @@ function remember(key: string, value: CompiledFormula): CompiledFormula {
 
   cache.set(key, value);
   return value;
+}
+
+function compilationError(error: unknown, position?: SourcePosition): FormulaError {
+  if (error instanceof FormulaError) return error;
+  return new FormulaError(error instanceof RangeError ? 'Formula is too complex' : String(error), position);
 }
 
 /**
@@ -45,74 +60,116 @@ export function compileFormula(
   fieldId?: string,
   visiting: ReadonlySet<string> = new Set()
 ): CompiledFormula {
-  const source = expression.trim();
+  const signature = formulaSchemaSignature(schema);
+  // Keep shared results for this whole pass even when a wide graph evicts
+  // entries from the bounded cross-call cache.
+  const memo = new Map<string, CachedCompilation>();
+  const compile = (source: string, ownerId: string | undefined, ancestors: ReadonlySet<string>): CachedCompilation => {
+    const key = JSON.stringify([signature, ownerId, source]);
+    const chain = new Set(ancestors);
 
-  if (source === '') return { ast: null, resultType: 'empty' };
+    if (ownerId) chain.add(ownerId);
+    const cached = memo.get(key) ?? cache.get(key);
 
-  // A cached dependency must still be checked against an editor draft's
-  // ancestry, which can differ from the saved formula's ancestry.
-  const key = JSON.stringify([formulaSchemaSignature(schema), fieldId, [...visiting].sort(), source]);
-  const cached = cache.get(key);
+    if (cached) {
+      const cycle = Array.from(cached.dependencies).find((id) => chain.has(id));
+      let error: FormulaError | undefined;
 
-  if (cached) return cached;
-
-  const chain = new Set(visiting);
-
-  if (fieldId) chain.add(fieldId);
-
-  let ast: FormulaNode;
-
-  try {
-    ast = parseFormula(source);
-  } catch (error) {
-    return remember(key, { ast: null, resultType: 'any', error: error as FormulaError });
-  }
-
-  const getPropType = (ref: string, position: SourcePosition): FormulaType => {
-    const entry = resolveFormulaField(schema, ref);
-
-    if (!entry) throw new FormulaError(`Unknown property "${ref}"`, position, ref);
-    if (entry.type === FieldType.Rollup) {
-      const relationId = parseRollupTypeOption(entry.field)?.relation_field_id;
-
-      if (relationId && resolveFormulaField(schema, relationId)?.id !== relationId) {
-        throw new FormulaError(
-          `Property "${entry.name}" uses a missing relation property "${relationId}"`,
-          position,
-          relationId
+      if (cycle) {
+        error = new FormulaError(
+          `Property "${resolveFormulaField(schema, cycle)?.name ?? cycle}" would reference itself`,
+          cached.result.ast?.position
+        );
+      } else if (chain.size + cached.depth > FORMULA_MAX_DEPTH) {
+        error = new FormulaError(
+          `Formulas can only reference each other ${FORMULA_MAX_DEPTH} levels deep`,
+          cached.result.ast?.position
         );
       }
+
+      if (error) {
+        return { ...cached, result: { ...cached.result, resultType: 'any', error }, contextualError: true };
+      }
+
+      memo.set(key, cached);
+      return cached;
     }
 
-    if (entry.type !== FieldType.Formula) return formulaTypeOfField(entry);
-    if (chain.has(entry.id)) {
-      throw new FormulaError(`Property "${entry.name}" would reference itself`, position);
+    const dependencies = new Set<string>();
+    let depth = 0;
+    let contextualError = false;
+    const finish = (result: CompiledFormula): CachedCompilation => {
+      const compiled = { result, dependencies, depth, contextualError };
+
+      if (!contextualError) {
+        memo.set(key, compiled);
+        remember(key, compiled);
+      }
+
+      return compiled;
+    };
+
+    if (source === '') return finish({ ast: null, resultType: 'empty' });
+    let ast: FormulaNode;
+
+    try {
+      ast = parseFormula(source);
+    } catch (error) {
+      return finish({ ast: null, resultType: 'any', error: compilationError(error) });
     }
 
-    if (chain.size >= FORMULA_MAX_DEPTH) {
-      throw new FormulaError(`Formulas can only reference each other ${FORMULA_MAX_DEPTH} levels deep`, position);
+    const getPropType = (ref: string, position: SourcePosition): FormulaType => {
+      const entry = resolveFormulaField(schema, ref);
+
+      if (!entry) throw new FormulaError(`Unknown property "${ref}"`, position, ref);
+      if (entry.type === FieldType.Rollup) {
+        const relationId = parseRollupTypeOption(entry.field)?.relation_field_id;
+
+        if (relationId && resolveFormulaField(schema, relationId)?.id !== relationId) {
+          throw new FormulaError(
+            `Property "${entry.name}" uses a missing relation property "${relationId}"`,
+            position,
+            relationId
+          );
+        }
+      }
+
+      if (entry.type !== FieldType.Formula) return formulaTypeOfField(entry);
+      if (chain.has(entry.id)) {
+        contextualError = true;
+        throw new FormulaError(`Property "${entry.name}" would reference itself`, position);
+      }
+
+      if (chain.size >= FORMULA_MAX_DEPTH) {
+        contextualError = true;
+        throw new FormulaError(`Formulas can only reference each other ${FORMULA_MAX_DEPTH} levels deep`, position);
+      }
+
+      const nested = compile(parseFormulaTypeOption(entry.field).formula.trim(), entry.id, chain);
+
+      dependencies.add(entry.id);
+      nested.dependencies.forEach((id) => dependencies.add(id));
+      depth = Math.max(depth, 1 + nested.depth);
+      if (nested.result.error) {
+        contextualError ||= Boolean(nested.contextualError);
+        throw new FormulaError(
+          `Property "${entry.name}" has an invalid formula: ${nested.result.error.message}`,
+          position,
+          nested.result.error.missingPropertyRef
+        );
+      }
+
+      return nested.result.resultType;
+    };
+
+    try {
+      return finish({ ast, resultType: inferFormulaType(ast, { getPropType }) });
+    } catch (error) {
+      return finish({ ast, resultType: 'any', error: compilationError(error, ast.position) });
     }
-
-    const nested = compileFormula(parseFormulaTypeOption(entry.field).formula, schema, entry.id, chain);
-
-    if (nested.error) {
-      throw new FormulaError(
-        `Property "${entry.name}" has an invalid formula: ${nested.error.message}`,
-        position,
-        nested.error.missingPropertyRef
-      );
-    }
-
-    return nested.resultType;
   };
 
-  try {
-    return remember(key, { ast, resultType: inferFormulaType(ast, { getPropType }) });
-  } catch (error) {
-    const failed: CompiledFormula = { ast, resultType: 'any', error: error as FormulaError };
-
-    return remember(key, failed);
-  }
+  return compile(expression.trim(), fieldId, visiting).result;
 }
 
 /** Test hook. */

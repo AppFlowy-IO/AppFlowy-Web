@@ -1,6 +1,7 @@
 import { FieldType } from '@/application/database-yjs/database.type';
 import { YDatabaseField, YDatabaseRow } from '@/application/types';
 
+import { FormulaEvaluationBudget } from './budget';
 import { readFieldFormulaValue, ReadFieldValueContext } from './cell-values';
 import { compileFormula } from './compile';
 import { FormulaError, SourcePosition } from './errors';
@@ -58,12 +59,13 @@ function withRaw(value: FormulaValue, resultType: FormulaCellResult['resultType'
  * Never throws: parse, type and runtime failures come back as `error`.
  */
 export function evaluateFormulaCell(options: EvaluateFormulaCellOptions): FormulaCellResult {
-  return evaluateFormulaCellWithCache(options, new Map());
+  return evaluateFormulaCellWithCache(options, new Map(), new FormulaEvaluationBudget());
 }
 
 function evaluateFormulaCellWithCache(
   options: EvaluateFormulaCellOptions,
-  values: Map<string, FormulaValue>
+  values: Map<string, FormulaValue>,
+  budget: FormulaEvaluationBudget
 ): FormulaCellResult {
   const typeOption = parseFormulaTypeOption(options.field);
 
@@ -73,7 +75,8 @@ function evaluateFormulaCellWithCache(
       expression: typeOption.formula,
       format: { numberFormat: typeOption.format, ...options.format },
     },
-    values
+    values,
+    budget
   );
 }
 
@@ -84,13 +87,14 @@ export interface EvaluateFormulaExpressionOptions extends EvaluateFormulaCellOpt
 
 /** Evaluates an arbitrary expression as if it were `field`'s formula (used for live previews). */
 export function evaluateFormulaExpression(options: EvaluateFormulaExpressionOptions): FormulaCellResult {
-  return evaluateFormulaExpressionWithCache(options, new Map());
+  return evaluateFormulaExpressionWithCache(options, new Map(), new FormulaEvaluationBudget());
 }
 
 /** Share raw property values only within this synchronous evaluation of one row. */
 function evaluateFormulaExpressionWithCache(
   options: EvaluateFormulaExpressionOptions,
-  values: Map<string, FormulaValue>
+  values: Map<string, FormulaValue>,
+  budget: FormulaEvaluationBudget
 ): FormulaCellResult {
   const { schema, fieldId, row, rowId, now, expression } = options;
   const formatOptions: FormulaFormatOptions = { ...options.format };
@@ -145,7 +149,8 @@ function evaluateFormulaExpressionWithCache(
         getRollupValue: options.getRollupValue,
         visiting,
       },
-      values
+      values,
+      budget
     );
 
     if (nested.error) {
@@ -157,7 +162,7 @@ function evaluateFormulaExpressionWithCache(
   };
 
   try {
-    const value = evaluateFormula(compiled.ast, { getProp, now, rowId });
+    const value = evaluateFormula(compiled.ast, { getProp, now, rowId, budget });
 
     return withRaw(value, compiled.resultType, formatFormulaValue(value, formatOptions));
   } catch (error) {

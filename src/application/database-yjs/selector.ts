@@ -3204,14 +3204,17 @@ export function useFormulaCellValue({
   useEffect(() => {
     if (!isFormula || !row) return;
     const bump = () => setRowClock((prev) => prev + 1);
-    const cells = row.get(YjsDatabaseKey.cells);
 
-    row.observe(bump);
-    cells?.observeDeep(bump);
+    // Observe through the row so replacing its cells map also keeps subsequent
+    // edits to the replacement subscribed, as happens during synchronization.
+    row.observeDeep(bump);
+
+    // Inputs may have changed since render, before these observers attached.
+    // Refresh once after subscribing so that gap cannot leave a stale value.
+    bump();
 
     return () => {
-      row.unobserve(bump);
-      cells?.unobserveDeep(bump);
+      row.unobserveDeep(bump);
     };
   }, [isFormula, row]);
 

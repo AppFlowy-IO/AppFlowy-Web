@@ -1,4 +1,4 @@
-import { FieldType } from '@/application/database-yjs/database.type';
+import { FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { YDatabaseField, YDatabaseFields, YjsDatabaseKey } from '@/application/types';
 
@@ -38,27 +38,45 @@ export function collectExpressionExternalReferences(
   const relations = new Map<string, FormulaFieldSchema>();
   const rollups = new Map<string, FormulaFieldSchema>();
   const visited = new Set<string>(ownerId ? [ownerId] : []);
-  const visit = (source: string, fieldId?: string) => {
-    // Compiles are cached, and evaluation compiles the same expression anyway.
-    const { ast } = compileFormula(source, schema, fieldId);
+  const pending: Array<{ source: string; fieldId?: string } | { ref: string }> = [{ source: expression, fieldId: ownerId }];
 
-    if (!ast) return;
-    clock ||= formulaUsesClock(ast);
-    collectPropRefs(ast).forEach((ref) => {
-      const entry = resolveFormulaField(schema, ref);
+  while (pending.length > 0) {
+    const next = pending.pop()!;
 
-      if (!entry) return;
-      if (PEOPLE_TYPES.has(entry.type)) people = true;
-      if (entry.type === FieldType.Relation) relations.set(entry.id, entry);
-      if (entry.type === FieldType.Rollup) rollups.set(entry.id, entry);
-      if (entry.type === FieldType.Formula && !visited.has(entry.id)) {
-        visited.add(entry.id);
-        visit(parseFormulaTypeOption(entry.field).formula, entry.id);
-      }
-    });
-  };
+    if ('source' in next) {
+      // Compiles are cached, and evaluation compiles the same expression anyway.
+      const { ast } = compileFormula(next.source, schema, next.fieldId);
 
-  visit(expression, ownerId);
+      // Invalid formulas retain discoverable references (for example a cycle
+      // reading a Person). Both AST and field traversals are iterative.
+      if (!ast) continue;
+      clock ||= formulaUsesClock(ast);
+      const refs = collectPropRefs(ast);
+
+      for (let index = refs.length - 1; index >= 0; index -= 1) pending.push({ ref: refs[index] });
+      continue;
+    }
+
+    const entry = resolveFormulaField(schema, next.ref);
+
+    if (!entry) continue;
+    if (PEOPLE_TYPES.has(entry.type)) people = true;
+    if (entry.type === FieldType.Relation) relations.set(entry.id, entry);
+    if (entry.type === FieldType.Rollup) {
+      rollups.set(entry.id, entry);
+      const showAs = Number(parseRollupTypeOption(entry.field)?.show_as);
+
+      // The target schema may still be loading in another database. List
+      // rollups can contain people even without a direct Person dependency.
+      if (showAs === RollupDisplayMode.OriginalList || showAs === RollupDisplayMode.UniqueList) people = true;
+    }
+
+    if (entry.type === FieldType.Formula && !visited.has(entry.id)) {
+      visited.add(entry.id);
+      pending.push({ source: parseFormulaTypeOption(entry.field).formula, fieldId: entry.id });
+    }
+  }
+
   if (!clock && !people && relations.size === 0 && rollups.size === 0) return NO_EXTERNAL_REFERENCES;
   return { clock, people, relations: Array.from(relations.values()), rollups: Array.from(rollups.values()) };
 }
@@ -81,7 +99,8 @@ export function collectFormulaExternalReferences(
 export function formulaExternalReferencesKey(references: FormulaExternalReferences): string {
   if (references === NO_EXTERNAL_REFERENCES) return '';
   const fieldKey = (entry: FormulaFieldSchema) => {
-    const relationId = entry.type === FieldType.Rollup ? parseRollupTypeOption(entry.field)?.relation_field_id : undefined;
+    const relationId =
+      entry.type === FieldType.Rollup ? parseRollupTypeOption(entry.field)?.relation_field_id : undefined;
     const relation = relationId ? (entry.field.parent as YDatabaseFields | null)?.get(relationId) : undefined;
 
     return [entry.id, entry.type, entry.field.get(YjsDatabaseKey.type_option)?.toJSON(), relation?.toJSON()];
