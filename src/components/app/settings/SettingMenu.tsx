@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next';
 
 import { SettingMenuItem } from '@/application/types';
 import { ReactComponent as ManageDataIcon } from '@/assets/icons/database.svg';
-import { ReactComponent as MembersIcon } from '@/assets/icons/users.svg';
+import { ReactComponent as ConnectionsIcon } from '@/assets/icons/link.svg';
 import { ReactComponent as ProfileIcon } from '@/assets/icons/person.svg';
 import { ReactComponent as PersonIcon } from '@/assets/icons/user.svg';
+import { ReactComponent as MembersIcon } from '@/assets/icons/users.svg';
 
 interface SettingMenuProps {
   selectedItem: SettingMenuItem;
@@ -36,6 +37,11 @@ function SettingMenu({ selectedItem, onSelectItem }: SettingMenuProps) {
         value: SettingMenuItem.MANAGE_DATA,
         label: t('settings.manageData.menuLabel'),
         IconComponent: ManageDataIcon,
+      },
+      {
+        value: SettingMenuItem.CONNECTIONS,
+        label: t('settings.connections.menuLabel'),
+        IconComponent: ConnectionsIcon,
       },
     ];
   }, [t]);
