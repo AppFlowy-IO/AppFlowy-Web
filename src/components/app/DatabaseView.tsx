@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
+import { publishDatabasePageSelection } from '@/application/database-yjs/database-page-state';
 import { PageService, ViewService } from '@/application/services/domains';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { View, ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -33,6 +34,8 @@ import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
 
 type DatabaseViewProps = ViewComponentProps & {
   bindViewSync?: (doc: ViewComponentProps['doc']) => SyncContext | null;
+  /** Only the main page owns the app header's selected database tab. */
+  isRouteView?: boolean;
 };
 
 const DATABASE_CONTAINER_RETRY_DELAYS_MS = [500, 1500, 3000] as const;
@@ -220,6 +223,13 @@ function DatabaseView(props: DatabaseViewProps) {
       tabViewId,
       visibleViewIds: restoredVisibleViewIds,
     });
+
+  useLayoutEffect(() => {
+    if (!props.isRouteView || !props.workspaceId || !databasePageId || !activeViewId) return;
+    return publishDatabasePageSelection({
+      workspaceId: props.workspaceId, databasePageId, tabViewId, activeViewId,
+    });
+  }, [props.isRouteView, props.workspaceId, databasePageId, tabViewId, activeViewId]);
 
   useLayoutEffect(() => {
     if (!hasRestoreGeneration || !activeViewId || search.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM) === activeViewId) return;

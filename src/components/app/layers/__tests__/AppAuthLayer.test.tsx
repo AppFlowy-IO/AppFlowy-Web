@@ -356,12 +356,66 @@ describe('AppAuthLayer workspace info loading', () => {
 
       expect(mockGetServerInfo).toHaveBeenCalledTimes(1);
       expect(latestAuthContext?.syncLimitsLoaded).toBe(false);
+      expect(latestAuthContext?.databaseHistoryCapabilityLoaded).toBe(false);
 
       await act(async () => {
         await jest.advanceTimersByTimeAsync(1_000);
       });
 
       expect(mockGetServerInfo).toHaveBeenCalledTimes(2);
+      expect(latestAuthContext?.syncLimitsLoaded).toBe(true);
+      expect(latestAuthContext?.databaseHistoryCapabilityLoaded).toBe(true);
+      expect(latestAuthContext?.maxUpdateBytes).toBe(8_000_000);
+      expect(latestAuthContext?.maxSlowSyncUpdateBytes).toBe(64_000_000);
+    } finally {
+      view.unmount();
+      errorSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it('resolves legacy database capabilities on a missing server-info endpoint without enabling the slow lane', async () => {
+    jest.useFakeTimers();
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    let latestAuthContext: AuthInternalContextType | null = null;
+
+    mockGetWorkspaceInfo.mockResolvedValue(createWorkspaceInfo('workspace-old'));
+    mockGetServerInfo.mockReset().mockRejectedValueOnce({ code: 404 }).mockResolvedValue({
+      enable_page_history: true,
+      enable_database_history: true,
+      enable_database_history_version_ui: true,
+      max_update_bytes: 8_000_000,
+      max_slow_sync_update_bytes: 64_000_000,
+    });
+
+    function CaptureAuthContext() {
+      latestAuthContext = useContext(AuthInternalContext);
+      return null;
+    }
+
+    const view = render(
+      <AFConfigContext.Provider
+        value={{ isAuthenticated: true, updateCurrentUser: jest.fn(), openLoginModal: jest.fn() }}
+      >
+        <AppAuthLayer><CaptureAuthContext /></AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    try {
+      expect(latestAuthContext?.databaseHistoryCapabilityLoaded).toBe(false);
+      await act(async () => { await jest.advanceTimersByTimeAsync(0); });
+      expect(latestAuthContext?.databaseHistoryCapabilityLoaded).toBe(true);
+      expect(latestAuthContext?.enableDatabaseHistory).toBe(false);
+      expect(latestAuthContext?.enablePageHistory).toBe(true);
+      expect(latestAuthContext?.syncLimitsLoaded).toBe(false);
+      expect(latestAuthContext?.maxUpdateBytes).toBeUndefined();
+      expect(latestAuthContext?.maxSlowSyncUpdateBytes).toBeUndefined();
+
+      // A later server upgrade must replace the legacy fallback with its
+      // advertised restore fencing and upload limits without a page reload.
+      await act(async () => { await jest.advanceTimersByTimeAsync(5 * 60_000); });
+      expect(latestAuthContext?.databaseHistoryCapabilityLoaded).toBe(true);
+      expect(latestAuthContext?.enableDatabaseHistory).toBe(true);
       expect(latestAuthContext?.syncLimitsLoaded).toBe(true);
       expect(latestAuthContext?.maxUpdateBytes).toBe(8_000_000);
       expect(latestAuthContext?.maxSlowSyncUpdateBytes).toBe(64_000_000);

@@ -3,12 +3,15 @@ import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
+import { useDatabasePageSelection } from '@/application/database-yjs/database-page-state';
 import { ensureRowDocumentView, syncRowDocumentViewName } from '@/application/row-document/lifecycle';
 import { useActiveRowPage } from '@/application/row-document/row-page-state';
-import { isDatabaseContainer } from '@/application/view-utils';
+import { isDatabaseContainer, isDatabaseLayout, resolveActiveDatabaseViewId } from '@/application/view-utils';
+import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { findView } from '@/components/_shared/outline/utils';
 import { useAppOutline, useAppView, useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
+import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
+import { useContainerVisibleViewIds } from '@/components/database/hooks/visibleViewIds/useContainerVisibleViewIds';
 import { InlineCommentToggleButton } from '@/components/inline-comment/InlineCommentToggleButton';
 import { openOrDownload } from '@/utils/open_schema';
 
@@ -28,6 +31,24 @@ function RightMenu() {
   const hasRowPageRoute = searchParams.has('r');
   const rowPageRowId = searchParams.get('r');
   const activeRowPage = useActiveRowPage();
+  const tabViewId = searchParams.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM);
+  const displayedViewId = useDatabasePageSelection(workspaceId, routeViewId, tabViewId);
+  const { visibleViewIds } = useContainerVisibleViewIds({
+    view: routeView,
+    outline,
+    databaseId: routeView?.extra?.database_id,
+    embedded: routeView?.extra?.embedded,
+  });
+  // Prefer the rendered database's selection, including restored views that
+  // have not reached the outline yet. Resolve from the route while it mounts.
+  const activeViewId = displayedViewId ?? (
+    routeView && isDatabaseLayout(routeView.layout)
+      ? resolveActiveDatabaseViewId({
+          databasePageId: routeViewId,
+          tabViewId,
+          visibleViewIds,
+        })
+      : routeViewId);
   const actionViewId = useMemo(() => {
     if (!routeViewId || !routeView?.parent_view_id) {
       return routeViewId;
@@ -70,7 +91,7 @@ function RightMenu() {
       {favoriteViewId && (
         <FavoriteButton viewId={favoriteViewId} beforeToggle={rowPage ? prepareRowDocumentForFavorite : undefined} />
       )}
-      {actionViewId && <MoreActions viewId={actionViewId} activeViewId={routeViewId} rowId={rowPageRowId} />}
+      {actionViewId && <MoreActions viewId={actionViewId} activeViewId={activeViewId} rowId={rowPageRowId} />}
 
       <Divider orientation={'vertical'} className={'mx-2'} flexItem />
       <Tooltip title={t('publish.downloadApp')}>

@@ -6,7 +6,7 @@ import * as Y from 'yjs';
 import { ERROR_CODE } from '@/application/constants';
 import { invalidateDatabaseBlobAfterRestore, prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
-import { captureDatabaseStorageFence, db, deleteCollabDB, openCollabDB, openRowCollabDBWithProvider,
+import { captureDatabaseStorageFence, db, deleteCollabDB, matchesDatabaseStorageFence, openCollabDB, openRowCollabDBWithProvider,
   readDatabaseIdFromRowCache } from '@/application/db';
 import { DATABASE_RESTORE_MARKER_PREFIX } from '@/application/db/database-storage-fence';
 import { getDatabaseRestoreState } from '@/application/services/domains/database-history';
@@ -346,9 +346,19 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
         const owner = current.refs.latestUserRef.current;
 
         if (owner) {
-          await db.sync_outbox.where('[userId+workspaceId+objectId]')
-            .equals([owner.uuid, current.workspaceId, objectId])
-            .filter((record) => (record.databaseRestoreId ?? nilMarker) !== marker).delete();
+          const fence = await captureDatabaseStorageFence(databaseId, { required: true });
+
+          // A delayed response can still match this tab's tracker after a
+          // sibling has advanced storage. Never discard that sibling's edits.
+          if ((fence.epoch ?? nilMarker) !== marker) return false;
+          await db.transaction('rw', db.sync_outbox, db.collab_custom, async () => {
+            // Hold the generation and outbox write locks together, including
+            // when a restore commits after the preliminary fence read.
+            if (!(await matchesDatabaseStorageFence(fence))) return;
+            await db.sync_outbox.where('[userId+workspaceId+objectId]')
+              .equals([owner.uuid, current.workspaceId, objectId])
+              .filter((record) => (record.databaseRestoreId ?? nilMarker) !== marker).delete();
+          });
         }
 
         return false;

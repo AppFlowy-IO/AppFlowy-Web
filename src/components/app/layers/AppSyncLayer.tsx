@@ -84,6 +84,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     maxSlowSyncUpdateBytes,
     syncLimitsLoaded = false,
     enableDatabaseHistory,
+    databaseHistoryCapabilityLoaded = syncLimitsLoaded,
   } = useAuthInternal();
   const [awarenessMap] = useState<Record<string, Awareness>>({});
   // Lazy-init so a throwaway EventEmitter isn't constructed on every render
@@ -131,7 +132,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     revertCollabVersion,
     scheduleDeferredCleanup,
   } = useSync(webSocket, broadcastChannel, eventEmitter, currentWorkspaceId!, {
-    enabled: enableDatabaseHistory, capabilityLoaded: syncLimitsLoaded,
+    enabled: enableDatabaseHistory, capabilityLoaded: databaseHistoryCapabilityLoaded,
   });
 
   useEffect(() => {
@@ -408,6 +409,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     maxUpdateBytes,
     maxSlowSyncUpdateBytes,
     syncLimitsLoaded,
+    databaseHistoryCapabilityLoaded,
     wsReadyState,
   ].join('|');
 

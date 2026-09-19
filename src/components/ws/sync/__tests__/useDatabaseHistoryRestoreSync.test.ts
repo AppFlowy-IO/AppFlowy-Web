@@ -6,7 +6,7 @@ import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import * as Y from 'yjs';
 
 import { invalidateDatabaseBlobAfterRestore, prefetchDatabaseBlobDiff } from '@/application/database-blob';
-import { captureDatabaseStorageFence, db, deleteCollabDB, openCollabDB, openRowCollabDBWithProvider } from '@/application/db';
+import { captureDatabaseStorageFence, db, deleteCollabDB, matchesDatabaseStorageFence, openCollabDB, openRowCollabDBWithProvider } from '@/application/db';
 import { getDatabaseRestoreState } from '@/application/services/domains/database-history';
 import { getCachedRowDatabaseId } from '@/application/services/js-services/cache';
 import { getCollab } from '@/application/services/js-services/http/collab-api';
@@ -20,9 +20,10 @@ jest.mock('@/application/database-blob', () => ({
   invalidateDatabaseBlobAfterRestore: jest.fn(), prefetchDatabaseBlobDiff: jest.fn(),
 }));
 jest.mock('@/application/db', () => ({
-  db: { rows: { where: jest.fn(), filter: jest.fn() }, sync_outbox: { where: jest.fn() } }, deleteCollabDB: jest.fn(),
+  db: { rows: { where: jest.fn(), filter: jest.fn() }, sync_outbox: { where: jest.fn() },
+    collab_custom: {}, transaction: jest.fn() }, deleteCollabDB: jest.fn(),
   openCollabDB: jest.fn(), openRowCollabDBWithProvider: jest.fn(), captureDatabaseStorageFence: jest.fn(),
-  readDatabaseIdFromRowCache: jest.fn(),
+  readDatabaseIdFromRowCache: jest.fn(), matchesDatabaseStorageFence: jest.fn(),
 }));
 jest.mock('@/application/services/domains/database-history', () => ({ getDatabaseRestoreState: jest.fn() }));
 jest.mock('@/application/services/js-services/http/collab-api', () => ({ getCollab: jest.fn() }));
@@ -72,6 +73,9 @@ beforeEach(() => {
   jest.mocked(getCachedRowDatabaseId).mockReturnValue('database');
   localStorage.clear();
   jest.mocked(captureDatabaseStorageFence).mockResolvedValue({ databaseId: 'database', epoch: null, cacheEpoch: null });
+  jest.mocked(matchesDatabaseStorageFence).mockResolvedValue(true);
+  jest.mocked(db.transaction).mockImplementation((...args: unknown[]) =>
+    (args[args.length - 1] as () => Promise<unknown>)());
   jest.mocked(db.rows.where).mockReturnValue({ startsWith: () => ({ toArray: async () => [{ row_id: 'row' }] }) } as never);
   jest.mocked(deleteCollabDB).mockResolvedValue(true);
   jest.mocked(getDatabaseRestoreState).mockResolvedValue({ database_restore_id: 'restore-new', version: 'same-version' });
@@ -253,6 +257,28 @@ test('verification fails closed before capability resolution and when the server
   expect(deleteCollabDB).not.toHaveBeenCalled();
 });
 
+test('legacy database sync resumes only after capabilities resolve with history disabled', async () => {
+  const f = fixture();
+  const { result, rerender, unmount } = renderHook(({ loaded }) => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: false, capabilityLoaded: loaded,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }), { initialProps: { loaded: false } });
+
+  for (const type of [Types.Database, Types.DatabaseRow]) {
+    expect(await result.current.ensureDatabaseRestoreCurrent('legacy', type)).toBe(false);
+  }
+
+  rerender({ loaded: true });
+  for (const type of [Types.Database, Types.DatabaseRow]) {
+    expect(await result.current.ensureDatabaseRestoreCurrent('legacy', type)).toBe(true);
+  }
+
+  expect(getDatabaseRestoreState).not.toHaveBeenCalled();
+  expect(deleteOutboxByObjectId).not.toHaveBeenCalled();
+  unmount();
+});
+
 test('a failed reload retains owners and automatically retries after its contexts were retired', async () => {
   jest.useFakeTimers();
   const f = fixture();
@@ -387,12 +413,18 @@ test('a stale notification hint verifies authority without resetting the current
   expect(f.contexts.get('database')?.doc).toBe(f.root);
 });
 
-test('discarding a stale payload retains freshly queued edits from the current generation', async () => {
+test.each([null, '00000000-0000-0000-0000-000000000000', 'restore-new'])(
+  'discarding a stale payload retains freshly queued edits in storage generation %s', async (epoch) => {
   const f = fixture();
+  const marker = epoch ?? '00000000-0000-0000-0000-000000000000';
   const remove = jest.fn(async () => 1);
   let predicate: ((record: { databaseRestoreId?: string }) => boolean) | undefined;
 
-  localStorage.setItem('af_database_restore:v1:server:user:workspace:database', 'restore-new');
+  localStorage.setItem('af_database_restore:v1:server:user:workspace:database', epoch ?? 'null');
+  jest.mocked(getDatabaseRestoreState).mockResolvedValue({ database_restore_id: epoch, version: null });
+  jest.mocked(captureDatabaseStorageFence).mockResolvedValue({
+    databaseId: 'database', epoch, cacheEpoch: epoch,
+  });
   jest.mocked(db.sync_outbox.where).mockReturnValue({ equals: () => ({ filter: (value: typeof predicate) => {
     predicate = value;
     return { delete: remove };
@@ -406,9 +438,61 @@ test('discarding a stale payload retains freshly queued edits from the current g
   expect(await result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow, 'older-restore')).toBe(false);
   expect(remove).toHaveBeenCalled();
   expect(predicate?.({ databaseRestoreId: 'older-restore' })).toBe(true);
-  expect(predicate?.({})).toBe(true);
-  expect(predicate?.({ databaseRestoreId: 'restore-new' })).toBe(false);
+  expect(predicate?.({})).toBe(marker !== '00000000-0000-0000-0000-000000000000');
+  expect(predicate?.({ databaseRestoreId: marker })).toBe(false);
+  expect(db.transaction).toHaveBeenCalledWith('rw', db.sync_outbox, db.collab_custom, expect.any(Function));
+  expect(matchesDatabaseStorageFence).toHaveBeenCalledWith({ databaseId: 'database', epoch, cacheEpoch: epoch });
   expect(deleteOutboxByObjectId).not.toHaveBeenCalled();
+});
+
+test.each(['before the response', 'before cleanup commits'])(
+  'a stale R1 response preserves unsent R2 edits when a sibling advances %s', async (timing) => {
+  const f = fixture();
+  let epoch = 'restore-r1';
+  let respond!: (state: { database_restore_id: string; version: null }) => void;
+  let queued = [{ databaseRestoreId: 'restore-r2', payload: 'new unsent edit' }];
+  const remove = jest.fn(async (predicate: (record: typeof queued[number]) => boolean) => {
+    queued = queued.filter((record) => !predicate(record));
+  });
+
+  localStorage.setItem('af_database_restore:v1:server:user:workspace:database', epoch);
+  jest.mocked(captureDatabaseStorageFence).mockImplementation(async () => ({
+    databaseId: 'database', epoch, cacheEpoch: epoch,
+  }));
+  jest.mocked(matchesDatabaseStorageFence).mockImplementation(async (fence) => fence.epoch === epoch);
+  jest.mocked(getDatabaseRestoreState).mockImplementationOnce(() => new Promise((resolve) => { respond = resolve; }));
+  jest.mocked(db.sync_outbox.where).mockReturnValue({ equals: () => ({
+    filter: (predicate: (record: typeof queued[number]) => boolean) => ({ delete: () => remove(predicate) }),
+  }) } as never);
+  jest.mocked(db.transaction).mockImplementation(async (...args: unknown[]) => {
+    // The sibling commits R2 after a preliminary fence read but before this
+    // transaction obtains the shared collab_custom/outbox write lock.
+    if (timing === 'before cleanup commits') epoch = 'restore-r2';
+    return (args[args.length - 1] as () => Promise<unknown>)();
+  });
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }));
+  let verification!: Promise<boolean>;
+
+  await act(async () => {
+    verification = result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow, 'restore-r2');
+  });
+  if (timing === 'before the response') epoch = 'restore-r2';
+  await act(async () => {
+    respond({ database_restore_id: 'restore-r1', version: null });
+    expect(await verification).toBe(false);
+  });
+  expect(queued).toEqual([{ databaseRestoreId: 'restore-r2', payload: 'new unsent edit' }]);
+  expect(remove).not.toHaveBeenCalled();
+  if (timing === 'before cleanup commits') {
+    expect(db.transaction).toHaveBeenCalledWith('rw', db.sync_outbox, db.collab_custom, expect.any(Function));
+    expect(matchesDatabaseStorageFence).toHaveBeenCalled();
+  }
+
+  unmount();
 });
 
 
