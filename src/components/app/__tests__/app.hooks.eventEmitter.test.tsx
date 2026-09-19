@@ -6,10 +6,6 @@ import type { ReactNode } from 'react';
 import { useEventEmitter, useEventEmitterOptional } from '@/components/app/app.hooks';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 
-jest.mock('@/components/app/layers/AppAuthLayer', () => ({ AppAuthLayer: () => null }));
-jest.mock('@/components/app/layers/AppBusinessLayer', () => ({ AppBusinessLayer: () => null }));
-jest.mock('@/components/app/layers/AppSyncLayer', () => ({ AppSyncLayer: () => null }));
-
 describe('app event emitter hooks', () => {
   it('keeps the required hook strict outside AppProvider', () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);

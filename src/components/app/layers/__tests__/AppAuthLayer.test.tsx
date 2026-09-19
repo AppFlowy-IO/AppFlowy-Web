@@ -4,7 +4,7 @@ import { useContext } from 'react';
 import { UserService, WorkspaceService, AuthService } from '@/application/services/domains';
 import { invalidToken } from '@/application/session/token';
 import { type UserWorkspaceInfo } from '@/application/types';
-import { AppProvider } from '@/components/app/app.hooks';
+import { AppProvider } from '@/components/app/AppProvider';
 import { AuthInternalContext, type AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { AppAuthLayer } from '@/components/app/layers/AppAuthLayer';
 import { AFConfigContext } from '@/components/main/app.hooks';

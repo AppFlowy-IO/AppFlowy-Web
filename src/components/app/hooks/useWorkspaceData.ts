@@ -534,6 +534,12 @@ function folderOutlinePatchMayAffectFavorites(patch: JsonPatchOperation[]): bool
   });
 }
 
+interface WorkspaceSnapshot<T> {
+  workspaceId: string;
+  revision: number;
+  value: T;
+}
+
 // Hook for managing workspace data (outline, favorites, recent, trash)
 export function useWorkspaceData() {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
@@ -563,12 +569,14 @@ export function useWorkspaceData() {
   const latestAcceptedRootOutlineRequestSeqRef = useRef(0);
   const latestForcedOutlineRequestSeqRef = useRef(0);
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
-  const [recentViews, setRecentViews] = useState<View[]>();
+  const [recentViewsSnapshot, setRecentViews] = useState<WorkspaceSnapshot<View[]>>();
+  const recentViewsRequestSeqRef = useRef(0);
   const [trashList, setTrashList] = useState<View[]>();
   const favoriteViewsRequestedRef = useRef(false);
   const favoriteViewsRequestSeqRef = useRef(0);
-  const [workspaceDatabases, setWorkspaceDatabases] = useState<DatabaseRelations | undefined>(undefined);
-  const workspaceDatabasesRef = useRef<DatabaseRelations | undefined>(undefined);
+  const [workspaceDatabasesSnapshot, setWorkspaceDatabases] = useState<WorkspaceSnapshot<DatabaseRelations>>();
+  const workspaceDatabasesRef = useRef<WorkspaceSnapshot<DatabaseRelations>>();
+  const databaseRelationsRequestSeqRef = useRef(0);
   const [requestAccessError, setRequestAccessError] = useState<RequestAccessError | null>(null);
   const trashRequestSeqRef = useRef(0);
   const trashLoaderInstanceId = useId();
@@ -584,13 +592,25 @@ export function useWorkspaceData() {
   const shareAccessProbeGenerationsRef = useRef(new Map<string, number>());
   const permissionRefreshRevisionRef = useRef(0);
 
-  const mentionableUsersRef = useRef<MentionablePerson[]>([]);
+  const mentionableUsersRef = useRef<WorkspaceSnapshot<MentionablePerson[]>>();
 
   if (currentWorkspaceIdRef.current !== currentWorkspaceId) {
     currentWorkspaceIdRef.current = currentWorkspaceId;
     nonSidebarSelfParentViewIdsRef.current.clear();
     workspaceRevisionRef.current += 1;
   }
+
+  const workspaceRevision = workspaceRevisionRef.current;
+  // Reset effects run after render; snapshots must already belong to this visit.
+  const recentViews =
+    recentViewsSnapshot?.workspaceId === currentWorkspaceId && recentViewsSnapshot?.revision === workspaceRevision
+      ? recentViewsSnapshot.value
+      : undefined;
+  const workspaceDatabases =
+    workspaceDatabasesSnapshot?.workspaceId === currentWorkspaceId &&
+    workspaceDatabasesSnapshot?.revision === workspaceRevision
+      ? workspaceDatabasesSnapshot.value
+      : undefined;
 
   // The flat metadata index is session-long while this layer owns a workspace,
   // so sidebar rerenders and virtualized relation headers can reuse it. Once
@@ -2648,10 +2668,15 @@ export function useWorkspaceData() {
 
   // Load recent views
   const loadRecentViews = useCallback(async () => {
-    if (!currentWorkspaceId) return;
+    if (!currentWorkspaceId || isStaleWorkspaceRequest(currentWorkspaceId, workspaceRevision)) return;
+    const requestSeq = ++recentViewsRequestSeqRef.current;
+    const isStaleRequest = () =>
+      isStaleWorkspaceRequest(currentWorkspaceId, workspaceRevision) || recentViewsRequestSeqRef.current !== requestSeq;
+
     try {
       const res = await ViewService.getRecent(currentWorkspaceId);
 
+      if (isStaleRequest()) return;
       if (!res) {
         throw new Error('Recent views not found');
       }
@@ -2661,45 +2686,64 @@ export function useWorkspaceData() {
       // With lazy loading, don't filter by outline presence since most views
       // won't be loaded in the shallow tree. Recent views come from a dedicated
       // server endpoint and are already valid.
-      setRecentViews(views.filter((item: View) => !item.extra?.is_space));
+      setRecentViews({
+        workspaceId: currentWorkspaceId,
+        revision: workspaceRevision,
+        value: views.filter((item: View) => !item.extra?.is_space),
+      });
       return views;
     } catch (e) {
+      if (isStaleRequest()) return;
       console.error('Recent views not found');
     }
-  }, [currentWorkspaceId]);
+  }, [currentWorkspaceId, isStaleWorkspaceRequest, workspaceRevision]);
 
   // Get cached database relations (synchronous, returns immediately)
   const getCachedDatabaseRelations = useCallback(() => {
-    return workspaceDatabasesRef.current;
-  }, []);
+    const cached = workspaceDatabasesRef.current;
+
+    return cached && !isStaleWorkspaceRequest(cached.workspaceId, cached.revision) ? cached.value : undefined;
+  }, [isStaleWorkspaceRequest]);
+
+  const selectedWorkspaceId = userWorkspaceInfo?.selectedWorkspace.id;
+  const databaseStorageId = userWorkspaceInfo?.selectedWorkspace.databaseStorageId;
 
   // Internal helper to fetch and update database relations
   const fetchAndUpdateDatabaseRelations = useCallback(
     async (silent = false) => {
-      if (!currentWorkspaceId) {
+      if (
+        !currentWorkspaceId ||
+        selectedWorkspaceId !== currentWorkspaceId ||
+        !databaseStorageId ||
+        isStaleWorkspaceRequest(currentWorkspaceId, workspaceRevision)
+      ) {
         return;
       }
 
-      const selectedWorkspace = userWorkspaceInfo?.selectedWorkspace;
-
-      if (!selectedWorkspace) return;
+      const requestSeq = ++databaseRelationsRequestSeqRef.current;
+      const isStaleRequest = () =>
+        isStaleWorkspaceRequest(currentWorkspaceId, workspaceRevision) ||
+        databaseRelationsRequestSeqRef.current !== requestSeq;
 
       try {
-        const res = await ViewService.getDatabaseRelations(currentWorkspaceId, selectedWorkspace.databaseStorageId);
+        const res = await ViewService.getDatabaseRelations(currentWorkspaceId, databaseStorageId);
 
+        if (isStaleRequest()) return;
         if (res) {
-          workspaceDatabasesRef.current = res;
-          setWorkspaceDatabases(res);
+          const snapshot = { workspaceId: currentWorkspaceId, revision: workspaceRevision, value: res };
+
+          workspaceDatabasesRef.current = snapshot;
+          setWorkspaceDatabases(snapshot);
         }
 
         return res;
       } catch (e) {
-        if (!silent) {
+        if (!silent && !isStaleRequest()) {
           console.error(e);
         }
       }
     },
-    [currentWorkspaceId, userWorkspaceInfo?.selectedWorkspace]
+    [currentWorkspaceId, databaseStorageId, isStaleWorkspaceRequest, selectedWorkspaceId, workspaceRevision]
   );
 
   // Load database relations (returns cached if available, fetches otherwise).
@@ -2708,13 +2752,22 @@ export function useWorkspaceData() {
   // would otherwise be missing from the cached map.
   const loadDatabaseRelations = useCallback(
     async (options: { refresh?: boolean } = {}) => {
-      if (!options.refresh && workspaceDatabasesRef.current) {
-        return workspaceDatabasesRef.current;
+      if (!currentWorkspaceId || isStaleWorkspaceRequest(currentWorkspaceId, workspaceRevision)) return;
+      const cached = getCachedDatabaseRelations();
+
+      if (!options.refresh && cached) {
+        return cached;
       }
 
       return fetchAndUpdateDatabaseRelations(false);
     },
-    [fetchAndUpdateDatabaseRelations]
+    [
+      currentWorkspaceId,
+      fetchAndUpdateDatabaseRelations,
+      getCachedDatabaseRelations,
+      isStaleWorkspaceRequest,
+      workspaceRevision,
+    ]
   );
 
   // Refresh database relations in background (doesn't block, updates cache)
@@ -2763,18 +2816,22 @@ export function useWorkspaceData() {
       throw new Error('No workspace found');
     }
 
+    if (isStaleWorkspaceRequest(currentWorkspaceId, workspaceRevision)) return [];
+
     try {
       const res = await WorkspaceService.getMentionableUsers(currentWorkspaceId);
 
+      if (isStaleWorkspaceRequest(currentWorkspaceId, workspaceRevision)) return [];
       if (res) {
-        mentionableUsersRef.current = res;
+        mentionableUsersRef.current = { workspaceId: currentWorkspaceId, revision: workspaceRevision, value: res };
       }
 
       return res || [];
     } catch (e) {
+      if (isStaleWorkspaceRequest(currentWorkspaceId, workspaceRevision)) return [];
       return Promise.reject(e);
     }
-  }, [currentWorkspaceId]);
+  }, [currentWorkspaceId, isStaleWorkspaceRequest, workspaceRevision]);
 
   const loadMentionableUsers = useMemo(() => {
     return createDeduplicatedNoArgsRequest(_loadMentionableUsers);
@@ -2783,8 +2840,11 @@ export function useWorkspaceData() {
   // Get mention user
   const getMentionUser = useCallback(
     async (uuid: string) => {
-      if (mentionableUsersRef.current.length > 0) {
-        const user = mentionableUsersRef.current.find((user) => user.person_id === uuid);
+      if (!currentWorkspaceId || isStaleWorkspaceRequest(currentWorkspaceId, workspaceRevision)) return;
+      const cached = mentionableUsersRef.current;
+
+      if (cached?.workspaceId === currentWorkspaceId && cached.revision === workspaceRevision) {
+        const user = cached.value.find((user) => user.person_id === uuid);
 
         if (user) {
           return user;
@@ -2799,7 +2859,7 @@ export function useWorkspaceData() {
         return Promise.reject(e);
       }
     },
-    [loadMentionableUsers]
+    [currentWorkspaceId, isStaleWorkspaceRequest, loadMentionableUsers, workspaceRevision]
   );
 
   // Load data when workspace changes
@@ -2846,6 +2906,7 @@ export function useWorkspaceData() {
     // cross-workspace data contamination
     workspaceDatabasesRef.current = undefined;
     setWorkspaceDatabases(undefined);
+    mentionableUsersRef.current = undefined;
     void loadOutline(currentWorkspaceId, true);
     // Warm the shared user/workspace database catalog once. Relation cells,
     // property menus, and linked-database pickers all reuse this same snapshot
@@ -2883,7 +2944,6 @@ export function useWorkspaceData() {
   // workspace. Once WorkspaceService.open() resolves and userWorkspaceInfo
   // refreshes, refetch so the sidebar populates. Skip on initial render
   // (`undefined → defined`) — that's already handled by the effect above.
-  const selectedWorkspaceId = userWorkspaceInfo?.selectedWorkspace.id;
   const prevSelectedWorkspaceIdRef = useRef<string | undefined>(selectedWorkspaceId);
   const workspaceAwaitingSelectionRef = useRef<string | null>(null);
 
