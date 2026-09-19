@@ -1,4 +1,9 @@
-import { IntegrationConnection, IntegrationProvider } from '@/application/integrations/types';
+import {
+  IntegrationConnection,
+  IntegrationProvider,
+  integrationProviders,
+  isIntegrationProvider,
+} from '@/application/integrations/types';
 
 import { APIResponse, executeAPIRequest, getAxios } from './core';
 
@@ -7,6 +12,21 @@ const REQUEST_TIMEOUT_MS = 45_000;
 interface ConnectProviderResponse {
   oauth_url: string;
   connection_id: string;
+}
+
+export async function getConfiguredProviders(signal?: AbortSignal): Promise<IntegrationProvider[]> {
+  // Existing servers expose integration availability only in the native projection.
+  // Read just the provider keys; native feature flags must not configure the web app.
+  const response = await executeAPIRequest<{ connections?: string[] }>(() =>
+    getAxios()?.get('/api/server-info', {
+      headers: { 'x-platform': 'app' },
+      signal,
+      timeout: REQUEST_TIMEOUT_MS,
+    })
+  );
+
+  // An omitted capability is unknown on older servers; an empty list is authoritative.
+  return response.connections?.filter(isIntegrationProvider) ?? [...integrationProviders];
 }
 
 export async function listConnections(workspaceId: string, signal?: AbortSignal): Promise<IntegrationConnection[]> {

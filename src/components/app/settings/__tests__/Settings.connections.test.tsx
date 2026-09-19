@@ -15,6 +15,7 @@ jest.mock('@/components/app/settings/ProfilePanel', () => ({ ProfilePanel: () =>
 jest.mock('@/components/app/settings/MembersPanel', () => ({ MembersPanel: () => null }));
 jest.mock('@/components/app/settings/ManageDataPanel', () => ({ ManageDataPanel: () => null }));
 jest.mock('@/application/services/domains/integration', () => ({
+  getConfiguredProviders: jest.fn(),
   listConnections: jest.fn(),
   getConnectionEmail: jest.fn(),
 }));
@@ -32,6 +33,7 @@ describe('Connections settings lifecycle', () => {
     jest.clearAllMocks();
     mockWorkspaceId = 'workspace-1';
     api.listConnections.mockResolvedValue([]);
+    api.getConfiguredProviders.mockResolvedValue(['google-drive', 'google-calendar']);
     api.getConnectionEmail.mockResolvedValue(undefined);
   });
 

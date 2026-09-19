@@ -13,6 +13,7 @@ jest.mock('react-i18next', () => ({
 }));
 jest.mock('sonner', () => ({ toast: { error: jest.fn() } }));
 jest.mock('@/application/services/domains/integration', () => ({
+  getConfiguredProviders: jest.fn(),
   listConnections: jest.fn(),
   connectProvider: jest.fn(),
   confirmConnection: jest.fn(),
@@ -29,6 +30,7 @@ const mockTranslate = (key: string, params?: Record<string, string>) => {
   for (const [name, value] of Object.entries(params || {})) text = text.replace(`{{${name}}}`, value);
   return text;
 };
+
 let mockTranslator = mockTranslate;
 const api = jest.mocked(IntegrationService);
 const drive: IntegrationConnection = {
@@ -58,6 +60,7 @@ describe('Connections settings', () => {
     jest.clearAllMocks();
     mockTranslator = mockTranslate;
     api.listConnections.mockResolvedValue([]);
+    api.getConfiguredProviders.mockResolvedValue(['google-drive', 'google-calendar']);
     api.getConnectionEmail.mockResolvedValue(undefined);
     api.disconnectConnection.mockResolvedValue({ success: true });
     api.confirmConnection.mockResolvedValue({ success: true, connection: drive });
@@ -73,6 +76,97 @@ describe('Connections settings', () => {
     openMenu(screen.getByRole('button', { name: 'Add connection' }));
     expect(await screen.findByRole('menuitem', { name: 'Google Drive' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Google Calendar' })).toBeTruthy();
+  });
+
+  it('does not open a popup for unconfigured providers and refreshes after server setup', async () => {
+    const open = jest.spyOn(window, 'open').mockReturnValue(null);
+
+    api.getConfiguredProviders.mockResolvedValueOnce([]).mockResolvedValueOnce(['google-drive']);
+    render(<ConnectionsPanel workspaceId='workspace' />);
+    const driveButton = await screen.findByTestId('connect-google-drive');
+
+    expect(driveButton.disabled).toBe(true);
+    expect(screen.getByTestId('connect-google-calendar').disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Add connection' }).disabled).toBe(true);
+    expect(
+      screen.getByText('Unavailable connections: Google Drive, Google Calendar. Ask your administrator to enable them.')
+    ).toBeTruthy();
+    fireEvent.click(driveButton);
+    expect(open).not.toHaveBeenCalled();
+    expect(api.connectProvider).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.getByTestId('connect-google-drive').disabled).toBe(false));
+    expect(screen.getByTestId('connect-google-calendar').disabled).toBe(true);
+    openMenu(screen.getByRole('button', { name: 'Add connection' }));
+    expect((await screen.findByRole('menuitem', { name: 'Google Calendar' })).getAttribute('aria-disabled')).toBe(
+      'true'
+    );
+    expect(screen.getByRole('menuitem', { name: 'Google Drive' }).getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  it('shows setup guidance when a provider becomes unavailable after the panel loads', async () => {
+    const popup = { close: jest.fn() } as unknown as Window;
+
+    jest.spyOn(window, 'open').mockReturnValue(popup);
+    api.connectProvider.mockRejectedValue({
+      code: 1008,
+      message: 'Invalid request:provider google-drive is not configured',
+    });
+    render(<ConnectionsPanel workspaceId='workspace' />);
+    fireEvent.click(await screen.findByTestId('connect-google-drive'));
+    expect(
+      await screen.findByText('Unavailable connections: Google Drive. Ask your administrator to enable them.')
+    ).toBeTruthy();
+    expect(popup.close).toHaveBeenCalled();
+    expect(screen.getByTestId('connect-google-drive').disabled).toBe(true);
+    expect(screen.getByTestId('connect-google-calendar').disabled).toBe(false);
+    expect(api.confirmConnection).not.toHaveBeenCalled();
+  });
+
+  it('keeps connection errors visible in the panel and clears them on the next attempt', async () => {
+    const open = jest.spyOn(window, 'open').mockReturnValue(null);
+
+    render(<ConnectionsPanel workspaceId='workspace' />);
+    fireEvent.click(await screen.findByTestId('connect-google-drive'));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Allow pop-ups for AppFlowy, then try connecting again.'
+    );
+
+    const popup = { close: jest.fn() } as unknown as Window;
+
+    open.mockReturnValue(popup);
+    api.connectProvider.mockRejectedValue(new Error('Network unavailable'));
+    fireEvent.click(screen.getByTestId('connect-google-drive'));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Network unavailable'));
+    expect(popup.close).toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('allows disconnecting an existing account when its provider is no longer configured', async () => {
+    api.getConfiguredProviders.mockResolvedValue([]);
+    api.listConnections.mockResolvedValue([drive]);
+    render(<ConnectionsPanel workspaceId='workspace' />);
+    await screen.findByText('stored@example.com');
+    openMenu(within(screen.getByTestId('connection-drive-1')).getByRole('button'));
+    expect(
+      (await screen.findByRole('menuitem', { name: 'Connect another account' })).getAttribute('aria-disabled')
+    ).toBe('true');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Disconnect account' }));
+    fireEvent.click(await screen.findByTestId('confirm-disconnect-connection'));
+    await waitFor(() => expect(screen.queryByTestId('connection-drive-1')).toBeNull());
+    expect(api.disconnectConnection).toHaveBeenCalledWith('drive-1', expect.any(AbortSignal));
+  });
+
+  it('keeps Connect disabled until provider availability can be loaded', async () => {
+    api.getConfiguredProviders
+      .mockRejectedValueOnce(new Error('Server unavailable'))
+      .mockResolvedValueOnce(['google-drive']);
+    render(<ConnectionsPanel workspaceId='workspace' />);
+    expect((await screen.findByRole('alert')).textContent).toContain('Server unavailable');
+    expect(screen.getByRole('button', { name: 'Add connection' }).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect((await screen.findByTestId('connect-google-drive')).disabled).toBe(false);
   });
 
   it('confirms authorization once, refreshes accounts, and shows provider email', async () => {
@@ -94,7 +188,7 @@ describe('Connections settings', () => {
     render(<ConnectionsPanel workspaceId='workspace' />);
     fireEvent.click(await screen.findByTestId('connect-google-drive'));
     expect(screen.getByText('Complete authorization in the browser window.')).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Add connection' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Add connection' }).disabled).toBe(true);
     await waitFor(() => expect(popup.location.href).toContain('expected-state'));
 
     await act(async () => {
@@ -138,6 +232,7 @@ describe('Connections settings', () => {
     mockTranslator = (key, params) => mockTranslate(key, params);
     rerender(<ConnectionsPanel workspaceId='workspace' />);
     expect(api.listConnections).toHaveBeenCalledTimes(1);
+    expect(api.getConfiguredProviders).toHaveBeenCalledTimes(1);
     expect(api.getConnectionEmail).toHaveBeenCalledTimes(1);
   });
 

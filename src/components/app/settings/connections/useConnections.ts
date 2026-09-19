@@ -3,15 +3,22 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { authorizeIntegration, IntegrationOAuthError } from '@/application/integrations/oauth';
-import { IntegrationConnection, IntegrationProvider, isIntegrationProvider } from '@/application/integrations/types';
+import {
+  IntegrationConnection,
+  IntegrationProvider,
+  integrationProviders,
+  isIntegrationProvider,
+} from '@/application/integrations/types';
 import * as IntegrationService from '@/application/services/domains/integration';
-import { getErrorMessage } from '@/utils/errors';
+import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
 
 export function useConnections(workspaceId: string) {
   const { t } = useTranslation();
   const [connections, setConnections] = useState<IntegrationConnection[]>([]);
+  const [configuredProviders, setConfiguredProviders] = useState<readonly IntegrationProvider[]>(integrationProviders);
   const [loading, setLoading] = useState(true);
   const [loadFailure, setLoadFailure] = useState<{ error: unknown }>();
+  const [connectionFailure, setConnectionFailure] = useState<{ error: unknown }>();
   const [pending, setPending] = useState<{ provider: IntegrationProvider; stage: 'authorizing' | 'confirming' }>();
   const [disconnecting, setDisconnecting] = useState(false);
   const operation = useRef<AbortController>();
@@ -24,11 +31,17 @@ export function useConnections(workspaceId: string) {
     loadRequest.current = controller;
     setLoading(true);
     setLoadFailure(undefined);
+    setConnectionFailure(undefined);
     try {
-      const result = await IntegrationService.listConnections(workspaceId, controller.signal);
+      const [result, configured] = await Promise.all([
+        IntegrationService.listConnections(workspaceId, controller.signal),
+        IntegrationService.getConfiguredProviders(controller.signal),
+      ]);
 
-      if (!controller.signal.aborted)
+      if (!controller.signal.aborted) {
         setConnections(result.filter((connection) => isIntegrationProvider(connection.provider)));
+        setConfiguredProviders(configured);
+      }
     } catch (error) {
       if (!controller.signal.aborted) setLoadFailure({ error });
     } finally {
@@ -53,10 +66,11 @@ export function useConnections(workspaceId: string) {
 
   const connect = useCallback(
     async (provider: IntegrationProvider) => {
-      if (operation.current) return;
+      if (operation.current || loading || loadFailure || !configuredProviders.includes(provider)) return;
       const controller = new AbortController();
 
       operation.current = controller;
+      setConnectionFailure(undefined);
       setPending({ provider, stage: 'authorizing' });
       try {
         const { connectionId, oauthQuery } = await authorizeIntegration(workspaceId, provider, controller.signal);
@@ -76,10 +90,17 @@ export function useConnections(workspaceId: string) {
         await reload();
       } catch (error) {
         if (!controller.signal.aborted) {
-          if (error instanceof IntegrationOAuthError) {
-            if (error.code !== 'cancelled') toast.error(t(`settings.connections.${error.code}`));
+          if (
+            isAPIErrorCode(error, 1008) &&
+            getErrorMessage(error, '').endsWith(`provider ${provider} is not configured`)
+          ) {
+            // Configuration can change after the panel loads. Disable further attempts
+            // until the user refreshes, and show the same setup guidance as on startup.
+            setConfiguredProviders((current) => current.filter((key) => key !== provider));
+          } else if (error instanceof IntegrationOAuthError && error.code === 'cancelled') {
+            return;
           } else {
-            toast.error(getErrorMessage(error, t('settings.connections.connectionFailed')));
+            setConnectionFailure({ error });
           }
         }
       } finally {
@@ -89,7 +110,7 @@ export function useConnections(workspaceId: string) {
         }
       }
     },
-    [workspaceId, reload, t]
+    [workspaceId, reload, t, loading, loadFailure, configuredProviders]
   );
 
   const cancel = useCallback(() => {
@@ -126,6 +147,23 @@ export function useConnections(workspaceId: string) {
   );
 
   const loadError = loadFailure ? getErrorMessage(loadFailure.error, t('settings.connections.loadFailed')) : undefined;
+  const connectionError = connectionFailure
+    ? connectionFailure.error instanceof IntegrationOAuthError && connectionFailure.error.code !== 'cancelled'
+      ? t(`settings.connections.${connectionFailure.error.code}`)
+      : getErrorMessage(connectionFailure.error, t('settings.connections.connectionFailed'))
+    : undefined;
 
-  return { connections, loading, loadError, pending, disconnecting, reload, connect, cancel, disconnect };
+  return {
+    connections,
+    configuredProviders,
+    loading,
+    loadError,
+    connectionError,
+    pending,
+    disconnecting,
+    reload,
+    connect,
+    cancel,
+    disconnect,
+  };
 }

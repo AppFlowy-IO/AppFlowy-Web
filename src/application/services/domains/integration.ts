@@ -1,4 +1,5 @@
 export {
+  getConfiguredProviders,
   listConnections,
   connectProvider,
   confirmConnection,

@@ -35,12 +35,25 @@ const providers = {
 
 export function ConnectionsPanel({ workspaceId }: { workspaceId: string }) {
   const { t } = useTranslation();
-  const { connections, loading, loadError, pending, disconnecting, reload, connect, cancel, disconnect } =
-    useConnections(workspaceId);
+  const {
+    connections,
+    configuredProviders,
+    loading,
+    loadError,
+    connectionError,
+    pending,
+    disconnecting,
+    reload,
+    connect,
+    cancel,
+    disconnect,
+  } = useConnections(workspaceId);
   const [disconnectTarget, setDisconnectTarget] = useState<{ connection: IntegrationConnection; email: string }>();
   // Keep Radix menus inside the MUI dialog's focus trap and stacking context.
   const [menuContainer, setMenuContainer] = useState<HTMLDivElement | null>(null);
   const busy = loading || Boolean(pending) || disconnecting;
+  const connectDisabled = busy || Boolean(loadError);
+  const unavailableProviders = integrationProviders.filter((provider) => !configuredProviders.includes(provider));
 
   return (
     <div
@@ -55,19 +68,51 @@ export function ConnectionsPanel({ workspaceId }: { workspaceId: string }) {
       <div className='appflowy-scroller flex-1 overflow-y-auto px-8 py-6'>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
-            <Button variant='outline' disabled={busy} data-testid='add-connection'>
+            <Button
+              variant='outline'
+              disabled={connectDisabled || configuredProviders.length === 0}
+              data-testid='add-connection'
+            >
               <PlusIcon className='h-4 w-4' />
               {t('settings.connections.addConnection')}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align='start' container={menuContainer}>
             {integrationProviders.map((provider) => (
-              <DropdownMenuItem key={provider} onSelect={() => void connect(provider)} disabled={busy}>
+              <DropdownMenuItem
+                key={provider}
+                onSelect={() => void connect(provider)}
+                disabled={connectDisabled || !configuredProviders.includes(provider)}
+              >
                 <ProviderLabel provider={provider} />
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {!loading && !loadError && unavailableProviders.length > 0 && (
+          <div
+            role='status'
+            className='mt-5 flex items-center justify-between gap-4 rounded-lg border border-border-primary p-4 text-sm'
+          >
+            <p className='text-text-secondary'>
+              {t('settings.connections.providersUnavailable', {
+                providers: unavailableProviders
+                  .map((provider) => t(`settings.connections.${providers[provider].name}`))
+                  .join(', '),
+              })}
+            </p>
+            <Button variant='outline' onClick={() => void reload()} disabled={busy}>
+              {t('settings.connections.refresh')}
+            </Button>
+          </div>
+        )}
+
+        {connectionError && (
+          <div role='alert' className='mt-5 text-sm text-text-error'>
+            {connectionError}
+          </div>
+        )}
 
         {loadError && (
           <div role='alert' className='mt-5 flex items-center justify-between gap-4 text-sm text-text-error'>
@@ -121,6 +166,7 @@ export function ConnectionsPanel({ workspaceId }: { workspaceId: string }) {
                   connection={connection}
                   workspaceId={workspaceId}
                   disabled={busy}
+                  canConnect={!loadError && configuredProviders.some((provider) => provider === connection.provider)}
                   menuContainer={menuContainer}
                   onConnect={connect}
                   onDisconnect={(email) => setDisconnectTarget({ connection, email })}
@@ -142,7 +188,7 @@ export function ConnectionsPanel({ workspaceId }: { workspaceId: string }) {
                   </div>
                   <Button
                     variant='outline'
-                    disabled={busy}
+                    disabled={connectDisabled || !configuredProviders.includes(provider)}
                     onClick={() => void connect(provider)}
                     data-testid={`connect-${provider}`}
                   >
@@ -194,6 +240,7 @@ function ConnectionRow({
   connection,
   workspaceId,
   disabled,
+  canConnect,
   menuContainer,
   onConnect,
   onDisconnect,
@@ -201,6 +248,7 @@ function ConnectionRow({
   connection: IntegrationConnection;
   workspaceId: string;
   disabled: boolean;
+  canConnect: boolean;
   menuContainer: HTMLDivElement | null;
   onConnect: (provider: IntegrationProvider) => Promise<void>;
   onDisconnect: (email: string) => void;
@@ -247,7 +295,7 @@ function ConnectionRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align='end' container={menuContainer}>
-            <DropdownMenuItem onSelect={() => void onConnect(provider)} disabled={disabled}>
+            <DropdownMenuItem onSelect={() => void onConnect(provider)} disabled={disabled || !canConnect}>
               {t('settings.connections.connectAnotherAccount')}
             </DropdownMenuItem>
             <DropdownMenuItem variant='destructive' onSelect={() => onDisconnect(account)} disabled={disabled}>

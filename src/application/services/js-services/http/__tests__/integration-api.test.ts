@@ -2,6 +2,7 @@ import { IntegrationConnection } from '@/application/integrations/types';
 
 import { executeAPIRequest, getAxios } from '../core';
 import {
+  getConfiguredProviders,
   listConnections,
   connectProvider,
   confirmConnection,
@@ -29,6 +30,23 @@ describe('integration API contract', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.mocked(getAxios).mockReturnValue({ get, post, delete: remove } as unknown as ReturnType<typeof getAxios>);
+  });
+
+  it.each([
+    [[], []],
+    [['google-drive', 'slack'], ['google-drive']],
+    [undefined, ['google-drive', 'google-calendar']],
+  ])('reads configured providers from the native capability projection (%s)', async (configured, expected) => {
+    get.mockResolvedValue({ data: { data: { connections: configured } } });
+    await expect(getConfiguredProviders(signal)).resolves.toEqual(expected);
+    expect(get).toHaveBeenCalledWith(
+      '/api/server-info',
+      expect.objectContaining({
+        headers: { 'x-platform': 'app' },
+        signal,
+        timeout: expect.any(Number),
+      })
+    );
   });
 
   it('loads the current workspace connections and preserves account metadata', async () => {
