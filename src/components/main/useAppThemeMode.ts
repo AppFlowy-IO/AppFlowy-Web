@@ -46,10 +46,9 @@ export function useAppThemeMode () {
 
   useEffect(() => {
     if (fixedTheme) return;
+    const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
     function detectColorScheme () {
-      const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-
       setIsDark(darkModeMediaQuery.matches);
     }
 
@@ -57,9 +56,9 @@ export function useAppThemeMode () {
       detectColorScheme();
     }
 
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', detectColorScheme);
+    darkModeMediaQuery.addEventListener('change', detectColorScheme);
     return () => {
-      window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', detectColorScheme);
+      darkModeMediaQuery.removeEventListener('change', detectColorScheme);
     };
   }, [fixedTheme]);
 

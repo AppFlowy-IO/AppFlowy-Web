@@ -10,9 +10,11 @@ import { CalculationType, FieldType, RollupDisplayMode } from '@/application/dat
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
+import { markDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import {
   ensureRelationGroupLabel,
   getRelationGroupLabelRevision,
+  readFormulaRelationTitle,
   readRelationCellText,
   readRelationGroupLabel,
   retainRelationGroupLabels,
@@ -23,6 +25,7 @@ import {
   invalidateRollupCell,
   readRollupCell,
   readRollupCellSync,
+  resolveRollupCell,
   subscribeRollupCell,
 } from '@/application/database-yjs/rollup/cache';
 import {
@@ -32,6 +35,8 @@ import {
   YDatabaseField,
   YDatabaseFields,
   YDatabaseRow,
+  YDatabaseView,
+  YDatabaseViews,
   YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
@@ -211,6 +216,118 @@ function createFixture({
 }
 
 describe('relation and rollup basics', () => {
+  it('keeps historical relation members when the live database deletes them', async () => {
+    const fixture = createFixture({ suffix: 'history-formula-membership' });
+    const relatedDoc = (await fixture.loadView(fixture.relatedViewId))!;
+    const relatedDatabase = relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const views = new Y.Map() as YDatabaseViews;
+    const view = new Y.Map() as YDatabaseView;
+    const orders = Y.Array.from(fixture.relatedRowIds.map((id) => ({ id, height: 36 })));
+
+    view.set(YjsDatabaseKey.row_orders, orders);
+    views.set(fixture.relatedViewId, view);
+    relatedDatabase.set(YjsDatabaseKey.views, views);
+    const liveContext = {
+      relationField: fixture.relationField,
+      relatedRowId: fixture.relatedRowIds[0],
+      loadView: fixture.loadView,
+      createRow: fixture.createRow,
+      getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
+    };
+
+    ensureRelationGroupLabel(liveContext);
+    await waitFor(() => expect(readFormulaRelationTitle(liveContext)).toBe('Alice'));
+    orders.delete(0, orders.length);
+    expect(readFormulaRelationTitle(liveContext)).toBeNull();
+
+    const historyDoc = new Y.Doc() as YDoc;
+
+    Y.applyUpdate(historyDoc, Y.encodeStateAsUpdate(fixture.baseDoc));
+    markDatabaseHistoryDocumentImmutable(historyDoc);
+    const historyDatabase = historyDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const historyContext = {
+      ...liveContext,
+      relationField: historyDatabase.get(YjsDatabaseKey.fields).get(fixture.relationFieldId)!,
+      loadView: jest.fn(fixture.loadView),
+      createRow: jest.fn(fixture.createRow),
+      getViewIdFromDatabaseId: jest.fn(fixture.getViewIdFromDatabaseId),
+    };
+
+    try {
+      ensureRelationGroupLabel(historyContext);
+      expect(readFormulaRelationTitle(historyContext)).toBe(fixture.relatedRowIds[0]);
+      expect(historyContext.loadView).not.toHaveBeenCalled();
+      expect(historyContext.createRow).not.toHaveBeenCalled();
+      expect(historyContext.getViewIdFromDatabaseId).not.toHaveBeenCalled();
+      expect(readFormulaRelationTitle(liveContext)).toBeNull();
+    } finally {
+      historyDoc.destroy();
+    }
+  });
+
+  it('reads historical rollups from stored cells without loading or changing the live cache', async () => {
+    const suffix = 'history-formula-rollup';
+    const fieldId = `rollup-${suffix}`;
+    const fixture = createFixture({
+      suffix,
+      rollups: [{
+        fieldId,
+        targetFieldId: `score-${suffix}`,
+        calculationType: CalculationType.Sum,
+        showAs: RollupDisplayMode.Calculated,
+      }],
+    });
+    const liveContext = {
+      baseDoc: fixture.baseDoc,
+      database: fixture.baseDatabase,
+      row: fixture.baseRow,
+      rowId: fixture.baseRowId,
+      fieldId,
+      rollupField: fixture.baseDatabase.get(YjsDatabaseKey.fields).get(fieldId)!,
+      loadView: fixture.loadView,
+      createRow: fixture.createRow as (rowKey: string) => Promise<YDoc>,
+      getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
+    };
+
+    expect((await readRollupCell(liveContext)).rawNumeric).toBe(30);
+    fixture.baseRow.get(YjsDatabaseKey.cells).set(fieldId, createCell(7, FieldType.Rollup));
+    const historyDoc = new Y.Doc() as YDoc;
+    const historyRowDoc = new Y.Doc() as YDoc;
+
+    Y.applyUpdate(historyDoc, Y.encodeStateAsUpdate(fixture.baseDoc));
+    Y.applyUpdate(historyRowDoc, Y.encodeStateAsUpdate(fixture.baseRow.doc!));
+    markDatabaseHistoryDocumentImmutable(historyDoc);
+    markDatabaseHistoryDocumentImmutable(historyRowDoc);
+    const historyDatabase = historyDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const historyContext = {
+      ...liveContext,
+      baseDoc: historyDoc,
+      database: historyDatabase,
+      row: historyRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow,
+      rollupField: historyDatabase.get(YjsDatabaseKey.fields).get(fieldId)!,
+      loadView: jest.fn(liveContext.loadView),
+      createRow: jest.fn(liveContext.createRow),
+      getViewIdFromDatabaseId: jest.fn(liveContext.getViewIdFromDatabaseId),
+    };
+    const notifyLive = jest.fn();
+    const unsubscribe = subscribeRollupCell(`${fixture.baseRowId}:${fieldId}`, notifyLive);
+
+    try {
+      expect(await resolveRollupCell(historyContext)).toEqual({ value: '7', rawNumeric: 7 });
+      expect(await readRollupCell(historyContext)).toEqual({ value: '7', rawNumeric: 7 });
+      expect(readRollupCellSync(historyContext)).toEqual({ value: '7', rawNumeric: 7 });
+      expect(historyContext.loadView).not.toHaveBeenCalled();
+      expect(historyContext.createRow).not.toHaveBeenCalled();
+      expect(historyContext.getViewIdFromDatabaseId).not.toHaveBeenCalled();
+      expect(notifyLive).not.toHaveBeenCalled();
+      expect(readRollupCellSync(liveContext).rawNumeric).toBe(30);
+    } finally {
+      unsubscribe();
+      historyDoc.destroy();
+      historyRowDoc.destroy();
+    }
+  });
+
   it('observes a group-label resolution that emits between render and subscription', async () => {
     const fixture = createFixture({ suffix: 'group-label-external-store' });
     const context = {

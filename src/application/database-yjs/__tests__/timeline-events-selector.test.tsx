@@ -239,6 +239,66 @@ describe('useTimelineEventsSelector with separate start and end fields', () => {
     databaseDoc.destroy();
   });
 
+  it('calculates a formula column over its results', async () => {
+    const { wrapper, contextValue, fields, databaseDoc } = createFixture();
+    const amountField = new Y.Map() as YDatabaseField;
+    const formulaField = new Y.Map() as YDatabaseField;
+    const typeOptions = new Y.Map();
+    const formulaOption = new Y.Map();
+
+    amountField.set(YjsDatabaseKey.id, 'amount');
+    amountField.set(YjsDatabaseKey.name, 'Amount');
+    amountField.set(YjsDatabaseKey.type, FieldType.Number);
+    fields.set('amount', amountField);
+    formulaField.set(YjsDatabaseKey.id, 'double');
+    formulaField.set(YjsDatabaseKey.name, 'Double');
+    formulaField.set(YjsDatabaseKey.type, FieldType.Formula);
+    fields.set('double', formulaField);
+    formulaField.set(YjsDatabaseKey.type_option, typeOptions);
+    typeOptions.set(String(FieldType.Formula), formulaOption);
+    formulaOption.set('expression', 'prop("amount") * 2');
+
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const view = database.get(YjsDatabaseKey.views).get(viewId);
+    const calculations = new Y.Array() as YDatabaseCalculations;
+    const calculation = new Y.Map() as YDatabaseCalculation;
+
+    calculation.set(YjsDatabaseKey.id, 'sum');
+    calculation.set(YjsDatabaseKey.field_id, 'double');
+    calculation.set(YjsDatabaseKey.type, CalculationType.Sum);
+    calculation.set(YjsDatabaseKey.calculation_value, '');
+    calculations.push([calculation]);
+    view.set(YjsDatabaseKey.calculations, calculations);
+    // A formula has no stored cell: the footer must evaluate it per row.
+    const rows = Object.fromEntries(
+      ['range', 'backwards', 'open'].map((id, index) => [
+        id,
+        createRowDoc(id, databaseId, {
+          [START]: { fieldType: FieldType.DateTime, data: String(jan2) },
+          [PRIMARY]: { fieldType: FieldType.RichText, data: id },
+          amount: { fieldType: FieldType.Number, data: String((index + 1) * 10) },
+        }),
+      ])
+    );
+
+    contextValue.rowMap = rows;
+    contextValue.seedsReady = true;
+    contextValue.blobPrefetchComplete = true;
+    const { unmount } = render(<TimelineCalculation fieldId='double' />, { wrapper });
+
+    await waitFor(() => expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('120'));
+    act(() => {
+      const row = rows.open.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>;
+      const cells = row.get(YjsDatabaseKey.cells) as Y.Map<Y.Map<unknown>>;
+
+      cells.get('amount')!.set(YjsDatabaseKey.data, '50');
+    });
+    await waitFor(() => expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('160'));
+    unmount();
+    Object.values(rows).forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
+  });
+
   it.each([false, true])(
     'renders seed batches while realtime rows are pending (prefetch complete: %s)',
     async (prefetchComplete) => {

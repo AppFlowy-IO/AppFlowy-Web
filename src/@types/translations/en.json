@@ -1,6 +1,6 @@
 {
   "clientCompatibility": {
-    "serverTooOld": "AppFlowy Web {{clientVersion}} requires server {{requiredServerVersion}} or later. Your server is {{serverVersion}}. Please ask your administrator to upgrade the server.",
+    "serverTooOld": "Requires server {{requiredServerVersion}} or later. Some features may be unavailable.",
     "clientTooOld": "This server requires AppFlowy Web {{requiredClientVersion}} or later. You are using {{clientVersion}}. Reload after your administrator updates the web app.",
     "upgradeBoth": "This server requires AppFlowy Web {{requiredClientVersion}} or later, but also needs a server upgrade. Please contact your administrator to update both.",
     "reload": "Reload web app",
@@ -625,7 +625,8 @@
     "personField": "Select a person from your workspace. Useful for assigning tasks or ownership",
     "createdByField": "Automatically records who created the item. This value is read-only",
     "lastEditedByField": "Automatically records who edited the item last. This value is read-only",
-    "timeField": "Add a time value. Useful for tracking duration or specific times"
+    "timeField": "Add a time value. Useful for tracking duration or specific times",
+    "formulaField": "Compute a value from other properties with a formula"
   },
   "sideBar": {
     "closeSidebar": "Close sidebar",
@@ -793,6 +794,40 @@
     }
   },
   "settings": {
+    "connections": {
+      "menuLabel": "Connections",
+      "description": "Manage your connected accounts and app integrations across your workspace.",
+      "addConnection": "Add connection",
+      "googleDrive": "Google Drive",
+      "googleCalendar": "Google Calendar",
+      "googleDriveDescription": "Connect Google Drive to preview files directly in your document",
+      "googleCalendarDescription": "Get notifications for scheduled and instant meetings to quickly start AI meeting notes",
+      "connection": "Connection",
+      "access": "Access",
+      "canPreviewLinks": "Can preview links",
+      "canSyncEvents": "Can sync calendar events",
+      "connect": "Connect",
+      "connectAnotherAccount": "Connect another account",
+      "disconnectAccount": "Disconnect account",
+      "disconnect": "Disconnect",
+      "disconnectTitle": "Disconnect \"{{account}}\"?",
+      "disconnectDescription": "This account will no longer be available to this workspace. You can connect it again at any time.",
+      "manageConnection": "Manage connection",
+      "manageAccount": "Manage connection for {{account}}",
+      "loading": "Loading connections",
+      "authorizing": "Complete authorization in the browser window.",
+      "confirming": "Finishing connection…",
+      "retry": "Retry",
+      "refresh": "Refresh",
+      "providersUnavailable": "Unavailable connections: {{providers}}. Ask your administrator to enable them.",
+      "loadFailed": "Unable to load connections. Please try again.",
+      "connectionFailed": "Unable to connect this account. Please try again.",
+      "disconnectFailed": "Unable to disconnect this account. Please try again.",
+      "popupBlocked": "Allow pop-ups for AppFlowy, then try connecting again.",
+      "timedOut": "The connection timed out. Please try again.",
+      "invalidResponse": "Unable to complete authorization. Please try connecting again.",
+      "authorizationDenied": "Authorization was declined. Please try again and allow access."
+    },
     "title": "Settings",
     "popupMenuItem": {
       "settings": "Settings",
@@ -2008,7 +2043,8 @@
       "optionAlreadyExist": "Option already exists",
       "copiedCreatedAt": "Created at copied to clipboard",
       "copiedUpdatedAt": "Last modified copied to clipboard",
-      "copiedDate": "Date copied to clipboard"
+      "copiedDate": "Date copied to clipboard",
+      "formulaFieldName": "Formula"
     },
     "rowPage": {
       "newField": "Add a new field",
@@ -2245,6 +2281,24 @@
       "networkHint": "Paste a link to embed",
       "uploadError": "Upload failed, please try again",
       "addFileOrMedia": "Add file or media"
+    },
+    "formula": {
+      "title": "Formula",
+      "editFormula": "Edit formula",
+      "placeholder": "Type a formula, e.g. prop(\"Price\") * 2",
+      "dialogDescription": "Write a formula that computes this property from other properties.",
+      "type": "Type",
+      "previewWith": "Preview with",
+      "untitledRow": "Row {{index}}",
+      "properties": "Properties",
+      "builtins": "Built-ins",
+      "functions": "Functions",
+      "propertyDescription": "Property of type {{type}}.",
+      "insertExample": "Insert this example",
+      "error": "Error",
+      "missingProperty": "Missing property",
+      "missingPropertyDescription": "A property used by this formula is missing. It may have been deleted.",
+      "deleteDependencyWarning": "Deleting this property will break the following formulas:"
     }
   },
   "document": {

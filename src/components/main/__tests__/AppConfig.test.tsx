@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useContext } from 'react';
 
 import { UserService } from '@/application/services/domains';
@@ -6,6 +7,7 @@ import { clearHttpResponseCaches } from '@/application/services/js-services/http
 import { emit, EventType } from '@/application/session';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { useUserTimezone } from '@/components/main/hooks/useUserTimezone';
+import { useAppLanguage } from '@/components/main/useAppLanguage';
 
 import AppConfig from '../AppConfig';
 
@@ -94,6 +96,7 @@ describe('AppConfig authentication startup', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (useLiveQuery as jest.Mock).mockReturnValue(undefined);
     localStorage.clear();
     sessionStorage.clear();
     mockTokenValid = false;
@@ -134,6 +137,22 @@ describe('AppConfig authentication startup', () => {
         timezone: expect.objectContaining({ default_timezone: 'Asia/Shanghai' }),
       })
     );
+  });
+
+  it('applies the active account language without opening Settings', async () => {
+    mockTokenValid = true;
+    (useLiveQuery as jest.Mock).mockReturnValue({ uuid: 'user-1', metadata: { language: 'fr-FR' } });
+
+    const { rerender } = render(<AppConfig><AuthenticationState /></AppConfig>);
+
+    await waitFor(() => expect(useAppLanguage).toHaveBeenLastCalledWith('fr-FR'));
+    // Dexie can still expose the old profile during an account change.
+    mockUserId = 'user-2';
+    act(() => { emit(EventType.SESSION_VALID); });
+    expect(useAppLanguage).toHaveBeenLastCalledWith(undefined);
+    (useLiveQuery as jest.Mock).mockReturnValue({ uuid: 'user-2', metadata: { language: 'ja-JP' } });
+    rerender(<AppConfig><AuthenticationState /></AppConfig>);
+    await waitFor(() => expect(useAppLanguage).toHaveBeenLastCalledWith('ja-JP'));
   });
 
   it('reacts to a same-tab invalidation without delayed token polling', async () => {

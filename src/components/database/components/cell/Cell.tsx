@@ -12,6 +12,7 @@ import { CheckboxCell } from '@/components/database/components/cell/checkbox';
 import { ChecklistCell } from '@/components/database/components/cell/checklist';
 import { RowCreateModifiedTime } from '@/components/database/components/cell/created-modified';
 import { DateTimeCell } from '@/components/database/components/cell/date';
+import { FormulaCell } from '@/components/database/components/cell/formula';
 import { NumberCell } from '@/components/database/components/cell/number';
 import { RelationCell } from '@/components/database/components/cell/relation';
 import { RollupCell } from '@/components/database/components/cell/rollup';
@@ -59,6 +60,8 @@ export function Cell(props: CellProps<CellType>) {
         return PersonCell;
       case FieldType.Rollup:
         return RollupCell;
+      case FieldType.Formula:
+        return FormulaCell;
       default:
         return TextCell;
     }

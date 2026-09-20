@@ -2,12 +2,9 @@ import { getCellFieldTypeContext } from '@/application/database-yjs/cell.field-t
 import { isCellDataTransformable, parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell } from '@/application/database-yjs/cell.type';
 import { FieldType } from '@/application/database-yjs/database.type';
-import {
-  parseChecklistFlexible,
-  parseSelectOptionTypeOptions,
-  stringifyChecklist,
-} from '@/application/database-yjs/fields';
+import { parseChecklistFlexible, stringifyChecklist } from '@/application/database-yjs/fields/checklist/parse';
 import { getDateCellStr } from '@/application/database-yjs/fields/date/utils';
+import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
 import { parseTimeStringToMs, parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { User, YDatabaseCell, YDatabaseField } from '@/application/types';

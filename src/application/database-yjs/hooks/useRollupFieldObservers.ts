@@ -1,6 +1,7 @@
 import { debounce } from 'lodash-es';
 import { useEffect, useState } from 'react';
 
+import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import {
   useDatabase,
   useDatabaseContext,
@@ -11,7 +12,10 @@ import {
 } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { parseRelationTypeOption, parseRollupTypeOption } from '@/application/database-yjs/fields';
+import { collectFormulaExternalReferences, readFormulaSchema } from '@/application/database-yjs/fields/formula';
 import { getEffectiveFiltersSnapshot } from '@/application/database-yjs/filter';
+import type { FormulaRowSources } from '@/application/database-yjs/formula/useFormulaRelationTitles';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { invalidateRelationCell } from '@/application/database-yjs/relation/cache';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { invalidateRollupCell } from '@/application/database-yjs/rollup/cache';
@@ -22,6 +26,13 @@ import { YDatabase, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/a
 import { rememberRollupTarget, migrateRollupFilters } from '../rollup/filter';
 
 const ROLLUP_OBSERVER_POOL_SIZE = 4;
+const NO_ROLLUP_FIELDS: readonly string[] = [];
+
+interface RollupObserverOptions extends FormulaRowSources {
+  /** Formula cells/previews can observe just their own row and dependencies. */
+  rollupFieldIds?: readonly string[];
+  observeConditions?: boolean;
+}
 
 /**
  * Hook that sets up observers for rollup fields used in sorts/filters.
@@ -31,23 +42,38 @@ const ROLLUP_OBSERVER_POOL_SIZE = 4;
  * @param onConditionsChange - Callback to trigger when rollup data changes
  * @param rollupWatchVersion - Version counter to trigger re-setup of observers
  */
-export function useRollupFieldObservers(onConditionsChange: () => void, rollupWatchVersion: number) {
-  const rows = useRowMap();
+export function useRollupFieldObservers(
+  onConditionsChange: () => void,
+  rollupWatchVersion: number,
+  options: RollupObserverOptions = {}
+) {
+  const rowMap = useRowMap();
+  const liveRows = options.rows ?? rowMap;
+  const { getCachedRowDocs, subscribeToCachedRowDocChanges } = options;
+  // Condition passes can publish a fresh array with identical row membership.
+  // Rebuilding here would invalidate rollups, publish another pass, and repeat.
+  const rowIdsKey = options.rowIds ? JSON.stringify(options.rowIds) : undefined;
+  const additionalRollupFieldIds = options.rollupFieldIds ?? NO_ROLLUP_FIELDS;
+  const observeConditions = options.observeConditions ?? true;
   const readOnly = useReadOnly();
   const fields = useDatabaseFields();
   const database = useDatabase();
   const view = useDatabaseView();
   const sorts = view?.get(YjsDatabaseKey.sorts);
   const filters = view?.get(YjsDatabaseKey.filters);
-  const { loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { dataSource, databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const history = dataSource?.type === 'history' || isDatabaseHistoryDocumentImmutable(databaseDoc);
   const [observerRevision, setObserverRevision] = useState(0);
 
   useEffect(() => {
-    if (!rows || !fields || !database || !loadView || !createRow || !getViewIdFromDatabaseId) return;
+    if (history) return;
+    if ((!liveRows && !getCachedRowDocs) || !fields || !database || !loadView || !createRow || !getViewIdFromDatabaseId) return;
+    if (!observeConditions && additionalRollupFieldIds.length === 0) return;
 
     // Find relation and rollup fields used in sorts/filters.
     const relationFieldIds = new Set<string>();
-    const rollupFieldIds = new Set<string>();
+    const rollupFieldIds = new Set(additionalRollupFieldIds);
+    const schema = readFormulaSchema(fields);
 
     const addConditionField = (fieldId?: string) => {
       if (!fieldId) return;
@@ -60,16 +86,24 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
       if (field && Number(field.get(YjsDatabaseKey.type)) === FieldType.Rollup) {
         rollupFieldIds.add(fieldId);
       }
-    };
 
-    sorts?.forEach((sort) => addConditionField(sort.get(YjsDatabaseKey.field_id)));
+      if (field && Number(field.get(YjsDatabaseKey.type)) === FieldType.Formula) {
+        const references = collectFormulaExternalReferences(field, schema);
+
+        references.relations.forEach((entry) => relationFieldIds.add(entry.id));
+        references.rollups.forEach((entry) => rollupFieldIds.add(entry.id));
+      }
+    };
 
     const visitFilter = (filter: ReturnType<typeof getEffectiveFiltersSnapshot>[number]) => {
       addConditionField(filter.fieldId);
       filter.children?.forEach(visitFilter);
     };
 
-    getEffectiveFiltersSnapshot(filters, fields).forEach(visitFilter);
+    if (observeConditions) {
+      sorts?.forEach((sort) => addConditionField(sort.get(YjsDatabaseKey.field_id)));
+      getEffectiveFiltersSnapshot(filters, fields).forEach(visitFilter);
+    }
 
     if (relationFieldIds.size === 0 && rollupFieldIds.size === 0) return;
 
@@ -79,6 +113,71 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
     const relatedDocCache = new Map<string, YDoc | null>();
     const viewIdCache = new Map<string, string | null>();
     const debouncedChange = debounce(onConditionsChange, 200);
+    const selectedIds = rowIdsKey ? new Set<string>(JSON.parse(rowIdsKey)) : undefined;
+    const cachedRows = getCachedRowDocs?.() ?? {};
+    const sourceIds = new Set([...Object.keys(cachedRows), ...Object.keys(liveRows ?? {})]);
+    const rows: Record<string, YDoc> = {};
+    const rowSource = (rowId: string) => {
+      const live = liveRows?.[rowId];
+      const cached = cachedRows[rowId];
+
+      return live && (hasRowConditionData(live) || !cached) ? live : cached;
+    };
+
+    sourceIds.forEach((rowId) => {
+      if (selectedIds && !selectedIds.has(rowId)) return;
+      const doc = rowSource(rowId);
+
+      if (doc) rows[rowId] = doc;
+    });
+    const unsubscribeCached = subscribeToCachedRowDocChanges?.(({ added, removed }) => {
+      if ([...Object.keys(added), ...Object.keys(removed)].some((id) => !selectedIds || selectedIds.has(id))) {
+        setObserverRevision((revision) => revision + 1);
+      }
+    });
+
+    if (unsubscribeCached) observerCleanups.push(unsubscribeCached);
+
+    if (!observeConditions) {
+      // A footer can be the only mounted consumer of a formula column. Keep
+      // its rollup sources in step with edits to the owning rows as well.
+      const relationIds = [...rollupFieldIds].flatMap((fieldId) => {
+        const field = fields.get(fieldId);
+        const relationId = field && parseRollupTypeOption(field)?.relation_field_id;
+
+        return relationId ? [relationId] : [];
+      });
+
+      Object.keys(rows).forEach((rowId) => {
+        const relationKey = () => {
+          const row = rowSource(rowId)?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as
+            | YDatabaseRow
+            | undefined;
+
+          return JSON.stringify(relationIds.map((id) => getRelationRowIdsFromCell(row?.get(YjsDatabaseKey.cells)?.get(id))));
+        };
+
+        let previousDoc = rowSource(rowId);
+        let previousRelations = relationKey();
+        const handleRowChange = () => {
+          const nextDoc = rowSource(rowId);
+          const nextRelations = relationKey();
+
+          if (previousDoc === nextDoc && previousRelations === nextRelations) return;
+          previousDoc = nextDoc;
+          previousRelations = nextRelations;
+          rollupFieldIds.forEach((fieldId) => invalidateRollupCell(`${rowId}:${fieldId}`));
+          debouncedChange();
+          setObserverRevision((revision) => revision + 1);
+        };
+
+        // A populated live doc replaces its detached seed after hydration.
+        new Set([liveRows?.[rowId], cachedRows[rowId]]).forEach((doc) => {
+          if (!doc) return;
+          observerCleanups.push(subscribeSharedYjsDeep(doc.getMap(YjsEditorKey.data_section), handleRowChange));
+        });
+      });
+    }
 
     const getRelatedDoc = async (databaseId: string) => {
       if (relatedDocCache.has(databaseId)) {
@@ -357,7 +456,11 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
       observerCleanups.forEach((cleanup) => cleanup());
     };
   }, [
-    rows,
+    history,
+    liveRows,
+    rowIdsKey,
+    getCachedRowDocs,
+    subscribeToCachedRowDocChanges,
     fields,
     database,
     loadView,
@@ -369,5 +472,7 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
     rollupWatchVersion,
     observerRevision,
     readOnly,
+    additionalRollupFieldIds,
+    observeConditions,
   ]);
 }
