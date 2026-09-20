@@ -228,7 +228,7 @@ export function DocumentHistoryModal({
   const handleRestore = useCallback(async () => {
     const versionId = selectedVersionIdRef.current;
 
-    if (!viewId || !versionId || !revertCollabVersion || githubSource.managed || githubSource.loading) {
+    if (!viewId || !versionId || !revertCollabVersion || githubSource.readOnly) {
       return;
     }
 
@@ -257,7 +257,7 @@ export function DocumentHistoryModal({
     } finally {
       setIsRestoring(false);
     }
-  }, [viewId, revertCollabVersion, refreshVersions, onOpenChange, githubSource.managed, githubSource.loading]);
+  }, [viewId, revertCollabVersion, refreshVersions, onOpenChange, githubSource.readOnly]);
 
   const handleClose = useCallback(() => onOpenChange(false), [onOpenChange]);
 
@@ -405,7 +405,7 @@ export function DocumentHistoryModal({
             onlyShowMine={onlyShowMine}
             onDateFilterChange={setDateFilter}
             onOnlyShowMineChange={setOnlyShowMine}
-            onRestoreClicked={githubSource.managed || githubSource.loading ? undefined : handleRestore}
+            onRestoreClicked={githubSource.readOnly ? undefined : handleRestore}
             isRestoring={isRestoring}
             onClose={handleClose}
             isPro={isPro}

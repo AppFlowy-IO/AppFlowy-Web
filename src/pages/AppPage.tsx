@@ -498,8 +498,8 @@ function AppPage() {
   // pages opened by direct URL before the outline branch has loaded.
   const isReadOnly = useMemo(() => {
     if (!viewId) return false;
-    return githubSource.managed || getViewReadOnlyStatus(viewId, outline, view, objectPermission);
-  }, [viewId, outline, view, objectPermission, githubSource.managed]);
+    return githubSource.readOnly || getViewReadOnlyStatus(viewId, outline, view, objectPermission);
+  }, [viewId, outline, view, objectPermission, githubSource.readOnly]);
 
   const canComment = useMemo(() => {
     if (!viewId) return false;
@@ -508,8 +508,8 @@ function AppPage() {
 
   const canWrite = useMemo(() => {
     if (!viewId) return false;
-    return !githubSource.managed && getViewCanWriteStatus(viewId, outline, view, objectPermission);
-  }, [objectPermission, outline, view, viewId, githubSource.managed]);
+    return !githubSource.readOnly && getViewCanWriteStatus(viewId, outline, view, objectPermission);
+  }, [objectPermission, outline, view, viewId, githubSource.readOnly]);
   const canShare = objectPermission.can_share;
 
   const viewDom = useMemo(() => {

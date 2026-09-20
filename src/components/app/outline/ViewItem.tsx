@@ -24,6 +24,7 @@ import {
 import { useReorderableItem } from '@/components/_shared/reorder/useReorderableItem';
 import AnimatedCollapse from '@/components/app/outline/AnimatedCollapse';
 import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
+import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import DropRowLine from '@/components/database/components/drag-and-drop/DropRowLine';
 import { cn } from '@/lib/utils';
 
@@ -88,6 +89,19 @@ function ViewItem({
 
   const isExpanded = expandIds.includes(viewId);
   const [hovered, setHovered] = React.useState<boolean>(false);
+  const [iconPickerRequested, setIconPickerRequested] = React.useState(false);
+  // Check ownership only when the icon is clicked, rather than fetching it for every sidebar row.
+  const { canWrite } = useViewActionPermissions(view, iconPickerRequested);
+  const canEditIcon = iconPickerRequested && canWrite;
+  const canEditIconRef = useRef(canEditIcon);
+
+  canEditIconRef.current = canEditIcon;
+  const handleIconOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open && canEditIcon) setIconPickerRequested(false);
+    },
+    [canEditIcon]
+  );
   const visibleChildren = useMemo(() => {
     if (aiEnabled) return view.children;
     return view.children?.filter((child) => child.layout !== ViewLayout.AIChat);
@@ -139,6 +153,9 @@ function ViewItem({
 
   const handleChangeIcon = useCallback(
     async (icon: { ty: ViewIconType; value: string }) => {
+      // An upload may finish after the picker closes or source ownership changes.
+      if (!canEditIconRef.current) return;
+      setIconPickerRequested(false);
       try {
         await updatePage?.(view.view_id, {
           icon: icon,
@@ -185,6 +202,7 @@ function ViewItem({
 
   const onUploadFile = useCallback(
     async (file: File) => {
+      if (!canEditIconRef.current) return Promise.reject(new Error('Page is read-only'));
       if (!uploadFile) return Promise.reject();
       return uploadFile(viewId, file);
     },
@@ -259,6 +277,9 @@ function ViewItem({
 
         {showPageIcon ? (
           <CustomIconPopover
+            enable={canEditIcon}
+            open={canEditIcon}
+            onOpenChange={handleIconOpenChange}
             defaultActiveTab={view.icon?.ty === 1 ? 'upload' : view.icon?.ty === 2 ? 'icon' : 'emoji'}
             tabs={['emoji', 'icon', 'upload']}
             onUploadFile={onUploadFile}
@@ -283,6 +304,7 @@ function ViewItem({
               data-testid='page-icon'
               onClick={(e) => {
                 e.stopPropagation();
+                setIconPickerRequested(true);
               }}
             >
               <PageIcon
@@ -310,6 +332,8 @@ function ViewItem({
     isRefDatabaseView,
     getIcon,
     getDotIcon,
+    canEditIcon,
+    handleIconOpenChange,
     onUploadFile,
     handleRemoveIcon,
     t,

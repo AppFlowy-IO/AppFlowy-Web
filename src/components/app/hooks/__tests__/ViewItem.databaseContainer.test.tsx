@@ -30,6 +30,10 @@ jest.mock('@/components/_shared/cutsom-icon', () => ({
   CustomIconPopover: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
+  useViewActionPermissions: () => ({ canWrite: false }),
+}));
+
 jest.mock('@/components/_shared/outline/OutlineIcon', () => () => null);
 jest.mock('@/components/_shared/view-icon/PageIcon', () => () => null);
 

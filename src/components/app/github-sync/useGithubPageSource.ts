@@ -7,6 +7,8 @@ interface PageSourceState {
   source: GithubPageSource | null;
   loading: boolean;
   error: boolean;
+  /** Keep editing disabled until source ownership has been checked. */
+  readOnly: boolean;
 }
 
 interface Entry {
@@ -16,8 +18,8 @@ interface Entry {
   timer?: ReturnType<typeof setTimeout>;
 }
 
-const EMPTY: PageSourceState = { source: null, loading: false, error: false };
-const PENDING: PageSourceState = { source: null, loading: true, error: false };
+const EMPTY: PageSourceState = { source: null, loading: false, error: false, readOnly: false };
+const PENDING: PageSourceState = { source: null, loading: true, error: false, readOnly: true };
 const entries = new Map<string, Entry>();
 const NO_AUTH_CONTEXT = createContext<React.ContextType<typeof AFConfigContext>>(undefined);
 const REFRESH_MS = 30_000;
@@ -69,13 +71,20 @@ function refresh(key: string, entry: Entry, workspaceId: string, viewId: string)
       if (controller.signal.aborted || entries.get(key) !== entry) return;
       // Ownership cannot be released through this API. A transient/inconsistent null must not
       // turn an already managed document editable while it remains mounted.
-      entry.state = { source: source ?? entry.state.source, loading: false, error: false };
+      const retainedSource = source ?? entry.state.source;
+
+      entry.state = { source: retainedSource, loading: false, error: false, readOnly: Boolean(retainedSource) };
     })
-    .catch(() => {
+    .catch((error: { httpStatus?: number } | null) => {
       if (controller.signal.aborted || entries.get(key) !== entry) return;
-      // Older servers and ordinary-page failures fall back to canonical object permissions.
-      // Known ownership survives all failures, including pause/disconnect and permission races.
-      entry.state = { ...entry.state, loading: false, error: true };
+      // Only a missing route on an older server can fall back to canonical permissions.
+      // An unavailable ownership check must not unlock a page using cached write access.
+      entry.state = {
+        ...entry.state,
+        loading: false,
+        error: true,
+        readOnly: Boolean(entry.state.source) || error?.httpStatus !== 404,
+      };
     })
     .finally(() => {
       if (controller.signal.aborted || entries.get(key) !== entry) return;

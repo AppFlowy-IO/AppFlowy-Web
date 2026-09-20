@@ -61,6 +61,13 @@ access. Source badges provide status, **Open in GitHub**, and GitHub history pro
 page content and structural actions stay read-only, with history preview available and restore
 blocked. The current UI does not publish public-site snapshots, detach ownership, or create PRs.
 
+The full-page editor, page modal, metadata menus and history restore keep writes disabled while
+the page-source check is pending or fails. A successful unmanaged response restores ordinary
+page permissions. Only an explicit HTTP 404 from an older server falls back to canonical object
+permissions; confirmed GitHub ownership remains read-only even then. This also covers cached
+writable permissions, sidebar icons and the **Shared with me** rename/icon menu. Pending title
+saves and image-picker callbacks also recheck editing access before issuing mutations.
+
 Key implementation files:
 
 - `src/application/integrations/github-sync.ts` and
@@ -169,6 +176,12 @@ tests passed again after the screenshot-based layout changes; these are reruns, 
 distinct tests. Type-checking, lint and the production build passed; the post-layout build took
 19.58 seconds. The final type-check and 33-test rerun also cover the subsequent setup-card visibility
 and Refresh dependency changes.
+
+The read-only follow-up passed 103 focused tests across 17 suites, plus TypeScript and focused
+ESLint checks. Regressions cover unresolved/failed ownership checks, full-page and modal editors,
+paused/failed bindings, sidebar/shared-page metadata controls, history restore, undo/redo, and
+delayed title/upload callbacks. Confirmed manual pages retain editing. These checks use controlled
+component fixtures; the live GitHub BDD result below predates this follow-up and was not rerun.
 
 The browser check rendered the real Settings menu, Connections panel and dialogs in Chromium
 against controlled HTTP responses. It exercised public setup without OAuth, close/reopen and

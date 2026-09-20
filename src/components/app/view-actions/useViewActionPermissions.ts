@@ -114,7 +114,7 @@ export function useViewActionPermissions(
   const hasLoadedViewActionPermissions = !canLoadViewActionPermissions || loadedViewId === viewId;
   const permissionForCurrentView = loadedViewId === viewId ? objectPermission : null;
   const canRead = hasLoadedViewActionPermissions && permissionForCurrentView?.can_read === true;
-  const canWrite = canRead && !githubSource.managed && permissionForCurrentView.can_write;
+  const canWrite = canRead && !githubSource.readOnly && permissionForCurrentView.can_write;
   const canShare = canRead && permissionForCurrentView.can_share;
   const canManageViewActions = hasLoadedViewActionPermissions
     ? canUseViewMutationActions({ objectPermission: permissionForCurrentView })
@@ -130,8 +130,8 @@ export function useViewActionPermissions(
     canRead,
     canShare,
     canWrite,
-    canCreateViewActions: !githubSource.loading && !githubSource.managed && canCreateViewActions,
-    canManageViewActions: !githubSource.loading && !githubSource.managed && canManageViewActions,
+    canCreateViewActions: !githubSource.readOnly && canCreateViewActions,
+    canManageViewActions: !githubSource.readOnly && canManageViewActions,
     canUsePageHistory: githubSource.managed ? canRead : canUsePageHistory,
     hasLoadedViewActionPermissions,
     isLoadingViewActionPermissions,

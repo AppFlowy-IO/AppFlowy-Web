@@ -351,7 +351,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
             </IconButton>
           </Tooltip>
           <Divider orientation={'vertical'} className={'h-4'} />
-          {space && ref.current && !githubSource.managed && !githubSource.loading && (
+          {space && ref.current && !githubSource.readOnly && (
             <MovePagePopover
               viewId={effectiveViewId}
               open={movePageOpen}
@@ -401,15 +401,15 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         </div>
       </div>
     );
-  }, [effectiveViewId, handleClose, movePageOpen, outline, t, toView, githubSource.managed, githubSource.loading]);
+  }, [effectiveViewId, handleClose, movePageOpen, outline, t, toView, githubSource.readOnly]);
 
   // Check if view is in shareWithMe and determine readonly status.
   // `resolvedView` includes the server-fetched fallback, so locked pages opened
   // before their outline branch is loaded still flip the editor to read-only.
   const isReadOnly = useMemo(() => {
     if (!effectiveViewId) return false;
-    return githubSource.managed || getViewReadOnlyStatus(effectiveViewId, outline, resolvedView, objectPermission);
-  }, [effectiveViewId, getViewReadOnlyStatus, objectPermission, outline, resolvedView, githubSource.managed]);
+    return githubSource.readOnly || getViewReadOnlyStatus(effectiveViewId, outline, resolvedView, objectPermission);
+  }, [effectiveViewId, getViewReadOnlyStatus, objectPermission, outline, resolvedView, githubSource.readOnly]);
 
   // Comment permission is independent from editability, so a locked or
   // read-and-comment page opened in the modal still offers the comment action.
@@ -420,8 +420,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
   const canWrite = useMemo(() => {
     if (!effectiveViewId) return false;
-    return !githubSource.managed && getViewCanWriteStatus(effectiveViewId, outline, resolvedView, objectPermission);
-  }, [effectiveViewId, objectPermission, outline, resolvedView, githubSource.managed]);
+    return !githubSource.readOnly && getViewCanWriteStatus(effectiveViewId, outline, resolvedView, objectPermission);
+  }, [effectiveViewId, objectPermission, outline, resolvedView, githubSource.readOnly]);
   const canShare = objectPermission.can_share;
 
   const View = useMemo(() => {

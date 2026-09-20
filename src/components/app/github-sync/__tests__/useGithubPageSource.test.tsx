@@ -63,6 +63,7 @@ test('deduplicates selected page and menu consumers without probing inactive vie
   await waitFor(() => expect(active.result.current.page.managed).toBe(true));
   expect(active.result.current.menu.source).toEqual(managed);
   expect(active.result.current.closed.managed).toBe(false);
+  expect(active.result.current.closed.readOnly).toBe(false);
   expect(fetchSource).toHaveBeenCalledTimes(1);
   active.unmount();
 });
@@ -76,15 +77,18 @@ test('retains managed ownership on refresh failures and inconsistent null respon
     await Promise.resolve();
   });
   expect(active.result.current.managed).toBe(true);
+  expect(active.result.current.readOnly).toBe(true);
   await act(async () => {
     jest.advanceTimersByTime(30_000);
   });
   expect(active.result.current.error).toBe(true);
   expect(active.result.current.managed).toBe(true);
+  expect(active.result.current.readOnly).toBe(true);
   await act(async () => {
     jest.advanceTimersByTime(30_000);
   });
   expect(active.result.current.managed).toBe(true);
+  expect(active.result.current.readOnly).toBe(true);
   active.unmount();
 });
 
@@ -106,11 +110,13 @@ test('aborts the previous workspace request and ignores a late response', async 
   const signal = fetchSource.mock.calls[0][2];
 
   active.rerender({ workspace: 'second' });
+  expect(active.result.current.readOnly).toBe(true);
   expect(signal?.aborted).toBe(true);
   await waitFor(() => expect(active.result.current.loading).toBe(false));
   await act(async () => finishOld?.(managed));
   expect(active.result.current.source).toBeNull();
   expect(active.result.current.managed).toBe(false);
+  expect(active.result.current.readOnly).toBe(false);
   active.unmount();
 });
 
@@ -123,6 +129,7 @@ test('clears ownership on account changes and releases an unmounted request', as
   active.rerender();
   expect(active.result.current.source).toBeNull();
   expect(active.result.current.loading).toBe(true);
+  expect(active.result.current.readOnly).toBe(true);
   expect(fetchSource).toHaveBeenCalledTimes(2);
   const signal = fetchSource.mock.calls[1][2];
 
@@ -131,7 +138,7 @@ test('clears ownership on account changes and releases an unmounted request', as
 });
 
 test('ordinary pages and an unavailable older endpoint retain canonical permissions', async () => {
-  fetchSource.mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('not supported'));
+  fetchSource.mockResolvedValueOnce(null).mockRejectedValueOnce({ httpStatus: 404 });
   const active = renderHook(({ view }) => useGithubPageSource('workspace', view), {
     wrapper: Wrapper,
     initialProps: { view: 'manual' },
@@ -139,9 +146,67 @@ test('ordinary pages and an unavailable older endpoint retain canonical permissi
 
   await waitFor(() => expect(active.result.current.loading).toBe(false));
   expect(active.result.current.managed).toBe(false);
+  expect(active.result.current.readOnly).toBe(false);
   active.rerender({ view: 'legacy' });
   await waitFor(() => expect(active.result.current.error).toBe(true));
   expect(active.result.current.managed).toBe(false);
   expect(active.result.current.loading).toBe(false);
+  expect(active.result.current.readOnly).toBe(false);
+  active.unmount();
+});
+
+test.each([null, managed])('holds editing until the initial source check resolves (%p)', async (source) => {
+  let resolveSource!: (source: GithubPageSource | null) => void;
+
+  fetchSource.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveSource = resolve;
+      })
+  );
+  const active = renderHook(() => useGithubPageSource('workspace', 'view'), { wrapper: Wrapper });
+
+  expect(active.result.current.loading).toBe(true);
+  expect(active.result.current.managed).toBe(false);
+  expect(active.result.current.readOnly).toBe(true);
+  await act(async () => resolveSource(source));
+  expect(active.result.current.loading).toBe(false);
+  expect(active.result.current.readOnly).toBe(Boolean(source));
+  active.unmount();
+});
+
+test.each([null, managed])('failed initial checks stay read-only until a successful retry (%p)', async (source) => {
+  jest.useFakeTimers();
+  fetchSource.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(source);
+  const active = renderHook(() => useGithubPageSource('workspace', 'view'), { wrapper: Wrapper });
+
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(active.result.current.error).toBe(true);
+  expect(active.result.current.loading).toBe(false);
+  expect(active.result.current.readOnly).toBe(true);
+  await act(async () => {
+    jest.advanceTimersByTime(30_000);
+  });
+  expect(active.result.current.error).toBe(false);
+  expect(active.result.current.readOnly).toBe(Boolean(source));
+  active.unmount();
+});
+
+test('a missing endpoint cannot unlock previously confirmed source ownership', async () => {
+  jest.useFakeTimers();
+  fetchSource.mockResolvedValueOnce(managed).mockRejectedValueOnce({ httpStatus: 404 });
+  const active = renderHook(() => useGithubPageSource('workspace', 'view'), { wrapper: Wrapper });
+
+  await act(async () => {
+    await Promise.resolve();
+  });
+  await act(async () => {
+    jest.advanceTimersByTime(30_000);
+  });
+  expect(active.result.current.error).toBe(true);
+  expect(active.result.current.managed).toBe(true);
+  expect(active.result.current.readOnly).toBe(true);
   active.unmount();
 });

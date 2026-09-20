@@ -40,6 +40,11 @@ export function ViewMetaPreview({
   const [cover, setCover] = React.useState<ViewMetaCover | null>(normalizeCover(coverProp));
   const [icon, setIcon] = React.useState<ViewMetaIcon | null>(iconProp || null);
   const [focusedTitleViewId, setFocusedTitleViewId] = React.useState<string>();
+  // TitleEditable flushes its debounce when it unmounts. A read-only transition must
+  // also block callbacks retained by the former title, icon picker or cover popover.
+  const readOnlyRef = React.useRef(readOnly);
+
+  readOnlyRef.current = readOnly;
 
   const handleTitleFocus = useCallback(() => {
     setFocusedTitleViewId(viewId);
@@ -88,7 +93,7 @@ export function ViewMetaPreview({
 
   const handleUpdateIcon = React.useCallback(
     async (icon: { ty: ViewIconType; value: string }) => {
-      if (!updatePageIcon || !viewId) return;
+      if (readOnlyRef.current || !updatePageIcon || !viewId) return;
       setIcon(icon);
       try {
         await updatePageIcon(viewId, icon);
@@ -102,7 +107,7 @@ export function ViewMetaPreview({
 
   const handleUpdateName = React.useCallback(
     async (newName: string) => {
-      if (!updatePageName || !viewId) return;
+      if (readOnlyRef.current || !updatePageName || !viewId) return;
       try {
         if (name === newName) return;
         await updatePageName(viewId, newName);
@@ -116,7 +121,7 @@ export function ViewMetaPreview({
 
   const handleUpdateCover = React.useCallback(
     async (newCover?: ViewMetaCover) => {
-      if (!updatePage || !viewId) return;
+      if (readOnlyRef.current || !updatePage || !viewId) return;
       const normalizedCover = normalizeCover(newCover);
 
       setCover(normalizedCover);
@@ -143,7 +148,7 @@ export function ViewMetaPreview({
 
   const onUploadFile = useCallback(
     async (file: File) => {
-      if (!uploadFile) return Promise.reject();
+      if (readOnlyRef.current || !uploadFile) return Promise.reject();
       return uploadFile(file);
     },
     [uploadFile]

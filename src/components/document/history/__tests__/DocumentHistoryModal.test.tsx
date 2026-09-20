@@ -19,12 +19,13 @@ import { DocumentHistoryModal } from '../DocumentHistoryModal';
 let lastEditorProps: Record<string, unknown> | null = null;
 let lastVersionListProps: Record<string, unknown> | null = null;
 let mockGithubManaged = false;
+let mockGithubReadOnly = false;
 
 jest.mock('@/application/services/domains/github-sync', () => ({
   getPageSourceHistory: jest.fn().mockResolvedValue({ versions: [] }),
 }));
 jest.mock('@/components/app/github-sync/useGithubPageSource', () => ({
-  useGithubPageSource: () => ({ managed: mockGithubManaged, loading: false }),
+  useGithubPageSource: () => ({ managed: mockGithubManaged, readOnly: mockGithubManaged || mockGithubReadOnly }),
 }));
 
 jest.mock('@/components/editor', () => ({
@@ -87,6 +88,7 @@ describe('DocumentHistoryModal version preview', () => {
     lastEditorProps = null;
     lastVersionListProps = null;
     mockGithubManaged = false;
+    mockGithubReadOnly = false;
     jest.clearAllMocks();
 
     getCollabHistory.mockResolvedValue([
@@ -117,6 +119,15 @@ describe('DocumentHistoryModal version preview', () => {
 
     await waitFor(() => expect(lastEditorProps).not.toBeNull());
     expect(typeof lastVersionListProps?.onRestoreClicked).toBe('function');
+  });
+
+  it('withholds restore while GitHub ownership is unresolved', async () => {
+    mockGithubReadOnly = true;
+    render(<DocumentHistoryModal open onOpenChange={jest.fn()} viewId='view-1' />);
+
+    await waitFor(() => expect(lastEditorProps).not.toBeNull());
+    expect(lastVersionListProps?.onRestoreClicked).toBeUndefined();
+    expect(revertCollabVersion).not.toHaveBeenCalled();
   });
 
   it('forwards loadView and bindViewSync to the preview Editor so embedded databases can load', async () => {

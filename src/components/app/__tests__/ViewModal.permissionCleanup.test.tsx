@@ -17,6 +17,8 @@ const mockView: View = {
 };
 let mockOutlineViews: View[] = [mockView];
 let mockGithubManaged = false;
+let mockGithubLoading = false;
+let mockGithubReadOnly = false;
 const mockLoadView = jest.fn();
 const mockBindViewSync = jest.fn();
 const mockNoop = jest.fn();
@@ -92,7 +94,12 @@ jest.mock('@/components/app/hooks/useViewObjectPermission', () => ({
 }));
 
 jest.mock('@/components/app/github-sync/useGithubPageSource', () => ({
-  useGithubPageSource: () => ({ managed: mockGithubManaged, loading: false, source: null }),
+  useGithubPageSource: () => ({
+    managed: mockGithubManaged,
+    loading: mockGithubLoading,
+    readOnly: mockGithubReadOnly,
+    source: null,
+  }),
 }));
 
 jest.mock('@/components/app/hooks/useViewOperations', () => ({
@@ -158,15 +165,46 @@ describe('ViewModal permission cleanup', () => {
     jest.clearAllMocks();
     mockOutlineViews = [mockView];
     mockGithubManaged = false;
+    mockGithubLoading = false;
+    mockGithubReadOnly = false;
     mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId) };
   });
 
   it('makes a GitHub document read-only even while a previously writable permission is cached', async () => {
     mockGithubManaged = true;
+    mockGithubReadOnly = true;
     mockLoadView.mockResolvedValue(new Y.Doc({ guid: 'github-source-doc' }));
     render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
 
     await screen.findByText('github-source-doc');
+    expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({ readOnly: true, canWrite: false }));
+  });
+
+  it.each([true, false])('disables editing while ownership loads, then applies managed=%s', async (managed) => {
+    mockGithubLoading = true;
+    mockGithubReadOnly = true;
+    mockLoadView.mockResolvedValue(new Y.Doc({ guid: 'pending-source-doc' }));
+    const { rerender } = render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await screen.findByText('pending-source-doc');
+    expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({ readOnly: true, canWrite: false }));
+
+    mockGithubLoading = false;
+    mockGithubManaged = managed;
+    mockGithubReadOnly = managed;
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    expect(mockRenderedViewProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ readOnly: managed, canWrite: !managed })
+    );
+  });
+
+  it('keeps editing disabled when ownership cannot be resolved', async () => {
+    mockGithubReadOnly = true;
+    mockLoadView.mockResolvedValue(new Y.Doc({ guid: 'unresolved-source-doc' }));
+    render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await screen.findByText('unresolved-source-doc');
     expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({ readOnly: true, canWrite: false }));
   });
 
