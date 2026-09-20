@@ -9,7 +9,8 @@ import { evaluateFormula } from './evaluator';
 import { formatFormulaValue, FormulaFormatOptions } from './format';
 import { FORMULA_MAX_DEPTH, FormulaCellResult } from './formula.type';
 import { parseFormulaTypeOption } from './parse';
-import { FormulaFieldSchema, resolveFormulaField } from './schema';
+import { withFormulaResultCache } from './result-cache';
+import { FormulaFieldSchema, refreshFormulaSchema, resolveFormulaField } from './schema';
 import { EMPTY, FormulaValue } from './values';
 
 export interface EvaluateFormulaCellOptions extends ReadFieldValueContext {
@@ -59,7 +60,18 @@ function withRaw(value: FormulaValue, resultType: FormulaCellResult['resultType'
  * Never throws: parse, type and runtime failures come back as `error`.
  */
 export function evaluateFormulaCell(options: EvaluateFormulaCellOptions): FormulaCellResult {
-  return evaluateFormulaCellWithCache(options, new Map(), new FormulaEvaluationBudget());
+  const current = refreshEvaluationSchema(options);
+
+  return withFormulaResultCache(current, (values) =>
+    evaluateFormulaCellWithCache(current, values, new FormulaEvaluationBudget())
+  );
+}
+
+function refreshEvaluationSchema<T extends EvaluateFormulaCellOptions>(options: T): T {
+  const schema = refreshFormulaSchema(options.schema);
+  const field = schema.find((entry) => entry.id === options.fieldId)?.field ?? options.field;
+
+  return { ...options, schema, field };
 }
 
 function evaluateFormulaCellWithCache(
@@ -87,7 +99,7 @@ export interface EvaluateFormulaExpressionOptions extends EvaluateFormulaCellOpt
 
 /** Evaluates an arbitrary expression as if it were `field`'s formula (used for live previews). */
 export function evaluateFormulaExpression(options: EvaluateFormulaExpressionOptions): FormulaCellResult {
-  return evaluateFormulaExpressionWithCache(options, new Map(), new FormulaEvaluationBudget());
+  return evaluateFormulaExpressionWithCache(refreshEvaluationSchema(options), new Map(), new FormulaEvaluationBudget());
 }
 
 /** Share raw property values only within this synchronous evaluation of one row. */
@@ -154,7 +166,11 @@ function evaluateFormulaExpressionWithCache(
     );
 
     if (nested.error) {
-      throw new FormulaError(`Property "${entry.name}" has an error: ${nested.error}`, position, nested.missingPropertyRef);
+      throw new FormulaError(
+        `Property "${entry.name}" has an error: ${nested.error}`,
+        position,
+        nested.missingPropertyRef
+      );
     }
 
     values.set(entry.id, nested.value);

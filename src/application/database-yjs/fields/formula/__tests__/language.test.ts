@@ -86,6 +86,22 @@ describe('bounded formula regular expressions', () => {
 });
 
 describe('formula language: parsing and operators', () => {
+  it.each(['', ','])('bounds split(%j) before allocating the output list', (separator) => {
+    const source = ','.repeat(60_000);
+    const ast = parseFormula(`prop("Large").split(${JSON.stringify(separator)})`);
+    const split = jest.spyOn(String.prototype, 'split');
+    const arrayFrom = jest.spyOn(Array, 'from');
+
+    try {
+      expect(() => evaluateFormula(ast, { getProp: () => text(source) })).toThrow(/work limit/);
+      expect(split.mock.contexts.includes(source)).toBe(false);
+      expect(arrayFrom.mock.calls.some(([value]) => value === source)).toBe(false);
+    } finally {
+      split.mockRestore();
+      arrayFrom.mockRestore();
+    }
+  });
+
   it.each([
     'ifs(false, "prefix") + 1 + 2',
     '1 + ifs(false, "suffix") + 2',
@@ -308,6 +324,27 @@ describe('formula language: functions', () => {
     expect(run('toNumber(true)')).toEqual(num(1));
     expect(run('toNumber("abc")')).toEqual(EMPTY);
     expectError('test("a", "(")', /Invalid regular expression/);
+  });
+
+  it.each<[string, number]>([
+    ['round(1234567890123456)', 1234567890123456],
+    ['round(-1234567890123456)', -1234567890123456],
+    ['round(9007199254740991, 2)', 9007199254740991],
+    ['round(-9007199254740991, 15)', -9007199254740991],
+    ['round(123456789012345.6)', 123456789012346],
+    ['round(123456789012345.6, 1)', 123456789012345.6],
+    ['round(12345678901234.56, 1)', 12345678901234.6],
+    ['round(1.234567890123456, 15)', 1.234567890123456],
+    ['round(0.49999999999999994)', 0],
+    ['round(1.0049999999999997, 2)', 1],
+    ['round(-1.005, 2)', -1],
+    ['round(-1.0050000000000001, 2)', -1.01],
+    ['round(450359962737049.75, 1)', 450359962737049.8],
+    ['round(-450359962737049.75, 1)', -450359962737049.7],
+    ['round(1e308, 15)', 1e308],
+    ['round(5e-324, 15)', 0],
+  ])('preserves digits when evaluating %s', (expression, expected) => {
+    expect(run(expression)).toEqual(num(expected));
   });
 
   it('number', () => {

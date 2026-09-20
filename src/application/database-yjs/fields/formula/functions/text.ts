@@ -265,11 +265,30 @@ export const textFunctions: FormulaFunctionSpec[] = [
       { name: 'separator', type: 'text' },
     ],
     returnType: listOf('text'),
-    impl: ([value, separator]) => {
+    impl: ([value, separator], ctx, _nodes, position) => {
       const source = asText(value);
 
       if (source === '') return list([]);
       const delimiter = asText(separator);
+      // Charge output slots before the native split/map allocates them. The
+      // input traversal alone does not account for a list of many empty pieces.
+      let count = 0;
+
+      if (delimiter === '') {
+        for (let index = 0; index < source.length; count += 1) {
+          index += source.codePointAt(index)! > 0xffff ? 2 : 1;
+        }
+      } else {
+        count = 1;
+        let index = source.indexOf(delimiter);
+
+        while (index !== -1) {
+          count += 1;
+          index = source.indexOf(delimiter, index + delimiter.length);
+        }
+      }
+
+      ctx.consumeWork(count, position);
 
       return list((delimiter === '' ? Array.from(source) : source.split(delimiter)).map((item) => text(item)));
     },
