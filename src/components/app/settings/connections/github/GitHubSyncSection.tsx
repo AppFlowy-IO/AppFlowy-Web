@@ -29,6 +29,7 @@ function WorkspaceSyncSection({ workspaceId, configuration, open, onOpenChange, 
   const [loading, setLoading] = useState(configuration.available && configuration.can_manage);
   const [error, setError] = useState<unknown>();
   const [revision, setRevision] = useState(0);
+  const [managedId, setManagedId] = useState<string>();
   const canManage = configuration.available && configuration.can_manage;
 
   useEffect(() => {
@@ -50,15 +51,17 @@ function WorkspaceSyncSection({ workspaceId, configuration, open, onOpenChange, 
     return () => controller.abort();
   }, [canManage, configuration, revision, workspaceId]);
 
-  const binding = bindings.find((item) => item.space_id === configuration.space_id);
-
   return (
     <section
-      className={binding ? 'mt-6 border-t border-border-primary pt-5' : undefined}
+      className={bindings.length ? 'mt-6 space-y-5 border-t border-border-primary pt-5' : undefined}
       aria-label={t('settings.githubSync.title', { defaultValue: 'GitHub sync' })}
     >
-      {binding && (
-        <div className='flex items-start justify-between gap-4'>
+      {bindings.map((binding) => (
+        <div
+          key={binding.id}
+          className='flex items-start justify-between gap-4'
+          data-testid={`github-sync-binding-${binding.id}`}
+        >
           <div className='min-w-0'>
             <h3 className='flex items-center gap-2 text-sm font-medium text-text-primary'>
               <GitHubIcon aria-hidden='true' className='h-5 w-5' />
@@ -69,28 +72,34 @@ function WorkspaceSyncSection({ workspaceId, configuration, open, onOpenChange, 
                 defaultValue: 'Keep a space up to date with Markdown from GitHub.',
               })}
             </p>
-            {configuration.available && (
-              <p className='mt-2 break-words text-sm text-text-secondary'>
-                {configuration.repository} → {configuration.space_name}
-              </p>
-            )}
+            <p className='mt-2 break-words text-sm text-text-secondary'>
+              {binding.repository_owner}/{binding.repository_name} →{' '}
+              {configuration.spaces.find((space) => space.space_id === binding.space_id)?.space_name || binding.space_id}
+            </p>
+            <p className='mt-2 text-sm text-text-secondary'>
+              {!binding.enabled
+                ? t('settings.githubSync.paused', { defaultValue: 'Sync paused' })
+                : binding.last_error
+                ? t('settings.githubSync.failed', { defaultValue: 'Sync needs attention' })
+                : t('settings.githubSync.connected', { defaultValue: 'Repository connected' })}
+            </p>
           </div>
           {canManage && (
             <Button
               variant='outline'
               disabled={loading || Boolean(error)}
-              onClick={() => onOpenChange(true)}
+              onClick={() => setManagedId(binding.id)}
               data-testid='github-sync-open'
             >
               {t('settings.githubSync.manage', { defaultValue: 'Manage sync' })}
             </Button>
           )}
         </div>
-      )}
+      ))}
       {!configuration.available && (
         <p className='mt-3 text-sm text-text-secondary'>
           {t('settings.githubSync.unavailable', {
-            defaultValue: 'Ask your administrator to configure the GitHub repository and destination space.',
+            defaultValue: 'GitHub sync is not available on this server.',
           })}
         </p>
       )}
@@ -118,24 +127,27 @@ function WorkspaceSyncSection({ workspaceId, configuration, open, onOpenChange, 
           </Button>
         </div>
       )}
-      {binding && canManage && (
-        <p className='mt-2 text-sm text-text-secondary'>
-          {!binding.enabled
-            ? t('settings.githubSync.paused', { defaultValue: 'Sync paused' })
-            : binding.last_error
-            ? t('settings.githubSync.failed', { defaultValue: 'Sync needs attention' })
-            : t('settings.githubSync.connected', { defaultValue: 'Repository connected' })}
-        </p>
-      )}
-      {open && canManage && !loading && !error && (
+      {(open || managedId) && canManage && !loading && !error && (
         <GitHubSyncDialog
           workspaceId={workspaceId}
-          configuration={configuration}
-          open={open}
-          bindingId={binding?.id}
+          configuration={
+            open
+              ? {
+                  ...configuration,
+                  spaces: configuration.spaces.filter(
+                    (space) => !bindings.some((binding) => binding.space_id === space.space_id)
+                  ),
+                }
+              : configuration
+          }
+          open
+          bindingId={open ? undefined : managedId}
           onOpenChange={(value) => {
             onOpenChange(value);
-            if (!value) setRevision((current) => current + 1);
+            if (!value) {
+              setManagedId(undefined);
+              setRevision((current) => current + 1);
+            }
           }}
           onOpenSpace={onOpenSpace}
         />

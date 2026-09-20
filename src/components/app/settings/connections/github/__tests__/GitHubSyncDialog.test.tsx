@@ -1,4 +1,4 @@
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 
 import { GitHubSyncBinding, GitHubSyncConfiguration, GitHubSyncStatus } from '@/application/integrations/github-sync';
@@ -70,13 +70,14 @@ const authorize = jest.mocked(authorizeIntegration);
 const configuration: GitHubSyncConfiguration = {
   available: true,
   can_manage: true,
-  repository: 'example/docs',
+  repository: '',
   branch: 'main',
   root_path: 'docs',
-  space_id: 'space',
-  space_name: 'Self-hosted Guide',
-  existing_page_count: 42,
+  space_id: null,
+  space_name: null,
+  existing_page_count: 0,
   oauth_configured: true,
+  spaces: [{ space_id: 'space', space_name: 'Self-hosted Guide', existing_page_count: 42 }],
 };
 const binding: GitHubSyncBinding = {
   id: 'binding',
@@ -137,6 +138,12 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function checkRepository() {
+  fireEvent.change(screen.getByTestId('github-sync-repository'), { target: { value: 'example/docs' } });
+  fireEvent.change(screen.getByTestId('github-sync-space'), { target: { value: 'space' } });
+  fireEvent.click(screen.getByTestId('github-sync-check-repository'));
+}
+
 async function reviewAndStart() {
   await waitFor(() => expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: 'Next' }));
@@ -159,10 +166,228 @@ describe('GitHub sync setup and management', () => {
 
   afterEach(() => jest.useRealTimers());
 
+  it('accepts a repository URL and submits the chosen branch, directory and destination after review', async () => {
+    render(
+      <GitHubSyncDialog
+        {...props()}
+        configuration={{
+          ...configuration,
+          spaces: [
+            ...configuration.spaces,
+            { space_id: 'second-space', space_name: 'Developer guide', existing_page_count: 7 },
+          ],
+        }}
+      />
+    );
+    expect(api.probeRepository).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByTestId('github-sync-repository'), {
+      target: { value: 'https://github.com/example/docs' },
+    });
+    fireEvent.change(screen.getByTestId('github-sync-branch'), { target: { value: 'release/docs' } });
+    fireEvent.change(screen.getByTestId('github-sync-directory'), { target: { value: '/manual/install/' } });
+    fireEvent.change(screen.getByTestId('github-sync-space'), { target: { value: 'second-space' } });
+    expect(api.probeRepository).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('github-sync-check-repository'));
+    await screen.findByText('Public repository · No GitHub sign-in required');
+    expect(api.probeRepository).toHaveBeenCalledWith(
+      'workspace',
+      { repository: 'https://github.com/example/docs' },
+      expect.any(AbortSignal)
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getByText('Developer guide')).toBeTruthy();
+    expect(screen.getByText('release/docs')).toBeTruthy();
+    expect(screen.getByText('/manual/install')).toBeTruthy();
+    expect(screen.getByText('7 existing pages')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Start sync' }));
+    await waitFor(() =>
+      expect(api.createBinding).toHaveBeenCalledWith(
+        'workspace',
+        {
+          repository_id: 123,
+          branch: 'release/docs',
+          root_path: 'manual/install',
+          space_id: 'second-space',
+        },
+        expect.any(AbortSignal)
+      )
+    );
+  });
+
+  it('uses the checked repository default branch until the user edits it', async () => {
+    api.probeRepository.mockResolvedValue({ ...ready, repository: { ...ready.repository, default_branch: 'trunk' } });
+    render(<GitHubSyncDialog {...props()} />);
+    checkRepository();
+    await screen.findByText('Public repository · No GitHub sign-in required');
+    expect(screen.getByTestId('github-sync-branch')).toHaveProperty('value', 'trunk');
+    api.probeRepository.mockResolvedValue({ ...ready, repository: { ...ready.repository, default_branch: 'develop' } });
+    fireEvent.change(screen.getByTestId('github-sync-repository'), { target: { value: 'another/repository' } });
+    fireEvent.click(screen.getByTestId('github-sync-check-repository'));
+    await waitFor(() => expect(screen.getByTestId('github-sync-branch')).toHaveProperty('value', 'develop'));
+  });
+
+  it('keeps configuration immutable while the initial create request is pending', async () => {
+    const pending = deferred<{ binding: GitHubSyncBinding; run: { id: string; status: string } }>();
+
+    api.createBinding.mockReturnValueOnce(pending.promise);
+    render(<GitHubSyncDialog {...props()} />);
+    checkRepository();
+    await reviewAndStart();
+    expect(screen.getByRole('button', { name: 'Back' }).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.queryByTestId('github-sync-repository')).toBeNull();
+    await act(async () => pending.resolve({ binding, run: { id: 'run', status: 'pending' } }));
+    expect(await screen.findByText('Sync completed')).toBeTruthy();
+    expect(api.createBinding).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires a destination and complete source fields before continuing', async () => {
+    render(<GitHubSyncDialog {...props()} />);
+    fireEvent.change(screen.getByTestId('github-sync-repository'), { target: { value: 'example/docs' } });
+    fireEvent.click(screen.getByTestId('github-sync-check-repository'));
+    await screen.findByText('Public repository · No GitHub sign-in required');
+    expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('github-sync-space'), { target: { value: 'space' } });
+    expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(false);
+    fireEvent.change(screen.getByTestId('github-sync-branch'), { target: { value: ' ' } });
+    expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(true);
+    expect(api.createBinding).not.toHaveBeenCalled();
+  });
+
+  it('invalidates checked access immediately when the repository changes', async () => {
+    render(<GitHubSyncDialog {...props()} />);
+    checkRepository();
+    await screen.findByText('Public repository · No GitHub sign-in required');
+    fireEvent.change(screen.getByTestId('github-sync-repository'), { target: { value: 'different/private' } });
+    expect(screen.queryByText('Public repository · No GitHub sign-in required')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(true);
+    expect(api.probeRepository).toHaveBeenCalledTimes(1);
+    expect(api.createBinding).not.toHaveBeenCalled();
+  });
+
+  it('aborts a pending probe and ignores its stale result after the source changes', async () => {
+    const late = deferred<typeof ready>();
+
+    api.probeRepository.mockReturnValueOnce(late.promise);
+    render(<GitHubSyncDialog {...props()} />);
+    checkRepository();
+    const signal = api.probeRepository.mock.calls[0][2];
+
+    fireEvent.change(screen.getByTestId('github-sync-repository'), { target: { value: 'different/private' } });
+    await act(async () => late.resolve(ready));
+    expect(signal?.aborted).toBe(true);
+    expect(screen.queryByText('Public repository · No GitHub sign-in required')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('github-sync-check-repository'));
+    await screen.findByText('Public repository · No GitHub sign-in required');
+    expect(api.probeRepository).toHaveBeenLastCalledWith(
+      'workspace',
+      { repository: 'different/private' },
+      expect.any(AbortSignal)
+    );
+  });
+
+  it('explains when no writable unconnected destinations are available', () => {
+    render(<GitHubSyncDialog {...props()} configuration={{ ...configuration, spaces: [] }} />);
+    expect(
+      screen.getByText(
+        'Create a writable space to connect this repository. Spaces already connected to GitHub are not available.'
+      )
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(true);
+    expect(api.probeRepository).not.toHaveBeenCalled();
+  });
+
+  it('manages the selected binding and uses its saved repository when checking access', async () => {
+    const second = {
+      ...binding,
+      id: 'second',
+      space_id: 'second-space',
+      repository_owner: 'other',
+      repository_name: 'guide',
+      branch: 'stable',
+      root_path: 'manual',
+      last_error: 'connection_issue',
+    };
+
+    api.listBindings.mockResolvedValue({ bindings: [binding, second] });
+    api.getBinding.mockResolvedValue({ ...complete, binding: second });
+    render(
+      <GitHubSyncSection
+        {...props()}
+        open={false}
+        configuration={{
+          ...configuration,
+          spaces: [
+            ...configuration.spaces,
+            { space_id: 'second-space', space_name: 'Developer guide', existing_page_count: 7 },
+          ],
+        }}
+      />
+    );
+    const row = await screen.findByTestId('github-sync-binding-second');
+
+    expect(row.textContent).toContain('other/guide');
+    fireEvent.click(within(row).getByRole('button', { name: 'Manage sync' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Check repository access' }));
+    await screen.findByText('Public repository · No GitHub sign-in required');
+    expect(api.getBinding).toHaveBeenCalledWith('workspace', 'second', expect.any(AbortSignal));
+    expect(api.probeRepository).toHaveBeenCalledWith(
+      'workspace',
+      { repository: 'other/guide' },
+      expect.any(AbortSignal)
+    );
+    expect(screen.queryByTestId('github-sync-repository')).toBeNull();
+    expect(screen.queryByTestId('github-sync-space')).toBeNull();
+    expect(screen.getByText('stable')).toBeTruthy();
+    expect(screen.getByText('/manual')).toBeTruthy();
+    expect(api.createBinding).not.toHaveBeenCalled();
+  });
+
+  it('opens a new connection even when existing bindings exist and excludes their destinations', async () => {
+    api.listBindings.mockResolvedValue({ bindings: [binding] });
+    render(
+      <GitHubSyncSection
+        {...props()}
+        configuration={{
+          ...configuration,
+          spaces: [
+            ...configuration.spaces,
+            { space_id: 'second-space', space_name: 'Developer guide', existing_page_count: 7 },
+          ],
+        }}
+      />
+    );
+    const select = await screen.findByTestId('github-sync-space');
+
+    expect(within(select).queryByRole('option', { name: 'Self-hosted Guide' })).toBeNull();
+    expect(within(select).getByRole('option', { name: 'Developer guide' })).toBeTruthy();
+    expect(api.getBinding).not.toHaveBeenCalled();
+    expect(api.probeRepository).not.toHaveBeenCalled();
+  });
+
+  it('rejects recovery when a reused repository name resolves to a different immutable repository ID', async () => {
+    api.getBinding.mockResolvedValue({ ...complete, binding: { ...binding, last_error: 'connection_issue' } });
+    api.probeRepository.mockResolvedValue({ ...ready, repository: { ...ready.repository, id: 456 } });
+    render(<GitHubSyncDialog {...props()} bindingId='binding' />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Check repository access' }));
+    await screen.findByText(
+      'This repository address now points to a different repository. The existing sync source has not been changed.'
+    );
+    expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(true);
+    expect(api.updateBinding).not.toHaveBeenCalled();
+    expect(api.createBinding).not.toHaveBeenCalled();
+  });
+
   it('imports a public repository without OAuth or a credential in the create request', async () => {
     render(<GitHubSyncDialog {...props()} />);
+    checkRepository();
     expect(await screen.findByText('Public repository · No GitHub sign-in required')).toBeTruthy();
-    expect(api.probeRepository).toHaveBeenCalledWith('workspace', {}, expect.any(AbortSignal));
+    expect(api.probeRepository).toHaveBeenCalledWith(
+      'workspace',
+      { repository: 'example/docs' },
+      expect.any(AbortSignal)
+    );
     expect(screen.queryByRole('button', { name: 'Connect GitHub account' })).toBeNull();
     expect(integrations.listConnections).not.toHaveBeenCalled();
     await reviewAndStart();
@@ -187,6 +412,7 @@ describe('GitHub sync setup and management', () => {
       .mockResolvedValueOnce({ status: 'authentication_required' })
       .mockResolvedValue({ ...ready, repository: { ...ready.repository, private: true } });
     render(<GitHubSyncDialog {...props()} />);
+    checkRepository();
     fireEvent.click(await screen.findByRole('button', { name: 'Connect GitHub account' }));
     expect(await screen.findByText('annie')).toBeTruthy();
     expect(authorize).toHaveBeenCalledWith('workspace', 'github', expect.any(AbortSignal));
@@ -199,7 +425,7 @@ describe('GitHub sync setup and management', () => {
     );
     expect(api.probeRepository).toHaveBeenLastCalledWith(
       'workspace',
-      { connection_id: 'github-account' },
+      { repository: 'example/docs', connection_id: 'github-account' },
       expect.any(AbortSignal)
     );
     await reviewAndStart();
@@ -212,6 +438,7 @@ describe('GitHub sync setup and management', () => {
     api.probeRepository.mockResolvedValueOnce({ status: 'authentication_required' }).mockResolvedValue(ready);
     integrations.listConnections.mockResolvedValue([account]);
     render(<GitHubSyncDialog {...props()} />);
+    checkRepository();
     const select = await screen.findByRole('combobox', { name: 'GitHub account' });
 
     expect(screen.getByRole('option', { name: 'annie' })).toBeTruthy();
@@ -231,6 +458,8 @@ describe('GitHub sync setup and management', () => {
     await waitFor(() => expect(screen.getByTestId('add-connection').disabled).toBe(false));
     fireEvent.keyDown(screen.getByTestId('add-connection'), { key: 'Enter', code: 'Enter' });
     fireEvent.click(await screen.findByTestId('add-github-sync'));
+    await screen.findByTestId('github-sync-repository');
+    checkRepository();
     fireEvent.click(await screen.findByRole('button', { name: 'Connect GitHub account' }));
     await screen.findByText('annie');
     integrations.listConnections.mockResolvedValue([account]);
@@ -246,6 +475,7 @@ describe('GitHub sync setup and management', () => {
   it('keeps ordinary repository errors retryable without treating them as an OAuth request', async () => {
     api.probeRepository.mockRejectedValueOnce(new Error('GitHub temporarily unavailable'));
     render(<GitHubSyncDialog {...props()} />);
+    checkRepository();
     expect(await screen.findByRole('alert')).toHaveProperty(
       'textContent',
       expect.stringContaining('GitHub temporarily unavailable')
@@ -479,15 +709,22 @@ describe('GitHub sync setup and management', () => {
     api.probeRepository.mockReturnValueOnce(late.promise);
     const view = render(<GitHubSyncDialog {...props()} />);
 
+    checkRepository();
+
     await waitFor(() => expect(api.probeRepository).toHaveBeenCalledTimes(1));
     const signal = api.probeRepository.mock.calls[0][2];
 
     view.rerender(<GitHubSyncDialog {...props()} workspaceId='different-workspace' />);
+    checkRepository();
     await screen.findByText('Public repository · No GitHub sign-in required');
     await act(async () => late.resolve({ status: 'authentication_required' }));
     expect(signal?.aborted).toBe(true);
     expect(screen.queryByRole('button', { name: 'Connect GitHub account' })).toBeNull();
-    expect(api.probeRepository).toHaveBeenLastCalledWith('different-workspace', {}, expect.any(AbortSignal));
+    expect(api.probeRepository).toHaveBeenLastCalledWith(
+      'different-workspace',
+      { repository: 'example/docs' },
+      expect.any(AbortSignal)
+    );
   });
 
   it('polls serially and cancels its timer and in-flight read on close', async () => {
@@ -548,6 +785,7 @@ describe('GitHub sync setup and management', () => {
   it('shows private-provider setup guidance instead of an unusable OAuth button', async () => {
     api.probeRepository.mockResolvedValue({ status: 'authentication_required' });
     render(<GitHubSyncDialog {...props()} configuration={{ ...configuration, oauth_configured: false }} />);
+    checkRepository();
     expect(
       await screen.findByText('Ask your administrator to configure GitHub OAuth for private repository access.')
     ).toBeTruthy();
@@ -605,16 +843,17 @@ describe('GitHub sync setup and management', () => {
     expect(accept).toHaveBeenCalledTimes(1);
   });
 
-  it('restarts the initial probe after React StrictMode effect cleanup', async () => {
+  it('probes only on explicit confirmation and remains usable after StrictMode cleanup', async () => {
     render(
       <StrictMode>
         <GitHubSyncDialog {...props()} />
       </StrictMode>
     );
+    expect(api.probeRepository).not.toHaveBeenCalled();
+    checkRepository();
     expect(await screen.findByText('Public repository · No GitHub sign-in required')).toBeTruthy();
-    expect(api.probeRepository).toHaveBeenCalledTimes(2);
-    expect(api.probeRepository.mock.calls[0][2]?.aborted).toBe(true);
-    expect(api.probeRepository.mock.calls[1][2]?.aborted).toBe(false);
+    expect(api.probeRepository).toHaveBeenCalledTimes(1);
+    expect(api.probeRepository.mock.calls[0][2]?.aborted).toBe(false);
     expect(authorize).not.toHaveBeenCalled();
   });
 
@@ -624,6 +863,8 @@ describe('GitHub sync setup and management', () => {
     api.probeRepository.mockResolvedValue({ status: 'authentication_required' });
     authorize.mockReturnValue(pending.promise);
     const view = render(<GitHubSyncDialog {...props()} />);
+
+    checkRepository();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Connect GitHub account' }));
     const signal = authorize.mock.calls[0][2];

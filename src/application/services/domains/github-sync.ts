@@ -8,6 +8,7 @@ export type {
   GitHubSyncEntry,
   GitHubSyncRun,
   GitHubSyncStatus,
+  GitHubSyncSpace,
   GithubPageSource,
   GithubSourceVersion,
   UpdateGitHubSyncBinding,

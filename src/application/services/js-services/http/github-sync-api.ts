@@ -27,7 +27,11 @@ export function getConfiguration(workspaceId: string, signal?: AbortSignal) {
 }
 
 /** An omitted connection explicitly probes public access without starting OAuth. */
-export function probeRepository(workspaceId: string, input: { connection_id?: string } = {}, signal?: AbortSignal) {
+export function probeRepository(
+  workspaceId: string,
+  input: { repository: string; connection_id?: string },
+  signal?: AbortSignal
+) {
   return executeAPIRequest<GitHubRepositoryProbe>(
     () => getAxios()?.post(`${workspacePath(workspaceId)}/repository`, input, requestOptions(signal)),
     privateResponse

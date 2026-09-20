@@ -26,10 +26,12 @@ describe('GitHub synchronization API', () => {
 
   it('uses the authenticated Cloud probe without requiring OAuth for a public repository', async () => {
     post.mockResolvedValue({ data: { data: { status: 'ready', repository: { id: 12, private: false } } } });
-    await expect(probeRepository('workspace', {}, signal)).resolves.toMatchObject({ status: 'ready' });
+    await expect(probeRepository('workspace', { repository: 'example/docs' }, signal)).resolves.toMatchObject({
+      status: 'ready',
+    });
     expect(post).toHaveBeenCalledWith(
       '/api/integrations/github/workspaces/workspace/repository',
-      {},
+      { repository: 'example/docs' },
       expect.objectContaining({ signal, timeout: expect.any(Number) })
     );
     expect(executeAPIRequest).toHaveBeenLastCalledWith(expect.any(Function), { suppressResponseDataLogging: true });
@@ -46,10 +48,19 @@ describe('GitHub synchronization API', () => {
 
   it('passes an explicitly selected private account and generation to Cloud', async () => {
     post.mockResolvedValue({ data: { data: { status: 'authentication_required' } } });
-    await expect(probeRepository('workspace', { connection_id: 'account' }, signal)).resolves.toEqual({
+    await expect(
+      probeRepository(
+        'workspace',
+        { repository: 'https://github.com/example/private', connection_id: 'account' },
+        signal
+      )
+    ).resolves.toEqual({
       status: 'authentication_required',
     });
-    expect(post.mock.calls[0][1]).toEqual({ connection_id: 'account' });
+    expect(post.mock.calls[0][1]).toEqual({
+      repository: 'https://github.com/example/private',
+      connection_id: 'account',
+    });
     patch.mockResolvedValue({ data: { data: { binding: { generation: 7 } } } });
     await updateBinding('workspace', 'binding', { expected_generation: 7, connection_id: 'account' }, signal);
     expect(patch).toHaveBeenCalledWith(
@@ -69,7 +80,7 @@ describe('GitHub synchronization API', () => {
     const failure = { code: 1027, message: 'github_rate_limited', retryAfterSecs: 60 };
 
     post.mockRejectedValue(failure);
-    await expect(probeRepository('workspace', {}, signal)).rejects.toBe(failure);
+    await expect(probeRepository('workspace', { repository: 'example/docs' }, signal)).rejects.toBe(failure);
   });
 
   it('keeps workspace and object paths isolated, and preserves an unmanaged-page result', async () => {

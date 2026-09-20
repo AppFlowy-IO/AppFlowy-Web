@@ -31,6 +31,7 @@ type Verification = Awaited<ReturnType<typeof verifyGithubSyncContent>>;
 type State = {
   workspaceId: string;
   spaceId: string;
+  spaceName: string;
   configuration: GitHubSyncConfiguration;
   createRequests: Array<Record<string, unknown>>;
   oauthRequests: number;
@@ -137,13 +138,12 @@ Given('the configured GitHub sync owner opens the unbound destination workspace'
   expect(configuration).toMatchObject({
     available: true,
     can_manage: true,
-    repository: REPOSITORY,
-    branch: 'main',
-    space_id: spaceId,
   });
-  expect(configuration.root_path.replace(/^\/+|\/+$/g, '')).toBe('docs');
-  expect(configuration.space_name).toBeTruthy();
-  expect(configuration.existing_page_count, 'Provide a blank destination space for this import.').toBe(0);
+  const destination = configuration.spaces.find((space) => space.space_id === spaceId);
+
+  expect(destination, 'The owner must be able to select the destination space.').toBeDefined();
+  expect(destination!.space_name).toBeTruthy();
+  expect(destination!.existing_page_count, 'Provide a blank destination space for this import.').toBe(0);
   const existing = await readApi<{ bindings: GitHubSyncBinding[] }>(page, `${workspacePath(workspaceId)}/bindings`);
 
   expect(
@@ -154,6 +154,7 @@ Given('the configured GitHub sync owner opens the unbound destination workspace'
   const state: State = {
     workspaceId,
     spaceId,
+    spaceName: destination!.space_name,
     configuration,
     createRequests: [],
     oauthRequests: 0,
@@ -206,23 +207,34 @@ Given('the configured GitHub sync owner opens the unbound destination workspace'
 });
 
 When('the owner opens Add connection and selects GitHub', async ({ page }) => {
-  const state = stateFor(page);
-
   await WorkspaceSelectors.dropdownTrigger(page).click();
   await AccountSelectors.settingsButton(page).click();
   await expect(AccountSelectors.settingsDialog(page)).toBeVisible();
   await page.getByTestId('settings-menu-connections').click();
   await expect(page.getByTestId('connections-panel')).toBeVisible();
   await page.getByTestId('add-connection').click();
+  await page.getByTestId('add-github-sync').click();
+  await expect(page.getByTestId('github-sync-dialog')).toBeVisible();
+});
+
+When('the owner configures the commercial repository and destination through the dialog', async ({ page }) => {
+  const state = stateFor(page);
+  const dialog = page.getByTestId('github-sync-dialog');
+
+  await dialog.getByTestId('github-sync-repository').fill(`https://github.com/${REPOSITORY}`);
+  await dialog.getByTestId('github-sync-branch').fill('main');
+  await dialog.getByTestId('github-sync-directory').fill('/docs');
+  await dialog.getByTestId('github-sync-space').selectOption(state.spaceId);
   const probeResponse = page.waitForResponse((response) =>
     matchesResponse(response, `${workspacePath(state.workspaceId)}/repository`, 'POST')
   );
 
-  await page.getByTestId('add-github-sync').click();
+  await dialog.getByTestId('github-sync-check-repository').click();
   const response = await probeResponse;
   const probe = await responseData<GitHubRepositoryProbe>(response);
 
   expect(response.request().postDataJSON()).not.toHaveProperty('connection_id');
+  expect(response.request().postDataJSON()).toHaveProperty('repository', `https://github.com/${REPOSITORY}`);
   expect(probe).toMatchObject({ status: 'ready', repository: { full_name: REPOSITORY, private: false } });
   await expect(page.getByTestId('github-sync-dialog')).toBeVisible();
 });
@@ -232,12 +244,11 @@ Then('the configured commercial documentation source needs no GitHub account', a
   const dialog = page.getByTestId('github-sync-dialog');
 
   await expect(dialog.getByText('Public repository · No GitHub sign-in required')).toBeVisible();
-  await expect(dialog.getByText(REPOSITORY, { exact: true })).toBeVisible();
-  await expect(dialog.getByText('main', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('/docs', { exact: true })).toBeVisible();
-  await expect(dialog.getByText(state.configuration.space_name!, { exact: true })).toBeVisible();
+  await expect(dialog.getByTestId('github-sync-repository')).toHaveValue(`https://github.com/${REPOSITORY}`);
+  await expect(dialog.getByTestId('github-sync-branch')).toHaveValue('main');
+  await expect(dialog.getByTestId('github-sync-directory')).toHaveValue('/docs');
+  await expect(dialog.getByTestId('github-sync-space')).toHaveValue(state.spaceId);
   await expect(dialog.getByRole('button', { name: /Connect GitHub/ })).toHaveCount(0);
-  await expect(dialog.getByRole('combobox')).toHaveCount(0);
   expect(state.oauthRequests).toBe(0);
   expect(state.popups).toBe(0);
 });
@@ -266,6 +277,7 @@ When('the owner reviews the source and starts GitHub sync', async ({ page }) => 
   expect(state.createRequests).toHaveLength(1);
   expect(state.createRequests[0]).not.toHaveProperty('connection_id');
   expect(state.createRequests[0]).toMatchObject({ space_id: state.spaceId, branch: 'main' });
+  expect(String(state.createRequests[0].root_path).replace(/^\/+|\/+$/g, '')).toBe('docs');
 });
 
 When('the owner closes and reopens the durable GitHub sync', async ({ page }) => {
@@ -277,7 +289,7 @@ When('the owner closes and reopens the durable GitHub sync', async ({ page }) =>
     .last()
     .click();
   await expect(dialog).toBeHidden();
-  await page.getByTestId('github-sync-open').click();
+  await page.getByTestId(`github-sync-binding-${state.bindingId}`).getByTestId('github-sync-open').click();
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Start sync', exact: true })).toHaveCount(0);
   const status = await readApi<GitHubSyncStatus>(
@@ -375,7 +387,7 @@ When('the owner views the space and opens an imported document', async ({ page }
   await page.getByTestId('github-sync-dialog').getByRole('button', { name: 'View space', exact: true }).click();
   await expect(page.getByTestId('github-sync-dialog')).toBeHidden();
   await expect(AccountSelectors.settingsDialog(page)).toBeHidden();
-  await expandSpaceByName(page, state.configuration.space_name!);
+  await expandSpaceByName(page, state.spaceName);
   const row = page.getByTestId(`page-${entry.viewId}`);
 
   await expect(row).toBeVisible({ timeout: 30_000 });

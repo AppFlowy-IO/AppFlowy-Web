@@ -1,5 +1,5 @@
 import { Check, CircleAlert, FileText, FolderTree, Info, ScanSearch } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -53,23 +53,71 @@ function SyncSession({
   const [currentId, setCurrentId] = useState(bindingId);
   const [phase, setPhase] = useState<'repository' | 'review'>('repository');
   const [recovering, setRecovering] = useState(false);
+  const [repository, setRepository] = useState('');
+  const [branch, setBranch] = useState(configuration.branch || 'main');
+  const [branchEdited, setBranchEdited] = useState(false);
+  const [directory, setDirectory] = useState(`/${(configuration.root_path || 'docs').replace(/^\/+/, '')}`);
+  const [spaceId, setSpaceId] = useState('');
   const [probe, setProbe] = useState<GitHubRepositoryProbe>();
   const [connectionId, setConnectionId] = useState<string>();
   const [accounts, setAccounts] = useState<IntegrationConnection[]>([]);
   const lastAction = useRef<SyncAction>();
-  const { run, busy, error } = useSyncAction();
+  const { run, busy, error, cancel } = useSyncAction();
   const { status, error: statusError, reload } = useGitHubSyncStatus(workspaceId, currentId);
   const setup = !currentId || recovering;
+  const savedBinding = currentId ? status?.binding : undefined;
+  const sourceRepository = savedBinding
+    ? `${savedBinding.repository_owner}/${savedBinding.repository_name}`
+    : repository.trim();
+  const selectedSpaceId = savedBinding?.space_id || spaceId;
+  const selectedSpace = configuration.spaces.find((space) => space.space_id === selectedSpaceId);
+  const sourceConfiguration = {
+    ...configuration,
+    repository: savedBinding
+      ? sourceRepository
+      : probe?.status === 'ready'
+      ? probe.repository.full_name
+      : sourceRepository,
+    branch: savedBinding?.branch || branch.trim(),
+    root_path: savedBinding?.root_path || directory.trim().replace(/^\/+|\/+$/g, ''),
+    space_id: selectedSpaceId,
+    space_name: selectedSpace?.space_name || selectedSpaceId,
+    existing_page_count: selectedSpace?.existing_page_count || 0,
+  };
+  const canContinue =
+    probe?.status === 'ready' &&
+    Boolean(sourceConfiguration.branch) &&
+    Boolean(savedBinding || selectedSpace) &&
+    Boolean(sourceConfiguration.root_path);
+  const verifyRepositoryIdentity = useCallback(
+    (result: GitHubRepositoryProbe) => {
+      if (savedBinding && result.status === 'ready' && result.repository.id !== savedBinding.repository_id) {
+        throw new Error(
+          t('settings.githubSync.repositoryChanged', {
+            defaultValue:
+              'This repository address now points to a different repository. The existing sync source has not been changed.',
+          })
+        );
+      }
+
+      return result;
+    },
+    [savedBinding, t]
+  );
 
   const checkRepository = useCallback(
     (selected?: string) => {
+      if (!sourceRepository) return;
+      setProbe(undefined);
       lastAction.current = { type: 'repository', connectionId: selected };
       return run(
         async (signal) => {
-          const result = await GitHubSyncService.probeRepository(
-            workspaceId,
-            selected ? { connection_id: selected } : {},
-            signal
+          const result = verifyRepositoryIdentity(
+            await GitHubSyncService.probeRepository(
+              workspaceId,
+              { repository: sourceRepository, ...(selected ? { connection_id: selected } : {}) },
+              signal
+            )
           );
 
           assertActive(signal);
@@ -85,16 +133,13 @@ function SyncSession({
         ({ result, connections, selected }) => {
           setProbe(result);
           setConnectionId(selected);
+          if (result.status === 'ready' && !branchEdited && !savedBinding) setBranch(result.repository.default_branch);
           if (connections) setAccounts(connections);
         }
       );
     },
-    [run, workspaceId]
+    [run, workspaceId, sourceRepository, branchEdited, savedBinding, verifyRepositoryIdentity]
   );
-
-  useEffect(() => {
-    if (!bindingId) void checkRepository();
-  }, [bindingId, checkRepository]);
 
   const connect = () => {
     lastAction.current = { type: 'connect' };
@@ -120,22 +165,28 @@ function SyncSession({
             })
           );
         const selected = confirmation.connection?.id || authorization.connectionId;
-        const result = await GitHubSyncService.probeRepository(workspaceId, { connection_id: selected }, signal);
+        const result = verifyRepositoryIdentity(
+          await GitHubSyncService.probeRepository(
+            workspaceId,
+            { repository: sourceRepository, connection_id: selected },
+            signal
+          )
+        );
 
         return { result, selected, account: confirmation.connection };
       },
       ({ result, selected, account }) => {
         setProbe(result);
         setConnectionId(selected);
+        if (result.status === 'ready' && !branchEdited && !savedBinding) setBranch(result.repository.default_branch);
         if (account) setAccounts((current) => [...current.filter((item) => item.id !== account.id), account]);
       }
     );
   };
 
   const start = () => {
-    if (busy || probe?.status !== 'ready' || !configuration.space_id || (currentId && !status)) return;
+    if (busy || !canContinue || probe?.status !== 'ready' || (currentId && !status)) return;
     const repositoryId = probe.repository.id;
-    const spaceId = configuration.space_id;
 
     lastAction.current = { type: 'start' };
     void run(
@@ -171,9 +222,9 @@ function SyncSession({
           workspaceId,
           {
             repository_id: repositoryId,
-            space_id: spaceId,
-            branch: configuration.branch,
-            root_path: configuration.root_path,
+            space_id: selectedSpaceId,
+            branch: sourceConfiguration.branch,
+            root_path: sourceConfiguration.root_path,
             ...(connectionId ? { connection_id: connectionId } : {}),
           },
           signal
@@ -361,14 +412,41 @@ function SyncSession({
                   )}
                 </>
               )}
-              <RepositorySummary
-                configuration={configuration}
-                variant={phase === 'review' ? 'review' : 'fields'}
-                account={phase === 'review' && connectionId ? displayAccount : undefined}
-              />
+              {phase === 'repository' && !recovering ? (
+                <RepositoryFields
+                  configuration={configuration}
+                  repository={repository}
+                  branch={branch}
+                  directory={directory}
+                  spaceId={spaceId}
+                  busy={busy}
+                  onRepositoryChange={(value) => {
+                    // A different source must earn a new probe, including when the previous request resolves late.
+                    cancel();
+                    setRepository(value);
+                    setProbe(undefined);
+                    setConnectionId(undefined);
+                    setAccounts([]);
+                    lastAction.current = undefined;
+                  }}
+                  onBranchChange={(value) => {
+                    setBranch(value);
+                    setBranchEdited(true);
+                  }}
+                  onDirectoryChange={setDirectory}
+                  onSpaceChange={setSpaceId}
+                  onCheck={() => void checkRepository()}
+                />
+              ) : (
+                <RepositorySummary
+                  configuration={sourceConfiguration}
+                  variant={phase === 'review' ? 'review' : 'fields'}
+                  account={phase === 'review' && connectionId ? displayAccount : undefined}
+                />
+              )}
             </>
           ) : status ? (
-            <BindingProgress status={status} configuration={configuration} />
+            <BindingProgress status={status} configuration={sourceConfiguration} />
           ) : (
             <div role='status' className='flex items-center gap-2 py-5 text-sm text-text-secondary'>
               <Progress variant='primary' />
@@ -434,6 +512,7 @@ function SyncSession({
             <Button
               variant='outline'
               className='min-w-20 px-4'
+              disabled={busy && phase === 'review'}
               onClick={() => {
                 if (phase === 'review') setPhase('repository');
                 else if (recovering) setRecovering(false);
@@ -445,15 +524,11 @@ function SyncSession({
                 : t('settings.githubSync.cancel', { defaultValue: 'Cancel' })}
             </Button>
             {phase === 'repository' ? (
-              <Button
-                className='min-w-20 px-4'
-                disabled={busy || probe?.status !== 'ready'}
-                onClick={() => setPhase('review')}
-              >
+              <Button className='min-w-20 px-4' disabled={busy || !canContinue} onClick={() => setPhase('review')}>
                 {t('settings.githubSync.next', { defaultValue: 'Next' })}
               </Button>
             ) : (
-              <Button className='min-w-20 px-4' loading={busy} onClick={start}>
+              <Button className='min-w-20 px-4' loading={busy} disabled={!canContinue} onClick={start}>
                 {recovering
                   ? t('settings.githubSync.resume', { defaultValue: 'Resume sync' })
                   : t('settings.githubSync.start', { defaultValue: 'Start sync' })}
@@ -547,6 +622,116 @@ function InfoNotice({ children, className = '' }: { children: React.ReactNode; c
     >
       <Info aria-hidden='true' className='mt-0.5 h-4 w-4 shrink-0 fill-fill-theme-thick text-text-on-fill' />
       <p>{children}</p>
+    </div>
+  );
+}
+
+function RepositoryFields({
+  configuration,
+  repository,
+  branch,
+  directory,
+  spaceId,
+  busy,
+  onRepositoryChange,
+  onBranchChange,
+  onDirectoryChange,
+  onSpaceChange,
+  onCheck,
+}: {
+  configuration: GitHubSyncConfiguration;
+  repository: string;
+  branch: string;
+  directory: string;
+  spaceId: string;
+  busy: boolean;
+  onRepositoryChange: (value: string) => void;
+  onBranchChange: (value: string) => void;
+  onDirectoryChange: (value: string) => void;
+  onSpaceChange: (value: string) => void;
+  onCheck: () => void;
+}) {
+  const { t } = useTranslation();
+  const inputClass =
+    'mt-1 w-full rounded-md border border-border-primary bg-fill-content px-3 py-2 text-sm text-text-primary';
+  const selectedSpace = configuration.spaces.find((space) => space.space_id === spaceId);
+
+  return (
+    <div className='space-y-4 text-xs text-text-secondary'>
+      <label className='block'>
+        {t('settings.githubSync.repository', { defaultValue: 'Repository' })}
+        <input
+          className={inputClass}
+          value={repository}
+          onChange={(event) => onRepositoryChange(event.target.value)}
+          placeholder='https://github.com/owner/repository'
+          autoComplete='off'
+          data-testid='github-sync-repository'
+        />
+      </label>
+      <Button
+        variant='outline'
+        disabled={busy || !repository.trim()}
+        onClick={onCheck}
+        data-testid='github-sync-check-repository'
+      >
+        {t('settings.githubSync.checkRepository', { defaultValue: 'Check repository' })}
+      </Button>
+      <label className='block'>
+        {t('settings.githubSync.branch', { defaultValue: 'Branch' })}
+        <input
+          className={inputClass}
+          value={branch}
+          disabled={busy}
+          onChange={(event) => onBranchChange(event.target.value)}
+          data-testid='github-sync-branch'
+        />
+      </label>
+      <label className='block'>
+        {t('settings.githubSync.directory', { defaultValue: 'Documentation directory' })}
+        <input
+          className={inputClass}
+          value={directory}
+          disabled={busy}
+          onChange={(event) => onDirectoryChange(event.target.value)}
+          data-testid='github-sync-directory'
+        />
+        <span className='mt-1.5 block leading-5 text-text-tertiary'>
+          {t('settings.githubSync.directoryHelp', { defaultValue: 'Path to the directory containing Markdown files.' })}
+        </span>
+      </label>
+      <label className='block'>
+        {t('settings.githubSync.space', { defaultValue: 'Sync to space' })}
+        <select
+          className={inputClass}
+          value={spaceId}
+          disabled={busy}
+          onChange={(event) => onSpaceChange(event.target.value)}
+          data-testid='github-sync-space'
+        >
+          <option value=''>{t('settings.githubSync.selectSpace', { defaultValue: 'Select a space' })}</option>
+          {configuration.spaces.map((space) => (
+            <option key={space.space_id} value={space.space_id}>
+              {space.space_name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {selectedSpace ? (
+        <p className='leading-5 text-text-tertiary'>
+          {t('settings.githubSync.existingPages', {
+            count: selectedSpace.existing_page_count,
+            defaultValue: '{{count}} existing pages. Pages that are not mapped to this repository will not be changed.',
+          })}
+        </p>
+      ) : configuration.spaces.length === 0 ? (
+        <p role='status' className='leading-5 text-text-tertiary'>
+          {t('settings.githubSync.noSpaces', {
+            defaultValue:
+              'Create a writable space to connect this repository. Spaces already connected to GitHub are not available.',
+          })}
+        </p>
+      ) : null}
     </div>
   );
 }

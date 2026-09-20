@@ -10,6 +10,7 @@ export function useGithubSyncConfiguration(workspaceId: string) {
     workspaceId: string;
     configuration?: GitHubSyncConfiguration;
     failed?: boolean;
+    unsupported?: boolean;
   }>();
 
   useEffect(() => {
@@ -17,7 +18,16 @@ export function useGithubSyncConfiguration(workspaceId: string) {
 
     void getConfiguration(workspaceId, controller.signal)
       .then((configuration) => {
-        if (!controller.signal.aborted) setResult({ workspaceId, configuration });
+        if (controller.signal.aborted) return;
+        // Older routes ignore the selected repository and only allow their fixed destination.
+        // Do not open the editable wizard until Cloud supports explicit destination discovery.
+        const unsupported = !Array.isArray(configuration.spaces);
+
+        setResult({
+          workspaceId,
+          configuration: unsupported ? { ...configuration, available: false, spaces: [] } : configuration,
+          unsupported: unsupported && configuration.available,
+        });
       })
       .catch((error: { httpStatus?: number }) => {
         if (!controller.signal.aborted) {
@@ -33,6 +43,7 @@ export function useGithubSyncConfiguration(workspaceId: string) {
   return {
     configuration: result?.workspaceId === workspaceId ? result.configuration : undefined,
     failed: result?.workspaceId === workspaceId && result.failed,
+    unsupported: result?.workspaceId === workspaceId && result.unsupported,
     reload,
   };
 }

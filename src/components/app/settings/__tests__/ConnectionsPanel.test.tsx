@@ -2,10 +2,11 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { toast } from 'sonner';
 
 import translations from '@/@types/translations/en.json';
+import { GitHubSyncConfiguration } from '@/application/integrations/github-sync';
 import { INTEGRATION_OAUTH_CALLBACK } from '@/application/integrations/oauth';
 import { IntegrationConnection } from '@/application/integrations/types';
-import * as IntegrationService from '@/application/services/domains/integration';
 import * as GitHubSyncService from '@/application/services/domains/github-sync';
+import * as IntegrationService from '@/application/services/domains/integration';
 
 import { ConnectionsPanel } from '../ConnectionsPanel';
 
@@ -77,6 +78,7 @@ describe('Connections settings', () => {
       space_name: null,
       existing_page_count: 0,
       oauth_configured: false,
+      spaces: [],
     });
     jest.mocked(GitHubSyncService.listBindings).mockResolvedValue({ bindings: [] });
     api.disconnectConnection.mockResolvedValue({ success: true });
@@ -102,21 +104,59 @@ describe('Connections settings', () => {
     jest.mocked(GitHubSyncService.getConfiguration).mockResolvedValue({
       available: true,
       can_manage: true,
-      repository: 'AppFlowy-IO/docs',
+      repository: '',
       branch: 'main',
       root_path: 'docs',
-      space_id: 'space',
-      space_name: 'Guide',
+      space_id: null,
+      space_name: null,
       existing_page_count: 3,
       oauth_configured: false,
+      spaces: [],
     });
     render(<ConnectionsPanel workspaceId='workspace' />);
-    await waitFor(() => expect((screen.getByTestId('add-connection') as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect(screen.getByTestId('add-connection').disabled).toBe(false));
     openMenu(screen.getByTestId('add-connection'));
     expect(await screen.findByTestId('add-github-sync')).toBeTruthy();
     expect(screen.queryByTestId('connect-github')).toBeNull();
     expect(open).not.toHaveBeenCalled();
     expect(api.connectProvider).not.toHaveBeenCalled();
+  });
+
+  it('requires a Cloud upgrade for legacy fixed-destination configuration and enables setup after refresh', async () => {
+    const legacy: Omit<GitHubSyncConfiguration, 'spaces'> = {
+      available: true,
+      can_manage: true,
+      repository: 'legacy/fixed-docs',
+      branch: 'main',
+      root_path: 'docs',
+      space_id: 'legacy-space',
+      space_name: 'Legacy guide',
+      existing_page_count: 3,
+      oauth_configured: false,
+    };
+
+    jest.mocked(GitHubSyncService.getConfiguration).mockResolvedValueOnce(legacy as GitHubSyncConfiguration);
+    render(<ConnectionsPanel workspaceId='workspace' />);
+    await screen.findByText('Update AppFlowy Cloud to configure GitHub connections here, then refresh.');
+    expect(GitHubSyncService.listBindings).not.toHaveBeenCalled();
+    openMenu(screen.getByTestId('add-connection'));
+    await screen.findByRole('menuitem', { name: 'Google Drive' });
+    expect(screen.queryByTestId('add-github-sync')).toBeNull();
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Google Drive' }), { key: 'Escape' });
+
+    jest.mocked(GitHubSyncService.getConfiguration).mockResolvedValue({
+      ...legacy,
+      repository: '',
+      space_id: null,
+      space_name: null,
+      existing_page_count: 0,
+      spaces: [],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(GitHubSyncService.listBindings).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Update AppFlowy Cloud to configure GitHub connections here, then refresh.')).toBeNull();
+    openMenu(screen.getByTestId('add-connection'));
+    expect(await screen.findByTestId('add-github-sync')).toBeTruthy();
   });
 
   it('displays a stored GitHub login without querying Google or exposing a numeric ID as the account label', async () => {

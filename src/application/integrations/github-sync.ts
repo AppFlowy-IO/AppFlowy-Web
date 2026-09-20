@@ -1,4 +1,11 @@
-/** Server-authorized destination for the first GitHub documentation sync rollout. */
+/** Writable destinations in the currently selected workspace. */
+export interface GitHubSyncSpace {
+  space_id: string;
+  space_name: string;
+  existing_page_count: number;
+}
+
+/** Server-authorized destinations and defaults for a new GitHub connection. */
 export interface GitHubSyncConfiguration {
   available: boolean;
   can_manage: boolean;
@@ -9,6 +16,7 @@ export interface GitHubSyncConfiguration {
   space_name: string | null;
   existing_page_count: number;
   oauth_configured: boolean;
+  spaces: GitHubSyncSpace[];
 }
 
 export interface GitHubRepository {

@@ -19,15 +19,17 @@ Connection errors remain visible in Settings, including when popups are blocked 
 
 ## GitHub documentation sync
 
-**Add connection → GitHub** opens the repository/review/sync wizard. Cloud's workspace configuration
-provides the allowed repository, `main` branch, `docs` directory, destination space, existing-page
-count, and owner management capability. These fields describe the configured internal rollout;
-the UI does not offer arbitrary repository or destination editing.
+**Add connection → GitHub** opens the repository/review/sync wizard for a workspace owner. The
+current workspace supplies the workspace ID. Enter a GitHub repository name or HTTPS repository
+URL, branch and documentation directory, then select a writable destination space. Cloud returns
+the permitted space choices and their existing-page counts. **Check repository** probes anonymous
+access before review; changing the repository invalidates that check. The selected configuration
+is saved on the binding and is used by Worker on subsequent runs.
 
 The layout follows the supplied six-screen design: Connections and its provider menu, a GitHub
 header with a vertical numbered Repository/Review/Sync stepper, aligned configuration and review
 fields, progress, and a green completion state with a bordered summary. Add connection is the
-setup entry; a management section appears once a binding exists. The account field appears only
+setup entry; each existing binding has its own management action. The account field appears only
 when repository access requires authentication. Completion uses actual synced page/folder counts
 and last-sync time, with **View space** and **Done** actions.
 
@@ -39,7 +41,7 @@ and authenticated confirmation below. GitHub labels come from `metadata.github_l
 Google's `getConnectionEmail` endpoint. A private repository requires configured GitHub OAuth.
 Public sync availability is independent of OAuth provider configuration.
 
-Review describes the fixed source/destination and read-only behavior. It does not fabricate a
+Review describes the selected source/destination and read-only behavior. It does not fabricate a
 source preview or create/update count. Unmapped existing pages remain untouched; explicit adoption
 mappings are supported by the server API but have no mapping editor in this wizard. Starting sync
 creates durable server work. The dialog shows actual operation progress and persisted page/folder
@@ -76,12 +78,29 @@ Key implementation files:
 - `src/components/app/settings/connections/github/`: setup, durable status polling and management.
 - `src/components/app/github-sync/`: managed-page source state, badges and version provenance.
 
-Cloud and Worker require their destination allowlist and both migrations
+Cloud and Worker require both migrations
 `20260919120000_github_space_sync.sql` and `20260920120000_github_sync_public_authentication.sql`.
 The second migration distinguishes public bindings from OAuth bindings whose credential was
 removed. Source write protection is always active; there is no global sync enablement flag.
+Workspace, space and repository are configured through the UI. The old
+`APPFLOWY_GITHUB_SYNC_WORKSPACE_ID`, `APPFLOWY_GITHUB_SYNC_SPACE_ID` and
+`APPFLOWY_GITHUB_SYNC_REPOSITORY` environment variables are no longer used. Worker still needs
+the deployment's public API and Web URLs to construct copied-asset and internal-page links.
 
 ## Local provider setup
+
+For GitHub private-repository access, use the existing **AppFlowy Admin → Settings → Connections**
+page (`/console/integrations`). Choose GitHub, enter its OAuth client ID and secret, leave
+**Enable connection** checked and save. Register the **OAuth callback URL** displayed by Admin
+with the GitHub OAuth app. Blank custom scopes use the server defaults, `read:user repo`.
+The generic Admin provider form already supports GitHub; it needs no separate sync configuration.
+
+Admin stores the encrypted OAuth app through `PUT /api/admin/integrations/providers/github`.
+Cloud and Worker share that database provider store and encryption configuration; no provider
+file is required. Other replicas observe changes within 30 seconds. Refresh Web Connections,
+enter the repository and use **Connect GitHub account** when private access is requested.
+Public repositories require neither this Admin setup nor user authorization. Repository, branch,
+directory and destination space are always chosen in Web, independently of the Admin OAuth app.
 
 The callback change does not configure a Google OAuth application. Cloud needs a Google client ID
 and client secret for `google-drive` and/or `google-calendar`.
@@ -137,7 +156,14 @@ after two minutes. Cloud retains the desktop deep-link flow for desktop launches
 
 ![Connected accounts in dark mode](images/connections-dark.png)
 
-GitHub setup with controlled repository fixtures:
+Current GitHub setup and binding management, captured from the running application:
+
+![Choose a GitHub repository and destination](images/github-sync-configurable-dark.png)
+
+![Manage separate GitHub space bindings](images/github-sync-managed-connections-dark.png)
+
+Earlier controlled repository fixtures show the remaining wizard states (the original setup
+preview predates editable source fields):
 
 ![Connections before adding GitHub](images/github-sync-connections-dark.png)
 
@@ -201,10 +227,9 @@ mock sync endpoints or GitHub responses. Use an explicitly provisioned test work
 owner who can sign in by password and a **blank, unbound destination space**.
 
 Run current Cloud and Worker binaries against the fully migrated application schema, including
-both GitHub sync migrations listed above. Configure the same `APPFLOWY_GITHUB_SYNC_WORKSPACE_ID`
-and `APPFLOWY_GITHUB_SYNC_SPACE_ID` in both processes, with
-`APPFLOWY_GITHUB_SYNC_REPOSITORY=AppFlowy-IO/AppFlowy-SelfHost-Commercial`. Cloud and Worker must
-share working PostgreSQL, Redis and S3-compatible storage; copied asset URLs must be reachable
+both GitHub sync migrations listed above. Do not configure a GitHub destination on either service;
+the scenario enters the repository and selects its destination through the dialog. Cloud and
+Worker must share working PostgreSQL, Redis and S3-compatible storage; copied asset URLs must be reachable
 by the browser/test runner. The Web application's configured API/auth URLs must point to that
 deployment. Public GitHub reads need network access and available anonymous quota; this scenario
 requires neither GitHub OAuth configuration nor a GitHub access token.
@@ -218,8 +243,8 @@ Set these variables in the test process's private environment:
 | `APPFLOWY_GOTRUE_BASE_URL` | GoTrue base URL used by that Web deployment, including any proxy prefix. |
 | `GITHUB_SYNC_E2E_OWNER_EMAIL` | Existing workspace owner's email. |
 | `GITHUB_SYNC_E2E_OWNER_PASSWORD` | That owner's password; do not put it in committed configuration. |
-| `GITHUB_SYNC_E2E_WORKSPACE_ID` | UUID matching Cloud and Worker's allowed workspace. |
-| `GITHUB_SYNC_E2E_SPACE_ID` | UUID matching their allowed, blank destination space. |
+| `GITHUB_SYNC_E2E_WORKSPACE_ID` | UUID of the test owner's workspace; used by the test driver only. |
+| `GITHUB_SYNC_E2E_SPACE_ID` | UUID of a blank, unbound writable space selected by the test driver in the UI. |
 
 ```sh
 pnpm test:e2e:bdd:github-sync
@@ -233,7 +258,8 @@ not skip. Generation and `--list` remain usable without credentials.
 
 The scenario signs in through the password UI, creates an unrelated manual sentinel through the
 normal page API, then uses **Settings → Connections → Add connection → GitHub → Next → Start
-sync**. It checks that public setup opens no OAuth popup and sends no connection ID, closes and
+sync**, entering the commercial repository, `main`, `/docs` and destination space in the wizard.
+It checks that public setup opens no OAuth popup and sends no connection ID, closes and
 reopens the durable run, waits for completion, compares UI counts with actual binding entries,
 and opens an imported document through **View space** to verify its source link and read-only
 editor. Exactly one binding-creation request must occur. The sentinel's fresh Yjs content, parent,
@@ -272,3 +298,26 @@ bytes. This corpus has no nested source folders, so this live run does not exerc
 The oracle's **21 focused unit tests** also passed, including intentional content, formatting,
 ordering, link/image and topology corruption. Those unit results and the earlier controlled
 browser screenshots remain separate from this live end-to-end result.
+
+
+### UI-configured import validation (2026-09-20)
+
+The latest live Chromium BDD scenario passed in **1.1 minutes** with
+`APPFLOWY_GITHUB_SYNC_WORKSPACE_ID`, `APPFLOWY_GITHUB_SYNC_SPACE_ID` and
+`APPFLOWY_GITHUB_SYNC_REPOSITORY` absent from both Cloud and Worker. The owner entered the commercial
+repository URL, `main`, `/docs` and selected a fresh destination through Connections. No GitHub
+OAuth provider or token was used. The test driver variables above supply only sign-in/navigation
+and the option to select; they are not service configuration.
+
+At commit `bb13ce3d9588c863d7eeacf60de3e552d42a3614`, the independent verifier compared **10 pages,
+1,931 blocks and 43 page-scoped images** against the pinned GitHub tree and raw source. The current
+corpus includes `docs/CONNECTION.md` in addition to the nine previously tested documents. It verified
+closing/reopening the durable run, exactly one creation request, no OAuth popup, the unchanged
+manual sentinel and read-only imported editor. Cleanup paused the newly created binding.
+The report is `playwright-report/github-sync/index.html`; the execution log is
+`/tmp/github-ui-config-live-bdd.log`.
+
+Focused wizard/Connections tests also cover choosing another repository, custom branch/directory,
+required destination selection, multiple binding cards, stale probe cancellation, immutable
+recovery targets, and upgrading an older Cloud configuration response. TypeScript, ESLint and
+BDD generation passed. These checks do not exercise live private-repository OAuth consent.

@@ -33,5 +33,12 @@ export function useSyncAction() {
     }
   }, []);
 
-  return { run, busy, error };
+  const cancel = useCallback(() => {
+    active.current?.abort();
+    active.current = undefined;
+    setBusy(false);
+    setError(undefined);
+  }, []);
+
+  return { run, busy, error, cancel };
 }

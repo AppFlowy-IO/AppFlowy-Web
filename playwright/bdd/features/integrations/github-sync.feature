@@ -1,11 +1,12 @@
 @github-sync-live @mode:serial
 Feature: Import public GitHub documentation through Connections
-  A workspace owner imports the real commercial self-host documentation into the configured space.
+  A workspace owner configures the repository and destination space in Connections.
   Cloud and Worker fetch GitHub and persist the pages without a GitHub OAuth account.
 
   Scenario: Public documentation survives closing the wizard and remains read-only
     Given the configured GitHub sync owner opens the unbound destination workspace
     When the owner opens Add connection and selects GitHub
+    And the owner configures the commercial repository and destination through the dialog
     Then the configured commercial documentation source needs no GitHub account
     When the owner reviews the source and starts GitHub sync
     And the owner closes and reopens the durable GitHub sync

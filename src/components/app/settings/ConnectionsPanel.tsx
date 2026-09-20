@@ -239,6 +239,13 @@ export function ConnectionsPanel({
             </div>
           )
         )}
+        {github.unsupported && (
+          <p role='status' className='mt-5 text-sm text-text-secondary'>
+            {t('settings.githubSync.serverUpgradeRequired', {
+              defaultValue: 'Update AppFlowy Cloud to configure GitHub connections here, then refresh.',
+            })}
+          </p>
+        )}
         {github.failed && (
           <p role='alert' className='mt-5 text-sm text-text-error'>
             {t('settings.githubSync.configurationFailed', {
