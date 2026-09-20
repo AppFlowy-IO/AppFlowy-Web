@@ -71,3 +71,54 @@ for (const paste of ['rich text', 'plain text'] as const) {
     await expect(editor.locator(':scope > [data-block-type]')).toHaveCount(1);
   });
 }
+
+test('pasting a copied list into an empty callout preserves both list items', async ({ page, request }) => {
+  await signInAndWaitForApp(page, request, generateRandomEmail());
+  await AddPageSelectors.inlineAddButton(page).first().click();
+  await AddPageSelectors.addDocumentButton(page).click();
+
+  const editor = page.getByRole('dialog').last().locator('[data-slate-editor="true"]');
+  const sourceItems = editor.locator(':scope > [data-block-type="bulleted_list"]');
+
+  await editor.click();
+  await page.keyboard.type('- First copied item');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Second copied item');
+  await expect(sourceItems).toHaveText(['First copied item', 'Second copied item']);
+
+  // The first Select All can select just the current block; the second selects the document.
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.press('ControlOrMeta+c');
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const items = await navigator.clipboard.read();
+        const html = items.find((item) => item.types.includes('text/html'));
+
+        return html ? (await html.getType('text/html')).text() : '';
+      })
+    )
+    .toContain('data-slate-fragment');
+
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/callout');
+  await page.getByTestId('slash-menu-callout').click();
+
+  const callout = editor.locator('[data-block-type="callout"]');
+
+  await expect(callout).toBeVisible();
+  await callout.click({ position: { x: 100, y: 20 } });
+  await page.keyboard.press('ControlOrMeta+v');
+
+  await expect(callout.locator('[data-block-type="bulleted_list"]')).toHaveText([
+    'First copied item',
+    'Second copied item',
+  ]);
+  await expect(sourceItems).toHaveText(['First copied item', 'Second copied item']);
+  await expect(editor.locator(':scope > [data-block-type]')).toHaveCount(3);
+  await page.keyboard.type(' after paste');
+  await expect(callout.locator('[data-block-type="bulleted_list"]').last()).toHaveText('Second copied item after paste');
+});

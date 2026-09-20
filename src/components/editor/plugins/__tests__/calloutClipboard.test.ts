@@ -74,6 +74,51 @@ describe('paste inside a callout', () => {
     }
   );
 
+  it.each([
+    { type: BlockType.BulletedListBlock, data: {} },
+    { type: BlockType.NumberedListBlock, data: { number: 3 } },
+    { type: BlockType.TodoListBlock, data: { checked: true } },
+    { type: BlockType.HeadingBlock, data: { level: 2 } },
+  ])('preserves copied $type blocks and their data inside an empty callout', ({ type, data }) => {
+    const editor = createPasteEditor(block(BlockType.CalloutBlock, ''));
+    const originalId = (editor.children[0] as Element).blockId;
+    const copied = [block(type, 'First item', [], data), block(type, 'Second item', [], data)];
+
+    (copied[0].children[0] as Element).children = [{ text: 'First item', bold: true }];
+    editor.insertData(clipboardData(copied));
+
+    expect(editor.children).toHaveLength(2);
+    const container = editor.children[0] as Element;
+
+    expect(container).toMatchObject({ blockId: originalId, type: BlockType.CalloutBlock });
+    expect(container.children.map(Node.string)).toEqual(['', 'First item', 'Second item']);
+    expect(container.children.slice(1)).toMatchObject(copied);
+    expect(editor.selection?.anchor).toEqual({ path: [0, 2, 0, 0], offset: 11 });
+    editor.flushLocalChanges();
+    expect(yDocToSlateContent(editor.sharedRoot.doc!)?.children).toEqual(editor.children);
+  });
+
+  it('preserves a copied checkbox before existing children when the callout first line is empty', () => {
+    const editor = createPasteEditor(block(BlockType.CalloutBlock, '', [block(BlockType.Paragraph, 'Existing child')]));
+    const copied = block(BlockType.TodoListBlock, 'Completed task', [], { checked: true });
+
+    editor.insertData(clipboardData([copied]));
+
+    const container = editor.children[0] as Element;
+
+    expect(container.children.map(Node.string)).toEqual(['', 'Completed task', 'Existing child']);
+    expect(container.children[1]).toMatchObject(copied);
+  });
+
+  it('continues to merge copied heading text at a caret inside populated callout text', () => {
+    const editor = createPasteEditor(block(BlockType.CalloutBlock, 'Before after'), 7);
+
+    editor.insertData(clipboardData([block(BlockType.HeadingBlock, 'Title', [], { level: 2 })]));
+
+    expect((editor.children[0] as Element).children.map(Node.string)).toEqual(['Before Titleafter']);
+    expect(editor.selection?.anchor).toEqual({ path: [0, 0, 0], offset: 12 });
+  });
+
   it('replaces selected callout text, moves the trailing text after the paste, and preserves existing children', () => {
     const editor = createPasteEditor(
       block(BlockType.CalloutBlock, 'Before REPLACE after', [block(BlockType.Paragraph, 'Existing child')]),

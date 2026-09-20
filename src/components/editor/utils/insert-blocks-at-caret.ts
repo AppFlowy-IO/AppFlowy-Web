@@ -100,7 +100,14 @@ export function insertBlocksAtCaret(
       return true;
     }
 
-    const mergeSource = options.mergeFirstBlockInline ? extractMergeableInlineNodes(nodes[0]) : null;
+    // Only paragraphs can fill an expanded container's empty first line.
+    // Other copied blocks must become children to preserve their type and data.
+    const preserveFirstBlockType =
+      insertInsideBlock &&
+      nodes[0].type !== BlockType.Paragraph &&
+      CustomEditor.getBlockTextContent(node as Node, 2).length === 0;
+    const mergeSource =
+      options.mergeFirstBlockInline && !preserveFirstBlockType ? extractMergeableInlineNodes(nodes[0]) : null;
 
     if (mergeSource && mergeSource.length > 0 && canMergeIntoBlock(node as BlockElement, nodePath, editor.selection)) {
       insertWithFirstBlockMerged(editor, doc, mergeSource, nodes.slice(1), {
