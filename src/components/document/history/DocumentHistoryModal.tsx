@@ -3,6 +3,9 @@ import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from '
 import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
+import { getPageSourceHistory, GithubSourceVersion } from '@/application/services/domains/github-sync';
+import { GithubVersionSource } from '@/components/app/github-sync/GithubVersionSource';
+import { useGithubPageSource } from '@/components/app/github-sync/useGithubPageSource';
 import { CollabVersionRecord } from '@/application/collab-version.type';
 import { Types, ViewIcon } from '@/application/types';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
@@ -110,6 +113,26 @@ export function DocumentHistoryModal({
   const loadDatabaseRelations = useLoadDatabaseRelations();
   const workspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
+  const githubSource = useGithubPageSource(workspaceId, viewId, open);
+  const [sourceVersions, setSourceVersions] = useState<{ key: string; versions: GithubSourceVersion[] }>({
+    key: '',
+    versions: [],
+  });
+  const sourceKey = `${currentUser?.uuid ?? currentUser?.uid}:${workspaceId}:${viewId}`;
+
+  useEffect(() => {
+    if (!open || !workspaceId || !githubSource.managed) return;
+    const controller = new AbortController();
+
+    void getPageSourceHistory(workspaceId, viewId, controller.signal)
+      .then(({ versions }) => {
+        if (!controller.signal.aborted) setSourceVersions({ key: sourceKey, versions });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setSourceVersions({ key: sourceKey, versions: [] });
+      });
+    return () => controller.abort();
+  }, [open, workspaceId, viewId, githubSource.managed, sourceKey]);
   const { isPro } = useSubscriptionPlan(getSubscriptions);
   const { t } = useTranslation();
   const titleId = useId();
@@ -205,7 +228,7 @@ export function DocumentHistoryModal({
   const handleRestore = useCallback(async () => {
     const versionId = selectedVersionIdRef.current;
 
-    if (!viewId || !versionId || !revertCollabVersion) {
+    if (!viewId || !versionId || !revertCollabVersion || githubSource.managed || githubSource.loading) {
       return;
     }
 
@@ -234,7 +257,7 @@ export function DocumentHistoryModal({
     } finally {
       setIsRestoring(false);
     }
-  }, [viewId, revertCollabVersion, refreshVersions, onOpenChange]);
+  }, [viewId, revertCollabVersion, refreshVersions, onOpenChange, githubSource.managed, githubSource.loading]);
 
   const handleClose = useCallback(() => onOpenChange(false), [onOpenChange]);
 
@@ -324,6 +347,11 @@ export function DocumentHistoryModal({
     };
   }, [clearPreviewDocs]);
 
+  const selectedSource =
+    githubSource.managed && sourceVersions.key === sourceKey
+      ? sourceVersions.versions.find((version) => version.version_id === selectedVersionId)
+      : undefined;
+
   return (
     <Dialog
       open={open}
@@ -342,6 +370,14 @@ export function DocumentHistoryModal({
           <DialogTitle id={titleId} className='border-b border-border px-6 py-4 text-base font-bold text-text-primary'>
             {view?.name || t('untitled')}
           </DialogTitle>
+          {githubSource.managed && (
+            <p className='border-b border-border-primary px-6 py-3 text-sm text-text-secondary'>
+              {t('settings.githubSync.managedPage', {
+                defaultValue: 'This page is managed in GitHub. Make changes in the repository.',
+              })}
+            </p>
+          )}
+          {selectedSource && <GithubVersionSource version={selectedSource} />}
           <div className='min-h-0 flex-1 overflow-hidden'>
             <VersionPreviewBody
               loading={loading}
@@ -369,7 +405,7 @@ export function DocumentHistoryModal({
             onlyShowMine={onlyShowMine}
             onDateFilterChange={setDateFilter}
             onOnlyShowMineChange={setOnlyShowMine}
-            onRestoreClicked={handleRestore}
+            onRestoreClicked={githubSource.managed || githubSource.loading ? undefined : handleRestore}
             isRestoring={isRestoring}
             onClose={handleClose}
             isPro={isPro}

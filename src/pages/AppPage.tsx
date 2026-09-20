@@ -34,6 +34,7 @@ import {
   useScheduleDeferredCleanup,
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
+import { useGithubPageSource } from '@/components/app/github-sync/useGithubPageSource';
 import {
   getViewCanCommentStatus,
   getViewCanWriteStatus,
@@ -143,6 +144,7 @@ function AppPage() {
   // Use outline view if available, otherwise use fallback for the active route only.
   const view = outlineView ?? (fallbackView?.view_id === viewId ? fallbackView : null);
   const layout = view?.layout;
+  const githubSource = useGithubPageSource(workspaceId, viewId, layout === ViewLayout.Document);
 
   const rendered = useAppRendered();
 
@@ -496,8 +498,8 @@ function AppPage() {
   // pages opened by direct URL before the outline branch has loaded.
   const isReadOnly = useMemo(() => {
     if (!viewId) return false;
-    return getViewReadOnlyStatus(viewId, outline, view, objectPermission);
-  }, [viewId, outline, view, objectPermission]);
+    return githubSource.managed || getViewReadOnlyStatus(viewId, outline, view, objectPermission);
+  }, [viewId, outline, view, objectPermission, githubSource.managed]);
 
   const canComment = useMemo(() => {
     if (!viewId) return false;
@@ -506,8 +508,8 @@ function AppPage() {
 
   const canWrite = useMemo(() => {
     if (!viewId) return false;
-    return getViewCanWriteStatus(viewId, outline, view, objectPermission);
-  }, [objectPermission, outline, view, viewId]);
+    return !githubSource.managed && getViewCanWriteStatus(viewId, outline, view, objectPermission);
+  }, [objectPermission, outline, view, viewId, githubSource.managed]);
   const canShare = objectPermission.can_share;
 
   const viewDom = useMemo(() => {

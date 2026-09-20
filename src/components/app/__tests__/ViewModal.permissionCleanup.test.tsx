@@ -16,6 +16,7 @@ const mockView: View = {
   is_private: false,
 };
 let mockOutlineViews: View[] = [mockView];
+let mockGithubManaged = false;
 const mockLoadView = jest.fn();
 const mockBindViewSync = jest.fn();
 const mockNoop = jest.fn();
@@ -90,6 +91,10 @@ jest.mock('@/components/app/hooks/useViewObjectPermission', () => ({
   useViewObjectPermission: (viewId?: string) => mockUseViewObjectPermission(viewId),
 }));
 
+jest.mock('@/components/app/github-sync/useGithubPageSource', () => ({
+  useGithubPageSource: () => ({ managed: mockGithubManaged, loading: false, source: null }),
+}));
+
 jest.mock('@/components/app/hooks/useViewOperations', () => ({
   getViewCanCommentStatus: () => true,
   getViewCanWriteStatus: () => true,
@@ -152,7 +157,17 @@ describe('ViewModal permission cleanup', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockOutlineViews = [mockView];
+    mockGithubManaged = false;
     mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId) };
+  });
+
+  it('makes a GitHub document read-only even while a previously writable permission is cached', async () => {
+    mockGithubManaged = true;
+    mockLoadView.mockResolvedValue(new Y.Doc({ guid: 'github-source-doc' }));
+    render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await screen.findByText('github-source-doc');
+    expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({ readOnly: true, canWrite: false }));
   });
 
   it('passes canonical can_share through for an editable member who cannot manage sharing', async () => {
@@ -164,7 +179,9 @@ describe('ViewModal permission cleanup', () => {
     render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
 
     await screen.findByText('editable-no-share-doc');
-    expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({ canShare: false }));
+    expect(mockRenderedViewProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ canShare: false, readOnly: false, canWrite: true })
+    );
   });
 
   it('waits for the effective database child permission before loading cached content', async () => {

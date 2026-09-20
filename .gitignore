@@ -1,6 +1,8 @@
 # Test results
 test-results/
 playwright/.features-gen/
+playwright/.features-gen-github-sync/
+playwright-report/github-sync/
 
 # Logs
 logs

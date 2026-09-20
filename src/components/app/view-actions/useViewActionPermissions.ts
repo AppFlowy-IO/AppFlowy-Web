@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AccessService, ViewService } from '@/application/services/domains';
 import { type CollabObjectPermission, View } from '@/application/types';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useGithubPageSource } from '@/components/app/github-sync/useGithubPageSource';
 import { useViewObjectPermission } from '@/components/app/hooks/useViewObjectPermission';
 import {
   isCollabObjectPermissionForTarget,
@@ -25,8 +26,8 @@ export function useViewActionPermissions(
   const workspaceId = useCurrentWorkspaceId();
   const viewId = view?.view_id ?? fallbackViewId;
   const activeObjectPermission = useViewObjectPermission(viewId);
-  const resolvedTarget =
-    explicitTarget ?? (viewId && view ? resolvePermissionProbeTarget(viewId, view) : undefined);
+  const githubSource = useGithubPageSource(workspaceId, viewId, opened);
+  const resolvedTarget = explicitTarget ?? (viewId && view ? resolvePermissionProbeTarget(viewId, view) : undefined);
   const collabObjectId = resolvedTarget?.collabObjectId;
   const collabType = resolvedTarget?.collabType;
   const requestSeq = useRef(0);
@@ -113,7 +114,7 @@ export function useViewActionPermissions(
   const hasLoadedViewActionPermissions = !canLoadViewActionPermissions || loadedViewId === viewId;
   const permissionForCurrentView = loadedViewId === viewId ? objectPermission : null;
   const canRead = hasLoadedViewActionPermissions && permissionForCurrentView?.can_read === true;
-  const canWrite = canRead && permissionForCurrentView.can_write;
+  const canWrite = canRead && !githubSource.managed && permissionForCurrentView.can_write;
   const canShare = canRead && permissionForCurrentView.can_share;
   const canManageViewActions = hasLoadedViewActionPermissions
     ? canUseViewMutationActions({ objectPermission: permissionForCurrentView })
@@ -129,9 +130,9 @@ export function useViewActionPermissions(
     canRead,
     canShare,
     canWrite,
-    canCreateViewActions,
-    canManageViewActions,
-    canUsePageHistory,
+    canCreateViewActions: !githubSource.loading && !githubSource.managed && canCreateViewActions,
+    canManageViewActions: !githubSource.loading && !githubSource.managed && canManageViewActions,
+    canUsePageHistory: githubSource.managed ? canRead : canUsePageHistory,
     hasLoadedViewActionPermissions,
     isLoadingViewActionPermissions,
   };

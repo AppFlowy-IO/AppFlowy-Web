@@ -87,6 +87,25 @@ describe('integration OAuth popup', () => {
     expect(connectProvider).not.toHaveBeenCalled();
   });
 
+  it('uses the existing popup handoff for GitHub authorization', async () => {
+    const githubUrl = `https://github.com/login/oauth/authorize?state=server-state&redirect_uri=${encodeURIComponent(
+      `${callbackOrigin}/api/integrations/connections/oauth/callback`
+    )}`;
+
+    connectProvider.mockResolvedValue({ oauth_url: githubUrl, connection_id: 'github-pending-id' });
+    const result = authorizeIntegration('workspace', 'github', controller.signal);
+
+    await Promise.resolve();
+    expect(popup.location.href).toBe(githubUrl);
+    expect(connectProvider).toHaveBeenCalledWith('workspace', 'github', controller.signal);
+    callback();
+    await expect(result).resolves.toEqual({
+      connectionId: 'github-pending-id',
+      oauthQuery: 'code=authorization-code&state=server-state',
+    });
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
   it('rejects denied authorization and never returns an OAuth query to confirm', async () => {
     const result = authorizeIntegration('workspace', 'google-calendar', controller.signal);
 

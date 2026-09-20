@@ -19,6 +19,9 @@ jest.mock('@/application/services/domains/integration', () => ({
   listConnections: jest.fn(),
   getConnectionEmail: jest.fn(),
 }));
+jest.mock('@/application/services/domains/github-sync', () => ({
+  getConfiguration: jest.fn().mockResolvedValue({ available: false, can_manage: false }),
+}));
 
 const api = jest.mocked(IntegrationService);
 const onClose = jest.fn();

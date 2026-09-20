@@ -5,32 +5,30 @@ import { defineBddConfig } from 'playwright-bdd';
 dotenv.config();
 
 const testDir = defineBddConfig({
-  features: 'playwright/bdd/features/**/*.feature',
-  steps: 'playwright/bdd/steps/**/*.ts',
-  outputDir: 'playwright/.features-gen',
-  // Live GitHub imports need an explicitly configured, disposable destination.
-  tags: 'not @github-sync-live',
+  features: 'playwright/bdd/features/integrations/github-sync.feature',
+  steps: 'playwright/bdd/steps/github-sync.steps.ts',
+  outputDir: 'playwright/.features-gen-github-sync',
 });
 
+// A real import owns its configured destination. Retrying against that same space
+// would exercise reopening an existing binding instead of initial setup.
 export default defineConfig({
   testDir,
   testMatch: '**/*.spec.js',
-  fullyParallel: true,
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI
-    ? [['list'], ['html'], ['github'], ['json', { outputFile: 'playwright-report/report.json' }]]
-    : 'list',
-  timeout: 120000,
+  retries: 0,
+  workers: 1,
+  timeout: 600_000,
+  reporter: [['list'], ['html', { outputFolder: 'playwright-report/github-sync', open: 'never' }]],
+  outputDir: 'test-results/github-sync',
   use: {
     baseURL: process.env.BASE_URL || 'http://localhost:3000',
-    viewport: { width: 1440, height: 900 },
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'off',
-    actionTimeout: 15000,
-    navigationTimeout: 15000,
+    actionTimeout: 15_000,
+    navigationTimeout: 30_000,
     bypassCSP: true,
     permissions: ['clipboard-read', 'clipboard-write'],
   },
@@ -39,14 +37,12 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        viewport: { width: 1440, height: 900 },
+        viewport: { width: 1440, height: 1000 },
         launchOptions: {
           args: [
             '--disable-gpu-sandbox',
             '--no-sandbox',
             '--disable-dev-shm-usage',
-            '--force-device-scale-factor=1',
-            // Respondent contexts share the browser's trust in CI's localhost key.
             ...(process.env.APPFLOWY_TEST_TLS_SPKI
               ? [`--ignore-certificate-errors-spki-list=${process.env.APPFLOWY_TEST_TLS_SPKI}`]
               : []),
@@ -55,7 +51,5 @@ export default defineConfig({
       },
     },
   ],
-  expect: {
-    timeout: 15000,
-  },
+  expect: { timeout: 15_000 },
 });
