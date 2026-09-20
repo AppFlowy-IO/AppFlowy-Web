@@ -372,6 +372,131 @@ describe('Database blob prefetch lifecycle', () => {
     rowDoc.destroy();
   });
 
+  it.each(['retry', 'remove grouping'])(
+    'pauses row loads after a completed delta until %s recovers',
+    async (recovery) => {
+      const doc = createDatabaseDoc('overload-after-delta');
+      const rowDoc = createHydratedRowDoc('database-id_rows_row-id');
+      const createRow = jest.fn().mockResolvedValue(rowDoc);
+      const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+      const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
+      const groups = new Y.Array();
+      const retry = createDeferred<Awaited<ReturnType<typeof prefetchDatabaseBlobDiff>>>();
+
+      view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
+      view?.set(YjsDatabaseKey.groups, groups);
+      mockedOpenRowDoc.mockResolvedValue(rowDoc);
+      mockedPrefetch
+        .mockImplementationOnce(async (_workspaceId, _databaseId, options) => {
+          options?.onSeedsReady?.();
+          return {} as Awaited<ReturnType<typeof prefetchDatabaseBlobDiff>>;
+        })
+        .mockRejectedValueOnce({ code: 1079, message: 'Busy' })
+        .mockReturnValueOnce(retry.promise);
+      const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+      try {
+        await waitFor(() => expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true));
+        await act(async () => {
+          groups.push([new Y.Map()]);
+        });
+        await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+        const ensured = requestEnsureRow();
+
+        await act(async () => {
+          await Promise.resolve();
+        });
+        expect(mockedOpenRowDoc).not.toHaveBeenCalled();
+        expect(createRow).not.toHaveBeenCalled();
+
+        if (recovery === 'retry') {
+          fireEvent.click(screen.getByRole('button', { name: 'landingPage.serverError.retry' }));
+          await act(async () => {
+            await Promise.resolve();
+          });
+          expect(mockedOpenRowDoc).not.toHaveBeenCalled();
+          expect(createRow).not.toHaveBeenCalled();
+          await act(async () => {
+            mockedPrefetch.mock.calls[2][2]?.onSeedsReady?.();
+            retry.resolve({} as Awaited<ReturnType<typeof prefetchDatabaseBlobDiff>>);
+            await retry.promise;
+          });
+        } else {
+          await act(async () => {
+            groups.delete(0, groups.length);
+          });
+        }
+
+        await act(async () => {
+          expect(await ensured).toBe(rowDoc);
+        });
+        expect(mockedOpenRowDoc).toHaveBeenCalledTimes(1);
+        expect(createRow).toHaveBeenCalledTimes(1);
+        expect(mockedPrefetch).toHaveBeenCalledTimes(recovery === 'retry' ? 3 : 2);
+        expect(mockDatabaseContext?.seedsReady).toBe(true);
+        expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true);
+        expect(screen.queryByRole('alert')).toBeNull();
+      } finally {
+        unmount();
+        doc.destroy();
+        rowDoc.destroy();
+      }
+    }
+  );
+
+  it('pauses card bindings through overload retries and shares their resumed registration', async () => {
+    const doc = createDatabaseDoc('overload-card-binding');
+    const rowDoc = createHydratedRowDoc('database-id_rows_row-id');
+    const createRow = jest.fn().mockResolvedValue(rowDoc);
+    const retry = createDeferred<Awaited<ReturnType<typeof prefetchDatabaseBlobDiff>>>();
+
+    mockedPrefetch.mockRejectedValueOnce({ code: 1079, message: 'Busy' }).mockReturnValueOnce(retry.promise);
+    const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+    try {
+      await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+      expect(createRow).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'landingPage.serverError.retry' }));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(createRow).not.toHaveBeenCalled();
+      await act(async () => {
+        mockedPrefetch.mock.calls[1][2]?.onSeedsReady?.();
+        retry.resolve({} as Awaited<ReturnType<typeof prefetchDatabaseBlobDiff>>);
+        await retry.promise;
+      });
+      expect(createRow).toHaveBeenCalledTimes(1);
+      expect(createRow).toHaveBeenCalledWith('database-id_rows_row-id');
+    } finally {
+      unmount();
+      doc.destroy();
+      rowDoc.destroy();
+    }
+  });
+
+  it('discards paused row loads and card bindings when their database lifecycle ends', async () => {
+    const doc = createDatabaseDoc('overload-unmount');
+    const createRow = jest.fn();
+
+    mockedPrefetch.mockRejectedValueOnce({ code: 1079, message: 'Busy' });
+    const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    const ensured = requestEnsureRow();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    unmount();
+    await act(async () => {
+      expect(await ensured).toBeUndefined();
+    });
+    expect(createRow).not.toHaveBeenCalled();
+    expect(mockedOpenRowDoc).not.toHaveBeenCalled();
+    doc.destroy();
+  });
+
   it.each(['settled', 'in-flight'])(
     'restores a successful delta after an %s full-prefetch overload and can retry full mode later',
     async (phase) => {

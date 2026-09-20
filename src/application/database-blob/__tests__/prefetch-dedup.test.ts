@@ -454,6 +454,52 @@ describe('database blob prefetch deduplication', () => {
     expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
   });
 
+  it('clears earlier seeds after the last owner cancels a subsequent prefetch', async () => {
+    const databaseId = 'database-cancel-cached-seeds';
+    const response = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+    databaseIds.add(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 20, seqNo: 1 }));
+    await prefetchDatabaseBlobDiff('workspace', databaseId);
+    mockedDatabaseBlobDiff.mockReturnValueOnce(response.promise);
+    const result = prefetchDatabaseBlobDiff('workspace', databaseId).catch((error) => error);
+
+    releaseDatabaseRowDocSeedCache(databaseId);
+    response.resolve(readyDiff());
+    expect(await result).toMatchObject({ name: 'AbortError' });
+    await flushPendingWork();
+    expect(takeDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).toBeNull();
+  });
+
+  it('preserves a replacement prefetch when cancelled work finishes after reopening', async () => {
+    const databaseId = 'database-reopen-after-abort';
+    const cancelledResponse = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+    const replacementResponse = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+    const onSeedsReady = jest.fn();
+
+    databaseIds.add(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff
+      .mockReturnValueOnce(cancelledResponse.promise)
+      .mockReturnValueOnce(replacementResponse.promise);
+    const cancelled = prefetchDatabaseBlobDiff('workspace', databaseId).catch((error) => error);
+
+    releaseDatabaseRowDocSeedCache(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    const replacement = prefetchDatabaseBlobDiff('workspace', databaseId, { onSeedsReady });
+
+    cancelledResponse.resolve(readyDiff());
+    expect(await cancelled).toMatchObject({ name: 'AbortError' });
+    await flushPendingWork();
+    expect(mockedDatabaseBlobDiff.mock.calls[1][3]?.signal?.aborted).toBe(false);
+    replacementResponse.resolve(persistablePage({ timestamp: 20, seqNo: 1 }));
+    await replacement;
+    expect(onSeedsReady).toHaveBeenCalledTimes(1);
+    expect(takeDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).not.toBeNull();
+    releaseDatabaseRowDocSeedCache(databaseId);
+  });
+
   it.each([
     { code: 1012, message: 'Denied' },
     { code: 1079, message: 'Busy', retryAfterSecs: 60 },

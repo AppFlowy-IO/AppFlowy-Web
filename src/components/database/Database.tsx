@@ -304,6 +304,15 @@ function Database(props: Database2Props) {
   const blobPrefetchGenerationRef = useRef(0);
   // Gate that ensureRow awaits. Resolves after batch preload (or immediately in readOnly).
   const seedsGateRef = useRef(createDeferredGate());
+  // Unlike the initial seed gate, overload can pause row loading again after
+  // an earlier view mode has already finished loading.
+  const rowLoadPauseRef = useRef<ReturnType<typeof createDeferredGate> | null>(null);
+  const resumeRowLoads = useCallback(() => {
+    const pause = rowLoadPauseRef.current;
+
+    rowLoadPauseRef.current = null;
+    pause?.resolve();
+  }, []);
   const [blobPrefetchComplete, setBlobPrefetchComplete] = useState(false);
   const [blobPrefetchBlocked, setBlobPrefetchBlocked] = useState(false);
   const [seedsReady, setSeedsReady] = useState(false);
@@ -523,13 +532,25 @@ function Database(props: Database2Props) {
   );
 
   const registerRowSync = useCallback(
-    (rowKey: string, forceSync = false, refreshForceSync = false) => {
+    function register(
+      rowKey: string,
+      forceSync = false,
+      refreshForceSync = false
+    ): Promise<YDoc | undefined> | undefined {
       if (!createRow) {
         return;
       }
 
       if (activeDatabaseLifecycleRef.current !== databaseLifecycleIdentity) {
         return;
+      }
+
+      const pause = rowLoadPauseRef.current;
+
+      if (pause) {
+        // Card bindings and reconciliation use this path without ensureRow.
+        // Recheck the lifecycle and pause when the queued registration resumes.
+        return pause.promise.then(() => register(rowKey, forceSync, refreshForceSync));
       }
 
       const lifecycleRegistrations = rowSyncRegistrationsRef.current;
@@ -894,6 +915,7 @@ function Database(props: Database2Props) {
     // The publish API doesn't support blob/diff endpoint
     if (readOnly) {
       activePrefetchKeyRef.current = null;
+      resumeRowLoads();
       gate.resolve();
       setBlobPrefetchBlocked(false);
       setBlobPrefetchComplete(true);
@@ -904,10 +926,14 @@ function Database(props: Database2Props) {
     const databaseId = getDatabaseId();
 
     if (!workspaceId || !databaseId) {
+      resumeRowLoads();
       gate.resolve();
       return null;
     }
 
+    // A paused row can resume after a tab/filter change. It must not prime
+    // the cache again using the previous view mode's captured callback.
+    localCachePrimedRef.current = true;
     const forceFullSync = activeViewNeedsFullRowData;
     const prefetchKey = `${databaseId}:${forceFullSync ? 'full' : 'delta'}`;
     const isCurrentPrefetch = () => isCurrentLifecycle() && activePrefetchKeyRef.current === prefetchKey;
@@ -926,6 +952,7 @@ function Database(props: Database2Props) {
         setBlobPrefetchBlocked(false);
         setBlobPrefetchComplete(true);
         setSeedsReady(true);
+        resumeRowLoads();
         runBatchPreload(prefetchGeneration);
       });
     }
@@ -947,6 +974,7 @@ function Database(props: Database2Props) {
         // Seeds are cached — filter/sort can now build ephemeral docs from them
         // without waiting for IndexedDB persist.
         setSeedsReady(true);
+        resumeRowLoads();
         // Also kick off batch preload for visible rows (heavy IndexedDB path).
         runBatchPreload(prefetchGeneration);
       },
@@ -964,11 +992,16 @@ function Database(props: Database2Props) {
 
         if (isDatabaseBlobBackpressure(error)) {
           // Opening thousands of individual row syncs would amplify the same
-          // overload. Keep the seed gate closed and let the user retry the batch.
+          // overload. Pause even if an earlier delta already opened the seed
+          // gate, and keep the pause through retries until seeds are ready.
+          rowLoadPauseRef.current ??= createDeferredGate();
           setBlobPrefetchBlocked(true);
+          setBlobPrefetchComplete(false);
+          setSeedsReady(false);
           return;
         }
 
+        resumeRowLoads();
         gate.resolve(); // Unblock ensureRow on non-admission failure
         setBlobPrefetchComplete(true);
         setSeedsReady(true);
@@ -977,7 +1010,15 @@ function Database(props: Database2Props) {
     prefetchPromisesRef.current.set(prefetchKey, promise);
     blobPrefetchPromiseRef.current = promise;
     return promise;
-  }, [readOnly, workspaceId, getDatabaseId, getPriorityRowIds, activeViewNeedsFullRowData, runBatchPreload]);
+  }, [
+    readOnly,
+    workspaceId,
+    getDatabaseId,
+    getPriorityRowIds,
+    activeViewNeedsFullRowData,
+    resumeRowLoads,
+    runBatchPreload,
+  ]);
 
   useEffect(() => {
     retainDatabaseRowDocSeedCache(currentDatabaseId);
@@ -1125,6 +1166,11 @@ function Database(props: Database2Props) {
       };
 
       if (!isCurrentEnsure()) return;
+
+      while (rowLoadPauseRef.current) {
+        await rowLoadPauseRef.current.promise;
+        if (!isCurrentEnsure()) return;
+      }
 
       // Fast path: row already loaded (e.g. by batch preload or previous call).
       // Check before awaiting the gate to avoid blocking on already-available rows.
@@ -1348,6 +1394,7 @@ function Database(props: Database2Props) {
     const previousGate = seedsGateRef.current;
 
     blobPrefetchGenerationRef.current = prefetchGeneration;
+    resumeRowLoads();
     previousGate.resolve();
     const initialRowMap = props.initialRowMap ?? {};
 
@@ -1384,9 +1431,10 @@ function Database(props: Database2Props) {
 
       lifecycleRowSyncRegistrations.forEach(releaseRowSyncRegistration);
       lifecycleRowSyncRegistrations.clear();
+      resumeRowLoads();
       lifecycleGate.resolve();
     };
-  }, [databaseLifecycleIdentity, doc, props.initialRowMap, publishCellLocalMutationChange]);
+  }, [databaseLifecycleIdentity, doc, props.initialRowMap, publishCellLocalMutationChange, resumeRowLoads]);
 
   // Trigger blob prefetch when database opens
   useEffect(() => {
@@ -1636,7 +1684,7 @@ function Database(props: Database2Props) {
   }
 
   return (
-    <div className={'flex min-h-0 w-full flex-1 flex-col justify-center'}>
+    <div className={'flex min-h-0 w-full flex-1 flex-col'}>
       <DatabaseContextProvider value={mainContextValue}>
         {blobPrefetchBlocked && !readOnly && (
           <div role='alert' className='flex items-center justify-center gap-2 p-3 text-sm'>

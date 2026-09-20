@@ -172,8 +172,11 @@ function clearSharedPrefetchEntryAfterSettle(databaseId: string, sharedKey: stri
   entry.promise
     ?.finally(() => {
       entry.clearWhenSettled = false;
+      const currentEntry = sharedPrefetchEntries.get(sharedKey);
 
-      if ((rowDocSeedCacheRetainCounts.get(databaseId) ?? 0) === 0 && sharedPrefetchEntries.get(sharedKey) === entry) {
+      // Rejection removes the entry before this continuation runs. Its cached
+      // seeds still need cleanup, but a replacement prefetch owns its own data.
+      if ((rowDocSeedCacheRetainCounts.get(databaseId) ?? 0) === 0 && (!currentEntry || currentEntry === entry)) {
         clearDatabaseRowDocSeedCache(databaseId);
       }
     })
