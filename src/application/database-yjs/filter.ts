@@ -30,10 +30,17 @@ import {
   TextFilter,
   TextFilterCondition,
 } from '@/application/database-yjs/fields';
+import { FormulaFieldSchema, ReadFieldValueContext, readFormulaSchema } from '@/application/database-yjs/fields/formula';
 import { EnhancedBigStats } from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { RollupFilterMetadata, RollupFilterMode } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
+import {
+  evaluateFormulaForRow,
+  formulaPredicateFieldType,
+  formulaResultToDateCell,
+  formulaResultToNumberText,
+} from '@/application/database-yjs/formula/filter';
 import type { RollupCellValue } from '@/application/database-yjs/rollup/cache';
 import {
   parseRollupFilterMetadata,
@@ -56,8 +63,10 @@ import {
 import { canonicalizeUserUid } from '@/application/user-uid';
 import { isAfterOneDay, isTimestampBefore, isTimestampBetweenRange, isTimestampInSameDay } from '@/utils/time';
 
-export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
+export function parseFilter(storedFieldType: FieldType, filter: YDatabaseFilter, fields?: YDatabaseFields) {
   const fieldId = filter.get(YjsDatabaseKey.field_id);
+  const field = fields?.get(fieldId);
+  const fieldType = storedFieldType === FieldType.Formula && field ? formulaPredicateFieldType(field, fields) : storedFieldType;
   const filterType = Number(filter.get(YjsDatabaseKey.filter_type));
   const id = filter.get(YjsDatabaseKey.id);
   const content = filter.get(YjsDatabaseKey.content);
@@ -230,10 +239,14 @@ function hasListFilterContent(content: unknown) {
     .some(Boolean);
 }
 
-function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField) {
+function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField, fields?: YDatabaseFields) {
   const actualType = Number(field.get(YjsDatabaseKey.type));
   const fieldType =
-    actualType === FieldType.Rollup ? rollupPredicateType(parseFilter(actualType, filter), field) : actualType;
+    actualType === FieldType.Rollup
+      ? rollupPredicateType(parseFilter(actualType, filter), field)
+      : actualType === FieldType.Formula
+      ? formulaPredicateFieldType(field, fields)
+      : actualType;
   const condition = Number(filter.get(YjsDatabaseKey.condition));
   const content = filter.get(YjsDatabaseKey.content);
 
@@ -332,7 +345,7 @@ function getEffectiveFilterSnapshot(
   const fieldId = node.get(YjsDatabaseKey.field_id);
   const field = fields.get(fieldId);
 
-  if (!field || !isDataFilterEffective(node, field)) return null;
+  if (!field || !isDataFilterEffective(node, field, fields)) return null;
 
   return {
     filterType,
@@ -495,6 +508,10 @@ export interface FilterDraft {
 }
 
 export function resolveRollupFilterTargetFieldType(fieldType: FieldType, field?: YDatabaseField): FieldType | undefined {
+  // A formula filter is evaluated with the vocabulary of the formula's result
+  // type. Persisting it in the same slot lets the server (which cannot
+  // evaluate formulas) rebuild the right filter variant.
+  if (fieldType === FieldType.Formula) return field ? formulaPredicateFieldType(field) : FieldType.RichText;
   if (fieldType !== FieldType.Rollup) return undefined;
 
   // Desktop persists the evaluated filter variant, not the Rollup's raw target
@@ -657,6 +674,8 @@ type FilterOptions = {
   getRollupCellText?: (rowId: string, fieldId: string) => string;
   /** Full rollup result including the raw numeric, for desktop-parity numeric comparison. */
   getRollupCellValue?: (rowId: string, fieldId: string) => RollupCellValue;
+  /** Member names, related titles and rollup results for formula filters. */
+  getFormulaContext?: (rowId: string) => ReadFieldValueContext;
 };
 
 type SelectOptionFilterContext = {
@@ -810,6 +829,10 @@ export function filterBy(
 
   if (filterArray.length === 0 || Object.keys(rowMetas).length === 0 || fields.size === 0) return rows;
 
+  // Formula filters evaluate every row; read the schema once for the pass.
+  let formulaSchema: FormulaFieldSchema[] | undefined;
+  const getFormulaSchema = () => (formulaSchema ??= readFormulaSchema(fields));
+
   const compileFilterPredicate = (filterNode: YDatabaseFilter): ((row: Row) => boolean) | null => {
     if (!filterNode || typeof filterNode !== 'object') {
       return null;
@@ -840,10 +863,12 @@ export function filterBy(
     const fieldId = node.get(YjsDatabaseKey.field_id);
     const field = fields.get(fieldId);
 
-    if (!field || !isDataFilterEffective(node, field)) return null;
+    if (!field || !isDataFilterEffective(node, field, fields)) return null;
 
     const fieldType = Number(field.get(YjsDatabaseKey.type));
-    const filterValue = parseFilter(fieldType, node);
+    // A formula filters with the vocabulary of its result type.
+    const formulaPredicateType = fieldType === FieldType.Formula ? formulaPredicateFieldType(field, fields) : undefined;
+    const filterValue = parseFilter(formulaPredicateType ?? fieldType, node);
     const condition = Number(filterValue.condition);
     const rawContent = filterValue.content;
     const content = typeof rawContent === 'string' ? rawContent : '';
@@ -865,6 +890,28 @@ export function filterBy(
       const snapshot = getRowConditionSnapshot(rowMeta);
 
       if (!snapshot) return false;
+
+      if (fieldType === FieldType.Formula) {
+        const result = evaluateFormulaForRow(
+          field,
+          fieldId,
+          getFormulaSchema(),
+          snapshot.row,
+          rowId,
+          options?.getFormulaContext?.(rowId)
+        );
+
+        switch (formulaPredicateType) {
+          case FieldType.Number:
+            return numberFilterCheck(formulaResultToNumberText(result), content, condition);
+          case FieldType.Checkbox:
+            return checkboxFilterCheck(result.rawBoolean ? 'Yes' : 'No', condition);
+          case FieldType.DateTime:
+            return dateFilterCheck(formulaResultToDateCell(result), filterValue as DateFilter);
+          default:
+            return textFilterCheck(result.error ? '' : result.text, content, condition);
+        }
+      }
 
       const cellData = getConditionCellData(snapshot, fieldId, field);
 
@@ -1123,26 +1170,28 @@ export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
     case DateFilterCondition.DateStartIsNotEmpty:
       return !!data;
     case DateFilterCondition.DateStartsOn:
+      if (!data) return false;
       return isTimestampInSameDay(data, timestamp.toString());
     case DateFilterCondition.DateEndsOn:
+      if (!endTimestamp) return false;
       return isTimestampInSameDay(endTimestamp, timestamp.toString());
     case DateFilterCondition.DateStartsBefore:
       if (!data) return false;
       return isTimestampBefore(data, timestamp.toString());
     case DateFilterCondition.DateEndsBefore:
-      if (!data) return false;
+      if (!endTimestamp) return false;
       return isTimestampBefore(endTimestamp, timestamp.toString());
     case DateFilterCondition.DateStartsAfter:
       if (!data) return false;
       return isAfterOneDay(data, timestamp.toString());
     case DateFilterCondition.DateEndsAfter:
-      if (!data) return false;
+      if (!endTimestamp) return false;
       return isAfterOneDay(endTimestamp, timestamp.toString());
     case DateFilterCondition.DateStartsOnOrBefore:
       if (!data) return false;
       return isTimestampBefore(data, timestamp.toString()) || isTimestampInSameDay(data, timestamp.toString());
     case DateFilterCondition.DateEndsOnOrBefore:
-      if (!data) return false;
+      if (!endTimestamp) return false;
       return (
         isTimestampBefore(endTimestamp, timestamp.toString()) || isTimestampInSameDay(endTimestamp, timestamp.toString())
       );
@@ -1150,7 +1199,7 @@ export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
       if (!data) return false;
       return isTimestampBefore(timestamp.toString(), data) || isTimestampInSameDay(timestamp.toString(), data);
     case DateFilterCondition.DateEndsOnOrAfter:
-      if (!data) return false;
+      if (!endTimestamp) return false;
       return (
         isTimestampBefore(timestamp.toString(), endTimestamp) || isTimestampInSameDay(timestamp.toString(), endTimestamp)
       );
@@ -1158,7 +1207,7 @@ export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
       if (!data) return false;
       return isTimestampBetweenRange(data, start.toString(), end.toString());
     case DateFilterCondition.DateEndsBetween:
-      if (!data) return false;
+      if (!endTimestamp) return false;
       return isTimestampBetweenRange(endTimestamp, start.toString(), end.toString());
     default:
       return false;
@@ -1465,6 +1514,9 @@ export function getDefaultFilterCondition(
       if (predicateType === FieldType.Media) return { condition: 1, content: '' }; // MediaIsNotEmpty
       return defaultRollupPredicate(predicateType);
     }
+
+    case FieldType.Formula:
+      return getDefaultFilterCondition(field ? formulaPredicateFieldType(field) : FieldType.RichText, field);
 
     case FieldType.Relation:
       return {

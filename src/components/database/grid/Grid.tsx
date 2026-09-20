@@ -24,6 +24,8 @@ export function Grid() {
     <GridProvider grouping={grouping}>
       <div
         data-testid='database-grid'
+        // Rows the grid lists after filters and sorts; large-database tests read it.
+        data-row-count={rowOrders?.length}
         className={`database-grid relative grid-table-${viewId} flex min-h-0 w-full flex-1 flex-col`}
       >
         <GridVirtualizer columns={fields} />

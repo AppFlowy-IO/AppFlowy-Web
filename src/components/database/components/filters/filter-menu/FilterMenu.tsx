@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 
 import { DateFilter, FieldType, Filter, NumberFilter, PersonFilter, SelectOptionFilter, useFieldSelector } from '@/application/database-yjs';
+import { predicateFieldTypeForResult } from '@/application/database-yjs/formula/filter';
+import { useFormulaResultType } from '@/application/database-yjs/selector';
 import { YjsDatabaseKey } from '@/application/types';
 import DateTimeFilterMenu from '@/components/database/components/filters/filter-menu/DateTimeFilterMenu';
 
@@ -16,7 +18,10 @@ import TextFilterMenu from './TextFilterMenu';
 
 export function FilterMenu({ filter }: { filter: Filter }) {
   const { field } = useFieldSelector(filter?.fieldId);
-  const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const actualType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const formulaResultType = useFormulaResultType(filter?.fieldId ?? '');
+  // A formula borrows the filter menu of its result type.
+  const fieldType = actualType === FieldType.Formula ? predicateFieldTypeForResult(formulaResultType) : actualType;
 
   const menu = useMemo(() => {
     if (!field) return null;

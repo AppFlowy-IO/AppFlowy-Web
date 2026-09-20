@@ -28,6 +28,7 @@ export enum FieldType {
   Rollup = 16,
   CreatedBy = 17,
   LastEditedBy = 18,
+  Formula = 19,
 }
 
 export const ATTRIBUTION_FIELD_TYPES = [FieldType.CreatedBy, FieldType.LastEditedBy] as const;

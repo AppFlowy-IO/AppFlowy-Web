@@ -3,6 +3,7 @@ import Big from 'big.js';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupListItem } from '@/application/database-yjs/cell.type';
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
+import { waitForDatabaseHydration } from '@/application/database-yjs/database.hydration';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { getDateCellStr, getRowTimeString } from '@/application/database-yjs/fields/date/utils';
 import { EnhancedBigStats } from '@/application/database-yjs/fields/number/EnhancedBigStats';
@@ -13,6 +14,7 @@ import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { getRowKey } from '@/application/database-yjs/row_meta';
+import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import {
   LoadViewOptions,
   RowId,
@@ -59,6 +61,7 @@ type RollupCacheEntry = RollupCellValue & {
 };
 
 type RollupComputeContext = {
+  requireLoadedSources?: boolean;
   baseDoc: YDoc;
   database: YDatabase;
   rollupField: YDatabaseField;
@@ -198,7 +201,17 @@ function touchRelatedDocCache(viewId: string, promise: Promise<YDoc | null>) {
   }
 }
 
-async function loadRelatedDoc(viewId: string, databaseId: string, loadView?: RelatedViewLoader) {
+async function loadRelatedDoc(viewId: string, databaseId: string, loadView?: RelatedViewLoader, requireLoadedSources = false) {
+  if (requireLoadedSources) {
+    const doc = await loadView?.(viewId, false, false, { databaseId, databaseMetadataOnly: true });
+
+    if (!doc || !(await waitForDatabaseHydration(doc))) {
+      throw new Error(`Related database ${databaseId} could not be loaded for formula conversion`);
+    }
+
+    return doc;
+  }
+
   if (!loadView) return null;
   const cacheKey = `${databaseId}:${viewId}`;
   const cached = relatedDocCache.get(cacheKey);
@@ -251,7 +264,7 @@ async function createRelationTargetResolver(
 
   if (!viewId) return null;
 
-  const doc = await loadRelatedDoc(viewId, targetRelationOption.database_id, context.loadView);
+  const doc = await loadRelatedDoc(viewId, targetRelationOption.database_id, context.loadView, context.requireLoadedSources);
 
   if (!doc) return null;
 
@@ -444,7 +457,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
   if (!viewId) return { value: '' };
 
-  const relatedDoc = await loadRelatedDoc(viewId, relationOption.database_id, context.loadView);
+  const relatedDoc = await loadRelatedDoc(viewId, relationOption.database_id, context.loadView, context.requireLoadedSources);
 
   if (!relatedDoc) return { value: '' };
 
@@ -832,6 +845,35 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   })();
 
   return withTargetFieldType(calculatedValue);
+}
+
+/** A fresh, fully hydrated value for materialization, independent of display caches. */
+export async function resolveRollupCell(context: RollupComputeContext): Promise<RollupCellValue> {
+  const release = await semaphore.acquire();
+
+  try {
+    return await computeRollupCellValue({
+      ...context,
+      requireLoadedSources: true,
+      getViewIdFromDatabaseId: async (databaseId) => {
+        const viewId = await context.getViewIdFromDatabaseId?.(databaseId);
+
+        if (!viewId) throw new Error(`Related database ${databaseId} could not be resolved for formula conversion`);
+        return viewId;
+      },
+      createRow: async (rowKey) => {
+        const doc = await context.createRow?.(rowKey);
+
+        if (!doc || !(await waitForDatabaseRowHydration(doc))) {
+          throw new Error(`Related row ${rowKey} could not be loaded for formula conversion`);
+        }
+
+        return doc;
+      },
+    });
+  } finally {
+    release();
+  }
 }
 
 export async function readRollupCell(context: RollupComputeContext): Promise<RollupCellValue> {

@@ -121,6 +121,7 @@ function RollupDivideByInput({
       <span>{label}</span>
       <Input
         ref={inputRef}
+        data-testid={'rollup-visualization-divisor'}
         aria-label={label}
         inputMode={'numeric'}
         value={draft}
@@ -205,7 +206,7 @@ export function RollupVisualizationSettings({
         {!isNumber ? (
           <>
             <DropdownMenuSub>
-              <DropdownMenuSubTrigger className={'w-full'}>
+              <DropdownMenuSubTrigger className={'w-full'} data-testid={'rollup-visualization-color'}>
                 <ColorTileIcon value={getRollupVisualizationColor(option.color)} />
                 <span>{t('grid.rollup.color', { defaultValue: 'Color' })}</span>
                 <span className={'ml-auto truncate text-xs text-text-secondary'}>
@@ -219,6 +220,7 @@ export function RollupVisualizationSettings({
                       <DropdownMenuRadioItem
                         key={color.value}
                         value={color.value}
+                        data-testid={`rollup-visualization-color-${color.value}`}
                         aria-label={t(color.labelKey, { defaultValue: color.label })}
                         className={'h-auto justify-center p-0 data-[state=checked]:bg-transparent'}
                         onSelect={(event) => {
@@ -248,6 +250,7 @@ export function RollupVisualizationSettings({
 
             <DropdownMenuItem
               role={'menuitemcheckbox'}
+              data-testid={'rollup-visualization-show-number'}
               aria-checked={option.showNumber}
               className={'h-10 gap-2 px-2'}
               onSelect={(event) => {
