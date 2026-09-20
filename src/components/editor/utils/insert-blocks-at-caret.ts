@@ -2,11 +2,11 @@ import { Editor, Element, Node, Path, Range, Text, Transforms } from 'slate';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { TEXT_BLOCK_TYPES } from '@/application/slate-yjs/command/const';
+import { TEXT_BLOCK_TYPES, TOGGLE_BLOCK_TYPES } from '@/application/slate-yjs/command/const';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
 import { findSlateEntryByBlockId, getBlockEntry, getSharedRoot } from '@/application/slate-yjs/utils/editor';
 import { assertDocExists, getBlock, getChildrenArray } from '@/application/slate-yjs/utils/yjs';
-import { BlockType, CollabOrigin, YjsEditorKey } from '@/application/types';
+import { BlockType, CollabOrigin, ToggleListBlockData, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
 type BlockElement = Element & { blockId?: string };
@@ -15,9 +15,12 @@ type BlockElement = Element & { blockId?: string };
  * Inserts a sequence of pasted block elements relative to the caret,
  * mirroring the semantics of Slate's `insertFragment` (and the desktop
  * editor's paste command) while going through the YJS insertion path so
- * blocks land as siblings at the right indent level:
+ * blocks land at the right indent level:
  *
  * - An expanded selection is deleted first, like any native paste.
+ * - Expanded callouts, quotes, and toggles retain their container. The first
+ *   text block merges at the caret and remaining blocks become children,
+ *   matching Enter in these blocks.
  * - If the current block is empty, the pasted blocks replace it so the first
  *   block keeps its type (pasting a heading into an empty line yields a
  *   heading, not a paragraph with the heading's text).
@@ -64,15 +67,19 @@ export function insertBlocksAtCaret(
 
     if (!block) return false;
 
-    const parentId = block.get(YjsEditorKey.block_parent);
+    // Match splitBlock: an expanded container receives new lines as children.
+    // Its empty text wrapper is an insertion point, not a replaceable block.
+    const insertInsideBlock =
+      TOGGLE_BLOCK_TYPES.includes(node.type as BlockType) && !(node.data as ToggleListBlockData)?.collapsed;
+    const parentId = insertInsideBlock ? blockId : block.get(YjsEditorKey.block_parent);
     const parent = getBlock(parentId, sharedRoot);
 
     if (!parent) return false;
 
     const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
-    const index = parentChildren.toArray().findIndex((id) => id === blockId);
+    const index = insertInsideBlock ? -1 : parentChildren.toArray().findIndex((id) => id === blockId);
 
-    if (index < 0) return false;
+    if (index < 0 && !insertInsideBlock) return false;
 
     const doc = assertDocExists(sharedRoot);
 
@@ -81,7 +88,7 @@ export function insertBlocksAtCaret(
     // at the current index and remove the empty original.
     const isEmpty = CustomEditor.getBlockTextContent(node as Node).length === 0 && (node.children?.length ?? 0) <= 1;
 
-    if (isEmpty) {
+    if (isEmpty && !insertInsideBlock) {
       let insertedIds: string[] = [];
 
       doc.transact(() => {
@@ -104,7 +111,7 @@ export function insertBlocksAtCaret(
       return true;
     }
 
-    // Default: insert every block as a sibling after the current block.
+    // Insert after the current block, or before an expanded container's children.
     let insertedIds: string[] = [];
 
     doc.transact(() => {
@@ -240,19 +247,14 @@ function inlineTextLength(children: Element['children']): number {
 }
 
 /**
- * Extracts the inline text leaves from a fragment produced by
- * `Editor.fragment` over a range inside one block's text wrapper.
+ * Extracts the selected text leaves from a range inside a text wrapper.
+ * Slate retains ancestor containers in nested fragments, so their first
+ * wrapper can be empty while the selected text lives in a descendant.
  */
 function extractInlineNodesFromRangeFragment(fragment: Node[]): Text[] {
-  const block = fragment[0];
-
-  if (!Element.isElement(block)) return [];
-
-  const wrapper = getTextWrapper(block);
-
-  if (!wrapper) return [];
-
-  return wrapper.children.filter((child): child is Text => Text.isText(child) && child.text.length > 0);
+  return fragment.flatMap((node) =>
+    Array.from(Node.texts(node), ([text]) => text).filter((text) => text.text.length > 0)
+  );
 }
 
 /**
