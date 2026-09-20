@@ -11,50 +11,77 @@ export interface FormulaFieldSchema {
   field: YDatabaseField;
 }
 
-export function readFormulaSchema(fields?: YDatabaseFields): FormulaFieldSchema[] {
-  if (!fields) return [];
-  const schema: FormulaFieldSchema[] = [];
-
-  fields.forEach((field, id) => {
-    schema.push({
-      id,
-      name: String(field.get(YjsDatabaseKey.name) ?? ''),
-      type: Number(field.get(YjsDatabaseKey.type)) as FieldType,
-      field,
-    });
-  });
-
-  return schema;
-}
-
-const schemaCache = new WeakMap<YDatabaseFields, { version: number; schema: FormulaFieldSchema[] }>();
-
-/**
- * `readFormulaSchema` shared by every caller that reads the same fields
- * version (e.g. all formula cells of a grid render), so the schema is built
- * once per fields change instead of once per cell.
- */
-export function readFormulaSchemaForVersion(fields: YDatabaseFields | undefined, version: number): FormulaFieldSchema[] {
-  if (!fields) return [];
-  const cached = schemaCache.get(fields);
-
-  if (cached && cached.version === version) return cached.schema;
-  const schema = readFormulaSchema(fields);
-
-  schemaCache.set(fields, { version, schema });
-  return schema;
-}
-
-/*
- * A schema array is a snapshot: callers re-read it after fields change. The
- * derived signature and lookup maps are cached per array so evaluating a
- * formula for every row of a filter or sort pass does not rebuild them.
- */
+const schemaCache = new WeakMap<
+  YDatabaseFields,
+  { version: number | undefined; schema: FormulaFieldSchema[]; signature: string }
+>();
+// Keep the source even for an empty schema, so a retained snapshot can discover
+// fields added while its view has no mounted subscribers.
+const schemaSources = new WeakMap<FormulaFieldSchema[], YDatabaseFields>();
 const signatureCache = new WeakMap<FormulaFieldSchema[], string>();
 const indexCache = new WeakMap<
   FormulaFieldSchema[],
   { byId: Map<string, FormulaFieldSchema>; byName: Map<string, FormulaFieldSchema> }
 >();
+
+/**
+ * Observer versions can lag inside a transaction or while a view is closed.
+ * Validate the live fields at the read boundary, then share the signature and
+ * lookup maps for the resulting snapshot throughout synchronous evaluation.
+ */
+function readCurrentFormulaSchema(fields: YDatabaseFields, version?: number): FormulaFieldSchema[] {
+  const cached = schemaCache.get(fields);
+  const schema: FormulaFieldSchema[] = [];
+  const signatureEntries: unknown[] = [];
+
+  fields.forEach((field, id) => {
+    const name = String(field.get(YjsDatabaseKey.name) ?? '');
+    const type = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+    schema.push({ id, name, type, field });
+    signatureEntries.push([id, type, name, field.get(YjsDatabaseKey.type_option)?.toJSON()]);
+  });
+
+  const signature = stringifyFormulaConfig(signatureEntries);
+
+  if (
+    cached &&
+    (version === undefined || cached.version === version) &&
+    cached.signature === signature &&
+    cached.schema.length === schema.length &&
+    schema.every((entry, index) => entry.field === cached.schema[index].field)
+  ) {
+    return cached.schema;
+  }
+
+  schemaSources.set(schema, fields);
+  // Capture type options now: the Yjs handles can mutate before a caller first
+  // requests this snapshot's signature.
+  signatureCache.set(schema, signature);
+  schemaCache.set(fields, { version: version ?? cached?.version, schema, signature });
+  return schema;
+}
+
+export function readFormulaSchema(fields?: YDatabaseFields): FormulaFieldSchema[] {
+  return fields ? readCurrentFormulaSchema(fields) : [];
+}
+
+/** Share one validated schema snapshot among callers reading the same version. */
+export function readFormulaSchemaForVersion(fields: YDatabaseFields | undefined, version: number): FormulaFieldSchema[] {
+  return fields ? readCurrentFormulaSchema(fields, version) : [];
+}
+
+/** Only retained snapshots from the schema readers carry a refreshable source. */
+export function hasFormulaSchemaSource(schema: FormulaFieldSchema[]): boolean {
+  return schemaSources.has(schema);
+}
+
+/** Refresh retained schemas before using cached plans or results; leave untracked arrays unchanged. */
+export function refreshFormulaSchema(schema: FormulaFieldSchema[]): FormulaFieldSchema[] {
+  const fields = schemaSources.get(schema);
+
+  return fields ? readCurrentFormulaSchema(fields) : schema;
+}
 
 /** Changes whenever a field is added, removed, renamed, retyped or reconfigured. */
 export function formulaSchemaSignature(schema: FormulaFieldSchema[]): string {
@@ -62,13 +89,18 @@ export function formulaSchemaSignature(schema: FormulaFieldSchema[]): string {
 
   if (signature === undefined) {
     // last_modified has second resolution; multiple edits can share it.
-    signature = JSON.stringify(
+    signature = stringifyFormulaConfig(
       schema.map((entry) => [entry.id, entry.type, entry.name, entry.field.get(YjsDatabaseKey.type_option)?.toJSON()])
     );
     signatureCache.set(schema, signature);
   }
 
   return signature;
+}
+
+/** Native Yrs type options can contain BigInts, including integers beyond Number's exact range. */
+export function stringifyFormulaConfig(value: unknown): string {
+  return JSON.stringify(value, (_key, item) => (typeof item === 'bigint' ? item.toString() : item));
 }
 
 function schemaIndex(schema: FormulaFieldSchema[]) {

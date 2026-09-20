@@ -5,7 +5,7 @@ import { YDatabaseField, YDatabaseFields, YjsDatabaseKey } from '@/application/t
 import { collectPropRefs, formulaUsesClock } from './ast';
 import { compileFormula } from './compile';
 import { parseFormulaTypeOption } from './parse';
-import { FormulaFieldSchema, resolveFormulaField } from './schema';
+import { FormulaFieldSchema, resolveFormulaField, stringifyFormulaConfig } from './schema';
 
 /** Fields whose formula values come from outside the row document. */
 export interface FormulaExternalReferences {
@@ -106,7 +106,7 @@ export function formulaExternalReferencesKey(references: FormulaExternalReferenc
     return [entry.id, entry.type, entry.field.get(YjsDatabaseKey.type_option)?.toJSON(), relation?.toJSON()];
   };
 
-  return JSON.stringify([
+  return stringifyFormulaConfig([
     references.clock,
     references.people,
     references.relations.map(fieldKey),

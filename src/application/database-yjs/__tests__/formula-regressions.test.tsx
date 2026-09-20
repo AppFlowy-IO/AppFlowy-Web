@@ -880,6 +880,20 @@ describe('formula rollups with hidden source columns', () => {
     await waitFor(() => expect(result.current.cells?.get(f.rowId)).toBe(1));
   });
 
+  it('refreshes a formula filter after its related value changes while the view is unmounted', async () => {
+    const f = fixture('prop("Rollup")');
+
+    f.filters.push([dataFilter(NumberFilterCondition.GreaterThan, '8')]);
+    const opened = renderHook(useRowOrdersSelector, { wrapper: f.wrapper });
+
+    await waitFor(() => expect(opened.result.current).toEqual([]));
+    opened.unmount();
+    act(() => setAmount(f.relatedRow, '9'));
+    const reopened = renderHook(useRowOrdersSelector, { wrapper: f.wrapper });
+
+    await waitFor(() => expect(reopened.result.current?.map((row) => row.id)).toEqual([f.rowId]));
+  });
+
   it('settles footer rollups when the view republishes the same row membership', async () => {
     jest.useFakeTimers();
     const f = fixture('prop("Rollup")');

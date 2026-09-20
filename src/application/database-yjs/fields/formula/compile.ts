@@ -8,7 +8,7 @@ import { FormulaError, SourcePosition } from './errors';
 import { FORMULA_MAX_DEPTH } from './formula.type';
 import { parseFormulaTypeOption } from './parse';
 import { parseFormula } from './parser';
-import { FormulaFieldSchema, formulaSchemaSignature, resolveFormulaField } from './schema';
+import { FormulaFieldSchema, formulaSchemaSignature, refreshFormulaSchema, resolveFormulaField } from './schema';
 import { FormulaType } from './values';
 
 export interface CompiledFormula {
@@ -56,10 +56,11 @@ function compilationError(error: unknown, position?: SourcePosition): FormulaErr
  */
 export function compileFormula(
   expression: string,
-  schema: FormulaFieldSchema[],
+  sourceSchema: FormulaFieldSchema[],
   fieldId?: string,
   visiting: ReadonlySet<string> = new Set()
 ): CompiledFormula {
+  const schema = refreshFormulaSchema(sourceSchema);
   const signature = formulaSchemaSignature(schema);
   // Keep shared results for this whole pass even when a wide graph evicts
   // entries from the bounded cross-call cache.

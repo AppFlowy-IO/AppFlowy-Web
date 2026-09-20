@@ -3188,8 +3188,11 @@ export function useFormulaCellValue({
   // The viewer's date and time formats are applied by FormulaCell, so the
   // cells of other fields do not re-render when the user record changes.
   const [rowClock, setRowClock] = useState(0);
-  // Shared by all formula cells rendering the same fields version.
-  const schema = useMemo(() => readFormulaSchemaForVersion(fields, fieldsVersion), [fields, fieldsVersion]);
+  // Ordinary cells must skip schema validation as well as its subscription.
+  const schema = useMemo(
+    () => (isFormula ? readFormulaSchemaForVersion(fields, fieldsVersion) : []),
+    [isFormula, fields, fieldsVersion]
+  );
   const references = useMemo(() => {
     void fieldClock;
     return isFormula && field ? collectFormulaExternalReferences(field, schema) : NO_EXTERNAL_REFERENCES;

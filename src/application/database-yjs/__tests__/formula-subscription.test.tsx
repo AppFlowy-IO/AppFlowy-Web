@@ -6,6 +6,8 @@ import { FormulaCell } from '@/application/database-yjs/cell.type';
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { createFields, createRow } from '@/application/database-yjs/fields/formula/__tests__/fixture';
+import * as formulaEvaluator from '@/application/database-yjs/fields/formula/evaluator';
+import * as formulaSchema from '@/application/database-yjs/fields/formula/schema';
 import { useDatabaseFieldsVersion } from '@/application/database-yjs/hooks/useDatabaseFieldsVersion';
 import { useCellSelector } from '@/application/database-yjs/selector';
 import { YDatabase, YDatabaseFields, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -35,10 +37,55 @@ function fixture(expression: string) {
     <DatabaseContext.Provider value={context}>{children}</DatabaseContext.Provider>
   );
 
-  return { row, rowId, wrapper };
+  return { row, rowId, fields, context, wrapper };
 }
 
 describe('formula row subscriptions', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each([false, true])('skips formula schema reads for ordinary cells (has formulas: %s)', (hasFormulas) => {
+    const f = fixture('prop("input")');
+
+    if (!hasFormulas) f.fields.delete('formula');
+    const readSchema = jest.spyOn(formulaSchema, 'readFormulaSchemaForVersion');
+    const { result, rerender } = renderHook(() => useCellSelector({ rowId: f.rowId, fieldId: 'input' }), {
+      wrapper: f.wrapper,
+    });
+
+    expect(result.current?.fieldType).toBe(FieldType.Number);
+    act(() => {
+      f.row.get(YjsDatabaseKey.cells).get('input').set(YjsDatabaseKey.data, '5');
+    });
+    rerender();
+    expect(readSchema).not.toHaveBeenCalled();
+  });
+
+  it('starts and stops formula schema reads when a field changes type', () => {
+    const f = fixture('prop("input") * 2');
+    const field = f.fields.get('formula');
+
+    field.set(YjsDatabaseKey.type, FieldType.Number);
+    const readSchema = jest.spyOn(formulaSchema, 'readFormulaSchemaForVersion');
+    const { result } = renderHook(() => useCellSelector({ rowId: f.rowId, fieldId: 'formula' }), {
+      wrapper: f.wrapper,
+    });
+
+    expect(readSchema).not.toHaveBeenCalled();
+    act(() => {
+      field.set(YjsDatabaseKey.type, FieldType.Formula);
+    });
+    expect((result.current as FormulaCell)?.rawNumeric).toBe(4);
+    expect(readSchema).toHaveBeenCalled();
+    readSchema.mockClear();
+    act(() => {
+      field.set(YjsDatabaseKey.type, FieldType.Number);
+    });
+    act(() => {
+      f.row.get(YjsDatabaseKey.cells).get('input').set(YjsDatabaseKey.data, '5');
+    });
+    expect(readSchema).not.toHaveBeenCalled();
+  });
+
   it('follows a replacement cells map and releases its observer on unmount', () => {
     const f = fixture('prop("input")');
     const subscribe = jest.spyOn(f.row, 'observeDeep');
@@ -103,5 +150,122 @@ describe('formula row subscriptions', () => {
 
     act(() => setInput('11'));
     expect(result.current?.rawNumeric).toBe(11);
+  });
+
+  it('uses current row inputs on the first render after reopening', () => {
+    const f = fixture('prop("input") * 2');
+    const opened = renderHook(() => useCellSelector({ rowId: f.rowId, fieldId: 'formula' }) as FormulaCell | undefined, {
+      wrapper: f.wrapper,
+    });
+
+    expect(opened.result.current?.rawNumeric).toBe(4);
+    opened.unmount();
+    f.row.get(YjsDatabaseKey.cells).get('input').set(YjsDatabaseKey.data, '7');
+
+    const rendered: Array<number | undefined> = [];
+    const reopened = renderHook(
+      () => {
+        const cell = useCellSelector({ rowId: f.rowId, fieldId: 'formula' }) as FormulaCell | undefined;
+
+        rendered.push(cell?.rawNumeric);
+        return cell;
+      },
+      { wrapper: f.wrapper }
+    );
+
+    expect(rendered[0]).toBe(14);
+    expect(rendered.every((value) => value === 14)).toBe(true);
+    expect(reopened.result.current?.rawNumeric).toBe(14);
+  });
+
+  it('refreshes transitive schema changes before the first reopened render', () => {
+    const f = fixture('prop("helper")');
+    const helper = createFields([
+      {
+        id: 'helper',
+        name: 'Helper',
+        type: FieldType.Formula,
+        typeOption: { expression: 'prop("input") * 2' },
+      },
+    ])
+      .get('helper')
+      .clone();
+
+    f.fields.set('helper', helper);
+    const opened = renderHook(() => useCellSelector({ rowId: f.rowId, fieldId: 'formula' }) as FormulaCell | undefined, {
+      wrapper: f.wrapper,
+    });
+
+    expect(opened.result.current?.rawNumeric).toBe(4);
+    opened.unmount();
+    helper.get(YjsDatabaseKey.type_option).get(String(FieldType.Formula)).set('expression', 'prop("input") * 5');
+
+    const rendered: Array<number | undefined> = [];
+    const reopened = renderHook(
+      () => {
+        const cell = useCellSelector({ rowId: f.rowId, fieldId: 'formula' }) as FormulaCell | undefined;
+
+        rendered.push(cell?.rawNumeric);
+        return cell;
+      },
+      { wrapper: f.wrapper }
+    );
+
+    expect(rendered[0]).toBe(10);
+    expect(rendered.every((value) => value === 10)).toBe(true);
+    expect(reopened.result.current?.rawNumeric).toBe(10);
+  });
+
+  it('isolates rapid database switches and does no work for the closed view', () => {
+    const first = fixture('prop("input") * 2');
+    const second = fixture('prop("input") * 10');
+
+    second.row.get(YjsDatabaseKey.cells).get('input').set(YjsDatabaseKey.data, '7');
+    // Both databases deliberately have the same field, row, and view IDs.
+    let context = first.context;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={context}>{children}</DatabaseContext.Provider>
+    );
+    const rendered: Array<number | undefined> = [];
+    const evaluation = jest.spyOn(formulaEvaluator, 'evaluateFormula');
+    const opened = renderHook(
+      () => {
+        const cell = useCellSelector({ rowId: 'row', fieldId: 'formula' }) as FormulaCell | undefined;
+
+        rendered.push(cell?.rawNumeric);
+        return cell;
+      },
+      { wrapper }
+    );
+
+    expect(opened.result.current?.rawNumeric).toBe(4);
+    rendered.length = 0;
+    context = second.context;
+    opened.rerender();
+    expect(rendered.every((value) => value === 70)).toBe(true);
+
+    evaluation.mockClear();
+    act(() => {
+      first.row.get(YjsDatabaseKey.cells).get('input').set(YjsDatabaseKey.data, '5');
+      first.fields
+        .get('formula')
+        .get(YjsDatabaseKey.type_option)
+        .get(String(FieldType.Formula))
+        .set('expression', 'prop("input") * 3');
+    });
+    expect(evaluation).not.toHaveBeenCalled();
+    expect(opened.result.current?.rawNumeric).toBe(70);
+
+    rendered.length = 0;
+    context = first.context;
+    opened.rerender();
+    expect(rendered[0]).toBe(15);
+    expect(rendered.every((value) => value === 15)).toBe(true);
+
+    opened.unmount();
+    evaluation.mockClear();
+    first.row.get(YjsDatabaseKey.cells).get('input').set(YjsDatabaseKey.data, '8');
+    second.row.get(YjsDatabaseKey.cells).get('input').set(YjsDatabaseKey.data, '9');
+    expect(evaluation).not.toHaveBeenCalled();
   });
 });

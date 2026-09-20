@@ -63,11 +63,22 @@ function binary(
  * round(2.5) = 3 and round(-2.5) = -2.
  */
 export function roundTo(value: number, decimals: number): number {
-  const factor = 10 ** Math.max(0, Math.min(15, Math.trunc(decimals)));
-  // Offset the float representation error so 1.005 rounds to 1.01, not 1.
-  const scaled = Number((value * factor).toPrecision(15));
+  if (!Number.isFinite(value) || value === 0) return value;
+  const places = Math.max(0, Math.min(15, Math.trunc(decimals)));
+  // Round the shortest decimal representation directly: binary scaling can
+  // move half ties, while capping significant digits corrupts large values.
+  const [mantissa, exponent] = Math.abs(value).toExponential().split('e');
+  const digits = mantissa.replace('.', '');
+  const keep = Number(exponent) + 1 + places;
 
-  return Math.round(scaled) / factor;
+  if (keep >= digits.length) return value;
+  if (keep < 0) return value < 0 ? -0 : 0;
+  const discarded = digits.slice(keep);
+  const increment =
+    discarded[0] > '5' || (discarded[0] === '5' && (value > 0 || /[1-9]/.test(discarded.slice(1))));
+  const rounded = BigInt(digits.slice(0, keep) || '0') + (increment ? 1n : 0n);
+
+  return Number(`${value < 0 ? '-' : ''}${rounded}e-${places}`);
 }
 
 const CURRENCY_CODES: Record<string, string> = {
