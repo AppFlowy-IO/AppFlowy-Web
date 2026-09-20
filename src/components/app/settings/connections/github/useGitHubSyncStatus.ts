@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { GitHubSyncStatus } from '@/application/integrations/github-sync';
 import * as GitHubSyncService from '@/application/services/domains/github-sync';
@@ -17,12 +17,42 @@ export function useGitHubSyncStatus(workspaceId: string, bindingId?: string) {
   const [snapshot, setSnapshot] = useState<{ key: string; status: GitHubSyncStatus }>();
   const [failure, setFailure] = useState<{ key: string; error: unknown }>();
   const [revision, setRevision] = useState(0);
-  const reload = useCallback(() => setRevision((value) => value + 1), []);
+  const activeRequest = useRef<AbortController>();
+  const reload = useCallback(
+    (update?: Partial<Pick<GitHubSyncStatus, 'binding' | 'run'>>) => {
+      // A read started before a mutation must not overwrite its confirmed result.
+      activeRequest.current?.abort();
+      if (update) {
+        const updatedKey = `${workspaceId}:${update.binding?.id ?? bindingId ?? ''}`;
+
+        setSnapshot((current) => {
+          const previous = current?.key === updatedKey ? current.status : undefined;
+          const binding = update.binding ?? previous?.binding;
+
+          return binding
+            ? {
+                key: updatedKey,
+                status: {
+                  binding,
+                  run: update.run === undefined ? previous?.run ?? null : update.run,
+                  entries: previous?.entries ?? [],
+                },
+              }
+            : current;
+        });
+      }
+
+      setRevision((value) => value + 1);
+    },
+    [bindingId, workspaceId]
+  );
 
   useEffect(() => {
     if (!bindingId) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+
+    activeRequest.current = controller;
 
     const poll = async () => {
       try {
@@ -49,6 +79,7 @@ export function useGitHubSyncStatus(workspaceId: string, bindingId?: string) {
     return () => {
       controller.abort();
       clearTimeout(timer);
+      if (activeRequest.current === controller) activeRequest.current = undefined;
     };
   }, [bindingId, key, revision, workspaceId]);
 

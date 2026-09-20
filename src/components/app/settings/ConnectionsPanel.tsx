@@ -252,7 +252,10 @@ export function ConnectionsPanel({
             workspaceId={workspaceId}
             configuration={github.configuration}
             open={githubOpen}
-            onOpenChange={setGithubOpen}
+            onOpenChange={(open) => {
+              setGithubOpen(open);
+              if (!open) void reload();
+            }}
             onOpenSpace={onOpenSpace}
           />
         )}

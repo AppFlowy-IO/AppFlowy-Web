@@ -5,9 +5,11 @@ import { GitHubSyncBinding, GitHubSyncConfiguration, GitHubSyncStatus } from '@/
 import { authorizeIntegration } from '@/application/integrations/oauth';
 import * as GitHubSyncService from '@/application/services/domains/github-sync';
 import * as IntegrationService from '@/application/services/domains/integration';
+import { ConnectionsPanel } from '@/components/app/settings/ConnectionsPanel';
 
 import { GitHubSyncDialog } from '../GitHubSyncDialog';
 import { GitHubSyncSection } from '../GitHubSyncSection';
+import { useGitHubSyncStatus } from '../useGitHubSyncStatus';
 import { useSyncAction } from '../useSyncAction';
 
 jest.mock('react-i18next', () => ({
@@ -22,24 +24,28 @@ jest.mock('react-i18next', () => ({
 }));
 jest.mock('@/components/_shared/modal/NormalModal', () => ({
   NormalModal: ({
+    open,
     title,
     children,
     onClose,
   }: {
+    open: boolean;
     title: React.ReactNode;
     children: React.ReactNode;
     onClose: () => void;
-  }) => (
-    <div role='dialog'>
-      {title}
-      <button aria-label='Dismiss dialog' onClick={onClose}>
-        ×
-      </button>
-      {children}
-    </div>
-  ),
+  }) =>
+    open ? (
+      <div role='dialog'>
+        {title}
+        <button aria-label='Dismiss dialog' onClick={onClose}>
+          ×
+        </button>
+        {children}
+      </div>
+    ) : null,
 }));
 jest.mock('@/application/services/domains/github-sync', () => ({
+  getConfiguration: jest.fn(),
   probeRepository: jest.fn(),
   listBindings: jest.fn(),
   createBinding: jest.fn(),
@@ -52,6 +58,7 @@ jest.mock('@/application/integrations/oauth', () => ({
   IntegrationOAuthError: class extends Error {},
 }));
 jest.mock('@/application/services/domains/integration', () => ({
+  getConfiguredProviders: jest.fn(),
   listConnections: jest.fn(),
   confirmConnection: jest.fn(),
   getConnectionEmail: jest.fn(),
@@ -215,6 +222,27 @@ describe('GitHub sync setup and management', () => {
     expect(api.createBinding.mock.calls[0][1].connection_id).toBe(account.id);
   });
 
+  it('refreshes the Connections account list when closing the wizard after GitHub authorization', async () => {
+    Element.prototype.scrollIntoView = jest.fn();
+    api.getConfiguration.mockResolvedValue(configuration);
+    integrations.getConfiguredProviders.mockResolvedValue([]);
+    api.probeRepository.mockResolvedValueOnce({ status: 'authentication_required' }).mockResolvedValue(ready);
+    render(<ConnectionsPanel workspaceId='workspace' />);
+    await waitFor(() => expect(screen.getByTestId('add-connection').disabled).toBe(false));
+    fireEvent.keyDown(screen.getByTestId('add-connection'), { key: 'Enter', code: 'Enter' });
+    fireEvent.click(await screen.findByTestId('add-github-sync'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect GitHub account' }));
+    await screen.findByText('annie');
+    integrations.listConnections.mockResolvedValue([account]);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByTestId('connection-github-account')).toHaveProperty(
+      'textContent',
+      expect.stringContaining('annie')
+    );
+    expect(api.createBinding).not.toHaveBeenCalled();
+  });
+
   it('keeps ordinary repository errors retryable without treating them as an OAuth request', async () => {
     api.probeRepository.mockRejectedValueOnce(new Error('GitHub temporarily unavailable'));
     render(<GitHubSyncDialog {...props()} />);
@@ -276,6 +304,98 @@ describe('GitHub sync setup and management', () => {
     expect(authorize).not.toHaveBeenCalled();
   });
 
+  it('applies a confirmed pause and its generation before a slow status refresh finishes', async () => {
+    const paused = { ...binding, enabled: false, status: 'paused', generation: 6 };
+
+    api.getBinding.mockResolvedValueOnce(complete).mockReturnValue(deferred<GitHubSyncStatus>().promise);
+    api.updateBinding.mockResolvedValueOnce({ binding: paused });
+    render(<GitHubSyncDialog {...props()} bindingId='binding' />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Pause sync' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume sync' }));
+    await waitFor(() => expect(api.updateBinding).toHaveBeenCalledTimes(2));
+    expect(api.updateBinding).toHaveBeenLastCalledWith(
+      'workspace',
+      'binding',
+      { expected_generation: 6, enabled: true },
+      expect.any(AbortSignal)
+    );
+  });
+
+  it('retains a confirmed mutation when a status read from before it resolves late', async () => {
+    jest.useFakeTimers();
+    const staleRead = deferred<GitHubSyncStatus>();
+    const paused = { ...binding, enabled: false, status: 'paused', generation: 6 };
+
+    api.getBinding
+      .mockResolvedValueOnce(complete)
+      .mockReturnValueOnce(staleRead.promise)
+      .mockReturnValue(deferred<GitHubSyncStatus>().promise);
+    const hook = renderHook(() => useGitHubSyncStatus('workspace', 'binding'));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(15_000);
+    });
+    const staleSignal = api.getBinding.mock.calls[1][2];
+
+    act(() => hook.result.current.reload({ binding: paused }));
+    await act(async () => staleRead.resolve(complete));
+    expect(staleSignal?.aborted).toBe(true);
+    expect(hook.result.current.status?.binding).toEqual(paused);
+    expect(hook.result.current.status?.entries).toEqual(complete.entries);
+  });
+
+  it('disables duplicate sync requests as soon as the server returns a pending run', async () => {
+    api.getBinding.mockResolvedValueOnce(complete).mockReturnValue(deferred<GitHubSyncStatus>().promise);
+    render(<GitHubSyncDialog {...props()} bindingId='binding' />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync now' }));
+    await waitFor(() => expect(api.getBinding).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button', { name: 'Sync now' }).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Sync now' }));
+    expect(api.syncBinding).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed sync mutation and clears its error after success', async () => {
+    api.syncBinding.mockRejectedValueOnce(new Error('Temporary sync failure'));
+    render(<GitHubSyncDialog {...props()} bindingId='binding' />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync now' }));
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      expect.stringContaining('Temporary sync failure')
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(api.syncBinding).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(api.syncBinding).toHaveBeenLastCalledWith('workspace', 'binding', expect.any(AbortSignal));
+  });
+
+  it('retries a failed pause using a generation refreshed since the first attempt', async () => {
+    jest.useFakeTimers();
+    const updated = { ...complete, binding: { ...binding, generation: 6 } };
+    const paused = { ...binding, enabled: false, status: 'paused', generation: 7 };
+
+    api.getBinding.mockResolvedValueOnce(complete).mockResolvedValueOnce(updated);
+    api.updateBinding.mockRejectedValueOnce(new Error('Binding changed')).mockResolvedValueOnce({ binding: paused });
+    render(<GitHubSyncDialog {...props()} bindingId='binding' />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Pause sync' }));
+    await screen.findByRole('alert');
+    await act(async () => {
+      jest.advanceTimersByTime(15_000);
+    });
+    api.getBinding.mockResolvedValue({ ...complete, binding: paused });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByText('Sync paused');
+    expect(api.updateBinding).toHaveBeenLastCalledWith(
+      'workspace',
+      'binding',
+      { expected_generation: 6, enabled: false },
+      expect.any(AbortSignal)
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('switches an inaccessible OAuth binding to verified public access before resuming with the returned generation', async () => {
     const paused = {
       ...binding,
@@ -308,6 +428,49 @@ describe('GitHub sync setup and management', () => {
       expect.any(AbortSignal)
     );
     expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it('retains the changed access generation when resuming fails and the owner retries', async () => {
+    const paused = {
+      ...binding,
+      authentication_mode: 'oauth' as const,
+      enabled: false,
+      status: 'paused',
+      last_error: 'connection_issue',
+    };
+    const publicBinding = { ...binding, enabled: false, status: 'paused', generation: 6 };
+
+    api.getBinding
+      .mockResolvedValueOnce({ ...complete, binding: paused })
+      .mockReturnValue(deferred<GitHubSyncStatus>().promise);
+    api.updateBinding
+      .mockResolvedValueOnce({ binding: publicBinding })
+      .mockRejectedValueOnce(new Error('Resume temporarily unavailable'))
+      .mockResolvedValueOnce({ binding: { ...publicBinding, generation: 7 } })
+      .mockResolvedValueOnce({ binding: { ...binding, generation: 8 } });
+    render(<GitHubSyncDialog {...props()} bindingId='binding' />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Check repository access' }));
+    await screen.findByText('Public repository · No GitHub sign-in required');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Resume sync' }));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByText('Sync completed');
+    expect(api.updateBinding).toHaveBeenNthCalledWith(
+      3,
+      'workspace',
+      'binding',
+      { expected_generation: 6, authentication_mode: 'public' },
+      expect.any(AbortSignal)
+    );
+    expect(api.updateBinding).toHaveBeenNthCalledWith(
+      4,
+      'workspace',
+      'binding',
+      { expected_generation: 7, enabled: true },
+      expect.any(AbortSignal)
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('aborts old workspace reads and ignores their late private-account response', async () => {

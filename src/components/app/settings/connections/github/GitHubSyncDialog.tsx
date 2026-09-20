@@ -1,5 +1,5 @@
 import { Check, CircleAlert, FileText, FolderTree, Info, ScanSearch } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -31,6 +31,11 @@ export interface GitHubSyncDialogProps {
   onOpenSpace?: (spaceId: string) => void;
 }
 
+type SyncAction =
+  | { type: 'repository'; connectionId?: string }
+  | { type: 'connect' | 'start' | 'sync' }
+  | { type: 'enabled'; enabled: boolean };
+
 export function GitHubSyncDialog(props: GitHubSyncDialogProps) {
   if (!props.open || !props.configuration.can_manage || !props.configuration.available) return null;
   return <SyncSession key={`${props.workspaceId}:${props.bindingId || 'new'}`} {...props} />;
@@ -51,13 +56,15 @@ function SyncSession({
   const [probe, setProbe] = useState<GitHubRepositoryProbe>();
   const [connectionId, setConnectionId] = useState<string>();
   const [accounts, setAccounts] = useState<IntegrationConnection[]>([]);
+  const lastAction = useRef<SyncAction>();
   const { run, busy, error } = useSyncAction();
   const { status, error: statusError, reload } = useGitHubSyncStatus(workspaceId, currentId);
   const setup = !currentId || recovering;
 
   const checkRepository = useCallback(
-    (selected?: string) =>
-      run(
+    (selected?: string) => {
+      lastAction.current = { type: 'repository', connectionId: selected };
+      return run(
         async (signal) => {
           const result = await GitHubSyncService.probeRepository(
             workspaceId,
@@ -80,7 +87,8 @@ function SyncSession({
           setConnectionId(selected);
           if (connections) setAccounts(connections);
         }
-      ),
+      );
+    },
     [run, workspaceId]
   );
 
@@ -88,8 +96,9 @@ function SyncSession({
     if (!bindingId) void checkRepository();
   }, [bindingId, checkRepository]);
 
-  const connect = () =>
-    run(
+  const connect = () => {
+    lastAction.current = { type: 'connect' };
+    return run(
       async (signal) => {
         // This is invoked directly from the click, so the shared OAuth helper can open its popup.
         const authorization = await authorizeIntegration(workspaceId, 'github', signal);
@@ -121,12 +130,14 @@ function SyncSession({
         if (account) setAccounts((current) => [...current.filter((item) => item.id !== account.id), account]);
       }
     );
+  };
 
   const start = () => {
     if (busy || probe?.status !== 'ready' || !configuration.space_id || (currentId && !status)) return;
     const repositoryId = probe.repository.id;
     const spaceId = configuration.space_id;
 
+    lastAction.current = { type: 'start' };
     void run(
       async (signal) => {
         if (currentId && status) {
@@ -141,6 +152,8 @@ function SyncSession({
           );
 
           assertActive(signal);
+          // Keep the new generation even if the subsequent resume fails.
+          reload(result);
           return result.binding.enabled
             ? result
             : GitHubSyncService.updateBinding(
@@ -166,17 +179,20 @@ function SyncSession({
           signal
         );
       },
-      ({ binding }) => {
+      (result) => {
+        const { binding } = result;
+
         setCurrentId(binding.id);
         setRecovering(false);
         onBindingChange?.(binding);
-        reload();
+        reload(result);
       }
     );
   };
 
   const setEnabled = (enabled: boolean) => {
     if (!status || busy) return;
+    lastAction.current = { type: 'enabled', enabled };
     void run(
       (signal) =>
         GitHubSyncService.updateBinding(
@@ -190,17 +206,46 @@ function SyncSession({
         ),
       ({ binding }) => {
         onBindingChange?.(binding);
-        reload();
+        reload({ binding });
       }
     );
   };
 
   const syncNow = () => {
     if (!currentId || busy) return;
+    lastAction.current = { type: 'sync' };
     void run(
       (signal) => GitHubSyncService.syncBinding(workspaceId, currentId, signal),
-      () => reload()
+      ({ run }) => reload({ run })
     );
+  };
+
+  const retry = () => {
+    const action = lastAction.current;
+
+    if (!error || !action) {
+      reload();
+      return;
+    }
+
+    // Remember the user's intent, not a callback capturing an old generation.
+    switch (action.type) {
+      case 'repository':
+        void checkRepository(action.connectionId);
+        break;
+      case 'connect':
+        void connect();
+        break;
+      case 'start':
+        start();
+        break;
+      case 'enabled':
+        setEnabled(action.enabled);
+        break;
+      case 'sync':
+        syncNow();
+        break;
+    }
   };
 
   const checkAccess = () => {
@@ -340,14 +385,7 @@ function SyncSession({
                   })
                 )}
               </p>
-              <Button
-                variant='outline'
-                disabled={busy}
-                onClick={() => {
-                  if (setup) void checkRepository(connectionId);
-                  else reload();
-                }}
-              >
+              <Button variant='outline' disabled={busy} onClick={retry}>
                 {t('settings.githubSync.retry', { defaultValue: 'Retry' })}
               </Button>
             </div>
