@@ -1,15 +1,20 @@
+import Big from 'big.js';
+
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupListItem } from '@/application/database-yjs/cell.type';
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
+import { waitForDatabaseHydration } from '@/application/database-yjs/database.hydration';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { getDateCellStr, getRowTimeString } from '@/application/database-yjs/fields/date/utils';
 import { EnhancedBigStats } from '@/application/database-yjs/fields/number/EnhancedBigStats';
-import { parseNumberTypeOptions } from '@/application/database-yjs/fields/number/parse';
+import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
+import { parseNumberTypeOptions, stringifyDesktopNumberValue } from '@/application/database-yjs/fields/number/parse';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { getRowKey } from '@/application/database-yjs/row_meta';
+import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import {
   LoadViewOptions,
   RowId,
@@ -22,10 +27,22 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
+
+import { rememberRollupTarget } from './filter';
+
+export type RollupFilterCell = {
+  data: unknown;
+  text: string;
+  date?: DateTimeCell;
+};
 
 export type RollupCellValue = {
   value: string;
   rawNumeric?: number;
+  rawDate?: DateTimeCell;
+  filterCells?: RollupFilterCell[];
+  targetField?: YDatabaseField;
   list?: string[];
   listItems?: RollupListItem[];
   targetFieldType?: FieldType;
@@ -44,6 +61,7 @@ type RollupCacheEntry = RollupCellValue & {
 };
 
 type RollupComputeContext = {
+  requireLoadedSources?: boolean;
   baseDoc: YDoc;
   database: YDatabase;
   rollupField: YDatabaseField;
@@ -183,7 +201,17 @@ function touchRelatedDocCache(viewId: string, promise: Promise<YDoc | null>) {
   }
 }
 
-async function loadRelatedDoc(viewId: string, databaseId: string, loadView?: RelatedViewLoader) {
+async function loadRelatedDoc(viewId: string, databaseId: string, loadView?: RelatedViewLoader, requireLoadedSources = false) {
+  if (requireLoadedSources) {
+    const doc = await loadView?.(viewId, false, false, { databaseId, databaseMetadataOnly: true });
+
+    if (!doc || !(await waitForDatabaseHydration(doc))) {
+      throw new Error(`Related database ${databaseId} could not be loaded for formula conversion`);
+    }
+
+    return doc;
+  }
+
   if (!loadView) return null;
   const cacheKey = `${databaseId}:${viewId}`;
   const cached = relatedDocCache.get(cacheKey);
@@ -236,7 +264,7 @@ async function createRelationTargetResolver(
 
   if (!viewId) return null;
 
-  const doc = await loadRelatedDoc(viewId, targetRelationOption.database_id, context.loadView);
+  const doc = await loadRelatedDoc(viewId, targetRelationOption.database_id, context.loadView, context.requireLoadedSources);
 
   if (!doc) return null;
 
@@ -308,6 +336,7 @@ function parseNumber(value: unknown): number | null {
 
 function normalizeTimestamp(value: unknown): number | null {
   if (typeof value !== 'string' && typeof value !== 'number') return null;
+  if (typeof value === 'string' && !value.trim()) return null;
   const raw = typeof value === 'number' ? value : Number(value);
 
   if (Number.isNaN(raw)) return null;
@@ -428,7 +457,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
   if (!viewId) return { value: '' };
 
-  const relatedDoc = await loadRelatedDoc(viewId, relationOption.database_id, context.loadView);
+  const relatedDoc = await loadRelatedDoc(viewId, relationOption.database_id, context.loadView, context.requireLoadedSources);
 
   if (!relatedDoc) return { value: '' };
 
@@ -439,12 +468,17 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
   if (!relatedDatabase || !targetField) return { value: '' };
 
+  rememberRollupTarget(rollupField, targetField);
   const targetFieldType = Number(targetField.get(YjsDatabaseKey.type)) as FieldType;
-  const withTargetFieldType = (result: RollupCellValue): RollupCellValue => ({ ...result, targetFieldType });
+  const withTargetFieldType = (result: RollupCellValue): RollupCellValue => ({
+    ...result,
+    targetFieldType,
+    targetField,
+  });
 
   if (totalRelated === 0) {
     if (showAs === RollupDisplayMode.OriginalList || showAs === RollupDisplayMode.UniqueList) {
-      return withTargetFieldType({ value: '', list: [], listItems: [] });
+      return withTargetFieldType({ value: '', list: [], listItems: [], filterCells: [] });
     }
 
     switch (calculationType) {
@@ -471,6 +505,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   const selectValues: string[][] = [];
   const nonEmptyFlags: boolean[] = [];
   const collectedListItems: RollupListItem[] = [];
+  const filterCells: RollupFilterCell[] = [];
 
   for (const relatedRowId of relatedRowIds) {
     if (!context.createRow) continue;
@@ -481,7 +516,14 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
     if (!relatedRow) continue;
     const cell = relatedRow.get(YjsDatabaseKey.cells)?.get(rollupOption.target_field_id);
-    const parsedData = cell ? parseYDatabaseCellToCell(cell, targetField).data : undefined;
+    const parsedCell = cell ? parseYDatabaseCellToCell(cell, targetField) : undefined;
+    const parsedData = parsedCell?.data;
+    let filterData = parsedData;
+    let date: DateTimeCell | undefined;
+
+    if (targetFieldType === FieldType.DateTime && cell) {
+      date = parsedCell as DateTimeCell;
+    }
 
     let text = '';
 
@@ -491,6 +533,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
       if (ts !== null) {
         text = formatDateValue(targetField, ts);
         timestampValues.push(ts);
+        date = { data: String(ts), fieldType: FieldType.DateTime, createdAt: 0, lastModified: 0 };
       }
     } else if (targetFieldType === FieldType.LastEditedTime) {
       const ts = normalizeTimestamp(relatedRow.get(YjsDatabaseKey.last_modified));
@@ -498,7 +541,17 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
       if (ts !== null) {
         text = formatDateValue(targetField, ts);
         timestampValues.push(ts);
+        date = { data: String(ts), fieldType: FieldType.DateTime, createdAt: 0, lastModified: 0 };
       }
+    } else if (targetFieldType === FieldType.CreatedBy || targetFieldType === FieldType.LastEditedBy) {
+      const uid = canonicalizeUserUid(
+        relatedRow.get(
+          targetFieldType === FieldType.CreatedBy ? YjsDatabaseKey.created_by : YjsDatabaseKey.last_edited_by
+        )
+      );
+
+      filterData = JSON.stringify(uid === null ? [] : [uid]);
+      text = uid ?? '';
     } else if (cell && targetFieldType === FieldType.Relation) {
       const relationItems = relationTargetResolver
         ? await resolveRelationTargetItems(cell, relationTargetResolver, context)
@@ -517,6 +570,20 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
       }
     }
 
+    if (targetFieldType === FieldType.Relation) filterData = getRelationRowIdsFromCell(cell);
+    if (targetFieldType === FieldType.Number && parsedData !== undefined && parsedData !== '') {
+      text = stringifyDesktopNumberValue(String(parsedData), parseNumberTypeOptions(targetField).format);
+      // Native number list predicates use displayed percent units, once.
+      try {
+        filterData = new Big(String(parsedData))
+          .times(parseNumberTypeOptions(targetField).format === NumberFormat.Percent ? 100 : 1)
+          .toFixed();
+      } catch {
+        filterData = '';
+      }
+    }
+
+    filterCells.push({ data: filterData, text, date });
     values.push(text);
     nonEmptyFlags.push(!isEmptyValue(text));
 
@@ -568,7 +635,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
     });
     const list = listItems.map((item) => item.label);
 
-    return withTargetFieldType({ value: list.join(', '), list, listItems });
+    return withTargetFieldType({ value: list.join(', '), list, listItems, filterCells });
   }
 
   const emptyCount = nonEmptyFlags.filter((isNonEmpty) => !isNonEmpty).length;
@@ -653,14 +720,30 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
         if (timestampValues.length === 0) return { value: '' };
         const earliest = Math.min(...timestampValues);
 
-        return { value: formatDateValue(targetField, earliest) };
+        return {
+          value: formatDateValue(targetField, earliest),
+          rawDate: {
+            data: String(earliest),
+            fieldType: FieldType.DateTime,
+            createdAt: 0,
+            lastModified: 0,
+          } as DateTimeCell,
+        };
       }
 
       case CalculationType.DateLatest: {
         if (timestampValues.length === 0) return { value: '' };
         const latest = Math.max(...timestampValues);
 
-        return { value: formatDateValue(targetField, latest) };
+        return {
+          value: formatDateValue(targetField, latest),
+          rawDate: {
+            data: String(latest),
+            fieldType: FieldType.DateTime,
+            createdAt: 0,
+            lastModified: 0,
+          } as DateTimeCell,
+        };
       }
 
       case CalculationType.DateRange: {
@@ -668,7 +751,17 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
         const min = Math.min(...timestampValues);
         const max = Math.max(...timestampValues);
 
-        return { value: formatDuration(max - min) };
+        return {
+          value: formatDuration(max - min),
+          rawDate: {
+            data: String(min),
+            endTimestamp: String(max),
+            isRange: true,
+            fieldType: FieldType.DateTime,
+            createdAt: 0,
+            lastModified: 0,
+          } as DateTimeCell,
+        };
       }
 
       case CalculationType.CountChecked: {
@@ -754,6 +847,35 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   return withTargetFieldType(calculatedValue);
 }
 
+/** A fresh, fully hydrated value for materialization, independent of display caches. */
+export async function resolveRollupCell(context: RollupComputeContext): Promise<RollupCellValue> {
+  const release = await semaphore.acquire();
+
+  try {
+    return await computeRollupCellValue({
+      ...context,
+      requireLoadedSources: true,
+      getViewIdFromDatabaseId: async (databaseId) => {
+        const viewId = await context.getViewIdFromDatabaseId?.(databaseId);
+
+        if (!viewId) throw new Error(`Related database ${databaseId} could not be resolved for formula conversion`);
+        return viewId;
+      },
+      createRow: async (rowKey) => {
+        const doc = await context.createRow?.(rowKey);
+
+        if (!doc || !(await waitForDatabaseRowHydration(doc))) {
+          throw new Error(`Related row ${rowKey} could not be loaded for formula conversion`);
+        }
+
+        return doc;
+      },
+    });
+  } finally {
+    release();
+  }
+}
+
 export async function readRollupCell(context: RollupComputeContext): Promise<RollupCellValue> {
   pruneCache();
   const cellId = `${context.rowId}:${context.fieldId}`;
@@ -767,6 +889,9 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
       list: cached.list,
       listItems: cached.listItems,
       targetFieldType: cached.targetFieldType,
+      targetField: cached.targetField,
+      filterCells: cached.filterCells,
+      rawDate: cached.rawDate,
     };
   }
 
@@ -787,6 +912,9 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
             list: value.list,
             listItems: value.listItems,
             targetFieldType: value.targetFieldType,
+            targetField: value.targetField,
+            filterCells: value.filterCells,
+            rawDate: value.rawDate,
             generation: currentGen,
             updatedAt: Date.now(),
           });
@@ -818,6 +946,9 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
       list: currentCached.list,
       listItems: currentCached.listItems,
       targetFieldType: currentCached.targetFieldType,
+      targetField: currentCached.targetField,
+      filterCells: currentCached.filterCells,
+      rawDate: currentCached.rawDate,
     };
   }
 
@@ -841,6 +972,9 @@ export function readRollupCellSync(context: RollupComputeContext): RollupCellVal
       list: cached.list,
       listItems: cached.listItems,
       targetFieldType: cached.targetFieldType,
+      targetField: cached.targetField,
+      filterCells: cached.filterCells,
+      rawDate: cached.rawDate,
     };
   }
 
@@ -859,6 +993,9 @@ export function readRollupCellSync(context: RollupComputeContext): RollupCellVal
             list: value.list,
             listItems: value.listItems,
             targetFieldType: value.targetFieldType,
+            targetField: value.targetField,
+            filterCells: value.filterCells,
+            rawDate: value.rawDate,
             generation: currentGen,
             updatedAt: Date.now(),
           });
@@ -885,6 +1022,9 @@ export function readRollupCellSync(context: RollupComputeContext): RollupCellVal
         list: cached.list,
         listItems: cached.listItems,
         targetFieldType: cached.targetFieldType,
+        targetField: cached.targetField,
+        filterCells: cached.filterCells,
+        rawDate: cached.rawDate,
       }
     : { value: '' };
 }

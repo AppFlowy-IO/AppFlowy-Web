@@ -406,20 +406,32 @@ export async function createDatabaseFeedPageViaGrid(params: {
     prev_view_id: params.prevViewId,
   });
   let syncOwnerDoc: YDoc | null = null;
+  let createdContainer = false;
 
   try {
     if (!response.database_id) throw new Error('The server did not return a database ID for the new Feed');
 
-    if (params.standalone) {
-      const loadViewMeta = params.loadViewMeta!;
+    const createdViewMeta = params.standalone
+      ? await params.loadViewMeta!(response.view_id).catch(() => null)
+      : null;
+    // Full-page creation under a document returns an embedded Grid child.
+    // The saved view decides whether to convert that child or replace a container's Grid.
+    const returnedGridChild =
+      createdViewMeta?.layout === ViewLayout.Grid &&
+      !createdViewMeta.extra?.is_database_container &&
+      !createdViewMeta.children?.length;
+
+    createdContainer = createdViewMeta?.extra?.is_database_container === true;
+
+    if (params.standalone && !returnedGridChild) {
       const createDatabaseView = params.createDatabaseView!;
-      const createdViewMeta = await loadViewMeta(response.view_id).catch(() => null);
       const createdChildren = createdViewMeta?.children ?? [];
 
       if (createdChildren.length !== 1 || createdChildren[0].layout !== ViewLayout.Grid) {
         throw new Error('The new database container did not contain exactly one Grid view');
       }
 
+      createdContainer = true;
       const gridViewId = createdChildren[0].view_id;
       const databaseDoc = await params.loadView(gridViewId, false, false, {
         databaseId: response.database_id,
@@ -439,7 +451,7 @@ export async function createDatabaseFeedPageViaGrid(params: {
         database_id: response.database_id,
         layout: ViewLayout.Feed,
         name: 'Feed',
-        embedded: false,
+        embedded: createdViewMeta?.extra?.embedded === true,
       });
 
       if (feedResponse.view_id === gridViewId || feedResponse.database_id !== response.database_id) {
@@ -518,7 +530,7 @@ export async function createDatabaseFeedPageViaGrid(params: {
     void syncContext.flush?.();
     return { ...response, view_id: normalizedViewId };
   } catch (error) {
-    await compensateCreatedFeedView(response.view_id, deletePage, params.standalone ? deleteTrash : undefined);
+    await compensateCreatedFeedView(response.view_id, deletePage, createdContainer ? deleteTrash : undefined);
     throw error;
   } finally {
     releaseTemporarySyncOwner(syncOwnerDoc, scheduleDeferredCleanup);

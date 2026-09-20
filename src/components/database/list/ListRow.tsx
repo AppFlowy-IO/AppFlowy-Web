@@ -1,15 +1,10 @@
-import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
-import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import { attachClosestEdge, extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import {
   type CSSProperties,
   memo,
-  type MutableRefObject,
   useCallback,
   useEffect,
   useMemo,
   useRef,
-  useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -27,7 +22,7 @@ import { ReactComponent as DocumentIcon } from '@/assets/icons/doc.svg';
 import { ReactComponent as CommentIcon } from '@/assets/icons/titlebar_comment.svg';
 import { Cell } from '@/components/database/components/cell/Cell';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
-import { ClearSortingConfirm } from '@/components/database/components/sorts/ClearSortingConfirm';
+import { type Edge, useRowDnd as useListRowDnd } from '@/components/database/components/drag-and-drop/useRowDnd';
 import { cn } from '@/lib/utils';
 import { isFlagEmoji } from '@/utils/emoji';
 
@@ -142,101 +137,6 @@ function ListPrimaryField({ field, rowId }: { field: Column; rowId: string }) {
       ) : null}
     </div>
   );
-}
-
-function useListRowDnd({
-  dragHandleRef,
-  enabled,
-  onDropRow,
-  rowId,
-  rowRef,
-  hasSorts,
-}: {
-  dragHandleRef: MutableRefObject<HTMLDivElement | null>;
-  enabled: boolean;
-  onDropRow?: (sourceRowId: string, targetRowId: string, edge: Edge) => void;
-  rowId: string;
-  rowRef: MutableRefObject<HTMLDivElement | null>;
-  hasSorts: boolean;
-}) {
-  const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const [clearSortsOpen, setClearSortsOpen] = useState(false);
-  const pendingDropRef = useRef<(() => void) | null>(null);
-  const ignoreClickRef = useRef(false);
-
-  useEffect(() => {
-    const element = rowRef.current;
-    const dragHandle = dragHandleRef.current;
-
-    if (!enabled || !element || !dragHandle || !onDropRow) return;
-
-    return combine(
-      draggable({
-        element,
-        dragHandle,
-        getInitialData: () => ({ type: 'database-list-row', rowId }),
-        onDragStart: () => {
-          ignoreClickRef.current = true;
-          setDragging(true);
-        },
-        onDrop: () => {
-          setDragging(false);
-          window.setTimeout(() => {
-            ignoreClickRef.current = false;
-          }, 0);
-        },
-      }),
-      dropTargetForElements({
-        element,
-        canDrop: ({ source }) => source.data.type === 'database-list-row' && source.data.rowId !== rowId,
-        getData: ({ input, element: targetElement }) =>
-          attachClosestEdge(
-            { type: 'database-list-row', rowId },
-            { allowedEdges: ['top', 'bottom'], element: targetElement, input }
-          ),
-        onDragEnter: ({ self }) => setClosestEdge(extractClosestEdge(self.data)),
-        onDrag: ({ self }) => setClosestEdge(extractClosestEdge(self.data)),
-        onDragLeave: () => setClosestEdge(null),
-        onDrop: ({ self, source }) => {
-          const edge = extractClosestEdge(self.data);
-          const sourceRowId = source.data.rowId;
-
-          setClosestEdge(null);
-          if (!edge || typeof sourceRowId !== 'string') return;
-
-          const move = () => onDropRow(sourceRowId, rowId, edge);
-
-          if (hasSorts) {
-            pendingDropRef.current = move;
-            setClearSortsOpen(true);
-          } else {
-            move();
-          }
-        },
-      })
-    );
-  }, [dragHandleRef, enabled, hasSorts, onDropRow, rowId, rowRef]);
-
-  return {
-    clearSortsDialog:
-      enabled && clearSortsOpen ? (
-        <ClearSortingConfirm
-          onClose={() => {
-            pendingDropRef.current = null;
-            setClearSortsOpen(false);
-          }}
-          onRemoved={() => {
-            pendingDropRef.current?.();
-            pendingDropRef.current = null;
-          }}
-          open={clearSortsOpen}
-        />
-      ) : null,
-    closestEdge,
-    dragging,
-    ignoreClickRef,
-  };
 }
 
 export interface ListRowProps {

@@ -141,7 +141,7 @@ export async function getCurrentDatabaseInfo(page: Page): Promise<DatabaseFixtur
     )
     .toBe(true);
 
-  return currentInfo as DatabaseFixtureInfo;
+  return currentInfo as unknown as DatabaseFixtureInfo;
 }
 
 export async function createNamedGridDatabase(

@@ -149,7 +149,7 @@ describe('RollupPropertyMenuContent Calculate menu', () => {
   });
 
   it('shows all Desktop visualization choices and persists only the changed option', () => {
-    setRollupData({ targetFieldType: FieldType.Number });
+    setRollupData({ targetFieldType: FieldType.Number, showAs: RollupDisplayMode.Calculated });
 
     render(<RollupPropertyMenuContent fieldId={'rollup-field'} />);
 
@@ -160,7 +160,7 @@ describe('RollupPropertyMenuContent Calculate menu', () => {
   });
 
   it('keeps visualization settings out of the compact in-cell editor', () => {
-    setRollupData({ targetFieldType: FieldType.Number });
+    setRollupData({ targetFieldType: FieldType.Number, showAs: RollupDisplayMode.Calculated });
 
     render(<RollupPropertyMenuContent fieldId={'rollup-field'} variant={'cell'} />);
 
@@ -171,6 +171,7 @@ describe('RollupPropertyMenuContent Calculate menu', () => {
   it('configures color, divisor, and Show number for Bar and Ring visualizations', () => {
     setRollupData({
       targetFieldType: FieldType.Number,
+      showAs: RollupDisplayMode.Calculated,
       visualization: { type: 1, color: 'fill-default', divisor: 0, showNumber: false },
     });
 
@@ -189,6 +190,7 @@ describe('RollupPropertyMenuContent Calculate menu', () => {
   it('hides Divide by for percentage calculations', () => {
     setRollupData({
       targetFieldType: FieldType.Number,
+      showAs: RollupDisplayMode.Calculated,
       calculationType: CalculationType.PercentNotEmpty,
       visualization: { type: 2, color: 'fill-default', divisor: 80, showNumber: false },
     });

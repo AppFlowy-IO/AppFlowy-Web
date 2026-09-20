@@ -38,6 +38,7 @@ export enum BlockType {
   GridBlock = 'grid',
   BoardBlock = 'board',
   CalendarBlock = 'calendar',
+  TimelineBlock = 'timeline',
   ListBlock = 'list',
   ChartBlock = 'chart',
   DatabaseGalleryBlock = 'gallery',
@@ -506,6 +507,9 @@ export enum ViewLayout {
   /// value (7) — they're distinct enums and the mapping between them
   /// lives in `dispatch.ts`.
   Form = 9,
+  /// Folder-side layout value for timeline views. Matches
+  /// `ViewLayout::Timeline = 10` in `libs/collab/src/folder/view.rs`.
+  Timeline = 10,
 }
 
 export enum YjsEditorKey {
@@ -595,6 +599,10 @@ export enum YjsDatabaseKey {
   rollup_show_as_color = '__rollup_show_as_color__',
   rollup_show_as_divisor = '__rollup_show_as_divisor__',
   rollup_show_as_show_number = '__rollup_show_as_show_number__',
+  // Formula field: the expression source, with property references stored
+  // as prop("<field_id>") so renames never break a formula. Key name matches
+  // the collab crate's FormulaTypeOption (AppFlowy-Cloud-Premium PR #412).
+  expression = 'expression',
   field_orders = 'field_orders',
   field_settings = 'field_settings',
   /// Per-view form-builder map (`form_field_settings` key on each view in
@@ -628,6 +636,7 @@ export enum YjsDatabaseKey {
   source_field_type = 'source_field_type', // Added this
   condition = 'condition',
   rollup_target_type = 'rollup_target_ty',
+  rollup_meta = 'rollup_meta',
   schema_version = 'schema_version',
   row_templates = 'row_templates',
   default_row_template = 'default_row_template',
@@ -652,9 +661,29 @@ export enum YjsDatabaseKey {
   shown_empty_group_ids = 'shown_empty_group_ids',
   collapse_hidden_groups = 'collapse_hidden_groups',
   first_day_of_week = 'first_day_of_week',
+  first_day_of_week_v2 = 'first_day_of_week_v2',
   show_week_numbers = 'show_week_numbers',
   show_weekends = 'show_weekends',
   layout_ty = 'layout_ty',
+  day_count = 'day_count',
+  /// Timeline layout setting: whether the property table is docked on the left.
+  show_table = 'show_table',
+  /// Timeline layout setting: Relation field (to this database) drawn as dependency arrows.
+  dependency_field_id = 'dependency_field_id',
+  /// Timeline layout setting: Number field (0–100) drawn as a progress fill.
+  progress_field_id = 'progress_field_id',
+  /// Timeline layout setting: second date field supplying each bar's end.
+  end_field_id = 'end_field_id',
+  /// Timeline layout setting: how dependents move with a dragged bar (`TimelineDependencyShift`).
+  dependency_shift_ty = 'dependency_shift_ty',
+  /// Timeline layout setting: which side of the relation `dependency_field_id` lists.
+  dependency_direction = 'dependency_direction',
+  /// Timeline layout setting: per-link type and lag, keyed "predecessor:successor".
+  dependency_links = 'dependency_links',
+  /// Timeline layout setting: shifted dependents skip Saturdays and Sundays.
+  avoid_weekends = 'avoid_weekends',
+  /// Timeline layout setting: properties shown as columns of the docked table.
+  table_field_ids = 'table_field_ids',
   icon = 'icon',
   is_inline = 'is_inline',
   embedded = 'embedded',
@@ -888,6 +917,9 @@ export enum DatabaseViewLayout {
   /// Matches `DatabaseLayout::Form = 7` in
   /// `libs/collab/src/database/views/layout.rs`.
   Form = 7,
+  /// Matches `DatabaseLayout::Timeline = 8` in
+  /// `libs/collab/src/database/views/layout.rs`.
+  Timeline = 8,
 }
 
 export interface YDatabaseView extends Y.Map<unknown> {
@@ -969,6 +1001,9 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 
   // DatabaseViewLayout.Gallery
   get(key: '5'): YDatabaseGalleryLayoutSetting;
+
+  // DatabaseViewLayout.Timeline
+  get(key: '8'): YDatabaseTimelineLayoutSetting;
 }
 
 export interface YDatabaseGridLayoutSetting extends Y.Map<unknown> {
@@ -983,10 +1018,38 @@ export interface YDatabaseBoardLayoutSetting extends Y.Map<unknown> {
 }
 
 export interface YDatabaseCalendarLayoutSetting extends Y.Map<unknown> {
-  get(key: YjsDatabaseKey.first_day_of_week | YjsDatabaseKey.field_id | YjsDatabaseKey.layout_ty): string;
-  get(key: YjsDatabaseKey.number_of_days): number;
+  get(key: YjsDatabaseKey.field_id): string;
+  get(
+    key:
+      | YjsDatabaseKey.first_day_of_week
+      | YjsDatabaseKey.first_day_of_week_v2
+      | YjsDatabaseKey.layout_ty
+      | YjsDatabaseKey.day_count
+      | YjsDatabaseKey.number_of_days
+  ): number | bigint | null | undefined;
 
   get(key: YjsDatabaseKey.show_week_numbers | YjsDatabaseKey.show_weekends): boolean;
+}
+
+/// Same keys as the calendar setting (`layout_ty`, `first_day_of_week_v2`) plus
+/// the timeline-only `show_table` and optional field bindings.
+export interface YDatabaseTimelineLayoutSetting extends Y.Map<unknown> {
+  get(key: YjsDatabaseKey.field_id): string;
+  get(
+    key: YjsDatabaseKey.dependency_field_id | YjsDatabaseKey.progress_field_id | YjsDatabaseKey.end_field_id
+  ): string | undefined;
+  get(
+    key:
+      | YjsDatabaseKey.layout_ty
+      | YjsDatabaseKey.first_day_of_week
+      | YjsDatabaseKey.first_day_of_week_v2
+      | YjsDatabaseKey.dependency_shift_ty
+      | YjsDatabaseKey.dependency_direction
+  ): number | bigint | null | undefined;
+  get(
+    key: YjsDatabaseKey.show_table | YjsDatabaseKey.avoid_weekends | YjsDatabaseKey.hide_empty_groups
+  ): boolean | undefined;
+  get(key: YjsDatabaseKey.table_field_ids | YjsDatabaseKey.dependency_links): unknown;
 }
 
 export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
@@ -1078,6 +1141,8 @@ export interface YDatabaseFilter extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.type | YjsDatabaseKey.condition | YjsDatabaseKey.content | YjsDatabaseKey.filter_type): string;
 
   get(key: YjsDatabaseKey.rollup_target_type): number | string | undefined;
+
+  get(key: YjsDatabaseKey.rollup_meta): unknown;
 
   get(key: YjsDatabaseKey.children): YDatabaseFilters | YDatabaseFilter[] | undefined;
 }
@@ -1196,6 +1261,10 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.format): string;
 
+  // Formula
+  // eslint-disable-next-line @typescript-eslint/unified-signatures
+  get(key: YjsDatabaseKey.expression): string | undefined;
+
   // AI Translate
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.auto_fill): boolean;
@@ -1255,6 +1324,7 @@ export const layoutMap = {
   [ViewLayout.Gallery]: 'gallery',
   [ViewLayout.Feed]: 'feed',
   [ViewLayout.Form]: 'form',
+  [ViewLayout.Timeline]: 'timeline',
 };
 
 export const databaseLayoutMap = {
@@ -1266,6 +1336,7 @@ export const databaseLayoutMap = {
   [DatabaseViewLayout.Gallery]: 'gallery',
   [DatabaseViewLayout.Feed]: 'feed',
   [DatabaseViewLayout.Form]: 'form',
+  [DatabaseViewLayout.Timeline]: 'timeline',
 };
 
 export enum FontLayout {
@@ -1750,6 +1821,9 @@ export interface SpaceInfo {
 
   /** The created time of the space view (timestamp). */
   space_created_at?: number;
+
+  /** Whether this space retains a home document at its own view ID. */
+  has_space_home_page?: boolean;
 
   /** The space icon. If not set, uses the default icon. */
   space_icon?: string;
@@ -2292,6 +2366,7 @@ export enum SettingMenuItem {
   WORKSPACE = 'WORKSPACE',
   MEMBERS = 'MEMBERS',
   MANAGE_DATA = 'MANAGE_DATA',
+  CONNECTIONS = 'CONNECTIONS',
   SITES = 'SITES',
 }
 

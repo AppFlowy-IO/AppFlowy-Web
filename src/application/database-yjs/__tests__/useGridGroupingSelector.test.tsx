@@ -14,6 +14,7 @@ import {
   useGroupByFieldDispatch,
   useGridGroupingSelector,
   useListGroupingSelector,
+  useTimelineGroupingSelector,
   useUpdateCellDispatch,
   useUpdateDateGroupConditionDispatch,
   useUpdateGroupContentDispatch,
@@ -182,6 +183,52 @@ function createGridGroupingFixture({
     wrapper,
   };
 }
+
+test('timeline grouping keeps over 1000 rows and updates their order after settings and sort changes', async () => {
+  const fixture = createGridGroupingFixture({ rowAValue: 'A', rowBValue: 'A' });
+
+  fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Timeline);
+  fixture.updateCell(fixture.rowA, fixture.otherFieldId, '0000');
+  fixture.updateCell(fixture.rowB, fixture.otherFieldId, '0001');
+  const extraRows = Array.from({ length: 1203 }, (_, index) => {
+    const id = `row-${index + 2}`;
+    const doc = createRowDoc(id, 'grid-grouping-database', {
+      [fixture.fieldId]: createCell(FieldType.RichText, 'A'),
+      [fixture.otherFieldId]: createCell(FieldType.RichText, String(index + 2).padStart(4, '0')),
+    });
+
+    fixture.contextValue.rowMap![id] = doc;
+    return { id, doc };
+  });
+
+  fixture.rowOrders.push(extraRows.map(({ id }) => ({ id, height: 36 })));
+  const { result, unmount } = renderHook(useTimelineGroupingSelector, { wrapper: fixture.wrapper });
+
+  await waitFor(() => expect(result.current.visibleGroups[0].rows).toHaveLength(1205));
+
+  act(() => {
+    const settings = new Y.Map();
+
+    settings.set(YjsDatabaseKey.hide_empty_groups, true);
+    fixture.view.get(YjsDatabaseKey.layout_settings).set('8', settings);
+  });
+  expect(result.current.visibleGroups[0].rows).toHaveLength(1205);
+  const sort = new Y.Map() as YDatabaseSort;
+
+  sort.set(YjsDatabaseKey.id, 'timeline-sort');
+  sort.set(YjsDatabaseKey.field_id, fixture.otherFieldId);
+  sort.set(YjsDatabaseKey.condition, SortCondition.Descending);
+  act(() => fixture.sorts.push([sort]));
+  await waitFor(() => {
+    expect(result.current.visibleGroups[0].rows).toHaveLength(1205);
+    expect(result.current.visibleGroups[0].rows[0].id).toBe('row-1204');
+  });
+  unmount();
+  extraRows.forEach(({ doc }) => doc.destroy());
+  fixture.rowA.destroy();
+  fixture.rowB.destroy();
+  fixture.databaseDoc.destroy();
+});
 
 describe('useGridGroupingSelector refresh behavior', () => {
   const useGroupingWithMetadataSync = () => {

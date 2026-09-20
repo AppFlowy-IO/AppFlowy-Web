@@ -1,12 +1,21 @@
-import { memo, useRef } from "react";
+import { memo, useRef } from 'react';
 
-import { useCellSelector, useReadOnly, useUpdateCellDispatch } from "@/application/database-yjs";
-import { TextCell } from "@/application/database-yjs/cell.type";
-import { Input } from "@/components/ui/input";
-
+import { useCellSelector, useReadOnly, useUpdateCellDispatch } from '@/application/database-yjs';
+import { TextCell } from '@/application/database-yjs/cell.type';
+import { Input } from '@/components/ui/input';
 
 export const EventTitle = memo(
-  ({ rowId, fieldId, onCloseEvent }: { rowId: string; fieldId: string; onCloseEvent?: () => void }) => {
+  ({
+    rowId,
+    fieldId,
+    onCloseEvent,
+    onSubmit,
+  }: {
+    rowId: string;
+    fieldId: string;
+    onCloseEvent?: () => void;
+    onSubmit?: () => void;
+  }) => {
     const readOnly = useReadOnly();
     const cell = useCellSelector({ rowId, fieldId }) as TextCell;
     const value = cell?.data;
@@ -16,6 +25,7 @@ export const EventTitle = memo(
     return (
       <div className='flex w-full items-center gap-2'>
         <Input
+          data-testid='calendar-event-title-input'
           readOnly={readOnly}
           autoFocus
           ref={inputRef}
@@ -24,10 +34,10 @@ export const EventTitle = memo(
               e.stopPropagation();
               e.preventDefault();
               updateCell((e.target as HTMLInputElement).value);
-              onCloseEvent?.();
+              (onSubmit ?? onCloseEvent)?.();
             }
           }}
-          value={value}
+          value={value ?? ''}
           onChange={(e) => {
             updateCell(e.target.value);
           }}

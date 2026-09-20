@@ -282,6 +282,7 @@
     "documentFromV010": "Document from v0.1.0",
     "databaseFromV010": "Database from v0.1.0",
     "notionZip": "Notion Exported Zip File",
+    "confluenceZip": "Confluence HTML or CSV (.zip)",
     "csv": "CSV",
     "database": "Database",
     "success": "Imported successfully",
@@ -290,6 +291,7 @@
     "partialSuccess_one": "Imported {{success}} of {{count}} file",
     "partialSuccess_other": "Imported {{success}} of {{count}} files",
     "notionImportStarted": "Notion import started. Pages will appear in this view when ready.",
+    "confluenceImportStarted": "Confluence import started. Pages will appear in this view when ready.",
     "failed": "Import failed",
     "failedFile": "Could not import {{name}}: {{reason}}",
     "failedFiles": "Could not import: {{names}}",
@@ -623,7 +625,8 @@
     "personField": "Select a person from your workspace. Useful for assigning tasks or ownership",
     "createdByField": "Automatically records who created the item. This value is read-only",
     "lastEditedByField": "Automatically records who edited the item last. This value is read-only",
-    "timeField": "Add a time value. Useful for tracking duration or specific times"
+    "timeField": "Add a time value. Useful for tracking duration or specific times",
+    "formulaField": "Compute a value from other properties with a formula"
   },
   "sideBar": {
     "closeSidebar": "Close sidebar",
@@ -791,6 +794,40 @@
     }
   },
   "settings": {
+    "connections": {
+      "menuLabel": "Connections",
+      "description": "Manage your connected accounts and app integrations across your workspace.",
+      "addConnection": "Add connection",
+      "googleDrive": "Google Drive",
+      "googleCalendar": "Google Calendar",
+      "googleDriveDescription": "Connect Google Drive to preview files directly in your document",
+      "googleCalendarDescription": "Get notifications for scheduled and instant meetings to quickly start AI meeting notes",
+      "connection": "Connection",
+      "access": "Access",
+      "canPreviewLinks": "Can preview links",
+      "canSyncEvents": "Can sync calendar events",
+      "connect": "Connect",
+      "connectAnotherAccount": "Connect another account",
+      "disconnectAccount": "Disconnect account",
+      "disconnect": "Disconnect",
+      "disconnectTitle": "Disconnect \"{{account}}\"?",
+      "disconnectDescription": "This account will no longer be available to this workspace. You can connect it again at any time.",
+      "manageConnection": "Manage connection",
+      "manageAccount": "Manage connection for {{account}}",
+      "loading": "Loading connections",
+      "authorizing": "Complete authorization in the browser window.",
+      "confirming": "Finishing connection…",
+      "retry": "Retry",
+      "refresh": "Refresh",
+      "providersUnavailable": "Unavailable connections: {{providers}}. Ask your administrator to enable them.",
+      "loadFailed": "Unable to load connections. Please try again.",
+      "connectionFailed": "Unable to connect this account. Please try again.",
+      "disconnectFailed": "Unable to disconnect this account. Please try again.",
+      "popupBlocked": "Allow pop-ups for AppFlowy, then try connecting again.",
+      "timedOut": "The connection timed out. Please try again.",
+      "invalidResponse": "Unable to complete authorization. Please try connecting again.",
+      "authorizationDenied": "Authorization was declined. Please try again and allow access."
+    },
     "title": "Settings",
     "popupMenuItem": {
       "settings": "Settings",
@@ -870,7 +907,7 @@
       "description": "Manage your AppFlowy workspace data",
       "importWorkspace": {
         "title": "Import your workspace",
-        "tooltip": "Import your workspace from an AppFlowy backup ZIP file",
+        "tooltip": "Create a new workspace from an AppFlowy backup, Notion export, or Confluence space export (HTML or CSV ZIP)",
         "button": "Import",
         "success": "Import started. We will send a confirmation email once the import is complete.",
         "failed": "Failed to import workspace"
@@ -2006,7 +2043,8 @@
       "optionAlreadyExist": "Option already exists",
       "copiedCreatedAt": "Created at copied to clipboard",
       "copiedUpdatedAt": "Last modified copied to clipboard",
-      "copiedDate": "Date copied to clipboard"
+      "copiedDate": "Date copied to clipboard",
+      "formulaFieldName": "Formula"
     },
     "rowPage": {
       "newField": "Add a new field",
@@ -2137,6 +2175,9 @@
       "disableTwoWayRelationDescription": "The reciprocal property will be removed from the related database."
     },
     "rollup": {
+      "filterModeAny": "Any",
+      "filterModeNone": "None",
+      "filterModeEvery": "Every",
       "relation": "Relation",
       "title": "Rollup properties",
       "targetProperty": "Target property",
@@ -2240,6 +2281,24 @@
       "networkHint": "Paste a link to embed",
       "uploadError": "Upload failed, please try again",
       "addFileOrMedia": "Add file or media"
+    },
+    "formula": {
+      "title": "Formula",
+      "editFormula": "Edit formula",
+      "placeholder": "Type a formula, e.g. prop(\"Price\") * 2",
+      "dialogDescription": "Write a formula that computes this property from other properties.",
+      "type": "Type",
+      "previewWith": "Preview with",
+      "untitledRow": "Row {{index}}",
+      "properties": "Properties",
+      "builtins": "Built-ins",
+      "functions": "Functions",
+      "propertyDescription": "Property of type {{type}}.",
+      "insertExample": "Insert this example",
+      "error": "Error",
+      "missingProperty": "Missing property",
+      "missingPropertyDescription": "A property used by this formula is missing. It may have been deleted.",
+      "deleteDependencyWarning": "Deleting this property will break the following formulas:"
     }
   },
   "document": {
@@ -2372,6 +2431,8 @@
         "linkedKanban": "Linked Kanban",
         "calendar": "Calendar",
         "linkedCalendar": "Linked Calendar",
+        "timeline": "Timeline",
+        "linkedTimeline": "Linked Timeline",
         "quote": "Quote",
         "divider": "Divider",
         "table": "Table",
@@ -2871,12 +2932,16 @@
         "day": "Day",
         "week": "Week",
         "month": "Month",
-        "year": "Year"
+        "year": "Year",
+        "period": "period"
       }
     },
     "week": "Week",
     "month": "Month",
     "multiMonth": "Multi-month",
+    "numberOfDays": "Number of days",
+    "dayCount_one": "{{count}} day",
+    "dayCount_other": "{{count}} days",
     "mobileEventScreen": {
       "emptyTitle": "No events yet",
       "emptyBody": "Press the plus button to create an event on this day."
@@ -2914,6 +2979,7 @@
   },
   "search": {
     "label": "Search",
+    "clear": "Clear search",
     "sidebarSearchIcon": "Search and quickly jump to a page",
     "placeholder": {
       "actions": "Search actions..."
@@ -3616,12 +3682,15 @@
     "importNotion": "Import from Notion",
     "importWorkspace": "Import workspace",
     "importFromAppFlowy": "Import from AppFlowy",
+    "importCreatesWorkspace": "Each import creates a new workspace.",
+    "importFromConfluence": "Import from Confluence",
     "importFromNotion": "Import from Notion",
     "import": "Import",
     "importSuccess": "Uploaded successfully",
-    "importSuccessMessage": "We'll notify you when the import is complete. After that, you can view your imported pages in the sidebar.",
+    "importSuccessMessage": "We'll notify you when the import is complete. Select the new workspace from the workspace switcher to view your imported pages.",
     "importFailed": "Import failed, please check the file format",
     "dropNotionFile": "Drop your Notion zip file here to upload, or click to browse",
+    "dropConfluenceFile": "Drop your Confluence HTML or CSV space export (.zip) here to upload, or click to browse",
     "dropAppFlowyFile": "Drop your AppFlowy zip file here to upload, or click to browse",
     "error": {
       "pageNameIsEmpty": "The page name is empty, please try another one"
@@ -4337,5 +4406,67 @@
     "revertedDialogTitle": "Page Restored",
     "revertedDialogDescription": "This page was restored to a previous version from another device.",
     "revertedDismiss": "Got it"
+  },
+  "timeline": {
+    "menuName": "Timeline",
+    "creationRequiresPro": "Creating a Timeline view requires a Pro workspace.",
+    "creationCheckingPlan": "Checking workspace plan…",
+    "creationPlanUnavailable": "Unable to check the workspace plan. Try again.",
+    "referencedTimelinePrefix": "View of",
+    "settings": {
+      "name": "Timeline settings",
+      "layoutDateField": "Timeline by",
+      "firstDayOfWeek": "Start week on",
+      "showTable": "Show table",
+      "noDateTitle": "No date",
+      "noDatePopoverTitle": "Drag or click to assign a date",
+      "unsupportedTitle": "This timeline has no date property",
+      "unsupportedHint": "Add a date property to the database, or pick one in the timeline settings.",
+      "dependencies": "Dependencies",
+      "shiftDependents": "Shift dependents",
+      "shiftOverlapOnly": "Only when dates overlap",
+      "shiftMaintainGap": "Keep the time between items",
+      "shiftNever": "Never",
+      "avoidWeekends": "Avoid weekends",
+      "endDateField": "End date",
+      "tableProperties": "Table properties",
+      "progress": "Progress"
+    },
+    "zoom": {
+      "hours": "Hours",
+      "day": "Day",
+      "week": "Week",
+      "biWeek": "Bi-week",
+      "month": "Month",
+      "quarter": "Quarter",
+      "year": "Year"
+    },
+    "today": "Today",
+    "previous": "Earlier",
+    "next": "Later",
+    "scrollToBar": "Scroll to item",
+    "newRow": "New",
+    "popup": {
+      "duration_one": "{{count}} day",
+      "duration_other": "{{count}} days",
+      "progress": "{{percent}}% complete"
+    },
+    "linkHandle": "Drag to add a dependency",
+    "blockedBy": "Blocked by",
+    "blocking": "Blocking",
+    "setUpDependencies": "Set up dependencies",
+    "setUpDependenciesHint": "Adds \"Blocked by\" and \"Blocking\" properties and draws arrows between linked items.",
+    "dependencyDirection": "Field lists",
+    "link": {
+      "title": "Dependency",
+      "type": "Type",
+      "finishToStart": "Finish to start",
+      "startToStart": "Start to start",
+      "finishToFinish": "Finish to finish",
+      "startToFinish": "Start to finish",
+      "lag": "Lag (days)",
+      "remove": "Remove dependency"
+    },
+    "openRow": "Open"
   }
 }

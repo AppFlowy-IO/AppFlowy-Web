@@ -1,5 +1,7 @@
 import { EventApi, EventContentArg } from '@fullcalendar/core';
 
+import { useCalendarEventPast } from './eventAppearance';
+
 import {
   MonthAllDayEvent,
   MonthMultiDayTimedEvent,
@@ -26,6 +28,7 @@ export function EventDisplay({
   className,
 }: EventDisplayProps) {
   const rowId = event.extendedProps?.rowId;
+  const isPast = useCalendarEventPast(event.extendedProps?.completionTime);
 
   if (!rowId) return null;
 
@@ -46,7 +49,7 @@ export function EventDisplay({
   const EventComponent = getEventComponent();
 
   return (
-    <div>
+    <div className={isPast ? 'calendar-event-past' : undefined}>
       <EventComponent
         event={event}
         eventInfo={eventInfo}

@@ -44,7 +44,7 @@ export const NoDateButton = memo(
             className='no-date-button gap-1 overflow-hidden whitespace-nowrap'
           >
             {`${t('calendar.settings.noDateTitle')} (${emptyEvents.length})`}
-            <DropdownIcon className='h-5 w-5' />
+            <DropdownIcon className='h-5 w-5 text-icon-secondary' />
           </Button>
         </PopoverTrigger>
         <PopoverContent
@@ -60,7 +60,7 @@ export const NoDateButton = memo(
             if (target.closest('.MuiDialog-root')) return;
             setOpen(false);
           }}
-          className='appflowy-scroller max-h-[360px] w-[260px] overflow-y-auto p-2'
+          className='appflowy-scroller max-h-[360px] w-[260px] overflow-y-auto border border-border-primary bg-surface-layer-04 p-2'
         >
           <div
             style={{

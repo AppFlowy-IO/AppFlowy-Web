@@ -176,8 +176,7 @@ export function AccountAppPanel() {
       const lang = savedLang || i18nInstance.language || 'en';
 
       setLanguage(lang);
-      // useAppLanguage forces i18n to navigator.language on mount, so apply the
-      // persisted choice here once we have it.
+      // Apply a fresh profile preference if it differs from the cached startup value.
       if (savedLang && savedLang !== i18nInstance.language) {
         void i18nInstance.changeLanguage(savedLang);
       }

@@ -746,7 +746,7 @@ describe('useUpdateAdvancedFilter', () => {
     expect(sibling.get(YjsDatabaseKey.condition)).toBe(TextFilterCondition.TextContains);
   });
 
-  it('preserves a numeric Rollup variant when a Desktop tree must be rebuilt', () => {
+  it('preserves a numeric Rollup variant and Desktop tree shape when another predicate changes', () => {
     const fixture = createDatabaseFixture();
     const rollupFieldId = 'rollup-field';
     const rollupField = new Y.Map() as YDatabaseField;
@@ -794,13 +794,10 @@ describe('useUpdateAdvancedFilter', () => {
       });
     });
 
-    const rebuiltRoot = fixture.filters.get(0);
-    const rebuiltChildren = rebuiltRoot.get(YjsDatabaseKey.children) as YDatabaseFilters;
-    const rebuiltTextFilter = rebuiltChildren.get(0);
-    const rebuiltRollupFilter = rebuiltChildren.get(1);
+    const updated = fixture.filters.toJSON()[0];
 
-    expect(rebuiltTextFilter.get(YjsDatabaseKey.condition)).toBe(TextFilterCondition.TextIs);
-    expect(rebuiltRollupFilter.get(YjsDatabaseKey.rollup_target_type)).toBe(FieldType.Number);
+    expect(updated.children[0].condition).toBe(TextFilterCondition.TextIs);
+    expect(updated.children[1]).toMatchObject({ content: '10', rollup_target_ty: FieldType.Number });
   });
 
   it('ignores a delayed update targeting a previous field', () => {

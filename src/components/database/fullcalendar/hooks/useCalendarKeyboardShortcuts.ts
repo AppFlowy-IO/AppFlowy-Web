@@ -1,12 +1,11 @@
 import { CalendarApi } from '@fullcalendar/core';
-import { useCallback, useEffect } from 'react';
+import { RefObject, useEffect } from 'react';
 
-import { createHotkey, HOT_KEY_NAME, isInputElement } from '@/utils/hotkeys';
-
-import { CalendarViewType } from '../types';
+import { CALENDAR_DAY_COUNTS, CalendarViewType, getCalendarDayView } from '../types';
 
 interface UseCalendarKeyboardShortcutsProps {
   calendar?: CalendarApi | null;
+  toolbarRef?: RefObject<HTMLDivElement | null>;
   currentView: CalendarViewType;
   onViewChange?: (view: CalendarViewType) => void;
   onPrev?: () => void;
@@ -16,65 +15,80 @@ interface UseCalendarKeyboardShortcutsProps {
 
 export const useCalendarKeyboardShortcuts = ({
   calendar,
+  toolbarRef,
   onViewChange,
   onPrev,
   onNext,
   onToday,
 }: UseCalendarKeyboardShortcutsProps) => {
-  const isMonthViewHotkey = createHotkey(HOT_KEY_NAME.CALENDAR_MONTH_VIEW);
-  const isWeekViewHotkey = createHotkey(HOT_KEY_NAME.CALENDAR_WEEK_VIEW);
-  const isPrevHotkey = createHotkey(HOT_KEY_NAME.CALENDAR_PREV);
-  const isNextHotkey = createHotkey(HOT_KEY_NAME.CALENDAR_NEXT);
-  const isTodayHotkey = createHotkey(HOT_KEY_NAME.CALENDAR_TODAY);
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (isInputElement()) {
-        return;
-      }
-
-      if (isMonthViewHotkey(event)) {
-        event.preventDefault();
-        onViewChange?.(CalendarViewType.DAY_GRID_MONTH);
-        return;
-      }
-
-      if (isWeekViewHotkey(event)) {
-        event.preventDefault();
-        onViewChange?.(CalendarViewType.TIME_GRID_WEEK);
-        return;
-      }
-
-      if (isPrevHotkey(event)) {
-        event.preventDefault();
-        
-        onPrev?.();
-        return;
-      }
-
-      if (isNextHotkey(event)) {
-        event.preventDefault();
-        
-        onNext?.();
-        return;
-      }
-
-      if (isTodayHotkey(event)) {
-        event.preventDefault();
-        onToday?.();
-        return;
-      }
-    },
-    [onViewChange, onPrev, onNext, onToday, isMonthViewHotkey, isWeekViewHotkey, isPrevHotkey, isNextHotkey, isTodayHotkey]
-  );
-
   useEffect(() => {
     if (!calendar) return;
+    const toolbar = toolbarRef?.current;
+    const keyboardTarget = toolbar?.closest('.calendar-wrapper') || toolbar;
 
-    document.addEventListener('keydown', handleKeyDown);
+    if (!keyboardTarget) return;
+    const handleKeyDown = (event: Event) => {
+      const keyEvent = event as KeyboardEvent;
+      const target = keyEvent.target;
+      const editable = target instanceof Element ? target.closest('[contenteditable]') : null;
 
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      // Normal and sticky toolbars share the same calendar. Only the first handler consumes a key.
+      if (
+        keyEvent.defaultPrevented ||
+        keyEvent.isComposing ||
+        keyEvent.repeat ||
+        keyEvent.metaKey ||
+        keyEvent.ctrlKey ||
+        keyEvent.altKey ||
+        keyEvent.shiftKey
+      )
+        return;
+      if (
+        !(target instanceof Element) ||
+        (editable !== null && editable.getAttribute('contenteditable') !== 'false')
+      )
+        return;
+
+      const blocked = target.closest(
+        'input, textarea, select, [role="textbox"], [role="dialog"], [role="menu"], [role="listbox"]'
+      );
+
+      // An embedded calendar can live inside Slate's textbox or a row dialog.
+      if (blocked && keyboardTarget.contains(blocked)) return;
+
+      let action: (() => void) | undefined;
+
+      switch (keyEvent.key.toLowerCase()) {
+        case 'm':
+          action = () => onViewChange?.(CalendarViewType.DAY_GRID_MONTH);
+          break;
+        case 'w':
+          action = () => onViewChange?.(CalendarViewType.TIME_GRID_WEEK);
+          break;
+        case 'k':
+          action = onPrev;
+          break;
+        case 'j':
+          action = onNext;
+          break;
+        case 't':
+          action = onToday;
+          break;
+        default: {
+          const count = CALENDAR_DAY_COUNTS.find((days) => String(days) === keyEvent.key);
+          const view = count && getCalendarDayView(count);
+
+          if (view) action = () => onViewChange?.(view);
+        }
+      }
+
+      if (!action) return;
+      keyEvent.preventDefault();
+      keyEvent.stopPropagation();
+      action();
     };
-  }, [calendar, handleKeyDown]);
+
+    keyboardTarget.addEventListener('keydown', handleKeyDown);
+    return () => keyboardTarget.removeEventListener('keydown', handleKeyDown);
+  }, [calendar, toolbarRef, onViewChange, onPrev, onNext, onToday]);
 };

@@ -10,6 +10,7 @@ import {
 import type { Column } from '@/application/database-yjs';
 import type { Cell as DatabaseCell } from '@/application/database-yjs/cell.type';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
+import { SelectOptionColor } from '@/application/database-yjs/fields/select-option/select_option.type';
 
 import { formatListTime, ListCell } from '../ListCell';
 
@@ -33,7 +34,6 @@ jest.mock('@/application/database-yjs', () => ({
     Person: 15,
     Rollup: 16,
   },
-  SelectOptionColor: { OptionColor1: 'OptionColor1' },
   parseChecklistFlexible: jest.fn(),
   parseSelectOptionTypeOptions: jest.fn(),
   useFieldSelector: jest.fn(),
@@ -77,7 +77,7 @@ describe('database_list_field_display.dart: list view displays multiple field ty
     mockUseReadOnly.mockReturnValue(false);
     mockUseUpdateCellDispatch.mockReturnValue(jest.fn());
     mockParseSelectOptionTypeOptions.mockReturnValue({
-      options: [{ color: 'OptionColor1', id: 'todo', name: 'Todo' }],
+      options: [{ color: SelectOptionColor.OptionColor1, id: 'todo', name: 'Todo' }],
     } as ReturnType<typeof parseSelectOptionTypeOptions>);
   });
 
@@ -177,8 +177,8 @@ describe('database_list_field_display.dart: list view displays multiple field ty
   it('renders Flutter checklist geometry as an 80px bar plus 45px percentage', () => {
     mockParseChecklistFlexible.mockReturnValue({
       options: [
-        { color: 'OptionColor1', id: 'one', name: 'One' },
-        { color: 'OptionColor1', id: 'two', name: 'Two' },
+        { color: SelectOptionColor.OptionColor1, id: 'one', name: 'One' },
+        { color: SelectOptionColor.OptionColor1, id: 'two', name: 'Two' },
       ],
       percentage: 0.5,
       selectedOptionIds: ['two'],

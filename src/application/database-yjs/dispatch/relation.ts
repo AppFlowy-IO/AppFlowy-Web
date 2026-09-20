@@ -39,6 +39,8 @@ import {
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
+import { migrateRollupsForRelation } from '../rollup/filter';
+
 type RelationTypeOptionUpdates = Partial<RelationTypeOption>;
 
 type RelationCellChanges = {
@@ -220,7 +222,7 @@ function setRelationTypeOption(field: YDatabaseField, option: RelationTypeOption
   field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 }
 
-function addFieldToAllViews(database: YDatabase, fieldId: FieldId) {
+export function addFieldToAllViews(database: YDatabase, fieldId: FieldId) {
   const views = database.get(YjsDatabaseKey.views);
   const viewIds = Object.keys(views?.toJSON() ?? {});
 
@@ -577,7 +579,11 @@ export async function applyRelationReciprocalInserts(args: {
   );
 }
 
-export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
+/**
+ * Row-agnostic relation cell writer: `(rowId, fieldId, changes)`. Keeps the
+ * reciprocal side of a two-way relation in step, like `useUpdateRelationCell`.
+ */
+export function useUpdateRelationCellDispatch() {
   const context = useDatabaseContext();
   const database = useDatabase();
   const rowMap = useRowMap();
@@ -586,7 +592,7 @@ export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
   const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
-    async (changes: RelationCellChanges) => {
+    async (rowId: RowId, fieldId: FieldId, changes: RelationCellChanges) => {
       const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
       if (!field) return;
@@ -683,8 +689,14 @@ export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
         }),
       ]);
     },
-    [actorUid, bindViewSync, context, createRow, database, fieldId, getViewIdFromDatabaseId, loadView, rowId, rowMap]
+    [actorUid, bindViewSync, context, createRow, database, getViewIdFromDatabaseId, loadView, rowMap]
   );
+}
+
+export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
+  const update = useUpdateRelationCellDispatch();
+
+  return useCallback((changes: RelationCellChanges) => update(rowId, fieldId, changes), [fieldId, rowId, update]);
 }
 
 export function useUpdateRelationTypeOption(fieldId: FieldId) {
@@ -835,6 +847,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
 
             if (!currentField) return;
             setRelationTypeOption(currentField, nextOption);
+            if (databaseIdChanged) migrateRollupsForRelation(database, fieldId);
           },
         ],
         'updateRelationTypeOption',

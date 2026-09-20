@@ -2,3 +2,7 @@ services:
   appflowy_cloud:
     environment:
       APPFLOWY_BASE_URL: ${APPFLOWY_BASE_URL}
+      # Form uploads use the same HTTPS proxy as the public Form API.
+      APPFLOWY_S3_PRESIGNED_URL_ENDPOINT: ${APPFLOWY_BASE_URL}/minio-api
+      # Share links must open the web app, which CI serves separately from the API.
+      APPFLOWY_WEB_URL: http://localhost:3000

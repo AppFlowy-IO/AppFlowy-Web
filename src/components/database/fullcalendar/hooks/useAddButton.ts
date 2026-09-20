@@ -41,7 +41,10 @@ export function useAddButton({
         const dateAttr = dayCell.getAttribute('data-date');
 
         if (dateAttr) {
-          const date = new Date(dateAttr);
+          // FullCalendar's date-only attributes describe a local calendar day.
+          // Parsing them as ISO dates would shift west-of-UTC users to yesterday.
+          const [year, month, day] = dateAttr.split('-').map(Number);
+          const date = new Date(year, month - 1, day);
           
           // Check if add button should be enabled for this date
           const enabled = isAddButtonEnabled ? isAddButtonEnabled(date) : true;

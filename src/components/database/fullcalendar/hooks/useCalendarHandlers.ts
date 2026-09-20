@@ -1,9 +1,11 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
+import { CalendarLayout, useCalendarLayoutSetting, useDatabaseViewId, useReadOnly } from '@/application/database-yjs';
+import { useUpdateCalendarSetting } from '@/application/database-yjs/dispatch';
 import { Log } from '@/utils/log';
 
-import { CalendarViewType } from '../types';
+import { changeCalendarView } from '../calendarNavigation';
+import { CalendarViewType, getCalendarDayCount, getCalendarDayView } from '../types';
 
 import { useCalendarEvents } from './useCalendarEvents';
 
@@ -14,12 +16,21 @@ import type { CalendarApi, DatesSetArg, MoreLinkArg } from '@fullcalendar/core';
  * Centralizes all calendar interaction logic
  */
 export function useCalendarHandlers() {
-  // Get current view from context
-  const { calendarViewTypeMap } = useDatabaseContext();
+  const setting = useCalendarLayoutSetting();
   const viewId = useDatabaseViewId();
-  const currentView: CalendarViewType = useMemo(() => {
-    return calendarViewTypeMap?.get(viewId) || CalendarViewType.DAY_GRID_MONTH
-  }, [calendarViewTypeMap, viewId]);
+  const readOnly = useReadOnly();
+  const updateSetting = useUpdateCalendarSetting();
+  const sharedView =
+    !setting || (setting.layout !== CalendarLayout.WeekLayout && setting.layout !== CalendarLayout.DayLayout)
+      ? CalendarViewType.DAY_GRID_MONTH
+      : getCalendarDayView(setting.numberOfDays) ?? CalendarViewType.TIME_GRID_WEEK;
+  // Read-only viewers can explore another mode without modifying shared data.
+  const [localView, setLocalView] = useState<{ viewId: string; view: CalendarViewType }>();
+  const currentView = readOnly && localView?.viewId === viewId ? localView.view : sharedView;
+
+  useEffect(() => {
+    setLocalView(undefined);
+  }, [viewId, readOnly]);
 
   const [calendarTitle, setCalendarTitle] = useState('');
   const [morelinkInfo, setMorelinkInfo] = useState<MoreLinkArg | undefined>(undefined);
@@ -28,16 +39,29 @@ export function useCalendarHandlers() {
   // Get calendar event handlers
   const { handleEventDrop, handleEventResize, handleSelect, handleAdd, updateEventTime } = useCalendarEvents();
 
-  // Handle view changes (month/week toggle)
-  const handleViewChange = useCallback((view: CalendarViewType, calendarApi: CalendarApi | null) => {
-    if (calendarApi) {
-      // Switch view and adjust to today's date range
-      calendarApi.changeView(view);
-      
-      // Navigate to today
-      calendarApi.today();
-    }
-  }, []);
+  const handleViewChange = useCallback(
+    (view: CalendarViewType, calendarApi: CalendarApi | null) => {
+      if (view === currentView) return;
+      if (readOnly) {
+        setLocalView({ viewId, view });
+      } else {
+        const count = getCalendarDayCount(view);
+
+        updateSetting({
+          layout:
+            count === undefined
+              ? CalendarLayout.MonthLayout
+              : count === 1
+              ? CalendarLayout.DayLayout
+              : CalendarLayout.WeekLayout,
+          numberOfDays: count ?? null,
+        });
+      }
+
+      changeCalendarView(calendarApi, view);
+    },
+    [currentView, readOnly, updateSetting, viewId]
+  );
 
   // Handle calendar date range changes
   const handleDatesSet = useCallback((dateInfo: DatesSetArg, _calendarApi: CalendarApi | null) => {
@@ -72,6 +96,6 @@ export function useCalendarHandlers() {
     handleSelect,
     handleAdd,
     updateEventTime,
-    closeMorePopover
+    closeMorePopover,
   };
 }

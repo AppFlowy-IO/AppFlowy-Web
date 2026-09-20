@@ -1,10 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { toast } from 'sonner';
 
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { DatabaseContextState } from '@/application/database-yjs/context';
 import { useDuplicateDatabaseView, useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, UIVariant, View, ViewLayout, YjsDatabaseKey } from '@/application/types';
 import { DatabaseTabs } from '@/components/database/components/tabs/DatabaseTabs';
+
+jest.mock('sonner', () => ({ toast: { error: jest.fn(), success: jest.fn() } }));
 
 jest.mock('@/application/database-yjs', () => ({
   useDatabase: jest.fn(),
@@ -205,6 +208,49 @@ describe('DatabaseTabs', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Duplicate view' }));
 
     await waitFor(() => expect(duplicateView).toHaveBeenCalledWith(databaseView.view_id, 'Form (Copy)'));
+    expect(onBeforeViewAddedToDatabase).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onAfterViewAddedToDatabase).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows the plan rejection when duplicating a Timeline view', async () => {
+    const message = 'Creating a Timeline view requires a Pro workspace.';
+    const duplicateView = jest.fn().mockRejectedValue({ code: 1090, message });
+    const onBeforeViewAddedToDatabase = jest.fn();
+    const onAfterViewAddedToDatabase = jest.fn();
+    const sourceYjsView = {
+      get: jest.fn((key: YjsDatabaseKey) => {
+        if (key === YjsDatabaseKey.name) return 'Timeline';
+        if (key === YjsDatabaseKey.layout) return DatabaseViewLayout.Timeline;
+        return undefined;
+      }),
+    };
+    const views = new Map([[databaseView.view_id, sourceYjsView]]);
+    const context = {
+      createDatabaseView: jest.fn(),
+      isDocumentBlock: true,
+      loadViewMeta: jest.fn(async () => databaseContainer),
+      readOnly: false,
+      showActions: true,
+    } as unknown as DatabaseContextState;
+    const props = {
+      databasePageId: databaseView.view_id,
+      selectedViewId: databaseView.view_id,
+      viewIds: [databaseView.view_id],
+      onBeforeViewAddedToDatabase,
+      onAfterViewAddedToDatabase,
+    };
+
+    (useDatabase as jest.Mock).mockReturnValue({ get: () => views });
+    (useDuplicateDatabaseView as jest.Mock).mockReturnValue(duplicateView);
+    (useDatabaseContext as jest.Mock).mockReturnValue(context);
+
+    render(<DatabaseTabs {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate view' }));
+
+    await waitFor(() => expect(duplicateView).toHaveBeenCalledWith(databaseView.view_id, 'Timeline (Copy)'));
+    expect(toast.error).toHaveBeenCalledWith(message);
+    expect(toast.success).not.toHaveBeenCalled();
     expect(onBeforeViewAddedToDatabase).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(onAfterViewAddedToDatabase).toHaveBeenCalledTimes(1));
   });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { CalendarViewType } from '@/components/database/fullcalendar/types';
+import { CalendarViewType, isTimeGridView } from '@/components/database/fullcalendar/types';
 
 export const useDynamicDayMaxEventRows = (currentView: CalendarViewType) => {
   const [dayMaxEventRows, setDayMaxEventRows] = useState(4);
@@ -21,7 +21,7 @@ export const useDynamicDayMaxEventRows = (currentView: CalendarViewType) => {
   }, []);
 
   const updateCalendarCellStyles = useCallback((weekHeight: number) => {
-    if (currentView === CalendarViewType.TIME_GRID_WEEK) return;
+    if (isTimeGridView(currentView)) return;
 
     const minHeight = Math.max(weekHeight, 80);
     

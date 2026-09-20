@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { ExportService, FileService } from '@/application/services/domains';
+import { ExportService } from '@/application/services/domains';
 import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as HelpIcon } from '@/assets/icons/help.svg';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
@@ -12,19 +12,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { getErrorMessage } from '@/utils/errors';
 import { openUrl } from '@/utils/url';
 
-const ZIP_ACCEPT = '.zip,application/zip,application/x-zip,application/x-zip-compressed';
-
 const IMPORT_GUIDE_URL = 'https://appflowy.com/guide/import-from-AppFlowy';
 const BACKUP_GUIDE_URL = 'https://appflowy.com/guide/back-up-your-data';
 
-export function ManageDataPanel() {
+export function ManageDataPanel({ onImport }: { onImport: () => void }) {
   const { t } = useTranslation();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
 
   const isOwner = useMemo(() => {
@@ -32,41 +28,6 @@ export function ManageDataPanel() {
 
     return isSameUserUid(workspace?.owner?.uid, currentUser?.uid);
   }, [userWorkspaceInfo?.workspaces, currentWorkspaceId, currentUser?.uid]);
-
-  const handleImport = useCallback(
-    async (file: File) => {
-      setImporting(true);
-      try {
-        await FileService.importFile(file, {
-          taskType: FileService.CreateImportTaskType.Workspace,
-          onProgress: () => {
-            /* progress is surfaced via the in-progress state */
-          },
-        });
-        toast.success(t('settings.manageData.importWorkspace.success'));
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } catch (e: any) {
-        toast.error(getErrorMessage(e) || t('settings.manageData.importWorkspace.failed'));
-      } finally {
-        setImporting(false);
-      }
-    },
-    [t]
-  );
-
-  const onFilePicked = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-
-      event.target.value = '';
-      if (file) void handleImport(file);
-    },
-    [handleImport]
-  );
-
-  const handleImportClick = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
 
   const handleBackup = useCallback(async () => {
     if (!currentWorkspaceId) return;
@@ -105,24 +66,9 @@ export function ManageDataPanel() {
             </div>
             <p className='mt-1 text-sm text-text-secondary'>{t('settings.manageData.importWorkspace.tooltip')}</p>
           </div>
-          <Button
-            variant='default'
-            size='lg'
-            data-testid='manage-data-import'
-            loading={importing}
-            disabled={importing}
-            onClick={handleImportClick}
-          >
+          <Button variant='default' size='lg' data-testid='manage-data-import' onClick={onImport}>
             {t('settings.manageData.importWorkspace.button')}
           </Button>
-          <input
-            ref={fileInputRef}
-            type='file'
-            accept={ZIP_ACCEPT}
-            className='hidden'
-            data-testid='manage-data-import-input'
-            onChange={onFilePicked}
-          />
         </section>
 
         {/* Backup your workspace — owner only */}

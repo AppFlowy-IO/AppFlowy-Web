@@ -110,7 +110,27 @@ function Calendar() {
   }
 
   return (
-    <div className='calendar-wrapper pb-5'>
+    <div
+      className='calendar-wrapper pb-5 outline-none'
+      tabIndex={0}
+      onPointerDownCapture={(event) => {
+        const target = event.target as HTMLElement;
+
+        // React portal events reach this handler even when the menu is outside the calendar.
+        if (!event.currentTarget.contains(target)) return;
+        const editable = target.closest('[contenteditable]');
+        const control = target.closest(
+          'input, textarea, select, button, a, [role="textbox"], [role="dialog"], [role="menu"], [role="listbox"], [role="button"]'
+        );
+
+        if (
+          (!editable || editable.getAttribute('contenteditable') === 'false') &&
+          (!control || !event.currentTarget.contains(control))
+        ) {
+          event.currentTarget.focus({ preventScroll: true });
+        }
+      }}
+    >
       {/* Normal toolbar - always visible */}
       <div ref={normalToolbarRef}>
         <StickyCalendarToolbar

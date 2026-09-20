@@ -34,7 +34,6 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { DefaultTimeSetting, MetadataKey } from '@/application/user-metadata';
-import { CalendarViewType } from '@/components/database/fullcalendar/types';
 import { useCurrentUser } from '@/components/main/app.hooks';
 
 export interface DatabaseContextState {
@@ -143,9 +142,6 @@ export interface DatabaseContextState {
   getSubscriptions?: (() => Promise<Subscription[]>) | undefined;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   variant?: UIVariant;
-  // Calendar view type map: viewId -> CalendarViewType
-  calendarViewTypeMap?: Map<string, CalendarViewType>;
-  setCalendarViewType?: (viewId: string, viewType: CalendarViewType) => void;
   openPageModalViewId?: string;
   // Close row detail modal (when in modal context)
   closeRowDetailModal?: () => void;

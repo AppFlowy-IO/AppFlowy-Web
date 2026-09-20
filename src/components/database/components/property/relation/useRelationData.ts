@@ -12,7 +12,7 @@ import {
 import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { EventType, on } from '@/application/session/event';
 import { getTokenParsed } from '@/application/session/token';
-import { View } from '@/application/types';
+import { View, YDatabaseField } from '@/application/types';
 
 import {
   buildRelationDatabaseCandidates,
@@ -449,13 +449,15 @@ function withLoading(
 }
 
 export interface UseRelationDataOptions {
+  field?: YDatabaseField;
   enabled?: boolean;
 }
 
 export function useRelationData(fieldId: string, options: UseRelationDataOptions = {}) {
   const { enabled = true } = options;
   const { eventEmitter, getViewIdFromDatabaseId, loadViewMeta, loadViews, workspaceId } = useDatabaseContext();
-  const { field } = useFieldSelector(fieldId);
+  const { field: localField } = useFieldSelector(fieldId);
+  const field = options.field ?? localField;
   const relationOption: RelationTypeOption | null = field ? parseRelationTypeOption(field) : null;
   const relatedDatabaseId = relationOption?.database_id || null;
   const catalogRevision = useSyncExternalStore(

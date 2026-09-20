@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useDatabase, useDatabaseContext } from '@/application/database-yjs/context';
+import { useDatabase, useDatabaseContext, useReadOnly } from '@/application/database-yjs/context';
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import { useUpdateRollupTypeOption } from '@/application/database-yjs/dispatch';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { parseRollupTypeOption, parseRollupVisualizationOption } from '@/application/database-yjs/fields/rollup/parse';
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
+import { rememberRollupTarget, migrateRollupFilters } from '@/application/database-yjs/rollup/filter';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { YDatabaseField, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -44,10 +45,14 @@ function readTargetFields(doc: YDoc | null): TargetFieldOption[] {
   const options: TargetFieldOption[] = [];
 
   fields.forEach((field: YDatabaseField, id: string) => {
+    const type = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+    // Formula results have no stored cells for the rollup evaluator to read.
+    if (type === FieldType.Formula) return;
     options.push({
       id,
       name: field.get(YjsDatabaseKey.name) || '',
-      type: Number(field.get(YjsDatabaseKey.type)) as FieldType,
+      type,
       field,
     });
   });
@@ -57,6 +62,7 @@ function readTargetFields(doc: YDoc | null): TargetFieldOption[] {
 
 export function useRollupData(fieldId: string) {
   const database = useDatabase();
+  const readOnly = useReadOnly();
   const { field, clock } = useFieldSelector(fieldId);
   const { loadView, getViewIdFromDatabaseId } = useDatabaseContext();
   const updateRollupTypeOption = useUpdateRollupTypeOption(fieldId);
@@ -212,21 +218,28 @@ export function useRollupData(fieldId: string) {
     Boolean(relatedDatabaseId) && (relatedFieldsState.databaseId !== relatedDatabaseId || relatedFieldsState.loading);
 
   const targetField = relatedFields.find((target) => target.id === rollupOption.target_field_id);
+
+  useEffect(() => {
+    if (!field || !targetField) return;
+    rememberRollupTarget(field, targetField.field);
+    if (!readOnly) database.doc?.transact(() => migrateRollupFilters(database, fieldId, targetField.type));
+  }, [database, field, fieldId, targetField, readOnly]);
+
   const availableCalculations = useMemo(() => getAvailableRollupCalculations(targetField?.type), [targetField?.type]);
 
   // Keep imported/remote options valid even when another client changes the target.
   useEffect(() => {
-    if (targetField?.type === undefined) return;
+    if (readOnly || targetField?.type === undefined) return;
     if (availableCalculations.includes(rollupOption.calculation_type as CalculationType)) return;
 
     updateRollupTypeOption({ calculation_type: CalculationType.Count, condition_value: '' });
-  }, [availableCalculations, rollupOption.calculation_type, targetField?.type, updateRollupTypeOption]);
+  }, [availableCalculations, rollupOption.calculation_type, targetField?.type, updateRollupTypeOption, readOnly]);
 
   useEffect(() => {
-    if (rollupOption.calculation_type === CalculationType.CountValue || !rollupOption.condition_value) return;
+    if (readOnly || rollupOption.calculation_type === CalculationType.CountValue || !rollupOption.condition_value) return;
 
     updateRollupTypeOption({ condition_value: '' });
-  }, [rollupOption.calculation_type, rollupOption.condition_value, updateRollupTypeOption]);
+  }, [rollupOption.calculation_type, rollupOption.condition_value, updateRollupTypeOption, readOnly]);
 
   const selectRelationField = useCallback(
     async (relation: RelationFieldOption) => {
@@ -259,6 +272,7 @@ export function useRollupData(fieldId: string) {
         }
 
         updateRollupTypeOption({
+          target_field_type: firstTarget.type,
           target_field_id: firstTarget.id,
           calculation_type: CalculationType.Count,
           condition_value: '',
@@ -272,6 +286,8 @@ export function useRollupData(fieldId: string) {
 
   const selectTargetField = useCallback(
     (target: TargetFieldOption) => {
+      // The schema can change between rendering the picker and clicking an item.
+      if (Number(target.field.get(YjsDatabaseKey.type)) === FieldType.Formula) return;
       relationSelectionRequest.current += 1;
       const currentCalculation = rollupOption.calculation_type as CalculationType;
       const nextCalculation = getAvailableRollupCalculations(target.type).includes(currentCalculation)
@@ -279,10 +295,10 @@ export function useRollupData(fieldId: string) {
         : CalculationType.Count;
 
       updateRollupTypeOption({
+        target_field_type: target.type,
         target_field_id: target.id,
         calculation_type: nextCalculation,
         condition_value: '',
-        ...(target.type === FieldType.Number ? {} : { visualization_type: RollupShowAsType.Number }),
       });
     },
     [rollupOption.calculation_type, updateRollupTypeOption]

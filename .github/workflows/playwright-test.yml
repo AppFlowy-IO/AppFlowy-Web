@@ -9,7 +9,10 @@ on:
 
 env:
   CLOUD_VERSION: latest-amd64
+  # Public Form APIs and uploads reject plaintext requests at the backend proxy.
+  APPFLOWY_BASE_URL: https://localhost
   APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: 'true'
+  EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED: 'true'
   NODE_VERSION: '24'
   PNPM_VERSION: '10.9.0'
 
@@ -98,8 +101,20 @@ jobs:
             bdd: 'false'
             shard: '3/3'
           - name: 'database-bdd'
-            spec: 'playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/embedded-grid-bottom-rows.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/grid-row-handle.feature.spec.js
             description: 'Database row and undo/redo BDD workflows'
+            bdd: 'true'
+            shard: ''
+          - name: 'form-timeline-bdd'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/form/
+              playwright/.features-gen/playwright/bdd/features/database/timeline.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/timeline-integration.feature.spec.js
+            description: 'Form and Timeline creation and interactions'
             bdd: 'true'
             shard: ''
           - name: 'gallery-bdd'
@@ -107,6 +122,7 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/auth/auth-regressions.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/app/sidebar-drop-indicator.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/editor/database-row-page-mention.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/tab-return-scroll.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-relation-prefill.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-row-detail-no-stacking.feature.spec.js
@@ -188,6 +204,19 @@ jobs:
           echo '' >> .env
           echo 'APPFLOWY_PAGE_HISTORY_ENABLE=true' >> .env
 
+          # Replace the repository's expired example certificate with a short-lived
+          # localhost certificate. Node trusts this certificate; Chromium pins its
+          # public key so separate respondent contexts can use the same HTTPS API.
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+            -keyout nginx/ssl/private_key.key \
+            -out nginx/ssl/certificate.crt
+          echo "NODE_EXTRA_CA_CERTS=$PWD/nginx/ssl/certificate.crt" >> "$GITHUB_ENV"
+          test_tls_spki=$(openssl x509 -in nginx/ssl/certificate.crt -pubkey -noout | \
+            openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A)
+          echo "APPFLOWY_TEST_TLS_SPKI=$test_tls_spki" >> "$GITHUB_ENV"
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -249,7 +278,7 @@ jobs:
             up -d
 
           echo "Waiting for backend services..."
-          timeout 180 bash -c 'until curl -sf http://localhost/api/health > /dev/null 2>&1; do
+          timeout 180 bash -c 'until curl --cacert nginx/ssl/certificate.crt -sf https://localhost/api/health > /dev/null 2>&1; do
             echo "Waiting for backend... ($(date +%T))"
             sleep 5
           done' && echo "Backend is ready" || (
@@ -260,6 +289,11 @@ jobs:
             docker compose -f docker-compose-web-ci.yml logs --tail=50
             exit 1
           )
+
+          # Timeline fixtures seed a Pro entitlement in this job's temporary DB.
+          test_postgres_container=$(docker compose -f docker-compose-web-ci.yml ps -q postgres)
+          test -n "$test_postgres_container"
+          echo "APPFLOWY_TEST_POSTGRES_CONTAINER=$test_postgres_container" >> "$GITHUB_ENV"
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -305,6 +339,24 @@ jobs:
           TEST_BDD: ${{ matrix.test-group.bdd }}
           TEST_SHARD: ${{ matrix.test-group.shard }}
           TEST_SPEC: ${{ matrix.test-group.spec }}
+
+      - name: Report failed backend duplication tasks
+        if: failure()
+        continue-on-error: true
+        working-directory: AppFlowy-Cloud-Premium
+        run: |
+          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml images
+
+          # The synchronous duplicate-document API returns only a generic 1017
+          # error. Preserve the Worker failure reason before CI deletes its DB.
+          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml exec -T postgres \
+            sh -c 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -v ON_ERROR_STOP=1' <<'SQL'
+          SELECT task_id, workspace_id, status, left(error, 2000) AS error, created_at
+          FROM af_duplicate_task
+          WHERE error IS NOT NULL
+          ORDER BY created_at DESC
+          LIMIT 20;
+          SQL
 
       - name: Test summary
         if: always()
@@ -352,20 +404,18 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/upload-test-artifact
         with:
           name: playwright-report-${{ matrix.test-group.name }}
           path: playwright-report/
-          if-no-files-found: ignore
           retention-days: 7
 
       - name: Upload test traces
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/upload-test-artifact
         with:
           name: playwright-traces-${{ matrix.test-group.name }}
           path: test-results/
-          if-no-files-found: ignore
           retention-days: 3
 
       - name: Cleanup

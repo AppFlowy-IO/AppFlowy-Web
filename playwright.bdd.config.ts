@@ -10,11 +10,23 @@ const testDir = defineBddConfig({
   outputDir: 'playwright/.features-gen',
 });
 
+function optInSuites(): RegExp | undefined {
+  const skipped = [
+    ...(process.env.RUN_LARGE_DATABASE ? [] : ['@large-database']),
+    ...(process.env.RUN_NATHAN_EMPLOYEES ? [] : ['@nathan-employees']),
+  ];
+
+  return skipped.length > 0 ? new RegExp(skipped.join('|')) : undefined;
+}
+
 export default defineConfig({
   testDir,
   testMatch: '**/*.spec.js',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
+  // Opt-in suites: the 5000-row database takes minutes to seed (RUN_LARGE_DATABASE=1), and the
+  // nathan@appflowy.io employees database only exists on a local server (RUN_NATHAN_EMPLOYEES=1).
+  grepInvert: optInSuites(),
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI
@@ -39,7 +51,16 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 },
         launchOptions: {
-          args: ['--disable-gpu-sandbox', '--no-sandbox', '--disable-dev-shm-usage', '--force-device-scale-factor=1'],
+          args: [
+            '--disable-gpu-sandbox',
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--force-device-scale-factor=1',
+            // Respondent contexts share the browser's trust in CI's localhost key.
+            ...(process.env.APPFLOWY_TEST_TLS_SPKI
+              ? [`--ignore-certificate-errors-spki-list=${process.env.APPFLOWY_TEST_TLS_SPKI}`]
+              : []),
+          ],
         },
       },
     },

@@ -418,6 +418,7 @@
     /* Current time indicator */
     .fc-timegrid-now-indicator-line {
       @apply bg-other-colors-filled-today !important;
+      border: 0 !important;
       height: 2px !important;
       z-index: 10;
       position: relative !important;
@@ -518,26 +519,6 @@
   
   }
 
-  .fc-event-past {
-    &:not(:hover):not(.fc-event-open) {
-      .event-inner, .event-title {
-        opacity: 0.50 !important;
-      }
-      .time-slot {
-        opacity: 0.50 !important;
-      }
-      .event-line {
-        opacity: 0.30 !important;
-      }
-    }
-  }
-
-  .fc-timegrid-event.fc-event-past:not(:hover):not(.fc-event-open) > .fc-event-main {
-    &:before {
-      opacity: 0.30 !important;
-    }
-  }
-
   // .fc-daygrid-day, .fc-daygrid-day.fc-day-today {
   //   &:hover {
   //     @apply bg-fill-info-light;
@@ -547,7 +528,10 @@
   /* Week view event background */
   &.week-view .fc-event {
     @apply bg-other-colors-filled-event !important;
-    @apply hover:bg-other-colors-filled-event-hover  !important;
+
+    &:not(.fc-event-open):not(.fc-event-dragging-start):not(.fc-event-dragging):not(.fc-event-resizing):hover {
+      @apply bg-other-colors-filled-event-hover !important;
+    }
   }
 
   
@@ -710,7 +694,6 @@
   .fc-event-dragging {
     transform: scale(1.001) !important;
     transition: opacity 0.2s ease, transform 0.2s ease !important;
-    animation: dragPulse 2s infinite ease-in-out !important;    
   }
   
   .fc-event-resizing {
@@ -790,43 +773,60 @@ body > .fc-event[style*="z-index"] {
 }
 
 .fc-event {
-  &.fc-event-open, &.fc-event-dragging-start, &.fc-event-resizing {
+  // This also applies to events inside the portaled +more popover.
+  &:has(.calendar-event-past):not(:hover):not(.event-hovered):not(.fc-event-open):not(.fc-event-dragging-start):not(.fc-event-dragging):not(.fc-event-resizing) {
+    // Fade the foreground once: nested title/time elements must not compound it.
+    .event-inner {
+      opacity: 0.50;
+    }
+    .event-line,
+    &.fc-timegrid-event > .fc-event-main::before {
+      opacity: 0.40;
+    }
+  }
+
+  &.fc-event-open, &.fc-event-dragging-start, &.fc-event-dragging, &.fc-event-resizing {
     border: none !important;
     transform: scale(1.001) !important;
     &:not(.fc-timegrid-event) .event-content {
-      @apply border !bg-fill-theme-thick !border-border-theme-thick !text-text-inverse;
+      @apply border !bg-fill-theme-thick !border-border-theme-thick !text-text-on-fill;
       
       .event-inner, .event-title, .event-icon {
-        @apply text-text-inverse !important;
+        @apply text-text-on-fill !important;
         @apply opacity-100 !important;
       }
 
       .time-slot {
-        @apply text-text-inverse !important;
+        @apply text-text-on-fill !important;
         @apply opacity-100 !important;
       }
     }
     
     &.fc-timegrid-event {
-      @apply border !bg-fill-theme-thick !border-border-theme-thick !text-text-inverse;
+      @apply border !bg-fill-theme-thick !border-border-theme-thick !text-text-on-fill;
       
       .event-content {
-        @apply bg-fill-theme-thick text-text-inverse !important;
+        @apply bg-fill-theme-thick text-text-on-fill !important;
         
         .event-inner, .event-title, .event-icon {
-          @apply text-text-inverse !important;
+          @apply text-text-on-fill !important;
           @apply opacity-100 !important;
         }
 
         .time-slot {
-          @apply text-text-inverse !important;
+          @apply text-text-on-fill !important;
           @apply opacity-100 !important;
         }
       }
     }
+
+    .event-line,
+    &.fc-timegrid-event > .fc-event-main::before {
+      opacity: 0 !important;
+    }
   }
 
-  &.fc-popover-event.event-hovered {
+  &.fc-popover-event.event-hovered:not(.fc-event-open):not(.fc-event-dragging-start):not(.fc-event-dragging):not(.fc-event-resizing) {
     .event-content {
       @apply bg-other-colors-filled-event-hover !important;
     }
@@ -866,15 +866,12 @@ body > .fc-event[style*="z-index"] {
   }
 }
 
-.event-time-icon .event-icon {
-  @apply text-text-primary opacity-65;
-}
-
 .fc-scrollgrid-sync-table {
   @apply overflow-hidden;
 }
-.event-icon {
-  @apply opacity-80;
+.fc-event .event-icon {
+  color: inherit;
+  opacity: 1;
 }
 
 body {
@@ -886,39 +883,6 @@ body {
     &.fc-nodate-event {
       box-shadow: 0 2px 16px 0 var(--shadow-color);
       opacity: 1 !important;
-    }
-  
-    &:not(.fc-timegrid-event) .event-content {
-      @apply border !bg-fill-theme-thick !border-border-theme-thick !text-text-inverse;
-      
-      .event-inner, .event-time-icon .event-icon {
-        @apply text-text-inverse !important;
-        opacity: 1;
-      }
-
-      .time-slot {
-        @apply text-text-inverse !important;
-      }
-    }
-    
-    &.fc-timegrid-event {
-      @apply text-text-inverse;
-
-      &:hover {
-        @apply bg-fill-theme-thick !important;
-      }
-      
-      .event-content {
-        @apply  text-text-inverse !important;
-        
-        .event-inner, .event-title, .event-icon {
-          @apply text-text-inverse !important;
-        }
-
-        .time-slot {
-          @apply text-text-inverse !important;
-        }
-      }
     }
   }
 }
@@ -979,7 +943,7 @@ body.fc-dragging {
 .fc-external-ghost {
   @apply bg-fill-theme-thick !important;
   @apply border-border-theme-thick !important;
-  @apply text-text-inverse !important;
+  @apply text-text-on-fill !important;
   border-radius: 4px !important;
   padding: 2px 6px !important;
   font-size: 0.75rem !important;

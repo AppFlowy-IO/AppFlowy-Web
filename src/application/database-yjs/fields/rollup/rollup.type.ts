@@ -28,3 +28,19 @@ export interface RollupTypeOption {
 export interface RollupFilter extends Filter {
   condition: number;
 }
+
+export enum RollupFilterMode {
+  Any = 0,
+  None = 1,
+  Every = 2,
+}
+
+/** Desktop's additive `rollup_meta` contract. Absence is different from enum zero. */
+export interface RollupFilterMetadata {
+  target_field_type?: number;
+  rollup_filter_mode?: RollupFilterMode;
+  rollup_show_as?: number;
+  rollup_calculation_type?: number;
+  relation_field_id?: string;
+  target_field_id?: string;
+}

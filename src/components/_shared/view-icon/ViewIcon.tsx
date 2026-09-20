@@ -14,6 +14,7 @@ import { ReactComponent as GallerySvg } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
 import { ReactComponent as ListSvg } from '@/assets/icons/list.svg';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
+import { ReactComponent as TimelineSvg } from '@/assets/icons/timeline.svg';
 
 export function ViewIcon ({ layout, size, className }: {
   layout: ViewLayout;
@@ -65,6 +66,8 @@ export function ViewIcon ({ layout, size, className }: {
       return <FeedSvg className={iconClassName} />;
     case ViewLayout.Form:
       return <FormSvg className={iconClassName} />;
+    case ViewLayout.Timeline:
+      return <TimelineSvg className={iconClassName} />;
     default:
       return null;
   }
