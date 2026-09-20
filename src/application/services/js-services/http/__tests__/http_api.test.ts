@@ -833,6 +833,49 @@ describe('http_api client (unit)', () => {
     expect(cachedResponse.data).toEqual(cachedData);
   });
 
+  it('keeps native connection capabilities separate from cached web server info', async () => {
+    const module = await import('../http_api');
+
+    module.initAPIService(baseConfig);
+
+    const requestInterceptor = mockAxiosInstance.interceptors.request.use.mock.calls[1][0] as (
+      config: unknown
+    ) => unknown;
+    const responseSuccess = mockAxiosInstance.interceptors.response.use.mock.calls[1][0] as (
+      response: unknown
+    ) => unknown;
+    const responseError = mockAxiosInstance.interceptors.response.use.mock.calls[1][1] as (
+      error: unknown
+    ) => Promise<{ data: unknown }>;
+    const url = '/api/server-info';
+    const variants = [
+      { platform: 'web', data: { code: 0, data: { min_web_client_version: '0.17.0' } } },
+      { platform: 'app', data: { code: 0, data: { connections: ['google-drive'] } } },
+    ];
+
+    for (const { platform, data } of variants) {
+      responseSuccess({
+        config: { method: 'get', url, headers: { 'x-platform': platform } },
+        headers: { etag: `W/"${platform}"` },
+        data,
+      });
+    }
+
+    for (const { platform, data } of variants) {
+      const headers = {
+        get: (name: string) => (name === 'x-platform' ? platform : undefined),
+        set: jest.fn(),
+      };
+      const config = { method: 'get', url, headers };
+
+      requestInterceptor(config);
+      expect(headers.set).toHaveBeenCalledWith('If-None-Match', `W/"${platform}"`);
+      const response = await responseError({ isAxiosError: true, config, response: { status: 304 } });
+
+      expect(response.data).toEqual(data);
+    }
+  });
+
   it('does not attach ETags to mutation POST requests', async () => {
     const module = await import('../http_api');
     module.initAPIService(baseConfig);

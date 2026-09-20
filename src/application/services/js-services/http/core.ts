@@ -80,8 +80,13 @@ function getEtagCacheKey(config: EtagCacheConfig): string | undefined {
 
   if (method === 'get') {
     const params = stableSerialize(config.params);
+    const key = params ? `GET ${url}?${params}` : `GET ${url}`;
+    // Server info has different bodies for web and native clients. Connections
+    // reads the native provider list without replacing the web capability cache.
+    const platform =
+      typeof config.headers?.get === 'function' ? config.headers.get('x-platform') : config.headers?.['x-platform'];
 
-    return params ? `GET ${url}?${params}` : `GET ${url}`;
+    return platform ? `${key} [x-platform=${JSON.stringify(platform)}]` : key;
   }
 
   return undefined;
