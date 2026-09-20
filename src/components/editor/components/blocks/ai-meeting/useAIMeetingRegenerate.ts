@@ -8,7 +8,7 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { AIMeetingBlockData } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { useAIEnabled } from '@/components/app/app.hooks';
-import { WriterRequest } from '@/components/chat/request';
+import { WriterRequest } from '@/components/chat/request/writer-request';
 import { AIAssistantType } from '@/components/chat/types';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
