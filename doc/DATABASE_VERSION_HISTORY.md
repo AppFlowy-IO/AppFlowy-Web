@@ -31,6 +31,9 @@ Restoration enqueues a durable `/history/{version}/restore-jobs` job with an ide
 resumes it. Success requires a recovery version and a completed live database reload before the
 dialog closes. The recovery snapshot remains selectable in history.
 
+Reopening history may finish cleanup of an already successful restore. That recovery keeps the
+newly opened dialog visible; automatic closing applies only to a restore confirmed in that opening.
+
 The committed restore job UUID identifies the database generation. HTTP and websocket updates,
 outbox records, and row seed writes retain the generation under which they were authored. Restore
 reconciliation fences old asynchronous responses, retires obsolete providers and database/row

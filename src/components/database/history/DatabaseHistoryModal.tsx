@@ -61,6 +61,7 @@ export default function DatabaseHistoryModal({
   const [confirmation, setConfirmation] = useState<DatabaseHistoryVersion | null>(null);
   const [refresh, setRefresh] = useState(0);
   const previousCompleted = useRef(0);
+  const closeAfterRestore = useRef(false);
   const restore = useDatabaseHistoryRestore({ open, userId, workspaceId, databaseId, onRestored });
   const selectedVersion = useMemo(() => versions.find((version) => version.version === selected), [versions, selected]);
   // Fix the range for this list traversal, even when an older page is requested later.
@@ -70,13 +71,23 @@ export default function DatabaseHistoryModal({
   useEffect(() => {
     if (restore.completed === previousCompleted.current) return;
     previousCompleted.current = restore.completed;
-    // Completion follows the live database reload. Leave history before a refresh
-    // can select the newly saved recovery version and show pre-restore content.
-    onOpenChange(false);
-  }, [restore.completed, onOpenChange]);
+    if (closeAfterRestore.current) {
+      closeAfterRestore.current = false;
+      // Leave the restore the user requested here before previewing its new
+      // recovery version, which contains the pre-restore database.
+      onOpenChange(false);
+    } else if (open) {
+      // A live database reload may unmount history before its saved intent is
+      // cleared. Finishing that intent on the next open is cleanup, not a new
+      // Restore click: keep this dialog open and load the current history list.
+      setCursor(undefined);
+      setRefresh((value) => value + 1);
+    }
+  }, [restore.completed, onOpenChange, open]);
 
   useEffect(() => {
     if (!open) {
+      closeAfterRestore.current = false;
       setCursor(undefined);
       return;
     }
@@ -214,7 +225,11 @@ export default function DatabaseHistoryModal({
         <DialogActions>
           <Button variant='ghost' onClick={() => setConfirmation(null)}>{t('button.cancel')}</Button>
           <Button data-testid='database-history-confirm-restore' onClick={() => {
-            if (confirmation) restore.start(confirmation.version);
+            if (confirmation) {
+              closeAfterRestore.current = true;
+              restore.start(confirmation.version);
+            }
+
             setConfirmation(null);
           }}>{t('versionHistory.restoreVersion', 'Restore version')}</Button>
         </DialogActions>
