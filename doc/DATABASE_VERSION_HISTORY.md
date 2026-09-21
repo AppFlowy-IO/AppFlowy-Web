@@ -45,7 +45,24 @@ reconciles verified mounts during restore and remembers entries removed by that 
 versions can remount them under their original active parent. Never-mounted views and ordinary
 user deletions stay absent. After the restored aggregate reloads, initiating and follower tabs
 refresh the current workspace's sidebar roots and expanded branches; revision fences prevent
-older in-flight loads from bringing removed entries back.
+older in-flight loads from bringing removed entries back. Transient Folder read failures retain
+that navigation work for the current workspace/account session, with exponential retry delays
+capped at 30 seconds and at most eight concurrent parent reads. Duplicate generation events
+share pending work without restarting its backoff; a later restore preserves any still-pending
+expanded branches. Retries fetch Folder
+authority directly and do not repeat the completed database aggregate reset. Folder-derived
+parent read targets (up to 4,096 recently observed parents) survive removal of their last child
+within the session, allowing a later restore to refresh deep standalone mounts. These targets
+never create sidebar entries locally.
+Restore reads reject responses superseded by newer Folder mutations, older revisions, and
+omitted batch roots; a transient projection omission therefore remains retryable. An exact
+navigation denial/not-found retires an omitted parent instead of polling it indefinitely.
+
+Completion timing differs between clients: the desktop generation acknowledgment waits for its
+Folder refresh, while Web retains navigation refresh independently after the aggregate reload.
+The Web history dialog can therefore close while sidebar reads are retrying. Both clients apply
+the same server-owned mount membership; changing workspace/account cancels the old session's
+navigation retries and fences its outstanding responses.
 
 ## Validation
 

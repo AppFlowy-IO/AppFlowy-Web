@@ -250,7 +250,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       resetPlans.current.delete(planKey);
       // Sidebar membership lives in Folder, separately from the replaced Database document.
       // Refresh it for both the initiating tab and followers that observed a restore marker.
-      eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId });
+      eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId, restoreId });
     } finally {
       // Messages queued before/during cutover belong to the discarded branch.
       for (const id of objectIds) {

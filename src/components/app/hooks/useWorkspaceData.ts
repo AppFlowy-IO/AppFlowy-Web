@@ -388,7 +388,28 @@ const ACCESS_REVOKED_PROBE_ERROR_CODES = new Set<number>([
 ]);
 
 const PERMISSION_SUBTREE_REHYDRATE_MAX_ATTEMPTS = 2;
+const DATABASE_RESTORE_NAVIGATION_RETRY_MS = 1_000;
+const DATABASE_RESTORE_NAVIGATION_MAX_RETRY_MS = 30_000;
+const MAX_RETAINED_RESTORE_NAVIGATION_PARENTS = 4_096;
+const MAX_CONCURRENT_RESTORE_NAVIGATION_READS = 8;
 const NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS = 30_000;
+
+interface RestoreNavigationRead {
+  isCurrent: () => boolean;
+  minimumFolderRid: () => FolderRid | null;
+  acceptRoot: () => void;
+}
+
+function rememberRestoreNavigationParent(parents: Map<string, number>, viewId: string, depth: number) {
+  const retainedDepth = Math.min(depth, parents.get(viewId) ?? depth);
+
+  parents.delete(viewId);
+  parents.set(viewId, retainedDepth);
+  if (parents.size <= MAX_RETAINED_RESTORE_NAVIGATION_PARENTS) return;
+  const oldestViewId = parents.keys().next().value;
+
+  if (oldestViewId !== undefined) parents.delete(oldestViewId);
+}
 
 interface NoopFolderTrashRefreshBurst {
   firstNotificationAt: number;
@@ -555,6 +576,11 @@ export function useWorkspaceData() {
   // must compare against the root/sidebar outline snapshot we actually applied.
   const lastFolderRidRef = useRef<FolderRid | null>(null);
   const lastFolderViewRidRef = useRef<FolderRid | null>(null);
+  const folderMutationRevisionRef = useRef(0);
+  const lastFolderMutationRidRef = useRef<FolderRid | null>(null);
+  // Keep Folder-derived read targets even when removal of their last child clears lazy-load
+  // markers. A later restore can remount that child below the shallow root's depth boundary.
+  const restoreNavigationParentDepthsRef = useRef(new Map<string, number>());
   const lastAppliedRootOutlineRidRef = useRef<FolderRid | null>(null);
   const lastAppliedRootOutlineFingerprintRef = useRef<string | null>(null);
   const pendingFolderViewUpdatesRef = useRef<Map<string, PendingFolderViewUpdate>>(new Map());
@@ -601,6 +627,11 @@ export function useWorkspaceData() {
   }
 
   const workspaceRevision = workspaceRevisionRef.current;
+
+  useEffect(() => {
+    restoreNavigationParentDepthsRef.current.clear();
+  }, [currentWorkspaceId, userWorkspaceInfo?.userId]);
+
   // Reset effects run after render; snapshots must already belong to this visit.
   const recentViews =
     recentViewsSnapshot?.workspaceId === currentWorkspaceId && recentViewsSnapshot?.revision === workspaceRevision
@@ -744,6 +775,15 @@ export function useWorkspaceData() {
 
     if (!current || compareFolderRid(next, current) > 0) {
       lastFolderRidRef.current = next;
+    }
+  }, []);
+
+  const recordFolderMutation = useCallback((next: FolderRid | null) => {
+    folderMutationRevisionRef.current += 1;
+    const current = lastFolderMutationRidRef.current;
+
+    if (next && (!current || compareFolderRid(next, current) > 0)) {
+      lastFolderMutationRidRef.current = next;
     }
   }, []);
 
@@ -1270,7 +1310,7 @@ export function useWorkspaceData() {
   );
 
   const loadViewChildrenBatch = useCallback(
-    async (viewIds: string[], rootRequestSeq?: number): Promise<View[]> => {
+    async (viewIds: string[], rootRequestSeq?: number, restoreRead?: RestoreNavigationRead): Promise<View[]> => {
       if (!currentWorkspaceId || viewIds.length === 0) return [];
 
       const workspaceId = currentWorkspaceId;
@@ -1279,6 +1319,7 @@ export function useWorkspaceData() {
       const metadataAccessToken = captureWorkspaceViewMetadataAccessToken(workspaceId);
       const isStaleBatchRequest = () =>
         permissionRefreshRevisionRef.current !== permissionRevision ||
+        (restoreRead !== undefined && !restoreRead.isCurrent()) ||
         (rootRequestSeq === undefined
           ? isStaleWorkspaceRequest(workspaceId, workspaceRevision)
           : isStaleRootOutlineRequest(workspaceId, workspaceRevision, rootRequestSeq));
@@ -1308,6 +1349,31 @@ export function useWorkspaceData() {
 
         if (isStaleBatchRequest()) {
           return views;
+        }
+
+        if (restoreRead) {
+          const returnedIds = new Set(views.map((view) => view?.view_id));
+          const minimumFolderRid = restoreRead.minimumFolderRid();
+
+          // Batch endpoints can omit roots while their projections are temporarily unresolved.
+          // An omitted root is not authoritative evidence that its children were removed.
+          const omittedIds = uniqueIds.filter((viewId) => !returnedIds.has(viewId));
+
+          if (omittedIds.length > 0) {
+            // Confirm deleted/inaccessible parents independently so a partial batch cannot
+            // either discard transiently missing work or poll a genuinely deleted parent forever.
+            await Promise.all(omittedIds.map((viewId) => ViewService.getNavigation(workspaceId, viewId, 0)));
+            if (isStaleBatchRequest()) return views;
+            throw new Error('Database restore subtree response omitted a requested root');
+          }
+
+          if (minimumFolderRid && views.some((view) => {
+            const viewRid = parseFolderRid(view?.folder_rid);
+
+            return viewRid && compareFolderRid(viewRid, minimumFolderRid) < 0;
+          })) {
+            throw new Error('Database restore subtree is older than an accepted Folder snapshot');
+          }
         }
 
         views.forEach((view) => {
@@ -1749,14 +1815,19 @@ export function useWorkspaceData() {
   }, [currentWorkspaceId, refreshTrashListInBackground]);
 
   const revalidateSidebarOutline = useCallback(
-    async (expandedViewIds: string[] = []): Promise<SidebarOutlineRevalidationResult> => {
+    async (
+      expandedViewIds: string[] = [],
+      restoreRead?: RestoreNavigationRead
+    ): Promise<SidebarOutlineRevalidationResult> => {
       if (!currentWorkspaceId) return 'unchanged';
 
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
       const permissionRevision = permissionRefreshRevisionRef.current;
       const metadataAccessToken = captureWorkspaceViewMetadataAccessToken(workspaceId);
-      const isStalePermissionRequest = () => permissionRefreshRevisionRef.current !== permissionRevision;
+      const isStalePermissionRequest = () =>
+        permissionRefreshRevisionRef.current !== permissionRevision ||
+        (restoreRead !== undefined && !restoreRead.isCurrent());
       const requestSeq = ++rootOutlineRequestSeqRef.current;
       const outlineRequest = ViewService.getOutline(workspaceId);
       let res: Awaited<typeof outlineRequest>;
@@ -1782,14 +1853,20 @@ export function useWorkspaceData() {
         throw new Error('App outline not found');
       }
 
-      primeWorkspaceViewMetadataFromServer(workspaceId, res.outline, metadataAccessToken);
-
-      latestAcceptedRootOutlineRequestSeqRef.current = requestSeq;
-
       const nextFolderRid = parseFolderRid(res.folderRid);
       const currentRid = lastAppliedRootOutlineRidRef.current;
+      const minimumFolderRid = restoreRead?.minimumFolderRid();
 
-      if (nextFolderRid && currentRid && compareFolderRid(nextFolderRid, currentRid) <= 0) {
+      // An older server snapshot cannot acknowledge retained restore navigation work.
+      // Leave its request sequence unaccepted so that work remains retryable.
+      if (nextFolderRid && currentRid && compareFolderRid(nextFolderRid, currentRid) < 0) return 'unchanged';
+      if (nextFolderRid && minimumFolderRid && compareFolderRid(nextFolderRid, minimumFolderRid) < 0) return 'unchanged';
+
+      primeWorkspaceViewMetadataFromServer(workspaceId, res.outline, metadataAccessToken);
+      latestAcceptedRootOutlineRequestSeqRef.current = requestSeq;
+      restoreRead?.acceptRoot();
+
+      if (nextFolderRid && currentRid && compareFolderRid(nextFolderRid, currentRid) === 0) {
         Log.debug('[Outline] [periodic-revalidate] skipped unchanged outline', {
           workspaceId,
           folderRid: res.folderRid,
@@ -1876,8 +1953,26 @@ export function useWorkspaceData() {
     ]
   );
 
+  // Route navigation and profile updates must not replace the session-owned retry queue.
+  const loadOutlineRef = useRef(loadOutline);
+  const currentUserEmailRef = useRef(currentUserEmail);
+
+  loadOutlineRef.current = loadOutline;
+  currentUserEmailRef.current = currentUserEmail;
+
   useEffect(() => {
     let cancelled = false;
+    const ownedWorkspaceRevision = workspaceRevisionRef.current;
+    const restoreRefreshTargets = new Map<string, number>();
+    const pendingRestoreNotifications = new Map<string, string | undefined>();
+    let restoreRootPending = false;
+    let restoreRefreshInFlight = false;
+    let restoreRetryDelay = DATABASE_RESTORE_NAVIGATION_RETRY_MS;
+    let restoreRetryTimer: ReturnType<typeof setTimeout> | undefined;
+    const isCurrentRestoreSession = () =>
+      !cancelled &&
+      currentWorkspaceIdRef.current === currentWorkspaceId &&
+      workspaceRevisionRef.current === ownedWorkspaceRevision;
 
     const refreshPermissionDerivedState = () => {
       if (!currentWorkspaceId) return;
@@ -1886,7 +1981,7 @@ export function useWorkspaceData() {
       // Keep this refresh in the always-mounted workspace layer so permission
       // notifications are handled even while the share panel is closed.
       AccessService.invalidateShareDetailCache(currentWorkspaceId);
-      void loadOutline(currentWorkspaceId, false);
+      void loadOutlineRef.current(currentWorkspaceId, false);
     };
 
     const evictAccessDerivedSubtrees = (targetViewId?: string) => {
@@ -1953,7 +2048,7 @@ export function useWorkspaceData() {
       if (!currentWorkspaceId) return;
 
       const changedViewId = payload?.viewId;
-      const normalizedCurrentEmail = currentUserEmail?.toLowerCase();
+      const normalizedCurrentEmail = currentUserEmailRef.current?.toLowerCase();
       const payloadEmails = payload?.emails;
       const hasOnlyValidEmails =
         Array.isArray(payloadEmails) &&
@@ -2045,7 +2140,7 @@ export function useWorkspaceData() {
         });
     };
 
-    const refreshPermissionSubtrees = (changedViewId?: string) => {
+    const preparePermissionSubtreeRefresh = (changedViewId?: string) => {
       if (!currentWorkspaceId) return;
 
       ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
@@ -2106,7 +2201,16 @@ export function useWorkspaceData() {
         staleSubtreeWaves.set(depth, wave);
       }
 
-      refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
+      return { workspaceId, permissionRevision, staleSubtreeWaves };
+    };
+
+    const refreshPermissionSubtrees = (changedViewId?: string) => {
+      const refresh = preparePermissionSubtreeRefresh(changedViewId);
+
+      if (!refresh) return;
+      const { workspaceId, permissionRevision, staleSubtreeWaves } = refresh;
+
+      refreshRequestedFavoriteViewsInBackground(workspaceId);
       refreshPermissionDerivedState();
 
       // Restore still-authorized expanded branches from the server. Fetch each
@@ -2147,11 +2251,144 @@ export function useWorkspaceData() {
       refreshPermissionSubtrees(payload?.objectId ?? undefined);
     };
 
-    const handleDatabaseRestored = (payload: { workspaceId: string; databaseId: string }) => {
+    const refreshRestoredNavigation = async () => {
+      if (!isCurrentRestoreSession() || restoreRefreshInFlight) return;
+      restoreRefreshInFlight = true;
+      const permissionRevision = permissionRefreshRevisionRef.current;
+      const folderMutationRevision = folderMutationRevisionRef.current;
+      const isCurrentRequest = () =>
+        isCurrentRestoreSession() && permissionRefreshRevisionRef.current === permissionRevision &&
+        folderMutationRevisionRef.current === folderMutationRevision;
+      let rootAccepted = false;
+      const restoreRead: RestoreNavigationRead = {
+        isCurrent: isCurrentRequest,
+        minimumFolderRid: () => {
+          const mutationRid = lastFolderMutationRidRef.current;
+          const rootRid = lastAppliedRootOutlineRidRef.current;
+
+          return mutationRid && (!rootRid || compareFolderRid(mutationRid, rootRid) > 0) ? mutationRid : rootRid;
+        },
+        acceptRoot: () => { rootAccepted = true; },
+      };
+
+      try {
+        if (restoreRootPending) {
+          // This reader reports transport failures instead of swallowing them. A completed
+          // database reset must retain its independent navigation work until the server answers.
+          await revalidateSidebarOutline([], restoreRead);
+          if (!isCurrentRequest()) return;
+          // A newer request can supersede this reader's failure while still being pending.
+          // Only this attempt's accepted authoritative read completes the restore refresh.
+          if (!rootAccepted) {
+            throw new Error('Database restore outline refresh was superseded before acceptance');
+          }
+
+          restoreRootPending = false;
+        }
+
+        const waves = new Map<number, string[]>();
+
+        for (const [viewId, depth] of restoreRefreshTargets) {
+          const wave = waves.get(depth) ?? [];
+
+          wave.push(viewId);
+          waves.set(depth, wave);
+        }
+
+        for (const [, viewIds] of [...waves].sort(([left], [right]) => left - right)) {
+          if (!isCurrentRequest()) return;
+          let retryWave = false;
+
+          for (let offset = 0; offset < viewIds.length; offset += MAX_CONCURRENT_RESTORE_NAVIGATION_READS) {
+            if (!isCurrentRequest()) return;
+            await Promise.all(
+              viewIds.slice(offset, offset + MAX_CONCURRENT_RESTORE_NAVIGATION_READS).map(async (viewId) => {
+                // A failed parent read leaves its descendants temporarily absent. Finish that
+                // wave before treating a missing descendant as an authoritative removal.
+                if (!findView(stableOutlineRef.current, viewId)) {
+                  restoreRefreshTargets.delete(viewId);
+                  return;
+                }
+
+                if (loadingViewIdsRef.current.has(viewId)) {
+                  retryWave = true;
+                  return;
+                }
+
+                try {
+                  await loadViewChildrenBatch([viewId], undefined, restoreRead);
+                  if (isCurrentRequest()) restoreRefreshTargets.delete(viewId);
+                } catch (error) {
+                  if (!isCurrentRequest()) return;
+                  if (isAuthoritativeViewRefreshError(error)) {
+                    restoreRefreshTargets.delete(viewId);
+                    restoreNavigationParentDepthsRef.current.delete(viewId);
+                  } else {
+                    retryWave = true;
+                  }
+                }
+              })
+            );
+          }
+
+          if (retryWave) break;
+        }
+      } catch (error) {
+        if (isCurrentRequest()) {
+          if (isAuthoritativeViewRefreshError(error)) {
+            restoreRootPending = false;
+            restoreRefreshTargets.clear();
+          } else {
+            Log.warn('[Outline] database restore navigation will retry', { workspaceId: currentWorkspaceId, error });
+          }
+        }
+      } finally {
+        restoreRefreshInFlight = false;
+        if (isCurrentRestoreSession()) {
+          if (!isCurrentRequest()) restoreRootPending = true;
+          if (restoreRootPending || restoreRefreshTargets.size > 0) {
+            restoreRetryTimer = setTimeout(() => {
+              restoreRetryTimer = undefined;
+              void refreshRestoredNavigation();
+            }, restoreRetryDelay);
+            restoreRetryDelay = Math.min(restoreRetryDelay * 2, DATABASE_RESTORE_NAVIGATION_MAX_RETRY_MS);
+          } else {
+            pendingRestoreNotifications.clear();
+          }
+        }
+      }
+    };
+
+    const handleDatabaseRestored = (payload: { workspaceId: string; databaseId: string; restoreId?: string }) => {
       if (payload.workspaceId !== currentWorkspaceId) return;
-      // A database can be mounted in several branches. Reuse the revision-fenced refresh so
-      // old lazy loads cannot put removed tabs back after the restored root has been loaded.
-      refreshPermissionSubtrees();
+      if (
+        pendingRestoreNotifications.has(payload.databaseId) &&
+        pendingRestoreNotifications.get(payload.databaseId) === payload.restoreId
+      ) return;
+      const alreadyPending = restoreRefreshInFlight || restoreRetryTimer !== undefined;
+      const refresh = preparePermissionSubtreeRefresh();
+
+      if (!refresh) return;
+      pendingRestoreNotifications.set(payload.databaseId, payload.restoreId);
+      // Keep targets captured before eviction even if another restore arrives during an
+      // outage. Database view definitions never determine which entries belong in the sidebar.
+      for (const [depth, viewIds] of refresh.staleSubtreeWaves) {
+        for (const viewId of viewIds) {
+          restoreRefreshTargets.set(viewId, Math.min(depth, restoreRefreshTargets.get(viewId) ?? depth));
+          rememberRestoreNavigationParent(restoreNavigationParentDepthsRef.current, viewId, depth);
+        }
+      }
+
+      for (const [viewId, depth] of restoreNavigationParentDepthsRef.current) {
+        restoreRefreshTargets.set(viewId, Math.min(depth, restoreRefreshTargets.get(viewId) ?? depth));
+      }
+
+      restoreRootPending = true;
+      refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
+      if (!alreadyPending) {
+        restoreRetryDelay = DATABASE_RESTORE_NAVIGATION_RETRY_MS;
+        void refreshRestoredNavigation();
+      }
     };
 
     if (eventEmitter) {
@@ -2162,6 +2399,10 @@ export function useWorkspaceData() {
 
     return () => {
       cancelled = true;
+      clearTimeout(restoreRetryTimer);
+      // The existing readers apply their own permission revision fence before committing.
+      // Retire admitted restore reads when this workspace/account owner is replaced.
+      if (restoreRefreshInFlight) permissionRefreshRevisionRef.current += 1;
       if (eventEmitter) {
         eventEmitter.off(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
         eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
@@ -2170,10 +2411,10 @@ export function useWorkspaceData() {
     };
   }, [
     currentWorkspaceId,
-    currentUserEmail,
+    userWorkspaceInfo?.userId,
     eventEmitter,
     loadViewChildrenBatch,
-    loadOutline,
+    revalidateSidebarOutline,
     markCachedFolderSubtreesStale,
     refreshRequestedFavoriteViewsInBackground,
     stableOutlineRef,
@@ -2287,6 +2528,7 @@ export function useWorkspaceData() {
       }
 
       if (!patchedOutline) return;
+      recordFolderMutation(patchRid);
 
       // Deduplicate children that may have been inserted twice.
       // FOLDER_VIEW_CHANGED (VIEW_ADDED) and FOLDER_OUTLINE_CHANGED arrive as
@@ -2365,6 +2607,7 @@ export function useWorkspaceData() {
     refreshRequestedFavoriteViewsInBackground,
     refreshTrashListInBackground,
     reconcilePendingFolderViewUpdates,
+    recordFolderMutation,
     replaceOutlinePreservingChildren,
     scheduleNoopFolderTrashRefresh,
     stableOutlineRef,
@@ -2526,6 +2769,15 @@ export function useWorkspaceData() {
 
           if (parentId) {
             const previousParent = findView(nextOutline, parentId);
+
+            if (previousParent && (loadedViewIdsRef.current.has(parentId) || previousParent.children.length > 0)) {
+              const depth = buildViewDepthIndex(nextOutline).get(parentId);
+
+              if (depth !== undefined) {
+                rememberRestoreNavigationParent(restoreNavigationParentDepthsRef.current, parentId, depth);
+              }
+            }
+
             const remainingChildIds = new Set(childIds);
             const visiblyRemovedChildren =
               previousParent?.children.filter((child) => !remainingChildIds.has(child.view_id)) ?? [];
@@ -2636,6 +2888,10 @@ export function useWorkspaceData() {
         lastFolderViewRidRef.current = folderRid;
       }
 
+      if (nextOutline !== stableOutlineRef.current || shouldInvalidateDatabaseCatalog) {
+        recordFolderMutation(folderRid);
+      }
+
       if (nextOutline !== stableOutlineRef.current) {
         stableOutlineRef.current = nextOutline;
         setOutline(nextOutline);
@@ -2662,6 +2918,7 @@ export function useWorkspaceData() {
     currentWorkspaceId,
     eventEmitter,
     loadOutline,
+    recordFolderMutation,
     refreshRequestedFavoriteViewsInBackground,
     refreshTrashListInBackground,
     scheduleNoopFolderTrashRefresh,
@@ -2889,6 +3146,7 @@ export function useWorkspaceData() {
     scheduledTrashRefreshKeyRef.current = undefined;
     lastFolderRidRef.current = null;
     lastFolderViewRidRef.current = null;
+    lastFolderMutationRidRef.current = null;
     lastAppliedRootOutlineRidRef.current = null;
     lastAppliedRootOutlineFingerprintRef.current = null;
     pendingFolderViewUpdatesRef.current.clear();

@@ -147,7 +147,9 @@ test('same-version restore replaces root and rows, clears old queues, and preser
   expect(documentDestroyed).not.toHaveBeenCalled();
   expect(f.refs.queuedMessagesDuringReset.current.size).toBe(0);
   expect(navigationRefresh).toHaveBeenCalledTimes(1);
-  expect(navigationRefresh).toHaveBeenCalledWith({ workspaceId: 'workspace', databaseId: 'database' });
+  expect(navigationRefresh).toHaveBeenCalledWith({
+    workspaceId: 'workspace', databaseId: 'database', restoreId: 'restore-new',
+  });
 });
 
 test.each(['database', 'row', 'newly-opened-row'])(
