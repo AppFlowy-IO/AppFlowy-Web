@@ -1,26 +1,6 @@
-import { expect, test as base } from '@playwright/test';
+import { expect } from '@playwright/test';
 
-const test = base.extend<{}, { integrationsURL: string }>({
-  integrationsURL: [
-    async ({}, use, workerInfo) => {
-      const { createServer } = await import('vite');
-      const server = await createServer({
-        cacheDir: `node_modules/.vite/integrations-${workerInfo.workerIndex}`,
-        logLevel: 'error',
-        optimizeDeps: { entries: ['playwright/support/integrations.fixture.tsx'] },
-        server: { host: '127.0.0.1', port: 5190, strictPort: false },
-      });
-
-      try {
-        await server.listen();
-        await use(server.resolvedUrls!.local[0]);
-      } finally {
-        await server.close();
-      }
-    },
-    { scope: 'worker', timeout: 120_000 },
-  ],
-});
+import { fixtureHTML, test } from '../../support/integrations-server';
 
 test.use({ launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] } });
 
@@ -116,11 +96,7 @@ test('connected Drive browsing and Calendar reminders lead to private, transcrib
   await page.route('**/integrations-fixture', (route) =>
     route.fulfill({
       contentType: 'text/html',
-      body: `<!doctype html><html><body id="body"><div id="root"></div><script type="module">
-    import RefreshRuntime from '/@react-refresh'; RefreshRuntime.injectIntoGlobalHook(window);
-    window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => (type) => type; window.__vite_plugin_react_preamble_installed__ = true;
-    await import('/playwright/support/integrations.fixture.tsx');
-  </script></body></html>`,
+      body: fixtureHTML('integrations'),
     })
   );
   await page.goto(new URL('/integrations-fixture', integrationsURL).href);
@@ -150,7 +126,7 @@ test('connected Drive browsing and Calendar reminders lead to private, transcrib
   await expect(page.getByText('Transcription saved', { exact: true })).toBeVisible();
   await expect(page.getByTestId('document-content')).toContainText('Last decision: launch tomorrow.');
   const document = JSON.parse((await page.getByTestId('document-content').textContent()) ?? '{}');
-  const text = Object.values(document.data.document.meta.text_map) as string[];
+  const text = Object.values<string>(document.data.document.meta.text_map);
 
   expect(text.filter((value) => value.startsWith('Last decision'))).toEqual(['Last decision: launch tomorrow.']);
   await expect(page.getByRole('button', { name: 'Start transcribing', exact: true })).toBeVisible();

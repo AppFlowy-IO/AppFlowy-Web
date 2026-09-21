@@ -63,7 +63,7 @@ function Recording({ payload }: { payload: CreatePagePayload }) {
   }, [doc, editor]);
 
   return (
-    <Slate editor={editor} initialValue={yDocToSlateContent(doc).children}>
+    <Slate editor={editor} initialValue={yDocToSlateContent(doc)!.children}>
       <h2>{payload.name}</h2>
       <AIMeetingRecording
         workspaceId='workspace'
@@ -88,7 +88,9 @@ function Fixture() {
   const operations = useMemo(
     () =>
       ({
-        createSpaceWithInitialPage: async (value) => {
+        createSpaceWithInitialPage: async (
+          value: Parameters<NonNullable<AppOperationsContextType['createSpaceWithInitialPage']>>[0]
+        ) => {
           setPayload(value.initial_page);
           setPrivateSpace(value.space_permission);
           return { space: { view_id: 'private-space' }, page: { view_id: 'meeting-page' } };
@@ -96,7 +98,7 @@ function Fixture() {
         toView: async () => {
           setOpened(true);
         },
-      } as AppOperationsContextType),
+      } as unknown as AppOperationsContextType),
     []
   );
 

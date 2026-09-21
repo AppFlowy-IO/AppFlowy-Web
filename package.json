@@ -34,6 +34,7 @@
     "test:http-api:file-import": "jest src/application/services/js-services/http/__tests__/file-import.integration.test.ts --no-coverage --maxWorkers=1 --testPathIgnorePatterns=/node_modules/",
     "test:http-api:quick-note": "jest src/application/services/js-services/http/__tests__/quick-note.integration.test.ts --no-coverage --maxWorkers=1 --testPathIgnorePatterns=/node_modules/",
     "test:e2e": "playwright test",
+    "test:e2e:integrations": "playwright test -c playwright.integrations.config.ts",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:single": "playwright test --headed --workers=1",
