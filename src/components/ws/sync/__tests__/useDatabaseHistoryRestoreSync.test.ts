@@ -115,11 +115,17 @@ test.each([null, 'restore-current'])('verifies an unopened follower row in gener
 test('same-version restore replaces root and rows, clears old queues, and preserves row Documents', async () => {
   const f = fixture();
   const documentDestroyed = jest.fn();
+  const events = new EventEmitter();
+  const navigationRefresh = jest.fn(() => {
+    expect(f.contexts.get('database')?.doc).toBe(f.nextRoot);
+  });
+
+  events.on(APP_EVENTS.DATABASE_RESTORED, navigationRefresh);
 
   f.document.on('destroy', documentDestroyed);
   const { result } = renderHook(() => useDatabaseHistoryRestoreSync({
     refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
-    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    eventEmitter: events, register: f.register, unregister: f.unregister,
     scheduleDeferredCleanup: jest.fn(),
   }));
 
@@ -140,6 +146,8 @@ test('same-version restore replaces root and rows, clears old queues, and preser
   expect(f.contexts.get('row-document')?.doc).toBe(f.document);
   expect(documentDestroyed).not.toHaveBeenCalled();
   expect(f.refs.queuedMessagesDuringReset.current.size).toBe(0);
+  expect(navigationRefresh).toHaveBeenCalledTimes(1);
+  expect(navigationRefresh).toHaveBeenCalledWith({ workspaceId: 'workspace', databaseId: 'database' });
 });
 
 test.each(['database', 'row', 'newly-opened-row'])(

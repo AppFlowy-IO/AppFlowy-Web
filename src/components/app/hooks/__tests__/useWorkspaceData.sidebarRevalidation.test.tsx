@@ -419,7 +419,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     if (revoked) expect(findView(result.current.outline ?? [], changed.view_id)).toBeNull();
   });
 
-  it.each([APP_EVENTS.PERMISSION_CHANGED, APP_EVENTS.SHARE_VIEWS_CHANGED])(
+  it.each([APP_EVENTS.PERMISSION_CHANGED, APP_EVENTS.SHARE_VIEWS_CHANGED, APP_EVENTS.DATABASE_RESTORED])(
     'restarts a superseded sibling load after %s without letting the stale request clear its marker',
     async (event) => {
       const eventEmitter = new EventEmitter();
@@ -453,7 +453,9 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       act(() => {
         eventEmitter.emit(
           event,
-          event === APP_EVENTS.PERMISSION_CHANGED
+          event === APP_EVENTS.DATABASE_RESTORED
+            ? { workspaceId, databaseId: 'database-id' }
+            : event === APP_EVENTS.PERMISSION_CHANGED
             ? { objectId: changedSpaceId }
             : { viewId: changedSpaceId, emails: ['current-user@appflowy.io'] }
         );
@@ -488,6 +490,42 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       expect(ViewService.getMultiple).toHaveBeenCalledTimes(3);
     }
   );
+
+  it('reloads database sidebar tabs in both directions after a restore', async () => {
+    const eventEmitter = new EventEmitter();
+    const containerId = 'version-db';
+    const tabs = ['Filter checked', 'All Data', 'Board'].map((name) => createView(name, {
+      name, layout: ViewLayout.Grid, parent_view_id: containerId, extra: { database_id: 'database-id' },
+    }));
+    const container = createView(containerId, {
+      layout: ViewLayout.Grid, has_children: true,
+      extra: { database_id: 'database-id', is_database_container: true },
+    });
+    const shallowRoot = [createView('space-id', { children: [container], has_children: true })];
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: shallowRoot, folderRid: '1-1' });
+    (ViewService.getMultiple as jest.Mock).mockResolvedValue([{ ...container, children: tabs }]);
+    const { result, unmount } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+    await act(async () => { await result.current.loadViewChildrenBatch?.([containerId]); });
+    expect(findView(result.current.outline ?? [], containerId)?.children).toEqual(tabs);
+
+    for (const restoredTabs of [tabs.slice(0, 1), tabs]) {
+      (ViewService.getMultiple as jest.Mock).mockResolvedValue([{ ...container, children: restoredTabs }]);
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId: 'database-id' });
+      });
+      await waitFor(() => expect(findView(result.current.outline ?? [], containerId)?.children).toEqual(restoredTabs));
+    }
+
+    (ViewService.getMultiple as jest.Mock).mockClear();
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId: 'another-workspace', databaseId: 'database-id' });
+    });
+    expect(ViewService.getMultiple).not.toHaveBeenCalled();
+    unmount();
+  });
 
   it('drops a loaded deep subtree that a permission refresh omits from the shallow root', async () => {
     const eventEmitter = new EventEmitter();

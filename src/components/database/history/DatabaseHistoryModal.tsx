@@ -209,7 +209,7 @@ export default function DatabaseHistoryModal({
         <DialogTitle id={`${titleId}-confirm`}>{t('databaseHistory.confirmTitle', 'Restore this database version?')}</DialogTitle>
         <DialogContent>
           <p className='text-sm'>{t('databaseHistory.confirmDescription',
-            'This restores the whole database, including shared views and rows. Row-page document content and folder structure stay as they are. A recovery version of the current database will be saved first; if that fails, the restore will stop.')}</p>
+            'This restores the whole database, including shared views, their sidebar entries, and rows. Row-page document content and other pages stay as they are. A recovery version of the current database will be saved first; if that fails, the restore will stop.')}</p>
         </DialogContent>
         <DialogActions>
           <Button variant='ghost' onClick={() => setConfirmation(null)}>{t('button.cancel')}</Button>

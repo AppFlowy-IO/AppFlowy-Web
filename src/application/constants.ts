@@ -97,6 +97,7 @@ export const APP_EVENTS = {
   INBOX_NOTIFICATION: 'inbox-notification',               // Inbox notification push for notification center refresh
   INLINE_COMMENT_CHANGED: 'inline-comment-changed',       // Document inline comment created, resolved, or deleted
   COLLAB_DOC_RESET: 'collab-doc-reset',                   // Collab version reset replaced active Y.Doc instance
+  DATABASE_RESTORED: 'database-restored',                 // Restored aggregate and navigation are ready to reload
 
   // Editor events
   FIND_AND_REPLACE: 'find-and-replace',                   // Open the in-document find & replace panel for a view

@@ -2147,9 +2147,17 @@ export function useWorkspaceData() {
       refreshPermissionSubtrees(payload?.objectId ?? undefined);
     };
 
+    const handleDatabaseRestored = (payload: { workspaceId: string; databaseId: string }) => {
+      if (payload.workspaceId !== currentWorkspaceId) return;
+      // A database can be mounted in several branches. Reuse the revision-fenced refresh so
+      // old lazy loads cannot put removed tabs back after the restored root has been loaded.
+      refreshPermissionSubtrees();
+    };
+
     if (eventEmitter) {
       eventEmitter.on(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
       eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
+      eventEmitter.on(APP_EVENTS.DATABASE_RESTORED, handleDatabaseRestored);
     }
 
     return () => {
@@ -2157,6 +2165,7 @@ export function useWorkspaceData() {
       if (eventEmitter) {
         eventEmitter.off(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
         eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
+        eventEmitter.off(APP_EVENTS.DATABASE_RESTORED, handleDatabaseRestored);
       }
     };
   }, [

@@ -3,7 +3,7 @@ import EventEmitter from 'events';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as Y from 'yjs';
 
-import { ERROR_CODE } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { invalidateDatabaseBlobAfterRestore, prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
 import { captureDatabaseStorageFence, db, deleteCollabDB, matchesDatabaseStorageFence, openCollabDB, openRowCollabDBWithProvider,
@@ -248,6 +248,9 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
 
       completed = true;
       resetPlans.current.delete(planKey);
+      // Sidebar membership lives in Folder, separately from the replaced Database document.
+      // Refresh it for both the initiating tab and followers that observed a restore marker.
+      eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId });
     } finally {
       // Messages queued before/during cutover belong to the discarded branch.
       for (const id of objectIds) {

@@ -37,6 +37,13 @@ reconciliation fences old asynchronous responses, retires obsolete providers and
 outbox updates, and reloads the aggregate. Repeated notifications for the same generation preserve
 current providers and queued edits. Row-page documents retain their independent state.
 
+Sidebar membership belongs to Folder, separately from database view definitions. The server
+reconciles verified mounts during restore and remembers entries removed by that restore so later
+versions can remount them under their original active parent. Never-mounted views and ordinary
+user deletions stay absent. After the restored aggregate reloads, initiating and follower tabs
+refresh the current workspace's sidebar roots and expanded branches; revision fences prevent
+older in-flight loads from bringing removed entries back.
+
 ## Validation
 
 Tests cover the history API and pagination, all eight layouts, immutable previews, real grid
