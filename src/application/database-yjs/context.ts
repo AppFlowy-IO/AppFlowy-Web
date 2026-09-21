@@ -126,6 +126,8 @@ export interface DatabaseContextState {
   ) => Promise<import('@/application/types').CreatePageResponse>;
   openPageModal?: (viewId: string) => void;
   deletePage?: (viewId: string) => Promise<void>;
+  restorePage?: (viewId: string) => Promise<void>;
+  movePage?: (viewId: string, parentId: string) => Promise<void>;
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;

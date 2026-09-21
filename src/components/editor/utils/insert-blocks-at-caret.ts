@@ -86,7 +86,10 @@ export function insertBlocksAtCaret(
     // If the current block is empty (no text, no children), the user expects
     // paste to fill that block — not push it above the pasted content. Insert
     // at the current index and remove the empty original.
-    const isEmpty = CustomEditor.getBlockTextContent(node as Node).length === 0 && (node.children?.length ?? 0) <= 1;
+    const isEmpty =
+      TEXT_BLOCK_TYPES.includes(node.type as BlockType) &&
+      CustomEditor.getBlockTextContent(node as Node).length === 0 &&
+      (node.children?.length ?? 0) <= 1;
 
     if (isEmpty && !insertInsideBlock) {
       let insertedIds: string[] = [];

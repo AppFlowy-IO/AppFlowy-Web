@@ -40,42 +40,37 @@ function MentionPage({
   const [content, setContent] = useState<string>('');
 
   useEffect(() => {
-    void (async () => {
-      if (loadViewMeta) {
-        setNoAccess(false);
-        try {
-          const meta = await loadViewMeta(pageId);
+    let current = true;
+    let receivedUpdate = false;
 
-          setMeta(meta);
-        } catch (e) {
-          setNoAccess(true);
-          if (e && (e as View).name) {
-            setMeta(e as View);
-          }
-        }
-      }
-    })();
-  }, [loadViewMeta, pageId]);
+    setMeta(null);
+    setNoAccess(false);
+    const handleView = (view: View) => {
+      if (view.view_id !== pageId) return;
+      receivedUpdate = true;
+      setMeta(view);
+      setNoAccess(false);
+    };
 
-  useEffect(() => {
     const handleOutlineLoaded = (outline: View[]) => {
       const view = findView(outline, pageId);
 
-      if (view) {
-        setMeta(view);
-      }
+      if (view) handleView(view);
     };
 
-    if (eventEmitter) {
-      eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
-    }
-
+    eventEmitter?.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
+    eventEmitter?.on(APP_EVENTS.VIEW_META_CHANGED, handleView);
+    void loadViewMeta?.(pageId).then((view) => {
+      if (current && !receivedUpdate) setMeta(view);
+    }).catch(() => {
+      if (current && !receivedUpdate) setNoAccess(true);
+    });
     return () => {
-      if (eventEmitter) {
-        eventEmitter.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
-      }
+      current = false;
+      eventEmitter?.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
+      eventEmitter?.off(APP_EVENTS.VIEW_META_CHANGED, handleView);
     };
-  }, [eventEmitter, pageId]);
+  }, [eventEmitter, loadViewMeta, pageId]);
 
   const icon = useMemo(() => {
     return meta?.icon;

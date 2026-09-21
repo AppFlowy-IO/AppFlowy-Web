@@ -104,6 +104,8 @@ export interface EditorContextState {
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   deletePage?: (viewId: string) => Promise<void>;
+  restorePage?: (viewId: string) => Promise<void>;
+  movePage?: (viewId: string, parentId: string) => Promise<void>;
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
@@ -160,6 +162,8 @@ export const EditorContextProvider = ({
   addPage,
   updatePage,
   deletePage,
+  restorePage,
+  movePage,
   duplicatePage,
   openPageModal,
   loadViews,
@@ -254,6 +258,8 @@ export const EditorContextProvider = ({
       addPage,
       updatePage,
       deletePage,
+      restorePage,
+      movePage,
       duplicatePage,
       openPageModal,
       loadViews,
@@ -305,6 +311,8 @@ export const EditorContextProvider = ({
       addPage,
       updatePage,
       deletePage,
+      restorePage,
+      movePage,
       duplicatePage,
       openPageModal,
       loadViews,

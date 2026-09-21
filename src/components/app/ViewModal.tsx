@@ -461,6 +461,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         updatePage={updatePage}
         addPage={addPage}
         deletePage={deletePage}
+        restorePage={operations.restorePage}
+        movePage={operations.movePage}
         duplicatePage={operations.duplicatePage}
         openPageModal={openPageModal}
         loadViews={loadViews}

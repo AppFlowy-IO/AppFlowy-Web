@@ -554,6 +554,8 @@ function AppPage() {
           updatePage={updatePage}
           addPage={addPage}
           deletePage={deletePage}
+          restorePage={operations.restorePage}
+          movePage={operations.movePage}
           duplicatePage={operations.duplicatePage}
           openPageModal={openPageModal}
           loadViews={loadViews}
@@ -603,6 +605,8 @@ function AppPage() {
         updatePage={updatePage}
         addPage={addPage}
         deletePage={deletePage}
+        restorePage={operations.restorePage}
+        movePage={operations.movePage}
         duplicatePage={operations.duplicatePage}
         openPageModal={openPageModal}
         loadViews={loadViews}

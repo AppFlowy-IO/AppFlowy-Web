@@ -13,9 +13,10 @@ import { ViewService } from '@/application/services/domains';
 import { getAxios, executeAPIRequest, APIResponse } from '@/application/services/js-services/http/core';
 import { getView } from '@/application/services/js-services/http/view-api';
 import { YjsEditor } from '@/application/slate-yjs';
+import { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { BlockType, CreateDatabaseViewResponse, View, ViewLayout } from '@/application/types';
+import { BlockType, CollabOrigin, CreateDatabaseViewResponse, View, ViewLayout, YDoc, YjsEditorKey } from '@/application/types';
 import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
@@ -33,6 +34,11 @@ import {
 } from '@/components/editor/components/toolbar/block-controls/OutlineControls';
 import { BlockNode, CalloutNode, DatabaseNode, OutlineNode } from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
+import { containsSubpage, prepareSubpageFragment } from '@/components/editor/subpage/subpage-operations';
+import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
+import { getBlock, getBlockIndex } from '@/application/slate-yjs/utils/yjs';
+import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
+
 import { copyTextToClipboard } from '@/utils/copy';
 import { getErrorMessage } from '@/utils/errors';
 
@@ -231,6 +237,7 @@ function ControlsMenu({
   anchorEl: HTMLElement | null;
 }) {
   const { selectedBlockIds } = useEditorLocalState();
+  const editorContext = useEditorContext();
   const {
     workspaceId,
     loadViewMeta,
@@ -539,6 +546,31 @@ function ControlsMenu({
       }
 
       const [selectedNode] = entry;
+
+      if (containsSubpage([selectedNode])) {
+        const prepared = await prepareSubpageFragment([selectedNode], editorContext);
+        const afterId = newBlockIds[newBlockIds.length - 1] || prevId || blockId;
+        const after = getBlock(afterId, editor.sharedRoot);
+
+        if (!after || editor.readOnly || !YjsEditor.connected(editor)) {
+          await prepared.rollback();
+          continue;
+        }
+
+        const doc = editor.sharedRoot.doc as YDoc;
+
+        editor.flushLocalChanges();
+        if (YHistoryEditor.isYHistoryEditor(editor)) editor.undoManager.stopCapturing();
+        doc.transact(() => {
+          newBlockIds.push(...slateContentInsertToYData(
+            after.get(YjsEditorKey.block_parent), getBlockIndex(afterId, editor.sharedRoot) + 1,
+            convertSlateFragmentTo(prepared.fragment), doc
+          ));
+        }, CollabOrigin.LocalManual);
+        if (YHistoryEditor.isYHistoryEditor(editor)) editor.undoManager.stopCapturing();
+        continue;
+      }
+
       const isDatabaseBlock = isDatabaseBlockType(selectedNode.type as BlockType);
       const newBlockId = CustomEditor.duplicateBlock(
         editor,
@@ -586,7 +618,7 @@ function ControlsMenu({
     if (entry) {
       selectPathStartSafely(editor, entry[1]);
     }
-  }, [editor, resolveDuplicatedDatabaseBlockData, selectedBlockIds, setDatabaseBlockData, t]);
+  }, [editor, editorContext, resolveDuplicatedDatabaseBlockData, selectedBlockIds, setDatabaseBlockData, t]);
 
   const options = useMemo(() => {
     return [

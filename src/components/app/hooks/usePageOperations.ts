@@ -238,7 +238,7 @@ export function usePageOperations({
         throw new Error('No workspace or service found');
       }
 
-      const { afterPreSync, ...duplicateOptions } = options;
+      const { afterPreSync, onDuplicated, ...duplicateOptions } = options;
 
       try {
         await assertGenericDeepDuplicateIsSafe({
@@ -262,7 +262,8 @@ export function usePageOperations({
 
         await afterPreSync?.();
 
-        await PageService.duplicate(currentWorkspaceId, viewId, duplicateOptions);
+        if (onDuplicated) await PageService.duplicate(currentWorkspaceId, viewId, duplicateOptions, onDuplicated);
+        else await PageService.duplicate(currentWorkspaceId, viewId, duplicateOptions);
         refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         await loadOutline?.(currentWorkspaceId, false);
 
@@ -358,13 +359,17 @@ export function usePageOperations({
       try {
         await PageService.restore(currentWorkspaceId, viewId);
         refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
+        if (viewId) ViewService.invalidateCache(currentWorkspaceId, viewId);
+        void loadTrash?.(currentWorkspaceId, { ensureFreshAfterInFlight: true }).catch((error) => {
+          Log.warn('[Trash] Failed to refresh after restoring a page', error);
+        });
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, loadOutline]
+    [currentWorkspaceId, loadOutline, loadTrash]
   );
 
   // Create space

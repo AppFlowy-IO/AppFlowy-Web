@@ -2460,7 +2460,7 @@
         "actionUnavailable": "Linking databases is not available right now"
       },
       "subPage": {
-        "name": "Document",
+        "name": "Subpage",
         "keyword1": "sub page",
         "keyword2": "page",
         "keyword3": "child page",
@@ -2705,6 +2705,7 @@
       "subPage": {
         "handlingPasteHint": " - (handling paste)",
         "errors": {
+          "unsupportedInTable": "Subpages cannot be inserted into table cells.",
           "failedDeletePage": "Failed to delete page",
           "failedCreatePage": "Failed to create page",
           "failedMovePage": "Failed to move page to this document",
