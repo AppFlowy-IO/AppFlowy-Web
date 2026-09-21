@@ -5,4 +5,5 @@ export {
   confirmConnection,
   disconnectConnection,
   getConnectionEmail,
+  queryIntegration,
 } from '../js-services/http/integration-api';

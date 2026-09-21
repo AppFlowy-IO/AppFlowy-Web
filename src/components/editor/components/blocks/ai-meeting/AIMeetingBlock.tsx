@@ -10,9 +10,12 @@ import { ReactComponent as TranscriptIcon } from '@/assets/icons/ai_meeting_tran
 import { ReactComponent as NotesIcon } from '@/assets/icons/ai_notes.svg';
 import { ReactComponent as SummaryIcon } from '@/assets/icons/ai_summary_tab.svg';
 import { AIMeetingNode, EditorElementProps } from '@/components/editor/editor.type';
+import { useEditorContext } from '@/components/editor/EditorContext';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 import { AIMeetingMoreMenu } from './AIMeetingMoreMenu';
+import { AIMeetingRecording } from './AIMeetingRecording';
 import { buildCopyText, COPY_META, type CopyMeta, type TabKey, getBaseSpeakerId, parseSpeakerInfoMap } from './ai-meeting.utils';
 import { RegenerateMenu } from './RegenerateMenu';
 import { useAIMeetingClipboard } from './useAIMeetingClipboard';
@@ -58,6 +61,7 @@ export const AIMeetingBlock = memo(
       const slateReadOnly = useReadOnly();
       const readOnly = slateReadOnly || editor.isElementReadOnly(node as unknown as Element);
       const data = node.data ?? {};
+      const { workspaceId, viewId } = useEditorContext();
       const containerRef = useRef<HTMLDivElement | null>(null);
       const contentRef = useRef<HTMLDivElement | null>(null);
       const setRefs = useCallback(
@@ -310,6 +314,38 @@ export const AIMeetingBlock = memo(
                 aria-label={t('document.aiMeeting.titleDefault', { defaultValue: DEFAULT_TITLE })}
               />
             </div>
+            {!readOnly && regenerate.isAIEnabled && workspaceId && viewId && (
+              <AIMeetingRecording
+                key={`${workspaceId}:${viewId}:${node.blockId}`}
+                workspaceId={workspaceId}
+                viewId={viewId}
+                blockId={node.blockId}
+                transcriptBlockId={(sectionNodes.transcriptNode as { blockId?: string } | undefined)?.blockId}
+                pendingDuration={data.pending_billing_duration}
+                onFinished={() => {
+                  void regenerate.handleRegenerateSummary();
+                }}
+              />
+            )}
+            {!readOnly &&
+              regenerate.isAIEnabled &&
+              !hasNodeContent(sectionNodes.summaryNode) &&
+              (hasNodeContent(sectionNodes.transcriptNode) || hasNodeContent(sectionNodes.notesNode)) && (
+                <Button
+                  variant='ghost'
+                  className='mt-2'
+                  disabled={regenerate.isRegeneratingSummary}
+                  onClick={() => {
+                    void regenerate.handleRegenerateSummary();
+                  }}
+                >
+                  {t(
+                    regenerate.isRegeneratingSummary
+                      ? 'document.aiMeeting.regenerate.generating'
+                      : 'document.aiMeeting.generateSummary'
+                  )}
+                </Button>
+              )}
           </div>
 
           <div className="mx-[0.5px] mb-[0.5px] rounded-2xl bg-bg-body">

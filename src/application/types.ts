@@ -198,6 +198,7 @@ export interface AudioBlockData extends BlockData {
 }
 
 export interface GoogleDriveBlockData extends BlockData {
+  file_id?: string;
   url?: string;
   name?: string;
   email?: string;
@@ -207,6 +208,10 @@ export interface GoogleDriveBlockData extends BlockData {
 }
 
 export interface AIMeetingBlockData extends BlockData {
+  meeting_source?: string;
+  meeting_app_name?: string;
+  scheduled_start_time?: string;
+  scheduled_end_time?: string;
   title?: string;
   date?: string | number;
   audio_file_path?: string;
