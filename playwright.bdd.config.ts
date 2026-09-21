@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
-import { defineBddConfig } from 'playwright-bdd';
 import * as dotenv from 'dotenv';
+import { defineBddConfig } from 'playwright-bdd';
 
 dotenv.config();
 
@@ -8,6 +8,8 @@ const testDir = defineBddConfig({
   features: 'playwright/bdd/features/**/*.feature',
   steps: 'playwright/bdd/steps/**/*.ts',
   outputDir: 'playwright/.features-gen',
+  // Live GitHub imports need an explicitly configured, disposable destination.
+  tags: 'not @github-sync-live',
 });
 
 function optInSuites(): RegExp | undefined {

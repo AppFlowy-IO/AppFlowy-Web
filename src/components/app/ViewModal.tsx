@@ -34,6 +34,8 @@ import {
   useSetOpenPageModalEffectiveViewId,
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
+import { GithubSourceBadge } from '@/components/app/github-sync/GithubSourceBadge';
+import { useGithubPageSource } from '@/components/app/github-sync/useGithubPageSource';
 import MoreActions from '@/components/app/header/MoreActions';
 import {
   getViewCanCommentStatus,
@@ -147,6 +149,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   // the capability that was probed and stored for that exact folder view.
   const probedObjectPermission = useViewObjectPermission(effectiveViewId);
   const objectPermission = probedObjectPermission ?? INITIAL_VIEW_OBJECT_CAPABILITIES;
+  const githubSource = useGithubPageSource(workspaceId, effectiveViewId, open);
   const canReadEffectiveView = probedObjectPermission?.can_read === true;
 
   useEffect(() => {
@@ -334,9 +337,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     const space = findAncestors(outline || [], effectiveViewId)?.find((item) => item.extra?.is_space);
 
     return (
-      <div
-        className={'sticky top-0 z-[10] flex w-full items-center justify-between gap-2 bg-surface-primary px-4 py-4'}
-      >
+      <div className={'sticky top-0 z-[10] flex w-full items-center justify-between gap-2 bg-surface-primary px-4 py-4'}>
         <div className={'flex items-center gap-4'}>
           <Tooltip title={t('tooltip.openAsPage')}>
             <IconButton
@@ -350,7 +351,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
             </IconButton>
           </Tooltip>
           <Divider orientation={'vertical'} className={'h-4'} />
-          {space && ref.current && (
+          {space && ref.current && !githubSource.readOnly && (
             <MovePagePopover
               viewId={effectiveViewId}
               open={movePageOpen}
@@ -379,6 +380,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         </div>
 
         <div className={'flex items-center gap-4'}>
+          <GithubSourceBadge viewId={effectiveViewId} />
           <Users viewId={effectiveViewId} />
           <ShareButton viewId={effectiveViewId} />
           {ref.current && (
@@ -399,15 +401,15 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         </div>
       </div>
     );
-  }, [effectiveViewId, handleClose, movePageOpen, outline, t, toView]);
+  }, [effectiveViewId, handleClose, movePageOpen, outline, t, toView, githubSource.readOnly]);
 
   // Check if view is in shareWithMe and determine readonly status.
   // `resolvedView` includes the server-fetched fallback, so locked pages opened
   // before their outline branch is loaded still flip the editor to read-only.
   const isReadOnly = useMemo(() => {
     if (!effectiveViewId) return false;
-    return getViewReadOnlyStatus(effectiveViewId, outline, resolvedView, objectPermission);
-  }, [effectiveViewId, getViewReadOnlyStatus, objectPermission, outline, resolvedView]);
+    return githubSource.readOnly || getViewReadOnlyStatus(effectiveViewId, outline, resolvedView, objectPermission);
+  }, [effectiveViewId, getViewReadOnlyStatus, objectPermission, outline, resolvedView, githubSource.readOnly]);
 
   // Comment permission is independent from editability, so a locked or
   // read-and-comment page opened in the modal still offers the comment action.
@@ -418,8 +420,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
   const canWrite = useMemo(() => {
     if (!effectiveViewId) return false;
-    return getViewCanWriteStatus(effectiveViewId, outline, resolvedView, objectPermission);
-  }, [effectiveViewId, objectPermission, outline, resolvedView]);
+    return !githubSource.readOnly && getViewCanWriteStatus(effectiveViewId, outline, resolvedView, objectPermission);
+  }, [effectiveViewId, objectPermission, outline, resolvedView, githubSource.readOnly]);
   const canShare = objectPermission.can_share;
 
   const View = useMemo(() => {

@@ -35,7 +35,8 @@ describe('integration API contract', () => {
   it.each([
     [[], []],
     [['google-drive', 'slack'], ['google-drive']],
-    [undefined, ['google-drive', 'google-calendar']],
+    [['github'], ['github']],
+    [undefined, ['google-drive', 'google-calendar', 'github']],
   ])('reads configured providers from the native capability projection (%s)', async (configured, expected) => {
     get.mockResolvedValue({ data: { data: { connections: configured } } });
     await expect(getConfiguredProviders(signal)).resolves.toEqual(expected);
@@ -56,6 +57,13 @@ describe('integration API contract', () => {
       '/api/integrations/connections',
       expect.objectContaining({ params: { workspace_id: 'workspace', include_metadata: true }, signal })
     );
+  });
+
+  it('never uses a Google email endpoint for GitHub accounts', async () => {
+    await expect(
+      getConnectionEmail('workspace', { id: 'github-account', provider: 'github' }, signal)
+    ).resolves.toBeUndefined();
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('initiates and confirms with the original state binding and unmodified OAuth query', async () => {

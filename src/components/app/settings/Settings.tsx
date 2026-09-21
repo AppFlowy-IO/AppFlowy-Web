@@ -1,7 +1,7 @@
 import Dialog from '@mui/material/Dialog';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { SettingMenuItem } from '@/application/types';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
@@ -26,6 +26,7 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
   const { t } = useTranslation();
   const [search, setSearch] = useSearchParams();
   const workspaceId = useCurrentWorkspaceId();
+  const navigate = useNavigate();
   const [selectedItem, setSelectedItem] = useState<SettingMenuItem>(SettingMenuItem.ACCOUNT);
 
   useEffect(() => {
@@ -80,7 +81,14 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
               </div>
             }
           >
-            <ConnectionsPanel key={workspaceId} workspaceId={workspaceId} />
+            <ConnectionsPanel
+              key={workspaceId}
+              workspaceId={workspaceId}
+              onOpenSpace={(spaceId) => {
+                onClose();
+                navigate(`/app/${encodeURIComponent(workspaceId)}/${encodeURIComponent(spaceId)}`);
+              }}
+            />
           </Suspense>
         )}
       </div>

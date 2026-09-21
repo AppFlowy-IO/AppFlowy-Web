@@ -55,4 +55,37 @@ describe('CollaborativeEditor permission transitions', () => {
     await waitFor(() => expect(editor.readOnly).toBe(false));
     expect(connectedEditors).toEqual([editor]);
   });
+
+  it('disables undo and redo on the existing editor when a page becomes read-only', async () => {
+    const doc = withTestingYDoc('view-id') as YDoc;
+    const connectedEditors: YjsEditor[] = [];
+    const onEditorConnected = (editor: YjsEditor) => connectedEditors.push(editor);
+    const renderEditor = (readOnly: boolean) => (
+      <EditorContextProvider readOnly={readOnly} canWrite={!readOnly} viewId='view-id' workspaceId='workspace-id'>
+        <CollaborativeEditor doc={doc} onEditorConnected={onEditorConnected} />
+      </EditorContextProvider>
+    );
+    const { rerender } = render(renderEditor(false));
+
+    await waitFor(() => expect(connectedEditors).toHaveLength(1));
+    const editor = connectedEditors[0];
+
+    if (!YHistoryEditor.isYHistoryEditor(editor)) throw new Error('Expected the production history editor');
+    const undo = jest.spyOn(editor.undoManager, 'undo');
+    const redo = jest.spyOn(editor.undoManager, 'redo');
+
+    rerender(renderEditor(true));
+    expect(editor.readOnly).toBe(true);
+    expect(connectedEditors).toEqual([editor]);
+    editor.undo();
+    editor.redo();
+    expect(undo).not.toHaveBeenCalled();
+    expect(redo).not.toHaveBeenCalled();
+
+    rerender(renderEditor(false));
+    editor.undo();
+    editor.redo();
+    expect(undo).toHaveBeenCalledTimes(1);
+    expect(redo).toHaveBeenCalledTimes(1);
+  });
 });

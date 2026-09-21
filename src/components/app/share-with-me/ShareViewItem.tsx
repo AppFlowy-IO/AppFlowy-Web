@@ -1,8 +1,9 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
-import { AccessLevel, View, ViewIconType } from '@/application/types';
+import { AccessService } from '@/application/services/domains';
+import { View, ViewIconType } from '@/application/types';
 import { getViewUrl } from '@/application/view-utils';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/emoji.svg';
@@ -15,7 +16,7 @@ import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayCon
 import { useAppOperations, useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import ViewItem from '@/components/app/outline/ViewItem';
 import { RemoveAccessConfirmDialog } from '@/components/app/share/RemoveAccessConfirmDialog';
-import { AccessService } from '@/application/services/domains';
+import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
@@ -55,10 +56,15 @@ export function ShareViewItem({
   const { updatePage, uploadFile } = useAppOperations();
   const { openRenameModal } = useAppOverlayContext();
 
-  const canEdit = view.access_level && view.access_level > AccessLevel.ReadAndComment;
+  const { canWrite: canEdit } = useViewActionPermissions(view, popoverOpen);
+  // Upload completion can retain a callback after its picker closes or access changes.
+  const canEditRef = useRef(false);
+
+  canEditRef.current = popoverOpen && canEdit;
 
   const onUploadFile = useCallback(
     async (file: File, viewId: string) => {
+      if (!canEditRef.current) return Promise.reject(new Error('Page is read-only'));
       if (!uploadFile) return Promise.reject();
       return uploadFile(viewId, file);
     },
@@ -67,6 +73,7 @@ export function ShareViewItem({
 
   const handleChangeIcon = useCallback(
     async (icon: { ty: ViewIconType; value: string; color?: string }) => {
+      if (!canEditRef.current) return;
       try {
         await updatePage?.(view.view_id, {
           icon:
@@ -118,6 +125,7 @@ export function ShareViewItem({
   }, [currentWorkspaceId, currentUser, view, onDataRefresh, t, viewId, navigate]);
 
   const handleRename = useCallback(() => {
+    if (!canEditRef.current) return;
     setPopoverOpen(false);
     openRenameModal(view.view_id);
   }, [openRenameModal, view.view_id]);

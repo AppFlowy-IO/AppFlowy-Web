@@ -7,7 +7,8 @@ import { Breadcrumb } from '@/components/_shared/breadcrumb';
 import { useOutlinePopover } from '@/components/_shared/outline/outline.hooks';
 import OutlinePopover from '@/components/_shared/outline/OutlinePopover';
 import BreadcrumbSkeleton from '@/components/_shared/skeleton/BreadcrumbSkeleton';
-import { useAppRendered, useToView, useBreadcrumb } from '@/components/app/app.hooks';
+import { useAppRendered, useToView, useBreadcrumb, useAppViewId } from '@/components/app/app.hooks';
+import { GithubSourceBadge } from '@/components/app/github-sync/GithubSourceBadge';
 import LockedBadge from '@/components/app/header/LockedBadge';
 import Recent from '@/components/app/recent/Recent';
 
@@ -38,6 +39,7 @@ export function AppHeader({ onOpenDrawer, openDrawer, onCloseDrawer }: AppHeader
 
   const toView = useToView();
   const rendered = useAppRendered();
+  const viewId = useAppViewId();
 
   const recent = useMemo(() => <Recent />, []);
 
@@ -86,6 +88,7 @@ export function AppHeader({ onOpenDrawer, openDrawer, onCloseDrawer }: AppHeader
             <Breadcrumb toView={toView} variant={UIVariant.App} crumbs={crumbs} />
           )}
         </div>
+        {!isTrash && <GithubSourceBadge viewId={viewId} />}
         <LockedBadge />
         {rendered && (
           <Suspense fallback={null}>

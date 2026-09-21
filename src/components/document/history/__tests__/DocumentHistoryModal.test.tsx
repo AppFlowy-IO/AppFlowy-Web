@@ -17,6 +17,16 @@ import { DocumentHistoryModal } from '../DocumentHistoryModal';
 
 // Capture the props the preview Editor is rendered with.
 let lastEditorProps: Record<string, unknown> | null = null;
+let lastVersionListProps: Record<string, unknown> | null = null;
+let mockGithubManaged = false;
+let mockGithubReadOnly = false;
+
+jest.mock('@/application/services/domains/github-sync', () => ({
+  getPageSourceHistory: jest.fn().mockResolvedValue({ versions: [] }),
+}));
+jest.mock('@/components/app/github-sync/useGithubPageSource', () => ({
+  useGithubPageSource: () => ({ managed: mockGithubManaged, readOnly: mockGithubManaged || mockGithubReadOnly }),
+}));
 
 jest.mock('@/components/editor', () => ({
   Editor: (props: Record<string, unknown>) => {
@@ -26,7 +36,12 @@ jest.mock('@/components/editor', () => ({
 }));
 
 jest.mock('@/components/_shared/progress/ComponentLoading', () => () => null);
-jest.mock('../DocumentHistoryVersionList', () => ({ VersionList: () => null }));
+jest.mock('../DocumentHistoryVersionList', () => ({
+  VersionList: (props: Record<string, unknown>) => {
+    lastVersionListProps = props;
+    return null;
+  },
+}));
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -71,6 +86,9 @@ jest.mock('@/components/main/app.hooks', () => ({
 describe('DocumentHistoryModal version preview', () => {
   beforeEach(() => {
     lastEditorProps = null;
+    lastVersionListProps = null;
+    mockGithubManaged = false;
+    mockGithubReadOnly = false;
     jest.clearAllMocks();
 
     getCollabHistory.mockResolvedValue([
@@ -86,12 +104,38 @@ describe('DocumentHistoryModal version preview', () => {
     previewCollabVersion.mockResolvedValue(new Y.Doc());
   });
 
+  it('keeps GitHub history preview readable while withholding the restore action', async () => {
+    mockGithubManaged = true;
+    render(<DocumentHistoryModal open onOpenChange={jest.fn()} viewId='view-1' />);
+
+    await waitFor(() => expect(lastEditorProps).not.toBeNull());
+    expect(lastEditorProps?.readOnly).toBe(true);
+    expect(lastVersionListProps?.onRestoreClicked).toBeUndefined();
+    expect(revertCollabVersion).not.toHaveBeenCalled();
+  });
+
+  it('preserves restore for ordinary manual pages', async () => {
+    render(<DocumentHistoryModal open onOpenChange={jest.fn()} viewId='view-1' />);
+
+    await waitFor(() => expect(lastEditorProps).not.toBeNull());
+    expect(typeof lastVersionListProps?.onRestoreClicked).toBe('function');
+  });
+
+  it('withholds restore while GitHub ownership is unresolved', async () => {
+    mockGithubReadOnly = true;
+    render(<DocumentHistoryModal open onOpenChange={jest.fn()} viewId='view-1' />);
+
+    await waitFor(() => expect(lastEditorProps).not.toBeNull());
+    expect(lastVersionListProps?.onRestoreClicked).toBeUndefined();
+    expect(revertCollabVersion).not.toHaveBeenCalled();
+  });
+
   it('forwards loadView and bindViewSync to the preview Editor so embedded databases can load', async () => {
     render(
       <DocumentHistoryModal
         open
         onOpenChange={jest.fn()}
-        viewId="view-1"
+        viewId='view-1'
         view={{ name: 'Project Tracker 2', icon: null }}
       />
     );

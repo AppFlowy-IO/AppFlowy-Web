@@ -92,6 +92,9 @@ export async function getConnectionEmail(
   connection: Pick<IntegrationConnection, 'id' | 'provider'>,
   signal?: AbortSignal
 ): Promise<string | undefined> {
+  // GitHub identity is a stable numeric ID; its login comes from stored metadata.
+  if (connection.provider !== 'google-drive' && connection.provider !== 'google-calendar') return undefined;
+
   const response = await executeAPIRequest<{ data: { user?: { emailAddress?: string }; email?: string } }>(
     () =>
       getAxios()?.post(

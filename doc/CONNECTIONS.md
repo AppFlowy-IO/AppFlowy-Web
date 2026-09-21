@@ -1,8 +1,9 @@
 # Connections settings
 
-Settings → Connections uses the same workspace-scoped integration API as desktop for Google Drive
-and Google Calendar. It lists the current user's accounts, resolves email addresses through Cloud's
-provider proxy, supports additional accounts, and asks for confirmation before disconnecting one.
+Settings → Connections manages Google Drive/Calendar accounts and GitHub documentation sync.
+Google accounts use the same workspace-scoped integration API as desktop, including email lookup
+through Cloud's provider proxy, additional accounts, and confirmation before disconnecting.
+GitHub setup checks public repository access first; public documentation requires no GitHub sign-in.
 
 The HTTP adapter is `src/application/services/js-services/http/integration-api.ts`. OAuth popup
 handling lives in `src/application/integrations/oauth.ts`; the settings hook owns requests and
@@ -16,7 +17,90 @@ configuration. Refresh retries failed account-email lookups while reusing succes
 unavailable providers use stored account identifiers until they are enabled again.
 Connection errors remain visible in Settings, including when popups are blocked or the network fails.
 
+## GitHub documentation sync
+
+**Add connection → GitHub** opens the repository/review/sync wizard for a workspace owner. The
+current workspace supplies the workspace ID. Enter a GitHub repository name or HTTPS repository
+URL, branch and documentation directory, then select a writable destination space. Cloud returns
+the permitted space choices and their existing-page counts. **Check repository** probes anonymous
+access before review; changing the repository invalidates that check. The selected configuration
+is saved on the binding and is used by Worker on subsequent runs.
+
+The layout follows the supplied six-screen design: Connections and its provider menu, a GitHub
+header with a vertical numbered Repository/Review/Sync stepper, aligned configuration and review
+fields, progress, and a green completion state with a bordered summary. Add connection is the
+setup entry; each existing binding has its own management action. The account field appears only
+when repository access requires authentication. Completion uses actual synced page/folder counts
+and last-sync time, with **View space** and **Done** actions.
+
+The wizard probes repository access without credentials. Public access proceeds directly to review
+and creates a binding without `connection_id`. Only an `authentication_required` response reveals
+GitHub account selection and **Connect GitHub account**. That action reuses the generic OAuth popup
+and authenticated confirmation below. GitHub labels come from `metadata.github_login` or
+`metadata.account_name`; numeric `account_identifier` values are not emails, and GitHub never uses
+Google's `getConnectionEmail` endpoint. A private repository requires configured GitHub OAuth.
+Public sync availability is independent of OAuth provider configuration.
+
+Review describes the selected source/destination and read-only behavior. It does not fabricate a
+source preview or create/update count. Unmapped existing pages remain untouched; explicit adoption
+mappings are supported by the server API but have no mapping editor in this wizard. Starting sync
+creates durable server work. The dialog shows actual operation progress and persisted page/folder
+counts, retains partial failures, and can close/reopen without creating another import. It polls
+serially every two seconds while work is active, every fifteen seconds while idle, and backs off
+on errors using the server retry delay. Closing or switching workspaces cancels requests and
+rejects stale responses.
+
+Progress has two truthful stage rows: scanning the repository, then importing content and setting
+up navigation. The server combines page creation, content import and hierarchy changes in its
+operation count, so the UI does not invent the mockup's separate per-stage totals. The close note
+explains that sync continues and can be reopened; it does not promise a completion notification.
+
+Owners can use **Sync now**, pause/resume, or check access and reconnect. Pausing retains read-only
+page ownership. Moving an OAuth binding to public access is explicit: verify anonymous repository
+access, PATCH `authentication_mode: "public"` with the current generation, then resume using the
+returned generation. Removing an OAuth account never silently converts its bindings to public
+access. Source badges provide status, **Open in GitHub**, and GitHub history provenance; managed
+page content and structural actions stay read-only, with history preview available and restore
+blocked. The current UI does not publish public-site snapshots, detach ownership, or create PRs.
+
+The full-page editor, page modal, metadata menus and history restore keep writes disabled while
+the page-source check is pending or fails. A successful unmanaged response restores ordinary
+page permissions. Only an explicit HTTP 404 from an older server falls back to canonical object
+permissions; confirmed GitHub ownership remains read-only even then. This also covers cached
+writable permissions, sidebar icons and the **Shared with me** rename/icon menu. Pending title
+saves and image-picker callbacks also recheck editing access before issuing mutations.
+
+Key implementation files:
+
+- `src/application/integrations/github-sync.ts` and
+  `src/application/services/js-services/http/github-sync-api.ts`: configuration, repository probe,
+  binding management, source status, and history DTOs/requests.
+- `src/components/app/settings/connections/github/`: setup, durable status polling and management.
+- `src/components/app/github-sync/`: managed-page source state, badges and version provenance.
+
+Cloud and Worker require both migrations
+`20260919120000_github_space_sync.sql` and `20260920120000_github_sync_public_authentication.sql`.
+The second migration distinguishes public bindings from OAuth bindings whose credential was
+removed. Source write protection is always active; there is no global sync enablement flag.
+Workspace, space and repository are configured through the UI. The old
+`APPFLOWY_GITHUB_SYNC_WORKSPACE_ID`, `APPFLOWY_GITHUB_SYNC_SPACE_ID` and
+`APPFLOWY_GITHUB_SYNC_REPOSITORY` environment variables are no longer used. Worker still needs
+the deployment's public API and Web URLs to construct copied-asset and internal-page links.
+
 ## Local provider setup
+
+For GitHub private-repository access, use the existing **AppFlowy Admin → Settings → Connections**
+page (`/console/integrations`). Choose GitHub, enter its OAuth client ID and secret, leave
+**Enable connection** checked and save. Register the **OAuth callback URL** displayed by Admin
+with the GitHub OAuth app. Blank custom scopes use the server defaults, `read:user repo`.
+The generic Admin provider form already supports GitHub; it needs no separate sync configuration.
+
+Admin stores the encrypted OAuth app through `PUT /api/admin/integrations/providers/github`.
+Cloud and Worker share that database provider store and encryption configuration; no provider
+file is required. Other replicas observe changes within 30 seconds. Refresh Web Connections,
+enter the repository and use **Connect GitHub account** when private access is requested.
+Public repositories require neither this Admin setup nor user authorization. Repository, branch,
+directory and destination space are always chosen in Web, independently of the Admin OAuth app.
 
 The callback change does not configure a Google OAuth application. Cloud needs a Google client ID
 and client secret for `google-drive` and/or `google-calendar`.
@@ -72,14 +156,168 @@ after two minutes. Cloud retains the desktop deep-link flow for desktop launches
 
 ![Connected accounts in dark mode](images/connections-dark.png)
 
+Current GitHub setup and binding management, captured from the running application:
+
+![Choose a GitHub repository and destination](images/github-sync-configurable-dark.png)
+
+![Manage separate GitHub space bindings](images/github-sync-managed-connections-dark.png)
+
+Earlier controlled repository fixtures show the remaining wizard states (the original setup
+preview predates editable source fields):
+
+![Connections before adding GitHub](images/github-sync-connections-dark.png)
+
+![Add connection menu with GitHub](images/github-sync-add-menu-dark.png)
+
+![Public GitHub repository without account authorization](images/github-sync-public-dark.png)
+
+![Review the configured repository and destination](images/github-sync-review-dark.png)
+
+![Durable synchronization progress](images/github-sync-progress-dark.png)
+
+![Completed synchronization and source summary](images/github-sync-completed-dark.png)
+
+![Private repository prompts for a GitHub account](images/github-sync-private-light.png)
+
+![Completed synchronization on a narrow screen](images/github-sync-mobile-light.png)
+
 ## Verification
 
-Run `pnpm type-check` and:
+Run `pnpm type-check` and the relevant suites:
 
 ```sh
 pnpm exec jest --runInBand --no-coverage src/application/integrations/__tests__/oauth.test.ts src/application/services/js-services/http/__tests__/integration-api.test.ts src/components/app/settings/__tests__/ConnectionsPanel.test.tsx src/components/app/settings/__tests__/Settings.workspaceImport.test.tsx src/components/app/settings/__tests__/Settings.connections.test.tsx
 ```
 
+The GitHub setup/management suite is
+`src/components/app/settings/connections/github/__tests__/GitHubSyncDialog.test.tsx`; also run
+`src/application/services/js-services/http/__tests__/github-sync-api.test.ts` and the page-source
+suites in `src/components/app/github-sync/__tests__/`. These controlled tests exercise public/private
+setup, credential isolation, durable reopen, pause/recovery, source permissions and request cleanup.
+They do not by themselves establish live browser GitHub authorization or a deployed provider flow.
+
+The 2026-09-20 focused checks passed 113 distinct tests: 84 integration, settings, GitHub API,
+wizard and page-source cases, plus 29 permission regressions. The 33 wizard and Connections-panel
+tests passed again after the screenshot-based layout changes; these are reruns, not additional
+distinct tests. Type-checking, lint and the production build passed; the post-layout build took
+19.58 seconds. The final type-check and 33-test rerun also cover the subsequent setup-card visibility
+and Refresh dependency changes.
+
+The read-only follow-up passed 103 focused tests across 17 suites, plus TypeScript and focused
+ESLint checks. Regressions cover unresolved/failed ownership checks, full-page and modal editors,
+paused/failed bindings, sidebar/shared-page metadata controls, history restore, undo/redo, and
+delayed title/upload callbacks. Confirmed manual pages retain editing. These checks use controlled
+component fixtures; the live GitHub BDD result below predates this follow-up and was not rerun.
+
+The browser check rendered the real Settings menu, Connections panel and dialogs in Chromium
+against controlled HTTP responses. It exercised public setup without OAuth, close/reopen and
+completion, pause, private setup with the actual Cloud callback HTML and popup confirmation, and
+a 390px viewport. The final browser run passed after those last UI changes and produced all eight
+GitHub screenshots above. The screenshots show that fixture; provider consent itself was simulated.
+
 In Cloud, run `node --test libs/appflowy-cloud-integrations/tests/oauth_callback.test.cjs`.
 Live Google authorization also requires the provider credentials and exact Cloud callback URI
 to be configured on the deployed server.
+
+## Live GitHub BDD test
+
+`playwright/bdd/features/integrations/github-sync.feature` drives the real Web application, Cloud,
+Worker and object storage against `AppFlowy-IO/AppFlowy-SelfHost-Commercial/main/docs`. It does not
+mock sync endpoints or GitHub responses. Use an explicitly provisioned test workspace with an
+owner who can sign in by password and a **blank, unbound destination space**.
+
+Run current Cloud and Worker binaries against the fully migrated application schema, including
+both GitHub sync migrations listed above. Do not configure a GitHub destination on either service;
+the scenario enters the repository and selects its destination through the dialog. Cloud and
+Worker must share working PostgreSQL, Redis and S3-compatible storage; copied asset URLs must be reachable
+by the browser/test runner. The Web application's configured API/auth URLs must point to that
+deployment. Public GitHub reads need network access and available anonymous quota; this scenario
+requires neither GitHub OAuth configuration nor a GitHub access token.
+
+Set these variables in the test process's private environment:
+
+| Variable | Value |
+| --- | --- |
+| `BASE_URL` | Running Web application URL. |
+| `APPFLOWY_BASE_URL` | Cloud API base URL, without `/api`. |
+| `APPFLOWY_GOTRUE_BASE_URL` | GoTrue base URL used by that Web deployment, including any proxy prefix. |
+| `GITHUB_SYNC_E2E_OWNER_EMAIL` | Existing workspace owner's email. |
+| `GITHUB_SYNC_E2E_OWNER_PASSWORD` | That owner's password; do not put it in committed configuration. |
+| `GITHUB_SYNC_E2E_WORKSPACE_ID` | UUID of the test owner's workspace; used by the test driver only. |
+| `GITHUB_SYNC_E2E_SPACE_ID` | UUID of a blank, unbound writable space selected by the test driver in the UI. |
+
+```sh
+pnpm test:e2e:bdd:github-sync
+```
+
+The dedicated `playwright.github-sync.bdd.config.ts` selects only this feature and its steps,
+runs one Chromium worker, disables retries, and allows ten minutes. The default BDD configuration
+excludes `@github-sync-live`, so a normal suite run does not start a live repository import.
+Explicit execution with missing owner/destination variables fails with setup guidance; it does
+not skip. Generation and `--list` remain usable without credentials.
+
+The scenario signs in through the password UI, creates an unrelated manual sentinel through the
+normal page API, then uses **Settings → Connections → Add connection → GitHub → Next → Start
+sync**, entering the commercial repository, `main`, `/docs` and destination space in the wizard.
+It checks that public setup opens no OAuth popup and sends no connection ID, closes and
+reopens the durable run, waits for completion, compares UI counts with actual binding entries,
+and opens an imported document through **View space** to verify its source link and read-only
+editor. Exactly one binding-creation request must occur. The sentinel's fresh Yjs content, parent,
+name and unmanaged status must remain unchanged.
+
+`playwright/support/github-sync-content-verifier.ts` independently fetches the complete Git tree
+at the applied commit and its pinned raw Markdown/assets, verifies Git object hashes, decodes
+fresh authenticated page-view Yjs responses, and compares ordered Markdown semantics, formatting,
+links, heading targets and copied image bytes. It does not use the production converter to build
+expected documents. The `github-source-verification` JSON attachment records the commit, imported
+paths/view IDs, page/folder counts and verified block/image counts. The HTML report is written to
+`playwright-report/github-sync`; failure traces/screenshots go to `test-results/github-sync`.
+
+Once the creation response confirms the new binding's ID, cleanup pauses that binding after the
+scenario, including a later assertion failure, to stop periodic GitHub requests. It preserves
+imported documents and the manual sentinel for inspection. If Cloud commits creation but the
+browser loses its response, the result requires inspection: cleanup does not infer ownership of
+other newly observed bindings. A second initial-import run needs a fresh blank space and matching
+Cloud/Worker configuration; the test does not delete or silently reuse an earlier import.
+
+On **2026-09-20**, the dedicated live BDD scenario passed **1/1 in 3.7 minutes** against real Web,
+Cloud, Worker, GoTrue, S3-compatible storage and public GitHub. An actual anonymous rate limit
+delayed the import; Worker automatically retried the same durable run and completed at
+03:47:51 UTC. The browser completed setup without GitHub OAuth, closed/reopened the run, verified
+the imported document's source/read-only state, and preserved the unrelated manual page. The
+After hook confirmed `enabled: false` on the newly created binding while retaining its content.
+
+The `github-source-verification` attachment records commit
+`da5f03250512a7effc1139ab2be235cda63f8171`: **9 pages, 0 folders, 1,748 blocks and 38 images**.
+The imported source files were `docs/AUDIT.md`, `docs/AUTHENTICATION.md`, `docs/docker-compose.md`,
+`docs/LDAP.md`, `docs/LICENSE_INVITE_CODE.md`, `docs/MODEL_CONFIG.md`, `docs/OIDC.md`,
+`docs/OKTA_SAML.md` and `docs/SCIM.md`. The independent verifier checked the complete pinned tree
+inventory, source hashes, persisted page placement and document semantics, and copied image
+bytes. This corpus has no nested source folders, so this live run does not exercise folder creation.
+
+The oracle's **21 focused unit tests** also passed, including intentional content, formatting,
+ordering, link/image and topology corruption. Those unit results and the earlier controlled
+browser screenshots remain separate from this live end-to-end result.
+
+
+### UI-configured import validation (2026-09-20)
+
+The latest live Chromium BDD scenario passed in **1.1 minutes** with
+`APPFLOWY_GITHUB_SYNC_WORKSPACE_ID`, `APPFLOWY_GITHUB_SYNC_SPACE_ID` and
+`APPFLOWY_GITHUB_SYNC_REPOSITORY` absent from both Cloud and Worker. The owner entered the commercial
+repository URL, `main`, `/docs` and selected a fresh destination through Connections. No GitHub
+OAuth provider or token was used. The test driver variables above supply only sign-in/navigation
+and the option to select; they are not service configuration.
+
+At commit `bb13ce3d9588c863d7eeacf60de3e552d42a3614`, the independent verifier compared **10 pages,
+1,931 blocks and 43 page-scoped images** against the pinned GitHub tree and raw source. The current
+corpus includes `docs/CONNECTION.md` in addition to the nine previously tested documents. It verified
+closing/reopening the durable run, exactly one creation request, no OAuth popup, the unchanged
+manual sentinel and read-only imported editor. Cleanup paused the newly created binding.
+The report is `playwright-report/github-sync/index.html`; the execution log is
+`/tmp/github-ui-config-live-bdd.log`.
+
+Focused wizard/Connections tests also cover choosing another repository, custom branch/directory,
+required destination selection, multiple binding cards, stale probe cancellation, immutable
+recovery targets, and upgrading an older Cloud configuration response. TypeScript, ESLint and
+BDD generation passed. These checks do not exercise live private-repository OAuth consent.
