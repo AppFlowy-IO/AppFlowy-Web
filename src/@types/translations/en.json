@@ -801,11 +801,11 @@
       "googleDrive": "Google Drive",
       "googleCalendar": "Google Calendar",
       "googleDriveDescription": "Connect Google Drive to preview files directly in your document",
-      "googleCalendarDescription": "Get notifications for scheduled and instant meetings to quickly start AI meeting notes",
+      "googleCalendarDescription": "Get reminders for upcoming Google Meet meetings and start AI meeting notes while AppFlowy is open.",
       "connection": "Connection",
       "access": "Access",
       "canPreviewLinks": "Can preview links",
-      "canSyncEvents": "Can sync calendar events",
+      "canSyncEvents": "Can assist with meeting notes",
       "connect": "Connect",
       "connectAnotherAccount": "Connect another account",
       "disconnectAccount": "Disconnect account",
@@ -826,7 +826,9 @@
       "popupBlocked": "Allow pop-ups for AppFlowy, then try connecting again.",
       "timedOut": "The connection timed out. Please try again.",
       "invalidResponse": "Unable to complete authorization. Please try connecting again.",
-      "authorizationDenied": "Authorization was declined. Please try again and allow access."
+      "authorizationDenied": "Authorization was declined. Please try again and allow access.",
+      "calendarReminderHint": "Keep AppFlowy open for reminders from your primary calendar. Meetings with a Google Meet link can start AI meeting notes.",
+      "enableBrowserNotifications": "Enable browser notifications"
     },
     "title": "Settings",
     "popupMenuItem": {
@@ -2391,6 +2393,30 @@
           "italian": "Italian",
           "swedish": "Swedish"
         }
+      },
+      "calendarReminder": "Your meeting is starting soon",
+      "startTranscribing": "Start transcribing",
+      "stopTranscribing": "Stop transcribing",
+      "dismiss": "Dismiss",
+      "attendees": "Attendees:",
+      "meetingSpace": "Meeting",
+      "launchFailed": "Unable to open meeting notes. Try again.",
+      "recordingFailed": "Unable to transcribe this meeting. Check your audio permissions and try again.",
+      "generateSummary": "Generate summary",
+      "audioSourceHint": "Choose the meeting tab and enable Share audio to include other participants. Your microphone is also included. Keep this page open while transcribing.",
+      "meetingAudio": "Meeting tab and microphone",
+      "microphoneOnly": "Microphone only",
+      "recordingState": {
+        "starting": "Connecting…",
+        "recording": "Transcribing…",
+        "stopping": "Finishing transcription…"
+      },
+      "recordingErrors": {
+        "unsupported": "Audio capture is unavailable in this browser. Use a supported browser over HTTPS.",
+        "noSharedAudio": "The selected source has no audio. Select the meeting tab and enable Share audio.",
+        "alreadyRecording": "Another meeting is already being transcribed. Stop it before starting a new one.",
+        "connectionFailed": "The transcription connection failed. Check your connection and try again.",
+        "quotaExceeded": "You have no transcription time remaining."
       }
     },
     "date": {
@@ -2712,7 +2738,22 @@
           "failedDuplicateFindView": "Failed to duplicate page - original view not found"
         }
       },
-      "cannotMoveToItsChildren": "Cannot move to its children"
+      "cannotMoveToItsChildren": "Cannot move to its children",
+      "googleDrive": {
+        "pasteLink": "Paste a link",
+        "browseGoogleDrive": "Browse Google Drive",
+        "connectGoogleAccount": "Connect Google account",
+        "account": "Google Drive account",
+        "search": "Search files",
+        "loadFailed": "Unable to load Google Drive files. Try again.",
+        "noFiles": "No files found",
+        "loadMore": "Load more",
+        "openOriginal": "Open in Google Drive",
+        "replace": "Replace",
+        "reload": "Reload",
+        "embedPlaceholder": "Paste a Google Drive link",
+        "worksWithLinksOfGoogleDrive": "Paste a public Google Drive link, or browse a connected account to select private files."
+      }
     },
     "outlineBlock": {
       "placeholder": "Table of Contents"

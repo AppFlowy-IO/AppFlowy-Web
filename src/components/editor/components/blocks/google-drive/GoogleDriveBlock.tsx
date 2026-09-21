@@ -15,22 +15,28 @@ import { notify } from '@/components/_shared/notify';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
 import { EditorElementProps, GoogleDriveBlockNode } from '@/components/editor/editor.type';
+import { useEditorContext } from '@/components/editor/EditorContext';
 import { copyTextToClipboard } from '@/utils/copy';
 import { openUrl } from '@/utils/url';
 
-import { buildGoogleDriveEmbeddedUrl } from './google-drive-utils';
+import { buildGoogleDriveEmbeddedUrl, getGoogleDriveFileId, isGoogleDriveUrl } from './google-drive-utils';
+import { useDrivePreview } from './useDrivePreview';
 
 export const GoogleDriveBlock = memo(
   forwardRef<HTMLDivElement, EditorElementProps<GoogleDriveBlockNode>>(({ node, children, ...attributes }, ref) => {
     const { t } = useTranslation();
     const { blockId, data } = node;
     const { url, name } = data || {};
+    const { workspaceId } = useEditorContext();
+    const fileId = data?.file_id || (data?.email && url ? getGoogleDriveFileId(url) : undefined);
+    const { thumbnail, version, reload } = useDrivePreview(workspaceId, fileId, data?.email);
+    const [failedThumbnail, setFailedThumbnail] = useState<string>();
     const editor = useSlateStatic() as YjsEditor;
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
     const { openPopover } = usePopoverContext();
     const emptyRef = useRef<HTMLDivElement>(null);
     const [showToolbar, setShowToolbar] = useState(false);
-    const embeddedUrl = useMemo(() => (url ? buildGoogleDriveEmbeddedUrl(url) : ''), [url]);
+    const embeddedUrl = useMemo(() => (url && isGoogleDriveUrl(url) ? buildGoogleDriveEmbeddedUrl(url) : ''), [url]);
 
     const openEditPopover = useCallback(() => {
       if (emptyRef.current && !readOnly) {
@@ -81,14 +87,24 @@ export const GoogleDriveBlock = memo(
                 'relative w-full overflow-hidden rounded-[8px] border border-border-primary bg-fill-list-active'
               }
             >
-              <iframe
-                title={name || t('document.slashMenu.name.googleDrive', { defaultValue: 'Google Drive' })}
-                src={embeddedUrl}
-                className={'h-[420px] w-full bg-white'}
-                loading='lazy'
-                allow='autoplay; clipboard-read; clipboard-write'
-                sandbox='allow-same-origin allow-scripts allow-popups allow-forms allow-downloads'
-              />
+              {thumbnail && failedThumbnail !== thumbnail ? (
+                <img
+                  src={thumbnail}
+                  alt={name || ''}
+                  className='h-[420px] w-full object-contain'
+                  onError={() => setFailedThumbnail(thumbnail)}
+                />
+              ) : (
+                <iframe
+                  key={version}
+                  title={name || t('document.slashMenu.name.googleDrive', { defaultValue: 'Google Drive' })}
+                  src={embeddedUrl}
+                  className={'h-[420px] w-full bg-white'}
+                  loading='lazy'
+                  allow='autoplay; clipboard-read; clipboard-write'
+                  sandbox='allow-same-origin allow-scripts allow-popups allow-forms allow-downloads'
+                />
+              )}
               {showToolbar && (
                 <div onClick={(e) => e.stopPropagation()} className={'absolute right-2 top-2 z-10'}>
                   <div
@@ -97,11 +113,21 @@ export const GoogleDriveBlock = memo(
                     <ActionButton onClick={onCopy} tooltip={t('button.copyLinkOriginal')}>
                       <CopyIcon />
                     </ActionButton>
-                    <ActionButton onClick={onOpen} tooltip={'Open'}>
+                    <ActionButton onClick={onOpen} tooltip={t('document.plugins.googleDrive.openOriginal')}>
                       <OpenIcon />
                     </ActionButton>
                     {!readOnly && (
                       <>
+                        <button
+                          type='button'
+                          className='px-2 text-xs'
+                          onClick={(event) => openPopover(blockId, BlockType.GoogleDriveBlock, event.currentTarget)}
+                        >
+                          {t('document.plugins.googleDrive.replace')}
+                        </button>
+                        <button type='button' className='px-2 text-xs' onClick={reload}>
+                          {t('document.plugins.googleDrive.reload')}
+                        </button>
                         <Divider className={'my-1.5 bg-line-on-toolbar'} orientation={'vertical'} flexItem={true} />
                         <ActionButton onClick={onDelete} tooltip={t('button.delete')}>
                           <DeleteIcon />

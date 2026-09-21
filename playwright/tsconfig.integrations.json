@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "../src/**/*.d.ts",
+    "../playwright.integrations.config.ts",
+    "e2e/integrations/**/*.ts",
+    "support/connections.ts",
+    "support/connections.fixture.tsx",
+    "support/integrations-server.ts",
+    "support/integrations.fixture.tsx"
+  ],
+  "references": []
+}

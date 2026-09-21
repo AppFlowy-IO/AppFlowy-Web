@@ -21,6 +21,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  connections:
+    name: 'Connections (Chromium, Firefox, WebKit)'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install test browsers
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: Typecheck integration tests
+        run: pnpm exec tsc --project playwright/tsconfig.integrations.json
+      - name: Test connections and connected features
+        run: pnpm test:e2e:integrations
+      - name: Upload browser test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: connections-browser-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
   # Build once and share artifact with all test jobs
   build:
     runs-on: ubuntu-latest

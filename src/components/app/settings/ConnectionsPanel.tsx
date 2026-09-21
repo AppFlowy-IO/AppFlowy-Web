@@ -13,6 +13,7 @@ import { ReactComponent as GoogleDriveIcon } from '@/assets/icons/google_drive.s
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { ConfirmModal } from '@/components/_shared/modal/ConfirmModal';
+import { CalendarNotifications } from '@/components/app/settings/connections/CalendarNotifications';
 import { useConnections } from '@/components/app/settings/connections/useConnections';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -67,6 +68,7 @@ export function ConnectionsPanel({ workspaceId }: { workspaceId: string }) {
         <p className='mt-1 text-sm text-text-secondary'>{t('settings.connections.description')}</p>
       </div>
       <div className='appflowy-scroller flex-1 overflow-y-auto px-8 py-6'>
+        {connections.some((connection) => connection.provider === 'google-calendar') && <CalendarNotifications />}
         <div className='flex items-center justify-between gap-3'>
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
