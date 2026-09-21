@@ -52,6 +52,7 @@ export enum BlockType {
   FileBlock = 'file',
   GalleryBlock = 'multi_image',
   SubpageBlock = 'sub_page',
+  LinkedPageBlock = 'linked_page',
   SimpleTableBlock = 'simple_table',
   SimpleTableRowBlock = 'simple_table_row',
   SimpleTableCellBlock = 'simple_table_cell',

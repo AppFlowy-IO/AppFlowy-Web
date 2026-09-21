@@ -42,6 +42,7 @@ export function getBlockCssProperty(node: Element) {
     case BlockType.ToggleListBlock:
     case BlockType.QuoteBlock:
     case BlockType.SubpageBlock:
+    case BlockType.LinkedPageBlock:
     case BlockType.CalloutBlock:
       return 'leading-[1.85em]';
     case BlockType.OutlineBlock:
