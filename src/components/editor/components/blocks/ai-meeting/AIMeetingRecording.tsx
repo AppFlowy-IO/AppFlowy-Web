@@ -41,13 +41,13 @@ export function AIMeetingRecording({
   const { t } = useTranslation();
   const editor = useSlateStatic() as YjsEditor;
   const session = useRef<MeetingTranscription>();
+  const attemptRef = useRef(0);
   const mounted = useRef(true);
   const finished = useRef(onFinished);
   const [choosing, setChoosing] = useState(false);
   const [state, setState] = useState<TranscriptionState>('idle');
   const [partial, setPartial] = useState('');
   const [error, setError] = useState('');
-  const hasTranscript = useRef(false);
 
   useEffect(() => {
     finished.current = onFinished;
@@ -56,8 +56,8 @@ export function AIMeetingRecording({
     mounted.current = true;
     if (consumeMeetingStart(viewId)) setChoosing(true);
     return () => {
-      void session.current?.stop();
       mounted.current = false;
+      void session.current?.stop();
     };
   }, [viewId, workspaceId, blockId]);
 
@@ -74,13 +74,17 @@ export function AIMeetingRecording({
 
   const start = async (source: MeetingAudioSource) => {
     if (session.current || !transcriptBlockId) return;
+    const attempt = ++attemptRef.current;
+    const isCurrent = () => attemptRef.current === attempt;
+    let hasTranscript = false;
+
     setError('');
     setChoosing(false);
-    hasTranscript.current = false;
     const transcriptTurns = new Map<number, string>();
     // Final socket messages may arrive after the React editor unmounts. Write
     // directly to its retained collab instead of depending on Slate selection.
     const updateMeeting = (data: Partial<AIMeetingBlockData>) => {
+      if (!isCurrent()) return;
       const block = getBlock(blockId, editor.sharedRoot);
 
       if (block)
@@ -91,7 +95,7 @@ export function AIMeetingRecording({
     };
 
     const onError = (failure: unknown) => {
-      if (!mounted.current) return;
+      if (!mounted.current || !isCurrent()) return;
       if (failure instanceof DOMException && failure.name === 'AbortError') return;
       setError(
         failure instanceof MeetingRecordingError
@@ -102,22 +106,24 @@ export function AIMeetingRecording({
 
     const recording = new MeetingTranscription(workspaceId, {
       onState: (next) => {
+        if (!isCurrent()) return;
         if (next === 'recording' || next === 'idle' || next === 'stopping')
           updateMeeting({ recording_state: next === 'recording' ? 'recording' : 'idle', auto_start_recording: false });
         if (!mounted.current) return;
         setState(next);
         if (next === 'idle') {
           session.current = undefined;
-          if (hasTranscript.current)
+          if (hasTranscript)
             setTimeout(() => {
-              if (mounted.current) finished.current();
+              if (mounted.current && isCurrent()) finished.current();
             }, 0);
         }
       },
       onPartial: (text) => {
-        if (mounted.current) setPartial(text);
+        if (mounted.current && isCurrent()) setPartial(text);
       },
       onTranscript: (text, turnOrder) => {
+        if (!isCurrent()) return;
         const root = editor.sharedRoot;
         const block = getBlock(transcriptBlockId, root);
 
@@ -151,7 +157,7 @@ export function AIMeetingRecording({
           if (turnOrder !== undefined) transcriptTurns.set(turnOrder, id);
           updateMeeting({ show_notes_directly: false });
         });
-        hasTranscript.current = true;
+        hasTranscript = true;
       },
       onError,
       onPendingDuration: (seconds) => {
@@ -163,6 +169,8 @@ export function AIMeetingRecording({
     try {
       await recording.start(source, pendingDuration);
     } catch (failure) {
+      // A cancelled permission/token request may settle after another start.
+      if (!isCurrent()) return;
       onError(failure);
       session.current = undefined;
       if (mounted.current) setState('idle');
