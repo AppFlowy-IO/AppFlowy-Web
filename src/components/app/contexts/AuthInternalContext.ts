@@ -21,7 +21,7 @@ import { UserWorkspaceInfo } from '@/application/types';
  * being connected.
  *
  * **Hooks:** `useCurrentWorkspaceId`, `useCurrentWorkspaceIdOptional`,
- *            `useUserWorkspaceInfo`, `usePageHistoryEnabled`
+ *            `useUserWorkspaceInfo`, `usePageHistoryEnabled`, `useIsOfficialHosted`
  */
 export interface AuthInternalContextType {
   /** All workspace info for the current user, including workspace list and selected workspace. */
@@ -34,6 +34,12 @@ export interface AuthInternalContextType {
   enablePageHistory?: boolean;
   /** Whether server-backed AI features are enabled for this deployment/workspace. */
   aiEnabled?: boolean;
+  /**
+   * Whether `/api/server-info` reported `self_hosted: false`. Only the official
+   * AppFlowy cloud runs the billing service, so pricing surfaces render only
+   * when this is `true`. Unknown server info keeps it `false`.
+   */
+  isOfficialHosted?: boolean;
   /** Maximum raw Yjs update accepted by the realtime WebSocket lane. */
   maxUpdateBytes?: number;
   /** Maximum raw Yjs update accepted by the opt-in HTTP slow lane. */

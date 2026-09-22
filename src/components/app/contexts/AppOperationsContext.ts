@@ -19,6 +19,7 @@ import {
   LoadRowDocument,
   LoadView,
   LoadViewMeta,
+  PricingCatalog,
   PublishConfigPatch,
   Subscription,
   TestDatabasePromptConfig,
@@ -47,6 +48,7 @@ import {
  * **Narrower hooks** (read a subset of this context):
  * - `useToView()` — just the `toView` navigation callback
  * - `useGetSubscriptions()` — just `getSubscriptions`
+ * - `usePricingCatalog()` — `getPricingCatalog` behind a shared, TTL-cached store
  * - `usePublishing()` — memoized `{ publish, unpublish }`
  * - `useCollabHistory()` — memoized `{ getCollabHistory, previewCollabVersion, revertCollabVersion }`
  *
@@ -109,6 +111,8 @@ export interface AppOperationsContextType {
   // ── Billing / Subscriptions ────────────────────────────────────────
   /** Fetch the workspace's active subscriptions. Hook: `useGetSubscriptions()`. */
   getSubscriptions?: () => Promise<Subscription[]>;
+  /** Fetch the public plan pricing catalog. Hook: `usePricingCatalog()` (shared, TTL-cached). */
+  getPricingCatalog?: () => Promise<PricingCatalog>;
 
   // ── Publishing ─────────────────────────────────────────────────────
   /** Publish a view to the web. Hook: `usePublishing()`. */

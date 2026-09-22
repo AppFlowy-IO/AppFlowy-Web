@@ -163,6 +163,7 @@ export {
   getActiveSubscription,
   getWorkspaceSubscriptions,
   cancelSubscription,
+  getPricingCatalog,
 } from './billing-api';
 
 // Import

@@ -2069,6 +2069,80 @@ export interface Subscription {
 
 export type Subscriptions = Subscription[];
 
+/** Widens a literal union so unknown server values still type-check while keeping autocomplete. */
+type LooseString = string & Record<never, never>;
+
+/** `plans[].kind` in the billing pricing catalog. */
+export type PricingPlanKind = 'workspace_plan' | 'workspace_add_on' | 'account_add_on';
+
+/** `plans[].id` values the billing pricing catalog publishes today. */
+export type PricingPlanId = SubscriptionPlan | 'ai_local' | 'vault_workspace';
+
+/** Units a `quantity` feature value can carry. Unknown units fall back to `display`. */
+export type FeatureValueUnit =
+  | 'members'
+  | 'guests'
+  | 'gb'
+  | 'mb'
+  | 'days'
+  | 'hours'
+  | 'images_per_month'
+  | 'responses_lifetime'
+  | 'images_lifetime'
+  | 'workspaces';
+
+/**
+ * Typed feature value from the billing pricing catalog. `display` is the
+ * server's English fallback and is always present.
+ */
+export type FeatureValue =
+  | { kind: 'unlimited'; display: string }
+  | { kind: 'included'; display: string }
+  | { kind: 'excluded'; display: string }
+  | { kind: 'quantity'; amount: number; unit: FeatureValueUnit | LooseString; display: string }
+  | { kind: 'text'; display: string };
+
+export interface PricingPrice {
+  interval: SubscriptionInterval;
+  /** Total for the interval: a yearly price is the whole year, not per month. */
+  price_cents: number;
+}
+
+export interface PricingFeature {
+  key: string;
+  /** English plan-card sentence, e.g. "Unlimited storage". */
+  label: string;
+  value: FeatureValue;
+}
+
+export interface PricingPlan {
+  id: PricingPlanId | LooseString;
+  kind: PricingPlanKind | LooseString;
+  name: string;
+  description: string;
+  /** Month then year; empty for the free plan. */
+  prices: PricingPrice[];
+  /** Ordered plan-card bullets. */
+  features: PricingFeature[];
+}
+
+export interface PricingComparisonRow {
+  key: string;
+  label: string;
+  tooltip: string | null;
+  /** Keyed by the `workspace_plan` ids present in `plans`. */
+  values: Record<string, FeatureValue>;
+}
+
+/** Response of `GET /billing/api/v1/pricing` on the official AppFlowy cloud. */
+export interface PricingCatalog {
+  version: number;
+  currency: string;
+  annual_discount_percent: number;
+  plans: PricingPlan[];
+  comparison: PricingComparisonRow[];
+}
+
 export interface UpdatePagePayload {
   name: string;
   icon?: {

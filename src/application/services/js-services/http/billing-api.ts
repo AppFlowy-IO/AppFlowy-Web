@@ -1,4 +1,5 @@
 import {
+  PricingCatalog,
   SubscriptionInterval,
   SubscriptionPlan,
   Subscriptions,
@@ -60,5 +61,14 @@ export async function cancelSubscription(workspaceId: string, plan: Subscription
       sync: true,
       reason,
     })
+  );
+}
+
+/** Public plan catalog: prices, descriptions, bullets and comparison rows. No auth required. */
+export async function getPricingCatalog() {
+  const url = `/billing/api/v1/pricing`;
+
+  return executeAPIRequest<PricingCatalog>(() =>
+    getAxios()?.get<APIResponse<PricingCatalog>>(url)
   );
 }

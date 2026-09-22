@@ -17,6 +17,7 @@ import {
   useAIEnabled,
   useAppOperations,
   useCurrentWorkspaceId,
+  useIsOfficialHosted,
   useRefreshUserWorkspaceInfo,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
@@ -43,7 +44,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { isAppFlowyHosted } from '@/utils/subscription';
 import { openUrl } from '@/utils/url';
 
 import { SettingsDialog } from '@/components/app/settings';
@@ -55,7 +55,7 @@ export function Workspaces() {
   const currentWorkspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
   const aiEnabled = useAIEnabled();
-  const isHosted = isAppFlowyHosted();
+  const isHosted = useIsOfficialHosted();
   const [openUpgradePlan, setOpenUpgradePlan] = useState(false);
   const [openUpgradeAIMax, setOpenUpgradeAIMax] = useState(false);
   const [open, setOpen] = useState(false);

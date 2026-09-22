@@ -4,7 +4,7 @@ import {
   SubscriptionPlan,
 } from '@/application/types';
 
-import { getWorkspaceSubscriptions } from '../billing-api';
+import { getPricingCatalog, getWorkspaceSubscriptions } from '../billing-api';
 
 const mockGet = jest.fn();
 
@@ -50,5 +50,16 @@ describe('getWorkspaceSubscriptions', () => {
     subscriptions.resolve({ data: { data: [proSubscription] } });
 
     await expect(resultPromise).resolves.toEqual([proSubscription]);
+  });
+});
+
+describe('getPricingCatalog', () => {
+  it('requests the public pricing endpoint and unwraps the catalog', async () => {
+    const catalog = { version: 1, currency: 'USD', annual_discount_percent: 20, plans: [], comparison: [] };
+
+    mockGet.mockResolvedValueOnce({ data: { data: catalog } });
+
+    await expect(getPricingCatalog()).resolves.toEqual(catalog);
+    expect(mockGet).toHaveBeenCalledWith('/billing/api/v1/pricing');
   });
 });

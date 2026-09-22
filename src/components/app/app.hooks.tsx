@@ -84,6 +84,17 @@ export function useAIEnabled(): boolean {
   return context?.aiEnabled ?? true;
 }
 
+/**
+ * Returns whether the server is the official AppFlowy cloud, i.e. server-info
+ * reported `self_hosted: false`. Fails closed: self-hosted deployments and
+ * unknown server info get no billing surface, matching the desktop client.
+ */
+export function useIsOfficialHosted(): boolean {
+  const context = useContext(AuthInternalContext);
+
+  return context?.isOfficialHosted ?? false;
+}
+
 // ─── Navigation-only hooks → AppNavigationContext ────────────────────────────
 // Provided by AppBusinessLayer. Available after workspace loads.
 

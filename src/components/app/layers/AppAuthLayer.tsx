@@ -74,6 +74,9 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const serverInfo = useServerInfo(!!isAuthenticated, defaultConfig.baseURL);
   const enablePageHistory = serverInfo.info?.enable_page_history ?? (serverInfo.status === 'unavailable' ? true : undefined);
   const aiEnabled = serverInfo.status === 'loading' ? false : serverInfo.info?.ai_enabled ?? true;
+  // Billing exists only on the official AppFlowy cloud. Unknown server info
+  // grants no pricing surface, matching the desktop client.
+  const isOfficialHosted = serverInfo.status === 'available' && serverInfo.info?.self_hosted === false;
   const maxUpdateBytes = serverInfo.info?.max_update_bytes;
   const maxSlowSyncUpdateBytes = serverInfo.info?.max_slow_sync_update_bytes;
   const syncLimitsLoaded = serverInfo.status === 'available';
@@ -310,6 +313,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       isAuthenticated: !!isAuthenticated,
       enablePageHistory,
       aiEnabled,
+      isOfficialHosted,
       maxUpdateBytes,
       maxSlowSyncUpdateBytes,
       syncLimitsLoaded,
@@ -324,6 +328,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       isAuthenticated,
       enablePageHistory,
       aiEnabled,
+      isOfficialHosted,
       maxUpdateBytes,
       maxSlowSyncUpdateBytes,
       syncLimitsLoaded,

@@ -1,21 +1,32 @@
-import { Button, CircularProgress } from '@mui/material';
-import React, { useCallback, useEffect } from 'react';
+import { Button, CircularProgress, Skeleton } from '@mui/material';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
+import { BillingService } from '@/application/services/domains';
 import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
-import { BillingService } from '@/application/services/domains';
-import { useGetSubscriptions, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useCurrentWorkspaceId, useGetSubscriptions } from '@/components/app/app.hooks';
+import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
+import {
+  PricingTranslate,
+  findPlan,
+  formatFeatureBullet,
+  getPlanDisplayPrice,
+  localizePlanDescription,
+} from '@/utils/pricing';
 
 function UpgradeAIMax({ open, onClose, onOpen }: { open: boolean; onClose: () => void; onOpen: () => void }) {
   const { t } = useTranslation();
+  // Catalog keys are built at runtime, which the typed i18n resources cannot express.
+  const translate = t as unknown as PricingTranslate;
   const [isActive, setIsActive] = React.useState(false);
   const currentWorkspaceId = useCurrentWorkspaceId();
   const [cancelLoading, setCancelLoading] = React.useState(false);
   const [cancelOpen, setCancelOpen] = React.useState(false);
   const getSubscriptions = useGetSubscriptions();
+  const { catalog, isLoading, hasError, reload } = usePricingCatalog({ enabled: open });
 
   const [search, setSearch] = useSearchParams();
   const action = search.get('action');
@@ -97,30 +108,51 @@ function UpgradeAIMax({ open, onClose, onOpen }: { open: boolean; onClose: () =>
     }
   }, [open, loadSubscription]);
 
-  return (
-    <NormalModal
-      open={open}
-      onClose={handleClose}
-      title={t('subscribe.upgradeAIMax')}
-      disableRestoreFocus={true}
-      cancelButtonProps={{
-        className: 'hidden',
-      }}
-      okButtonProps={{
-        className: 'hidden',
-      }}
-      slotProps={{
-        root: {
-          className: 'min-w-[500px] max-w-full max-h-full',
-        },
-      }}
-    >
-      <div className={'relative flex w-full flex-col gap-4 rounded-[16px] border border-billing-primary p-4'}>
+  const plan = useMemo(() => (catalog ? findPlan(catalog, SubscriptionPlan.AIMax) : undefined), [catalog]);
+  const price = useMemo(() => (plan ? getPlanDisplayPrice(plan, SubscriptionInterval.Year) : null), [plan]);
+  const points = useMemo(
+    () =>
+      plan
+        ? plan.features
+            .map((feature) => formatFeatureBullet(translate, feature))
+            .filter((point): point is string => Boolean(point))
+        : [],
+    [plan, translate]
+  );
+
+  const renderContent = () => {
+    if (!catalog && isLoading) {
+      return (
+        <div className={'flex w-full flex-col gap-4'} data-testid={'pricing-skeleton'}>
+          <Skeleton variant={'rounded'} height={280} />
+        </div>
+      );
+    }
+
+    // A catalog without the add-on is as unusable as no catalog at all.
+    if ((!catalog && hasError) || (catalog && !plan)) {
+      return (
+        <div className={'flex flex-col items-start gap-3'} data-testid={'pricing-error'}>
+          <div className={'text-text-secondary'}>{t('subscribe.pricingUnavailable')}</div>
+          <Button variant={'outlined'} color={'inherit'} onClick={() => void reload()}>
+            {t('button.retry')}
+          </Button>
+        </div>
+      );
+    }
+
+    if (!plan) return null;
+
+    return (
+      <div
+        className={'relative flex w-full flex-col gap-4 rounded-[16px] border border-billing-primary p-4'}
+        data-testid={'pricing-plan-ai_max'}
+      >
         <div className='flex flex-col gap-[14px]'>
-          <div className='text-billing-primary'>{t('subscribe.AIMax.description')}</div>
+          <div className='text-billing-primary'>{localizePlanDescription(translate, plan)}</div>
         </div>
         <div className='flex flex-col gap-[10px]'>
-          <div className='text-xl font-semibold'>$8</div>
+          <div className='text-xl font-semibold'>{price ?? ''}</div>
           <div className='whitespace-pre-wrap text-text-secondary'>{t('subscribe.AIMax.pricing')}</div>
         </div>
         {!isActive ? (
@@ -142,27 +174,38 @@ function UpgradeAIMax({ open, onClose, onOpen }: { open: boolean; onClose: () =>
           </Button>
         )}
         <div className='flex flex-col gap-2'>
-          <div className='flex items-center gap-2'>
-            <div className={'flex h-6 items-center'}>
-              <div className={'h-2 w-2 rounded-full bg-billing-primary'} />
+          {points.map((point, index) => (
+            <div key={index} className='flex items-center gap-2'>
+              <div className={'flex h-6 items-center'}>
+                <div className={'h-2 w-2 rounded-full bg-billing-primary'} />
+              </div>
+              <div className='flex-1 whitespace-pre-wrap break-words'>{point}</div>
             </div>
-            <div className='flex-1 whitespace-pre-wrap break-words'>{t('subscribe.AIMax.points.first')}</div>
-          </div>
-          <div className='flex items-center gap-2'>
-            <div className={'flex h-6 items-center'}>
-              <div className={'h-2 w-2 rounded-full bg-billing-primary'} />
-            </div>
-            <div className='flex-1 whitespace-pre-wrap break-words'>{t('subscribe.AIMax.points.second')}</div>
-          </div>
-
-          <div className='flex items-center gap-2'>
-            <div className={'flex h-6 items-center'}>
-              <div className={'h-2 w-2 rounded-full bg-billing-primary'} />
-            </div>
-            <div className='flex-1 whitespace-pre-wrap break-words'>{t('subscribe.AIMax.points.third')}</div>
-          </div>
+          ))}
         </div>
       </div>
+    );
+  };
+
+  return (
+    <NormalModal
+      open={open}
+      onClose={handleClose}
+      title={t('subscribe.upgradeAIMax')}
+      disableRestoreFocus={true}
+      cancelButtonProps={{
+        className: 'hidden',
+      }}
+      okButtonProps={{
+        className: 'hidden',
+      }}
+      slotProps={{
+        root: {
+          className: 'min-w-[500px] max-w-full max-h-full',
+        },
+      }}
+    >
+      {renderContent()}
       <NormalModal
         title={<div className={'w-full text-left'}>{t('subscribe.AIMax.removeTitle')}</div>}
         classes={{ paper: 'w-[420px]' }}
