@@ -12,8 +12,9 @@ export class DatabaseRestoreTracker {
   private readonly markers = new Map<string, string | null>();
   private readonly checks = new Map<string, Promise<boolean>>();
   private readonly revisions = new Map<string, number>();
-  private readonly hints = new Map<string, { restoreId: string }>();
-  private readonly verifiedHints = new Map<string, { restoreId: string } | undefined>();
+  private readonly hints = new Map<string, { restoreId?: string }>();
+  private readonly verifiedHints = new Map<string, { restoreId?: string } | undefined>();
+  private observedRestore = false;
 
   constructor(
     private readonly storagePrefix: string,
@@ -29,7 +30,10 @@ export class DatabaseRestoreTracker {
       if (!key?.startsWith(storagePrefix)) continue;
       const value = storage.getItem(key);
 
-      if (value !== null) this.markers.set(key.slice(storagePrefix.length), value === 'null' ? null : value);
+      if (value !== null) {
+        this.markers.set(key.slice(storagePrefix.length), value === 'null' ? null : value);
+        if (value !== 'null') this.observedRestore = true;
+      }
     }
   }
 
@@ -41,9 +45,15 @@ export class DatabaseRestoreTracker {
     return this.revisions.get(databaseId) || 0;
   }
 
-  /** A hint invalidates any authority read which started before its arrival. */
-  observeRestoreHint(databaseId: string, restoreId: string): void {
-    if (this.hints.get(databaseId)?.restoreId !== restoreId) {
+  /** Legacy sessions without restore evidence need no row-identity lookup for sync. */
+  hasRestoreEvidence(): boolean {
+    return this.observedRestore;
+  }
+
+  /** A root version boundary has no restore ID but still invalidates earlier authority reads. */
+  observeRestoreHint(databaseId: string, restoreId?: string): void {
+    this.observedRestore = true;
+    if (restoreId === undefined || this.hints.get(databaseId)?.restoreId !== restoreId) {
       this.hints.set(databaseId, { restoreId });
     }
   }
@@ -80,6 +90,7 @@ export class DatabaseRestoreTracker {
       }
 
       if (hint !== this.hints.get(databaseId)) continue;
+      if (state.database_restore_id !== null) this.observedRestore = true;
       const previous = this.markers.get(databaseId) ?? null;
 
       if (previous === state.database_restore_id) {

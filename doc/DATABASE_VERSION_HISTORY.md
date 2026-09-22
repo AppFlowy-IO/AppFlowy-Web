@@ -41,12 +41,14 @@ outbox updates, and reloads the aggregate. Repeated notifications for the same g
 current providers and queued edits. Row-page documents retain their independent state.
 
 Receiving a restore is independent of the history UI capability. A server restore notification,
-a stamped sync response, or an existing persisted restore marker requires authoritative generation
-verification even while capability discovery is pending or history is disabled locally. This keeps
+a stamped sync response, a database root version boundary, or an existing persisted restore marker
+requires authoritative generation verification even while capability discovery is pending or history is disabled locally. This keeps
 remote restores consistent with document history without enabling the history UI. Root and row
 traffic remain fenced after a failed verification; transient failures retry, while permission denials
 stop background polling. A hint arriving during verification invalidates the earlier authority read,
 so sync waits for a read started after that hint before admitting traffic.
+Root version boundaries trigger the same aggregate recovery when a notification was missed; the
+collab version UUID never substitutes for the restore job UUID, and the partial root frame is discarded.
 
 Sidebar membership belongs to Folder, separately from database view definitions. The server
 reconciles verified mounts during restore and remembers entries removed by that restore so later

@@ -3,18 +3,17 @@ import EventEmitter from 'events';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { bindSyncContext, UpdateFlags } from '@/application/services/js-services/sync-protocol';
+import { Types } from '@/application/types';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
 import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
 
 import { useSyncRefs } from './sync/syncRefs';
 import { HttpFullSyncResult, SyncContextType } from './sync/types';
-import { Types } from '@/application/types';
-
-import { useDatabaseHistoryRestoreSync } from './sync/useDatabaseHistoryRestoreSync';
 import { useBatchSync } from './sync/useBatchSync';
 import { useCollabMessageHandler } from './sync/useCollabMessageHandler';
 import { useCollabVersionRevert } from './sync/useCollabVersionRevert';
+import { useDatabaseHistoryRestoreSync } from './sync/useDatabaseHistoryRestoreSync';
 import { useSyncContextLifecycle } from './sync/useSyncContextLifecycle';
 import { useWorkspaceNotifications } from './sync/useWorkspaceNotifications';
 
@@ -175,10 +174,10 @@ export const useSync = (
   const refs = useSyncRefs();
 
   refs.latestUserRef.current = currentUser;
-  const beforeDatabaseSendRef = useRef<(id: string, type: Types, marker?: string) => Promise<boolean>>(async () => false);
+  const beforeDatabaseSendRef = useRef<(id: string, type: Types, marker?: string, rootVersionChanged?: boolean) => Promise<boolean>>(async () => false);
   const prepareDatabaseContextRef = useRef<(context: import('./sync/types').RegisterSyncContext) => void>(() => undefined);
-  const beforeDatabaseSend = useCallback((id: string, type: Types, marker?: string) =>
-    beforeDatabaseSendRef.current(id, type, marker), []);
+  const beforeDatabaseSend = useCallback((id: string, type: Types, marker?: string, rootVersionChanged?: boolean) =>
+    beforeDatabaseSendRef.current(id, type, marker, rootVersionChanged), []);
   const prepareDatabaseContext = useCallback((context: import('./sync/types').RegisterSyncContext) =>
     prepareDatabaseContextRef.current(context), []);
 

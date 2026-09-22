@@ -307,16 +307,30 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     return databaseId;
   }, []);
 
-  const ensureDatabaseRestoreCurrent = useCallback(async (objectId: string, type: Types, expectedMarker?: string): Promise<boolean> => {
+  const ensureDatabaseRestoreCurrent = useCallback(async (
+    objectId: string, type: Types, expectedMarker?: string, rootVersionChanged = false
+  ): Promise<boolean> => {
     if (type !== Types.Database && type !== Types.DatabaseRow) return true;
     const current = latest.current;
 
     if (current.refs.isDisposedRef.current) return false;
+    if (!current.enabled && !rootVersionChanged &&
+        (expectedMarker === undefined || expectedMarker === nilMarker) &&
+        !tracker.hasRestoreEvidence() && observedRestores.current.size === 0) {
+      return current.capabilityLoaded !== false;
+    }
+
     let databaseId: string | undefined;
 
     try {
       databaseId = await resolveDatabase(objectId, type);
       const scopeKey = `${current.userId}:${current.workspaceId}:${databaseId}`;
+
+      if (databaseId && type === Types.Database && rootVersionChanged) {
+        observedRestores.current.add(scopeKey);
+        // A collab version is only evidence to reread authority, never a database restore ID.
+        tracker.observeRestoreHint(databaseId);
+      }
 
       if (databaseId && expectedMarker !== undefined && expectedMarker !== nilMarker) {
         observedRestores.current.add(scopeKey);

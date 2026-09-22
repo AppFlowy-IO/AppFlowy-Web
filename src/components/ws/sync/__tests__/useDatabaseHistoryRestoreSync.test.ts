@@ -12,7 +12,8 @@ import { getCollab } from '@/application/services/js-services/http/collab-api';
 import { deleteOutboxByObjectId, startDrainAll } from '@/application/sync-outbox';
 import { Types, YDoc } from '@/application/types';
 
-import { SyncRefs } from '../syncRefs';
+import { SyncRefs, useSyncRefs } from '../syncRefs';
+import { useCollabMessageHandler } from '../useCollabMessageHandler';
 import { useDatabaseHistoryRestoreSync } from '../useDatabaseHistoryRestoreSync';
 
 jest.mock('@/application/database-blob', () => ({
@@ -268,6 +269,8 @@ test('verification fails closed before capability resolution and when the server
 
 test('legacy database sync resumes only after capabilities resolve with history disabled', async () => {
   const f = fixture();
+
+  jest.mocked(getCachedRowDatabaseId).mockReturnValue(undefined);
   const { result, rerender, unmount } = renderHook(({ loaded }) => useDatabaseHistoryRestoreSync({
     refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: false, capabilityLoaded: loaded,
     eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
@@ -284,6 +287,7 @@ test('legacy database sync resumes only after capabilities resolve with history 
   }
 
   expect(getDatabaseRestoreState).not.toHaveBeenCalled();
+  expect(db.rows.filter).not.toHaveBeenCalled();
   expect(deleteOutboxByObjectId).not.toHaveBeenCalled();
   unmount();
 });
@@ -356,7 +360,83 @@ test('a stamped server response discovers an aggregate restore while history is 
   unmount();
 });
 
-test.each(['notification', 'stamped response'])('a %s arriving during verification fences sends until a fresh authority read finishes', async (evidence) => {
+test.each(['update', 'manifest'])('an unmarked root %s discovers an aggregate restore without a notification or history capability', async (kind) => {
+  const f = fixture();
+  const oldVersion = '11111111-1111-4111-8111-111111111111';
+  const incomingVersion = '22222222-2222-4222-8222-222222222222';
+  const actualRestoreId = '33333333-3333-4333-8333-333333333333';
+  const events = new EventEmitter();
+  const partialRoot = new Y.Doc();
+
+  f.root.version = oldVersion;
+  partialRoot.getMap('data').set('partial-frame', true);
+  jest.mocked(getDatabaseRestoreState).mockResolvedValue({ database_restore_id: actualRestoreId, version: incomingVersion });
+  const { result, unmount } = renderHook(() => {
+    const refs = useSyncRefs();
+
+    Object.assign(refs, f.refs);
+    const restore = useDatabaseHistoryRestoreSync({
+      refs, workspaceId: 'workspace', userId: 'user', enabled: false, capabilityLoaded: false,
+      eventEmitter: events, register: f.register, unregister: f.unregister,
+      scheduleDeferredCleanup: jest.fn(),
+    });
+
+    return useCollabMessageHandler(refs, undefined, undefined, events, f.register, jest.fn(), restore.ensureDatabaseRestoreCurrent);
+  });
+
+  await act(async () => {
+    expect(await result.current.enqueueIncomingCollabMessage({
+      objectId: 'database', collabType: Types.Database,
+      ...(kind === 'update'
+        ? { update: { version: incomingVersion, flags: 0, payload: Y.encodeStateAsUpdate(partialRoot) } }
+        : { syncRequest: { version: incomingVersion, stateVector: Y.encodeStateVector(partialRoot) } }),
+    })).toBe(false);
+  });
+  expect(getDatabaseRestoreState).toHaveBeenCalledWith('workspace', 'database');
+  expect(f.contexts.get('database')?.doc).toBe(f.nextRoot);
+  expect(f.contexts.get('row')?.doc).toBe(f.nextRow);
+  expect(f.contexts.get('row-document')?.doc).toBe(f.document);
+  expect(f.nextRoot.getMap('data').has('partial-frame')).toBe(false);
+  expect(f.nextRoot.databaseRestoreId).toBe(actualRestoreId);
+  expect(f.nextRow.databaseRestoreId).toBe(actualRestoreId);
+  expect(invalidateDatabaseBlobAfterRestore).toHaveBeenCalledWith('database', actualRestoreId, null);
+  partialRoot.destroy();
+  unmount();
+});
+
+test('a root version hint cannot reset only the root when aggregate authority is denied', async () => {
+  const f = fixture();
+  const events = new EventEmitter();
+
+  f.root.version = '11111111-1111-4111-8111-111111111111';
+  jest.mocked(getDatabaseRestoreState).mockRejectedValue({ code: ERROR_CODE.NOT_HAS_PERMISSION, httpStatus: 403 });
+  const { result, unmount } = renderHook(() => {
+    const refs = useSyncRefs();
+
+    Object.assign(refs, f.refs);
+    const restore = useDatabaseHistoryRestoreSync({
+      refs, workspaceId: 'workspace', userId: 'user', enabled: false, capabilityLoaded: true,
+      eventEmitter: events, register: f.register, unregister: f.unregister,
+      scheduleDeferredCleanup: jest.fn(),
+    });
+
+    return useCollabMessageHandler(refs, undefined, undefined, events, f.register, jest.fn(), restore.ensureDatabaseRestoreCurrent);
+  });
+
+  await act(async () => {
+    expect(await result.current.enqueueIncomingCollabMessage({
+      objectId: 'database', collabType: Types.Database,
+      syncRequest: { version: '22222222-2222-4222-8222-222222222222', stateVector: Y.encodeStateVector(f.root) },
+    })).toBe(false);
+  });
+  expect(getDatabaseRestoreState).toHaveBeenCalledWith('workspace', 'database');
+  expect(deleteCollabDB).not.toHaveBeenCalled();
+  expect(f.contexts.get('database')?.doc).toBe(f.root);
+  expect(f.contexts.get('row')?.doc).toBe(f.row);
+  unmount();
+});
+
+test.each(['notification', 'stamped response', 'root version'])('a %s arriving during verification fences sends until a fresh authority read finishes', async (evidence) => {
   const f = fixture();
 
   type State = { database_restore_id: string; version: string };
@@ -383,8 +463,10 @@ test.each(['notification', 'stamped response'])('a %s arriving during verificati
   await act(async () => {
     if (evidence === 'notification') {
       result.current.handleRestoreNotification({ databaseId: 'database', databaseRestoreId: 'restore-new' });
-    } else {
+    } else if (evidence === 'stamped response') {
       void result.current.ensureDatabaseRestoreCurrent('database', Types.Database, 'restore-new');
+    } else {
+      void result.current.ensureDatabaseRestoreCurrent('database', Types.Database, undefined, true);
     }
 
     finishStaleRead({ database_restore_id: 'restore-old', version: 'same-version' });
@@ -406,6 +488,7 @@ test.each(['notification', 'stamped response'])('a %s arriving during verificati
 test('an unavailable row identity cache fails closed without rejecting the sync guard', async () => {
   const f = fixture();
 
+  localStorage.setItem('af_database_restore:v1:server:user:workspace:database', 'restore-new');
   f.contexts.delete('row');
   jest.mocked(getCachedRowDatabaseId).mockReturnValue(undefined);
   jest.mocked(db.rows.filter).mockReturnValue({ first: async () => { throw new Error('IndexedDB unavailable'); } } as never);

@@ -45,7 +45,7 @@ export function useCollabMessageHandler(
   eventEmitter: EventEmitter,
   registerSyncContext: (context: RegisterSyncContext) => SyncContext,
   scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void,
-  beforeApply?: (objectId: string, type: Types, marker?: string) => Promise<boolean>
+  beforeApply?: (objectId: string, type: Types, marker?: string, rootVersionChanged?: boolean) => Promise<boolean>
 ) {
   const lastHandledWsMessageRef = useRef<ICollabMessage | null>(null);
   const lastHandledBcMessageRef = useRef<ICollabMessage | null>(null);
@@ -75,9 +75,16 @@ export function useCollabMessageHandler(
         const marker = message.update
           ? message.update.databaseRestoreId ?? '00000000-0000-0000-0000-000000000000'
           : undefined;
-        const allowed = await beforeApply(objectId, message.collabType, marker);
+        const rootVersion = message.update?.version || message.syncRequest?.version;
+        const rootVersionChanged = message.collabType === Types.Database && contextBeforeCheck &&
+          isCollabVersionId(rootVersion) && rootVersion !== contextBeforeCheck.doc.version;
+        const allowed = rootVersionChanged
+          ? await beforeApply(objectId, message.collabType, marker, true)
+          : await beforeApply(objectId, message.collabType, marker);
 
-        if (!allowed || isApplyCancelled(options) || contextBeforeCheck !== refs.registeredContexts.current.get(objectId)) return false;
+        // A root branch switch belongs to aggregate recovery. Its partial frame must never
+        // fall through to the single-collab reset, even when the hint was already obsolete.
+        if (rootVersionChanged || !allowed || isApplyCancelled(options) || contextBeforeCheck !== refs.registeredContexts.current.get(objectId)) return false;
       }
 
       const incomingVersion = message.update?.version || message.syncRequest?.version || null;
