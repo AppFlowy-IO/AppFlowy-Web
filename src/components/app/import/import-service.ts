@@ -6,15 +6,26 @@ import {
   cancelImportTask,
   createConfluenceImportTask,
   createDatabaseCsvImportTask,
+  createDocumentFileImportTask,
   createNotionImportTask,
   getDatabaseCsvImportStatus,
+  getDocumentFileImportStatus,
+  uploadDocumentFileImportFile,
   uploadImportFile,
   uploadImportFileMultipart,
   uploadDatabaseCsvImportFile,
 } from '@/application/services/js-services/http/import-api';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
 import { deleteBlock, getBlock, getChildrenArray, getPageId } from '@/application/slate-yjs/utils/yjs';
-import { DatabaseCsvImportLayout, DatabaseCsvImportMode, Types, YjsEditorKey, YSharedRoot } from '@/application/types';
+import {
+  DatabaseCsvImportLayout,
+  DatabaseCsvImportMode,
+  DocumentFileImportFormat,
+  ImportDiagnosticsWarning,
+  Types,
+  YjsEditorKey,
+  YSharedRoot,
+} from '@/application/types';
 import { parsedBlockToSlateElement } from '@/components/app/import/markdown-to-blocks';
 // Import failures arrive either as `Error`s or as `{ code, message }` rejections from the
 // HTTP layer; `getErrorMessage` normalises both.
@@ -23,6 +34,30 @@ import { calculateMd5 } from '@/utils/md5';
 
 const CSV_POLL_INTERVAL_MS = 1500;
 const CSV_POLL_TIMEOUT_MS = 5 * 60 * 1000;
+// A 50 MB Word document or a 20 MB PDF can take the worker a while to convert; poll a bit slower
+// and wait longer than for CSV.
+const DOCUMENT_POLL_INTERVAL_MS = 2000;
+const DOCUMENT_POLL_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Per-format upload caps, mirroring the server defaults (which mirror Notion's paid-plan limits).
+ * Checked before uploading so an oversized pick fails instantly instead of after the upload.
+ */
+export const DOCUMENT_FILE_MAX_BYTES: Record<DocumentFileImportFormat, number> = {
+  html: 50 * 1024 * 1024,
+  docx: 50 * 1024 * 1024,
+  pdf: 20 * 1024 * 1024,
+};
+
+export class DocumentFileTooLargeError extends Error {
+  constructor(
+    public readonly fileName: string,
+    public readonly limitBytes: number
+  ) {
+    super(`${fileName} exceeds the ${Math.round(limitBytes / 1024 / 1024)} MB limit`);
+    this.name = 'DocumentFileTooLargeError';
+  }
+}
 
 // AppFlowy Cloud's `ErrorCode::TooManyImportTask`. Unlike a bad delimiter or an oversized file,
 // this describes the account rather than the file, so every remaining file in a batch would fail
@@ -191,7 +226,7 @@ export interface ImportCsvBatchInput {
   signal?: AbortSignal;
 }
 
-export interface ImportCsvBatchItem {
+export interface ImportFileBatchItem {
   fileName: string;
   /** Set when the file imported successfully. */
   viewId?: string;
@@ -200,25 +235,31 @@ export interface ImportCsvBatchItem {
    * failure carried no message — wording is the caller's job, so it stays translatable.
    */
   error?: string;
+  /** Content the converter could not carry over, when the server reported any. */
+  warnings?: ImportDiagnosticsWarning[];
 }
 
-export interface ImportCsvBatchResult {
+export type ImportCsvBatchItem = ImportFileBatchItem;
+
+export interface ImportFileBatchResult {
   /**
    * One entry per file that was attempted, in selection order. Shorter than the input when the
    * batch stopped early — either cancelled, or halted by a failure that would repeat for every
    * remaining file. Callers should treat `items.length`, not the input length, as the denominator.
    */
-  items: ImportCsvBatchItem[];
+  items: ImportFileBatchItem[];
   /** True when `signal` fired mid-batch, so `items` covers only the files attempted so far. */
   aborted: boolean;
 }
 
+export type ImportCsvBatchResult = ImportFileBatchResult;
+
 /**
- * Import several CSV files as sibling Grid pages under the same parent.
+ * Import several files one at a time, each into its own page under the same parent.
  *
- * Files are imported one at a time on purpose: the server caps how many import tasks a user
- * may have pending (`MAXIMUM_IMPORT_PENDING_TASK`, 3 by default), so fanning out in parallel
- * makes every file past the cap fail with `TooManyImportTask`.
+ * Sequential on purpose: the server caps how many import tasks a user may have pending
+ * (`MAXIMUM_IMPORT_PENDING_TASK`, 3 by default), so fanning out in parallel makes every file
+ * past the cap fail with `TooManyImportTask`.
  *
  * One bad file does not sink the batch — its error is recorded and the remaining files still
  * import. The exception is `TooManyImportTask`, which is about the account rather than the file:
@@ -228,9 +269,13 @@ export interface ImportCsvBatchResult {
  * Aborting via `signal` likewise stops the batch and returns what finished, rather than throwing,
  * so the caller can still report the pages that were created.
  */
-export async function importCsvFilesAsDatabases(input: ImportCsvBatchInput): Promise<ImportCsvBatchResult> {
-  const { workspaceId, parentViewId, files, onFileStart, signal } = input;
-  const items: ImportCsvBatchItem[] = [];
+async function importFilesSequentially(
+  files: File[],
+  signal: AbortSignal | undefined,
+  onFileStart: ((index: number, total: number) => void) | undefined,
+  importOne: (file: File) => Promise<{ viewId: string; warnings?: ImportDiagnosticsWarning[] }>
+): Promise<ImportFileBatchResult> {
+  const items: ImportFileBatchItem[] = [];
 
   for (let index = 0; index < files.length; index++) {
     if (signal?.aborted) return { items, aborted: true };
@@ -240,9 +285,9 @@ export async function importCsvFilesAsDatabases(input: ImportCsvBatchInput): Pro
     onFileStart?.(index, files.length);
 
     try {
-      const { viewId } = await importCsvAsDatabase({ workspaceId, parentViewId, file, signal });
+      const { viewId, warnings } = await importOne(file);
 
-      items.push({ fileName: file.name, viewId });
+      items.push(warnings && warnings.length > 0 ? { fileName: file.name, viewId, warnings } : { fileName: file.name, viewId });
     } catch (err) {
       if (err instanceof ImportAbortError) return { items, aborted: true };
 
@@ -254,6 +299,107 @@ export async function importCsvFilesAsDatabases(input: ImportCsvBatchInput): Pro
   }
 
   return { items, aborted: false };
+}
+
+/** Import several CSV files as sibling Grid pages under the same parent. */
+export async function importCsvFilesAsDatabases(input: ImportCsvBatchInput): Promise<ImportCsvBatchResult> {
+  const { workspaceId, parentViewId, files, onFileStart, signal } = input;
+
+  return importFilesSequentially(files, signal, onFileStart, (file) =>
+    importCsvAsDatabase({ workspaceId, parentViewId, file, signal })
+  );
+}
+
+export interface ImportDocumentFileInput {
+  workspaceId: string;
+  parentViewId: string;
+  file: File;
+  format: DocumentFileImportFormat;
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+}
+
+export interface ImportDocumentFileResult {
+  viewId: string;
+  warnings: ImportDiagnosticsWarning[];
+}
+
+/**
+ * Import one HTML / Word / PDF file as a new Document page. The server converts it.
+ *
+ *   1. createDocumentFileImportTask → { task_id, presigned_url }
+ *   2. PUT the file to presigned_url with the format's content type
+ *   3. poll getDocumentFileImportStatus until 'Completed' (returns view_id) or a terminal failure
+ *
+ * If `signal` aborts, polling exits and the server task is cancelled best-effort.
+ */
+export async function importDocumentFile(input: ImportDocumentFileInput): Promise<ImportDocumentFileResult> {
+  const { workspaceId, parentViewId, file, format, onProgress, signal } = input;
+
+  throwIfAborted(signal);
+  const limit = DOCUMENT_FILE_MAX_BYTES[format];
+
+  if (file.size > limit) throw new DocumentFileTooLargeError(file.name, limit);
+
+  const md5_base64 = await calculateMd5(file);
+
+  throwIfAborted(signal);
+  const task = await createDocumentFileImportTask(workspaceId, {
+    content_length: file.size,
+    md5_base64,
+    file_name: file.name,
+    format,
+    parent_view_id: parentViewId,
+  });
+
+  try {
+    throwIfAborted(signal);
+    await uploadDocumentFileImportFile(task.presigned_url, file, format, onProgress, signal);
+
+    const start = Date.now();
+
+    while (Date.now() - start < DOCUMENT_POLL_TIMEOUT_MS) {
+      throwIfAborted(signal);
+      const status = await getDocumentFileImportStatus(workspaceId, task.task_id);
+
+      if (status.status === 'Completed' && status.view_id) {
+        return { viewId: status.view_id, warnings: status.diagnostics?.warnings ?? [] };
+      }
+
+      if (status.status === 'Failed' || status.status === 'Expire' || status.status === 'Cancel') {
+        throw new Error(status.error || `${format} import ${status.status.toLowerCase()}`);
+      }
+
+      await sleep(DOCUMENT_POLL_INTERVAL_MS, signal);
+    }
+
+    throw new Error(`${format} import timed out`);
+  } catch (err) {
+    // The server task may still be pending or converting — cancel it whether we aborted, timed
+    // out, or hit a hard failure.
+    void cancelImportTask(task.task_id).catch(noop);
+    throwIfAborted(signal);
+    throw err;
+  }
+}
+
+export interface ImportDocumentFilesBatchInput {
+  workspaceId: string;
+  parentViewId: string;
+  files: File[];
+  format: DocumentFileImportFormat;
+  /** Called before each file starts, with its zero-based index in `files`. */
+  onFileStart?: (index: number, total: number) => void;
+  signal?: AbortSignal;
+}
+
+/** Import several HTML / Word / PDF files as sibling Document pages under the same parent. */
+export async function importDocumentFiles(input: ImportDocumentFilesBatchInput): Promise<ImportFileBatchResult> {
+  const { workspaceId, parentViewId, files, format, onFileStart, signal } = input;
+
+  return importFilesSequentially(files, signal, onFileStart, (file) =>
+    importDocumentFile({ workspaceId, parentViewId, file, format, signal })
+  );
 }
 
 /**
