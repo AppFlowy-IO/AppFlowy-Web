@@ -209,6 +209,10 @@ export default defineConfig({
       // `cors-af` feature). Set APPFLOWY_DEV_API_PROXY_TARGET=http://localhost:8001
       // together with APPFLOWY_BASE_URL=http://localhost:<vite port> and
       // APPFLOWY_WS_BASE_URL=ws://localhost:<vite port>/ws/v2.
+      // The billing service is a separate process in local development (default
+      // BILLING_PORT=4242 in AppFlowy-Cloud-Service), while production serves
+      // /billing on the API origin through nginx. Override the local target with
+      // APPFLOWY_DEV_BILLING_PROXY_TARGET when the service runs elsewhere.
       ...(process.env.APPFLOWY_DEV_API_PROXY_TARGET
         ? {
             '/api': {
@@ -219,6 +223,10 @@ export default defineConfig({
               target: process.env.APPFLOWY_DEV_API_PROXY_TARGET,
               changeOrigin: true,
               ws: true,
+            },
+            '/billing': {
+              target: process.env.APPFLOWY_DEV_BILLING_PROXY_TARGET || 'http://localhost:4242',
+              changeOrigin: true,
             },
           }
         : {}),
