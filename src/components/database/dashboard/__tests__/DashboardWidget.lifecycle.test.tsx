@@ -7,16 +7,19 @@ import { moveDashboardWidget, updateDashboardLayoutSetting } from '@/application
 import { DashboardRow } from '@/application/database-yjs/dashboard.type';
 import { DatabaseViewLayout, YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
+import { WIDGET_GRID_ROW_GUTTER, WIDGET_INLINE_PADDING } from '../constants';
 import {
   DashboardProvider,
   useDashboardContext,
   useDashboardFilters,
+  useDashboardLayout,
   useDashboardLocalWidgetChanges,
 } from '../DashboardContext';
 import { DashboardGrid } from '../DashboardGrid';
 import { DashboardHostContext, DashboardUiContext } from '../DashboardUiContext';
 
 const mockWidgetViews = new Map<string, YDatabaseView>();
+const mockWidgetPaddings = new Map<string, number | undefined>();
 
 jest.mock('@/utils/runtime-config', () => ({ getConfigValue: (_key: string, fallback: string) => fallback }));
 jest.mock('react-i18next', () => {
@@ -28,12 +31,15 @@ jest.mock('@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box', () => ({
 jest.mock('@/components/database', () => ({
   Database: ({
     activeViewId,
+    paddingStart,
     viewConditionsOverlay,
   }: {
     activeViewId: string;
+    paddingStart?: number;
     viewConditionsOverlay?: YDatabaseView;
   }) => {
     if (viewConditionsOverlay) mockWidgetViews.set(activeViewId, viewConditionsOverlay);
+    mockWidgetPaddings.set(activeViewId, paddingStart);
     return null;
   },
 }));
@@ -78,7 +84,8 @@ function makeView(rowIds = ['first']) {
 }
 
 function TestDashboard() {
-  const { rows, updateRows } = useDashboardContext();
+  const { updateRows } = useDashboardContext();
+  const { rows } = useDashboardLayout();
   const { resetViewOverlays, commitViewOverlays } = useDashboardFilters();
   const { unsaved: localWidgetChanges } = useDashboardLocalWidgetChanges();
 
@@ -102,7 +109,7 @@ function TestDashboard() {
   );
 }
 
-function setup(strict = false) {
+function setup(strict = false, readOnly = false) {
   const doc = new Y.Doc({ guid: 'db' }) as YDoc;
   const database = new Y.Map() as YDatabase;
   const views = new Y.Map<YDatabaseView>();
@@ -120,8 +127,8 @@ function setup(strict = false) {
   updateDashboardLayoutSetting(otherDashboard, { rows: ROWS });
   const host: DatabaseContextState = {
     databaseDoc: doc,
-    readOnly: false,
-    canWrite: true,
+    readOnly,
+    canWrite: !readOnly,
     rowMap: {},
     databasePageId: 'dashboard',
     activeViewId: 'dashboard',
@@ -166,7 +173,23 @@ function editConditions() {
   expect(screen.getByTestId('private-changes').textContent).toBe('1');
 }
 
-beforeEach(() => mockWidgetViews.clear());
+beforeEach(() => {
+  mockWidgetViews.clear();
+  mockWidgetPaddings.clear();
+});
+
+it.each([false, true])(
+  'gives a grid widget a start gutter for its row controls unless it is read-only: %s',
+  (readOnly) => {
+    const { doc, unmount } = setup(false, readOnly);
+
+    // The row controls only show for editable rows; a read-only grid keeps the
+    // widget padding.
+    expect(mockWidgetPaddings.get('v1')).toBe(readOnly ? WIDGET_INLINE_PADDING : WIDGET_GRID_ROW_GUTTER);
+    unmount();
+    doc.destroy();
+  }
+);
 
 it.each([false, true])('follows a server view replacement while preserving private edits: %s', async (dirty) => {
   const { doc, views, unmount } = setup();

@@ -37,7 +37,12 @@ import {
 import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
-import { DASHBOARD_COLUMN_GAP, WIDGET_INLINE_PADDING, WIDGET_MISSING_GRACE_MS } from './constants';
+import {
+  DASHBOARD_COLUMN_GAP,
+  WIDGET_GRID_ROW_GUTTER,
+  WIDGET_INLINE_PADDING,
+  WIDGET_MISSING_GRACE_MS,
+} from './constants';
 import { useDashboardFilters } from './DashboardContext';
 import { useDashboardHost, useDashboardUi } from './DashboardUiContext';
 import { useDraggableWidget, useWidgetDropTarget } from './hooks/useDashboardDnd';
@@ -375,6 +380,12 @@ const WidgetSource = memo(function WidgetSource({
     (permissions: EmbeddedDatabasePermissions) => {
       if (!doc) return null;
 
+      // A grid's rows show their hover controls in the start gutter, which
+      // the widget padding cannot hold (the card would clip them): an
+      // editable grid gets a gutter sized for the compact controls instead.
+      const paddingStart =
+        layout === ViewLayout.Grid && !permissions.readOnly ? WIDGET_GRID_ROW_GUTTER : WIDGET_INLINE_PADDING;
+
       return (
         <Suspense fallback={<WidgetPlaceholder reason='loading' />}>
           <WidgetDatabase
@@ -413,7 +424,7 @@ const WidgetSource = memo(function WidgetSource({
             onOpenRowPage={handleOpenRowPage}
             openPageModal={openPageModal}
             paddingEnd={WIDGET_INLINE_PADDING}
-            paddingStart={WIDGET_INLINE_PADDING}
+            paddingStart={paddingStart}
             readOnly={permissions.readOnly}
             scheduleDeferredCleanup={scheduleDeferredCleanup}
             searchMentions={searchMentions}
@@ -448,6 +459,7 @@ const WidgetSource = memo(function WidgetSource({
       handleOpenRowPage,
       initialRowMap,
       isHost,
+      layout,
       loadDatabaseRelations,
       loadRowDocument,
       loadView,

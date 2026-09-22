@@ -30,6 +30,13 @@ export const WIDGET_EDIT_HEADER_HEIGHT = 36;
 export const WIDGET_BODY_BORDER = 2;
 /** Inline padding handed to the nested database (tab bar, conditions, grid). */
 export const WIDGET_INLINE_PADDING = 12;
+/**
+ * Start padding of an editable grid widget: its rows show their hover
+ * controls in the start gutter, which `WIDGET_INLINE_PADDING` cannot hold
+ * (the card clips them). Fits the compact controls, one 24 px button plus
+ * its border (`COMPACT_HOVER_CONTROLS_WIDTH`), with a small gap.
+ */
+export const WIDGET_GRID_ROW_GUTTER = 32;
 /** Height of the nested filter / sort chip row when it is expanded. */
 export const WIDGET_CONDITIONS_BAR_HEIGHT = 40;
 /** Smallest viewport a widget hands to its database, so tiny rows still render. */

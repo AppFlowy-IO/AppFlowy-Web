@@ -8,7 +8,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReadOnly, useRowData, useSortsSelector } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
-import { HoverControls } from '@/components/database/components/grid/controls/HoverControls';
+import { HOVER_CONTROLS_WIDTH, HoverControls } from '@/components/database/components/grid/controls/HoverControls';
 import {
   GridDragState,
   ItemState,
@@ -214,6 +214,7 @@ function GridVirtualRow({
         <div style={{ width: `${before}px` }}>
           {isRegularRow && !readOnly && (
             <HoverControls
+              compact={before < HOVER_CONTROLS_WIDTH}
               state={state}
               dragHandleRef={(el) => {
                 dragHandleRef.current = el;
