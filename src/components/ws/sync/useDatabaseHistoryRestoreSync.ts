@@ -62,6 +62,9 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
   const retryTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const deferredSync = useRef(new Set<string>());
   const restoreHints = useRef(new Set<string>());
+  // A restore observed in this session must keep fencing later traffic even
+  // after its retry hint is consumed or the history UI capability is disabled.
+  const observedRestores = useRef(new Set<string>());
   const sessionActive = useRef(true);
   const retryReset = useRef<(databaseId: string) => Promise<boolean>>();
   const userId = deps.userId || '';
@@ -308,13 +311,34 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     if (type !== Types.Database && type !== Types.DatabaseRow) return true;
     const current = latest.current;
 
-    if (current.refs.isDisposedRef.current || current.capabilityLoaded === false) return false;
-    if (!current.enabled) return true;
-    const databaseId = await resolveDatabase(objectId, type);
+    if (current.refs.isDisposedRef.current) return false;
+    let databaseId: string | undefined;
 
-    if (!databaseId || resetting.current.has(databaseId)) return false;
     try {
-      const unchanged = await tracker.check(databaseId);
+      databaseId = await resolveDatabase(objectId, type);
+      const scopeKey = `${current.userId}:${current.workspaceId}:${databaseId}`;
+
+      if (databaseId && expectedMarker !== undefined && expectedMarker !== nilMarker) {
+        observedRestores.current.add(scopeKey);
+        if (expectedMarker !== tracker.marker(databaseId)) tracker.observeRestoreHint(databaseId, expectedMarker);
+      }
+
+      const hasRestoreEvidence = databaseId &&
+        (observedRestores.current.has(scopeKey) || tracker.marker(databaseId) !== null);
+
+      // Capabilities advertise UI/ordinary sync support. An authoritative restore
+      // hint or an already-stamped database still requires aggregate recovery.
+      if (!hasRestoreEvidence) {
+        if (current.capabilityLoaded === false) return false;
+        if (!current.enabled) return true;
+      }
+
+      if (!databaseId || resetting.current.has(databaseId)) return false;
+      let unchanged = true;
+
+      do {
+        unchanged = await tracker.check(databaseId) && unchanged;
+      } while (!tracker.verificationIsCurrent(databaseId));
 
       if (!sessionActive.current || current.refs.isDisposedRef.current ||
           latest.current.workspaceId !== current.workspaceId || latest.current.userId !== current.userId) return false;
@@ -370,6 +394,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       return true;
     } catch (error) {
       Log.warn('[DatabaseHistory] Restore state verification failed; sync remains queued', { databaseId, error });
+      if (!databaseId) return false;
       const retryKey = `${current.userId}:${current.workspaceId}:${databaseId}`;
 
       const detail = error as { code?: number; httpStatus?: number; retryAfterSecs?: number } | null;
@@ -407,11 +432,12 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
           latest.current.workspaceId === current.workspaceId && latest.current.userId === current.userId &&
           !retryTimers.current.has(retryKey)) {
         const delayMs = Math.max(5000, (detail?.retryAfterSecs || 0) * 1000);
+        const retryDatabaseId = databaseId;
 
         retryTimers.current.set(retryKey, setTimeout(() => {
           retryTimers.current.delete(retryKey);
           if (sessionActive.current && latest.current.workspaceId === current.workspaceId && latest.current.userId === current.userId) {
-            void retryReset.current?.(databaseId);
+            void retryReset.current?.(retryDatabaseId);
           }
         }, delayMs));
       }
@@ -426,6 +452,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     const timers = retryTimers.current;
     const hints = restoreHints.current;
     const deferred = deferredSync.current;
+    const observed = observedRestores.current;
 
     sessionActive.current = true;
     return () => {
@@ -434,6 +461,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       timers.clear();
       hints.clear();
       deferred.clear();
+      observed.clear();
     };
   }, [deps.workspaceId, userId]);
 
@@ -445,10 +473,15 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
   }, [tracker, ensureDatabaseRestoreCurrent]);
 
   const handleRestoreNotification = useCallback((value?: notification.IDatabaseRestored | null) => {
-    if (!latest.current.enabled || !value?.databaseId || !value.databaseRestoreId) return;
-    restoreHints.current.add(`${latest.current.userId}:${latest.current.workspaceId}:${value.databaseId}`);
+    if (!sessionActive.current || latest.current.refs.isDisposedRef.current ||
+        !value?.databaseId || !value.databaseRestoreId) return;
+    const scopeKey = `${latest.current.userId}:${latest.current.workspaceId}:${value.databaseId}`;
+
+    observedRestores.current.add(scopeKey);
+    restoreHints.current.add(scopeKey);
+    tracker.observeRestoreHint(value.databaseId, value.databaseRestoreId);
     void ensureDatabaseRestoreCurrent(value.databaseId, Types.Database);
-  }, [ensureDatabaseRestoreCurrent]);
+  }, [ensureDatabaseRestoreCurrent, tracker]);
 
   useEffect(() => {
     const verifyOpenDatabases = () => {
@@ -477,10 +510,14 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
   }, [deps.refs, deps.workspaceId, deps.userId, ensureDatabaseRestoreCurrent]);
 
   const prepareDatabaseContext = useCallback((context: RegisterSyncContext) => {
-    if (!latest.current.enabled || context.doc.databaseRestoreId !== undefined) return;
+    if (context.doc.databaseRestoreId !== undefined) return;
     const databaseId = context.collabType === Types.Database ? context.doc.guid :
       context.collabType === Types.DatabaseRow ? getCachedRowDatabaseId(context.doc.guid) ||
         context.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)?.get(YjsDatabaseKey.database_id) : undefined;
+    const hasRestoreEvidence = databaseId && (tracker.marker(databaseId) !== null ||
+      observedRestores.current.has(`${latest.current.userId}:${latest.current.workspaceId}:${databaseId}`));
+
+    if (!latest.current.enabled && !hasRestoreEvidence) return;
 
     if (context.collabType === Types.Database || context.collabType === Types.DatabaseRow) {
       context.doc.databaseRestoreId = databaseId ? tracker.marker(databaseId) ?? nilMarker : nilMarker;

@@ -12,6 +12,8 @@ export class DatabaseRestoreTracker {
   private readonly markers = new Map<string, string | null>();
   private readonly checks = new Map<string, Promise<boolean>>();
   private readonly revisions = new Map<string, number>();
+  private readonly hints = new Map<string, { restoreId: string }>();
+  private readonly verifiedHints = new Map<string, { restoreId: string } | undefined>();
 
   constructor(
     private readonly storagePrefix: string,
@@ -39,6 +41,18 @@ export class DatabaseRestoreTracker {
     return this.revisions.get(databaseId) || 0;
   }
 
+  /** A hint invalidates any authority read which started before its arrival. */
+  observeRestoreHint(databaseId: string, restoreId: string): void {
+    if (this.hints.get(databaseId)?.restoreId !== restoreId) {
+      this.hints.set(databaseId, { restoreId });
+    }
+  }
+
+  /** Includes hints delivered after a check resolved but before its caller resumed. */
+  verificationIsCurrent(databaseId: string): boolean {
+    return this.verifiedHints.has(databaseId) && this.verifiedHints.get(databaseId) === this.hints.get(databaseId);
+  }
+
   check(databaseId: string): Promise<boolean> {
     const pending = this.checks.get(databaseId);
 
@@ -55,11 +69,22 @@ export class DatabaseRestoreTracker {
     let unchanged = true;
 
     for (;;) {
-      const state = await this.readState(databaseId);
+      const hint = this.hints.get(databaseId);
+      let state: DatabaseRestoreState;
+
+      try {
+        state = await this.readState(databaseId);
+      } catch (error) {
+        if (hint !== this.hints.get(databaseId)) continue;
+        throw error;
+      }
+
+      if (hint !== this.hints.get(databaseId)) continue;
       const previous = this.markers.get(databaseId) ?? null;
 
       if (previous === state.database_restore_id) {
         this.markers.set(databaseId, state.database_restore_id);
+        this.verifiedHints.set(databaseId, hint);
         return unchanged;
       }
 
@@ -68,6 +93,7 @@ export class DatabaseRestoreTracker {
       try {
         await this.reset(databaseId, state);
       } catch (error) {
+        if (hint !== this.hints.get(databaseId)) continue;
         // Another tab advanced storage after our marker read. Its opaque UUID
         // cannot be ordered, so read authority again with a fresh cache witness.
         if (error instanceof DatabaseStorageGenerationChangedError) continue;

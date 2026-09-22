@@ -44,6 +44,47 @@ test('concurrent callers share verification and failed reload never advances the
   expect(localStorage.getItem('marker:db')).toBe('restore-1');
 });
 
+test.each(['response', 'denial'])('a restore hint supersedes an in-flight authority %s', async (outcome) => {
+  localStorage.setItem('marker:db', 'restore-old');
+  let finishRead!: (state: { database_restore_id: string; version: string }) => void;
+  let failRead!: (error: Error) => void;
+  const read = jest.fn()
+    .mockImplementationOnce(() => new Promise((resolve, reject) => { finishRead = resolve; failRead = reject; }))
+    .mockResolvedValue({ database_restore_id: 'restore-new', version: 'same-version' });
+  const reset = jest.fn().mockResolvedValue(undefined);
+  const tracker = new DatabaseRestoreTracker('marker:', read, reset, localStorage);
+  const pending = tracker.check('db');
+
+  tracker.observeRestoreHint('db', 'restore-new');
+  if (outcome === 'response') finishRead({ database_restore_id: 'restore-old', version: 'same-version' });
+  else failRead(new Error('Previous permission denial'));
+  expect(await pending).toBe(false);
+  expect(read).toHaveBeenCalledTimes(3);
+  expect(reset).toHaveBeenCalledTimes(1);
+  expect(tracker.marker('db')).toBe('restore-new');
+  expect(tracker.verificationIsCurrent('db')).toBe(true);
+});
+
+test('a later restore hint recovers a failed reload of the superseded generation', async () => {
+  let failReload!: (error: Error) => void;
+  const read = jest.fn()
+    .mockResolvedValueOnce({ database_restore_id: 'restore-first', version: 'same-version' })
+    .mockResolvedValue({ database_restore_id: 'restore-next', version: 'same-version' });
+  const reset = jest.fn()
+    .mockImplementationOnce(() => new Promise((_, reject) => { failReload = reject; }))
+    .mockResolvedValue(undefined);
+  const tracker = new DatabaseRestoreTracker('marker:', read, reset, localStorage);
+  const pending = tracker.check('db');
+
+  await Promise.resolve();
+  tracker.observeRestoreHint('db', 'restore-next');
+  failReload(new Error('Superseded collab unavailable'));
+  expect(await pending).toBe(false);
+  expect(reset).toHaveBeenCalledTimes(2);
+  expect(tracker.marker('db')).toBe('restore-next');
+  expect(tracker.verificationIsCurrent('db')).toBe(true);
+});
+
 test('a second restore committed during reload is resolved before synchronization resumes', async () => {
   const read = jest.fn()
     .mockResolvedValueOnce({ database_restore_id: 'restore-1', version: 'version' })
