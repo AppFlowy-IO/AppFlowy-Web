@@ -395,7 +395,9 @@ When('Eva signs in and opens the captured share URL', async ({ page, browser, re
   }
 
   await state.respondentContext?.close().catch(() => undefined);
-  const evaContext = await browser.newContext({ baseURL: new URL(page.url()).origin });
+  // The server may serve public forms from a different origin than the editor.
+  // Sign in on the share origin so that its respondent page retains Eva's session.
+  const evaContext = await browser.newContext({ baseURL: new URL(state.capturedUrl).origin });
   const evaPage = await evaContext.newPage();
 
   setupPageErrorHandling(evaPage);

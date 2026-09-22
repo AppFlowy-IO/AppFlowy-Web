@@ -191,8 +191,10 @@ describe('desktop page-link blocks', () => {
   it('keeps the current title and icon visible when the metadata loader changes', async () => {
     mockLoadViewMeta.mockResolvedValue({ view_id: 'linked-view', name: 'Loaded title', icon: { ty: 0, value: '📄' } });
     const { rerender } = renderPageLink();
+
     await screen.findByText('Loaded title');
     let resolveLookup!: (view: Partial<View>) => void;
+
     mockCurrentLoadViewMeta = jest.fn(
       () =>
         new Promise((resolve) => {
@@ -214,8 +216,10 @@ describe('desktop page-link blocks', () => {
 
   it('does not show cached metadata for a different page while loading', async () => {
     const { rerender } = renderPageLink();
+
     await screen.findByText('Linked page title');
     let resolveLookup!: (view: Partial<View>) => void;
+
     mockLoadViewMeta.mockReturnValue(
       new Promise((resolve) => {
         resolveLookup = resolve;

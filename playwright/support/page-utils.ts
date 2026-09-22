@@ -29,8 +29,8 @@ export async function expandSpaceByName(page: Page, spaceName: string): Promise<
   const isExpanded = await expandedIndicator.getAttribute('data-expanded');
 
   if (isExpanded !== 'true') {
-    await spaceItem.locator('[data-testid="space-name"]').click({ force: true });
-    await page.waitForTimeout(1000);
+    await spaceItem.locator('[data-testid="space-name"]').click();
+    await expect(expandedIndicator).toHaveAttribute('data-expanded', 'true');
   }
 }
 
