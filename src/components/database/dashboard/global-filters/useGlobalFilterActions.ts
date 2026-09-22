@@ -5,6 +5,7 @@ import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type
 import {
   useDashboardContext,
   useDashboardFilters,
+  useDashboardLayout,
   useDashboardLocalWidgetChanges,
   useDashboardSources,
 } from '@/components/database/dashboard/DashboardContext';
@@ -136,7 +137,8 @@ export function useGlobalFilterActions() {
 
 /** Source databases of the dashboard's widgets, in widget order, with live property lists. */
 export function useDashboardFilterSources() {
-  const { rows, hostDatabaseId } = useDashboardContext();
+  const { hostDatabaseId } = useDashboardContext();
+  const { rows } = useDashboardLayout();
   const { sourceDocs, sourceNames } = useDashboardSources();
   const databaseIds = useMemo(() => dashboardSourceDatabaseIds(rows), [rows]);
 

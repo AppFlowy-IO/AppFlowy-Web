@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
 
 import {
   dashboardSourceDatabaseIds,
@@ -28,7 +28,11 @@ import {
  * Shared state of one dashboard view, split by how often it changes so a
  * consumer only re-renders for what it reads:
  *
- * - `DashboardContext`: the persisted layout and the Edit / View mode toggle.
+ * - `DashboardContext`: the Edit / View mode toggle, write access and the
+ *   layout writers; changes only when the mode or the access does.
+ * - `DashboardLayoutContext`: the persisted rows and display settings, for
+ *   the grid and everything that reads the rows. Kept apart so the toolbar
+ *   and the filter bar do not re-render for every resize or move.
  * - `DashboardFiltersContext`: the global filters and the viewer's unsaved
  *   overrides.
  * - `DashboardSourcesContext`: the registry of source-database docs (and
@@ -37,21 +41,15 @@ import {
  * - `DashboardSourceRegistryContext`: only the (stable) registration
  *   callbacks, for components that register sources without reading them.
  *
- * All four are mounted by `DashboardProvider`, which `DatabaseViews` renders
- * around the dashboard content (tab bar included), so both the toolbar
- * (`DashboardActions`) and the grid read the same values.
+ * All of them are mounted by `DashboardProvider`, which `DatabaseViews`
+ * renders around the dashboard content (tab bar included), so both the
+ * toolbar (`DashboardActions`) and the grid read the same values.
  */
 export interface DashboardContextValue {
   /** The dashboard's own view id (a view of the host database). */
   dashboardViewId: string;
   /** The host database id; widgets may reference other databases too. */
   hostDatabaseId: string;
-  /** View ids shown as tabs of the host database (the widget picker offers them first). */
-  hostViewIds: string[];
-  /** Persisted rows. */
-  rows: DashboardRow[];
-  /** Persisted widget-title flag. */
-  showWidgetTitles: boolean;
   /** Whether the viewer can persist layout / filter changes. */
   canEdit: boolean;
   /** Edit mode is local UI state: never persisted, never synced. */
@@ -61,6 +59,15 @@ export interface DashboardContextValue {
   updateSetting: (update: DashboardLayoutUpdate) => void;
   /** Persist a row transformation computed from the latest rows. */
   updateRows: (updater: (rows: DashboardRow[]) => DashboardRow[]) => void;
+}
+
+export interface DashboardLayoutContextValue {
+  /** Persisted rows. */
+  rows: DashboardRow[];
+  /** View ids shown as tabs of the host database (the widget picker offers them first). */
+  hostViewIds: string[];
+  /** Persisted widget-title flag. */
+  showWidgetTitles: boolean;
 }
 
 // The unsaved counts live in their own context: every widget reads this one,
@@ -93,6 +100,7 @@ export type DashboardSourceRegistryContextValue = Pick<
 >;
 
 export const DashboardContext = createContext<DashboardContextValue | null>(null);
+export const DashboardLayoutContext = createContext<DashboardLayoutContextValue | null>(null);
 export const DashboardFiltersContext = createContext<DashboardFiltersContextValue | null>(null);
 export const DashboardSourcesContext = createContext<DashboardSourcesContextValue | null>(null);
 export const DashboardSourceRegistryContext = createContext<DashboardSourceRegistryContextValue | null>(null);
@@ -115,6 +123,11 @@ export function useDashboardContext(): DashboardContextValue {
 
 export function useDashboardContextOptional(): DashboardContextValue | null {
   return useContext(DashboardContext);
+}
+
+/** The persisted rows and display settings; re-renders the caller on every layout write. */
+export function useDashboardLayout(): DashboardLayoutContextValue {
+  return required(useContext(DashboardLayoutContext), 'DashboardLayoutContext');
 }
 
 export function useDashboardFilters(): DashboardFiltersContextValue {
@@ -183,8 +196,14 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   const { unsaved, savable, getViewOverlay, setViewOverlayWritable, resetViewOverlays, commitViewOverlays } =
     useDashboardViewOverlays(dashboardViewId, rows);
 
-  const [sourceDocs, setSourceDocs] = useState<Record<string, YDoc>>(() => ({ [hostDatabaseId]: databaseDoc }));
+  // Docs the widgets registered; the host doc is derived, so a replaced host
+  // doc never leaves a render with the previous one.
+  const [widgetSourceDocs, setWidgetSourceDocs] = useState<Record<string, YDoc>>({});
   const [sourceNames, setSourceNames] = useState<Record<string, string>>({});
+  const sourceDocs = useMemo(
+    () => ({ ...widgetSourceDocs, [hostDatabaseId]: databaseDoc }),
+    [databaseDoc, hostDatabaseId, widgetSourceDocs]
+  );
   const sourceDocsRef = useRef(sourceDocs);
 
   sourceDocsRef.current = sourceDocs;
@@ -219,12 +238,6 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   const viewIdsKey = viewIds?.join(',') ?? '';
   // Stable identity while the tab list is unchanged.
   const hostViewIds = useMemo(() => (viewIdsKey ? viewIdsKey.split(',') : EMPTY_VIEW_IDS), [viewIdsKey]);
-
-  useEffect(() => {
-    setSourceDocs((previous) =>
-      previous[hostDatabaseId] === databaseDoc ? previous : { ...previous, [hostDatabaseId]: databaseDoc }
-    );
-  }, [databaseDoc, hostDatabaseId]);
 
   const setEditing = useCallback(
     (editing: boolean) => {
@@ -272,7 +285,7 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   );
 
   const registerSourceDoc = useCallback((databaseId: string, doc: YDoc | null) => {
-    setSourceDocs((previous) => {
+    setWidgetSourceDocs((previous) => {
       if (doc === null) {
         if (!(databaseId in previous)) return previous;
         const next = { ...previous };
@@ -292,31 +305,22 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
 
   const { showWidgetTitles } = storedSetting;
 
-  const layoutValue = useMemo<DashboardContextValue>(
+  const contextValue = useMemo<DashboardContextValue>(
     () => ({
       dashboardViewId,
       hostDatabaseId,
-      hostViewIds,
-      rows,
-      showWidgetTitles,
       canEdit: !readOnly,
       isEditing,
       setEditing,
       updateSetting,
       updateRows,
     }),
-    [
-      dashboardViewId,
-      hostDatabaseId,
-      hostViewIds,
-      rows,
-      showWidgetTitles,
-      readOnly,
-      isEditing,
-      setEditing,
-      updateSetting,
-      updateRows,
-    ]
+    [dashboardViewId, hostDatabaseId, readOnly, isEditing, setEditing, updateSetting, updateRows]
+  );
+
+  const layoutValue = useMemo<DashboardLayoutContextValue>(
+    () => ({ rows, hostViewIds, showWidgetTitles }),
+    [rows, hostViewIds, showWidgetTitles]
   );
 
   const filtersValue = useMemo<DashboardFiltersContextValue>(
@@ -353,14 +357,16 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   );
 
   return (
-    <DashboardContext.Provider value={layoutValue}>
-      <DashboardFiltersContext.Provider value={filtersValue}>
-        <DashboardLocalWidgetChangesContext.Provider value={localWidgetChanges}>
-          <DashboardSourceRegistryContext.Provider value={registryValue}>
-            <DashboardSourcesContext.Provider value={sourcesValue}>{children}</DashboardSourcesContext.Provider>
-          </DashboardSourceRegistryContext.Provider>
-        </DashboardLocalWidgetChangesContext.Provider>
-      </DashboardFiltersContext.Provider>
+    <DashboardContext.Provider value={contextValue}>
+      <DashboardLayoutContext.Provider value={layoutValue}>
+        <DashboardFiltersContext.Provider value={filtersValue}>
+          <DashboardLocalWidgetChangesContext.Provider value={localWidgetChanges}>
+            <DashboardSourceRegistryContext.Provider value={registryValue}>
+              <DashboardSourcesContext.Provider value={sourcesValue}>{children}</DashboardSourcesContext.Provider>
+            </DashboardSourceRegistryContext.Provider>
+          </DashboardLocalWidgetChangesContext.Provider>
+        </DashboardFiltersContext.Provider>
+      </DashboardLayoutContext.Provider>
     </DashboardContext.Provider>
   );
 }

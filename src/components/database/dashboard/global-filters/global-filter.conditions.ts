@@ -174,6 +174,13 @@ export function isDateRangeCondition(condition: number) {
   return condition === DateFilterCondition.DateStartsBetween || condition === DateFilterCondition.DateEndsBetween;
 }
 
+const DATE_EMPTINESS_CONDITIONS: ReadonlySet<number> = new Set([
+  DateFilterCondition.DateStartIsEmpty,
+  DateFilterCondition.DateStartIsNotEmpty,
+  DateFilterCondition.DateEndIsEmpty,
+  DateFilterCondition.DateEndIsNotEmpty,
+]);
+
 /** Whether the condition alone decides the filter, so no value control is shown. */
 export function conditionHidesContent(fieldType: FieldType, condition: number): boolean {
   switch (fieldType) {
@@ -195,15 +202,7 @@ export function conditionHidesContent(fieldType: FieldType, condition: number): 
     case FieldType.DateTime:
     case FieldType.CreatedTime:
     case FieldType.LastEditedTime:
-      return (
-        isRelativeDateCondition(condition) ||
-        [
-          DateFilterCondition.DateStartIsEmpty,
-          DateFilterCondition.DateStartIsNotEmpty,
-          DateFilterCondition.DateEndIsEmpty,
-          DateFilterCondition.DateEndIsNotEmpty,
-        ].includes(condition)
-      );
+      return isRelativeDateCondition(condition) || DATE_EMPTINESS_CONDITIONS.has(condition);
     default:
       return true;
   }
@@ -280,12 +279,15 @@ function parseIdList(content: string): string[] {
 
   if (!trimmed) return [];
 
-  try {
-    const parsed = JSON.parse(trimmed);
+  // Person ids are stored as a JSON array; anything else is a comma-separated list.
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
 
-    if (Array.isArray(parsed)) return parsed.map((id) => String(id)).filter(Boolean);
-  } catch {
-    // Select content is a comma-separated id list.
+      if (Array.isArray(parsed)) return parsed.map((id) => String(id)).filter(Boolean);
+    } catch {
+      // Not JSON after all: read it as a list.
+    }
   }
 
   return trimmed
@@ -322,6 +324,7 @@ export function isGlobalFilterActive(filter: DashboardGlobalFilter, sources?: Gl
       return conditionHidesContent(fieldType, condition) || content.trim().length > 0;
     case FieldType.SingleSelect:
     case FieldType.MultiSelect:
+      return conditionHidesContent(fieldType, condition) || parseOptionContent(content).length > 0;
     case FieldType.Person:
     case FieldType.CreatedBy:
     case FieldType.LastEditedBy:

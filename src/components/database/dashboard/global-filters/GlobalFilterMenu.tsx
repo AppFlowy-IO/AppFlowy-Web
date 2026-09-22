@@ -24,6 +24,12 @@ import { useGlobalFilterLabel } from './useGlobalFilterLabel';
 
 type MenuScreen = { type: 'list' } | { type: 'pick' } | { type: 'edit'; filterId: string };
 
+const itemClassName = cn(dropdownMenuItemVariants({ variant: 'default' }), 'w-full text-left');
+const addItemClassName = cn(
+  itemClassName,
+  'text-text-secondary disabled:cursor-not-allowed disabled:text-text-tertiary'
+);
+
 function sourcesText(t: Translate, count: number) {
   return t('dashboard.globalFilters.sources', {
     count,
@@ -50,7 +56,7 @@ function FilterListItem({
       data-testid='dashboard-global-filter-item'
       data-filter-id={filter.id}
       data-active={active}
-      className={cn(dropdownMenuItemVariants({ variant: 'default' }), 'w-full text-left')}
+      className={itemClassName}
       onClick={onOpen}
     >
       <FieldTypeIcon type={filter.fieldType} className='text-icon-secondary' />
@@ -101,7 +107,7 @@ function PropertyTypePicker({
               key={type}
               data-testid='dashboard-global-filter-property-option'
               data-field-type={type}
-              className={cn(dropdownMenuItemVariants({ variant: 'default' }), 'w-full text-left')}
+              className={itemClassName}
               onClick={() => onSelect(type)}
             >
               <FieldTypeIcon type={type} className='text-icon-secondary' />
@@ -240,10 +246,7 @@ export function GlobalFilterMenu({ filterId, startWithPicker = false, onClose }:
           type='button'
           data-testid='dashboard-global-filter-add'
           disabled={availableTypes.length === 0}
-          className={cn(
-            dropdownMenuItemVariants({ variant: 'default' }),
-            'w-full text-left text-text-secondary disabled:cursor-not-allowed disabled:text-text-tertiary'
-          )}
+          className={addItemClassName}
           onClick={() => setScreen({ type: 'pick' })}
         >
           <PlusIcon className='text-icon-secondary' />

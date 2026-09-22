@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { CSSProperties, useRef, useSyncExternalStore } from 'react';
 
 import {
   DASHBOARD_MAX_ROW_HEIGHT,
@@ -7,7 +8,7 @@ import {
 } from '@/application/database-yjs/dashboard.type';
 
 import { DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP } from '../constants';
-import { useRowHeightResize } from '../hooks/useRowHeightResize';
+import { ROW_HEIGHT_CSS_VARIABLE, useRowHeightResize } from '../hooks/useRowHeightResize';
 import { applyWidthPreview, useWidthResize } from '../hooks/useWidthResize';
 
 // jsdom has no PointerEvent (and `fireEvent.pointerDown` would drop the
@@ -83,12 +84,14 @@ function HeightProbe({
   enabled?: boolean;
   onCommit: (height: number) => void;
 }) {
-  const resize = useRowHeightResize({ height, enabled, onCommit });
+  const rowRef = useRef<HTMLDivElement>(null);
+  const resize = useRowHeightResize({ height, enabled, onCommit, getRowElement: () => rowRef.current });
+  const preview = useSyncExternalStore(resize.preview.subscribe, resize.preview.get);
 
   return (
-    <div>
-      <output data-testid='height'>{resize.height}</output>
-      <output data-testid='previewing'>{String(resize.preview !== null)}</output>
+    <div data-testid='row' ref={rowRef} style={{ [ROW_HEIGHT_CSS_VARIABLE]: `${height}px` } as CSSProperties}>
+      <output data-testid='height'>{preview ?? height}</output>
+      <output data-testid='previewing'>{String(resize.dragging)}</output>
       <div
         data-testid='handle'
         onKeyDown={resize.handleKeyDown}
@@ -99,6 +102,8 @@ function HeightProbe({
     </div>
   );
 }
+
+const rowHeightVariable = () => screen.getByTestId('row').style.getPropertyValue(ROW_HEIGHT_CSS_VARIABLE);
 
 function pressHandle(clientX = 0, clientY = 0, button = 0) {
   fireEvent(screen.getByTestId('handle'), pointer('pointerdown', { button, clientX, clientY }));
@@ -240,11 +245,14 @@ describe('useRowHeightResize', () => {
     movePointer(0, 220);
     expect(screen.getByTestId('height').textContent).toBe('480');
     expect(screen.getByTestId('previewing').textContent).toBe('true');
+    // The row resizes through its CSS variable, written by the drag itself.
+    expect(rowHeightVariable()).toBe('480px');
 
     releasePointer();
     expect(onCommit).toHaveBeenCalledWith(480);
     expect(screen.getByTestId('previewing').textContent).toBe('false');
     expect(screen.getByTestId('height').textContent).toBe('360');
+    expect(rowHeightVariable()).toBe('360px');
   });
 
   it('clamps the preview to the supported range', () => {

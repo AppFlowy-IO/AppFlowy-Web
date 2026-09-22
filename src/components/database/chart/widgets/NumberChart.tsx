@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ChartAggregationType, ChartDataItem, ChartNumberFormat } from '@/application/database-yjs/chart.type';
@@ -29,10 +29,8 @@ function NumberChart({ item, title, numberFormat, aggregationType, fieldNumberFo
   const { t } = useTranslation();
   const isEmpty = !item || item.rowIds.length === 0;
 
-  const formatted = useMemo(
-    () => (item ? formatNumberChartValue(item.value, { numberFormat, aggregationType, fieldNumberFormat }) : ''),
-    [item, numberFormat, aggregationType, fieldNumberFormat]
-  );
+  // One call on hoisted formatters: cheaper than a memo's dependency compare.
+  const formatted = item ? formatNumberChartValue(item.value, { numberFormat, aggregationType, fieldNumberFormat }) : '';
 
   const clickable = !isEmpty && !!onClick;
 

@@ -369,6 +369,43 @@ describe('useChartData Number chart', () => {
     await waitFor(() => expect(result.current.numberValue).toBe(12));
   });
 
+  it('keeps the row observers while the row map is replaced with the same docs', async () => {
+    const settings: ChartLayoutSettings = {
+      ...baseSettings,
+      aggregationType: ChartAggregationType.Sum,
+      yFieldId: amountFieldId,
+    };
+    const { rowMetas } = setup(settings, ['r1', 'r2'], { r1: '10', r2: '5' });
+    const root = rowMetas.r1.getMap(YjsEditorKey.data_section);
+    const observeDeep = jest.spyOn(root, 'observeDeep');
+    const unobserveDeep = jest.spyOn(root, 'unobserveDeep');
+
+    const { result, rerender } = renderHook(() => useChartData({ settings }));
+
+    await waitFor(() => expect(result.current.numberValue).toBe(15));
+    await waitFor(() => expect(observeDeep).toHaveBeenCalledTimes(1));
+
+    // Another row doc of the database arriving gives `Database` a new map
+    // object; the charted docs are the same, so nothing re-subscribes.
+    (useRowMap as jest.Mock).mockReturnValue({ ...rowMetas, r3: createRowDoc('r3', databaseId, {}) });
+    rerender();
+
+    expect(unobserveDeep).not.toHaveBeenCalled();
+    expect(observeDeep).toHaveBeenCalledTimes(1);
+
+    // A charted doc replaced by its canonical copy is re-observed.
+    const canonical = createRowDoc('r1', databaseId, { [amountFieldId]: createCell(FieldType.Number, '20') });
+    const canonicalRoot = canonical.getMap(YjsEditorKey.data_section);
+    const observeCanonical = jest.spyOn(canonicalRoot, 'observeDeep');
+
+    (useRowMap as jest.Mock).mockReturnValue({ ...rowMetas, r1: canonical });
+    rerender();
+
+    expect(unobserveDeep).toHaveBeenCalledTimes(1);
+    expect(observeCanonical).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(result.current.numberValue).toBe(25));
+  });
+
   it('returns a single zero item when no rows match', async () => {
     setup(baseSettings, [], {});
 

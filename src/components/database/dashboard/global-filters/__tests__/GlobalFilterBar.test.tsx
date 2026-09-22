@@ -7,6 +7,7 @@ import { TextFilterCondition } from '@/application/database-yjs/fields/text/text
 import { YDoc } from '@/application/types';
 import type {
   DashboardContextValue,
+  DashboardLayoutContextValue,
   DashboardFiltersContextValue,
   DashboardSourcesContextValue,
 } from '@/components/database/dashboard/DashboardContext';
@@ -15,8 +16,11 @@ import { GlobalFilterBar, GlobalFilterButton } from '../index';
 
 import { createSourceDoc, option, setFieldOptions } from './source-doc.fixture';
 
-/** The three dashboard contexts, served from one object. */
-type MockDashboard = DashboardContextValue & DashboardFiltersContextValue & DashboardSourcesContextValue;
+/** The four dashboard contexts, served from one object. */
+type MockDashboard = DashboardContextValue &
+  DashboardLayoutContextValue &
+  DashboardFiltersContextValue &
+  DashboardSourcesContextValue;
 
 let mockContext: MockDashboard | null = null;
 
@@ -28,6 +32,7 @@ jest.mock('@/components/database/dashboard/DashboardContext', () => {
 
   return {
     useDashboardContext: required,
+    useDashboardLayout: required,
     useDashboardFilters: required,
     useDashboardSources: required,
     useDashboardContextOptional: () => mockContext,

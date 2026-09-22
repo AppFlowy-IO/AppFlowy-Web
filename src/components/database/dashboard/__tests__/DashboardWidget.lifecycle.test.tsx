@@ -168,7 +168,7 @@ function editConditions() {
 
 beforeEach(() => mockWidgetViews.clear());
 
-it.each([false, true])('follows a server view replacement while preserving private edits: %s', (dirty) => {
+it.each([false, true])('follows a server view replacement while preserving private edits: %s', async (dirty) => {
   const { doc, views, unmount } = setup();
   const previous = widgetView();
 
@@ -183,7 +183,9 @@ it.each([false, true])('follows a server view replacement while preserving priva
 
   remoteDatabase.get(YjsDatabaseKey.views).set('v1', replacement);
   replacement.get(YjsDatabaseKey.filters).push([sharedFilter]);
-  act(() => Y.applyUpdate(doc, Y.encodeStateAsUpdate(remote), 'remote'));
+  // The overlay rebinds while the widget renders and follows the replacement's
+  // conditions in a microtask, which the async act flushes.
+  await act(async () => Y.applyUpdate(doc, Y.encodeStateAsUpdate(remote), 'remote'));
   const current = widgetView();
 
   expect(current).not.toBe(previous);

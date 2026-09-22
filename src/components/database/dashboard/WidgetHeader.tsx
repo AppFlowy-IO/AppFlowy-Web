@@ -1,4 +1,4 @@
-import { MouseEvent, ReactNode, useCallback, useState } from 'react';
+import { memo, MouseEvent, ReactNode, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
@@ -151,9 +151,13 @@ export function WidgetHeaderFrame({ actions }: WidgetHeaderFrameProps) {
   );
 }
 
-/** Widget header rendered by `DatabaseViews` in place of the tab bar. */
-export function WidgetHeader() {
+/**
+ * Widget header rendered by `DatabaseViews` in place of the tab bar.
+ * Memoized: `DatabaseViews` re-renders with every row-map change of the
+ * nested database, and the header only depends on `WidgetContext`.
+ */
+export const WidgetHeader = memo(function WidgetHeader() {
   return <WidgetHeaderFrame actions={<DatabaseActions />} />;
-}
+});
 
 export default WidgetHeader;

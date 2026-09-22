@@ -143,6 +143,52 @@ describe('useGlobalFilterSources', () => {
     expect(renders).toHaveBeenCalledTimes(2);
   });
 
+  it('follows a replaced column-order array and a change of the reference view', () => {
+    const doc = createSourceDoc('db-x', [
+      { id: 'x-name', name: 'Name', type: FieldType.RichText, isPrimary: true },
+      { id: 'x-status', name: 'Status', type: FieldType.SingleSelect, options: [todo] },
+      { id: 'x-points', name: 'Points', type: FieldType.Number },
+    ]);
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as Y.Map<unknown>;
+    const views = database.get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+    const inlineView = views.get('db-x-view') as Y.Map<unknown>;
+    const { result } = renderSources({ sourceDocs: { 'db-x': doc } });
+
+    expect(result.current[0].fields.map((field) => field.id)).toEqual(['x-name', 'x-status', 'x-points']);
+
+    // Desktop replaces the whole array instead of moving items inside it.
+    act(() => {
+      doc.transact(() => {
+        const orders = new Y.Array<{ id: string }>();
+
+        inlineView.set(YjsDatabaseKey.field_orders, orders);
+        orders.push([{ id: 'x-points' }, { id: 'x-status' }, { id: 'x-name' }]);
+      });
+    });
+    expect(result.current[0].fields.map((field) => field.id)).toEqual(['x-name', 'x-points', 'x-status']);
+
+    // Another view becomes the reference: its order wins from then on.
+    act(() => {
+      doc.transact(() => {
+        const view = new Y.Map<unknown>();
+        const orders = new Y.Array<{ id: string }>();
+
+        inlineView.set(YjsDatabaseKey.is_inline, false);
+        views.set('db-x-other', view);
+        view.set(YjsDatabaseKey.is_inline, true);
+        view.set(YjsDatabaseKey.field_orders, orders);
+        orders.push([{ id: 'x-status' }, { id: 'x-points' }, { id: 'x-name' }]);
+      });
+    });
+    expect(result.current[0].fields.map((field) => field.id)).toEqual(['x-name', 'x-status', 'x-points']);
+
+    // The new reference's array is what is observed now.
+    act(() => {
+      (views.get('db-x-other')?.get(YjsDatabaseKey.field_orders) as Y.Array<{ id: string }>).delete(0, 1);
+    });
+    expect(result.current[0].fields.map((field) => field.id)).toEqual(['x-name', 'x-points', 'x-status']);
+  });
+
   it('detaches after the last listener leaves and catches up on changes made meanwhile', async () => {
     const docs = createDocs();
     const unobserve = jest.spyOn(fieldsMap(docs['db-a']), 'unobserveDeep');

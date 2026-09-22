@@ -10,12 +10,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 
 import { DASHBOARD_EDGE_DROP_ZONE_HEIGHT, DASHBOARD_EDIT_ROW_GAP, DASHBOARD_ROW_GAP } from './constants';
-import { useDashboardContext } from './DashboardContext';
+import { useDashboardContext, useDashboardLayout } from './DashboardContext';
 import { DashboardLimitMessage } from './DashboardLimitMessage';
 import { DashboardRow } from './DashboardRow';
 import { useDashboardDraggingWidgetId, useDashboardUi } from './DashboardUiContext';
 import { useRowGapDropTarget } from './hooks/useDashboardDnd';
 import { useStackedLayout } from './hooks/useStackedLayout';
+import { preloadWidgetPicker } from './WidgetPicker';
 
 function RowGapDropZone({ rowIndex, height }: { rowIndex: number; height: number }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -51,7 +52,7 @@ function RowGapDropZone({ rowIndex, height }: { rowIndex: number; height: number
 
 export function AddWidgetButton({ onAdd, className }: { onAdd: () => void; className?: string }) {
   const { t } = useTranslation();
-  const { rows } = useDashboardContext();
+  const { rows } = useDashboardLayout();
   const { showLimitMessage } = useDashboardUi();
   const full = countDashboardWidgets(rows) >= DASHBOARD_MAX_WIDGETS;
   const button = (
@@ -63,6 +64,8 @@ export function AddWidgetButton({ onAdd, className }: { onAdd: () => void; class
       data-testid='dashboard-add-widget-button'
       disabled={full}
       onClick={onAdd}
+      onFocus={preloadWidgetPicker}
+      onPointerEnter={preloadWidgetPicker}
       size='lg'
       type='button'
       variant='ghost'
@@ -102,7 +105,8 @@ export function AddWidgetButton({ onAdd, className }: { onAdd: () => void; class
  * an "Add widget" button follows the last row.
  */
 export const DashboardGrid = memo(function DashboardGrid() {
-  const { rows, isEditing, canEdit, showWidgetTitles } = useDashboardContext();
+  const { isEditing, canEdit } = useDashboardContext();
+  const { rows, showWidgetTitles } = useDashboardLayout();
   const { openPicker } = useDashboardUi();
   const gridRef = useRef<HTMLDivElement>(null);
   const stacked = useStackedLayout(gridRef);

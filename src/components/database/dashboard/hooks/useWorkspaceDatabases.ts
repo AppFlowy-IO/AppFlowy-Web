@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 import {
   getCachedWorkspaceDatabaseCatalog,
@@ -11,6 +11,7 @@ import { Log } from '@/utils/log';
 
 const EMPTY_DATABASES: WorkspaceDatabaseWithViews[] = [];
 const SERVER_REVISION = 'server';
+const IDLE = { loading: false, error: null as string | null };
 
 export interface WorkspaceDatabasesState {
   databases: WorkspaceDatabaseWithViews[];
@@ -29,40 +30,34 @@ export function useWorkspaceDatabases(workspaceId: string | undefined, enabled: 
     () => (workspaceId ? getWorkspaceDatabaseCatalogRevision(workspaceId) : ''),
     () => SERVER_REVISION
   );
-  const [state, setState] = useState<WorkspaceDatabasesState>(() => ({
-    databases: (workspaceId && enabled && getCachedWorkspaceDatabaseCatalog(workspaceId)) || EMPTY_DATABASES,
-    loading: false,
-    error: null,
-  }));
+  // The catalog hands out one array object per snapshot, so it is read from
+  // the store rather than copied into state after the fact.
+  const cached = useSyncExternalStore(
+    subscribeWorkspaceDatabaseCatalog,
+    () => (enabled && workspaceId ? getCachedWorkspaceDatabaseCatalog(workspaceId) ?? null : null),
+    () => null
+  );
+  const [status, setStatus] = useState(IDLE);
 
   useEffect(() => {
     if (!enabled || !workspaceId) return;
-    const cached = getCachedWorkspaceDatabaseCatalog(workspaceId);
 
-    if (cached) {
-      setState((current) =>
-        current.databases === cached && !current.loading && !current.error
-          ? current
-          : { databases: cached, loading: false, error: null }
-      );
+    if (getCachedWorkspaceDatabaseCatalog(workspaceId)) {
+      setStatus((current) => (current.loading || current.error ? IDLE : current));
       return;
     }
 
     let cancelled = false;
 
-    setState((current) => ({ ...current, loading: true, error: null }));
+    setStatus({ loading: true, error: null });
     getWorkspaceDatabaseCatalog(workspaceId)
-      .then((databases) => {
-        if (!cancelled) setState({ databases, loading: false, error: null });
+      .then(() => {
+        if (!cancelled) setStatus(IDLE);
       })
       .catch((error: unknown) => {
         if (cancelled) return;
         Log.warn('[Dashboard] failed to load the workspace database catalog', error);
-        setState((current) => ({
-          ...current,
-          loading: false,
-          error: error instanceof Error ? error.message : String(error),
-        }));
+        setStatus({ loading: false, error: error instanceof Error ? error.message : String(error) });
       });
 
     return () => {
@@ -70,5 +65,8 @@ export function useWorkspaceDatabases(workspaceId: string | undefined, enabled: 
     };
   }, [enabled, revision, workspaceId]);
 
-  return state;
+  return useMemo(
+    () => ({ databases: cached ?? EMPTY_DATABASES, loading: status.loading, error: status.error }),
+    [cached, status]
+  );
 }

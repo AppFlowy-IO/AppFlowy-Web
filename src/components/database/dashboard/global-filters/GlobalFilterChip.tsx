@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 
 import { GlobalFilterSource } from './global-filter.utils';
-import { GlobalFilterMenu } from './GlobalFilterMenu';
+import { LazyGlobalFilterMenu, preloadGlobalFilterMenu } from './LazyGlobalFilterMenu';
 import { useGlobalFilterLabel } from './useGlobalFilterLabel';
 
 /** One dashboard filter in the bar; opens its editor. Styled like a view filter chip. */
@@ -31,6 +31,8 @@ export const GlobalFilterChip = memo(function GlobalFilterChip({
           data-filter-id={filter.id}
           data-active={active}
           title={text}
+          onFocus={preloadGlobalFilterMenu}
+          onPointerEnter={preloadGlobalFilterMenu}
           className={cn(
             'flex h-7 max-w-[320px] items-center rounded-full border px-2 py-1 outline-none',
             active
@@ -73,7 +75,7 @@ export const GlobalFilterChip = memo(function GlobalFilterChip({
         onCloseAutoFocus={(event) => event.preventDefault()}
         onClick={(event) => event.stopPropagation()}
       >
-        <GlobalFilterMenu filterId={filter.id} onClose={close} />
+        <LazyGlobalFilterMenu filterId={filter.id} onClose={close} />
       </PopoverContent>
     </Popover>
   );

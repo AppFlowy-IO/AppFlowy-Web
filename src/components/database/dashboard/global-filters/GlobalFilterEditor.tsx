@@ -190,7 +190,7 @@ const TargetRow = memo(function TargetRow({
 });
 
 /** Maps one more source database (to its first compatible property). */
-function AddSourceButton({
+const AddSourceButton = memo(function AddSourceButton({
   addable,
   sources,
   onChange,
@@ -230,7 +230,7 @@ function AddSourceButton({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
+});
 
 const ConditionSelect = memo(function ConditionSelect({
   fieldType,

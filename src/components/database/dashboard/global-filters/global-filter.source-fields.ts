@@ -30,17 +30,19 @@ export function getReferenceView(database: YDatabase): YDatabaseView | undefined
   const views = database.get(YjsDatabaseKey.views);
 
   if (!views) return undefined;
-  const entries = Array.from(views.entries()) as [string, YDatabaseView][];
-  const inline = entries.find(([, view]) => Boolean(view?.get(YjsDatabaseKey.is_inline)));
+  let oldest: { id: string; view: YDatabaseView; createdAt: number } | undefined;
 
-  if (inline) return inline[1];
-  entries.sort(([idA, viewA], [idB, viewB]) => {
-    const createdA = Number(viewA?.get(YjsDatabaseKey.created_at)) || 0;
-    const createdB = Number(viewB?.get(YjsDatabaseKey.created_at)) || 0;
+  for (const [id, view] of views.entries() as IterableIterator<[string, YDatabaseView]>) {
+    if (!view) continue;
+    if (view.get(YjsDatabaseKey.is_inline)) return view;
+    const createdAt = Number(view.get(YjsDatabaseKey.created_at)) || 0;
 
-    return createdA - createdB || idA.localeCompare(idB);
-  });
-  return entries[0]?.[1];
+    if (!oldest || createdAt < oldest.createdAt || (createdAt === oldest.createdAt && id.localeCompare(oldest.id) < 0)) {
+      oldest = { id, view, createdAt };
+    }
+  }
+
+  return oldest?.view;
 }
 
 function toSourceField(fieldId: string, field: YDatabaseField): GlobalFilterSourceField {
@@ -65,18 +67,21 @@ export function readGlobalFilterSourceFields(doc: YDoc): GlobalFilterSourceField
   if (!database || !fields) return [];
   const order = getReferenceView(database)?.get(YjsDatabaseKey.field_orders)?.toArray() ?? [];
   const seen = new Set<string>();
-  const result: GlobalFilterSourceField[] = [];
+  const primary: GlobalFilterSourceField[] = [];
+  const others: GlobalFilterSourceField[] = [];
   const push = (fieldId: string) => {
     if (!fieldId || seen.has(fieldId)) return;
     const field = fields.get(fieldId);
 
     if (!field) return;
     seen.add(fieldId);
-    result.push(toSourceField(fieldId, field));
+    const sourceField = toSourceField(fieldId, field);
+
+    (sourceField.isPrimary ? primary : others).push(sourceField);
   };
 
   order.forEach((item) => push(item?.id));
   Array.from(fields.keys()).forEach(push);
 
-  return [...result.filter((field) => field.isPrimary), ...result.filter((field) => !field.isPrimary)];
+  return primary.concat(others);
 }

@@ -11,10 +11,10 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { APP_EVENTS } from '@/application/constants';
 import {
   duplicateDashboardWidget,
   moveDashboardWidget,
@@ -25,8 +25,7 @@ import {
   DashboardWidget as DashboardWidgetData,
 } from '@/application/database-yjs/dashboard.type';
 import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot/database-yjs-render-bridge';
-import { UIVariant, View, ViewIcon, ViewLayout, YDoc } from '@/application/types';
-import { findView } from '@/components/_shared/outline/utils';
+import { UIVariant, ViewLayout, YDoc } from '@/application/types';
 import { AppOperationsContext } from '@/components/app/contexts/AppOperationsContext';
 import { Database } from '@/components/database';
 import { useDatabaseDeletionStatus } from '@/components/editor/components/blocks/database/hooks/useDatabaseDeletionStatus';
@@ -35,7 +34,6 @@ import {
   EmbeddedDatabasePermissions,
   EmbeddedDatabasePermissionsResolver,
 } from '@/components/editor/components/blocks/database/hooks/useEmbeddedDatabasePermissions';
-import { useViewMeta } from '@/components/editor/components/blocks/database/hooks/useViewMeta';
 import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
@@ -43,7 +41,9 @@ import { DASHBOARD_COLUMN_GAP, WIDGET_INLINE_PADDING, WIDGET_MISSING_GRACE_MS } 
 import { useDashboardFilters } from './DashboardContext';
 import { useDashboardHost, useDashboardUi } from './DashboardUiContext';
 import { useDraggableWidget, useWidgetDropTarget } from './hooks/useDashboardDnd';
+import { ROW_HEIGHT_CSS_VARIABLE, RowHeightPreview } from './hooks/useRowHeightResize';
 import { useWidgetExtraFilters } from './hooks/useWidgetExtraFilters';
+import { useWidgetViewMeta } from './hooks/useWidgetViewMeta';
 import { useDelayedFlag, useWidgetViewSnapshot } from './hooks/useWidgetViewSnapshot';
 import { databaseLayoutToViewLayout, getLayoutLabel, getWidgetHeaderHeight, getWidgetViewportHeight } from './utils';
 import { canDuplicateWidget, getWidgetMoveTargets, WidgetMoveDirection } from './widget-moves';
@@ -61,59 +61,6 @@ const noop = () => undefined;
 // Widgets re-render for their own chrome (title, Edit mode, drag state); the
 // nested database only when one of its props changes.
 const WidgetDatabase = memo(Database);
-
-interface MetaOverride {
-  name: string;
-  icon: ViewIcon | null;
-}
-
-function sameIcon(a: ViewIcon | null, b: ViewIcon | null) {
-  return a === b || (a !== null && b !== null && a.ty === b.ty && a.value === b.value);
-}
-
-/** Folder name / icon of the widget's view, following renames. */
-function useWidgetViewMeta(viewId: string) {
-  const { loadViewMeta, eventEmitter } = useDashboardHost();
-  const { viewMeta } = useViewMeta({ viewId, loadViewMeta, ignoreMetaErrors: true });
-  const [override, setOverride] = useState<MetaOverride | null>(null);
-
-  useEffect(() => {
-    if (!eventEmitter) return;
-
-    // The outline reloads on every sidebar expand and folder sync: keep the
-    // current override unless the name or icon really changed.
-    const apply = (view: View) => {
-      const icon = view.icon ?? null;
-
-      setOverride((current) =>
-        current && current.name === view.name && sameIcon(current.icon, icon) ? current : { name: view.name, icon }
-      );
-    };
-
-    const handleViewChanged = (view: View) => {
-      if (view.view_id === viewId) apply(view);
-    };
-
-    const handleOutlineLoaded = (outline: View[]) => {
-      const view = findView(outline, viewId);
-
-      if (view) apply(view);
-    };
-
-    eventEmitter.on(APP_EVENTS.VIEW_META_CHANGED, handleViewChanged);
-    eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
-    return () => {
-      eventEmitter.off(APP_EVENTS.VIEW_META_CHANGED, handleViewChanged);
-      eventEmitter.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
-    };
-  }, [eventEmitter, viewId]);
-
-  return {
-    name: override?.name ?? viewMeta?.name ?? '',
-    icon: override ? override.icon : viewMeta?.icon ?? null,
-    layout: viewMeta?.layout,
-  };
-}
 
 /**
  * Tells the dashboard whether this widget's source is writable: "Save for
@@ -146,7 +93,11 @@ interface WidgetChromeProps {
 }
 
 interface WidgetSourceProps extends WidgetChromeProps {
-  widget: DashboardWidgetData;
+  // The ids rather than the widget object: a resize or move re-creates the
+  // object, and the source has no use for the width.
+  widgetId: string;
+  viewId: string;
+  databaseId: string;
   rowHeight: number;
   cardRef: RefObject<HTMLDivElement>;
 }
@@ -158,7 +109,9 @@ interface WidgetSourceProps extends WidgetChromeProps {
  * elsewhere on the dashboard never re-render it.
  */
 const WidgetSource = memo(function WidgetSource({
-  widget,
+  widgetId,
+  viewId,
+  databaseId,
   rowHeight,
   cardRef,
   isDragging,
@@ -167,6 +120,7 @@ const WidgetSource = memo(function WidgetSource({
   showWidgetTitles,
 }: WidgetSourceProps) {
   const { t } = useTranslation();
+  const widget = useMemo(() => ({ id: widgetId, viewId, databaseId }), [databaseId, viewId, widgetId]);
   const hostContext = useDashboardHost();
   const appOperations = useContext(AppOperationsContext);
   const { effectiveGlobalFilters, getViewOverlay } = useDashboardFilters();
@@ -565,8 +519,10 @@ interface DashboardWidgetProps extends WidgetChromeProps {
   widget: DashboardWidgetData;
   /** Grid columns the card spans (12 when the dashboard is stacked). */
   span: number;
-  /** Row height in CSS px (includes a live resize preview). */
+  /** Persisted row height in CSS px. */
   height: number;
+  /** The height being dragged, if any (see `useRowHeightResize`). */
+  heightPreview: RowHeightPreview;
 }
 
 /**
@@ -577,6 +533,7 @@ export const DashboardWidget = memo(function DashboardWidget({
   widget,
   span,
   height,
+  heightPreview,
   isEditing,
   canEdit,
   showWidgetTitles,
@@ -586,10 +543,11 @@ export const DashboardWidget = memo(function DashboardWidget({
   const cardRef = useRef<HTMLDivElement>(null);
   const { dndInstanceId, getRows } = useDashboardUi();
   const editing = isEditing && canEdit;
-  // The card follows a row-height drag on every pointer move; the nested
-  // database (whose viewport height derives from it) catches up when React
-  // has time, instead of re-rendering on every pixel.
-  const contentHeight = useDeferredValue(height);
+  // The card follows a row-height drag through CSS (the row's variable); the
+  // nested database, whose viewport height derives from the number, catches
+  // up when React has time instead of re-rendering on every pixel.
+  const previewHeight = useSyncExternalStore(heightPreview.subscribe, heightPreview.get, heightPreview.get);
+  const contentHeight = useDeferredValue(previewHeight ?? height);
   const indicator = useWidgetDropTarget({
     elementRef: cardRef,
     widgetId: widget.id,
@@ -609,7 +567,7 @@ export const DashboardWidget = memo(function DashboardWidget({
       data-view-id={widget.viewId}
       data-widget-id={widget.id}
       ref={cardRef}
-      style={{ gridColumn: `span ${span} / span ${span}`, height }}
+      style={{ gridColumn: `span ${span} / span ${span}`, height: `var(${ROW_HEIGHT_CSS_VARIABLE})` }}
     >
       <div
         className={cn(
@@ -622,12 +580,14 @@ export const DashboardWidget = memo(function DashboardWidget({
         <WidgetSource
           canEdit={canEdit}
           cardRef={cardRef}
+          databaseId={widget.databaseId}
           isDragging={isDragging}
           isEditing={isEditing}
           key={`${widget.databaseId}:${widget.viewId}`}
           rowHeight={contentHeight}
           showWidgetTitles={showWidgetTitles}
-          widget={widget}
+          viewId={widget.viewId}
+          widgetId={widget.id}
         />
       </div>
       {indicator ? (

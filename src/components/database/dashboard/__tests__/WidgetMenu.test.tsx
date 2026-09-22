@@ -4,7 +4,12 @@ import { ReactNode, useState } from 'react';
 import { DASHBOARD_MAX_WIDGETS, DashboardRow, DashboardWidget } from '@/application/database-yjs/dashboard.type';
 import { ViewLayout } from '@/application/types';
 
-import { DashboardContext, DashboardContextValue } from '../DashboardContext';
+import {
+  DashboardContext,
+  DashboardContextValue,
+  DashboardLayoutContext,
+  DashboardLayoutContextValue,
+} from '../DashboardContext';
 import { NO_WIDGET_MOVES, WidgetMoveTargets } from '../widget-moves';
 import { WidgetActions, WidgetContext, WidgetContextValue } from '../WidgetContext';
 import { WidgetHeaderFrame } from '../WidgetHeader';
@@ -58,19 +63,20 @@ const FULL_ROWS = Array.from({ length: DASHBOARD_MAX_WIDGETS / 4 }, (_, rowIndex
   )
 );
 
-function createDashboardContext(rows: DashboardRow[]): DashboardContextValue {
+function createDashboardContext(): DashboardContextValue {
   return {
     dashboardViewId: 'dashboard',
     hostDatabaseId: 'db',
-    hostViewIds: [],
-    rows,
-    showWidgetTitles: true,
     canEdit: true,
     isEditing: true,
     setEditing: jest.fn(),
     updateSetting: jest.fn(),
     updateRows: jest.fn(),
   };
+}
+
+function createDashboardLayout(rows: DashboardRow[]): DashboardLayoutContextValue {
+  return { rows, hostViewIds: [], showWidgetTitles: true };
 }
 
 function createContext(overrides: Partial<WidgetContextValue> = {}): WidgetContextValue {
@@ -92,8 +98,10 @@ function createContext(overrides: Partial<WidgetContextValue> = {}): WidgetConte
 
 function withContext(value: WidgetContextValue, children: ReactNode, rows: DashboardRow[] = MOVABLE_ROWS) {
   return (
-    <DashboardContext.Provider value={createDashboardContext(rows)}>
-      <WidgetContext.Provider value={value}>{children}</WidgetContext.Provider>
+    <DashboardContext.Provider value={createDashboardContext()}>
+      <DashboardLayoutContext.Provider value={createDashboardLayout(rows)}>
+        <WidgetContext.Provider value={value}>{children}</WidgetContext.Provider>
+      </DashboardLayoutContext.Provider>
     </DashboardContext.Provider>
   );
 }

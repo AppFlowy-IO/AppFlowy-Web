@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef } from 'react';
+import { CSSProperties, KeyboardEvent, memo, PointerEvent, useCallback, useRef, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { resizeDashboardWidget, setDashboardRowHeight } from '@/application/database-yjs/dashboard-layout';
@@ -19,9 +19,10 @@ import { cn } from '@/lib/utils';
 import { DASHBOARD_COLUMN_GAP, DASHBOARD_EDIT_ROW_GAP, DASHBOARD_ROW_GAP } from './constants';
 import { useDashboardDraggingWidgetId, useDashboardUi } from './DashboardUiContext';
 import { DashboardWidget } from './DashboardWidget';
-import { useRowHeightResize } from './hooks/useRowHeightResize';
+import { ROW_HEIGHT_CSS_VARIABLE, RowHeightPreview, useRowHeightResize } from './hooks/useRowHeightResize';
 import { applyWidthPreview, useWidthResize } from './hooks/useWidthResize';
 import { getColumnBoundaryOffset } from './utils';
+import { preloadWidgetPicker } from './WidgetPicker';
 
 const HEIGHT_HANDLE_SIZE = 12;
 
@@ -30,6 +31,72 @@ const HEIGHT_HANDLE_SIZE = 12;
 const EDGE_CONTROL_CLASS =
   'absolute top-1/2 -translate-y-1/2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100';
 const EDGE_BUTTON_CLASS = 'rounded-full bg-fill-theme-select text-fill-theme-thick';
+
+interface RowHeightHandleProps {
+  rowId: string;
+  /** The persisted height; a drag previews another one. */
+  height: number;
+  preview: RowHeightPreview;
+  dragging: boolean;
+  /** A widget drag is in progress: the handle must not catch the pointer. */
+  inert: boolean;
+  onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
+  onPointerDown: (event: PointerEvent<HTMLElement>) => void;
+}
+
+/**
+ * The handle under a row. It alone follows the drag through React (for its
+ * value and the "NNN px" badge): the row and its cards resize through CSS.
+ */
+const RowHeightHandle = memo(function RowHeightHandle({
+  rowId,
+  height,
+  preview,
+  dragging,
+  inert,
+  onKeyDown,
+  onPointerDown,
+}: RowHeightHandleProps) {
+  const { t } = useTranslation();
+  const previewHeight = useSyncExternalStore(preview.subscribe, preview.get, preview.get);
+  const liveHeight = previewHeight ?? height;
+
+  return (
+    <div
+      aria-label={t('dashboard.widget.resizeHeight', { defaultValue: 'Drag to change row height' })}
+      aria-orientation='horizontal'
+      aria-valuemax={DASHBOARD_MAX_ROW_HEIGHT}
+      aria-valuemin={DASHBOARD_MIN_ROW_HEIGHT}
+      aria-valuenow={liveHeight}
+      className={cn(
+        'group/height absolute inset-x-0 top-full z-10 flex cursor-row-resize touch-none items-center justify-center outline-none',
+        inert && 'pointer-events-none'
+      )}
+      data-active={dragging ? 'true' : undefined}
+      data-row-id={rowId}
+      data-testid='dashboard-height-handle'
+      onKeyDown={onKeyDown}
+      onPointerDown={onPointerDown}
+      role='separator'
+      style={{ height: HEIGHT_HANDLE_SIZE, marginTop: (DASHBOARD_EDIT_ROW_GAP - HEIGHT_HANDLE_SIZE) / 2 }}
+      tabIndex={0}
+    >
+      <span
+        className={cn(
+          'h-1 rounded-full transition-all',
+          dragging
+            ? 'w-full bg-fill-theme-thick'
+            : 'w-10 bg-transparent group-hover/height:w-full group-hover/height:!bg-fill-theme-thick group-hover/row:bg-border-primary group-focus-visible/height:w-full group-focus-visible/height:!bg-fill-theme-thick'
+        )}
+      />
+      {dragging ? (
+        <span className='absolute right-0 top-full mt-1 rounded-200 bg-surface-inverse px-1.5 py-0.5 text-xs text-text-on-fill'>
+          {liveHeight}px
+        </span>
+      ) : null}
+    </div>
+  );
+});
 
 interface DashboardRowProps {
   row: DashboardRowData;
@@ -82,12 +149,19 @@ export const DashboardRow = memo(function DashboardRow({
     getRowElement,
     onCommit: commitWidth,
   });
-  const heightResize = useRowHeightResize({ height: row.height, enabled: editing, onCommit: commitHeight });
+  const heightResize = useRowHeightResize({
+    height: row.height,
+    enabled: editing,
+    onCommit: commitHeight,
+    getRowElement,
+  });
   const widths = applyWidthPreview(row.widgets, widthResize.preview);
-  const rowHeight = heightResize.height;
   const rowFull = row.widgets.length >= DASHBOARD_MAX_WIDGETS_PER_ROW;
   const isDraggingWidget = draggingWidgetId !== null;
-  const isResizing = widthResize.preview !== null || heightResize.preview !== null;
+  const isResizing = widthResize.preview !== null || heightResize.dragging;
+  // The drag writes the variable itself; a render during a drag (a
+  // collaborator's edit) must not put the persisted height back.
+  const rowHeight = heightResize.preview.get() ?? row.height;
 
   const boundaries = row.widgets.slice(0, -1).map((widget, index) => ({
     key: widget.id,
@@ -118,6 +192,8 @@ export const DashboardRow = memo(function DashboardRow({
       data-testid='dashboard-insert-row-button'
       disabled={dashboardFull}
       onClick={() => openPicker({ mode: 'add', placement: { type: 'new_row', rowIndex: rowIndex + 1 } })}
+      onFocus={preloadWidgetPicker}
+      onPointerEnter={preloadWidgetPicker}
       size='icon-sm'
       type='button'
       variant='ghost'
@@ -136,6 +212,8 @@ export const DashboardRow = memo(function DashboardRow({
       onClick={() =>
         openPicker({ mode: 'add', placement: { type: 'existing_row', rowId: row.id, index: row.widgets.length } })
       }
+      onFocus={preloadWidgetPicker}
+      onPointerEnter={preloadWidgetPicker}
       size='icon-sm'
       type='button'
       variant='ghost'
@@ -155,17 +233,23 @@ export const DashboardRow = memo(function DashboardRow({
       <div
         className='grid w-full'
         ref={gridRef}
-        style={{
-          gridTemplateColumns: `repeat(${DASHBOARD_GRID_COLUMNS}, minmax(0, 1fr))`,
-          columnGap: DASHBOARD_COLUMN_GAP,
-          rowGap: DASHBOARD_ROW_GAP,
-          height: stacked ? undefined : rowHeight,
-        }}
+        style={
+          {
+            gridTemplateColumns: `repeat(${DASHBOARD_GRID_COLUMNS}, minmax(0, 1fr))`,
+            columnGap: DASHBOARD_COLUMN_GAP,
+            rowGap: DASHBOARD_ROW_GAP,
+            // The grid and its cards read the row height from this variable, so
+            // a height drag is one style write instead of a render per pixel.
+            [ROW_HEIGHT_CSS_VARIABLE]: `${rowHeight}px`,
+            height: stacked ? undefined : `var(${ROW_HEIGHT_CSS_VARIABLE})`,
+          } as CSSProperties
+        }
       >
         {row.widgets.map((widget, index) => (
           <DashboardWidget
             canEdit={canEdit}
-            height={rowHeight}
+            height={row.height}
+            heightPreview={heightResize.preview}
             isDragging={draggingWidgetId === widget.id}
             isEditing={isEditing}
             key={widget.id}
@@ -262,39 +346,15 @@ export const DashboardRow = memo(function DashboardRow({
       ) : null}
 
       {editing ? (
-        <div
-          aria-label={t('dashboard.widget.resizeHeight', { defaultValue: 'Drag to change row height' })}
-          aria-orientation='horizontal'
-          aria-valuemax={DASHBOARD_MAX_ROW_HEIGHT}
-          aria-valuemin={DASHBOARD_MIN_ROW_HEIGHT}
-          aria-valuenow={rowHeight}
-          className={cn(
-            'group/height absolute inset-x-0 top-full z-10 flex cursor-row-resize touch-none items-center justify-center outline-none',
-            isDraggingWidget && 'pointer-events-none'
-          )}
-          data-active={heightResize.preview !== null ? 'true' : undefined}
-          data-row-id={row.id}
-          data-testid='dashboard-height-handle'
+        <RowHeightHandle
+          dragging={heightResize.dragging}
+          height={row.height}
+          inert={isDraggingWidget}
           onKeyDown={heightResize.handleKeyDown}
           onPointerDown={heightResize.startResize}
-          role='separator'
-          style={{ height: HEIGHT_HANDLE_SIZE, marginTop: (DASHBOARD_EDIT_ROW_GAP - HEIGHT_HANDLE_SIZE) / 2 }}
-          tabIndex={0}
-        >
-          <span
-            className={cn(
-              'h-1 rounded-full transition-all',
-              heightResize.preview !== null
-                ? 'w-full bg-fill-theme-thick'
-                : 'w-10 bg-transparent group-hover/height:w-full group-hover/height:!bg-fill-theme-thick group-hover/row:bg-border-primary group-focus-visible/height:w-full group-focus-visible/height:!bg-fill-theme-thick'
-            )}
-          />
-          {heightResize.preview !== null ? (
-            <span className='absolute right-0 top-full mt-1 rounded-200 bg-surface-inverse px-1.5 py-0.5 text-xs text-text-on-fill'>
-              {rowHeight}px
-            </span>
-          ) : null}
-        </div>
+          preview={heightResize.preview}
+          rowId={row.id}
+        />
       ) : null}
     </div>
   );

@@ -35,6 +35,7 @@ import { GlobalFilterSourceField } from './global-filter.utils';
 import { useGlobalFilterDateFormat } from './useGlobalFilterLabel';
 
 const CONTENT_TEST_ID = 'dashboard-global-filter-content';
+const itemClassName = cn(dropdownMenuItemVariants({ variant: 'default' }), 'w-full text-left');
 // Same rule as the view number filter: optional minus, digits, one decimal point.
 const NUMBER_INPUT_PATTERN = /^-?\d*\.?\d*$/;
 
@@ -55,7 +56,7 @@ function ClearSelectionButton({ onClear }: { onClear: () => void }) {
       <button
         type='button'
         data-testid='dashboard-global-filter-clear-selection'
-        className={cn(dropdownMenuItemVariants({ variant: 'default' }), 'w-full text-left')}
+        className={itemClassName}
         onClick={onClear}
       >
         {t('grid.filter.clearSelection')}
@@ -106,8 +107,12 @@ function OptionContent({ filter, onChange, field }: ContentProps & { field?: Glo
   const [search, setSearch] = useState('');
   const selected = useMemo(() => new Set(parseOptionContent(filter.content)), [filter.content]);
   const options = useMemo(() => field?.options ?? [], [field]);
+  const searchTexts = useMemo(() => options.map((option) => option.name.toLocaleLowerCase()), [options]);
   const keyword = search.trim().toLocaleLowerCase();
-  const visible = options.filter((option) => option.name.toLocaleLowerCase().includes(keyword));
+  const visible = useMemo(
+    () => (keyword ? options.filter((_, index) => searchTexts[index].includes(keyword)) : options),
+    [keyword, options, searchTexts]
+  );
 
   const toggle = (optionId: string) => {
     const next = new Set(selected);
@@ -141,7 +146,7 @@ function OptionContent({ filter, onChange, field }: ContentProps & { field?: Glo
               data-testid='dashboard-global-filter-option'
               data-option-id={option.id}
               data-checked={checked}
-              className={cn(dropdownMenuItemVariants({ variant: 'default' }), 'w-full text-left')}
+              className={itemClassName}
               onClick={() => toggle(option.id)}
             >
               <Tag
@@ -175,7 +180,8 @@ function PersonContent({ filter, onChange }: ContentProps) {
       users.flatMap((user) => {
         const identifier = isAttribution ? canonicalizeUserUid(user.uid) : user.person_id;
 
-        return identifier ? [{ identifier, user }] : [];
+        if (!identifier) return [];
+        return [{ identifier, user, searchText: `${user.name ?? ''} ${user.email ?? ''}`.toLocaleLowerCase() }];
       }),
     [isAttribution, users]
   );
@@ -185,8 +191,9 @@ function PersonContent({ filter, onChange }: ContentProps) {
     return selectedIds.filter((id) => !known.has(id));
   }, [people, selectedIds]);
   const keyword = search.trim().toLocaleLowerCase();
-  const visible = people.filter(({ user }) =>
-    `${user.name ?? ''} ${user.email ?? ''}`.toLocaleLowerCase().includes(keyword)
+  const visible = useMemo(
+    () => (keyword ? people.filter(({ searchText }) => searchText.includes(keyword)) : people),
+    [keyword, people]
   );
 
   const toggle = (identifier: string) => {
@@ -204,7 +211,7 @@ function PersonContent({ filter, onChange }: ContentProps) {
       data-testid='dashboard-global-filter-person'
       data-person-id={key}
       data-checked={checked}
-      className={cn(dropdownMenuItemVariants({ variant: 'default' }), 'w-full text-left')}
+      className={itemClassName}
       onClick={() => toggle(key)}
     >
       {avatar}
@@ -258,11 +265,8 @@ function DateContent({ filter, onChange }: ContentProps) {
   const [open, setOpen] = useState(false);
   const range = isDateRangeCondition(filter.condition);
   const value = useMemo(() => parseDateContent(filter.content), [filter.content]);
-  const weekStartsOn = useMemo(() => {
-    const day = Number(currentUser?.metadata?.[MetadataKey.StartWeekOn]) || 0;
-
-    return (day >= 0 && day <= 6 ? day : 0) as 0 | 1 | 2 | 3 | 4 | 5 | 6;
-  }, [currentUser?.metadata]);
+  const startWeekOn = Number(currentUser?.metadata?.[MetadataKey.StartWeekOn]) || 0;
+  const weekStartsOn = (startWeekOn >= 0 && startWeekOn <= 6 ? startWeekOn : 0) as 0 | 1 | 2 | 3 | 4 | 5 | 6;
   const toDate = (unix?: number) => (unix === undefined ? undefined : dayjs(unix * 1000).toDate());
   const toUnix = (date?: Date) => (date ? dayjs(date).startOf('day').unix() : undefined);
   const format = (unix?: number) => (unix === undefined ? '' : dayjs(unix * 1000).format(dateFormat));

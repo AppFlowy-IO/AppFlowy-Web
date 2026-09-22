@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
-import { useDashboardContext } from './DashboardContext';
+import { useDashboardLayout } from './DashboardContext';
 import { canDuplicateWidget, getWidgetMoveTargets, WidgetMoveDirection, WidgetMoveTargets } from './widget-moves';
 import { useWidgetContext, WidgetActions } from './WidgetContext';
 
@@ -162,7 +162,7 @@ interface WidgetMenuProps {
 function WidgetMenuItems() {
   const { t } = useTranslation();
   const { actions, isEditing, canEdit, widgetId } = useWidgetContext();
-  const { rows } = useDashboardContext();
+  const { rows } = useDashboardLayout();
   const editing = isEditing && canEdit;
   const entries = useMemo(
     () =>

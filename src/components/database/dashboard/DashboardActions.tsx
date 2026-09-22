@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
@@ -12,8 +13,11 @@ import { GlobalFilterButton } from './global-filters/GlobalFilterButton';
  *
  * Renders nothing outside a `DashboardProvider`, e.g. for the one render in
  * which the tab bar still reports the previous view's layout.
+ *
+ * Memoized: the conditions toolbar that renders it follows every change of
+ * the host database context, while this only depends on `DashboardContext`.
  */
-export function DashboardActions({ compact = false }: { compact?: boolean }) {
+export const DashboardActions = memo(function DashboardActions({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation();
   const dashboard = useDashboardContextOptional();
 
@@ -49,6 +53,6 @@ export function DashboardActions({ compact = false }: { compact?: boolean }) {
       ) : null}
     </div>
   );
-}
+});
 
 export default DashboardActions;

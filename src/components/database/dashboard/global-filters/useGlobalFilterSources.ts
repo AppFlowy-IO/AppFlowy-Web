@@ -1,18 +1,28 @@
 import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { YMapEvent } from 'yjs';
 
 import { SelectOption } from '@/application/database-yjs/fields/select-option/select_option.type';
-import { YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
+import { YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 
 import { getDatabase, getReferenceView, readGlobalFilterSourceFields } from './global-filter.source-fields';
 import { GlobalFilterSource, GlobalFilterSourceField } from './global-filter.utils';
 
 export { readGlobalFilterSourceFields };
 
+/** View keys that decide which view is the reference and which array holds its column order. */
+const REFERENCE_VIEW_KEYS: readonly string[] = [
+  YjsDatabaseKey.field_orders,
+  YjsDatabaseKey.is_inline,
+  YjsDatabaseKey.created_at,
+];
+
 /**
  * Observe what `readGlobalFilterSourceFields` reads: the fields (deep), the
  * reference view's column order, and the containers that may be replaced
- * (the database map once the doc syncs, the views map when views change).
+ * (the database map once the doc syncs, the views map when views change,
+ * a view's own keys when its column-order array is swapped or another view
+ * becomes the reference).
  */
 function observeSourceDoc(doc: YDoc, onChange: () => void) {
   const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
@@ -26,14 +36,17 @@ function observeSourceDoc(doc: YDoc, onChange: () => void) {
     if (!database) return;
     const fields = database.get(YjsDatabaseKey.fields);
     const views = database.get(YjsDatabaseKey.views);
+    const viewMaps = views ? (Array.from(views.values()) as YDatabaseView[]).filter(Boolean) : [];
     const orders = getReferenceView(database)?.get(YjsDatabaseKey.field_orders);
 
     fields?.observeDeep(onChange);
     views?.observe(onContainerChange);
+    viewMaps.forEach((view) => view.observe(onViewChange));
     orders?.observe(onChange);
     detach = () => {
       fields?.unobserveDeep(onChange);
       views?.unobserve(onContainerChange);
+      viewMaps.forEach((view) => view.unobserve(onViewChange));
       orders?.unobserve(onChange);
     };
   };
@@ -41,6 +54,10 @@ function observeSourceDoc(doc: YDoc, onChange: () => void) {
   function onContainerChange() {
     attach();
     onChange();
+  }
+
+  function onViewChange(event: YMapEvent<unknown>) {
+    if (REFERENCE_VIEW_KEYS.some((key) => event.keysChanged.has(key))) onContainerChange();
   }
 
   sharedRoot.observe(onContainerChange);

@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 
 import { GlobalFilterChip } from './GlobalFilterChip';
-import { GlobalFilterMenu } from './GlobalFilterMenu';
+import { LazyGlobalFilterMenu, preloadGlobalFilterMenu } from './LazyGlobalFilterMenu';
 import { useDashboardFilterSources, useGlobalFilterActions } from './useGlobalFilterActions';
 
 /** The chips; only mounted while there are filters, so an empty bar observes no source database. */
@@ -49,6 +49,8 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
               size='sm'
               data-testid='dashboard-global-filter-bar-add'
               className='h-7 rounded-full px-2 font-medium text-text-secondary'
+              onFocus={preloadGlobalFilterMenu}
+              onPointerEnter={preloadGlobalFilterMenu}
             >
               <PlusIcon className='h-4 w-4 text-icon-secondary' />
               {t('dashboard.globalFilters.add', { defaultValue: 'Add global filter' })}
@@ -60,7 +62,7 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
             onCloseAutoFocus={(event) => event.preventDefault()}
             onClick={(event) => event.stopPropagation()}
           >
-            <GlobalFilterMenu startWithPicker onClose={closeAdd} />
+            <LazyGlobalFilterMenu startWithPicker onClose={closeAdd} />
           </PopoverContent>
         </Popover>
       )}

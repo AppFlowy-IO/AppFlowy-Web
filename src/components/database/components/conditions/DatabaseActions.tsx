@@ -26,6 +26,27 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 // other view's bundle.
 const DashboardActions = lazy(() => import('@/components/database/dashboard/DashboardActions'));
 
+/** Layouts whose toolbar offers sorting. */
+const SORTABLE_LAYOUTS = new Set<DatabaseViewLayout>([
+  DatabaseViewLayout.Grid,
+  DatabaseViewLayout.List,
+  DatabaseViewLayout.Gallery,
+  DatabaseViewLayout.Feed,
+  DatabaseViewLayout.Timeline,
+]);
+
+/** Layouts whose toolbar offers the template button. */
+const TEMPLATE_LAYOUTS = new Set<DatabaseViewLayout>([
+  DatabaseViewLayout.Grid,
+  DatabaseViewLayout.Board,
+  DatabaseViewLayout.Calendar,
+  DatabaseViewLayout.Chart,
+  DatabaseViewLayout.List,
+  DatabaseViewLayout.Gallery,
+  DatabaseViewLayout.Feed,
+  DatabaseViewLayout.Timeline,
+]);
+
 function DatabaseSearchAction() {
   const { t } = useTranslation();
   const { query, setQuery } = useDatabaseSearch();
@@ -128,30 +149,11 @@ export function DatabaseActions() {
   // view conditions; Settings stays for the layout switcher.
   const isDashboard = layout === DatabaseViewLayout.Dashboard && !isDashboardWidget;
   const showFilters = !isDashboard;
-  const showSorts =
-    !isDashboard &&
-    [
-      DatabaseViewLayout.Grid,
-      DatabaseViewLayout.List,
-      DatabaseViewLayout.Gallery,
-      DatabaseViewLayout.Feed,
-      DatabaseViewLayout.Timeline,
-    ].includes(layout);
+  const showSorts = !isDashboard && SORTABLE_LAYOUTS.has(layout);
   const supportsSearch = layout === DatabaseViewLayout.Gallery || layout === DatabaseViewLayout.Feed;
   // A widget header has no room for the search field or the template button.
   const showSearch = supportsSearch && !isDashboardWidget;
-  const showTemplates =
-    !isDashboardWidget &&
-    [
-      DatabaseViewLayout.Grid,
-      DatabaseViewLayout.Board,
-      DatabaseViewLayout.Calendar,
-      DatabaseViewLayout.Chart,
-      DatabaseViewLayout.List,
-      DatabaseViewLayout.Gallery,
-      DatabaseViewLayout.Feed,
-      DatabaseViewLayout.Timeline,
-    ].includes(layout);
+  const showTemplates = !isDashboardWidget && TEMPLATE_LAYOUTS.has(layout);
   const compact = showSearch || Boolean(isDashboardWidget);
   const settingsButton = (
     <Button

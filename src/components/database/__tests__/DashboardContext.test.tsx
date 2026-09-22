@@ -13,6 +13,7 @@ import {
   useDashboardContext,
   useDashboardContextOptional,
   useDashboardFilters,
+  useDashboardLayout,
   useDashboardSourceRegistry,
   useDashboardSources,
 } from '@/components/database/dashboard/DashboardContext';
@@ -87,12 +88,13 @@ function renderDashboard(doc: YDoc, initial: Options = {}) {
 
   const hook = renderHook(
     () => {
-      const layout = useDashboardContext();
+      const context = useDashboardContext();
+      const layout = useDashboardLayout();
       const filters = useDashboardFilters();
       const sources = useDashboardSources();
       const registry = useDashboardSourceRegistry();
 
-      return { ...layout, ...filters, ...sources, parts: { layout, filters, sources, registry } };
+      return { ...context, ...layout, ...filters, ...sources, parts: { context, layout, filters, sources, registry } };
     },
     { wrapper }
   );
@@ -457,20 +459,23 @@ describe('DashboardProvider', () => {
 
     // A widget exposing its source doc touches the sources only.
     act(() => result.current.registerSourceDoc('other-database', new Y.Doc() as unknown as YDoc));
+    expect(result.current.parts.context).toBe(previous.context);
     expect(result.current.parts.layout).toBe(previous.layout);
     expect(result.current.parts.filters).toBe(previous.filters);
     expect(result.current.parts.sources).not.toBe(previous.sources);
     previous = result.current.parts;
 
     act(() => result.current.registerSourceName('other-database', 'Projects'));
+    expect(result.current.parts.context).toBe(previous.context);
     expect(result.current.parts.layout).toBe(previous.layout);
     expect(result.current.parts.filters).toBe(previous.filters);
     // Components that only register sources never re-render for it.
     expect(result.current.parts.registry).toBe(previous.registry);
     previous = result.current.parts;
 
-    // Filter edits (local or persisted) leave the layout alone.
+    // Filter edits (local or persisted) leave the mode and the layout alone.
     act(() => result.current.setLocalGlobalFilters([{ ...GLOBAL_FILTER, content: 'mine' }]));
+    expect(result.current.parts.context).toBe(previous.context);
     expect(result.current.parts.layout).toBe(previous.layout);
     expect(result.current.parts.sources).toBe(previous.sources);
     expect(result.current.parts.filters).not.toBe(previous.filters);
@@ -479,16 +484,24 @@ describe('DashboardProvider', () => {
     act(() => {
       doc.transact(() => updateDashboardLayoutSetting(view, { globalFilters: [] }));
     });
+    expect(result.current.parts.context).toBe(previous.context);
     expect(result.current.parts.layout).toBe(previous.layout);
     expect(result.current.parts.sources).toBe(previous.sources);
     previous = result.current.parts;
 
-    // Layout edits that keep the widget databases leave the filters alone.
+    // Layout edits that keep the widget databases leave the filters alone,
+    // and the mode context with them: the toolbar never re-renders for a resize.
     act(() => result.current.updateRows((rows) => rows.map((row) => ({ ...row, height: 400 }))));
-    act(() => result.current.setEditing(true));
     expect(result.current.parts.filters).toBe(previous.filters);
     expect(result.current.parts.sources).toBe(previous.sources);
+    expect(result.current.parts.context).toBe(previous.context);
     expect(result.current.parts.layout).not.toBe(previous.layout);
+    previous = result.current.parts;
+
+    // The mode toggle leaves the rows alone.
+    act(() => result.current.setEditing(true));
+    expect(result.current.parts.layout).toBe(previous.layout);
+    expect(result.current.parts.context).not.toBe(previous.context);
   });
 
   describe('source registry', () => {

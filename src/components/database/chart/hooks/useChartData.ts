@@ -554,6 +554,7 @@ export interface UseChartDataReturn {
 }
 
 const EMPTY_CHART_DATA: ChartDataItem[] = [];
+const EMPTY_ROW_DOCS: YDoc[] = [];
 
 /**
  * Grace period before declaring a chart "empty" when `rowOrders` is `[]` at
@@ -837,8 +838,36 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     rowTimes: xFieldType === FieldType.CreatedTime || xFieldType === FieldType.LastEditedTime,
   };
 
+  // The same ids keep the same array: filtered and sorted views re-emit
+  // `rowOrders` after unrelated changes, and cell edits bump `rowDataClock`.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stableRowOrders = useMemo(() => rowOrders, [rowOrdersReady, rowIdsKey]);
+
+  // The row docs the chart reads, in row order. `rowMetas` is a new object
+  // whenever any row doc of the database arrives or is canonicalised, so keep
+  // the previous list while every charted doc is the same object: the
+  // observers below then stay attached instead of re-subscribing every row.
+  const chartedDocsRef = useRef<YDoc[]>(EMPTY_ROW_DOCS);
+  const chartedDocs = useMemo(() => {
+    const next: YDoc[] = [];
+
+    if (stableRowOrders && rowMetas) {
+      stableRowOrders.forEach((row) => {
+        const doc = rowMetas[row.id];
+
+        if (doc) next.push(doc);
+      });
+    }
+
+    const previous = chartedDocsRef.current;
+
+    if (previous.length === next.length && previous.every((doc, index) => doc === next[index])) return previous;
+    chartedDocsRef.current = next;
+    return next;
+  }, [rowMetas, stableRowOrders]);
+
   useEffect(() => {
-    if (!needsRowDocs || !rowsLoaded || !rowOrders || !rowMetas) return;
+    if (!needsRowDocs || !rowsLoaded) return;
     let frame: number | null = null;
     const handleChange = (events: Y.YEvent[]) => {
       const touchesRowData = events.some((event) => touchesChartedRowData(event, watchedRef.current));
@@ -850,29 +879,19 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
       });
     };
 
-    const roots = rowOrders.flatMap((row) => {
-      const root = rowMetas[row.id]?.getMap(YjsEditorKey.data_section);
-
-      return root ? [root] : [];
-    });
+    const roots = chartedDocs.map((doc) => doc.getMap(YjsEditorKey.data_section));
 
     roots.forEach((root) => root.observeDeep(handleChange));
     return () => {
       roots.forEach((root) => root.unobserveDeep(handleChange));
       if (frame !== null) window.cancelAnimationFrame(frame);
     };
-    // `rowIdsKey` stands for `rowOrders`, whose identity changes on unrelated renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needsRowDocs, rowsLoaded, rowIdsKey, rowMetas]);
+  }, [chartedDocs, needsRowDocs, rowsLoaded]);
 
   // === Render-time derivation ===
   // Rows go back to `undefined` while a newly applied filter hydrates them:
   // show the spinner, not an empty chart.
   const isLoading = !rowsLoaded || !rowOrdersReady;
-  // The same ids keep the same array: filtered and sorted views re-emit
-  // `rowOrders` after unrelated changes, and cell edits bump `rowDataClock`.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const stableRowOrders = useMemo(() => rowOrders, [rowOrdersReady, rowIdsKey]);
 
   // The Number chart depends only on the aggregation, the Y field and the rows
   // (row docs only when it aggregates the Y field), so title / number format /

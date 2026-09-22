@@ -2,20 +2,20 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as FilterIcon } from '@/assets/icons/filter.svg';
-import { useDashboardContextOptional } from '@/components/database/dashboard/DashboardContext';
+import { useDashboardContextOptional, useDashboardFilters } from '@/components/database/dashboard/DashboardContext';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-import { GlobalFilterMenu } from './GlobalFilterMenu';
-import { useGlobalFilterActions } from './useGlobalFilterActions';
+import { LazyGlobalFilterMenu, preloadGlobalFilterMenu } from './LazyGlobalFilterMenu';
 
 function GlobalFilterButtonContent({ compact }: { compact: boolean }) {
   const { t } = useTranslation();
-  const { filters } = useGlobalFilterActions();
+  // Only the count is shown while closed; the menu reads the rest itself.
+  const { effectiveGlobalFilters } = useDashboardFilters();
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
-  const count = filters.length;
+  const count = effectiveGlobalFilters.length;
   const label = t('dashboard.globalFilters.button', { defaultValue: 'Filter' });
 
   return (
@@ -32,6 +32,8 @@ function GlobalFilterButtonContent({ compact }: { compact: boolean }) {
               data-testid='dashboard-global-filter-button'
               data-count={count}
               style={{ color: count > 0 ? 'var(--icon-info-thick)' : undefined }}
+              onFocus={preloadGlobalFilterMenu}
+              onPointerEnter={preloadGlobalFilterMenu}
             >
               <FilterIcon aria-hidden='true' className='h-5 w-5' />
               {count > 0 && (
@@ -55,7 +57,7 @@ function GlobalFilterButtonContent({ compact }: { compact: boolean }) {
         onCloseAutoFocus={(event) => event.preventDefault()}
         onClick={(event) => event.stopPropagation()}
       >
-        <GlobalFilterMenu onClose={close} />
+        <LazyGlobalFilterMenu onClose={close} />
       </PopoverContent>
     </Popover>
   );

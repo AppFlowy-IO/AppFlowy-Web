@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 
 import { DatabaseViewLayout, YDatabase, YDatabaseViews, YjsDatabaseKey } from '@/application/types';
 
@@ -44,21 +44,64 @@ export function readHostViews(views: YDatabaseViews | undefined): HostViewEntry[
     .map(({ viewId, name, layout, embedded }) => ({ viewId, name, layout, embedded }));
 }
 
-const noopSubscribe = () => () => undefined;
+function sameHostViews(a: HostViewEntry[], b: HostViewEntry[]) {
+  if (a.length !== b.length) return false;
+
+  for (let index = 0; index < a.length; index += 1) {
+    const left = a[index];
+    const right = b[index];
+
+    if (
+      left.viewId !== right.viewId ||
+      left.name !== right.name ||
+      left.layout !== right.layout ||
+      left.embedded !== right.embedded
+    )
+      return false;
+  }
+
+  return true;
+}
+
+const EMPTY_HOST_VIEWS: HostViewEntry[] = [];
+const emptyStore = {
+  subscribe: () => () => undefined,
+  getSnapshot: () => EMPTY_HOST_VIEWS,
+};
+
+// The list is rebuilt when the views change, not on every render of the
+// picker (which follows each keystroke of its search box); an unchanged list
+// keeps its identity.
+function createStore(views: YDatabaseViews) {
+  let snapshot: HostViewEntry[] | null = null;
+  const read = () => {
+    const next = readHostViews(views);
+
+    if (!snapshot || !sameHostViews(snapshot, next)) snapshot = next;
+    return snapshot;
+  };
+
+  return {
+    getSnapshot: () => snapshot ?? read(),
+    subscribe: (notify: () => void) => {
+      const onChange = () => {
+        read();
+        notify();
+      };
+
+      views.observeDeep(onChange);
+      // Changes between the render and the subscription are picked up by the
+      // snapshot check React runs right after subscribing.
+      read();
+      return () => views.unobserveDeep(onChange);
+    },
+  };
+}
 
 /** Live list of the host database's views. */
 export function useHostViews(database: YDatabase | undefined): HostViewEntry[] {
   const views = database?.get(YjsDatabaseKey.views);
-  const subscribe = useCallback(
-    (notify: () => void) => {
-      if (!views) return noopSubscribe();
-      views.observeDeep(notify);
-      return () => views.unobserveDeep(notify);
-    },
-    [views]
-  );
-  const getSnapshot = useCallback(() => JSON.stringify(readHostViews(views)), [views]);
-  const raw = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const store = useMemo(() => (views ? createStore(views) : emptyStore), [views]);
 
-  return useMemo(() => JSON.parse(raw) as HostViewEntry[], [raw]);
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 }

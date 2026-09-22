@@ -14,7 +14,7 @@ import { DashboardWidgetPlacement } from '@/application/database-yjs/dashboard.t
 import { UIVariant } from '@/application/types';
 
 import { DASHBOARD_DEFAULT_INLINE_PADDING, DASHBOARD_LIMIT_MESSAGE_DURATION } from './constants';
-import { useDashboardContext, useDashboardSourceRegistry } from './DashboardContext';
+import { useDashboardContext, useDashboardLayout, useDashboardSourceRegistry } from './DashboardContext';
 import { DashboardEmptyState } from './DashboardEmptyState';
 import { DashboardGrid } from './DashboardGrid';
 import { DashboardLimitMessage } from './DashboardLimitMessage';
@@ -40,7 +40,8 @@ import { WidgetPicker } from './WidgetPicker';
 /** The Dashboard layout: global filters, then the widget grid (or its empty state). */
 export function Dashboard() {
   const { paddingStart, paddingEnd, workspaceId, variant } = useDatabaseContext();
-  const { rows, isEditing, canEdit, setEditing, updateRows, hostDatabaseId } = useDashboardContext();
+  const { isEditing, canEdit, setEditing, updateRows, hostDatabaseId } = useDashboardContext();
+  const { rows } = useDashboardLayout();
   const { registerSourceDoc, registerSourceName } = useDashboardSourceRegistry();
   const hostServices = useDashboardHostServices();
   const editing = isEditing && canEdit;

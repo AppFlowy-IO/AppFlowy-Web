@@ -225,9 +225,14 @@ export function createViewConditionsOverlay(initialView: YDatabaseView): ViewCon
       view = createProxy();
       realView.observe(onRealViewChange);
       attachReal();
-      // Runs while a widget renders: follow the replacement, but leave the
-      // dirty state (and its listeners) to the next real change.
-      followReal();
+      // Runs while a widget renders: the target swaps at once (reads go to
+      // the replacement), but following its conditions writes the local doc
+      // and notifies the nested database's subscriptions, which must not
+      // happen inside a render. The dirty state (and its listeners) waits
+      // for the next real change.
+      queueMicrotask(() => {
+        if (!destroyed) followReal();
+      });
     },
     isDirty: () => dirty,
     subscribe(listener) {
