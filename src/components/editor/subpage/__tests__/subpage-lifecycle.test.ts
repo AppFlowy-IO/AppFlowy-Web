@@ -17,12 +17,15 @@ const settle = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
 
-function setup(type = BlockType.SubpageBlock) {
+function setup(type = BlockType.SubpageBlock, source?: YDoc) {
   const doc = new Y.Doc() as YDoc;
-  initializeDocumentStructure(doc, true);
+  if (source) Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
+  else initializeDocumentStructure(doc, true);
   const editor = withYHistory(withYjs(createEditor(), doc, { readOnly: false, localOrigin: CollabOrigin.Local }));
   editor.connect();
-  const id = CustomEditor.turnToBlock(editor, editor.children[0].blockId!, type, { view_id: 'child' })!;
+  const id = source
+    ? editor.children[0].blockId!
+    : CustomEditor.turnToBlock(editor, editor.children[0].blockId!, type, { view_id: 'child' })!;
   editor.undoManager.clear();
   const events = new EventEmitter();
   const context: EditorContextState = {
@@ -31,6 +34,7 @@ function setup(type = BlockType.SubpageBlock) {
     readOnly: false,
     eventEmitter: events,
     loadViewMeta: jest.fn().mockResolvedValue({ view_id: 'child', parent_view_id: 'parent' } as View),
+    loadTrashViews: jest.fn().mockResolvedValue([]),
     deletePage: jest.fn().mockResolvedValue(undefined),
     restorePage: jest.fn().mockResolvedValue(undefined),
   };
@@ -145,6 +149,117 @@ describe('owned subpage lifecycle', () => {
     }
   });
 
+  it('checks authoritative ownership before deleting a child still present in the old outline', async () => {
+    const f = setup();
+    (f.context.loadViewMeta as jest.Mock).mockImplementation(async (_id, _callback, options) => ({
+      view_id: 'child',
+      parent_view_id: options?.authoritative ? 'other' : 'parent',
+    }));
+    try {
+      CustomEditor.deleteBlock(f.editor, f.id);
+      await settle();
+      expect(f.context.loadViewMeta).toHaveBeenCalledWith('child', undefined, { authoritative: true });
+      expect(f.context.deletePage).not.toHaveBeenCalled();
+      expect(f.onError).not.toHaveBeenCalled();
+    } finally {
+      f.dispose();
+    }
+  });
+
+  it('deletes again on redo even while the rendered trash list still contains the restored page', async () => {
+    const f = setup();
+    let staleTrash = false;
+    (f.context.loadViewMeta as jest.Mock).mockImplementation(async (_id, _callback, options) => {
+      if (staleTrash && !options?.authoritative) throw new Error('Cached trash entry');
+      return { view_id: 'child', parent_view_id: 'parent' };
+    });
+    try {
+      CustomEditor.deleteBlock(f.editor, f.id);
+      await settle();
+      staleTrash = true;
+      f.editor.undo();
+      await settle();
+      expect(f.context.restorePage).toHaveBeenCalledWith('child');
+      f.editor.redo();
+      await settle();
+      expect(f.context.deletePage).toHaveBeenCalledTimes(2);
+      expect(f.onError).not.toHaveBeenCalled();
+    } finally {
+      f.dispose();
+    }
+  });
+
+  it.each([false, true])(
+    'preserves an undo during peer trash updates (peer joins during restoration: %s)',
+    async (joinLate) => {
+      const f = setup();
+      let peer: ReturnType<typeof setup> | undefined;
+      let trashed = true;
+      let finishRestore!: () => void;
+      (f.context.restorePage as jest.Mock).mockImplementation(async () => {
+        await new Promise<void>((resolve) => {
+          finishRestore = resolve;
+        });
+        trashed = false;
+      });
+      const connectPeer = () => {
+        const p = setup(BlockType.SubpageBlock, f.doc);
+        peer = p;
+        const forward = (update: Uint8Array, origin: unknown) => {
+          if (origin !== CollabOrigin.Remote) Y.applyUpdate(p.doc, update, CollabOrigin.Remote);
+        };
+        const backward = (update: Uint8Array, origin: unknown) => {
+          if (origin !== CollabOrigin.Remote) Y.applyUpdate(f.doc, update, CollabOrigin.Remote);
+        };
+        f.doc.on('update', forward);
+        p.doc.on('update', backward);
+        (p.context.loadTrashViews as jest.Mock).mockImplementation(async () => (trashed ? [{ view_id: 'child' }] : []));
+        return p;
+      };
+      const hasChild = (editor: typeof f.editor) => editor.children.some((node) => node.type === BlockType.SubpageBlock);
+      const trashEvent = { workspaceId: 'workspace', trashItems: [{ view_id: 'child' }] };
+      try {
+        if (!joinLate) connectPeer();
+        CustomEditor.deleteBlock(f.editor, f.id);
+        await settle();
+        expect(f.context.deletePage).toHaveBeenCalledWith('child');
+        f.editor.undo();
+        await settle();
+        const p = peer ?? connectPeer();
+        expect(hasChild(p.editor)).toBe(true);
+        p.events.emit(APP_EVENTS.TRASH_UPDATED, trashEvent);
+        await settle();
+        expect(hasChild(f.editor)).toBe(true);
+        expect(hasChild(p.editor)).toBe(true);
+
+        finishRestore();
+        await settle();
+        // A delayed trash snapshot after restoration must be revalidated too.
+        p.events.emit(APP_EVENTS.TRASH_UPDATED, trashEvent);
+        await settle();
+        expect(hasChild(f.editor)).toBe(true);
+        expect(hasChild(p.editor)).toBe(true);
+        expect(p.context.loadTrashViews).toHaveBeenCalled();
+
+        // Once restoration is complete, a new sidebar deletion still removes it.
+        trashed = true;
+        p.events.emit(APP_EVENTS.TRASH_UPDATED, trashEvent);
+        await settle();
+        expect(hasChild(f.editor)).toBe(false);
+        expect(hasChild(p.editor)).toBe(false);
+        expect(p.editor.undoManager.undoStack).toHaveLength(0);
+        expect(p.context.deletePage).not.toHaveBeenCalled();
+        expect(f.onError).not.toHaveBeenCalled();
+        expect(p.onError).not.toHaveBeenCalled();
+      } finally {
+        finishRestore?.();
+        await settle();
+        peer?.dispose();
+        f.dispose();
+      }
+    }
+  );
+
   it('removes moved or trashed subpages on explicit folder notifications without deleting them again', async () => {
     for (const event of ['move', 'outline', 'trash']) {
       const f = setup();
@@ -154,7 +269,10 @@ describe('owned subpage lifecycle', () => {
           f.events.emit(APP_EVENTS.OUTLINE_LOADED, [
             { view_id: 'other', children: [{ view_id: 'child', parent_view_id: 'other' }] },
           ]);
-        else f.events.emit(APP_EVENTS.TRASH_UPDATED, { workspaceId: 'workspace', trashItems: [{ view_id: 'child' }] });
+        else {
+          (f.context.loadTrashViews as jest.Mock).mockResolvedValue([{ view_id: 'child' }]);
+          f.events.emit(APP_EVENTS.TRASH_UPDATED, { workspaceId: 'workspace', trashItems: [{ view_id: 'child' }] });
+        }
         await settle();
         expect(f.editor.children.some((node) => node.blockId === f.id)).toBe(false);
         expect(f.context.deletePage).not.toHaveBeenCalled();

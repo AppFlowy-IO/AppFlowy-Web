@@ -1,3 +1,4 @@
+import { nanoid } from 'nanoid';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -8,6 +9,7 @@ import {
   deleteBlock,
   getBlock,
   getChildrenArray,
+  getDocument,
   getPageId,
 } from '@/application/slate-yjs/utils/yjs';
 import { BlockType, CollabOrigin, View, YjsEditorKey } from '@/application/types';
@@ -17,6 +19,7 @@ import { queueSubpageOperation } from './subpage-operations';
 
 // Folder notifications are synced to peers, but are not new undoable user edits.
 const folderNotificationOrigin = {};
+const deletionKey = (id: string) => `subpage_deletion:${id}`;
 
 function collectSubpages(editor: YjsEditor): Map<string, string> {
   const pages = new Map<string, string>();
@@ -51,6 +54,7 @@ export function observeSubpageLifecycle(
   onError: (error: unknown) => void
 ) {
   const doc = editor.sharedRoot.doc!;
+  const metadata = getDocument(editor.sharedRoot).get(YjsEditorKey.meta) as Y.Map<unknown>;
   const events = getContext().eventEmitter;
   const deleted = new Set<string>();
   const pending = new Map<string, Promise<void>>();
@@ -59,6 +63,15 @@ export function observeSubpageLifecycle(
   // Keep the last observed state after disposal so queued operations can finish
   // reconciling an undo even if the editor and its Y.Doc have been destroyed.
   const isReferenced = (id: string) => [...previous.values()].includes(id);
+  // Keep this marker outside undo history, including while the block is absent.
+  // It reaches peers before an undo can reinsert the block, so even a newly
+  // connected editor knows the trash entry belongs to a document deletion.
+  const clearDeletion = (id: string, marker: unknown) => {
+    if (!marker || metadata.get(deletionKey(id)) !== marker) return;
+    doc.transact(() => metadata.delete(deletionKey(id)), folderNotificationOrigin);
+  };
+
+  const isReconciling = (id: string) => pending.has(id) || deleted.has(id) || metadata.has(deletionKey(id));
 
   const reconcile = (id: string) => {
     const context = getContext();
@@ -67,17 +80,31 @@ export function observeSubpageLifecycle(
 
       if (isReferenced(id)) {
         if (deleted.has(id) && context.restorePage) {
+          const marker = metadata.get(deletionKey(id));
+
           await context.restorePage(id);
           deleted.delete(id);
+          clearDeletion(id, marker);
         }
       } else if (!deleted.has(id) && context.deletePage && context.loadViewMeta) {
         // A pasted reference or a page moved elsewhere is not owned by this
         // document. A failed lookup is never evidence that it should be deleted.
-        const view = await context.loadViewMeta(id);
+        const trash = await context.loadTrashViews?.();
+
+        if (trash?.some((view) => view.view_id === id)) return;
+        const view = await context.loadViewMeta(id, undefined, { authoritative: true });
 
         if (view?.parent_view_id !== context.viewId || isReferenced(id) || editor.readOnly) return;
-        await context.deletePage(id);
-        deleted.add(id);
+        const marker = nanoid();
+
+        doc.transact(() => metadata.set(deletionKey(id), marker), folderNotificationOrigin);
+        try {
+          await context.deletePage(id);
+          deleted.add(id);
+        } catch (error) {
+          clearDeletion(id, marker);
+          throw error;
+        }
       }
     }).catch(onError);
 
@@ -146,9 +173,22 @@ export function observeSubpageLifecycle(
 
   const handleTrash = (payload: { workspaceId?: string; trashItems?: View[] }) => {
     if (payload.workspaceId && payload.workspaceId !== getContext().workspaceId) return;
-    removeReferences(
-      new Set(payload.trashItems?.map((view) => view.view_id).filter((id) => !pending.has(id) && !deleted.has(id)))
+    const candidates = new Set(
+      payload.trashItems?.map((view) => view.view_id).filter((id) => isReferenced(id) && !isReconciling(id))
     );
+
+    if (!candidates.size) return;
+    // A snapshot can arrive after restoration has completed and its shared
+    // marker has gone. Recheck the server, then recheck the marker in case an
+    // undo started while this request was in flight.
+    void getContext()
+      .loadTrashViews?.()
+      .then((trash) => {
+        removeReferences(
+          new Set(trash.map((view) => view.view_id).filter((id) => candidates.has(id) && !isReconciling(id)))
+        );
+      })
+      .catch(onError);
   };
 
   doc.on('afterTransaction', handleTransaction);
