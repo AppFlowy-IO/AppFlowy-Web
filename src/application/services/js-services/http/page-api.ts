@@ -264,13 +264,14 @@ export async function duplicatePage(
   }
 
   if (!duplicatedId || duplicatedId === viewId) throw new Error('Could not find the duplicated page');
+  // Register the created page for rollback before any subsequent lookup or move
+  // can fail. Callers still await this operation before inserting its block.
+  onDuplicated(duplicatedId);
   if (options.parentViewId) {
     const duplicate = await getView(workspaceId, duplicatedId);
 
     if (duplicate.parent_view_id !== options.parentViewId) await movePageTo(workspaceId, duplicatedId, options.parentViewId);
   }
-
-  onDuplicated(duplicatedId);
 }
 
 export async function deleteTrash(workspaceId: string, viewId?: string) {

@@ -43,10 +43,21 @@ export function markSubpageClipboard(nodes: Node[], cut: boolean): Node[] {
 /** Resolve all owned pages before inserting the fragment, keeping undo atomic. */
 export async function prepareSubpageFragment(nodes: Node[], context: EditorContextState, allowMove = false) {
   if (context.readOnly) throw new Error('The document is read-only');
-  const created: string[] = [];
+  const compensations: { id: string; undo: () => Promise<void> }[] = [];
   const ids = new Map<string, string>();
-  const rollback = async () => {
-    await Promise.all(created.map((id) => context.deletePage?.(id)));
+  let rollbackPromise: Promise<void> | undefined;
+  const rollback = () => {
+    rollbackPromise ??= (async () => {
+      // Reverse each page's mutations and let every compensation run even if
+      // another fails. The shared queue also orders rollback against cut/undo.
+      const results = await Promise.allSettled(
+        [...compensations].reverse().map(({ id, undo }) => queueSubpageOperation(context.workspaceId, id, undo))
+      );
+      const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+
+      if (failure) throw failure.reason;
+    })();
+    return rollbackPromise;
   };
 
   const visit = async (node: Node): Promise<Node> => {
@@ -59,10 +70,26 @@ export async function prepareSubpageFragment(nodes: Node[], context: EditorConte
 
       if (!id) {
         if (allowMove && data.was_cut === true) {
-          if (!context.restorePage || !context.movePage) throw new Error('Moving subpages is unavailable');
+          const { restorePage, movePage, deletePage, loadViewMeta, loadTrashViews } = context;
+
+          if (!restorePage || !movePage || !deletePage || !loadTrashViews) throw new Error('Moving subpages is unavailable');
           await queueSubpageOperation(context.workspaceId, sourceId, async () => {
-            await context.restorePage!(sourceId);
-            await context.movePage!(sourceId, context.viewId);
+            // Read after any pending cut deletion. Cached outline metadata can
+            // still describe a trashed page as active at this point.
+            const trashed = (await loadTrashViews()).find((view) => view.view_id === sourceId);
+            const source = trashed ?? (await loadViewMeta?.(sourceId, undefined, { authoritative: true }));
+            const parentId = source?.parent_view_id;
+
+            if (!parentId) throw new Error('Could not find the original subpage parent');
+            if (trashed) {
+              await restorePage(sourceId);
+              compensations.push({ id: sourceId, undo: () => deletePage(sourceId) });
+            }
+
+            if (parentId !== context.viewId) {
+              compensations.push({ id: sourceId, undo: () => movePage(sourceId, parentId) });
+              await movePage(sourceId, context.viewId);
+            }
           });
           id = sourceId;
         } else {
@@ -73,7 +100,7 @@ export async function prepareSubpageFragment(nodes: Node[], context: EditorConte
             openAfterDuplicate: false,
             onDuplicated: (viewId) => {
               id = viewId;
-              created.push(viewId);
+              compensations.push({ id: viewId, undo: async () => context.deletePage?.(viewId) });
             },
           });
         }

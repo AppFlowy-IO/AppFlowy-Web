@@ -11,6 +11,20 @@ import { Log } from '@/utils/log';
 
 type BlockElement = Element & { blockId?: string };
 
+// Internal fragments can start with part of any text block. Preserve code and
+// table-cell identities, and never merge a block that owns nested children.
+const MERGEABLE_FIRST_FRAGMENT_TYPES = TEXT_BLOCK_TYPES.filter(
+  (type) => type !== BlockType.CodeBlock && type !== BlockType.SimpleTableCellBlock
+);
+
+export function shouldMergeFirstFragmentNodeInline(node: Node): boolean {
+  return (
+    Element.isElement(node) &&
+    MERGEABLE_FIRST_FRAGMENT_TYPES.includes(node.type as BlockType) &&
+    node.children.length === 1
+  );
+}
+
 /**
  * Inserts a sequence of pasted block elements relative to the caret,
  * mirroring the semantics of Slate's `insertFragment` (and the desktop

@@ -2157,6 +2157,7 @@ export interface ViewComponentProps {
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
   restorePage?: (viewId: string) => Promise<void>;
+  loadTrashViews?: () => Promise<View[]>;
   movePage?: (viewId: string, parentId: string) => Promise<void>;
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
@@ -2226,7 +2227,7 @@ export interface DuplicatePageOptions {
 }
 
 export interface DuplicatePageOperationOptions extends DuplicatePageOptions {
-  /** Receives the newly created view, for embedded page blocks. */
+  /** Registers the created view for cleanup; duplication may still fail after this callback. */
   onDuplicated?: (viewId: string) => void;
   /**
    * Client-only lifecycle hook. Runs after the pre-duplicate collab sync and

@@ -4,9 +4,9 @@ import { ReactEditor } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
+import { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
 import { getBlockEntry, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
-import { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
 import { notify } from '@/components/_shared/notify';
 import {
   clipboardPayloadToSlateFragment,
@@ -17,7 +17,10 @@ import { containsSimpleTableBlocks } from '@/components/editor/clipboard/table-f
 import { EditorContextState } from '@/components/editor/EditorContext';
 import { containsSubpage, prepareSubpageFragment } from '@/components/editor/subpage/subpage-operations';
 import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
-import { insertBlocksAtCaret } from '@/components/editor/utils/insert-blocks-at-caret';
+import {
+  insertBlocksAtCaret,
+  shouldMergeFirstFragmentNodeInline,
+} from '@/components/editor/utils/insert-blocks-at-caret';
 import { getErrorMessage } from '@/utils/errors';
 
 export function withSubpages<T extends ReactEditor>(editor: T, getContext: () => EditorContextState): T {
@@ -69,7 +72,9 @@ export function withSubpages<T extends ReactEditor>(editor: T, getContext: () =>
       });
       const nodes = convertSlateFragmentTo(stripInlineCommentIds(prepared.fragment)).filter(Element.isElement);
 
-      if (!insertBlocksAtCaret(e, nodes, { mergeFirstBlockInline: false })) await prepared.rollback();
+      if (!insertBlocksAtCaret(e, nodes, { mergeFirstBlockInline: shouldMergeFirstFragmentNodeInline(nodes[0]) }))
+        await prepared.rollback();
+      e.flushLocalChanges();
       if (YHistoryEditor.isYHistoryEditor(e)) e.undoManager.stopCapturing();
     })()
       .catch((error) => notify.error(getErrorMessage(error)))

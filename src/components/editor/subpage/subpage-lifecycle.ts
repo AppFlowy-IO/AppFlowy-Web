@@ -3,7 +3,13 @@ import * as Y from 'yjs';
 import { APP_EVENTS } from '@/application/constants';
 import { YjsEditor } from '@/application/slate-yjs';
 import { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
-import { deleteBlock, getBlock, getChildrenArray, getPageId } from '@/application/slate-yjs/utils/yjs';
+import {
+  appendFirstEmptyParagraph,
+  deleteBlock,
+  getBlock,
+  getChildrenArray,
+  getPageId,
+} from '@/application/slate-yjs/utils/yjs';
 import { BlockType, CollabOrigin, View, YjsEditorKey } from '@/application/types';
 import { EditorContextState } from '@/components/editor/EditorContext';
 
@@ -50,12 +56,14 @@ export function observeSubpageLifecycle(
   const pending = new Map<string, Promise<void>>();
   let previous = collectSubpages(editor);
   let disposed = false;
-  const isReferenced = (id: string) => [...collectSubpages(editor).values()].includes(id);
+  // Keep the last observed state after disposal so queued operations can finish
+  // reconciling an undo even if the editor and its Y.Doc have been destroyed.
+  const isReferenced = (id: string) => [...previous.values()].includes(id);
 
   const reconcile = (id: string) => {
-    const operation = queueSubpageOperation(getContext().workspaceId, id, async () => {
-      if (disposed || editor.readOnly) return;
-      const context = getContext();
+    const context = getContext();
+    const operation = queueSubpageOperation(context.workspaceId, id, async () => {
+      if (editor.readOnly) return;
 
       if (isReferenced(id)) {
         if (deleted.has(id) && context.restorePage) {
@@ -67,7 +75,7 @@ export function observeSubpageLifecycle(
         // document. A failed lookup is never evidence that it should be deleted.
         const view = await context.loadViewMeta(id);
 
-        if (view?.parent_view_id !== context.viewId || isReferenced(id) || editor.readOnly || disposed) return;
+        if (view?.parent_view_id !== context.viewId || isReferenced(id) || editor.readOnly) return;
         await context.deletePage(id);
         deleted.add(id);
       }
@@ -110,6 +118,11 @@ export function observeSubpageLifecycle(
       collectSubpages(editor).forEach((id, blockId) => {
         if (ids.has(id)) deleteBlock(editor.sharedRoot, blockId);
       });
+      const page = getBlock(getPageId(editor.sharedRoot), editor.sharedRoot);
+
+      if (getChildrenArray(page.get(YjsEditorKey.block_children), editor.sharedRoot).length === 0) {
+        appendFirstEmptyParagraph(editor.sharedRoot, '');
+      }
     }, folderNotificationOrigin);
   };
 

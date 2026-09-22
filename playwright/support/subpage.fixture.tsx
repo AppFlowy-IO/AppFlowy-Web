@@ -21,6 +21,7 @@ const doc = new Y.Doc() as YDoc;
 const otherDoc = new Y.Doc() as YDoc;
 const events = new EventEmitter();
 const pages = new Map<string, View>();
+const trashedPageIds = new Set<string>();
 let editor: YjsEditor;
 
 initializeDocumentStructure(doc, true);
@@ -110,11 +111,14 @@ function Fixture() {
               return { view_id };
             }}
             deletePage={async (id) => {
-              setTrash((ids) => [...new Set([...ids, id])]);
+              trashedPageIds.add(id);
+              setTrash([...trashedPageIds]);
             }}
             restorePage={async (id) => {
-              setTrash((ids) => ids.filter((value) => value !== id));
+              trashedPageIds.delete(id);
+              setTrash([...trashedPageIds]);
             }}
+            loadTrashViews={async () => [...pages.values()].filter((view) => trashedPageIds.has(view.view_id))}
             movePage={async (id, parentId) => {
               publish({ ...pages.get(id)!, parent_view_id: parentId });
             }}

@@ -13,10 +13,9 @@ import { ViewService } from '@/application/services/domains';
 import { getAxios, executeAPIRequest, APIResponse } from '@/application/services/js-services/http/core';
 import { getView } from '@/application/services/js-services/http/view-api';
 import { YjsEditor } from '@/application/slate-yjs';
-import { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { BlockType, CollabOrigin, CreateDatabaseViewResponse, View, ViewLayout, YDoc, YjsEditorKey } from '@/application/types';
+import { BlockType, CreateDatabaseViewResponse, View, ViewLayout } from '@/application/types';
 import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
@@ -34,11 +33,6 @@ import {
 } from '@/components/editor/components/toolbar/block-controls/OutlineControls';
 import { BlockNode, CalloutNode, DatabaseNode, OutlineNode } from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
-import { containsSubpage, prepareSubpageFragment } from '@/components/editor/subpage/subpage-operations';
-import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
-import { getBlock, getBlockIndex } from '@/application/slate-yjs/utils/yjs';
-import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
-
 import { copyTextToClipboard } from '@/utils/copy';
 import { getErrorMessage } from '@/utils/errors';
 
@@ -52,6 +46,7 @@ import {
   isDatabaseBlockType,
   loadDatabaseDuplicateSourceViews,
 } from './databaseDuplicateUtils';
+import { duplicateBlockSelection, finalizeDuplicatedBlockData } from './duplicateBlockSelection';
 
 function getViewNoCache(workspaceId: string, viewId: string, depth: number = 1): Promise<View> {
   const url = `/api/workspace/${workspaceId}/view/${viewId}?depth=${depth}&_t=${Date.now()}`;
@@ -263,13 +258,9 @@ function ControlsMenu({
 
   const setDatabaseBlockData = useCallback(
     (blockId: string, nextData: DatabaseNode['data']) => {
-      const entry = findSlateEntryByBlockId(editor, blockId);
-
-      if (!entry) {
+      if (!finalizeDuplicatedBlockData(editor, blockId, nextData)) {
         throw new Error(t('document.plugins.subPage.errors.failedDuplicatePage'));
       }
-
-      Transforms.setNodes(editor, { data: nextData }, { at: entry[1] });
     },
     [editor, t]
   );
@@ -534,58 +525,16 @@ function ControlsMenu({
   );
 
   const duplicateSelectedBlocks = useCallback(async () => {
-    const newBlockIds: string[] = [];
-    const prevId = selectedBlockIds?.[selectedBlockIds.length - 1];
+    const duplicated = await duplicateBlockSelection(editor, selectedBlockIds ?? [], editorContext, (source) =>
+      isDatabaseBlockType(source.type as BlockType)
+        ? createDatabaseDuplicatePlaceholderData((source as DatabaseNode).data.parent_id)
+        : undefined
+    );
+    const newBlockIds = duplicated.map(({ blockId }) => blockId);
     let hasDatabaseBlock = false;
 
-    for (const [index, blockId] of (selectedBlockIds ?? []).entries()) {
-      const entry = findSlateEntryByBlockId(editor, blockId);
-
-      if (!entry) {
-        continue;
-      }
-
-      const [selectedNode] = entry;
-
-      if (containsSubpage([selectedNode])) {
-        const prepared = await prepareSubpageFragment([selectedNode], editorContext);
-        const afterId = newBlockIds[newBlockIds.length - 1] || prevId || blockId;
-        const after = getBlock(afterId, editor.sharedRoot);
-
-        if (!after || editor.readOnly || !YjsEditor.connected(editor)) {
-          await prepared.rollback();
-          continue;
-        }
-
-        const doc = editor.sharedRoot.doc as YDoc;
-
-        editor.flushLocalChanges();
-        if (YHistoryEditor.isYHistoryEditor(editor)) editor.undoManager.stopCapturing();
-        doc.transact(() => {
-          newBlockIds.push(...slateContentInsertToYData(
-            after.get(YjsEditorKey.block_parent), getBlockIndex(afterId, editor.sharedRoot) + 1,
-            convertSlateFragmentTo(prepared.fragment), doc
-          ));
-        }, CollabOrigin.LocalManual);
-        if (YHistoryEditor.isYHistoryEditor(editor)) editor.undoManager.stopCapturing();
-        continue;
-      }
-
+    for (const { source: selectedNode, blockId: newBlockId } of duplicated) {
       const isDatabaseBlock = isDatabaseBlockType(selectedNode.type as BlockType);
-      const newBlockId = CustomEditor.duplicateBlock(
-        editor,
-        blockId,
-        index === 0 ? prevId : newBlockIds[index - 1],
-        isDatabaseBlock
-          ? { data: createDatabaseDuplicatePlaceholderData((selectedNode as DatabaseNode).data.parent_id) }
-          : undefined
-      );
-
-      if (!newBlockId) {
-        continue;
-      }
-
-      newBlockIds.push(newBlockId);
 
       if (isDatabaseBlock) {
         hasDatabaseBlock = true;
@@ -692,9 +641,7 @@ function ControlsMenu({
                 e.preventDefault();
                 onClose();
                 Promise.resolve(option.onClick()).catch((error) => {
-                  notify.error(
-                    getErrorMessage(error, t('document.plugins.subPage.errors.failedDuplicatePage'))
-                  );
+                  notify.error(getErrorMessage(error, t('document.plugins.subPage.errors.failedDuplicatePage')));
                 });
               }}
             >

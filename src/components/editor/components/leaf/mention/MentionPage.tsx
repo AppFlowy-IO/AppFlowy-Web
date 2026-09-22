@@ -35,21 +35,21 @@ function MentionPage({
   const eventEmitter = context.eventEmitter;
 
   const { navigateToView, loadViewMeta, loadView } = context;
-  const [noAccess, setNoAccess] = useState(false);
-  const [meta, setMeta] = useState<View | null>(null);
+  const [metadata, setMetadata] = useState<{ pageId: string; view: View | null; noAccess: boolean } | null>(null);
+  // Keep the current page visible while revalidating, without showing the
+  // previous page's metadata when this component receives a new reference.
+  const meta = metadata?.pageId === pageId ? metadata.view : null;
+  const noAccess = metadata?.pageId === pageId && metadata.noAccess;
   const [content, setContent] = useState<string>('');
 
   useEffect(() => {
     let current = true;
     let receivedUpdate = false;
 
-    setMeta(null);
-    setNoAccess(false);
     const handleView = (view: View) => {
       if (view.view_id !== pageId) return;
       receivedUpdate = true;
-      setMeta(view);
-      setNoAccess(false);
+      setMetadata({ pageId, view, noAccess: false });
     };
 
     const handleOutlineLoaded = (outline: View[]) => {
@@ -61,9 +61,15 @@ function MentionPage({
     eventEmitter?.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
     eventEmitter?.on(APP_EVENTS.VIEW_META_CHANGED, handleView);
     void loadViewMeta?.(pageId).then((view) => {
-      if (current && !receivedUpdate) setMeta(view);
+      if (current && !receivedUpdate) setMetadata({ pageId, view, noAccess: false });
     }).catch(() => {
-      if (current && !receivedUpdate) setNoAccess(true);
+      if (current && !receivedUpdate) {
+        setMetadata((previous) => ({
+          pageId,
+          view: previous?.pageId === pageId ? previous.view : null,
+          noAccess: true,
+        }));
+      }
     });
     return () => {
       current = false;

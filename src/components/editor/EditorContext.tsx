@@ -105,6 +105,8 @@ export interface EditorContextState {
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   deletePage?: (viewId: string) => Promise<void>;
   restorePage?: (viewId: string) => Promise<void>;
+  /** Read current trash state after any pending page operations have settled. */
+  loadTrashViews?: () => Promise<View[]>;
   movePage?: (viewId: string, parentId: string) => Promise<void>;
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
@@ -163,6 +165,7 @@ export const EditorContextProvider = ({
   updatePage,
   deletePage,
   restorePage,
+  loadTrashViews,
   movePage,
   duplicatePage,
   openPageModal,
@@ -259,6 +262,7 @@ export const EditorContextProvider = ({
       updatePage,
       deletePage,
       restorePage,
+      loadTrashViews,
       movePage,
       duplicatePage,
       openPageModal,
@@ -312,6 +316,7 @@ export const EditorContextProvider = ({
       updatePage,
       deletePage,
       restorePage,
+      loadTrashViews,
       movePage,
       duplicatePage,
       openPageModal,

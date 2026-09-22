@@ -19,7 +19,9 @@ const context = (): EditorContextState => ({
   }),
   deletePage: jest.fn().mockResolvedValue(undefined),
   restorePage: jest.fn().mockResolvedValue(undefined),
+  loadTrashViews: jest.fn().mockResolvedValue([{ view_id: 'cut', parent_view_id: 'original-parent' }]),
   movePage: jest.fn().mockResolvedValue(undefined),
+  loadViewMeta: jest.fn().mockResolvedValue({ view_id: 'cut', parent_view_id: 'original-parent' }),
 });
 
 it('copies nested subpages with new IDs and preserves linked_page references', async () => {
@@ -56,6 +58,7 @@ it('restores a cut subpage only after its pending deletion, then moves the same 
   const prepare = prepareSubpageFragment([page('cut', true)], ctx, true);
   for (let i = 0; i < 5; i++) await Promise.resolve();
   expect(ctx.restorePage).not.toHaveBeenCalled();
+  expect(ctx.loadTrashViews).not.toHaveBeenCalled();
   finishDelete();
   await pending;
   const { fragment } = await prepare;
@@ -72,6 +75,56 @@ it('cleans up earlier duplicates when a later child cannot be copied', async () 
     .mockRejectedValueOnce(new Error('No access'));
   await expect(prepareSubpageFragment([page('first'), page('second')], ctx)).rejects.toThrow('No access');
   expect(ctx.deletePage).toHaveBeenCalledWith('first-copy');
+});
+
+it('returns a cancelled cut paste to its original parent and trash state, only once', async () => {
+  const ctx = context();
+  const actions: string[] = [];
+  ctx.restorePage = jest.fn(async () => {
+    actions.push('restore');
+  });
+  ctx.movePage = jest.fn(async (_, parent) => {
+    actions.push(`move:${parent}`);
+  });
+  ctx.deletePage = jest.fn(async () => {
+    actions.push('trash');
+  });
+  const prepared = await prepareSubpageFragment([page('cut', true)], ctx, true);
+
+  await prepared.rollback();
+  await prepared.rollback();
+  expect(actions).toEqual(['restore', 'move:parent', 'move:original-parent', 'trash']);
+});
+
+it('returns an active cut page to its original parent without trashing it on cancellation', async () => {
+  const ctx = context();
+  (ctx.loadTrashViews as jest.Mock).mockResolvedValue([]);
+  const prepared = await prepareSubpageFragment([page('cut', true)], ctx, true);
+
+  await prepared.rollback();
+  expect(ctx.movePage).toHaveBeenNthCalledWith(1, 'cut', 'parent');
+  expect(ctx.movePage).toHaveBeenNthCalledWith(2, 'cut', 'original-parent');
+  expect(ctx.restorePage).not.toHaveBeenCalled();
+  expect(ctx.deletePage).not.toHaveBeenCalled();
+});
+
+it('re-trashes a restored cut page when its move fails', async () => {
+  const ctx = context();
+  (ctx.movePage as jest.Mock).mockRejectedValueOnce(new Error('Move failed'));
+
+  await expect(prepareSubpageFragment([page('cut', true)], ctx, true)).rejects.toThrow('Move failed');
+  expect(ctx.restorePage).toHaveBeenCalledWith('cut');
+  expect(ctx.deletePage).toHaveBeenCalledWith('cut');
+  expect(ctx.movePage).toHaveBeenLastCalledWith('cut', 'original-parent');
+});
+
+it('compensates cut-page restoration and movement when a later duplicate fails', async () => {
+  const ctx = context();
+  (ctx.duplicatePage as jest.Mock).mockRejectedValueOnce(new Error('Copy failed'));
+
+  await expect(prepareSubpageFragment([page('cut', true), page('copy')], ctx, true)).rejects.toThrow('Copy failed');
+  expect(ctx.movePage).toHaveBeenLastCalledWith('cut', 'original-parent');
+  expect(ctx.deletePage).toHaveBeenCalledWith('cut');
 });
 
 it('does not insert aliases when the duplicate operation cannot return a new page', async () => {

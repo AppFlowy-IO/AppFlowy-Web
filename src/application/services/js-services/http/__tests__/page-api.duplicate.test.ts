@@ -1,4 +1,8 @@
-import { ViewLayout } from '@/application/types';
+import { Element } from 'slate';
+
+import { BlockType, ViewLayout } from '@/application/types';
+import { EditorContextState } from '@/components/editor/EditorContext';
+import { prepareSubpageFragment } from '@/components/editor/subpage/subpage-operations';
 
 import { getAxios } from '../core';
 import { duplicatePage } from '../page-api';
@@ -69,4 +73,34 @@ it('rejects ambiguous legacy duplicates instead of linking another user’s page
   const received = jest.fn();
   await expect(duplicatePage('workspace', 'source', {}, received)).rejects.toThrow('Could not identify');
   expect(received).not.toHaveBeenCalled();
+});
+
+it.each(['metadata lookup', 'move'])('rolls back an identified duplicate if its %s fails', async (failure) => {
+  const error = new Error(`${failure} failed`);
+  const get = jest.fn(async (url: string) => {
+    if (url.endsWith('/duplicate/task')) return response({ result: { duplicated_view_id: 'copy' } });
+    if (url.includes('/view/source?')) return response(source);
+    if (url.includes('/view/copy?')) {
+      if (failure === 'metadata lookup') throw error;
+      return response(copy);
+    }
+    return response({ view_id: 'parent', children: [source] });
+  });
+  const post = jest.fn(async (url: string) => {
+    if (url.endsWith('/move')) throw error;
+    return { headers: { 'x-appflowy-duplicate-task-id': 'task' } };
+  });
+  jest.mocked(getAxios).mockReturnValue({ get, post } as never);
+  const context: EditorContextState = {
+    workspaceId: 'workspace',
+    viewId: 'destination',
+    readOnly: false,
+    duplicatePage: (viewId, options) => duplicatePage('workspace', viewId, options, options?.onDuplicated),
+    deletePage: jest.fn().mockResolvedValue(undefined),
+  };
+  const fragment: Element[] = [{ type: BlockType.SubpageBlock, data: { view_id: 'source' }, children: [{ text: '' }] }];
+
+  await expect(prepareSubpageFragment(fragment, context)).rejects.toThrow(error);
+  expect(context.deletePage).toHaveBeenCalledTimes(1);
+  expect(context.deletePage).toHaveBeenCalledWith('copy');
 });

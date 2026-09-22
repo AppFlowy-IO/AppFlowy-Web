@@ -127,6 +127,7 @@ export interface DatabaseContextState {
   openPageModal?: (viewId: string) => void;
   deletePage?: (viewId: string) => Promise<void>;
   restorePage?: (viewId: string) => Promise<void>;
+  loadTrashViews?: () => Promise<View[]>;
   movePage?: (viewId: string, parentId: string) => Promise<void>;
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;

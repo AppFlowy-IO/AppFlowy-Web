@@ -349,6 +349,12 @@ export function usePageOperations({
     [currentWorkspaceId, loadOutline]
   );
 
+  const loadTrashViews = useCallback(async () => {
+    if (!currentWorkspaceId) throw new Error('No workspace or service found');
+
+    return ViewService.getTrash(currentWorkspaceId);
+  }, [currentWorkspaceId]);
+
   // Restore page from trash
   const restorePage = useCallback(
     async (viewId?: string) => {
@@ -663,6 +669,7 @@ export function usePageOperations({
     movePage,
     deleteTrash,
     restorePage,
+    loadTrashViews,
     createSpace,
     createSpaceWithInitialPage,
     updateSpace,

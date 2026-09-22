@@ -87,6 +87,8 @@ export interface AppOperationsContextType {
   deleteTrash?: (viewId?: string) => Promise<void>;
   /** Restore a page from trash. */
   restorePage?: (viewId?: string) => Promise<void>;
+  /** Load current trash metadata without relying on the rendered sidebar state. */
+  loadTrashViews?: () => Promise<View[]>;
 
   // ── Space operations ───────────────────────────────────────────────
   /** Create a new workspace space (top-level folder). */

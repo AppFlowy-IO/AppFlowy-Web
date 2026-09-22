@@ -25,6 +25,7 @@ function DrawerContent({
     addPage,
     deletePage,
     restorePage,
+    loadTrashViews,
     movePage,
     duplicatePage,
     setWordCount,
@@ -218,6 +219,7 @@ function DrawerContent({
             addPage={addPage}
             deletePage={deletePage}
             restorePage={restorePage}
+            loadTrashViews={loadTrashViews}
             movePage={movePage}
             duplicatePage={duplicatePage}
             openPageModal={openPageModal}

@@ -3,12 +3,13 @@ import EventEmitter from 'events';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { APP_EVENTS } from '@/application/constants';
-import { BlockType, ViewLayout } from '@/application/types';
+import { BlockType, View, ViewLayout } from '@/application/types';
 import { BlockNode } from '@/components/editor/editor.type';
 
 import { Element } from '../Element';
 
 const mockLoadViewMeta = jest.fn();
+let mockCurrentLoadViewMeta = mockLoadViewMeta;
 const mockNavigateToView = jest.fn();
 const mockEditor = { selection: null };
 const mockEvents = new EventEmitter();
@@ -29,7 +30,7 @@ jest.mock('@/components/editor/EditorContext', () => ({
   useEditorContext: () => ({
     viewId: 'current-page',
     readOnly: mockReadOnly,
-    loadViewMeta: mockLoadViewMeta,
+    loadViewMeta: mockCurrentLoadViewMeta,
     navigateToView: mockNavigateToView,
     eventEmitter: mockEvents,
   }),
@@ -45,7 +46,9 @@ jest.mock('@/components/editor/components/drag-drop/handleBlockDrop', () => ({})
 jest.mock('@/application/slate-yjs/command', () => ({}));
 jest.mock('@/application/slate-yjs/utils/convert', () => ({}));
 jest.mock('@/application/slate-yjs/utils/editor', () => ({}));
-jest.mock('@/components/_shared/view-icon/PageIcon', () => () => <span data-testid='page-icon' />);
+jest.mock('@/components/_shared/view-icon/PageIcon', () => ({ view }: { view: View }) => (
+  <span data-testid='page-icon' data-icon={view.icon?.value} />
+));
 jest.mock('@/components/editor/components/leaf/mention/style.css', () => ({}));
 jest.mock('@/components/editor/components/element/BlockNotFound', () => ({
   BlockNotFound: () => <div data-testid='unsupported-block' />,
@@ -83,7 +86,7 @@ jest.mock('@/components/editor/components/blocks/video', () => ({}));
 jest.mock('@/components/editor/components/blocks/todo-list', () => ({}));
 jest.mock('@/components/editor/components/blocks/toggle-list', () => ({}));
 
-function renderPageLink(type = 'linked_page', data: Record<string, unknown> = { view_id: 'linked-view' }) {
+function pageLink(type = 'linked_page', data: Record<string, unknown> = { view_id: 'linked-view' }) {
   const node: BlockNode = {
     blockId: 'page-link-block',
     type: type as BlockType,
@@ -91,16 +94,21 @@ function renderPageLink(type = 'linked_page', data: Record<string, unknown> = { 
     children: [{ text: '' }],
   };
 
-  return render(
+  return (
     <Element element={node} attributes={{ 'data-slate-node': 'element', ref: jest.fn() }}>
       <span data-testid='slate-children' />
     </Element>
   );
 }
 
+function renderPageLink(type = 'linked_page', data: Record<string, unknown> = { view_id: 'linked-view' }) {
+  return render(pageLink(type, data));
+}
+
 describe('desktop page-link blocks', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCurrentLoadViewMeta = mockLoadViewMeta;
     mockReadOnly = false;
     mockLoadViewMeta.mockResolvedValue({
       view_id: 'linked-view',
@@ -149,23 +157,79 @@ describe('desktop page-link blocks', () => {
     renderPageLink('sub_page');
     await screen.findByText('document.mention.noAccess');
 
-    act(() => { mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Recovered child' }); });
+    act(() => {
+      mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Recovered child' });
+    });
     fireEvent.click(await screen.findByText('Recovered child'));
     await waitFor(() => expect(mockNavigateToView).toHaveBeenCalledWith('linked-view', undefined));
-    act(() => { mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Renamed child' }); });
+    act(() => {
+      mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Renamed child' });
+    });
     await screen.findByText('Renamed child');
   });
 
   it('does not let a delayed lookup overwrite newer metadata', async () => {
     let rejectLookup!: (error: Error) => void;
 
-    mockLoadViewMeta.mockReturnValue(new Promise((_, reject) => { rejectLookup = reject; }));
+    mockLoadViewMeta.mockReturnValue(
+      new Promise((_, reject) => {
+        rejectLookup = reject;
+      })
+    );
     renderPageLink('sub_page');
-    act(() => { mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, [{ view_id: 'linked-view', name: 'Recovered child' }]); });
+    act(() => {
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, [{ view_id: 'linked-view', name: 'Recovered child' }]);
+    });
     await screen.findByText('Recovered child');
-    await act(async () => { rejectLookup(new Error('Old cache miss')); });
+    await act(async () => {
+      rejectLookup(new Error('Old cache miss'));
+    });
     expect(screen.queryByText('document.mention.noAccess')).toBeNull();
     expect(screen.getByText('Recovered child')).toBeTruthy();
+  });
+
+  it('keeps the current title and icon visible when the metadata loader changes', async () => {
+    mockLoadViewMeta.mockResolvedValue({ view_id: 'linked-view', name: 'Loaded title', icon: { ty: 0, value: '📄' } });
+    const { rerender } = renderPageLink();
+    await screen.findByText('Loaded title');
+    let resolveLookup!: (view: Partial<View>) => void;
+    mockCurrentLoadViewMeta = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveLookup = resolve;
+        })
+    );
+
+    rerender(pageLink());
+
+    expect(mockCurrentLoadViewMeta).toHaveBeenCalledWith('linked-view');
+    expect(screen.getByText('Loaded title')).toBeTruthy();
+    expect(screen.getByTestId('page-icon').getAttribute('data-icon')).toBe('📄');
+    await act(async () => {
+      resolveLookup({ view_id: 'linked-view', name: 'Refreshed title', icon: { ty: 0, value: '🌱' } });
+    });
+    expect(screen.getByText('Refreshed title')).toBeTruthy();
+    expect(screen.getByTestId('page-icon').getAttribute('data-icon')).toBe('🌱');
+  });
+
+  it('does not show cached metadata for a different page while loading', async () => {
+    const { rerender } = renderPageLink();
+    await screen.findByText('Linked page title');
+    let resolveLookup!: (view: Partial<View>) => void;
+    mockLoadViewMeta.mockReturnValue(
+      new Promise((resolve) => {
+        resolveLookup = resolve;
+      })
+    );
+
+    rerender(pageLink('linked_page', { view_id: 'other-view' }));
+
+    expect(mockLoadViewMeta).toHaveBeenLastCalledWith('other-view');
+    expect(screen.queryByText('Linked page title')).toBeNull();
+    await act(async () => {
+      resolveLookup({ view_id: 'other-view', name: 'Other page' });
+    });
+    expect(screen.getByText('Other page')).toBeTruthy();
   });
 
   it.each([{}, { view_id: '' }, { view_id: 123 }])('does not load a malformed page reference: %j', (data) => {

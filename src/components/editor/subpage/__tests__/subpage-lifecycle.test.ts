@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 
-import { createEditor } from 'slate';
+import { createEditor, Node } from 'slate';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -71,7 +71,7 @@ describe('owned subpage lifecycle', () => {
     }
   });
 
-  it('restores after undo while the delete request is still in flight', async () => {
+  it.each([false, true])('restores an in-flight deletion after undo (unmounted: %s)', async (unmount) => {
     const f = setup();
     let finish!: () => void;
     (f.context.deletePage as jest.Mock).mockImplementation(
@@ -86,11 +86,13 @@ describe('owned subpage lifecycle', () => {
       f.editor.undo();
       await settle();
       expect(f.context.restorePage).not.toHaveBeenCalled();
+      if (unmount) f.dispose();
       finish();
       await settle();
       expect(f.context.restorePage).toHaveBeenCalledWith('child');
+      expect(f.onError).not.toHaveBeenCalled();
     } finally {
-      f.dispose();
+      if (!unmount) f.dispose();
     }
   });
 
@@ -149,12 +151,21 @@ describe('owned subpage lifecycle', () => {
       try {
         if (event === 'move') f.events.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'child', parent_view_id: 'other' });
         else if (event === 'outline')
-          f.events.emit(APP_EVENTS.OUTLINE_LOADED, [{ view_id: 'other', children: [{ view_id: 'child', parent_view_id: 'other' }] }]);
+          f.events.emit(APP_EVENTS.OUTLINE_LOADED, [
+            { view_id: 'other', children: [{ view_id: 'child', parent_view_id: 'other' }] },
+          ]);
         else f.events.emit(APP_EVENTS.TRASH_UPDATED, { workspaceId: 'workspace', trashItems: [{ view_id: 'child' }] });
         await settle();
         expect(f.editor.children.some((node) => node.blockId === f.id)).toBe(false);
         expect(f.context.deletePage).not.toHaveBeenCalled();
         expect(f.editor.undoManager.undoStack).toHaveLength(0);
+        expect(f.editor.children).toHaveLength(1);
+        expect(f.editor.children[0].type).toBe(BlockType.Paragraph);
+        expect(Node.string(f.editor.children[0])).toBe('');
+        f.editor.select(f.editor.start([0]));
+        f.editor.insertText('Still editable');
+        f.editor.flushLocalChanges();
+        expect(Node.string(f.editor.children[0])).toBe('Still editable');
       } finally {
         f.dispose();
       }
