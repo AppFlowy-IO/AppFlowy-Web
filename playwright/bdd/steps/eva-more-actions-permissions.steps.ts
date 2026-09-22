@@ -234,7 +234,8 @@ async function openPageFromSidebar(page: Page, pageName: string): Promise<void> 
 
   await expect(pageItem).toBeVisible({ timeout: 30000 });
   await pageItem.scrollIntoViewIfNeeded();
-  await pageItem.getByTestId('page-name').click({ force: true });
+  // Hit-test the label so a row behind the fixed footer cannot open Trash.
+  await pageItem.getByTestId('page-name').click();
   await expect(page.locator('main').getByText(pageName, { exact: true }).first()).toBeVisible({ timeout: 30000 });
 }
 
