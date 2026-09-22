@@ -61,7 +61,8 @@ it('restores a cut subpage only after its pending deletion, then moves the same 
   expect(ctx.loadTrashViews).not.toHaveBeenCalled();
   finishDelete();
   await pending;
-  const { fragment } = await prepare;
+  const { fragment, commit } = await prepare;
+  commit();
   expect(ctx.restorePage).toHaveBeenCalledWith('cut');
   expect(ctx.movePage).toHaveBeenCalledWith('cut', 'parent');
   expect(ctx.duplicatePage).not.toHaveBeenCalled();
@@ -138,4 +139,26 @@ it('uses desktop-compatible copy and cut markers without mutating document data'
   expect((markSubpageClipboard([original], true)[0] as Element).data.was_cut).toBe(true);
   expect((markSubpageClipboard([original], false)[0] as Element).data.was_copied).toBe(true);
   expect(original.data.was_cut).toBe(false);
+});
+
+it('orders overlapping multi-page pastes through insertion and rollback without deadlocking', async () => {
+  const firstContext = context();
+  const secondContext = { ...context(), viewId: 'second-parent' };
+  const first = prepareSubpageFragment([page('a', true), page('b', true)], firstContext, true);
+  const second = prepareSubpageFragment([page('b', true), page('a', true)], secondContext, true);
+  const preparedFirst = await first;
+  let preparedSecond: Awaited<typeof second> | undefined;
+
+  try {
+    expect(firstContext.movePage).toHaveBeenCalledTimes(2);
+    expect(secondContext.movePage).not.toHaveBeenCalled();
+    preparedFirst.commit();
+    preparedSecond = await second;
+    expect(secondContext.movePage).toHaveBeenCalledTimes(2);
+    await preparedSecond.rollback();
+    expect(secondContext.movePage).toHaveBeenCalledTimes(4);
+  } finally {
+    preparedFirst.commit();
+    preparedSecond?.commit();
+  }
 });

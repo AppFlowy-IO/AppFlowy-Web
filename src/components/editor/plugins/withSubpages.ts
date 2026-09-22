@@ -58,24 +58,26 @@ export function withSubpages<T extends ReactEditor>(editor: T, getContext: () =>
 
     void (async () => {
       const prepared = await prepareSubpageFragment(fragment, getContext(), true);
-      const range = target.current;
+      let inserted = false;
 
-      if (!range || !YjsEditor.connected(e) || e.readOnly) {
-        await prepared.rollback();
-        return;
-      }
+      try {
+        const range = target.current;
 
-      Editor.withoutNormalizing(editor, () => {
-        editor.select(range);
+        if (!range || !YjsEditor.connected(e) || e.readOnly) return;
+        Editor.withoutNormalizing(editor, () => {
+          editor.select(range);
+          e.flushLocalChanges();
+          if (YHistoryEditor.isYHistoryEditor(e)) e.undoManager.stopCapturing();
+        });
+        const nodes = convertSlateFragmentTo(stripInlineCommentIds(prepared.fragment)).filter(Element.isElement);
+
+        inserted = insertBlocksAtCaret(e, nodes, { mergeFirstBlockInline: shouldMergeFirstFragmentNodeInline(nodes[0]) });
         e.flushLocalChanges();
         if (YHistoryEditor.isYHistoryEditor(e)) e.undoManager.stopCapturing();
-      });
-      const nodes = convertSlateFragmentTo(stripInlineCommentIds(prepared.fragment)).filter(Element.isElement);
-
-      if (!insertBlocksAtCaret(e, nodes, { mergeFirstBlockInline: shouldMergeFirstFragmentNodeInline(nodes[0]) }))
-        await prepared.rollback();
-      e.flushLocalChanges();
-      if (YHistoryEditor.isYHistoryEditor(e)) e.undoManager.stopCapturing();
+      } finally {
+        if (inserted) prepared.commit();
+        else await prepared.rollback();
+      }
     })()
       .catch((error) => notify.error(getErrorMessage(error)))
       .finally(() => target.unref());

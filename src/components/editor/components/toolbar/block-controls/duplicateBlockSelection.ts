@@ -94,6 +94,7 @@ export async function duplicateBlockSelection(
 
     return duplicated;
   } finally {
-    if (!inserted) await prepared.rollback();
+    if (inserted) prepared.commit();
+    else await prepared.rollback();
   }
 }

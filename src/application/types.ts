@@ -1925,6 +1925,8 @@ export interface View {
   is_locked?: boolean;
   last_edited_time?: string;
   favorited_at?: string;
+  /** Server timestamp of this trash entry, distinct from the page's edit time. */
+  deleted_at?: string;
   last_viewed_at?: string;
   created_at?: string;
   database_relations?: DatabaseRelations;
