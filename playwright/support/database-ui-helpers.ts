@@ -95,7 +95,8 @@ export async function createDatabaseView(
   if (viewType === 'Grid') {
     await AddPageSelectors.addGridButton(page).click({ force: true });
   } else if (viewType === 'Board') {
-    await page.locator('[role="menuitem"]').filter({ hasText: 'Board' }).click({ force: true });
+    // Exact match: the "Dashboard" entry also contains "Board".
+    await page.locator('[role="menuitem"]').filter({ hasText: /^Board$/ }).click({ force: true });
   } else if (viewType === 'Calendar') {
     await page.locator('[role="menuitem"]').filter({ hasText: 'Calendar' }).click({ force: true });
   } else if (viewType === 'Chart') {

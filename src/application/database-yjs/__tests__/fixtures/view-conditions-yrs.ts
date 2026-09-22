@@ -1,0 +1,5 @@
+// Produced by view_conditions_yrs_fixture.rs with the server's pinned Yrs 0.25.0.
+// Native filter/sort Y.Maps contain BigInt enums; the delta changes both conditions to 0.
+export const viewConditionsYrsInitial =
+  'ARHSCQAnAQRkYXRhCGRhdGFiYXNlAScA0gkABXZpZXdzAScA0gkBBnZpZXctMQEoANIJAgJpZAF3BnZpZXctMScA0gkCB2ZpbHRlcnMABwDSCQQBKADSCQUCaWQBdwhmaWx0ZXItMSgA0gkFCGZpZWxkX2lkAXcGcGVyc29uKADSCQUJY29uZGl0aW9uAXoAAAAAAAAAASgA0gkFAnR5AXoAAAAAAAAACigA0gkFC2ZpbHRlcl90eXBlAXoAAAAAAAAAAigA0gkFB2NvbnRlbnQBdwJbXScA0gkCBXNvcnRzAAcA0gkMASgA0gkNAmlkAXcGc29ydC0xKADSCQ0IZmllbGRfaWQBdwZwZXJzb24oANIJDQljb25kaXRpb24BegAAAAAAAAABAA==';
+export const viewConditionsYrsDelta = 'AQLSCRGo0gkIAXoAAAAAAAAAAKjSCRABegAAAAAAAAAAAdIJAggBEAE=';

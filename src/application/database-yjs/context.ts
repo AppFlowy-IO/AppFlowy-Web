@@ -3,6 +3,8 @@ import EventEmitter from 'events';
 import { AxiosInstance } from 'axios';
 import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 
+import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
+import { getOverlayTarget } from '@/application/database-yjs/view-conditions-overlay';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
@@ -32,6 +34,7 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
   YSharedRoot,
+  YDatabaseView,
 } from '@/application/types';
 import { DefaultTimeSetting, MetadataKey } from '@/application/user-metadata';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -93,6 +96,11 @@ export interface DatabaseContextState {
   paddingEnd?: number;
   isDocumentBlock?: boolean;
   embeddedHeight?: number;
+  /**
+   * Set when this database renders inside a dashboard widget: the tab bar is
+   * replaced by the widget header and the viewport is the row height.
+   */
+  isDashboardWidget?: boolean;
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;
@@ -151,6 +159,26 @@ export interface DatabaseContextState {
 }
 
 export const DatabaseContext = createContext<DatabaseContextState | null>(null);
+
+/**
+ * Dashboard global filters resolved for this database (plain filter nodes in
+ * the persisted view-filter shape). They are AND-ed with the view's own
+ * filters by `useRowOrdersSelector`; a widget without a mapped property
+ * receives none. Kept out of `DatabaseContext` so a filter change only
+ * re-renders the row selectors, not every database context consumer.
+ */
+export const DatabaseExtraFiltersContext = createContext<DashboardExtraFilter[] | undefined>(undefined);
+
+/**
+ * A viewer's local stand-in for the active view (see
+ * `view-conditions-overlay.ts`): its filters and sorts are a private copy,
+ * everything else is the real view. Set by a dashboard widget in View mode.
+ */
+export const DatabaseViewOverlayContext = createContext<YDatabaseView | undefined>(undefined);
+
+export const useDatabaseViewOverlay = () => useContext(DatabaseViewOverlayContext);
+
+export const useDatabaseExtraFilters = () => useContext(DatabaseExtraFiltersContext);
 
 export const useDatabaseContext = () => {
   const context = useContext(DatabaseContext);
@@ -426,12 +454,28 @@ export const useReadOnly = () => {
   return context?.readOnly === undefined ? true : context?.readOnly;
 };
 
+/**
+ * Read-only for the filter / sort controls. A view overlay makes them
+ * editable for everyone: the changes stay with the viewer (Notion lets
+ * view-only users use a dashboard widget's filters and sorts).
+ */
+export const useConditionsReadOnly = () => {
+  const readOnly = useReadOnly();
+  const overlay = useDatabaseViewOverlay();
+
+  return readOnly && !overlay;
+};
+
 export const useDatabaseView = () => {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
+  const overlay = useDatabaseViewOverlay();
   const views = database?.get(YjsDatabaseKey.views);
+  const view = viewId ? views?.get(viewId) : undefined;
 
-  return viewId ? views?.get(viewId) : undefined;
+  // Only the view the overlay stands in for: a nested context (the calendar's
+  // draft doc, another database) reads its own view.
+  return overlay && view && getOverlayTarget(overlay) === view ? overlay : view;
 };
 
 export function useDatabaseFields() {

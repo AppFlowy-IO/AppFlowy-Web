@@ -7,6 +7,7 @@ import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { isDatabaseBlockType } from '@/application/database-block';
+import { createDatabaseDashboardPageViaGrid } from '@/application/database-yjs/dashboard-page';
 import { createDatabaseFeedPageViaGrid, createLinkedDatabaseFeedView } from '@/application/database-yjs/feed-layout';
 import {
   createDatabaseGalleryPageViaGrid,
@@ -61,6 +62,7 @@ import { ReactComponent as TimelineIcon } from '@/assets/icons/timeline.svg';
 import { ReactComponent as CalloutIcon } from '@/assets/icons/callout.svg';
 import { ReactComponent as ChartIcon } from '@/assets/icons/chart.svg';
 import { ReactComponent as ContinueWritingIcon } from '@/assets/icons/continue_writing.svg';
+import { ReactComponent as DashboardIcon } from '@/assets/icons/dashboard.svg';
 import { ReactComponent as DateIcon } from '@/assets/icons/date.svg';
 import { ReactComponent as DividerIcon } from '@/assets/icons/divider.svg';
 import { ReactComponent as OutlineIcon } from '@/assets/icons/doc.svg';
@@ -498,6 +500,23 @@ export function SlashPanel({
                   updatePage,
                 });
               })()
+            : layout === ViewLayout.Dashboard
+            ? await (() => {
+                if (!loadView || !bindViewSync || !deletePage || !createDatabaseView) {
+                  throw new Error('Dashboard creation is not available right now');
+                }
+
+                return createDatabaseDashboardPageViaGrid({
+                  parentViewId: documentId,
+                  name,
+                  addPage,
+                  loadView,
+                  bindViewSync,
+                  createDatabaseView,
+                  deletePage,
+                  scheduleDeferredCleanup,
+                });
+              })()
             : layout === ViewLayout.Feed
             ? await (() => {
                 if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
@@ -571,6 +590,7 @@ export function SlashPanel({
     [
       addPage,
       bindViewSync,
+      createDatabaseView,
       deletePage,
       documentId,
       editor,
@@ -731,6 +751,10 @@ export function SlashPanel({
               });
             case ViewLayout.Timeline:
               return t('timeline.referencedTimelinePrefix', {
+                defaultValue: 'View of',
+              });
+            case ViewLayout.Dashboard:
+              return t('dashboard.referencedDashboardPrefix', {
                 defaultValue: 'View of',
               });
             default:
@@ -1427,6 +1451,30 @@ export function SlashPanel({
         aliases: ['link to timeline', 'referenced timeline', 'ltt'],
         onClick: () => {
           void handleOpenLinkedDatabasePicker(ViewLayout.Timeline, 'linkedTimeline');
+        },
+      },
+      {
+        label: t('document.slashMenu.name.dashboard', { defaultValue: 'Dashboard' }),
+        key: 'dashboard',
+        disabled: !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
+        icon: <DashboardIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['dashboard', 'dash', 'widgets', 'overview', 'kpi', 'database'],
+        aliases: ['dashboard view', 'dash'],
+        onClick: () => {
+          void createInlineDatabase(ViewLayout.Dashboard);
+        },
+      },
+      {
+        label: t('document.slashMenu.name.linkedDashboard', { defaultValue: 'Linked Dashboard' }),
+        key: 'linkedDashboard',
+        disabled: !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
+        icon: <DashboardIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['linked', 'dashboard', 'widgets', 'overview', 'database'],
+        aliases: ['link to dashboard', 'referenced dashboard'],
+        onClick: () => {
+          void handleOpenLinkedDatabasePicker(ViewLayout.Dashboard, 'linkedDashboard');
         },
       },
       {

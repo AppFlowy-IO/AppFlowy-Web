@@ -1,18 +1,32 @@
 import dayjs, { Dayjs } from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import * as Y from 'yjs';
 
-import { useDatabaseContext, useDatabaseFields, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
 import {
+  useDatabaseContext,
+  useDatabaseFields,
+  useDatabaseView,
+  useRowMap,
+  useRowOrdersSelector,
+} from '@/application/database-yjs';
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import {
+  CHART_COLORS,
   ChartAggregationType,
   ChartDataItem,
   ChartLayoutSettings,
+  ChartType,
   isDateGroupableFieldType,
   isGroupableFieldType,
 } from '@/application/database-yjs/chart.type';
-import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { getCell } from '@/application/database-yjs/const';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
-import { parseSelectOptionTypeOptions, SelectOption } from '@/application/database-yjs/fields';
+import {
+  NumberFormat,
+  parseNumberTypeOptions,
+  parseSelectOptionTypeOptions,
+  SelectOption,
+} from '@/application/database-yjs/fields';
 import { safeParseTimestamp } from '@/application/database-yjs/fields/date/utils';
 import {
   YjsDatabaseKey,
@@ -23,6 +37,8 @@ import {
   RowId,
   YDoc,
 } from '@/application/types';
+
+import { chartDataEqual } from '../widgets/chartUtils';
 
 import { useChartColors, UseChartColorsReturn } from './useChartColors';
 
@@ -89,6 +105,38 @@ function bucketDate(date: Dayjs, condition: DateGroupCondition): GroupValue {
       return { label: date.format('MMM YYYY'), groupKey: key, sortKey: key };
     }
   }
+}
+
+function isFieldId(value: string | null | undefined): value is string {
+  return Boolean(value);
+}
+
+/**
+ * Whether a row-doc change (observed from the row's data section) can change
+ * what the chart reads: a watched cell, the cells map or row itself being
+ * replaced, or (when grouping by created / edited time) the row timestamps.
+ */
+export function touchesChartedRowData(
+  event: { path: Array<string | number>; changes: { keys: ReadonlyMap<string, unknown> } },
+  watched: { fieldIds: ReadonlySet<string>; rowTimes: boolean }
+): boolean {
+  const { path } = event;
+
+  // Map events only down to the cells map; a cell's own content is deeper.
+  if (path.length === 0) return event.changes.keys.has(YjsEditorKey.database_row);
+  if (path[0] !== YjsEditorKey.database_row) return false;
+  if (path.length === 1) {
+    const { keys } = event.changes;
+
+    return (
+      keys.has(YjsDatabaseKey.cells) ||
+      (watched.rowTimes && (keys.has(YjsDatabaseKey.created_at) || keys.has(YjsDatabaseKey.last_modified)))
+    );
+  }
+
+  if (path[1] !== YjsDatabaseKey.cells) return false;
+  if (path.length === 2) return [...event.changes.keys.keys()].some((fieldId) => watched.fieldIds.has(fieldId));
+  return watched.fieldIds.has(String(path[2]));
 }
 
 /**
@@ -216,7 +264,7 @@ function getCellNumericValue(rowId: string, field: YDatabaseField, rowMetas: Rec
 /**
  * Compute aggregation on an array of values
  */
-function computeAggregation(values: number[], aggregationType: ChartAggregationType): number {
+export function computeAggregation(values: number[], aggregationType: ChartAggregationType): number {
   if (values.length === 0) {
     return 0;
   }
@@ -256,6 +304,61 @@ function computeAggregation(values: number[], aggregationType: ChartAggregationT
     default:
       return values.length;
   }
+}
+
+interface ComputeNumberChartDataInput {
+  /** Only the aggregation type matters to the Number chart. */
+  settings: Pick<ChartLayoutSettings, 'aggregationType'> | null;
+  rowOrders: ReadonlyArray<{ id: string }> | null | undefined;
+  /** Only read when the value aggregates the Y field (not for a row count). */
+  rowMetas: Record<RowId, YDoc> | null | undefined;
+  yField: YDatabaseField | null;
+}
+
+/**
+ * Pure transform for the Number (KPI) chart: a single aggregated value over
+ * every row that survived the view's filters (and any dashboard global
+ * filters, which `useRowOrdersSelector` already applied). There is no x-axis
+ * grouping. Count, or a missing / deleted Y field, falls back to the row count
+ * — the same fallback the grouped charts use.
+ *
+ * Returns an empty array while row orders (or, when the Y field is
+ * aggregated, row docs) are unavailable, otherwise exactly one item whose
+ * `rowIds` holds every counted row (for drill-down).
+ */
+export function computeNumberChartData({
+  settings,
+  rowOrders,
+  rowMetas,
+  yField,
+}: ComputeNumberChartDataInput): ChartDataItem[] {
+  if (!rowOrders) {
+    return [];
+  }
+
+  const rowIds = rowOrders.map((row) => row.id);
+  const aggregationType = settings?.aggregationType ?? ChartAggregationType.Count;
+  let value: number;
+
+  if (aggregationType === ChartAggregationType.Count || !yField) {
+    value = rowIds.length;
+  } else {
+    if (!rowMetas) return [];
+    const numericValues = rowIds
+      .map((rowId) => getCellNumericValue(rowId, yField, rowMetas))
+      .filter((v): v is number => v !== null);
+
+    value = computeAggregation(numericValues, aggregationType);
+  }
+
+  return [
+    {
+      label: yField ? String(yField.get(YjsDatabaseKey.name) || '') : '',
+      value,
+      rowIds,
+      color: CHART_COLORS[0],
+    },
+  ];
 }
 
 interface ComputeChartDataInput {
@@ -440,9 +543,18 @@ export interface UseChartDataReturn {
   groupableFields: GroupableField[];
   /** Whether there are any groupable fields in the database */
   hasGroupableFields: boolean;
+  /** Resolved Y field (only when the aggregation needs one and it still exists) */
+  yAxisField: YDatabaseField | null;
+  /** Current name of the Y field, kept fresh across renames */
+  yFieldName: string;
+  /** Number format of the Y field when it is a Number field, otherwise null */
+  yNumberFormat: NumberFormat | null;
+  /** Number chart only: the aggregated value, or null for other chart types / while loading */
+  numberValue: number | null;
 }
 
 const EMPTY_CHART_DATA: ChartDataItem[] = [];
+const EMPTY_ROW_DOCS: YDoc[] = [];
 
 /**
  * Grace period before declaring a chart "empty" when `rowOrders` is `[]` at
@@ -460,6 +572,59 @@ const EMPTY_ROW_ORDERS_GRACE_MS = 300;
  * without the burst.
  */
 const ROW_LOAD_CONCURRENCY = 16;
+
+/**
+ * `ensureRow` every id through a pool of `ROW_LOAD_CONCURRENCY` workers.
+ * `onLoaded` runs only after a load resolves, so a failed row is retried by
+ * the next call. Stops picking up rows once `isCancelled` returns true.
+ */
+export async function ensureRowsWithConcurrency(
+  rowIds: readonly string[],
+  ensureRow: (rowId: string) => unknown,
+  { isCancelled, onLoaded }: { isCancelled: () => boolean; onLoaded?: (rowId: string) => void }
+) {
+  let cursor = 0;
+  const worker = async () => {
+    while (!isCancelled()) {
+      const idx = cursor++;
+
+      if (idx >= rowIds.length) return;
+      const rowId = rowIds[idx];
+
+      try {
+        await ensureRow(rowId);
+        onLoaded?.(rowId);
+      } catch (e) {
+        console.error('chart: failed to load row', rowId, e);
+      }
+    }
+  };
+
+  const workerCount = Math.min(ROW_LOAD_CONCURRENCY, rowIds.length);
+
+  await Promise.all(Array.from({ length: workerCount }, worker));
+}
+
+/**
+ * Order fields by the view's `field_orders`; fields the view does not list
+ * keep their relative order after the listed ones.
+ */
+export function sortByFieldOrder<T extends { id: string }>(
+  items: T[],
+  fieldOrders: { toArray: () => { id?: unknown }[] } | undefined
+): T[] {
+  if (!fieldOrders || items.length < 2) return items;
+  const position = new Map<string, number>();
+
+  fieldOrders.toArray().forEach((order, index) => {
+    if (typeof order?.id === 'string' && !position.has(order.id)) position.set(order.id, index);
+  });
+
+  return items
+    .map((item, index) => ({ item, index, rank: position.get(item.id) ?? Number.MAX_SAFE_INTEGER }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(({ item }) => item);
+}
 
 /**
  * Hook for computing chart data from database rows. The transform is pure and
@@ -486,6 +651,21 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     return () => fields.unobserveDeep(onChange);
   }, [fields]);
 
+  // The default X axis follows the view's property order (desktop's
+  // `select_chart_group_field`), so reordering columns can change it. Its own
+  // clock: only the groupable-field list depends on the order, and the chart
+  // data follows only when the resolved X axis changes.
+  const fieldOrders = useDatabaseView()?.get(YjsDatabaseKey.field_orders);
+  const [fieldOrderClock, setFieldOrderClock] = useState(0);
+
+  useEffect(() => {
+    if (!fieldOrders) return;
+    const onChange = () => setFieldOrderClock((c) => c + 1);
+
+    fieldOrders.observe(onChange);
+    return () => fieldOrders.unobserve(onChange);
+  }, [fieldOrders]);
+
   // Stable string representation of the row order. Yjs often returns a fresh
   // array reference even when the contents are unchanged, so we depend on the
   // joined ids in effects instead of the array identity.
@@ -504,6 +684,14 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   // `undefined → []` transition wouldn't re-trigger the effect on its own.
   const rowOrdersReady = !!rowOrders;
 
+  const isNumberChart = settings?.chartType === ChartType.Number;
+  const aggregationType = settings?.aggregationType ?? ChartAggregationType.Count;
+  const yFieldId = settings?.aggregationType !== ChartAggregationType.Count ? settings?.yFieldId : undefined;
+  const yAxisField = yFieldId && fields ? fields.get(yFieldId) ?? null : null;
+  // A Number chart that counts rows (Count, or no Y field) only needs
+  // `rowOrders.length`, so it skips row hydration entirely.
+  const needsRowDocs = !isNumberChart || (aggregationType !== ChartAggregationType.Count && yAxisField !== null);
+
   // Lazily request row docs that haven't been loaded yet.
   useEffect(() => {
     if (!rowOrders || !ensureRow) {
@@ -521,6 +709,11 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
       return () => clearTimeout(timer);
     }
 
+    if (!needsRowDocs) {
+      setRowsLoaded(true);
+      return;
+    }
+
     const rowsToLoad = rowOrders.filter((row) => !loadedRowIdsRef.current.has(row.id));
 
     if (rowsToLoad.length === 0) {
@@ -534,26 +727,14 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     const loadAll = async () => {
       // Only mark a row as loaded *after* `ensureRow` resolves — otherwise a
       // failed load would permanently skip the row on subsequent effect fires.
-      let cursor = 0;
-      const worker = async () => {
-        while (!cancelled) {
-          const idx = cursor++;
-
-          if (idx >= rowsToLoad.length) return;
-          const row = rowsToLoad[idx];
-
-          try {
-            await ensureRow(row.id);
-            loadedRowIdsRef.current.add(row.id);
-          } catch (e) {
-            console.error('chart: failed to load row', row.id, e);
-          }
+      await ensureRowsWithConcurrency(
+        rowsToLoad.map((row) => row.id),
+        ensureRow,
+        {
+          isCancelled: () => cancelled,
+          onLoaded: (rowId) => loadedRowIdsRef.current.add(rowId),
         }
-      };
-
-      const workerCount = Math.min(ROW_LOAD_CONCURRENCY, rowsToLoad.length);
-
-      await Promise.all(Array.from({ length: workerCount }, worker));
+      );
 
       if (!cancelled) setRowsLoaded(true);
     };
@@ -564,7 +745,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowOrdersReady, rowIdsKey, ensureRow]);
+  }, [rowOrdersReady, rowIdsKey, ensureRow, needsRowDocs]);
 
   // Find all groupable fields
   const groupableFields = useMemo<GroupableField[]>(() => {
@@ -582,9 +763,11 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
         });
       }
     });
-    return result;
+    // `fields` is a Y.Map whose iteration order depends on how the doc was
+    // built, so rank by the view's property order instead.
+    return sortByFieldOrder(result, fieldOrders);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, fieldsClock]);
+  }, [fields, fieldOrders, fieldsClock, fieldOrderClock]);
 
   const hasGroupableFields = groupableFields.length > 0;
 
@@ -616,6 +799,19 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
 
   const colors = useChartColors({ fieldType, selectOptions });
 
+  const { yFieldName, yNumberFormat } = useMemo(() => {
+    void fieldsClock;
+
+    if (!yAxisField) return { yFieldName: '', yNumberFormat: null };
+
+    const yType = Number(yAxisField.get(YjsDatabaseKey.type)) as FieldType;
+
+    return {
+      yFieldName: String(yAxisField.get(YjsDatabaseKey.name) || ''),
+      yNumberFormat: yType === FieldType.Number ? parseNumberTypeOptions(yAxisField, yType).format : null,
+    };
+  }, [yAxisField, fieldsClock]);
+
   const optionIdToName = useMemo(() => {
     const map = new Map<string, string>();
 
@@ -625,24 +821,127 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     return map;
   }, [selectOptions]);
 
+  // Row docs are mutated in place: editing a cell the chart reads (a value
+  // typed into a table next to this chart on a dashboard, or a collaborator's
+  // edit) changes neither `rowOrders` nor `rowMetas`. Observe the row data and
+  // bump a clock, at most once per frame, so the derivations below rerun.
+  // Only the cells the chart reads count (edits in other columns, row height
+  // or the last-modified stamp do not), read from a ref so a settings change
+  // never re-subscribes.
+  const [rowDataClock, setRowDataClock] = useState(0);
+  const xFieldType = isNumberChart ? null : fieldType;
+  const watchedRef = useRef({ fieldIds: new Set<string>(), rowTimes: false });
+
+  watchedRef.current = {
+    fieldIds: new Set([isNumberChart ? null : resolvedXFieldId, yAxisField ? yFieldId : null].filter(isFieldId)),
+    // CreatedTime / LastEditedTime groups read the row's own timestamps.
+    rowTimes: xFieldType === FieldType.CreatedTime || xFieldType === FieldType.LastEditedTime,
+  };
+
+  // The same ids keep the same array: filtered and sorted views re-emit
+  // `rowOrders` after unrelated changes, and cell edits bump `rowDataClock`.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stableRowOrders = useMemo(() => rowOrders, [rowOrdersReady, rowIdsKey]);
+
+  // The row docs the chart reads, in row order. `rowMetas` is a new object
+  // whenever any row doc of the database arrives or is canonicalised, so keep
+  // the previous list while every charted doc is the same object: the
+  // observers below then stay attached instead of re-subscribing every row.
+  const chartedDocsRef = useRef<YDoc[]>(EMPTY_ROW_DOCS);
+  const chartedDocs = useMemo(() => {
+    const next: YDoc[] = [];
+
+    if (stableRowOrders && rowMetas) {
+      stableRowOrders.forEach((row) => {
+        const doc = rowMetas[row.id];
+
+        if (doc) next.push(doc);
+      });
+    }
+
+    const previous = chartedDocsRef.current;
+
+    if (previous.length === next.length && previous.every((doc, index) => doc === next[index])) return previous;
+    chartedDocsRef.current = next;
+    return next;
+  }, [rowMetas, stableRowOrders]);
+
+  useEffect(() => {
+    if (!needsRowDocs || !rowsLoaded) return;
+    let frame: number | null = null;
+    const handleChange = (events: Y.YEvent[]) => {
+      const touchesRowData = events.some((event) => touchesChartedRowData(event, watchedRef.current));
+
+      if (!touchesRowData || frame !== null) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        setRowDataClock((clock) => clock + 1);
+      });
+    };
+
+    const roots = chartedDocs.map((doc) => doc.getMap(YjsEditorKey.data_section));
+
+    roots.forEach((root) => root.observeDeep(handleChange));
+    return () => {
+      roots.forEach((root) => root.unobserveDeep(handleChange));
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+  }, [chartedDocs, needsRowDocs, rowsLoaded]);
+
   // === Render-time derivation ===
-  const isLoading = !rowsLoaded;
+  // Rows go back to `undefined` while a newly applied filter hydrates them:
+  // show the spinner, not an empty chart.
+  const isLoading = !rowsLoaded || !rowOrdersReady;
+
+  // The Number chart depends only on the aggregation, the Y field and the rows
+  // (row docs only when it aggregates the Y field), so title / number format /
+  // x-axis edits leave it alone. The item keeps its identity while the value
+  // and row ids are unchanged, which lets the memoized NumberChart skip renders.
+  const numberRowMetas = needsRowDocs ? rowMetas : null;
+  const numberChartDataRef = useRef<ChartDataItem[]>(EMPTY_CHART_DATA);
+  const numberChartData = useMemo<ChartDataItem[]>(() => {
+    // Yjs mutates field maps (Y field renamed or retyped) and row docs in place.
+    void fieldsClock;
+    void rowDataClock;
+
+    if (!isNumberChart || !rowsLoaded) return EMPTY_CHART_DATA;
+    const next = computeNumberChartData({
+      settings: { aggregationType },
+      rowOrders: stableRowOrders,
+      rowMetas: numberRowMetas,
+      yField: yAxisField,
+    });
+
+    if (chartDataEqual(numberChartDataRef.current, next)) return numberChartDataRef.current;
+    numberChartDataRef.current = next;
+    return next;
+  }, [
+    isNumberChart,
+    rowsLoaded,
+    aggregationType,
+    yAxisField,
+    stableRowOrders,
+    numberRowMetas,
+    fieldsClock,
+    rowDataClock,
+  ]);
 
   // Pure derivation. Yjs hydrates row docs in micro-batches, so this can
   // recompute many times during a single page load — but downstream chart
   // widgets are wrapped in `React.memo(..., chartDataEqual)`, so re-renders
   // are skipped when the resulting bars are unchanged.
-  const chartData = useMemo<ChartDataItem[]>(() => {
-    // Yjs mutates field maps in place, so their identity cannot invalidate this
-    // memo after a schema-only field-type switch.
+  const groupedChartData = useMemo<ChartDataItem[]>(() => {
+    // Yjs mutates field maps and row docs in place, so their identity cannot
+    // invalidate this memo after a schema-only change or a cell edit.
     void fieldsClock;
+    void rowDataClock;
 
-    if (!rowsLoaded) return EMPTY_CHART_DATA;
+    if (isNumberChart || !rowsLoaded) return EMPTY_CHART_DATA;
 
     return computeChartData({
       settings,
       resolvedXFieldId,
-      rowOrders,
+      rowOrders: stableRowOrders,
       rowMetas,
       xAxisField,
       fieldType,
@@ -652,17 +951,22 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     });
   }, [
     rowsLoaded,
+    isNumberChart,
     settings,
     resolvedXFieldId,
-    rowOrders,
+    stableRowOrders,
     rowMetas,
     xAxisField,
     fieldType,
     fields,
     fieldsClock,
+    rowDataClock,
     optionIdToName,
     colors,
   ]);
+
+  const chartData = isNumberChart ? numberChartData : groupedChartData;
+  const numberValue = isNumberChart && chartData.length > 0 ? chartData[0].value : null;
 
   return {
     chartData,
@@ -672,6 +976,10 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     fieldType,
     groupableFields,
     hasGroupableFields,
+    yAxisField,
+    yFieldName,
+    yNumberFormat,
+    numberValue,
   };
 }
 

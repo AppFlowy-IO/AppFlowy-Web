@@ -88,4 +88,18 @@ describe('HoverControls accessibility', () => {
 
     await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
   });
+
+  it('keeps only the menu trigger in a gutter too narrow for both buttons', () => {
+    const { rerender } = render(
+      <HoverControls rowId='row-a' rowKey='row:row-a' state={{ type: GridDragState.IDLE }} />
+    );
+
+    expect(screen.getByTestId('row-add-button')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Drag row. Open menu' })).toBeTruthy();
+
+    rerender(<HoverControls compact rowId='row-a' rowKey='row:row-a' state={{ type: GridDragState.IDLE }} />);
+
+    expect(screen.queryByTestId('row-add-button')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Drag row. Open menu' })).toBeTruthy();
+  });
 });

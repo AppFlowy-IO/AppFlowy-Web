@@ -18,6 +18,16 @@ import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from '@/components/ui/tooltip';
 import { isMac } from '@/utils/hotkeys';
 
+/** An `icon-sm` button (`w-6`). */
+const ACCESSORY_BUTTON_WIDTH = 24;
+/** The controls' transparent border, one px per side. */
+const CONTROLS_BORDER_WIDTH = 2;
+
+/** Gutter that fits both row controls (add and menu). */
+export const HOVER_CONTROLS_WIDTH = 2 * ACCESSORY_BUTTON_WIDTH + CONTROLS_BORDER_WIDTH;
+/** Gutter that fits the compact controls (the menu / drag button alone). */
+export const COMPACT_HOVER_CONTROLS_WIDTH = ACCESSORY_BUTTON_WIDTH + CONTROLS_BORDER_WIDTH;
+
 export function HoverControls({
   rowId,
   rowKey,
@@ -25,12 +35,19 @@ export function HoverControls({
   groupId,
   dragHandleRef,
   canDrag = true,
+  compact = false,
 }: {
   rowId: string;
   rowKey: string;
   groupFieldId?: string;
   groupId?: string;
   canDrag?: boolean;
+  /**
+   * Only the menu / drag button, for a gutter narrower than
+   * `HOVER_CONTROLS_WIDTH` (a dashboard widget): the row menu offers
+   * "insert above / below" too, so nothing is lost.
+   */
+  compact?: boolean;
   dragHandleRef?: (node: HTMLDivElement | null) => void;
   state: ItemState;
 }) {
@@ -76,37 +93,44 @@ export function HoverControls({
           'relative left-0 flex w-full items-start justify-end border border-transparent py-1.5 focus-within:!pointer-events-auto focus-within:!opacity-100'
         }
       >
-        <Tooltip disableHoverableContent>
-          <TooltipTrigger asChild>
-            <Button
-              loading={addBelowLoading || addAboveLoading}
-              tabIndex={-1}
-              variant={'ghost'}
-              size={'icon-sm'}
-              className={'text-icon-secondary'}
-              onClick={async (e) => {
-                e.stopPropagation();
-                const altKey = e.altKey;
+        {compact ? null : (
+          <Tooltip disableHoverableContent>
+            <TooltipTrigger asChild>
+              <Button
+                loading={addBelowLoading || addAboveLoading}
+                tabIndex={-1}
+                variant={'ghost'}
+                size={'icon-sm'}
+                className={'text-icon-secondary'}
+                data-testid='row-add-button'
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  const altKey = e.altKey;
 
-                showPreventDialog(() => {
-                  if (altKey) {
-                    void onAddRowAbove();
-                  } else {
-                    void onAddRowBelow();
-                  }
-                });
-              }}
-            >
-              {addBelowLoading || addAboveLoading ? <Progress variant={'primary'} /> : <AddIcon className={'h-5 w-5'} />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {t('tooltip.addNewRow')}
-            <TooltipShortcut>{`${isMac() ? t('blockActions.addAboveMacCmd') : t('blockActions.addAboveCmd')} ${t(
-              'blockActions.addAboveTooltip'
-            )}`}</TooltipShortcut>
-          </TooltipContent>
-        </Tooltip>
+                  showPreventDialog(() => {
+                    if (altKey) {
+                      void onAddRowAbove();
+                    } else {
+                      void onAddRowBelow();
+                    }
+                  });
+                }}
+              >
+                {addBelowLoading || addAboveLoading ? (
+                  <Progress variant={'primary'} />
+                ) : (
+                  <AddIcon className={'h-5 w-5'} />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t('tooltip.addNewRow')}
+              <TooltipShortcut>{`${isMac() ? t('blockActions.addAboveMacCmd') : t('blockActions.addAboveCmd')} ${t(
+                'blockActions.addAboveTooltip'
+              )}`}</TooltipShortcut>
+            </TooltipContent>
+          </Tooltip>
+        )}
         <div ref={dragHandleRef} className='flex shrink-0'>
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <Tooltip disableHoverableContent>

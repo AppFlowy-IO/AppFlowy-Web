@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useReadOnly } from '@/application/database-yjs/context';
+import { useConditionsReadOnly } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import { PersonFilter, PersonFilterCondition } from '@/application/database-yjs/fields/person/person.type';
@@ -24,7 +24,7 @@ const EMPTY_USER_IDS: readonly string[] = [];
 function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const updateFilter = useUpdateFilter();
   const { field } = useFieldSelector(filter.fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;

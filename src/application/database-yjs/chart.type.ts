@@ -10,6 +10,28 @@ export enum ChartType {
   Line = 1,
   HorizontalBar = 2,
   Donut = 3,
+  /** Single KPI tile: one aggregated value over all filtered rows. */
+  Number = 4,
+}
+
+/**
+ * Display format for the Number chart value.
+ * - `auto`: follow the Y field's number format (currency, percent, ...) when
+ *   it is a Number field, otherwise a grouped decimal.
+ * - `compact`: abbreviated notation (1.2K, 3.4M).
+ * - `percent`: treat the value as a ratio (0.25 → 25%), like the Number
+ *   field's Percent format.
+ */
+export type ChartNumberFormat = 'auto' | 'compact' | 'percent';
+
+export const CHART_NUMBER_FORMATS: readonly ChartNumberFormat[] = ['auto', 'compact', 'percent'];
+
+export const DEFAULT_CHART_NUMBER_FORMAT: ChartNumberFormat = 'auto';
+
+export function parseChartNumberFormat(value: unknown): ChartNumberFormat {
+  return (CHART_NUMBER_FORMATS as readonly unknown[]).includes(value)
+    ? (value as ChartNumberFormat)
+    : DEFAULT_CHART_NUMBER_FORMAT;
 }
 
 /**
@@ -37,6 +59,10 @@ export interface ChartLayoutSettings {
   yFieldId?: string;
   cumulative: boolean;
   dateCondition: DateGroupCondition;
+  /** Number chart only: how the value is formatted. Defaults to `auto`. */
+  numberFormat?: ChartNumberFormat;
+  /** Number chart only: custom title. Empty/undefined uses the generated title. */
+  titleText?: string;
 }
 
 /**
@@ -94,6 +120,8 @@ export const ChartLayoutKeys = {
   yFieldId: 'yFieldId',
   cumulative: 'cumulative',
   dateCondition: 'dateCondition',
+  numberFormat: 'numberFormat',
+  titleText: 'titleText',
 } as const;
 
 /**

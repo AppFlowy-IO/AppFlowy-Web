@@ -57,7 +57,7 @@ const mockNoop = jest.fn();
 jest.mock('@/application/database-yjs/context', () => ({
   ...jest.requireActual('@/application/database-yjs/context'),
   useDatabase: () => mockDatabase,
-  useReadOnly: () => mockReadOnly,
+  useConditionsReadOnly: () => mockReadOnly,
 }));
 jest.mock('@/application/database-yjs/selector', () => ({
   useFieldSelector: () => ({ field: mockField }),

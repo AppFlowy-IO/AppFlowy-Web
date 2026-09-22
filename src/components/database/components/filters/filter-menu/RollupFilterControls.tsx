@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useReadOnly } from '@/application/database-yjs/context';
+import { useConditionsReadOnly } from '@/application/database-yjs/context';
 import { FieldType, Filter } from '@/application/database-yjs/database.type';
 import { useUpdateAdvancedFilter, UpdateFilterParams } from '@/application/database-yjs/dispatch/sort-filter';
 import { RollupFilterMode } from '@/application/database-yjs/fields/rollup/rollup.type';
@@ -50,7 +50,7 @@ export default function RollupFilterControls({
   layout?: 'row' | 'menu';
 }) {
   const { t } = useTranslation();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const { field, clock } = useFieldSelector(filter.fieldId);
   const { targetField } = useRollupData(filter.fieldId);
   const updateFilter = useUpdateAdvancedFilter();

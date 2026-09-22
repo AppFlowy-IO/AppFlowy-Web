@@ -6,7 +6,7 @@ import {
   SelectOptionFilter,
   SelectOptionFilterCondition,
   useFieldSelector,
-  useReadOnly,
+  useConditionsReadOnly,
 } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import ClearSelectionItem from '@/components/database/components/filters/filter-menu/ClearSelectionItem';
@@ -17,7 +17,7 @@ import FieldMenuTitle from './FieldMenuTitle';
 
 function MultiSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter }) {
   const { t } = useTranslation();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const { field } = useFieldSelector(filter.fieldId);
   const conditions = useMemo(() => {
     return [

@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import { useCallback, useMemo, useState } from 'react';
 
-import { DateFilter, DateFilterCondition, useReadOnly } from '@/application/database-yjs';
+import { DateFilter, DateFilterCondition, useConditionsReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import { DateFormat, TimeFormat } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
@@ -14,7 +14,7 @@ import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
 function DateTimeFilterDatePicker({ filter }: { filter: DateFilter }) {
   const currentUser = useCurrentUser();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
 
   const weekStartsOn = useMemo(() => {
     const value = Number(currentUser?.metadata?.[MetadataKey.StartWeekOn]) || 0;

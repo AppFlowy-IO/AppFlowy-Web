@@ -17,7 +17,18 @@ export function ChartProvider({ children }: ChartProviderProps) {
   // the chart-relevant fields. So this reference is stable across unrelated
   // Yjs writes.
   const settings = useChartLayoutSetting();
-  const { chartData, isLoading, xAxisField, selectOptions, fieldType, hasGroupableFields } = useChartData({ settings });
+  const {
+    chartData,
+    isLoading,
+    xAxisField,
+    selectOptions,
+    fieldType,
+    hasGroupableFields,
+    yAxisField,
+    yFieldName,
+    yNumberFormat,
+    numberValue,
+  } = useChartData({ settings });
 
   // Drill-down state
   const [drillDownItem, setDrillDownItem] = useState<ChartDataItem | null>(null);
@@ -40,8 +51,25 @@ export function ChartProvider({ children }: ChartProviderProps) {
     aggregationType: settings?.aggregationType ?? ChartAggregationType.Count,
     selectOptions,
     hasGroupableFields,
+    yAxisField,
+    yFieldName,
+    yNumberFormat,
+    numberValue,
     onElementClick: handleElementClick,
-  }), [settings, chartData, isLoading, xAxisField, fieldType, selectOptions, hasGroupableFields, handleElementClick]);
+  }), [
+    settings,
+    chartData,
+    isLoading,
+    xAxisField,
+    fieldType,
+    selectOptions,
+    hasGroupableFields,
+    yAxisField,
+    yFieldName,
+    yNumberFormat,
+    numberValue,
+    handleElementClick,
+  ]);
 
   return (
     <ChartContext.Provider value={contextValue}>

@@ -2478,7 +2478,9 @@
         "continueWriting": "Continue Writing",
         "askAIAnything": "Ask AI Anything",
         "feed": "Feed",
-        "linkedFeed": "Linked Feed"
+        "linkedFeed": "Linked Feed",
+        "dashboard": "Dashboard",
+        "linkedDashboard": "Linked Dashboard"
       },
       "linkedDatabase": {
         "title": "Link to an existing database",
@@ -4421,7 +4423,22 @@
       "title": "Rows in \"{{category}}\"",
       "close": "Close",
       "rowCount": "{{count}} rows",
-      "noRows": "No rows in this category"
+      "noRows": "No rows in this category",
+      "showMore": "Show {{count}} more"
+    },
+    "numberChart": "Number",
+    "number": {
+      "calculate": "Calculate",
+      "property": "Property",
+      "countAll": "Count all",
+      "format": "Format",
+      "formatAuto": "Auto",
+      "formatCompact": "Compact",
+      "formatPercent": "Percent",
+      "emptyState": "No rows to count",
+      "title": "Title",
+      "titleOf": "{{aggregation}} of {{field}}",
+      "titlePlaceholder": "Default title"
     }
   },
   "list": {
@@ -4510,5 +4527,77 @@
       "remove": "Remove dependency"
     },
     "openRow": "Open"
+  },
+  "dashboard": {
+    "menuName": "Dashboard",
+    "creationRequiresPro": "Creating a Dashboard view requires a Pro workspace.",
+    "referencedDashboardPrefix": "View of",
+    "edit": "Edit",
+    "done": "Done",
+    "addWidget": "Add widget",
+    "insertRowBelow": "Insert a row below",
+    "addRow": "Add row",
+    "emptyTitle": "Build your dashboard",
+    "emptyHint": "Add widgets to show charts, tables, boards and more from any database.",
+    "emptyViewerHint": "This dashboard has no widgets yet.",
+    "widgetLimit": "Dashboards support up to {{count}} widgets.",
+    "rowLimit": "A row holds up to {{count}} widgets.",
+    "widget": {
+      "open": "Open view",
+      "changeView": "Change view",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "moveLeft": "Move left",
+      "moveRight": "Move right",
+      "notFound": "This view no longer exists",
+      "noAccess": "You don't have access to this database",
+      "loading": "Loading…",
+      "remove": "Remove widget",
+      "menu": "Widget options",
+      "dragHandle": "Drag to move",
+      "resizeWidth": "Drag to resize",
+      "resizeHeight": "Drag to change row height",
+      "unsupported": "A dashboard can't be shown inside a dashboard"
+    },
+    "picker": {
+      "title": "Add widget",
+      "existing": "Existing views",
+      "newView": "New view",
+      "search": "Search views",
+      "thisDatabase": "This database",
+      "otherDatabases": "Other databases",
+      "noResults": "No views found",
+      "createIn": "Create a new view in {{name}}",
+      "selectDatabase": "Choose a database",
+      "changeViewTitle": "Change view",
+      "loadFailed": "Could not load databases",
+      "createFailed": "Could not create the view"
+    },
+    "globalFilters": {
+      "button": "Filter",
+      "title": "Filter multiple sources",
+      "add": "Add global filter",
+      "property": "Property",
+      "appliesTo": "This filter will apply across {{type}} properties selected below",
+      "noTargets": "No widgets have a property of this type",
+      "remove": "Remove",
+      "delete": "Delete filter",
+      "done": "Done",
+      "saveForEverybody": "Save for everybody",
+      "localChanges": "Only you see these filter changes",
+      "reset": "Reset",
+      "sources_one": "{{count}} source",
+      "sources_other": "{{count}} sources",
+      "addSource": "Add source",
+      "name": "Filter name",
+      "isChecked": "Is checked",
+      "isUnchecked": "Is unchecked"
+    },
+    "settings": {
+      "name": "Dashboard settings",
+      "showWidgetTitles": "Show widget titles"
+    }
   }
 }

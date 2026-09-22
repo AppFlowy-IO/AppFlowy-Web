@@ -10,12 +10,15 @@ import {
   useAddDatabaseView,
   useDuplicateDatabaseView,
 } from '@/application/database-yjs';
+import { readDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
+import { DASHBOARD_LAYOUT_KEY } from '@/application/database-yjs/dashboard.type';
 import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import {
   DatabaseViewLayout,
   View,
   ViewLayout,
   YDatabase,
+  YDatabaseView,
   YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
@@ -1159,5 +1162,184 @@ describe('useAddDatabaseView', () => {
         embedded: false,
       })
     );
+  });
+
+  describe('Dashboard', () => {
+    function renderAddView(databaseDoc: YDoc, createDatabaseView: jest.Mock) {
+      const contextValue: DatabaseContextState = {
+        readOnly: false,
+        databaseDoc,
+        databasePageId: 'base-view-id',
+        activeViewId: 'base-view-id',
+        rowMap: {},
+        workspaceId: 'workspace-id',
+        createDatabaseView,
+        isDocumentBlock: false,
+      };
+
+      return renderHook(() => useAddDatabaseView(), {
+        wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+      });
+    }
+
+    it('creates a Dashboard folder view named Dashboard', async () => {
+      const databaseId = 'db-dashboard';
+      const databaseDoc = createDatabaseDoc(databaseId);
+      const createDatabaseView = jest.fn().mockResolvedValue({
+        view_id: 'dashboard-view-id',
+        database_id: databaseId,
+        database_update: createAddViewUpdate(databaseDoc, 'dashboard-view-id'),
+      });
+      const { result } = renderAddView(databaseDoc, createDatabaseView);
+      let createdViewId: string | undefined;
+
+      await act(async () => {
+        createdViewId = await result.current(DatabaseViewLayout.Dashboard);
+      });
+
+      expect(createdViewId).toBe('dashboard-view-id');
+      expect(ViewLayout.Dashboard).toBe(11);
+      expect(createDatabaseView).toHaveBeenCalledWith(
+        'base-view-id',
+        expect.objectContaining({
+          database_id: databaseId,
+          layout: ViewLayout.Dashboard,
+          name: 'Dashboard',
+        })
+      );
+    });
+
+    it('keeps a caller-provided name', async () => {
+      const databaseId = 'db-dashboard-name';
+      const databaseDoc = createDatabaseDoc(databaseId);
+      const createDatabaseView = jest.fn().mockResolvedValue({
+        view_id: 'dashboard-view-id',
+        database_id: databaseId,
+        database_update: createAddViewUpdate(databaseDoc, 'dashboard-view-id'),
+      });
+      const { result } = renderAddView(databaseDoc, createDatabaseView);
+
+      await act(async () => {
+        await result.current(DatabaseViewLayout.Dashboard, 'Sales overview');
+      });
+
+      expect(createDatabaseView).toHaveBeenCalledWith(
+        'base-view-id',
+        expect.objectContaining({ layout: ViewLayout.Dashboard, name: 'Sales overview' })
+      );
+    });
+
+    it('seeds empty rows and global filters in layout_settings[9] after creation', async () => {
+      const databaseId = 'db-dashboard-seed';
+      const newViewId = 'dashboard-view-id';
+      const databaseDoc = createDatabaseDoc(databaseId);
+      const createDatabaseView = jest.fn().mockResolvedValue({
+        view_id: newViewId,
+        database_id: databaseId,
+        database_update: createAddViewUpdate(databaseDoc, newViewId),
+      });
+      const { result } = renderAddView(databaseDoc, createDatabaseView);
+
+      await act(async () => {
+        await result.current(DatabaseViewLayout.Dashboard);
+      });
+
+      const database = getDatabase(databaseDoc) as unknown as YDatabase;
+      const view = database.get(YjsDatabaseKey.views).get(newViewId);
+      const setting = view.get(YjsDatabaseKey.layout_settings)?.get(DASHBOARD_LAYOUT_KEY);
+
+      expect(DASHBOARD_LAYOUT_KEY).toBe(String(DatabaseViewLayout.Dashboard));
+      expect(setting).toBeDefined();
+      expect(setting.get(YjsDatabaseKey.dashboard_rows)).toEqual([]);
+      expect(setting.get(YjsDatabaseKey.dashboard_global_filters)).toEqual([]);
+      expect(readDashboardLayoutSetting(database, newViewId)).toEqual({
+        rows: [],
+        globalFilters: [],
+        showWidgetTitles: true,
+      });
+
+      // The seeded setting reaches other clients through the normal update stream.
+      const remote = new Y.Doc();
+
+      Y.applyUpdate(remote, Y.encodeStateAsUpdate(databaseDoc));
+      const remoteDatabase = remote.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+      const remoteSetting = remoteDatabase
+        .get(YjsDatabaseKey.views)
+        .get(newViewId)
+        .get(YjsDatabaseKey.layout_settings)
+        ?.get(DASHBOARD_LAYOUT_KEY);
+
+      expect(remoteSetting?.get(YjsDatabaseKey.dashboard_rows)).toEqual([]);
+    });
+
+    it('does not seed a setting on other layouts', async () => {
+      const databaseId = 'db-grid-no-dashboard';
+      const newViewId = 'grid-view-id';
+      const databaseDoc = createDatabaseDoc(databaseId);
+      const createDatabaseView = jest.fn().mockResolvedValue({
+        view_id: newViewId,
+        database_id: databaseId,
+        database_update: createAddViewUpdate(databaseDoc, newViewId),
+      });
+      const { result } = renderAddView(databaseDoc, createDatabaseView);
+
+      await act(async () => {
+        await result.current(DatabaseViewLayout.Grid);
+      });
+
+      const database = getDatabase(databaseDoc) as unknown as YDatabase;
+      const view = database.get(YjsDatabaseKey.views).get(newViewId);
+
+      expect(view.get(YjsDatabaseKey.layout_settings)?.get(DASHBOARD_LAYOUT_KEY)).toBeUndefined();
+    });
+
+    it('returns the view id without seeding when the update omits the created view', async () => {
+      const databaseId = 'db-dashboard-missing';
+      const databaseDoc = createDatabaseDoc(databaseId);
+      const createDatabaseView = jest.fn().mockResolvedValue({
+        view_id: 'dashboard-view-id',
+        database_id: databaseId,
+      });
+      const { result } = renderAddView(databaseDoc, createDatabaseView);
+      let createdViewId: string | undefined;
+
+      await act(async () => {
+        createdViewId = await result.current(DatabaseViewLayout.Dashboard);
+      });
+
+      expect(createdViewId).toBe('dashboard-view-id');
+      expect(getDatabase(databaseDoc).get(YjsDatabaseKey.views)).toBeUndefined();
+    });
+
+    it('seeds the dashboard setting without adding history or clearing redo', async () => {
+      const databaseId = 'db-dashboard-history';
+      const newViewId = 'dashboard-view-id';
+      const databaseDoc = createDatabaseDoc(databaseId);
+      const database = getDatabase(databaseDoc);
+      const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+      runDatabaseAction(databaseDoc, { type: 'database.test-marker' }, () => {
+        database.set('history-marker', true);
+      });
+      history.undo();
+      expect(history.canRedo()).toBe(true);
+
+      const createDatabaseView = jest.fn().mockResolvedValue({
+        view_id: newViewId,
+        database_id: databaseId,
+        database_update: createAddViewUpdate(databaseDoc, newViewId),
+      });
+      const { result } = renderAddView(databaseDoc, createDatabaseView);
+
+      await act(async () => {
+        await result.current(DatabaseViewLayout.Dashboard);
+      });
+
+      const view = (database.get(YjsDatabaseKey.views) as Y.Map<YDatabaseView>).get(newViewId);
+
+      expect(view?.get(YjsDatabaseKey.layout_settings)?.get(DASHBOARD_LAYOUT_KEY)).toBeDefined();
+      expect(history.canUndo()).toBe(false);
+      expect(history.canRedo()).toBe(true);
+    });
   });
 });

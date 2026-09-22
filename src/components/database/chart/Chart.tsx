@@ -1,7 +1,12 @@
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
-import { ChartType } from '@/application/database-yjs/chart.type';
+import {
+  ChartAggregationType,
+  ChartType,
+  DEFAULT_CHART_NUMBER_FORMAT,
+} from '@/application/database-yjs/chart.type';
 import ChartEmptyState from '@/components/database/chart/ChartEmptyState';
 import ChartProvider from '@/components/database/chart/ChartProvider';
 import { useChartContext } from '@/components/database/chart/useChartContext';
@@ -9,7 +14,34 @@ import BarChartWidget from '@/components/database/chart/widgets/BarChart';
 import DonutChartWidget from '@/components/database/chart/widgets/DonutChart';
 import HorizontalBarChartWidget from '@/components/database/chart/widgets/HorizontalBarChart';
 import LineChartWidget from '@/components/database/chart/widgets/LineChart';
+import NumberChartWidget from '@/components/database/chart/widgets/NumberChart';
+import { getNumberChartTitle } from '@/components/database/chart/widgets/numberChartUtils';
 import { Progress } from '@/components/ui/progress';
+
+function NumberChartContent() {
+  const { t } = useTranslation();
+  const { chartData, settings, aggregationType, yAxisField, yFieldName, yNumberFormat, onElementClick } =
+    useChartContext();
+
+  const title = getNumberChartTitle(t, {
+    titleText: settings?.titleText,
+    aggregationType,
+    yFieldName,
+    hasYField: !!yAxisField,
+  });
+  const effectiveAggregation = yAxisField ? aggregationType : ChartAggregationType.Count;
+
+  return (
+    <NumberChartWidget
+      item={chartData[0] ?? null}
+      title={title}
+      numberFormat={settings?.numberFormat ?? DEFAULT_CHART_NUMBER_FORMAT}
+      aggregationType={effectiveAggregation}
+      fieldNumberFormat={yNumberFormat}
+      onClick={onElementClick}
+    />
+  );
+}
 
 function ChartContent() {
   const { chartType, chartData, isLoading, hasGroupableFields, onElementClick } = useChartContext();
@@ -21,6 +53,12 @@ function ChartContent() {
         <Progress />
       </div>
     );
+  }
+
+  // Number chart has no x-axis, so it needs neither groupable fields nor
+  // grouped data; it renders its own empty state when no rows match.
+  if (chartType === ChartType.Number) {
+    return <NumberChartContent />;
   }
 
   // Empty state: no groupable fields (SingleSelect, MultiSelect, Checkbox) in the database

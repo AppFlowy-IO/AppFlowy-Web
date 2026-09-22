@@ -5,7 +5,7 @@ import {
   SelectOptionFilter,
   SelectOptionFilterCondition,
   useFieldSelector,
-  useReadOnly,
+  useConditionsReadOnly,
 } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import ClearSelectionItem from '@/components/database/components/filters/filter-menu/ClearSelectionItem';
@@ -14,7 +14,7 @@ import { SelectOptionList } from '@/components/database/components/filters/filte
 import SingleSelectFilterConditionsSelect from '@/components/database/components/filters/filter-menu/SingleSelectOptionFilterConditionsSelect';
 
 function SingleSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter }) {
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const { field } = useFieldSelector(filter.fieldId);
   const displaySelectOptionList = useMemo(() => {
     return ![SelectOptionFilterCondition.OptionIsEmpty, SelectOptionFilterCondition.OptionIsNotEmpty].includes(
