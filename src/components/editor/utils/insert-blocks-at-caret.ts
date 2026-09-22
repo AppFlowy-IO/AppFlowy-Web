@@ -11,6 +11,20 @@ import { Log } from '@/utils/log';
 
 type BlockElement = Element & { blockId?: string };
 
+// Internal fragments can start with part of any text block. Preserve code and
+// table-cell identities, and never merge a block that owns nested children.
+const MERGEABLE_FIRST_FRAGMENT_TYPES = TEXT_BLOCK_TYPES.filter(
+  (type) => type !== BlockType.CodeBlock && type !== BlockType.SimpleTableCellBlock
+);
+
+export function shouldMergeFirstFragmentNodeInline(node: Node): boolean {
+  return (
+    Element.isElement(node) &&
+    MERGEABLE_FIRST_FRAGMENT_TYPES.includes(node.type as BlockType) &&
+    node.children.length === 1
+  );
+}
+
 /**
  * Inserts a sequence of pasted block elements relative to the caret,
  * mirroring the semantics of Slate's `insertFragment` (and the desktop
@@ -86,7 +100,10 @@ export function insertBlocksAtCaret(
     // If the current block is empty (no text, no children), the user expects
     // paste to fill that block — not push it above the pasted content. Insert
     // at the current index and remove the empty original.
-    const isEmpty = CustomEditor.getBlockTextContent(node as Node).length === 0 && (node.children?.length ?? 0) <= 1;
+    const isEmpty =
+      TEXT_BLOCK_TYPES.includes(node.type as BlockType) &&
+      CustomEditor.getBlockTextContent(node as Node).length === 0 &&
+      (node.children?.length ?? 0) <= 1;
 
     if (isEmpty && !insertInsideBlock) {
       let insertedIds: string[] = [];

@@ -52,6 +52,7 @@ export enum BlockType {
   FileBlock = 'file',
   GalleryBlock = 'multi_image',
   SubpageBlock = 'sub_page',
+  LinkedPageBlock = 'linked_page',
   SimpleTableBlock = 'simple_table',
   SimpleTableRowBlock = 'simple_table_row',
   SimpleTableCellBlock = 'simple_table_cell',
@@ -1408,7 +1409,7 @@ export interface LoadViewMetaOptions {
   /** Resolve display fields from the flat workspace metadata index when possible. */
   metadataOnly?: boolean;
   /**
-   * Bypass the materialized outline and service caches. Metadata-only callers
+   * Bypass the materialized outline, rendered trash list, and service caches. Metadata-only callers
    * refresh through the shared flat resolver; full callers retain the direct
    * response's immediate children for navigation and recovery flows.
    */
@@ -1929,6 +1930,8 @@ export interface View {
   is_locked?: boolean;
   last_edited_time?: string;
   favorited_at?: string;
+  /** Server timestamp of this trash entry, distinct from the page's edit time. */
+  deleted_at?: string;
   last_viewed_at?: string;
   created_at?: string;
   database_relations?: DatabaseRelations;
@@ -2160,6 +2163,9 @@ export interface ViewComponentProps {
   updatePage?: (viewId: string, data: UpdatePagePayload) => Promise<void>;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
+  restorePage?: (viewId: string) => Promise<void>;
+  loadTrashViews?: () => Promise<View[]>;
+  movePage?: (viewId: string, parentId: string) => Promise<void>;
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   variant?: UIVariant;
@@ -2228,6 +2234,8 @@ export interface DuplicatePageOptions {
 }
 
 export interface DuplicatePageOperationOptions extends DuplicatePageOptions {
+  /** Registers the created view for cleanup; duplication may still fail after this callback. */
+  onDuplicated?: (viewId: string) => void;
   /**
    * Client-only lifecycle hook. Runs after the pre-duplicate collab sync and
    * before the duplicate API request; it is not sent to the server.

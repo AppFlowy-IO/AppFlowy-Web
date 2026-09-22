@@ -204,6 +204,10 @@ export async function openSharePopover(page: Page): Promise<void> {
   await expect(page.locator('[data-slot="popover-content"]').first()).toBeVisible({
     timeout: 10000,
   });
+  // Cloud can spend ~14s checking permissions before returning a retryable
+  // 1054 during form creation. Give the controller's bootstrap retry time to
+  // finish, while still checking the actual controls (or failure) below.
+  await expect(page.getByTestId('form-share-popover-loading')).toBeHidden({ timeout: 60000 });
   // The loading skeleton is not a settled state. The Anonymous toggle
   // is mounted only after the share bootstrap has completed.
   await expect(page.getByTestId('form-share-anonymous-toggle')).toBeVisible({

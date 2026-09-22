@@ -46,6 +46,7 @@ import {
   isDatabaseBlockType,
   loadDatabaseDuplicateSourceViews,
 } from './databaseDuplicateUtils';
+import { duplicateBlockSelection, finalizeDuplicatedBlockData } from './duplicateBlockSelection';
 
 function getViewNoCache(workspaceId: string, viewId: string, depth: number = 1): Promise<View> {
   const url = `/api/workspace/${workspaceId}/view/${viewId}?depth=${depth}&_t=${Date.now()}`;
@@ -231,6 +232,7 @@ function ControlsMenu({
   anchorEl: HTMLElement | null;
 }) {
   const { selectedBlockIds } = useEditorLocalState();
+  const editorContext = useEditorContext();
   const {
     workspaceId,
     loadViewMeta,
@@ -256,13 +258,9 @@ function ControlsMenu({
 
   const setDatabaseBlockData = useCallback(
     (blockId: string, nextData: DatabaseNode['data']) => {
-      const entry = findSlateEntryByBlockId(editor, blockId);
-
-      if (!entry) {
+      if (!finalizeDuplicatedBlockData(editor, blockId, nextData)) {
         throw new Error(t('document.plugins.subPage.errors.failedDuplicatePage'));
       }
-
-      Transforms.setNodes(editor, { data: nextData }, { at: entry[1] });
     },
     [editor, t]
   );
@@ -527,33 +525,16 @@ function ControlsMenu({
   );
 
   const duplicateSelectedBlocks = useCallback(async () => {
-    const newBlockIds: string[] = [];
-    const prevId = selectedBlockIds?.[selectedBlockIds.length - 1];
+    const duplicated = await duplicateBlockSelection(editor, selectedBlockIds ?? [], editorContext, (source) =>
+      isDatabaseBlockType(source.type as BlockType)
+        ? createDatabaseDuplicatePlaceholderData((source as DatabaseNode).data.parent_id)
+        : undefined
+    );
+    const newBlockIds = duplicated.map(({ blockId }) => blockId);
     let hasDatabaseBlock = false;
 
-    for (const [index, blockId] of (selectedBlockIds ?? []).entries()) {
-      const entry = findSlateEntryByBlockId(editor, blockId);
-
-      if (!entry) {
-        continue;
-      }
-
-      const [selectedNode] = entry;
+    for (const { source: selectedNode, blockId: newBlockId } of duplicated) {
       const isDatabaseBlock = isDatabaseBlockType(selectedNode.type as BlockType);
-      const newBlockId = CustomEditor.duplicateBlock(
-        editor,
-        blockId,
-        index === 0 ? prevId : newBlockIds[index - 1],
-        isDatabaseBlock
-          ? { data: createDatabaseDuplicatePlaceholderData((selectedNode as DatabaseNode).data.parent_id) }
-          : undefined
-      );
-
-      if (!newBlockId) {
-        continue;
-      }
-
-      newBlockIds.push(newBlockId);
 
       if (isDatabaseBlock) {
         hasDatabaseBlock = true;
@@ -586,7 +567,7 @@ function ControlsMenu({
     if (entry) {
       selectPathStartSafely(editor, entry[1]);
     }
-  }, [editor, resolveDuplicatedDatabaseBlockData, selectedBlockIds, setDatabaseBlockData, t]);
+  }, [editor, editorContext, resolveDuplicatedDatabaseBlockData, selectedBlockIds, setDatabaseBlockData, t]);
 
   const options = useMemo(() => {
     return [
@@ -660,9 +641,7 @@ function ControlsMenu({
                 e.preventDefault();
                 onClose();
                 Promise.resolve(option.onClick()).catch((error) => {
-                  notify.error(
-                    getErrorMessage(error, t('document.plugins.subPage.errors.failedDuplicatePage'))
-                  );
+                  notify.error(getErrorMessage(error, t('document.plugins.subPage.errors.failedDuplicatePage')));
                 });
               }}
             >

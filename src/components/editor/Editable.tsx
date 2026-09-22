@@ -18,6 +18,8 @@ import { PanelProvider } from '@/components/editor/components/panels/PanelsConte
 import { RemoteSelectionsLayer } from '@/components/editor/components/remote-selections';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
+import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
+import { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
 import { useShortcuts } from '@/components/editor/shortcut.hooks';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { getScrollParent } from '@/components/global-comment/utils';
@@ -111,6 +113,21 @@ const EditorEditable = () => {
   }, []);
 
   const { onKeyDown } = useShortcuts(editor);
+
+  const onCut = useCallback((event: React.ClipboardEvent<HTMLDivElement>) => {
+    if (readOnly || !editor.selection || !Range.isCollapsed(editor.selection) || !YjsEditor.isYjsEditor(editor)) return;
+    const node = getBlockEntry(editor)?.[0];
+
+    if (!node?.blockId || ![BlockType.SubpageBlock, BlockType.LinkedPageBlock].includes(node.type as BlockType)) return;
+    // Page blocks use AppFlowy's embed nodes, so Slate's collapsed-void cut
+    // handler does not remove them after serializing the clipboard fragment.
+    event.preventDefault();
+    editor.setFragmentData(event.clipboardData, 'cut');
+    editor.flushLocalChanges();
+    if (YHistoryEditor.isYHistoryEditor(editor)) editor.undoManager.stopCapturing();
+    CustomEditor.deleteBlock(editor, node.blockId);
+    if (YHistoryEditor.isYHistoryEditor(editor)) editor.undoManager.stopCapturing();
+  }, [editor, readOnly]);
 
   const onCompositionStart = useCallback(() => {
     const { selection } = editor;
@@ -218,6 +235,7 @@ const EditorEditable = () => {
               autoComplete={'off'}
               scrollSelectionIntoView={scrollSelectionIntoView}
               onCompositionStart={readOnly ? undefined : onCompositionStart}
+              onCut={onCut}
               onKeyDown={readOnly ? undefined : onKeyDown}
               onMouseDown={handleMouseDown}
               onClick={readOnly ? undefined : handleClick}

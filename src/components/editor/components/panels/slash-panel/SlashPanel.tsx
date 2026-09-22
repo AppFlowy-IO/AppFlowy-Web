@@ -42,7 +42,6 @@ import {
   ImageBlockData,
   LinkPreviewBlockData,
   LinkPreviewType,
-  SubpageNodeData,
   ToggleListBlockData,
   VideoBlockData,
   View,
@@ -103,6 +102,7 @@ import { usePanelContext } from '@/components/editor/components/panels/Panels.ho
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { createSubpage } from '@/components/editor/subpage/create-subpage';
 import { Button as OutlineButton } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -268,6 +268,7 @@ export function SlashPanel({
     getMoreAIContext,
     createDatabaseView,
   } = useEditorContext();
+  const editorContext = useEditorContext();
   const [viewName, setViewName] = useState('');
   const [linkedPicker, setLinkedPicker] = useState<{
     position: { top: number; left: number };
@@ -1112,37 +1113,16 @@ export function SlashPanel({
         },
       },
       {
-        label: t('document.menuName'),
+        label: t('document.slashMenu.subPage.name'),
         key: 'document',
         icon: <DocumentIcon />,
         group: SlashMenuGroupKey.BasicBlocks,
-        keywords: [
-          'document',
-          'doc',
-          'page',
-          'create',
-          'add',
-          'sub page',
-          'child page',
-          'insert page',
-          'embed page',
-          'new page',
-        ],
+        keywords: ['subpage', 'sub page', 'document', 'doc', 'page', 'child page', 'new page', 'create page'],
         onClick: async () => {
-          if (!documentId || !addPage || !openPageModal) return;
           try {
-            const response = await addPage(documentId, {
-              layout: ViewLayout.Document,
-            });
-
-            turnInto(BlockType.SubpageBlock, {
-              view_id: response.view_id,
-            } as SubpageNodeData);
-
-            openPageModal(response.view_id);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          } catch (e: any) {
-            notify.error(e.message);
+            await createSubpage(editor, editorContext);
+          } catch (error) {
+            notify.error(t('document.plugins.subPage.errors.failedCreatePage'));
           }
         },
       },
@@ -1829,6 +1809,7 @@ export function SlashPanel({
     askAIAnything,
     continueWriting,
     turnInto,
+    editorContext,
     openPanel,
     documentId,
     addPage,

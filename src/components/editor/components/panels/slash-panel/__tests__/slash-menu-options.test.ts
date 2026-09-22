@@ -28,6 +28,13 @@ describe('slash-menu-options', () => {
   });
 
   describe('filterSlashMenuOptions', () => {
+    it('keeps subpages outside simple table cells', () => {
+      const options = [option({ key: 'document', label: 'Subpage' }), option({ key: 'text' })];
+
+      expect(filterSlashMenuOptions(options, {}).map((item) => item.key)).toEqual(['document', 'text']);
+      expect(filterSlashMenuOptions(options, { isInsideSimpleTableCell: true }).map((item) => item.key)).toEqual(['text']);
+    });
+
     const options = [
       option({ key: 'text' }),
       option({ key: 'simpleTable' }),
