@@ -1,16 +1,27 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { MeetingTranscription } from '@/application/integrations/meeting-transcription';
 import { getMeetingStreamingToken, reportMeetingDuration } from '@/application/services/js-services/http/meeting-api';
+import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 
 import { AIMeetingRecording } from '../AIMeetingRecording';
 
 const mockEditor = { sharedRoot: {} };
-const mockTranslate = (key: string) => key;
+const mockTranslate = (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key;
+const mockGetSubscriptions = jest.fn();
+let mockHosted = true;
+let workspaceSequence = 0;
 let mockMeetingData: Record<string, unknown>;
 
 jest.mock('slate-react', () => ({ useSlateStatic: () => mockEditor }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockTranslate }) }));
+jest.mock('@/components/editor/EditorContext', () => ({
+  useEditorContext: () => ({ getSubscriptions: mockGetSubscriptions }),
+}));
+jest.mock('@/utils/subscription', () => ({
+  ...jest.requireActual('@/utils/subscription'),
+  isAppFlowyHosted: () => mockHosted,
+}));
 jest.mock('@/application/slate-yjs/utils/yjs', () => ({
   getBlock: () => ({
     get: () => JSON.stringify(mockMeetingData),
@@ -63,6 +74,9 @@ describe('AI meeting recording attempts', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockHosted = true;
+    workspaceSequence += 1;
+    mockGetSubscriptions.mockReset().mockResolvedValue([]);
     mockMeetingData = {};
     microphone = stream();
     getUserMedia.mockReset().mockResolvedValue(microphone);
@@ -96,7 +110,7 @@ describe('AI meeting recording attempts', () => {
   function mount() {
     return render(
       <AIMeetingRecording
-        workspaceId='workspace'
+        workspaceId={`workspace-${workspaceSequence}`}
         viewId='page'
         blockId='meeting'
         transcriptBlockId='transcript'
@@ -119,6 +133,61 @@ describe('AI meeting recording attempts', () => {
       await flush();
     });
   }
+
+  it.each([
+    [SubscriptionPlan.Free, 'server'],
+    [SubscriptionPlan.Free, 'local'],
+    [SubscriptionPlan.Pro, 'server'],
+    [SubscriptionPlan.Team, 'server'],
+    [SubscriptionPlan.AIMax, 'server'],
+    [SubscriptionPlan.AIMax, 'local'],
+  ])('shows Pro guidance only for Free transcription exhaustion (%s, %s)', async (plan, source) => {
+    const serverMessage = 'No transcription time remaining: 7200/7200 seconds used';
+
+    mockGetSubscriptions.mockResolvedValue([{
+      plan, currency: 'USD', price_cents: 2000, recurring_interval: SubscriptionInterval.Month,
+    }]);
+    if (source === 'server') {
+      jest.mocked(getMeetingStreamingToken).mockRejectedValueOnce({ code: 1129, message: serverMessage });
+    } else {
+      jest.mocked(reportMeetingDuration).mockResolvedValueOnce({ remaining_duration: 0 });
+    }
+
+    mount();
+    expect(mockGetSubscriptions).not.toHaveBeenCalled();
+    await start();
+    await waitFor(() => expect(mockGetSubscriptions).toHaveBeenCalledTimes(1));
+
+    if (plan === SubscriptionPlan.Free) {
+      await waitFor(() => expect(screen.getByRole('alert').textContent).toContain(
+        'Ask the workspace owner to upgrade to Pro for more transcription time.'
+      ));
+    } else {
+      expect(screen.getByRole('alert').textContent).toBe(
+        source === 'server' ? serverMessage : 'document.aiMeeting.recordingErrors.quotaExceeded'
+      );
+    }
+
+    expect(microphone.audio.stop).toHaveBeenCalled();
+  });
+
+  it.each(['self-hosted', 'unavailable', 'unknown'])('preserves quota guidance when the plan is %s', async (kind) => {
+    const serverMessage = 'Your transcription allowance is exhausted';
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockHosted = kind !== 'self-hosted';
+    if (kind === 'unavailable') mockGetSubscriptions.mockRejectedValue(new Error('Billing unavailable'));
+    if (kind === 'unknown') mockGetSubscriptions.mockResolvedValue(undefined);
+    jest.mocked(getMeetingStreamingToken).mockRejectedValueOnce({ code: 1129, message: serverMessage });
+    mount();
+    await start();
+
+    expect(screen.getByRole('alert').textContent).toBe(serverMessage);
+    if (kind === 'self-hosted') expect(mockGetSubscriptions).not.toHaveBeenCalled();
+    else await waitFor(() => expect(errorLog).toHaveBeenCalled());
+    expect(screen.getByRole('alert').textContent).toBe(serverMessage);
+    errorLog.mockRestore();
+  });
 
   it('keeps a newer recording controllable when cancelled microphone permission arrives late', async () => {
     let resolveFirst!: (value: unknown) => void;
