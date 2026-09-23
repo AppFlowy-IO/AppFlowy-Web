@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ReactNode } from 'react';
 
 import { BillingService } from '@/application/services/domains';
@@ -166,5 +166,36 @@ describe('BillingPanel', () => {
     expect((await screen.findByTestId('billing-error')).textContent).toContain('billing down');
     fireEvent.click(screen.getByText('Retry'));
     expect(await screen.findByText('Free')).toBeTruthy();
+  });
+
+  it('shows the full annual charge before confirming a switch from monthly billing', async () => {
+    api.getWorkspaceSubscriptionStatus.mockResolvedValue([
+      workspaceStatus(SubscriptionPlan.Pro, { recurring_interval: SubscriptionInterval.Month }),
+    ]);
+    api.getWorkspaceUsage.mockResolvedValue(proUsage);
+    api.setSubscriptionRecurringInterval.mockResolvedValue(undefined);
+    renderPanel();
+
+    fireEvent.click(await screen.findByTestId('billing-edit-period'));
+    const monthly = within(screen.getByTestId(`period-option-${SubscriptionInterval.Month}`));
+    const annualOption = screen.getByTestId(`period-option-${SubscriptionInterval.Year}`);
+    const annual = within(annualOption);
+
+    expect(await annual.findByText('$120')).toBeTruthy();
+    expect(annual.getByText('per seat billed annually')).toBeTruthy();
+    expect(annual.queryByText('$10')).toBeNull();
+    expect(monthly.getByText('$12.5')).toBeTruthy();
+    expect(monthly.getByText('per seat billed monthly')).toBeTruthy();
+
+    fireEvent.click(annualOption);
+    fireEvent.click(screen.getByTestId('change-period-confirm'));
+
+    await waitFor(() =>
+      expect(api.setSubscriptionRecurringInterval).toHaveBeenCalledWith(
+        'workspace-1',
+        SubscriptionPlan.Pro,
+        SubscriptionInterval.Year
+      )
+    );
   });
 });

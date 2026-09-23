@@ -834,7 +834,7 @@
         "title": "プロ",
         "description": "小規模チームのプロジェクト管理とチーム知識の管理に最適",
         "price": "{}",
-        "priceInfo": "1ユーザーあたり月額 \n年間請求\n\n{} 毎月請求"
+        "priceInfo": "1ユーザーあたり月額\n年間請求"
       },
       "planLabels": {
         "itemOne": "ワークスペース",

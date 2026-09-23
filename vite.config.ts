@@ -166,8 +166,9 @@ async function isLocalGatewayRunning(): Promise<boolean> {
  * starting or stopping the gateway). APPFLOWY_DEV_API_PROXY_TARGET,
  * APPFLOWY_DEV_WS_PROXY_TARGET and APPFLOWY_DEV_BILLING_PROXY_TARGET override
  * the detection. WebSocket traffic always goes to the cloud unless overridden,
- * because the gateway does not proxy it. The client sends requests here
- * whenever APPFLOWY_BASE_URL points at localhost in dev mode.
+ * because the gateway does not proxy it. The client sends requests here only
+ * when APPFLOWY_BASE_URL uses HTTP on a loopback host at port 8000 or 8100,
+ * without a path prefix, in dev mode. Other configured backends keep their URL.
  */
 async function localDevProxyConfig() {
   const explicitApiTarget = process.env.APPFLOWY_DEV_API_PROXY_TARGET;

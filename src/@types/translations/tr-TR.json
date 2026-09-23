@@ -828,7 +828,7 @@
         "title": "Pro",
         "description": "Küçük ekiplerin projeleri ve ekip bilgisini yönetmesi için",
         "price": "{}",
-        "priceInfo": "kullanıcı başına aylık \nyıllık faturalandırılır\n\n{} aylık faturalandırılır"
+        "priceInfo": "kullanıcı başına aylık\nyıllık faturalandırılır"
       },
       "planLabels": {
         "itemOne": "Çalışma Alanları",

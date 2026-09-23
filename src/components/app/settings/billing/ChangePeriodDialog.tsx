@@ -5,7 +5,7 @@ import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
 import { cn } from '@/lib/utils';
-import { findPlan, getPlanDisplayPrice } from '@/utils/pricing';
+import { findPlan, formatPriceCents, getPlanPrice } from '@/utils/pricing';
 
 import { intervalLabel } from './labels';
 
@@ -51,7 +51,7 @@ export function ChangePeriodDialog({ open, plan, currentInterval, onClose, onCon
         {INTERVALS.map((interval) => {
           const isCurrent = interval === currentInterval;
           const isSelected = interval === selected;
-          const price = catalogPlan ? getPlanDisplayPrice(catalogPlan, interval) : null;
+          const price = catalogPlan ? getPlanPrice(catalogPlan, interval) : undefined;
 
           return (
             <button
@@ -76,7 +76,9 @@ export function ChangePeriodDialog({ open, plan, currentInterval, onClose, onCon
                     </span>
                   )}
                 </div>
-                {price && <span className='text-sm font-medium text-text-primary'>{price}</span>}
+                {price && (
+                  <span className='text-sm font-medium text-text-primary'>{formatPriceCents(price.price_cents)}</span>
+                )}
                 <span className='text-xs text-text-secondary'>
                   {interval === SubscriptionInterval.Year
                     ? t('settings.billingPage.annualPriceInfo')

@@ -2,21 +2,30 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
+import en from '@/@types/translations/en.json';
+import fr from '@/@types/translations/fr-FR.json';
+import ja from '@/@types/translations/ja-JP.json';
+import ko from '@/@types/translations/ko-KR.json';
+import th from '@/@types/translations/th-TH.json';
+import tr from '@/@types/translations/tr-TR.json';
+import uk from '@/@types/translations/uk-UA.json';
+import vi from '@/@types/translations/vi-VN.json';
 import { PricingCatalog, Subscription, SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { AppOperationsContext, AppOperationsContextType } from '@/components/app/contexts/AppOperationsContext';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import { resetPricingCatalogCache } from '@/components/app/hooks/usePricingCatalog';
 import UpgradePlan from '@/components/billing/UpgradePlan';
 
-const mockTranslations: Record<string, string> = {
+const defaultTranslations: Record<string, string> = {
   'subscribe.feature.storage': 'Storage',
   'subscribe.value.unlimited': 'Unlimited',
   // Header copy from the published plan table.
-  'settings.comparePlanDialog.freePlan.price': '{} / member / month',
-  'settings.comparePlanDialog.proPlan.price': '{} / member / month',
-  'settings.comparePlanDialog.freePlan.priceInfo': '',
-  'settings.comparePlanDialog.proPlan.priceInfo': 'billed annually',
+  'settings.comparePlanDialog.freePlan.price': en.settings.comparePlanDialog.freePlan.price,
+  'settings.comparePlanDialog.proPlan.price': en.settings.comparePlanDialog.proPlan.price,
+  'settings.comparePlanDialog.freePlan.priceInfo': en.settings.comparePlanDialog.freePlan.priceInfo,
+  'settings.comparePlanDialog.proPlan.priceInfo': en.settings.comparePlanDialog.proPlan.priceInfo,
 };
+let mockTranslations = { ...defaultTranslations };
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -175,6 +184,7 @@ function renderModal(
 
 describe('UpgradePlan', () => {
   beforeEach(() => {
+    mockTranslations = { ...defaultTranslations };
     resetPricingCatalogCache();
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -195,7 +205,7 @@ describe('UpgradePlan', () => {
     expect(proColumn.getAttribute('data-highlighted')).toBe('true');
     expect(freeColumn.getAttribute('data-highlighted')).toBe('false');
 
-    // Annual per-month price with the monthly note, desktop style; no interval tabs.
+    // Annual per-month price with the annual billing note, desktop style; no interval tabs.
     // The amount is its own span so it can be larger than the qualifier.
     expect(within(proColumn).getByTestId('plan-price').textContent).toBe('$10 / member / month');
     expect(within(proColumn).getByText('$10')).toBeTruthy();
@@ -253,6 +263,28 @@ describe('UpgradePlan', () => {
     expect(proColumn.getAttribute('data-highlighted')).toBe('false');
     expect(within(proColumn).queryByTestId('pricing-upgrade-pro')).toBeNull();
     expect(within(freeColumn).getByTestId('pricing-downgrade-free')).toBeTruthy();
+  });
+
+  it.each([
+    ['French', fr],
+    ['Japanese', ja],
+    ['Korean', ko],
+    ['Thai', th],
+    ['Turkish', tr],
+    ['Ukrainian', uk],
+    ['Vietnamese', vi],
+  ] as const)('renders annual pricing without unfilled placeholders in %s', async (_language, resource) => {
+    const { price, priceInfo } = resource.settings.comparePlanDialog.proPlan;
+
+    mockTranslations['settings.comparePlanDialog.proPlan.price'] = price;
+    mockTranslations['settings.comparePlanDialog.proPlan.priceInfo'] = priceInfo;
+    renderModal(async () => catalog);
+
+    const proColumn = await screen.findByTestId('pricing-plan-pro');
+
+    expect(within(proColumn).getByTestId('plan-price').textContent).toBe('$10');
+    expect(proColumn.textContent).not.toContain('{}');
+    expect(proColumn.textContent).not.toContain('$12.5');
   });
 
   it('shows skeleton cards while the catalog loads', () => {

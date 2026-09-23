@@ -21,7 +21,7 @@ export function Error() {
               rewrite();
             }}
           >{t('chat.writer.button.retry')}</span>
-        </span> : error?.code === ERROR_CODE_NO_LIMIT ? t('chat.writer.errors.noLimit') : error?.message}
+        </span> : error?.code === ERROR_CODE_NO_LIMIT ? t('chat.writer.errors.responseLimit') : error?.message}
       </div>
 
     </div>

@@ -101,7 +101,7 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
               <AlertDescription>
                 <div className='flex items-center gap-3'>
                   <Error className='!min-h-5 !min-w-5 text-icon-error-thick'/>
-                  {t('chat.errors.noLimit')}
+                  {t('chat.errors.responseLimit')}
                 </div>
               </AlertDescription>
             </Alert>

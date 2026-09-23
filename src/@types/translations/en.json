@@ -386,7 +386,7 @@
     "generating": "Generating response...",
     "errors": {
       "copied": "Error copying to clipboard",
-      "noLimit": "Your workspace has ran out of free AI responses. Please ask your workspace owner to upgrade the workspace plan or purchase AI add-ons.",
+      "responseLimit": "Your workspace has run out of free AI responses. Please ask your workspace owner to upgrade to the Pro Plan.",
       "emptyMessage": "Please enter a message",
       "wait": "Please wait for the current response to finish generating"
     },
@@ -461,7 +461,7 @@
       "errors": {
         "noAssistantType": "No assistant type selected",
         "connection": "Connection lost. Please check your internet and",
-        "noLimit": "Your working space is running out of free AI responses. To get more responses, please upgrade to Pro Plan or purchase an AI add-on."
+        "responseLimit": "Your workspace has run out of free AI responses. Upgrade to the Pro Plan to unlock unlimited responses."
       }
     },
     "customPrompt": {
@@ -665,13 +665,10 @@
     "upgradeToAIMax": "Unlock unlimited AI",
     "storageLimitDialogTitle": "You have run out of free storage. Upgrade to unlock unlimited storage",
     "storageLimitDialogTitleIOS": "You have run out of free storage.",
-    "aiResponseLimitTitle": "You have run out of free AI responses. Upgrade to the Pro Plan or purchase an AI add-on to unlock unlimited responses",
     "aiResponseLimitTitleIOS": "You have run out of free AI responses.",
     "aiResponseLimitDialogTitle": "AI Responses limit reached",
-    "aiResponseLimit": "You have run out of free AI responses.\n\nGo to Settings -> Plan -> Click AI Max or Pro Plan to get more AI responses",
     "askOwnerToUpgradeToPro": "Your workspace is running out of free storage. Please ask your workspace owner to upgrade to the Pro Plan",
     "askOwnerToUpgradeToProIOS": "Your workspace is running out of free storage.",
-    "askOwnerToUpgradeToAIMax": "Your workspace has ran out of free AI responses. Please ask your workspace owner to upgrade the plan or purchase AI add-ons",
     "askOwnerToUpgradeToAIMaxIOS": "Your workspace is running out of free AI responses.",
     "purchaseStorageSpace": "Purchase Storage Space",
     "singleFileProPlanLimitationDescription": "You have exceeded the maximum file upload size allowed in the free plan. Please upgrade to the Pro Plan to upload larger files",
