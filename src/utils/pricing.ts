@@ -42,16 +42,18 @@ const PLAN_DESCRIPTION_KEYS: Record<string, string> = {
 };
 
 /**
- * Formats cents as the modal's short dollar string: 1250 -> `$12.5`,
- * 1000 -> `$10`, 1299 -> `$12.99`. With `perMonthFromYearly` a yearly total
- * becomes its monthly equivalent: 12000 -> `$10`.
+ * Formats cents as the short dollar string used across the pricing UI, matching
+ * the desktop client: 1250 -> `US$12.5`, 1000 -> `US$10`, 1299 -> `US$12.99`.
+ * With `perMonthFromYearly` a yearly total becomes its monthly equivalent:
+ * 12000 -> `US$10`.
  */
 export function formatPriceCents(cents: number, options: { perMonthFromYearly?: boolean } = {}): string {
   const dollars = (options.perMonthFromYearly ? cents / 12 : cents) / 100;
   // Round to whole cents, then drop trailing zeros so 12.50 renders as 12.5.
   const rounded = Math.round(dollars * 100) / 100;
 
-  return `$${Number(rounded.toFixed(2))}`;
+  // Same prefix as the desktop client's pricing labels.
+  return `US$${Number(rounded.toFixed(2))}`;
 }
 
 export function getPlanPrice(plan: PricingPlan, interval: SubscriptionInterval): PricingPrice | undefined {
@@ -100,6 +102,13 @@ export function localizePlanDescription(t: PricingTranslate, plan: PricingPlan):
 /** Localized noun for a feature key, or the server's `fallback` for keys this client does not know. */
 export function localizeFeatureLabel(t: PricingTranslate, key: string, fallback: string): string {
   return t(`${FEATURE_LABEL_KEY_PREFIX}${key}`, { defaultValue: fallback });
+}
+
+/** Localized tooltip for a comparison row, the server's tooltip for keys this client does not know, or null. */
+export function localizeFeatureTooltip(t: PricingTranslate, key: string, fallback: string | null): string | null {
+  const text = t(`subscribe.featureTooltip.${key}`, { defaultValue: fallback ?? '' });
+
+  return text ? text : null;
 }
 
 /** Localized value text; unknown kinds and units fall back to the server's `display`. */

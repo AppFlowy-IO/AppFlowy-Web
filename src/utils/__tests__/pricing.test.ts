@@ -95,25 +95,25 @@ const catalog: PricingCatalog = {
 
 describe('formatPriceCents', () => {
   it('renders short dollar strings without trailing zeros', () => {
-    expect(formatPriceCents(1250)).toBe('$12.5');
-    expect(formatPriceCents(1000)).toBe('$10');
-    expect(formatPriceCents(0)).toBe('$0');
-    expect(formatPriceCents(1299)).toBe('$12.99');
+    expect(formatPriceCents(1250)).toBe('US$12.5');
+    expect(formatPriceCents(1000)).toBe('US$10');
+    expect(formatPriceCents(0)).toBe('US$0');
+    expect(formatPriceCents(1299)).toBe('US$12.99');
   });
 
   it('converts a yearly total into its monthly equivalent', () => {
-    expect(formatPriceCents(12000, { perMonthFromYearly: true })).toBe('$10');
-    expect(formatPriceCents(9600, { perMonthFromYearly: true })).toBe('$8');
-    expect(formatPriceCents(7200, { perMonthFromYearly: true })).toBe('$6');
+    expect(formatPriceCents(12000, { perMonthFromYearly: true })).toBe('US$10');
+    expect(formatPriceCents(9600, { perMonthFromYearly: true })).toBe('US$8');
+    expect(formatPriceCents(7200, { perMonthFromYearly: true })).toBe('US$6');
   });
 });
 
 describe('plan lookup helpers', () => {
   it('finds prices per interval and derives display prices', () => {
     expect(getPlanPrice(pro, SubscriptionInterval.Month)?.price_cents).toBe(1250);
-    expect(getPlanDisplayPrice(pro, SubscriptionInterval.Month)).toBe('$12.5');
-    expect(getPlanDisplayPrice(pro, SubscriptionInterval.Year)).toBe('$10');
-    expect(getPlanDisplayPrice(aiMax, SubscriptionInterval.Year)).toBe('$8');
+    expect(getPlanDisplayPrice(pro, SubscriptionInterval.Month)).toBe('US$12.5');
+    expect(getPlanDisplayPrice(pro, SubscriptionInterval.Year)).toBe('US$10');
+    expect(getPlanDisplayPrice(aiMax, SubscriptionInterval.Year)).toBe('US$8');
   });
 
   it('returns null when a plan has no price for the interval', () => {

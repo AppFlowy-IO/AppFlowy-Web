@@ -1,8 +1,8 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
-import { PricingCatalog, SubscriptionInterval } from '@/application/types';
+import { PricingCatalog, Subscription, SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { AppOperationsContext, AppOperationsContextType } from '@/components/app/contexts/AppOperationsContext';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import { resetPricingCatalogCache } from '@/components/app/hooks/usePricingCatalog';
@@ -11,6 +11,8 @@ import UpgradePlan from '@/components/billing/UpgradePlan';
 const mockTranslations: Record<string, string> = {
   'subscribe.feature.storage': 'Storage',
   'subscribe.value.unlimited': 'Unlimited',
+  // Desktop-style price note with the monthly price placeholder.
+  'settings.comparePlanDialog.proPlan.priceInfo': 'Per user per month \nbilled annually\n\n{} billed monthly',
 };
 
 jest.mock('react-i18next', () => ({
@@ -45,39 +47,6 @@ jest.mock('@/components/_shared/modal', () => ({
       </div>
     ) : null,
 }));
-
-jest.mock('@/components/_shared/tabs/ViewTabs', () => {
-  const ReactModule = jest.requireActual('react');
-
-  return {
-    ViewTabs: ({
-      children,
-      onChange,
-    }: {
-      children: ReactNode;
-      onChange: (event: unknown, value: unknown) => void;
-    }) => (
-      <div>
-        {ReactModule.Children.map(children, (child: ReactNode) =>
-          ReactModule.isValidElement(child) ? ReactModule.cloneElement(child, { onChange }) : child
-        )}
-      </div>
-    ),
-    ViewTab: ({
-      label,
-      value,
-      onChange,
-    }: {
-      label: ReactNode;
-      value: string;
-      onChange?: (event: unknown, value: unknown) => void;
-    }) => (
-      <button type='button' onClick={(event) => onChange?.(event, value)}>
-        {label}
-      </button>
-    ),
-  };
-});
 
 const catalog: PricingCatalog = {
   version: 1,
@@ -116,10 +85,59 @@ const catalog: PricingCatalog = {
       features: [],
     },
   ],
-  comparison: [],
+  comparison: [
+    {
+      key: 'workspaces',
+      label: 'Workspaces',
+      tooltip: null,
+      values: {
+        free: { kind: 'text', display: 'Charged per workspace' },
+        pro: { kind: 'text', display: 'Charged per workspace' },
+      },
+    },
+    {
+      key: 'members',
+      label: 'Members',
+      tooltip: null,
+      values: {
+        free: { kind: 'quantity', amount: 2, unit: 'members', display: 'Up to 2' },
+        pro: { kind: 'quantity', amount: 10, unit: 'members', display: 'Up to 10' },
+      },
+    },
+    {
+      key: 'realtime_collaboration',
+      label: 'Real-time collaboration',
+      tooltip: null,
+      values: {
+        free: { kind: 'included', display: 'yes' },
+        pro: { kind: 'included', display: 'yes' },
+      },
+    },
+    {
+      key: 'guests',
+      label: 'Guest editors',
+      tooltip: 'Collaborate on specific pages with non-members',
+      values: {
+        free: { kind: 'excluded', display: 'no' },
+        pro: { kind: 'quantity', amount: 10, unit: 'guests', display: 'Up to 10' },
+      },
+    },
+    {
+      key: 'storage',
+      label: 'Storage',
+      tooltip: null,
+      values: {
+        free: { kind: 'quantity', amount: 5, unit: 'gb', display: '5 GB' },
+        pro: { kind: 'unlimited', display: 'Unlimited' },
+      },
+    },
+  ],
 };
 
-function renderModal(getPricingCatalog: () => Promise<PricingCatalog>, { isOfficialHosted = true } = {}) {
+function renderModal(
+  getPricingCatalog: () => Promise<PricingCatalog>,
+  { isOfficialHosted = true, subscriptions = [] as Subscription[] } = {}
+) {
   return render(
     <MemoryRouter>
       <AuthInternalContext.Provider
@@ -131,7 +149,7 @@ function renderModal(getPricingCatalog: () => Promise<PricingCatalog>, { isOffic
         }}
       >
         <AppOperationsContext.Provider
-          value={{ getSubscriptions: async () => [], getPricingCatalog } as unknown as AppOperationsContextType}
+          value={{ getSubscriptions: async () => subscriptions, getPricingCatalog } as unknown as AppOperationsContextType}
         >
           <UpgradePlan open onClose={() => undefined} onOpen={() => undefined} />
         </AppOperationsContext.Provider>
@@ -150,29 +168,69 @@ describe('UpgradePlan', () => {
     jest.restoreAllMocks();
   });
 
-  it('renders prices, the discount label and bullets from the pricing catalog', async () => {
+  it('renders the comparison table with Pro highlighted as the upgrade target', async () => {
     renderModal(async () => catalog);
 
-    const proCard = await screen.findByTestId('pricing-plan-pro');
+    const proColumn = await screen.findByTestId('pricing-plan-pro');
+    const freeColumn = screen.getByTestId('pricing-plan-free');
 
-    // Yearly is the default interval: the yearly total is shown per month.
-    expect(within(proCard).getByText('$10')).toBeTruthy();
-    expect(within(proCard).getByText('subscribe.proDuration.yearly')).toBeTruthy();
-    expect(within(screen.getByTestId('pricing-plan-free')).getByText('subscribe.freeDuration')).toBeTruthy();
-    expect(screen.getByText(/Save 20%/)).toBeTruthy();
-    expect(screen.getByText('$USD')).toBeTruthy();
-    // Add-ons never get a card in the compare view.
+    // Free is the current plan; Pro is the upgrade target and therefore highlighted, like the desktop dialog.
+    expect(within(freeColumn).getByTestId('current-plan-badge')).toBeTruthy();
+    expect(within(proColumn).queryByTestId('current-plan-badge')).toBeNull();
+    expect(proColumn.getAttribute('data-highlighted')).toBe('true');
+    expect(freeColumn.getAttribute('data-highlighted')).toBe('false');
+
+    // Annual per-month price with the monthly note, desktop style; no interval tabs.
+    expect(within(proColumn).getByText('US$10')).toBeTruthy();
+    expect(within(proColumn).getByText(/US\$12\.5/)).toBeTruthy();
+    expect(within(freeColumn).getByText('US$0')).toBeTruthy();
+    expect(within(freeColumn).getByText('settings.comparePlanDialog.freePlan.priceInfo')).toBeTruthy();
+    expect(screen.queryByText('subscribe.monthly')).toBeNull();
     expect(screen.queryByTestId('pricing-plan-ai_max')).toBeNull();
 
-    // Known keys compose localized parts; unknown keys use the server sentence; excluded ones are skipped.
-    expect(within(proCard).getByText('Storage: Unlimited')).toBeTruthy();
-    expect(within(proCard).getByText('Up to 10 workspace members')).toBeTruthy();
-    expect(within(proCard).queryByText('No guests')).toBeNull();
+    // Comparison rows from the catalog: labels, values, check marks and blank cells.
+    const table = screen.getByTestId('plan-comparison');
 
-    fireEvent.click(screen.getByText('subscribe.monthly'));
+    expect(within(table).getByText('Members')).toBeTruthy();
+    expect(within(table).getByText('Guest editors')).toBeTruthy();
+    expect(within(freeColumn).getByText('Up to 2')).toBeTruthy();
+    expect(within(proColumn).getAllByText('Up to 10')).toHaveLength(2);
+    expect(within(proColumn).getByText('Unlimited')).toBeTruthy();
+    expect(within(freeColumn).getByText('5 GB')).toBeTruthy();
+    expect(within(freeColumn).getAllByTestId('feature-included')).toHaveLength(1);
+    expect(within(freeColumn).getAllByTestId('feature-excluded')).toHaveLength(1);
+    expect(within(proColumn).getAllByTestId('feature-included')).toHaveLength(1);
 
-    expect(within(proCard).getByText('$12.5')).toBeTruthy();
-    expect(within(proCard).getByText('subscribe.proDuration.monthly')).toBeTruthy();
+    // Only the upgrade target has a button, and it checks out yearly.
+    expect(within(freeColumn).queryByTestId('pricing-downgrade-free')).toBeNull();
+    const { BillingService } = jest.requireMock('@/application/services/domains');
+
+    BillingService.getSubscriptionLink.mockResolvedValue('https://checkout.example');
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+
+    fireEvent.click(within(proColumn).getByTestId('pricing-upgrade-pro'));
+    await waitFor(() => expect(openSpy).toHaveBeenCalledWith('https://checkout.example', '_current'));
+    expect(BillingService.getSubscriptionLink).toHaveBeenCalledWith(
+      'workspace-id',
+      SubscriptionPlan.Pro,
+      SubscriptionInterval.Year
+    );
+  });
+
+  it('marks Pro as current and offers a downgrade on Free for a Pro workspace', async () => {
+    renderModal(async () => catalog, {
+      subscriptions: [
+        { plan: SubscriptionPlan.Pro, currency: 'USD', price_cents: 1250, recurring_interval: SubscriptionInterval.Month },
+      ],
+    });
+
+    const proColumn = await screen.findByTestId('pricing-plan-pro');
+    const freeColumn = screen.getByTestId('pricing-plan-free');
+
+    await waitFor(() => expect(within(proColumn).getByTestId('current-plan-badge')).toBeTruthy());
+    expect(proColumn.getAttribute('data-highlighted')).toBe('false');
+    expect(within(proColumn).queryByTestId('pricing-upgrade-pro')).toBeNull();
+    expect(within(freeColumn).getByTestId('pricing-downgrade-free')).toBeTruthy();
   });
 
   it('shows skeleton cards while the catalog loads', () => {
@@ -185,7 +243,7 @@ describe('UpgradePlan', () => {
   it('offers a retry when the catalog cannot be loaded and recovers on success', async () => {
     const getPricingCatalog = jest
       .fn<Promise<PricingCatalog>, []>()
-      .mockRejectedValueOnce(new Error('billing unavailable'))
+      .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(catalog);
 
     renderModal(getPricingCatalog);
@@ -197,9 +255,9 @@ describe('UpgradePlan', () => {
 
     fireEvent.click(within(errorState).getByText('button.retry'));
 
-    const proCard = await screen.findByTestId('pricing-plan-pro');
+    const proColumn = await screen.findByTestId('pricing-plan-pro');
 
-    expect(within(proCard).getByText('$10')).toBeTruthy();
+    expect(within(proColumn).getByText('US$10')).toBeTruthy();
     expect(getPricingCatalog).toHaveBeenCalledTimes(2);
   });
 
@@ -207,7 +265,6 @@ describe('UpgradePlan', () => {
     renderModal(async () => catalog, { isOfficialHosted: false });
 
     await screen.findByTestId('pricing-plan-free');
-
     expect(screen.queryByTestId('pricing-plan-pro')).toBeNull();
   });
 });

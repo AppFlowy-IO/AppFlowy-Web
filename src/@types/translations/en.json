@@ -4136,6 +4136,12 @@
     "freeDuration": "forever",
     "pricingUnavailable": "We couldn't load pricing right now.",
     "featureBullet": "{{feature}}: {{value}}",
+    "featureTooltip": {
+      "guests": "Collaborate on specific pages with non-members",
+      "ai_responses": "Lifetime means the number of responses never reset",
+      "ai_images": "Lifetime means the number of responses never reset",
+      "custom_namespace": "Custom published site URL"
+    },
     "value": {
       "unlimited": "Unlimited",
       "included": "Included",

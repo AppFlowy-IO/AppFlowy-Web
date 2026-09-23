@@ -1,26 +1,138 @@
-import { Button, Skeleton } from '@mui/material';
+import { Button as MuiButton, Skeleton } from '@mui/material';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { BillingService } from '@/application/services/domains';
-import { Subscription, SubscriptionInterval, SubscriptionPlan } from '@/application/types';
+import {
+  FeatureValue,
+  PricingComparisonRow,
+  PricingPlan,
+  Subscription,
+  SubscriptionInterval,
+  SubscriptionPlan,
+} from '@/application/types';
+import { ReactComponent as CheckIcon } from '@/assets/icons/check.svg';
+import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
-import { ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
 import { useCurrentWorkspaceId, useGetSubscriptions, useIsOfficialHosted } from '@/components/app/app.hooks';
 import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
+import { fillPlaceholders } from '@/components/app/settings/billing/labels';
 import CancelSubscribe from '@/components/billing/CancelSubscribe';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import {
   PricingTranslate,
-  formatFeatureBullet,
+  formatPriceCents,
   getPlanDisplayPrice,
   isFreePlan,
+  localizeFeatureLabel,
+  localizeFeatureTooltip,
+  localizeFeatureValue,
   localizePlanDescription,
   localizePlanName,
   toSubscriptionPlan,
   workspacePlans,
 } from '@/utils/pricing';
+
+type PlanAction = 'none' | 'upgrade' | 'downgrade';
+
+/**
+ * Mirrors the desktop compare dialog: the current plan gets no action, Free is
+ * a downgrade from a paid plan, and every other plan is an upgrade. The
+ * upgrade target is the highlighted column.
+ */
+function planActionFor(planId: string, currentPlan: SubscriptionPlan | undefined): PlanAction {
+  if (!currentPlan || planId === currentPlan) return 'none';
+  if (planId === SubscriptionPlan.Free) return 'downgrade';
+
+  return 'upgrade';
+}
+
+// Colors and dimensions follow the desktop compare dialog
+// (settings_plan_comparison_dialog.dart): purple accents with light/dark variants,
+// a gradient border around the upgrade target, 36px rows and a 784px-wide dialog.
+const DIALOG_PAPER_CLASS = 'w-[820px] max-w-[96vw]';
+const LABEL_COLUMN_CLASS = 'w-[220px] shrink-0';
+const PLAN_COLUMN_CLASS = 'w-[236px] shrink-0';
+const HEADER_CLASS = 'flex h-[320px] flex-col px-3 pt-2';
+const ROW_CLASS =
+  'flex h-9 items-center gap-2 border-b border-border-primary px-3 text-sm font-medium text-text-primary';
+const ACCENT_TEXT_CLASS = 'text-[#5C3699] dark:text-[#C49BEC]';
+const HEADING_TEXT_CLASS = 'text-[#5C3699] dark:text-[#E8E0FF]';
+const ACCENT_GRADIENT_CLASS =
+  'bg-[linear-gradient(90deg,#251D37,#7547C0)] dark:bg-[linear-gradient(90deg,#7459AD,#DDC8FF)]';
+const BUTTON_GRADIENT_CLASS =
+  'bg-[linear-gradient(135deg,#251D37_40%,#7547C0)] dark:bg-[linear-gradient(135deg,#7459AD_40%,#DDC8FF)]';
+const CURRENT_BADGE_CLASS = 'bg-[#4F3F5F] text-white dark:bg-[#E8E0FF] dark:text-black';
+
+function UpgradeButton({ label, onClick, testId }: { label: string; onClick: () => void; testId: string }) {
+  return (
+    <div className={cn('rounded-[16px] p-[2px]', BUTTON_GRADIENT_CLASS)}>
+      <button
+        type='button'
+        onClick={onClick}
+        data-testid={testId}
+        className='flex h-9 w-[148px] items-center justify-center rounded-[14px] bg-surface-primary text-sm font-semibold hover:opacity-90'
+      >
+        {/* Light mode paints the label with the gradient like the desktop's shader mask; dark mode uses the accent color. */}
+        <span className={cn('bg-clip-text text-transparent', BUTTON_GRADIENT_CLASS, 'dark:bg-none dark:text-[#C49BEC]')}>
+          {label}
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function DowngradeButton({ label, onClick, testId }: { label: string; onClick: () => void; testId: string }) {
+  return (
+    <button
+      type='button'
+      onClick={onClick}
+      data-testid={testId}
+      className='flex h-9 w-[148px] items-center justify-center rounded-[16px] border border-[#333333] text-sm font-medium text-text-primary hover:bg-fill-content-hover dark:border-border-primary'
+    >
+      {label}
+    </button>
+  );
+}
+
+function FeatureLabelCell({ label, tooltip }: { label: string; tooltip: string | null }) {
+  return (
+    <div className={ROW_CLASS}>
+      <span className='min-w-0 flex-1 truncate'>{label}</span>
+      {tooltip && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className='flex items-center' aria-label={tooltip}>
+                <InfoIcon className='h-4 w-4 text-icon-secondary' />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{tooltip}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+    </div>
+  );
+}
+
+function FeatureValueCell({ text, value }: { text: string | null; value?: FeatureValue }) {
+  if (!value || value.kind === 'excluded') {
+    return <div className={ROW_CLASS} data-testid='feature-excluded' />;
+  }
+
+  if (value.kind === 'included') {
+    return (
+      <div className={ROW_CLASS} data-testid='feature-included'>
+        <CheckIcon className='h-5 w-5 text-icon-primary' />
+      </div>
+    );
+  }
+
+  return <div className={ROW_CLASS}>{text}</div>;
+}
 
 function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => void; onOpen: () => void }) {
   const { t } = useTranslation();
@@ -53,26 +165,12 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
   const loadSubscription = useCallback(async () => {
     try {
       const subscriptions = await getSubscriptions?.();
-
-      if (!subscriptions || subscriptions.length === 0) {
-        setActiveSubscription({
-          plan: SubscriptionPlan.Free,
-          currency: '',
-          recurring_interval: SubscriptionInterval.Month,
-          price_cents: 0,
-        });
-        return;
-      }
-
-      const proSubscription = subscriptions.find(
+      const proSubscription = subscriptions?.find(
         (item) => item.plan === SubscriptionPlan.Pro || item.plan === SubscriptionPlan.Team
       );
 
       if (proSubscription) {
-        setActiveSubscription({
-          ...proSubscription,
-          plan: SubscriptionPlan.Pro,
-        });
+        setActiveSubscription({ ...proSubscription, plan: SubscriptionPlan.Pro });
         return;
       }
 
@@ -94,8 +192,8 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
       return prev;
     });
   }, [onClose, setSearch]);
-  const [interval, setInterval] = React.useState<SubscriptionInterval>(SubscriptionInterval.Year);
 
+  // Checkout is yearly like the desktop client; the billing period can be changed afterwards in Settings.
   const handleUpgrade = useCallback(
     async (planId: string) => {
       if (!currentWorkspaceId) return;
@@ -108,7 +206,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
       if (!plan) return;
 
       try {
-        const link = await BillingService.getSubscriptionLink(currentWorkspaceId, plan, interval);
+        const link = await BillingService.getSubscriptionLink(currentWorkspaceId, plan, SubscriptionInterval.Year);
 
         window.open(link, '_current');
         // eslint-disable-next-line
@@ -116,7 +214,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
         notify.error(e.message);
       }
     },
-    [currentWorkspaceId, interval, isHosted]
+    [currentWorkspaceId, isHosted]
   );
 
   useEffect(() => {
@@ -125,32 +223,40 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
     }
   }, [open, loadSubscription]);
 
-  const plans = useMemo(() => {
+  const currentPlan = activeSubscription?.plan;
+
+  const columns = useMemo(() => {
     if (!catalog) return [];
 
-    const cards = workspacePlans(catalog).map((plan) => {
+    const plans: PricingPlan[] = workspacePlans(catalog);
+    // Self-hosted instances have Pro features enabled by default; paid plans are not offered.
+    const offered = isHosted ? plans : plans.filter((plan) => isFreePlan(plan));
+
+    return offered.map((plan) => {
       const free = isFreePlan(plan);
+      const yearly = getPlanDisplayPrice(plan, SubscriptionInterval.Year);
+      const monthly = getPlanDisplayPrice(plan, SubscriptionInterval.Month);
+      const priceInfo = free
+        ? t('settings.comparePlanDialog.freePlan.priceInfo')
+        : yearly
+        ? fillPlaceholders(t('settings.comparePlanDialog.proPlan.priceInfo'), monthly ?? '')
+        : t('subscribe.proDuration.monthly');
+      const actionType = planActionFor(plan.id, currentPlan);
 
       return {
-        key: plan.id,
-        isFree: free,
+        plan,
         name: localizePlanName(translate, plan),
         description: localizePlanDescription(translate, plan),
-        price: free ? t('subscribe.free') : getPlanDisplayPrice(plan, interval) ?? '',
-        duration: free
-          ? t('subscribe.freeDuration')
-          : interval === SubscriptionInterval.Month
-          ? t('subscribe.proDuration.monthly')
-          : t('subscribe.proDuration.yearly'),
-        points: plan.features
-          .map((feature) => formatFeatureBullet(translate, feature))
-          .filter((point): point is string => Boolean(point)),
+        price: free ? formatPriceCents(0) : yearly ?? monthly ?? '',
+        priceInfo,
+        action: actionType,
+        isCurrent: plan.id === currentPlan,
+        highlighted: actionType === 'upgrade',
       };
     });
+  }, [catalog, currentPlan, isHosted, t, translate]);
 
-    // Self-hosted instances have Pro features enabled by default; paid plans are not offered.
-    return isHosted ? cards : cards.filter((card) => card.isFree);
-  }, [catalog, interval, isHosted, t, translate]);
+  const rows: PricingComparisonRow[] = catalog?.comparison ?? [];
 
   return (
     <NormalModal
@@ -164,114 +270,106 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
       okButtonProps={{
         className: 'hidden',
       }}
-      slotProps={{
-        root: {
-          className: 'min-w-[500px] max-w-full max-h-full',
-        },
-      }}
+      maxWidth={false}
+      classes={{ paper: DIALOG_PAPER_CLASS }}
     >
       <div className={'flex w-full flex-col gap-4 p-4'}>
-        <div className={'flex items-center justify-between gap-4'}>
-          <ViewTabs
-            indicatorColor={'secondary'}
-            value={interval}
-            onChange={(_, v) => {
-              setInterval(v);
-            }}
-          >
-            <ViewTab
-              label={
-                catalog
-                  ? `${t('subscribe.yearly')} ${t('subscribe.save', {
-                      discount: catalog.annual_discount_percent,
-                    })}`
-                  : t('subscribe.yearly')
-              }
-              value={SubscriptionInterval.Year}
-            />
-            <ViewTab label={t('subscribe.monthly')} value={SubscriptionInterval.Month} />
-          </ViewTabs>
-          <div className={'flex items-center justify-end'}>
-            {t('subscribe.priceIn')}
-            <span className={'ml-1.5 font-medium'}>{`$${catalog?.currency ?? 'USD'}`}</span>
-          </div>
-        </div>
-
         {!catalog && isLoading ? (
           <div className={'flex w-full gap-4'} data-testid={'pricing-skeleton'}>
-            <Skeleton variant={'rounded'} width={240} height={360} />
-            <Skeleton variant={'rounded'} width={240} height={360} />
+            <Skeleton variant={'rounded'} width={220} height={480} />
+            <Skeleton variant={'rounded'} width={236} height={480} />
+            <Skeleton variant={'rounded'} width={236} height={480} />
           </div>
         ) : !catalog && hasError ? (
           <div className={'flex flex-col items-start gap-3'} data-testid={'pricing-error'}>
             <div className={'text-text-secondary'}>{t('subscribe.pricingUnavailable')}</div>
-            <Button variant={'outlined'} color={'inherit'} onClick={() => void reload()}>
+            <MuiButton variant={'outlined'} color={'inherit'} onClick={() => void reload()}>
               {t('button.retry')}
-            </Button>
+            </MuiButton>
           </div>
         ) : (
-          <div className={'flex w-full gap-4 overflow-auto'}>
-            {plans.map((plan) => {
-              return (
-                <div
-                  key={plan.key}
-                  data-testid={`pricing-plan-${plan.key}`}
-                  style={{
-                    borderColor: activeSubscription?.plan === plan.key ? 'var(--billing-primary)' : undefined,
-                  }}
-                  className={'relative flex flex-col gap-2 rounded-[16px] border border-border-primary p-4'}
-                >
-                  {activeSubscription?.plan === plan.key && (
-                    <div
-                      className={
-                        'absolute right-0 top-0 rounded-[14px] rounded-br-none rounded-tl-none bg-billing-primary p-2 text-xs text-content-on-fill'
-                      }
-                    >
-                      {t('subscribe.currentPlan')}
-                    </div>
-                  )}
-                  <div className={'font-medium'}>{plan.name}</div>
-                  <div className={'text-sm text-text-secondary'}>{plan.description}</div>
-                  <div className={'text-lg'}>{plan.price}</div>
-                  <div className={'whitespace-pre-wrap text-text-secondary'}>{plan.duration}</div>
-
-                  {!plan.isFree ? (
-                    <div className={'flex flex-col gap-2'}>
-                      {activeSubscription?.plan !== plan.key && (
-                        <Button color={'secondary'} onClick={() => void handleUpgrade(plan.key)} variant={'contained'}>
-                          {t('subscribe.changePlan')}
-                        </Button>
-                      )}
-                      <span className={'font-medium'}>{t('subscribe.everythingInFree')}</span>
-                    </div>
-                  ) : (
-                    activeSubscription?.plan !== plan.key && (
-                      <Button
-                        onClick={() => {
-                          setCancelOpen(true);
-                        }}
-                        variant={'outlined'}
-                        color={'inherit'}
-                      >
-                        {t('subscribe.cancel')}
-                      </Button>
-                    )
-                  )}
-                  <div className={'flex flex-col gap-2'}>
-                    {plan.points.map((point, index) => {
-                      return (
-                        <div key={index} className={'flex items-start gap-2'}>
-                          <div className={'flex h-6 items-center'}>
-                            <div className={'h-2 w-2 rounded-full bg-billing-primary'} />
-                          </div>
-                          <div className={''}>{point}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
+          <div className={'flex w-full items-start justify-start gap-2 overflow-x-auto'} data-testid={'plan-comparison'}>
+            <div className={LABEL_COLUMN_CLASS}>
+              <div className={cn(HEADER_CLASS, 'pt-8')}>
+                <div className={cn('whitespace-pre-line text-2xl font-semibold', HEADING_TEXT_CLASS)}>
+                  {t('settings.comparePlanDialog.planFeatures')}
                 </div>
-              );
-            })}
+              </div>
+              {rows.map((row) => (
+                <FeatureLabelCell
+                  key={row.key}
+                  label={localizeFeatureLabel(translate, row.key, row.label)}
+                  tooltip={localizeFeatureTooltip(translate, row.key, row.tooltip)}
+                />
+              ))}
+            </div>
+
+            {columns.map(({ plan, name, description, price, priceInfo, action: planAction, isCurrent, highlighted }) => (
+              <div
+                key={plan.id}
+                data-testid={`pricing-plan-${plan.id}`}
+                data-highlighted={highlighted}
+                className={cn(PLAN_COLUMN_CLASS, 'rounded-[24px] p-1', highlighted && ACCENT_GRADIENT_CLASS)}
+              >
+                <div className={cn('rounded-[22px] bg-surface-primary', highlighted && 'pb-2')}>
+                  <div className={HEADER_CLASS}>
+                    <div className='h-7'>
+                      {isCurrent && (
+                        <span
+                          className={cn(
+                            'inline-flex h-[22px] w-[72px] items-center justify-center rounded-[4px] text-xs font-medium',
+                            CURRENT_BADGE_CLASS
+                          )}
+                          data-testid='current-plan-badge'
+                        >
+                          {t('settings.comparePlanDialog.current')}
+                        </span>
+                      )}
+                    </div>
+                    <div className={cn('text-2xl font-semibold', highlighted ? ACCENT_TEXT_CLASS : 'text-text-primary')}>
+                      {name}
+                    </div>
+                    <div className='mt-1 line-clamp-3 text-sm leading-5 text-text-secondary'>{description}</div>
+                    <div
+                      className={cn(
+                        'mt-5 text-2xl font-semibold',
+                        highlighted ? ACCENT_TEXT_CLASS : 'text-text-primary'
+                      )}
+                    >
+                      {price}
+                    </div>
+                    <div className='mt-1 whitespace-pre-line text-sm leading-5 text-text-secondary'>{priceInfo}</div>
+                    <div className='mt-auto flex h-14 items-center'>
+                      {planAction === 'upgrade' && (
+                        <UpgradeButton
+                          label={t('settings.comparePlanDialog.actions.upgrade')}
+                          onClick={() => void handleUpgrade(plan.id)}
+                          testId={`pricing-upgrade-${plan.id}`}
+                        />
+                      )}
+                      {planAction === 'downgrade' && (
+                        <DowngradeButton
+                          label={t('settings.comparePlanDialog.actions.downgrade')}
+                          onClick={() => setCancelOpen(true)}
+                          testId={`pricing-downgrade-${plan.id}`}
+                        />
+                      )}
+                    </div>
+                  </div>
+                  {rows.map((row) => {
+                    const value = row.values[plan.id];
+
+                    return (
+                      <FeatureValueCell
+                        key={row.key}
+                        value={value}
+                        text={value ? localizeFeatureValue(translate, value) : null}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
