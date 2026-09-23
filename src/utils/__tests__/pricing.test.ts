@@ -11,6 +11,7 @@ import {
   localizeFeatureValue,
   localizePlanDescription,
   localizePlanName,
+  splitPriceTemplate,
   toSubscriptionPlan,
   workspacePlans,
 } from '@/utils/pricing';
@@ -191,7 +192,9 @@ describe('localization helpers', () => {
 
 describe('formatFeatureBullet', () => {
   it('skips excluded features', () => {
-    expect(formatFeatureBullet(t, { key: 'guests', label: 'No guests', value: { kind: 'excluded', display: 'no' } })).toBeNull();
+    expect(
+      formatFeatureBullet(t, { key: 'guests', label: 'No guests', value: { kind: 'excluded', display: 'no' } })
+    ).toBeNull();
   });
 
   it('shows the localized noun for included features', () => {
@@ -213,7 +216,11 @@ describe('formatFeatureBullet', () => {
       })
     ).toBe('Members: Up to 10');
     expect(
-      formatFeatureBullet(t, { key: 'storage', label: 'Unlimited storage', value: { kind: 'unlimited', display: 'Unlimited' } })
+      formatFeatureBullet(t, {
+        key: 'storage',
+        label: 'Unlimited storage',
+        value: { kind: 'unlimited', display: 'Unlimited' },
+      })
     ).toBe('Storage: Unlimited');
   });
 
@@ -225,5 +232,32 @@ describe('formatFeatureBullet', () => {
         value: { kind: 'unlimited', display: 'Unlimited' },
       })
     ).toBe('Quantum sync across galaxies');
+  });
+});
+
+describe('splitPriceTemplate', () => {
+  it('splits the localized template around the amount', () => {
+    expect(splitPriceTemplate('{} / member / month', '$16')).toEqual({
+      prefix: '',
+      amount: '$16',
+      suffix: ' / member / month',
+    });
+  });
+
+  it('keeps text before the placeholder', () => {
+    expect(splitPriceTemplate('per member {} monthly', '$16')).toEqual({
+      prefix: 'per member ',
+      amount: '$16',
+      suffix: ' monthly',
+    });
+  });
+
+  it('keeps the amount when a template has no placeholder', () => {
+    expect(splitPriceTemplate('per member / month', '$16')).toEqual({
+      prefix: '',
+      amount: '$16',
+      suffix: ' per member / month',
+    });
+    expect(splitPriceTemplate('', '$0')).toEqual({ prefix: '', amount: '$0', suffix: '' });
   });
 });

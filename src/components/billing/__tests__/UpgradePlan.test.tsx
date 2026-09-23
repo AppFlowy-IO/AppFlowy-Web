@@ -62,7 +62,13 @@ const catalog: PricingCatalog = {
       name: 'Free',
       description: 'Server free description',
       prices: [],
-      features: [{ key: 'members', label: 'Up to 2 members', value: { kind: 'quantity', amount: 2, unit: 'members', display: 'Up to 2' } }],
+      features: [
+        {
+          key: 'members',
+          label: 'Up to 2 members',
+          value: { kind: 'quantity', amount: 2, unit: 'members', display: 'Up to 2' },
+        },
+      ],
     },
     {
       id: 'pro',
@@ -75,7 +81,11 @@ const catalog: PricingCatalog = {
       ],
       features: [
         { key: 'storage', label: 'Unlimited storage', value: { kind: 'unlimited', display: 'Unlimited' } },
-        { key: 'members', label: 'Up to 10 workspace members', value: { kind: 'quantity', amount: 10, unit: 'members', display: 'Up to 10' } },
+        {
+          key: 'members',
+          label: 'Up to 10 workspace members',
+          value: { kind: 'quantity', amount: 10, unit: 'members', display: 'Up to 10' },
+        },
         { key: 'guests', label: 'No guests', value: { kind: 'excluded', display: 'no' } },
       ],
     },
@@ -152,7 +162,9 @@ function renderModal(
         }}
       >
         <AppOperationsContext.Provider
-          value={{ getSubscriptions: async () => subscriptions, getPricingCatalog } as unknown as AppOperationsContextType}
+          value={
+            { getSubscriptions: async () => subscriptions, getPricingCatalog } as unknown as AppOperationsContextType
+          }
         >
           <UpgradePlan open onClose={() => undefined} onOpen={() => undefined} />
         </AppOperationsContext.Provider>
@@ -184,10 +196,12 @@ describe('UpgradePlan', () => {
     expect(freeColumn.getAttribute('data-highlighted')).toBe('false');
 
     // Annual per-month price with the monthly note, desktop style; no interval tabs.
-    expect(within(proColumn).getByText('$10 / member / month')).toBeTruthy();
+    // The amount is its own span so it can be larger than the qualifier.
+    expect(within(proColumn).getByTestId('plan-price').textContent).toBe('$10 / member / month');
+    expect(within(proColumn).getByText('$10')).toBeTruthy();
     expect(within(proColumn).getByText('billed annually')).toBeTruthy();
     expect(within(proColumn).queryByText(/billed monthly/)).toBeNull();
-    expect(within(freeColumn).getByText('$0 / member / month')).toBeTruthy();
+    expect(within(freeColumn).getByTestId('plan-price').textContent).toBe('$0 / member / month');
     expect(screen.queryByText('subscribe.monthly')).toBeNull();
     expect(screen.queryByTestId('pricing-plan-ai_max')).toBeNull();
 
@@ -223,7 +237,12 @@ describe('UpgradePlan', () => {
   it('marks Pro as current and offers a downgrade on Free for a Pro workspace', async () => {
     renderModal(async () => catalog, {
       subscriptions: [
-        { plan: SubscriptionPlan.Pro, currency: 'USD', price_cents: 1250, recurring_interval: SubscriptionInterval.Month },
+        {
+          plan: SubscriptionPlan.Pro,
+          currency: 'USD',
+          price_cents: 1250,
+          recurring_interval: SubscriptionInterval.Month,
+        },
       ],
     });
 
@@ -260,7 +279,7 @@ describe('UpgradePlan', () => {
 
     const proColumn = await screen.findByTestId('pricing-plan-pro');
 
-    expect(within(proColumn).getByText('$10 / member / month')).toBeTruthy();
+    expect(within(proColumn).getByTestId('plan-price').textContent).toBe('$10 / member / month');
     expect(getPricingCatalog).toHaveBeenCalledTimes(2);
   });
 

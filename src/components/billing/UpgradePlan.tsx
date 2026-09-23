@@ -18,11 +18,11 @@ import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useCurrentWorkspaceId, useGetSubscriptions, useIsOfficialHosted } from '@/components/app/app.hooks';
 import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
-import { fillPlaceholders } from '@/components/app/settings/billing/labels';
 import CancelSubscribe from '@/components/billing/CancelSubscribe';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
+  PriceLabelParts,
   PricingTranslate,
   formatPriceCents,
   getPlanDisplayPrice,
@@ -32,6 +32,7 @@ import {
   localizeFeatureValue,
   localizePlanDescription,
   localizePlanName,
+  splitPriceTemplate,
   toSubscriptionPlan,
   workspacePlans,
 } from '@/utils/pricing';
@@ -50,36 +51,44 @@ function planActionFor(planId: string, currentPlan: SubscriptionPlan | undefined
   return 'upgrade';
 }
 
-// Colors and dimensions follow the desktop compare dialog
-// (settings_plan_comparison_dialog.dart): purple accents with light/dark variants,
-// a gradient border around the upgrade target, 36px rows and a 784px-wide dialog.
-const DIALOG_PAPER_CLASS = 'w-[820px] max-w-[96vw]';
-const LABEL_COLUMN_CLASS = 'w-[220px] shrink-0';
-const PLAN_COLUMN_CLASS = 'w-[236px] shrink-0';
-const HEADER_CLASS = 'flex h-[320px] flex-col px-3 pt-2';
+// Layout and colors mirror the desktop compare dialog
+// (settings_plan_comparison_dialog.dart): a 784px dialog, a 250px label column,
+// 215px plan columns whose heading, price and button blocks are 116/116/56px
+// tall, 36px rows, purple accents and a gradient border around the upgrade
+// target. The app switches themes with `data-dark-mode=true` on the root
+// element, so dark variants use that attribute rather than Tailwind's `dark:`.
+const DIALOG_PAPER_CLASS = 'w-[784px] max-w-[96vw]';
+const LABEL_COLUMN_CLASS = 'w-[250px] shrink-0 pt-[30px]';
+const PLAN_COLUMN_CLASS = 'w-[215px] shrink-0 rounded-[24px]';
+const HEADING_BLOCK_CLASS = 'h-[116px] w-[185px] overflow-hidden pl-3';
+// Content of the highlighted column sits 12px further in, like the desktop.
+const HIGHLIGHT_INSET_CLASS = 'pl-6';
 const ROW_CLASS =
   'flex h-9 items-center gap-2 border-b border-border-primary px-3 text-sm font-medium text-text-primary';
-const ACCENT_TEXT_CLASS = 'text-[#5C3699] dark:text-[#C49BEC]';
-const HEADING_TEXT_CLASS = 'text-[#5C3699] dark:text-[#E8E0FF]';
+const TITLE_CLASS = 'truncate text-2xl font-semibold leading-[30px]';
+const NOTE_CLASS = 'mt-1 text-xs leading-[18px] text-text-secondary';
+const ACCENT_TEXT_CLASS = 'text-[#5C3699] [[data-dark-mode=true]_&]:text-[#C49BEC]';
+const HEADING_TEXT_CLASS = 'text-[#5C3699] [[data-dark-mode=true]_&]:text-[#E8E0FF]';
 const ACCENT_GRADIENT_CLASS =
-  'bg-[linear-gradient(90deg,#251D37,#7547C0)] dark:bg-[linear-gradient(90deg,#7459AD,#DDC8FF)]';
-const BUTTON_GRADIENT_CLASS =
-  'bg-[linear-gradient(135deg,#251D37_40%,#7547C0)] dark:bg-[linear-gradient(135deg,#7459AD_40%,#DDC8FF)]';
-const CURRENT_BADGE_CLASS = 'bg-[#4F3F5F] text-white dark:bg-[#E8E0FF] dark:text-black';
+  'bg-[linear-gradient(90deg,#251D37,#7547C0)] [[data-dark-mode=true]_&]:bg-[linear-gradient(90deg,#7459AD,#DDC8FF)]';
+const BUTTON_BORDER_GRADIENT_CLASS =
+  'bg-[linear-gradient(21deg,#251D37_40%,#7547C0)] [[data-dark-mode=true]_&]:bg-[linear-gradient(21deg,#7459AD_40%,#DDC8FF)]';
+// Light mode paints the label with the gradient like the desktop's shader mask; dark mode uses the accent color.
+const BUTTON_LABEL_CLASS =
+  'bg-[linear-gradient(1deg,#251D37_40%,#7547C0)] bg-clip-text text-transparent [[data-dark-mode=true]_&]:bg-none [[data-dark-mode=true]_&]:text-[#C49BEC]';
+const CURRENT_BADGE_CLASS =
+  'bg-[#4F3F5F] text-white [[data-dark-mode=true]_&]:bg-[#E8E0FF] [[data-dark-mode=true]_&]:text-black';
 
 function UpgradeButton({ label, onClick, testId }: { label: string; onClick: () => void; testId: string }) {
   return (
-    <div className={cn('rounded-[16px] p-[2px]', BUTTON_GRADIENT_CLASS)}>
+    <div className={cn('rounded-[16px] p-[2px]', BUTTON_BORDER_GRADIENT_CLASS)}>
       <button
         type='button'
         onClick={onClick}
         data-testid={testId}
         className='flex h-9 w-[148px] items-center justify-center rounded-[14px] bg-surface-primary text-sm font-semibold hover:opacity-90'
       >
-        {/* Light mode paints the label with the gradient like the desktop's shader mask; dark mode uses the accent color. */}
-        <span className={cn('bg-clip-text text-transparent', BUTTON_GRADIENT_CLASS, 'dark:bg-none dark:text-[#C49BEC]')}>
-          {label}
-        </span>
+        <span className={BUTTON_LABEL_CLASS}>{label}</span>
       </button>
     </div>
   );
@@ -87,14 +96,43 @@ function UpgradeButton({ label, onClick, testId }: { label: string; onClick: () 
 
 function DowngradeButton({ label, onClick, testId }: { label: string; onClick: () => void; testId: string }) {
   return (
-    <button
-      type='button'
-      onClick={onClick}
-      data-testid={testId}
-      className='flex h-9 w-[148px] items-center justify-center rounded-[16px] border border-[#333333] text-sm font-medium text-text-primary hover:bg-fill-content-hover dark:border-border-primary'
-    >
-      {label}
-    </button>
+    <div className='rounded-[16px] border border-[#333333] p-[2px]'>
+      <button
+        type='button'
+        onClick={onClick}
+        data-testid={testId}
+        className='flex h-9 w-[148px] items-center justify-center rounded-[14px] text-sm font-medium text-text-primary hover:bg-fill-content-hover'
+      >
+        {label}
+      </button>
+    </div>
+  );
+}
+
+function CurrentBadge({ label }: { label: string }) {
+  return (
+    <div className='flex h-[22px] pl-3'>
+      <span
+        className={cn(
+          'flex h-[22px] w-[72px] items-center justify-center rounded-[4px] text-xs font-medium',
+          CURRENT_BADGE_CLASS
+        )}
+        data-testid='current-plan-badge'
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+
+/** The amount stands out; the rest of the localized template follows in a smaller size, as on the desktop. */
+function PriceLabel({ parts, className }: { parts: PriceLabelParts; className: string }) {
+  return (
+    <div className={cn('line-clamp-2 leading-[30px]', className)} data-testid='plan-price'>
+      {parts.prefix ? <span className='text-xs font-medium'>{parts.prefix}</span> : null}
+      <span className='text-2xl font-semibold'>{parts.amount}</span>
+      {parts.suffix ? <span className='text-xs font-medium'>{parts.suffix}</span> : null}
+    </div>
   );
 }
 
@@ -118,20 +156,22 @@ function FeatureLabelCell({ label, tooltip }: { label: string; tooltip: string |
   );
 }
 
-function FeatureValueCell({ text, value }: { text: string | null; value?: FeatureValue }) {
+function FeatureValueCell({ text, value, inset }: { text: string | null; value?: FeatureValue; inset: boolean }) {
+  const className = cn(ROW_CLASS, inset && HIGHLIGHT_INSET_CLASS);
+
   if (!value || value.kind === 'excluded') {
-    return <div className={ROW_CLASS} data-testid='feature-excluded' />;
+    return <div className={className} data-testid='feature-excluded' />;
   }
 
   if (value.kind === 'included') {
     return (
-      <div className={ROW_CLASS} data-testid='feature-included'>
+      <div className={className} data-testid='feature-included'>
         <CheckIcon className='h-5 w-5 text-icon-primary' />
       </div>
     );
   }
 
-  return <div className={ROW_CLASS}>{text}</div>;
+  return <div className={className}>{text}</div>;
 }
 
 function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => void; onOpen: () => void }) {
@@ -250,7 +290,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
         plan,
         name: localizePlanName(translate, plan),
         description: localizePlanDescription(translate, plan),
-        price: fillPlaceholders(
+        price: splitPriceTemplate(
           t(free ? 'settings.comparePlanDialog.freePlan.price' : 'settings.comparePlanDialog.proPlan.price'),
           amount
         ),
@@ -268,7 +308,11 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
     <NormalModal
       open={open}
       onClose={handleClose}
-      title={t('subscribe.upgradePlanTitle')}
+      title={
+        <span className='block text-left text-2xl font-semibold text-text-primary'>
+          {t('subscribe.upgradePlanTitle')}
+        </span>
+      }
       disableRestoreFocus={true}
       cancelButtonProps={{
         className: 'hidden',
@@ -279,12 +323,12 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
       maxWidth={false}
       classes={{ paper: DIALOG_PAPER_CLASS }}
     >
-      <div className={'flex w-full flex-col gap-4 p-4'}>
+      <div className={'flex w-full flex-col'}>
         {!catalog && isLoading ? (
-          <div className={'flex w-full gap-4'} data-testid={'pricing-skeleton'}>
-            <Skeleton variant={'rounded'} width={220} height={480} />
-            <Skeleton variant={'rounded'} width={236} height={480} />
-            <Skeleton variant={'rounded'} width={236} height={480} />
+          <div className={'flex w-full gap-2'} data-testid={'pricing-skeleton'}>
+            <Skeleton variant={'rounded'} width={250} height={480} />
+            <Skeleton variant={'rounded'} width={215} height={480} />
+            <Skeleton variant={'rounded'} width={215} height={480} />
           </div>
         ) : !catalog && hasError ? (
           <div className={'flex flex-col items-start gap-3'} data-testid={'pricing-error'}>
@@ -294,13 +338,18 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
             </MuiButton>
           </div>
         ) : (
-          <div className={'flex w-full items-start justify-start gap-2 overflow-x-auto'} data-testid={'plan-comparison'}>
+          <div className={'flex w-full items-start justify-start overflow-x-auto'} data-testid={'plan-comparison'}>
             <div className={LABEL_COLUMN_CLASS}>
-              <div className={cn(HEADER_CLASS, 'pt-8')}>
-                <div className={cn('whitespace-pre-line text-2xl font-semibold', HEADING_TEXT_CLASS)}>
-                  {t('settings.comparePlanDialog.planFeatures')}
-                </div>
+              <div
+                className={cn(
+                  'line-clamp-2 h-[116px] whitespace-pre-line text-2xl font-semibold leading-[30px]',
+                  HEADING_TEXT_CLASS
+                )}
+              >
+                {t('settings.comparePlanDialog.planFeatures')}
               </div>
+              <div className='h-[116px]' />
+              <div className='h-14' />
               {rows.map((row) => (
                 <FeatureLabelCell
                   key={row.key}
@@ -315,54 +364,35 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
                 key={plan.id}
                 data-testid={`pricing-plan-${plan.id}`}
                 data-highlighted={highlighted}
-                className={cn(PLAN_COLUMN_CLASS, 'rounded-[24px] p-1', highlighted && ACCENT_GRADIENT_CLASS)}
+                className={cn(PLAN_COLUMN_CLASS, highlighted ? cn('p-1', ACCENT_GRADIENT_CLASS) : 'pt-1')}
               >
-                <div className={cn('rounded-[22px] bg-surface-primary', highlighted && 'pb-2')}>
-                  <div className={HEADER_CLASS}>
-                    <div className='h-7'>
-                      {isCurrent && (
-                        <span
-                          className={cn(
-                            'inline-flex h-[22px] w-[72px] items-center justify-center rounded-[4px] text-xs font-medium',
-                            CURRENT_BADGE_CLASS
-                          )}
-                          data-testid='current-plan-badge'
-                        >
-                          {t('settings.comparePlanDialog.current')}
-                        </span>
-                      )}
-                    </div>
-                    <div className={cn('text-2xl font-semibold', highlighted ? ACCENT_TEXT_CLASS : 'text-text-primary')}>
-                      {name}
-                    </div>
-                    <div className='mt-1 line-clamp-3 text-sm leading-5 text-text-secondary'>{description}</div>
-                    <div
-                      className={cn(
-                        'mt-5 text-2xl font-semibold',
-                        highlighted ? ACCENT_TEXT_CLASS : 'text-text-primary'
-                      )}
-                    >
-                      {price}
-                    </div>
-                    {priceInfo && (
-                      <div className='mt-1 whitespace-pre-line text-sm leading-5 text-text-secondary'>{priceInfo}</div>
+                {/* The badge replaces the top padding so every column's title starts 30px down, like the label column. */}
+                <div className={cn('rounded-[22px] bg-surface-primary', isCurrent ? 'pb-[22px]' : 'py-[22px]')}>
+                  {isCurrent && <CurrentBadge label={t('settings.comparePlanDialog.current')} />}
+                  <div className='h-1' />
+                  <div className={cn(HEADING_BLOCK_CLASS, highlighted && HIGHLIGHT_INSET_CLASS)}>
+                    <div className={cn(TITLE_CLASS, highlighted ? ACCENT_TEXT_CLASS : 'text-text-primary')}>{name}</div>
+                    <div className={cn(NOTE_CLASS, 'line-clamp-4')}>{description}</div>
+                  </div>
+                  <div className={cn(HEADING_BLOCK_CLASS, highlighted && HIGHLIGHT_INSET_CLASS)}>
+                    <PriceLabel parts={price} className={highlighted ? ACCENT_TEXT_CLASS : 'text-text-primary'} />
+                    {priceInfo && <div className={NOTE_CLASS}>{priceInfo}</div>}
+                  </div>
+                  <div className={cn('flex h-14 items-center pl-3', highlighted && HIGHLIGHT_INSET_CLASS)}>
+                    {planAction === 'upgrade' && (
+                      <UpgradeButton
+                        label={t('settings.comparePlanDialog.actions.upgrade')}
+                        onClick={() => void handleUpgrade(plan.id)}
+                        testId={`pricing-upgrade-${plan.id}`}
+                      />
                     )}
-                    <div className='mt-auto flex h-14 items-center'>
-                      {planAction === 'upgrade' && (
-                        <UpgradeButton
-                          label={t('settings.comparePlanDialog.actions.upgrade')}
-                          onClick={() => void handleUpgrade(plan.id)}
-                          testId={`pricing-upgrade-${plan.id}`}
-                        />
-                      )}
-                      {planAction === 'downgrade' && (
-                        <DowngradeButton
-                          label={t('settings.comparePlanDialog.actions.downgrade')}
-                          onClick={() => setCancelOpen(true)}
-                          testId={`pricing-downgrade-${plan.id}`}
-                        />
-                      )}
-                    </div>
+                    {planAction === 'downgrade' && (
+                      <DowngradeButton
+                        label={t('settings.comparePlanDialog.actions.downgrade')}
+                        onClick={() => setCancelOpen(true)}
+                        testId={`pricing-downgrade-${plan.id}`}
+                      />
+                    )}
                   </div>
                   {rows.map((row) => {
                     const value = row.values[plan.id];
@@ -372,6 +402,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
                         key={row.key}
                         value={value}
                         text={value ? localizeFeatureValue(translate, value) : null}
+                        inset={highlighted}
                       />
                     );
                   })}

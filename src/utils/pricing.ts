@@ -57,6 +57,29 @@ export function formatPriceCents(cents: number, options: { perMonthFromYearly?: 
   return `$${Number(rounded.toFixed(2))}`;
 }
 
+/** A price label split around its amount: `$16` and ` / member / month`. */
+export interface PriceLabelParts {
+  prefix: string;
+  amount: string;
+  suffix: string;
+}
+
+/**
+ * Splits a desktop-style price template (`"{} / member / month"`) around its
+ * `{}` placeholder so the amount can be rendered larger than the qualifier, as
+ * the desktop compare dialog does. A template without a placeholder keeps the
+ * amount in front of it.
+ */
+export function splitPriceTemplate(template: string, amount: string): PriceLabelParts {
+  const index = template.indexOf('{}');
+
+  if (index < 0) {
+    return { prefix: '', amount, suffix: template ? ` ${template}` : '' };
+  }
+
+  return { prefix: template.slice(0, index), amount, suffix: template.slice(index + 2) };
+}
+
 export function getPlanPrice(plan: PricingPlan, interval: SubscriptionInterval): PricingPrice | undefined {
   return plan.prices.find((price) => price.interval === interval);
 }
