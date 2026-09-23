@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { findPlan, formatPriceCents, getPlanPrice } from '@/utils/pricing';
 
@@ -23,14 +25,17 @@ const INTERVALS = [SubscriptionInterval.Month, SubscriptionInterval.Year];
 export function ChangePeriodDialog({ open, plan, currentInterval, onClose, onConfirm }: ChangePeriodDialogProps) {
   const { t } = useTranslation();
   const [selected, setSelected] = useState(currentInterval);
-  const { catalog } = usePricingCatalog({ enabled: open });
+  const { catalog, isLoading, hasError, reload } = usePricingCatalog({ enabled: open });
   const catalogPlan = catalog ? findPlan(catalog, plan) : undefined;
+  const selectedPrice = catalogPlan ? getPlanPrice(catalogPlan, selected) : undefined;
+  const hasMissingPrice = !catalogPlan || INTERVALS.some((interval) => !getPlanPrice(catalogPlan, interval));
 
   useEffect(() => {
     if (open) setSelected(currentInterval);
   }, [currentInterval, open]);
 
   const unchanged = selected === currentInterval;
+  const canConfirm = !unchanged && !isLoading && !hasError && selectedPrice !== undefined;
 
   return (
     <NormalModal
@@ -40,14 +45,29 @@ export function ChangePeriodDialog({ open, plan, currentInterval, onClose, onCon
       cancelText={t('button.cancel')}
       onClose={onClose}
       onCancel={onClose}
-      okButtonProps={{ disabled: unchanged, 'data-testid': 'change-period-confirm' }}
+      okButtonProps={{ disabled: !canConfirm, 'data-testid': 'change-period-confirm' }}
       onOk={() => {
-        if (!unchanged) onConfirm(selected);
+        if (!canConfirm) return;
+        onConfirm(selected);
         onClose();
       }}
       classes={{ paper: 'w-[440px]' }}
     >
       <div className='flex flex-col gap-3'>
+        {isLoading && (
+          <div role='status' aria-label={t('loading')} className='flex items-center gap-2 text-sm text-text-secondary'>
+            <Progress variant='primary' />
+            {t('loading')}
+          </div>
+        )}
+        {!isLoading && (hasError || hasMissingPrice) && (
+          <div role='alert' className='flex flex-col items-start gap-3'>
+            <div className='text-sm text-text-secondary'>{t('subscribe.pricingUnavailable')}</div>
+            <Button variant='outline' onClick={() => void reload()}>
+              {t('button.retry')}
+            </Button>
+          </div>
+        )}
         {INTERVALS.map((interval) => {
           const isCurrent = interval === currentInterval;
           const isSelected = interval === selected;
@@ -59,7 +79,7 @@ export function ChangePeriodDialog({ open, plan, currentInterval, onClose, onCon
               type='button'
               data-testid={`period-option-${interval}`}
               aria-pressed={isSelected}
-              disabled={isCurrent}
+              disabled={isCurrent || isLoading || hasError || !price}
               onClick={() => setSelected(interval)}
               className={cn(
                 'flex items-center justify-between rounded-[12px] border p-4 text-left',

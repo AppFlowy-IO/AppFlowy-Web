@@ -3,6 +3,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import {
   PricingCatalog,
+  Subscription,
   SubscriptionInterval,
   SubscriptionPlan,
   SubscriptionStatus,
@@ -147,13 +148,17 @@ export function LocationProbe() {
 export function BillingTestProviders({
   children,
   getPricingCatalog = async () => catalog,
+  getSubscriptions,
 }: {
   children: ReactNode;
   getPricingCatalog?: () => Promise<PricingCatalog>;
+  getSubscriptions?: () => Promise<Subscription[]>;
 }) {
   return (
     <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-      <AppOperationsContext.Provider value={{ getPricingCatalog } as unknown as AppOperationsContextType}>
+      <AppOperationsContext.Provider
+        value={{ getPricingCatalog, getSubscriptions } as unknown as AppOperationsContextType}
+      >
         {children}
         <LocationProbe />
       </AppOperationsContext.Provider>

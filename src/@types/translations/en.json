@@ -4062,6 +4062,7 @@
     "currentPlan": "Current",
     "freeDuration": "forever",
     "pricingUnavailable": "We couldn't load pricing right now.",
+    "subscriptionUnavailable": "We couldn't load your current subscription. Please try again.",
     "featureBullet": "{{feature}}: {{value}}",
     "featureTooltip": {
       "guests": "Collaborate on specific pages with non-members",

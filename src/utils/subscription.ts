@@ -5,11 +5,14 @@
  * Self-hosted instances are not official hosts.
  */
 import {
+  Role,
   Subscription,
   SubscriptionPlan,
+  Workspace,
   WorkspaceSubscriptionInfo,
   WorkspaceSubscriptionStatus,
 } from '@/application/types';
+import { isSameUserUid, UserUid } from '@/application/user-uid';
 import { getConfigValue } from '@/utils/runtime-config';
 
 const OFFICIAL_HOSTNAMES = new Set(['beta.appflowy.cloud', 'test.appflowy.cloud', 'localhost']);
@@ -91,6 +94,15 @@ export function isOfficialHostedServer(serverInfo: HostedServerInfoState): boole
   return selfHosted === false;
 }
 
+/** Shared access rule for billing settings and the dialog that handles their Change plan action. */
+export function canManageWorkspaceBilling(
+  workspace: Workspace | undefined,
+  userUid: UserUid,
+  isOfficialHosted: boolean
+): boolean {
+  return isOfficialHosted && (workspace?.role === Role.Owner || isSameUserUid(workspace?.owner?.uid, userUid));
+}
+
 export function hasProAccessFromPlans(plans?: SubscriptionPlan[] | null): boolean {
   if (!plans || plans.length === 0) return false;
   return plans.some((plan) => PRO_ACCESS_PLANS.has(plan));
@@ -145,7 +157,6 @@ export function isSubscriptionCanceled(status?: { cancel_at: number | null } | n
 export function isBillingPortalEnabled(info: WorkspaceSubscriptionInfo): boolean {
   return info.plan !== SubscriptionPlan.Free || info.addOns.length > 0;
 }
-
 
 /** Bytes as gigabytes with at most two decimals and no trailing zeros: 5368709120 -> "5", 0 -> "0". */
 export function formatStorageGb(bytes: number): string {

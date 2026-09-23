@@ -1,5 +1,5 @@
 import { Button as MuiButton, Skeleton } from '@mui/material';
-import React, { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
@@ -8,7 +8,6 @@ import {
   FeatureValue,
   PricingComparisonRow,
   PricingPlan,
-  Subscription,
   SubscriptionInterval,
   SubscriptionPlan,
 } from '@/application/types';
@@ -19,6 +18,7 @@ import { notify } from '@/components/_shared/notify';
 import { useCurrentWorkspaceId, useGetSubscriptions, useIsOfficialHosted } from '@/components/app/app.hooks';
 import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
 import CancelSubscribe from '@/components/billing/CancelSubscribe';
+import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
@@ -36,8 +36,15 @@ import {
   toSubscriptionPlan,
   workspacePlans,
 } from '@/utils/pricing';
+import { getProAccessPlanFromSubscriptions } from '@/utils/subscription';
 
 type PlanAction = 'none' | 'upgrade' | 'downgrade';
+
+interface SubscriptionState {
+  workspaceId?: string;
+  status: 'loading' | 'ready' | 'error';
+  plan?: SubscriptionPlan;
+}
 
 /**
  * Mirrors the desktop compare dialog: the current plan gets no action, Free is
@@ -178,10 +185,11 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
   const { t } = useTranslation();
   // Catalog keys are built at runtime, which the typed i18n resources cannot express.
   const translate = t as unknown as PricingTranslate;
-  const [activeSubscription, setActiveSubscription] = React.useState<Subscription | null>(null);
+  const [subscriptionState, setSubscriptionState] = useState<SubscriptionState>({ status: 'loading' });
+  const subscriptionRequest = useRef(0);
   const currentWorkspaceId = useCurrentWorkspaceId();
   const isHosted = useIsOfficialHosted();
-  const [cancelOpen, setCancelOpen] = React.useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const getSubscriptions = useGetSubscriptions();
   const { catalog, isLoading, hasError, reload } = usePricingCatalog({ enabled: open });
 
@@ -203,27 +211,34 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
   }, [action, open, setSearch]);
 
   const loadSubscription = useCallback(async () => {
+    const request = ++subscriptionRequest.current;
+
+    setSubscriptionState({ workspaceId: currentWorkspaceId, status: 'loading' });
     try {
-      const subscriptions = await getSubscriptions?.();
-      const proSubscription = subscriptions?.find(
-        (item) => item.plan === SubscriptionPlan.Pro || item.plan === SubscriptionPlan.Team
-      );
+      if (!getSubscriptions) throw new Error('Subscription service is unavailable');
+      const subscriptions = await getSubscriptions();
 
-      if (proSubscription) {
-        setActiveSubscription({ ...proSubscription, plan: SubscriptionPlan.Pro });
-        return;
-      }
+      if (!subscriptions) throw new Error('Subscription data is unavailable');
+      if (subscriptionRequest.current !== request) return;
 
-      setActiveSubscription({
-        plan: SubscriptionPlan.Free,
-        currency: '',
-        recurring_interval: SubscriptionInterval.Month,
-        price_cents: 0,
+      setSubscriptionState({
+        workspaceId: currentWorkspaceId,
+        status: 'ready',
+        plan: getProAccessPlanFromSubscriptions(subscriptions),
       });
     } catch (e) {
+      if (subscriptionRequest.current !== request) return;
+      setSubscriptionState({ workspaceId: currentWorkspaceId, status: 'error' });
       console.error(e);
     }
-  }, [getSubscriptions]);
+  }, [currentWorkspaceId, getSubscriptions]);
+
+  const currentPlan =
+    subscriptionState.workspaceId === currentWorkspaceId && subscriptionState.status === 'ready'
+      ? subscriptionState.plan
+      : undefined;
+  const subscriptionHasError =
+    subscriptionState.workspaceId === currentWorkspaceId && subscriptionState.status === 'error';
 
   const handleClose = useCallback(() => {
     onClose();
@@ -236,7 +251,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
   // Checkout is yearly like the desktop client; the billing period can be changed afterwards in Settings.
   const handleUpgrade = useCallback(
     async (planId: string) => {
-      if (!currentWorkspaceId) return;
+      if (!currentWorkspaceId || !currentPlan) return;
 
       // Self-hosted deployments have Pro features enabled by default.
       if (!isHosted) return;
@@ -254,16 +269,19 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
         notify.error(e.message);
       }
     },
-    [currentWorkspaceId, isHosted]
+    [currentWorkspaceId, currentPlan, isHosted]
   );
 
   useEffect(() => {
     if (open) {
       void loadSubscription();
     }
-  }, [open, loadSubscription]);
 
-  const currentPlan = activeSubscription?.plan;
+    return () => {
+      // A closed dialog or a different workspace must not receive an older request's result.
+      subscriptionRequest.current += 1;
+    };
+  }, [open, loadSubscription]);
 
   const columns = useMemo(() => {
     if (!catalog) return [];
@@ -324,6 +342,23 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
       classes={{ paper: DIALOG_PAPER_CLASS }}
     >
       <div className={'flex w-full flex-col'}>
+        {isHosted && subscriptionHasError ? (
+          <div role='alert' className='mb-4 flex flex-col items-start gap-3' data-testid='subscription-error'>
+            <div className='text-text-secondary'>{t('subscribe.subscriptionUnavailable')}</div>
+            <MuiButton variant='outlined' color='inherit' onClick={() => void loadSubscription()}>
+              {t('button.retry')}
+            </MuiButton>
+          </div>
+        ) : isHosted && !currentPlan ? (
+          <div
+            role='status'
+            className='mb-4 flex items-center gap-2 text-text-secondary'
+            data-testid='subscription-loading'
+          >
+            <Progress variant='primary' />
+            {t('loading')}
+          </div>
+        ) : null}
         {!catalog && isLoading ? (
           <div className={'flex w-full gap-2'} data-testid={'pricing-skeleton'}>
             <Skeleton variant={'rounded'} width={250} height={480} />

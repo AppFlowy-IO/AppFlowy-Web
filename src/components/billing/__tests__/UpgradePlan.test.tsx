@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -158,7 +158,7 @@ const catalog: PricingCatalog = {
 
 function renderModal(
   getPricingCatalog: () => Promise<PricingCatalog>,
-  { isOfficialHosted = true, subscriptions = [] as Subscription[] } = {}
+  { isOfficialHosted = true, subscriptions = [] as Subscription[], getSubscriptions = async () => subscriptions } = {}
 ) {
   return render(
     <MemoryRouter>
@@ -171,9 +171,7 @@ function renderModal(
         }}
       >
         <AppOperationsContext.Provider
-          value={
-            { getSubscriptions: async () => subscriptions, getPricingCatalog } as unknown as AppOperationsContextType
-          }
+          value={{ getSubscriptions, getPricingCatalog } as unknown as AppOperationsContextType}
         >
           <UpgradePlan open onClose={() => undefined} onOpen={() => undefined} />
         </AppOperationsContext.Provider>
@@ -320,5 +318,42 @@ describe('UpgradePlan', () => {
 
     await screen.findByTestId('pricing-plan-free');
     expect(screen.queryByTestId('pricing-plan-pro')).toBeNull();
+  });
+
+  it('shows subscription loading and keeps actions unavailable until the current plan is known', async () => {
+    let resolveSubscriptions!: (value: Subscription[]) => void;
+    const request = new Promise<Subscription[]>((resolve) => {
+      resolveSubscriptions = resolve;
+    });
+
+    renderModal(async () => catalog, { getSubscriptions: () => request });
+    await screen.findByTestId('plan-comparison');
+    expect(screen.getByTestId('subscription-loading')).toBeTruthy();
+    expect(screen.queryByTestId('pricing-upgrade-pro')).toBeNull();
+    expect(screen.queryByTestId('pricing-downgrade-free')).toBeNull();
+
+    await act(async () => resolveSubscriptions([]));
+    expect(await screen.findByTestId('pricing-upgrade-pro')).toBeTruthy();
+    expect(screen.queryByTestId('subscription-loading')).toBeNull();
+  });
+
+  it('explains a failed subscription lookup and retries it without reloading the catalog', async () => {
+    const getPricingCatalog = jest.fn().mockResolvedValue(catalog);
+    const getSubscriptions = jest.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue([]);
+
+    renderModal(getPricingCatalog, { getSubscriptions });
+    const errorState = await screen.findByTestId('subscription-error');
+
+    expect(errorState.textContent).toContain('subscribe.subscriptionUnavailable');
+    expect(screen.getByTestId('plan-comparison')).toBeTruthy();
+    expect(screen.queryByTestId('pricing-upgrade-pro')).toBeNull();
+    expect(screen.queryByTestId('pricing-downgrade-free')).toBeNull();
+
+    fireEvent.click(within(errorState).getByRole('button', { name: 'button.retry' }));
+
+    expect(await screen.findByTestId('pricing-upgrade-pro')).toBeTruthy();
+    expect(screen.queryByTestId('subscription-error')).toBeNull();
+    expect(getSubscriptions).toHaveBeenCalledTimes(2);
+    expect(getPricingCatalog).toHaveBeenCalledTimes(1);
   });
 });

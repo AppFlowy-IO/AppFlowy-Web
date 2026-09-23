@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { BillingService } from '@/application/services/domains';
 import {
@@ -48,6 +49,9 @@ export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspa
   const [busy, setBusy] = useState(false);
   const generationRef = useRef(0);
   const mountedRef = useRef(true);
+  const [search] = useSearchParams();
+  const comparisonOpen = search.get('action') === 'change_plan';
+  const wasComparisonOpen = useRef(comparisonOpen);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -89,6 +93,12 @@ export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspa
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    // Settings stays mounted behind the comparison dialog, which can cancel a subscription.
+    if (wasComparisonOpen.current && !comparisonOpen) void reload();
+    wasComparisonOpen.current = comparisonOpen;
+  }, [comparisonOpen, reload]);
 
   const runMutation = useCallback(
     async (mutation: () => Promise<void>) => {

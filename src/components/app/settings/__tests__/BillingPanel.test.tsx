@@ -147,6 +147,7 @@ describe('BillingPanel', () => {
     const confirm = await screen.findByTestId('change-period-confirm');
 
     expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    await screen.findByText('$12.5');
     fireEvent.click(screen.getByTestId(`period-option-${SubscriptionInterval.Month}`));
     expect((confirm as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(confirm);

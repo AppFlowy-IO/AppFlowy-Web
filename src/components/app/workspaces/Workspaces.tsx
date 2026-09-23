@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
+import { WorkspaceService } from '@/application/services/domains';
 import { Workspace } from '@/application/types';
-import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as TipIcon } from '@/assets/icons/help.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
@@ -19,13 +19,13 @@ import {
   useRefreshUserWorkspaceInfo,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
+import { SettingsDialog } from '@/components/app/settings';
 import CurrentWorkspace from '@/components/app/workspaces/CurrentWorkspace';
 import DeleteWorkspace from '@/components/app/workspaces/DeleteWorkspace';
 import EditWorkspace from '@/components/app/workspaces/EditWorkspace';
 import LeaveWorkspace from '@/components/app/workspaces/LeaveWorkspace';
 import WorkspaceList from '@/components/app/workspaces/WorkspaceList';
 import UpgradePlan from '@/components/billing/UpgradePlan';
-import { WorkspaceService } from '@/application/services/domains';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import {
   DropdownMenu,
@@ -41,9 +41,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { canManageWorkspaceBilling } from '@/utils/subscription';
 import { openUrl } from '@/utils/url';
-
-import { SettingsDialog } from '@/components/app/settings';
 
 export function Workspaces() {
   const { t } = useTranslation();
@@ -66,7 +65,7 @@ export function Workspaces() {
   const [openLeaveWorkspace, setOpenLeaveWorkspace] = useState<Workspace | null>(null);
   const [openSettings, setOpenSettings] = useState(false);
 
-  const isOwner = isSameUserUid(currentWorkspace?.owner?.uid, currentUser?.uid);
+  const canManageBilling = canManageWorkspaceBilling(currentWorkspace, currentUser?.uid, isHosted);
 
   useEffect(() => {
     setCurrentWorkspace(userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === currentWorkspaceId));
@@ -241,7 +240,7 @@ export function Workspaces() {
                 <div className={'flex-1 text-left'}>{t('web.settings')}</div>
               </DropdownMenuItem>
             </DropdownMenuGroup>
-            {isOwner && isHosted && (
+            {canManageBilling && (
               <DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -259,7 +258,7 @@ export function Workspaces() {
         </DropdownMenu>
       </div>
 
-      {isOwner && isHosted && (
+      {canManageBilling && (
         <UpgradePlan
           onOpen={() => {
             setOpenUpgradePlan(true);

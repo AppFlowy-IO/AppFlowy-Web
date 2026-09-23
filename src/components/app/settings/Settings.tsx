@@ -3,8 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
-import { Role, SettingMenuItem } from '@/application/types';
-import { isSameUserUid } from '@/application/user-uid';
+import { SettingMenuItem } from '@/application/types';
 import { useCurrentWorkspaceId, useIsOfficialHosted, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { AccountAppPanel } from '@/components/app/settings/AccountAppPanel';
 import { ManageDataPanel } from '@/components/app/settings/ManageDataPanel';
@@ -13,6 +12,7 @@ import { ProfilePanel } from '@/components/app/settings/ProfilePanel';
 import SettingMenu from '@/components/app/settings/SettingMenu';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Progress } from '@/components/ui/progress';
+import { canManageWorkspaceBilling } from '@/utils/subscription';
 
 const ConnectionsPanel = lazy(() =>
   import('@/components/app/settings/ConnectionsPanel').then((module) => ({ default: module.ConnectionsPanel }))
@@ -43,10 +43,8 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
     () => userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === workspaceId),
     [userWorkspaceInfo?.workspaces, workspaceId]
   );
-  const isOwner =
-    currentWorkspace?.role === Role.Owner || isSameUserUid(currentWorkspace?.owner?.uid, currentUser?.uid);
   // Billing exists only on the official cloud, and only the owner can change a workspace's plan.
-  const showBilling = isOfficialHosted && isOwner;
+  const showBilling = canManageWorkspaceBilling(currentWorkspace, currentUser?.uid, isOfficialHosted);
 
   useEffect(() => {
     if (!showBilling && (selectedItem === SettingMenuItem.PLAN || selectedItem === SettingMenuItem.BILLING)) {
