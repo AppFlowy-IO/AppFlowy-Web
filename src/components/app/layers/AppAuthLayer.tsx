@@ -13,6 +13,7 @@ import { Log } from '@/utils/log';
 import { ClientCompatibilityProvider } from '../compatibility/ClientCompatibility';
 import { AuthInternalContext, AuthInternalContextType } from '../contexts/AuthInternalContext';
 import { useServerInfo } from '../hooks/useServerInfo';
+import { isOfficialHostedServer } from '@/utils/subscription';
 
 interface AppAuthLayerProps {
   children: React.ReactNode;
@@ -76,7 +77,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const aiEnabled = serverInfo.status === 'loading' ? false : serverInfo.info?.ai_enabled ?? true;
   // Billing exists only on the official AppFlowy cloud. Unknown server info
   // grants no pricing surface, matching the desktop client.
-  const isOfficialHosted = serverInfo.status === 'available' && serverInfo.info?.self_hosted === false;
+  const isOfficialHosted = isOfficialHostedServer(serverInfo);
   const maxUpdateBytes = serverInfo.info?.max_update_bytes;
   const maxSlowSyncUpdateBytes = serverInfo.info?.max_slow_sync_update_bytes;
   const syncLimitsLoaded = serverInfo.status === 'available';

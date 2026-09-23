@@ -68,6 +68,29 @@ export function isAppFlowyHosted(): boolean {
   return isOfficialHostname(resolveHostname());
 }
 
+/** The subset of the server-info hook state that decides whether billing exists. */
+export interface HostedServerInfoState {
+  status: 'loading' | 'available' | 'unavailable';
+  info?: { self_hosted?: boolean };
+}
+
+/**
+ * Whether the server behind server-info is the official AppFlowy cloud.
+ * An explicit `self_hosted` flag is authoritative. Servers that predate the
+ * flag omit it; for those the hostname allowlist decides, so the official
+ * cloud keeps billing while an unknown domain does not. Missing or failed
+ * server info never grants billing, matching the desktop client.
+ */
+export function isOfficialHostedServer(serverInfo: HostedServerInfoState): boolean {
+  if (serverInfo.status !== 'available') return false;
+
+  const selfHosted = serverInfo.info?.self_hosted;
+
+  if (selfHosted === undefined) return isAppFlowyHosted();
+
+  return selfHosted === false;
+}
+
 export function hasProAccessFromPlans(plans?: SubscriptionPlan[] | null): boolean {
   if (!plans || plans.length === 0) return false;
   return plans.some((plan) => PRO_ACCESS_PLANS.has(plan));
