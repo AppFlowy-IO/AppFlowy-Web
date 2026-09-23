@@ -9,7 +9,11 @@ const mockTranslate = (key: string) => key;
 let mockWorkspaceId = 'workspace-1';
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockTranslate }) }));
-jest.mock('@/components/app/app.hooks', () => ({ useCurrentWorkspaceId: () => mockWorkspaceId }));
+jest.mock('@/components/app/app.hooks', () => ({
+  useCurrentWorkspaceId: () => mockWorkspaceId,
+  useUserWorkspaceInfo: () => undefined,
+  useIsOfficialHosted: () => false,
+}));
 jest.mock('@/components/app/settings/AccountAppPanel', () => ({ AccountAppPanel: () => null }));
 jest.mock('@/components/app/settings/ProfilePanel', () => ({ ProfilePanel: () => null }));
 jest.mock('@/components/app/settings/MembersPanel', () => ({ MembersPanel: () => null }));

@@ -164,6 +164,10 @@ export {
   getWorkspaceSubscriptions,
   cancelSubscription,
   getPricingCatalog,
+  getWorkspaceSubscriptionStatus,
+  getWorkspaceUsage,
+  getBillingPortalLink,
+  setSubscriptionRecurringInterval,
 } from './billing-api';
 
 // Import
