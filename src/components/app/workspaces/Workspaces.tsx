@@ -4,7 +4,6 @@ import { useSearchParams } from 'react-router-dom';
 
 import { Workspace } from '@/application/types';
 import { isSameUserUid } from '@/application/user-uid';
-import { ReactComponent as UpgradeAIMaxIcon } from '@/assets/icons/ai.svg';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as TipIcon } from '@/assets/icons/help.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
@@ -14,7 +13,6 @@ import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
 import Import from '@/components/_shared/more-actions/importer/Import';
 import { notify } from '@/components/_shared/notify';
 import {
-  useAIEnabled,
   useAppOperations,
   useCurrentWorkspaceId,
   useIsOfficialHosted,
@@ -26,7 +24,6 @@ import DeleteWorkspace from '@/components/app/workspaces/DeleteWorkspace';
 import EditWorkspace from '@/components/app/workspaces/EditWorkspace';
 import LeaveWorkspace from '@/components/app/workspaces/LeaveWorkspace';
 import WorkspaceList from '@/components/app/workspaces/WorkspaceList';
-import UpgradeAIMax from '@/components/billing/UpgradeAIMax';
 import UpgradePlan from '@/components/billing/UpgradePlan';
 import { WorkspaceService } from '@/application/services/domains';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -54,10 +51,8 @@ export function Workspaces() {
   const refreshUserWorkspaceInfo = useRefreshUserWorkspaceInfo();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
-  const aiEnabled = useAIEnabled();
   const isHosted = useIsOfficialHosted();
   const [openUpgradePlan, setOpenUpgradePlan] = useState(false);
-  const [openUpgradeAIMax, setOpenUpgradeAIMax] = useState(false);
   const [open, setOpen] = useState(false);
   const [hoveredHeader, setHoveredHeader] = useState<boolean>(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -258,18 +253,6 @@ export function Workspaces() {
                   <UpgradeIcon />
                   {t('subscribe.changePlan')}
                 </DropdownMenuItem>
-                {aiEnabled && (
-                  <DropdownMenuItem
-                    data-testid='upgrade-ai-max-button'
-                    onSelect={() => {
-                      setOpenUpgradeAIMax(true);
-                      setOpen(false);
-                    }}
-                  >
-                    <UpgradeAIMaxIcon />
-                    {t('subscribe.getAIMax')}
-                  </DropdownMenuItem>
-                )}
               </DropdownMenuGroup>
             )}
           </DropdownMenuContent>
@@ -277,24 +260,13 @@ export function Workspaces() {
       </div>
 
       {isOwner && isHosted && (
-        <>
-          <UpgradePlan
-            onOpen={() => {
-              setOpenUpgradePlan(true);
-            }}
-            open={openUpgradePlan}
-            onClose={() => setOpenUpgradePlan(false)}
-          />
-          {aiEnabled && (
-            <UpgradeAIMax
-              onOpen={() => {
-                setOpenUpgradeAIMax(true);
-              }}
-              open={openUpgradeAIMax}
-              onClose={() => setOpenUpgradeAIMax(false)}
-            />
-          )}
-        </>
+        <UpgradePlan
+          onOpen={() => {
+            setOpenUpgradePlan(true);
+          }}
+          open={openUpgradePlan}
+          onClose={() => setOpenUpgradePlan(false)}
+        />
       )}
 
       <Import />

@@ -78,8 +78,11 @@ export function BillingPanel({ workspaceId }: { workspaceId: string }) {
 
     const portalEnabled = isBillingPortalEnabled(info);
     const aiMax = findWorkspaceAddOn(info, SubscriptionPlan.AIMax);
+    // AI Max is no longer sold (unlimited AI comes with Pro). A workspace that
+    // still has an active AI Max add-on can manage or remove it here; a
+    // canceled one simply runs out.
+    const activeAiMax = aiMax && !isSubscriptionCanceled(aiMax) ? aiMax : null;
     const aiMaxLabel = t('settings.billingPage.addons.aiMax.label');
-    const aiMaxCanceled = isSubscriptionCanceled(aiMax);
 
     return (
       <>
@@ -118,55 +121,46 @@ export function BillingPanel({ workspaceId }: { workspaceId: string }) {
           </>
         )}
 
-        <SettingsDivider />
-        <SettingsSection title={t('settings.billingPage.addons.title')}>
-          <SettingActionRow
-            label={aiMaxLabel}
-            description={addOnDescription(
-              aiMax,
-              t('settings.billingPage.addons.aiMax.description'),
-              t('settings.billingPage.addons.aiMax.activeDescription'),
-              t('settings.billingPage.addons.aiMax.canceledDescription')
-            )}
-            buttonLabel={
-              !aiMax
-                ? t('settings.billingPage.addons.addLabel')
-                : aiMaxCanceled
-                ? t('settings.billingPage.addons.renewLabel')
-                : t('settings.billingPage.addons.removeLabel')
-            }
-            variant={aiMax && !aiMaxCanceled ? 'outline' : 'default'}
-            disabled={busy}
-            onClick={() => {
-              if (!aiMax || aiMaxCanceled) {
-                void billing.subscribeWorkspace(SubscriptionPlan.AIMax);
-                return;
-              }
-
-              setRemoveConfirm({
-                title: fillPlaceholders(t('settings.billingPage.addons.removeDialog.title'), aiMaxLabel),
-                description: fillNamedPlaceholder(
-                  t('settings.billingPage.addons.removeDialog.description'),
-                  'plan',
-                  aiMaxLabel
-                ),
-                onConfirm: () => billing.cancelWorkspace(SubscriptionPlan.AIMax),
-              });
-            }}
-            testId='billing-ai-max-action'
-          />
-          {aiMax && (
-            <SettingActionRow
-              label={fillPlaceholders(t('settings.billingPage.planPeriod'), aiMaxLabel)}
-              description={intervalLabel(t, aiMax.recurring_interval)}
-              buttonLabel={t('settings.billingPage.plan.periodButtonLabel')}
-              variant='outline'
-              disabled={busy}
-              onClick={() => setPeriodEdit({ plan: SubscriptionPlan.AIMax, interval: aiMax.recurring_interval })}
-              testId='billing-ai-max-edit-period'
-            />
-          )}
-        </SettingsSection>
+        {activeAiMax && (
+          <>
+            <SettingsDivider />
+            <SettingsSection title={t('settings.billingPage.addons.title')}>
+              <SettingActionRow
+                label={aiMaxLabel}
+                description={addOnDescription(
+                  activeAiMax,
+                  t('settings.billingPage.addons.aiMax.description'),
+                  t('settings.billingPage.addons.aiMax.activeDescription'),
+                  t('settings.billingPage.addons.aiMax.canceledDescription')
+                )}
+                buttonLabel={t('settings.billingPage.addons.removeLabel')}
+                variant='outline'
+                disabled={busy}
+                onClick={() =>
+                  setRemoveConfirm({
+                    title: fillPlaceholders(t('settings.billingPage.addons.removeDialog.title'), aiMaxLabel),
+                    description: fillNamedPlaceholder(
+                      t('settings.billingPage.addons.removeDialog.description'),
+                      'plan',
+                      aiMaxLabel
+                    ),
+                    onConfirm: () => billing.cancelWorkspace(SubscriptionPlan.AIMax),
+                  })
+                }
+                testId='billing-ai-max-action'
+              />
+              <SettingActionRow
+                label={fillPlaceholders(t('settings.billingPage.planPeriod'), aiMaxLabel)}
+                description={intervalLabel(t, activeAiMax.recurring_interval)}
+                buttonLabel={t('settings.billingPage.plan.periodButtonLabel')}
+                variant='outline'
+                disabled={busy}
+                onClick={() => setPeriodEdit({ plan: SubscriptionPlan.AIMax, interval: activeAiMax.recurring_interval })}
+                testId='billing-ai-max-edit-period'
+              />
+            </SettingsSection>
+          </>
+        )}
       </>
     );
   };

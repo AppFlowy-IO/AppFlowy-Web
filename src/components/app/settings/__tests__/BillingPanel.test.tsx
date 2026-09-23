@@ -41,7 +41,12 @@ jest.mock('@/components/_shared/modal', () => ({
       <div role='dialog'>
         <div>{title}</div>
         {children}
-        <button type='button' data-testid={okButtonProps?.['data-testid'] ?? 'modal-ok'} disabled={okButtonProps?.disabled} onClick={onOk}>
+        <button
+          type='button'
+          data-testid={okButtonProps?.['data-testid'] ?? 'modal-ok'}
+          disabled={okButtonProps?.disabled}
+          onClick={onOk}
+        >
           ok
         </button>
       </div>
@@ -79,14 +84,13 @@ describe('BillingPanel', () => {
     expect(screen.getByTestId('location-search').textContent).toBe('?action=change_plan');
   });
 
-  it('starts AI Max checkout from the add-on row', async () => {
-    api.getSubscriptionLink.mockResolvedValue('https://checkout/ai-max');
+  it('does not offer the retired AI Max add-on to a workspace without it', async () => {
     renderPanel();
 
-    fireEvent.click(await screen.findByTestId('billing-ai-max-action'));
-    await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://checkout/ai-max', '_current'));
-    expect(api.getSubscriptionLink).toHaveBeenCalledWith('workspace-1', SubscriptionPlan.AIMax, SubscriptionInterval.Year);
-    expect(screen.queryByTestId('billing-vault-action')).toBeNull();
+    expect(await screen.findByText('Free')).toBeTruthy();
+    expect(screen.queryByText('Add-ons')).toBeNull();
+    expect(screen.queryByTestId('billing-ai-max-action')).toBeNull();
+    expect(api.getSubscriptionLink).not.toHaveBeenCalled();
   });
 
   it('describes an active AI Max add-on and removes it after confirmation', async () => {
@@ -108,23 +112,22 @@ describe('BillingPanel', () => {
     expect(screen.getByText('Are you sure you want to remove AI Max? AI Max ends now.')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('billing-remove-confirm'));
-    await waitFor(() => expect(api.cancelSubscription).toHaveBeenCalledWith('workspace-1', SubscriptionPlan.AIMax, undefined));
+    await waitFor(() =>
+      expect(api.cancelSubscription).toHaveBeenCalledWith('workspace-1', SubscriptionPlan.AIMax, undefined)
+    );
     await waitFor(() => expect(api.getWorkspaceSubscriptionStatus).toHaveBeenCalledTimes(2));
   });
 
-  it('offers Renew for a canceled add-on and restarts checkout from it', async () => {
+  it('hides a canceled AI Max add-on instead of offering to renew it', async () => {
     api.getWorkspaceSubscriptionStatus.mockResolvedValue([
       workspaceStatus(SubscriptionPlan.AIMax, { cancel_at: PERIOD_END }),
     ]);
-    api.getSubscriptionLink.mockResolvedValue('https://checkout/ai-max');
     renderPanel();
 
-    expect(await screen.findByText(`AI Max will be available until ${dueDate}`)).toBeTruthy();
-    expect(screen.getByTestId('billing-ai-max-action').textContent).toContain('Renew');
-
-    fireEvent.click(screen.getByTestId('billing-ai-max-action'));
-    await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://checkout/ai-max', '_current'));
-    expect(api.cancelSubscription).not.toHaveBeenCalled();
+    expect(await screen.findByText('Free')).toBeTruthy();
+    expect(screen.queryByText(`AI Max will be available until ${dueDate}`)).toBeNull();
+    expect(screen.queryByTestId('billing-ai-max-action')).toBeNull();
+    expect(api.getSubscriptionLink).not.toHaveBeenCalled();
   });
 
   it('lets a Pro workspace edit its billing period and payment method', async () => {
@@ -148,7 +151,11 @@ describe('BillingPanel', () => {
     expect((confirm as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(confirm);
     await waitFor(() =>
-      expect(api.setSubscriptionRecurringInterval).toHaveBeenCalledWith('workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Month)
+      expect(api.setSubscriptionRecurringInterval).toHaveBeenCalledWith(
+        'workspace-1',
+        SubscriptionPlan.Pro,
+        SubscriptionInterval.Month
+      )
     );
   });
 

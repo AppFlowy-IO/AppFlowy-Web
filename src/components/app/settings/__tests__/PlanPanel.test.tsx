@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { BillingService } from '@/application/services/domains';
 import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
-import { resetPricingCatalogCache } from '@/components/app/hooks/usePricingCatalog';
 import { PlanPanel } from '@/components/app/settings/PlanPanel';
 import { renderDate } from '@/utils/time';
 
@@ -22,9 +21,9 @@ jest.mock('@/application/services/domains', () => ({
 
 const api = jest.mocked(BillingService);
 
-function renderPanel(getPricingCatalog?: () => Promise<never>) {
+function renderPanel() {
   return render(
-    <BillingTestProviders getPricingCatalog={getPricingCatalog}>
+    <BillingTestProviders>
       <PlanPanel workspaceId='workspace-1' />
     </BillingTestProviders>
   );
@@ -33,38 +32,37 @@ function renderPanel(getPricingCatalog?: () => Promise<never>) {
 describe('PlanPanel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    resetPricingCatalogCache();
     window.open = jest.fn();
     api.getWorkspaceSubscriptionStatus.mockResolvedValue([]);
     api.getWorkspaceUsage.mockResolvedValue(freeUsage);
   });
 
-  it('renders usage, upgrade toggles, the current plan and catalog prices for a Free workspace', async () => {
-    api.getSubscriptionLink.mockResolvedValue('https://checkout/ai-max');
+  it('renders usage, Pro upgrade toggles and the current plan for a Free workspace', async () => {
+    api.getSubscriptionLink.mockResolvedValue('https://checkout/pro');
     renderPanel();
 
     expect(await screen.findByText('1 of 5 GB')).toBeTruthy();
     expect(screen.getByText('3 of 10')).toBeTruthy();
-    expect(screen.getByTestId('plan-toggle-pro')).toBeTruthy();
-    expect(screen.getByTestId('plan-toggle-ai-max')).toBeTruthy();
+    // Both toggles upsell Pro: unlimited AI is part of Pro now that AI Max is no longer sold.
+    expect(screen.getByTestId('plan-toggle-pro').textContent).toContain('Pro');
+    expect(screen.getByTestId('plan-toggle-unlimited-ai').textContent).toContain('Pro');
+    expect(screen.queryByText('AI Max')).toBeNull();
+    expect(screen.queryByTestId('plan-addon-ai-max')).toBeNull();
+    expect(screen.getByTestId('current-plan-box').textContent).toContain('Current plan');
     expect(screen.getByTestId('current-plan-box').textContent).toContain('Free');
     expect(screen.getByTestId('current-plan-box').textContent).toContain('Perfect for individuals');
-
-    const aiMaxBox = await screen.findByTestId('plan-addon-ai-max');
-
-    await waitFor(() => expect(aiMaxBox.textContent).toContain('$8'));
-    expect(aiMaxBox.getAttribute('data-active')).toBe('false');
-    expect(screen.queryByTestId('plan-addon-vault')).toBeNull();
+    // Without add-on cards the page no longer needs the pricing catalog.
+    expect(api.getPricingCatalog).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('plan-change-plan'));
     expect(screen.getByTestId('location-search').textContent).toBe('?action=change_plan');
 
-    fireEvent.click(screen.getAllByText('Add')[0]);
-    await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://checkout/ai-max', '_current'));
-    expect(api.getSubscriptionLink).toHaveBeenCalledWith('workspace-1', SubscriptionPlan.AIMax, SubscriptionInterval.Year);
+    fireEvent.click(screen.getByLabelText('Unlimited AI and advanced models'));
+    await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://checkout/pro', '_current'));
+    expect(api.getSubscriptionLink).toHaveBeenCalledWith('workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Year);
   });
 
-  it('shows unlimited badges, the Added state and a cancellation notice for a paid workspace', async () => {
+  it('shows unlimited badges, no toggles and a cancellation notice for a paid workspace', async () => {
     api.getWorkspaceSubscriptionStatus.mockResolvedValue([
       workspaceStatus(SubscriptionPlan.Pro, { cancel_at: PERIOD_END }),
       workspaceStatus(SubscriptionPlan.AIMax),
@@ -75,31 +73,12 @@ describe('PlanPanel', () => {
     expect(await screen.findByText('Unlimited storage')).toBeTruthy();
     expect(screen.getByText('Unlimited responses')).toBeTruthy();
     expect(screen.queryByTestId('plan-toggle-pro')).toBeNull();
-    expect(screen.queryByTestId('plan-toggle-ai-max')).toBeNull();
+    expect(screen.queryByTestId('plan-toggle-unlimited-ai')).toBeNull();
     expect(screen.getByTestId('current-plan-box').textContent).toContain('Pro');
     expect(screen.getByTestId('current-plan-box').textContent).toContain(
       `Downgraded to Free on ${renderDate(PERIOD_END, 'MM/DD/YYYY', true)}.`
     );
-
-    const aiMaxBox = await screen.findByTestId('plan-addon-ai-max');
-
-    await waitFor(() => expect(aiMaxBox.getAttribute('data-active')).toBe('true'));
-    expect(aiMaxBox.textContent).toContain('Added');
-  });
-
-  it('keeps the usage summary when the pricing catalog fails and offers a retry', async () => {
-    const getPricingCatalog = jest.fn().mockRejectedValueOnce(new Error('offline'));
-
-    renderPanel(getPricingCatalog);
-
-    expect(await screen.findByText('1 of 5 GB')).toBeTruthy();
-    expect((await screen.findAllByTestId('pricing-error')).length).toBeGreaterThan(0);
-    expect(screen.queryByTestId('plan-addon-ai-max')).toBeNull();
-
-    getPricingCatalog.mockResolvedValue(
-      (await import('./billing-test-utils')).catalog
-    );
-    fireEvent.click(screen.getAllByText('Retry')[0]);
-    expect(await screen.findByTestId('plan-addon-ai-max')).toBeTruthy();
+    // The retired AI Max add-on is not offered on the plan page even to a workspace that has it.
+    expect(screen.queryByText('AI Max')).toBeNull();
   });
 });
