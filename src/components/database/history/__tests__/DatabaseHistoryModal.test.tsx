@@ -23,12 +23,14 @@ jest.mock('../DatabaseHistoryPreviewProvider', () => ({
 const mockStart = jest.fn();
 let mockRestoreCompleted = 0;
 let mockUseRealRestore = false;
+let mockRestoreBusy = false;
+let mockRestoreError: string | null = null;
 
 jest.mock('../useDatabaseHistoryRestore', () => ({
   databaseHistoryError: (error: Error) => error.message,
   useDatabaseHistoryRestore: (...args: unknown[]) => mockUseRealRestore
     ? jest.requireActual('../useDatabaseHistoryRestore').useDatabaseHistoryRestore(...args)
-    : ({ start: mockStart, completed: mockRestoreCompleted, isRestoring: false, job: null, error: null }),
+    : ({ start: mockStart, completed: mockRestoreCompleted, isRestoring: mockRestoreBusy, job: null, error: mockRestoreError }),
 }));
 
 const records = [1, 2].map((n) => ({
@@ -45,6 +47,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockRestoreCompleted = 0;
   mockUseRealRestore = false;
+  mockRestoreBusy = false;
+  mockRestoreError = null;
   localStorage.clear();
   jest.mocked(getDatabaseHistory).mockResolvedValue(records);
 });
@@ -53,15 +57,43 @@ test('renders database metadata without a document-only author filter and confir
   const session = { root: new Y.Doc({ guid: 'historical-root' }), rows: {}, destroy: jest.fn() };
 
   jest.mocked(loadDatabaseHistoryPreview).mockResolvedValue(session);
-  const { unmount } = render(<DatabaseHistoryModal {...props} />);
+  const { unmount, rerender } = render(<DatabaseHistoryModal {...props} />);
 
-  await screen.findByTestId('historical-preview');
+  const preview = await screen.findByTestId('historical-preview');
+
   expect(screen.queryByText('versionHistory.onlyYours')).not.toBeInTheDocument();
   fireEvent.click(screen.getByTestId('database-history-restore'));
   expect(screen.getByText(/whole database, including shared views, their sidebar entries, and rows/)).toBeInTheDocument();
   expect(mockStart).not.toHaveBeenCalled();
   fireEvent.click(screen.getByTestId('database-history-confirm-restore'));
   expect(mockStart).toHaveBeenCalledWith('v1');
+  mockRestoreBusy = true;
+  rerender(<DatabaseHistoryModal {...props} />);
+  const progress = screen.getByTestId('database-history-restore-progress');
+
+  expect(progress.closest('[data-testid="database-version-history-modal"]'))
+    .toBe(screen.getByTestId('database-version-history-modal'));
+  expect(progress.closest('aside')).toBeNull();
+  expect(await screen.findByRole('status')).toHaveTextContent('Restore queued…');
+  expect(screen.getByTestId('database-history-restore')).toBeDisabled();
+  expect(screen.getByTestId('database-history-restore')).not.toHaveAttribute('aria-busy');
+  expect(screen.getByTestId('historical-preview')).toBe(preview);
+  expect(preview.closest('[inert]')).not.toBeNull();
+  expect(screen.getByTestId('database-history-list').closest('aside')).toHaveAttribute('inert');
+  expect(screen.queryByRole('button', { name: 'Filter versions' })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByTestId('database-history-restore-close')).toHaveFocus());
+  expect(session.destroy).not.toHaveBeenCalled();
+
+  mockRestoreError = 'The server is temporarily unavailable';
+  rerender(<DatabaseHistoryModal {...props} />);
+  expect(screen.queryByTestId('database-history-restore-progress')).not.toBeInTheDocument();
+  expect(screen.getByRole('alert')).toHaveTextContent(mockRestoreError);
+  expect(preview.closest('[inert]')).toBeNull();
+  mockRestoreError = null;
+  rerender(<DatabaseHistoryModal {...props} />);
+  expect(screen.getByTestId('database-history-restore-progress')).toBeInTheDocument();
+  fireEvent.click(screen.getByTestId('database-history-restore-close'));
+  expect(props.onOpenChange).toHaveBeenCalledWith(false);
   unmount();
   expect(session.destroy).toHaveBeenCalledTimes(1);
 });

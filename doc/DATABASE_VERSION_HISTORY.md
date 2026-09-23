@@ -31,6 +31,13 @@ Restoration enqueues a durable `/history/{version}/restore-jobs` job with an ide
 resumes it. Success requires a recovery version and a completed live database reload before the
 dialog closes. The recovery snapshot remains selectable in history.
 
+Active restore progress is centered over the whole history dialog, matching desktop. Web uses
+the shared three-dot `AFLoadingIndicator`; desktop uses its native `AFLoadingIndicator`. The
+preview remains mounted, but the overlay blocks pointer, keyboard and assistive-technology access
+to the covered controls. An explicit Close button stays available above the overlay; clicking the
+backdrop does not dismiss it. The footer Restore button is disabled without a second indicator;
+errors remove the overlay so recovery actions remain readable.
+
 Reopening history may finish cleanup of an already successful restore. That recovery keeps the
 newly opened dialog visible; automatic closing applies only to a restore confirmed in that opening.
 

@@ -1,4 +1,5 @@
 import { Dialog, DialogContent, DialogTitle } from '@mui/material';
+import FocusTrap from '@mui/material/Unstable_TrapFocus';
 import { memo, ReactNode, useCallback, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -29,29 +30,39 @@ export type HistoryDateFilter = 'all' | 'last7Days' | 'last30Days' | 'last60Days
 const DATE_FILTERS: HistoryDateFilter[] = ['all', 'last7Days', 'last30Days', 'last60Days'];
 
 // Presentation is shared; each history feature owns its data, permissions, and restore lifecycle.
-export function VersionHistoryDialog({ open, onClose, title, testId, sidebar, children }: {
+export function VersionHistoryDialog({ open, onClose, title, testId, sidebar, children, overlay }: {
   open: boolean;
   onClose: () => void;
   title: ReactNode;
   testId: string;
   sidebar: ReactNode;
   children: ReactNode;
+  overlay?: ReactNode;
 }) {
   const titleId = useId();
+  // Retain preview state while removing the covered controls from pointer,
+  // keyboard, and assistive-technology interaction.
+  const blockedContent = overlay ? { inert: '', 'aria-hidden': true as const } : {};
 
   return (
-    <Dialog open={open} onClose={onClose} aria-labelledby={titleId} fullWidth maxWidth={false}
+    <Dialog open={open} onClose={(_, reason) => {
+      if (overlay && reason === 'backdropClick') return;
+      onClose();
+    }} aria-labelledby={titleId} fullWidth maxWidth={false}
       keepMounted={false} disableRestoreFocus PaperProps={DIALOG_PAPER_PROPS}>
-      <DialogContent data-testid={testId} className='flex h-full w-full flex-col overflow-hidden !p-0 md:flex-row'>
-        <div className='order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-2xl md:order-1 md:rounded-l-2xl md:rounded-tr-none'>
+      <DialogContent data-testid={testId} className='relative flex h-full w-full flex-col overflow-hidden !p-0 md:flex-row'>
+        <div {...blockedContent} className='order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-2xl md:order-1 md:rounded-l-2xl md:rounded-tr-none'>
           <DialogTitle id={titleId} className='border-b border-border px-6 py-4 text-base font-bold text-text-primary'>
             {title}
           </DialogTitle>
           <div className='min-h-0 flex-1 overflow-hidden'>{children}</div>
         </div>
-        <aside className='order-1 flex max-h-[45%] min-h-0 w-full max-w-full shrink-0 flex-col overflow-hidden rounded-r-2xl border-border-primary bg-surface-container-layer-01 md:order-2 md:max-h-none md:w-[280px] md:border-l'>
+        <aside {...blockedContent} className='order-1 flex max-h-[45%] min-h-0 w-full max-w-full shrink-0 flex-col overflow-hidden rounded-r-2xl border-border-primary bg-surface-container-layer-01 md:order-2 md:max-h-none md:w-[280px] md:border-l'>
           {sidebar}
         </aside>
+        {overlay && <FocusTrap open>
+          <div className='absolute inset-0 z-20' tabIndex={-1}>{overlay}</div>
+        </FocusTrap>}
       </DialogContent>
     </Dialog>
   );

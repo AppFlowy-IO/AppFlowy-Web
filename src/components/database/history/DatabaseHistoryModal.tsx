@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 
 import type { DatabaseHistoryCursor, DatabaseHistoryVersion } from '@/application/database-history.type';
 import { DATABASE_HISTORY_PAGE_SIZE, getDatabaseHistory } from '@/application/services/domains/database-history';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import AFLoadingIndicator from '@/components/_shared/AFLoadingIndicator';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import {
   HistoryDateFilter,
@@ -162,7 +164,25 @@ export default function DatabaseHistoryModal({
   return (
     <>
       <VersionHistoryDialog open={open} onClose={() => onOpenChange(false)} title={name || t('untitled')}
-        testId='database-version-history-modal' sidebar={
+        testId='database-version-history-modal' overlay={restore.isRestoring && !restore.error ? (
+          // Only this overlay's Close action remains interactive during restore.
+          <div data-testid='database-history-restore-progress'
+            className='absolute inset-0 flex items-center justify-center p-6'>
+            <div aria-hidden='true' className='absolute inset-0 bg-surface-layer-02 opacity-80' />
+            <Button data-testid='database-history-restore-close' autoFocus variant='ghost' size='icon'
+              className='absolute right-4 top-3 z-10 text-icon-secondary'
+              aria-label={t('button.close', 'Close')} onClick={() => onOpenChange(false)}>
+              <CloseIcon className='h-5 w-5' />
+            </Button>
+            <div className='relative flex max-w-sm flex-col items-center gap-3 text-center'>
+              <AFLoadingIndicator label={t(`databaseHistory.restoreState.${restore.job?.state || 'queued'}`,
+                RESTORE_PROGRESS[restore.job?.state || 'queued'] || 'Restoring database…')} />
+              <p className='text-xs text-text-secondary'>
+                {t('databaseHistory.canClose', 'You can close this window. The restore will continue.')}
+              </p>
+            </div>
+          </div>
+        ) : undefined} sidebar={
           <div className='flex h-full min-h-0 flex-col'>
             <VersionHistoryHeader closeTestId='database-history-close' onClose={() => onOpenChange(false)}>
               <VersionHistoryDateFilter value={dateFilter} onChange={(filter) => {
@@ -198,13 +218,8 @@ export default function DatabaseHistoryModal({
               </Button>}
             </div>
             <VersionHistoryFooter disabled={!selectedVersion || restore.isRestoring || !userId}
-              loading={restore.isRestoring} testId='database-history-restore'
+              testId='database-history-restore'
               onRestore={() => setConfirmation(selectedVersion || null)}>
-              {restore.isRestoring && <p role='status' className='text-sm text-text-secondary'>
-                {t(`databaseHistory.restoreState.${restore.job?.state || 'queued'}`,
-                  RESTORE_PROGRESS[restore.job?.state || 'queued'] || 'Restoring database…')}
-                <span className='mt-1 block text-xs'>{t('databaseHistory.canClose', 'You can close this window. The restore will continue.')}</span>
-              </p>}
               {restore.error && <p role='alert' className='text-sm text-text-error'>{restore.error}</p>}
             </VersionHistoryFooter>
           </div>
