@@ -49,10 +49,9 @@ describe('PlanPanel', () => {
     expect(screen.queryByText('AI Max')).toBeNull();
     expect(screen.queryByTestId('plan-addon-ai-max')).toBeNull();
     expect(screen.getByTestId('current-plan-box').textContent).toContain('Current plan');
+    // Plan copy comes from the pricing catalog, localized with the compare dialog's strings.
     expect(screen.getByTestId('current-plan-box').textContent).toContain('Free');
-    expect(screen.getByTestId('current-plan-box').textContent).toContain('Perfect for individuals');
-    // Without add-on cards the page no longer needs the pricing catalog.
-    expect(api.getPricingCatalog).not.toHaveBeenCalled();
+    expect(screen.getByTestId('current-plan-box').textContent).toContain('For individuals');
 
     fireEvent.click(screen.getByTestId('plan-change-plan'));
     expect(screen.getByTestId('location-search').textContent).toBe('?action=change_plan');

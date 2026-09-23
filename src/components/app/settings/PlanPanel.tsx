@@ -4,9 +4,11 @@ import { useSearchParams } from 'react-router-dom';
 
 import { SubscriptionPlan, WorkspaceUsageAndLimit } from '@/application/types';
 import { ReactComponent as CheckCircleIcon } from '@/assets/icons/check_circle.svg';
+import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+import { PricingTranslate, findPlan, localizePlanDescription, localizePlanName } from '@/utils/pricing';
 import { findWorkspaceAddOn, formatStorageGb, isSubscriptionCanceled } from '@/utils/subscription';
 
 import { fillPlaceholders, formatPeriodEnd, userDateFormat } from './billing/labels';
@@ -125,6 +127,9 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
   const dateFormat = userDateFormat(currentUser?.metadata);
   const billing = useWorkspaceBilling(workspaceId);
   const { info, usage, status, error, reload } = billing;
+  const { catalog } = usePricingCatalog();
+  // Catalog keys are built at runtime, which the typed i18n resources cannot express.
+  const translate = t as unknown as PricingTranslate;
 
   const openChangePlan = useCallback(() => {
     setSearch((prev) => {
@@ -133,25 +138,27 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
     });
   }, [setSearch]);
 
+  // Fallback copy while the catalog loads, or for Team, which it does not list:
+  // the same strings the compare dialog localizes the catalog with.
   const planTitle = (plan: SubscriptionPlan) => {
     switch (plan) {
       case SubscriptionPlan.Pro:
-        return t('settings.planPage.planUsage.currentPlan.proTitle');
+        return t('subscribe.pro');
       case SubscriptionPlan.Team:
         return t('settings.planPage.planUsage.currentPlan.teamTitle');
       default:
-        return t('settings.planPage.planUsage.currentPlan.freeTitle');
+        return t('subscribe.free');
     }
   };
 
   const planInfo = (plan: SubscriptionPlan) => {
     switch (plan) {
       case SubscriptionPlan.Pro:
-        return t('settings.planPage.planUsage.currentPlan.proInfo');
+        return t('subscribe.proDescription');
       case SubscriptionPlan.Team:
         return t('settings.planPage.planUsage.currentPlan.teamInfo');
       default:
-        return t('settings.planPage.planUsage.currentPlan.freeInfo');
+        return t('subscribe.freeDescription');
     }
   };
 
@@ -191,6 +198,10 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
     // A workspace that still has the retired AI Max add-on already has unlimited AI.
     const hasAiMax = findWorkspaceAddOn(info, SubscriptionPlan.AIMax) !== null;
     const canceled = info.subscription && isSubscriptionCanceled(info.subscription);
+    // The pricing catalog is the source of plan copy.
+    const catalogPlan = catalog ? findPlan(catalog, info.plan) : undefined;
+    const title = catalogPlan ? localizePlanName(translate, catalogPlan) : planTitle(info.plan);
+    const description = catalogPlan ? localizePlanDescription(translate, catalogPlan) : planInfo(info.plan);
 
     return (
       <div className='flex flex-col gap-4'>
@@ -220,8 +231,8 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
           <div className='mt-4 rounded-[16px] border border-[#BDBDBD] p-4'>
             <div className='flex items-center gap-4'>
               <div className='flex flex-[6] flex-col'>
-                <div className='mt-1 text-2xl font-semibold text-text-primary'>{planTitle(info.plan)}</div>
-                <div className='mt-2 line-clamp-3 text-sm text-text-primary'>{planInfo(info.plan)}</div>
+                <div className='mt-1 text-2xl font-semibold text-text-primary'>{title}</div>
+                <div className='mt-2 line-clamp-3 text-sm text-text-primary'>{description}</div>
               </div>
               <div className='flex flex-[5] justify-center'>
                 <GradientButton

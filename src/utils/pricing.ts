@@ -30,16 +30,16 @@ const UNIT_VALUE_KEYS: Record<string, string> = {
   forms: 'subscribe.value.forms',
 };
 
+// Only the plans a client surface shows are translated; add-ons keep the
+// server's copy, so a client string cannot drift from what is sold.
 const PLAN_NAME_KEYS: Record<string, string> = {
   [SubscriptionPlan.Free]: 'subscribe.free',
   [SubscriptionPlan.Pro]: 'subscribe.pro',
-  [SubscriptionPlan.AIMax]: 'subscribe.AIMax.label',
 };
 
 const PLAN_DESCRIPTION_KEYS: Record<string, string> = {
   [SubscriptionPlan.Free]: 'subscribe.freeDescription',
   [SubscriptionPlan.Pro]: 'subscribe.proDescription',
-  [SubscriptionPlan.AIMax]: 'subscribe.AIMax.description',
 };
 
 /**

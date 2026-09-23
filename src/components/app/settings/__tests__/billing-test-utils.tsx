@@ -54,18 +54,13 @@ export const translations: Record<string, string> = {
   'settings.planPage.planUsage.memberProToggle': 'More members & unlimited AI',
   'settings.planPage.planUsage.aiMaxToggle': 'Unlimited AI and advanced models',
   'settings.planPage.planUsage.currentPlan.bannerLabel': 'Current plan',
-  'settings.planPage.planUsage.currentPlan.freeTitle': 'Free',
-  'settings.planPage.planUsage.currentPlan.proTitle': 'Pro',
   'settings.planPage.planUsage.currentPlan.teamTitle': 'Team',
-  'settings.planPage.planUsage.currentPlan.freeInfo': 'Perfect for individuals',
-  'settings.planPage.planUsage.currentPlan.proInfo': 'Perfect for teams',
   'settings.planPage.planUsage.currentPlan.upgrade': 'Change plan',
   'settings.planPage.planUsage.currentPlan.canceledInfo': 'Downgraded to Free on {}.',
-  'settings.planPage.planUsage.addons.title': 'Workspace Add-ons',
-  'settings.planPage.planUsage.addons.addLabel': 'Add',
-  'settings.planPage.planUsage.addons.activeLabel': 'Added',
-  'settings.planPage.planUsage.addons.aiMax.title': 'AI Max',
-  'settings.planPage.planUsage.addons.aiMax.priceInfo': 'Per user per month billed annually',
+  'subscribe.free': 'Free',
+  'subscribe.pro': 'Pro',
+  'subscribe.freeDescription': 'For individuals',
+  'subscribe.proDescription': 'For small teams',
   'subscribe.pricingUnavailable': 'Pricing unavailable',
   'button.retry': 'Retry',
   'button.confirm': 'Confirm',
@@ -90,7 +85,6 @@ export function workspaceStatus(
     ...overrides,
   };
 }
-
 
 export const freeUsage: WorkspaceUsageAndLimit = {
   member_count: 1,
