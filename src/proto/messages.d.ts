@@ -336,6 +336,9 @@ export namespace collab {
 
         /** SyncRequest version */
         version?: (string|null);
+
+        /** SyncRequest syncReceipts */
+        syncReceipts?: (boolean|null);
     }
 
     /**
@@ -361,6 +364,9 @@ export namespace collab {
 
         /** SyncRequest version. */
         public version: string;
+
+        /** SyncRequest syncReceipts. */
+        public syncReceipts: boolean;
 
         /**
          * Creates a new SyncRequest instance using the specified properties.
@@ -460,6 +466,9 @@ export namespace collab {
 
         /** Update afterStateVector */
         afterStateVector?: (Uint8Array|null);
+
+        /** Update syncIds */
+        syncIds?: (string[]|null);
     }
 
     /**
@@ -492,6 +501,9 @@ export namespace collab {
 
         /** Update afterStateVector. */
         public afterStateVector: Uint8Array;
+
+        /** Update syncIds. */
+        public syncIds: string[];
 
         /**
          * Creates a new Update instance using the specified properties.
@@ -571,6 +583,135 @@ export namespace collab {
         public static getTypeUrl(typeUrlPrefix?: string): string;
     }
 
+    /** Properties of a SyncReceipt. */
+    interface ISyncReceipt {
+
+        /** SyncReceipt stage */
+        stage?: (collab.SyncReceipt.Stage|null);
+
+        /** SyncReceipt syncIds */
+        syncIds?: (string[]|null);
+
+        /** SyncReceipt messageIds */
+        messageIds?: (collab.IRid[]|null);
+
+        /** SyncReceipt version */
+        version?: (string|null);
+    }
+
+    /**
+     * AwarenessUpdate message is send to inform about the latest changes in the
+     * Yjs doc awareness state.
+     */
+    class SyncReceipt implements ISyncReceipt {
+
+        /**
+         * Constructs a new SyncReceipt.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: collab.ISyncReceipt);
+
+        /** SyncReceipt stage. */
+        public stage: collab.SyncReceipt.Stage;
+
+        /** SyncReceipt syncIds. */
+        public syncIds: string[];
+
+        /** SyncReceipt messageIds. */
+        public messageIds: collab.IRid[];
+
+        /** SyncReceipt version. */
+        public version: string;
+
+        /**
+         * Creates a new SyncReceipt instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns SyncReceipt instance
+         */
+        public static create(properties?: collab.ISyncReceipt): collab.SyncReceipt;
+
+        /**
+         * Encodes the specified SyncReceipt message. Does not implicitly {@link collab.SyncReceipt.verify|verify} messages.
+         * @param message SyncReceipt message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: collab.ISyncReceipt, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified SyncReceipt message, length delimited. Does not implicitly {@link collab.SyncReceipt.verify|verify} messages.
+         * @param message SyncReceipt message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: collab.ISyncReceipt, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a SyncReceipt message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns SyncReceipt
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.SyncReceipt;
+
+        /**
+         * Decodes a SyncReceipt message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns SyncReceipt
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.SyncReceipt;
+
+        /**
+         * Verifies a SyncReceipt message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a SyncReceipt message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns SyncReceipt
+         */
+        public static fromObject(object: { [k: string]: any }): collab.SyncReceipt;
+
+        /**
+         * Creates a plain object from a SyncReceipt message. Also converts values to other types if specified.
+         * @param message SyncReceipt
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: collab.SyncReceipt, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this SyncReceipt to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for SyncReceipt
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    namespace SyncReceipt {
+
+        /** Stage enum. */
+        enum Stage {
+            UNKNOWN = 0,
+            ACCEPTED = 1,
+            SAVED = 2,
+            RETRY = 3
+        }
+    }
+
     /** Properties of an AwarenessUpdate. */
     interface IAwarenessUpdate {
 
@@ -578,10 +719,7 @@ export namespace collab {
         payload?: (Uint8Array|null);
     }
 
-    /**
-     * AwarenessUpdate message is send to inform about the latest changes in the
-     * Yjs doc awareness state.
-     */
+    /** Represents an AwarenessUpdate. */
     class AwarenessUpdate implements IAwarenessUpdate {
 
         /**
@@ -803,6 +941,9 @@ export namespace collab {
 
         /** CollabMessage accessChanged */
         accessChanged?: (collab.IAccessChanged|null);
+
+        /** CollabMessage syncReceipt */
+        syncReceipt?: (collab.ISyncReceipt|null);
     }
 
     /** Represents a CollabMessage. */
@@ -832,8 +973,11 @@ export namespace collab {
         /** CollabMessage accessChanged. */
         public accessChanged?: (collab.IAccessChanged|null);
 
+        /** CollabMessage syncReceipt. */
+        public syncReceipt?: (collab.ISyncReceipt|null);
+
         /** CollabMessage data. */
-        public data?: ("syncRequest"|"update"|"awarenessUpdate"|"accessChanged");
+        public data?: ("syncRequest"|"update"|"awarenessUpdate"|"accessChanged"|"syncReceipt");
 
         /**
          * Creates a new CollabMessage instance using the specified properties.
@@ -1179,6 +1323,9 @@ export namespace collab {
 
         /** CollabBatchSyncResult messageId */
         messageId?: (collab.IRid|null);
+
+        /** CollabBatchSyncResult saved */
+        saved?: (boolean|null);
     }
 
     /** Result for a single collab in batch sync response. */
@@ -1213,6 +1360,9 @@ export namespace collab {
 
         /** CollabBatchSyncResult messageId. */
         public messageId?: (collab.IRid|null);
+
+        /** CollabBatchSyncResult saved. */
+        public saved: boolean;
 
         /**
          * Creates a new CollabBatchSyncResult instance using the specified properties.

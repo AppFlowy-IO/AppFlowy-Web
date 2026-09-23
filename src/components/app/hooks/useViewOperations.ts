@@ -5,6 +5,7 @@ import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
 import { CollabService, ViewService, WorkspaceService } from '@/application/services/domains';
+import { setSyncAlias } from '@/application/sync-status/store';
 import {
   AccessLevel,
   DatabaseRelations,
@@ -31,6 +32,7 @@ import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
 
 import { useDatabaseIdentity } from './useDatabaseIdentity';
+
 import type { ViewObjectCapabilities } from './useViewObjectPermission';
 
 /**
@@ -309,6 +311,7 @@ export function useViewOperations({
         // leaves the database behind a permanent transition overlay.
         const docWithMeta = doc as YDocWithMeta;
 
+        setSyncAlias(viewId, collabObjectId);
         docWithMeta.object_id = collabObjectId;
         docWithMeta._collabType = collabType;
 

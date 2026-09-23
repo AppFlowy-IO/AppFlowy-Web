@@ -16,6 +16,7 @@ export interface CollabFullSyncBatchResult {
   serverStateVector: Uint8Array;
   collabVersion?: string;
   messageId?: collab.IRid;
+  saved?: boolean;
   error?: string;
 }
 
@@ -317,6 +318,7 @@ export async function collabFullSyncBatch(
       serverStateVector,
       collabVersion: result.collabVersion || undefined,
       messageId: result.messageId ?? undefined,
+      saved: result.saved ?? false,
       error: result.error || undefined,
     });
   }

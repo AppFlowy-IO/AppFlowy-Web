@@ -17,6 +17,7 @@ import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
+import { setSyncAlias } from '@/application/sync-status/store';
 import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
@@ -432,6 +433,11 @@ function Database(props: Database2Props) {
   );
 
   const currentDatabaseId = useSyncExternalStore(subscribeToDatabaseId, getDatabaseId, getDatabaseId);
+
+  // No cleanup: aliases are tiny and stay valid until the sync session resets.
+  useEffect(() => {
+    setSyncAlias(activeViewId, currentDatabaseId);
+  }, [activeViewId, currentDatabaseId]);
   // A shared background loader can retain a callback and first invoke it after
   // reset, so invocation-time generation checks alone cannot identify stale work.
   const databaseLifecycleIdentity = useMemo(

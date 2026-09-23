@@ -6,8 +6,11 @@ import {
   deleteOutboxByObjectId,
   enqueueOutboxUpdate,
   shouldRouteUpdateThroughOutbox,
+  startDrainObject,
   waitForDrain,
 } from '@/application/sync-outbox';
+import { bindSyncStatus } from '@/application/sync-status/bind';
+import { markSyncReady } from '@/application/sync-status/store';
 import { CollabOrigin, Types, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
@@ -107,6 +110,7 @@ export const bindSyncContext = (ctx: SyncContext): void => {
       collabType,
       syncRequest: {
         stateVector: Y.encodeStateVector(doc),
+        syncReceipts: true,
         lastMessageId: lastMessageId || { timestamp: 0, counter: 0 },
         version: doc.version,
       },
@@ -132,6 +136,9 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   const { doc, emit } = ctx;
   const stateVector = message.stateVector && message.stateVector.length > 0 ? message.stateVector : undefined;
   const update = Y.encodeStateAsUpdate(doc, stateVector);
+
+  bindSyncStatus(doc, ctx.collabType);
+  if (!message.syncReceipts && !doc.store.pendingStructs && !doc.store.pendingDs) markSyncReady(doc.guid);
 
   Log.debug('[sync] responding to sync request from server', {
     objectId: doc.guid,
@@ -279,11 +286,13 @@ export const initSync = (ctx: SyncContext) => {
   // Persist every local update synchronously to the sync_outbox, then let the
   // background drain loop push it over the WebSocket. Survives refresh, tab
   // crash, and modal-unmount races because IndexedDB is the source of truth.
+  bindSyncStatus(doc, collabType);
   ctx.flush = () => waitForDrain([doc.guid]);
 
   ctx.discardPendingUpdates = (options) => deleteOutboxByObjectId(doc.guid, options);
 
   const onUpdate = (update: Uint8Array, origin: string, _doc: Y.Doc, transaction: Y.Transaction) => {
+    bindSyncStatus(doc, collabType);
     if (origin === CollabOrigin.Remote) return;
 
     if (origin === CollabOrigin.InlineCommentAuthorized) {
@@ -310,12 +319,9 @@ export const initSync = (ctx: SyncContext) => {
   };
 
   const onDestroy = () => {
-    // when switching versions, we destroy previous instance of the document
-    // at this point all stashed updates are no longer valid. Fire-and-forget
-    // is acceptable here: the unregister path that sets `skipFlushOnDestroy`
-    // will also trigger its own discard, and callers that need to observe
-    // completion go through the await path in useCollab{Message,Version}Revert.
-    void ctx.discardPendingUpdates?.();
+    // Navigation must not discard edits still awaiting persistence. Version
+    // reset/revert callers explicitly await discardPendingUpdates beforehand.
+    startDrainObject(doc.guid);
   };
 
   doc.on('update', onUpdate);

@@ -158,6 +158,7 @@ export type AppflowyWebSocketType = {
 };
 
 export interface Options {
+  onSyncReceipt?: (message: messages.Message) => void;
   /**
    * UUID v4 representing the unique identifier of currently opened workspace.
    */
@@ -341,10 +342,28 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
 
   triggerNonceReconnectRef.current = triggerNonceReconnect;
 
+  const decodedFrame = useRef<{ data: unknown; message: messages.Message }>();
   const { lastMessage, sendMessage, readyState, getWebSocket } = useWebSocket(
     socketUrl,
     {
       share: true,
+      // Runs once per subscriber of the shared socket. Only one hook instance
+      // exists today; a second one would process every receipt twice.
+      filter: (event) => {
+        if (typeof event.data === 'string') return true;
+        try {
+          const message = messages.Message.decode(new Uint8Array(event.data));
+
+          if (message.collabMessage?.syncReceipt) {
+            options.onSyncReceipt?.(message);
+            return false; // Receipts must not rerender the app tree or lose frames to React batching.
+          }
+
+          decodedFrame.current = { data: event.data, message };
+        } catch { /* Existing decoding/error behavior handles other frames. */ }
+
+        return true;
+      },
       heartbeat: {
         message: 'echo',
         returnMessage: 'echo',
@@ -549,10 +568,12 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     triggerNonceReconnect('manual', true);
   }, [triggerNonceReconnect, shouldConnect, readyState]);
 
-  const lastProtobufMessage = useMemo(
-    () => (lastMessage ? messages.Message.decode(new Uint8Array(lastMessage.data)) : null),
-    [lastMessage]
-  );
+  const lastProtobufMessage = useMemo(() => {
+    if (!lastMessage) return null;
+    const cached = decodedFrame.current;
+
+    return cached && cached.data === lastMessage.data ? cached.message : messages.Message.decode(new Uint8Array(lastMessage.data));
+  }, [lastMessage]);
 
   // Depend on the primitive fields, not the options object identity: callers
   // typically pass an inline object literal, which would defeat the memo.

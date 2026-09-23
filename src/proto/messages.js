@@ -786,6 +786,7 @@ export const collab = $root.collab = (() => {
          * @property {collab.IRid|null} [lastMessageId] SyncRequest lastMessageId
          * @property {Uint8Array|null} [stateVector] SyncRequest stateVector
          * @property {string|null} [version] SyncRequest version
+         * @property {boolean|null} [syncReceipts] SyncRequest syncReceipts
          */
 
         /**
@@ -832,6 +833,14 @@ export const collab = $root.collab = (() => {
         SyncRequest.prototype.version = "";
 
         /**
+         * SyncRequest syncReceipts.
+         * @member {boolean} syncReceipts
+         * @memberof collab.SyncRequest
+         * @instance
+         */
+        SyncRequest.prototype.syncReceipts = false;
+
+        /**
          * Creates a new SyncRequest instance using the specified properties.
          * @function create
          * @memberof collab.SyncRequest
@@ -861,6 +870,8 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.stateVector);
             if (message.version != null && Object.hasOwnProperty.call(message, "version"))
                 writer.uint32(/* id 3, wireType 2 =*/26).string(message.version);
+            if (message.syncReceipts != null && Object.hasOwnProperty.call(message, "syncReceipts"))
+                writer.uint32(/* id 6, wireType 0 =*/48).bool(message.syncReceipts);
             return writer;
         };
 
@@ -909,6 +920,10 @@ export const collab = $root.collab = (() => {
                         message.version = reader.string();
                         break;
                     }
+                case 6: {
+                        message.syncReceipts = reader.bool();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -955,6 +970,9 @@ export const collab = $root.collab = (() => {
             if (message.version != null && message.hasOwnProperty("version"))
                 if (!$util.isString(message.version))
                     return "version: string expected";
+            if (message.syncReceipts != null && message.hasOwnProperty("syncReceipts"))
+                if (typeof message.syncReceipts !== "boolean")
+                    return "syncReceipts: boolean expected";
             return null;
         };
 
@@ -982,6 +1000,8 @@ export const collab = $root.collab = (() => {
                     message.stateVector = object.stateVector;
             if (object.version != null)
                 message.version = String(object.version);
+            if (object.syncReceipts != null)
+                message.syncReceipts = Boolean(object.syncReceipts);
             return message;
         };
 
@@ -1008,6 +1028,7 @@ export const collab = $root.collab = (() => {
                         object.stateVector = $util.newBuffer(object.stateVector);
                 }
                 object.version = "";
+                object.syncReceipts = false;
             }
             if (message.lastMessageId != null && message.hasOwnProperty("lastMessageId"))
                 object.lastMessageId = $root.collab.Rid.toObject(message.lastMessageId, options);
@@ -1015,6 +1036,8 @@ export const collab = $root.collab = (() => {
                 object.stateVector = options.bytes === String ? $util.base64.encode(message.stateVector, 0, message.stateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateVector) : message.stateVector;
             if (message.version != null && message.hasOwnProperty("version"))
                 object.version = message.version;
+            if (message.syncReceipts != null && message.hasOwnProperty("syncReceipts"))
+                object.syncReceipts = message.syncReceipts;
             return object;
         };
 
@@ -1059,6 +1082,7 @@ export const collab = $root.collab = (() => {
          * @property {string|null} [version] Update version
          * @property {Uint8Array|null} [beforeStateVector] Update beforeStateVector
          * @property {Uint8Array|null} [afterStateVector] Update afterStateVector
+         * @property {Array.<string>|null} [syncIds] Update syncIds
          */
 
         /**
@@ -1072,6 +1096,7 @@ export const collab = $root.collab = (() => {
          * @param {collab.IUpdate=} [properties] Properties to set
          */
         function Update(properties) {
+            this.syncIds = [];
             if (properties)
                 for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null)
@@ -1127,6 +1152,14 @@ export const collab = $root.collab = (() => {
         Update.prototype.afterStateVector = $util.newBuffer([]);
 
         /**
+         * Update syncIds.
+         * @member {Array.<string>} syncIds
+         * @memberof collab.Update
+         * @instance
+         */
+        Update.prototype.syncIds = $util.emptyArray;
+
+        /**
          * Creates a new Update instance using the specified properties.
          * @function create
          * @memberof collab.Update
@@ -1162,6 +1195,9 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.beforeStateVector);
             if (message.afterStateVector != null && Object.hasOwnProperty.call(message, "afterStateVector"))
                 writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.afterStateVector);
+            if (message.syncIds != null && message.syncIds.length)
+                for (let i = 0; i < message.syncIds.length; ++i)
+                    writer.uint32(/* id 8, wireType 2 =*/66).string(message.syncIds[i]);
             return writer;
         };
 
@@ -1222,6 +1258,12 @@ export const collab = $root.collab = (() => {
                         message.afterStateVector = reader.bytes();
                         break;
                     }
+                case 8: {
+                        if (!(message.syncIds && message.syncIds.length))
+                            message.syncIds = [];
+                        message.syncIds.push(reader.string());
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -1277,6 +1319,13 @@ export const collab = $root.collab = (() => {
             if (message.afterStateVector != null && message.hasOwnProperty("afterStateVector"))
                 if (!(message.afterStateVector && typeof message.afterStateVector.length === "number" || $util.isString(message.afterStateVector)))
                     return "afterStateVector: buffer expected";
+            if (message.syncIds != null && message.hasOwnProperty("syncIds")) {
+                if (!Array.isArray(message.syncIds))
+                    return "syncIds: array expected";
+                for (let i = 0; i < message.syncIds.length; ++i)
+                    if (!$util.isString(message.syncIds[i]))
+                        return "syncIds: string[] expected";
+            }
             return null;
         };
 
@@ -1316,6 +1365,13 @@ export const collab = $root.collab = (() => {
                     $util.base64.decode(object.afterStateVector, message.afterStateVector = $util.newBuffer($util.base64.length(object.afterStateVector)), 0);
                 else if (object.afterStateVector.length >= 0)
                     message.afterStateVector = object.afterStateVector;
+            if (object.syncIds) {
+                if (!Array.isArray(object.syncIds))
+                    throw TypeError(".collab.Update.syncIds: array expected");
+                message.syncIds = [];
+                for (let i = 0; i < object.syncIds.length; ++i)
+                    message.syncIds[i] = String(object.syncIds[i]);
+            }
             return message;
         };
 
@@ -1332,6 +1388,8 @@ export const collab = $root.collab = (() => {
             if (!options)
                 options = {};
             let object = {};
+            if (options.arrays || options.defaults)
+                object.syncIds = [];
             if (options.defaults) {
                 object.messageId = null;
                 object.flags = 0;
@@ -1370,6 +1428,11 @@ export const collab = $root.collab = (() => {
                 object.beforeStateVector = options.bytes === String ? $util.base64.encode(message.beforeStateVector, 0, message.beforeStateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.beforeStateVector) : message.beforeStateVector;
             if (message.afterStateVector != null && message.hasOwnProperty("afterStateVector"))
                 object.afterStateVector = options.bytes === String ? $util.base64.encode(message.afterStateVector, 0, message.afterStateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.afterStateVector) : message.afterStateVector;
+            if (message.syncIds && message.syncIds.length) {
+                object.syncIds = [];
+                for (let j = 0; j < message.syncIds.length; ++j)
+                    object.syncIds[j] = message.syncIds[j];
+            }
             return object;
         };
 
@@ -1402,6 +1465,368 @@ export const collab = $root.collab = (() => {
         return Update;
     })();
 
+    collab.SyncReceipt = (function() {
+
+        /**
+         * Properties of a SyncReceipt.
+         * @memberof collab
+         * @interface ISyncReceipt
+         * @property {collab.SyncReceipt.Stage|null} [stage] SyncReceipt stage
+         * @property {Array.<string>|null} [syncIds] SyncReceipt syncIds
+         * @property {Array.<collab.IRid>|null} [messageIds] SyncReceipt messageIds
+         * @property {string|null} [version] SyncReceipt version
+         */
+
+        /**
+         * Constructs a new SyncReceipt.
+         * @memberof collab
+         * @classdesc AwarenessUpdate message is send to inform about the latest changes in the
+         * Yjs doc awareness state.
+         * @implements ISyncReceipt
+         * @constructor
+         * @param {collab.ISyncReceipt=} [properties] Properties to set
+         */
+        function SyncReceipt(properties) {
+            this.syncIds = [];
+            this.messageIds = [];
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * SyncReceipt stage.
+         * @member {collab.SyncReceipt.Stage} stage
+         * @memberof collab.SyncReceipt
+         * @instance
+         */
+        SyncReceipt.prototype.stage = 0;
+
+        /**
+         * SyncReceipt syncIds.
+         * @member {Array.<string>} syncIds
+         * @memberof collab.SyncReceipt
+         * @instance
+         */
+        SyncReceipt.prototype.syncIds = $util.emptyArray;
+
+        /**
+         * SyncReceipt messageIds.
+         * @member {Array.<collab.IRid>} messageIds
+         * @memberof collab.SyncReceipt
+         * @instance
+         */
+        SyncReceipt.prototype.messageIds = $util.emptyArray;
+
+        /**
+         * SyncReceipt version.
+         * @member {string} version
+         * @memberof collab.SyncReceipt
+         * @instance
+         */
+        SyncReceipt.prototype.version = "";
+
+        /**
+         * Creates a new SyncReceipt instance using the specified properties.
+         * @function create
+         * @memberof collab.SyncReceipt
+         * @static
+         * @param {collab.ISyncReceipt=} [properties] Properties to set
+         * @returns {collab.SyncReceipt} SyncReceipt instance
+         */
+        SyncReceipt.create = function create(properties) {
+            return new SyncReceipt(properties);
+        };
+
+        /**
+         * Encodes the specified SyncReceipt message. Does not implicitly {@link collab.SyncReceipt.verify|verify} messages.
+         * @function encode
+         * @memberof collab.SyncReceipt
+         * @static
+         * @param {collab.ISyncReceipt} message SyncReceipt message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SyncReceipt.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.stage != null && Object.hasOwnProperty.call(message, "stage"))
+                writer.uint32(/* id 1, wireType 0 =*/8).int32(message.stage);
+            if (message.syncIds != null && message.syncIds.length)
+                for (let i = 0; i < message.syncIds.length; ++i)
+                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.syncIds[i]);
+            if (message.messageIds != null && message.messageIds.length)
+                for (let i = 0; i < message.messageIds.length; ++i)
+                    $root.collab.Rid.encode(message.messageIds[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+            if (message.version != null && Object.hasOwnProperty.call(message, "version"))
+                writer.uint32(/* id 4, wireType 2 =*/34).string(message.version);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified SyncReceipt message, length delimited. Does not implicitly {@link collab.SyncReceipt.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.SyncReceipt
+         * @static
+         * @param {collab.ISyncReceipt} message SyncReceipt message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SyncReceipt.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a SyncReceipt message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.SyncReceipt
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.SyncReceipt} SyncReceipt
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SyncReceipt.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.SyncReceipt();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.stage = reader.int32();
+                        break;
+                    }
+                case 2: {
+                        if (!(message.syncIds && message.syncIds.length))
+                            message.syncIds = [];
+                        message.syncIds.push(reader.string());
+                        break;
+                    }
+                case 3: {
+                        if (!(message.messageIds && message.messageIds.length))
+                            message.messageIds = [];
+                        message.messageIds.push($root.collab.Rid.decode(reader, reader.uint32()));
+                        break;
+                    }
+                case 4: {
+                        message.version = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a SyncReceipt message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.SyncReceipt
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.SyncReceipt} SyncReceipt
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SyncReceipt.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a SyncReceipt message.
+         * @function verify
+         * @memberof collab.SyncReceipt
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        SyncReceipt.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.stage != null && message.hasOwnProperty("stage"))
+                switch (message.stage) {
+                default:
+                    return "stage: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                case 3:
+                    break;
+                }
+            if (message.syncIds != null && message.hasOwnProperty("syncIds")) {
+                if (!Array.isArray(message.syncIds))
+                    return "syncIds: array expected";
+                for (let i = 0; i < message.syncIds.length; ++i)
+                    if (!$util.isString(message.syncIds[i]))
+                        return "syncIds: string[] expected";
+            }
+            if (message.messageIds != null && message.hasOwnProperty("messageIds")) {
+                if (!Array.isArray(message.messageIds))
+                    return "messageIds: array expected";
+                for (let i = 0; i < message.messageIds.length; ++i) {
+                    let error = $root.collab.Rid.verify(message.messageIds[i]);
+                    if (error)
+                        return "messageIds." + error;
+                }
+            }
+            if (message.version != null && message.hasOwnProperty("version"))
+                if (!$util.isString(message.version))
+                    return "version: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a SyncReceipt message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.SyncReceipt
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.SyncReceipt} SyncReceipt
+         */
+        SyncReceipt.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.SyncReceipt)
+                return object;
+            let message = new $root.collab.SyncReceipt();
+            switch (object.stage) {
+            default:
+                if (typeof object.stage === "number") {
+                    message.stage = object.stage;
+                    break;
+                }
+                break;
+            case "UNKNOWN":
+            case 0:
+                message.stage = 0;
+                break;
+            case "ACCEPTED":
+            case 1:
+                message.stage = 1;
+                break;
+            case "SAVED":
+            case 2:
+                message.stage = 2;
+                break;
+            case "RETRY":
+            case 3:
+                message.stage = 3;
+                break;
+            }
+            if (object.syncIds) {
+                if (!Array.isArray(object.syncIds))
+                    throw TypeError(".collab.SyncReceipt.syncIds: array expected");
+                message.syncIds = [];
+                for (let i = 0; i < object.syncIds.length; ++i)
+                    message.syncIds[i] = String(object.syncIds[i]);
+            }
+            if (object.messageIds) {
+                if (!Array.isArray(object.messageIds))
+                    throw TypeError(".collab.SyncReceipt.messageIds: array expected");
+                message.messageIds = [];
+                for (let i = 0; i < object.messageIds.length; ++i) {
+                    if (typeof object.messageIds[i] !== "object")
+                        throw TypeError(".collab.SyncReceipt.messageIds: object expected");
+                    message.messageIds[i] = $root.collab.Rid.fromObject(object.messageIds[i]);
+                }
+            }
+            if (object.version != null)
+                message.version = String(object.version);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a SyncReceipt message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.SyncReceipt
+         * @static
+         * @param {collab.SyncReceipt} message SyncReceipt
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        SyncReceipt.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.arrays || options.defaults) {
+                object.syncIds = [];
+                object.messageIds = [];
+            }
+            if (options.defaults) {
+                object.stage = options.enums === String ? "UNKNOWN" : 0;
+                object.version = "";
+            }
+            if (message.stage != null && message.hasOwnProperty("stage"))
+                object.stage = options.enums === String ? $root.collab.SyncReceipt.Stage[message.stage] === undefined ? message.stage : $root.collab.SyncReceipt.Stage[message.stage] : message.stage;
+            if (message.syncIds && message.syncIds.length) {
+                object.syncIds = [];
+                for (let j = 0; j < message.syncIds.length; ++j)
+                    object.syncIds[j] = message.syncIds[j];
+            }
+            if (message.messageIds && message.messageIds.length) {
+                object.messageIds = [];
+                for (let j = 0; j < message.messageIds.length; ++j)
+                    object.messageIds[j] = $root.collab.Rid.toObject(message.messageIds[j], options);
+            }
+            if (message.version != null && message.hasOwnProperty("version"))
+                object.version = message.version;
+            return object;
+        };
+
+        /**
+         * Converts this SyncReceipt to JSON.
+         * @function toJSON
+         * @memberof collab.SyncReceipt
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        SyncReceipt.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for SyncReceipt
+         * @function getTypeUrl
+         * @memberof collab.SyncReceipt
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        SyncReceipt.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.SyncReceipt";
+        };
+
+        /**
+         * Stage enum.
+         * @name collab.SyncReceipt.Stage
+         * @enum {number}
+         * @property {number} UNKNOWN=0 UNKNOWN value
+         * @property {number} ACCEPTED=1 ACCEPTED value
+         * @property {number} SAVED=2 SAVED value
+         * @property {number} RETRY=3 RETRY value
+         */
+        SyncReceipt.Stage = (function() {
+            const valuesById = {}, values = Object.create(valuesById);
+            values[valuesById[0] = "UNKNOWN"] = 0;
+            values[valuesById[1] = "ACCEPTED"] = 1;
+            values[valuesById[2] = "SAVED"] = 2;
+            values[valuesById[3] = "RETRY"] = 3;
+            return values;
+        })();
+
+        return SyncReceipt;
+    })();
+
     collab.AwarenessUpdate = (function() {
 
         /**
@@ -1414,8 +1839,7 @@ export const collab = $root.collab = (() => {
         /**
          * Constructs a new AwarenessUpdate.
          * @memberof collab
-         * @classdesc AwarenessUpdate message is send to inform about the latest changes in the
-         * Yjs doc awareness state.
+         * @classdesc Represents an AwarenessUpdate.
          * @implements IAwarenessUpdate
          * @constructor
          * @param {collab.IAwarenessUpdate=} [properties] Properties to set
@@ -1882,6 +2306,7 @@ export const collab = $root.collab = (() => {
          * @property {collab.IUpdate|null} [update] CollabMessage update
          * @property {collab.IAwarenessUpdate|null} [awarenessUpdate] CollabMessage awarenessUpdate
          * @property {collab.IAccessChanged|null} [accessChanged] CollabMessage accessChanged
+         * @property {collab.ISyncReceipt|null} [syncReceipt] CollabMessage syncReceipt
          */
 
         /**
@@ -1947,17 +2372,25 @@ export const collab = $root.collab = (() => {
          */
         CollabMessage.prototype.accessChanged = null;
 
+        /**
+         * CollabMessage syncReceipt.
+         * @member {collab.ISyncReceipt|null|undefined} syncReceipt
+         * @memberof collab.CollabMessage
+         * @instance
+         */
+        CollabMessage.prototype.syncReceipt = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
         /**
          * CollabMessage data.
-         * @member {"syncRequest"|"update"|"awarenessUpdate"|"accessChanged"|undefined} data
+         * @member {"syncRequest"|"update"|"awarenessUpdate"|"accessChanged"|"syncReceipt"|undefined} data
          * @memberof collab.CollabMessage
          * @instance
          */
         Object.defineProperty(CollabMessage.prototype, "data", {
-            get: $util.oneOfGetter($oneOfFields = ["syncRequest", "update", "awarenessUpdate", "accessChanged"]),
+            get: $util.oneOfGetter($oneOfFields = ["syncRequest", "update", "awarenessUpdate", "accessChanged", "syncReceipt"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -1997,6 +2430,8 @@ export const collab = $root.collab = (() => {
                 $root.collab.AwarenessUpdate.encode(message.awarenessUpdate, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
             if (message.accessChanged != null && Object.hasOwnProperty.call(message, "accessChanged"))
                 $root.collab.AccessChanged.encode(message.accessChanged, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
+            if (message.syncReceipt != null && Object.hasOwnProperty.call(message, "syncReceipt"))
+                $root.collab.SyncReceipt.encode(message.syncReceipt, writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
             return writer;
         };
 
@@ -2055,6 +2490,10 @@ export const collab = $root.collab = (() => {
                     }
                 case 6: {
                         message.accessChanged = $root.collab.AccessChanged.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 8: {
+                        message.syncReceipt = $root.collab.SyncReceipt.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -2137,6 +2576,16 @@ export const collab = $root.collab = (() => {
                         return "accessChanged." + error;
                 }
             }
+            if (message.syncReceipt != null && message.hasOwnProperty("syncReceipt")) {
+                if (properties.data === 1)
+                    return "data: multiple values";
+                properties.data = 1;
+                {
+                    let error = $root.collab.SyncReceipt.verify(message.syncReceipt);
+                    if (error)
+                        return "syncReceipt." + error;
+                }
+            }
             return null;
         };
 
@@ -2175,6 +2624,11 @@ export const collab = $root.collab = (() => {
                 if (typeof object.accessChanged !== "object")
                     throw TypeError(".collab.CollabMessage.accessChanged: object expected");
                 message.accessChanged = $root.collab.AccessChanged.fromObject(object.accessChanged);
+            }
+            if (object.syncReceipt != null) {
+                if (typeof object.syncReceipt !== "object")
+                    throw TypeError(".collab.CollabMessage.syncReceipt: object expected");
+                message.syncReceipt = $root.collab.SyncReceipt.fromObject(object.syncReceipt);
             }
             return message;
         };
@@ -2219,6 +2673,11 @@ export const collab = $root.collab = (() => {
                 object.accessChanged = $root.collab.AccessChanged.toObject(message.accessChanged, options);
                 if (options.oneofs)
                     object.data = "accessChanged";
+            }
+            if (message.syncReceipt != null && message.hasOwnProperty("syncReceipt")) {
+                object.syncReceipt = $root.collab.SyncReceipt.toObject(message.syncReceipt, options);
+                if (options.oneofs)
+                    object.data = "syncReceipt";
             }
             return object;
         };
@@ -2920,6 +3379,7 @@ export const collab = $root.collab = (() => {
          * @property {Uint8Array|null} [serverStateVector] CollabBatchSyncResult serverStateVector
          * @property {string|null} [collabVersion] CollabBatchSyncResult collabVersion
          * @property {collab.IRid|null} [messageId] CollabBatchSyncResult messageId
+         * @property {boolean|null} [saved] CollabBatchSyncResult saved
          */
 
         /**
@@ -3002,6 +3462,14 @@ export const collab = $root.collab = (() => {
         CollabBatchSyncResult.prototype.messageId = null;
 
         /**
+         * CollabBatchSyncResult saved.
+         * @member {boolean} saved
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.saved = false;
+
+        /**
          * Creates a new CollabBatchSyncResult instance using the specified properties.
          * @function create
          * @memberof collab.CollabBatchSyncResult
@@ -3041,6 +3509,8 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 7, wireType 2 =*/58).string(message.collabVersion);
             if (message.messageId != null && Object.hasOwnProperty.call(message, "messageId"))
                 $root.collab.Rid.encode(message.messageId, writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
+            if (message.saved != null && Object.hasOwnProperty.call(message, "saved"))
+                writer.uint32(/* id 9, wireType 0 =*/72).bool(message.saved);
             return writer;
         };
 
@@ -3107,6 +3577,10 @@ export const collab = $root.collab = (() => {
                     }
                 case 8: {
                         message.messageId = $root.collab.Rid.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 9: {
+                        message.saved = reader.bool();
                         break;
                     }
                 default:
@@ -3176,6 +3650,9 @@ export const collab = $root.collab = (() => {
                 if (error)
                     return "messageId." + error;
             }
+            if (message.saved != null && message.hasOwnProperty("saved"))
+                if (typeof message.saved !== "boolean")
+                    return "saved: boolean expected";
             return null;
         };
 
@@ -3234,6 +3711,8 @@ export const collab = $root.collab = (() => {
                     throw TypeError(".collab.CollabBatchSyncResult.messageId: object expected");
                 message.messageId = $root.collab.Rid.fromObject(object.messageId);
             }
+            if (object.saved != null)
+                message.saved = Boolean(object.saved);
             return message;
         };
 
@@ -3271,6 +3750,7 @@ export const collab = $root.collab = (() => {
                 }
                 object.collabVersion = "";
                 object.messageId = null;
+                object.saved = false;
             }
             if (message.objectId != null && message.hasOwnProperty("objectId"))
                 object.objectId = message.objectId;
@@ -3288,6 +3768,8 @@ export const collab = $root.collab = (() => {
                 object.collabVersion = message.collabVersion;
             if (message.messageId != null && message.hasOwnProperty("messageId"))
                 object.messageId = $root.collab.Rid.toObject(message.messageId, options);
+            if (message.saved != null && message.hasOwnProperty("saved"))
+                object.saved = message.saved;
             return object;
         };
 

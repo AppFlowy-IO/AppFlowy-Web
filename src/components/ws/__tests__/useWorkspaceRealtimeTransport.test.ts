@@ -114,6 +114,7 @@ describe('useWorkspaceRealtimeTransport', () => {
       clientId: 7,
       deviceId: 'device-1',
       connect: true,
+      onSyncReceipt: expect.any(Function),
       reconnectWhenHidden: true,
     });
     expect(result.current.canSendToServer).toBe(true);

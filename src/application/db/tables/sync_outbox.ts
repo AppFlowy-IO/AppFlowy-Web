@@ -2,6 +2,10 @@ import { Table } from 'dexie';
 
 export interface SyncOutboxRecord {
   id?: number;
+  /** Stable identity retained until the exact server update has been saved. Not indexed. */
+  syncId?: string;
+  /** Row/database ancestors captured at edit time, including across reloads. */
+  syncAncestors?: string[];
   userId: string;
   workspaceId: string;
   objectId: string;

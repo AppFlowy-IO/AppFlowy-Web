@@ -1,4 +1,16 @@
 {
+  "syncIndicator": {
+    "checking": "Checking sync…",
+    "checkingDescription": "Checking this page with the server.",
+    "syncing": "Syncing…",
+    "syncingDescription": "Sending your changes to the server.",
+    "synced": "Synced",
+    "syncedDescription": "Your changes have been received by the server. Verification and saving run in the background.",
+    "offline": "Offline",
+    "offlineDescription": "Waiting for a connection. Pending changes will retry automatically.",
+    "error": "Unable to sync",
+    "errorDescription": "Some changes could not be saved. Keep this page open and check your connection or storage."
+  },
   "clientCompatibility": {
     "serverTooOld": "Requires server {{requiredServerVersion}} or later. Some features may be unavailable.",
     "clientTooOld": "This server requires AppFlowy Web {{requiredClientVersion}} or later. You are using {{clientVersion}}. Reload after your administrator updates the web app.",

@@ -1,9 +1,14 @@
 import * as Y from 'yjs';
 
+import { SyncReceiptRecord } from '@/application/db/tables/sync_receipts';
 import { Types } from '@/application/types';
+import { collab } from '@/proto/messages';
+import { getSyncStatus, markSyncReady, setSyncConnected, setSyncParent } from '@/application/sync-status/store';
 
 interface MockSyncOutboxRecord {
   id?: number;
+  syncId?: string;
+  syncAncestors?: string[];
   userId: string;
   workspaceId: string;
   objectId: string;
@@ -16,6 +21,7 @@ interface MockSyncOutboxRecord {
 }
 
 let mockRecords: MockSyncOutboxRecord[] = [];
+const mockReceipts = new Map<string, SyncReceiptRecord>();
 let mockNextId = 1;
 let mockTransactionQueue: Promise<unknown> = Promise.resolve();
 
@@ -42,6 +48,13 @@ const mockSyncOutboxTable = {
     mockRecords.push({ ...row, id });
     return id;
   }),
+  bulkPut: jest.fn(async (rows: MockSyncOutboxRecord[]) => {
+    rows.forEach((row) => {
+      const index = mockRecords.findIndex((record) => record.id === row.id);
+
+      if (index !== -1) mockRecords[index] = { ...row };
+    });
+  }),
   bulkDelete: jest.fn(async (ids: number[]) => {
     const idsToDelete = new Set(ids);
 
@@ -65,11 +78,15 @@ const mockSyncOutboxTable = {
           .slice()
           .sort((a, b) => Number(a[field] ?? 0) - Number(b[field] ?? 0)),
     }),
-    between: (lower: unknown[]) => ({
+    between: (lower: unknown[], _upper: unknown[], includeLower = true) => ({
       limit: (count: number) => ({
         toArray: async () =>
           mockRecords
-            .filter((record) => mockMatchesIndex(index, lower, record))
+            .filter(
+              (record) =>
+                mockMatchesIndex(index, lower, record) &&
+                (typeof lower[3] !== 'number' || (includeLower ? record.id! >= lower[3] : record.id! > lower[3]))
+            )
             .slice()
             .sort((a, b) => Number(a.id ?? 0) - Number(b.id ?? 0))
             .slice(0, count),
@@ -78,19 +95,71 @@ const mockSyncOutboxTable = {
   })),
 };
 
-const mockTransaction = jest.fn(
-  (_mode: string, _table: typeof mockSyncOutboxTable, callback: () => Promise<unknown>) => {
-    const transaction = mockTransactionQueue.then(callback);
+const mockSyncReceiptTable = {
+  bulkDelete: jest.fn(async (ids: string[]) => {
+    ids.forEach((id) => mockReceipts.delete(id));
+  }),
+  bulkGet: jest.fn(async (ids: string[]) =>
+    ids.map((id) => {
+      const record = mockReceipts.get(id);
 
-    // IndexedDB serializes read-write transactions that touch the same store.
-    mockTransactionQueue = transaction.catch(() => undefined);
-    return transaction;
-  }
-);
+      return record && { ...record };
+    })
+  ),
+  bulkPut: jest.fn(async (records: SyncReceiptRecord[]) => {
+    records.forEach((record) => mockReceipts.set(record.syncId, { ...record }));
+  }),
+  clear: jest.fn(async () => {
+    mockReceipts.clear();
+  }),
+  where: jest.fn((index: string) => ({
+    anyOf: (keys: string[][]) => ({
+      modify: async (callback: (record: SyncReceiptRecord) => void) => {
+        expect(index).toBe('[userId+workspaceId+receiptKey]');
+        for (const record of mockReceipts.values()) {
+          if (
+            keys.some(
+              ([uid, wid, key]) => uid === record.userId && wid === record.workspaceId && key === record.receiptKey
+            )
+          ) {
+            callback(record);
+          }
+        }
+      },
+    }),
+    equals: ([uid, wid, oid]: string[]) => ({
+      delete: async () => {
+        expect(index).toBe('[userId+workspaceId+objectId]');
+        for (const record of mockReceipts.values()) {
+          if (uid === record.userId && wid === record.workspaceId && oid === record.objectId)
+            mockReceipts.delete(record.syncId);
+        }
+      },
+    }),
+    between: (lower: number, upper: number) => ({
+      delete: async () => {
+        expect(index).toBe('savedAt');
+        for (const record of mockReceipts.values()) {
+          if (record.savedAt >= lower && record.savedAt < upper) mockReceipts.delete(record.syncId);
+        }
+      },
+    }),
+  })),
+};
+
+const mockTransaction = jest.fn((_mode: string, ...tablesAndCallback: unknown[]) => {
+  const callback = tablesAndCallback[tablesAndCallback.length - 1] as () => Promise<unknown>;
+  const transaction = mockTransactionQueue.then(callback);
+
+  // IndexedDB serializes read-write transactions that touch the same store.
+  mockTransactionQueue = transaction.catch(() => undefined);
+  return transaction;
+});
 
 jest.mock('@/application/db', () => ({
   db: {
     sync_outbox: mockSyncOutboxTable,
+    sync_receipts: mockSyncReceiptTable,
     transaction: mockTransaction,
   },
 }));
@@ -114,7 +183,21 @@ import {
   setCurrentSession,
   shouldRouteUpdateThroughOutbox,
   startDrainAll,
+  restartSyncDelivery,
 } from '@/application/sync-outbox';
+
+import {
+  configureReceiptRecovery,
+  discardSyncObject,
+  markSyncError,
+  markSyncSent,
+  receiveSyncReceipt,
+  refreshSyncReceipts,
+  resetReceiptSession,
+  resetSyncDelivery,
+  trackSyncRecord,
+  wasSyncSent,
+} from '@/application/sync-outbox/receipts';
 
 const userId = 'user-1';
 const workspaceId = 'workspace-1';
@@ -146,6 +229,7 @@ describe('sync outbox live send', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockRecords = [];
+    mockReceipts.clear();
     mockNextId = 1;
     mockTransactionQueue = Promise.resolve();
     clearDrainConfig();
@@ -170,6 +254,1021 @@ describe('sync outbox live send', () => {
     await purgeAllOutbox();
     clearDrainConfig();
     setCurrentSession(null);
+  });
+
+  function enableReceipts() {
+    const send = jest.fn();
+
+    configureDrain({ userId, workspaceId, send, isReady: () => true, trackReceipts: true });
+    setSyncConnected(true);
+    markSyncReady(objectId);
+    return send;
+  }
+
+  async function receipt(stage: collab.SyncReceipt.Stage, syncIds: string[], counter = 1, version = '') {
+    await receiveSyncReceipt(workspaceId, {
+      objectId,
+      syncReceipt: {
+        stage,
+        syncIds,
+        version,
+        messageIds: [{ timestamp: 42, counter }],
+      },
+    });
+    await flushPromises();
+  }
+
+  it('shows synced on acceptance but retains recovery copies until saved, including newer edits', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('first') });
+    await flushPromises();
+    const first = mockRecords[0].syncId!;
+
+    expect(getSyncStatus(objectId)).toBe('syncing');
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [first]);
+    expect(mockRecords).toHaveLength(1);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('second') });
+    await flushPromises();
+    const second = mockRecords[1].syncId!;
+
+    await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(mockRecords.map((record) => record.syncId)).toEqual([second]);
+    expect(getSyncStatus(objectId)).toBe('syncing');
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [second], 2);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    expect(mockRecords.map((record) => record.syncId)).toEqual([second]);
+    await receipt(collab.SyncReceipt.Stage.SAVED, [], 2);
+    expect(mockRecords).toHaveLength(0);
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it('does not treat a higher saved RID, another object, or another version as evidence', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('value'), version: 'v1' });
+    await flushPromises();
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [mockRecords[0].syncId!], 1, 'v1');
+    await receipt(collab.SyncReceipt.Stage.SAVED, [], 2, 'v1');
+    await receipt(collab.SyncReceipt.Stage.SAVED, [], 1, 'v2');
+    await receiveSyncReceipt(workspaceId, {
+      objectId: 'another-object',
+      syncReceipt: {
+        stage: collab.SyncReceipt.Stage.SAVED,
+        version: 'v1',
+        messageIds: [{ timestamp: 42, counter: 1 }],
+      },
+    });
+    expect(mockRecords).toHaveLength(1);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    await receipt(collab.SyncReceipt.Stage.SAVED, [], 1, 'v1');
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('handles saved-before-accepted notifications and delete-only edits', async () => {
+    enableReceipts();
+    const doc = new Y.Doc();
+
+    doc.getText('text').insert(0, 'delete me');
+    const before = Y.encodeStateVector(doc);
+    let deletion!: Uint8Array;
+
+    doc.on('update', (update) => {
+      deletion = update;
+    });
+    doc.getText('text').delete(0, 9);
+    expect(Y.encodeStateVector(doc)).toEqual(before);
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: deletion, beforeStateVector: before });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+
+    await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(mockRecords).toHaveLength(1);
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('advances the indexed cursor past 64 pending receipts without blocking later edits', async () => {
+    const send = enableReceipts();
+
+    for (let i = 0; i < 70; i++) {
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate(String(i)) });
+      await flushPromises();
+    }
+
+    expect(mockRecords).toHaveLength(70);
+    const sentIds = new Set(send.mock.calls.flatMap(([message]) => message.collabMessage.update.syncIds));
+
+    expect(sentIds.size).toBe(70);
+    expect(send.mock.calls.length).toBeLessThanOrEqual(70);
+  });
+
+  it('includes a separately edited row document in its database status', async () => {
+    enableReceipts();
+    setSyncParent(objectId, 'row');
+    setSyncParent('row', 'database');
+    markSyncReady('database');
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('row content') });
+    await flushPromises();
+    expect(mockRecords[0].syncAncestors).toEqual(['row', 'database']);
+    expect(getSyncStatus('database')).toBe('syncing');
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [mockRecords[0].syncId!]);
+    expect(getSyncStatus('database')).toBe('synced');
+    await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(getSyncStatus('database')).toBe('synced');
+  });
+
+  it.each([false, true])('shows synced for an accepted HTTP upload and only retires it when saved=%s', async (saved) => {
+    enableReceipts();
+    configureDrain({
+      userId,
+      workspaceId,
+      send: jest.fn(),
+      isReady: () => true,
+      trackReceipts: true,
+      maxUpdateBytes: 1,
+      maxSlowSyncUpdateBytes: 4096,
+      slowSync: jest.fn(async () => ({
+        outcome: 'confirmed' as const,
+        saved,
+        messageId: { timestamp: 42, counter: 1 },
+      })),
+    });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('large') });
+    for (let i = 0; i < 8; i++) await flushPromises();
+    expect(getSyncStatus(objectId)).toBe('synced');
+    expect(mockRecords).toHaveLength(saved ? 0 : 1);
+    if (!saved) await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('retries retained identities after reconnect without claiming transport delivery is a save', async () => {
+    const send = enableReceipts();
+
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('retained') });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+    restartSyncDelivery();
+    startDrainAll();
+    await flushPromises();
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[1][0].collabMessage.update.syncIds).toEqual([id]);
+    expect(mockRecords).toHaveLength(1);
+    await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('rehydrates a retained database edit after a page reload', async () => {
+    enableReceipts();
+    setSyncParent(objectId, 'database');
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('reload') });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+
+    clearDrainConfig();
+    setCurrentSession(null);
+    setCurrentSession({ userId, workspaceId });
+    const send = enableReceipts();
+
+    markSyncReady('database');
+    startDrainAll();
+    await flushPromises();
+    expect(send.mock.calls[0][0].collabMessage.update.syncIds).toEqual([id]);
+    expect(getSyncStatus('database')).toBe('syncing');
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+    await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(getSyncStatus('database')).toBe('synced');
+  });
+
+  it('recovers acceptance when a tab joins before the saved notification', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('late tab') });
+    await flushPromises();
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [mockRecords[0].syncId!]);
+    clearDrainConfig();
+    setCurrentSession(null);
+    setCurrentSession({ userId, workspaceId });
+    configureDrain({ userId, workspaceId, send: jest.fn(), isReady: () => false, trackReceipts: true });
+    setSyncConnected(true);
+    markSyncReady(objectId);
+    startDrainAll();
+    for (let i = 0; i < 4; i++) await flushPromises();
+    expect(getSyncStatus(objectId)).toBe('synced');
+    await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(mockRecords).toHaveLength(0);
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it('recovers a missed saved broadcast after another tab retires the payload', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('suspended tab') });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+    // Simulate the other tab's atomic saved-proof write and outbox deletion.
+    mockReceipts.get(id)!.savedAt = Date.now();
+    mockRecords = [];
+    await refreshSyncReceipts();
+    expect(getSyncStatus(objectId)).toBe('synced');
+    expect(mockReceipts.get(id)!.savedAt).toBeGreaterThan(0);
+  });
+
+  it('does not infer saved state from a missing outbox row without receipt evidence', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('not proven') });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+    mockRecords = [];
+    await refreshSyncReceipts();
+    expect(getSyncStatus(objectId)).toBe('synced');
+    expect([...mockReceipts.values()][0].savedAt).toBe(0);
+    await receipt(collab.SyncReceipt.Stage.RETRY, [id]);
+    expect(getSyncStatus(objectId)).toBe('syncing');
+  });
+
+  it("preserves another tab's saved proof when a delayed accepted receipt arrives", async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('delayed ack') });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+    mockReceipts.get(id)!.savedAt = Date.now();
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id], 2);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    expect(mockReceipts.get(id)!.savedAt).toBeGreaterThan(0);
+  });
+
+  it('waits for manifest repair after RETRY and saves the original and repair identities independently', async () => {
+    const send = enableReceipts();
+    const doc = new Y.Doc({ guid: objectId });
+
+    doc.getText('text').insert(0, 'missing');
+    const before = Y.encodeStateVector(doc);
+
+    doc.getText('text').insert(7, ' dependency');
+    const dependent = Y.encodeStateAsUpdate(doc, before);
+    const server = new Y.Doc();
+
+    Y.applyUpdate(server, dependent);
+    expect(server.store.pendingStructs).not.toBeNull();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: dependent, beforeStateVector: before });
+    await flushPromises();
+    const original = mockRecords[0].syncId!;
+
+    await receipt(collab.SyncReceipt.Stage.RETRY, [original, 'unknown']);
+    expect(getSyncStatus(objectId)).toBe('syncing');
+    expect(send).toHaveBeenCalledTimes(1); // RETRY must not create a send/reject loop.
+    expect(wasSyncSent(mockRecords[0])).toBe(false);
+
+    const repair = Y.encodeStateAsUpdate(doc, Y.encodeStateVector(server));
+
+    await enqueueOutboxUpdate(
+      { objectId, collabType: Types.Document, payload: repair },
+      { source: 'manifest', broadcast: false }
+    );
+    for (let i = 0; i < 4; i++) await flushPromises();
+    const repairId = mockRecords.find((record) => record.source === 'manifest')!.syncId!;
+
+    Y.applyUpdate(server, repair);
+    expect(server.store.pendingStructs).toBeNull();
+    expect(server.getText('text').toString()).toBe(doc.getText('text').toString());
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [original], 2);
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [repairId], 3);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    await receipt(collab.SyncReceipt.Stage.SAVED, [], 3);
+    expect(mockRecords.map((record) => record.syncId)).toEqual([original]);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    await receipt(collab.SyncReceipt.Stage.SAVED, [], 2);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    doc.destroy();
+    server.destroy();
+  });
+
+  it('makes a rejected accepted attempt retryable without accepting unrelated identities', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('retry') });
+    await flushPromises();
+    const record = mockRecords[0];
+
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [record.syncId!]);
+    await receiveSyncReceipt(workspaceId, {
+      objectId: 'other-object',
+      syncReceipt: {
+        stage: collab.SyncReceipt.Stage.RETRY,
+        syncIds: [record.syncId!],
+      },
+    });
+    expect(getSyncStatus(objectId)).toBe('synced');
+    await receipt(collab.SyncReceipt.Stage.RETRY, [record.syncId!]);
+    expect(getSyncStatus(objectId)).toBe('syncing');
+    expect(wasSyncSent(record)).toBe(false);
+    expect(mockReceipts.has(record.syncId!)).toBe(false);
+    await refreshSyncReceipts();
+    expect(getSyncStatus(objectId)).toBe('syncing');
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [record.syncId!], 2);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    expect(mockRecords).toHaveLength(1);
+    await receipt(collab.SyncReceipt.Stage.SAVED, [], 2);
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it('shows synced through a two-minute snapshot delay without another send or discarding recovery data', async () => {
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+    try {
+      const send = enableReceipts();
+
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('delayed snapshot') });
+      await flushPromises();
+      const id = mockRecords[0].syncId!;
+
+      expect(getSyncStatus(objectId)).toBe('syncing');
+      await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+      expect(getSyncStatus(objectId)).toBe('synced');
+      expect(mockRecords).toHaveLength(1);
+      expect(mockReceipts.get(id)!.savedAt).toBe(0);
+      await jest.advanceTimersByTimeAsync(2 * 60_000);
+      expect(getSyncStatus(objectId)).toBe('synced');
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(mockRecords).toHaveLength(1);
+      await receipt(collab.SyncReceipt.Stage.SAVED, []);
+      expect(mockRecords).toHaveLength(0);
+      expect(getSyncStatus(objectId)).toBe('synced');
+    } finally {
+      configureReceiptRecovery(undefined);
+      jest.useRealTimers();
+    }
+  });
+
+  it('rearms a lost predecessor with its rejected dependent without resending accepted or unrelated edits', async () => {
+    const send = enableReceipts();
+    const doc = new Y.Doc();
+
+    doc.getText('text').insert(0, 'missing');
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: Y.encodeStateAsUpdate(doc) });
+    await flushPromises();
+    const predecessor = mockRecords[0];
+    const before = Y.encodeStateVector(doc);
+
+    doc.getText('text').insert(7, ' dependent');
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: Y.encodeStateAsUpdate(doc, before) });
+    await flushPromises();
+    const dependent = mockRecords[1];
+
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('accepted') });
+    await flushPromises();
+    const accepted = mockRecords[2];
+
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [accepted.syncId!]);
+    await enqueueOutboxUpdate({ objectId: 'another-object', collabType: Types.Document, payload: makeUpdate('unrelated') });
+    await flushPromises();
+    const unrelated = mockRecords[3];
+    const sends = send.mock.calls.length;
+
+    await receipt(collab.SyncReceipt.Stage.RETRY, [dependent.syncId!]);
+    expect(send).toHaveBeenCalledTimes(sends);
+    expect(wasSyncSent(predecessor)).toBe(false);
+    expect(wasSyncSent(dependent)).toBe(false);
+    expect(wasSyncSent(accepted)).toBe(true);
+    expect(wasSyncSent(unrelated)).toBe(true);
+
+    await enqueueOutboxUpdate(
+      { objectId, collabType: Types.Document, payload: Y.encodeStateAsUpdate(doc) },
+      { source: 'manifest', broadcast: false }
+    );
+    for (let i = 0; i < 4; i++) await flushPromises();
+    const repairedIds = send.mock.calls.slice(sends).flatMap(([message]) => message.collabMessage.update.syncIds);
+
+    expect(repairedIds).toContain(predecessor.syncId);
+    expect(repairedIds).toContain(dependent.syncId);
+    expect(repairedIds).not.toContain(accepted.syncId);
+    expect(repairedIds).not.toContain(unrelated.syncId);
+  });
+
+  it('retries a lost acceptance after five seconds while leaving accepted snapshot work alone', async () => {
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+    try {
+      const send = enableReceipts();
+
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('accepted') });
+      await flushPromises();
+      const accepted = mockRecords[0].syncId!;
+
+      await receipt(collab.SyncReceipt.Stage.ACCEPTED, [accepted]);
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('lost ack') });
+      await flushPromises();
+      const lost = mockRecords[1].syncId!;
+      const sends = send.mock.calls.length;
+
+      await jest.advanceTimersByTimeAsync(4_999);
+      expect(send).toHaveBeenCalledTimes(sends);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(send).toHaveBeenCalledTimes(sends + 1);
+      expect(send.mock.calls.at(-1)![0].collabMessage.update.syncIds).toEqual([lost]);
+      expect(getSyncStatus(objectId)).toBe('syncing');
+      await receipt(collab.SyncReceipt.Stage.ACCEPTED, [lost], 2);
+      await jest.advanceTimersByTimeAsync(2 * 60_000);
+      expect(send).toHaveBeenCalledTimes(sends + 1);
+      expect(getSyncStatus(objectId)).toBe('synced');
+      expect(mockRecords).toHaveLength(2);
+    } finally {
+      configureReceiptRecovery(undefined);
+      jest.useRealTimers();
+    }
+  });
+
+  it('backs off missing acceptance retries to thirty seconds and cancels on acknowledgement', async () => {
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+    try {
+      enableReceipts();
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('lost ack') });
+      await flushPromises();
+      const id = mockRecords[0].syncId!;
+      const retry = jest.fn(() => markSyncSent([id]));
+
+      configureReceiptRecovery(retry);
+      for (const delay of [5, 10, 20, 30, 30]) {
+        const calls = retry.mock.calls.length;
+
+        await jest.advanceTimersByTimeAsync(delay * 1_000 - 1);
+        expect(retry).toHaveBeenCalledTimes(calls);
+        await jest.advanceTimersByTimeAsync(1);
+        expect(retry).toHaveBeenCalledTimes(calls + 1);
+        expect(retry).toHaveBeenLastCalledWith(objectId);
+      }
+
+      await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(retry).toHaveBeenCalledTimes(5);
+    } finally {
+      configureReceiptRecovery(undefined);
+      jest.useRealTimers();
+    }
+  });
+
+  it('recovers a sibling tab acceptance before retrying a missing ACK', async () => {
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+    try {
+      const send = enableReceipts();
+
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('sibling ack') });
+      await flushPromises();
+      const id = mockRecords[0].syncId!;
+
+      mockReceipts.set(id, {
+        syncId: id, userId, workspaceId, objectId, receiptKey: `${objectId}\u0000\u000042-1`, savedAt: 0,
+      });
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(getSyncStatus(objectId)).toBe('synced');
+      expect(mockRecords).toHaveLength(1);
+    } finally {
+      configureReceiptRecovery(undefined);
+      jest.useRealTimers();
+    }
+  });
+
+  it.each(['session', 'disconnect', 'owner'] as const)(
+    'fences an acceptance timeout already reading IndexedDB after a %s change',
+    async (change) => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        enableReceipts();
+        await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('stale retry') });
+        await flushPromises();
+        const deferred = createDeferred<Array<SyncReceiptRecord | undefined>>();
+        const retry = jest.fn();
+
+        configureReceiptRecovery(retry);
+        mockSyncReceiptTable.bulkGet.mockImplementationOnce(() => deferred.promise);
+        await jest.advanceTimersByTimeAsync(5_000);
+        if (change === 'session') setCurrentSession({ userId, workspaceId: 'new-workspace' });
+        else if (change === 'disconnect') resetSyncDelivery();
+        else configureReceiptRecovery(undefined);
+        deferred.resolve([]);
+        await flushPromises();
+        expect(retry).not.toHaveBeenCalled();
+      } finally {
+        configureReceiptRecovery(undefined);
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  it('does not retry a new edit early when an older acceptance lookup is still pending', async () => {
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+    try {
+      const send = enableReceipts();
+
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('old') });
+      await flushPromises();
+      const first = mockRecords[0].syncId!;
+      const deferred = createDeferred<Array<SyncReceiptRecord | undefined>>();
+
+      mockSyncReceiptTable.bulkGet.mockImplementationOnce(() => deferred.promise);
+      await jest.advanceTimersByTimeAsync(5_000);
+      await receipt(collab.SyncReceipt.Stage.ACCEPTED, [first]);
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('new') });
+      await flushPromises();
+      const second = mockRecords[1].syncId!;
+      const sends = send.mock.calls.length;
+
+      deferred.resolve([]);
+      await flushPromises();
+      expect(send).toHaveBeenCalledTimes(sends);
+      await jest.advanceTimersByTimeAsync(4_999);
+      expect(send).toHaveBeenCalledTimes(sends);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(send.mock.calls.at(-1)![0].collabMessage.update.syncIds).toEqual([second]);
+    } finally {
+      configureReceiptRecovery(undefined);
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps a live rejection unsynced when deleting cached acceptance fails', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('retry cache failure') });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+    mockSyncReceiptTable.bulkDelete.mockRejectedValueOnce(new Error('database unavailable'));
+    await receipt(collab.SyncReceipt.Stage.RETRY, [id]);
+    await refreshSyncReceipts();
+    expect(getSyncStatus(objectId)).toBe('syncing');
+    expect(mockRecords).toHaveLength(1);
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id], 2);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    await receipt(collab.SyncReceipt.Stage.SAVED, [], 2);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it.each(['savedAt', 'userId', 'workspaceId', 'syncId', 'receiptKey'] as const)(
+    'does not remove saved, foreign, or newer receipt metadata when retry cleanup finds different %s',
+    async (field) => {
+      enableReceipts();
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('scoped retry') });
+      await flushPromises();
+      const id = mockRecords[0].syncId!;
+
+      await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+      const record = mockReceipts.get(id)!;
+
+      mockSyncReceiptTable.bulkGet.mockResolvedValueOnce([
+        { ...record, [field]: field === 'savedAt' ? Date.now() : 'newer-or-foreign' },
+      ]);
+      await receipt(collab.SyncReceipt.Stage.RETRY, [id]);
+      expect(mockReceipts.has(id)).toBe(true);
+      expect(getSyncStatus(objectId)).toBe('syncing');
+    }
+  );
+
+  it('does not restore an old acceptance when its metadata write finishes after RETRY', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('delayed acceptance') });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+    const write = createDeferred<void>();
+
+    mockSyncReceiptTable.bulkPut.mockImplementationOnce(async (records) => {
+      await write.promise;
+      records.forEach((record) => mockReceipts.set(record.syncId, { ...record }));
+    });
+    const accepted = receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+
+    await flushPromises();
+    expect(getSyncStatus(objectId)).toBe('synced');
+    const rejected = receipt(collab.SyncReceipt.Stage.RETRY, [id]);
+
+    expect(getSyncStatus(objectId)).toBe('syncing');
+    write.resolve();
+    await Promise.all([accepted, rejected]);
+    expect(mockReceipts.has(id)).toBe(false);
+    expect(getSyncStatus(objectId)).toBe('syncing');
+  });
+
+  it('retries missing receipts with bounded backoff and stops when saved', async () => {
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+    try {
+      enableReceipts();
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('lost receipt') });
+      await flushPromises();
+      const record = mockRecords[0];
+      const retry = jest.fn();
+
+      await receipt(collab.SyncReceipt.Stage.ACCEPTED, [record.syncId!]);
+      configureReceiptRecovery(retry);
+      for (const delay of [5, 10, 20, 30, 30]) {
+        await jest.advanceTimersByTimeAsync(delay * 60_000 - 1);
+        const calls = retry.mock.calls.length;
+
+        await jest.advanceTimersByTimeAsync(1);
+        expect(retry).toHaveBeenCalledTimes(calls + 1);
+        expect(wasSyncSent(record)).toBe(false);
+        expect(getSyncStatus(objectId)).toBe('synced');
+        markSyncSent([record.syncId!]);
+      }
+
+      await receipt(collab.SyncReceipt.Stage.SAVED, []);
+      await jest.advanceTimersByTimeAsync(60 * 60_000);
+      expect(retry).toHaveBeenCalledTimes(5);
+      expect(getSyncStatus(objectId)).toBe('synced');
+    } finally {
+      configureReceiptRecovery(undefined);
+      jest.useRealTimers();
+    }
+  });
+
+  it('recovers a missed cross-tab saved receipt before retrying its payload', async () => {
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+    try {
+      enableReceipts();
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('saved in sibling') });
+      await flushPromises();
+      const id = mockRecords[0].syncId!;
+      const retry = jest.fn();
+
+      await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+      mockReceipts.get(id)!.savedAt = Date.now();
+      configureReceiptRecovery(retry);
+      await jest.advanceTimersByTimeAsync(5 * 60_000);
+      expect(retry).not.toHaveBeenCalled();
+      expect(mockRecords).toHaveLength(0);
+      expect(getSyncStatus(objectId)).toBe('synced');
+    } finally {
+      configureReceiptRecovery(undefined);
+      jest.useRealTimers();
+    }
+  });
+
+  it('retains live confirmation when the acceptance metadata write fails', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('quota') });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+
+    mockSyncReceiptTable.bulkPut.mockRejectedValueOnce(new Error('quota exceeded'));
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    expect(mockRecords).toHaveLength(1);
+    await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it('retains live confirmation when the indexed saved-proof lookup fails', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('lookup unavailable') });
+    await flushPromises();
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [mockRecords[0].syncId!]);
+    mockSyncReceiptTable.where.mockImplementationOnce(() => {
+      throw new Error('database unavailable');
+    });
+    await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it('retains the payload when atomic saved cleanup fails and recovers it later', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('cleanup unavailable') });
+    await flushPromises();
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [mockRecords[0].syncId!]);
+    mockSyncOutboxTable.bulkDelete.mockRejectedValueOnce(new Error('transaction aborted'));
+    await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(mockRecords).toHaveLength(1);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    await refreshSyncReceipts();
+    expect(mockRecords).toHaveLength(0);
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it('keeps pending edits when shared receipt recovery fails', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('read failed') });
+    await flushPromises();
+    mockSyncReceiptTable.bulkGet.mockRejectedValueOnce(new Error('database unavailable'));
+    await refreshSyncReceipts();
+    expect(mockRecords).toHaveLength(1);
+    expect(getSyncStatus(objectId)).toBe('syncing');
+  });
+
+  it('shows a failed local enqueue until its best-effort upload receives actual saved evidence', async () => {
+    configureDrain({
+      userId,
+      workspaceId,
+      send: jest.fn(),
+      sendBestEffort: jest.fn(),
+      isReady: () => true,
+      trackReceipts: true,
+    });
+    setSyncConnected(true);
+    const record = {
+      userId,
+      workspaceId,
+      objectId,
+      collabType: Types.Document,
+      payload: makeUpdate('not durable'),
+      createdAt: Date.now(),
+      syncId: 'failed-enqueue',
+    };
+
+    trackSyncRecord(record);
+    markSyncError('unknown');
+    markSyncError(record.syncId);
+    markSyncError(record.syncId);
+    expect(getSyncStatus(objectId)).toBe('error');
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [record.syncId]);
+    expect(getSyncStatus(objectId)).toBe('error');
+    await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it('handles save evidence before an enqueue settles or fails', async () => {
+    enableReceipts();
+    const record = {
+      userId,
+      workspaceId,
+      objectId,
+      collabType: Types.Document,
+      payload: makeUpdate('race'),
+      createdAt: Date.now(),
+      syncId: 'enqueue-race',
+    };
+
+    trackSyncRecord(record);
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [record.syncId]);
+    await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    markSyncError(record.syncId);
+    await flushPromises();
+    expect(getSyncStatus(objectId)).toBe('synced');
+    expect(wasSyncSent(record)).toBe(true);
+    trackSyncRecord(record); // A stale IndexedDB discovery must not resurrect a settled edit.
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it('ignores foreign, missing, unsupported, and version-mismatched receipt identities', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('scoped'), version: 'v1' });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+
+    await receiveSyncReceipt('another-workspace', { objectId, syncReceipt: {} });
+    await receiveSyncReceipt(workspaceId, { syncReceipt: {} });
+    await receiveSyncReceipt(workspaceId, { objectId });
+    await receiveSyncReceipt(workspaceId, { objectId, syncReceipt: { stage: 99 } });
+    await receiveSyncReceipt(workspaceId, { objectId, syncReceipt: { stage: collab.SyncReceipt.Stage.ACCEPTED } });
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id, 'unknown'], 1, 'v2');
+    await receipt(collab.SyncReceipt.Stage.SAVED, [], 1, 'v1');
+    expect(mockRecords).toHaveLength(1);
+    expect(getSyncStatus(objectId)).toBe('syncing');
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id], 1, 'v1');
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it('keeps uint64 RIDs exact above JavaScript integer precision', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('exact rid') });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+    const actual = collab.Rid.fromObject({ timestamp: '9007199254740993', counter: 1 });
+    const rounded = collab.Rid.fromObject({ timestamp: '9007199254740992', counter: 1 });
+
+    await receiveSyncReceipt(workspaceId, {
+      objectId,
+      syncReceipt: { stage: collab.SyncReceipt.Stage.ACCEPTED, syncIds: [id], messageIds: [actual] },
+    });
+    await receiveSyncReceipt(workspaceId, {
+      objectId,
+      syncReceipt: { stage: collab.SyncReceipt.Stage.SAVED, messageIds: [rounded] },
+    });
+    expect(mockRecords).toHaveLength(1);
+    await receiveSyncReceipt(workspaceId, {
+      objectId,
+      syncReceipt: { stage: collab.SyncReceipt.Stage.SAVED, messageIds: [actual] },
+    });
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('bounds retries per identity without losing confirmation for the current attempt', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('many retries') });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+
+    for (let counter = 1; counter <= 10; counter++) await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id], counter);
+    await receipt(collab.SyncReceipt.Stage.SAVED, [], 1);
+    expect(mockRecords).toHaveLength(1);
+    await receipt(collab.SyncReceipt.Stage.SAVED, [], 10);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('bounds early receipt caching and safely replays an evicted confirmation', async () => {
+    enableReceipts();
+    for (let counter = 0; counter < 514; counter++) await receipt(collab.SyncReceipt.Stage.SAVED, [], counter);
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('evicted hint') });
+    await flushPromises();
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [mockRecords[0].syncId!], 0);
+    expect(mockRecords).toHaveLength(1);
+    await receipt(collab.SyncReceipt.Stage.SAVED, [], 0);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('discards only the specified object and ignores records outside the current session', async () => {
+    enableReceipts();
+    const record = {
+      userId,
+      workspaceId,
+      objectId,
+      collabType: Types.Document,
+      payload: makeUpdate('discard'),
+      createdAt: Date.now(),
+      syncId: 'discarded',
+    };
+
+    trackSyncRecord({ ...record, syncId: undefined });
+    trackSyncRecord({ ...record, userId: 'another-user' });
+    expect(getSyncStatus(objectId)).toBe('synced');
+    trackSyncRecord(record);
+    trackSyncRecord({ ...record, syncId: 'other', objectId: 'other-object' });
+    discardSyncObject('missing');
+    discardSyncObject(objectId);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    expect(getSyncStatus('other-object')).toBe('syncing');
+    discardSyncObject(objectId);
+    resetReceiptSession(`${userId}\u0000${workspaceId}`);
+    expect(getSyncStatus('other-object')).toBe('syncing');
+  });
+
+  it('settles saved evidence when a delayed durable enqueue finally receives its ID', async () => {
+    enableReceipts();
+    const record = {
+      userId,
+      workspaceId,
+      objectId,
+      collabType: Types.Document,
+      payload: makeUpdate('late ID'),
+      createdAt: Date.now(),
+      syncId: 'late-id',
+    };
+
+    trackSyncRecord(record);
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [record.syncId]);
+    await receipt(collab.SyncReceipt.Stage.SAVED, []);
+    expect(getSyncStatus(objectId)).toBe('synced');
+    mockRecords.push({ ...record, id: 100 });
+    trackSyncRecord({ ...record, id: 100 });
+    await flushPromises();
+    expect(mockRecords).toHaveLength(0);
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it('bounds settled-identity bookkeeping during long editing sessions', () => {
+    enableReceipts();
+    const base = {
+      userId,
+      workspaceId,
+      objectId,
+      collabType: Types.Document,
+      payload: new Uint8Array(),
+      createdAt: Date.now(),
+    };
+
+    for (let index = 0; index < 8193; index++) {
+      trackSyncRecord({ ...base, syncId: String(index) });
+      discardSyncObject(objectId);
+    }
+
+    expect(wasSyncSent({ ...base, syncId: '0' })).toBe(false);
+    expect(wasSyncSent({ ...base, syncId: '8192' })).toBe(true);
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it('ignores empty receipt lists and handles protobuf default RID fields consistently', async () => {
+    enableReceipts();
+    await receiveSyncReceipt(workspaceId, { objectId, syncReceipt: { stage: collab.SyncReceipt.Stage.SAVED } });
+    await receiveSyncReceipt(workspaceId, { objectId, syncReceipt: { stage: collab.SyncReceipt.Stage.RETRY } });
+    await receiveSyncReceipt(workspaceId, {
+      objectId,
+      syncReceipt: { stage: collab.SyncReceipt.Stage.ACCEPTED, messageIds: [{}] },
+    });
+    await receiveSyncReceipt(workspaceId, {
+      objectId,
+      syncReceipt: { stage: collab.SyncReceipt.Stage.SAVED, messageIds: [{}] },
+    });
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it.each(['userId', 'workspaceId', 'objectId', 'version'] as const)(
+    'rejects persisted receipt metadata with a mismatched %s',
+    async (field) => {
+      enableReceipts();
+      await enqueueOutboxUpdate({
+        objectId,
+        collabType: Types.Document,
+        payload: makeUpdate('bad metadata'),
+        version: 'v1',
+      });
+      await flushPromises();
+      const id = mockRecords[0].syncId!;
+
+      await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id], 1, 'v1');
+      mockReceipts.set(id, { ...mockReceipts.get(id)!, [field]: 'foreign', savedAt: Date.now() });
+      await refreshSyncReceipts();
+      expect(mockRecords).toHaveLength(1);
+      expect(getSyncStatus(objectId)).toBe('synced');
+    }
+  );
+
+  it('does not resurrect a pending identity discarded during its receipt lookup', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('discard during lookup') });
+    await flushPromises();
+    const id = mockRecords[0].syncId!;
+
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+    const stored = { ...mockReceipts.get(id)!, savedAt: Date.now() };
+    const deferred = createDeferred<Array<SyncReceiptRecord | undefined>>();
+
+    mockSyncReceiptTable.bulkGet.mockImplementationOnce(() => deferred.promise);
+    const refreshing = refreshSyncReceipts();
+
+    discardSyncObject(objectId);
+    deferred.resolve([stored]);
+    await refreshing;
+    expect(getSyncStatus(objectId)).toBe('synced');
+  });
+
+  it('does not apply receipt recovery or retry callbacks to a replacement session', async () => {
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+    try {
+      enableReceipts();
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('workspace switch') });
+      await flushPromises();
+      const id = mockRecords[0].syncId!;
+
+      await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+      const deferred = createDeferred<Array<SyncReceiptRecord | undefined>>();
+      const retry = jest.fn();
+
+      mockSyncReceiptTable.bulkGet.mockImplementationOnce(() => deferred.promise);
+      configureReceiptRecovery(retry);
+      await jest.advanceTimersByTimeAsync(5 * 60_000);
+      setCurrentSession({ userId, workspaceId: 'new-workspace' });
+      deferred.resolve([{ ...mockReceipts.get(id)!, savedAt: Date.now() }]);
+      await flushPromises();
+      expect(retry).not.toHaveBeenCalled();
+      expect(mockRecords).toHaveLength(1);
+      expect(getSyncStatus(objectId)).toBe('checking');
+    } finally {
+      configureReceiptRecovery(undefined);
+      jest.useRealTimers();
+    }
+  });
+
+  it.each(['session', 'discard'] as const)(
+    'does not change live counters after %s during saved cleanup',
+    async (change) => {
+      enableReceipts();
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('cleanup race') });
+      await flushPromises();
+      const id = mockRecords[0].syncId!;
+
+      await receipt(collab.SyncReceipt.Stage.ACCEPTED, [id]);
+      const deleting = createDeferred<void>();
+
+      mockSyncOutboxTable.bulkDelete.mockImplementationOnce(() => deleting.promise);
+      const saving = receipt(collab.SyncReceipt.Stage.SAVED, []);
+
+      await flushPromises();
+      expect(mockSyncOutboxTable.bulkDelete).toHaveBeenCalled();
+      if (change === 'session') setCurrentSession({ userId, workspaceId: 'new-workspace' });
+      else discardSyncObject(objectId);
+      deleting.resolve();
+      await saving;
+      expect(getSyncStatus(objectId)).toBe(change === 'session' ? 'checking' : 'synced');
+    }
+  );
+
+  it('keeps a saved notification scoped when its IndexedDB transaction spans a session change', async () => {
+    enableReceipts();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('saved during switch') });
+    await flushPromises();
+    await receipt(collab.SyncReceipt.Stage.ACCEPTED, [mockRecords[0].syncId!]);
+    const deferred = createDeferred<unknown>();
+
+    mockTransaction.mockImplementationOnce(() => deferred.promise);
+    const saving = receipt(collab.SyncReceipt.Stage.SAVED, []);
+
+    setCurrentSession({ userId, workspaceId: 'new-workspace' });
+    deferred.resolve(undefined);
+    await saving;
+    expect(mockRecords).toHaveLength(1);
+    expect(getSyncStatus(objectId)).toBe('checking');
   });
 
   it('sends immediately when the transport is ready and removes the durable copy after enqueue lands', async () => {
