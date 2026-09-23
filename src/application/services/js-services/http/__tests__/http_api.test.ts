@@ -46,6 +46,7 @@ jest.mock('@/application/session/token', () => ({
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: jest.fn((_: string, defaultValue: string | undefined) => defaultValue),
+  isLocalDevelopment: () => false,
 }));
 
 jest.mock('@/assets/icons/check_circle.svg', () => ({}), { virtual: true });

@@ -6,6 +6,7 @@ import { getTokenParsed, invalidToken } from '@/application/session/token';
 import { Log } from '@/utils/log';
 
 import { initGrantService, refreshToken } from './gotrue';
+import { resolveLocalApiBaseURL } from './local-dev-origins';
 
 let axiosInstance: AxiosInstance | null = null;
 
@@ -432,8 +433,17 @@ export function initAPIService(config: AFCloudConfig) {
     return;
   }
 
+  // Local development only: `pnpm dev` against a localhost cloud sends API
+  // requests to the dev server, whose proxies reach the local gateway or cloud
+  // and the billing service without CORS. Production keeps the configured URL.
+  const baseURL = resolveLocalApiBaseURL(config.baseURL);
+
+  if (baseURL !== config.baseURL) {
+    console.info(`[local-dev] API requests go through ${baseURL} (configured base: ${config.baseURL})`);
+  }
+
   axiosInstance = axios.create({
-    baseURL: config.baseURL,
+    baseURL,
     headers: {
       'Content-Type': 'application/json',
     },
