@@ -34,6 +34,7 @@ const KNOWN: Record<string, string> = {
   'subscribe.value.responsesLifetime': '{{amount}} lifetime',
   'subscribe.value.imagesLifetime': '{{amount}} lifetime',
   'subscribe.value.workspaces': '{{amount}} workspaces',
+  'subscribe.value.forms': '{{amount}}',
   'subscribe.featureBullet': '{{feature}}: {{value}}',
 };
 
@@ -174,6 +175,7 @@ describe('localization helpers', () => {
     [{ kind: 'quantity', amount: 10, unit: 'responses_lifetime', display: 'x' }, '10 lifetime'],
     [{ kind: 'quantity', amount: 2, unit: 'images_lifetime', display: 'x' }, '2 lifetime'],
     [{ kind: 'quantity', amount: 1, unit: 'workspaces', display: 'x' }, '1 workspaces'],
+    [{ kind: 'quantity', amount: 1, unit: 'forms', display: 'x' }, '1'],
     [{ kind: 'text', display: 'Limited trial' }, 'Limited trial'],
   ])('localizes %j as %s', (value, expected) => {
     expect(localizeFeatureValue(t, value)).toBe(expected);

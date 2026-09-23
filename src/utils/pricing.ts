@@ -27,6 +27,7 @@ const UNIT_VALUE_KEYS: Record<string, string> = {
   responses_lifetime: 'subscribe.value.responsesLifetime',
   images_lifetime: 'subscribe.value.imagesLifetime',
   workspaces: 'subscribe.value.workspaces',
+  forms: 'subscribe.value.forms',
 };
 
 const PLAN_NAME_KEYS: Record<string, string> = {
