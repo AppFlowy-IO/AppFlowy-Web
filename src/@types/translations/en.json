@@ -1389,14 +1389,14 @@
       "freePlan": {
         "title": "Free",
         "description": "For individuals up to 2 members to organize everything",
-        "price": "{}",
-        "priceInfo": "Free forever"
+        "price": "{} / member / month",
+        "priceInfo": ""
       },
       "proPlan": {
         "title": "Pro",
         "description": "For small teams to manage projects and team knowledge",
-        "price": "{}",
-        "priceInfo": "Per user per month \nbilled annually\n\n{} billed monthly"
+        "price": "{} / member / month",
+        "priceInfo": "billed annually"
       },
       "planLabels": {
         "itemOne": "Workspaces",

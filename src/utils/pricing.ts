@@ -44,17 +44,17 @@ const PLAN_DESCRIPTION_KEYS: Record<string, string> = {
 
 /**
  * Formats cents as the short dollar string used across the pricing UI, matching
- * the desktop client: 1250 -> `US$12.5`, 1000 -> `US$10`, 1299 -> `US$12.99`.
+ * the desktop client: 1250 -> `$12.5`, 1000 -> `$10`, 1299 -> `$12.99`.
  * With `perMonthFromYearly` a yearly total becomes its monthly equivalent:
- * 12000 -> `US$10`.
+ * 12000 -> `$10`.
  */
 export function formatPriceCents(cents: number, options: { perMonthFromYearly?: boolean } = {}): string {
   const dollars = (options.perMonthFromYearly ? cents / 12 : cents) / 100;
   // Round to whole cents, then drop trailing zeros so 12.50 renders as 12.5.
   const rounded = Math.round(dollars * 100) / 100;
 
-  // Same prefix as the desktop client's pricing labels.
-  return `US$${Number(rounded.toFixed(2))}`;
+  // Plain dollar prefix, as in the published plan table and the desktop client.
+  return `$${Number(rounded.toFixed(2))}`;
 }
 
 export function getPlanPrice(plan: PricingPlan, interval: SubscriptionInterval): PricingPrice | undefined {

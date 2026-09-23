@@ -11,8 +11,11 @@ import UpgradePlan from '@/components/billing/UpgradePlan';
 const mockTranslations: Record<string, string> = {
   'subscribe.feature.storage': 'Storage',
   'subscribe.value.unlimited': 'Unlimited',
-  // Desktop-style price note with the monthly price placeholder.
-  'settings.comparePlanDialog.proPlan.priceInfo': 'Per user per month \nbilled annually\n\n{} billed monthly',
+  // Header copy from the published plan table.
+  'settings.comparePlanDialog.freePlan.price': '{} / member / month',
+  'settings.comparePlanDialog.proPlan.price': '{} / member / month',
+  'settings.comparePlanDialog.freePlan.priceInfo': '',
+  'settings.comparePlanDialog.proPlan.priceInfo': 'billed annually',
 };
 
 jest.mock('react-i18next', () => ({
@@ -181,10 +184,10 @@ describe('UpgradePlan', () => {
     expect(freeColumn.getAttribute('data-highlighted')).toBe('false');
 
     // Annual per-month price with the monthly note, desktop style; no interval tabs.
-    expect(within(proColumn).getByText('US$10')).toBeTruthy();
-    expect(within(proColumn).getByText(/US\$12\.5/)).toBeTruthy();
-    expect(within(freeColumn).getByText('US$0')).toBeTruthy();
-    expect(within(freeColumn).getByText('settings.comparePlanDialog.freePlan.priceInfo')).toBeTruthy();
+    expect(within(proColumn).getByText('$10 / member / month')).toBeTruthy();
+    expect(within(proColumn).getByText('billed annually')).toBeTruthy();
+    expect(within(proColumn).queryByText(/billed monthly/)).toBeNull();
+    expect(within(freeColumn).getByText('$0 / member / month')).toBeTruthy();
     expect(screen.queryByText('subscribe.monthly')).toBeNull();
     expect(screen.queryByTestId('pricing-plan-ai_max')).toBeNull();
 
@@ -257,7 +260,7 @@ describe('UpgradePlan', () => {
 
     const proColumn = await screen.findByTestId('pricing-plan-pro');
 
-    expect(within(proColumn).getByText('US$10')).toBeTruthy();
+    expect(within(proColumn).getByText('$10 / member / month')).toBeTruthy();
     expect(getPricingCatalog).toHaveBeenCalledTimes(2);
   });
 

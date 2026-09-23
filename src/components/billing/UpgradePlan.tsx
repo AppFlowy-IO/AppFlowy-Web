@@ -236,18 +236,24 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
       const free = isFreePlan(plan);
       const yearly = getPlanDisplayPrice(plan, SubscriptionInterval.Year);
       const monthly = getPlanDisplayPrice(plan, SubscriptionInterval.Month);
+      // The published plan table shows only the annual figure ("billed annually");
+      // the monthly price stays under Billing > Edit period. An empty info hides the line.
       const priceInfo = free
         ? t('settings.comparePlanDialog.freePlan.priceInfo')
         : yearly
-        ? fillPlaceholders(t('settings.comparePlanDialog.proPlan.priceInfo'), monthly ?? '')
+        ? t('settings.comparePlanDialog.proPlan.priceInfo')
         : t('subscribe.proDuration.monthly');
+      const amount = free ? formatPriceCents(0) : yearly ?? monthly ?? '';
       const actionType = planActionFor(plan.id, currentPlan);
 
       return {
         plan,
         name: localizePlanName(translate, plan),
         description: localizePlanDescription(translate, plan),
-        price: free ? formatPriceCents(0) : yearly ?? monthly ?? '',
+        price: fillPlaceholders(
+          t(free ? 'settings.comparePlanDialog.freePlan.price' : 'settings.comparePlanDialog.proPlan.price'),
+          amount
+        ),
         priceInfo,
         action: actionType,
         isCurrent: plan.id === currentPlan,
@@ -338,7 +344,9 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
                     >
                       {price}
                     </div>
-                    <div className='mt-1 whitespace-pre-line text-sm leading-5 text-text-secondary'>{priceInfo}</div>
+                    {priceInfo && (
+                      <div className='mt-1 whitespace-pre-line text-sm leading-5 text-text-secondary'>{priceInfo}</div>
+                    )}
                     <div className='mt-auto flex h-14 items-center'>
                       {planAction === 'upgrade' && (
                         <UpgradeButton
