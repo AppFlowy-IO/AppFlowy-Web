@@ -152,12 +152,177 @@ Feature: Formula editor
       | text          | kind     |
       | /* note */    | comment  |
       | if            | function |
-      | prop("Price") | prop     |
+      | Price         | prop     |
       | >             | operator |
       | 10            | number   |
       | "big"         | string   |
       | not           | keyword  |
       | true          | keyword  |
+
+  # ---------------------------------------------------------------------------
+  # Property tokens
+  # ---------------------------------------------------------------------------
+
+  Scenario: A typed property reference becomes a token with the property's icon and name
+    When I start a new formula property
+    And I type "prop("Price"" in the formula editor
+    Then the formula editor shows no property tokens
+    When I type ")" in the formula editor
+    Then the formula editor shows these property tokens
+      | Price |
+    And the property token "Price" shows its property type icon
+    When I type " * 2" in the formula editor
+    Then the formula editor contains "prop("Price") * 2"
+    And the formula preview shows "25"
+
+  Scenario: A saved formula opens with its references as tokens
+    Given a formula property "Label" with the expression "prop("Name") + " " + prop("Notes")"
+    When I open the formula editor of "Label" from the property menu
+    Then the formula editor shows these property tokens
+      | Name  |
+      | Notes |
+    And the formula editor contains "prop("Name") + " " + prop("Notes")"
+
+  Scenario: Autocomplete and the catalogue insert property tokens
+    When I start a new formula property
+    And I type "ric" in the formula editor
+    And I press "Enter" in the formula editor
+    Then the formula editor shows these property tokens
+      | Price |
+    When I type " + length()" in the formula editor
+    And I press "ArrowLeft" in the formula editor
+    And I click the catalogue property "Name"
+    Then the formula editor shows these property tokens
+      | Price |
+      | Name  |
+    And the formula editor contains "prop("Price") + length(prop("Name"))"
+
+  Scenario: The caret and Backspace treat a token as one unit
+    When I start a new formula property
+    And I type the formula "upper(prop("Name"))"
+    And I press "End" in the formula editor
+    And I press "ArrowLeft" in the formula editor
+    And I press "ArrowLeft" in the formula editor
+    And I type ""a" + " in the formula editor
+    Then the formula editor contains "upper("a" + prop("Name"))"
+    When I press "End" in the formula editor
+    And I press "ArrowLeft" in the formula editor
+    And I press "Backspace" in the formula editor
+    Then the formula editor contains "upper("a" + )"
+    And the formula editor shows no property tokens
+
+  Scenario: Copying a formula gives prop() text and pasting prop() text gives tokens
+    When I start a new formula property
+    And I type the formula "prop("Price") * 2"
+    And I copy the whole formula
+    Then the copied formula is "prop("Price") * 2"
+    When I clear the formula editor
+    And I paste "prop("Name") + prop("Notes")" into the formula editor
+    Then the formula editor shows these property tokens
+      | Name  |
+      | Notes |
+    And the formula editor contains "prop("Name") + prop("Notes")"
+    And the formula preview shows "Onealpha"
+
+  Scenario: A reference to a missing property is a token marked as missing
+    When I start a new formula property
+    And I type the formula "prop("Nope") + 1"
+    Then the property token "Nope" is marked as missing
+    And the formula editor shows the error "Unknown property "Nope""
+
+  Scenario: Shift+Arrow extends the selection over a whole token
+    When I start a new formula property
+    And I type the formula "1 + prop("Price") + 2"
+    And I press "End" in the formula editor
+    And I press "Shift+ArrowLeft" in the formula editor
+    And I press "Shift+ArrowLeft" in the formula editor
+    And I press "Shift+ArrowLeft" in the formula editor
+    And I press "Shift+ArrowLeft" in the formula editor
+    And I press "Shift+ArrowLeft" in the formula editor
+    And I press "Backspace" in the formula editor
+    Then the formula editor contains "1 + "
+    And the formula editor shows no property tokens
+
+  Scenario: Up and Down move between lines that hold tokens
+    When I start a new formula property
+    And I type the formula "1 + prop("Price") +\n2"
+    And I press "ArrowUp" in the formula editor
+    And I type "0" in the formula editor
+    Then the formula editor contains "10 + prop("Price") +\n2"
+    When I press "ArrowDown" in the formula editor
+    And I type "0" in the formula editor
+    Then the formula editor contains "10 + prop("Price") +\n20"
+    And the formula editor shows these property tokens
+      | Price |
+    And the formula preview shows "42.5"
+
+  Scenario: Clicking a token puts the caret after it
+    When I start a new formula property
+    And I type the formula "prop("Price") + 1"
+    And I click the property token "Price"
+    And I type " * 2" in the formula editor
+    Then the formula editor contains "prop("Price") * 2 + 1"
+    And the formula preview shows "26"
+
+  Scenario: Undo and redo restore and remove a deleted token
+    When I start a new formula property
+    And I type the formula "prop("Price") + 1"
+    And I press "Home" in the formula editor
+    And I press "ArrowRight" in the formula editor
+    And I press "Backspace" in the formula editor
+    Then the formula editor contains " + 1"
+    When I press "ControlOrMeta+z" in the formula editor
+    Then the formula editor contains "prop("Price") + 1"
+    And the formula editor shows these property tokens
+      | Price |
+    When I press "ControlOrMeta+Shift+z" in the formula editor
+    Then the formula editor contains " + 1"
+    And the formula editor shows no property tokens
+
+  Scenario: A token follows a property renamed while the editor is open
+    When I start a new formula property
+    And I type the formula "upper(prop("Notes"))"
+    And a collaborator renames the property "Notes" to "Memo"
+    Then the formula editor shows these property tokens
+      | Memo |
+    And the formula editor contains "upper(prop("Memo"))"
+    And the formula preview shows "ALPHA"
+    When I close the formula editor with "the Done button"
+    Then the last formula column shows these values
+      | ALPHA   |
+      | BETA    |
+      | <empty> |
+
+  Scenario: A token stays bound to the right property when two share a name
+    When I add a "Number" property named "Price 2"
+    And a collaborator sets row 1 of "Price 2" to "7"
+    And a collaborator renames the property "Price 2" to "Price"
+    And I start a new formula property
+    And I click the catalogue property "Price 2"
+    Then the formula editor shows these property tokens
+      | Price |
+    And the formula editor refers to "Price 2" by its id
+    And the formula preview shows "7"
+    When I close the formula editor with "the Done button"
+    Then the last formula column shows these values
+      | 7       |
+      | <empty> |
+      | <empty> |
+
+  Scenario: Typing a name right before a token is an error, not a new reference
+    When I start a new formula property
+    And I type the formula "upper(prop("Name"))"
+    And I press "Home" in the formula editor
+    And I type "x" in the formula editor
+    Then the formula editor contains "xupper(prop("Name"))"
+    When I press "End" in the formula editor
+    And I press "ArrowLeft" in the formula editor
+    And I press "ArrowLeft" in the formula editor
+    And I type "y" in the formula editor
+    Then the formula editor contains "xupper(yprop("Name"))"
+    And the formula editor shows these property tokens
+      | Name |
+    And the Done button is disabled
 
   # ---------------------------------------------------------------------------
   # Autocomplete

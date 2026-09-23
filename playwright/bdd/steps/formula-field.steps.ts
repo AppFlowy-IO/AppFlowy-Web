@@ -26,6 +26,8 @@ import {
   fieldIdByName,
   formulaCellText,
   formulaDialog,
+  clearFormula,
+  expectFormulaSource,
   formulaInput,
   type FormulaInputType,
   gridCellText,
@@ -417,12 +419,12 @@ When('I close the formula editor with {string}', async ({ page }, method: string
 
 Then('the formula editor is open with an empty formula', async ({ page }) => {
   await expect(formulaDialog(page)).toBeVisible();
-  await expect(formulaInput(page)).toHaveValue('');
+  await expectFormulaSource(page, '');
 });
 
 Then('the formula editor is open with a formula', async ({ page }) => {
   await expect(formulaDialog(page)).toBeVisible();
-  await expect(formulaInput(page)).not.toHaveValue('');
+  await expect(formulaInput(page)).not.toHaveAttribute('data-value', '');
 });
 
 Then('the formula editor is closed', async ({ page }) => {
@@ -465,11 +467,11 @@ When('I press {string} in the formula editor', async ({ page }, key: string) => 
 });
 
 Then(/^the formula editor contains "(.*)"$/, async ({ page }, expression: string) => {
-  await expect(formulaInput(page)).toHaveValue(expression.replace(/\\n/g, '\n'));
+  await expectFormulaSource(page, expression.replace(/\\n/g, '\n'));
 });
 
 Then('the formula editor highlights these tokens', async ({ page }, table: DataTable) => {
-  const overlay = formulaDialog(page).locator('pre');
+  const overlay = formulaInput(page);
 
   for (const { text, kind } of table.hashes()) {
     await expect(
@@ -477,6 +479,83 @@ Then('the formula editor highlights these tokens', async ({ page }, table: DataT
       `"${text}" should be highlighted as ${kind}`
     ).toHaveText(text);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Property tokens
+// ---------------------------------------------------------------------------
+
+function propertyTokens(page: Page): Locator {
+  return formulaInput(page).getByTestId('formula-token');
+}
+
+function propertyToken(page: Page, name: string): Locator {
+  return propertyTokens(page).filter({ hasText: name }).first();
+}
+
+Then('the formula editor shows these property tokens', async ({ page }, table: DataTable) => {
+  await expect(propertyTokens(page)).toHaveText(table.raw().map(([name]) => name));
+});
+
+Then('the formula editor shows no property tokens', async ({ page }) => {
+  await expect(propertyTokens(page)).toHaveCount(0);
+});
+
+Then('the property token {string} shows its property type icon', async ({ page }, name: string) => {
+  const token = propertyToken(page, name);
+
+  await expect(token.locator('svg')).toHaveCount(1);
+  await expect(token).not.toHaveAttribute('data-missing', 'true');
+});
+
+Then('the property token {string} is marked as missing', async ({ page }, name: string) => {
+  await expect(propertyToken(page, name)).toHaveAttribute('data-missing', 'true');
+});
+
+When('I click the property token {string}', async ({ page }, name: string) => {
+  await propertyToken(page, name).click();
+});
+
+When(
+  'a collaborator renames the property {string} to {string}',
+  async ({ page }, name: string, to: string) => {
+    await renameFieldDirect(page, await fieldId(page, name), to);
+  }
+);
+
+Then('the formula editor refers to {string} by its id', async ({ page }, name: string) => {
+  await expect(formulaInput(page)).toHaveAttribute('data-value', `prop("${await fieldId(page, name)}")`);
+});
+
+When('I clear the formula editor', async ({ page }) => {
+  await clearFormula(page);
+});
+
+When('I copy the whole formula', async ({ page }) => {
+  const input = formulaInput(page);
+
+  await input.press('ControlOrMeta+a');
+  // A synthetic copy event hands the editor a DataTransfer we can read back,
+  // without clipboard permissions.
+  await input.evaluate((element) => {
+    const data = new DataTransfer();
+
+    element.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }));
+    element.setAttribute('data-copied', data.getData('text/plain'));
+  });
+});
+
+Then(/^the copied formula is "(.*)"$/, async ({ page }, expression: string) => {
+  await expect(formulaInput(page)).toHaveAttribute('data-copied', expression);
+});
+
+When(/^I paste "(.*)" into the formula editor$/, async ({ page }, text: string) => {
+  await formulaInput(page).evaluate((element, pasted) => {
+    const data = new DataTransfer();
+
+    data.setData('text/plain', pasted);
+    element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, text);
 });
 
 // ---------------------------------------------------------------------------
