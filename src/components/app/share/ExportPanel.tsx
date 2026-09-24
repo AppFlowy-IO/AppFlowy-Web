@@ -19,10 +19,10 @@ function ExportPanel({ viewId }: { viewId: string }) {
   const viewIdResolved = view?.view_id;
   const workspaceId = useCurrentWorkspaceId();
   const getSubscriptions = useGetSubscriptions();
-  const { isPro } = useSubscriptionPlan(getSubscriptions);
+  const { isPro } = useSubscriptionPlan(getSubscriptions, { cacheKey: workspaceId });
   const { showBlockingLoader, hideBlockingLoader } = useAppOverlayContext();
   const [linkedPagesOverride, setLinkedPagesOverride] = useState<boolean | null>(null);
-  const includeLinkedPages = linkedPagesOverride ?? isPro;
+  const includeLinkedPages = isPro && (linkedPagesOverride ?? true);
   const [exporting, setExporting] = useState<boolean>(false);
   const exportingRef = useRef<boolean>(false);
 

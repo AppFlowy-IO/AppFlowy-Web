@@ -25,6 +25,7 @@ import {
   waitForChartReady,
 } from '../../support/chart-test-helpers';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
+import { mockBillingEndpoints } from '../../support/fixtures';
 import { ChartSelectors, ChartSettingsSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 
@@ -73,6 +74,24 @@ test.describe('Chart settings — Chart type', () => {
 
     // Bar carries the right-aligned tick by default
     await expect(barItem.locator('svg').last()).toBeVisible();
+  });
+
+  test('Free keeps Bar and opens upgrade before a premium chart can change the data', async ({ page, request }) => {
+    await mockBillingEndpoints(page);
+    await setupChartWithData(page, request, generateRandomEmail());
+    await openChartSettings(page);
+    await expect(page.getByRole('menuitem', { name: 'Bar', exact: true })).toBeVisible();
+    for (const name of ['Horizontal Bar', 'Line', 'Donut']) {
+      await expect(page.getByRole('menuitem', { name: `${name} (Upgrade Required)`, exact: true })).toBeAttached();
+    }
+
+    const line = page.getByRole('menuitem', { name: 'Line (Upgrade Required)', exact: true });
+
+    await line.scrollIntoViewIfNeeded();
+    await line.click();
+    await expect(page).toHaveURL(/action=change_plan/);
+    await expect(page.locator('.recharts-line')).toHaveCount(0);
+    await expect(ChartSelectors.bars(page).first()).toBeAttached();
   });
 
   test('switching to Line renders a Recharts line series', async ({ page, request }) => {

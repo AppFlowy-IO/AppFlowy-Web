@@ -147,7 +147,7 @@ function createView(overrides: Partial<View>): View {
   };
 }
 
-function createAddViewUpdate(databaseDoc: YDoc, viewId: string): number[] {
+function createAddViewUpdate(databaseDoc: YDoc, viewId: string, layout?: DatabaseViewLayout, name = 'Created view'): number[] {
   const remoteDoc = new Y.Doc();
 
   Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(databaseDoc));
@@ -163,7 +163,8 @@ function createAddViewUpdate(databaseDoc: YDoc, viewId: string): number[] {
   const view = new Y.Map<unknown>();
 
   view.set(YjsDatabaseKey.id, viewId);
-  view.set(YjsDatabaseKey.name, 'Created view');
+  view.set(YjsDatabaseKey.name, name);
+  if (layout !== undefined) view.set(YjsDatabaseKey.layout, layout);
   view.set(YjsDatabaseKey.field_orders, new Y.Array());
   views.set(viewId, view);
 
@@ -175,6 +176,142 @@ function getDatabase(databaseDoc: YDoc): Y.Map<unknown> {
 }
 
 describe('useAddDatabaseView', () => {
+  it.each([false, true])(
+    'preserves the Free form and draft after quota denial, then retries and creates multiple Pro forms (embedded: %s)',
+    async (embedded) => {
+      const databaseDoc = createDatabaseDoc('form-database');
+
+      addExistingGridView(databaseDoc, 'grid');
+      const createDatabaseView = jest.fn();
+      const deletePage = jest.fn();
+      const denied = { code: 1076, message: 'Upgrade this workspace to Pro to create more Forms.' };
+      const contextValue: DatabaseContextState = {
+        readOnly: false,
+        canWrite: true,
+        databaseDoc,
+        databasePageId: 'container',
+        activeViewId: 'grid',
+        rowMap: {},
+        workspaceId: 'workspace',
+        createDatabaseView,
+        deletePage,
+        isDocumentBlock: embedded,
+      };
+      const { result } = renderHook(() => useAddDatabaseView(), {
+        wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+      });
+      const allowForm = (viewId: string) =>
+        createDatabaseView.mockResolvedValueOnce({
+          view_id: viewId,
+          database_id: 'form-database',
+          database_update: createAddViewUpdate(databaseDoc, viewId, DatabaseViewLayout.Form),
+        });
+
+      // These are server admission responses, not a client-side quota implementation.
+      allowForm('first-free-form');
+      await act(async () => {
+        await expect(result.current(DatabaseViewLayout.Form, 'Customer feedback')).resolves.toBe('first-free-form');
+      });
+      const beforeDenial = Y.encodeStateAsUpdate(databaseDoc);
+
+      createDatabaseView.mockRejectedValueOnce(denied);
+      await expect(result.current(DatabaseViewLayout.Form, 'Product feedback draft')).rejects.toEqual(denied);
+      expect(Y.encodeStateAsUpdate(databaseDoc)).toEqual(beforeDenial);
+      expect(deletePage).not.toHaveBeenCalled();
+
+      // Upgrade and retry the unchanged draft; the existing Free form remains intact.
+      allowForm('second-form-after-upgrade');
+      await act(async () => {
+        await expect(result.current(DatabaseViewLayout.Form, 'Product feedback draft')).resolves.toBe(
+          'second-form-after-upgrade'
+        );
+      });
+      expect(createDatabaseView.mock.calls[2]).toEqual(createDatabaseView.mock.calls[1]);
+      expect(createDatabaseView).toHaveBeenLastCalledWith('grid', {
+        parent_view_id: 'container',
+        prev_view_id: undefined,
+        database_id: 'form-database',
+        layout: ViewLayout.Form,
+        name: 'Product feedback draft',
+        embedded,
+      });
+
+      allowForm('third-pro-form');
+      await act(async () => {
+        await expect(result.current(DatabaseViewLayout.Form, 'Team survey')).resolves.toBe('third-pro-form');
+      });
+      const views = getDatabase(databaseDoc).get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+
+      expect([...views.keys()].sort()).toEqual([
+        'first-free-form',
+        'grid',
+        'second-form-after-upgrade',
+        'third-pro-form',
+      ]);
+      expect(views.get('first-free-form')?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Form);
+
+      const beforeCancellation = Y.encodeStateAsUpdate(databaseDoc);
+
+      createDatabaseView.mockRejectedValueOnce(denied);
+      await expect(result.current(DatabaseViewLayout.Form, 'After cancellation')).rejects.toEqual(denied);
+      expect(Y.encodeStateAsUpdate(databaseDoc)).toEqual(beforeCancellation);
+    }
+  );
+
+  it('preserves Form questions on duplication quota denial and retries the copy after upgrading', async () => {
+    const databaseDoc = createDatabaseDoc('duplicate-form-database');
+
+    addExistingGridView(databaseDoc, 'source-form');
+    const views = getDatabase(databaseDoc).get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+    const source = views.get('source-form')!;
+
+    source.set(YjsDatabaseKey.layout, DatabaseViewLayout.Form);
+    source.set(YjsDatabaseKey.form_field_settings, new Y.Map([['required-question', new Y.Map([['required', true]])]]));
+    const denied = { code: 1076, message: 'Upgrade this workspace to Pro to create more Forms.' };
+    const createDatabaseView = jest.fn().mockRejectedValue(denied);
+    const deletePage = jest.fn();
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      canWrite: true,
+      databaseDoc,
+      databasePageId: 'container',
+      activeViewId: 'source-form',
+      rowMap: {},
+      workspaceId: 'workspace',
+      createDatabaseView,
+      deletePage,
+    };
+    const { result } = renderHook(() => useDuplicateDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+    const before = Y.encodeStateAsUpdate(databaseDoc);
+
+    await expect(result.current('source-form', 'Feedback copy')).rejects.toEqual(denied);
+    expect(Y.encodeStateAsUpdate(databaseDoc)).toEqual(before);
+    expect([...views.keys()]).toEqual(['source-form']);
+    expect(createDatabaseView).toHaveBeenCalledWith(
+      'source-form',
+      expect.objectContaining({ layout: ViewLayout.Form, name: 'Feedback copy' })
+    );
+    expect(deletePage).not.toHaveBeenCalled();
+
+    createDatabaseView.mockResolvedValueOnce({
+      view_id: 'copied-form',
+      database_id: 'duplicate-form-database',
+      database_update: createAddViewUpdate(databaseDoc, 'copied-form', DatabaseViewLayout.Form, 'Feedback copy'),
+    });
+    await act(async () => {
+      await expect(result.current('source-form', 'Feedback copy')).resolves.toBe('copied-form');
+    });
+    expect(createDatabaseView.mock.calls[1]).toEqual(createDatabaseView.mock.calls[0]);
+    const sourceQuestions = source.get(YjsDatabaseKey.form_field_settings) as Y.Map<unknown>;
+    const copiedQuestions = views.get('copied-form')?.get(YjsDatabaseKey.form_field_settings) as Y.Map<unknown>;
+
+    expect(copiedQuestions.toJSON()).toEqual(sourceQuestions.toJSON());
+    expect(copiedQuestions).not.toBe(sourceQuestions);
+    expect(views.get('copied-form')?.get(YjsDatabaseKey.name)).toBe('Feedback copy');
+  });
+
   it.each([
     { embedded: true, isDocumentBlock: false, activeChild: true },
     { embedded: true, isDocumentBlock: false, activeChild: false },

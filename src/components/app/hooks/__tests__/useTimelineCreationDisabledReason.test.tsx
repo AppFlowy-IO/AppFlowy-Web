@@ -37,13 +37,15 @@ describe('Timeline workspace access', () => {
   });
 
   it.each([SubscriptionPlan.Free, SubscriptionPlan.Team, SubscriptionPlan.AIMax, SubscriptionPlan.Pro])(
-    'requires exactly Pro when the workspace plan is %s',
+    'matches server Pro and legacy Team access when the workspace plan is %s',
     async (plan) => {
       const getSubscriptions = jest.fn().mockResolvedValue([subscription(plan)]);
       const { result } = renderHook(() => useTimelineCreationDisabledReason(getSubscriptions, { workspaceId: plan }));
 
       expect(result.current).toBe(checkingPlan);
-      await waitFor(() => expect(result.current).toBe(plan === SubscriptionPlan.Pro ? undefined : requiresPro));
+      await waitFor(() =>
+        expect(result.current).toBe([SubscriptionPlan.Pro, SubscriptionPlan.Team].includes(plan) ? undefined : requiresPro)
+      );
     }
   );
 
@@ -59,7 +61,7 @@ describe('Timeline workspace access', () => {
     expect(getSubscriptions).not.toHaveBeenCalled();
   });
 
-  it('does not reuse the general paid-feature cache which also accepts Team', async () => {
+  it('keeps Timeline and general paid-feature access consistent for legacy Team', async () => {
     const getSubscriptions = jest.fn().mockResolvedValue([subscription(SubscriptionPlan.Team)]);
     const { result } = renderHook(() => ({
       general: useSubscriptionPlan(getSubscriptions, { cacheKey: 'team-workspace' }),
@@ -67,7 +69,35 @@ describe('Timeline workspace access', () => {
     }));
 
     await waitFor(() => expect(result.current.general.isPro).toBe(true));
-    expect(result.current.timeline).toBe(requiresPro);
+    expect(result.current.timeline).toBeUndefined();
+  });
+
+  it('refreshes an open Timeline gate after an upgrade and after cancellation', async () => {
+    jest.useFakeTimers();
+    try {
+      const getSubscriptions = jest.fn().mockResolvedValue([]);
+      const { result } = renderHook(() =>
+        useTimelineCreationDisabledReason(getSubscriptions, { workspaceId: 'timeline-plan-lifecycle' })
+      );
+
+      await act(async () => undefined);
+      expect(result.current).toBe(requiresPro);
+
+      getSubscriptions.mockResolvedValue([subscription(SubscriptionPlan.Pro)]);
+      await act(async () => {
+        jest.advanceTimersByTime(60_001);
+      });
+      expect(result.current).toBeUndefined();
+
+      getSubscriptions.mockResolvedValue([]);
+      await act(async () => {
+        jest.advanceTimersByTime(60_001);
+      });
+      expect(result.current).toBe(requiresPro);
+      expect(getSubscriptions).toHaveBeenCalledTimes(3);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('revokes the previous workspace access immediately while checking the next workspace', async () => {

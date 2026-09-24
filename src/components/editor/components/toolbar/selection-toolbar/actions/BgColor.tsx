@@ -19,6 +19,8 @@ import { renderColor } from '@/utils/color';
 import ActionButton from './ActionButton';
 import { CreateCustomColorTile } from './TextColor';
 
+const MAX_SAVED_CUSTOM_COLORS = 9;
+
 function BgColor({
   focusEditor: focusEditor,
   toggleDisableEditorFocus,
@@ -27,7 +29,7 @@ function BgColor({
   toggleDisableEditorFocus: () => void;
 }) {
   const { t } = useTranslation();
-  const { getSubscriptions } = useEditorContext();
+  const { getSubscriptions, workspaceId } = useEditorContext();
   const { visible, forceShow } = useSelectionToolbarContext();
   const editor = useSlateStatic() as YjsEditor;
   const marks = CustomEditor.getAllMarks(editor).map(
@@ -43,8 +45,8 @@ function BgColor({
   const recentColorToSave = useRef<string | null>(null);
   const initialColor = useRef<string | null>(null);
 
-  const { isPro } = useSubscriptionPlan(getSubscriptions);
-  const maxCustomColors = isPro ? 9 : 4;
+  const { isPro } = useSubscriptionPlan(getSubscriptions, { cacheKey: workspaceId });
+  const maxCustomColors = isPro ? MAX_SAVED_CUSTOM_COLORS : 4;
 
   const isCustomColor = useCallback((color: string) => {
     return color.startsWith('#') || color.startsWith('0x');
@@ -64,17 +66,18 @@ function BgColor({
 
     try {
       const customParsed: string[] = custom ? JSON.parse(custom) : [];
-      let updatedCustomColors = customParsed.slice(0, maxCustomColors);
+      // Keep saved Pro colors available if the plan changes while this picker is open.
+      let updatedCustomColors = customParsed.slice(0, MAX_SAVED_CUSTOM_COLORS);
 
       if (singleColor !== undefined && isCustomColor(singleColor) && !updatedCustomColors.includes(singleColor)) {
-        updatedCustomColors = [singleColor, ...updatedCustomColors].slice(0, maxCustomColors);
+        updatedCustomColors = [singleColor, ...updatedCustomColors].slice(0, MAX_SAVED_CUSTOM_COLORS);
       }
 
       setCustomColors(updatedCustomColors);
     } catch (e) {
       console.error('Failed to parse recent colors:', e);
     }
-  }, [isCustomColor, maxCustomColors, singleColor]);
+  }, [isCustomColor, singleColor]);
 
   useEffect(() => {
     if (!visible && isOpen) {
@@ -133,11 +136,11 @@ function BgColor({
 
   const handleCreateCustomColor = useCallback(
     (color: string) => {
-      if (!color || customColors.includes(color)) {
+      if (!color || customColors.slice(0, maxCustomColors).includes(color)) {
         return;
       }
 
-      const updatedCustomColors = [...customColors, color].slice(-maxCustomColors);
+      const updatedCustomColors = [...customColors.slice(0, maxCustomColors), color].slice(-maxCustomColors);
 
       setCustomColors(updatedCustomColors);
       localStorage.setItem('custom-bg-colors', JSON.stringify(updatedCustomColors));
@@ -329,7 +332,7 @@ function BgColor({
         <Separator className={'my-2'} />
         <div className={'px-3.5 pb-2 pt-1.5 text-xs font-medium text-text-tertiary'}>{t('colors.custom')}</div>
         <div className='flex flex-wrap gap-2 px-3.5 pb-1.5'>
-          {customColors.map((color, index) => (
+          {customColors.slice(0, maxCustomColors).map((color, index) => (
             <ColorTile
               key={index}
               value={renderColor(color)}
@@ -348,6 +351,7 @@ function BgColor({
     handleCreateCustomColor,
     handlePickColor,
     isChoosingCustom,
+    maxCustomColors,
     recentColors,
     singleColor,
     t,

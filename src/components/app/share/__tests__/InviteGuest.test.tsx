@@ -13,6 +13,8 @@ const mockSharePageToGroup = jest.fn();
 const mockSharePageToGroups = jest.fn();
 const mockNotifyError = jest.fn();
 const mockNotifySuccess = jest.fn();
+const mockGetSubscriptionLink = jest.fn();
+let mockHosted = false;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -32,7 +34,7 @@ jest.mock('@/application/services/domains', () => ({
     sharePageToGroups: (...args: unknown[]) => mockSharePageToGroups(...args),
   },
   BillingService: {
-    getSubscriptionLink: jest.fn(),
+    getSubscriptionLink: (...args: unknown[]) => mockGetSubscriptionLink(...args),
   },
   WorkspaceService: {
     getWorkspaceGroups: (...args: unknown[]) => mockGetWorkspaceGroups(...args),
@@ -51,7 +53,7 @@ jest.mock('@/components/app/app.hooks', () => ({
 }));
 
 jest.mock('@/utils/subscription', () => ({
-  isAppFlowyHosted: () => false,
+  isAppFlowyHosted: () => mockHosted,
 }));
 
 jest.mock('@/components/ui/popover', () => ({
@@ -162,6 +164,8 @@ function renderInviteGuest(overrides: Partial<ComponentProps<typeof InviteGuest>
 
 describe('InviteGuest group sharing', () => {
   beforeEach(() => {
+    mockHosted = false;
+    mockGetSubscriptionLink.mockReset();
     mockGetWorkspaceGroups.mockReset();
     mockGetWorkspaceGroups.mockResolvedValue({ groups: [successfulGroup, failedGroup] });
     mockSharePageTo.mockReset();
@@ -171,6 +175,51 @@ describe('InviteGuest group sharing', () => {
     mockSharePageToGroups.mockReset();
     mockNotifyError.mockReset();
     mockNotifySuccess.mockReset();
+  });
+
+  it('offers Pro for a Free guest denial and preserves the invitation when upgrade is canceled', async () => {
+    mockHosted = true;
+    mockSharePageTo.mockRejectedValueOnce({ code: 1070, message: 'Free guest limit reached' });
+    const onInviteSuccess = jest.fn();
+
+    renderInviteGuest({ onInviteSuccess });
+    fireEvent.change(screen.getByLabelText('invite-input'), { target: { value: 'guest@example.com' } });
+    fireEvent.click(await screen.findByTestId('suggestion-email:guest@example.com'));
+    fireEvent.click(screen.getByRole('button', { name: 'shareAction.invite' }));
+
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('shareAction.upgradeConfirmDescription')).toBeTruthy();
+    expect(mockNotifyError).not.toHaveBeenCalled();
+    expect(onInviteSuccess).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'button.cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByTestId('tag-user:guest@example.com')).toBeTruthy();
+    expect(mockGetSubscriptionLink).not.toHaveBeenCalled();
+
+    // After a subsequent server-side upgrade, the same recipient can be retried.
+    fireEvent.click(screen.getByRole('button', { name: 'shareAction.invite' }));
+    await waitFor(() => expect(onInviteSuccess).toHaveBeenCalledTimes(1));
+    expect(mockSharePageTo).toHaveBeenCalledTimes(2);
+    expect(mockSharePageTo).toHaveBeenLastCalledWith('workspace-1', 'view-1', ['guest@example.com'], AccessLevel.ReadOnly);
+    expect(screen.queryByTestId('tag-user:guest@example.com')).toBeNull();
+  });
+
+  it.each([
+    [1071, 'Your paid workspace guest quota has been reached. Contact support.'],
+    [403, 'You do not have permission to share this page.'],
+  ])('preserves guidance for error %s without offering an irrelevant Pro upgrade', async (code, message) => {
+    mockHosted = true;
+    mockSharePageTo.mockRejectedValueOnce({ code, message });
+    renderInviteGuest();
+    fireEvent.change(screen.getByLabelText('invite-input'), { target: { value: 'guest@example.com' } });
+    fireEvent.click(await screen.findByTestId('suggestion-email:guest@example.com'));
+    fireEvent.click(screen.getByRole('button', { name: 'shareAction.invite' }));
+
+    await waitFor(() => expect(mockNotifyError).toHaveBeenCalledWith(message));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(mockGetSubscriptionLink).not.toHaveBeenCalled();
+    expect(screen.getByTestId('tag-user:guest@example.com')).toBeTruthy();
+    expect(mockNotifySuccess).not.toHaveBeenCalled();
   });
 
   it('loads group summaries for a workspace member with page Full Access', async () => {

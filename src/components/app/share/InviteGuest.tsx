@@ -666,15 +666,8 @@ export function InviteGuest({
               code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED || code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED
           ) ?? errors[0];
 
-        if (
-          error.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED ||
-          error.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED
-        ) {
-          if (isAppFlowyHosted()) {
-            setUpgradeModalOpen(true);
-          } else {
-            notify.error(error.message ?? t('settings.appearance.members.inviteFailedDialogTitle'));
-          }
+        if (error.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED && isAppFlowyHosted()) {
+          setUpgradeModalOpen(true);
         } else {
           notify.error(error.message ?? t('settings.appearance.members.inviteFailedDialogTitle'));
         }

@@ -1,14 +1,11 @@
 import { Page, expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { mockBillingEndpoints, setupPageErrorHandling } from '../../support/fixtures';
-import {
-  ExportSelectors,
-  PageSelectors,
-  ShareSelectors,
-  SidebarSelectors,
-} from '../../support/selectors';
+import { ExportSelectors, PageSelectors, ShareSelectors, SidebarSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
+import { mockProSubscription } from '../../support/subscription-test-helpers';
 
 /**
  * Export to PDF — BDD scenarios for the Share popover's "Export as" tab.
@@ -76,65 +73,73 @@ test.describe('Feature: Export to PDF', () => {
     });
   });
 
-  test('Scenario: Clicking Export to PDF triggers a download', async ({ page, request }) => {
-    // The PDF endpoint is fully mocked here so the test doesn't depend on the
-    // CI backend having Typst/render configured. We assert the request shape
-    // (URL + query params) and that the client triggers a browser download
-    // from the response blob. Real PDF rendering is verified server-side.
-    let exportRequestUrl: string | null = null;
-    const fakePdf = Buffer.from('%PDF-1.4\n%fake\n', 'utf-8');
+  for (const plan of ['Free', 'Pro'] as const) {
+    test(`Scenario: ${plan} PDF export sends the correct child options and preserves the downloaded bytes`, async ({
+      page,
+      request,
+    }) => {
+      // The PDF endpoint is fully mocked here so the test doesn't depend on the
+      // CI backend having Typst/render configured. We assert the request shape
+      // (URL + query params) and that the client triggers a browser download
+      // from the response blob. Real PDF rendering is verified server-side.
+      let exportRequestUrl: string | null = null;
+      const fakePdf = Buffer.from('%PDF-1.4\n%fake\n', 'utf-8');
 
-    await test.step('Given the PDF endpoint is mocked to return a tiny PDF with attachment headers', async () => {
-      await page.route(/\/api\/export\/view\/.*\/pdf(\?|$)/, (route) => {
-        exportRequestUrl = route.request().url();
-        route.fulfill({
-          status: 200,
-          headers: {
-            'Content-Type': 'application/pdf',
-            'Content-Disposition': 'attachment; filename="Getting started.pdf"',
-          },
-          body: fakePdf,
+      if (plan === 'Pro') await mockProSubscription(page);
+      else await mockBillingEndpoints(page);
+
+      await test.step('Given the PDF endpoint is mocked to return a tiny PDF with attachment headers', async () => {
+        await page.route(/\/api\/export\/view\/.*\/pdf(\?|$)/, (route) => {
+          exportRequestUrl = route.request().url();
+          route.fulfill({
+            status: 200,
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': 'attachment; filename="Getting started.pdf"',
+            },
+            body: fakePdf,
+          });
         });
       });
-    });
 
-    await test.step('And a signed-in user with the default workspace', async () => {
-      await signInAndWaitForApp(page, request, testEmail);
-      await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
-      await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
-      await page.waitForTimeout(2000);
-    });
+      await test.step('And a signed-in user with the default workspace', async () => {
+        await signInAndWaitForApp(page, request, testEmail);
+        await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
+        await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
+        await page.waitForTimeout(2000);
+      });
 
-    await test.step('When the user opens Export as and clicks Export to PDF', async () => {
-      await openSharePopover(page);
-      await switchToExportAsTab(page);
+      await test.step('When the user opens Export as and clicks Export to PDF', async () => {
+        await openSharePopover(page);
+        await switchToExportAsTab(page);
 
-      const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
+        const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
 
-      await ExportSelectors.pdfButton(page).click({ force: true });
-      const download = await downloadPromise;
+        await ExportSelectors.pdfButton(page).click({ force: true });
+        const download = await downloadPromise;
 
-      await test.step('Then the browser receives a download with the server-suggested filename', async () => {
-        const filename = download.suggestedFilename();
+        await test.step('Then the browser receives a download with the server-suggested filename', async () => {
+          expect(download.suggestedFilename()).toBe('Getting started.pdf');
+          const downloadedPath = await download.path();
 
-        expect(filename.length).toBeGreaterThan(0);
-        expect(filename).toMatch(/\.(pdf|zip)$/i);
+          expect(downloadedPath).not.toBeNull();
+          expect(await readFile(downloadedPath!)).toEqual(fakePdf);
+        });
+      });
+
+      await test.step('And the request hit the view PDF endpoint with default query params', () => {
+        expect(exportRequestUrl).not.toBeNull();
+        const params = new URL(exportRequestUrl!).searchParams;
+
+        expect(params.get('include_nested')).toBe(String(plan === 'Pro'));
+        expect(params.get('include_database')).toBe(String(plan === 'Pro'));
+        expect(params.get('include_images')).toBe('true');
+        expect(params.get('max_depth')).toBe('2');
       });
     });
+  }
 
-    await test.step('And the request hit the view PDF endpoint with default query params', () => {
-      expect(exportRequestUrl).not.toBeNull();
-      expect(exportRequestUrl!).toContain('include_nested=');
-      expect(exportRequestUrl!).toContain('include_database=');
-      expect(exportRequestUrl!).toContain('include_images=true');
-      expect(exportRequestUrl!).toContain('max_depth=2');
-    });
-  });
-
-  test('Scenario: Free cloud user clicking Include-linked-pages opens the upgrade flow', async ({
-    page,
-    request,
-  }) => {
+  test('Scenario: Free cloud user clicking Include-linked-pages opens the upgrade flow', async ({ page, request }) => {
     let upgradeLinkRequested = false;
 
     await test.step('Given billing endpoints report no active subscription (Free)', async () => {
@@ -185,19 +190,14 @@ test.describe('Feature: Export to PDF', () => {
     await test.step('Then the subscription-link endpoint is hit and a checkout URL is opened', async () => {
       expect(upgradeLinkRequested).toBe(true);
 
-      const opened = await page.evaluate(() =>
-        ((window as unknown as { __opened?: string[] }).__opened ?? []).slice()
-      );
+      const opened = await page.evaluate(() => ((window as unknown as { __opened?: string[] }).__opened ?? []).slice());
 
       expect(opened.length).toBeGreaterThan(0);
       expect(opened[0]).toContain('checkout');
     });
 
     await test.step('And the toggle did NOT flip to checked (still Free)', async () => {
-      await expect(ExportSelectors.includeLinkedPagesSwitch(page)).toHaveAttribute(
-        'data-state',
-        'unchecked',
-      );
+      await expect(ExportSelectors.includeLinkedPagesSwitch(page)).toHaveAttribute('data-state', 'unchecked');
     });
   });
 });

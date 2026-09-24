@@ -99,6 +99,14 @@ describe('AddViewButton', () => {
     expect(toast.error).toHaveBeenCalledTimes(1);
     expect(onViewAdded).not.toHaveBeenCalled();
     expect(onAfterAddView).toHaveBeenCalledTimes(1);
+
+    mockAddView.mockResolvedValueOnce('form-after-upgrade');
+    fireEvent.click(screen.getByTestId('add-form-view-option'));
+    await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('form-after-upgrade'));
+    expect(mockAddView.mock.calls[1]).toEqual(mockAddView.mock.calls[0]);
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(onViewAdded).toHaveBeenCalledTimes(1);
+    expect(onAfterAddView).toHaveBeenCalledTimes(2);
   });
 
   it('shows the server plan error and finishes loading without selecting a new view', async () => {

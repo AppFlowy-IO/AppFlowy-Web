@@ -87,7 +87,7 @@ function ChartLayoutSettings() {
   }, [currentWorkspaceId]);
   // Skip the subscription fetch entirely in publish / read-only mode — the
   // settings menu is hidden anyway, so the network call would be wasted.
-  const { isPro } = useSubscriptionPlan(readOnly ? undefined : getSubscriptions);
+  const { isPro } = useSubscriptionPlan(readOnly ? undefined : getSubscriptions, { cacheKey: currentWorkspaceId });
 
   // Reuse the canonical in-app upgrade entry point: setting `?action=change_plan`
   // is observed by `UpgradePlan` (mounted in `Workspaces`) which auto-opens the

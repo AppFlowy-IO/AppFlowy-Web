@@ -67,8 +67,8 @@ function CreationMenu({ surface }: { surface: 'page' | 'view' }) {
 }
 
 describe.each(['page', 'view'] as const)('Timeline %s creation menu', (surface) => {
-  it('greys out Free with a hover tooltip, then enables creation in a Pro workspace', async () => {
-    mockWorkspaceId = `${surface}-free`;
+  it.each([SubscriptionPlan.Pro, SubscriptionPlan.Team])('greys out Free with a hover tooltip, then enables creation in a %s workspace', async (plan) => {
+    mockWorkspaceId = `${surface}-${plan}-free`;
     mockGetSubscriptions.mockResolvedValue([]);
     mockAddPage.mockReset().mockResolvedValue({ view_id: 'created-page' });
     mockAddView.mockReset().mockResolvedValue('created-view');
@@ -92,10 +92,10 @@ describe.each(['page', 'view'] as const)('Timeline %s creation menu', (surface) 
     expect(mockAddView).not.toHaveBeenCalled();
     fireEvent.pointerLeave(timeline.parentElement!);
 
-    mockWorkspaceId = `${surface}-pro`;
+    mockWorkspaceId = `${surface}-${plan}-paid`;
     mockGetSubscriptions.mockResolvedValue([
       {
-        plan: SubscriptionPlan.Pro,
+        plan,
         currency: 'USD',
         price_cents: 1000,
         recurring_interval: SubscriptionInterval.Month,

@@ -1,7 +1,6 @@
-import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Subscription, SubscriptionPlan } from '@/application/types';
+import { Subscription } from '@/application/types';
 import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 
 import { useSubscriptionPlan } from './useSubscriptionPlan';
@@ -13,15 +12,8 @@ export function useTimelineCreationDisabledReason(
 ): string | undefined {
   const { t } = useTranslation();
   const isDevelopment = isDevelopmentOrTestEnvironment();
-  const getProSubscriptions = useCallback(async () => {
-    const subscriptions = await getSubscriptions?.();
-
-    // Other paid features also accept Team. Timeline requires exactly Pro,
-    // so keep its filtered result in a separate workspace cache entry.
-    return subscriptions?.filter((subscription) => subscription.plan === SubscriptionPlan.Pro);
-  }, [getSubscriptions]);
   const { isPro, activeSubscriptionPlan, hasError } = useSubscriptionPlan(
-    getSubscriptions && workspaceId ? getProSubscriptions : undefined,
+    getSubscriptions && workspaceId ? getSubscriptions : undefined,
     { cacheKey: workspaceId ? `timeline:${workspaceId}` : undefined, enabled: enabled && !isDevelopment }
   );
 
