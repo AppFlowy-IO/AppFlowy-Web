@@ -84,20 +84,20 @@ describe('AddViewButton', () => {
     jest.restoreAllMocks();
   });
 
-  it('shows one Pro upgrade message when the Free form quota is reached', async () => {
+  it.each(['form', 'chart'])('shows one Pro upgrade message when %s creation is rejected', async (layout) => {
     const onViewAdded = jest.fn();
     const onAfterAddView = jest.fn();
 
     mockExperimentalDatabaseViewCreationEnabled = true;
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
-    mockAddView.mockRejectedValueOnce({ code: 1076, message: 'Form limit reached' });
+    mockAddView.mockRejectedValueOnce({ code: 1076, message: 'Workspace limit reached' });
     render(
       <MemoryRouter>
         <AddViewButton databasePageId='database-page-id' onAfterAddView={onAfterAddView} onViewAdded={onViewAdded} />
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByTestId('add-form-view-option'));
+    fireEvent.click(layout === 'form' ? screen.getByTestId('add-form-view-option') : screen.getByText('chart.menuName'));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
       'Upgrade this workspace to Pro to use this feature or increase its limits.'

@@ -13,6 +13,8 @@ import {
 import { executeAPIRequest, executeAPIVoidRequest, getAxios } from '@/application/services/js-services/http/core';
 
 import {
+  addAppPage,
+  createDatabaseView,
   createSpace,
   createSpaceWithInitialPage,
   getDatabaseContainerUpgradeStatus,
@@ -57,6 +59,24 @@ function apiResponse<T>(data: T) {
     },
   };
 }
+
+describe('online Form and Chart creation', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each([ViewLayout.Form, ViewLayout.Chart])('rejects offline standalone and linked layout %s before sending', async (layout) => {
+    jest.clearAllMocks();
+    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+
+    await expect(addAppPage('workspace-id', 'parent-id', { layout })).rejects.toThrow(
+      'Connect to the internet to create Form or Chart views.'
+    );
+    await expect(createDatabaseView('workspace-id', 'source-id', {
+      database_id: 'database-id', parent_view_id: 'parent-id', layout, name: 'View',
+    })).rejects.toThrow('Connect to the internet to create Form or Chart views.');
+    expect(executeAPIRequest).not.toHaveBeenCalled();
+    expect(getAxios).not.toHaveBeenCalled();
+  });
+});
 
 describe('createSpaceWithInitialPage', () => {
   const post = jest.fn();
