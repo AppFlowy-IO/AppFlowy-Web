@@ -13,14 +13,16 @@ let mockHosted = true;
 let workspaceSequence = 0;
 let mockMeetingData: Record<string, unknown>;
 
+jest.mock('@/components/app/hooks/useServerInfo', () => ({
+  useIsOfficialHosted: () => mockHosted,
+  useServerHostingMode: () => mockHosted ? 'cloud' : 'self-hosted',
+  useServerInfoState: () => ({ status: 'available' }),
+}));
+
 jest.mock('slate-react', () => ({ useSlateStatic: () => mockEditor }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockTranslate }) }));
 jest.mock('@/components/editor/EditorContext', () => ({
   useEditorContext: () => ({ getSubscriptions: mockGetSubscriptions }),
-}));
-jest.mock('@/utils/subscription', () => ({
-  ...jest.requireActual('@/utils/subscription'),
-  isAppFlowyHosted: () => mockHosted,
 }));
 jest.mock('@/application/slate-yjs/utils/yjs', () => ({
   getBlock: () => ({

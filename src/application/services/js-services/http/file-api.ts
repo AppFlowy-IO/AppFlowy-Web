@@ -1,7 +1,7 @@
 import { ERROR_CODE } from '@/application/constants';
 import { getAppFlowyFileUploadUrl, getAppFlowyFileUrl } from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
-import { isAppFlowyHosted } from '@/utils/subscription';
+import { isOfficialHostedServer } from '@/utils/server-info';
 
 import { getAxios, handleAPIError } from './core';
 
@@ -49,7 +49,7 @@ export async function uploadFile(
     if (e.response?.status === 413 && typeof e.response?.data?.code !== 'number') {
       return Promise.reject({
         code: ERROR_CODE.PAYLOAD_TOO_LARGE,
-        message: isAppFlowyHosted()
+        message: isOfficialHostedServer()
           ? 'File size is too large. Please upgrade your plan for unlimited uploads.'
           : 'File size is too large.',
       });

@@ -15,6 +15,8 @@ import { AppOperationsContext, AppOperationsContextType } from '@/components/app
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import { resetPricingCatalogCache } from '@/components/app/hooks/usePricingCatalog';
 import UpgradePlan from '@/components/billing/UpgradePlan';
+import { getConfigValue } from '@/utils/runtime-config';
+import { updateServerInfo } from '@/utils/server-info';
 
 const defaultTranslations: Record<string, string> = {
   'subscribe.feature.storage': 'Storage',
@@ -160,13 +162,16 @@ function renderModal(
   getPricingCatalog: () => Promise<PricingCatalog>,
   { isOfficialHosted = true, subscriptions = [] as Subscription[], getSubscriptions = async () => subscriptions } = {}
 ) {
+  updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+    status: 'available',
+    info: { enable_page_history: true, self_hosted: !isOfficialHosted },
+  });
   return render(
     <MemoryRouter>
       <AuthInternalContext.Provider
         value={{
           currentWorkspaceId: 'workspace-id',
           isAuthenticated: true,
-          isOfficialHosted,
           onChangeWorkspace: async () => undefined,
         }}
       >

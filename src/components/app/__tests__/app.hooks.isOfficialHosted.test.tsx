@@ -1,36 +1,61 @@
-import { renderHook } from '@testing-library/react';
-import { ReactNode } from 'react';
+import { act, renderHook } from '@testing-library/react';
 
-import { useIsOfficialHosted } from '@/components/app/app.hooks';
-import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
+import { ERROR_CODE } from '@/application/constants';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
+import { getBillingErrorMessage } from '@/utils/billing-error';
+import { updateServerInfo } from '@/utils/server-info';
 
-function withAuth(value: Partial<AuthInternalContextType>) {
-  return function Wrapper({ children }: { children: ReactNode }) {
-    return (
-      <AuthInternalContext.Provider value={{ isAuthenticated: true, onChangeWorkspace: async () => undefined, ...value }}>
-        {children}
-      </AuthInternalContext.Provider>
-    );
-  };
-}
+const mockBaseUrl = jest.fn(() => 'http://localhost:8000');
 
-describe('useIsOfficialHosted', () => {
-  it('is false outside the auth layer', () => {
-    const { result } = renderHook(() => useIsOfficialHosted());
+jest.mock('@/utils/runtime-config', () => ({ getConfigValue: () => mockBaseUrl() }));
+jest.mock('@/application/services/domains', () => ({ AuthService: { getServerInfo: jest.fn() } }));
 
-    expect(result.current).toBe(false);
-  });
+const error = { code: ERROR_CODE.INVALID_SUBSCRIPTION_PLAN, message: 'Server limit reached' };
 
-  it('is false until server-info confirms the official cloud', () => {
-    expect(renderHook(() => useIsOfficialHosted(), { wrapper: withAuth({}) }).result.current).toBe(false);
-    expect(renderHook(() => useIsOfficialHosted(), { wrapper: withAuth({ isOfficialHosted: false }) }).result.current).toBe(
-      false
-    );
-  });
+beforeEach(() => {
+  mockBaseUrl.mockReturnValue('http://localhost:8000');
+  updateServerInfo(mockBaseUrl(), { status: 'loading' });
+});
 
-  it('is true when server-info reported self_hosted: false', () => {
-    expect(renderHook(() => useIsOfficialHosted(), { wrapper: withAuth({ isOfficialHosted: true }) }).result.current).toBe(
-      true
-    );
-  });
+it('shares the server-info decision between feature gates and error guidance', () => {
+  const { result } = renderHook(useIsOfficialHosted);
+
+  expect(result.current).toBe(false);
+  expect(getBillingErrorMessage(error)).toBeUndefined();
+  act(() =>
+    updateServerInfo(mockBaseUrl(), {
+      status: 'available',
+      info: { enable_page_history: true, self_hosted: false },
+    })
+  );
+  expect(result.current).toBe(true);
+  expect(getBillingErrorMessage(error)).toContain('Pro');
+  act(() =>
+    updateServerInfo(mockBaseUrl(), {
+      status: 'available',
+      info: { enable_page_history: true, self_hosted: true },
+    })
+  );
+  expect(result.current).toBe(false);
+  expect(getBillingErrorMessage(error)).toBeUndefined();
+});
+
+it('drops cloud guidance on refresh failure and when switching servers', () => {
+  updateServerInfo(mockBaseUrl(), { status: 'available', info: { enable_page_history: true, self_hosted: false } });
+  const { result, rerender } = renderHook(useIsOfficialHosted);
+
+  expect(result.current).toBe(true);
+  act(() => updateServerInfo(mockBaseUrl(), { status: 'unavailable' }));
+  expect(result.current).toBe(false);
+  expect(getBillingErrorMessage(error)).toBeUndefined();
+  act(() =>
+    updateServerInfo(mockBaseUrl(), {
+      status: 'available',
+      info: { enable_page_history: true, self_hosted: false },
+    })
+  );
+  mockBaseUrl.mockReturnValue('https://selfhost.example.com');
+  rerender();
+  expect(result.current).toBe(false);
+  expect(getBillingErrorMessage(error)).toBeUndefined();
 });

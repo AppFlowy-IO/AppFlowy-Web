@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 
 import { DatabaseViewLayout } from '@/application/types';
 import { AddViewButton } from '@/components/database/components/tabs/AddViewButton';
+import { getConfigValue } from '@/utils/runtime-config';
+import { updateServerInfo } from '@/utils/server-info';
 
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
@@ -69,6 +71,10 @@ jest.mock('@/components/ui/tooltip', () => ({
 describe('AddViewButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available',
+      info: { enable_page_history: true, self_hosted: false },
+    });
     mockExperimentalDatabaseViewCreationEnabled = false;
     mockAddView.mockResolvedValue('list-view-id');
     jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(300);

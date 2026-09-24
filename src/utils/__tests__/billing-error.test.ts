@@ -1,10 +1,37 @@
 import { ERROR_CODE } from '@/application/constants';
 import { getBillingErrorMessage } from '@/utils/billing-error';
 import { getErrorMessage } from '@/utils/errors';
+import { updateServerInfo } from '@/utils/server-info';
 
 const upgradeMessage = 'Upgrade this workspace to Pro to use this feature or increase its limits.';
+const mockBaseUrl = jest.fn(() => 'https://test.appflowy.cloud');
+
+jest.mock('@/utils/runtime-config', () => ({
+  getConfigValue: () => mockBaseUrl(),
+}));
 
 describe('billing error messages', () => {
+  beforeEach(() => {
+    mockBaseUrl.mockReturnValue('https://test.appflowy.cloud');
+    updateServerInfo(mockBaseUrl(), { status: 'available', info: { enable_page_history: true, self_hosted: false } });
+  });
+
+  it.each(['https://selfhost.example.com', 'http://localhost:8000', 'http://127.0.0.1:8000', 'http://[::1]:8000'])(
+    'preserves administrator-defined limits on %s',
+    (baseUrl) => {
+      mockBaseUrl.mockReturnValue(baseUrl);
+      updateServerInfo(baseUrl, { status: 'available', info: { enable_page_history: true, self_hosted: true } });
+      const error = {
+        code: ERROR_CODE.SINGLE_UPLOAD_LIMIT_EXCEEDED,
+        message: 'Your administrator limits files to 100 MB',
+      };
+
+      expect(getBillingErrorMessage(error)).toBeUndefined();
+      expect(getBillingErrorMessage({ response: { data: error } })).toBeUndefined();
+      expect(getErrorMessage(error)).toBe(error.message);
+    }
+  );
+
   it.each([
     ERROR_CODE.INVALID_SUBSCRIPTION_PLAN,
     ERROR_CODE.FILE_STORAGE_LIMIT_EXCEEDED,

@@ -1,9 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import { PricingCatalog } from '@/application/types';
 import { AppOperationsContext } from '@/components/app/contexts/AppOperationsContext';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import { resetPricingCatalogCache } from '@/components/app/hooks/usePricingCatalog';
+import { updateServerInfo } from '@/utils/server-info';
+import { defaultConfig } from '@/application/services/js-services/http/cloud-config';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 import { openArgType } from '../../../.storybook/argTypes';
@@ -51,6 +53,14 @@ const meta = {
     (Story: React.ComponentType, context: { args: StoryArgs }) => {
       const pricing = context.args.pricing ?? 'ready';
       const isOfficialHosted = context.args.isOfficialHosted ?? true;
+
+      useEffect(() => {
+        updateServerInfo(defaultConfig.baseURL, {
+          status: 'available',
+          info: { enable_page_history: true, self_hosted: !isOfficialHosted },
+        });
+        return () => updateServerInfo(defaultConfig.baseURL, { status: 'loading' });
+      }, [isOfficialHosted]);
       const [open, setOpen] = useState(context.args.open ?? false);
       // The catalog store is module-global; start every pricing state from a cold cache.
       const getPricingCatalog = useMemo(() => {
@@ -60,7 +70,7 @@ const meta = {
 
       return (
         <AFConfigContext.Provider value={mockAFConfigValue}>
-          <AuthInternalContext.Provider value={{ ...mockAuthInternalValue, isOfficialHosted }}>
+          <AuthInternalContext.Provider value={mockAuthInternalValue}>
             <AppOperationsContext.Provider value={{ ...mockOperationsValue, getPricingCatalog }}>
               <div style={{ padding: '20px', width: '100%', maxWidth: '800px' }}>
                 <button
