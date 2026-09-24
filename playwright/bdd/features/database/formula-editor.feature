@@ -260,6 +260,101 @@ Feature: Formula editor
     And the formula editor contains "prop("Price") * prop("Price")"
     And the formula preview shows "156.25"
 
+  Scenario: A copied formula keeps its prop() calls and pastes back to the same formula
+    When I start a new formula property
+    And I type the formula "pi() * prop("Price") ^ 2"
+    Then the formula editor shows these property tokens
+      | Price |
+    When I copy the whole formula
+    Then the copied formula is "pi() * prop("Price") ^ 2"
+    When I clear the formula editor
+    And I paste the copied formula into the formula editor
+    Then the formula editor contains "pi() * prop("Price") ^ 2"
+    And the formula editor shows these property tokens
+      | Price |
+    And the formula editor infers type "number"
+    And the formula editor shows no error
+    And the formula preview shows "490.873852123405"
+
+  Scenario: A complex multi-line formula survives copy and paste
+    When I start a new formula property
+    And I type the formula:
+      """
+      if(prop("Price") > 10 and not empty(prop("Notes")),
+        round(pi() * prop("Price") ^ 2, 2),
+        prop("Price") % 3) + prop("Name").length() + "prop(\"Price\")".length()
+      """
+    Then the formula editor shows these property tokens
+      | Price |
+      | Notes |
+      | Price |
+      | Price |
+      | Name  |
+    And the formula editor shows no error
+    When I copy the whole formula
+    Then the copied formula is:
+      """
+      if(prop("Price") > 10 and not empty(prop("Notes")),
+        round(pi() * prop("Price") ^ 2, 2),
+        prop("Price") % 3) + prop("Name").length() + "prop(\"Price\")".length()
+      """
+    When I clear the formula editor
+    And I paste the copied formula into the formula editor
+    Then the formula editor contains:
+      """
+      if(prop("Price") > 10 and not empty(prop("Notes")),
+        round(pi() * prop("Price") ^ 2, 2),
+        prop("Price") % 3) + prop("Name").length() + "prop(\"Price\")".length()
+      """
+    And the formula editor shows these property tokens
+      | Price |
+      | Notes |
+      | Price |
+      | Price |
+      | Name  |
+    And the formula editor infers type "number"
+    And the formula editor shows no error
+    And the formula preview shows "506.87"
+
+  Scenario: Pasting a formula with variables keeps the variables as text
+    When I start a new formula property
+    And I paste "lets(Price, 2, Name, 3, Price * Name * Notes.length())" into the formula editor
+    Then the formula editor contains "lets(Price, 2, Name, 3, Price * Name * prop("Notes").length())"
+    And the formula editor shows these property tokens
+      | Notes |
+    And the formula editor shows no error
+    And the formula preview shows "30"
+
+  Scenario: A rich-text paste of bare names and curly quotes gives tokens
+    When I start a new formula property
+    And I paste "Price * 2 + prop(“Name”).length()" with rich text into the formula editor
+    Then the formula editor contains "prop("Price") * 2 + prop("Name").length()"
+    And the formula editor shows these property tokens
+      | Price |
+      | Name  |
+    And the formula preview shows "28"
+
+  Scenario: Copying part of a formula and pasting it elsewhere keeps its tokens
+    When I start a new formula property
+    And I type the formula "1 + prop("Price")"
+    And I press "End" in the formula editor
+    And I press "Shift+ArrowLeft" in the formula editor
+    And I copy the selected formula
+    Then the copied formula is "prop("Price")"
+    When I press "End" in the formula editor
+    And I type " * " in the formula editor
+    And I paste the copied formula into the formula editor
+    Then the formula editor contains "1 + prop("Price") * prop("Price")"
+    And the formula editor shows these property tokens
+      | Price |
+      | Price |
+    And the formula preview shows "157.25"
+    When I clear the formula editor
+    And I paste the copied formula into the formula editor
+    And I type " ^ 2" in the formula editor
+    Then the formula editor contains "prop("Price") ^ 2"
+    And the formula preview shows "156.25"
+
   Scenario: A reference to a missing property is a token marked as missing
     When I start a new formula property
     And I type the formula "prop("Nope") + 1"
@@ -424,6 +519,49 @@ Feature: Formula editor
     When I click the autocomplete suggestion "true"
     Then the formula editor contains "prop("Price") > 1 and true"
     And the formula editor infers type "boolean"
+
+  Scenario: Accepting a suggestion with the caret mid-word replaces the whole word
+    When I start a new formula property
+    And I type "price * 2" in the formula editor
+    And I press "Home" in the formula editor
+    And I press "ArrowRight" in the formula editor
+    And I press "ArrowRight" in the formula editor
+    Then the autocomplete suggests "Price"
+    When I click the autocomplete suggestion "Price"
+    Then the formula editor contains "prop("Price") * 2"
+    And the formula editor shows these property tokens
+      | Price |
+    When I clear the formula editor
+    And I type "upxyz(1)" in the formula editor
+    And I press "Home" in the formula editor
+    And I press "ArrowRight" in the formula editor
+    And I press "ArrowRight" in the formula editor
+    Then the autocomplete suggests "upper()"
+    When I press "Enter" in the formula editor
+    Then the formula editor contains "upper()(1)"
+
+  Scenario: A mid-word suggestion picked with the keyboard replaces the whole word
+    When I start a new formula property
+    And I type "prop("Price") + notes" in the formula editor
+    And I press "ArrowLeft" in the formula editor
+    Then the autocomplete suggestions are
+      | Notes |
+    When I press "Enter" in the formula editor
+    Then the formula editor contains "prop("Price") + prop("Notes")"
+    And the formula editor shows these property tokens
+      | Price |
+      | Notes |
+
+  Scenario: Typing inside a word and accepting a function replaces the whole word
+    When I start a new formula property
+    And I type "lenxx" in the formula editor
+    And I press "Home" in the formula editor
+    And I press "ArrowRight" in the formula editor
+    And I press "ArrowRight" in the formula editor
+    And I press "ArrowRight" in the formula editor
+    Then the autocomplete suggests "length()"
+    When I click the autocomplete suggestion "length()"
+    Then the formula editor contains "length()"
 
   Scenario: Autocomplete stays closed inside text and Escape only closes the popup
     When I start a new formula property

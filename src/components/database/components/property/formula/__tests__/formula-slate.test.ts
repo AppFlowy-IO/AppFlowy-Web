@@ -17,6 +17,7 @@ import {
   sourceToNodes,
   withFormulaTokens,
 } from '../formula-slate';
+import { normalizePastedFormula } from '../formula-paste';
 
 function makeEditor(source = '') {
   const editor = withFormulaTokens(withHistory(createEditor()));
@@ -28,9 +29,9 @@ function makeEditor(source = '') {
 }
 
 function tokens(editor: Editor): FormulaPropElement[] {
-  return Array.from(Editor.nodes(editor, { at: [], match: (node) => (node as { type?: string }).type === FORMULA_PROP })).map(
-    ([node]) => node as unknown as FormulaPropElement
-  );
+  return Array.from(
+    Editor.nodes(editor, { at: [], match: (node) => (node as { type?: string }).type === FORMULA_PROP })
+  ).map(([node]) => node as unknown as FormulaPropElement);
 }
 
 function type(editor: Editor, text: string) {
@@ -140,6 +141,30 @@ describe('formula slate document', () => {
     expect(tokens(editor).map((token) => token.ref)).toEqual(['Price']);
   });
 
+  it.each([
+    'pi() * prop("Amount") ^ 2',
+    'if(prop("Price") > 10 and not empty(prop("Notes")),\n  round(pi() * prop("Price") ^ 2, 2),\n  prop("Price") % 3) + prop("Name").length()',
+    'prop("Name") + " Price " + "prop(\\"Price\\")" /* Price */ + current.prop("Price")',
+    'lets(Price, 2, Price * prop("Price"))',
+  ])('copies all and pastes back to the same formula: %s', (source) => {
+    const names = ['Amount', 'Price', 'Notes', 'Name'];
+    const copyFrom = makeEditor(source);
+    let copied = '';
+
+    Transforms.select(copyFrom, []);
+    copyFrom.setFragmentData({ setData: (_: string, text: string) => (copied = text) } as unknown as DataTransfer);
+    expect(copied).toBe(source);
+
+    const pasteInto = withFormulaTokens(withHistory(createEditor()), (text) => normalizePastedFormula(text, names));
+
+    pasteInto.children = sourceToNodes('');
+    Editor.normalize(pasteInto, { force: true });
+    Transforms.select(pasteInto, offsetToPoint(pasteInto, 0));
+    pasteInto.insertData({ getData: () => copied } as unknown as DataTransfer);
+    expect(editorSource(pasteInto)).toBe(source);
+    expect(tokens(pasteInto).map((token) => token.ref)).toEqual(tokens(copyFrom).map((token) => token.ref));
+  });
+
   it('copies tokens out as prop() calls', () => {
     const editor = makeEditor('1 + prop("Price") * 2');
     let copied = '';
@@ -192,5 +217,152 @@ describe('formula slate document', () => {
     expect(selectedSource(editor)).toBe('prop("Price") + 2');
     Editor.deleteFragment(editor);
     expect(editorSource(editor)).toBe('1 + ');
+  });
+});
+
+describe('formula copy and paste', () => {
+  const NAMES = ['Amount', 'Price', 'Notes', 'Name', 'Say "hi"', '状态'];
+
+  function pasteEditor(source = '', caret = source.length) {
+    const editor = withFormulaTokens(withHistory(createEditor()), (text) => normalizePastedFormula(text, NAMES));
+
+    editor.children = sourceToNodes(source);
+    Editor.normalize(editor, { force: true });
+    Transforms.select(editor, offsetToPoint(editor, caret));
+    return editor;
+  }
+
+  function paste(editor: Editor, text: string) {
+    editor.insertData({ getData: () => text } as unknown as DataTransfer);
+  }
+
+  function copyAll(editor: Editor): string {
+    let copied = '';
+
+    Transforms.select(editor, []);
+    editor.setFragmentData({ setData: (_: string, text: string) => (copied = text) } as unknown as DataTransfer);
+    return copied;
+  }
+
+  it.each([
+    ['a lone reference', 'prop("Price")'],
+    ['two adjacent references', 'prop("Price")prop("Amount")'],
+    ['a reference whose name has quotes', 'prop("Say \\"hi\\"") + 1'],
+    ['a reference in single quotes', "prop('Price') * 2"],
+    ['a reference with padding', 'prop( "Price" ) * 2'],
+    ['a non-Latin name', 'prop("状态") == "Done"'],
+    ['a missing property', 'prop("Nope") + prop("Price")'],
+    ['a reference into another database', 'prop("Name").prop("Price")'],
+    ['a comment and a string that look like references', '/* prop("Price") */ "prop(\\"Price\\")" + prop("Price")'],
+    ['blank lines and trailing newline', 'prop("Price")\n\n  * 2\n'],
+    [
+      'deep nesting',
+      'if(empty(prop("Notes")), round(abs(prop("Price") - prop("Amount")) ^ 2, 1), max([prop("Price"), 0]))',
+    ],
+    ['a map with a variable', 'map([1, 2], current * prop("Price"))'],
+  ])('round-trips %s', (_, source) => {
+    const from = pasteEditor(source);
+    const copied = copyAll(from);
+
+    expect(copied).toBe(source);
+    const to = pasteEditor();
+
+    paste(to, copied);
+    expect(editorSource(to)).toBe(source);
+    expect(tokens(to).map((token) => token.source)).toEqual(tokens(from).map((token) => token.source));
+  });
+
+  it('pastes the copy of part of a formula into the middle of another', () => {
+    const from = pasteEditor('1 + prop("Price") * 2');
+
+    Transforms.select(from, { anchor: offsetToPoint(from, 4), focus: offsetToPoint(from, 17) });
+    let copied = '';
+
+    from.setFragmentData({ setData: (_: string, text: string) => (copied = text) } as unknown as DataTransfer);
+    const to = pasteEditor('max(, 3)', 4);
+
+    paste(to, copied);
+    expect(editorSource(to)).toBe('max(prop("Price"), 3)');
+    expect(tokens(to)).toHaveLength(1);
+    expect(selectionOffsets(to)).toEqual({ start: 17, end: 17 });
+  });
+
+  it('turns Windows line endings into lines', () => {
+    const editor = pasteEditor();
+
+    paste(editor, 'prop("Price") +\r\n prop("Amount")\r2');
+    expect(editorSource(editor)).toBe('prop("Price") +\n prop("Amount")\n2');
+    expect(editor.children).toHaveLength(3);
+    expect(tokens(editor)).toHaveLength(2);
+  });
+
+  it('replaces a selection that covers tokens', () => {
+    const editor = pasteEditor('prop("Price") + prop("Amount")');
+
+    Transforms.select(editor, []);
+    paste(editor, 'Notes');
+    expect(editorSource(editor)).toBe('prop("Notes")');
+    expect(tokens(editor).map((token) => token.ref)).toEqual(['Notes']);
+  });
+
+  it('deletes the selection on an empty paste', () => {
+    const editor = pasteEditor('1 + prop("Price")');
+
+    Transforms.select(editor, []);
+    editor.insertData({ types: ['text/plain'], getData: () => '' } as unknown as DataTransfer);
+    expect(editorSource(editor)).toBe('');
+  });
+
+  it('ignores a paste with no plain text', () => {
+    const editor = pasteEditor('1');
+
+    editor.insertData({ types: ['text/html'], getData: () => '' } as unknown as DataTransfer);
+    expect(editorSource(editor)).toBe('1');
+  });
+
+  it('pastes between two tokens', () => {
+    const editor = pasteEditor('prop("Price")prop("Amount")', 13);
+
+    paste(editor, ' * ');
+    expect(editorSource(editor)).toBe('prop("Price") * prop("Amount")');
+    expect(tokens(editor)).toHaveLength(2);
+  });
+
+  it('pastes bare names and curly quotes as tokens at the caret', () => {
+    const editor = pasteEditor('round(, 2)', 6);
+
+    paste(editor, 'Price * prop(“Amount”)');
+    expect(editorSource(editor)).toBe('round(prop("Price") * prop("Amount"), 2)');
+    expect(tokens(editor).map((token) => token.ref)).toEqual(['Price', 'Amount']);
+    expect(selectionOffsets(editor)).toEqual({ start: 36, end: 36 });
+  });
+
+  it('undoes a paste in one step', () => {
+    const editor = pasteEditor('1 + ');
+
+    paste(editor, 'Price *\nAmount');
+    expect(editorSource(editor)).toBe('1 + prop("Price") *\nprop("Amount")');
+    editor.undo();
+    expect(editorSource(editor)).toBe('1 + ');
+    expect(tokens(editor)).toHaveLength(0);
+    editor.redo();
+    expect(editorSource(editor)).toBe('1 + prop("Price") *\nprop("Amount")');
+    expect(tokens(editor)).toHaveLength(2);
+  });
+
+  it('copies and pastes back the same formula twice over', () => {
+    const source = 'pi() * prop("Amount") ^ 2';
+    const editor = pasteEditor(source);
+    const first = copyAll(editor);
+
+    Editor.deleteFragment(editor);
+    paste(editor, first);
+    const second = copyAll(editor);
+
+    Editor.deleteFragment(editor);
+    paste(editor, second);
+    expect(second).toBe(source);
+    expect(editorSource(editor)).toBe(source);
+    expect(tokens(editor)).toHaveLength(1);
   });
 });

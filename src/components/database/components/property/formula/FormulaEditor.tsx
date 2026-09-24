@@ -284,12 +284,14 @@ export function FormulaEditor({
   const acceptSuggestion = useCallback(
     (suggestion: Suggestion) => {
       const { text, caretOffset } = suggestionInsertion(suggestion, schema);
-      const end = inputRef.current?.selection()?.end ?? caret;
+      let end = inputRef.current?.selection()?.end ?? caret;
 
+      // With the caret mid-word, the suggestion replaces the whole word.
+      while (end < value.length && /[A-Za-z0-9_]/.test(value[end])) end += 1;
       inputRef.current?.replaceRange(currentWord.start, end, text, caretOffset);
       setSuggestionsDismissed(true);
     },
-    [caret, currentWord.start, schema]
+    [caret, currentWord.start, schema, value]
   );
 
   const handleKeyDown = useCallback(

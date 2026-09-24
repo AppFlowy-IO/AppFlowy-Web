@@ -1,4 +1,4 @@
-import { FORMULA_BUILTINS, FORMULA_FUNCTIONS } from '@/application/database-yjs/fields/formula';
+import { FORMULA_BUILTINS, FORMULA_FUNCTIONS, Token, tokenize } from '@/application/database-yjs/fields/formula';
 
 /**
  * Pasted formulas often come from somewhere that is not our editor: a chat or
@@ -35,7 +35,7 @@ function straightenPropQuotes(text: string): string {
   return text.replace(/\bprop\(\s*[“”‘’]([^“”‘’\n]*)[“”‘’]\s*\)/g, (_, name: string) => `prop(${quote(name)})`);
 }
 
-/** End of the string literal or block comment starting at `index`, or -1 when none starts there. */
+/** End of the string literal, curly-quoted text or block comment starting at `index`, or -1 when none starts there. */
 function skipLiteral(text: string, index: number): number {
   const ch = text[index];
 
@@ -49,6 +49,15 @@ function skipLiteral(text: string, index: number): number {
     return Math.min(end + 1, text.length);
   }
 
+  // Curly quotes that were not a prop() argument still read as quoted text.
+  if (ch === '“' || ch === '‘') {
+    const closeMark = ch === '“' ? '”' : '’';
+    let end = index + 1;
+
+    while (end < text.length && text[end] !== closeMark && text[end] !== '\n') end += 1;
+    return Math.min(end + 1, text.length);
+  }
+
   if (ch === '/' && text[index + 1] === '*') {
     const close = text.indexOf('*/', index + 2);
 
@@ -58,14 +67,61 @@ function skipLiteral(text: string, index: number): number {
   return -1;
 }
 
+/**
+ * Variable names bound by `let(name, value, body)` and
+ * `lets(name1, value1, ..., body)`; those are variables, not properties.
+ */
+function boundVariables(text: string): Set<string> {
+  const bound = new Set<string>();
+  let tokens: Token[];
+
+  try {
+    tokens = tokenize(text, true);
+  } catch {
+    return bound;
+  }
+
+  tokens.forEach((token, index) => {
+    const open = tokens[index + 1];
+
+    if (token.kind !== 'ident' || (token.value !== 'let' && token.value !== 'lets')) return;
+    if (open?.kind !== 'punct' || open.value !== '(') return;
+    // Split the call's arguments at its own top-level commas.
+    const args: Token[][] = [[]];
+    let depth = 0;
+
+    for (const next of tokens.slice(index + 2)) {
+      if (next.kind === 'punct' && (next.value === '(' || next.value === '[')) depth += 1;
+      if (next.kind === 'punct' && (next.value === ')' || next.value === ']')) {
+        if (depth === 0) break;
+        depth -= 1;
+      }
+
+      if (depth === 0 && next.kind === 'punct' && next.value === ',') args.push([]);
+      else args[args.length - 1].push(next);
+    }
+
+    // Names sit at the even positions before the body (the last argument).
+    args.slice(0, -1).forEach((arg, position) => {
+      if (position % 2 === 0 && arg.length === 1 && arg[0].kind === 'ident') bound.add(arg[0].value);
+    });
+  });
+
+  return bound;
+}
+
 /** Bare property names → `prop("Name")`; longest name wins, strings and comments untouched. */
 function wrapBareNames(text: string, names: string[]): string {
   const counts = new Map<string, number>();
+  const variables = boundVariables(text);
 
   names.forEach((name) => counts.set(name, (counts.get(name) ?? 0) + 1));
   // A name shared by several properties could mean any of them; leave it for the user to pick.
   const candidates = [...counts.keys()]
-    .filter((name) => counts.get(name) === 1 && name.trim() === name && name !== '' && !RESERVED.has(name))
+    .filter(
+      (name) =>
+        counts.get(name) === 1 && name.trim() === name && name !== '' && !RESERVED.has(name) && !variables.has(name)
+    )
     .sort((a, b) => b.length - a.length);
 
   if (candidates.length === 0) return text;

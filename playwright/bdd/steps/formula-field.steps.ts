@@ -545,8 +545,35 @@ When('I copy the whole formula', async ({ page }) => {
   });
 });
 
+When('I copy the selected formula', async ({ page }) => {
+  await formulaInput(page).evaluate((element) => {
+    const data = new DataTransfer();
+
+    element.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }));
+    element.setAttribute('data-copied', data.getData('text/plain'));
+  });
+});
+
 Then(/^the copied formula is "(.*)"$/, async ({ page }, expression: string) => {
   await expect(formulaInput(page)).toHaveAttribute('data-copied', expression);
+});
+
+Then('the copied formula is:', async ({ page }, expression: string) => {
+  await expect(formulaInput(page)).toHaveAttribute('data-copied', expression);
+});
+
+Then('the formula editor contains:', async ({ page }, expression: string) => {
+  await expect(formulaInput(page)).toHaveAttribute('data-value', expression);
+});
+
+// Pastes back what "I copy the whole formula" copied, as plain text.
+When('I paste the copied formula into the formula editor', async ({ page }) => {
+  await formulaInput(page).evaluate((element) => {
+    const data = new DataTransfer();
+
+    data.setData('text/plain', element.getAttribute('data-copied') ?? '');
+    element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
 });
 
 When(/^I paste "(.*)" into the formula editor$/, async ({ page }, text: string) => {
