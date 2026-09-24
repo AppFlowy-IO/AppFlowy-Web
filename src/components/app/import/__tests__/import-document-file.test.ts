@@ -109,7 +109,12 @@ describe('importDocumentFile', () => {
     getStatus.mockResolvedValue({ task_id: 'task-1', status: 'Failed', error: 'run OCR on it before importing' });
 
     await expect(
-      importDocumentFile({ workspaceId: WORKSPACE_ID, parentViewId: PARENT_VIEW_ID, file: file('scan.pdf'), format: 'pdf' })
+      importDocumentFile({
+        workspaceId: WORKSPACE_ID,
+        parentViewId: PARENT_VIEW_ID,
+        file: file('scan.pdf'),
+        format: 'pdf',
+      })
     ).rejects.toThrow('run OCR on it before importing');
     expect(cancelTask).toHaveBeenCalledWith('task-1');
   });
@@ -206,7 +211,55 @@ describe('importDocumentFiles', () => {
     expect(result.aborted).toBe(false);
     expect(result.items).toEqual([
       { fileName: 'a.docx', viewId: 'view-1' },
-      { fileName: 'b.docx', error: '3 import tasks are pending' },
+      { fileName: 'b.docx', error: '3 import tasks are pending', code: 1046 },
+    ]);
+    expect(createTask).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['request', 'worker'])(
+    'stops further uploads when a %s reports exhausted workspace storage',
+    async (stage) => {
+      const message = 'Workspace storage is full. Upgrade this workspace to Pro for unlimited storage.';
+
+      if (stage === 'request') {
+        createTask.mockRejectedValueOnce({ code: 1028, message });
+      } else {
+        getStatus.mockResolvedValueOnce({ task_id: 'task-a.pdf', status: 'Failed', error: message, error_code: 1028 });
+      }
+
+      const result = await importDocumentFiles({
+        workspaceId: WORKSPACE_ID,
+        parentViewId: PARENT_VIEW_ID,
+        files: [file('a.pdf'), file('b.pdf')],
+        format: 'pdf',
+      });
+
+      expect(result).toEqual({ items: [{ fileName: 'a.pdf', error: message, code: 1028 }], aborted: false });
+      expect(createTask).toHaveBeenCalledTimes(1);
+      expect(upload).toHaveBeenCalledTimes(stage === 'request' ? 0 : 1);
+    }
+  );
+
+  it('preserves attachment-size errors and continues with the next file', async () => {
+    getStatus
+      .mockResolvedValueOnce({
+        task_id: 'task-a.docx',
+        status: 'Failed',
+        error: 'Attachment exceeds 7 MiB',
+        error_code: 1037,
+      })
+      .mockResolvedValueOnce({ task_id: 'task-b.docx', status: 'Completed', view_id: 'view-b' });
+
+    const result = await importDocumentFiles({
+      workspaceId: WORKSPACE_ID,
+      parentViewId: PARENT_VIEW_ID,
+      files: [file('a.docx'), file('b.docx')],
+      format: 'docx',
+    });
+
+    expect(result.items).toEqual([
+      { fileName: 'a.docx', error: 'Attachment exceeds 7 MiB', code: 1037 },
+      { fileName: 'b.docx', viewId: 'view-b' },
     ]);
     expect(createTask).toHaveBeenCalledTimes(2);
   });

@@ -119,11 +119,15 @@ describe('ImportDialog document file tiles', () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(toast.error).toHaveBeenCalledWith(
-      expect.stringContaining('importPanel.failedFile:{"name":"scan.pdf","reason":"this PDF has no selectable text; run OCR on it before importing"')
+      expect.stringContaining(
+        'importPanel.failedFile:{"name":"scan.pdf","reason":"this PDF has no selectable text; run OCR on it before importing"'
+      )
     );
     expect(toast.success).toHaveBeenCalledWith('importPanel.success');
     expect(toast.warning).toHaveBeenCalledWith(
-      expect.stringContaining('importPanel.importedWithWarnings:{"name":"report.pdf","summary":"Images were not imported"')
+      expect.stringContaining(
+        'importPanel.importedWithWarnings:{"name":"report.pdf","summary":"Images were not imported"'
+      )
     );
     // Cancelled mid-batch: the dialog stays open so the third file can be retried.
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
@@ -140,7 +144,66 @@ describe('ImportDialog document file tiles', () => {
 
     await waitFor(() => expect(importDocs).toHaveBeenCalledTimes(1));
     expect(importDocs.mock.calls[0][0].files).toEqual([small]);
-    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('importPanel.fileTooLarge:{"name":"big.pdf","limit":20'));
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining('importPanel.fileTooLarge:{"name":"big.pdf","limit":20')
+    );
+  });
+
+  it.each([1028, 1015])(
+    'shows a storage prompt for quota code %s even alongside an earlier conversion failure',
+    async (code) => {
+      importDocs.mockResolvedValue({
+        items: [
+          { fileName: 'broken.pdf', error: 'Run OCR before importing' },
+          { fileName: 'report.pdf', error: 'Server quota message', code },
+        ],
+        aborted: false,
+      });
+      const { onOpenChange } = renderDialog();
+
+      pick('import-pdf-input', [
+        new File(['x'], 'broken.pdf'),
+        new File(['x'], 'report.pdf'),
+        new File(['x'], 'next.pdf'),
+      ]);
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('importPanel.storageLimitExceeded'));
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Run OCR before importing'));
+      expect(onOpenChange).not.toHaveBeenCalledWith(false);
+      expect(toView).not.toHaveBeenCalled();
+    }
+  );
+
+  it('keeps the dialog open when the last file hits the storage limit after a successful import', async () => {
+    importDocs.mockResolvedValue({
+      items: [
+        { fileName: 'first.docx', viewId: 'view-first' },
+        { fileName: 'second.docx', error: 'Quota', code: 1028 },
+      ],
+      aborted: false,
+    });
+    const { onOpenChange } = renderDialog();
+
+    pick('import-docx-input', [new File(['x'], 'first.docx'), new File(['x'], 'second.docx')]);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('importPanel.storageLimitExceeded'));
+    expect(toast.success).toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(toView).not.toHaveBeenCalled();
+  });
+
+  it.each([1017, 1037])('does not mislabel error code %s as exhausted workspace storage', async (code) => {
+    importDocs.mockResolvedValue({
+      items: [{ fileName: 'report.pdf', error: 'Specific server error', code }],
+      aborted: false,
+    });
+    renderDialog();
+
+    pick('import-pdf-input', [new File(['x'], 'report.pdf')]);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Specific server error'));
+    expect(toast.error).not.toHaveBeenCalledWith('importPanel.storageLimitExceeded');
   });
 
   it('shows the batch counter and lets the close button cancel the batch', async () => {

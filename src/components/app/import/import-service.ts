@@ -29,7 +29,7 @@ import {
 import { parsedBlockToSlateElement } from '@/components/app/import/markdown-to-blocks';
 // Import failures arrive either as `Error`s or as `{ code, message }` rejections from the
 // HTTP layer; `getErrorMessage` normalises both.
-import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
+import { getAPIErrorCode, getErrorMessage, isAPIErrorCode, isStorageLimitError } from '@/utils/errors';
 import { calculateMd5 } from '@/utils/md5';
 
 const CSV_POLL_INTERVAL_MS = 1500;
@@ -50,10 +50,7 @@ export const DOCUMENT_FILE_MAX_BYTES: Record<DocumentFileImportFormat, number> =
 };
 
 export class DocumentFileTooLargeError extends Error {
-  constructor(
-    public readonly fileName: string,
-    public readonly limitBytes: number
-  ) {
+  constructor(public readonly fileName: string, public readonly limitBytes: number) {
     super(`${fileName} exceeds the ${Math.round(limitBytes / 1024 / 1024)} MB limit`);
     this.name = 'DocumentFileTooLargeError';
   }
@@ -150,6 +147,14 @@ export class ImportAbortError extends Error {
   }
 }
 
+/** Preserve the worker's error code just like a rejected HTTP request. */
+class ImportTaskError extends Error {
+  constructor(message: string, public readonly code?: number) {
+    super(message);
+    this.name = 'ImportTaskError';
+  }
+}
+
 /**
  * Import a CSV file as a new Grid (database) page. Server handles parsing.
  *
@@ -231,10 +236,12 @@ export interface ImportFileBatchItem {
   /** Set when the file imported successfully. */
   viewId?: string;
   /**
-   * Set when the file failed; the batch continued with the remaining files. Empty when the
-   * failure carried no message — wording is the caller's job, so it stays translatable.
+   * Set when the file failed. Empty when the failure carried no message — wording is the
+   * caller's job, so it stays translatable.
    */
   error?: string;
+  /** Application error code, when the API or worker supplied one. */
+  code?: number;
   /** Content the converter could not carry over, when the server reported any. */
   warnings?: ImportDiagnosticsWarning[];
 }
@@ -262,9 +269,8 @@ export type ImportCsvBatchResult = ImportFileBatchResult;
  * past the cap fail with `TooManyImportTask`.
  *
  * One bad file does not sink the batch — its error is recorded and the remaining files still
- * import. The exception is `TooManyImportTask`, which is about the account rather than the file:
- * retrying it per file would burn a round trip each and then blame every file for a queue the
- * user only has to wait out, so the batch stops and reports the server's message once.
+ * import. Queue capacity and workspace storage failures stop the batch so the user can address
+ * the limit before uploading more files.
  *
  * Aborting via `signal` likewise stops the batch and returns what finished, rather than throwing,
  * so the caller can still report the pages that were created.
@@ -287,14 +293,17 @@ async function importFilesSequentially(
     try {
       const { viewId, warnings } = await importOne(file);
 
-      items.push(warnings && warnings.length > 0 ? { fileName: file.name, viewId, warnings } : { fileName: file.name, viewId });
+      items.push(
+        warnings && warnings.length > 0 ? { fileName: file.name, viewId, warnings } : { fileName: file.name, viewId }
+      );
     } catch (err) {
       if (err instanceof ImportAbortError) return { items, aborted: true };
 
-      items.push({ fileName: file.name, error: getErrorMessage(err, '') });
+      const code = getAPIErrorCode(err);
 
-      // Batch-fatal: the pending-task cap belongs to the user, not to this file.
-      if (isAPIErrorCode(err, TOO_MANY_IMPORT_TASK_CODE)) return { items, aborted: false };
+      items.push({ fileName: file.name, error: getErrorMessage(err, ''), ...(code === undefined ? {} : { code }) });
+
+      if (isAPIErrorCode(err, TOO_MANY_IMPORT_TASK_CODE) || isStorageLimitError(err)) return { items, aborted: false };
     }
   }
 
@@ -367,7 +376,7 @@ export async function importDocumentFile(input: ImportDocumentFileInput): Promis
       }
 
       if (status.status === 'Failed' || status.status === 'Expire' || status.status === 'Cancel') {
-        throw new Error(status.error || `${format} import ${status.status.toLowerCase()}`);
+        throw new ImportTaskError(status.error || `${format} import ${status.status.toLowerCase()}`, status.error_code);
       }
 
       await sleep(DOCUMENT_POLL_INTERVAL_MS, signal);

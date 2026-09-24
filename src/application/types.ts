@@ -2355,6 +2355,8 @@ export interface DocumentFileImportStatusResponse {
   status: ImportTaskStatus;
   view_id?: string;
   error?: string;
+  /** Stable application error code; older workers report only the message. */
+  error_code?: number;
   diagnostics?: ImportDiagnostics;
 }
 

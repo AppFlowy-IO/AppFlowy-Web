@@ -24,6 +24,7 @@ import {
   populateDocumentWithMarkdown,
   stripFileExtension,
 } from '@/components/app/import/import-service';
+import { isStorageLimitError } from '@/utils/errors';
 
 const MARKDOWN_ACCEPT = '.md,.markdown,.txt,text/markdown,text/plain';
 const CSV_ACCEPT = '.csv,text/csv';
@@ -171,9 +172,11 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
     (items: ImportFileBatchItem[], aborted: boolean, total: number): string | null => {
       const importedViewIds: string[] = [];
       const failed: ImportFileBatchItem[] = [];
+      let storageLimitReached = false;
 
       for (const item of items) {
         if (item.viewId) importedViewIds.push(item.viewId);
+        else if (isStorageLimitError(item)) storageLimitReached = true;
         else failed.push(item);
       }
 
@@ -187,13 +190,20 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
           toast.success(t('importPanel.partialSuccess', { success: importedViewIds.length, count: total }));
         } else {
           toast.success(
-            importedViewIds.length === 1 ? t('importPanel.success') : t('importPanel.successCount', { count: importedViewIds.length })
+            importedViewIds.length === 1
+              ? t('importPanel.success')
+              : t('importPanel.successCount', { count: importedViewIds.length })
           );
         }
       }
 
       // Files that were attempted and broke are reported even when the batch was cancelled
       // afterwards: cancelling hides the files never started, not the ones that already failed.
+      // Keep a storage denial visible even when earlier files had unrelated conversion failures.
+      if (storageLimitReached) {
+        toast.error(t('importPanel.storageLimitExceeded'));
+      }
+
       if (failed.length === 1) {
         toast.error(
           t('importPanel.failedFile', {
@@ -228,7 +238,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
 
       // Files left unattempted mean there is still work here — keep the dialog open so the
       // user can retry them instead of navigating away from a half-finished batch.
-      if (!attemptedAll || importedViewIds.length === 0) return null;
+      if (storageLimitReached || !attemptedAll || importedViewIds.length === 0) return null;
 
       return importedViewIds[0];
     },
@@ -239,7 +249,10 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
     async (
       format: BatchImportFormat,
       files: File[],
-      run: (signal: AbortSignal, onFileStart: (index: number, total: number) => void) => Promise<{ items: ImportFileBatchItem[]; aborted: boolean }>
+      run: (
+        signal: AbortSignal,
+        onFileStart: (index: number, total: number) => void
+      ) => Promise<{ items: ImportFileBatchItem[]; aborted: boolean }>
     ) => {
       if (!workspaceId || files.length === 0) return;
       const controller = new AbortController();
@@ -249,7 +262,9 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
       setActive(format);
       setBatchProgress({ current: 1, total: files.length });
       try {
-        const { items, aborted } = await run(controller.signal, (index, total) => setBatchProgress({ current: index + 1, total }));
+        const { items, aborted } = await run(controller.signal, (index, total) =>
+          setBatchProgress({ current: index + 1, total })
+        );
         const firstViewId = reportBatch(items, aborted, files.length);
 
         if (!firstViewId) return;
@@ -501,7 +516,12 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
         {/* The visible counter sits inside a disabled button, which assistive tech skips, so the
             batch reports its progress from a live region that stays in the accessibility tree. */}
         <span aria-live='polite' className='sr-only' data-testid='import-csv-progress-announcement'>
-          {active && active !== 'markdown' && active !== 'notion' && active !== 'confluence' && batchProgress && batchProgress.total > 1
+          {active &&
+          active !== 'markdown' &&
+          active !== 'notion' &&
+          active !== 'confluence' &&
+          batchProgress &&
+          batchProgress.total > 1
             ? t('importPanel.importingProgress', { current: batchProgress.current, total: batchProgress.total })
             : ''}
         </span>

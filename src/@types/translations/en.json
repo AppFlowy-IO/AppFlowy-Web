@@ -288,6 +288,7 @@
     "pdf": "PDF",
     "importedWithWarnings": "{{name}} imported, but some content could not be converted: {{summary}}",
     "fileTooLarge": "{{name}} is larger than the {{limit}} MB limit",
+    "storageLimitExceeded": "This workspace does not have enough storage for this import. Upgrade the workspace plan or contact your workspace administrator.",
     "csv": "CSV",
     "database": "Database",
     "success": "Imported successfully",
