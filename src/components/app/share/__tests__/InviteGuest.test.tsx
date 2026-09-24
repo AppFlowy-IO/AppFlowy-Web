@@ -14,6 +14,10 @@ const mockSharePageToGroups = jest.fn();
 const mockNotifyError = jest.fn();
 const mockNotifySuccess = jest.fn();
 
+jest.mock('@/components/app/hooks/useServerInfo', () => ({
+  useIsOfficialHosted: () => false,
+}));
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -50,9 +54,6 @@ jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'workspace-1',
 }));
 
-jest.mock('@/utils/subscription', () => ({
-  isAppFlowyHosted: () => false,
-}));
 
 jest.mock('@/components/ui/popover', () => ({
   Popover: ({ children }: { children: ReactNode }) => <>{children}</>,

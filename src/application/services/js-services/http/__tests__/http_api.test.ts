@@ -45,7 +45,8 @@ jest.mock('@/application/session/token', () => ({
 }));
 
 jest.mock('@/utils/runtime-config', () => ({
-  getConfigValue: jest.fn((_: string, defaultValue: string | undefined) => defaultValue),
+  getConfigValue: jest.fn((key: string, defaultValue: string | undefined) =>
+    key === 'APPFLOWY_BASE_URL' ? 'https://test.appflowy.cloud' : defaultValue),
   isLocalDevelopment: () => false,
 }));
 
@@ -61,7 +62,7 @@ const baseConfig = {
 };
 
 describe('http_api client (unit)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.resetModules();
     localStorage.clear();
     mockAxiosCreate.mockClear();
@@ -75,6 +76,11 @@ describe('http_api client (unit)', () => {
     mockAxiosInstance.delete.mockReset();
     mockGetTokenParsed.mockReset();
     mockGetTokenParsed.mockReturnValue(null);
+    const { updateServerInfo } = await import('@/utils/server-info');
+
+    updateServerInfo('https://test.appflowy.cloud', {
+      status: 'available', info: { enable_page_history: true, self_hosted: false },
+    });
   });
 
   it('keeps Pro guidance for JSON envelope and HTTP plan rejections', async () => {
@@ -100,6 +106,34 @@ describe('http_api client (unit)', () => {
       httpStatus: 403,
     });
   });
+
+  it.each(['https://selfhost.example.com', 'http://localhost:8000'])(
+    'preserves self-hosted limit errors from envelopes, HTTP errors and uploads on %s', async (baseUrl) => {
+      const { getConfigValue } = await import('@/utils/runtime-config');
+
+      jest.mocked(getConfigValue).mockImplementation((key, fallback) => key === 'APPFLOWY_BASE_URL' ? baseUrl : fallback);
+      const { updateServerInfo } = await import('@/utils/server-info');
+
+      updateServerInfo(baseUrl, { status: 'available', info: { enable_page_history: true, self_hosted: true } });
+      const core = await import('../core');
+      const { uploadFile } = await import('../file-api');
+
+      core.initAPIService({ ...baseConfig, baseURL: baseUrl });
+      const payload = { code: 1037, message: 'Your administrator limits files to 100 MB' };
+
+      mockAxiosInstance.post.mockResolvedValue({ status: 200, data: payload });
+      await expect(core.executeAPIRequest(() => core.getAxios()?.post('/upload'))).rejects.toMatchObject(payload);
+      await expect(core.executeAPIVoidRequest(() => core.getAxios()?.post('/upload'))).rejects.toMatchObject(payload);
+
+      mockAxiosInstance.put.mockRejectedValue({ isAxiosError: true, response: { status: 413, data: payload } });
+      await expect(uploadFile('workspace-id', 'view-id', new File(['abc'], 'test.txt'))).rejects.toMatchObject(payload);
+
+      mockAxiosInstance.put.mockRejectedValue({ isAxiosError: true, response: { status: 413, data: '' } });
+      await expect(uploadFile('workspace-id', 'view-id', new File(['abc'], 'test.txt'))).rejects.toMatchObject({
+        message: 'File size is too large.',
+      });
+    }
+  );
 
   it.each([200, 403])('rejects a JSON plan error returned as a PDF Blob with HTTP %s', async (status) => {
     const core = await import('../core');
@@ -165,7 +199,21 @@ describe('http_api client (unit)', () => {
     expect(mockAxiosInstance.put).not.toHaveBeenCalled();
   });
 
-  it.each(['part', 'completion'])('surfaces multipart %s quota denials without retrying them', async (phase) => {
+  it.each([
+    { phase: 'part', hosted: true },
+    { phase: 'completion', hosted: true },
+    { phase: 'part', hosted: false },
+    { phase: 'completion', hosted: false },
+  ])('surfaces multipart $phase quota denials without retrying them (cloud: $hosted)', async ({ phase, hosted }) => {
+    if (!hosted) {
+      const { getConfigValue } = await import('@/utils/runtime-config');
+
+      jest.mocked(getConfigValue).mockImplementation((key, fallback) =>
+        key === 'APPFLOWY_BASE_URL' ? 'https://selfhost.example.com' : fallback);
+      const { updateServerInfo } = await import('@/utils/server-info');
+
+      updateServerInfo('https://selfhost.example.com', { status: 'available', info: { enable_page_history: true, self_hosted: true } });
+    }
     const core = await import('../core');
     const { uploadFileMultipart } = await import('../multipart-upload');
     core.initAPIService(baseConfig);
@@ -184,7 +232,7 @@ describe('http_api client (unit)', () => {
 
     await expect(uploadFileMultipart({ workspaceId: 'workspace-id', viewId: 'view-id', file })).rejects.toMatchObject({
       code: 1028,
-      message: 'Upgrade this workspace to Pro to use this feature or increase its limits.',
+      message: hosted ? 'Upgrade this workspace to Pro to use this feature or increase its limits.' : 'Storage limit reached',
     });
     expect(mockAxiosInstance.put).toHaveBeenCalledTimes(phase === 'part' ? 1 : 2);
   });

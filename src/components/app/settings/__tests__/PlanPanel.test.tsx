@@ -7,6 +7,8 @@ import { AuthInternalContext } from '@/components/app/contexts/AuthInternalConte
 import { resetPricingCatalogCache } from '@/components/app/hooks/usePricingCatalog';
 import { PlanPanel } from '@/components/app/settings/PlanPanel';
 import UpgradePlan from '@/components/billing/UpgradePlan';
+import { getConfigValue } from '@/utils/runtime-config';
+import { updateServerInfo } from '@/utils/server-info';
 import { renderDate } from '@/utils/time';
 
 import { BillingTestProviders, PERIOD_END, freeUsage, proUsage, translate, workspaceStatus } from './billing-test-utils';
@@ -37,6 +39,10 @@ function renderPanel() {
 describe('PlanPanel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available',
+      info: { enable_page_history: true, self_hosted: false },
+    });
     resetPricingCatalogCache();
     window.open = jest.fn();
     api.getWorkspaceSubscriptionStatus.mockResolvedValue([]);
@@ -121,7 +127,6 @@ describe('PlanPanel', () => {
         value={{
           currentWorkspaceId: 'workspace-1',
           isAuthenticated: true,
-          isOfficialHosted: true,
           onChangeWorkspace: async () => undefined,
         }}
       >

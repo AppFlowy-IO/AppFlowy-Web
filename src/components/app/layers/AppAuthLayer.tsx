@@ -13,7 +13,6 @@ import { Log } from '@/utils/log';
 import { ClientCompatibilityProvider } from '../compatibility/ClientCompatibility';
 import { AuthInternalContext, AuthInternalContextType } from '../contexts/AuthInternalContext';
 import { useServerInfo } from '../hooks/useServerInfo';
-import { isOfficialHostedServer } from '@/utils/subscription';
 
 interface AppAuthLayerProps {
   children: React.ReactNode;
@@ -73,11 +72,9 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const [userWorkspaceInfo, setUserWorkspaceInfo] = useState<UserWorkspaceInfo | undefined>(undefined);
   const [workspaceInfoError, setWorkspaceInfoError] = useState<Error | undefined>(undefined);
   const serverInfo = useServerInfo(!!isAuthenticated, defaultConfig.baseURL);
-  const enablePageHistory = serverInfo.info?.enable_page_history ?? (serverInfo.status === 'unavailable' ? true : undefined);
+  const enablePageHistory =
+    serverInfo.info?.enable_page_history ?? (serverInfo.status === 'unavailable' ? true : undefined);
   const aiEnabled = serverInfo.status === 'loading' ? false : serverInfo.info?.ai_enabled ?? true;
-  // Billing exists only on the official AppFlowy cloud. Unknown server info
-  // grants no pricing surface, matching the desktop client.
-  const isOfficialHosted = isOfficialHostedServer(serverInfo);
   const maxUpdateBytes = serverInfo.info?.max_update_bytes;
   const maxSlowSyncUpdateBytes = serverInfo.info?.max_slow_sync_update_bytes;
   const syncLimitsLoaded = serverInfo.status === 'available';
@@ -314,7 +311,6 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       isAuthenticated: !!isAuthenticated,
       enablePageHistory,
       aiEnabled,
-      isOfficialHosted,
       maxUpdateBytes,
       maxSlowSyncUpdateBytes,
       syncLimitsLoaded,
@@ -329,7 +325,6 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       isAuthenticated,
       enablePageHistory,
       aiEnabled,
-      isOfficialHosted,
       maxUpdateBytes,
       maxSlowSyncUpdateBytes,
       syncLimitsLoaded,
