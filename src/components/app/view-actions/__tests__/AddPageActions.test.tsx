@@ -14,6 +14,8 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import AddPageActions from '@/components/app/view-actions/AddPageActions';
+import { getConfigValue } from '@/utils/runtime-config';
+import { updateServerInfo } from '@/utils/server-info';
 
 import type { ReactNode } from 'react';
 
@@ -218,6 +220,10 @@ function createLinkedListUpdate(databaseDoc: YDoc): number[] {
 describe('AddPageActions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available',
+      info: { enable_page_history: true, self_hosted: false },
+    });
     mockExperimentalDatabaseViewCreationEnabled = false;
     mockAddPage.mockReset();
     mockAddPage.mockResolvedValue({ view_id: 'chat-id' });
