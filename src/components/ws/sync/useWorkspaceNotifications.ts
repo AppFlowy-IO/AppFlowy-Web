@@ -1,11 +1,13 @@
 import EventEmitter from 'events';
 
 import { useEffect } from 'react';
+import { toast } from 'sonner';
 
-import { APP_EVENTS } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
 import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import { notification } from '@/proto/messages';
+import { getErrorMessage } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
 type WorkspaceNotification = notification.IWorkspaceNotification;
@@ -15,6 +17,16 @@ function dispatchNotifications(
   eventEmitter: EventEmitter,
   n: WorkspaceNotification
 ) {
+  if (n.storageLimitExceeded?.code === ERROR_CODE.FILE_STORAGE_LIMIT_EXCEEDED) {
+    const message = getErrorMessage(n.storageLimitExceeded);
+
+    if (message) {
+      // Deduplicate automatic retries. The edit remains in the durable outbox and the user's
+      // access stays intact so sync can resume after an upgrade or storage cleanup.
+      toast.error(message, { id: 'workspace-storage-limit-exceeded' });
+    }
+  }
+
   if (n.profileChange) {
     eventEmitter.emit(APP_EVENTS.USER_PROFILE_CHANGED, n.profileChange);
   }
