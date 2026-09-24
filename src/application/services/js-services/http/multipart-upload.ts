@@ -5,7 +5,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 
-import { getBillingErrorMessage } from '@/utils/billing-error';
+import { isWorkspaceLimitError } from '@/utils/billing-error';
 import { getErrorMessage } from '@/utils/errors';
 import {
   getAppFlowyFileUrl,
@@ -185,9 +185,8 @@ async function uploadPart(
         e_tag: response.data.data.e_tag,
       };
     } catch (error) {
-      // Plan denials are definitive until the workspace is upgraded. Retrying
-      // hides the useful server error behind a generic upload failure.
-      if (getBillingErrorMessage(error)) throw handleAPIError(error);
+      // Limits require a plan or administrator change, so retries cannot help.
+      if (isWorkspaceLimitError(error)) throw handleAPIError(error);
       lastError = error instanceof Error ? error : Object.assign(new Error(getErrorMessage(error)), handleAPIError(error));
 
       Log.debug('[uploadPart] retry', { partNumber, attempt, error: lastError.message });

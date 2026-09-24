@@ -391,6 +391,7 @@
     "errors": {
       "copied": "Error copying to clipboard",
       "responseLimit": "Your workspace has run out of free AI responses. Please ask your workspace owner to upgrade to the Pro Plan.",
+      "responseUnavailable": "Unable to generate a response. Please contact your workspace administrator.",
       "emptyMessage": "Please enter a message",
       "wait": "Please wait for the current response to finish generating"
     },

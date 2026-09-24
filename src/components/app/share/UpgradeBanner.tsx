@@ -8,9 +8,9 @@ import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as InfoIcon } from '@/assets/icons/vector.svg';
 import { BillingService } from '@/application/services/domains';
 import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
-import { isAppFlowyHosted } from '@/utils/subscription';
 
 const CLOSE_UPGRADE_LOCAL_STORAGE_KEY = 'close_upgrade_banner';
 
@@ -28,12 +28,10 @@ export function UpgradeBanner({ activeSubscriptionPlan }: { activeSubscriptionPl
     return activeSubscriptionPlan === SubscriptionPlan.Free;
   }, [activeSubscriptionPlan]);
 
-  const isOfficial = useMemo(() => {
-    return isAppFlowyHosted();
-  }, []);
+  const isOfficial = useIsOfficialHosted();
 
   const handleUpgrade = useCallback(async () => {
-    if (!currentWorkspaceId) return;
+    if (!isOfficial || !currentWorkspaceId) return;
 
     const plan = SubscriptionPlan.Pro;
 
@@ -46,7 +44,7 @@ export function UpgradeBanner({ activeSubscriptionPlan }: { activeSubscriptionPl
     } catch (e: any) {
       toast.error(e.message);
     }
-  }, [currentWorkspaceId]);
+  }, [currentWorkspaceId, isOfficial]);
 
   if (isClosed || !isOwner || !needUpgrade || !isOfficial) {
     return null;
