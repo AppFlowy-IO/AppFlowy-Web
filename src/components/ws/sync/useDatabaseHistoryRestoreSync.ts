@@ -6,6 +6,7 @@ import * as Y from 'yjs';
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { invalidateDatabaseBlobAfterRestore, prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
+import { invalidateDatabaseDependenciesAfterRestore } from '@/application/database-yjs/restore-dependencies';
 import { captureDatabaseStorageFence, db, deleteCollabDB, matchesDatabaseStorageFence, openCollabDB, openRowCollabDBWithProvider,
   readDatabaseIdFromRowCache } from '@/application/db';
 import { DATABASE_RESTORE_MARKER_PREFIX } from '@/application/db/database-storage-fence';
@@ -249,6 +250,9 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
         });
       }
 
+      // Cross-database consumers keep their own editors and do not receive a root reset.
+      // Fence their old async computations, then let them resolve and observe the new docs.
+      invalidateDatabaseDependenciesAfterRestore();
       completed = true;
       resetPlans.current.delete(planKey);
       // Sidebar membership lives in Folder, separately from the replaced Database document.

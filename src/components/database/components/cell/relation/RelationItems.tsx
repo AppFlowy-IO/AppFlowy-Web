@@ -10,6 +10,7 @@ import {
   useDatabaseIdFromField,
 } from '@/application/database-yjs';
 import type { RelationCell, RelationCellData } from '@/application/database-yjs/cell.type';
+import { useDatabaseDependencyRestoreRevision } from '@/application/database-yjs/restore-dependencies';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import {
@@ -80,6 +81,7 @@ function RelationItemsForDatabase({
 }: RelationItemsProps & { relatedDatabaseId: string | undefined }) {
   const { t } = useTranslation();
   const context = useDatabaseContextOptional();
+  const restoreRevision = useDatabaseDependencyRestoreRevision(context?.dataSource?.type !== 'history');
   // databasePageId: The main database page ID in the folder structure
   const viewId = context?.databasePageId;
 
@@ -220,7 +222,7 @@ function RelationItemsForDatabase({
     return () => {
       cancelled = true;
     };
-  }, [getViewIdFromDatabaseId, hasRelatedRows, loadView, relatedDatabaseId]);
+  }, [getViewIdFromDatabaseId, hasRelatedRows, loadView, relatedDatabaseId, restoreRevision]);
 
   useEffect(() => {
     if (!hasRelatedRows) {
@@ -303,7 +305,7 @@ function RelationItemsForDatabase({
       rowObserverCleanups.forEach((cleanup) => cleanup());
       rowObserverCleanups.clear();
     };
-  }, [createRow, docGuid, hasRelatedRows, liveRelatedRowIds, relatedFieldId, relatedViewId, rowIds]);
+  }, [createRow, docGuid, hasRelatedRows, liveRelatedRowIds, relatedFieldId, relatedViewId, rowIds, restoreRevision]);
 
   useEffect(() => {
     handleUpdateRowIds();

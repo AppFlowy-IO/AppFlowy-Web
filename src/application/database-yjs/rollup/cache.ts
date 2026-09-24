@@ -160,6 +160,16 @@ export function subscribeRollupCache(cb: () => void) {
   };
 }
 
+/** Retire derived values and outstanding loads before notifying mounted consumers. */
+export function invalidateRollupCacheAfterRestore() {
+  relatedDocCache.clear();
+  const cells = new Set([...cache.keys(), ...inflight.keys(), ...listeners.keys()]);
+
+  cells.forEach(bumpGeneration);
+  cells.forEach((cellId) => listeners.get(cellId)?.forEach((notify) => notify({ value: '' })));
+  globalListeners.forEach((notify) => notify());
+}
+
 export function invalidateRollupCell(cellId: string) {
   bumpGeneration(cellId);
 }
@@ -219,13 +229,16 @@ async function loadRelatedDoc(viewId: string, databaseId: string, loadView?: Rel
 
   if (cached) {
     touchRelatedDocCache(cacheKey, cached);
-    return cached;
+    return cached.then((doc) => relatedDocCache.get(cacheKey) === cached ? doc : null);
   }
 
-  const promise = loadView(viewId, false, false, { databaseId, databaseMetadataOnly: true }).catch(() => {
-    relatedDocCache.delete(cacheKey);
-    return null;
-  });
+  const promise: Promise<YDoc | null> = loadView(viewId, false, false, { databaseId, databaseMetadataOnly: true })
+    .then((doc) => relatedDocCache.get(cacheKey) === promise ? doc : null)
+    .catch(() => {
+      // A rejected pre-restore request must not evict a newer replacement request.
+      if (relatedDocCache.get(cacheKey) === promise) relatedDocCache.delete(cacheKey);
+      return null;
+    });
 
   touchRelatedDocCache(cacheKey, promise);
   return promise;

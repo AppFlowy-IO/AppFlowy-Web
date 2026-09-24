@@ -1,3 +1,4 @@
+import { useDatabaseDependencyRestoreRevision } from '@/application/database-yjs/restore-dependencies';
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import {
@@ -2927,6 +2928,7 @@ function useRollupCellValue({
   const [relationRowIdsKey, setRelationRowIdsKey] = useState('');
   const [relatedObserverRevision, setRelatedObserverRevision] = useState(0);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const restoreRevision = useDatabaseDependencyRestoreRevision(fieldType === FieldType.Rollup && dataSource?.type !== 'history');
   const cellId = `${rowId}:${fieldId}`;
   const rollupOption = useMemo(() => {
     if (!field) return undefined;
@@ -2974,7 +2976,7 @@ function useRollupCellValue({
       cancelled = true;
       unsubscribe();
     };
-  }, [rollupContext, fieldType, cellId, fieldClock]);
+  }, [rollupContext, fieldType, cellId, fieldClock, restoreRevision]);
 
   useEffect(() => {
     if (!rollupContext || fieldType !== FieldType.Rollup) return;
@@ -3177,6 +3179,7 @@ function useRollupCellValue({
     cellId,
     relationRowIdsKey,
     relatedObserverRevision,
+    restoreRevision,
   ]);
 
   if (!rollupContext || fieldType !== FieldType.Rollup) return undefined;

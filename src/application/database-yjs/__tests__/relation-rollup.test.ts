@@ -1,3 +1,4 @@
+import { invalidateDatabaseDependenciesAfterRestore } from '@/application/database-yjs/restore-dependencies';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useEffect, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
@@ -818,5 +819,73 @@ describe('relation and rollup basics', () => {
     const value = await resultPromise;
     expect(value.value).toBe('Alice, Bob');
     expect(value.list).toEqual(['Alice', 'Bob']);
+  });
+});
+
+
+describe('cross-database restore caches', () => {
+  it('reloads relation titles, formula titles, and rollups across repeated target replacements', async () => {
+    const suffix = 'dependent-restores';
+    const rollupId = 'restored-sum';
+    const fixture = createFixture({ suffix, rollups: [{ fieldId: rollupId, targetFieldId: `score-${suffix}`,
+      calculationType: CalculationType.Sum, showAs: RollupDisplayMode.Calculated }] });
+    let target = (await fixture.loadView(fixture.relatedViewId))!;
+    let rows = new Map<string, YDoc>();
+    for (const id of fixture.relatedRowIds) rows.set(id, (await fixture.createRow(id))!);
+    const loadView = jest.fn(async () => target);
+    const createRow = async (key: string) => rows.get(key.split('_rows_').pop()!)!;
+    const context = { ...fixture, row: fixture.baseRow, rowId: fixture.baseRowId,
+      database: fixture.baseDatabase, fieldId: fixture.relationFieldId, loadView, createRow };
+    const label = { ...context, relatedRowId: fixture.relatedRowIds[0] };
+    const rollup = { ...context, fieldId: rollupId,
+      rollupField: fixture.baseDatabase.get(YjsDatabaseKey.fields).get(rollupId) };
+    const read = async (title: string, sum: number) => {
+      readRelationCellText(context);
+      ensureRelationGroupLabel(label);
+      await waitFor(() => {
+        expect(readRelationCellText(context)).toBe(title);
+        expect(readRelationGroupLabel(label)).toBe(title.split(',')[0]);
+        expect(readFormulaRelationTitle(label)).toBe(title.split(',')[0]);
+      });
+      expect((await readRollupCell(rollup)).rawNumeric).toBe(sum);
+    };
+    await read('Alice, Bob', 30);
+    const initialLoads = loadView.mock.calls.length;
+    for (const [generation, amount] of [[1, 7], [2, 12]]) {
+      const fields = new Y.Map() as YDatabaseFields;
+      const nameId = `restored-title-${generation}`;
+      fields.set(nameId, createTextField(nameId, 'Name', true));
+      fields.set(fixture.scoreFieldId, createNumberField(fixture.scoreFieldId, 'Score'));
+      target.destroy();
+      rows.forEach((doc) => doc.destroy());
+      target = createDatabaseDoc(fixture.relatedDatabaseId, fixture.relatedViewId, fields);
+      rows = new Map(fixture.relatedRowIds.map((id, index) => [id,
+        createRowDoc(id, fixture.relatedDatabaseId, {
+          [nameId]: createCell(`Restored ${generation}-${index}`, FieldType.RichText),
+          [fixture.scoreFieldId]: createCell(String(amount), FieldType.Number),
+        })]));
+      invalidateDatabaseDependenciesAfterRestore();
+      await read(`Restored ${generation}-0, Restored ${generation}-1`, amount * 2);
+    }
+    expect(loadView.mock.calls.length).toBeGreaterThan(initialLoads);
+  });
+
+  it('does not reinstall a pre-restore root promise or evict its newer replacement', async () => {
+    const fixture = createFixture({ suffix: 'stale-root-restore' });
+    const oldRoot = (await fixture.loadView(fixture.relatedViewId))!;
+    const delayed = createDeferred<YDoc>();
+    const loadView = jest.fn().mockImplementationOnce(() => delayed.promise).mockResolvedValue(oldRoot);
+    const context = { ...fixture, database: fixture.baseDatabase, row: fixture.baseRow,
+      rowId: fixture.baseRowId, fieldId: fixture.relationFieldId, loadView };
+    readRelationCellText(context);
+    await waitFor(() => expect(loadView).toHaveBeenCalledTimes(1));
+    invalidateDatabaseDependenciesAfterRestore();
+    readRelationCellText(context);
+    await waitFor(() => expect(readRelationCellText(context)).toBe('Alice, Bob'));
+    delayed.resolve(createDatabaseDoc(fixture.relatedDatabaseId, fixture.relatedViewId, new Y.Map() as YDatabaseFields));
+    await delayed.promise;
+    await Promise.resolve();
+    expect(readRelationCellText(context)).toBe('Alice, Bob');
+    expect(loadView).toHaveBeenCalledTimes(2);
   });
 });

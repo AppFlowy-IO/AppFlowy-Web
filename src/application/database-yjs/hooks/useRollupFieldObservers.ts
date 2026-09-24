@@ -18,6 +18,7 @@ import type { FormulaRowSources } from '@/application/database-yjs/formula/useFo
 import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { invalidateRelationCell } from '@/application/database-yjs/relation/cache';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
+import { useDatabaseDependencyRestoreRevision } from '@/application/database-yjs/restore-dependencies';
 import { invalidateRollupCell } from '@/application/database-yjs/rollup/cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
@@ -64,6 +65,7 @@ export function useRollupFieldObservers(
   const { dataSource, databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
   const history = dataSource?.type === 'history' || isDatabaseHistoryDocumentImmutable(databaseDoc);
   const [observerRevision, setObserverRevision] = useState(0);
+  const restoreRevision = useDatabaseDependencyRestoreRevision(!history);
 
   useEffect(() => {
     if (history) return;
@@ -471,6 +473,7 @@ export function useRollupFieldObservers(
     onConditionsChange,
     rollupWatchVersion,
     observerRevision,
+    restoreRevision,
     readOnly,
     additionalRollupFieldIds,
     observeConditions,
