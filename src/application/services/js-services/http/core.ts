@@ -3,9 +3,11 @@ import dayjs from 'dayjs';
 
 import { AFCloudConfig } from '@/application/services/services.type';
 import { getTokenParsed, invalidToken } from '@/application/session/token';
+import { getBillingErrorMessage } from '@/utils/billing-error';
 import { Log } from '@/utils/log';
 
 import { initGrantService, refreshToken } from './gotrue';
+import { resolveLocalApiBaseURL } from './local-dev-origins';
 
 let axiosInstance: AxiosInstance | null = null;
 
@@ -165,7 +167,7 @@ export function handleAPIError(error: unknown): APIError {
 
     return {
       code: errorData?.code ?? error.response.status,
-      message: errorData?.message || error.message || 'Request failed',
+      message: getBillingErrorMessage(errorData) || errorData?.message || error.message || 'Request failed',
       httpStatus: error.response.status,
       retryAfterSecs,
     };
@@ -182,7 +184,7 @@ export function handleAPIError(error: unknown): APIError {
 
     return {
       code: apiError.code,
-      message: apiError.message || 'Request failed',
+      message: getBillingErrorMessage(apiError) || apiError.message || 'Request failed',
       httpStatus: apiError.httpStatus,
       retryAfterSecs: apiError.retryAfterSecs,
     };
@@ -265,7 +267,7 @@ export async function executeAPIRequest<TResponseData = unknown>(
     // Server returned an error response
     return Promise.reject({
       code: response.data.code,
-      message: response.data.message || 'Request failed',
+      message: getBillingErrorMessage(response.data) || response.data.message || 'Request failed',
       retryAfterSecs: response.data.retry_after_secs,
     });
   } catch (error) {
@@ -314,7 +316,7 @@ export async function executeAPIVoidRequest(
 
         return Promise.reject({
           code: data.code,
-          message: data.message || 'Request failed',
+          message: getBillingErrorMessage(data) || data.message || 'Request failed',
           retryAfterSecs: data.retry_after_secs,
         });
       }
@@ -432,8 +434,17 @@ export function initAPIService(config: AFCloudConfig) {
     return;
   }
 
+  // Local development only: `pnpm dev` against a localhost cloud sends API
+  // requests to the dev server, whose proxies reach the local gateway or cloud
+  // and the billing service without CORS. Production keeps the configured URL.
+  const baseURL = resolveLocalApiBaseURL(config.baseURL);
+
+  if (baseURL !== config.baseURL) {
+    console.info(`[local-dev] API requests go through ${baseURL} (configured base: ${config.baseURL})`);
+  }
+
   axiosInstance = axios.create({
-    baseURL: config.baseURL,
+    baseURL,
     headers: {
       'Content-Type': 'application/json',
     },

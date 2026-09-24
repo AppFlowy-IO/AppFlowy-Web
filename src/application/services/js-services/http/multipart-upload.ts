@@ -5,6 +5,8 @@
 
 import { v4 as uuidv4 } from 'uuid';
 
+import { getBillingErrorMessage } from '@/utils/billing-error';
+import { getErrorMessage } from '@/utils/errors';
 import {
   getAppFlowyFileUrl,
   getMultipartAbortUrl,
@@ -14,7 +16,7 @@ import {
   getMultipartUploadPartUrl,
 } from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
-import { getAxiosInstance } from './http_api';
+import { getAxiosInstance, handleAPIError } from './core';
 import { multipartUploadStore, PersistedMultipartUpload } from './multipart-upload-store';
 import {
   CHUNK_SIZE,
@@ -89,7 +91,7 @@ async function createMultipartUpload(
   });
 
   if (response.data.code !== 0 || !response.data.data) {
-    throw new Error(response.data.message || 'Failed to create multipart upload');
+    throw handleAPIError(response.data);
   }
 
   return response.data.data;
@@ -115,7 +117,7 @@ async function listUploadedParts(
   const response = await axiosInstance.get<APIResponse<UploadPartsResponse>>(url);
 
   if (response.data.code !== 0 || !response.data.data) {
-    throw new Error(response.data.message || 'Failed to list uploaded parts');
+    throw handleAPIError(response.data);
   }
 
   return response.data.data.parts;
@@ -175,7 +177,7 @@ async function uploadPart(
       });
 
       if (response.data.code !== 0 || !response.data.data) {
-        throw new Error(response.data.message || `Failed to upload part ${partNumber}`);
+        throw handleAPIError(response.data);
       }
 
       return {
@@ -183,7 +185,10 @@ async function uploadPart(
         e_tag: response.data.data.e_tag,
       };
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+      // Plan denials are definitive until the workspace is upgraded. Retrying
+      // hides the useful server error behind a generic upload failure.
+      if (getBillingErrorMessage(error)) throw handleAPIError(error);
+      lastError = error instanceof Error ? error : Object.assign(new Error(getErrorMessage(error)), handleAPIError(error));
 
       Log.debug('[uploadPart] retry', { partNumber, attempt, error: lastError.message });
 
@@ -233,7 +238,7 @@ async function completeMultipartUpload(
   });
 
   if (response.data.code !== 0) {
-    throw new Error(response.data.message || 'Failed to complete multipart upload');
+    throw handleAPIError(response.data);
   }
 
   // Return the complete file URL
@@ -495,9 +500,17 @@ export async function uploadFileMultipart({
     return activeUpload;
   }
 
-  const upload = uploadFileMultipartInternal({ workspaceId, viewId, file, onProgress }).finally(() => {
-    activeUploads.get(destKey)?.delete(file);
-  });
+  const upload = uploadFileMultipartInternal({ workspaceId, viewId, file, onProgress })
+    .catch((error: unknown) => {
+      // Keep Error compatibility for upload consumers while retaining the API
+      // code and actionable message for both JSON envelopes and HTTP failures.
+      const apiError = handleAPIError(error);
+
+      throw Object.assign(new Error(apiError.message), apiError);
+    })
+    .finally(() => {
+      activeUploads.get(destKey)?.delete(file);
+    });
   const targetMap = destMap ?? new WeakMap<File, Promise<string>>();
 
   targetMap.set(file, upload);

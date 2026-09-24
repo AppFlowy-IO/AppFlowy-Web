@@ -23,8 +23,26 @@ function namespaceRedirectPlugin() {
   return {
     name: 'namespace-redirect',
     apply: 'serve' as const,
-    configureServer(server: { middlewares: { use: (fn: (req: { url?: string; method?: string }, res: { statusCode: number; setHeader: (name: string, value: string) => void; end: () => void }, next: () => void) => void) => void } }) {
-      const ignoredPrefixes = ['/app', '/login', '/import', '/after-payment', '/as-template', '/accept-invitation', '/404'];
+    configureServer(server: {
+      middlewares: {
+        use: (
+          fn: (
+            req: { url?: string; method?: string },
+            res: { statusCode: number; setHeader: (name: string, value: string) => void; end: () => void },
+            next: () => void
+          ) => void
+        ) => void;
+      };
+    }) {
+      const ignoredPrefixes = [
+        '/app',
+        '/login',
+        '/import',
+        '/after-payment',
+        '/as-template',
+        '/accept-invitation',
+        '/404',
+      ];
 
       server.middlewares.use(async (req, res, next) => {
         if (!req.url || req.method !== 'GET') {
@@ -43,7 +61,13 @@ function namespaceRedirectPlugin() {
 
         // Skip if not a single-segment path (namespace only) or if it's a static asset/dev file
         const isStaticAsset = /\.(js|css|html|map|json|png|jpg|jpeg|gif|svg|woff2?|ttf)$/i.test(pathname);
-        if (parts.length !== 1 || isStaticAsset || pathname.includes('@') || pathname.includes('node_modules') || pathname.startsWith('/src/')) {
+        if (
+          parts.length !== 1 ||
+          isStaticAsset ||
+          pathname.includes('@') ||
+          pathname.includes('node_modules') ||
+          pathname.startsWith('/src/')
+        ) {
           return next();
         }
 
@@ -60,7 +84,9 @@ function namespaceRedirectPlugin() {
           const publishInfo = data?.data?.info;
 
           if (publishInfo?.namespace && publishInfo?.publish_name) {
-            const redirectUrl = `/${encodeURIComponent(publishInfo.namespace)}/${encodeURIComponent(publishInfo.publish_name)}`;
+            const redirectUrl = `/${encodeURIComponent(publishInfo.namespace)}/${encodeURIComponent(
+              publishInfo.publish_name
+            )}`;
             res.statusCode = 302;
             res.setHeader('Location', redirectUrl);
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -113,181 +139,217 @@ function linkPreviewApiPlugin() {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  define: {
-    __APPFLOWY_WEB_VERSION__: JSON.stringify(webClientVersion),
-    'process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED': JSON.stringify(
-      process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED ?? 'false'
-    ),
-  },
-  plugins: [
-    react(),
-    isDev ? namespaceRedirectPlugin() : undefined,
-    isDev ? linkPreviewApiPlugin() : undefined,
-    // Strip data-testid attributes in production builds
-    isProd ? stripTestIdPlugin() : undefined,
-    svgr({
-      svgrOptions: {
-        prettier: false,
-        plugins: ['@svgr/plugin-svgo', '@svgr/plugin-jsx'],
-        icon: true,
-        svgoConfig: {
-          multipass: true,
-          plugins: [
-            {
-              name: 'preset-default',
-              params: {
-                overrides: {
-                  removeViewBox: false,
+const LOCAL_CLOUD_TARGET = 'http://localhost:8000';
+const LOCAL_GATEWAY_TARGET = 'http://localhost:8100';
+const LOCAL_BILLING_TARGET = 'http://localhost:4242';
+
+async function isLocalGatewayRunning(): Promise<boolean> {
+  try {
+    const response = await fetch(`${LOCAL_GATEWAY_TARGET}/health`, { signal: AbortSignal.timeout(800) });
+
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Same-origin proxies for local development. With `pnpm dev` against a
+ * localhost cloud the services are separate processes: AppFlowy Cloud (:8000),
+ * the gateway (:8100, the only server for the workspace usage-and-limit
+ * endpoints; it proxies the rest to the cloud) and the billing service
+ * (:4242). The gateway sends no CORS headers on real responses, so the browser
+ * reaches them through these proxies instead; in production nginx serves all
+ * of them on one domain and the client never uses the dev server.
+ *
+ * The API target is detected once when the dev server starts (restart it after
+ * starting or stopping the gateway). APPFLOWY_DEV_API_PROXY_TARGET,
+ * APPFLOWY_DEV_WS_PROXY_TARGET and APPFLOWY_DEV_BILLING_PROXY_TARGET override
+ * the detection. WebSocket traffic always goes to the cloud unless overridden,
+ * because the gateway does not proxy it. The client sends requests here only
+ * when APPFLOWY_BASE_URL uses HTTP on a loopback host at port 8000 or 8100,
+ * without a path prefix, in dev mode. Other configured backends keep their URL.
+ */
+async function localDevProxyConfig() {
+  const explicitApiTarget = process.env.APPFLOWY_DEV_API_PROXY_TARGET;
+  const apiTarget = explicitApiTarget || ((await isLocalGatewayRunning()) ? LOCAL_GATEWAY_TARGET : LOCAL_CLOUD_TARGET);
+  const wsTarget = process.env.APPFLOWY_DEV_WS_PROXY_TARGET || explicitApiTarget || LOCAL_CLOUD_TARGET;
+  const billingTarget = process.env.APPFLOWY_DEV_BILLING_PROXY_TARGET || LOCAL_BILLING_TARGET;
+
+  // stderr: tooling such as `loadConfigFromFile` scripts may parse the config process's stdout.
+  console.warn(`[local-dev] proxying /api -> ${apiTarget}, /ws -> ${wsTarget}, /billing -> ${billingTarget}`);
+
+  return {
+    '/api': { target: apiTarget, changeOrigin: true },
+    '/ws': { target: wsTarget, changeOrigin: true, ws: true },
+    '/billing': { target: billingTarget, changeOrigin: true },
+  };
+}
+
+export default defineConfig(async ({ command, mode }) => {
+  // Dev server only; `vite build` (production) and config loads in test mode skip the proxies.
+  const localDevProxy = command === 'serve' && mode !== 'test' ? await localDevProxyConfig() : {};
+
+  return {
+    define: {
+      __APPFLOWY_WEB_VERSION__: JSON.stringify(webClientVersion),
+      'process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED': JSON.stringify(
+        process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED ?? 'false'
+      ),
+    },
+    plugins: [
+      react(),
+      isDev ? namespaceRedirectPlugin() : undefined,
+      isDev ? linkPreviewApiPlugin() : undefined,
+      // Strip data-testid attributes in production builds
+      isProd ? stripTestIdPlugin() : undefined,
+      svgr({
+        svgrOptions: {
+          prettier: false,
+          plugins: ['@svgr/plugin-svgo', '@svgr/plugin-jsx'],
+          icon: true,
+          svgoConfig: {
+            multipass: true,
+            plugins: [
+              {
+                name: 'preset-default',
+                params: {
+                  overrides: {
+                    removeViewBox: false,
+                  },
                 },
               },
-            },
-            {
-              name: 'prefixIds',
-              params: {
-                prefix: (node, { path }) => {
-                  const fileName = path?.split('/')?.pop()?.split('.')?.[0];
-                  return `${fileName}-`;
+              {
+                name: 'prefixIds',
+                params: {
+                  prefix: (node, { path }) => {
+                    const fileName = path?.split('/')?.pop()?.split('.')?.[0];
+                    return `${fileName}-`;
+                  },
                 },
               },
-            },
-          ],
-        },
-        svgProps: {
-          role: 'img',
-        },
-        replaceAttrValues: {
-          '#333': 'currentColor',
-          black: 'currentColor',
-        },
-      },
-    }),
-    // Enable istanbul for code coverage (active if isTest is true)
-    isTest
-      ? istanbul({
-        requireEnv: false,
-        include: ['src/**/*'],
-        exclude: ['**/__tests__/**/*', 'node_modules/**/*'],
-      })
-      : undefined,
-    process.env.ANALYZE_MODE
-      ? visualizer({
-        emitFile: true,
-      })
-      : undefined,
-    process.env.ANALYZE_MODE
-      ? totalBundleSize({
-        fileNameRegex: /\.(js|css)$/,
-        calculateGzip: false,
-      })
-      : undefined,
-  ],
-  // prevent vite from obscuring rust errors
-  clearScreen: false,
-  server: {
-    host: '0.0.0.0', // Listen on all network interfaces (both IPv4 and IPv6)
-    port: process.env.PORT ? parseInt(process.env.PORT) : 3000,
-    strictPort: true,
-    watch: {
-      ignored: ['node_modules'],
-    },
-    proxy: {
-      // Proxy S3/MinIO presigned URL uploads to avoid CORS issues in local dev.
-      // Set APPFLOWY_S3_PRESIGNED_URL_ENDPOINT=http://localhost:3000/s3 on the API server.
-      '/s3': {
-        target: 'http://localhost:9000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/s3/, ''),
-      },
-      '/gotrue': {
-        target: 'http://localhost:9999',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/gotrue/, ''),
-      },
-      // Optional same-origin proxy for the AppFlowy Cloud API and WebSocket,
-      // for local servers that send no CORS headers (e.g. a build without the
-      // `cors-af` feature). Set APPFLOWY_DEV_API_PROXY_TARGET=http://localhost:8001
-      // together with APPFLOWY_BASE_URL=http://localhost:<vite port> and
-      // APPFLOWY_WS_BASE_URL=ws://localhost:<vite port>/ws/v2.
-      ...(process.env.APPFLOWY_DEV_API_PROXY_TARGET
-        ? {
-            '/api': {
-              target: process.env.APPFLOWY_DEV_API_PROXY_TARGET,
-              changeOrigin: true,
-            },
-            '/ws': {
-              target: process.env.APPFLOWY_DEV_API_PROXY_TARGET,
-              changeOrigin: true,
-              ws: true,
-            },
-          }
-        : {}),
-    },
-    cors: false,
-    sourcemapIgnoreList: false,
-  },
-  envPrefix: ['APPFLOWY'],
-  esbuild: {
-    keepNames: true,
-    sourcesContent: true,
-    sourcemap: true,
-    minifyIdentifiers: false, // Disable identifier minification in development
-    minifySyntax: false, // Disable syntax minification in development
-    drop: !isDev ? ['debugger'] : [],
-    pure: !isDev ? ['console.log', 'console.debug'] : [],
-  },
-  build: {
-    target: `esnext`,
-    reportCompressedSize: true,
-    chunkSizeWarningLimit: 1600,
-    rollupOptions: isProd
-      ? {
-        output: {
-          chunkFileNames: 'static/js/[name]-[hash].js',
-          entryFileNames: 'static/js/[name]-[hash].js',
-          assetFileNames: 'static/[ext]/[name]-[hash].[ext]',
-          manualChunks(id) {
-            if (
-              // id.includes('/react@') ||
-              // id.includes('/react-dom@') ||
-              id.includes('/react-is@') ||
-              id.includes('/yjs@') ||
-              id.includes('/y-indexeddb@') ||
-              id.includes('/dexie') ||
-              id.includes('/redux') ||
-              id.includes('/react-custom-scrollbars-2') ||
-              id.includes('/dayjs') ||
-              id.includes('/smooth-scroll-into-view-if-needed') ||
-              id.includes('/react-virtualized-auto-sizer') ||
-              id.includes('/react-window') ||
-              id.includes('/@popperjs') ||
-              id.includes('/@mui/material/Dialog') ||
-              id.includes('/quill-delta')
-            ) {
-              return 'common';
-            }
+            ],
+          },
+          svgProps: {
+            role: 'img',
+          },
+          replaceAttrValues: {
+            '#333': 'currentColor',
+            black: 'currentColor',
           },
         },
-      }
-      : {},
-  },
-  resolve: {
-    dedupe: [...VITE_DEDUPED_DEPENDENCIES],
-    alias: [
-      { find: '@protobufjs/inquire', replacement: path.resolve(__dirname, 'src/shims/protobufjs-inquire.cjs') },
-      { find: 'src/', replacement: `${__dirname}/src/` },
-      { find: '@/', replacement: `${__dirname}/src/` },
+      }),
+      // Enable istanbul for code coverage (active if isTest is true)
+      isTest
+        ? istanbul({
+            requireEnv: false,
+            include: ['src/**/*'],
+            exclude: ['**/__tests__/**/*', 'node_modules/**/*'],
+          })
+        : undefined,
+      process.env.ANALYZE_MODE
+        ? visualizer({
+            emitFile: true,
+          })
+        : undefined,
+      process.env.ANALYZE_MODE
+        ? totalBundleSize({
+            fileNameRegex: /\.(js|css)$/,
+            calculateGzip: false,
+          })
+        : undefined,
     ],
-  },
+    // prevent vite from obscuring rust errors
+    clearScreen: false,
+    server: {
+      host: '0.0.0.0', // Listen on all network interfaces (both IPv4 and IPv6)
+      port: process.env.PORT ? parseInt(process.env.PORT) : 3000,
+      strictPort: true,
+      watch: {
+        ignored: ['node_modules'],
+      },
+      proxy: {
+        // Proxy S3/MinIO presigned URL uploads to avoid CORS issues in local dev.
+        // Set APPFLOWY_S3_PRESIGNED_URL_ENDPOINT=http://localhost:3000/s3 on the API server.
+        '/s3': {
+          target: 'http://localhost:9000',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/s3/, ''),
+        },
+        '/gotrue': {
+          target: 'http://localhost:9999',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/gotrue/, ''),
+        },
+        // Local AppFlowy Cloud, gateway and billing service (see localDevProxyConfig).
+        ...localDevProxy,
+      },
+      cors: false,
+      sourcemapIgnoreList: false,
+    },
+    envPrefix: ['APPFLOWY'],
+    esbuild: {
+      keepNames: true,
+      sourcesContent: true,
+      sourcemap: true,
+      minifyIdentifiers: false, // Disable identifier minification in development
+      minifySyntax: false, // Disable syntax minification in development
+      drop: !isDev ? ['debugger'] : [],
+      pure: !isDev ? ['console.log', 'console.debug'] : [],
+    },
+    build: {
+      target: `esnext`,
+      reportCompressedSize: true,
+      chunkSizeWarningLimit: 1600,
+      rollupOptions: isProd
+        ? {
+            output: {
+              chunkFileNames: 'static/js/[name]-[hash].js',
+              entryFileNames: 'static/js/[name]-[hash].js',
+              assetFileNames: 'static/[ext]/[name]-[hash].[ext]',
+              manualChunks(id) {
+                if (
+                  // id.includes('/react@') ||
+                  // id.includes('/react-dom@') ||
+                  id.includes('/react-is@') ||
+                  id.includes('/yjs@') ||
+                  id.includes('/y-indexeddb@') ||
+                  id.includes('/dexie') ||
+                  id.includes('/redux') ||
+                  id.includes('/react-custom-scrollbars-2') ||
+                  id.includes('/dayjs') ||
+                  id.includes('/smooth-scroll-into-view-if-needed') ||
+                  id.includes('/react-virtualized-auto-sizer') ||
+                  id.includes('/react-window') ||
+                  id.includes('/@popperjs') ||
+                  id.includes('/@mui/material/Dialog') ||
+                  id.includes('/quill-delta')
+                ) {
+                  return 'common';
+                }
+              },
+            },
+          }
+        : {},
+    },
+    resolve: {
+      dedupe: [...VITE_DEDUPED_DEPENDENCIES],
+      alias: [
+        { find: '@protobufjs/inquire', replacement: path.resolve(__dirname, 'src/shims/protobufjs-inquire.cjs') },
+        { find: 'src/', replacement: `${__dirname}/src/` },
+        { find: '@/', replacement: `${__dirname}/src/` },
+      ],
+    },
 
-  optimizeDeps: {
-    include: [...VITE_OPTIMIZED_DEPENDENCIES],
-  },
-  css: {
-    preprocessorOptions: {
-      scss: {
-        api: 'modern-compiler',
+    optimizeDeps: {
+      include: [...VITE_OPTIMIZED_DEPENDENCIES],
+    },
+    css: {
+      preprocessorOptions: {
+        scss: {
+          api: 'modern-compiler',
+        },
       },
     },
-  },
+  };
 });

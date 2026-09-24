@@ -46,6 +46,7 @@ jest.mock('@/application/session/token', () => ({
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: jest.fn((_: string, defaultValue: string | undefined) => defaultValue),
+  isLocalDevelopment: () => false,
 }));
 
 jest.mock('@/assets/icons/check_circle.svg', () => ({}), { virtual: true });
@@ -74,6 +75,118 @@ describe('http_api client (unit)', () => {
     mockAxiosInstance.delete.mockReset();
     mockGetTokenParsed.mockReset();
     mockGetTokenParsed.mockReturnValue(null);
+  });
+
+  it('keeps Pro guidance for JSON envelope and HTTP plan rejections', async () => {
+    const core = await import('../core');
+    core.initAPIService(baseConfig);
+    const payload = { code: 1076, message: 'Form limit reached', retry_after_secs: 5 };
+    const expected = {
+      code: 1076,
+      message: 'Upgrade this workspace to Pro to use this feature or increase its limits.',
+      retryAfterSecs: 5,
+    };
+
+    mockAxiosInstance.post.mockResolvedValue({ status: 200, data: payload });
+    await expect(core.executeAPIRequest(() => core.getAxios()?.post('/form'))).rejects.toEqual(expected);
+    await expect(core.executeAPIVoidRequest(() => core.getAxios()?.post('/publish'))).rejects.toEqual(expected);
+
+    mockAxiosInstance.post.mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 403, data: payload, headers: { 'retry-after': '5' } },
+    });
+    await expect(core.executeAPIRequest(() => core.getAxios()?.post('/space'))).rejects.toEqual({
+      ...expected,
+      httpStatus: 403,
+    });
+  });
+
+  it.each([200, 403])('rejects a JSON plan error returned as a PDF Blob with HTTP %s', async (status) => {
+    const core = await import('../core');
+    const { getViewPdfBlob } = await import('../export-api');
+    core.initAPIService(baseConfig);
+    const json = JSON.stringify({ code: 1076, message: 'Linked pages require a subscription' });
+    const blob = new Blob([json], { type: 'application/json' });
+
+    // jsdom's Blob predates the browser Blob.text API.
+    Object.defineProperty(blob, 'text', { value: async () => json });
+    const response = { status, data: blob, headers: { 'content-type': 'application/json' } };
+
+    if (status === 200) mockAxiosInstance.post.mockResolvedValue(response);
+    else mockAxiosInstance.post.mockRejectedValue({ isAxiosError: true, response });
+
+    await expect(getViewPdfBlob('workspace-id', 'view-id')).rejects.toMatchObject({
+      code: 1076,
+      message: 'Upgrade this workspace to Pro to use this feature or increase its limits.',
+    });
+  });
+
+  it('keeps PDF downloads intact and never buffers their contents as error text', async () => {
+    const core = await import('../core');
+    const { getViewPdfBlob } = await import('../export-api');
+    core.initAPIService(baseConfig);
+    const blob = new Blob(['%PDF-1.7'], { type: 'application/pdf' });
+    const readText = jest.fn();
+
+    Object.defineProperty(blob, 'text', { value: readText });
+    mockAxiosInstance.post.mockResolvedValue({
+      status: 200,
+      data: blob,
+      headers: { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="page.pdf"' },
+    });
+    await expect(getViewPdfBlob('workspace-id', 'view-id')).resolves.toEqual({ blob, filename: 'page.pdf' });
+    expect(readText).not.toHaveBeenCalled();
+  });
+
+  it('preserves single-upload upgrade errors in successful HTTP envelopes', async () => {
+    const core = await import('../core');
+    const { uploadFile } = await import('../file-api');
+    core.initAPIService(baseConfig);
+    mockAxiosInstance.put.mockResolvedValue({ status: 200, data: { code: 1037, message: 'Single Upload Limit Exceeded' } });
+
+    await expect(uploadFile('workspace-id', 'view-id', new File(['abc'], 'test.txt'))).rejects.toMatchObject({
+      code: 1037,
+      message: 'Upgrade this workspace to Pro to use this feature or increase its limits.',
+    });
+  });
+
+  it('surfaces multipart creation plan errors without uploading any parts', async () => {
+    const core = await import('../core');
+    const { uploadFileMultipart } = await import('../multipart-upload');
+    core.initAPIService(baseConfig);
+    mockAxiosInstance.post.mockResolvedValue({ status: 200, data: { code: 1037, message: 'Single Upload Limit Exceeded' } });
+
+    await expect(uploadFileMultipart({
+      workspaceId: 'workspace-id', viewId: 'view-id', file: new File(['abc'], 'test.txt'),
+    })).rejects.toMatchObject({
+      code: 1037,
+      message: 'Upgrade this workspace to Pro to use this feature or increase its limits.',
+    });
+    expect(mockAxiosInstance.put).not.toHaveBeenCalled();
+  });
+
+  it.each(['part', 'completion'])('surfaces multipart %s quota denials without retrying them', async (phase) => {
+    const core = await import('../core');
+    const { uploadFileMultipart } = await import('../multipart-upload');
+    core.initAPIService(baseConfig);
+    const file = new File(['abc'], 'test.txt');
+    const chunk = new Blob(['abc']);
+
+    Object.defineProperty(chunk, 'arrayBuffer', { value: async () => new ArrayBuffer(3) });
+    jest.spyOn(file, 'slice').mockReturnValue(chunk);
+    mockAxiosInstance.post.mockResolvedValue({ data: { code: 0, data: { upload_id: 'upload-id', file_id: 'file-id' } } });
+    mockAxiosInstance.get.mockResolvedValue({ data: { code: 0, data: { parts: [] } } });
+    if (phase === 'completion') {
+      mockAxiosInstance.put.mockResolvedValueOnce({ data: { code: 0, data: { e_tag: 'etag', part_num: 1 } } });
+    }
+
+    mockAxiosInstance.put.mockResolvedValueOnce({ data: { code: 1028, message: 'Storage limit reached' } });
+
+    await expect(uploadFileMultipart({ workspaceId: 'workspace-id', viewId: 'view-id', file })).rejects.toMatchObject({
+      code: 1028,
+      message: 'Upgrade this workspace to Pro to use this feature or increase its limits.',
+    });
+    expect(mockAxiosInstance.put).toHaveBeenCalledTimes(phase === 'part' ? 1 : 2);
   });
 
   it('initializes axios instance once with provided config', async () => {

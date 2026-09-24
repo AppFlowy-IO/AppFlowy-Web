@@ -554,6 +554,21 @@ describe('AddPageActions', () => {
     expect(mockToView).toHaveBeenCalledWith('chat-id');
   });
 
+  it('shows a Pro upgrade message without navigating when the Free form quota is reached', async () => {
+    mockExperimentalDatabaseViewCreationEnabled = true;
+    mockAddPage.mockRejectedValueOnce({ code: 1076, message: 'Form limit reached' });
+    renderActions(view({ view_id: 'space-id', extra: { is_space: true } }));
+    fireEvent.click(screen.getByTestId('add-form-button'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
+      'Upgrade this workspace to Pro to use this feature or increase its limits.'
+    ));
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.dismiss).toHaveBeenCalled();
+    expect(mockToView).not.toHaveBeenCalled();
+    expect(mockOpenPageModal).not.toHaveBeenCalled();
+  });
+
   it('shows the workspace plan error without navigating when Timeline creation is rejected', async () => {
     const message = 'Creating a Timeline view requires an active Pro plan for this workspace.';
 

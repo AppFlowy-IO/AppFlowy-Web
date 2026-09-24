@@ -43,10 +43,10 @@ export async function uploadFile(
       return getAppFlowyFileUrl(workspaceId, viewId, response?.data.data.file_id);
     }
 
-    return Promise.reject(response?.data);
+    return Promise.reject(handleAPIError(response?.data));
     // eslint-disable-next-line
   } catch (e: any) {
-    if (e.response?.status === 413) {
+    if (e.response?.status === 413 && typeof e.response?.data?.code !== 'number') {
       return Promise.reject({
         code: ERROR_CODE.PAYLOAD_TOO_LARGE,
         message: isAppFlowyHosted()

@@ -78,6 +78,29 @@ describe('AddViewButton', () => {
     jest.restoreAllMocks();
   });
 
+  it('shows one Pro upgrade message when the Free form quota is reached', async () => {
+    const onViewAdded = jest.fn();
+    const onAfterAddView = jest.fn();
+
+    mockExperimentalDatabaseViewCreationEnabled = true;
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockAddView.mockRejectedValueOnce({ code: 1076, message: 'Form limit reached' });
+    render(
+      <MemoryRouter>
+        <AddViewButton databasePageId='database-page-id' onAfterAddView={onAfterAddView} onViewAdded={onViewAdded} />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByTestId('add-form-view-option'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
+      'Upgrade this workspace to Pro to use this feature or increase its limits.'
+    ));
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(onViewAdded).not.toHaveBeenCalled();
+    expect(onAfterAddView).toHaveBeenCalledTimes(1);
+  });
+
   it('shows the server plan error and finishes loading without selecting a new view', async () => {
     const onViewAdded = jest.fn();
     const onAfterAddView = jest.fn();
