@@ -560,11 +560,11 @@ describe('AddPageActions', () => {
     expect(mockToView).toHaveBeenCalledWith('chat-id');
   });
 
-  it('shows a Pro upgrade message without navigating when the Free form quota is reached', async () => {
+  it.each(['form', 'chart'])('shows a Pro upgrade message without navigating when %s creation is rejected', async (layout) => {
     mockExperimentalDatabaseViewCreationEnabled = true;
-    mockAddPage.mockRejectedValueOnce({ code: 1076, message: 'Form limit reached' });
+    mockAddPage.mockRejectedValueOnce({ code: 1076, message: 'Workspace limit reached' });
     renderActions(view({ view_id: 'space-id', extra: { is_space: true } }));
-    fireEvent.click(screen.getByTestId('add-form-button'));
+    fireEvent.click(screen.getByTestId(`add-${layout}-button`));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
       'Upgrade this workspace to Pro to use this feature or increase its limits.'

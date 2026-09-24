@@ -9,6 +9,7 @@ import {
   FieldVisibility,
   useAddDatabaseView,
   useDuplicateDatabaseView,
+  useUpdateDatabaseLayout,
 } from '@/application/database-yjs';
 import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import {
@@ -20,6 +21,9 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
+import { getView } from '@/application/services/js-services/http/view-api';
+
+jest.mock('@/application/services/js-services/http/view-api', () => ({ getView: jest.fn() }));
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
@@ -174,7 +178,185 @@ function getDatabase(databaseDoc: YDoc): Y.Map<unknown> {
   return databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as Y.Map<unknown>;
 }
 
+describe('online Chart layout conversion', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.mocked(getView).mockReset();
+  });
+
+  function setup() {
+    const databaseDoc = createDatabaseDoc('database-id');
+
+    addExistingGridView(databaseDoc, 'base-view-id');
+    const before = Y.encodeStateAsUpdate(databaseDoc);
+    const onUpdate = jest.fn();
+
+    databaseDoc.on('update', onUpdate);
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      canWrite: true,
+      databaseDoc,
+      databasePageId: 'base-view-id',
+      rowMap: {},
+      workspaceId: 'workspace-id',
+    };
+    const hook = renderHook(() => useUpdateDatabaseLayout('base-view-id'), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    return { ...hook, databaseDoc, before, onUpdate };
+  }
+
+  it('does not mutate or enqueue a Chart conversion while offline', async () => {
+    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    const fixture = setup();
+
+    await expect(fixture.result.current(DatabaseViewLayout.Chart)).rejects.toThrow(
+      'Connect to the internet to create Form or Chart views.'
+    );
+    expect(getView).not.toHaveBeenCalled();
+    expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(fixture.before);
+    expect(fixture.onUpdate).not.toHaveBeenCalled();
+  });
+
+  it('requires the server creation path for Forms instead of converting an existing view', async () => {
+    const fixture = setup();
+
+    await expect(fixture.result.current(DatabaseViewLayout.Form)).rejects.toThrow('Use Add view to create a Form.');
+    expect(getView).not.toHaveBeenCalled();
+    expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(fixture.before);
+    expect(fixture.onUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does not trust navigator.onLine when the server is unreachable', async () => {
+    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    const error = { code: -1, message: 'Network Error' };
+
+    jest.mocked(getView).mockRejectedValue(error);
+    const fixture = setup();
+
+    await expect(fixture.result.current(DatabaseViewLayout.Chart)).rejects.toBe(error);
+    expect(getView).toHaveBeenCalledWith('workspace-id', 'base-view-id', 0);
+    expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(fixture.before);
+    expect(fixture.onUpdate).not.toHaveBeenCalled();
+  });
+
+  it('waits for a fresh server read before applying a Chart conversion', async () => {
+    let acceptRead!: (view: View) => void;
+
+    jest.mocked(getView).mockImplementation(() => new Promise<View>((resolve) => { acceptRead = resolve; }));
+    const fixture = setup();
+    const pending = fixture.result.current(DatabaseViewLayout.Chart);
+
+    await act(async () => { await Promise.resolve(); });
+    expect(getView).toHaveBeenCalledTimes(1);
+    expect(fixture.onUpdate).not.toHaveBeenCalled();
+    await act(async () => {
+      acceptRead(createView({ view_id: 'base-view-id', layout: ViewLayout.Grid }));
+      await pending;
+    });
+
+    const views = getDatabase(fixture.databaseDoc).get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+
+    expect(views.get('base-view-id')?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Chart);
+  });
+
+  it('does not let a pending Chart conversion replace a later layout choice', async () => {
+    let acceptRead!: (view: View) => void;
+
+    jest.mocked(getView).mockImplementation(() => new Promise<View>((resolve) => { acceptRead = resolve; }));
+    const fixture = setup();
+    const pending = fixture.result.current(DatabaseViewLayout.Chart);
+
+    await act(async () => { await Promise.resolve(); });
+    act(() => { void fixture.result.current(DatabaseViewLayout.Grid); });
+    await act(async () => {
+      acceptRead(createView({ view_id: 'base-view-id', layout: ViewLayout.Grid }));
+      await pending;
+    });
+
+    expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(fixture.before);
+    expect(fixture.onUpdate).not.toHaveBeenCalled();
+  });
+});
+
 describe('useAddDatabaseView', () => {
+  it.each([DatabaseViewLayout.Form, DatabaseViewLayout.Chart])(
+    'waits for server acceptance before adding layout %s to the local database',
+    async (layout) => {
+      const databaseDoc = createDatabaseDoc('database-id');
+
+      addExistingGridView(databaseDoc, 'base-view-id');
+      const before = Y.encodeStateAsUpdate(databaseDoc);
+      const databaseUpdate = createAddViewUpdate(databaseDoc, 'accepted-view-id');
+      let acceptRequest!: (response: { view_id: string; database_id: string; database_update: number[] }) => void;
+      const createDatabaseView = jest.fn(
+        () => new Promise<{ view_id: string; database_id: string; database_update: number[] }>((resolve) => {
+          acceptRequest = resolve;
+        })
+      );
+      const contextValue: DatabaseContextState = {
+        readOnly: false,
+        canWrite: true,
+        databaseDoc,
+        databasePageId: 'base-view-id',
+        rowMap: {},
+        workspaceId: 'workspace-id',
+        createDatabaseView,
+      };
+      const { result } = renderHook(() => useAddDatabaseView(), {
+        wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+      });
+      const pending = result.current(layout);
+
+      // Resolving folder placement must not create a provisional Yjs view or
+      // enqueue a mutation while the server's entitlement check is pending.
+      await act(async () => { await Promise.resolve(); });
+      expect(createDatabaseView).toHaveBeenCalledTimes(1);
+      expect(Y.encodeStateAsUpdate(databaseDoc)).toEqual(before);
+
+      await act(async () => {
+        acceptRequest({ view_id: 'accepted-view-id', database_id: 'database-id', database_update: databaseUpdate });
+        await expect(pending).resolves.toBe('accepted-view-id');
+      });
+
+      expect(getDatabase(databaseDoc).get(YjsDatabaseKey.views)).toHaveProperty('size', 2);
+    }
+  );
+
+  it.each([
+    [DatabaseViewLayout.Form, { code: 1076, message: 'Free workspaces can have one form. Upgrade to Pro.' }],
+    [DatabaseViewLayout.Chart, { code: 1076, message: 'Upgrade to Pro to use this chart type.' }],
+    [DatabaseViewLayout.Form, new Error('Network Error')],
+    [DatabaseViewLayout.Chart, new Error('Network Error')],
+  ] as const)('does not create a local view or enqueue updates when layout %s is rejected', async (layout, error) => {
+    const databaseDoc = createDatabaseDoc('database-id');
+
+    addExistingGridView(databaseDoc, 'base-view-id');
+    const before = Y.encodeStateAsUpdate(databaseDoc);
+    const onUpdate = jest.fn();
+
+    databaseDoc.on('update', onUpdate);
+    const createDatabaseView = jest.fn().mockRejectedValue(error);
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      canWrite: true,
+      databaseDoc,
+      databasePageId: 'base-view-id',
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await expect(result.current(layout)).rejects.toBe(error);
+    expect(Y.encodeStateAsUpdate(databaseDoc)).toEqual(before);
+    expect(onUpdate).not.toHaveBeenCalled();
+    expect(createDatabaseView).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     { embedded: true, isDocumentBlock: false, activeChild: true },
     { embedded: true, isDocumentBlock: false, activeChild: false },

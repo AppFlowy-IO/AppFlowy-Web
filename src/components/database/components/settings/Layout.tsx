@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabaseViewId } from '@/application/database-yjs';
@@ -14,6 +15,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
+import { getErrorMessage } from '@/utils/errors';
 
 function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
   const { t } = useTranslation();
@@ -79,7 +81,14 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
               className={'w-full'}
               data-testid={`database-layout-option-${option.value}`}
               onSelect={() => {
-                if (option.value !== currentLayout) updateLayout(option.value);
+                if (option.value === currentLayout) return;
+                void (async () => {
+                  try {
+                    await updateLayout(option.value);
+                  } catch (error) {
+                    toast.error(getErrorMessage(error, 'Failed to change view layout'));
+                  }
+                })();
               }}
             >
               <div className={'flex items-center gap-2'}>{option.label}</div>

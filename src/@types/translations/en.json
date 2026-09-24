@@ -1,4 +1,7 @@
 {
+  "databaseViewCreation": {
+    "onlineRequired": "Connect to the internet to create Form or Chart views."
+  },
   "billingLimits": {
     "workspaceProRequired": "Upgrade this workspace to Pro to use this feature or increase its limits.",
     "freeTranscriptionLimit": "This workspace has reached its free transcription limit. Ask the workspace owner to upgrade to Pro for more transcription time."

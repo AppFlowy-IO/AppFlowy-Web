@@ -26,6 +26,7 @@ import {
 } from '@/application/types';
 import { getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
 import { Log } from '@/utils/log';
+import { assertViewCreationOnline } from '@/application/view-online-policy';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 import { getView } from './view-api';
@@ -146,6 +147,7 @@ export async function addAppPage(
   parentViewId: string,
   { layout, name, page_data, view_id, prev_view_id }: CreatePagePayload
 ) {
+  assertViewCreationOnline(layout);
   const url = `/api/workspace/${workspaceId}/page-view`;
 
   Log.debug('[addAppPage] request', { url, workspaceId, parentViewId, layout, name, prev_view_id });
@@ -518,6 +520,7 @@ export async function updateSpace(workspaceId: string, payload: UpdateSpacePaylo
 }
 
 export async function createDatabaseView(workspaceId: string, viewId: string, payload: CreateDatabaseViewPayload) {
+  assertViewCreationOnline(payload.layout);
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/database-view`;
 
   Log.debug('[createDatabaseView]', { url, workspaceId, viewId, payload });
