@@ -57,6 +57,8 @@ import {
 import { FormulaEditorDialog } from '@/components/database/components/property/formula/FormulaEditorDialog';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
+import { flushFormulaEditor, formulaSource, setFormulaSource } from './formula-editor-input';
+
 jest.mock('@/components/database/components/cell/person/useMentionableUsers', () => {
   const users: MentionablePerson[] = [];
 
@@ -1180,7 +1182,7 @@ describe('formula relation title retention', () => {
 });
 
 describe('formula review regressions', () => {
-  it.each(['', ' + "unfinished'])('preserves IDs when names are reused with draft suffix %s', (suffix) => {
+  it.each(['', ' + "unfinished'])('preserves IDs when names are reused with draft suffix %s', async (suffix) => {
     const f = fixture('prop("price-first")');
 
     f.fields.get('price-second').set(YjsDatabaseKey.name, 'Other');
@@ -1188,7 +1190,7 @@ describe('formula review regressions', () => {
       wrapper: f.wrapper,
     });
     if (suffix) {
-      fireEvent.change(screen.getByTestId('formula-editor-input'), { target: { value: `prop("Price")${suffix}` } });
+      await setFormulaSource(`prop("Price")${suffix}`);
     }
 
     act(() => {
@@ -1197,9 +1199,9 @@ describe('formula review regressions', () => {
         f.fields.get('price-second').set(YjsDatabaseKey.name, 'Price');
       });
     });
-    expect(screen.getByTestId('formula-editor-input').value).toBe(`prop("Amount")${suffix}`);
+    expect(formulaSource()).toBe(`prop("Amount")${suffix}`);
     if (suffix) {
-      fireEvent.change(screen.getByTestId('formula-editor-input'), { target: { value: 'prop("Amount") + 1' } });
+      await setFormulaSource('prop("Amount") + 1');
     }
 
     expect(screen.getByTestId('formula-preview-value').textContent).toBe(suffix ? '3' : '2');
@@ -1263,7 +1265,7 @@ describe('formula footer row metadata', () => {
 describe('formula property insertions', () => {
   it.each(['catalogue', 'autocomplete', 'example'])(
     'preserves the second Price through %s insertion and save',
-    (source) => {
+    async (source) => {
       const f = fixture('');
 
       render(<FormulaEditorDialog fieldId={'formula'} rowId={f.rowId} open onOpenChange={jest.fn()} />, {
@@ -1274,12 +1276,14 @@ describe('formula property insertions', () => {
       if (source === 'catalogue') {
         fireEvent.click(secondPrice);
       } else if (source === 'autocomplete') {
-        fireEvent.change(screen.getByTestId('formula-editor-input'), { target: { value: 'Price', selectionStart: 5 } });
+        await setFormulaSource('Price');
         fireEvent.click(screen.getAllByTestId('formula-suggestion-Price')[1]);
       } else {
         fireEvent.mouseEnter(secondPrice);
         fireEvent.click(within(screen.getByTestId('formula-docs')).getAllByRole('button')[0]);
       }
+
+      await flushFormulaEditor();
 
       expect(screen.getByTestId('formula-preview-value').textContent).toBe('42');
       fireEvent.click(screen.getByTestId('formula-editor-done'));
