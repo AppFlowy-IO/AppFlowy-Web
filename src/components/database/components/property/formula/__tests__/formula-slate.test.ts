@@ -110,6 +110,36 @@ describe('formula slate document', () => {
     expect(tokens(editor)).toHaveLength(2);
   });
 
+  it('pastes after a token when the caret sits inside it', () => {
+    // Chrome can give a paste a target range inside a token's spacer.
+    const editor = makeEditor('prop("A")');
+
+    Transforms.select(editor, { path: [0, 1, 0], offset: 0 });
+    editor.insertData({ getData: () => ' + 1' } as unknown as DataTransfer);
+    expect(editorSource(editor)).toBe('prop("A") + 1');
+    expect(tokens(editor)).toHaveLength(1);
+  });
+
+  it('replaces a whole token when a pasted-over selection starts inside it', () => {
+    const editor = makeEditor('prop("A") + 1');
+
+    Transforms.select(editor, { anchor: { path: [0, 1, 0], offset: 0 }, focus: offsetToPoint(editor, 13) });
+    editor.insertData({ getData: () => '2' } as unknown as DataTransfer);
+    expect(editorSource(editor)).toBe('2');
+    expect(tokens(editor)).toHaveLength(0);
+  });
+
+  it('runs pasted text through the paste rewrite', () => {
+    const editor = withFormulaTokens(withHistory(createEditor()), (text) => text.replace('Price', 'prop("Price")'));
+
+    editor.children = sourceToNodes('');
+    Editor.normalize(editor, { force: true });
+    Transforms.select(editor, offsetToPoint(editor, 0));
+    editor.insertData({ getData: () => 'Price * 2' } as unknown as DataTransfer);
+    expect(editorSource(editor)).toBe('prop("Price") * 2');
+    expect(tokens(editor).map((token) => token.ref)).toEqual(['Price']);
+  });
+
   it('copies tokens out as prop() calls', () => {
     const editor = makeEditor('1 + prop("Price") * 2');
     let copied = '';

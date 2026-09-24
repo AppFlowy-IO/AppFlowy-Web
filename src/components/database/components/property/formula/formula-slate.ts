@@ -96,7 +96,7 @@ function lineChildren(line: string): Descendant[] {
 }
 
 export function sourceToNodes(source: string): Descendant[] {
-  return source.split('\n').map((line) => ({ type: FORMULA_LINE, children: lineChildren(line) }) as Descendant);
+  return source.split('\n').map((line) => ({ type: FORMULA_LINE, children: lineChildren(line) } as Descendant));
 }
 
 function nodeSource(node: Node): string {
@@ -237,10 +237,40 @@ export function ejectCaretFromToken(editor: Editor): void {
   if (token) Transforms.select(editor, offsetToPoint(editor, pointToOffset(editor, selection.anchor)));
 }
 
+/**
+ * Moves selection edges that sit inside a token out of it: a caret goes after
+ * the token, a range grows to cover it. Slate ignores text inserted into a
+ * void, and Chrome can hand a paste a target range inside a token's spacer.
+ */
+function selectOutsideTokens(editor: Editor) {
+  const { selection } = editor;
+
+  if (!selection) return;
+  const inToken = (point: Point) => Editor.above(editor, { at: point, match: isFormulaProp });
+
+  if (!inToken(selection.anchor) && !inToken(selection.focus)) return;
+  if (Range.isCollapsed(selection)) {
+    Transforms.select(editor, offsetToPoint(editor, pointToOffset(editor, selection.anchor)));
+    return;
+  }
+
+  const [start, end] = Range.edges(selection);
+  const startToken = inToken(start);
+  const startOffset = startToken
+    ? pointToOffset(editor, start) - (startToken[0] as unknown as FormulaPropElement).source.length
+    : pointToOffset(editor, start);
+
+  Transforms.select(editor, {
+    anchor: offsetToPoint(editor, startOffset),
+    focus: offsetToPoint(editor, pointToOffset(editor, end)),
+  });
+}
+
 /** Inserts plain source at the selection; new lines split the line. */
 export function insertSource(editor: Editor, text: string) {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
 
+  selectOutsideTokens(editor);
   Editor.withoutNormalizing(editor, () => {
     if (editor.selection && !Range.isCollapsed(editor.selection)) Transforms.delete(editor);
     lines.forEach((line, index) => {
@@ -308,7 +338,11 @@ export function selectedSource(editor: Editor): string {
  * node into a token (typed, pasted or inserted), keeps the document a list of
  * lines, and copies/pastes plain formula source.
  */
-export function withFormulaTokens<T extends Editor>(editor: T): T {
+export function withFormulaTokens<T extends Editor>(
+  editor: T,
+  /** Rewrites pasted text before it is inserted, e.g. bare property names into prop("..."). */
+  preparePaste: (text: string) => string = (text) => text
+): T {
   const { isInline, isVoid, normalizeNode } = editor;
 
   editor.isInline = (element) => element.type === FORMULA_PROP || isInline(element);
@@ -367,7 +401,7 @@ export function withFormulaTokens<T extends Editor>(editor: T): T {
   // Only plain text is pasted; an empty paste still replaces the selection.
   editor.insertData = (data) => {
     if (Array.from(data.types ?? []).includes('text/plain') || data.getData('text/plain')) {
-      insertSource(editor, data.getData('text/plain'));
+      insertSource(editor, preparePaste(data.getData('text/plain')));
     }
   };
 

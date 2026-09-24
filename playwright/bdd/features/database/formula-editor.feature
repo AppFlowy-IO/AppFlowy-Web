@@ -224,6 +224,42 @@ Feature: Formula editor
     And the formula editor contains "prop("Name") + prop("Notes")"
     And the formula preview shows "Onealpha"
 
+  Scenario: Pasting bare property names turns them into tokens
+    When I start a new formula property
+    And I paste "Price * 2 + Name.length()" into the formula editor
+    Then the formula editor shows these property tokens
+      | Price |
+      | Name  |
+    And the formula editor contains "prop("Price") * 2 + prop("Name").length()"
+    And the formula preview shows "28"
+
+  Scenario: Pasting bare names leaves strings, calls and unknown words alone
+    When I start a new formula property
+    And I paste "if(Price > 1, "Price", Notes) + Cost" into the formula editor
+    Then the formula editor shows these property tokens
+      | Price |
+      | Notes |
+    And the formula editor contains "if(prop("Price") > 1, "Price", prop("Notes")) + Cost"
+
+  Scenario: Pasting prop() with curly quotes gives tokens
+    When I start a new formula property
+    And I paste "prop(“Name”) + prop(‘Notes’)" into the formula editor
+    Then the formula editor shows these property tokens
+      | Name  |
+      | Notes |
+    And the formula editor contains "prop("Name") + prop("Notes")"
+    And the formula preview shows "Onealpha"
+
+  Scenario: Pasting a rich-text clipboard after a token appends to the formula
+    When I start a new formula property
+    And I type the formula "prop("Price")"
+    And I paste " * Price" with rich text into the formula editor
+    Then the formula editor shows these property tokens
+      | Price |
+      | Price |
+    And the formula editor contains "prop("Price") * prop("Price")"
+    And the formula preview shows "156.25"
+
   Scenario: A reference to a missing property is a token marked as missing
     When I start a new formula property
     And I type the formula "prop("Nope") + 1"

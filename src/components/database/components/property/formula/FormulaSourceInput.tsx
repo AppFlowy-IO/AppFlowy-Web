@@ -25,9 +25,9 @@ import {
 } from 'slate-react';
 
 import { FormulaFieldSchema, resolveFormulaField } from '@/application/database-yjs/fields/formula';
-import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
 import { cn } from '@/lib/utils';
 
+import { normalizePastedFormula } from './formula-paste';
 import {
   editorSource,
   ejectCaretFromToken,
@@ -42,6 +42,7 @@ import {
   textOffsets,
   withFormulaTokens,
 } from './formula-slate';
+import { FormulaPropChip } from './FormulaPropChip';
 import { HIGHLIGHT_CLASS, HighlightKind, highlightFormula } from './highlight';
 
 export interface FormulaSourceInputHandle {
@@ -68,9 +69,17 @@ interface FormulaSourceInputProps {
 
 type HighlightRange = BaseRange & { highlight: HighlightKind };
 
+const EDITABLE_STYLE = { minHeight: undefined };
+
+// Slate pins the placeholder to the top of the editable's padding box; `top:
+// auto` keeps it where the caret is, inside the padding.
 function renderPlaceholder({ attributes, children }: RenderPlaceholderProps) {
   return (
-    <span {...attributes} className={'!opacity-100 text-text-tertiary'}>
+    <span
+      {...attributes}
+      style={{ ...attributes.style, top: 'auto', width: 'auto' }}
+      className={'text-text-tertiary !opacity-100'}
+    >
       {children}
     </span>
   );
@@ -94,7 +103,20 @@ export const FormulaSourceInput = memo(
       handlersRef.current = { onChange, onCaretChange, onKeyDown };
     });
 
-    const [editor] = useState(() => withFormulaTokens(withReact(withHistory(createEditor()))));
+    // Pasted text is read against the current properties, which change while the editor is open.
+    const schemaRef = useRef(schema);
+
+    useLayoutEffect(() => {
+      schemaRef.current = schema;
+    });
+    const [editor] = useState(() =>
+      withFormulaTokens(withReact(withHistory(createEditor())), (text) =>
+        normalizePastedFormula(
+          text,
+          schemaRef.current.map((entry) => entry.name)
+        )
+      )
+    );
     const [initialValue] = useState<Descendant[]>(() => sourceToNodes(value));
     // The source the document currently serializes to; a different `value`
     // prop means the formula was replaced from outside.
@@ -275,6 +297,10 @@ export const FormulaSourceInput = memo(
           renderLeaf={renderLeaf}
           onKeyDown={handleKeyDown}
           className={className}
+          // Slate sizes an empty editor to its placeholder with an inline
+          // min-height; dropping it lets the host's min height apply, so the
+          // box does not jump when the first character is typed.
+          style={EDITABLE_STYLE}
         />
       </Slate>
     );
@@ -293,23 +319,17 @@ function FormulaPropToken({
   const focused = useFocused();
 
   return (
-    <span
+    <FormulaPropChip
       {...attributes}
       contentEditable={false}
       data-testid={'formula-token'}
-      data-highlight={'prop'}
       data-ref={token.ref}
-      data-missing={entry ? undefined : 'true'}
       title={token.source}
-      className={cn(
-        'mx-px inline-flex max-w-full select-none items-center gap-1 rounded-[4px] px-1 align-baseline font-sans leading-5',
-        entry ? 'bg-fill-secondary text-text-primary' : 'bg-fill-error-light text-text-error',
-        selected && focused && 'ring-2 ring-border-theme-thick'
-      )}
+      entry={entry}
+      reference={token.ref}
+      className={cn(selected && focused && 'ring-2 ring-border-theme-thick')}
     >
-      {entry ? <FieldTypeIcon type={entry.type} className={'h-3.5 w-3.5 shrink-0 text-icon-secondary'} /> : null}
-      <span className={'truncate'}>{entry?.name ?? token.ref}</span>
       {children}
-    </span>
+    </FormulaPropChip>
   );
 }

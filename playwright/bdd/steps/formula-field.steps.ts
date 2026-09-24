@@ -558,6 +558,25 @@ When(/^I paste "(.*)" into the formula editor$/, async ({ page }, text: string) 
   }, text);
 });
 
+// A clipboard from a web page or doc carries HTML too. Chrome then leaves the
+// paste event alone and inserts through a beforeinput "insertFromPaste".
+When(/^I paste "(.*)" with rich text into the formula editor$/, async ({ page }, text: string) => {
+  await formulaInput(page).evaluate((element, pasted) => {
+    const data = new DataTransfer();
+
+    data.setData('text/plain', pasted);
+    data.setData('text/html', `<span>${pasted}</span>`);
+    const paste = new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true });
+
+    element.dispatchEvent(paste);
+    if (!paste.defaultPrevented) {
+      element.dispatchEvent(
+        new InputEvent('beforeinput', { inputType: 'insertFromPaste', dataTransfer: data, bubbles: true, cancelable: true })
+      );
+    }
+  }, text);
+});
+
 // ---------------------------------------------------------------------------
 // Autocomplete
 // ---------------------------------------------------------------------------
@@ -672,9 +691,10 @@ Then(/^the docs panel reads "(.*)"$/, async ({ page }, text: string) => {
 });
 
 function docsExample(page: Page, expression: string): Locator {
+  // Examples show property references as chips; match on the source instead.
   return docsPanel(page)
     .getByRole('button')
-    .filter({ has: page.locator('code').getByText(expression, { exact: true }) });
+    .and(page.locator(`[data-expression="${expression.replace(/["\\]/g, '\\$&')}"]`));
 }
 
 Then(
