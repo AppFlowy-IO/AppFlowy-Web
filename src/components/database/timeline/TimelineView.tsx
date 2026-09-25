@@ -21,7 +21,7 @@ import {
   useNavigateToRow,
   usePrimaryFieldId,
 } from '@/application/database-yjs';
-import { useUpdateTimelineSetting } from '@/application/database-yjs/dispatch';
+import { useResizeColumnWidthDispatch, useUpdateTimelineSetting } from '@/application/database-yjs/dispatch';
 import {
   DateCellUpdate,
   useUpdateAnyCellDispatch,
@@ -54,15 +54,21 @@ import {
   TIMELINE_COLLAPSED_SIDEBAR_WIDTH,
   TIMELINE_COLUMN_OVERSCAN,
   TIMELINE_HEADER_HEIGHT,
+  TIMELINE_MIN_PRIMARY_COLUMN_WIDTH,
+  TIMELINE_MIN_TABLE_COLUMN_WIDTH,
   TIMELINE_ROW_HEIGHT,
   TIMELINE_SIDEBAR_WIDTH,
-  TIMELINE_TABLE_COLUMN_WIDTH,
   TIMELINE_TABLE_CONTROL_WIDTH,
   TIMELINE_TODAY_ANCHOR,
 } from './constants';
 import { useScrollWindow } from './hooks/useScrollWindow';
 import { TimelineDragMode, TimelineDragPreview, TimelineDragSpan, useTimelineDrag } from './hooks/useTimelineDrag';
-import { parseProgressPercent, parseRelationRowIds, serializeTimelineProgressPercent, useTimelineFieldValues } from './hooks/useTimelineFieldValues';
+import {
+  parseProgressPercent,
+  parseRelationRowIds,
+  serializeTimelineProgressPercent,
+  useTimelineFieldValues,
+} from './hooks/useTimelineFieldValues';
 import { useTimelineItems } from './hooks/useTimelineItems';
 import { useTimelineLinkDrag } from './hooks/useTimelineLinkDrag';
 import { useTimelinePermissions } from './hooks/useTimelinePermissions';
@@ -85,18 +91,28 @@ import {
 import { hitTestLink, TimelineArrows, TimelineLinkSelection } from './TimelineArrows';
 import { TimelineBarDragLabel } from './TimelineBar';
 import { TimelineCalculation } from './TimelineCalculation';
+import { TimelineColumnResizeHandle } from './TimelineColumnResizeHandle';
 import { TimelineGrid } from './TimelineGrid';
 import { useTimelineGrouping } from './TimelineGroupingContext';
 import { TimelineGroupFooter, TimelineGroupRow } from './TimelineGroupRow';
 import { TimelineHeader } from './TimelineHeader';
 import { TimelineLinkEditor } from './TimelineLinkEditor';
 import { TimelineRow, TimelineRowActions } from './TimelineRow';
-import { TimelineTableProvider, TimelineTableViewport, timelineTableViewportWidth } from './TimelineTable';
+import {
+  TimelineTableProvider,
+  TimelineTableViewport,
+  timelinePropertyColumnWidth,
+  timelineTableViewportWidth,
+} from './TimelineTable';
+import { TimelineColumnResize, timelineTableColumnWidths } from './table-layout';
 import { TimelineToolbar } from './TimelineToolbar';
 
-// Calendar cards carry only the title; a timeline bar adds chips solely for
-// properties the user set to "always shown" in this view's Properties menu.
-const CARD_FIELD_VISIBILITIES = [FieldVisibility.AlwaysShown];
+// Table columns are selected independently of the bar's visible properties.
+const TABLE_FIELD_VISIBILITIES = [
+  FieldVisibility.AlwaysShown,
+  FieldVisibility.HideWhenEmpty,
+  FieldVisibility.AlwaysHidden,
+];
 
 function dragLabelFor(preview: TimelineDragPreview): TimelineBarDragLabel {
   if (preview.mode === 'progress') return { side: 'end', text: `${preview.progress ?? 0}%` };
@@ -126,6 +142,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const { isDocumentBlock, variant, paddingStart, paddingEnd } = useDatabaseContext();
   const fixedViewport = shouldUseFixedDatabaseViewport({ isDocumentBlock, variant });
   const updateSetting = useUpdateTimelineSetting();
+  const resizeColumn = useResizeColumnWidthDispatch();
   const updateDateCells = useUpdateStartEndTimeCells();
   const updateAnyCell = useUpdateAnyCellDispatch();
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
@@ -154,12 +171,41 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const showSidebar = localOverride?.showTable ?? setting.showTable;
   // Only columns whose field still exists are shown, in the setting's order.
   const databaseFields = useDatabaseFields();
+  const fields = useFieldsSelector(TABLE_FIELD_VISIBILITIES);
   const tableFieldIds = useMemo(
     () => setting.tableFieldIds.filter((fieldId) => fieldId !== primaryFieldId && databaseFields?.has(fieldId)),
     [databaseFields, primaryFieldId, setting.tableFieldIds]
   );
+  const [columnResize, setColumnResize] = useState<(TimelineColumnResize & { viewId: string }) | null>(null);
+  const activeColumnResize =
+    showSidebar &&
+    permissions.editable &&
+    columnResize?.viewId === viewId &&
+    (columnResize.fieldId === primaryFieldId || tableFieldIds.includes(columnResize.fieldId))
+      ? columnResize
+      : null;
+  const columnWidths = useMemo(
+    () => timelineTableColumnWidths(fields, primaryFieldId, tableFieldIds, activeColumnResize),
+    [fields, primaryFieldId, tableFieldIds, activeColumnResize]
+  );
+  const primaryColumnWidth =
+    (primaryFieldId && columnWidths.get(primaryFieldId)) || TIMELINE_SIDEBAR_WIDTH - TIMELINE_TABLE_CONTROL_WIDTH;
+  const handleColumnResize = useCallback(
+    (fieldId: string, width: number | null) => {
+      setColumnResize((current) => {
+        const sameColumn = current?.viewId === viewId && current.fieldId === fieldId;
+
+        if (width === null) return sameColumn ? null : current;
+        return sameColumn && current.width === width ? current : { viewId, fieldId, width };
+      });
+    },
+    [viewId]
+  );
   const tableContentWidth = showSidebar
-    ? TIMELINE_SIDEBAR_WIDTH + tableFieldIds.length * TIMELINE_TABLE_COLUMN_WIDTH
+    ? tableFieldIds.reduce(
+        (width, fieldId) => width + timelinePropertyColumnWidth(columnWidths, fieldId),
+        primaryColumnWidth + TIMELINE_TABLE_CONTROL_WIDTH
+      )
     : TIMELINE_COLLAPSED_SIDEBAR_WIDTH;
   const scroll = useScrollWindow(scrollerRef);
   const sidebarWidth = timelineTableViewportWidth(tableContentWidth, scroll.clientWidth);
@@ -243,7 +289,6 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     sidebarWidth,
   });
 
-  const fields = useFieldsSelector(CARD_FIELD_VISIBILITIES);
   const propertyFields = useMemo(
     () =>
       fields.filter(
@@ -603,12 +648,12 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const lastVisibleIndex = virtualItems[virtualItems.length - 1]?.index ?? -1;
 
   return (
-    <TimelineTableProvider contentWidth={tableContentWidth} viewportWidth={sidebarWidth}>
+    <TimelineTableProvider contentWidth={tableContentWidth} viewportWidth={sidebarWidth} columnWidths={columnWidths}>
       <div
         className={cn(
           'mx-24 flex flex-col max-sm:!mx-6',
           fixedViewport ? 'h-full min-h-0' : '',
-          dragging && 'select-none'
+          (dragging || activeColumnResize) && 'select-none'
         )}
         // Same inline margins as the calendar: the page's gutters on desktop, or
         // whatever an embedding document block dictates.
@@ -635,27 +680,48 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                 <div
                   className={cn(
                     // Grid-style header cell: the primary field name plus the table toggle.
-                    'flex h-full items-center border-b border-r border-border-primary bg-background-primary',
+                    'flex h-full items-center border-b border-border-primary bg-background-primary',
                     showSidebar ? 'justify-between' : 'justify-center'
                   )}
-                  // Line the field name up with the row titles, which sit after the
-                  // 40px hover gutter when the table is editable.
-                  style={{ paddingLeft: showSidebar ? (permissions.editable ? 44 : 12) : undefined }}
                 >
                   {showSidebar ? (
-                    <span className='min-w-0 flex-1 basis-0 truncate text-sm text-text-secondary'>
-                      {primaryFieldName}
-                    </span>
+                    <div
+                      className='relative flex h-full shrink-0 items-center pr-2 text-sm text-text-secondary'
+                      style={{ width: primaryColumnWidth, paddingLeft: permissions.editable ? 44 : 12 }}
+                      data-testid={`timeline-table-header-${primaryFieldId}`}
+                    >
+                      <span className='truncate'>{primaryFieldName}</span>
+                      {permissions.editable && primaryFieldId ? (
+                        <TimelineColumnResizeHandle
+                          key={viewId}
+                          fieldId={primaryFieldId}
+                          width={primaryColumnWidth}
+                          minWidth={TIMELINE_MIN_PRIMARY_COLUMN_WIDTH}
+                          onResize={handleColumnResize}
+                          onCommit={resizeColumn}
+                        />
+                      ) : null}
+                    </div>
                   ) : null}
                   {showSidebar
                     ? tableFieldIds.map((fieldId) => (
                         <div
                           key={fieldId}
-                          className='flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2 text-sm text-text-secondary'
-                          style={{ width: TIMELINE_TABLE_COLUMN_WIDTH }}
+                          className='relative flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2 text-sm text-text-secondary'
+                          style={{ width: timelinePropertyColumnWidth(columnWidths, fieldId) }}
                           data-testid={`timeline-table-header-${fieldId}`}
                         >
                           <FieldDisplay fieldId={fieldId} className='min-w-0 [&_svg]:h-4 [&_svg]:w-4' />
+                          {permissions.editable ? (
+                            <TimelineColumnResizeHandle
+                              key={viewId}
+                              fieldId={fieldId}
+                              width={timelinePropertyColumnWidth(columnWidths, fieldId)}
+                              minWidth={TIMELINE_MIN_TABLE_COLUMN_WIDTH}
+                              onResize={handleColumnResize}
+                              onCommit={resizeColumn}
+                            />
+                          ) : null}
                         </div>
                       ))
                     : null}
@@ -861,26 +927,25 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                   data-testid='timeline-calculations'
                 >
                   <TimelineTableViewport>
-                    <div className='flex h-full border-r border-transparent bg-background-primary text-sm'>
-                      <div className='min-w-0 flex-1 basis-0' data-testid={`timeline-calculation-${primaryFieldId}`}>
+                    <div className='flex h-full bg-background-primary text-sm'>
+                      <div
+                        className='min-w-0 shrink-0'
+                        style={{ width: primaryColumnWidth }}
+                        data-testid={`timeline-calculation-${primaryFieldId}`}
+                      >
                         {primaryFieldId ? <TimelineCalculation fieldId={primaryFieldId} /> : null}
                       </div>
-                      {tableFieldIds.map((fieldId, index) => (
+                      {tableFieldIds.map((fieldId) => (
                         <div
                           key={fieldId}
                           className='shrink-0'
-                          // The last calculation fills the unused row-control slot;
-                          // earlier property columns stay aligned with their headers.
-                          style={{
-                            width:
-                              TIMELINE_TABLE_COLUMN_WIDTH +
-                              (index === tableFieldIds.length - 1 ? TIMELINE_TABLE_CONTROL_WIDTH : 0),
-                          }}
+                          style={{ width: timelinePropertyColumnWidth(columnWidths, fieldId) }}
                           data-testid={`timeline-calculation-${fieldId}`}
                         >
                           <TimelineCalculation fieldId={fieldId} />
                         </div>
                       ))}
+                      <div className='shrink-0' style={{ width: TIMELINE_TABLE_CONTROL_WIDTH }} />
                     </div>
                   </TimelineTableViewport>
                 </div>

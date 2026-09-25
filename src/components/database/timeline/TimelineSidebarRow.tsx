@@ -13,9 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-import { TIMELINE_TABLE_COLUMN_WIDTH } from './constants';
 import { TimelineRowModel } from './hooks/useTimelineRows';
-import { TimelineTableViewport } from './TimelineTable';
+import { TimelineTableViewport, timelinePropertyColumnWidth, useTimelineTableColumnWidths } from './TimelineTable';
 
 import type { TimelineRowActions } from './TimelineRow';
 
@@ -59,6 +58,7 @@ export const TimelineSidebarRow = memo(
     onDropRow,
   }: TimelineSidebarRowProps) => {
     const { t } = useTranslation();
+    const columnWidths = useTimelineTableColumnWidths();
     const meta = useRowMetaSelector(row.rowId);
     const icon = meta?.icon ?? '';
     const cellRef = useRef<HTMLDivElement | null>(null);
@@ -91,7 +91,7 @@ export const TimelineSidebarRow = memo(
           ref={cellRef}
           className={cn(
             // `group/list-row` reveals the shared row actions on hover, as in the List view.
-            'group/list-row relative flex h-full items-center overflow-hidden border-b border-r border-border-primary bg-background-primary text-sm text-text-primary',
+            'group/list-row relative flex h-full items-center overflow-hidden border-b border-border-primary bg-background-primary text-sm text-text-primary',
             // The selection tint is translucent: paint it over the opaque
             // background rather than instead of it, or the bar and arrows
             // scrolled under the docked table show through.
@@ -131,7 +131,7 @@ export const TimelineSidebarRow = memo(
             <div
               key={fieldId}
               className='flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2'
-              style={{ width: TIMELINE_TABLE_COLUMN_WIDTH }}
+              style={{ width: timelinePropertyColumnWidth(columnWidths, fieldId) }}
               data-testid={`timeline-table-cell-${row.rowId}-${fieldId}`}
             >
               <CardField rowId={row.rowId} fieldId={fieldId} />

@@ -147,6 +147,15 @@ Feature: Timeline view interactions
     And I choose the "Quarter" timeline scale
     Then the timeline quarter labels fall on Mondays
 
+  Scenario: Timeline settings contain long field names and keep shift options readable
+    Given a relation field is bound as the dependency field
+    And the timeline dependency field is renamed to "Related appflowy_timeline_dependencies_demo_with_a_long_name"
+    When I open the timeline settings menu
+    Then the timeline settings contain the field name "Related appflowy_timeline_dependencies_demo_with_a_long_name"
+    And the timeline shift settings are fully readable
+    When I open the timeline table properties menu
+    Then the timeline table properties contain the field name "Related appflowy_timeline_dependencies_demo_with_a_long_name"
+
   Scenario: The Layout menu converts a view to a timeline and back
     When I switch to the "Calendar" view tab
     And I change the view layout to "Timeline"
@@ -233,16 +242,38 @@ Feature: Timeline view interactions
     When I choose no timeline end date field
     Then the "Design" bar spans 1 columns
 
-  Scenario: Table properties add columns with a calculations footer
+  Scenario: Table columns resize and preserve their widths after reloading
     Given "Design" has a progress field at 40 percent
     When I show "Progress" as a table column
     Then the table has a "Progress" column reading 40 for "Design"
-    And the docked table is 140 px wider
+    And the docked table is 150 px wider
     And the "Progress" column header, cells and calculation line up
     When I set the "Progress" column calculation to "Sum"
     Then the "Progress" column calculation reads "Sum40"
+
+    When I resize the timeline title column to 240 px
+    Then the timeline title column is 240 px wide
+    When I resize the "Progress" timeline table column to 220 px
+    Then the "Progress" timeline table column is 220 px wide
+    And the "Progress" column header, cells and calculation line up
+    And the "Progress" column calculation reads "Sum40"
+
+    When I cancel resizing the "Progress" timeline table column to 260 px
+    Then the "Progress" timeline table column is 220 px wide
+    And the "Progress" column header, cells and calculation line up
+
+    When I reload the timeline
+    Then the timeline title column is 240 px wide
+    And the "Progress" timeline table column is 220 px wide
+    And the "Progress" column header, cells and calculation line up
+    And the "Progress" column calculation reads "Sum40"
+
+    When I resize the "Progress" timeline table column to 100 px
+    Then the "Progress" timeline table column is 100 px wide
     When I hide the "Progress" table column
     Then the table has no "Progress" column
+    When I show "Progress" as a table column
+    Then the "Progress" timeline table column is 100 px wide
 
   Scenario: Grouping by a select field stacks the rows under group headers
     Given a "Status" select field where "Design" is "Doing" and "Build" is "Done"

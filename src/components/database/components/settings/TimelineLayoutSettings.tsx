@@ -134,7 +134,7 @@ function TimelineLayoutSettings() {
             onChange(property.id);
           }}
         >
-          <FieldDisplay fieldId={property.id} />
+          <FieldDisplay fieldId={property.id} className='min-w-0 flex-1' title={property.name} />
           {value === property.id && <DropdownMenuItemTick />}
         </DropdownMenuItem>
       ))}
@@ -162,7 +162,7 @@ function TimelineLayoutSettings() {
                 updateSetting({ fieldId: property.id });
               }}
             >
-              <FieldDisplay fieldId={property.id} />
+              <FieldDisplay fieldId={property.id} className='min-w-0 flex-1' title={property.name} />
               {setting.fieldId === property.id && <DropdownMenuItemTick />}
             </DropdownMenuItem>
           ))}
@@ -222,7 +222,7 @@ function TimelineLayoutSettings() {
                         });
                       }}
                     >
-                      <FieldDisplay fieldId={property.id} />
+                      <FieldDisplay fieldId={property.id} className='min-w-0 flex-1' title={property.name} />
                       <Switch className={'ml-auto'} checked={shown} />
                     </DropdownMenuItem>
                   );
