@@ -151,8 +151,7 @@ Then('the document import completes and opens its page', async ({ page }) => {
   expect(status.status, status.error || JSON.stringify(status)).toBe('Completed');
   expect(status.view_id).toBeTruthy();
   if (format === 'pdf') {
-    expect(status.diagnostics?.warnings.map((warning) => warning.code)).toContain('pdf_images_not_imported');
-    await expect(page.getByText(/Images inside the PDF are not imported/)).toBeVisible();
+    expect(status.diagnostics?.warnings || []).toEqual([]);
   } else {
     expect(status.diagnostics?.warnings.map((warning) => warning.code)).toEqual(['docx_merged_cells_flattened']);
   }
@@ -171,7 +170,6 @@ Then('the imported document renders the fixture content', async ({ page, $testIn
   await expect(editor).toContainText('Final sentinel: every page was imported.');
   for (const label of [
     ...SECTIONS,
-    'Table of contents',
     'Formatting examples',
     'Code example',
     'Inline style samples',
@@ -181,8 +179,26 @@ Then('the imported document renders the fixture content', async ({ page, $testIn
     await expect(blocks('heading').filter({ hasText: label })).toHaveCount(1);
   }
 
+  const outline = blocks('outline');
+
+  await expect(outline).toHaveCount(1);
+  await expect(outline.locator('.outline-block')).toBeVisible();
+  await expect(blocks('heading').filter({ hasText: /^Table of contents$/i })).toHaveCount(0);
   for (const label of SECTIONS) {
-    await expect.poll(async () => (await editor.textContent())?.split(label).length).toBe(3);
+    await expect(outline.getByText(label, { exact: true })).toHaveCount(1);
+  }
+
+  // Every source contents entry must navigate to its real native heading, before and after reload.
+  for (const label of SECTIONS) {
+    const target = blocks('heading')
+      .filter({ hasText: new RegExp(`^${label}$`) })
+      .locator('[id^="heading-"]');
+    const targetId = (await target.getAttribute('id'))?.replace(/^heading-/, '');
+
+    expect(targetId).toBeTruthy();
+    await outline.getByText(label, { exact: true }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('blockId')).toBe(targetId);
+    await expect(target).toBeInViewport();
   }
 
   const expectedBullets = [...BULLETS];
@@ -193,6 +209,19 @@ Then('the imported document renders the fixture content', async ({ page, $testIn
   await expect
     .poll(() => blockTexts(blocks('numbered_list')))
     .toEqual(['Choose the source file', 'Start the import task', 'Open the completed page']);
+  const deepParent = blocks('bulleted_list').filter({ hasText: 'Release review' });
+
+  await expect
+    .poll(() => blockTexts(deepParent.locator('[data-block-type="bulleted_list"]')))
+    .toEqual(['Review formatting', 'Inspect the deepest item']);
+  await expect(deepParent.locator('[data-block-type="bulleted_list"] [data-block-type="bulleted_list"]')).toHaveText(
+    'Inspect the deepest item'
+  );
+  const finalBullet = blocks('bulleted_list').filter({ hasText: /^Approve the document$/ });
+
+  expect(
+    await finalBullet.evaluate((el) => el.parentElement?.closest('[data-block-type="bulleted_list"]') === null)
+  ).toBe(true);
 
   for (const [label, href] of [
     ['Open the import guide', 'https://example.com/import-guide?source=fixture&format=document'],
@@ -233,26 +262,13 @@ Then('the imported document renders the fixture content', async ({ page, $testIn
     blocks('bulleted_list').locator('strong').filter({ hasText: 'Keep bold text inside a list' })
   ).toHaveCount(1);
   await expect(editor).toContainText('Accented text: Réinitialiser le réseau. Café déjà vu.');
-  for (const value of [
-    'Underline sample stays readable.',
-    'Highlight sample stays readable.',
-    'Coloured sample stays readable.',
-    'Double strike sample stays readable.',
-    'import_ready = true',
-    'Centered paragraph sample.',
-    'Right aligned paragraph sample.',
-    'Justified paragraphs keep their words even when the imported document uses a different line width.',
-    'Merged readiness summary',
-    'Navigation',
-    'Verified',
-    'Table 2 Merged summary',
-    'Table 3 Rich cell content',
-    'Level three sample',
-    'Level four sample',
-    'Level five sample',
-    'Level six sample',
-  ]) {
-    await expect(editor).toContainText(value);
+  const content: Record<string, string[]> = JSON.parse(
+    await readFile(path.resolve('playwright/fixtures/document-import/feature_matrix.content.json'), 'utf8')
+  );
+  const renderedText = (await blockTexts(editor.locator('[data-block-type]'))).join(' ').replace(/\s+/g, ' ');
+
+  for (const passage of [...content.common, ...content[format]]) {
+    expect(renderedText.split(passage).length - 1, `Source passage must survive exactly once: ${passage}`).toBe(1);
   }
 
   // File-local bookmarks are flattened. They must not become broken external links.
@@ -276,6 +292,20 @@ Then('the imported document renders the fixture content', async ({ page, $testIn
   }
 
   await expect(blocks('simple_table')).toHaveCount(3);
+  const mergedRows = blocks('simple_table')
+    .filter({ hasText: 'Merged readiness summary' })
+    .locator('[data-block-type="simple_table_row"]');
+
+  await expect(mergedRows).toHaveCount(3);
+  // Slate's empty cells have a zero-width text leaf; compare their visible text.
+  expect(
+    await mergedRows
+      .nth(0)
+      .locator('td')
+      .evaluateAll((cells) => cells.map((cell) => (cell.textContent || '').replace(/[\uFEFF\u200B]/g, '').trim()))
+  ).toEqual(['Merged readiness summary', '', '']);
+  await expect(mergedRows.nth(1).locator('td')).toHaveText(['Area', 'Status', 'Owner']);
+  await expect(mergedRows.nth(2).locator('td')).toHaveText(['Navigation', 'Verified', 'Mira']);
   const richTable = blocks('simple_table').filter({ hasText: 'Delta' });
   const richRows = richTable.locator('[data-block-type="simple_table_row"]');
 
@@ -307,14 +337,6 @@ Then('the imported document renders the fixture content', async ({ page, $testIn
     await expect(editor.locator('span.bg-border-primary').filter({ hasText: /^import_ready = true$/ })).toHaveCount(1);
     await expect(editor).toContainText('Subscript example: H2O');
     await expect(editor).toContainText('Superscript example: x2');
-    const deepParent = blocks('bulleted_list').filter({ hasText: 'Release review' });
-
-    await expect
-      .poll(() => blockTexts(deepParent.locator('[data-block-type="bulleted_list"]')))
-      .toEqual(['Review formatting', 'Inspect the deepest item']);
-    await expect(deepParent.locator('[data-block-type="bulleted_list"] [data-block-type="bulleted_list"]')).toHaveText(
-      'Inspect the deepest item'
-    );
     for (const [label, level] of [
       ['Level three sample', 3],
       ['Level four sample', 4],
@@ -323,16 +345,7 @@ Then('the imported document renders the fixture content', async ({ page, $testIn
     ] as const) {
       await expect(editor.locator(`.heading.level-${level}`).filter({ hasText: label })).toHaveCount(1);
     }
-
-    const image = blocks('image').locator('img');
-
-    await expect(image).toHaveCount(1);
-    await image.scrollIntoViewIfNeeded();
-    await expect
-      .poll(() => image.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth > 0))
-      .toBe(true);
   } else {
-    await expect(blocks('image')).toHaveCount(0);
     await expect(editor).toContainText('Subscript example: H₂O');
     await expect(editor).toContainText('Superscript example: x²');
   }
@@ -340,6 +353,81 @@ Then('the imported document renders the fixture content', async ({ page, $testIn
   await richTable.scrollIntoViewIfNeeded();
   await $testInfo.attach(`imported-${format}-styles-and-rich-table`, {
     body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+});
+
+Then('the imported document displays the exact source image', async ({ page, $testInfo }) => {
+  const { format } = stateFor(page);
+  const editor = editorFor(page);
+  const blocks = (type: string) => editor.locator(`[data-block-type="${type}"]`);
+
+  const figure = blocks('image');
+  const image = figure.locator('img');
+
+  await expect(figure).toHaveCount(1);
+  await expect(image).toHaveCount(1);
+  await image.scrollIntoViewIfNeeded();
+  await expect(image).toBeVisible();
+  await expect(image).toBeInViewport();
+  await expect
+    .poll(() =>
+      image.evaluate((element: HTMLImageElement) => ({
+        complete: element.complete,
+        width: element.naturalWidth,
+        height: element.naturalHeight,
+      }))
+    )
+    .toEqual({ complete: true, width: 960, height: 240 });
+
+  const sourceImage = await readFile(path.resolve('playwright/fixtures/document-import/feature_matrix.png'));
+  const pixels = await image.evaluate(async (element: HTMLImageElement, base64: string) => {
+    const expected = new Image();
+
+    expected.src = `data:image/png;base64,${base64}`;
+    await expected.decode();
+    const rgba = (img: HTMLImageElement) => {
+      const canvas = document.createElement('canvas');
+
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const context = canvas.getContext('2d');
+
+      if (!context) throw new Error('Canvas is required for exact image verification');
+      context.drawImage(img, 0, 0);
+      return context.getImageData(0, 0, canvas.width, canvas.height).data;
+    };
+
+    const actual = rgba(element);
+    const reference = rgba(expected);
+    let differentChannels = 0;
+
+    for (let index = 0; index < reference.length; index++) {
+      if (actual[index] !== reference[index]) differentChannels++;
+    }
+
+    return { actualBytes: actual.length, expectedBytes: reference.length, differentChannels };
+  }, sourceImage.toString('base64'));
+
+  expect(pixels, 'Every displayed RGBA channel must match the source figure; placeholders cannot pass').toEqual({
+    actualBytes: 960 * 240 * 4,
+    expectedBytes: 960 * 240 * 4,
+    differentChannels: 0,
+  });
+  const placement = await figure.evaluate((element) => {
+    const editor = element.closest('[data-slate-editor="true"]');
+    const blocks = Array.from(editor?.querySelectorAll('[data-block-type]') || []);
+    const index = blocks.indexOf(element);
+
+    return { before: blocks[index - 1]?.textContent, after: blocks[index + 1]?.textContent };
+  });
+
+  expect(placement).toEqual({
+    before: 'Figures and final checks',
+    after: 'Figure 1 Source to conversion to imported page',
+  });
+  await $testInfo.attach(`imported-${format}-exact-source-image`, {
+    body: await image.screenshot(),
     contentType: 'image/png',
   });
 });

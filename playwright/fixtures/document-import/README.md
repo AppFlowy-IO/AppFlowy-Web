@@ -31,11 +31,21 @@ creation and during status polling. They verify the storage prompt and that the 
 file is never uploaded. Real PostgreSQL quota rejection and safe error persistence are covered by
 the server's `document_failure_reports_quota_code_and_sanitizes_internal_details` regression.
 
-The PDF importer currently omits embedded images and flattens file-internal bookmark links;
-the test checks the image warning and the visible contents labels. Source navigation is
-validated separately by Rust fixture tests; it does not become navigation to imported blocks.
-Word's image must load, and its merged-cell warning is asserted. The browser checks table
-dimensions/cell values, Word cell emphasis and inline code, deep list parents and explicit
-heading levels, including after a reload and sidebar reopen. Colour, highlight, underline,
-alignment, merged geometry and PDF table emphasis flatten; their text must survive. Neither
-format is expected to preserve print pagination or running footers.
+Both formats must render one native AppFlowy table of contents, with working clicks to
+all six imported section headings, and preserve three-level list parents. Exactly one image must appear
+between its section heading and caption, load at the source dimensions (960 × 240), and
+match every RGBA channel of `feature_matrix.png`. That reference PNG is the original image
+embedded in both fixtures, not a screenshot captured from the importer. All checks run
+again after a reload and sidebar reopen. Missing images and substituted placeholders fail.
+
+`feature_matrix.content.json` is the source-reviewed prose inventory shared with the
+server tests. Every passage, including the source title and all ten column sentences,
+must survive exactly once. It is independent of importer output. All cells in all three
+tables are checked, including the visible text of the flattened merged table.
+
+The browser also checks exact table dimensions/cell values, external link URLs, bold and
+italic text, line breaks in code, Word cell emphasis/inline code and explicit heading levels.
+Word's merged-cell warning is asserted. Colour, highlight, underline, alignment, merged
+geometry and PDF table emphasis flatten; their text must survive. Neither format is expected
+to preserve print pagination or running footers. Source PDF/Word navigation is also validated
+by server tests; unrelated file-local return links remain plain text after importing.
