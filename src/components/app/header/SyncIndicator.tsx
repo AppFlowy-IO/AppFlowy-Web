@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { getPendingSyncStatus, subscribeSyncStatus } from '@/application/sync-status/store';
+import LoadingDots from '@/components/_shared/LoadingDots';
 
 const labels = {
   syncing: 'Syncing',
@@ -43,28 +44,23 @@ function PendingSyncIndicator({ status }: { status: NonNullable<ReturnType<typeo
 
   return (
     <Tooltip title={tooltip}>
-      <span
+      <div
         role='status'
         aria-label={label}
         aria-live={announce ? 'polite' : 'off'}
         tabIndex={0}
         data-testid='sync-indicator'
         data-sync-status={status}
-        className='flex h-6 w-6 items-center justify-center gap-0.5 text-text-caption'
+        className='flex h-6 w-8 items-center justify-center'
       >
-        {[0, 1, 2].map((dot) => (
-          <span
-            key={dot}
-            aria-hidden='true'
-            className='h-1 w-1 rounded-full bg-current motion-safe:animate-bounce'
-            style={{ animationDelay: `${dot * 150}ms` }}
-          />
-        ))}
+        <div aria-hidden='true'>
+          <LoadingDots className='motion-reduce:[&>div]:!animate-none' />
+        </div>
         {/* Routine syncing has an accessible name without being announced on every edit. */}
         <span className='sr-only' data-testid='sync-indicator-announcement'>
           {announce ? label : ''}
         </span>
-      </span>
+      </div>
     </Tooltip>
   );
 }

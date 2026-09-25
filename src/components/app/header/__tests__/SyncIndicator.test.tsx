@@ -14,7 +14,7 @@ import { SyncIndicator } from '@/components/app/header/SyncIndicator';
 
 jest.mock('react-i18next', () => {
   const { syncIndicator } = jest.requireActual<{ syncIndicator: Record<string, string> }>(
-    '@/\u0040types/translations/en.json'
+    '@/@types/translations/en.json'
   );
 
   return {
@@ -70,7 +70,7 @@ it('stays hidden when synced, checking, or offline without unsettled edits', asy
   expect(jest.getTimerCount()).toBe(0);
 });
 
-it('shows only three dots after three seconds, with Syncing on hover', async () => {
+it('shows the shared AppFlowy loading dots after three seconds, with Syncing on hover', async () => {
   render(<SyncIndicator viewId='page' />);
   await update(() => changeSyncCounts('page', 1, 0));
   advance(2_999);
@@ -79,7 +79,7 @@ it('shows only three dots after three seconds, with Syncing on hover', async () 
   const indicator = screen.getByRole('status', { name: 'Syncing' });
 
   expect(indicator.getAttribute('data-sync-status')).toBe('syncing');
-  expect(indicator.querySelectorAll('[aria-hidden="true"]')).toHaveLength(3);
+  expect(indicator.querySelector('[aria-hidden="true"] [style]')?.getAttribute('style')).toContain('dots-loading');
   expect(indicator.textContent).toBe('');
   expect(indicator.getAttribute('aria-live')).toBe('off');
   expect(indicator.tabIndex).toBe(0);
