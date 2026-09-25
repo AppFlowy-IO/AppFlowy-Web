@@ -198,6 +198,7 @@
     "duplicateView": "复制"
   },
   "importPanel": {
+    "storageLimitExceeded": "此工作区的存储空间不足，无法完成导入。请升级工作区套餐，或联系工作区管理员。",
     "textAndMarkdown": "文本 和 Markdown",
     "documentFromV010": "来自 v0.1.0 的文档",
     "databaseFromV010": "来自 v0.1.0 的数据库",

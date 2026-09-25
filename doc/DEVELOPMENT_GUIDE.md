@@ -52,6 +52,26 @@ pnpm install
 pnpm run dev
 ```
 
+### Hosted plan restrictions
+
+`src/application/workspace-plan-policy.ts` defines the shared abstract
+`WorkspacePlanPolicy` and separate hosted, self-hosted, and unresolved implementations.
+Select it from the current server-info snapshot; do not infer a deployment from a
+workspace's subscription or duplicate hosting checks in feature code.
+
+The subscription hook uses this policy for charts, Timeline, expanded colors,
+PDF export, history, namespaces and other paid features. Self-hosted workspaces
+receive access without a billing request, even when subscription data is missing
+or says Free. Form/Chart creation and conversion only require an online quota
+check on hosted deployments. Ordinary creation APIs still await the server's
+response on self-hosted deployments; this bypass does not add an offline creation API.
+
+HTTP, upload, and realtime storage error formatters use the same policy for Pro
+upgrade guidance. Self-hosted server errors remain visible as sent by the server;
+permissions, capabilities, licensing and administrator resource limits are separate
+from cloud commercial plan restrictions. Loading or failed server-info never grants
+the self-hosted bypass or displays cloud checkout prompts.
+
 ### Testing Timeline workspace access
 
 Official production builds disable Timeline creation in non-Pro workspaces and show a Pro-workspace

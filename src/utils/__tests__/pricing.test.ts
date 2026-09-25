@@ -9,17 +9,12 @@ import {
   isFreePlan,
   localizeFeatureLabel,
   localizeFeatureValue,
-  localizePlanDescription,
-  localizePlanName,
   splitPriceTemplate,
   toSubscriptionPlan,
   workspacePlans,
 } from '@/utils/pricing';
 
 const KNOWN: Record<string, string> = {
-  'subscribe.free': 'Free',
-  'subscribe.pro': 'Pro',
-  'subscribe.proDescription': 'Localized pro description',
   'subscribe.feature.storage': 'Storage',
   'subscribe.feature.members': 'Members',
   'subscribe.feature.custom_namespace': 'Custom namespace',
@@ -148,15 +143,6 @@ describe('plan lookup helpers', () => {
 });
 
 describe('localization helpers', () => {
-  it('localizes known plan names and descriptions and falls back to server text', () => {
-    expect(localizePlanName(t, pro)).toBe('Pro');
-    expect(localizePlanDescription(t, pro)).toBe('Localized pro description');
-    expect(localizePlanName(t, vault)).toBe('Vault Workspace');
-    expect(localizePlanDescription(t, vault)).toBe('Server vault description');
-    // Known id whose description key is missing from the catalog of translations.
-    expect(localizePlanDescription(t, free)).toBe('Server free description');
-  });
-
   it('localizes feature labels with the server label as fallback', () => {
     expect(localizeFeatureLabel(t, 'storage', 'Storage (server)')).toBe('Storage');
     expect(localizeFeatureLabel(t, 'quantum_sync', 'Quantum sync')).toBe('Quantum sync');

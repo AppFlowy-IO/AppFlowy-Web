@@ -8,7 +8,7 @@ import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { PricingTranslate, findPlan, localizePlanDescription, localizePlanName } from '@/utils/pricing';
+import { findPlan } from '@/utils/pricing';
 import { findWorkspaceAddOn, formatStorageGb, isSubscriptionCanceled } from '@/utils/subscription';
 
 import { fillPlaceholders, formatPeriodEnd, userDateFormat } from './billing/labels';
@@ -128,8 +128,6 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
   const billing = useWorkspaceBilling(workspaceId);
   const { info, usage, status, error, reload } = billing;
   const { catalog } = usePricingCatalog();
-  // Catalog keys are built at runtime, which the typed i18n resources cannot express.
-  const translate = t as unknown as PricingTranslate;
 
   const openChangePlan = useCallback(() => {
     setSearch((prev) => {
@@ -138,8 +136,7 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
     });
   }, [setSearch]);
 
-  // Fallback copy while the catalog loads, or for Team, which it does not list:
-  // the same strings the compare dialog localizes the catalog with.
+  // Fallback copy only while the catalog is unavailable or for unlisted plans.
   const planTitle = (plan: SubscriptionPlan) => {
     switch (plan) {
       case SubscriptionPlan.Pro:
@@ -200,8 +197,8 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
     const canceled = info.subscription && isSubscriptionCanceled(info.subscription);
     // The pricing catalog is the source of plan copy.
     const catalogPlan = catalog ? findPlan(catalog, info.plan) : undefined;
-    const title = catalogPlan ? localizePlanName(translate, catalogPlan) : planTitle(info.plan);
-    const description = catalogPlan ? localizePlanDescription(translate, catalogPlan) : planInfo(info.plan);
+    const title = catalogPlan?.name ?? planTitle(info.plan);
+    const description = catalogPlan?.description ?? planInfo(info.plan);
 
     return (
       <div className='flex flex-col gap-4'>

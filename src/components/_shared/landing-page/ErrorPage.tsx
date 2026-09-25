@@ -1,10 +1,11 @@
-import { ReactNode, useCallback, useMemo, useState } from 'react';
+import { ReactNode, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { ReactComponent as ErrorLogo } from '@/assets/icons/warning_logo.svg';
 import { getLandingPageErrorContent, LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
+import { useServerHostingMode } from '@/components/app/hooks/useServerInfo';
 import { Progress } from '@/components/ui/progress';
 
 interface ErrorPageProps {
@@ -17,8 +18,11 @@ interface ErrorPageProps {
 export function ErrorPage({ onRetry, error, title, description }: ErrorPageProps) {
   const { t } = useTranslation();
 
+  // Re-evaluate quota guidance when deployment capabilities resolve or change.
+  useServerHostingMode();
+
   const [loading, setLoading] = useState(false);
-  const errorContent = useMemo(() => getLandingPageErrorContent(error, t), [error, t]);
+  const errorContent = getLandingPageErrorContent(error, t);
 
   const handleCopyError = useCallback(async () => {
     if (!error) return;

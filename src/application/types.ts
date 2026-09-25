@@ -2445,6 +2445,49 @@ export interface DatabaseCsvImportStatusResponse {
   error?: string;
 }
 
+/** Formats accepted by `POST /api/import/{workspace_id}/document` (one file → one page). */
+export type DocumentFileImportFormat = 'html' | 'docx' | 'pdf';
+
+export interface DocumentFileImportRequest {
+  content_length: number;
+  md5_base64?: string;
+  /** Original file name; its stem becomes the page name unless `name` is given. */
+  file_name: string;
+  format: DocumentFileImportFormat;
+  parent_view_id: string;
+  name?: string;
+}
+
+export interface DocumentFileImportCreateResponse {
+  task_id: string;
+  presigned_url: string;
+  expires_in_secs: number;
+}
+
+/** Server `ImportTaskState`; `Processing` is reported while the worker converts. */
+export type ImportTaskStatus = DatabaseCsvImportStatus | 'Processing';
+
+export interface ImportDiagnosticsWarning {
+  code: string;
+  count: number;
+  message: string;
+}
+
+export interface ImportDiagnostics {
+  warnings: ImportDiagnosticsWarning[];
+  omitted_warning_count?: number;
+}
+
+export interface DocumentFileImportStatusResponse {
+  task_id: string;
+  status: ImportTaskStatus;
+  view_id?: string;
+  error?: string;
+  /** Stable application error code; older workers report only the message. */
+  error_code?: number;
+  diagnostics?: ImportDiagnostics;
+}
+
 export interface CreateSpacePayload {
   name?: string;
   space_icon?: string;

@@ -30,18 +30,6 @@ const UNIT_VALUE_KEYS: Record<string, string> = {
   forms: 'subscribe.value.forms',
 };
 
-// Only the plans a client surface shows are translated; add-ons keep the
-// server's copy, so a client string cannot drift from what is sold.
-const PLAN_NAME_KEYS: Record<string, string> = {
-  [SubscriptionPlan.Free]: 'subscribe.free',
-  [SubscriptionPlan.Pro]: 'subscribe.pro',
-};
-
-const PLAN_DESCRIPTION_KEYS: Record<string, string> = {
-  [SubscriptionPlan.Free]: 'subscribe.freeDescription',
-  [SubscriptionPlan.Pro]: 'subscribe.proDescription',
-};
-
 /**
  * Formats cents as the short dollar string used across the pricing UI, matching
  * the desktop client: 1250 -> `$12.5`, 1000 -> `$10`, 1299 -> `$12.99`.
@@ -109,18 +97,6 @@ export function findPlan(catalog: PricingCatalog, id: string): PricingPlan | und
 /** Maps a catalog plan id onto the checkout enum, or `undefined` for ids checkout does not know. */
 export function toSubscriptionPlan(id: string): SubscriptionPlan | undefined {
   return SUBSCRIPTION_PLAN_IDS.has(id) ? (id as SubscriptionPlan) : undefined;
-}
-
-export function localizePlanName(t: PricingTranslate, plan: PricingPlan): string {
-  const key = PLAN_NAME_KEYS[plan.id];
-
-  return key ? t(key, { defaultValue: plan.name }) : plan.name;
-}
-
-export function localizePlanDescription(t: PricingTranslate, plan: PricingPlan): string {
-  const key = PLAN_DESCRIPTION_KEYS[plan.id];
-
-  return key ? t(key, { defaultValue: plan.description }) : plan.description;
 }
 
 /** Localized noun for a feature key, or the server's `fallback` for keys this client does not know. */

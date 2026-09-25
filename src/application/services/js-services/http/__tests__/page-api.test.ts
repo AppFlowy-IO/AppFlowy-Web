@@ -11,6 +11,8 @@ import {
   ViewLayout,
 } from '@/application/types';
 import { executeAPIRequest, executeAPIVoidRequest, getAxios } from '@/application/services/js-services/http/core';
+import { updateServerInfo } from '@/utils/server-info';
+import { getConfigValue } from '@/utils/runtime-config';
 
 import {
   addAppPage,
@@ -61,6 +63,12 @@ function apiResponse<T>(data: T) {
 }
 
 describe('online Form and Chart creation', () => {
+  beforeEach(() => {
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available', info: { enable_page_history: true, self_hosted: false },
+    });
+  });
+
   afterEach(() => jest.restoreAllMocks());
 
   it.each([ViewLayout.Form, ViewLayout.Chart])('rejects offline standalone and linked layout %s before sending', async (layout) => {
@@ -76,6 +84,24 @@ describe('online Form and Chart creation', () => {
     expect(executeAPIRequest).not.toHaveBeenCalled();
     expect(getAxios).not.toHaveBeenCalled();
   });
+
+  it.each([ViewLayout.Form, ViewLayout.Chart])('does not apply the hosted offline gate to self-hosted layout %s', async (layout) => {
+    jest.clearAllMocks();
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available', info: { enable_page_history: true, self_hosted: true },
+    });
+    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    // Browsers can report offline while a server on the local network remains
+    // reachable. Self-hosted operations must be allowed to reach that server.
+    jest.mocked(executeAPIRequest).mockResolvedValue({ view_id: 'accepted-view-id' });
+
+    await expect(addAppPage('workspace-id', 'parent-id', { layout })).resolves.toEqual({ view_id: 'accepted-view-id' });
+    await expect(createDatabaseView('workspace-id', 'source-id', {
+      database_id: 'database-id', parent_view_id: 'parent-id', layout, name: 'View',
+    })).resolves.toEqual({ view_id: 'accepted-view-id' });
+    expect(executeAPIRequest).toHaveBeenCalledTimes(2);
+  });
+
 });
 
 describe('createSpaceWithInitialPage', () => {

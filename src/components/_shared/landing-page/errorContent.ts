@@ -1,6 +1,7 @@
 import { TFunction } from 'i18next';
 
 import { ERROR_CODE } from '@/application/constants';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 
 export interface LandingPageError {
@@ -30,6 +31,16 @@ export function getLandingPageErrorContent(error: LandingPageError | undefined, 
     description: serverMessage || t(descriptionKey, fallbackDescription),
   });
 
+  const quotaContent = (titleKey: string, fallbackTitle: string, descriptionKey: string, fallbackDescription: string) =>
+    getWorkspacePlanPolicy().usesHostedBilling
+      ? content(titleKey, fallbackTitle, descriptionKey, fallbackDescription)
+      : content(
+          titleKey,
+          fallbackTitle,
+          'landingPage.error.administratorLimitDescription',
+          'The server rejected this request because a configured limit was reached. Contact your workspace administrator.'
+        );
+
   if (!error) {
     return content(
       'landingPage.error.title',
@@ -41,7 +52,7 @@ export function getLandingPageErrorContent(error: LandingPageError | undefined, 
 
   switch (error.code) {
     case ERROR_CODE.WORKSPACE_MEMBER_LIMIT_EXCEEDED:
-      return content(
+      return quotaContent(
         'landingPage.inviteCode.memberLimitTitle',
         'Workspace member limit reached',
         'landingPage.error.workspaceMemberLimitDescription',
@@ -49,14 +60,14 @@ export function getLandingPageErrorContent(error: LandingPageError | undefined, 
       );
     case ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED:
     case ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED:
-      return content(
+      return quotaContent(
         'landingPage.error.guestLimitTitle',
         'Workspace guest limit reached',
         'landingPage.error.guestLimitDescription',
         'This workspace has reached its guest limit. Ask the workspace owner to upgrade their plan or remove a guest, then try again.'
       );
     case ERROR_CODE.WORKSPACE_LIMIT_EXCEEDED:
-      return content(
+      return quotaContent(
         'landingPage.error.workspaceLimitTitle',
         'Workspace limit reached',
         'landingPage.error.workspaceLimitDescription',
@@ -72,7 +83,7 @@ export function getLandingPageErrorContent(error: LandingPageError | undefined, 
       );
     case ERROR_CODE.FILE_STORAGE_LIMIT_EXCEEDED:
     case ERROR_CODE.STORAGE_SPACE_NOT_ENOUGH:
-      return content(
+      return quotaContent(
         'landingPage.error.storageLimitTitle',
         'Storage limit reached',
         'landingPage.error.storageLimitDescription',

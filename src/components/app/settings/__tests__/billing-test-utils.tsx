@@ -112,12 +112,19 @@ export const catalog: PricingCatalog = {
   currency: 'USD',
   annual_discount_percent: 20,
   plans: [
-    { id: 'free', kind: 'workspace_plan', name: 'Free', description: '', prices: [], features: [] },
+    {
+      id: 'free',
+      kind: 'workspace_plan',
+      name: 'Personal',
+      description: 'For personal productivity',
+      prices: [],
+      features: [],
+    },
     {
       id: SubscriptionPlan.Pro,
       kind: 'workspace_plan',
       name: 'Pro',
-      description: '',
+      description: 'For professional work and teams',
       prices: [
         { interval: SubscriptionInterval.Month, price_cents: 1250 },
         { interval: SubscriptionInterval.Year, price_cents: 12000 },
