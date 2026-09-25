@@ -1,4 +1,11 @@
 {
+  "syncIndicator": {
+    "syncing": "Syncing",
+    "offline": "Offline",
+    "offlineDescription": "Waiting for a connection. Pending changes will retry automatically.",
+    "error": "Unable to sync",
+    "errorDescription": "Some changes could not be saved. Keep this page open and check your connection or storage."
+  },
   "databaseViewCreation": {
     "onlineRequired": "Connect to the internet to create Form or Chart views."
   },

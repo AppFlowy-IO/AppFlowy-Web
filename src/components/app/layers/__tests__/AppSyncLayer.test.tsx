@@ -43,6 +43,7 @@ jest.mock('@/application/sync-outbox', () => ({
   configureDrain: jest.fn(),
   resumePermissionBlockedSync: jest.fn(),
   setCurrentSession: jest.fn(),
+  restartSyncDelivery: jest.fn(),
   startDrainAll: jest.fn(),
 }));
 

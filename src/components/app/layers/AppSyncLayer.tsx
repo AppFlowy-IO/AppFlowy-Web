@@ -18,10 +18,12 @@ import {
   configureDrain,
   resumePermissionBlockedSync,
   setCurrentSession,
+  restartSyncDelivery,
   type SlowSyncBlockedReason,
   type SlowSyncOutboxItem,
   startDrainAll,
 } from '@/application/sync-outbox';
+import { setSyncConnected } from '@/application/sync-status/store';
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { useSync, useWorkspaceRealtimeTransport } from '@/components/ws';
 import { notification } from '@/proto/messages';
@@ -183,19 +185,18 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   // workspace receive local edits immediately, without waiting for a server
   // round-trip (matches the behaviour of the pre-outbox `emit` callback).
   const wsSendMessage = webSocket.sendMessage;
-  const wsReadyState = webSocket.readyState;
   const bcPostDurableMessage = broadcastChannel.postDurableMessage;
   const bcPostOutboxReady = broadcastChannel.postOutboxReady;
 
   // Live readyState for the drain send callback. The closure capture
-  // `wsReadyState` reflects the value at render time, but a drain can run
+  // `webSocketReadyState` reflects the value at render time, but a drain can run
   // later — a ref ensures `isReady()` and the post-send check always see
   // the latest known state.
-  const wsReadyStateRef = useRef(wsReadyState);
+  const wsReadyStateRef = useRef(webSocketReadyState);
 
   useEffect(() => {
-    wsReadyStateRef.current = wsReadyState;
-  }, [wsReadyState]);
+    wsReadyStateRef.current = webSocketReadyState;
+  }, [webSocketReadyState]);
 
   // Re-derive only when auth state flips — the user id is stable for the
   // lifetime of an authenticated session, so re-parsing the token on every
@@ -283,7 +284,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
         throw new Error(`Slow-sync response for ${item.objectId} did not include a durable message id`);
       }
 
-      return { outcome: 'confirmed' as const, messageId: uploaded.messageId };
+      return { outcome: 'confirmed' as const, messageId: uploaded.messageId, saved: uploaded.saved, version: uploaded.collabVersion };
     },
     [applyHttpFullSyncResult, currentWorkspaceId]
   );
@@ -320,12 +321,19 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     };
   }, [currentUserId, currentWorkspaceId]);
 
+  // Session resets keep the connection flag, so this only tracks the socket and
+  // does not depend on running after setCurrentSession.
+  useEffect(() => {
+    setSyncConnected(webSocketReadyState === WS_READY_STATE_OPEN);
+  }, [webSocketReadyState]);
+
   useEffect(() => {
     if (!currentWorkspaceId || !currentUserId) return;
 
     configureDrain({
       userId: currentUserId,
       workspaceId: currentWorkspaceId,
+      trackReceipts: true,
       // Server send — gated on WS being OPEN via isReady(). `keep=false` so
       // a transient close does not silently buffer the message into
       // react-use-websocket's in-memory retry queue (which would be lost on
@@ -391,14 +399,25 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     maxUpdateBytes,
     maxSlowSyncUpdateBytes,
     syncLimitsLoaded,
-    wsReadyState,
+    webSocketReadyState,
   ].join('|');
 
+  const deliveryKey = [currentUserId, currentWorkspaceId, canSendToServer, webSocketReadyState].join('|');
+
   useEffect(() => {
-    if (canSendToServer) {
-      startDrainAll();
-    }
+    restartSyncDelivery();
+  }, [deliveryKey]);
+
+  useEffect(() => {
+    if (canSendToServer) startDrainAll();
   }, [canSendToServer, drainWakeKey]);
+
+  // Followers only discover pending records for their indicator (isReady still
+  // restricts sends to the elected owner), so once per session is enough and
+  // socket state changes do not repeat the IndexedDB scan in every tab.
+  useEffect(() => {
+    if (!canSendToServer) startDrainAll();
+  }, [canSendToServer, currentUserId, currentWorkspaceId]);
 
   // Access changes do not rebuild the transport configuration. Wake only a
   // permission-blocked object so a restored grant can retry immediately,

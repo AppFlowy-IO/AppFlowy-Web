@@ -5,10 +5,11 @@ import { useSearchParams } from 'react-router-dom';
 
 import { ensureRowDocumentView, syncRowDocumentViewName } from '@/application/row-document/lifecycle';
 import { useActiveRowPage } from '@/application/row-document/row-page-state';
-import { isDatabaseContainer } from '@/application/view-utils';
+import { ViewLayout } from '@/application/types';
+import { isDatabaseContainer, isDatabaseLayout, isSpaceView } from '@/application/view-utils';
+import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { findView } from '@/components/_shared/outline/utils';
 import { useAppOutline, useAppView, useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { InlineCommentToggleButton } from '@/components/inline-comment/InlineCommentToggleButton';
 import { openOrDownload } from '@/utils/open_schema';
 
@@ -16,6 +17,7 @@ import ShareButton from 'src/components/app/share/ShareButton';
 
 import FavoriteButton from './FavoriteButton';
 import MoreActions from './MoreActions';
+import { SyncIndicator } from './SyncIndicator';
 import { Users } from './Users';
 
 function RightMenu() {
@@ -59,8 +61,17 @@ function RightMenu() {
   // a click in that window would favorite the wrong object.
   const favoriteViewId = hasRowPageRoute ? rowPage?.documentId : actionViewId;
 
+  const showSync =
+    hasRowPageRoute ||
+    Boolean(
+      routeView &&
+        !isSpaceView(routeView) &&
+        (routeView.layout === ViewLayout.Document || isDatabaseLayout(routeView.layout))
+    );
+
   return (
     <div className={'flex items-center gap-2'}>
+      {showSync ? <SyncIndicator viewId={hasRowPageRoute ? rowPageRowId ?? undefined : routeViewId} /> : null}
       <Users viewId={routeViewId} />
       {/* Access control belongs to the database container, but Desktop publishes the active child view. */}
       {actionViewId ? (

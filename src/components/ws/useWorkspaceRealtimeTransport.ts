@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { startDrainObject } from '@/application/sync-outbox';
+import { receiveSyncReceipt } from '@/application/sync-outbox/receipts';
 import type { messages } from '@/proto/messages';
 
 import { useAppflowyWebSocket, type AppflowyWebSocketType } from './useAppflowyWebSocket';
@@ -45,6 +46,10 @@ export function useWorkspaceRealtimeTransport({
     workspaceId,
     clientId,
     deviceId,
+    onSyncReceipt: (message) => {
+      if (message.collabMessage) void receiveSyncReceipt(workspaceId, message.collabMessage);
+      if (leadership.isCoordinated && leadership.isLeader) broadcastChannel.postMessage(message);
+    },
     connect: leadership.isLeader,
     // The elected owner may be hidden while serving visible follower tabs.
     reconnectWhenHidden: leadership.isCoordinated,

@@ -39,6 +39,7 @@ jest.mock('@/application/sync-outbox', () => {
     shouldRouteUpdateThroughOutbox: jest.fn(() => false),
     configureDrain: jest.fn(),
     clearDrainConfig: jest.fn(),
+    startDrainObject: jest.fn(),
     startDrainAll: jest.fn(),
     setCurrentSession: jest.fn(),
     __registerTestClient: (ctx: SyncContext) => {

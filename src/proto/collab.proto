@@ -38,6 +38,7 @@ message SyncRequest {
 
   // Collab version known to the sender of this message.
   string version = 3;
+  bool sync_receipts = 6;
 }
 
 /**
@@ -77,12 +78,21 @@ message Update {
   // generated this update. Advisory only — the server never trusts a
   // client-provided after vector; it derives its own from the update bytes.
   bytes after_state_vector = 6;
+  repeated string sync_ids = 8;
 }
 
 /**
  * AwarenessUpdate message is send to inform about the latest changes in the
  * Yjs doc awareness state.
  */
+message SyncReceipt {
+  enum Stage { UNKNOWN = 0; ACCEPTED = 1; SAVED = 2; RETRY = 3; }
+  Stage stage = 1;
+  repeated string sync_ids = 2;
+  repeated Rid message_ids = 3;
+  string version = 4;
+}
+
 message AwarenessUpdate {
   // Yjs awareness update encoded using lib0 v1 encoding.
   bytes payload = 1;
@@ -113,6 +123,7 @@ message CollabMessage {
     Update update = 4;
     AwarenessUpdate awareness_update = 5;
     AccessChanged access_changed = 6;
+    SyncReceipt sync_receipt = 8;
   }
 }
 
@@ -161,6 +172,7 @@ message CollabBatchSyncResult {
     // durably persisted. Slow-sync callers require this before retiring an
     // upload unless an authoritative collab-version change supersedes it.
     Rid message_id = 8;
+    bool saved = 9;
 }
 
 /**

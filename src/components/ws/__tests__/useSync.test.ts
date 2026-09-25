@@ -123,6 +123,7 @@ jest.mock('@/application/sync-outbox', () => {
     clearDrainConfig: jest.fn(() => {
       ctx.config = null;
     }),
+    startDrainObject: jest.fn(),
     startDrainAll: jest.fn(() => {
       for (const id of Array.from(ctx.pending.keys())) drain(id);
     }),
@@ -361,6 +362,7 @@ describe('useSync reconnect binding', () => {
         collabType: Types.Document,
         syncRequest: {
           stateVector: Y.encodeStateVector(docA),
+          syncReceipts: true,
           lastMessageId: { timestamp: 42, counter: 7 },
           version: docA.version,
         },
@@ -372,6 +374,7 @@ describe('useSync reconnect binding', () => {
         collabType: Types.DatabaseRow,
         syncRequest: {
           stateVector: Y.encodeStateVector(docB),
+          syncReceipts: true,
           lastMessageId: { timestamp: 0, counter: 0 },
           version: docB.version,
         },

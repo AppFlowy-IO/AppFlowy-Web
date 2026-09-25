@@ -1,5 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 
+import { collab, messages } from '@/proto/messages';
+
 import { getTokenParsed } from '@/application/session/token';
 
 import { useAppflowyWebSocket, Options } from '../useAppflowyWebSocket';
@@ -60,6 +62,7 @@ const lastSocketOptions = () => {
   const calls = mockUseWebSocket.mock.calls as unknown as [
     string,
     {
+      filter: (event: MessageEvent) => boolean;
       shouldReconnect?: (event: CloseEvent) => boolean;
       reconnectInterval?: (attemptNumber: number) => number;
     }
@@ -75,6 +78,23 @@ const baseOptions: Options = {
 };
 
 describe('useAppflowyWebSocket', () => {
+  it('delivers every receipt without publishing it through React message state', () => {
+    const onSyncReceipt = jest.fn();
+    const { unmount } = renderHook(() => useAppflowyWebSocket({ ...baseOptions, onSyncReceipt }));
+    const filter = lastSocketOptions().filter;
+
+    for (let counter = 1; counter <= 3; counter++) {
+      const data = messages.Message.encode({ collabMessage: { objectId: 'object', syncReceipt: {
+        stage: collab.SyncReceipt.Stage.SAVED, messageIds: [{ timestamp: 42, counter }],
+      } } }).finish();
+
+      expect(filter({ data } as unknown as MessageEvent)).toBe(false);
+    }
+
+    expect(onSyncReceipt).toHaveBeenCalledTimes(3);
+    unmount();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockReadyState = 1;

@@ -17,6 +17,8 @@
     "analyze": "cross-env ANALYZE_MODE=true vite build",
     "test": "pnpm run test:unit",
     "test:unit": "jest --coverage",
+    "test:sync-indicator": "jest --config jest.sync-indicator.config.cjs --runInBand",
+    "test:sync-indicator:browser": "node scripts/test-sync-indicator-browser.cjs",
     "test:unit:coverage": "cross-env COVERAGE=true jest --coverage",
     "test:http-api": "jest src/application/services/js-services/http/__tests__/*.integration.test.ts --no-coverage --maxWorkers=1 --testPathIgnorePatterns=/node_modules/",
     "test:http-api:coverage": "jest src/application/services/js-services/http/__tests__/*.integration.test.ts --coverage --maxWorkers=1 --testPathIgnorePatterns=/node_modules/",

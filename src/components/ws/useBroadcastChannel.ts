@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { receiveSyncReceipt } from '@/application/sync-outbox/receipts';
 import { messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
@@ -191,6 +192,11 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
         message = messages.Message.decode(payload);
       } catch (error) {
         Log.warn('Failed to decode a workspace BroadcastChannel message', error);
+        return;
+      }
+
+      if (message.collabMessage?.syncReceipt && channelName.startsWith('workspace:')) {
+        void receiveSyncReceipt(channelName.slice('workspace:'.length), message.collabMessage);
         return;
       }
 

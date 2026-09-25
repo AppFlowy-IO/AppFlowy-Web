@@ -12,17 +12,18 @@ import {
 } from '@/application/db/tables/collab_storage';
 import { rowSchema, rowTable } from '@/application/db/tables/rows';
 import { syncOutboxSchema, SyncOutboxTable } from '@/application/db/tables/sync_outbox';
+import { syncReceiptSchema, SyncReceiptTable } from '@/application/db/tables/sync_receipts';
 import { userSchema, UserTable } from '@/application/db/tables/users';
 import { versionSchema, VersionsTable } from '@/application/db/tables/versions';
 import { viewMetasSchema, ViewMetasTable } from '@/application/db/tables/view_metas';
 import {
-  workspaceMemberProfileSchema,
-  WorkspaceMemberProfileTable,
-} from '@/application/db/tables/workspace_member_profiles';
-import {
   workspaceDatabaseCatalogSchema,
   WorkspaceDatabaseCatalogTable,
 } from '@/application/db/tables/workspace_database_catalog';
+import {
+  workspaceMemberProfileSchema,
+  WorkspaceMemberProfileTable,
+} from '@/application/db/tables/workspace_member_profiles';
 import { YDoc } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -32,6 +33,7 @@ type DexieTables = ViewMetasTable &
   WorkspaceMemberProfileTable &
   VersionsTable &
   SyncOutboxTable &
+  SyncReceiptTable &
   CollabStorageTable &
   AppViewCacheTable &
   WorkspaceDatabaseCatalogTable;
@@ -47,6 +49,7 @@ const _schema = Object.assign(
     ...rowSchema,
     ...versionSchema,
     ...syncOutboxSchema,
+    ...syncReceiptSchema,
     ...collabStorageSchema,
     ...appViewCacheSchema,
     ...workspaceDatabaseCatalogSchema,
@@ -250,6 +253,10 @@ db.version(12).stores({
   ...appViewCacheSchema,
   ...workspaceDatabaseCatalogSchema,
 });
+
+// Version 13: share small receipt metadata across tabs without rewriting Yjs payloads on ACK.
+// Existing outbox records and every earlier migration are preserved.
+db.version(13).stores({ ..._schema, ...workspaceMemberProfileSchema });
 
 const openedSet = new Set<string>();
 const ensuredStores = new Map<string, Promise<void>>();
