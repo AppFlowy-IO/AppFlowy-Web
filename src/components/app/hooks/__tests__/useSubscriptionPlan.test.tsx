@@ -9,8 +9,15 @@ import {
 
 import { useSubscriptionPlan } from '../useSubscriptionPlan';
 
+let mockHostingMode: 'cloud' | 'self-hosted' | 'unknown' = 'cloud';
+let mockHostingStatus: 'available' | 'loading' | 'unavailable' = 'available';
+
+jest.mock('@/components/app/hooks/useServerInfo', () => ({
+  useServerHostingMode: () => mockHostingMode,
+  useServerInfoState: () => ({ status: mockHostingStatus }),
+}));
+
 jest.mock('@/utils/subscription', () => ({
-  isAppFlowyHosted: () => true,
   getProAccessPlanFromSubscriptions: (subscriptions?: Subscription[]) =>
     subscriptions?.some(
       ({ plan }) => plan === SubscriptionPlan.Pro || plan === SubscriptionPlan.Team,
@@ -38,6 +45,60 @@ const proSubscription: Subscription = {
 };
 
 describe('useSubscriptionPlan', () => {
+  beforeEach(() => {
+    mockHostingMode = 'cloud';
+    mockHostingStatus = 'available';
+  });
+
+  it('withholds Pro access while hosting is unknown and exposes server-info failures', async () => {
+    mockHostingMode = 'unknown';
+    mockHostingStatus = 'loading';
+    const getSubscriptions = jest.fn(async () => [proSubscription]);
+    const { result, rerender } = renderHook(() => useSubscriptionPlan(getSubscriptions));
+
+    expect(result.current.isPro).toBe(false);
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.hasError).toBe(false);
+    expect(result.current.activeSubscriptionPlan).toBeNull();
+    await act(async () => {
+      expect(await result.current.loadSubscription()).toBeNull();
+    });
+    expect(getSubscriptions).not.toHaveBeenCalled();
+
+    mockHostingStatus = 'unavailable';
+    rerender();
+    expect(result.current.isPro).toBe(false);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.hasError).toBe(true);
+    expect(getSubscriptions).not.toHaveBeenCalled();
+  });
+
+  it('updates feature access when server hosting resolves or changes', async () => {
+    mockHostingMode = 'self-hosted';
+    const getSubscriptions = jest.fn(async () => []);
+    const { result, rerender } = renderHook(() =>
+      useSubscriptionPlan(getSubscriptions, { cacheKey: 'workspace:hosting-change' })
+    );
+
+    expect(result.current.isPro).toBe(true);
+    expect(getSubscriptions).not.toHaveBeenCalled();
+
+    mockHostingMode = 'cloud';
+    rerender();
+    await waitFor(() => expect(result.current.activeSubscriptionPlan).toBe(SubscriptionPlan.Free));
+    expect(result.current.isPro).toBe(false);
+    expect(getSubscriptions).toHaveBeenCalledTimes(1);
+
+    mockHostingMode = 'self-hosted';
+    rerender();
+    expect(result.current.isPro).toBe(true);
+    expect(result.current.activeSubscriptionPlan).toBeNull();
+    await act(async () => {
+      await result.current.loadSubscription();
+    });
+    expect(getSubscriptions).toHaveBeenCalledTimes(1);
+  });
+
   it('deduplicates an in-flight workspace request and preserves loading until it resolves', async () => {
     const request = deferred<Subscription[]>();
     const getSubscriptions = jest.fn(() => request.promise);

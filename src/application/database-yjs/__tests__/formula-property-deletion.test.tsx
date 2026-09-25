@@ -23,7 +23,10 @@ import {
 import { DeletePropertyConfirm } from '@/components/database/components/property/DeletePropertyConfirm';
 import { FormulaEditorDialog } from '@/components/database/components/property/formula/FormulaEditorDialog';
 
+import { flushFormulaEditor, formulaSource, setFormulaSource } from './formula-editor-input';
+
 import type { ReactNode } from 'react';
+
 
 function fixture() {
   const fields = createFields([
@@ -190,7 +193,7 @@ describe('deleting formula dependencies', () => {
     expect(screen.queryByTestId('formula-deletion-warning')).toBeNull();
   });
 
-  it('keeps the broken expression in the editor and saves an explicitly selected replacement', () => {
+  it('keeps the broken expression in the editor and saves an explicitly selected replacement', async () => {
     const f = fixture();
     const deletion = renderHook(useDeletePropertyDispatch, { wrapper: f.wrapper });
 
@@ -200,17 +203,16 @@ describe('deleting formula dependencies', () => {
     render(<FormulaEditorDialog fieldId={'total'} rowId={'row'} open onOpenChange={onOpenChange} />, {
       wrapper: f.wrapper,
     });
-    const input = screen.getByTestId<HTMLTextAreaElement>('formula-editor-input');
-
-    expect(input.value).toBe('prop("price") * prop("Quantity")');
+    expect(formulaSource()).toBe('prop("price") * prop("Quantity")');
     expect(screen.getByTestId('formula-editor-error').textContent).toContain(
       'A property used by this formula is missing.'
     );
     expect(screen.getByTestId<HTMLButtonElement>('formula-editor-done').disabled).toBe(true);
     expect(parseFormulaTypeOption(f.fields.get('total')).formula).toBe('prop("price") * prop("quantity")');
 
-    fireEvent.change(input, { target: { value: '' } });
+    await setFormulaSource('');
     fireEvent.click(screen.getByTestId('formula-catalogue-property-other-price'));
+    await flushFormulaEditor();
     expect(screen.getByTestId('formula-preview-value').textContent).toBe('99');
     fireEvent.click(screen.getByTestId('formula-editor-done'));
     expect(parseFormulaTypeOption(f.fields.get('total')).formula).toBe('prop("other-price")');

@@ -2069,6 +2069,134 @@ export interface Subscription {
 
 export type Subscriptions = Subscription[];
 
+/** Stripe subscription lifecycle states as reported by the billing service. */
+export enum SubscriptionStatus {
+  Active = 'active',
+  Canceled = 'canceled',
+  Incomplete = 'incomplete',
+  IncompleteExpired = 'incomplete_expired',
+  PastDue = 'past_due',
+  Paused = 'paused',
+  Trialing = 'trialing',
+  Unpaid = 'unpaid',
+}
+
+/** One workspace subscription from `GET /billing/api/v1/subscription-status/{workspace_id}`. */
+export interface WorkspaceSubscriptionStatus {
+  workspace_id: string;
+  workspace_plan: SubscriptionPlan | 'ai_local';
+  recurring_interval: SubscriptionInterval;
+  subscription_status: SubscriptionStatus;
+  subscription_quantity: number;
+  /** Unix seconds when a canceled subscription ends; `null` while it still renews. */
+  cancel_at: number | null;
+  /** Unix seconds when the current billing period ends. */
+  current_period_end: number;
+}
+
+/** `GET /api/workspace/{workspace_id}/usage-and-limit`. Optional fields are absent on older servers. */
+export interface WorkspaceUsageAndLimit {
+  member_count: number;
+  member_count_limit: number;
+  storage_bytes: number;
+  storage_bytes_limit: number;
+  storage_bytes_unlimited: boolean;
+  single_upload_limit: number;
+  single_upload_unlimited: boolean;
+  ai_responses_count: number;
+  ai_responses_count_limit: number;
+  ai_image_responses_count?: number;
+  ai_image_responses_count_limit?: number;
+  ai_transcription_seconds?: number;
+  ai_transcription_seconds_limit?: number;
+  local_ai: boolean;
+  ai_responses_unlimited: boolean;
+}
+
+/** Client-side view of a workspace's subscriptions, mirroring the desktop `WorkspaceSubscriptionInfoPB`. */
+export interface WorkspaceSubscriptionInfo {
+  /** The workspace plan: Free, Pro or Team. Add-ons never appear here. */
+  plan: SubscriptionPlan;
+  /** The paid workspace plan's subscription, or `null` on Free. */
+  subscription: WorkspaceSubscriptionStatus | null;
+  /** Workspace add-on subscriptions (AI Max, AI On-device). */
+  addOns: WorkspaceSubscriptionStatus[];
+}
+
+/** Widens a literal union so unknown server values still type-check while keeping autocomplete. */
+type LooseString = string & Record<never, never>;
+
+/** `plans[].kind` in the billing pricing catalog. */
+export type PricingPlanKind = 'workspace_plan' | 'workspace_add_on' | 'account_add_on';
+
+/** `plans[].id` values the billing pricing catalog publishes today. */
+export type PricingPlanId = SubscriptionPlan | 'ai_local' | 'vault_workspace';
+
+/** Units a `quantity` feature value can carry. Unknown units fall back to `display`. */
+export type FeatureValueUnit =
+  | 'members'
+  | 'guests'
+  | 'gb'
+  | 'mb'
+  | 'days'
+  | 'hours'
+  | 'images_per_month'
+  | 'responses_lifetime'
+  | 'images_lifetime'
+  | 'workspaces';
+
+/**
+ * Typed feature value from the billing pricing catalog. `display` is the
+ * server's English fallback and is always present.
+ */
+export type FeatureValue =
+  | { kind: 'unlimited'; display: string }
+  | { kind: 'included'; display: string }
+  | { kind: 'excluded'; display: string }
+  | { kind: 'quantity'; amount: number; unit: FeatureValueUnit | LooseString; display: string }
+  | { kind: 'text'; display: string };
+
+export interface PricingPrice {
+  interval: SubscriptionInterval;
+  /** Total for the interval: a yearly price is the whole year, not per month. */
+  price_cents: number;
+}
+
+export interface PricingFeature {
+  key: string;
+  /** English plan-card sentence, e.g. "Unlimited storage". */
+  label: string;
+  value: FeatureValue;
+}
+
+export interface PricingPlan {
+  id: PricingPlanId | LooseString;
+  kind: PricingPlanKind | LooseString;
+  name: string;
+  description: string;
+  /** Month then year; empty for the free plan. */
+  prices: PricingPrice[];
+  /** Ordered plan-card bullets. */
+  features: PricingFeature[];
+}
+
+export interface PricingComparisonRow {
+  key: string;
+  label: string;
+  tooltip: string | null;
+  /** Keyed by the `workspace_plan` ids present in `plans`. */
+  values: Record<string, FeatureValue>;
+}
+
+/** Response of `GET /billing/api/v1/pricing` on the official AppFlowy cloud. */
+export interface PricingCatalog {
+  version: number;
+  currency: string;
+  annual_discount_percent: number;
+  plans: PricingPlan[];
+  comparison: PricingComparisonRow[];
+}
+
 export interface UpdatePagePayload {
   name: string;
   icon?: {
@@ -2424,6 +2552,8 @@ export enum SettingMenuItem {
   MANAGE_DATA = 'MANAGE_DATA',
   CONNECTIONS = 'CONNECTIONS',
   SITES = 'SITES',
+  PLAN = 'PLAN',
+  BILLING = 'BILLING',
 }
 
 export interface GenerateAISummaryRowPayload {

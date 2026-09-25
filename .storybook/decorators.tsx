@@ -21,6 +21,8 @@ import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
 import { AppSyncContext } from '@/components/app/contexts/AppSyncContext';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import { AFConfigContext } from '@/components/main/app.hooks';
+import { getConfigValue } from '@/utils/runtime-config';
+import { updateServerInfo } from '@/utils/server-info';
 import {
   mockAFConfigValue,
   mockAFConfigValueMinimal,
@@ -102,6 +104,15 @@ export const useHostnameMock = (hostname: string) => {
     cleanupRef.current = mockHostname(hostname);
     appliedHostnameRef.current = hostname;
   }
+
+  useEffect(() => {
+    const serverUrl = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
+
+    // Exercise the shared legacy server-info policy rather than inferring a
+    // second hosting decision inside stories.
+    updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true } });
+    return () => updateServerInfo(serverUrl, { status: 'loading' });
+  }, [hostname]);
 
   useEffect(() => {
     return () => {

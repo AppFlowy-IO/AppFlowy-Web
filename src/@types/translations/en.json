@@ -1,4 +1,11 @@
 {
+  "databaseViewCreation": {
+    "onlineRequired": "Connect to the internet to create Form or Chart views."
+  },
+  "billingLimits": {
+    "workspaceProRequired": "Upgrade this workspace to Pro to use this feature or increase its limits.",
+    "freeTranscriptionLimit": "This workspace has reached its free transcription limit. Ask the workspace owner to upgrade to Pro for more transcription time."
+  },
   "clientCompatibility": {
     "serverTooOld": "Requires server {{requiredServerVersion}} or later. Some features may be unavailable.",
     "clientTooOld": "This server requires AppFlowy Web {{requiredClientVersion}} or later. You are using {{clientVersion}}. Reload after your administrator updates the web app.",
@@ -392,7 +399,8 @@
     "generating": "Generating response...",
     "errors": {
       "copied": "Error copying to clipboard",
-      "noLimit": "Your workspace has ran out of free AI responses. Please ask your workspace owner to upgrade the workspace plan or purchase AI add-ons.",
+      "responseLimit": "Your workspace has run out of free AI responses. Please ask your workspace owner to upgrade to the Pro Plan.",
+      "responseUnavailable": "Unable to generate a response. Please contact your workspace administrator.",
       "emptyMessage": "Please enter a message",
       "wait": "Please wait for the current response to finish generating"
     },
@@ -467,7 +475,7 @@
       "errors": {
         "noAssistantType": "No assistant type selected",
         "connection": "Connection lost. Please check your internet and",
-        "noLimit": "Your working space is running out of free AI responses. To get more responses, please upgrade to Pro Plan or purchase an AI add-on."
+        "responseLimit": "Your workspace has run out of free AI responses. Upgrade to the Pro Plan to unlock unlimited responses."
       }
     },
     "customPrompt": {
@@ -671,13 +679,10 @@
     "upgradeToAIMax": "Unlock unlimited AI",
     "storageLimitDialogTitle": "You have run out of free storage. Upgrade to unlock unlimited storage",
     "storageLimitDialogTitleIOS": "You have run out of free storage.",
-    "aiResponseLimitTitle": "You have run out of free AI responses. Upgrade to the Pro Plan or purchase an AI add-on to unlock unlimited responses",
     "aiResponseLimitTitleIOS": "You have run out of free AI responses.",
     "aiResponseLimitDialogTitle": "AI Responses limit reached",
-    "aiResponseLimit": "You have run out of free AI responses.\n\nGo to Settings -> Plan -> Click AI Max or Pro Plan to get more AI responses",
     "askOwnerToUpgradeToPro": "Your workspace is running out of free storage. Please ask your workspace owner to upgrade to the Pro Plan",
     "askOwnerToUpgradeToProIOS": "Your workspace is running out of free storage.",
-    "askOwnerToUpgradeToAIMax": "Your workspace has ran out of free AI responses. Please ask your workspace owner to upgrade the plan or purchase AI add-ons",
     "askOwnerToUpgradeToAIMaxIOS": "Your workspace is running out of free AI responses.",
     "purchaseStorageSpace": "Purchase Storage Space",
     "singleFileProPlanLimitationDescription": "You have exceeded the maximum file upload size allowed in the free plan. Please upgrade to the Pro Plan to upload larger files",
@@ -1285,54 +1290,14 @@
         "aiResponseUsage": "{} of {}",
         "unlimitedAILabel": "Unlimited responses",
         "proBadge": "Pro",
-        "aiMaxBadge": "AI Max",
-        "aiOnDeviceBadge": "AI On-device for Mac",
-        "memberProToggle": "More members & unlimited AI",
+        "memberProToggle": "More members & unlimited AI & guest access",
         "aiMaxToggle": "Unlimited AI and access to advanced models",
-        "aiOnDeviceToggle": "Local AI for ultimate privacy",
-        "aiCredit": {
-          "title": "Add @:appName AI Credit",
-          "price": "{}",
-          "priceDescription": "for 1,000 credits",
-          "purchase": "Purchase AI",
-          "info": "Add 1,000 Ai credits per workspace and seamlessly integrate customizable AI into your workflow for smarter, faster results with up to:",
-          "infoItemOne": "10,000 responses per database",
-          "infoItemTwo": "1,000 responses per workspace"
-        },
         "currentPlan": {
           "bannerLabel": "Current plan",
-          "freeTitle": "Free",
-          "proTitle": "Pro",
           "teamTitle": "Team",
-          "freeInfo": "Perfect for individuals up to 2 members to organize everything",
-          "proInfo": "Perfect for small and medium teams up to 10 members.",
           "teamInfo": "Perfect for all productive and well-organized teams..",
           "upgrade": "Change plan",
           "canceledInfo": "Your plan is cancelled, you will be downgraded to the Free plan on {}."
-        },
-        "addons": {
-          "title": "Add-ons",
-          "addLabel": "Add",
-          "activeLabel": "Added",
-          "aiMax": {
-            "title": "AI Max",
-            "description": "Unlimited AI responses powered by GPT-4o, Claude 3.5 Sonnet, and more",
-            "price": "{}",
-            "priceInfo": "Per user per month billed annually"
-          },
-          "aiOnDevice": {
-            "title": "AI On-device for Mac",
-            "description": "Run Mistral 7B, LLAMA 3, and more local models on your machine",
-            "price": "{}",
-            "priceInfo": "Per user per month billed annually",
-            "recommend": "Recommend M1 or newer"
-          }
-        },
-        "deal": {
-          "bannerLabel": "New year deal!",
-          "title": "Grow your team!",
-          "info": "Upgrade and save 10% off Pro and Team plans! Boost your workspace productivity with powerful new features including @:appName AI.",
-          "viewPlans": "View plans"
         }
       }
     },
@@ -1394,14 +1359,14 @@
       "freePlan": {
         "title": "Free",
         "description": "For individuals up to 2 members to organize everything",
-        "price": "{}",
-        "priceInfo": "Free forever"
+        "price": "{} / member / month",
+        "priceInfo": ""
       },
       "proPlan": {
         "title": "Pro",
         "description": "For small teams to manage projects and team knowledge",
-        "price": "{}",
-        "priceInfo": "Per user per month \nbilled annually\n\n{} billed monthly"
+        "price": "{} / member / month",
+        "priceInfo": "billed annually"
       },
       "planLabels": {
         "itemOne": "Workspaces",
@@ -1416,26 +1381,6 @@
         "intelligentSearch": "Intelligent search",
         "tooltipSeven": "Allows you to customize part of the URL for your workspace",
         "customNamespaceTooltip": "Custom published site URL"
-      },
-      "freeLabels": {
-        "itemOne": "Charged per workspace",
-        "itemTwo": "Up to 2",
-        "itemThree": "5 GB",
-        "itemFour": "yes",
-        "itemFive": "yes",
-        "itemSix": "20 lifetime",
-        "itemFileUpload": "Up to 7 MB",
-        "intelligentSearch": "Intelligent search"
-      },
-      "proLabels": {
-        "itemOne": "Charged per workspace",
-        "itemTwo": "Up to 10",
-        "itemThree": "Unlimited",
-        "itemFour": "yes",
-        "itemFive": "yes",
-        "itemSix": "Unlimited",
-        "itemFileUpload": "Unlimited",
-        "intelligentSearch": "Intelligent search"
       },
       "paymentSuccess": {
         "title": "You are now on the {} plan!",
@@ -4118,21 +4063,7 @@
     "priceIn": "Price in ",
     "free": "Free",
     "pro": "Pro",
-    "getAIMax": "Get AI Max",
-    "upgradeAIMax": "Upgrade to AI Max",
     "unlock": "Unlock",
-    "AIMax": {
-      "label": "AI Max",
-      "removeTitle": "Remove AI Max",
-      "removeDescription": "Are you sure you want to remove AI Max? You will lose access to the features and benefits of AI Max immediately.",
-      "description": "Access the most advanced AI models including GPT-4o, GPT-o3-mini, DeepSeek R1, and Claude 3.5 Sonnet",
-      "pricing": "per member per month\nbilled annually",
-      "points": {
-        "first": "Unlimited AI responses",
-        "second": "Unlimited file uploads",
-        "third": "50 AI images per month"
-      }
-    },
     "freeDescription": "For individuals up to 2 members to organize everything",
     "proDescription": "For small teams to manage projects and team knowledge",
     "proDuration": {
@@ -4144,23 +4075,55 @@
     "everythingInFree": "Everything in Free +",
     "currentPlan": "Current",
     "freeDuration": "forever",
-    "freePoints": {
-      "first": "1 collaborative workspace up to 2 members",
-      "second": "Unlimited pages & blocks",
-      "three": "5 GB storage",
-      "four": "Intelligent search",
-      "five": "10 AI responses",
-      "six": "2 AI images",
-      "seven": "Mobile app",
-      "eight": "Real-time collaboration"
+    "pricingUnavailable": "We couldn't load pricing right now.",
+    "subscriptionUnavailable": "We couldn't load your current subscription. Please try again.",
+    "featureBullet": "{{feature}}: {{value}}",
+    "featureTooltip": {
+      "guests": "Collaborate on specific pages with non-members",
+      "custom_namespace": "Custom published site URL"
     },
-    "proPoints": {
-      "first": "Unlimited storage",
-      "second": "Up to 10 workspace members",
-      "three": "Unlimited AI responses",
-      "four": "10 AI images per month",
-      "five": "Unlimited file uploads",
-      "six": "Custom namespace"
+    "value": {
+      "unlimited": "Unlimited",
+      "included": "Included",
+      "excluded": "Not included",
+      "upTo": "Up to {{amount}}",
+      "gb": "{{amount}} GB",
+      "mb": "Up to {{amount}} MB",
+      "days": "{{amount}} days",
+      "hours": "{{amount}} hours",
+      "imagesPerMonth": "{{amount}} images per month",
+      "responsesLifetime": "{{amount}} lifetime",
+      "imagesLifetime": "{{amount}} lifetime",
+      "workspaces": "{{amount}} workspaces",
+      "forms": "{{amount}}"
+    },
+    "feature": {
+      "workspace": "Workspace",
+      "workspaces": "Workspace",
+      "storage": "Storage",
+      "members": "Members",
+      "version_history": "Version history",
+      "file_uploads": "File uploads",
+      "guests": "Free guest editors",
+      "forms": "Forms",
+      "charts": "Charts",
+      "timeline_view": "Timeline view",
+      "dashboards": "Dashboards",
+      "custom_team_spaces": "Custom team spaces",
+      "permission_groups": "Permission groups",
+      "local_ai": "Local AI",
+      "intelligent_search": "Intelligent search",
+      "ai_meeting_notes": "AI meeting notes",
+      "ai_transcription": "AI transcript",
+      "ai_responses": "AI responses",
+      "expanded_colors": "Expanded colors",
+      "publish_pages": "Publish pages",
+      "custom_namespace": "Custom namespace",
+      "pdf_export": "Export as .pdf",
+      "realtime_collaboration": "Real-time collaboration",
+      "ai_images": "AI images",
+      "ai_models": "Advanced AI models",
+      "vault": "Privacy Vault"
     },
     "cancelPlan": {
       "title": "Sorry to see you go",

@@ -15,6 +15,7 @@ message WorkspaceNotification {
         FolderViewChanged folder_view_changed = 9;
         InboxNotification inbox_notification = 10;
         CommentChanged comment_changed = 11;
+        StorageLimitExceeded storage_limit_exceeded = 13;
     }
 }
 
@@ -118,4 +119,11 @@ message InboxNotification {
 message CommentChanged {
     string workspace_id = 1;
     string view_id = 2;
+}
+
+// A refused edit remains pending locally; this is neither an acknowledgement nor a permission change.
+message StorageLimitExceeded {
+    string object_id = 1;
+    int32 code = 2;
+    string message = 3;
 }

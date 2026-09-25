@@ -493,6 +493,9 @@ export function usePageOperations({
     }
   }, [currentWorkspaceId]);
 
+  // Public plan pricing catalog; not scoped to a workspace.
+  const getPricingCatalog = useCallback(() => BillingService.getPricingCatalog(), []);
+
   // Publish view
   const performPublish = useCallback(
     async (view: View, publishName?: string, visibleViewIds?: string[], config?: PublishConfigPatch) => {
@@ -676,6 +679,7 @@ export function usePageOperations({
     createDatabaseView,
     uploadFile,
     getSubscriptions,
+    getPricingCatalog,
     publish,
     unpublish,
     createOrphanedView: createOrphanedViewOp,

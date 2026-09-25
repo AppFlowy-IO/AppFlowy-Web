@@ -1,6 +1,10 @@
 import { ERROR_CODE } from '@/application/constants';
+import { getBillingErrorMessage } from '@/utils/billing-error';
 
 export function getErrorMessage(error: unknown, fallback = 'Request failed'): string {
+  const billingMessage = getBillingErrorMessage(error);
+
+  if (billingMessage) return billingMessage;
   if (error instanceof Error) return error.message;
   if (typeof error === 'object' && error !== null && 'message' in error) {
     const message = (error as { message?: unknown }).message;
