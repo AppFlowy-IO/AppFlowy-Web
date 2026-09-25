@@ -1,55 +1,66 @@
-import { CircularProgress, Tooltip } from '@mui/material';
-import { useCallback, useSyncExternalStore } from 'react';
+import { Tooltip } from '@mui/material';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { getSyncStatus, subscribeSyncStatus } from '@/application/sync-status/store';
+import { getPendingSyncStatus, subscribeSyncStatus } from '@/application/sync-status/store';
 
 const labels = {
-  checking: 'Checking sync…',
-  syncing: 'Syncing…',
-  synced: 'Synced',
+  syncing: 'Syncing',
   offline: 'Offline',
   error: 'Unable to sync',
 };
 
 const descriptions = {
-  checking: 'Checking this page with the server.',
-  syncing: 'Sending your changes to the server.',
-  synced: 'Your changes have been received by the server. Verification and saving run in the background.',
   offline: 'Waiting for a connection. Pending changes will retry automatically.',
   error: 'Some changes could not be saved. Keep this page open and check your connection or storage.',
 };
 
 export function SyncIndicator({ viewId }: { viewId?: string }) {
-  const { t } = useTranslation();
-  const snapshot = useCallback(() => getSyncStatus(viewId ?? ''), [viewId]);
+  const snapshot = useCallback(() => getPendingSyncStatus(viewId ?? ''), [viewId]);
   const status = useSyncExternalStore(subscribeSyncStatus, snapshot, snapshot);
-  const busy = status === 'checking' || status === 'syncing';
-  // Announce only states that need action; routine syncing would be read on every edit.
-  const announce = status === 'error' || status === 'offline';
-  const label = t(`syncIndicator.${status}`, { defaultValue: labels[status] });
 
-  if (!viewId) return null;
+  // Unmounting cancels the delay on acceptance; the key prevents it leaking across page navigation.
+  return viewId && status ? <PendingSyncIndicator key={viewId} status={status} /> : null;
+}
+
+function PendingSyncIndicator({ status }: { status: NonNullable<ReturnType<typeof getPendingSyncStatus>> }) {
+  const { t } = useTranslation();
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    // One timer per uninterrupted wait, independent of edits, receipts, or connection transitions.
+    const timer = setTimeout(() => setVisible(true), 3_000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!visible) return null;
+
+  const announce = status !== 'syncing';
+  const label = t(`syncIndicator.${status}`, { defaultValue: labels[status] });
+  const tooltip =
+    status === 'syncing' ? label : t(`syncIndicator.${status}Description`, { defaultValue: descriptions[status] });
 
   return (
-    <Tooltip title={t(`syncIndicator.${status}Description`, { defaultValue: descriptions[status] })}>
+    <Tooltip title={tooltip}>
       <span
         role='status'
+        aria-label={label}
+        aria-live={announce ? 'polite' : 'off'}
+        tabIndex={0}
         data-testid='sync-indicator'
         data-sync-status={status}
-        className='flex items-center gap-1.5 whitespace-nowrap text-xs text-text-caption'
+        className='flex h-6 w-6 items-center justify-center gap-0.5 text-text-caption'
       >
-        {busy ? (
-          <CircularProgress size={12} color='inherit' />
-        ) : (
-          <span aria-hidden='true' className={status === 'synced' ? 'text-function-success' : ''}>
-            {status === 'synced' ? '✓' : status === 'error' ? '!' : '○'}
-          </span>
-        )}
-        <span aria-hidden='true' className='hidden sm:inline'>
-          {label}
-        </span>
-        {/* role=status is always a polite live region; only its text decides what is announced. */}
+        {[0, 1, 2].map((dot) => (
+          <span
+            key={dot}
+            aria-hidden='true'
+            className='h-1 w-1 rounded-full bg-current motion-safe:animate-bounce'
+            style={{ animationDelay: `${dot * 150}ms` }}
+          />
+        ))}
+        {/* Routine syncing has an accessible name without being announced on every edit. */}
         <span className='sr-only' data-testid='sync-indicator-announcement'>
           {announce ? label : ''}
         </span>

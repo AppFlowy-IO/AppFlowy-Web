@@ -115,6 +115,15 @@ export function subscribeSyncStatus(listener: () => void) {
   };
 }
 
+/** Only expose unsettled edits; startup checks and accepted edits awaiting a snapshot stay quiet. */
+export function getPendingSyncStatus(viewId: string): 'syncing' | 'offline' | 'error' | null {
+  const total = counts.get(aliases.get(viewId) ?? viewId);
+
+  if (total?.errors) return 'error';
+  if (!total || total.pending <= total.accepted) return null;
+  return connected ? 'syncing' : 'offline';
+}
+
 export function getSyncStatus(viewId: string): SyncStatus {
   const objectId = aliases.get(viewId) ?? viewId;
   const total = counts.get(objectId);
