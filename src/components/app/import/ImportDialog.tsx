@@ -1,11 +1,10 @@
-import { CircularProgress, Dialog, IconButton } from '@mui/material';
+import { CircularProgress, Dialog } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { DocumentFileImportFormat, ViewLayout } from '@/application/types';
 import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
-import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as ConfluenceIcon } from '@/assets/icons/confluence.svg';
 import { ReactComponent as DatabaseIcon } from '@/assets/icons/database.svg';
 import { ReactComponent as DocIcon } from '@/assets/icons/doc.svg';
@@ -24,6 +23,7 @@ import {
   populateDocumentWithMarkdown,
   stripFileExtension,
 } from '@/components/app/import/import-service';
+import { Button } from '@/components/ui/button';
 import { isStorageLimitError } from '@/utils/errors';
 
 const MARKDOWN_ACCEPT = '.md,.markdown,.txt,text/markdown,text/plain';
@@ -406,8 +406,29 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
       </span>
     ) : null;
 
+  // Matches the desktop import sheet: outlined two-column cards with the icon and label on one line.
   const tileClassName =
-    'flex items-center gap-3 rounded-300 bg-fill-content px-4 py-3 text-left text-text-primary hover:bg-fill-content-hover disabled:opacity-60';
+    'flex min-h-[64px] items-center gap-3 rounded-400 border border-border-primary px-4 py-3 text-left text-text-primary hover:border-border-primary-hover hover:bg-fill-content-hover disabled:opacity-60';
+
+  const renderDocumentTile = (format: DocumentFileImportFormat) => {
+    const tile = DOCUMENT_TILES.find((item) => item.format === format);
+
+    if (!tile) return null;
+    return (
+      <button
+        key={format}
+        type='button'
+        disabled={!!active}
+        onClick={() => documentInputRefs[format].current?.click()}
+        className={tileClassName}
+        data-testid={`import-${format}`}
+      >
+        <DocumentTileIcon format={format} />
+        <span className='text-sm'>{t(tile.labelKey)}</span>
+        {batchCounter(format)}
+      </button>
+    );
+  };
 
   return (
     <Dialog
@@ -416,27 +437,13 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
       keepMounted={false}
       PaperProps={{
         'data-testid': 'import-dialog',
-        className: 'w-[480px] max-w-[90vw] rounded-500',
+        className: 'w-[640px] max-w-[90vw] rounded-500',
       }}
     >
-      <div className='relative flex flex-col gap-4 p-5'>
-        <div className='flex w-full items-center justify-between text-base font-medium'>
-          <span className='flex-1 truncate font-medium'>{t('importPanel.title')}</span>
-          <IconButton
-            size='small'
-            color='inherit'
-            className='-right-1.5 h-6 w-6'
-            data-testid='import-dialog-close'
-            title={closeLabel}
-            aria-label={closeLabel}
-            onClick={handleCloseClick}
-            disabled={closeDisabled}
-          >
-            <CloseIcon />
-          </IconButton>
-        </div>
+      <div className='relative flex flex-col gap-5 p-6'>
+        <div className='truncate text-xl font-medium text-text-primary'>{t('importPanel.title')}</div>
 
-        <div className='grid grid-cols-2 gap-3'>
+        <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
           <button
             type='button'
             disabled={!!active}
@@ -461,20 +468,9 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
             {batchCounter('csv')}
           </button>
 
-          {DOCUMENT_TILES.map(({ format, labelKey }) => (
-            <button
-              key={format}
-              type='button'
-              disabled={!!active}
-              onClick={() => documentInputRefs[format].current?.click()}
-              className={tileClassName}
-              data-testid={`import-${format}`}
-            >
-              <DocumentTileIcon format={format} />
-              <span className='text-sm'>{t(labelKey)}</span>
-              {batchCounter(format)}
-            </button>
-          ))}
+          {renderDocumentTile('pdf')}
+          {renderDocumentTile('docx')}
+          {renderDocumentTile('html')}
 
           <button
             type='button'
@@ -499,6 +495,19 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
             <span className='text-sm'>{t('importPanel.confluenceZip')}</span>
             {active === 'confluence' ? <CircularProgress size={14} className='ml-auto' /> : null}
           </button>
+        </div>
+
+        <div className='flex justify-end'>
+          <Button
+            variant='ghost'
+            data-testid='import-dialog-close'
+            title={closeLabel}
+            aria-label={closeLabel}
+            onClick={handleCloseClick}
+            disabled={closeDisabled}
+          >
+            {closeLabel}
+          </Button>
         </div>
 
         {/* The visible counter sits inside a disabled button, which assistive tech skips, so the
