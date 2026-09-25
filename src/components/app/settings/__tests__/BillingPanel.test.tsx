@@ -73,10 +73,10 @@ describe('BillingPanel', () => {
     api.getWorkspaceUsage.mockResolvedValue(freeUsage);
   });
 
-  it('shows the Free plan and opens the upgrade modal through the change_plan action', async () => {
+  it('shows the server plan name and opens the upgrade modal through the change_plan action', async () => {
     renderPanel();
 
-    expect(await screen.findByText('Free')).toBeTruthy();
+    expect(await screen.findByText('Personal')).toBeTruthy();
     expect(screen.queryByTestId('billing-edit-period')).toBeNull();
     expect(screen.queryByTestId('billing-edit-payment-method')).toBeNull();
 
@@ -87,7 +87,7 @@ describe('BillingPanel', () => {
   it('does not offer the retired AI Max add-on to a workspace without it', async () => {
     renderPanel();
 
-    expect(await screen.findByText('Free')).toBeTruthy();
+    expect(await screen.findByText('Personal')).toBeTruthy();
     expect(screen.queryByText('Add-ons')).toBeNull();
     expect(screen.queryByTestId('billing-ai-max-action')).toBeNull();
     expect(api.getSubscriptionLink).not.toHaveBeenCalled();
@@ -124,7 +124,7 @@ describe('BillingPanel', () => {
     ]);
     renderPanel();
 
-    expect(await screen.findByText('Free')).toBeTruthy();
+    expect(await screen.findByText('Personal')).toBeTruthy();
     expect(screen.queryByText(`AI Max will be available until ${dueDate}`)).toBeNull();
     expect(screen.queryByTestId('billing-ai-max-action')).toBeNull();
     expect(api.getSubscriptionLink).not.toHaveBeenCalled();
@@ -166,7 +166,7 @@ describe('BillingPanel', () => {
 
     expect((await screen.findByTestId('billing-error')).textContent).toContain('billing down');
     fireEvent.click(screen.getByText('Retry'));
-    expect(await screen.findByText('Free')).toBeTruthy();
+    expect(await screen.findByText('Personal')).toBeTruthy();
   });
 
   it('shows the full annual charge before confirming a switch from monthly billing', async () => {

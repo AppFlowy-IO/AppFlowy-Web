@@ -4,7 +4,9 @@ import { useSearchParams } from 'react-router-dom';
 
 import { SubscriptionInterval, SubscriptionPlan, WorkspaceSubscriptionStatus } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
+import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
+import { findPlan } from '@/utils/pricing';
 import { findWorkspaceAddOn, isBillingPortalEnabled, isSubscriptionCanceled } from '@/utils/subscription';
 
 import { ChangePeriodDialog } from './billing/ChangePeriodDialog';
@@ -44,6 +46,7 @@ export function BillingPanel({ workspaceId }: { workspaceId: string }) {
   const currentUser = useCurrentUserOptional();
   const dateFormat = userDateFormat(currentUser?.metadata);
   const billing = useWorkspaceBilling(workspaceId);
+  const { catalog } = usePricingCatalog();
   const [periodEdit, setPeriodEdit] = useState<PeriodEdit | null>(null);
   const [removeConfirm, setRemoveConfirm] = useState<RemoveConfirm | null>(null);
 
@@ -82,13 +85,15 @@ export function BillingPanel({ workspaceId }: { workspaceId: string }) {
     // still has an active AI Max add-on can manage or remove it here; a
     // canceled one simply runs out.
     const activeAiMax = aiMax && !isSubscriptionCanceled(aiMax) ? aiMax : null;
-    const aiMaxLabel = t('settings.billingPage.addons.aiMax.label');
+    const catalogPlan = catalog ? findPlan(catalog, info.plan) : undefined;
+    const aiMaxPlan = catalog ? findPlan(catalog, SubscriptionPlan.AIMax) : undefined;
+    const aiMaxLabel = aiMaxPlan?.name ?? t('settings.billingPage.addons.aiMax.label');
 
     return (
       <>
         <SettingsSection title={t('settings.billingPage.plan.title')}>
           <SettingActionRow
-            label={workspacePlanLabel(t, info.plan)}
+            label={catalogPlan?.name ?? workspacePlanLabel(t, info.plan)}
             buttonLabel={t('settings.billingPage.plan.planButtonLabel')}
             onClick={openChangePlan}
             testId='billing-change-plan'
@@ -129,7 +134,7 @@ export function BillingPanel({ workspaceId }: { workspaceId: string }) {
                 label={aiMaxLabel}
                 description={addOnDescription(
                   activeAiMax,
-                  t('settings.billingPage.addons.aiMax.description'),
+                  aiMaxPlan?.description ?? t('settings.billingPage.addons.aiMax.description'),
                   t('settings.billingPage.addons.aiMax.activeDescription'),
                   t('settings.billingPage.addons.aiMax.canceledDescription')
                 )}

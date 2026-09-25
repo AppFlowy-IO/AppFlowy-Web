@@ -19,6 +19,10 @@ import { getConfigValue } from '@/utils/runtime-config';
 import { updateServerInfo } from '@/utils/server-info';
 
 const defaultTranslations: Record<string, string> = {
+  'subscribe.free': 'Client Free name',
+  'subscribe.pro': 'Client Pro name',
+  'subscribe.freeDescription': 'Client Free description',
+  'subscribe.proDescription': 'Client Pro description',
   'subscribe.feature.storage': 'Storage',
   'subscribe.value.unlimited': 'Unlimited',
   // Header copy from the published plan table.
@@ -70,7 +74,7 @@ const catalog: PricingCatalog = {
     {
       id: 'free',
       kind: 'workspace_plan',
-      name: 'Free',
+      name: 'Personal',
       description: 'Server free description',
       prices: [],
       features: [
@@ -201,6 +205,12 @@ describe('UpgradePlan', () => {
 
     const proColumn = await screen.findByTestId('pricing-plan-pro');
     const freeColumn = screen.getByTestId('pricing-plan-free');
+
+    // Server copy wins even when this client has translations for known plan IDs.
+    expect(within(freeColumn).getByText('Personal')).toBeTruthy();
+    expect(within(freeColumn).getByText('Server free description')).toBeTruthy();
+    expect(within(proColumn).getByText('Pro')).toBeTruthy();
+    expect(within(proColumn).getByText('Server pro description')).toBeTruthy();
 
     // Free is the current plan; Pro is the upgrade target and therefore highlighted, like the desktop dialog.
     expect(within(freeColumn).getByTestId('current-plan-badge')).toBeTruthy();
