@@ -9,12 +9,14 @@ import { WorkspaceService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
 function InviteCode() {
   const { t } = useTranslation();
+  const isHosted = useIsOfficialHosted();
   const params = useParams();
   const [loading, setLoading] = useState(false);
   const [hasJoined, setHasJoined] = useState(false);
@@ -120,7 +122,7 @@ function InviteCode() {
         error={error}
         title={isMemberLimitError ? t('landingPage.inviteCode.memberLimitTitle') : undefined}
         description={
-          isMemberLimitError
+          isMemberLimitError && isHosted
             ? t('landingPage.inviteCode.memberLimitDescription', {
                 workspaceName: workspace?.name || t('workspace.defaultName'),
               })

@@ -3,6 +3,8 @@ import { toast } from 'sonner';
 
 import { importCsvFilesAsDatabases, importDocumentFiles } from '@/components/app/import/import-service';
 import ImportDialog from '@/components/app/import/ImportDialog';
+import { getConfigValue } from '@/utils/runtime-config';
+import { updateServerInfo } from '@/utils/server-info';
 
 const toView = jest.fn();
 
@@ -49,6 +51,9 @@ describe('ImportDialog document file tiles', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     importDocs.mockReset();
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available', info: { enable_page_history: true, self_hosted: false },
+    });
   });
 
   it.each([
@@ -207,6 +212,23 @@ describe('ImportDialog document file tiles', () => {
       expect(toView).not.toHaveBeenCalled();
     }
   );
+
+  it('shows administrator guidance for self-hosted storage errors without offering a Pro upgrade', async () => {
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available', info: { enable_page_history: true, self_hosted: true },
+    });
+    importDocs.mockResolvedValue({
+      items: [{ fileName: 'report.pdf', error: 'Disk is full', code: 1028 }],
+      aborted: false,
+    });
+    renderDialog();
+
+    pick('import-pdf-input', [new File(['x'], 'report.pdf')]);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('importPanel.storageLimitAdministrator'));
+    expect(toast.error).not.toHaveBeenCalledWith('importPanel.storageLimitExceeded');
+    expect(toView).not.toHaveBeenCalled();
+  });
 
   it('keeps the dialog open when the last file hits the storage limit after a successful import', async () => {
     importDocs.mockResolvedValue({

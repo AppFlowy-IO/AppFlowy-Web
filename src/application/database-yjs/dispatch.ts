@@ -64,6 +64,7 @@ import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
 import { assertViewCreationOnline, onlineViewCreationRequiredError } from '@/application/view-online-policy';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { observeFormulaRelatedDocuments, resolveFormulaRowContext } from '@/application/database-yjs/formula/materialize';
 import {
   initializeGalleryLayoutSetting,
@@ -3306,13 +3307,15 @@ export function useUpdateDatabaseLayout(viewId: string) {
 
       if (Number(database.get(YjsDatabaseKey.views)?.get(viewId)?.get(YjsDatabaseKey.layout)) === layout) return;
 
-      // Forms need the atomic creation endpoint to enforce the workspace quota.
-      // The layout menu does not offer Form; reject direct callers as well.
-      if (layout === DatabaseViewLayout.Form) {
+      const planPolicy = getWorkspacePlanPolicy();
+
+      // Hosted Forms need the atomic creation endpoint to enforce the quota.
+      // Self-hosted instances retain the local layout-conversion path.
+      if (layout === DatabaseViewLayout.Form && planPolicy.requiresOnlineViewCreation(ViewLayout.Form)) {
         return Promise.reject(new Error('Use Add view to create a Form.'));
       }
 
-      if (layout !== DatabaseViewLayout.Chart) {
+      if (layout !== DatabaseViewLayout.Chart || !planPolicy.requiresOnlineViewCreation(ViewLayout.Chart)) {
         applyLayout();
         return;
       }

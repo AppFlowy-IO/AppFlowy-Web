@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { DocumentFileImportFormat, ViewLayout } from '@/application/types';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as ConfluenceIcon } from '@/assets/icons/confluence.svg';
 import { ReactComponent as DatabaseIcon } from '@/assets/icons/database.svg';
@@ -200,7 +201,13 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
       // afterwards: cancelling hides the files never started, not the ones that already failed.
       // Keep a storage denial visible even when earlier files had unrelated conversion failures.
       if (storageLimitReached) {
-        toast.error(t('importPanel.storageLimitExceeded'));
+        toast.error(
+          getWorkspacePlanPolicy().usesHostedBilling
+            ? t('importPanel.storageLimitExceeded')
+            : t('importPanel.storageLimitAdministrator', {
+                defaultValue: 'This workspace does not have enough storage for this import. Contact your workspace administrator.',
+              })
+        );
       }
 
       if (failed.length === 1) {

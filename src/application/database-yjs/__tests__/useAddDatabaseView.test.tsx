@@ -22,6 +22,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { getView } from '@/application/services/js-services/http/view-api';
+import { updateServerInfo } from '@/utils/server-info';
 
 jest.mock('@/application/services/js-services/http/view-api', () => ({ getView: jest.fn() }));
 
@@ -179,6 +180,12 @@ function getDatabase(databaseDoc: YDoc): Y.Map<unknown> {
 }
 
 describe('online Chart layout conversion', () => {
+  beforeEach(() => {
+    updateServerInfo('https://test.appflowy.cloud', {
+      status: 'available', info: { enable_page_history: true, self_hosted: false },
+    });
+  });
+
   afterEach(() => {
     jest.restoreAllMocks();
     jest.mocked(getView).mockReset();
@@ -217,6 +224,22 @@ describe('online Chart layout conversion', () => {
     expect(getView).not.toHaveBeenCalled();
     expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(fixture.before);
     expect(fixture.onUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([DatabaseViewLayout.Form, DatabaseViewLayout.Chart])('allows self-hosted layout %s conversion offline without a billing reachability read', (layout) => {
+    updateServerInfo('https://test.appflowy.cloud', {
+      status: 'available', info: { enable_page_history: true, self_hosted: true },
+    });
+    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    const fixture = setup();
+
+    act(() => { void fixture.result.current(layout); });
+
+    const views = getDatabase(fixture.databaseDoc).get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+
+    expect(views.get('base-view-id')?.get(YjsDatabaseKey.layout)).toBe(layout);
+    expect(getView).not.toHaveBeenCalled();
+    expect(fixture.onUpdate).toHaveBeenCalled();
   });
 
   it('requires the server creation path for Forms instead of converting an existing view', async () => {
