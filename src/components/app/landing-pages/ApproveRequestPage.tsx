@@ -1,4 +1,4 @@
-import { HTMLAttributes, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { HTMLAttributes, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -18,18 +18,23 @@ import { LandingPageError } from '@/components/_shared/landing-page/errorContent
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
 import { NormalModal } from '@/components/_shared/modal';
+import { useIsOfficialHosted, useServerInfo } from '@/components/app/hooks/useServerInfo';
+import { defaultConfig } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { hasProAccessFromPlans, isAppFlowyHosted } from '@/utils/subscription';
+import { hasProAccessFromPlans } from '@/utils/subscription';
 
 function ApproveRequestPage() {
   const [searchParams] = useSearchParams();
+  const serverInfo = useServerInfo(true, defaultConfig.baseURL);
+  const isHostingLoading = serverInfo.status === 'loading';
 
   const [requestInfo, setRequestInfo] = useState<GetRequestAccessInfoResponse | null>(null);
   const [currentPlans, setCurrentPlans] = useState<SubscriptionPlan[]>([]);
   const isPro = useMemo(() => hasProAccessFromPlans(currentPlans), [currentPlans]);
   const requestId = searchParams.get('request_id');
   const { t } = useTranslation();
+  const isHosted = useIsOfficialHosted();
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [alreadyProModalOpen, setAlreadyProModalOpen] = useState(false);
   const [hasSend, setHasSend] = useState(false);
@@ -38,7 +43,7 @@ function ApproveRequestPage() {
   const [notInvitee, setNotInvitee] = useState(false);
 
   const loadRequestInfo = useCallback(async () => {
-    if (!requestId) return;
+    if (!requestId || isHostingLoading) return;
     try {
       setError(undefined);
       const requestInfo = await AccessService.getRequestAccessInfo(requestId);
@@ -51,7 +56,7 @@ function ApproveRequestPage() {
         return;
       }
 
-      if (!isAppFlowyHosted()) {
+      if (!isHosted) {
         setCurrentPlans([]);
         return;
       }
@@ -78,10 +83,10 @@ function ApproveRequestPage() {
       setError(e);
       setIsError(true);
     }
-  }, [requestId]);
+  }, [requestId, isHosted, isHostingLoading]);
 
   const handleApprove = useCallback(async () => {
-    if (!requestId) return;
+    if (!requestId || isHostingLoading) return;
     try {
       setError(undefined);
       await AccessService.approveRequestAccess(requestId);
@@ -93,7 +98,7 @@ function ApproveRequestPage() {
       // eslint-disable-next-line
     } catch (e: any) {
       if (e.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED || e.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED) {
-        if (isAppFlowyHosted()) {
+        if (isHosted) {
           setUpgradeModalOpen(true);
         } else {
           toast.error(e.message);
@@ -112,22 +117,16 @@ function ApproveRequestPage() {
       setError(e);
       setIsError(true);
     }
-  }, [requestId, t, loadRequestInfo]);
+  }, [requestId, t, loadRequestInfo, isHosted, isHostingLoading]);
 
   const handleUpgrade = useCallback(async () => {
-    if (!requestInfo) return;
+    if (!isHosted || !requestInfo) return;
     const workspaceId = requestInfo.workspace.id;
 
     if (!workspaceId) return;
 
     if (isPro) {
       setAlreadyProModalOpen(true);
-      return;
-    }
-
-    // This should not be called on self-hosted instances, but adding check as safety
-    if (!isAppFlowyHosted()) {
-      // Self-hosted instances have Pro features enabled by default
       return;
     }
 
@@ -141,7 +140,7 @@ function ApproveRequestPage() {
     } catch (e: any) {
       toast.error(e.message);
     }
-  }, [requestInfo, isPro]);
+  }, [requestInfo, isPro, isHosted]);
 
   useEffect(() => {
     void loadRequestInfo();
@@ -159,9 +158,13 @@ function ApproveRequestPage() {
     [requestInfo]
   );
 
+  const autoApprovedRequestId = useRef<string | null>(null);
+
   useLayoutEffect(() => {
+    if (isHostingLoading || !requestId || autoApprovedRequestId.current === requestId) return;
+    autoApprovedRequestId.current = requestId;
     void handleApprove();
-  }, [handleApprove]);
+  }, [handleApprove, requestId, isHostingLoading]);
 
   if (isError) {
     return <ErrorPage onRetry={handleApprove} error={error} />;
@@ -225,6 +228,7 @@ function ApproveRequestPage() {
         primaryAction={{
           onClick: handleApprove,
           label: t('landingPage.approve.requestApprove'),
+          disabled: isHostingLoading,
         }}
         secondaryAction={{
           onClick: () => window.open('/app', '_self'),
@@ -237,7 +241,7 @@ function ApproveRequestPage() {
         title={<div className={'text-left font-semibold'}>{t('upgradePlanModal.title')}</div>}
         okText={t('upgradePlanModal.actionButton')}
         cancelText={t('upgradePlanModal.laterButton')}
-        open={upgradeModalOpen}
+        open={isHosted && upgradeModalOpen}
         onClose={() => setUpgradeModalOpen(false)}
         onOk={handleUpgrade}
       >
@@ -259,7 +263,7 @@ function ApproveRequestPage() {
             {t('approveAccess.alreadyProTitle')}
           </div>
         }
-        open={alreadyProModalOpen}
+        open={isHosted && alreadyProModalOpen}
         onClose={() => setAlreadyProModalOpen(false)}
       >
         <div className={'flex flex-col'}>

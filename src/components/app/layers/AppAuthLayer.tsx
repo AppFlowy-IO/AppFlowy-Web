@@ -77,6 +77,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const enableDatabaseHistory = serverInfo.info?.enable_database_history === true &&
     serverInfo.info?.enable_database_history_version_ui === true;
   const databaseHistoryCapabilityLoaded = serverInfo.status === 'available' || serverInfo.status === 'unsupported';
+
   const aiEnabled = serverInfo.status === 'loading' ? false : serverInfo.info?.ai_enabled ?? true;
   const maxUpdateBytes = serverInfo.info?.max_update_bytes;
   const maxSlowSyncUpdateBytes = serverInfo.info?.max_slow_sync_update_bytes;

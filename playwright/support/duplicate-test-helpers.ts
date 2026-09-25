@@ -281,15 +281,15 @@ export function databaseBlocks(editor: Locator): Locator {
 }
 
 /**
- * Result of probing the server for a document's persisted database-block count.
+ * Result of probing the server for a document's persisted content.
  *
  * This is deliberately a discriminated union rather than a numeric sentinel: the
  * probe can fail for six unrelated reasons, and collapsing them all into `-1`
- * makes a failing `expect.poll` indistinguishable from a genuine count mismatch.
+ * makes a failing `expect.poll` indistinguishable from a genuine content mismatch.
  * Playwright prints the received value on timeout, so the `error` string lands
  * directly in the CI log.
  */
-type ServerDatabaseBlockProbe = { count: number } | { error: string };
+type ServerDocumentProbe = { count: number; text: string } | { error: string };
 
 /**
  * Read the auth token the way the app stores it.
@@ -318,11 +318,7 @@ async function getAccessToken(page: Page): Promise<string | null> {
   });
 }
 
-async function getServerDocumentDatabaseBlockCount(
-  page: Page,
-  apiOrigin: string,
-  docViewId: string
-): Promise<ServerDatabaseBlockProbe> {
+async function getServerDocumentContent(page: Page, apiOrigin: string, docViewId: string): Promise<ServerDocumentProbe> {
   const pageUrl = page.url();
   const [, workspaceId] = new URL(pageUrl).pathname.split('/').filter(Boolean);
 
@@ -373,7 +369,11 @@ async function getServerDocumentDatabaseBlockCount(
       }
     });
 
-    return { count };
+    const meta = document?.get('meta') as Y.Map<unknown> | undefined;
+    const textMap = meta?.get('text_map') as Y.Map<Y.Text> | undefined;
+    const text = [...(textMap?.values() ?? [])].map((value) => value.toString()).join('\n');
+
+    return { count, text };
   } catch (e) {
     return { error: `failed to decode collab update: ${e instanceof Error ? e.message : String(e)}` };
   } finally {
@@ -388,12 +388,27 @@ async function waitForDocumentDatabaseBlocksOnServer(
   expectedCount: number
 ): Promise<void> {
   await expect
-    .poll(() => getServerDocumentDatabaseBlockCount(page, apiOrigin, docViewId), {
+    .poll(() => getServerDocumentContent(page, apiOrigin, docViewId), {
       timeout: 30000,
       intervals: [250, 500, 1000],
       message: `Expected document ${docViewId} to persist ${expectedCount} database block(s) before duplication`,
     })
-    .toEqual({ count: expectedCount });
+    .toMatchObject({ count: expectedCount });
+}
+
+export async function waitForDocumentTextOnServer(
+  page: Page,
+  apiOrigin: string,
+  docViewId: string,
+  expectedText: string
+): Promise<void> {
+  await expect
+    .poll(() => getServerDocumentContent(page, apiOrigin, docViewId), {
+      timeout: 30000,
+      intervals: [250, 500, 1000],
+      message: `Expected document ${docViewId} to persist its text before navigation`,
+    })
+    .toMatchObject({ text: expect.stringContaining(expectedText) });
 }
 
 async function focusEditorForSlash(page: Page, editor: Locator): Promise<void> {

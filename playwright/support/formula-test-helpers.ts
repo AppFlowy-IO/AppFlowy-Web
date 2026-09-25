@@ -65,6 +65,18 @@ export const SHOW_AS_IDS: Record<string, number> = { Number: 0, Bar: 1, Ring: 2 
 export const formulaDialog = (page: Page) => page.getByTestId('formula-editor-dialog');
 export const formulaInput = (page: Page) => page.getByTestId('formula-editor-input');
 
+/** The editor is a contenteditable; its formula source is mirrored in `data-value`. */
+export async function expectFormulaSource(page: Page, expression: string): Promise<void> {
+  await expect(formulaInput(page)).toHaveAttribute('data-value', expression);
+}
+
+/** Selects the whole formula and deletes it. */
+export async function clearFormula(page: Page): Promise<void> {
+  await formulaInput(page).press('ControlOrMeta+a');
+  await formulaInput(page).press('Backspace');
+  await expectFormulaSource(page, '');
+}
+
 export function fieldIdFromHeader(testId: string | null): string {
   return testId?.replace('grid-field-header-', '') ?? '';
 }
@@ -455,7 +467,7 @@ export async function startNewFormulaProperty(page: Page): Promise<void> {
 export async function typeFormula(page: Page, expression: string): Promise<void> {
   const input = formulaInput(page);
 
-  await input.fill('');
+  await clearFormula(page);
   // Typing key by key exercises autocomplete; the popup only reacts to
   // Enter/Tab/arrows, and new lines are typed with Shift+Enter.
   const lines = expression.split('\n');

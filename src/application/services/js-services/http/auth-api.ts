@@ -24,6 +24,11 @@ export interface ServerInfo {
   enable_database_history?: boolean;
   enable_database_history_version_ui?: boolean;
   ai_enabled?: boolean;
+  /**
+   * Whether this deployment is self-hosted. Only the official AppFlowy cloud
+   * runs the billing service, so pricing surfaces require `false`.
+   */
+  self_hosted?: boolean;
   /** Maximum raw Yjs update accepted by the realtime WebSocket fast lane. */
   max_update_bytes?: number;
   /**

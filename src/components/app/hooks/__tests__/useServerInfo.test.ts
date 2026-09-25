@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 
 import { AuthService } from '@/application/services/domains';
+import { getServerHostingMode, getServerInfoSnapshot } from '@/utils/server-info';
 
 import { SERVER_INFO_REFRESH_INTERVAL_MS, useServerInfo } from '../useServerInfo';
 
@@ -94,6 +95,8 @@ it('keeps older responses without version metadata usable and retries unsupporte
   expect(result.current.status).toBe('loading');
   await tick();
   expect(result.current.status).toBe('unsupported');
+  expect(getServerInfoSnapshot('server-a').status).toBe('unsupported');
+  expect(getServerHostingMode(getServerInfoSnapshot('server-a'), 'server-a')).toBe('unknown');
   expect(result.current.info).toBeUndefined();
   await tick(30_000);
   expect(getServerInfo).toHaveBeenCalledTimes(1);

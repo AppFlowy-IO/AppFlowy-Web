@@ -2,6 +2,8 @@
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen } from '@testing-library/react';
 
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
+
 import { VersionList } from '../DocumentHistoryVersionList';
 
 import type { ComponentProps } from 'react';
@@ -10,6 +12,12 @@ import type { ComponentProps } from 'react';
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+
+jest.mock('@/components/app/hooks/useServerInfo', () => ({ useIsOfficialHosted: jest.fn() }));
+
+beforeEach(() => {
+  jest.mocked(useIsOfficialHosted).mockReturnValue(true);
+});
 
 function listProps(): ComponentProps<typeof VersionList> {
   return {
@@ -112,4 +120,13 @@ test('restore remains disabled without a selection or callback and busy during r
   expect(restoreButton()).not.toHaveAttribute('aria-busy');
   fireEvent.click(restoreButton());
   expect(props.onRestoreClicked).toHaveBeenCalledTimes(1);
+});
+
+// Unknown and self-hosted servers both keep cloud upgrade prompts hidden.
+test('non-hosted free plans do not show the cloud upgrade banner', () => {
+  jest.mocked(useIsOfficialHosted).mockReturnValue(false);
+  render(<VersionList {...listProps()} />);
+
+  expect(screen.queryByText('versionHistory.upgrade')).not.toBeInTheDocument();
+  expect(screen.getByTestId('version-history-restore-button')).toBeEnabled();
 });

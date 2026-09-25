@@ -267,12 +267,14 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     movePage,
     deleteTrash,
     restorePage,
+    loadTrashViews,
     createSpace,
     createSpaceWithInitialPage,
     updateSpace,
     createDatabaseView,
     uploadFile,
     getSubscriptions,
+    getPricingCatalog,
     publish,
     unpublish,
     createOrphanedView,
@@ -834,7 +836,9 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     async (viewId: string, callback?: (meta: View | null) => void, options?: LoadViewMetaOptions) => {
       const deletedView = trashList?.find((v) => v.view_id === viewId);
 
-      if (deletedView) {
+      // Authoritative callers reconcile mutations that may have completed
+      // before the rendered trash list catches up.
+      if (deletedView && !options?.authoritative) {
         return Promise.reject(deletedView);
       }
 
@@ -1053,12 +1057,14 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       movePage,
       deleteTrash,
       restorePage,
+      loadTrashViews,
       createSpace,
       createSpaceWithInitialPage,
       updateSpace,
       createDatabaseView,
       uploadFile,
       getSubscriptions,
+      getPricingCatalog,
       publish,
       unpublish,
       createOrphanedView,
@@ -1094,12 +1100,14 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       movePage,
       deleteTrash,
       restorePage,
+      loadTrashViews,
       createSpace,
       createSpaceWithInitialPage,
       updateSpace,
       createDatabaseView,
       uploadFile,
       getSubscriptions,
+      getPricingCatalog,
       publish,
       unpublish,
       createOrphanedView,

@@ -3708,6 +3708,7 @@ export const notification = $root.notification = (() => {
          * @property {notification.IInboxNotification|null} [inboxNotification] WorkspaceNotification inboxNotification
          * @property {notification.ICommentChanged|null} [commentChanged] WorkspaceNotification commentChanged
          * @property {notification.IDatabaseRestored|null} [databaseRestored] WorkspaceNotification databaseRestored
+         * @property {notification.IStorageLimitExceeded|null} [storageLimitExceeded] WorkspaceNotification storageLimitExceeded
          */
 
         /**
@@ -3821,17 +3822,25 @@ export const notification = $root.notification = (() => {
          */
         WorkspaceNotification.prototype.databaseRestored = null;
 
+        /**
+         * WorkspaceNotification storageLimitExceeded.
+         * @member {notification.IStorageLimitExceeded|null|undefined} storageLimitExceeded
+         * @memberof notification.WorkspaceNotification
+         * @instance
+         */
+        WorkspaceNotification.prototype.storageLimitExceeded = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
         /**
          * WorkspaceNotification payload.
-         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"databaseRestored"|undefined} payload
+         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"databaseRestored"|"storageLimitExceeded"|undefined} payload
          * @memberof notification.WorkspaceNotification
          * @instance
          */
         Object.defineProperty(WorkspaceNotification.prototype, "payload", {
-            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification", "commentChanged", "databaseRestored"]),
+            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification", "commentChanged", "databaseRestored", "storageLimitExceeded"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -3883,6 +3892,8 @@ export const notification = $root.notification = (() => {
                 $root.notification.CommentChanged.encode(message.commentChanged, writer.uint32(/* id 11, wireType 2 =*/90).fork()).ldelim();
             if (message.databaseRestored != null && Object.hasOwnProperty.call(message, "databaseRestored"))
                 $root.notification.DatabaseRestored.encode(message.databaseRestored, writer.uint32(/* id 12, wireType 2 =*/98).fork()).ldelim();
+            if (message.storageLimitExceeded != null && Object.hasOwnProperty.call(message, "storageLimitExceeded"))
+                $root.notification.StorageLimitExceeded.encode(message.storageLimitExceeded, writer.uint32(/* id 13, wireType 2 =*/106).fork()).ldelim();
             return writer;
         };
 
@@ -3965,6 +3976,10 @@ export const notification = $root.notification = (() => {
                     }
                 case 12: {
                         message.databaseRestored = $root.notification.DatabaseRestored.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 13: {
+                        message.storageLimitExceeded = $root.notification.StorageLimitExceeded.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -4121,6 +4136,16 @@ export const notification = $root.notification = (() => {
                         return "databaseRestored." + error;
                 }
             }
+            if (message.storageLimitExceeded != null && message.hasOwnProperty("storageLimitExceeded")) {
+                if (properties.payload === 1)
+                    return "payload: multiple values";
+                properties.payload = 1;
+                {
+                    let error = $root.notification.StorageLimitExceeded.verify(message.storageLimitExceeded);
+                    if (error)
+                        return "storageLimitExceeded." + error;
+                }
+            }
             return null;
         };
 
@@ -4195,6 +4220,11 @@ export const notification = $root.notification = (() => {
                 if (typeof object.databaseRestored !== "object")
                     throw TypeError(".notification.WorkspaceNotification.databaseRestored: object expected");
                 message.databaseRestored = $root.notification.DatabaseRestored.fromObject(object.databaseRestored);
+            }
+            if (object.storageLimitExceeded != null) {
+                if (typeof object.storageLimitExceeded !== "object")
+                    throw TypeError(".notification.WorkspaceNotification.storageLimitExceeded: object expected");
+                message.storageLimitExceeded = $root.notification.StorageLimitExceeded.fromObject(object.storageLimitExceeded);
             }
             return message;
         };
@@ -4271,6 +4301,11 @@ export const notification = $root.notification = (() => {
                 object.databaseRestored = $root.notification.DatabaseRestored.toObject(message.databaseRestored, options);
                 if (options.oneofs)
                     object.payload = "databaseRestored";
+            }
+            if (message.storageLimitExceeded != null && message.hasOwnProperty("storageLimitExceeded")) {
+                object.storageLimitExceeded = $root.notification.StorageLimitExceeded.toObject(message.storageLimitExceeded, options);
+                if (options.oneofs)
+                    object.payload = "storageLimitExceeded";
             }
             return object;
         };
@@ -8763,6 +8798,258 @@ export const notification = $root.notification = (() => {
         };
 
         return CommentChanged;
+    })();
+
+    notification.StorageLimitExceeded = (function() {
+
+        /**
+         * Properties of a StorageLimitExceeded.
+         * @memberof notification
+         * @interface IStorageLimitExceeded
+         * @property {string|null} [objectId] StorageLimitExceeded objectId
+         * @property {number|null} [code] StorageLimitExceeded code
+         * @property {string|null} [message] StorageLimitExceeded message
+         */
+
+        /**
+         * Constructs a new StorageLimitExceeded.
+         * @memberof notification
+         * @classdesc Represents a StorageLimitExceeded.
+         * @implements IStorageLimitExceeded
+         * @constructor
+         * @param {notification.IStorageLimitExceeded=} [properties] Properties to set
+         */
+        function StorageLimitExceeded(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * StorageLimitExceeded objectId.
+         * @member {string} objectId
+         * @memberof notification.StorageLimitExceeded
+         * @instance
+         */
+        StorageLimitExceeded.prototype.objectId = "";
+
+        /**
+         * StorageLimitExceeded code.
+         * @member {number} code
+         * @memberof notification.StorageLimitExceeded
+         * @instance
+         */
+        StorageLimitExceeded.prototype.code = 0;
+
+        /**
+         * StorageLimitExceeded message.
+         * @member {string} message
+         * @memberof notification.StorageLimitExceeded
+         * @instance
+         */
+        StorageLimitExceeded.prototype.message = "";
+
+        /**
+         * Creates a new StorageLimitExceeded instance using the specified properties.
+         * @function create
+         * @memberof notification.StorageLimitExceeded
+         * @static
+         * @param {notification.IStorageLimitExceeded=} [properties] Properties to set
+         * @returns {notification.StorageLimitExceeded} StorageLimitExceeded instance
+         */
+        StorageLimitExceeded.create = function create(properties) {
+            return new StorageLimitExceeded(properties);
+        };
+
+        /**
+         * Encodes the specified StorageLimitExceeded message. Does not implicitly {@link notification.StorageLimitExceeded.verify|verify} messages.
+         * @function encode
+         * @memberof notification.StorageLimitExceeded
+         * @static
+         * @param {notification.IStorageLimitExceeded} message StorageLimitExceeded message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        StorageLimitExceeded.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.objectId != null && Object.hasOwnProperty.call(message, "objectId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.objectId);
+            if (message.code != null && Object.hasOwnProperty.call(message, "code"))
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.code);
+            if (message.message != null && Object.hasOwnProperty.call(message, "message"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.message);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified StorageLimitExceeded message, length delimited. Does not implicitly {@link notification.StorageLimitExceeded.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof notification.StorageLimitExceeded
+         * @static
+         * @param {notification.IStorageLimitExceeded} message StorageLimitExceeded message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        StorageLimitExceeded.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a StorageLimitExceeded message from the specified reader or buffer.
+         * @function decode
+         * @memberof notification.StorageLimitExceeded
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {notification.StorageLimitExceeded} StorageLimitExceeded
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        StorageLimitExceeded.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.StorageLimitExceeded();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.objectId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.code = reader.int32();
+                        break;
+                    }
+                case 3: {
+                        message.message = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a StorageLimitExceeded message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof notification.StorageLimitExceeded
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {notification.StorageLimitExceeded} StorageLimitExceeded
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        StorageLimitExceeded.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a StorageLimitExceeded message.
+         * @function verify
+         * @memberof notification.StorageLimitExceeded
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        StorageLimitExceeded.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.objectId != null && message.hasOwnProperty("objectId"))
+                if (!$util.isString(message.objectId))
+                    return "objectId: string expected";
+            if (message.code != null && message.hasOwnProperty("code"))
+                if (!$util.isInteger(message.code))
+                    return "code: integer expected";
+            if (message.message != null && message.hasOwnProperty("message"))
+                if (!$util.isString(message.message))
+                    return "message: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a StorageLimitExceeded message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof notification.StorageLimitExceeded
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {notification.StorageLimitExceeded} StorageLimitExceeded
+         */
+        StorageLimitExceeded.fromObject = function fromObject(object) {
+            if (object instanceof $root.notification.StorageLimitExceeded)
+                return object;
+            let message = new $root.notification.StorageLimitExceeded();
+            if (object.objectId != null)
+                message.objectId = String(object.objectId);
+            if (object.code != null)
+                message.code = object.code | 0;
+            if (object.message != null)
+                message.message = String(object.message);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a StorageLimitExceeded message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof notification.StorageLimitExceeded
+         * @static
+         * @param {notification.StorageLimitExceeded} message StorageLimitExceeded
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        StorageLimitExceeded.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.objectId = "";
+                object.code = 0;
+                object.message = "";
+            }
+            if (message.objectId != null && message.hasOwnProperty("objectId"))
+                object.objectId = message.objectId;
+            if (message.code != null && message.hasOwnProperty("code"))
+                object.code = message.code;
+            if (message.message != null && message.hasOwnProperty("message"))
+                object.message = message.message;
+            return object;
+        };
+
+        /**
+         * Converts this StorageLimitExceeded to JSON.
+         * @function toJSON
+         * @memberof notification.StorageLimitExceeded
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        StorageLimitExceeded.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for StorageLimitExceeded
+         * @function getTypeUrl
+         * @memberof notification.StorageLimitExceeded
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        StorageLimitExceeded.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/notification.StorageLimitExceeded";
+        };
+
+        return StorageLimitExceeded;
     })();
 
     return notification;

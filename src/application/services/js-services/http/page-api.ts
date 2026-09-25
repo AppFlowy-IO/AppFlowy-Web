@@ -22,11 +22,14 @@ import {
   UpdateSpacePayload,
   UpgradeDatabaseContainerResponse,
   ViewIconType,
+  View,
 } from '@/application/types';
 import { getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
 import { Log } from '@/utils/log';
+import { assertViewCreationOnline } from '@/application/view-online-policy';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
+import { getView } from './view-api';
 
 function isLosslessLegacyPermission(permission: SpacePermissionSettings): boolean {
   return (
@@ -144,6 +147,7 @@ export async function addAppPage(
   parentViewId: string,
   { layout, name, page_data, view_id, prev_view_id }: CreatePagePayload
 ) {
+  assertViewCreationOnline(layout);
   const url = `/api/workspace/${workspaceId}/page-view`;
 
   Log.debug('[addAppPage] request', { url, workspaceId, parentViewId, layout, name, prev_view_id });
@@ -207,7 +211,12 @@ export async function updatePageName(workspaceId: string, viewId: string, name: 
   return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, { name }));
 }
 
-export async function duplicatePage(workspaceId: string, viewId: string, options: DuplicatePageOptions = {}) {
+export async function duplicatePage(
+  workspaceId: string,
+  viewId: string,
+  options: DuplicatePageOptions = {},
+  onDuplicated?: (viewId: string) => void
+) {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/duplicate`;
   const payload: Record<string, unknown> = {};
 
@@ -217,7 +226,54 @@ export async function duplicatePage(workspaceId: string, viewId: string, options
   if (options.suffix) payload.suffix = options.suffix;
   if (options.source !== undefined) payload.source = options.source;
 
-  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, payload));
+  // Older servers return no duplicate ID. Snapshot both possible parents before
+  // the request so the compatibility path never picks an existing sibling.
+  const source = onDuplicated ? await getView(workspaceId, viewId) : undefined;
+  const parentIds = [...new Set([source?.parent_view_id, options.parentViewId].filter((id): id is string => !!id))];
+  const before = onDuplicated ? await Promise.all(parentIds.map((id) => getView(workspaceId, id, 1))) : [];
+  const existingIds = new Set(before.flatMap((view) => view.children?.map((child) => child.view_id) ?? []));
+  let taskId: string | undefined;
+
+  await executeAPIVoidRequest(async () => {
+    const response = await getAxios()?.post<APIResponse>(url, payload);
+
+    taskId = response?.headers?.['x-appflowy-duplicate-task-id'];
+    return response;
+  });
+  if (!onDuplicated) return;
+  let duplicatedId: string | undefined;
+
+  if (taskId) {
+    const task = await executeAPIRequest<{ result?: { duplicated_view_id?: string } }>(() =>
+      getAxios()?.get(`${url}/${taskId}`)
+    );
+
+    duplicatedId = task.result?.duplicated_view_id;
+  } else {
+    for (let attempt = 0; attempt < 20 && !duplicatedId; attempt++) {
+      const parents = await Promise.all(parentIds.map((id) => executeAPIRequest<View>(() =>
+        getAxios()?.get(`/api/workspace/${workspaceId}/view/${id}?depth=1&_t=${Date.now()}`)
+      )));
+      const candidates = parents.flatMap((parent) => parent.children ?? []).filter((view) =>
+        !existingIds.has(view.view_id) && view.view_id !== viewId && view.layout === source?.layout &&
+        view.name === `${source?.name}${options.suffix || ' (Copy)'}`
+      );
+
+      if (candidates.length > 1) throw new Error('Could not identify the duplicated page');
+      duplicatedId = candidates[0]?.view_id;
+      if (!duplicatedId) await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+
+  if (!duplicatedId || duplicatedId === viewId) throw new Error('Could not find the duplicated page');
+  // Register the created page for rollback before any subsequent lookup or move
+  // can fail. Callers still await this operation before inserting its block.
+  onDuplicated(duplicatedId);
+  if (options.parentViewId) {
+    const duplicate = await getView(workspaceId, duplicatedId);
+
+    if (duplicate.parent_view_id !== options.parentViewId) await movePageTo(workspaceId, duplicatedId, options.parentViewId);
+  }
 }
 
 export async function deleteTrash(workspaceId: string, viewId?: string) {
@@ -464,6 +520,7 @@ export async function updateSpace(workspaceId: string, payload: UpdateSpacePaylo
 }
 
 export async function createDatabaseView(workspaceId: string, viewId: string, payload: CreateDatabaseViewPayload) {
+  assertViewCreationOnline(payload.layout);
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/database-view`;
 
   Log.debug('[createDatabaseView]', { url, workspaceId, viewId, payload });

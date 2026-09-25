@@ -1,21 +1,46 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 
 import { AuthService } from '@/application/services/domains';
-import type { ServerInfo } from '@/application/services/js-services/http/auth-api';
 import { Log } from '@/utils/log';
+import {
+  getServerInfoSnapshot,
+  getServerHostingMode,
+  isOfficialHostedServer,
+  SERVER_INFO_LOADING,
+  ServerInfoState,
+  ServerHostingMode,
+  subscribeToServerInfo,
+  updateServerInfo,
+} from '@/utils/server-info';
 
 export const SERVER_INFO_REFRESH_INTERVAL_MS = 5 * 60_000;
 const REVALIDATE_MIN_AGE_MS = 30_000;
 
-type ServerInfoState =
-  | { status: 'loading' | 'unavailable' | 'unsupported'; info?: undefined }
-  | { status: 'available'; info: ServerInfo };
+/** Reactive view of the same hosting decision used by non-React error handlers. */
+export function useIsOfficialHosted(): boolean {
+  return useSyncExternalStore(subscribeToServerInfo, isOfficialHostedServer, () => false);
+}
 
-const loading: ServerInfoState = { status: 'loading' };
+export function useServerHostingMode(): ServerHostingMode {
+  return useSyncExternalStore(subscribeToServerInfo, getServerHostingMode, () => 'unknown');
+}
+
+export function useIsSelfHosted(): boolean {
+  return useServerHostingMode() === 'self-hosted';
+}
+
+/** Read capabilities without starting another refresh loop. */
+export function useServerInfoState(): ServerInfoState {
+  return useSyncExternalStore(subscribeToServerInfo, getServerInfoSnapshot, () => SERVER_INFO_LOADING);
+}
 
 /** One cancellable refresh loop owns server capabilities and compatibility metadata. */
 export function useServerInfo(enabled: boolean, serverUrl: string): ServerInfoState {
-  const [snapshot, setSnapshot] = useState<{ serverUrl: string; state: ServerInfoState }>();
+  const getSnapshot = useCallback(
+    () => (enabled ? getServerInfoSnapshot(serverUrl) : SERVER_INFO_LOADING),
+    [enabled, serverUrl]
+  );
+  const snapshot = useSyncExternalStore(subscribeToServerInfo, getSnapshot, getSnapshot);
 
   useEffect(() => {
     if (!enabled) return;
@@ -26,7 +51,7 @@ export function useServerInfo(enabled: boolean, serverUrl: string): ServerInfoSt
     let lastAttemptAt = 0;
     let retryAttempt = 0;
 
-    setSnapshot({ serverUrl, state: loading });
+    updateServerInfo(serverUrl, SERVER_INFO_LOADING);
 
     const refresh = async () => {
       if (inFlight || controller.signal.aborted) return;
@@ -40,16 +65,17 @@ export function useServerInfo(enabled: boolean, serverUrl: string): ServerInfoSt
 
         if (controller.signal.aborted) return;
         retryAttempt = 0;
-        setSnapshot({ serverUrl, state: { status: 'available', info } });
+        updateServerInfo(serverUrl, { status: 'available', info });
       } catch (error) {
         if (controller.signal.aborted) return;
         Log.error('[AppAuthLayer] Failed to load server info:', error);
+
         const unsupported = (error as { code?: number } | null)?.code === 404;
 
         // A missing endpoint confirms legacy capabilities; transient failures
         // cannot safely decide whether database restore fencing is required.
         // Neither failure can confirm a previous compatibility warning.
-        setSnapshot({ serverUrl, state: { status: unsupported ? 'unsupported' : 'unavailable' } });
+        updateServerInfo(serverUrl, { status: unsupported ? 'unsupported' : 'unavailable' });
         if (!unsupported) {
           nextDelay = Math.min(30_000, 1_000 * 2 ** retryAttempt);
           retryAttempt = Math.min(retryAttempt + 1, 5);
@@ -75,6 +101,7 @@ export function useServerInfo(enabled: boolean, serverUrl: string): ServerInfoSt
 
     return () => {
       controller.abort();
+      updateServerInfo(serverUrl, SERVER_INFO_LOADING);
       if (timer) clearTimeout(timer);
       window.removeEventListener('online', revalidate);
       window.removeEventListener('focus', revalidate);
@@ -82,5 +109,5 @@ export function useServerInfo(enabled: boolean, serverUrl: string): ServerInfoSt
     };
   }, [enabled, serverUrl]);
 
-  return enabled && snapshot?.serverUrl === serverUrl ? snapshot.state : loading;
+  return snapshot;
 }

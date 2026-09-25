@@ -9,6 +9,33 @@ import { APIResponse, executeAPIRequest, getAxios } from './core';
 
 const REQUEST_TIMEOUT_MS = 45_000;
 
+/** Keep provider credentials on the server, including when browsing private files. */
+export async function queryIntegration<T>(
+  workspaceId: string,
+  connectionId: string,
+  endpoint: string,
+  params: Record<string, string> = {},
+  signal?: AbortSignal
+): Promise<T> {
+  const response = await executeAPIRequest<{ data: T }>(
+    () =>
+      getAxios()?.post(
+        '/api/integrations/proxy',
+        {
+          workspace_id: workspaceId,
+          connection_id: connectionId,
+          method: 'GET',
+          endpoint,
+          params,
+        },
+        { signal, timeout: REQUEST_TIMEOUT_MS }
+      ),
+    { suppressResponseDataLogging: true }
+  );
+
+  return response.data;
+}
+
 interface ConnectProviderResponse {
   oauth_url: string;
   connection_id: string;

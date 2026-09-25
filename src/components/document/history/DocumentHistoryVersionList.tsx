@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { CollabVersionRecord } from '@/application/collab-version.type';
 import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { ReactComponent as UserIcon } from '@/assets/icons/user.svg';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import {
   VersionHistoryDateFilter,
   VersionHistoryFooter,
@@ -45,6 +46,7 @@ export const VersionList = memo(function VersionList({
   onClose?: () => void;
 }) {
   const { t } = useTranslation();
+  const isHosted = useIsOfficialHosted();
   const handleToggleOnlyMine = useCallback((event: Event) => {
     event.preventDefault();
     onOnlyShowMineChange(!onlyShowMine);
@@ -85,7 +87,7 @@ export const VersionList = memo(function VersionList({
           );
         })}
       </div>
-      {!isPro && (
+      {isHosted && !isPro && (
         <div className='m-3 flex items-center gap-2 rounded-300 bg-fill-featured-light p-3'>
           <CrownIcon className='h-5 w-5' />
           <span className='text-xs text-text-featured'>

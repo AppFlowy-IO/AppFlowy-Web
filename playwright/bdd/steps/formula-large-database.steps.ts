@@ -14,7 +14,7 @@ import {
 } from '../../support/employees-database';
 import { loginAndCreateGrid } from '../../support/field-type-helpers';
 import { deleteFilter } from '../../support/filter-test-helpers';
-import { closeMenus, formulaInput, readGridFieldsDirect, typeFormula } from '../../support/formula-test-helpers';
+import { closeMenus, expectFormulaSource, readGridFieldsDirect, typeFormula } from '../../support/formula-test-helpers';
 import { FieldType } from '../../support/selectors';
 import { generateRandomEmail, TestConfig } from '../../support/test-config';
 
@@ -586,6 +586,6 @@ When(/^I type the formula "(.*)" in under (\d+) seconds$/, async ({ page }, expr
   const started = Date.now();
 
   await typeFormula(page, expression);
-  await expect(formulaInput(page)).toHaveValue(expression);
+  await expectFormulaSource(page, expression);
   expect(Date.now() - started, 'time to type the formula').toBeLessThan(Number(seconds) * 1000);
 });

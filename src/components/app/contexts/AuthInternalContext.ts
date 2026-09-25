@@ -21,7 +21,7 @@ import { UserWorkspaceInfo } from '@/application/types';
  * being connected.
  *
  * **Hooks:** `useCurrentWorkspaceId`, `useCurrentWorkspaceIdOptional`,
- *            `useUserWorkspaceInfo`, `usePageHistoryEnabled`
+ *            `useUserWorkspaceInfo`, `usePageHistoryEnabled`, `useIsOfficialHosted`
  */
 export interface AuthInternalContextType {
   /** All workspace info for the current user, including workspace list and selected workspace. */
@@ -67,10 +67,10 @@ export const AuthInternalContext = createContext<AuthInternalContextType | null>
 // Hook to access auth internal context
 export function useAuthInternal() {
   const context = useContext(AuthInternalContext);
-  
+
   if (!context) {
     throw new Error('useAuthInternal must be used within an AuthInternalProvider');
   }
-  
+
   return context;
 }

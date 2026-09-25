@@ -1,4 +1,4 @@
-import { KeyboardEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { KeyboardEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabase, useDatabaseFields, useDatabaseView, useRowMap } from '@/application/database-yjs/context';
@@ -39,11 +39,10 @@ import { SearchInput } from '@/components/ui/search-input';
 import { cn } from '@/lib/utils';
 
 import { FormulaDocsPanel, FormulaDocsItem } from './FormulaDocsPanel';
-import { HIGHLIGHT_CLASS, highlightFormula } from './highlight';
+import { FormulaSourceInput, FormulaSourceInputHandle } from './FormulaSourceInput';
 
 const PREVIEW_ROW_LIMIT = 50;
 const AUTOCOMPLETE_LIMIT = 8;
-const MONO_CLASS = 'font-mono text-sm leading-6';
 
 export interface FormulaEditorProps {
   fieldId: string;
@@ -116,7 +115,7 @@ export function FormulaEditor({
 
     return (materializeVisibleRowOrders(rowOrders, canonical) ?? []).map((row) => row.id);
   }, [database, view]);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<FormulaSourceInputHandle>(null);
   // The editor opens with the caret after the saved formula.
   const [caret, setCaret] = useState(() => value.length);
   const [search, setSearch] = useState('');
@@ -233,43 +232,10 @@ export function FormulaEditor({
 
   // ---- editing helpers -------------------------------------------------
 
-  // A programmatic value change makes the browser park the caret at the end;
-  // restore the intended position right after React commits the new value.
-  const pendingCaretRef = useRef<number | null>(null);
-
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    const pending = pendingCaretRef.current;
-
-    if (!textarea || pending === null) return;
-    pendingCaretRef.current = null;
-    textarea.focus();
-    textarea.setSelectionRange(pending, pending);
-  }, [value]);
-
-  // Latest draft for callbacks that must stay stable (catalogue, docs examples).
-  const valueRef = useRef(value);
-
-  useLayoutEffect(() => {
-    valueRef.current = value;
-  }, [value]);
-
-  const insertAtCaret = useCallback(
-    (text: string, caretOffset: number, replaceFrom?: number) => {
-      const current = valueRef.current;
-      const textarea = textareaRef.current;
-      const start = replaceFrom ?? textarea?.selectionStart ?? current.length;
-      const end = textarea?.selectionEnd ?? start;
-      const next = current.slice(0, start) + text + current.slice(end);
-      const nextCaret = start + caretOffset;
-
-      pendingCaretRef.current = nextCaret;
-      onChange(next);
-      setCaret(nextCaret);
-      setSuggestionsDismissed(true);
-    },
-    [onChange]
-  );
+  const insertAtCaret = useCallback((text: string, caretOffset: number) => {
+    inputRef.current?.insert(text, caretOffset);
+    setSuggestionsDismissed(true);
+  }, []);
 
   const currentWord = useMemo(() => {
     let start = caret;
@@ -318,21 +284,18 @@ export function FormulaEditor({
   const acceptSuggestion = useCallback(
     (suggestion: Suggestion) => {
       const { text, caretOffset } = suggestionInsertion(suggestion, schema);
-      const textarea = textareaRef.current;
-      const end = textarea?.selectionEnd ?? caret;
-      const next = value.slice(0, currentWord.start) + text + value.slice(end);
-      const nextCaret = currentWord.start + caretOffset;
+      let end = inputRef.current?.selection()?.end ?? caret;
 
-      pendingCaretRef.current = nextCaret;
-      onChange(next);
-      setCaret(nextCaret);
+      // With the caret mid-word, the suggestion replaces the whole word.
+      while (end < value.length && /[A-Za-z0-9_]/.test(value[end])) end += 1;
+      inputRef.current?.replaceRange(currentWord.start, end, text, caretOffset);
       setSuggestionsDismissed(true);
     },
-    [caret, currentWord.start, onChange, value, schema]
+    [caret, currentWord.start, schema, value]
   );
 
   const handleKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    (event: KeyboardEvent<HTMLDivElement>) => {
       // Enter and Tab confirm an IME composition; never treat them as editor commands.
       if (event.nativeEvent.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
@@ -377,29 +340,13 @@ export function FormulaEditor({
     [acceptSuggestion, activeSuggestion, insertAtCaret, onSubmit, setActiveSuggestion, suggestions]
   );
 
-  const syncCaret = useCallback(() => {
-    const textarea = textareaRef.current;
-
-    if (textarea) setCaret(textarea.selectionStart);
-  }, []);
-
-  // Keep the textarea as tall as its content so the highlight overlay lines up;
-  // measure before paint so a multi-line formula does not open short and jump.
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-
-    if (!textarea) return;
-    textarea.style.height = '0px';
-    textarea.style.height = `${Math.max(textarea.scrollHeight, 72)}px`;
-  }, [value]);
-
-  useEffect(() => {
-    const textarea = textareaRef.current;
-
-    if (!textarea) return;
-    textarea.focus();
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-  }, []);
+  const handleSourceChange = useCallback(
+    (next: string) => {
+      onChange(next);
+      setSuggestionsDismissed(false);
+    },
+    [onChange]
+  );
 
   // ---- catalogue -------------------------------------------------------
 
@@ -430,48 +377,21 @@ export function FormulaEditor({
   const docsItem = useMemo<FormulaDocsItem | null>(() => nextDocsItem, [docsKey, schema]);
   const insertDocsExample = useCallback((text: string) => insertAtCaret(text, text.length), [insertAtCaret]);
 
-  const segments = useMemo(() => highlightFormula(value), [value]);
-
   return (
     <div className={'flex min-h-0 flex-col gap-3'} data-testid={'formula-editor'}>
       <div className={'relative'}>
-        <pre
-          aria-hidden
-          className={cn(
-            MONO_CLASS,
-            'pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words rounded-400 border border-transparent px-3 py-2 text-text-primary'
-          )}
-        >
-          {segments.map((segment, index) => (
-            <span key={index} className={HIGHLIGHT_CLASS[segment.kind]} data-highlight={segment.kind}>
-              {segment.text}
-            </span>
-          ))}
-          {'\n'}
-        </pre>
-        <textarea
-          ref={textareaRef}
-          data-testid={'formula-editor-input'}
-          aria-label={t('grid.formula.title', { defaultValue: 'Formula' })}
-          spellCheck={false}
-          autoComplete={'off'}
-          autoCorrect={'off'}
-          autoCapitalize={'off'}
-          placeholder={t('grid.formula.placeholder', { defaultValue: 'Type a formula, e.g. prop("Price") * 2' })}
+        <FormulaSourceInput
+          ref={inputRef}
           value={value}
-          className={cn(
-            MONO_CLASS,
-            'relative block w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded-400 border border-border-primary bg-transparent px-3 py-2 text-transparent caret-text-primary outline-none placeholder:text-text-tertiary focus-visible:border-border-theme-thick'
-          )}
-          onChange={(event) => {
-            onChange(event.target.value);
-            setSuggestionsDismissed(false);
-            setCaret(event.target.selectionStart);
-          }}
+          schema={schema}
+          onChange={handleSourceChange}
+          onCaretChange={setCaret}
           onKeyDown={handleKeyDown}
-          onKeyUp={syncCaret}
-          onClick={syncCaret}
-          onSelect={syncCaret}
+          ariaLabel={t('grid.formula.title', { defaultValue: 'Formula' })}
+          placeholder={t('grid.formula.placeholder', { defaultValue: 'Type a formula, e.g. prop("Price") * 2' })}
+          className={
+            'min-h-[72px] w-full whitespace-pre-wrap break-words rounded-400 border border-border-primary px-3 py-2 font-mono text-sm leading-6 text-text-primary outline-none focus-visible:border-border-theme-thick focus:border-border-theme-thick'
+          }
         />
         {suggestions.length > 0 ? (
           <div

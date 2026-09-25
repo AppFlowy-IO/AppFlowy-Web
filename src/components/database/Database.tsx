@@ -225,6 +225,9 @@ export interface Database2Props {
    * This is used by database tab delete to sync with the sidebar.
    */
   deletePage?: (viewId: string) => Promise<void>;
+  restorePage?: (viewId: string) => Promise<void>;
+  loadTrashViews?: () => Promise<View[]>;
+  movePage?: (viewId: string, parentId: string) => Promise<void>;
   /**
    * Event emitter for app-wide events like OUTLINE_LOADED.
    * Used by DatabaseTabs to listen for outline updates after rename/delete.
@@ -1497,6 +1500,9 @@ function Database(props: Database2Props) {
       createDatabaseView: props.createDatabaseView,
       updatePage: props.updatePage,
       deletePage: props.deletePage,
+      restorePage: props.restorePage,
+      loadTrashViews: props.loadTrashViews,
+      movePage: props.movePage,
       duplicatePage: props.duplicatePage,
       eventEmitter: props.eventEmitter,
       getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
@@ -1547,6 +1553,9 @@ function Database(props: Database2Props) {
       props.createDatabaseView,
       props.updatePage,
       props.deletePage,
+      props.restorePage,
+      props.loadTrashViews,
+      props.movePage,
       props.duplicatePage,
       props.eventEmitter,
       props.getViewIdFromDatabaseId,

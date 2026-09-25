@@ -15,3 +15,7 @@ export function getConfigValue(key: string, defaultValue: string): string {
 export function isDevelopmentOrTestEnvironment(): boolean {
   return true;
 }
+
+export function isLocalDevelopment(): boolean {
+  return false;
+}

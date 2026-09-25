@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { notifyConnectionsChanged } from '@/application/integrations/connection-events';
 import { authorizeIntegration, IntegrationOAuthError } from '@/application/integrations/oauth';
 import {
   IntegrationConnection,
@@ -89,6 +90,7 @@ export function useConnections(workspaceId: string) {
 
         if (controller.signal.aborted) return;
         if (!result.success) throw new Error(t('settings.connections.connectionFailed'));
+        notifyConnectionsChanged(workspaceId);
         await reload();
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -134,6 +136,7 @@ export function useConnections(workspaceId: string) {
         if (controller.signal.aborted) return false;
         if (!result.success) throw new Error(t('settings.connections.disconnectFailed'));
         setConnections((current) => current.filter((connection) => connection.id !== connectionId));
+        notifyConnectionsChanged(workspaceId);
         return true;
       } catch (error) {
         if (!controller.signal.aborted) toast.error(getErrorMessage(error, t('settings.connections.disconnectFailed')));
@@ -145,7 +148,7 @@ export function useConnections(workspaceId: string) {
         }
       }
     },
-    [t]
+    [t, workspaceId]
   );
 
   const loadError = loadFailure ? getErrorMessage(loadFailure.error, t('settings.connections.loadFailed')) : undefined;

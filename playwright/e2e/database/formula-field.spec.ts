@@ -97,7 +97,7 @@ test.describe('Formula field', () => {
     await cell.scrollIntoViewIfNeeded();
     await cell.evaluate((element) => (element as HTMLElement).click());
     await expect(dialog).toBeVisible({ timeout: 15000 });
-    await expect(page.getByTestId('formula-editor-input')).toHaveValue('prop("Numbers") * 2');
+    await expect(page.getByTestId('formula-editor-input')).toHaveAttribute('data-value', 'prop("Numbers") * 2');
     await expect(page.getByTestId('formula-preview-value')).toHaveText('$40');
     await page.getByTestId('formula-editor-cancel').click();
     await expect(dialog).toBeHidden({ timeout: 10000 });
@@ -128,11 +128,12 @@ test.describe('Formula field', () => {
     await expect(page.getByTestId('formula-editor-done')).toBeDisabled();
 
     // Autocomplete lists functions as you type and inserts on Enter.
-    await input.fill('');
+    await input.press('ControlOrMeta+a');
+    await input.press('Backspace');
     await input.pressSequentially('upp', { delay: 20 });
     await expect(page.getByTestId('formula-suggestion-upper()')).toBeVisible();
     await page.keyboard.press('Enter');
-    await expect(input).toHaveValue('upper()');
+    await expect(input).toHaveAttribute('data-value', 'upper()');
     await input.pressSequentially('"hi"', { delay: 20 });
     await expect(page.getByTestId('formula-editor-type')).toHaveText(/text/);
     await expect(page.getByTestId('formula-preview-value')).toHaveText('HI');

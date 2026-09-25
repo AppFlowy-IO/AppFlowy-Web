@@ -3,21 +3,17 @@ import { ReactEditor } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { SOFT_BREAK_TYPES, TEXT_BLOCK_TYPES } from '@/application/slate-yjs/command/const';
+import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { findSlateEntryByBlockId, getBlockEntry, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
-import {
-  BlockType,
-  FieldURLType,
-  FileBlockData,
-  ImageBlockData,
-  ImageType,
-  YjsEditorKey,
-} from '@/application/types';
+import { BlockType, FieldURLType, FileBlockData, ImageBlockData, ImageType, YjsEditorKey } from '@/application/types';
 import { extractAppFlowyClipboardFragment } from '@/components/editor/clipboard/appflowy-fragment';
 import { stripInlineCommentIds } from '@/components/editor/clipboard/inline-comment-metadata';
 import { containsSimpleTableBlocks, extractTSVFromTableFragment } from '@/components/editor/clipboard/table-fragment';
 import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
-import { insertBlocksAtCaret } from '@/components/editor/utils/insert-blocks-at-caret';
+import {
+  insertBlocksAtCaret,
+  shouldMergeFirstFragmentNodeInline,
+} from '@/components/editor/utils/insert-blocks-at-caret';
 import { FileHandler } from '@/utils/file';
 import { Log } from '@/utils/log';
 import { createPendingUploadId } from '@/utils/pending-upload';
@@ -345,27 +341,6 @@ function decodeSlateFragment(raw: string): Node[] | null {
     Log.warn('decodeSlateFragment: malformed clipboard fragment', err);
     return null;
   }
-}
-
-/**
- * Fragment block types whose inline text merges into the block under the
- * caret when they arrive first in a pasted fragment. Unlike external
- * HTML/markdown paste (where only paragraphs merge), an internal copy that
- * starts mid-line carries the source block's type — copying part of a heading
- * still yields a heading node — so any plain text block merges here, matching
- * Slate's `insertFragment` and the desktop editor. Code blocks keep their
- * block identity, and table cells never arrive here (handled earlier).
- */
-const MERGEABLE_FIRST_FRAGMENT_TYPES = TEXT_BLOCK_TYPES.filter(
-  (type) => type !== BlockType.CodeBlock && type !== BlockType.SimpleTableCellBlock
-);
-
-function shouldMergeFirstFragmentNodeInline(node: Node): boolean {
-  return (
-    Element.isElement(node) &&
-    MERGEABLE_FIRST_FRAGMENT_TYPES.includes(node.type as BlockType) &&
-    node.children.length === 1
-  );
 }
 
 /**
