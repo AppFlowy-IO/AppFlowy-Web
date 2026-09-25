@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "now_utc": "2026-09-25T00:00:00Z",
+  "provenance": "Published workflow patterns; concrete values and robustness rules are independently authored AppFlowy test fixtures, not customer records or copied example data.",
+  "scenarios": [
+    {
+      "id": "project-deadlines",
+      "source": "https://www.notion.com/help/formulas",
+      "adaptation": "Derive a due date two weeks after start and flag unfinished overdue projects. Missing starts are Unscheduled; completed status takes precedence once scheduled.",
+      "inputs": {
+        "start": [
+          null,
+          "2026-09-01",
+          "2026-09-11",
+          "2026-09-12"
+        ],
+        "status": [
+          null,
+          "To do",
+          "In progress",
+          "Done"
+        ]
+      },
+      "case_count": 16
+    },
+    {
+      "id": "rice-prioritization",
+      "source": "https://www.notion.com/help/formulas",
+      "adaptation": "Reach × impact × confidence ÷ effort and count voters. Missing/zero score inputs return zero; zero effort is guarded.",
+      "inputs": {
+        "reach": [
+          null,
+          0,
+          100,
+          500
+        ],
+        "impact": [
+          null,
+          0,
+          1,
+          2
+        ],
+        "confidence": [
+          null,
+          0,
+          0.5,
+          0.8
+        ],
+        "effort": [
+          null,
+          0,
+          1,
+          4
+        ],
+        "voters": [
+          [],
+          [
+            "Ada Lovelace"
+          ],
+          [
+            "Ada Lovelace",
+            "林 🚀"
+          ]
+        ]
+      },
+      "case_count": 768
+    },
+    {
+      "id": "order-invoice",
+      "source": "https://support.airtable.com/articles/8772429326-getting-started-with-the-airtable-formula-field",
+      "adaptation": "Extend published price × quantity orders with explicit discount/tax, refunds (negative price), cancellation, payment and outstanding balances. Round totals to cents.",
+      "inputs": {
+        "price": [
+          null,
+          0,
+          19.99,
+          -5
+        ],
+        "quantity": [
+          null,
+          0,
+          1,
+          3
+        ],
+        "discount": [
+          0,
+          0.1
+        ],
+        "tax": [
+          0,
+          0.2
+        ],
+        "cancelled": [
+          false,
+          true
+        ],
+        "paid": [
+          false,
+          true
+        ]
+      },
+      "case_count": 256
+    },
+    {
+      "id": "campaign-open-rate",
+      "source": "https://support.airtable.com/articles/7497685062-rollup-field-overview",
+      "adaptation": "Average a numeric Formula across linked email campaigns. Missing/zero sent count produces an empty rate; an actual zero open rate participates in Average. Test every subset, including no links.",
+      "rows": [
+        {
+          "name": "Product launch",
+          "opened": 40,
+          "sent": 200,
+          "expected_rate": 20
+        },
+        {
+          "name": "Newsletter",
+          "opened": 20,
+          "sent": 50,
+          "expected_rate": 40
+        },
+        {
+          "name": "Reminder",
+          "opened": 0,
+          "sent": 100,
+          "expected_rate": 0
+        },
+        {
+          "name": "Not sent",
+          "opened": 0,
+          "sent": 0,
+          "expected_rate": null
+        }
+      ],
+      "case_count": 16
+    }
+  ]
+}
