@@ -18,6 +18,7 @@ import type { FormulaRowSources } from '@/application/database-yjs/formula/useFo
 import { invalidateRelationCell } from '@/application/database-yjs/relation/cache';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
+import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
 import { invalidateRollupCell } from '@/application/database-yjs/rollup/cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
@@ -61,7 +62,8 @@ export function useRollupFieldObservers(
   const view = useDatabaseView();
   const sorts = view?.get(YjsDatabaseKey.sorts);
   const filters = view?.get(YjsDatabaseKey.filters);
-  const { loadView, createRow, getViewIdFromDatabaseId, workspaceId } = useDatabaseContext();
+  const { loadView, createRow, getViewIdFromDatabaseId, workspaceId, bindViewSync, scheduleDeferredCleanup } =
+    useDatabaseContext();
   const [observerRevision, setObserverRevision] = useState(0);
 
   useEffect(() => {
@@ -110,6 +112,7 @@ export function useRollupFieldObservers(
     const observerCleanups: Array<() => void> = [];
     const rowDocCache = new Map<string, YDoc>();
     const relatedDocCache = new Map<string, YDoc | null>();
+    const retainedMetadata = new Set<YDoc>();
     const viewIdCache = new Map<string, string | null>();
     const debouncedChange = debounce(onConditionsChange, 200);
     const selectedIds = rowIdsKey ? new Set<string>(JSON.parse(rowIdsKey)) : undefined;
@@ -202,6 +205,11 @@ export function useRollupFieldObservers(
       });
 
       if (cancelled) return null;
+      if (doc && !retainedMetadata.has(doc)) {
+        retainedMetadata.add(doc);
+        observerCleanups.push(retainRollupSource({ bindViewSync, scheduleDeferredCleanup }, doc));
+      }
+
       relatedDocCache.set(databaseId, doc);
       return doc;
     };
@@ -344,6 +352,8 @@ export function useRollupFieldObservers(
                   createRow,
                   getViewIdFromDatabaseId,
                   workspaceId,
+                  bindViewSync,
+                  scheduleDeferredCleanup,
                 },
                 () => {
                   const sourceType = resolvedRollupSourceType(rollupField);
@@ -514,6 +524,8 @@ export function useRollupFieldObservers(
     createRow,
     getViewIdFromDatabaseId,
     workspaceId,
+    bindViewSync,
+    scheduleDeferredCleanup,
     sorts,
     filters,
     onConditionsChange,

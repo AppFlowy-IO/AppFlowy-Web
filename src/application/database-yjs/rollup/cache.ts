@@ -33,6 +33,7 @@ import { canonicalizeUserUid } from '@/application/user-uid';
 
 import { rememberRollupTarget } from './filter';
 import { ComputedDependencyError, ComputedSession, enterComputedCell, evaluateRollupFormula } from './computed';
+import type { RollupSourceSync } from './source-sync';
 
 export type RollupFilterCell = {
   data: unknown;
@@ -64,7 +65,7 @@ type RollupCacheEntry = RollupCellValue & {
   updatedAt: number;
 };
 
-export type RollupComputeContext = {
+export type RollupComputeContext = RollupSourceSync & {
   workspaceId?: string;
   /** Scoped source observers own their document cache and must see load failures. */
   loadSourceDocumentsDirectly?: boolean;

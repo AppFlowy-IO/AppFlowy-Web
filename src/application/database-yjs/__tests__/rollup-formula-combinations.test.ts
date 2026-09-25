@@ -259,6 +259,107 @@ async function until(check: () => boolean) {
   throw new Error('Expected computed dependency update');
 }
 
+describe('real project formula and rollup workflows', () => {
+  function setCell(target: YDatabaseRow, id: string, type: F, value: unknown) {
+    const cell = target.get(K.cells).get(id) ?? new Y.Map() as YDatabaseCell;
+    if (!target.get(K.cells).has(id)) target.get(K.cells).set(id, cell);
+    cell.set(K.field_type, type);
+    cell.set(K.data, value);
+  }
+
+  function tasks(hours: string[], stages: string[], priorities: string[]) {
+    const f = fixture(F.Number, 'if(prop("stage") == "Done", prop("source"), 0)', hours, C.Sum);
+    f.target.fields.set('stage', field('stage', F.SingleSelect));
+    f.target.fields.set('priority', field('priority', F.SingleSelect));
+    f.target.fields.get('priority')!.get(K.type_option).get(String(F.SingleSelect)).set('content', JSON.stringify({
+      options: [{ id: 'High', name: 'High', color: 0 }, { id: 'Low', name: 'Low', color: 1 }],
+    }));
+    f.targetRows.forEach(({ row }, i) => {
+      setCell(row, 'stage', F.SingleSelect, stages[i]);
+      setCell(row, 'priority', F.SingleSelect, priorities[i]);
+    });
+    return f;
+  }
+
+  it('updates project effort after source, formula, and relation edits without rebuilding the reader', async () => {
+    const f = tasks(['8', '16', '100'], ['done', 'progress', 'done'], ['High', 'Low', 'High']);
+    const ids = f.targetRows.map(({ row }) => row.get(K.id));
+    const links = f.owner.row.get(K.cells).get('relation')!;
+    links.set(K.data, ids.slice(0, 2));
+    const changed = jest.fn();
+    const stop = observeRollupCell(f.context, changed);
+    const expectAfter = async (edit: () => void, expected: string) => {
+      changed.mockClear();
+      edit();
+      await until(() => changed.mock.calls.length > 0);
+      expect((await readRollupCell(f.context)).value).toBe(expected);
+    };
+    try {
+      await until(() => changed.mock.calls.length > 0);
+      expect((await readRollupCell(f.context)).value).toBe('8');
+      await expectAfter(() => setCell(f.targetRows[0].row, 'source', F.Number, '12'), '12');
+      await expectAfter(() => setCell(f.targetRows[1].row, 'stage', F.SingleSelect, 'done'), '28');
+      await expectAfter(() => f.target.fields.get('formula')!.get(K.type_option).get(String(F.Formula))
+        .set('expression', 'if(prop("stage") == "Done", prop("source") * 2, 0)'), '56');
+      await expectAfter(() => links.set(K.data, [ids[1]]), '32');
+      await expectAfter(() => links.set(K.data, ids.slice(0, 2)), '56');
+      await expectAfter(() => setCell(f.targetRows[0].row, 'source', F.Number, '0'), '32');
+      await expectAfter(() => links.set(K.data, []), '');
+      await expectAfter(() => links.set(K.data, ids.slice(0, 2)), '32');
+    } finally {
+      stop();
+    }
+  });
+
+  it('counts completed tasks, unfinished high-priority tasks, and hours with blank and empty recovery', async () => {
+    // The research example: 8 + 20 completed hours, one high-priority unfinished
+    // task, a blank-status zero-hour task, and an unrelated completed task.
+    const f = tasks(['8', '20', '6', '0', '100'], ['done', 'done', 'progress', '', 'done'],
+      ['High', 'Low', 'High', '', 'High']);
+    const ids = f.targetRows.map(({ row }) => row.get(K.id));
+    const links = f.owner.row.get(K.cells).get('relation')!;
+    const formula = f.target.fields.get('formula')!.get(K.type_option).get(String(F.Formula));
+    links.set(K.data, ids.slice(0, 3));
+    expect((await evaluateRollupCell(f.context)).value).toBe('28');
+    formula.set('expression', 'if(prop("stage") == "Done", 1, 0)');
+    expect((await evaluateRollupCell(f.context)).value).toBe('2');
+    formula.set('expression', 'if(prop("priority") == "High" and prop("stage") != "Done", 1, 0)');
+    expect((await evaluateRollupCell(f.context)).value).toBe('1');
+    formula.set('expression', 'prop("stage") == "Done"');
+    f.option.set(K.calculation_type, C.PercentChecked);
+    expect((await evaluateRollupCell(f.context)).value).toBe('66.7%');
+    links.set(K.data, ids.slice(0, 4));
+    expect((await evaluateRollupCell(f.context)).value).toBe('50.0%');
+    links.set(K.data, [ids[2]]);
+    expect((await evaluateRollupCell(f.context)).value).toBe('0.0%');
+    links.set(K.data, [ids[3]]);
+    expect((await evaluateRollupCell(f.context)).value).toBe('0.0%');
+    links.set(K.data, []);
+    expect((await evaluateRollupCell(f.context)).value).toBe('');
+    links.set(K.data, ids.slice(0, 3));
+    expect((await evaluateRollupCell(f.context)).value).toBe('66.7%');
+  });
+
+  it('totals expense line formulas and reacts to quantity changes while excluding unrelated expenses', async () => {
+    const f = fixture(F.Number, 'prop("source") * prop("quantity")', ['250', '80', '300', '9999'], C.Sum);
+    f.target.fields.set('quantity', field('quantity', F.Number));
+    f.targetRows.forEach(({ row }, i) => setCell(row, 'quantity', F.Number, ['4', '10', '1', '100'][i]));
+    f.owner.row.get(K.cells).get('relation')!.set(K.data, f.targetRows.slice(0, 3).map(({ row }) => row.get(K.id)));
+    const changed = jest.fn();
+    const stop = observeRollupCell(f.context, changed);
+    try {
+      await until(() => changed.mock.calls.length > 0);
+      expect((await readRollupCell(f.context)).value).toBe('2100');
+      changed.mockClear();
+      setCell(f.targetRows[2].row, 'quantity', F.Number, '2');
+      await until(() => changed.mock.calls.length > 0);
+      expect((await readRollupCell(f.context)).value).toBe('2400');
+    } finally {
+      stop();
+    }
+  });
+});
+
 describe('computed dependency lifecycle', () => {
   function nested() {
     const f = fixture(F.Number, 'prop("nested") * 2', ['1', '2'], C.Sum);

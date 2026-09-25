@@ -7,16 +7,26 @@ import { waitForGridReady } from '../../support/database-ui-helpers';
 import { toggleCheckbox, typeTextIntoCell } from '../../support/field-type-helpers';
 import {
   closeMenus,
+  addFormulaField,
   ensureRowCount,
+  expectFormulaCells,
+  expectFormulaSource,
+  openFormulaEditorFromMenu,
   revealColumn,
+  saveFormula,
   seedColumn,
   trimRowsDirect,
+  typeFormula,
 } from '../../support/formula-test-helpers';
 import {
   createNamedGridDatabase,
   createOneWayRelationField,
   createRollupCountFieldViaPropertyMenu,
   getCurrentDatabaseInfo,
+  getRelationCellRowIdsDirect,
+  openRelationCellMenu,
+  closeRelationMenu,
+  selectRelationRowById,
   setRelationCellDirect,
   waitForDatabaseTestContext,
 } from '../../support/relation-test-helpers';
@@ -35,6 +45,9 @@ interface RollupFixture {
   rollup: string;
   editor?: Page;
   documentToken: string;
+  relation?: string;
+  rowNames?: string[];
+  summaryFormula?: string;
 }
 
 const fixtures = new WeakMap<Page, RollupFixture>();
@@ -93,16 +106,19 @@ async function createFixtureGrid(page: Page, name: string, rowNames: string[], p
   return database;
 }
 
-async function seedInputSchema(page: Page): Promise<Map<string, string>> {
-  const specs = [
+type InputSpec = { id: string; name: string; type: FieldType; expression?: string };
+
+async function seedInputSchema(
+  page: Page,
+  specs: InputSpec[] = [
     { id: 'input-amount', name: 'Amount', type: FieldType.Number },
     { id: 'input-checked', name: 'Checked', type: FieldType.Checkbox },
     { id: 'input-stage', name: 'Stage', type: FieldType.SingleSelect },
     { id: 'input-tags', name: 'Tags', type: FieldType.MultiSelect },
     { id: 'input-double', name: 'Double', type: FieldType.Formula, expression: 'prop("input-amount") * 2' },
     { id: 'input-complete', name: 'Complete', type: FieldType.Formula, expression: 'prop("input-checked")' },
-  ];
-
+  ]
+): Promise<Map<string, string>> {
   // Use the established dev/test document bridge for fixture schema. The UI
   // under test is the rollup editor, not repeated input-property creation.
   await page.evaluate((specs) => {
@@ -211,6 +227,7 @@ const calculations: Record<string, [string, CalculationType]> = {
   'Percent checked': ['percent', CalculationType.PercentChecked],
   'Count values': ['count', CalculationType.CountValue],
   'Percent values': ['percent', CalculationType.PercentValue],
+  'Count checked': ['count', CalculationType.CountChecked],
 };
 
 When('the rollup targets {string} using {string}', async ({ page }, name: string, calculation: string) => {
@@ -221,7 +238,7 @@ When('the rollup targets {string} using {string}', async ({ page }, name: string
   const property = page.getByTestId('rollup-property-trigger').last();
 
   // Keeping the target preserves its selected options when only Calculate changes.
-  if (!(await property.textContent())?.includes(name)) {
+  if (!(await property.getByText(name, { exact: true }).count())) {
     await openSubmenu(page, 'rollup-property-trigger');
     await page.getByTestId(`rollup-property-option-${id}`).last().click();
     await propertyEditor(page);
@@ -260,9 +277,26 @@ async function expectRollup(page: Page, expected: string) {
   const state = fixture(page);
 
   await revealColumn(page, state.rollup);
-  await expect(page.getByTestId(`rollup-cell-${state.sourceRow}-${state.rollup}`).last()).toHaveText(expected, {
+  const cell = page.getByTestId(`rollup-cell-${state.sourceRow}-${state.rollup}`).last();
+
+  await expect(cell).toHaveText(expected, {
     timeout: 30_000,
   });
+  if (expected === '') {
+    // The cell has no loading attribute. A sustained blank after the preceding
+    // nonempty assertion prevents a transient render from satisfying emptiness.
+    let emptySince: number | undefined;
+
+    await expect.poll(async () => {
+      if ((await cell.textContent()) !== '') {
+        emptySince = undefined;
+        return false;
+      }
+
+      emptySince ??= Date.now();
+      return Date.now() - emptySince >= 600;
+    }, { timeout: 30_000, intervals: [100] }).toBe(true);
+  }
 }
 
 Then('the configured rollup shows {string}', async ({ page }, expected: string) => {
@@ -331,6 +365,216 @@ When('another tab toggles the related checkbox in row {int}', async ({ page }, r
   await revealColumn(editor, id);
   await toggleCheckbox(editor, id, row - 1);
 });
+
+Given('disposable related grids contain the {string} formula workflow', async ({ page, request }, workflow: string) => {
+  test.setTimeout(420_000);
+  setupPageErrorHandling(page);
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await signInAndWaitForApp(page, request, generateRandomEmail());
+  const expenses = workflow === 'expenses';
+  const research = workflow === 'research tasks';
+
+  expect(['project effort', 'research tasks', 'expenses']).toContain(workflow);
+  const names = expenses
+    ? ['Venue', 'Catering', 'Equipment', 'Unrelated expense']
+    : research
+    ? ['Design homepage', 'Build frontend', 'QA testing', 'Unspecified', 'Unrelated task']
+    : ['Write brief', 'Implement', 'Unspecified', 'Unrelated task'];
+  const target = await createFixtureGrid(page, expenses ? 'Expenses' : 'Tasks', names);
+  const specs: InputSpec[] = expenses
+    ? [
+        { id: 'unit-price', name: 'Unit price', type: FieldType.Number },
+        { id: 'quantity', name: 'Quantity', type: FieldType.Number },
+        {
+          id: 'expense-amount',
+          name: 'Expense amount',
+          type: FieldType.Formula,
+          expression: 'prop("unit-price") * prop("quantity")',
+        },
+      ]
+    : [
+        { id: 'hours', name: 'Hours', type: FieldType.Number },
+        { id: 'stage', name: 'Stage', type: FieldType.SingleSelect },
+        { id: 'priority', name: 'Priority', type: FieldType.SingleSelect },
+        {
+          id: 'completed-hours',
+          name: 'Completed hours',
+          type: FieldType.Formula,
+          expression: 'if(prop("stage") == "Done", prop("hours"), 0)',
+        },
+        { id: 'complete', name: 'Complete', type: FieldType.Formula, expression: 'prop("stage") == "Done"' },
+        {
+          id: 'completed-task',
+          name: 'Completed task',
+          type: FieldType.Formula,
+          expression: 'if(prop("stage") == "Done", 1, 0)',
+        },
+        {
+          id: 'high-unfinished',
+          name: 'High priority unfinished',
+          type: FieldType.Formula,
+          expression: 'if(prop("priority") == "High" and prop("stage") != "Done", 1, 0)',
+        },
+      ];
+  const fields = await seedInputSchema(page, specs);
+
+  if (expenses) {
+    await seedColumn(page, fields.get('Unit price')!, 'Number', ['250', '80', '300', '9999']);
+    await seedColumn(page, fields.get('Quantity')!, 'Number', ['4', '10', '1', '100']);
+  } else {
+    await seedColumn(
+      page,
+      fields.get('Hours')!,
+      'Number',
+      research ? ['8', '20', '6', '0', '100'] : ['8', '16', '0', '100']
+    );
+    await seedColumn(
+      page,
+      fields.get('Stage')!,
+      'Select',
+      research ? ['Done', 'Done', 'In progress', '<empty>', 'Done'] : ['Done', 'In progress', '<empty>', 'Done']
+    );
+    await seedColumn(
+      page,
+      fields.get('Priority')!,
+      'Select',
+      research ? ['High', 'Low', 'High', '<empty>', 'High'] : ['High', 'Low', '<empty>', 'High']
+    );
+  }
+
+  const targetUrl = page.url();
+  const source = await createFixtureGrid(
+    page,
+    'Projects',
+    ['Website'],
+    [target.databaseId, target.pageId, target.viewId]
+  );
+  const relation = await createOneWayRelationField(page, {
+    fieldName: expenses ? 'Expenses' : 'Tasks',
+    relatedDatabaseId: target.databaseId,
+  });
+
+  await setRelationCellDirect(page, relation, 0, target.rowIds.slice(0, expenses || research ? 3 : 2));
+  const rollup = await createRollupCountFieldViaPropertyMenu(page, {
+    fieldName: 'Aggregate',
+    relationFieldId: relation,
+    targetFieldId: target.primaryFieldId,
+  });
+  const documentToken = `rollup-workflow-${Date.now()}`;
+
+  await page.evaluate((token) => {
+    (window as typeof window & { __ROLLUP_FORMULA_DOCUMENT_TOKEN__?: string }).__ROLLUP_FORMULA_DOCUMENT_TOKEN__ = token;
+  }, documentToken);
+  fixtures.set(page, {
+    fields,
+    targetUrl,
+    targetRows: target.rowIds,
+    sourceRow: source.rowIds[0],
+    rollup,
+    documentToken,
+    relation,
+    rowNames: names,
+  });
+});
+
+When('the project adds a formula that summarizes completed hours', async ({ page }) => {
+  fixture(page).summaryFormula = await addFormulaField(
+    page,
+    'Status summary',
+    'format(prop("Aggregate")) + " hours done"'
+  );
+});
+
+When('the project adds a formula for the remaining budget', async ({ page }) => {
+  fixture(page).summaryFormula = await addFormulaField(page, 'Remaining budget', '3000 - prop("Aggregate")');
+});
+
+Then('the project summary formula shows {string}', async ({ page }, expected: string) => {
+  const id = fixture(page).summaryFormula;
+
+  if (!id) throw new Error('The project summary formula has not been created');
+  await revealColumn(page, id);
+  await expectFormulaCells(page, id, [expected]);
+});
+
+Then(
+  'the related formula {string} retains the expression {string} after reload',
+  async ({ page }, name: string, expression: string) => {
+    const editor = await relatedEditor(page);
+    const id = fixture(page).fields.get(name);
+
+    if (!id) throw new Error(`Unknown formula: ${name}`);
+    await editor.reload();
+    await waitForGridReady(editor);
+    await waitForDatabaseTestContext(editor);
+    await revealColumn(editor, id);
+    await openFormulaEditorFromMenu(editor, id);
+    await expectFormulaSource(editor, expression);
+    await editor.getByTestId('formula-editor-cancel').click();
+  }
+);
+
+When(
+  'another tab changes {string} in related row {int} to {string}',
+  async ({ page }, name: string, row: number, value: string) => {
+    const editor = await relatedEditor(page);
+    const id = fixture(page).fields.get(name);
+
+    if (!id) throw new Error(`Unknown input: ${name}`);
+    await revealColumn(editor, id);
+    await typeTextIntoCell(editor, id, row - 1, value);
+  }
+);
+
+When('another tab changes the {string} formula to {string}', async ({ page }, name: string, expression: string) => {
+  const editor = await relatedEditor(page);
+  const id = fixture(page).fields.get(name);
+
+  if (!id) throw new Error(`Unknown formula: ${name}`);
+  await closeMenus(editor);
+  await revealColumn(editor, id);
+  await openFormulaEditorFromMenu(editor, id);
+  await typeFormula(editor, expression);
+  await saveFormula(editor);
+});
+
+When('the project {word} the related row {string}', async ({ page }, action: string, name: string) => {
+  const state = fixture(page);
+  const index = state.rowNames?.indexOf(name) ?? -1;
+
+  expect(['links', 'unlinks']).toContain(action);
+  if (!state.relation || index < 0) throw new Error(`Unknown workflow relation or row: ${name}`);
+  const rowId = state.targetRows[index];
+
+  await closeMenus(page);
+  await revealColumn(page, state.relation);
+  await openRelationCellMenu(page, state.relation, 0);
+  if (action === 'links') {
+    await selectRelationRowById(page, rowId, name);
+  } else {
+    const option = page.locator('[data-radix-popper-content-wrapper]').last().locator(`[data-row-id="${rowId}"]`);
+
+    await option.hover();
+    await option.locator('..').getByRole('button').click();
+  }
+
+  await expect
+    .poll(async () => (await getRelationCellRowIdsDirect(page, state.relation!, state.sourceRow)).includes(rowId))
+    .toBe(action === 'links');
+  await closeRelationMenu(page);
+});
+
+Then(
+  'the rollup retains target {string} and calculation {string}',
+  async ({ page }, target: string, calculation: string) => {
+    await propertyEditor(page);
+    await expect(page.getByTestId('rollup-property-trigger').last().getByText(target, { exact: true })).toBeVisible();
+    await expect(
+      page.getByTestId('rollup-calculate-trigger').last().getByText(calculation, { exact: true })
+    ).toBeVisible();
+    await closeMenus(page);
+  }
+);
 
 After({ tags: '@rollup-formula-select' }, async ({ page }) => {
   await fixtures.get(page)?.editor?.close();

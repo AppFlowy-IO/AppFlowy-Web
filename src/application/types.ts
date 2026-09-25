@@ -1384,6 +1384,8 @@ export interface PublishViewMetaData {
 export type AppendBreadcrumb = (view?: View) => void;
 
 export type CreateRow = (rowKey: string, options?: { forceSync?: boolean }) => Promise<YDoc>;
+/** Retained callers own one sync reference and must schedule its cleanup. */
+export type BindViewSync = (doc: YDoc, options?: { retain?: boolean }) => SyncContext | null;
 export interface LoadViewOptions {
   databaseId?: string | null;
   /** Load only the canonical database collab, without page-view row_data. */
@@ -2271,7 +2273,7 @@ export interface ViewComponentProps {
   loadViewMeta?: LoadViewMeta;
   createRow?: CreateRow;
   loadView?: LoadView;
-  bindViewSync?: (doc: YDoc) => SyncContext | null;
+  bindViewSync?: BindViewSync;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   /**
    * Load a row sub-document (document content inside a database row).

@@ -3,6 +3,7 @@ import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-ob
 import { YDoc, YjsEditorKey } from '@/application/types';
 
 import { inspectRollupCell, invalidateRollupCell, RollupComputeContext } from './cache';
+import { retainRollupSource } from './source-sync';
 
 /** Observe the documents evaluation actually reads, including nested computed dependencies. */
 export function observeRollupCell(context: RollupComputeContext, changed: () => void): () => void {
@@ -19,6 +20,7 @@ export function observeRollupCell(context: RollupComputeContext, changed: () => 
   let observers = new Map<YDoc, () => void>();
   const loadedRows = new Map<string, Promise<YDoc>>();
   const loadedViews = new Map<string, Promise<YDoc | null>>();
+  const metadataDocuments = new WeakSet<YDoc>();
   const observedContext: RollupComputeContext = {
     ...context,
     loadSourceDocumentsDirectly: true,
@@ -56,6 +58,7 @@ export function observeRollupCell(context: RollupComputeContext, changed: () => 
                   throw new Error('Related database is not available yet');
                 }
 
+                metadataDocuments.add(doc);
                 return doc;
               },
               (error: unknown) => {
@@ -109,7 +112,13 @@ export function observeRollupCell(context: RollupComputeContext, changed: () => 
               if (disposed || pass.signal.aborted) return;
               readDocuments.add(doc);
               if (!observers.has(doc)) {
-                observers.set(doc, subscribeSharedYjsDeep(doc.getMap(YjsEditorKey.data_section), refresh));
+                const release = metadataDocuments.has(doc) ? retainRollupSource(context, doc) : undefined;
+                const unsubscribe = subscribeSharedYjsDeep(doc.getMap(YjsEditorKey.data_section), refresh);
+
+                observers.set(doc, () => {
+                  unsubscribe();
+                  release?.();
+                });
               }
             },
             usesClock: () => {

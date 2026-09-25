@@ -99,6 +99,7 @@ import {
   subscribeRelationGroupLabels,
 } from '@/application/database-yjs/relation/cache';
 import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
+import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import {
   invalidateRollupCell,
@@ -2889,7 +2890,8 @@ function useRollupCellValue({
   fieldClock: number;
 }) {
   const database = useDatabase();
-  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId, workspaceId } = useDatabaseContext();
+  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId, workspaceId, bindViewSync, scheduleDeferredCleanup } =
+    useDatabaseContext();
   const [value, setValue] = useState<RollupCellValue>({ value: '' });
   const [relationRowIdsKey, setRelationRowIdsKey] = useState('');
   const [relatedObserverRevision, setRelatedObserverRevision] = useState(0);
@@ -2914,8 +2916,13 @@ function useRollupCellValue({
       createRow,
       getViewIdFromDatabaseId,
       workspaceId,
+      bindViewSync,
+      scheduleDeferredCleanup,
     };
-  }, [database, row, field, rowId, fieldId, databaseDoc, loadView, createRow, getViewIdFromDatabaseId, workspaceId]);
+  }, [
+    database, row, field, rowId, fieldId, databaseDoc, loadView, createRow,
+    getViewIdFromDatabaseId, workspaceId, bindViewSync, scheduleDeferredCleanup,
+  ]);
 
   useEffect(() => {
     if (!rollupContext || fieldType !== FieldType.Rollup) {
@@ -2925,6 +2932,9 @@ function useRollupCellValue({
 
     let cancelled = false;
 
+    // Empty relations attach no replacement Formula observer after a membership
+    // change. The display read must rerun even if the previous observer disposed
+    // after invalidating an in-flight read.
     invalidateRollupCell(cellId);
     void readRollupCell(rollupContext).then((next) => {
       if (!cancelled) {
@@ -2942,7 +2952,7 @@ function useRollupCellValue({
       cancelled = true;
       unsubscribe();
     };
-  }, [rollupContext, fieldType, cellId, fieldClock]);
+  }, [rollupContext, fieldType, cellId, fieldClock, relationRowIdsKey]);
 
   useEffect(() => {
     if (!rollupContext || fieldType !== FieldType.Rollup) return;
@@ -3018,6 +3028,8 @@ function useRollupCellValue({
         return;
       }
 
+      observerCleanups.push(retainRollupSource(rollupContext, relatedDoc));
+
       let observedTargetType = targetFieldType();
       const readTargetRelationOption = () => {
         const relatedDatabase = relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as
@@ -3064,6 +3076,7 @@ function useRollupCellValue({
 
       if (cancelled) return;
       if (nestedRelatedDoc) {
+        observerCleanups.push(retainRollupSource(rollupContext, nestedRelatedDoc));
         observerCleanups.push(subscribeSharedYjsDeep(nestedRelatedDoc.getMap(YjsEditorKey.data_section), refreshRollup));
       }
 
