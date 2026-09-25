@@ -203,8 +203,10 @@ export function Outline({ width }: { width: number }) {
         presentAncestorIds.forEach((id) => setOutlineExpands(id, true, currentWorkspaceId));
         expandHydratedPath(presentAncestorIds);
       }
+
       return;
     }
+
     if (navigationHydrationInFlightRef.current.has(selectedViewId)) return;
     if ((navigationHydrationRetryAfterRef.current.get(selectedViewId) ?? 0) > Date.now()) return;
 
@@ -604,7 +606,7 @@ export function Outline({ width }: { width: number }) {
         setLoadingRevision((r) => r + 1);
       }
     },
-    [loadViewChildren, loadedViewIds, markViewChildrenStale, outline]
+    [currentWorkspaceId, loadViewChildren, loadedViewIds, markViewChildrenStale, outline]
   );
   const { t } = useTranslation();
 
