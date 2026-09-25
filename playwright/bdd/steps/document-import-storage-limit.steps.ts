@@ -5,10 +5,16 @@ import path from 'node:path';
 import { expect, type Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
+import { mockServerInfo } from '../../support/server-info-helpers';
+
 const { Given, When, Then } = createBdd();
 const STORAGE_PROMPT =
   'This workspace does not have enough storage for this import. Upgrade the workspace plan or contact your workspace administrator.';
 const stateByPage = new WeakMap<Page, { stage: string; creates: number; uploads: number }>();
+
+Given('the document import server is Cloud hosted', async ({ page }) => {
+  await mockServerInfo(page, { self_hosted: false });
+});
 
 Given('the document import {string} reports exhausted workspace storage', async ({ page }, stage: string) => {
   expect(['request', 'worker']).toContain(stage);
