@@ -29,8 +29,6 @@ import {
   uploadDocumentFileImportFile,
 } from '@/application/services/js-services/http/import-api';
 import {
-  DOCUMENT_FILE_MAX_BYTES,
-  DocumentFileTooLargeError,
   ImportAbortError,
   importDocumentFile,
   importDocumentFiles,
@@ -119,21 +117,46 @@ describe('importDocumentFile', () => {
     expect(cancelTask).toHaveBeenCalledWith('task-1');
   });
 
-  it('rejects oversized files before creating a task', async () => {
-    const big = file('huge.pdf', 'application/pdf', DOCUMENT_FILE_MAX_BYTES.pdf + 1);
+  it.each([
+    ['pdf', 30],
+    ['docx', 60],
+    ['html', 60],
+  ] as const)('allows a %s file above the server default when task creation accepts it', async (format, sizeMiB) => {
+    const big = file(`large.${format}`);
+
+    Object.defineProperty(big, 'size', { value: sizeMiB * 1024 * 1024 });
+    getStatus.mockResolvedValue({ task_id: 'task-1', status: 'Completed', view_id: 'view-large' });
 
     await expect(
-      importDocumentFile({ workspaceId: WORKSPACE_ID, parentViewId: PARENT_VIEW_ID, file: big, format: 'pdf' })
-    ).rejects.toBeInstanceOf(DocumentFileTooLargeError);
-    expect(createTask).not.toHaveBeenCalled();
+      importDocumentFile({ workspaceId: WORKSPACE_ID, parentViewId: PARENT_VIEW_ID, file: big, format })
+    ).resolves.toEqual({ viewId: 'view-large', warnings: [] });
+    expect(createTask).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+      expect.objectContaining({ content_length: big.size, format })
+    );
+    expect(upload).toHaveBeenCalledWith('https://s3.test/doc', big, format, undefined, undefined);
   });
 
-  it('turns an abort during polling into ImportAbortError and cancels the task', async () => {
+  it('surfaces the configured server size limit without uploading a rejected file', async () => {
+    const error = new Error('PDF exceeds the configured 5 MiB limit');
+    const oversized = file('large.pdf');
+
+    Object.defineProperty(oversized, 'size', { value: 6 * 1024 * 1024 });
+    createTask.mockRejectedValue(error);
+
+    await expect(
+      importDocumentFile({ workspaceId: WORKSPACE_ID, parentViewId: PARENT_VIEW_ID, file: oversized, format: 'pdf' })
+    ).rejects.toBe(error);
+    expect(upload).not.toHaveBeenCalled();
+    expect(getStatus).not.toHaveBeenCalled();
+  });
+
+  it.each(['Processing', 'Completed'])('rejects a %s response received after cancellation', async (status) => {
     const controller = new AbortController();
 
     getStatus.mockImplementation(async () => {
       controller.abort();
-      return { task_id: 'task-1', status: 'Processing' };
+      return { task_id: 'task-1', status, view_id: 'view-1' };
     });
 
     await expect(
@@ -160,6 +183,32 @@ describe('importDocumentFiles', () => {
     }));
     upload.mockResolvedValue(undefined);
     cancelTask.mockResolvedValue(undefined);
+  });
+
+  it.each([1, 2])('marks a %s-file batch aborted when the last status request completes after cancellation', async (count) => {
+    const controller = new AbortController();
+    const files = Array.from({ length: count }, (_, index) => file(`${index}.pdf`));
+    const lastTaskId = `task-${files[count - 1].name}`;
+
+    getStatus.mockImplementation(async (_ws: string, taskId: string) => {
+      if (taskId === lastTaskId) controller.abort();
+      return { task_id: taskId, status: 'Completed', view_id: `view-${taskId}` };
+    });
+
+    const result = await importDocumentFiles({
+      workspaceId: WORKSPACE_ID,
+      parentViewId: PARENT_VIEW_ID,
+      files,
+      format: 'pdf',
+      signal: controller.signal,
+    });
+
+    expect(result).toEqual({
+      items: files.slice(0, -1).map((item) => ({ fileName: item.name, viewId: `view-task-${item.name}` })),
+      aborted: true,
+    });
+    expect(createTask).toHaveBeenCalledTimes(count);
+    expect(cancelTask).toHaveBeenCalledWith(lastTaskId);
   });
 
   it('imports files one at a time, records per-file failures and keeps going', async () => {

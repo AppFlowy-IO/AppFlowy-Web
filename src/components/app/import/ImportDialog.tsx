@@ -14,7 +14,6 @@ import { ReactComponent as PdfIcon } from '@/assets/icons/pdf.svg';
 import { ReactComponent as TextIcon } from '@/assets/icons/text.svg';
 import { useAppOperations, useCurrentWorkspaceId, useOpenPageModal, useToView } from '@/components/app/app.hooks';
 import {
-  DOCUMENT_FILE_MAX_BYTES,
   ImportAbortError,
   ImportFileBatchItem,
   importConfluenceZipToView,
@@ -265,7 +264,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
         const { items, aborted } = await run(controller.signal, (index, total) =>
           setBatchProgress({ current: index + 1, total })
         );
-        const firstViewId = reportBatch(items, aborted, files.length);
+        const firstViewId = reportBatch(items, aborted || controller.signal.aborted, files.length);
 
         if (!firstViewId) return;
 
@@ -297,29 +296,11 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
   const handleDocumentFiles = useCallback(
     (files: File[], format: DocumentFileImportFormat) => {
       if (!workspaceId) return;
-      // Oversized picks fail before any upload; report them here so the batch only carries
-      // files the server will accept.
-      const limit = DOCUMENT_FILE_MAX_BYTES[format];
-      const accepted = files.filter((file) => file.size <= limit);
-
-      for (const file of files) {
-        if (file.size > limit) {
-          toast.error(
-            t('importPanel.fileTooLarge', {
-              name: file.name,
-              limit: Math.round(limit / 1024 / 1024),
-              ...RAW_INTERPOLATION,
-            })
-          );
-        }
-      }
-
-      if (accepted.length === 0) return;
-      void runBatch(format, accepted, (signal, onFileStart) =>
-        importDocumentFiles({ workspaceId, parentViewId, files: accepted, format, signal, onFileStart })
+      void runBatch(format, files, (signal, onFileStart) =>
+        importDocumentFiles({ workspaceId, parentViewId, files, format, signal, onFileStart })
       );
     },
-    [workspaceId, parentViewId, runBatch, t]
+    [workspaceId, parentViewId, runBatch]
   );
 
   const handleZip = useCallback(

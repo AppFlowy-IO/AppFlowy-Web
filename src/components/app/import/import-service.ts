@@ -34,27 +34,9 @@ import { calculateMd5 } from '@/utils/md5';
 
 const CSV_POLL_INTERVAL_MS = 1500;
 const CSV_POLL_TIMEOUT_MS = 5 * 60 * 1000;
-// A 50 MB Word document or a 20 MB PDF can take the worker a while to convert; poll a bit slower
-// and wait longer than for CSV.
+// Document conversion can take longer than CSV parsing, so poll less frequently and allow more time.
 const DOCUMENT_POLL_INTERVAL_MS = 2000;
 const DOCUMENT_POLL_TIMEOUT_MS = 10 * 60 * 1000;
-
-/**
- * Per-format upload caps, mirroring the server defaults (which mirror Notion's paid-plan limits).
- * Checked before uploading so an oversized pick fails instantly instead of after the upload.
- */
-export const DOCUMENT_FILE_MAX_BYTES: Record<DocumentFileImportFormat, number> = {
-  html: 50 * 1024 * 1024,
-  docx: 50 * 1024 * 1024,
-  pdf: 20 * 1024 * 1024,
-};
-
-export class DocumentFileTooLargeError extends Error {
-  constructor(public readonly fileName: string, public readonly limitBytes: number) {
-    super(`${fileName} exceeds the ${Math.round(limitBytes / 1024 / 1024)} MB limit`);
-    this.name = 'DocumentFileTooLargeError';
-  }
-}
 
 // AppFlowy Cloud's `ErrorCode::TooManyImportTask`. Unlike a bad delimiter or an oversized file,
 // this describes the account rather than the file, so every remaining file in a batch would fail
@@ -346,13 +328,10 @@ export async function importDocumentFile(input: ImportDocumentFileInput): Promis
   const { workspaceId, parentViewId, file, format, onProgress, signal } = input;
 
   throwIfAborted(signal);
-  const limit = DOCUMENT_FILE_MAX_BYTES[format];
-
-  if (file.size > limit) throw new DocumentFileTooLargeError(file.name, limit);
-
   const md5_base64 = await calculateMd5(file);
 
   throwIfAborted(signal);
+  // Task creation validates the server's configured per-format size limit before any upload.
   const task = await createDocumentFileImportTask(workspaceId, {
     content_length: file.size,
     md5_base64,
@@ -371,6 +350,7 @@ export async function importDocumentFile(input: ImportDocumentFileInput): Promis
       throwIfAborted(signal);
       const status = await getDocumentFileImportStatus(workspaceId, task.task_id);
 
+      throwIfAborted(signal);
       if (status.status === 'Completed' && status.view_id) {
         return { viewId: status.view_id, warnings: status.diagnostics?.warnings ?? [] };
       }

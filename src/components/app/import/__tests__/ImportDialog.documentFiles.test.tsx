@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
 
 import { importCsvFilesAsDatabases, importDocumentFiles } from '@/components/app/import/import-service';
@@ -23,7 +23,6 @@ jest.mock('react-i18next', () => ({
 jest.mock('sonner', () => ({ toast: { success: jest.fn(), error: jest.fn(), warning: jest.fn() } }));
 
 jest.mock('@/components/app/import/import-service', () => ({
-  DOCUMENT_FILE_MAX_BYTES: { html: 50 * 1024 * 1024, docx: 50 * 1024 * 1024, pdf: 20 * 1024 * 1024 },
   ImportAbortError: class ImportAbortError extends Error {},
   importConfluenceZipToView: jest.fn(),
   importNotionZipToView: jest.fn(),
@@ -134,19 +133,54 @@ describe('ImportDialog document file tiles', () => {
     expect(toView).not.toHaveBeenCalled();
   });
 
-  it('rejects oversized files locally and only sends the rest', async () => {
-    importDocs.mockResolvedValue({ items: [{ fileName: 'small.pdf', viewId: 'view-s' }], aborted: false });
-    renderDialog();
-    const small = new File(['s'], 'small.pdf');
-    const big = new File([new Uint8Array(20 * 1024 * 1024 + 1)], 'big.pdf');
+  it.each([
+    ['pdf', 30],
+    ['docx', 60],
+    ['html', 60],
+  ] as const)('sends all %s files for server size validation', async (format, sizeMiB) => {
+    const small = new File(['s'], `small.${format}`);
+    const big = new File(['b'], `big.${format}`);
 
-    pick('import-pdf-input', [big, small]);
+    Object.defineProperty(big, 'size', { value: sizeMiB * 1024 * 1024 });
+    importDocs.mockResolvedValue({
+      items: [
+        { fileName: big.name, viewId: 'view-b' },
+        { fileName: small.name, viewId: 'view-s' },
+      ],
+      aborted: false,
+    });
+    const { onOpenChange } = renderDialog();
 
-    await waitFor(() => expect(importDocs).toHaveBeenCalledTimes(1));
-    expect(importDocs.mock.calls[0][0].files).toEqual([small]);
-    expect(toast.error).toHaveBeenCalledWith(
-      expect.stringContaining('importPanel.fileTooLarge:{"name":"big.pdf","limit":20')
+    pick(`import-${format}-input`, [big, small]);
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(importDocs.mock.calls[0][0].files).toEqual([big, small]);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('does not navigate when a successful batch result arrives after the dialog is cancelled', async () => {
+    let resolveBatch!: (result: Awaited<ReturnType<typeof importDocumentFiles>>) => void;
+
+    importDocs.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveBatch = resolve;
+        })
     );
+    const { onOpenChange } = renderDialog();
+
+    pick('import-pdf-input', [new File(['x'], 'report.pdf')]);
+    await waitFor(() => expect(importDocs).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByTestId('import-dialog-close'));
+
+    expect(importDocs.mock.calls[0][0].signal?.aborted).toBe(true);
+    await act(async () => {
+      resolveBatch({ items: [{ fileName: 'report.pdf', viewId: 'view-r' }], aborted: false });
+    });
+
+    expect(onOpenChange).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(toView).not.toHaveBeenCalled();
   });
 
   it.each([1028, 1015])(
