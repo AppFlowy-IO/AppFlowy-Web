@@ -12,7 +12,7 @@ function tick() {
   listeners.forEach((notify) => notify());
 }
 
-function subscribe(notify: () => void) {
+export function subscribeFormulaClock(notify: () => void) {
   listeners.add(notify);
   if (listeners.size === 1) {
     timer = setInterval(tick, 1000);
@@ -34,7 +34,7 @@ function subscribe(notify: () => void) {
 
 export function useFormulaClock(enabled = false): number {
   return useSyncExternalStore(
-    enabled ? subscribe : disabledSubscribe,
+    enabled ? subscribeFormulaClock : disabledSubscribe,
     enabled ? snapshot : disabledSnapshot,
     disabledSnapshot
   );

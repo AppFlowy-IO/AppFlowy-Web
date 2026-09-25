@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import {
   DatabaseContext,
   DatabaseContextState,
+  CalculationType,
   FieldType,
   FilterType,
   RollupDisplayMode,
@@ -297,6 +298,40 @@ afterEach(() => {
 });
 
 describe('rollup target database loading', () => {
+  it('updates a mounted rollup when its Formula target expression changes', async () => {
+    const { contextValue, wrapper } = createFixture();
+    const relatedDoc = await contextValue.loadView!(relatedViewId);
+    const target = relatedDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database)
+      .get(YjsDatabaseKey.fields)
+      .get(targetFieldId);
+    const options = new Y.Map();
+    const option = new Y.Map();
+
+    options.set(String(FieldType.Formula), option);
+    option.set('expression', '2 + 3');
+    target.set(YjsDatabaseKey.type_option, options);
+    target.set(YjsDatabaseKey.type, FieldType.Formula);
+    const rollup = contextValue.databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database)
+      .get(YjsDatabaseKey.fields)
+      .get(rollupFieldId);
+
+    rollup
+      .get(YjsDatabaseKey.type_option)
+      .get(String(FieldType.Rollup))
+      .set(YjsDatabaseKey.calculation_type, CalculationType.Sum);
+    const { result } = renderHook(() => useCellSelector({ rowId: baseRowId, fieldId: rollupFieldId }), { wrapper });
+
+    await waitFor(() => expect(result.current?.data).toBe('5'));
+    act(() => {
+      option.set('expression', '2 + 7');
+    });
+    await waitFor(() => expect(result.current?.data).toBe('9'));
+  });
+
   it('loads selector observer metadata without page row data', async () => {
     const { getViewIdFromDatabaseId, loadView, wrapper } = createFixture();
 

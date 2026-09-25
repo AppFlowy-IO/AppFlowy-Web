@@ -98,6 +98,7 @@ import {
   subscribeRelationCache,
   subscribeRelationGroupLabels,
 } from '@/application/database-yjs/relation/cache';
+import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import {
   invalidateRollupCell,
@@ -2293,6 +2294,7 @@ export function useRowOrdersSelector() {
   const inlineRowOrders = getInlineViewRowOrders(database);
   const {
     databaseDoc,
+    workspaceId,
     loadView,
     createRow,
     getViewIdFromDatabaseId,
@@ -2537,6 +2539,7 @@ export function useRowOrdersSelector() {
       if (!row) return { value: '' };
       return readRollupCellSync({
         baseDoc: databaseDoc,
+        workspaceId,
         database,
         rollupField: field,
         row,
@@ -2547,7 +2550,7 @@ export function useRowOrdersSelector() {
         getViewIdFromDatabaseId,
       });
     },
-    [rowDocsForConditions, fields, database, databaseDoc, loadView, createRow, getViewIdFromDatabaseId]
+    [rowDocsForConditions, fields, database, databaseDoc, loadView, createRow, getViewIdFromDatabaseId, workspaceId]
   );
 
   const formulaContextGetter = useCallback(
@@ -2886,7 +2889,7 @@ function useRollupCellValue({
   fieldClock: number;
 }) {
   const database = useDatabase();
-  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId, workspaceId } = useDatabaseContext();
   const [value, setValue] = useState<RollupCellValue>({ value: '' });
   const [relationRowIdsKey, setRelationRowIdsKey] = useState('');
   const [relatedObserverRevision, setRelatedObserverRevision] = useState(0);
@@ -2910,8 +2913,9 @@ function useRollupCellValue({
       loadView,
       createRow,
       getViewIdFromDatabaseId,
+      workspaceId,
     };
-  }, [database, row, field, rowId, fieldId, databaseDoc, loadView, createRow, getViewIdFromDatabaseId]);
+  }, [database, row, field, rowId, fieldId, databaseDoc, loadView, createRow, getViewIdFromDatabaseId, workspaceId]);
 
   useEffect(() => {
     if (!rollupContext || fieldType !== FieldType.Rollup) {
@@ -3003,6 +3007,18 @@ function useRollupCellValue({
         void readRollupCell(rollupContext);
       };
 
+      const targetFieldType = () => {
+        const relatedDatabase = relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
+
+        return Number(relatedDatabase?.get(YjsDatabaseKey.fields)?.get(rollupOption.target_field_id)?.get(YjsDatabaseKey.type));
+      };
+
+      if (targetFieldType() === FieldType.Formula) {
+        observerCleanups.push(observeRollupCell(rollupContext, refreshRollup));
+        return;
+      }
+
+      let observedTargetType = targetFieldType();
       const readTargetRelationOption = () => {
         const relatedDatabase = relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as
           | YDatabase
@@ -3019,7 +3035,8 @@ function useRollupCellValue({
         refreshRollup();
         const nextTargetDatabaseId = readTargetRelationOption()?.database_id ?? '';
 
-        if (nextTargetDatabaseId !== observedTargetDatabaseId) {
+        if (nextTargetDatabaseId !== observedTargetDatabaseId || targetFieldType() !== observedTargetType) {
+          observedTargetType = targetFieldType();
           observedTargetDatabaseId = nextTargetDatabaseId;
           setRelatedObserverRevision((revision) => revision + 1);
         }
@@ -3820,7 +3837,7 @@ export function useFormulaColumnEvaluator(fieldId: string, rowSources?: FormulaR
   // Only a formula column recalculates when another field changes.
   const fieldsVersion = useDatabaseFieldsVersion(isFormula);
   const database = useDatabase();
-  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId, workspaceId } = useDatabaseContext();
   const references = useMemo(() => {
     void fieldsVersion;
     return isFormula && field ? collectFormulaExternalReferences(field, readFormulaSchema(fields)) : NO_EXTERNAL_REFERENCES;
@@ -3862,7 +3879,7 @@ export function useFormulaColumnEvaluator(fieldId: string, rowSources?: FormulaR
     void externalRevision;
     void clock;
     const schema = readFormulaSchema(fields);
-    const loaders = { loadView, createRow, getViewIdFromDatabaseId };
+    const loaders = { loadView, createRow, getViewIdFromDatabaseId, workspaceId };
 
     return (rowId: string, row: YDatabaseRow): number | string => {
       const result = evaluateFormulaCell({
@@ -3891,6 +3908,7 @@ export function useFormulaColumnEvaluator(fieldId: string, rowSources?: FormulaR
     loadView,
     createRow,
     getViewIdFromDatabaseId,
+    workspaceId,
   ]);
 }
 
