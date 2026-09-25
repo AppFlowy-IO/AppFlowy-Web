@@ -51,10 +51,10 @@ function PendingSyncIndicator({ status }: { status: NonNullable<ReturnType<typeo
         tabIndex={0}
         data-testid='sync-indicator'
         data-sync-status={status}
-        className='flex h-6 w-8 items-center justify-center'
+        className='flex h-6 w-6 items-center justify-center'
       >
         <div aria-hidden='true'>
-          <LoadingDots className='motion-reduce:[&>div]:!animate-none' />
+          <LoadingDots size={18} className='motion-reduce:[&>div]:!animate-none' />
         </div>
         {/* Routine syncing has an accessible name without being announced on every edit. */}
         <span className='sr-only' data-testid='sync-indicator-announcement'>

@@ -1,15 +1,17 @@
 export default function LoadingDots({
   className,
   colors = ['#00b5ff', '#e3006d', '#f7931e'],
+  size = 30,
 }: {
   className?: string;
   colors?: [string, string, string];
+  size?: number;
 }) {
   return (
     <div className={className}>
       <div
         style={{
-          width: `30px`,
+          width: size,
           aspectRatio: '2',
           background: `
             radial-gradient(circle closest-side, ${colors[0]} 90%, transparent) 0% 50%,
