@@ -43,6 +43,7 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
+import { useDatabaseRestoreNotice } from '@/components/app/DatabaseRestoreNotice';
 import { DatabaseRow } from '@/components/database/DatabaseRow';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import DatabaseViews from '@/components/database/DatabaseViews';
@@ -429,6 +430,8 @@ function Database(props: Database2Props) {
   );
 
   const currentDatabaseId = useSyncExternalStore(subscribeToDatabaseId, getDatabaseId, getDatabaseId);
+
+  useDatabaseRestoreNotice(workspaceId, props.variant === UIVariant.Publish ? undefined : currentDatabaseId);
   // A shared background loader can retain a callback and first invoke it after
   // reset, so invocation-time generation checks alone cannot identify stale work.
   const databaseLifecycleIdentity = useMemo(

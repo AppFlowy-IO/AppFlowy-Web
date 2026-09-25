@@ -71,7 +71,9 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
   const userId = deps.userId || '';
   const nilMarker = '00000000-0000-0000-0000-000000000000';
 
-  const resetDatabase = useCallback(async (databaseId: string, state: DatabaseRestoreState) => {
+  const resetDatabase = useCallback(async (
+    databaseId: string, state: DatabaseRestoreState, isInitialHydration: boolean
+  ) => {
     const { refs, workspaceId, eventEmitter, register, unregister, scheduleDeferredCleanup } = latest.current;
     const user = refs.latestUserRef.current;
 
@@ -257,7 +259,12 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       resetPlans.current.delete(planKey);
       // Sidebar membership lives in Folder, separately from the replaced Database document.
       // Refresh it for both the initiating tab and followers that observed a restore marker.
-      eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId, restoreId });
+      eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, {
+        workspaceId, databaseId, restoreId,
+        // An explicit completed restore is live even if history capabilities
+        // previously skipped authority checks. Version probes alone are not.
+        isInitialHydration: isInitialHydration && !restoreHints.current.has(planKey),
+      });
     } finally {
       // Messages queued before/during cutover belong to the discarded branch.
       for (const id of objectIds) {
@@ -277,12 +284,12 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
 
       return { ...state, storageEpoch: witness.epoch };
     },
-    (databaseId, state) => {
+    (databaseId, state, isInitialHydration) => {
       if (latest.current.workspaceId !== deps.workspaceId || latest.current.userId !== userId) {
         throw new Error('Database restore session changed');
       }
 
-      return resetDatabase(databaseId, state);
+      return resetDatabase(databaseId, state, isInitialHydration);
     }, localStorage
   ), [deps.workspaceId, userId, resetDatabase]);
 
@@ -483,7 +490,12 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     };
   }, [deps.workspaceId, userId]);
 
-  const reloadDatabaseAfterRestore = useCallback(async (databaseId: string, _restoreId: string) => {
+  const reloadDatabaseAfterRestore = useCallback(async (databaseId: string, restoreId: string) => {
+    const scopeKey = `${latest.current.userId}:${latest.current.workspaceId}:${databaseId}`;
+
+    observedRestores.current.add(scopeKey);
+    restoreHints.current.add(scopeKey);
+    tracker.observeRestoreHint(databaseId, restoreId);
     await ensureDatabaseRestoreCurrent(databaseId, Types.Database);
     // A failed check is deliberately swallowed for background drains; the UI
     // needs an error so it never reports completion before reload succeeds.

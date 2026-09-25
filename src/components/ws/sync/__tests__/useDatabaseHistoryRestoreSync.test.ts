@@ -1,8 +1,10 @@
 import EventEmitter from 'events';
 
-import { act, renderHook } from '@testing-library/react';
+import { act, fireEvent, renderHook, screen, waitFor, within } from '@testing-library/react';
+import { createElement, Fragment, useEffect, useState, type PropsWithChildren } from 'react';
 import * as Y from 'yjs';
 
+import translations from '@/@types/translations/en.json';
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { invalidateDatabaseBlobAfterRestore, prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { captureDatabaseStorageFence, db, deleteCollabDB, matchesDatabaseStorageFence, openCollabDB, openRowCollabDBWithProvider } from '@/application/db';
@@ -10,11 +12,18 @@ import { getDatabaseRestoreState } from '@/application/services/domains/database
 import { getCachedRowDatabaseId } from '@/application/services/js-services/cache';
 import { getCollab } from '@/application/services/js-services/http/collab-api';
 import { deleteOutboxByObjectId, startDrainAll } from '@/application/sync-outbox';
-import { Types, YDoc } from '@/application/types';
+import { Types, YDoc, YDocWithMeta } from '@/application/types';
+import { DatabaseRestoreNoticeProvider, useDatabaseRestoreNotice } from '@/components/app/DatabaseRestoreNotice';
 
 import { SyncRefs, useSyncRefs } from '../syncRefs';
 import { useCollabMessageHandler } from '../useCollabMessageHandler';
 import { useDatabaseHistoryRestoreSync } from '../useDatabaseHistoryRestoreSync';
+
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => translations.versionHistory[key.split('.')[1] as keyof typeof translations.versionHistory],
+  }),
+}));
 
 jest.mock('@/application/database-blob', () => ({
   invalidateDatabaseBlobAfterRestore: jest.fn(), prefetchDatabaseBlobDiff: jest.fn(),
@@ -35,11 +44,13 @@ jest.mock('@/application/services/js-services/cache', () => ({
 jest.mock('@/application/sync-outbox', () => ({ deleteOutboxByObjectId: jest.fn(), startDrainAll: jest.fn() }));
 
 function fixture() {
-  const root: YDoc = new Y.Doc({ guid: 'database' });
-  const row: YDoc = new Y.Doc({ guid: 'row' });
+  const root: YDocWithMeta = new Y.Doc({ guid: 'database' });
+  const row: YDocWithMeta = new Y.Doc({ guid: 'row' });
   const document: YDoc = new Y.Doc({ guid: 'row-document' });
   const map = new Y.Map();
 
+  root._collabType = Types.Database;
+  row._collabType = Types.DatabaseRow;
   map.set('database_id', 'database');
   row.getMap('data').set('data', map);
   const rootContext = { doc: root, collabType: Types.Database, emit: jest.fn(), _cleanup: jest.fn() };
@@ -66,6 +77,48 @@ function fixture() {
   jest.mocked(openRowCollabDBWithProvider).mockResolvedValue({ doc: nextRow } as never);
   jest.mocked(getCollab).mockResolvedValue({ data: Y.encodeStateAsUpdate(nextRoot) });
   return { refs, register, unregister, contexts, root, row, document, nextRoot, nextRow };
+}
+
+// Keep the actual notice provider mounted around the sync hook: observing a
+// completion callback alone cannot prove that an editing user saw the prompt.
+function databaseNoticeWrapper(events: EventEmitter, unmountOnRootReset = false) {
+  function EditingDatabase() {
+    useDatabaseRestoreNotice('workspace', 'database');
+    return createElement('input', { 'aria-label': 'Current database editor' });
+  }
+
+  return function DatabaseNoticeWrapper({ children }: PropsWithChildren) {
+    const [editing, setEditing] = useState(true);
+
+    useEffect(() => {
+      if (!unmountOnRootReset) return;
+      const handleReset = ({ objectId, doc }: { objectId: string; doc: YDocWithMeta }) => {
+        if (objectId === 'database' && doc._collabType === Types.Database) setEditing(false);
+      };
+
+      events.on(APP_EVENTS.COLLAB_DOC_RESET, handleReset);
+      return () => { events.off(APP_EVENTS.COLLAB_DOC_RESET, handleReset); };
+    }, []);
+
+    return createElement(DatabaseRestoreNoticeProvider, {
+      workspaceId: 'workspace', eventEmitter: events,
+      children: createElement(Fragment, null, editing && createElement(EditingDatabase), children),
+    });
+  };
+}
+
+async function assertAndDismissRestoreNotice() {
+  const dialog = await screen.findByRole('dialog', { name: 'Database restored' });
+
+  expect(screen.getAllByRole('dialog', { name: 'Database restored' })).toHaveLength(1);
+  expect(dialog.textContent).toContain(
+    'This database was restored to a previous version. You can continue editing the restored version.'
+  );
+  const dismiss = within(dialog).getByRole('button', { name: 'Got it' });
+
+  expect(document.activeElement).toBe(dismiss);
+  fireEvent.click(dismiss);
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull());
 }
 
 beforeEach(() => {
@@ -127,7 +180,7 @@ test('same-version restore replaces root and rows, clears old queues, and preser
     refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
     eventEmitter: events, register: f.register, unregister: f.unregister,
     scheduleDeferredCleanup: jest.fn(),
-  }));
+  }), { wrapper: databaseNoticeWrapper(events) });
 
   let admitted = true;
 
@@ -148,8 +201,39 @@ test('same-version restore replaces root and rows, clears old queues, and preser
   expect(f.refs.queuedMessagesDuringReset.current.size).toBe(0);
   expect(navigationRefresh).toHaveBeenCalledTimes(1);
   expect(navigationRefresh).toHaveBeenCalledWith({
-    workspaceId: 'workspace', databaseId: 'database', restoreId: 'restore-new',
+    workspaceId: 'workspace', databaseId: 'database', restoreId: 'restore-new', isInitialHydration: true,
   });
+  expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
+});
+
+test('a restore after verifying the original generation announces a live transition', async () => {
+  const f = fixture();
+  const events = new EventEmitter();
+  const restored = jest.fn();
+
+  events.on(APP_EVENTS.DATABASE_RESTORED, restored);
+  jest.mocked(getDatabaseRestoreState)
+    .mockResolvedValueOnce({ database_restore_id: null, version: 'original' });
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: events, register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }), { wrapper: databaseNoticeWrapper(events) });
+
+  await act(async () => {
+    expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database)).toBe(true);
+  });
+  expect(restored).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
+  await act(async () => {
+    expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database)).toBe(false);
+  });
+  expect(restored).toHaveBeenCalledTimes(1);
+  expect(restored).toHaveBeenCalledWith({
+    workspaceId: 'workspace', databaseId: 'database', restoreId: 'restore-new', isInitialHydration: false,
+  });
+  await assertAndDismissRestoreNotice();
+  unmount();
 });
 
 test.each(['database', 'row', 'newly-opened-row'])(
@@ -302,7 +386,7 @@ test.each([false, true])('remote restore replaces the aggregate while history is
     refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: false, capabilityLoaded: loaded,
     eventEmitter: events, register: f.register, unregister: f.unregister,
     scheduleDeferredCleanup: jest.fn(),
-  }));
+  }), { wrapper: databaseNoticeWrapper(events) });
 
   await act(async () => {
     result.current.handleRestoreNotification({ databaseId: 'database', databaseRestoreId: 'restore-new' });
@@ -311,7 +395,9 @@ test.each([false, true])('remote restore replaces the aggregate while history is
   expect(f.contexts.get('database')?.doc).toBe(f.nextRoot);
   expect(f.contexts.get('row')?.doc).toBe(f.nextRow);
   expect(f.contexts.get('row-document')?.doc).toBe(f.document);
-  expect(refreshed).toHaveBeenCalledWith({ workspaceId: 'workspace', databaseId: 'database', restoreId: 'restore-new' });
+  expect(refreshed).toHaveBeenCalledWith({
+    workspaceId: 'workspace', databaseId: 'database', restoreId: 'restore-new', isInitialHydration: false,
+  });
 
   // Consuming the hint must not let old row traffic bypass the generation
   // guard, or leave newly opened rows unstamped while the UI remains disabled.
@@ -324,6 +410,91 @@ test.each([false, true])('remote restore replaces the aggregate while history is
   result.current.prepareDatabaseContext({ doc: freshRow, collabType: Types.DatabaseRow });
   expect(freshRow.databaseRestoreId).toBe('restore-new');
   freshRow.destroy();
+  await assertAndDismissRestoreNotice();
+  unmount();
+});
+
+test('announces completion after the root reset unmounts the editing view while rows are still loading', async () => {
+  const f = fixture();
+  const events = new EventEmitter();
+  const restored = jest.fn();
+  let finishRow!: (value: Awaited<ReturnType<typeof openRowCollabDBWithProvider>>) => void;
+  const pendingRow = new Promise<Awaited<ReturnType<typeof openRowCollabDBWithProvider>>>((resolve) => {
+    finishRow = resolve;
+  });
+
+  events.on(APP_EVENTS.DATABASE_RESTORED, restored);
+  jest.mocked(openRowCollabDBWithProvider).mockReturnValueOnce(pendingRow);
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: false, capabilityLoaded: true,
+    eventEmitter: events, register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }), { wrapper: databaseNoticeWrapper(events, true) });
+
+  expect(screen.getByRole('textbox', { name: 'Current database editor' })).toBeTruthy();
+  await act(async () => {
+    result.current.handleRestoreNotification({ databaseId: 'database', databaseRestoreId: 'restore-new' });
+  });
+  await waitFor(() => expect(openRowCollabDBWithProvider).toHaveBeenCalledWith('row'));
+  expect(f.contexts.get('database')?.doc).toBe(f.nextRoot);
+  expect(screen.queryByRole('textbox', { name: 'Current database editor' })).toBeNull();
+  expect(f.contexts.has('row')).toBe(false);
+  expect(restored).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
+
+  await act(async () => { finishRow({ doc: f.nextRow } as Awaited<ReturnType<typeof openRowCollabDBWithProvider>>); });
+  expect(f.contexts.get('row')?.doc).toBe(f.nextRow);
+  expect(restored).toHaveBeenCalledTimes(1);
+  await assertAndDismissRestoreNotice();
+  await act(async () => {
+    result.current.handleRestoreNotification({ databaseId: 'database', databaseRestoreId: 'restore-new' });
+  });
+  expect(restored).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
+  unmount();
+});
+
+test.each([false, true])('a local restore is live without a known baseline (history enabled: %s)', async (enabled) => {
+  const f = fixture();
+  const events = new EventEmitter();
+  const restored = jest.fn();
+
+  events.on(APP_EVENTS.DATABASE_RESTORED, restored);
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled, capabilityLoaded: enabled,
+    eventEmitter: events, register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }), { wrapper: databaseNoticeWrapper(events) });
+
+  await act(async () => { await result.current.reloadDatabaseAfterRestore('database', 'restore-new'); });
+  expect(f.contexts.get('database')?.doc).toBe(f.nextRoot);
+  expect(restored).toHaveBeenCalledTimes(1);
+  expect(restored).toHaveBeenCalledWith({
+    workspaceId: 'workspace', databaseId: 'database', restoreId: 'restore-new', isInitialHydration: false,
+  });
+  await assertAndDismissRestoreNotice();
+  unmount();
+});
+
+test('a first version-mismatch probe does not turn historical hydration into a live restore', async () => {
+  const f = fixture();
+  const events = new EventEmitter();
+  const restored = jest.fn();
+
+  events.on(APP_EVENTS.DATABASE_RESTORED, restored);
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: false, capabilityLoaded: false,
+    eventEmitter: events, register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }), { wrapper: databaseNoticeWrapper(events) });
+
+  await act(async () => {
+    await result.current.ensureDatabaseRestoreCurrent('database', Types.Database, undefined, true);
+  });
+  expect(restored).toHaveBeenCalledWith({
+    workspaceId: 'workspace', databaseId: 'database', restoreId: 'restore-new', isInitialHydration: true,
+  });
+  expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
   unmount();
 });
 
@@ -343,13 +514,16 @@ test('a persisted restore marker requires verification while history is disabled
   unmount();
 });
 
-test('a stamped server response discovers an aggregate restore while history is disabled', async () => {
+test.each([false, true])('a stamped server response discovers an aggregate restore while history is disabled (known generation: %s)', async (knownGeneration) => {
   const f = fixture();
+
+  if (knownGeneration) localStorage.setItem('af_database_restore:v1:server:user:workspace:database', 'restore-old');
+  const events = new EventEmitter();
   const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
     refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: false, capabilityLoaded: true,
-    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    eventEmitter: events, register: f.register, unregister: f.unregister,
     scheduleDeferredCleanup: jest.fn(),
-  }));
+  }), { wrapper: databaseNoticeWrapper(events) });
 
   await act(async () => {
     expect(await result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow, 'restore-new')).toBe(false);
@@ -357,11 +531,16 @@ test('a stamped server response discovers an aggregate restore while history is 
   expect(f.contexts.get('database')?.doc).toBe(f.nextRoot);
   expect(f.contexts.get('row')?.doc).toBe(f.nextRow);
   expect(f.contexts.get('row-document')?.doc).toBe(f.document);
+  if (knownGeneration) await assertAndDismissRestoreNotice();
+  else expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
   unmount();
 });
 
-test.each(['update', 'manifest'])('an unmarked root %s discovers an aggregate restore without a notification or history capability', async (kind) => {
+test.each([['update', false], ['manifest', false], ['update', true], ['manifest', true]])(
+  'an unmarked root %s discovers an aggregate restore without a notification or history capability (known generation: %s)', async (kind, knownGeneration) => {
   const f = fixture();
+
+  if (knownGeneration) localStorage.setItem('af_database_restore:v1:server:user:workspace:database', 'restore-old');
   const oldVersion = '11111111-1111-4111-8111-111111111111';
   const incomingVersion = '22222222-2222-4222-8222-222222222222';
   const actualRestoreId = '33333333-3333-4333-8333-333333333333';
@@ -382,7 +561,7 @@ test.each(['update', 'manifest'])('an unmarked root %s discovers an aggregate re
     });
 
     return useCollabMessageHandler(refs, undefined, undefined, events, f.register, jest.fn(), restore.ensureDatabaseRestoreCurrent);
-  });
+  }, { wrapper: databaseNoticeWrapper(events) });
 
   await act(async () => {
     expect(await result.current.enqueueIncomingCollabMessage({
@@ -401,6 +580,8 @@ test.each(['update', 'manifest'])('an unmarked root %s discovers an aggregate re
   expect(f.nextRow.databaseRestoreId).toBe(actualRestoreId);
   expect(invalidateDatabaseBlobAfterRestore).toHaveBeenCalledWith('database', actualRestoreId, null);
   partialRoot.destroy();
+  if (knownGeneration) await assertAndDismissRestoreNotice();
+  else expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
   unmount();
 });
 
@@ -421,7 +602,7 @@ test('a root version hint cannot reset only the root when aggregate authority is
     });
 
     return useCollabMessageHandler(refs, undefined, undefined, events, f.register, jest.fn(), restore.ensureDatabaseRestoreCurrent);
-  });
+  }, { wrapper: databaseNoticeWrapper(events) });
 
   await act(async () => {
     expect(await result.current.enqueueIncomingCollabMessage({
@@ -433,6 +614,7 @@ test('a root version hint cannot reset only the root when aggregate authority is
   expect(deleteCollabDB).not.toHaveBeenCalled();
   expect(f.contexts.get('database')?.doc).toBe(f.root);
   expect(f.contexts.get('row')?.doc).toBe(f.row);
+  expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
   unmount();
 });
 
@@ -504,27 +686,33 @@ test('an unavailable row identity cache fails closed without rejecting the sync 
   unmount();
 });
 
-test('a failed reload retains owners and automatically retries after its contexts were retired', async () => {
+test.each([false, true])('a failed reload retains owners and automatically retries after its contexts were retired (known generation: %s)', async (knownGeneration) => {
   jest.useFakeTimers();
   const f = fixture();
+
+  if (knownGeneration) localStorage.setItem('af_database_restore:v1:server:user:workspace:database', 'restore-old');
+  const events = new EventEmitter();
 
   f.refs.contextRefCounts.current.set('database', 2);
   jest.mocked(getCollab).mockRejectedValueOnce(new Error('Temporary fetch failure'))
     .mockResolvedValue({ data: Y.encodeStateAsUpdate(f.nextRoot) });
   const { result } = renderHook(() => useDatabaseHistoryRestoreSync({
     refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
-    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    eventEmitter: events, register: f.register, unregister: f.unregister,
     scheduleDeferredCleanup: jest.fn(),
-  }));
+  }), { wrapper: databaseNoticeWrapper(events) });
 
   await act(async () => { await result.current.ensureDatabaseRestoreCurrent('database', Types.Database); });
   expect(f.contexts.has('database')).toBe(false);
+  expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
   expect(f.refs.resettingObjectIds.current.has('database')).toBe(true);
   await act(async () => { jest.advanceTimersByTime(5000); });
   expect(f.contexts.get('database')?.doc).toBe(f.nextRoot);
   expect(f.contexts.get('row')?.doc).toBe(f.nextRow);
   expect(f.register.mock.calls.filter(([value]) => value.doc.guid === 'database')).toHaveLength(2);
   expect(f.refs.resettingObjectIds.current.size).toBe(0);
+  if (knownGeneration) await assertAndDismissRestoreNotice();
+  else expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
   jest.useRealTimers();
 });
 
@@ -622,13 +810,14 @@ test.each([Types.Database, Types.DatabaseRow])(
 
 test('a stale notification hint verifies authority without resetting the current database', async () => {
   const f = fixture();
+  const events = new EventEmitter();
 
   localStorage.setItem('af_database_restore:v1:server:user:workspace:database', 'restore-new');
   const { result } = renderHook(() => useDatabaseHistoryRestoreSync({
     refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
-    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    eventEmitter: events, register: f.register, unregister: f.unregister,
     scheduleDeferredCleanup: jest.fn(),
-  }));
+  }), { wrapper: databaseNoticeWrapper(events) });
 
   await act(async () => {
     result.current.handleRestoreNotification({ databaseId: 'database', databaseRestoreId: 'older-restore', version: 'same-version' });
@@ -636,6 +825,7 @@ test('a stale notification hint verifies authority without resetting the current
   expect(getDatabaseRestoreState).toHaveBeenCalledWith('workspace', 'database');
   expect(deleteCollabDB).not.toHaveBeenCalled();
   expect(f.contexts.get('database')?.doc).toBe(f.root);
+  expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
 });
 
 test.each([null, '00000000-0000-0000-0000-000000000000', 'restore-new'])(
@@ -806,8 +996,10 @@ test('independent tabs resetting the same committed restore use one stable stora
 });
 
 
-test('retry after a partial rebuild replaces the displayed new root and preserves its latest owners', async () => {
+test.each([false, true])('retry after a partial rebuild replaces the displayed new root and preserves its latest owners (known generation: %s)', async (knownGeneration) => {
   const f = fixture();
+
+  if (knownGeneration) localStorage.setItem('af_database_restore:v1:server:user:workspace:database', 'restore-old');
   const secondRoot = new Y.Doc({ guid: 'database' });
   const events = new EventEmitter();
   const receiver = jest.fn();
@@ -821,11 +1013,12 @@ test('retry after a partial rebuild replaces the displayed new root and preserve
     refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
     eventEmitter: events, register: f.register, unregister: f.unregister,
     scheduleDeferredCleanup: jest.fn(),
-  }));
+  }), { wrapper: databaseNoticeWrapper(events) });
 
   await act(async () => { await result.current.ensureDatabaseRestoreCurrent('database', Types.Database); });
   expect(f.contexts.get('database')?.doc).toBe(f.nextRoot);
   expect(f.contexts.has('row')).toBe(false);
+  expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
   // Another mounted view acquired the replacement root while row recovery waited.
   f.refs.contextRefCounts.current.set('database', 3);
   await act(async () => { await result.current.ensureDatabaseRestoreCurrent('database', Types.Database); });
@@ -835,21 +1028,24 @@ test('retry after a partial rebuild replaces the displayed new root and preserve
   expect(receiver.mock.calls.filter(([value]) => value.objectId === 'database').map(([value]) => value.doc))
     .toEqual([f.nextRoot, secondRoot]);
   expect(f.refs.resettingObjectIds.current.size).toBe(0);
+  if (knownGeneration) await assertAndDismissRestoreNotice();
+  else expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
 });
 
 
 test.each([false, true])('a passive tab retries a transient first notification read and coalesces duplicate hints (history enabled: %s)', async (enabled) => {
   jest.useFakeTimers();
   const f = fixture();
+  const events = new EventEmitter();
 
   jest.mocked(getDatabaseRestoreState).mockRejectedValueOnce({
     code: ERROR_CODE.TOO_MANY_REQUESTS, httpStatus: 429, message: 'Restore publication fence',
   }).mockResolvedValue({ database_restore_id: 'restore-new', version: 'same-version' });
   const { result } = renderHook(() => useDatabaseHistoryRestoreSync({
     refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled, capabilityLoaded: enabled,
-    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    eventEmitter: events, register: f.register, unregister: f.unregister,
     scheduleDeferredCleanup: jest.fn(),
-  }));
+  }), { wrapper: databaseNoticeWrapper(events) });
   const hint = { databaseId: 'database', databaseRestoreId: 'restore-new', version: 'same-version' };
 
   await act(async () => {
@@ -858,25 +1054,30 @@ test.each([false, true])('a passive tab retries a transient first notification r
   });
   expect(getDatabaseRestoreState).toHaveBeenCalledTimes(1);
   expect(invalidateDatabaseBlobAfterRestore).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
   await act(async () => { jest.advanceTimersByTime(5000); });
   expect(f.contexts.get('database')?.doc).toBe(f.nextRoot);
   expect(f.contexts.get('row')?.doc).toBe(f.nextRow);
   expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
   await act(async () => { jest.advanceTimersByTime(15000); });
   expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+  await assertAndDismissRestoreNotice();
+  await act(async () => { result.current.handleRestoreNotification(hint); });
+  expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
   jest.useRealTimers();
 });
 
 test.each([false, true])('a definitive permission denial does not keep polling a retained restore hint (history enabled: %s)', async (enabled) => {
   jest.useFakeTimers();
   const f = fixture();
+  const events = new EventEmitter();
 
   jest.mocked(getDatabaseRestoreState).mockRejectedValue({ code: ERROR_CODE.NOT_HAS_PERMISSION, httpStatus: 403 });
   const { result } = renderHook(() => useDatabaseHistoryRestoreSync({
     refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled, capabilityLoaded: enabled,
-    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    eventEmitter: events, register: f.register, unregister: f.unregister,
     scheduleDeferredCleanup: jest.fn(),
-  }));
+  }), { wrapper: databaseNoticeWrapper(events) });
 
   await act(async () => {
     result.current.handleRestoreNotification({ databaseId: 'database', databaseRestoreId: 'restore-new', version: 'same-version' });
@@ -886,6 +1087,7 @@ test.each([false, true])('a definitive permission denial does not keep polling a
   expect(invalidateDatabaseBlobAfterRestore).not.toHaveBeenCalled();
   expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database)).toBe(false);
   jest.useRealTimers();
+  expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
 });
 
 test('a verification failure resolving after session disposal cannot schedule a retry', async () => {

@@ -122,6 +122,7 @@ import {
   setCurrentSession,
   shouldRouteUpdateThroughOutbox,
   startDrainAll,
+  type SlowSyncOutboxItem,
 } from '@/application/sync-outbox';
 
 const userId = 'user-1';
@@ -392,7 +393,7 @@ describe('sync outbox live send', () => {
     const payload = makeUpdate('legacy row');
     const send = jest.fn();
     const broadcast = jest.fn();
-    const slowSync = jest.fn(async () => ({ outcome: 'confirmed' as const }));
+    const slowSync = jest.fn(async (_item: SlowSyncOutboxItem) => ({ outcome: 'confirmed' as const }));
     const beforeSend = jest.fn(async () => true);
 
     configureDrain({
@@ -461,7 +462,7 @@ describe('sync outbox live send', () => {
     const payload = makeUpdate('large row');
 
     await enqueueOutboxUpdate({ objectId, collabType: Types.DatabaseRow, payload, databaseRestoreId });
-    const slowSync = jest.fn(async () => ({ outcome: 'confirmed' as const }));
+    const slowSync = jest.fn(async (_item: SlowSyncOutboxItem) => ({ outcome: 'confirmed' as const }));
     const beforeSend = jest.fn(async () => true);
 
     configureDrain({
@@ -479,6 +480,107 @@ describe('sync outbox live send', () => {
     expect(beforeSend).toHaveBeenCalledWith(objectId, Types.DatabaseRow, databaseRestoreId);
     expect(slowSync.mock.calls[0][0]).toMatchObject({ objectId, databaseRestoreId, docState: payload });
   });
+
+  it.each([
+    [Types.Database, undefined], [Types.DatabaseRow, undefined],
+    [Types.Database, 'old-generation'], [Types.DatabaseRow, 'old-generation'],
+  ] as const)(
+    'retires offline type %s updates from generation %s before reconnecting and sends fresh edits',
+    async (collabType, capturedGeneration) => {
+      let ready = false;
+      let generation = capturedGeneration ?? '00000000-0000-0000-0000-000000000000';
+      const send = jest.fn();
+      const beforeSend = jest.fn(async (id: string, _type: Types, marker?: string) => {
+        if (marker === generation) return true;
+        await deleteOutboxByObjectId(id, {
+          skipActiveDrain: true, preserveDatabaseRestoreId: generation,
+        });
+        return false;
+      });
+
+      configureDrain({ userId, workspaceId, send, isReady: () => ready, beforeSend });
+      await enqueueOutboxUpdate({
+        objectId, collabType, databaseRestoreId: capturedGeneration, payload: makeUpdate('queued offline edit'),
+      });
+      await flushPromises();
+      expect(mockRecords).toHaveLength(1);
+      expect(send).not.toHaveBeenCalled();
+
+      generation = 'restored-generation';
+      ready = true;
+      startDrainAll();
+      await flushPromises();
+      expect(send).not.toHaveBeenCalled();
+      expect(mockRecords).toHaveLength(0);
+      // Reconnect notifications must not resurrect or retry discarded bytes.
+      startDrainAll();
+      await flushPromises();
+      expect(send).not.toHaveBeenCalled();
+
+      const fresh = makeUpdate('fresh restored edit');
+
+      await enqueueOutboxUpdate({ objectId, collabType, databaseRestoreId: generation, payload: fresh });
+      await flushPromises();
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send.mock.calls[0][0].collabMessage).toMatchObject({
+        objectId, collabType, update: { databaseRestoreId: generation, payload: fresh },
+      });
+      expect(mockRecords).toHaveLength(0);
+    }
+  );
+
+  it.each([Types.Database, Types.DatabaseRow])(
+    'rechecks a failed HTTP upload before retrying collab type %s after restore',
+    async (collabType) => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        let generation = 'old-generation';
+        const payload = makeUpdate('oversized old generation');
+        const send = jest.fn();
+        const slowSync = jest.fn()
+          .mockRejectedValueOnce(Object.assign(new Error('busy'), { retryAfterSecs: 7 }))
+          .mockResolvedValue({ outcome: 'confirmed' });
+        const beforeSend = jest.fn(async (id: string, _type: Types, marker?: string) => {
+          if (marker === generation) return true;
+          await deleteOutboxByObjectId(id, {
+            skipActiveDrain: true, preserveDatabaseRestoreId: generation,
+          });
+          return false;
+        });
+
+        configureDrain({
+          userId, workspaceId, send, slowSync, beforeSend, isReady: () => true,
+          maxUpdateBytes: 1, maxSlowSyncUpdateBytes: payload.byteLength + 1_024,
+        });
+        await enqueueOutboxUpdate({ objectId, collabType, payload, databaseRestoreId: generation });
+        await flushPromises();
+        expect(slowSync).toHaveBeenCalledTimes(1);
+        expect(slowSync.mock.calls[0][0]).toMatchObject({ databaseRestoreId: 'old-generation', docState: payload });
+        expect(mockRecords).toHaveLength(1);
+
+        generation = 'restored-generation';
+        await jest.advanceTimersByTimeAsync(7_000);
+        await flushPromises();
+        expect(slowSync).toHaveBeenCalledTimes(1);
+        expect(mockRecords).toHaveLength(0);
+        await jest.advanceTimersByTimeAsync(30_000);
+        startDrainAll();
+        await flushPromises();
+        expect(slowSync).toHaveBeenCalledTimes(1);
+
+        const fresh = makeUpdate('fresh restored generation');
+
+        await enqueueOutboxUpdate({ objectId, collabType, payload: fresh, databaseRestoreId: generation });
+        await flushPromises();
+        expect(slowSync).toHaveBeenCalledTimes(2);
+        expect(slowSync.mock.calls[1][0]).toMatchObject({ databaseRestoreId: generation, docState: fresh });
+        expect(mockRecords).toHaveLength(0);
+        expect(send).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    }
+  );
 
   it('sends immediately when the transport is ready and removes the durable copy after enqueue lands', async () => {
     const send = jest.fn();
@@ -836,7 +938,7 @@ describe('sync outbox live send', () => {
     const send = jest.fn(() => {
       events.push('send');
     });
-    const slowSync = jest.fn(async () => {
+    const slowSync = jest.fn(async (_item: SlowSyncOutboxItem) => {
       events.push('slow');
       return {
         outcome: 'confirmed' as const,

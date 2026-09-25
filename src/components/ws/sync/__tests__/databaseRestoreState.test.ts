@@ -11,9 +11,36 @@ test('a new restore identity resets even when the history version is unchanged',
   const tracker = new DatabaseRestoreTracker('marker:', read, reset, localStorage);
 
   expect(await tracker.check('db')).toBe(false);
-  expect(reset).toHaveBeenCalledWith('db', { database_restore_id: 'restore-2', version: 'same-version' });
+  expect(reset).toHaveBeenCalledWith('db', { database_restore_id: 'restore-2', version: 'same-version' }, false);
   expect(await tracker.check('db')).toBe(true);
   expect(reset).toHaveBeenCalledTimes(1);
+});
+
+test.each([false, true])('first restored generation is initial hydration even with a restore hint: %s', async (hasHint) => {
+  const state = { database_restore_id: 'earlier-restore', version: 'version' };
+  const read = jest.fn().mockResolvedValue(state);
+  const reset = jest.fn().mockResolvedValue(undefined);
+  const tracker = new DatabaseRestoreTracker('marker:', read, reset, localStorage);
+
+  if (hasHint) tracker.observeRestoreHint('db', state.database_restore_id);
+  expect(await tracker.check('db')).toBe(false);
+  expect(reset).toHaveBeenCalledWith('db', state, true);
+  expect(await tracker.check('db')).toBe(true);
+  expect(reset).toHaveBeenCalledTimes(1);
+});
+
+test('a verified original generation makes the first subsequent restore a live transition', async () => {
+  const state = { database_restore_id: 'first-restore', version: 'version' };
+  const read = jest.fn()
+    .mockResolvedValueOnce({ database_restore_id: null, version: 'original' })
+    .mockResolvedValue(state);
+  const reset = jest.fn().mockResolvedValue(undefined);
+  const tracker = new DatabaseRestoreTracker('marker:', read, reset, localStorage);
+
+  expect(await tracker.check('db')).toBe(true);
+  expect(reset).not.toHaveBeenCalled();
+  expect(await tracker.check('db')).toBe(false);
+  expect(reset).toHaveBeenCalledWith('db', state, false);
 });
 
 test('another tab updating shared storage cannot mark this tab’s live documents current', async () => {
@@ -41,6 +68,7 @@ test('concurrent callers share verification and failed reload never advances the
   expect(localStorage.getItem('marker:db')).toBeNull();
   await tracker.check('db');
   expect(reset).toHaveBeenCalledTimes(2);
+  expect(reset.mock.calls.map((call) => call[2])).toEqual([true, true]);
   expect(localStorage.getItem('marker:db')).toBe('restore-1');
 });
 
@@ -112,7 +140,7 @@ test('a stale cache witness rechecks authority without publishing or installing 
   expect(read).toHaveBeenCalledTimes(3);
   expect(reset).toHaveBeenNthCalledWith(2, 'database', {
     database_restore_id: 'restore-two', version: 'version-two', storageEpoch: 'restore-two',
-  });
+  }, true);
   expect(tracker.marker('database')).toBe('restore-two');
   expect(localStorage.getItem('witness:database')).toBe('restore-two');
 });

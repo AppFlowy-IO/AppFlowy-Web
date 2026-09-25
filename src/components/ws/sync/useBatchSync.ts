@@ -250,6 +250,9 @@ export function useBatchSync(
 
     await Promise.all(results.map(async (result) => {
       const requested = requestedByObjectId.get(result.objectId);
+      // Authority verification can outlive a restore's editor replacement. Its earlier
+      // approval must not authorize these response bytes against the replacement Y.Doc.
+      const expectedDoc = refs.registeredContexts.current.get(result.objectId)?.doc;
 
       if (beforeSend && !await beforeSend(result.objectId, result.collabType,
         requested?.databaseRestoreId ?? (result.collabType === Types.Database || result.collabType === Types.DatabaseRow
@@ -271,8 +274,8 @@ export function useBatchSync(
 
       const context = refs.registeredContexts.current.get(result.objectId);
 
-      if (!context?.doc) {
-        Log.debug('[sync] HTTP full-sync missing update skipped: context not registered', {
+      if (!context?.doc || context.doc !== expectedDoc) {
+        Log.debug('[sync] HTTP full-sync missing update skipped: context retired or not registered', {
           objectId: result.objectId,
         });
         return;

@@ -47,6 +47,19 @@ reconciliation fences old asynchronous responses, retires obsolete providers and
 outbox updates, and reloads the aggregate. Repeated notifications for the same generation preserve
 current providers and queued edits. Row-page documents retain their independent state.
 
+Once an open database finishes reloading after a restore, web and desktop show **Database
+restored**: “This database was restored to a previous version. You can continue editing the
+restored version.” The user dismisses it with **Got it**. This applies to both the initiating
+client and other devices. Web tracks mounted databases by database identity, including embedded
+views and related-row dialogs, rather than matching a sidebar view ID. The workspace owns the
+notice so editor replacement cannot dismiss it. Root/row reset events do not produce duplicate
+document notices; only successful aggregate completion announces a restore, once per restore
+generation. The first authority reconciliation establishes a baseline without a notice, even
+if the editor mounted before that check. An explicit restore completion or a later generation
+change of an open database shows the notice, including when history capabilities previously
+skipped authority checks. Restores of unopened databases stay silent. The notice appears above
+row dialogs and takes focus until dismissed.
+
 Receiving a restore is independent of the history UI capability. A server restore notification,
 a stamped sync response, a database root version boundary, or an existing persisted restore marker
 requires authoritative generation verification even while capability discovery is pending or history is disabled locally. This keeps
@@ -87,6 +100,26 @@ Tests cover the history API and pagination, all eight layouts, immutable preview
 virtualization, restore polling, and generation-aware cache/outbox behavior. Database and document
 history component tests live under their respective `src/components/*/history/__tests__` folders;
 restore synchronization tests are in `src/components/ws/sync/__tests__`.
+
+Transport regressions cover both Database roots and DatabaseRow collabs: retired editor callbacks
+cannot emit manifest replies or enqueue edits, reconnect discards old offline updates, and HTTP
+batch/oversized-upload retries recheck the captured generation before sending again. Late HTTP
+responses cannot modify the restored collab. Each recovery case also checks that freshly authored
+edits retain the restored generation and can still synchronize. The durable queue cases live in
+`src/application/sync-outbox/__tests__/sync-outbox.test.ts`.
+
+Successful restore UI tests must assert the **Database restored** dialog, its complete message,
+and **Got it**, then acknowledge it before editing again. The modal and synchronization suites
+mount the production notice provider with an open database, so a reload callback or completion
+event alone cannot satisfy the test. Coverage includes local and peer restores, missed-notification
+recovery, disabled history capabilities, retries, selected-view replacement, and duplicate events.
+Initial hydration, failed or pending reloads, previews, and permission denials must remain silent.
+API, storage, and snapshot-only tests retain their data/protocol assertions; they have no UI surface.
+
+`playwright/e2e/database/version-history-restore.spec.ts` exercises local and peer restores against
+the server using isolated test accounts, requiring the same notice before further edits. Its
+capability check includes the web platform and client-version headers; an unversioned API probe
+can report history disabled because the server treats it as an unsupported legacy client.
 
 Browser checks with synthetic data cover short and long Grid snapshots, scrolling to the final
 List/Gallery rows, sticky headers, and all eight layouts. The screenshot uses synthetic data.

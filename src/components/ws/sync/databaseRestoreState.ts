@@ -19,7 +19,9 @@ export class DatabaseRestoreTracker {
   constructor(
     private readonly storagePrefix: string,
     private readonly readState: (databaseId: string) => Promise<DatabaseRestoreState>,
-    private readonly reset: (databaseId: string, state: DatabaseRestoreState) => Promise<void>,
+    private readonly reset: (
+      databaseId: string, state: DatabaseRestoreState, isInitialHydration: boolean
+    ) => Promise<void>,
     private readonly storage: Storage
   ) {
     // Snapshot at tab/workspace creation. Reading localStorage afresh on every
@@ -102,7 +104,10 @@ export class DatabaseRestoreTracker {
       unchanged = false;
       this.revisions.set(databaseId, this.revision(databaseId) + 1);
       try {
-        await this.reset(databaseId, state);
+        // A first authority read can discover a restore that predates opening
+        // the editor. A verified null marker is a known original generation;
+        // an absent marker remains initial hydration across failed reloads.
+        await this.reset(databaseId, state, !this.markers.has(databaseId));
       } catch (error) {
         if (hint !== this.hints.get(databaseId)) continue;
         // Another tab advanced storage after our marker read. Its opaque UUID
