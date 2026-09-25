@@ -291,7 +291,7 @@
     "notionZip": "Notion Exported Zip File",
     "confluenceZip": "Confluence HTML or CSV (.zip)",
     "html": "HTML",
-    "word": "Word",
+    "word": "Word (.docx)",
     "pdf": "PDF",
     "importedWithWarnings": "{{name}} imported, but some content could not be converted: {{summary}}",
     "fileTooLarge": "{{name}} is larger than the {{limit}} MB limit",
