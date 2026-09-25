@@ -491,7 +491,12 @@ Then('the timeline settings contain the field name {string}', async ({ page }, n
 });
 
 Then('the timeline shift settings are fully readable', async ({ page }) => {
-  for (const text of ['Shift dependents', 'Only when dates overlap', 'Keep the time between items', 'Never']) {
+  for (const text of [
+    'Shift dependents',
+    'Only when dates overlap',
+    'Shift & maintain time between items',
+    'Do not automatically shift',
+  ]) {
     const label = page.getByText(text, { exact: true });
 
     await label.scrollIntoViewIfNeeded();
@@ -529,8 +534,8 @@ Then('the timeline table properties contain the field name {string}', async ({ p
 
 const SHIFT_OPTION: Record<string, number> = {
   'Only when dates overlap': 0,
-  'Keep the time between items': 1,
-  Never: 2,
+  'Shift & maintain time between items': 1,
+  'Do not automatically shift': 2,
 };
 
 Given('dependents shift with {string}', async ({ page }, option) => {

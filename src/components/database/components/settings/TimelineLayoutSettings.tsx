@@ -49,9 +49,13 @@ const SHIFT_OPTIONS = [
   {
     value: TimelineDependencyShift.MaintainGap,
     labelKey: 'timeline.settings.shiftMaintainGap',
-    fallback: 'Keep the time between items',
+    fallback: 'Shift & maintain time between items',
   },
-  { value: TimelineDependencyShift.Never, labelKey: 'timeline.settings.shiftNever', fallback: 'Never' },
+  {
+    value: TimelineDependencyShift.Never,
+    labelKey: 'timeline.settings.shiftNever',
+    fallback: 'Do not automatically shift',
+  },
 ];
 
 function TimelineLayoutSettings() {
