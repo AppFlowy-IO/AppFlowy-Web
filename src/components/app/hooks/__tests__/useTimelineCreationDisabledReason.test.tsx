@@ -8,16 +8,18 @@ import { useTimelineCreationDisabledReason } from '../useTimelineCreationDisable
 let mockDevelopment = false;
 let mockHosted = true;
 
+jest.mock('@/components/app/hooks/useServerInfo', () => ({
+  useIsOfficialHosted: () => mockHosted,
+  useServerHostingMode: () => mockHosted ? 'cloud' : 'self-hosted',
+  useServerInfoState: () => ({ status: 'available' }),
+}));
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_key: string, options: { defaultValue: string }) => options.defaultValue }),
 }));
 jest.mock('@/utils/runtime-config', () => ({
   ...jest.requireActual('@/utils/runtime-config'),
   isDevelopmentOrTestEnvironment: () => mockDevelopment,
-}));
-jest.mock('@/utils/subscription', () => ({
-  ...jest.requireActual('@/utils/subscription'),
-  isAppFlowyHosted: () => mockHosted,
 }));
 
 const requiresPro = 'Creating a Timeline view requires a Pro workspace.';

@@ -9,13 +9,14 @@ import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { notify } from '@/components/_shared/notify';
 import { flattenViews } from '@/components/_shared/outline/utils';
 import { usePublishing, useGetSubscriptions, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import HomePageSetting from '@/components/app/publish-manage/HomePageSetting';
 import PublishedPages from '@/components/app/publish-manage/PublishedPages';
 import PublishPagesSkeleton from '@/components/app/publish-manage/PublishPagesSkeleton';
 import UpdateNamespace from '@/components/app/publish-manage/UpdateNamespace';
 import { PublishService } from '@/application/services/domains';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { openUrl } from '@/utils/url';
 
 export function PublishManage({ onClose }: { onClose?: () => void }) {
@@ -145,7 +146,7 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
 
   const { publish, unpublish } = usePublishing();
   const getSubscriptions = useGetSubscriptions();
-  const isHosted = useMemo(() => isAppFlowyHosted(), []);
+  const isHosted = useIsOfficialHosted();
   const handlePublish = useCallback(
     async (view: View, publishName: string) => {
       if (!publish) return;
@@ -177,30 +178,7 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
     [loadPublishPages, t, unpublish]
   );
 
-  const [activeSubscription, setActiveSubscription] = React.useState<SubscriptionPlan | null>(null);
-  const loadSubscription = useCallback(async () => {
-    try {
-      const subscriptions = await getSubscriptions?.();
-
-      if (!subscriptions || subscriptions.length === 0) {
-        setActiveSubscription(SubscriptionPlan.Free);
-        return;
-      }
-
-      setActiveSubscription(getProAccessPlanFromSubscriptions(subscriptions));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [getSubscriptions]);
-
-  useEffect(() => {
-    if (!isHosted) {
-      setActiveSubscription(null);
-      return;
-    }
-
-    void loadSubscription();
-  }, [isHosted, loadSubscription]);
+  const { activeSubscriptionPlan: activeSubscription, isPro } = useSubscriptionPlan(getSubscriptions);
 
   useEffect(() => {
     void loadPublishNamespace();
@@ -273,12 +251,9 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
             <IconButton
               size={'small'}
               data-testid='edit-namespace-button'
+              disabled={!isOwner || !isPro}
               onClick={(e) => {
-                // Block if not owner, or if on official host with Free/unloaded subscription
-                if (
-                  !isOwner ||
-                  (isHosted && (activeSubscription === null || activeSubscription === SubscriptionPlan.Free))
-                ) {
+                if (!isOwner || !isPro) {
                   return;
                 }
 
@@ -319,7 +294,7 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
         />
       )}
 
-      {updateOpen && (
+      {updateOpen && isPro && (
         <UpdateNamespace
           namespace={namespace}
           open={updateOpen}

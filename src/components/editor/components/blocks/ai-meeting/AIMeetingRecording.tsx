@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element } from 'slate';
 import { useSlateStatic } from 'slate-react';
 
+import { ERROR_CODE } from '@/application/constants';
 import { consumeMeetingStart } from '@/application/integrations/meeting-start';
 import {
   MeetingAudioSource,
@@ -19,9 +20,11 @@ import {
   getChildrenArray,
   getText,
 } from '@/application/slate-yjs/utils/yjs';
-import { AIMeetingBlockData, BlockType, YjsEditorKey } from '@/application/types';
+import { AIMeetingBlockData, BlockType, SubscriptionPlan, YjsEditorKey } from '@/application/types';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
+import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
-import { getErrorMessage } from '@/utils/errors';
+import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
 
 export function AIMeetingRecording({
   workspaceId,
@@ -39,6 +42,7 @@ export function AIMeetingRecording({
   onFinished: () => void;
 }) {
   const { t } = useTranslation();
+  const { getSubscriptions } = useEditorContext();
   const editor = useSlateStatic() as YjsEditor;
   const session = useRef<MeetingTranscription>();
   const attemptRef = useRef(0);
@@ -48,6 +52,29 @@ export function AIMeetingRecording({
   const [state, setState] = useState<TranscriptionState>('idle');
   const [partial, setPartial] = useState('');
   const [error, setError] = useState('');
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+  const getMeetingSubscriptions = useCallback(async () => {
+    const subscriptions = await getSubscriptions?.();
+
+    if (!subscriptions) throw new Error('Workspace subscription details are unavailable');
+
+    // AI Max has the same transcription allowance as Pro. Keep its paid
+    // entitlement in a separate cache scope so this cannot grant other Pro features.
+    return subscriptions.map((subscription) =>
+      subscription.plan === SubscriptionPlan.AIMax ? { ...subscription, plan: SubscriptionPlan.Pro } : subscription
+    );
+  }, [getSubscriptions]);
+  const { activeSubscriptionPlan } = useSubscriptionPlan(getSubscriptions ? getMeetingSubscriptions : undefined, {
+    cacheKey: `meeting-quota:${workspaceId}`,
+    enabled: quotaExceeded,
+  });
+  const quotaMessage =
+    quotaExceeded && getSubscriptions && activeSubscriptionPlan === SubscriptionPlan.Free
+      ? t('billingLimits.freeTranscriptionLimit', {
+          defaultValue:
+            'This workspace has reached its free transcription limit. Ask the workspace owner to upgrade to Pro for more transcription time.',
+        })
+      : error;
 
   useEffect(() => {
     finished.current = onFinished;
@@ -79,6 +106,7 @@ export function AIMeetingRecording({
     let hasTranscript = false;
 
     setError('');
+    setQuotaExceeded(false);
     setChoosing(false);
     const transcriptTurns = new Map<number, string>();
     // Final socket messages may arrive after the React editor unmounts. Write
@@ -97,6 +125,10 @@ export function AIMeetingRecording({
     const onError = (failure: unknown) => {
       if (!mounted.current || !isCurrent()) return;
       if (failure instanceof DOMException && failure.name === 'AbortError') return;
+      setQuotaExceeded(
+        (failure instanceof MeetingRecordingError && failure.code === 'quotaExceeded') ||
+          isAPIErrorCode(failure, ERROR_CODE.AI_MEETING_TRANSCRIPTION_LIMIT_EXCEEDED)
+      );
       setError(
         failure instanceof MeetingRecordingError
           ? t(`document.aiMeeting.recordingErrors.${failure.code}`)
@@ -217,7 +249,7 @@ export function AIMeetingRecording({
       )}
       {error && (
         <p role='alert' className='text-text-error'>
-          {error}
+          {quotaMessage}
         </p>
       )}
     </div>

@@ -9,11 +9,14 @@ import {
   FormulaFunctionSpec,
   formulaPropertyReference,
   formulaTypeOfField,
+  resolveFormulaField,
   typeToString,
 } from '@/application/database-yjs/fields/formula';
 import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
 import { cn } from '@/lib/utils';
 
+import { findPropReferences } from './formula-slate';
+import { FormulaPropChip } from './FormulaPropChip';
 import { HIGHLIGHT_CLASS, highlightFormula } from './highlight';
 
 export type FormulaDocsItem =
@@ -21,14 +24,30 @@ export type FormulaDocsItem =
   | { kind: 'property'; entry: FormulaFieldSchema }
   | { kind: 'builtin'; spec: FormulaBuiltinSpec };
 
-function Snippet({ source }: { source: string }) {
+/** A formula drawn as in the editor: property references as chips, the rest highlighted. */
+function Snippet({ source, schema }: { source: string; schema: FormulaFieldSchema[] }) {
   return (
-    <code className={'whitespace-pre-wrap break-words font-mono text-xs'}>
-      {highlightFormula(source).map((segment, index) => (
-        <span key={index} className={HIGHLIGHT_CLASS[segment.kind]} data-highlight={segment.kind}>
-          {segment.text}
-        </span>
-      ))}
+    <code className={'whitespace-pre-wrap break-words font-mono text-xs leading-6'}>
+      {highlightFormula(source).map((segment, index) => {
+        const reference = segment.kind === 'prop' ? findPropReferences(segment.text)[0]?.ref : undefined;
+
+        if (reference !== undefined) {
+          return (
+            <FormulaPropChip
+              key={index}
+              entry={resolveFormulaField(schema, reference)}
+              reference={reference}
+              className={'first:ml-0'}
+            />
+          );
+        }
+
+        return (
+          <span key={index} className={HIGHLIGHT_CLASS[segment.kind]} data-highlight={segment.kind}>
+            {segment.text}
+          </span>
+        );
+      })}
     </code>
   );
 }
@@ -116,8 +135,7 @@ function FormulaDocsPanelContent({
       examples = item.spec.examples;
       break;
     case 'property': {
-      const type =
-        item.entry.type === FieldType.Formula ? 'formula' : typeToString(formulaTypeOfField(item.entry));
+      const type = item.entry.type === FieldType.Formula ? 'formula' : typeToString(formulaTypeOfField(item.entry));
 
       title = (
         <span className={'flex items-center gap-2'}>
@@ -147,13 +165,15 @@ function FormulaDocsPanelContent({
           <button
             key={example.expression}
             type={'button'}
+            // Property references render as chips, so the source is exposed for tests.
+            data-expression={example.expression}
             title={t('grid.formula.insertExample', { defaultValue: 'Insert this example' })}
             className={cn(
               'flex flex-col items-start gap-0.5 rounded-300 border border-border-primary px-2 py-1.5 text-left hover:bg-fill-content-hover'
             )}
             onClick={() => onInsert(example.expression)}
           >
-            <Snippet source={example.expression} />
+            <Snippet source={example.expression} schema={schema} />
             <span className={'font-mono text-xs text-text-tertiary'}>= {example.result}</span>
           </button>
         ))}

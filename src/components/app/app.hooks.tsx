@@ -84,6 +84,8 @@ export function useAIEnabled(): boolean {
   return context?.aiEnabled ?? true;
 }
 
+export { useIsOfficialHosted } from './hooks/useServerInfo';
+
 // ─── Navigation-only hooks → AppNavigationContext ────────────────────────────
 // Provided by AppBusinessLayer. Available after workspace loads.
 

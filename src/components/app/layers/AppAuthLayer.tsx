@@ -72,7 +72,8 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const [userWorkspaceInfo, setUserWorkspaceInfo] = useState<UserWorkspaceInfo | undefined>(undefined);
   const [workspaceInfoError, setWorkspaceInfoError] = useState<Error | undefined>(undefined);
   const serverInfo = useServerInfo(!!isAuthenticated, defaultConfig.baseURL);
-  const enablePageHistory = serverInfo.info?.enable_page_history ?? (serverInfo.status === 'unavailable' ? true : undefined);
+  const enablePageHistory =
+    serverInfo.info?.enable_page_history ?? (serverInfo.status === 'unavailable' ? true : undefined);
   const aiEnabled = serverInfo.status === 'loading' ? false : serverInfo.info?.ai_enabled ?? true;
   const maxUpdateBytes = serverInfo.info?.max_update_bytes;
   const maxSlowSyncUpdateBytes = serverInfo.info?.max_slow_sync_update_bytes;

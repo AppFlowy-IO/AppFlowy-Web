@@ -15,6 +15,7 @@ import { AuthInternalContext } from '@/components/app/contexts/AuthInternalConte
 import { GoogleCalendarIntegration } from '@/components/app/integrations/GoogleCalendarIntegration';
 import { AIMeetingRecording } from '@/components/editor/components/blocks/ai-meeting/AIMeetingRecording';
 import { GoogleDriveBrowser } from '@/components/editor/components/blocks/google-drive/GoogleDriveBrowser';
+import { EditorContextProvider } from '@/components/editor/EditorContext';
 import '@/i18n/config';
 import '@/styles/global.css';
 
@@ -63,20 +64,22 @@ function Recording({ payload }: { payload: CreatePagePayload }) {
   }, [doc, editor]);
 
   return (
-    <Slate editor={editor} initialValue={yDocToSlateContent(doc)!.children}>
-      <h2>{payload.name}</h2>
-      <AIMeetingRecording
-        workspaceId='workspace'
-        viewId='meeting-page'
-        blockId={blockId}
-        transcriptBlockId={transcriptBlockId}
-        onFinished={() => setFinished(true)}
-      />
-      <output data-testid='document-content' className='block max-h-32 overflow-auto text-xs'>
-        {snapshot}
-      </output>
-      {finished && <p>Transcription saved</p>}
-    </Slate>
+    <EditorContextProvider workspaceId='workspace' viewId='meeting-page' readOnly={false}>
+      <Slate editor={editor} initialValue={yDocToSlateContent(doc)!.children}>
+        <h2>{payload.name}</h2>
+        <AIMeetingRecording
+          workspaceId='workspace'
+          viewId='meeting-page'
+          blockId={blockId}
+          transcriptBlockId={transcriptBlockId}
+          onFinished={() => setFinished(true)}
+        />
+        <output data-testid='document-content' className='block max-h-32 overflow-auto text-xs'>
+          {snapshot}
+        </output>
+        {finished && <p>Transcription saved</p>}
+      </Slate>
+    </EditorContextProvider>
   );
 }
 

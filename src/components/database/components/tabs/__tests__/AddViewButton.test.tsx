@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 
 import { DatabaseViewLayout } from '@/application/types';
 import { AddViewButton } from '@/components/database/components/tabs/AddViewButton';
+import { getConfigValue } from '@/utils/runtime-config';
+import { updateServerInfo } from '@/utils/server-info';
 
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
@@ -69,6 +71,10 @@ jest.mock('@/components/ui/tooltip', () => ({
 describe('AddViewButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available',
+      info: { enable_page_history: true, self_hosted: false },
+    });
     mockExperimentalDatabaseViewCreationEnabled = false;
     mockAddView.mockResolvedValue('list-view-id');
     jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(300);
@@ -76,6 +82,29 @@ describe('AddViewButton', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it.each(['form', 'chart'])('shows one Pro upgrade message when %s creation is rejected', async (layout) => {
+    const onViewAdded = jest.fn();
+    const onAfterAddView = jest.fn();
+
+    mockExperimentalDatabaseViewCreationEnabled = true;
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockAddView.mockRejectedValueOnce({ code: 1076, message: 'Workspace limit reached' });
+    render(
+      <MemoryRouter>
+        <AddViewButton databasePageId='database-page-id' onAfterAddView={onAfterAddView} onViewAdded={onViewAdded} />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(layout === 'form' ? screen.getByTestId('add-form-view-option') : screen.getByText('chart.menuName'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
+      'Upgrade this workspace to Pro to use this feature or increase its limits.'
+    ));
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(onViewAdded).not.toHaveBeenCalled();
+    expect(onAfterAddView).toHaveBeenCalledTimes(1);
   });
 
   it('shows the server plan error and finishes loading without selecting a new view', async () => {

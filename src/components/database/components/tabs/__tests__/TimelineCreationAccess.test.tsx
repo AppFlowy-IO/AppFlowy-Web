@@ -4,6 +4,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { SubscriptionInterval, SubscriptionPlan, View, ViewLayout } from '@/application/types';
 import AddPageActions from '@/components/app/view-actions/AddPageActions';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { getConfigValue } from '@/utils/runtime-config';
+import { updateServerInfo } from '@/utils/server-info';
 
 import { AddViewButton } from '../AddViewButton';
 
@@ -67,6 +69,13 @@ function CreationMenu({ surface }: { surface: 'page' | 'view' }) {
 }
 
 describe.each(['page', 'view'] as const)('Timeline %s creation menu', (surface) => {
+  beforeEach(() => {
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available',
+      info: { enable_page_history: true, self_hosted: false },
+    });
+  });
+
   it('greys out Free with a hover tooltip, then enables creation in a Pro workspace', async () => {
     mockWorkspaceId = `${surface}-free`;
     mockGetSubscriptions.mockResolvedValue([]);
