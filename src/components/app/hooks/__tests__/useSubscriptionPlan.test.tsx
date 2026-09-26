@@ -10,7 +10,7 @@ import {
 import { useSubscriptionPlan } from '../useSubscriptionPlan';
 
 let mockHostingMode: 'cloud' | 'self-hosted' | 'unknown' = 'cloud';
-let mockHostingStatus: 'available' | 'loading' | 'unavailable' = 'available';
+let mockHostingStatus: 'available' | 'loading' | 'unavailable' | 'unsupported' = 'available';
 
 jest.mock('@/components/app/hooks/useServerInfo', () => ({
   useServerHostingMode: () => mockHostingMode,
@@ -70,6 +70,22 @@ describe('useSubscriptionPlan', () => {
     expect(result.current.isPro).toBe(false);
     expect(result.current.isLoading).toBe(false);
     expect(result.current.hasError).toBe(true);
+    expect(getSubscriptions).not.toHaveBeenCalled();
+  });
+
+  it('settles unknown hosting when a legacy server does not expose server info', async () => {
+    mockHostingMode = 'unknown';
+    mockHostingStatus = 'unsupported';
+    const getSubscriptions = jest.fn(async () => [proSubscription]);
+    const { result } = renderHook(() => useSubscriptionPlan(getSubscriptions));
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.hasError).toBe(true);
+    expect(result.current.isPro).toBe(false);
+    expect(result.current.activeSubscriptionPlan).toBeNull();
+    await act(async () => {
+      expect(await result.current.loadSubscription()).toBeNull();
+    });
     expect(getSubscriptions).not.toHaveBeenCalled();
   });
 

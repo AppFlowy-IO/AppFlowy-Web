@@ -13,9 +13,7 @@ const MIN_HEIGHT = 36;
 export const PADDING_INLINE = getPlatform().isMobile ? 21 : 96;
 
 const logDebug = (..._args: Parameters<typeof console.debug>) => {
-  if (import.meta.env.DEV) {
-    // console.debug(..._args);
-  }
+  // console.debug(..._args);
 };
 
 export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[]; data: RenderRow[] }) {

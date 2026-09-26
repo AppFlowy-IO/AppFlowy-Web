@@ -12,8 +12,10 @@ import {
   formulaExternalReferencesKey,
   ReadFieldValueContext,
 } from '@/application/database-yjs/fields/formula';
+import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { useFormulaClock } from '@/application/database-yjs/formula/clock';
 import { useRollupFieldObservers } from '@/application/database-yjs/hooks/useRollupFieldObservers';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import {
   ensureRelationGroupLabel,
   readFormulaRelationTitle,
@@ -21,6 +23,7 @@ import {
   subscribeRelationGroupLabel,
 } from '@/application/database-yjs/relation/cache';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
+import { readHistoricalRelationText } from '@/application/database-yjs/relation/history';
 import {
   invalidateRollupCell,
   readRollupCell,
@@ -88,11 +91,32 @@ export function relatedRowTitle(
   relatedRowId: string,
   loaders: RelatedRowLoaders
 ): string | null | undefined {
+  if (relationField.doc && isDatabaseHistoryDocumentImmutable(relationField.doc as YDoc)) return relatedRowId;
   const title = readFormulaRelationTitle({ relationField, relatedRowId });
 
   if (title === null) return null;
   if (!title) ensureRelationGroupLabel({ relationField, relatedRowId, ...loaders });
   return title || undefined;
+}
+
+/** Snapshot-only dependencies: unresolved people and external rows retain their saved IDs. */
+export function historicalFormulaRowContext(
+  rowId: string,
+  row: YDatabaseRow | undefined,
+  { database, baseDoc, rows }: { database?: YDatabase; baseDoc: YDoc; rows?: Record<string, YDoc> | null }
+): ReadFieldValueContext {
+  return {
+    getRelatedRowTitle: (relationField, relatedRowId) => database
+      ? readHistoricalRelationText(database, parseRelationTypeOption(relationField).database_id, [relatedRowId], rows ?? {})
+      : relatedRowId,
+    getRollupValue: (fieldId) => {
+      const rollupField = database?.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+      return database && row && rollupField
+        ? readRollupCellSync({ baseDoc, database, rollupField, row, rowId, fieldId })
+        : undefined;
+    },
+  };
 }
 
 /**
@@ -124,10 +148,17 @@ export function formulaConditionContext(
 export function formulaRowContext(
   rowId: string,
   row: YDatabaseRow,
-  options: { members?: MemberNames; database?: YDatabase; baseDoc: YDoc; loaders: RelatedRowLoaders }
+  options: {
+    members?: MemberNames;
+    database?: YDatabase;
+    baseDoc: YDoc;
+    loaders: RelatedRowLoaders;
+    rows?: Record<string, YDoc> | null;
+  }
 ): ReadFieldValueContext {
   const { members, database, baseDoc, loaders } = options;
 
+  if (isDatabaseHistoryDocumentImmutable(baseDoc)) return historicalFormulaRowContext(rowId, row, options);
   return formulaConditionContext(rowId, {
     members,
     loaders,
@@ -166,13 +197,14 @@ export function useFormulaReadContext({
   rowClock: number;
 }): { context: ReadFieldValueContext; revision: string } {
   const database = useDatabase();
-  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { databaseDoc, dataSource, rowMap, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const history = dataSource?.type === 'history' || isDatabaseHistoryDocumentImmutable(databaseDoc);
   // Recomputed references to the same fields keep one identity, so a draft
   // being typed does not re-subscribe on every keystroke.
   const referencesKey = formulaExternalReferencesKey(nextReferences);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const references = useMemo(() => nextReferences, [referencesKey]);
-  const clock = useFormulaClock(references.clock);
+  const clock = useFormulaClock(!history && references.clock);
   const loadersRef = useRef<RelatedRowLoaders>({ loadView, createRow, getViewIdFromDatabaseId });
 
   useEffect(() => {
@@ -180,8 +212,8 @@ export function useFormulaReadContext({
   }, [loadView, createRow, getViewIdFromDatabaseId]);
 
   // Member names (Person, Created by, Last edited by).
-  const { users } = useMentionableUsersWithAutoFetch(references.people);
-  const members = useMemo(() => memberNames(users), [users]);
+  const { users } = useMentionableUsersWithAutoFetch(!history && references.people);
+  const members = useMemo(() => memberNames(history ? [] : users), [history, users]);
 
   // Related row titles: re-render only when one of this row's titles changes.
   const relatedRowIdsKey = useMemo(() => {
@@ -201,6 +233,7 @@ export function useFormulaReadContext({
     );
   }, [references.relations, relatedRowIdsKey]);
   const titleStore = useMemo(() => {
+    if (history) return { getSnapshot: () => 0, subscribe: () => noopUnsubscribe };
     const values = relatedRows.map((key) => readFormulaRelationTitle(key));
     let revision = 0;
 
@@ -235,15 +268,15 @@ export function useFormulaReadContext({
         };
       },
     };
-  }, [relatedRows]);
+  }, [history, relatedRows]);
   const titles = useSyncExternalStore(titleStore.subscribe, titleStore.getSnapshot, titleStore.getSnapshot);
 
   // Rollup results.
   const [rollupValues, setRollupValues] = useState<Record<string, RollupCellValue>>({});
-  const rollupFieldIds = useMemo(() => references.rollups.map((entry) => entry.id), [references.rollups]);
+  const rollupFieldIds = useMemo(() => history ? [] : references.rollups.map((entry) => entry.id), [history, references.rollups]);
   const observedRows = useMemo(() => (row?.doc ? { [rowId]: row.doc as YDoc } : {}), [row, rowId]);
   const refreshRollups = useCallback(() => {
-    if (!database || !row) return;
+    if (history || !database || !row) return;
     references.rollups.forEach((entry) => {
       void readRollupCell({
         baseDoc: databaseDoc,
@@ -255,7 +288,7 @@ export function useFormulaReadContext({
         ...loadersRef.current,
       }).catch((error: unknown) => console.error('[Formula] Failed to refresh rollup', error));
     });
-  }, [database, databaseDoc, row, rowId, references.rollups]);
+  }, [history, database, databaseDoc, row, rowId, references.rollups]);
 
   // The observer tracks relation membership; unrelated row edits need no reload.
   useRollupFieldObservers(refreshRollups, 0, {
@@ -265,7 +298,7 @@ export function useFormulaReadContext({
   });
 
   useEffect(() => {
-    if (!database || !row || references.rollups.length === 0) return;
+    if (history || !database || !row || references.rollups.length === 0) return;
     let cancelled = false;
 
     setRollupValues({});
@@ -287,12 +320,12 @@ export function useFormulaReadContext({
       cancelled = true;
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
-  }, [references.rollups, database, row, rowId, databaseDoc, refreshRollups]);
+  }, [history, references.rollups, database, row, rowId, databaseDoc, refreshRollups]);
 
   const hasRelations = references.relations.length > 0;
   const hasRollups = references.rollups.length > 0;
   const context = useMemo<ReadFieldValueContext>(
-    () => ({
+    () => history ? historicalFormulaRowContext(rowId, row, { database, baseDoc: databaseDoc, rows: rowMap }) : ({
       getUserName: members.getUserName,
       getPersonName: members.getPersonName,
       getRelatedRowTitle: hasRelations
@@ -300,7 +333,7 @@ export function useFormulaReadContext({
         : undefined,
       getRollupValue: hasRollups ? (fieldId) => rollupValues[fieldId] : undefined,
     }),
-    [members, hasRelations, hasRollups, rollupValues]
+    [history, rowId, row, database, databaseDoc, rowMap, members, hasRelations, hasRollups, rollupValues]
   );
 
   return { context, revision: `${clock}:${titles}` };

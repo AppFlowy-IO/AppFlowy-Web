@@ -2,8 +2,11 @@ import React, { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, u
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
+import { ViewService, WorkspaceService } from '@/application/services/domains';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 import {
   MentionSearchRequest,
+  Types,
   UIVariant,
   View,
   ViewLayout,
@@ -35,20 +38,18 @@ import {
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import {
+  INITIAL_VIEW_OBJECT_CAPABILITIES,
+  useViewObjectPermission,
+} from '@/components/app/hooks/useViewObjectPermission';
+import {
   getViewCanCommentStatus,
   getViewCanWriteStatus,
   getViewReadOnlyStatus,
 } from '@/components/app/hooks/useViewOperations';
-import {
-  INITIAL_VIEW_OBJECT_CAPABILITIES,
-  useViewObjectPermission,
-} from '@/components/app/hooks/useViewObjectPermission';
 import { RevertedDialog } from '@/components/app/RevertedDialog';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { ViewService, WorkspaceService } from '@/application/services/domains';
-import { getAxiosInstance } from '@/application/services/js-services/http';
 import { Log } from '@/utils/log';
 
 const ViewHelmet = lazy(() => import('@/components/_shared/helmet/ViewHelmet'));
@@ -405,7 +406,11 @@ function AppPage() {
         currentViewId: currentViewIdRef.current,
       });
       // Track external reverts so we can show the dialog when user opens the affected view.
-      if (isExternalRevert) {
+      // Database roots are shared across view IDs and rows belong to that aggregate.
+      // Their completed restore is announced once by DatabaseRestoreNoticeProvider.
+      const collabType = (nextDoc as YDocWithMeta)._collabType;
+
+      if (isExternalRevert && collabType !== Types.Database && collabType !== Types.DatabaseRow) {
         const targetViewId = resetViewId ?? objectId;
 
         Log.debug('[Version] AppPage adding to pendingExternalReverts:', { targetViewId });
@@ -588,6 +593,7 @@ function AppPage() {
     return (
       <DatabaseView
         key={viewId}
+        isRouteView
         requestInstance={requestInstance}
         workspaceId={workspaceId}
         doc={docForCurrentView}

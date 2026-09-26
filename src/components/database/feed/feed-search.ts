@@ -5,6 +5,7 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
+import { readHistoricalRelationText } from '@/application/database-yjs/relation/history';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import {
@@ -30,6 +31,8 @@ type Loaders = Pick<
 >;
 
 export interface FeedSearchData extends Loaders {
+  /** Complete immutable snapshots need no row subscriptions or live relation loads. */
+  immutable?: boolean;
   database: YDatabase;
   rows: Record<string, YDoc>;
   rowIds?: readonly string[];
@@ -202,6 +205,7 @@ export function createFeedSearchIndex() {
 
     const relationText = (databaseId: string, rowIds: string[]) => {
       if (!databaseId || rowIds.length === 0) return '';
+      if (data?.immutable) return readHistoricalRelationText(data.database, databaseId, rowIds, data.rows);
       let projection = projections.get(databaseId);
 
       if (!projection) {
@@ -318,6 +322,11 @@ export function createFeedSearchIndex() {
     },
     configure: (next: FeedSearchData) => {
       data = next;
+      if (next.immutable) {
+        rebuild();
+        return;
+      }
+
       const rowIds = new Set(next.rowIds ?? Object.keys(next.rows));
 
       candidates.forEach((entry, id) => {

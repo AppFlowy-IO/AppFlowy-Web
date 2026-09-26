@@ -33,6 +33,11 @@ jest.mock('@/application/ydoc/apply', () => ({
 }));
 
 jest.mock('@/application/db', () => ({
+  captureDatabaseStorageFence: jest.fn(async (databaseId: string) => ({
+    databaseId,
+    epoch: localStorage.getItem(`af_database_blob_epoch:${databaseId}`),
+    cacheEpoch: localStorage.getItem(`af_database_blob_epoch:${databaseId}`),
+  })),
   openCollabDB: jest.fn(),
   openCollabDBWithProvider: jest.fn(),
   openRowCollabDBWithProvider: jest.fn(),
@@ -90,25 +95,25 @@ function getCellData(doc: YDoc, fieldId: string) {
   return cells?.get(fieldId)?.get(YjsDatabaseKey.data);
 }
 
-async function runTestWithStrategy (strategy: StrategyType) {
+async function runTestWithStrategy(strategy: StrategyType) {
   return getPublishView(
     mockFetcher,
     {
       namespace: 'appflowy',
       publishName: 'test',
     },
-    strategy,
+    strategy
   );
 }
 
-async function runGetPublishViewMetaWithStrategy (strategy: StrategyType) {
+async function runGetPublishViewMetaWithStrategy(strategy: StrategyType) {
   return getPublishViewMeta(
     mockFetcher,
     {
       namespace: 'appflowy',
       publishName: 'test',
     },
-    strategy,
+    strategy
   );
 }
 
@@ -184,6 +189,7 @@ describe('Cache functions', () => {
 describe('database row legacy cache migration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    localStorage.clear();
     (db.collab_custom.get as jest.Mock).mockResolvedValue(undefined);
     (db.collab_custom.put as jest.Mock).mockResolvedValue(undefined);
     mockedDeleteCollabDB.mockResolvedValue(true);
@@ -298,6 +304,38 @@ describe('database row legacy cache migration', () => {
     expect(db.collab_custom.put).not.toHaveBeenCalled();
     expect(mockedDeleteCollabDB).not.toHaveBeenCalled();
     expect(getCellData(sharedDoc, 'same-field')).toBe('current-value');
+  });
+
+  it('never merges a pre-restore legacy cache into a restored row', async () => {
+    const databaseId = 'restored-database';
+    const rowId = 'row';
+    const row = createRowDoc(rowId, databaseId, { field: 'current' });
+    localStorage.setItem(`af_database_blob_epoch:${databaseId}`, 'R');
+
+    await expect(
+      mergeLegacyRowDocIfExists(`${databaseId}_rows_${rowId}`, rowId, row, { legacyExists: true })
+    ).resolves.toBe(false);
+    expect(mockedOpenCollabDBWithProvider).not.toHaveBeenCalled();
+    expect(getCellData(row, 'field')).toBe('current');
+    row.destroy();
+  });
+
+  it('rejects a legacy cache open that finishes after another tab restores', async () => {
+    const databaseId = 'database-delayed-migration';
+    const rowId = 'row';
+    const row = createRowDoc(rowId, databaseId, { field: 'current' });
+    const legacy = createRowDoc(rowId, databaseId, { field: 'stale legacy' });
+    mockedOpenCollabDBWithProvider.mockImplementationOnce(async () => {
+      localStorage.setItem(`af_database_blob_epoch:${databaseId}`, 'R');
+      return { doc: legacy, provider: { destroy: jest.fn() } } as never;
+    });
+
+    await expect(
+      mergeLegacyRowDocIfExists(`${databaseId}_rows_${rowId}`, rowId, row, { legacyExists: true })
+    ).resolves.toBe(false);
+    expect(getCellData(row, 'field')).toBe('current');
+    expect(db.collab_custom.put).not.toHaveBeenCalled();
+    row.destroy();
   });
 });
 

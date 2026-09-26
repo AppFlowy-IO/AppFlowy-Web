@@ -72,8 +72,12 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const [userWorkspaceInfo, setUserWorkspaceInfo] = useState<UserWorkspaceInfo | undefined>(undefined);
   const [workspaceInfoError, setWorkspaceInfoError] = useState<Error | undefined>(undefined);
   const serverInfo = useServerInfo(!!isAuthenticated, defaultConfig.baseURL);
-  const enablePageHistory =
-    serverInfo.info?.enable_page_history ?? (serverInfo.status === 'unavailable' ? true : undefined);
+  const enablePageHistory = serverInfo.info?.enable_page_history ??
+    (serverInfo.status === 'unavailable' || serverInfo.status === 'unsupported' ? true : undefined);
+  const enableDatabaseHistory = serverInfo.info?.enable_database_history === true &&
+    serverInfo.info?.enable_database_history_version_ui === true;
+  const databaseHistoryCapabilityLoaded = serverInfo.status === 'available' || serverInfo.status === 'unsupported';
+
   const aiEnabled = serverInfo.status === 'loading' ? false : serverInfo.info?.ai_enabled ?? true;
   const maxUpdateBytes = serverInfo.info?.max_update_bytes;
   const maxSlowSyncUpdateBytes = serverInfo.info?.max_slow_sync_update_bytes;
@@ -310,6 +314,8 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       currentWorkspaceId,
       isAuthenticated: !!isAuthenticated,
       enablePageHistory,
+      enableDatabaseHistory,
+      databaseHistoryCapabilityLoaded,
       aiEnabled,
       maxUpdateBytes,
       maxSlowSyncUpdateBytes,
@@ -324,6 +330,8 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       currentWorkspaceId,
       isAuthenticated,
       enablePageHistory,
+      enableDatabaseHistory,
+      databaseHistoryCapabilityLoaded,
       aiEnabled,
       maxUpdateBytes,
       maxSlowSyncUpdateBytes,

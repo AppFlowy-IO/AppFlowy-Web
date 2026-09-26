@@ -22,8 +22,9 @@ export function useFeedSearch({
   query: string;
 }) {
   const database = useDatabase();
-  const { databaseDoc, activeViewId, rowMap, createRow, ensureRow, loadView, getViewIdFromDatabaseId, eventEmitter } =
+  const { databaseDoc, activeViewId, rowMap, createRow, ensureRow, loadView, getViewIdFromDatabaseId, eventEmitter, dataSource } =
     useDatabaseContext();
+  const isHistory = dataSource?.type === 'history';
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const { users } = useMentionableUsersWithAutoFetch(Boolean(normalizedQuery));
   // The request queue and its observers belong to this database view.
@@ -40,14 +41,15 @@ export function useFeedSearch({
       return;
     }
 
-    const docs: Record<string, YDoc> = {};
+    const docs: Record<string, YDoc> = isHistory ? rowMap ?? {} : {};
 
-    rows?.forEach(({ id }) => {
+    if (!isHistory) rows?.forEach(({ id }) => {
       const doc = rowMap?.[id] ?? cachedRowDocs[id];
 
       if (doc) docs[id] = doc;
     });
     index.configure({
+      immutable: isHistory,
       database,
       rows: docs,
       rowIds: rows?.map(({ id }) => id),

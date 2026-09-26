@@ -311,9 +311,9 @@ test.describe.skip('Document Version History', () => {
       await expect(RevertedDialogSelectors.dialog(page)).toBeVisible({ timeout: 15000 });
 
       testLog.step(6, 'Assert dialog title is "Page Restored"');
-      const dialogTitle = RevertedDialogSelectors.dialog(page).locator(
-        '[data-slot="dialog-title"]'
-      );
+      const dialogTitle = RevertedDialogSelectors.dialog(page).getByRole('heading', {
+        name: 'Page Restored', exact: true,
+      });
       await expect(dialogTitle).toHaveText('Page Restored');
 
       testLog.step(7, 'Assert dialog description explains the external revert');

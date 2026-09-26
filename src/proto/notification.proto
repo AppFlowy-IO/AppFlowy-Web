@@ -15,8 +15,16 @@ message WorkspaceNotification {
         FolderViewChanged folder_view_changed = 9;
         InboxNotification inbox_notification = 10;
         CommentChanged comment_changed = 11;
+        DatabaseRestored database_restored = 12;
         StorageLimitExceeded storage_limit_exceeded = 13;
     }
+}
+
+// A hint to reload the authoritative aggregate generation before replaying local edits.
+message DatabaseRestored {
+    string database_id = 1;
+    string database_restore_id = 2;
+    string version = 3;
 }
 
 message UserProfileChange {
@@ -28,6 +36,7 @@ message UserProfileChange {
 message PermissionChanged {
     string object_id = 1;
     uint32 reason = 2;
+    int64 timestamp_ms = 3;
 }
 
 message SectionChanged {

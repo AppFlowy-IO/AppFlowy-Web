@@ -6,7 +6,7 @@ import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/clo
 import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { GroupColumn, Row } from '@/application/database-yjs';
+import { GroupColumn, Row, useReadOnly } from '@/application/database-yjs';
 import {
   useMoveCardDispatch,
   useReorderGroupColumnDispatch,
@@ -23,6 +23,7 @@ export function useColumnsDrag(
   getCards: (columnId: string) => Row[] | undefined,
   fieldId: string | null
 ) {
+  const readOnly = useReadOnly();
   const [instanceId] = useState(() => Symbol(`board-dnd-group-${groupId}`));
   const [registry] = useState(createRegistry);
   const stableData = useRef<GroupColumn[]>(columns);
@@ -146,7 +147,7 @@ export function useColumnsDrag(
   }, [getColumns, reorderColumn, reorderCard, registry, moveCard, instanceId]);
 
   useEffect(() => {
-    if (!scrollableRef.current) {
+    if (!scrollableRef.current || readOnly) {
       return;
     }
 
@@ -306,7 +307,7 @@ export function useColumnsDrag(
         canScroll: canRespond,
       })
     );
-  }, [columns, getCards, instanceId, moveCard, reorderCard, reorderColumn]);
+  }, [columns, getCards, instanceId, moveCard, readOnly, reorderCard, reorderColumn]);
 
   return {
     scrollableRef,

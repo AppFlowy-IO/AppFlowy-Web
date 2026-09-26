@@ -74,6 +74,11 @@ export function usePageHistoryEnabled(): boolean {
   return context?.enablePageHistory ?? true;
 }
 
+/** Database history fails closed on older or unavailable servers. */
+export function useDatabaseHistoryEnabled(): boolean {
+  return useContext(AuthInternalContext)?.enableDatabaseHistory === true;
+}
+
 /**
  * Returns whether server-backed AI features are enabled.
  * Fails open to match the desktop default when server info is unavailable.

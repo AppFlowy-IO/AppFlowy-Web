@@ -15,8 +15,10 @@ import { parseRelationTypeOption, parseRollupTypeOption } from '@/application/da
 import { collectFormulaExternalReferences, readFormulaSchema } from '@/application/database-yjs/fields/formula';
 import { getEffectiveFiltersSnapshot } from '@/application/database-yjs/filter';
 import type { FormulaRowSources } from '@/application/database-yjs/formula/useFormulaRelationTitles';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { invalidateRelationCell } from '@/application/database-yjs/relation/cache';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
+import { useDatabaseDependencyRestoreRevision } from '@/application/database-yjs/restore-dependencies';
 import { invalidateRollupCell } from '@/application/database-yjs/rollup/cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
@@ -60,10 +62,13 @@ export function useRollupFieldObservers(
   const view = useDatabaseView();
   const sorts = view?.get(YjsDatabaseKey.sorts);
   const filters = view?.get(YjsDatabaseKey.filters);
-  const { loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { dataSource, databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const history = dataSource?.type === 'history' || isDatabaseHistoryDocumentImmutable(databaseDoc);
   const [observerRevision, setObserverRevision] = useState(0);
+  const restoreRevision = useDatabaseDependencyRestoreRevision(!history);
 
   useEffect(() => {
+    if (history) return;
     if ((!liveRows && !getCachedRowDocs) || !fields || !database || !loadView || !createRow || !getViewIdFromDatabaseId) return;
     if (!observeConditions && additionalRollupFieldIds.length === 0) return;
 
@@ -453,6 +458,7 @@ export function useRollupFieldObservers(
       observerCleanups.forEach((cleanup) => cleanup());
     };
   }, [
+    history,
     liveRows,
     rowIdsKey,
     getCachedRowDocs,
@@ -467,6 +473,7 @@ export function useRollupFieldObservers(
     onConditionsChange,
     rollupWatchVersion,
     observerRevision,
+    restoreRevision,
     readOnly,
     additionalRollupFieldIds,
     observeConditions,

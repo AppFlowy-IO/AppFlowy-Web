@@ -93,6 +93,8 @@ const stableSyncValue = {
   flushAllSync: jest.fn(),
   syncAllToServer: jest.fn(),
   applyHttpFullSyncResult: jest.fn(async () => undefined),
+  ensureDatabaseRestoreCurrent: jest.fn(async () => true),
+  reloadDatabaseAfterRestore: jest.fn(async () => undefined),
   scheduleDeferredCleanup: jest.fn(),
 };
 
@@ -150,9 +152,12 @@ const renderLayer = (authValue: AuthInternalContextType = authContextValue) =>
     </AuthInternalContext.Provider>
   );
 
-const rerenderLayer = (rerender: ReturnType<typeof render>['rerender']) =>
+const rerenderLayer = (
+  rerender: ReturnType<typeof render>['rerender'],
+  authValue: AuthInternalContextType = authContextValue
+) =>
   rerender(
-    <AuthInternalContext.Provider value={authContextValue}>
+    <AuthInternalContext.Provider value={authValue}>
       <AppSyncLayer>
         <ContextConsumer />
       </AppSyncLayer>
@@ -290,22 +295,58 @@ describe('AppSyncLayer per-message churn', () => {
     expect(outboxMock.resumePermissionBlockedSync).toHaveBeenCalledWith('object-1');
   });
 
-  it('keeps the conservative realtime drain active while server-info is unresolved', () => {
-    const outboxMock = jest.requireMock('@/application/sync-outbox');
+  it.each([false, true])(
+    'keeps the conservative realtime drain active with legacy capabilities resolved: %s',
+    (databaseHistoryCapabilityLoaded) => {
+      const outboxMock = jest.requireMock('@/application/sync-outbox');
 
-    renderLayer({
+      renderLayer({
+        ...authContextValue,
+        enableDatabaseHistory: false,
+        databaseHistoryCapabilityLoaded,
+        maxUpdateBytes: undefined,
+        maxSlowSyncUpdateBytes: undefined,
+        syncLimitsLoaded: false,
+      });
+
+      const config = outboxMock.configureDrain.mock.calls.at(-1)?.[0];
+
+      expect(config.isReady()).toBe(true);
+      expect(config.maxUpdateBytes).toBeUndefined();
+      expect(config.slowSync).toBeUndefined();
+      expect(outboxMock.startDrainAll).toHaveBeenCalledTimes(1);
+      expect(mockUseSync).toHaveBeenLastCalledWith(
+        expect.anything(), expect.anything(), expect.anything(), 'workspace-1',
+        { enabled: false, capabilityLoaded: databaseHistoryCapabilityLoaded }
+      );
+    }
+  );
+
+  it('wakes persisted outbox records when a missing server-info endpoint resolves legacy capabilities', () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+    const loadingAuthValue = {
       ...authContextValue,
+      enableDatabaseHistory: false,
+      databaseHistoryCapabilityLoaded: false,
       maxUpdateBytes: undefined,
       maxSlowSyncUpdateBytes: undefined,
       syncLimitsLoaded: false,
-    });
+    };
+    const { rerender } = renderLayer(loadingAuthValue);
 
-    const config = outboxMock.configureDrain.mock.calls.at(-1)?.[0];
-
-    expect(config.isReady()).toBe(true);
-    expect(config.maxUpdateBytes).toBeUndefined();
-    expect(config.slowSync).toBeUndefined();
     expect(outboxMock.startDrainAll).toHaveBeenCalledTimes(1);
+    const configureCallsAfterMount = outboxMock.configureDrain.mock.calls.length;
+
+    // The 404 resolves restore capabilities but cannot advertise upload limits.
+    // Records with no mounted document still need a new drain attempt.
+    rerenderLayer(rerender, { ...loadingAuthValue, databaseHistoryCapabilityLoaded: true });
+
+    expect(outboxMock.startDrainAll).toHaveBeenCalledTimes(2);
+    expect(outboxMock.configureDrain).toHaveBeenCalledTimes(configureCallsAfterMount);
+    expect(mockUseSync).toHaveBeenLastCalledWith(
+      expect.anything(), expect.anything(), expect.anything(), 'workspace-1',
+      { enabled: false, capabilityLoaded: true }
+    );
   });
 
   it('configures the HTTP slow lane only on the elected transport owner', async () => {
@@ -470,6 +511,27 @@ describe('AppSyncLayer per-message churn', () => {
     expect(mockCollabFullSyncBatch.mock.calls[0][2]?.syncLane).toBeUndefined();
     expect(mockCollabFullSyncBatch.mock.calls[1][2]).toMatchObject({ syncLane: 'slow' });
     expect(stableSyncValue.applyHttpFullSyncResult).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains the request restore generation when applying an HTTP response', async () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+    const databaseRestoreId = '33333333-3333-4333-8333-333333333333';
+
+    mockCollabFullSyncBatch.mockResolvedValue([{
+      objectId: 'object-1', collabType: 1, missingUpdate: new Uint8Array(),
+      serverStateVector: new Uint8Array([0]), messageId: { timestamp: 1, counter: 0 },
+    }]);
+    renderLayer();
+    const leaderConfig = outboxMock.configureDrain.mock.calls.at(-1)?.[0];
+
+    await leaderConfig.slowSync({
+      objectId: 'object-1', collabType: 1, version: 'version-1', databaseRestoreId,
+      stateVector: new Uint8Array([0]), docState: new Uint8Array([9]),
+    }, new AbortController().signal);
+    expect(stableSyncValue.applyHttpFullSyncResult).toHaveBeenCalledTimes(2);
+    expect(stableSyncValue.applyHttpFullSyncResult).toHaveBeenCalledWith(
+      expect.objectContaining({ databaseRestoreId }), 'version-1', expect.any(AbortSignal)
+    );
   });
 
   it('treats a different authoritative server version without a RID as confirmed supersession', async () => {

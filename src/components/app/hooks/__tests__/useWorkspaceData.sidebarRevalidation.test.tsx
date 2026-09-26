@@ -94,7 +94,8 @@ function createWrapper(
   eventEmitter: EventEmitter,
   getWorkspaceId = () => workspaceId,
   getSelectedWorkspaceId = getWorkspaceId,
-  currentUserEmail = 'current-user@appflowy.io'
+  currentUserEmail: string | (() => string) = 'current-user@appflowy.io',
+  getUserId = () => 'user-id'
 ) {
   const authContext: AuthInternalContextType = {
     currentWorkspaceId: getWorkspaceId(),
@@ -122,7 +123,7 @@ function createWrapper(
     webSocket: {},
   } as unknown as SyncInternalContextType;
   const currentUser = {
-    email: currentUserEmail,
+    email: typeof currentUserEmail === 'function' ? currentUserEmail() : currentUserEmail,
     uid: 'user-id',
     uuid: 'user-uuid',
   } as User;
@@ -142,6 +143,7 @@ function createWrapper(
       userWorkspaceInfo: authContext.userWorkspaceInfo
         ? {
             ...authContext.userWorkspaceInfo,
+            userId: getUserId(),
             selectedWorkspace: {
               ...authContext.userWorkspaceInfo.selectedWorkspace,
               id: selectedWorkspaceId,
@@ -151,7 +153,13 @@ function createWrapper(
     };
 
     return (
-      <AFConfigContext.Provider value={appConfigContext}>
+      <AFConfigContext.Provider value={{
+        ...appConfigContext,
+        currentUser: {
+          ...currentUser,
+          email: typeof currentUserEmail === 'function' ? currentUserEmail() : currentUserEmail,
+        },
+      }}>
         <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
           <AuthInternalContext.Provider value={activeAuthContext}>
             <SyncInternalContext.Provider value={syncContext}>{children}</SyncInternalContext.Provider>
@@ -419,7 +427,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     if (revoked) expect(findView(result.current.outline ?? [], changed.view_id)).toBeNull();
   });
 
-  it.each([APP_EVENTS.PERMISSION_CHANGED, APP_EVENTS.SHARE_VIEWS_CHANGED])(
+  it.each([APP_EVENTS.PERMISSION_CHANGED, APP_EVENTS.SHARE_VIEWS_CHANGED, APP_EVENTS.DATABASE_RESTORED])(
     'restarts a superseded sibling load after %s without letting the stale request clear its marker',
     async (event) => {
       const eventEmitter = new EventEmitter();
@@ -453,7 +461,9 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       act(() => {
         eventEmitter.emit(
           event,
-          event === APP_EVENTS.PERMISSION_CHANGED
+          event === APP_EVENTS.DATABASE_RESTORED
+            ? { workspaceId, databaseId: 'database-id' }
+            : event === APP_EVENTS.PERMISSION_CHANGED
             ? { objectId: changedSpaceId }
             : { viewId: changedSpaceId, emails: ['current-user@appflowy.io'] }
         );
@@ -488,6 +498,567 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       expect(ViewService.getMultiple).toHaveBeenCalledTimes(3);
     }
   );
+
+  it('reloads database sidebar tabs in both directions after a restore', async () => {
+    const eventEmitter = new EventEmitter();
+    const containerId = 'version-db';
+    const tabs = ['Filter checked', 'All Data', 'Board'].map((name) => createView(name, {
+      name, layout: ViewLayout.Grid, parent_view_id: containerId, extra: { database_id: 'database-id' },
+    }));
+    const container = createView(containerId, {
+      layout: ViewLayout.Grid, has_children: true,
+      extra: { database_id: 'database-id', is_database_container: true },
+    });
+    const shallowRoot = [createView('space-id', { children: [container], has_children: true })];
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: shallowRoot, folderRid: '1-1' });
+    (ViewService.getMultiple as jest.Mock).mockResolvedValue([{ ...container, children: tabs }]);
+    const { result, unmount } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+    await act(async () => { await result.current.loadViewChildrenBatch?.([containerId]); });
+    expect(findView(result.current.outline ?? [], containerId)?.children).toEqual(tabs);
+
+    for (const restoredTabs of [tabs.slice(0, 1), tabs]) {
+      (ViewService.getMultiple as jest.Mock).mockResolvedValue([{ ...container, children: restoredTabs }]);
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId: 'database-id' });
+      });
+      await waitFor(() => expect(findView(result.current.outline ?? [], containerId)?.children).toEqual(restoredTabs));
+    }
+
+    (ViewService.getMultiple as jest.Mock).mockClear();
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId: 'another-workspace', databaseId: 'database-id' });
+    });
+    expect(ViewService.getMultiple).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it.each(['root', 'subtree'])(
+    'retains a restored %s refresh beyond two failures without duplicate events restarting its backoff',
+    async (failedRead) => {
+      const eventEmitter = new EventEmitter();
+      const container = createView('database-container', { has_children: true });
+      const initialOutline = [createView('space-id', { children: [container], has_children: true })];
+      const oldTab = createView('old-tab');
+      const restoredTab = createView('restored-tab');
+      const notification = { workspaceId, databaseId: 'database-id', restoreId: 'restore-1' };
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      let currentEmail = 'original@appflowy.io';
+
+      (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: initialOutline, folderRid: '1-1' });
+      (ViewService.getMultiple as jest.Mock).mockResolvedValue([{ ...container, children: [oldTab] }]);
+      const { result, rerender, unmount } = renderHook(() => useWorkspaceData(), {
+        wrapper: createWrapper(eventEmitter, () => workspaceId, () => workspaceId, () => currentEmail),
+      });
+
+      await waitFor(() => expect(result.current.outline).toEqual(initialOutline));
+      await act(async () => { await result.current.loadViewChildrenBatch?.([container.view_id]); });
+      expect(findView(result.current.outline ?? [], oldTab.view_id)).not.toBeNull();
+
+      const failingRead = (failedRead === 'root' ? ViewService.getOutline : ViewService.getMultiple) as jest.Mock;
+
+      failingRead.mockClear().mockRejectedValue({ code: ERROR_CODE.REQUEST_TIMEOUT, message: 'temporary outage' });
+      jest.useFakeTimers();
+      try {
+        await act(async () => { eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, notification); });
+        expect(failingRead).toHaveBeenCalledTimes(1);
+        expect(findView(result.current.outline ?? [], oldTab.view_id)).toBeNull();
+
+        await act(async () => { await jest.advanceTimersByTimeAsync(500); });
+        await act(async () => {
+          eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, notification);
+          eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { ...notification, restoreId: 'restore-2' });
+        });
+        currentEmail = 'updated@appflowy.io';
+        rerender();
+        expect(failingRead).toHaveBeenCalledTimes(1);
+        await act(async () => { await jest.advanceTimersByTimeAsync(500); });
+        expect(failingRead).toHaveBeenCalledTimes(2);
+
+        for (const delay of [2_000, 4_000]) {
+          await act(async () => { await jest.advanceTimersByTimeAsync(delay); });
+        }
+
+        expect(failingRead).toHaveBeenCalledTimes(4);
+
+        (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: initialOutline, folderRid: '1-1' });
+        (ViewService.getMultiple as jest.Mock).mockResolvedValue([{ ...container, children: [restoredTab] }]);
+        await act(async () => { await jest.advanceTimersByTimeAsync(8_000); });
+        expect(findView(result.current.outline ?? [], container.view_id)?.children).toEqual([restoredTab]);
+        expect(failingRead).toHaveBeenCalledTimes(5);
+        await act(async () => { await jest.advanceTimersByTimeAsync(60_000); });
+        expect(failingRead).toHaveBeenCalledTimes(5);
+      } finally {
+        unmount();
+        jest.useRealTimers();
+        consoleErrorSpy.mockRestore();
+      }
+    }
+  );
+
+  it.each(['workspace', 'account'])(
+    'cancels retained database restore navigation retries when the %s changes',
+    async (changedOwner) => {
+      const eventEmitter = new EventEmitter();
+      let activeWorkspaceId = workspaceId;
+      let activeUserId = 'user-id';
+      const getWorkspaceId = () => activeWorkspaceId;
+      const container = createView('database-container', { has_children: true });
+      const initialOutline = [container];
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: initialOutline, folderRid: '1-1' });
+      (ViewService.getMultiple as jest.Mock).mockResolvedValue([{ ...container, children: [createView('old-tab')] }]);
+      const { result, rerender, unmount } = renderHook(() => useWorkspaceData(), {
+        wrapper: createWrapper(eventEmitter, getWorkspaceId, getWorkspaceId, 'user@appflowy.io', () => activeUserId),
+      });
+
+      await waitFor(() => expect(result.current.outline).toEqual(initialOutline));
+      await act(async () => { await result.current.loadViewChildrenBatch?.([container.view_id]); });
+      (ViewService.getMultiple as jest.Mock).mockClear().mockRejectedValue(new Error('offline'));
+      jest.useFakeTimers();
+      try {
+        await act(async () => {
+          eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId: 'database-id', restoreId: 'restore-1' });
+        });
+        expect(ViewService.getMultiple).toHaveBeenCalledTimes(1);
+        if (changedOwner === 'workspace') activeWorkspaceId = 'other-workspace';
+        else activeUserId = 'other-user';
+        await act(async () => { rerender(); });
+        const rootReadCount = (ViewService.getOutline as jest.Mock).mock.calls.length;
+
+        await act(async () => { await jest.advanceTimersByTimeAsync(60_000); });
+        expect(ViewService.getMultiple).toHaveBeenCalledTimes(1);
+        expect(ViewService.getOutline).toHaveBeenCalledTimes(rootReadCount);
+      } finally {
+        unmount();
+        jest.useRealTimers();
+        consoleErrorSpy.mockRestore();
+      }
+    }
+  );
+
+  it.each(['workspace', 'account'])(
+    'does not apply an admitted database restore root response after the %s changes',
+    async (changedOwner) => {
+      const eventEmitter = new EventEmitter();
+      let activeWorkspaceId = workspaceId;
+      let activeUserId = 'user-id';
+      const getWorkspaceId = () => activeWorkspaceId;
+      const initialOutline = [createView('initial-space')];
+      const pendingRoot = createDeferred<{ outline: View[]; folderRid: string }>();
+
+      (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: initialOutline, folderRid: '1-1' });
+      const { result, rerender, unmount } = renderHook(() => useWorkspaceData(), {
+        wrapper: createWrapper(eventEmitter, getWorkspaceId, getWorkspaceId, 'user@appflowy.io', () => activeUserId),
+      });
+
+      await waitFor(() => expect(result.current.outline).toEqual(initialOutline));
+      (ViewService.getOutline as jest.Mock).mockImplementationOnce(() => pendingRoot.promise);
+      act(() => {
+        eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId: 'database-id', restoreId: 'restore-1' });
+      });
+      expect(ViewService.getOutline).toHaveBeenCalledTimes(2);
+      if (changedOwner === 'workspace') activeWorkspaceId = 'other-workspace';
+      else activeUserId = 'other-user';
+      await act(async () => { rerender(); });
+      await act(async () => {
+        pendingRoot.resolve({ outline: [createView('obsolete-restored-space')], folderRid: '1-2' });
+        await pendingRoot.promise;
+      });
+      expect(findView(result.current.outline ?? [], 'obsolete-restored-space')).toBeNull();
+      unmount();
+    }
+  );
+
+  it('keeps a restore root pending when a newer unaccepted request suppresses its failure', async () => {
+    const eventEmitter = new EventEmitter();
+    const initialOutline = [createView('initial-space')];
+    const pendingRestoreRoot = createDeferred<{ outline: View[]; folderRid: string }>();
+    const pendingPeriodicRoot = createDeferred<{ outline: View[]; folderRid: string }>();
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: initialOutline, folderRid: '1-1' });
+    const { result, unmount } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+    await waitFor(() => expect(result.current.outline).toEqual(initialOutline));
+    (ViewService.getOutline as jest.Mock)
+      .mockImplementationOnce(() => pendingRestoreRoot.promise)
+      .mockImplementationOnce(() => pendingPeriodicRoot.promise);
+    jest.useFakeTimers();
+    try {
+      act(() => {
+        eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId: 'database-id', restoreId: 'restore-1' });
+      });
+      let periodicRefresh: Promise<unknown> | undefined;
+
+      act(() => { periodicRefresh = result.current.revalidateSidebarOutline?.(); });
+      await act(async () => {
+        pendingRestoreRoot.reject(new Error('temporary outage'));
+        await pendingRestoreRoot.promise.catch(() => undefined);
+      });
+      (ViewService.getOutline as jest.Mock).mockResolvedValue({
+        outline: [createView('restored-space')], folderRid: '1-2',
+      });
+      await act(async () => { await jest.advanceTimersByTimeAsync(1_000); });
+      expect(findView(result.current.outline ?? [], 'restored-space')).not.toBeNull();
+      await act(async () => {
+        pendingPeriodicRoot.resolve({ outline: initialOutline, folderRid: '1-1' });
+        await periodicRefresh;
+      });
+      expect(findView(result.current.outline ?? [], 'restored-space')).not.toBeNull();
+    } finally {
+      unmount();
+      jest.useRealTimers();
+    }
+  });
+
+  it('retries a restore root that is older than the current Folder revision', async () => {
+    const eventEmitter = new EventEmitter();
+    const initialOutline = [createView('current-space')];
+    const restoredOutline = [createView('restored-space')];
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: initialOutline, folderRid: '1-2' });
+    const { result, unmount } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+    await waitFor(() => expect(result.current.outline).toEqual(initialOutline));
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: [createView('obsolete-space')], folderRid: '1-1' })
+      .mockResolvedValue({ outline: restoredOutline, folderRid: '1-3' });
+    jest.useFakeTimers();
+    try {
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId: 'database-id', restoreId: 'restore-1' });
+      });
+      expect(result.current.outline).toEqual(initialOutline);
+      await act(async () => { await jest.advanceTimersByTimeAsync(1_000); });
+      expect(result.current.outline).toEqual(restoredOutline);
+    } finally {
+      unmount();
+      jest.useRealTimers();
+    }
+  });
+
+  it('retains deep restored branches while a parent read fails and a later restore arrives', async () => {
+    const eventEmitter = new EventEmitter();
+    const parent = createView('parent', { has_children: true });
+    const nested = createView('nested', { has_children: true });
+    const oldTab = createView('old-tab');
+    const restoredTab = createView('restored-tab');
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [parent], folderRid: '1-1' });
+    (ViewService.getMultiple as jest.Mock).mockImplementation((_workspaceId: string, [viewId]: string[]) =>
+      Promise.resolve([viewId === parent.view_id
+        ? { ...parent, children: [nested] }
+        : { ...nested, children: [oldTab] }])
+    );
+    const { result, unmount } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+    await waitFor(() => expect(result.current.outline).toEqual([parent]));
+    await act(async () => { await result.current.loadViewChildrenBatch?.([parent.view_id]); });
+    await act(async () => { await result.current.loadViewChildrenBatch?.([nested.view_id]); });
+    expect(findView(result.current.outline ?? [], oldTab.view_id)).not.toBeNull();
+    (ViewService.getMultiple as jest.Mock).mockClear().mockRejectedValue(new Error('offline'));
+    jest.useFakeTimers();
+    try {
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId: 'database-id', restoreId: 'restore-1' });
+      });
+      expect(ViewService.getMultiple).toHaveBeenCalledTimes(1);
+      expect(ViewService.getMultiple).toHaveBeenLastCalledWith(workspaceId, [parent.view_id], 1);
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId: 'database-id', restoreId: 'restore-2' });
+      });
+      (ViewService.getMultiple as jest.Mock).mockImplementation((_workspaceId: string, [viewId]: string[]) =>
+        Promise.resolve([viewId === parent.view_id
+          ? { ...parent, children: [nested] }
+          : { ...nested, children: [restoredTab] }])
+      );
+      await act(async () => { await jest.advanceTimersByTimeAsync(1_000); });
+      expect(findView(result.current.outline ?? [], nested.view_id)?.children).toEqual([restoredTab]);
+      expect(ViewService.getMultiple).toHaveBeenNthCalledWith(2, workspaceId, [parent.view_id], 1);
+      expect(ViewService.getMultiple).toHaveBeenNthCalledWith(3, workspaceId, [nested.view_id], 1);
+    } finally {
+      unmount();
+      jest.useRealTimers();
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it.each(['root', 'subtree'])(
+    'fences an admitted restore %s response after a newer Folder removal and retries it',
+    async (pendingRead) => {
+      const eventEmitter = new EventEmitter();
+      const container = createView('container', { has_children: true });
+      const oldTab = createView('removed-tab');
+      const pendingRoot = createDeferred<{ outline: View[]; folderRid: string }>();
+      const pendingSubtree = createDeferred<View[]>();
+
+      (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [container], folderRid: '1-1' });
+      (ViewService.getMultiple as jest.Mock).mockResolvedValue([{ ...container, children: [oldTab], folder_rid: '1-1' }]);
+      const { result, unmount } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+      await waitFor(() => expect(result.current.outline).toEqual([container]));
+      await act(async () => { await result.current.loadViewChildrenBatch?.([container.view_id]); });
+      if (pendingRead === 'root') (ViewService.getOutline as jest.Mock).mockImplementationOnce(() => pendingRoot.promise);
+      else (ViewService.getMultiple as jest.Mock).mockImplementationOnce(() => pendingSubtree.promise);
+      jest.useFakeTimers();
+      try {
+        await act(async () => {
+          eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId: 'database-id', restoreId: 'restore-1' });
+        });
+        await act(async () => {
+          eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+            changeType: 2, viewId: container.view_id, childViewIds: [], folderRid: '1-3',
+          });
+        });
+        await act(async () => {
+          if (pendingRead === 'root') {
+            pendingRoot.resolve({ outline: [{ ...container, children: [oldTab] }], folderRid: '1-2' });
+            await pendingRoot.promise;
+          } else {
+            pendingSubtree.resolve([{ ...container, children: [oldTab], folder_rid: '1-2' }]);
+            await pendingSubtree.promise;
+          }
+        });
+        expect(findView(result.current.outline ?? [], oldTab.view_id)).toBeNull();
+        (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [container], folderRid: '1-3' });
+        (ViewService.getMultiple as jest.Mock).mockClear().mockResolvedValue([
+          { ...container, children: [], has_children: false, folder_rid: '1-3' },
+        ]);
+        await act(async () => { await jest.advanceTimersByTimeAsync(1_000); });
+        expect(ViewService.getMultiple).toHaveBeenCalledWith(workspaceId, [container.view_id], 1);
+        expect(findView(result.current.outline ?? [], container.view_id)?.children).toEqual([]);
+        expect(findView(result.current.outline ?? [], oldTab.view_id)).toBeNull();
+      } finally {
+        unmount();
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  it.each(['omitted', 'older'])(
+    'retries a restore subtree when its root is %s from the latest accepted Folder state',
+    async (invalidResponse) => {
+      const eventEmitter = new EventEmitter();
+      const container = createView('container', { has_children: true });
+      const oldTab = createView('old-tab');
+      const freshTab = createView('fresh-tab');
+      const pendingSubtree = createDeferred<View[]>();
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [container], folderRid: '1-1' });
+      (ViewService.getMultiple as jest.Mock).mockResolvedValue([{ ...container, children: [oldTab] }]);
+      const { result, unmount } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+      await waitFor(() => expect(result.current.outline).toEqual([container]));
+      await act(async () => { await result.current.loadViewChildrenBatch?.([container.view_id]); });
+      (ViewService.getMultiple as jest.Mock).mockImplementationOnce(() => pendingSubtree.promise);
+      jest.useFakeTimers();
+      try {
+        await act(async () => {
+          eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId: 'database-id', restoreId: 'restore-1' });
+        });
+        if (invalidResponse === 'older') {
+          (ViewService.getOutline as jest.Mock).mockResolvedValue({
+            outline: [{ ...container, children: [freshTab] }], folderRid: '1-3',
+          });
+          await act(async () => { await result.current.revalidateSidebarOutline?.(); });
+        }
+
+        await act(async () => {
+          pendingSubtree.resolve(invalidResponse === 'omitted' ? [] : [
+            { ...container, children: [oldTab], folder_rid: '1-2' },
+          ]);
+          await pendingSubtree.promise;
+        });
+        expect(findView(result.current.outline ?? [], oldTab.view_id)).toBeNull();
+        (ViewService.getMultiple as jest.Mock).mockClear().mockResolvedValue([
+          { ...container, children: [freshTab], folder_rid: '1-3' },
+        ]);
+        await act(async () => { await jest.advanceTimersByTimeAsync(1_000); });
+        expect(ViewService.getMultiple).toHaveBeenCalledTimes(1);
+        expect(findView(result.current.outline ?? [], container.view_id)?.children).toEqual([freshTab]);
+      } finally {
+        unmount();
+        jest.useRealTimers();
+        consoleErrorSpy.mockRestore();
+      }
+    }
+  );
+
+  it('restores the last standalone mount below the root depth boundary after its removal notification', async () => {
+    const eventEmitter = new EventEmitter();
+    const databaseId = 'standalone-database';
+    const boundary = createView('depth-six-boundary', { has_children: true });
+    const parent = createView('former-standalone-parent', {
+      parent_view_id: boundary.view_id,
+      has_children: true,
+    });
+    const mountedView = createView('standalone-mounted-view', {
+      parent_view_id: parent.view_id,
+      layout: ViewLayout.Grid,
+      extra: { database_id: databaseId },
+    });
+    let shallowRoot = boundary;
+
+    for (let depth = 5; depth >= 1; depth -= 1) {
+      shallowRoot = createView(`ancestor-${depth}`, {
+        children: [shallowRoot],
+        has_children: true,
+      });
+    }
+
+    const shallowOutline = [shallowRoot];
+    let mounted = true;
+    let folderRid = '1-1';
+
+    (ViewService.getOutline as jest.Mock).mockImplementation(() => Promise.resolve({
+      outline: shallowOutline,
+      folderRid,
+    }));
+    (ViewService.getMultiple as jest.Mock).mockImplementation((_workspaceId: string, viewIds: string[]) =>
+      Promise.resolve(viewIds.map((viewId) => {
+        if (viewId === boundary.view_id) {
+          return { ...boundary, folder_rid: folderRid, children: [{ ...parent, has_children: mounted }] };
+        }
+
+        if (viewId === parent.view_id) {
+          return { ...parent, folder_rid: folderRid, has_children: mounted, children: mounted ? [mountedView] : [] };
+        }
+
+        const ancestor = findView(shallowOutline, viewId);
+
+        if (!ancestor) throw new Error(`Unexpected Folder read target: ${viewId}`);
+        return { ...ancestor, folder_rid: folderRid };
+      }))
+    );
+    const { result, unmount } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+    try {
+      await waitFor(() => expect(result.current.outline).toEqual(shallowOutline));
+      await act(async () => { await result.current.loadViewChildrenBatch?.([boundary.view_id]); });
+      await act(async () => { await result.current.loadViewChildrenBatch?.([parent.view_id]); });
+      expect(findView(result.current.outline ?? [], mountedView.view_id)).not.toBeNull();
+      expect(result.current.loadedViewIds?.has(parent.view_id)).toBe(true);
+
+      mounted = false;
+      folderRid = '1-2';
+      // Folder removal can precede DatabaseRestored. Removing the last child also
+      // clears its parent's loaded marker, before the restore handler captures targets.
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+          changeType: 2, // VIEW_REMOVED
+          viewId: parent.view_id,
+          childViewIds: [],
+          folderRid,
+        });
+      });
+      expect(findView(result.current.outline ?? [], mountedView.view_id)).toBeNull();
+      expect(result.current.loadedViewIds?.has(parent.view_id)).toBe(false);
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId, restoreId: 'without-mount' });
+      });
+      await waitFor(() => expect(result.current.loadedViewIds?.has(boundary.view_id)).toBe(true));
+      expect(findView(result.current.outline ?? [], parent.view_id)?.children).toEqual([]);
+
+      // Even another authoritative restore without the mount must not recreate it
+      // from remembered targets. These hints authorize reads, not sidebar entries.
+      folderRid = '1-3';
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId, restoreId: 'still-without-mount' });
+      });
+      await waitFor(() => expect(result.current.loadedViewIds?.has(boundary.view_id)).toBe(true));
+      expect(findView(result.current.outline ?? [], mountedView.view_id)).toBeNull();
+
+      mounted = true;
+      folderRid = '1-4';
+      (ViewService.getMultiple as jest.Mock).mockClear();
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId, restoreId: 'with-mount-again' });
+      });
+      await waitFor(() => expect(findView(result.current.outline ?? [], parent.view_id)?.children).toEqual([mountedView]));
+      expect(ViewService.getMultiple).toHaveBeenCalledWith(workspaceId, [parent.view_id], 1);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('retires an omitted restore parent when an exact navigation probe confirms deletion', async () => {
+    const eventEmitter = new EventEmitter();
+    const container = createView('deleted-parent', { has_children: true });
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [container], folderRid: '1-1' });
+    (ViewService.getMultiple as jest.Mock).mockResolvedValue([{ ...container, children: [createView('old-tab')] }]);
+    const { result, unmount } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+    await waitFor(() => expect(result.current.outline).toEqual([container]));
+    await act(async () => { await result.current.loadViewChildrenBatch?.([container.view_id]); });
+    (ViewService.getMultiple as jest.Mock).mockClear().mockResolvedValue([]);
+    (ViewService.getNavigation as jest.Mock).mockRejectedValue({ code: ERROR_CODE.RECORD_NOT_FOUND });
+    jest.useFakeTimers();
+    try {
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId: 'database-id', restoreId: 'restore-1' });
+      });
+      expect(ViewService.getNavigation).toHaveBeenCalledWith(workspaceId, container.view_id, 0);
+      await act(async () => { await jest.advanceTimersByTimeAsync(60_000); });
+      expect(ViewService.getMultiple).toHaveBeenCalledTimes(1);
+      expect(ViewService.getNavigation).toHaveBeenCalledTimes(1);
+      expect(findView(result.current.outline ?? [], 'old-tab')).toBeNull();
+    } finally {
+      unmount();
+      jest.useRealTimers();
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('limits restored parent reads to eight concurrent requests within each depth wave', async () => {
+    const eventEmitter = new EventEmitter();
+    const parents = Array.from({ length: 12 }, (_, index) => createView(`parent-${index}`, { has_children: true }));
+    const pendingReads = new Map(parents.map((parent) => [parent.view_id, createDeferred<View[]>()]));
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: parents, folderRid: '1-1' });
+    (ViewService.getMultiple as jest.Mock).mockResolvedValue(parents.map((parent) => ({
+      ...parent, children: [createView(`old-${parent.view_id}`)],
+    })));
+    const { result, unmount } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+    try {
+      await waitFor(() => expect(result.current.outline).toEqual(parents));
+      await act(async () => { await result.current.loadViewChildrenBatch?.(parents.map((parent) => parent.view_id)); });
+      (ViewService.getMultiple as jest.Mock).mockClear().mockImplementation((_workspaceId: string, [viewId]: string[]) =>
+        pendingReads.get(viewId)?.promise
+      );
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId, databaseId: 'database-id', restoreId: 'restore-1' });
+      });
+      expect(ViewService.getMultiple).toHaveBeenCalledTimes(8);
+      await act(async () => {
+        for (const parent of parents.slice(0, 8)) {
+          pendingReads.get(parent.view_id)?.resolve([{ ...parent, children: [createView(`fresh-${parent.view_id}`)] }]);
+        }
+
+        await Promise.all(parents.slice(0, 8).map((parent) => pendingReads.get(parent.view_id)?.promise));
+      });
+      expect(ViewService.getMultiple).toHaveBeenCalledTimes(12);
+      await act(async () => {
+        for (const parent of parents.slice(8)) {
+          pendingReads.get(parent.view_id)?.resolve([{ ...parent, children: [createView(`fresh-${parent.view_id}`)] }]);
+        }
+
+        await Promise.all(parents.slice(8).map((parent) => pendingReads.get(parent.view_id)?.promise));
+      });
+      for (const parent of parents) {
+        expect(findView(result.current.outline ?? [], `fresh-${parent.view_id}`)).not.toBeNull();
+      }
+    } finally {
+      unmount();
+    }
+  });
 
   it('drops a loaded deep subtree that a permission refresh omits from the shallow root', async () => {
     const eventEmitter = new EventEmitter();

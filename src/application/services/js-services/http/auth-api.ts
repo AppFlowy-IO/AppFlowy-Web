@@ -20,6 +20,9 @@ export interface ServerInfo {
   /** Web uses a separate release line from the native min_client_version field. */
   min_web_client_version?: string;
   enable_page_history: boolean;
+  /** Database aggregate snapshots and the complete web history contract. Absent means disabled. */
+  enable_database_history?: boolean;
+  enable_database_history_version_ui?: boolean;
   ai_enabled?: boolean;
   /**
    * Whether this deployment is self-hosted. Only the official AppFlowy cloud

@@ -34,6 +34,7 @@ import {
 
 import { AppContextConsumer } from '../components/AppContextConsumer';
 import { useAuthInternal } from '../contexts/AuthInternalContext';
+import { DatabaseRestoreNoticeProvider } from '../DatabaseRestoreNotice';
 import { useDatabaseOperations } from '../hooks/useDatabaseOperations';
 import { usePageOperations } from '../hooks/usePageOperations';
 import { useRowOperations } from '../hooks/useRowOperations';
@@ -1144,13 +1145,19 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
         <AppOperationsContext.Provider value={operationsValue}>
           <AppEventEmitterContext.Provider value={syncContext.eventEmitter}>
             <AppSyncContext.Provider value={syncValue}>
-              <AppContextConsumer
-                requestAccessError={requestAccessError}
-                openModalViewId={openModalViewId}
-                setOpenModalViewId={setOpenModalViewId}
+              <DatabaseRestoreNoticeProvider
+                key={`${requesterId}:${currentWorkspaceId}`}
+                workspaceId={currentWorkspaceId || ''}
+                eventEmitter={syncContext.eventEmitter}
               >
-                {children}
-              </AppContextConsumer>
+                <AppContextConsumer
+                  requestAccessError={requestAccessError}
+                  openModalViewId={openModalViewId}
+                  setOpenModalViewId={setOpenModalViewId}
+                >
+                  {children}
+                </AppContextConsumer>
+              </DatabaseRestoreNoticeProvider>
             </AppSyncContext.Provider>
           </AppEventEmitterContext.Provider>
         </AppOperationsContext.Provider>

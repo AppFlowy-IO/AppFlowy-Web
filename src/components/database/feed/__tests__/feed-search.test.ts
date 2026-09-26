@@ -5,6 +5,7 @@ import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
 import { createField, createFieldWithTypeOption, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
+import { DatabaseHistoryRowStore } from '@/application/database-yjs/history-row-store';
 import { FieldType } from '@/application/database-yjs/database.type';
 import * as decode from '@/application/database-yjs/decode';
 import { MentionablePerson, YDatabase, YDatabaseFields, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -310,4 +311,47 @@ it('resolves relation labels before draining the candidate sync queue', async ()
   expect(ensureRow.mock.calls.length).toBeLessThan(30);
   index.dispose();
   pending.slice(1).forEach((resolve) => resolve(new Y.Doc() as YDoc));
+});
+
+
+it('searches complete immutable snapshots without retaining row subscriptions or resolving live relations', () => {
+  const { doc, database, fields } = databaseFixture();
+
+  database.set(YjsDatabaseKey.id, 'database');
+  fields.set('relation', createFieldWithTypeOption('relation', FieldType.Relation, { database_id: 'external' }).clone());
+  const store = new DatabaseHistoryRowStore('history:search');
+
+  for (let i = 0; i < 400; i++) {
+    const row = createRowDoc(String(i), 'database', {
+      title: { fieldType: FieldType.RichText, data: `Saved ${i}` },
+      relation: { fieldType: FieldType.Relation, data: ['external-row'] },
+    });
+
+    store.add(String(i), Y.encodeStateAsUpdate(row), 1);
+    row.destroy();
+  }
+
+  const ensureRow = jest.fn();
+  const loadView = jest.fn();
+  const createRow = jest.fn();
+  const index = createFeedSearchIndex();
+
+  index.configure({ immutable: true, database, rows: store.rows, fieldIds: ['title', 'relation'], users: [], ensureRow, loadView, createRow });
+  expect(index.getSnapshot().size).toBe(400);
+  expect(index.getSnapshot().get('399')).toContain('saved 399');
+  expect(index.getSnapshot().get('399')).toContain('external-row');
+  fields.set('relation', createFieldWithTypeOption('relation', FieldType.Relation, { database_id: 'database' }).clone());
+  const sourceRow = createRowDoc('source', 'database', { relation: { fieldType: FieldType.Relation, data: ['399'] } });
+
+  store.add('source', Y.encodeStateAsUpdate(sourceRow), 1);
+  sourceRow.destroy();
+  index.configure({ immutable: true, database, rows: store.rows, fieldIds: ['relation'], users: [], ensureRow, loadView, createRow });
+  expect(index.getSnapshot().get('source')).toBe('saved 399');
+  expect(ensureRow).not.toHaveBeenCalled();
+  expect(loadView).not.toHaveBeenCalled();
+  expect(createRow).not.toHaveBeenCalled();
+  expect(store.cachedDocumentCount).toBeLessThanOrEqual(128);
+  index.dispose();
+  store.destroy();
+  doc.destroy();
 });

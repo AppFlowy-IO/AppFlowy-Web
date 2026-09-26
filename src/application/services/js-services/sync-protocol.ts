@@ -160,6 +160,7 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
         objectId: doc.guid,
         collabType: ctx.collabType,
         version: doc.version ?? null,
+        databaseRestoreId: doc.databaseRestoreId,
         payload: update,
         beforeStateVector: stateVector,
       },
@@ -182,6 +183,7 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
         flags: UpdateFlags.Lib0v1,
         payload: update,
         version: doc.version,
+        databaseRestoreId: doc.databaseRestoreId,
         beforeStateVector: stateVector,
       },
     },
@@ -303,6 +305,7 @@ export const initSync = (ctx: SyncContext) => {
       objectId: doc.guid,
       collabType,
       version: doc.version ?? null,
+        databaseRestoreId: doc.databaseRestoreId,
       payload: update,
       beforeStateVector,
     });

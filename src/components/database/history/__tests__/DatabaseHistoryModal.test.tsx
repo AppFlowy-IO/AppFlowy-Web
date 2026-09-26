@@ -1,0 +1,362 @@
+// eslint-disable-next-line import/no-unresolved
+import '@testing-library/jest-dom';
+import EventEmitter from 'events';
+
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { format } from 'date-fns';
+import * as Y from 'yjs';
+
+import translations from '@/@types/translations/en.json';
+import { APP_EVENTS } from '@/application/constants';
+import type { DatabaseRestoreJob } from '@/application/database-history.type';
+import { getDatabaseHistory, getDatabaseRestoreJob, startDatabaseRestore } from '@/application/services/domains/database-history';
+import { DatabaseRestoreNoticeProvider, useDatabaseRestoreNotice } from '@/components/app/DatabaseRestoreNotice';
+
+import DatabaseHistoryModal from '../DatabaseHistoryModal';
+import { loadDatabaseHistoryPreview } from '../databaseHistoryPreviewSession';
+
+import type { ComponentProps } from 'react';
+
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string, fallback?: unknown) => {
+    if (['databaseRestoredTitle', 'databaseRestoredDescription', 'revertedDismiss'].includes(key.split('.')[1])) {
+      return translations.versionHistory[key.split('.')[1] as keyof typeof translations.versionHistory];
+    }
+
+    return typeof fallback === 'string' ? fallback : key;
+  } }),
+}));
+jest.mock('@/application/services/domains/database-history', () => ({
+  getDatabaseHistory: jest.fn(), getDatabaseRestoreJob: jest.fn(), startDatabaseRestore: jest.fn(), DATABASE_HISTORY_PAGE_SIZE: 30,
+}));
+jest.mock('@/application/services/js-services/http/cloud-config', () => ({ defaultConfig: { baseURL: 'server' } }));
+jest.mock('../databaseHistoryPreviewSession', () => ({ loadDatabaseHistoryPreview: jest.fn() }));
+jest.mock('../DatabaseHistoryPreviewProvider', () => ({
+  DatabaseHistoryPreview: ({ root }: { root: Y.Doc }) => <div data-testid='historical-preview'>{root.guid}</div>,
+}));
+const mockStart = jest.fn();
+let mockUseRealRestore = false;
+let mockRestoreBusy = false;
+let mockRestoreError: string | null = null;
+
+jest.mock('../useDatabaseHistoryRestore', () => ({
+  databaseHistoryError: (error: Error) => error.message,
+  useDatabaseHistoryRestore: (...args: unknown[]) => mockUseRealRestore
+    ? jest.requireActual('../useDatabaseHistoryRestore').useDatabaseHistoryRestore(...args)
+    : ({ start: mockStart, completed: 0, isRestoring: mockRestoreBusy, job: null, error: mockRestoreError }),
+}));
+
+const records = [1, 2].map((n) => ({
+  version: `v${n}`, parent: null, name: `Version ${n}`, created_at: '2026-09-10T00:00:00Z',
+  changed_at: `2026-09-10T00:00:00.00000${n}Z`, created_by: null, is_deleted: false,
+  row_count: 0, document_count: 0, size_bytes: 0,
+}));
+const props = {
+  open: true, onOpenChange: jest.fn(), workspaceId: 'w', databaseId: 'd', databasePageId: 'page',
+  activeViewId: 'tab', userId: 'user', onRestored: jest.fn(),
+};
+const restoredDescription = 'This database was restored to a previous version. You can continue editing the restored version.';
+
+function OpenDatabase() {
+  useDatabaseRestoreNotice('w', 'd');
+  return <input aria-label='Current database editor' />;
+}
+
+function HistoryWithRestoreNotice({
+  events, ...modalProps
+}: ComponentProps<typeof DatabaseHistoryModal> & { events: EventEmitter }) {
+  return (
+    <DatabaseRestoreNoticeProvider workspaceId={modalProps.workspaceId} eventEmitter={events}>
+      <OpenDatabase />
+      <DatabaseHistoryModal {...modalProps} onRestored={async (databaseId, restoreId) => {
+        // The real sync service announces completion only after it reloads the
+        // authoritative database. A succeeded server job alone is insufficient.
+        await modalProps.onRestored(databaseId, restoreId);
+        events.emit(APP_EVENTS.DATABASE_RESTORED, { workspaceId: modalProps.workspaceId, databaseId, restoreId });
+      }} />
+    </DatabaseRestoreNoticeProvider>
+  );
+}
+
+function successfulJob(jobId: string, version: string): DatabaseRestoreJob {
+  return {
+    job_id: jobId, workspace_id: 'w', database_id: 'd', target_version: version, state: 'succeeded',
+    staged_bytes: 0, staged_rows: 0, created_at: '', updated_at: '', started_at: null, finished_at: null, error: null,
+    result: { version, pre_restore_version: 'recovery', restored_rows: 0, restored_documents: 0, tombstoned_rows: 0 },
+  };
+}
+
+async function acknowledgeRestore() {
+  const notice = await screen.findByRole('dialog', { name: 'Database restored' });
+
+  expect(within(notice).getByText(restoredDescription, { exact: true })).toBeVisible();
+  expect(screen.getAllByTestId('reverted-dialog')).toHaveLength(1);
+  fireEvent.click(within(notice).getByRole('button', { name: 'Got it' }));
+  await waitFor(() => expect(screen.queryByTestId('reverted-dialog')).not.toBeInTheDocument());
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockUseRealRestore = false;
+  mockRestoreBusy = false;
+  mockRestoreError = null;
+  localStorage.clear();
+  props.onRestored.mockReset().mockResolvedValue(undefined);
+  jest.mocked(getDatabaseHistory).mockResolvedValue(records);
+});
+
+test('renders database metadata without a document-only author filter and confirms whole-database restore', async () => {
+  const session = { root: new Y.Doc({ guid: 'historical-root' }), rows: {}, destroy: jest.fn() };
+  const events = new EventEmitter();
+
+  jest.mocked(loadDatabaseHistoryPreview).mockResolvedValue(session);
+  const { unmount, rerender } = render(<HistoryWithRestoreNotice {...props} events={events} />);
+
+  const preview = await screen.findByTestId('historical-preview');
+
+  expect(screen.queryByText('versionHistory.onlyYours')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByTestId('database-history-restore'));
+  expect(screen.getByText(/whole database, including shared views, their sidebar entries, and rows/)).toBeInTheDocument();
+  expect(mockStart).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByTestId('database-history-confirm-restore'));
+  expect(mockStart).toHaveBeenCalledWith('v1');
+  mockRestoreBusy = true;
+  rerender(<HistoryWithRestoreNotice {...props} events={events} />);
+  const progress = screen.getByTestId('database-history-restore-progress');
+
+  expect(progress.closest('[data-testid="database-version-history-modal"]'))
+    .toBe(screen.getByTestId('database-version-history-modal'));
+  expect(progress.closest('aside')).toBeNull();
+  expect(await screen.findByRole('status')).toHaveTextContent('Restore queued…');
+  expect(screen.getByTestId('database-history-restore')).toBeDisabled();
+  expect(screen.getByTestId('database-history-restore')).not.toHaveAttribute('aria-busy');
+  expect(screen.getByTestId('historical-preview')).toBe(preview);
+  expect(preview.closest('[inert]')).not.toBeNull();
+  expect(screen.getByTestId('database-history-list').closest('aside')).toHaveAttribute('inert');
+  expect(screen.queryByRole('button', { name: 'Filter versions' })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByTestId('database-history-restore-close')).toHaveFocus());
+  expect(session.destroy).not.toHaveBeenCalled();
+  expect(screen.queryByTestId('reverted-dialog')).not.toBeInTheDocument();
+
+  mockRestoreError = 'The server is temporarily unavailable';
+  rerender(<HistoryWithRestoreNotice {...props} events={events} />);
+  expect(screen.queryByTestId('database-history-restore-progress')).not.toBeInTheDocument();
+  expect(screen.getByRole('alert')).toHaveTextContent(mockRestoreError);
+  expect(preview.closest('[inert]')).toBeNull();
+  expect(screen.queryByTestId('reverted-dialog')).not.toBeInTheDocument();
+  mockRestoreError = null;
+  rerender(<HistoryWithRestoreNotice {...props} events={events} />);
+  expect(screen.getByTestId('database-history-restore-progress')).toBeInTheDocument();
+  fireEvent.click(screen.getByTestId('database-history-restore-close'));
+  expect(props.onOpenChange).toHaveBeenCalledWith(false);
+  unmount();
+  expect(session.destroy).toHaveBeenCalledTimes(1);
+});
+
+test('destroys an obsolete preview that finishes after another version was selected', async () => {
+  const first = { root: new Y.Doc({ guid: 'obsolete' }), rows: {}, destroy: jest.fn() };
+  const second = { root: new Y.Doc({ guid: 'selected' }), rows: {}, destroy: jest.fn() };
+  let resolveFirst!: (value: typeof first) => void;
+
+  jest.mocked(loadDatabaseHistoryPreview)
+    .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+    .mockResolvedValueOnce(second);
+  const { unmount } = render(<DatabaseHistoryModal {...props} />);
+
+  await waitFor(() => expect(loadDatabaseHistoryPreview).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByText('Version 2'));
+  await screen.findByText('selected');
+  await act(async () => resolveFirst(first));
+  expect(first.destroy).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText('obsolete')).not.toBeInTheDocument();
+  expect(jest.mocked(loadDatabaseHistoryPreview).mock.calls[0][0].signal.aborted).toBe(true);
+  unmount();
+  expect(second.destroy).toHaveBeenCalledTimes(1);
+});
+
+test('shows preview errors without rendering live or incomplete database data', async () => {
+  jest.mocked(loadDatabaseHistoryPreview).mockRejectedValue(new Error('Snapshot was pruned'));
+  render(<DatabaseHistoryModal {...props} />);
+  await screen.findByText('Snapshot was pruned');
+  expect(screen.queryByTestId('historical-preview')).not.toBeInTheDocument();
+});
+
+
+test('automatic and recovery versions use saved timestamps as their primary labels', async () => {
+  const named = [records[0], records[1], { ...records[1], version: 'v3' }].map((record, index) => ({
+    ...record, name: index === 0 ? 'Before restore' : 'Database snapshot',
+    created_at: ['2026-09-10T00:00:00Z', '2026-09-09T00:00:00Z', '2026-09-08T00:00:00Z'][index],
+  }));
+
+  jest.mocked(getDatabaseHistory).mockResolvedValue(named);
+  jest.mocked(loadDatabaseHistoryPreview).mockResolvedValue({ root: new Y.Doc(), rows: {}, destroy: jest.fn() });
+  render(<DatabaseHistoryModal {...props} />);
+  const versions = await screen.findAllByTestId('database-history-version');
+
+  expect(screen.queryByText('Database snapshot')).not.toBeInTheDocument();
+  expect(screen.queryByText('Before restore')).not.toBeInTheDocument();
+  versions.forEach((version, index) => {
+    expect(version.querySelector('time')).toHaveAttribute('dateTime', named[index].created_at);
+    expect(version.querySelector('time')).toHaveTextContent(format(new Date(named[index].created_at), 'PPpp'));
+    expect(version.querySelector('time')?.parentElement).toHaveClass(
+      index === 0 ? 'text-text-info' : 'text-text-primary'
+    );
+  });
+});
+
+
+test('the shared filter menu resets pagination and loads the chosen date range', async () => {
+  const page = Array.from({ length: 30 }, (_, index) => ({ ...records[0], version: `v${index}` }));
+
+  jest.mocked(getDatabaseHistory).mockResolvedValue(page);
+  jest.mocked(loadDatabaseHistoryPreview).mockResolvedValue({ root: new Y.Doc(), rows: {}, destroy: jest.fn() });
+  render(<DatabaseHistoryModal {...props} />);
+  fireEvent.click(await screen.findByText('Load older versions'));
+  await waitFor(() => expect(getDatabaseHistory).toHaveBeenLastCalledWith('w', 'd', expect.objectContaining({
+    cursor: { before_changed_at: page[29].changed_at, before_version: 'v29' },
+  })));
+
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Filter versions' }), { key: 'Enter' });
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'versionHistory.last7Days' }));
+  await waitFor(() => expect(getDatabaseHistory).toHaveBeenLastCalledWith('w', 'd', expect.objectContaining({
+    cursor: undefined,
+    since: expect.any(Number),
+  })));
+  const since = jest.mocked(getDatabaseHistory).mock.calls[jest.mocked(getDatabaseHistory).mock.calls.length - 1]?.[2]?.since;
+
+  expect(Math.abs(Number(since) - (Date.now() - 7 * 86_400_000))).toBeLessThan(2000);
+  expect(screen.queryByText('versionHistory.onlyYours')).not.toBeInTheDocument();
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+  expect(props.onOpenChange).toHaveBeenCalledWith(false);
+});
+
+test('empty history disables restore and still allows closing the dialog', async () => {
+  jest.mocked(getDatabaseHistory).mockResolvedValue([]);
+  render(<DatabaseHistoryModal {...props} />);
+  await screen.findByText('No versions available.');
+  expect(screen.getByTestId('database-history-restore')).toBeDisabled();
+  expect(loadDatabaseHistoryPreview).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+  expect(props.onOpenChange).toHaveBeenCalledWith(false);
+});
+
+test('opening history finishes a saved successful restore without closing the newly opened dialog', async () => {
+  mockUseRealRestore = true;
+  const events = new EventEmitter();
+  const storageKey = 'af_database_history_restore:v1:server:user:w:d';
+  let finishReload!: () => void;
+
+  localStorage.setItem(storageKey, JSON.stringify({
+    version: 'v1', idempotencyKey: 'original-key', jobId: 'saved-job', enqueueUncertain: true,
+  }));
+  jest.mocked(getDatabaseRestoreJob).mockResolvedValue(successfulJob('saved-job', 'v1'));
+  jest.mocked(loadDatabaseHistoryPreview).mockImplementation(async ({ version }) => ({
+    root: new Y.Doc({ guid: version }), rows: {}, destroy: jest.fn(),
+  }));
+  props.onRestored.mockImplementation(() => new Promise<void>((resolve) => { finishReload = resolve; }));
+  const { rerender } = render(<HistoryWithRestoreNotice {...props} events={events} />);
+
+  await waitFor(() => expect(props.onRestored).toHaveBeenCalledWith('d', 'saved-job'));
+  expect(screen.queryByTestId('reverted-dialog')).not.toBeInTheDocument();
+  await act(async () => finishReload());
+  await acknowledgeRestore();
+  await waitFor(() => expect(localStorage.getItem(storageKey)).toBeNull());
+  await screen.findByTestId('historical-preview');
+  expect(props.onRestored).toHaveBeenCalledWith('d', 'saved-job');
+  expect(startDatabaseRestore).not.toHaveBeenCalled();
+  expect(props.onOpenChange).not.toHaveBeenCalled();
+  expect(screen.getByTestId('database-history-restore')).toBeEnabled();
+  rerender(<HistoryWithRestoreNotice {...props} events={events} open={false} />);
+  rerender(<HistoryWithRestoreNotice {...props} events={events} />);
+  await screen.findByTestId('historical-preview');
+  expect(props.onRestored).toHaveBeenCalledTimes(1);
+  expect(screen.queryByTestId('reverted-dialog')).not.toBeInTheDocument();
+});
+
+test('completed restores close once without previewing the recovery version and reopen on the latest page', async () => {
+  mockUseRealRestore = true;
+  const events = new EventEmitter();
+  let finishReload!: () => void;
+  const page = Array.from({ length: 30 }, (_, index) => ({ ...records[0], version: `page-${index}` }));
+  const older = { ...records[1], version: 'older', name: 'Older version' };
+  const recovery = { ...records[0], version: 'recovery', name: 'Before restore' };
+
+  jest.mocked(getDatabaseHistory)
+    .mockResolvedValueOnce(page)
+    .mockResolvedValueOnce([older])
+    .mockResolvedValueOnce([recovery, ...records]);
+  jest.mocked(loadDatabaseHistoryPreview).mockImplementation(async ({ version }) => ({
+    root: new Y.Doc({ guid: version }), rows: {}, destroy: jest.fn(),
+  }));
+  jest.mocked(startDatabaseRestore).mockResolvedValue(successfulJob('new-job', 'older'));
+  props.onRestored.mockImplementation(() => new Promise<void>((resolve) => { finishReload = resolve; }));
+  const { rerender } = render(<HistoryWithRestoreNotice {...props} events={events} />);
+
+  await screen.findByText('page-0');
+  fireEvent.click(screen.getByText('Load older versions'));
+  fireEvent.click(await screen.findByText('Older version'));
+  await screen.findByText('older');
+  expect(getDatabaseHistory).toHaveBeenCalledTimes(2);
+  expect(loadDatabaseHistoryPreview).toHaveBeenCalledTimes(2);
+
+  fireEvent.click(screen.getByTestId('database-history-restore'));
+  fireEvent.click(screen.getByTestId('database-history-confirm-restore'));
+  await waitFor(() => expect(startDatabaseRestore).toHaveBeenCalledWith('w', 'd', 'older', expect.any(String), expect.any(AbortSignal)));
+  await waitFor(() => expect(props.onRestored).toHaveBeenCalledWith('d', 'new-job'));
+  expect(screen.queryByTestId('reverted-dialog')).not.toBeInTheDocument();
+  expect(props.onOpenChange).not.toHaveBeenCalled();
+  expect(await screen.findByRole('status')).toHaveTextContent('Reloading database…');
+  await act(async () => finishReload());
+  await acknowledgeRestore();
+  await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
+  rerender(<HistoryWithRestoreNotice {...props} events={events} />);
+  expect(props.onOpenChange).toHaveBeenCalledTimes(1);
+  expect(getDatabaseHistory).toHaveBeenCalledTimes(2);
+  expect(loadDatabaseHistoryPreview).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText('recovery')).not.toBeInTheDocument();
+
+  rerender(<HistoryWithRestoreNotice {...props} events={events} open={false} />);
+  rerender(<HistoryWithRestoreNotice {...props} events={events} />);
+  await screen.findByText('recovery');
+  expect(getDatabaseHistory).toHaveBeenCalledTimes(3);
+  expect(getDatabaseHistory).toHaveBeenLastCalledWith('w', 'd', expect.objectContaining({ cursor: undefined }));
+  expect(props.onOpenChange).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText('Before restore')).not.toBeInTheDocument();
+  expect(props.onRestored).toHaveBeenCalledTimes(1);
+  expect(screen.queryByTestId('reverted-dialog')).not.toBeInTheDocument();
+});
+
+test('a failed database reload stays silent until reopening successfully finishes the saved restore', async () => {
+  mockUseRealRestore = true;
+  const events = new EventEmitter();
+  const storageKey = 'af_database_history_restore:v1:server:user:w:d';
+
+  jest.mocked(loadDatabaseHistoryPreview).mockImplementation(async ({ version }) => ({
+    root: new Y.Doc({ guid: version }), rows: {}, destroy: jest.fn(),
+  }));
+  jest.mocked(startDatabaseRestore).mockResolvedValue(successfulJob('retry-job', 'v1'));
+  jest.mocked(getDatabaseRestoreJob).mockResolvedValue(successfulJob('retry-job', 'v1'));
+  props.onRestored.mockRejectedValueOnce(new Error('Cannot reload restored database'));
+  const { rerender } = render(<HistoryWithRestoreNotice {...props} events={events} />);
+
+  await screen.findByTestId('historical-preview');
+  fireEvent.click(screen.getByTestId('database-history-restore'));
+  fireEvent.click(screen.getByTestId('database-history-confirm-restore'));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Cannot reload restored database');
+  expect(props.onRestored).toHaveBeenCalledWith('d', 'retry-job');
+  expect(props.onRestored).toHaveBeenCalledTimes(1);
+  expect(props.onOpenChange).not.toHaveBeenCalled();
+  expect(screen.queryByTestId('reverted-dialog')).not.toBeInTheDocument();
+  expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ jobId: 'retry-job' });
+
+  rerender(<HistoryWithRestoreNotice {...props} events={events} open={false} />);
+  rerender(<HistoryWithRestoreNotice {...props} events={events} />);
+  await acknowledgeRestore();
+  await waitFor(() => expect(localStorage.getItem(storageKey)).toBeNull());
+  expect(startDatabaseRestore).toHaveBeenCalledTimes(1);
+  expect(getDatabaseRestoreJob).toHaveBeenCalledWith('w', 'd', 'retry-job', expect.any(AbortSignal));
+  expect(props.onRestored).toHaveBeenCalledTimes(2);
+  expect(props.onOpenChange).not.toHaveBeenCalled();
+  expect(screen.getByTestId('database-history-restore')).toBeEnabled();
+});
