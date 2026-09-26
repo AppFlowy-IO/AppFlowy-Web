@@ -116,7 +116,7 @@ describe('database root storage generations', () => {
       async () => ({ database_restore_id: 'R', version: 'version' }), reset, localStorage);
 
     expect(await tracker.check('database')).toBe(false);
-    expect(reset).toHaveBeenCalledWith('database', { database_restore_id: 'R', version: 'version' });
+    expect(reset).toHaveBeenCalledWith('database', { database_restore_id: 'R', version: 'version' }, true);
     await reopened.provider.destroy();
     reopened.doc.destroy();
   });

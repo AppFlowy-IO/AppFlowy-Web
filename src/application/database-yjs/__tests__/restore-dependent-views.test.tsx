@@ -41,11 +41,13 @@ it('updates an open formula filter and sort when its rollup target is restored t
   ])
     .get(sourceField)
     .clone();
+
   fixture.baseFields.set(sourceField, formula);
   const view = new Y.Map() as YDatabaseView;
   const views = new Y.Map() as YDatabaseViews;
   const filter = new Y.Map() as YDatabaseFilter;
   const filters = new Y.Array() as YDatabaseFilters;
+
   filter.set(YjsDatabaseKey.id, 'filter');
   filter.set(YjsDatabaseKey.field_id, sourceField);
   filter.set(YjsDatabaseKey.type, FieldType.Formula);
@@ -55,6 +57,7 @@ it('updates an open formula filter and sort when its rollup target is restored t
   filters.push([filter]);
   const sort = new Y.Map() as YDatabaseSort;
   const sorts = new Y.Array() as YDatabaseSorts;
+
   sort.set(YjsDatabaseKey.id, 'sort');
   sort.set(YjsDatabaseKey.field_id, sourceField);
   sort.set(YjsDatabaseKey.condition, SortCondition.Ascending);
@@ -67,13 +70,16 @@ it('updates an open formula filter and sort when its rollup target is restored t
   fixture.baseDatabase.set(YjsDatabaseKey.views, views);
   const targetRows = fixture.baseRowIds.map((id) => {
     const source = fixture.baseRowMetas[id].getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row);
+
     return source.get(YjsDatabaseKey.cells).get(fixture.relationFieldId).get(YjsDatabaseKey.data).toArray()[0];
   });
   const clone = (doc: YDoc) => {
     const next = new Y.Doc({ guid: doc.guid }) as YDoc;
+
     Y.applyUpdate(next, Y.encodeStateAsUpdate(doc));
     return next;
   };
+
   let root = fixture.relatedFixture.databaseDoc;
   let rows = fixture.relatedFixture.rowMetas;
   const setAmounts = (values: number[]) =>
@@ -85,6 +91,7 @@ it('updates an open formula filter and sort when its rollup target is restored t
         .get(fixture.amountFieldId)
         .set(YjsDatabaseKey.data, String(value));
     });
+
   setAmounts([10, 20]);
   const context: DatabaseContextState = {
     databaseDoc: fixture.baseDoc,
@@ -107,6 +114,7 @@ it('updates an open formula filter and sort when its rollup target is restored t
     }),
     { wrapper }
   );
+
   await waitFor(() => {
     expect(opened.result.current.ids).toEqual([fixture.baseRowIds[1]]);
     expect(opened.result.current.first).toBe('20');
@@ -121,6 +129,7 @@ it('updates an open formula filter and sort when its rollup target is restored t
     act(() => {
       const nextRoot = clone(root);
       const nextRows = Object.fromEntries(Object.entries(rows).map(([id, doc]) => [id, clone(doc)]));
+
       root.destroy();
       Object.values(rows).forEach((doc) => doc.destroy());
       root = nextRoot;
@@ -133,5 +142,6 @@ it('updates an open formula filter and sort when its rollup target is restored t
       expect(opened.result.current.first).toBe(String(amounts[0] * 2));
     });
   }
+
   opened.unmount();
 });

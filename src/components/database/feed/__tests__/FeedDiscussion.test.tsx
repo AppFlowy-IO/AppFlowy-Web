@@ -83,7 +83,8 @@ describe('in-feed discussions', () => {
     const { setVisible } = setup();
 
     fireEvent.click(screen.getByTestId('feed-comment-summary-row'));
-    fireEvent.click(await screen.findByTestId('row-comment-emoji-button'));
+    // The first discussion mount can exceed the default 1s lookup on a cold CI worker.
+    fireEvent.click(await screen.findByTestId('row-comment-emoji-button', undefined, { timeout: 5000 }));
     expect(screen.getAllByRole('dialog')).toHaveLength(2);
     setVisible(false);
     await waitFor(() => expect(screen.queryAllByRole('dialog')).toHaveLength(0));
