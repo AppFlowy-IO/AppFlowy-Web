@@ -30,8 +30,6 @@ import {
   localizeFeatureLabel,
   localizeFeatureTooltip,
   localizeFeatureValue,
-  localizePlanDescription,
-  localizePlanName,
   splitPriceTemplate,
   toSubscriptionPlan,
   workspacePlans,
@@ -306,8 +304,8 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
 
       return {
         plan,
-        name: localizePlanName(translate, plan),
-        description: localizePlanDescription(translate, plan),
+        name: plan.name,
+        description: plan.description,
         price: splitPriceTemplate(
           t(free ? 'settings.comparePlanDialog.freePlan.price' : 'settings.comparePlanDialog.proPlan.price'),
           amount
@@ -318,8 +316,9 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
         highlighted: actionType === 'upgrade',
       };
     });
-  }, [catalog, currentPlan, isHosted, t, translate]);
+  }, [catalog, currentPlan, isHosted, t]);
 
+  // Billing owns the feature order; keep labels and plan values in its array order.
   const rows: PricingComparisonRow[] = catalog?.comparison ?? [];
 
   return (

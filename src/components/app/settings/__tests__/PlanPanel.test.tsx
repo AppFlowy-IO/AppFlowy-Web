@@ -61,9 +61,9 @@ describe('PlanPanel', () => {
     expect(screen.queryByText('AI Max')).toBeNull();
     expect(screen.queryByTestId('plan-addon-ai-max')).toBeNull();
     expect(screen.getByTestId('current-plan-box').textContent).toContain('Current plan');
-    // Plan copy comes from the pricing catalog, localized with the compare dialog's strings.
-    expect(screen.getByTestId('current-plan-box').textContent).toContain('Free');
-    expect(screen.getByTestId('current-plan-box').textContent).toContain('For individuals');
+    // Server plan copy takes precedence over the client's older Free translations.
+    expect(screen.getByTestId('current-plan-box').textContent).toContain('Personal');
+    expect(screen.getByTestId('current-plan-box').textContent).toContain('For personal productivity');
 
     fireEvent.click(screen.getByTestId('plan-change-plan'));
     expect(screen.getByTestId('location-search').textContent).toBe('?action=change_plan');
@@ -86,6 +86,7 @@ describe('PlanPanel', () => {
     expect(screen.queryByTestId('plan-toggle-pro')).toBeNull();
     expect(screen.queryByTestId('plan-toggle-unlimited-ai')).toBeNull();
     expect(screen.getByTestId('current-plan-box').textContent).toContain('Pro');
+    expect(screen.getByTestId('current-plan-box').textContent).toContain('For professional work and teams');
     expect(screen.getByTestId('current-plan-box').textContent).toContain(
       `Downgraded to Free on ${renderDate(PERIOD_END, 'MM/DD/YYYY', true)}.`
     );

@@ -4,6 +4,10 @@ import {
   DatabaseCsvImportCreateResponse,
   DatabaseCsvImportRequest,
   DatabaseCsvImportStatusResponse,
+  DocumentFileImportCreateResponse,
+  DocumentFileImportFormat,
+  DocumentFileImportRequest,
+  DocumentFileImportStatusResponse,
 } from '@/application/types';
 import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
@@ -326,4 +330,72 @@ export async function cancelDatabaseCsvImportTask(workspaceId: string, taskId: s
   const url = `/api/workspace/${workspaceId}/database/import/csv/${taskId}/cancel`;
 
   return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url));
+}
+
+/**
+ * Content type the server signs the document-import presigned URL for. The PUT must carry the
+ * same value or S3 rejects the signature.
+ */
+export const DOCUMENT_FILE_CONTENT_TYPES: Record<DocumentFileImportFormat, string> = {
+  html: 'text/html',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  pdf: 'application/pdf',
+};
+
+/** Stage one HTML / DOCX / PDF upload that becomes a single Document page under a parent. */
+export async function createDocumentFileImportTask(
+  workspaceId: string,
+  payload: DocumentFileImportRequest
+): Promise<DocumentFileImportCreateResponse> {
+  const url = `/api/import/${encodeURIComponent(workspaceId)}/document`;
+
+  return executeAPIRequest<DocumentFileImportCreateResponse>(() =>
+    getAxios()?.post<APIResponse<DocumentFileImportCreateResponse>>(url, payload, {
+      headers: {
+        'X-Host': getConfigValue('APPFLOWY_BASE_URL', ''),
+      },
+    })
+  );
+}
+
+export async function uploadDocumentFileImportFile(
+  presignedUrl: string,
+  file: File,
+  format: DocumentFileImportFormat,
+  onProgress?: (progress: number) => void,
+  signal?: AbortSignal
+) {
+  const response = await axios.put(presignedUrl, file, {
+    onUploadProgress: (progressEvent) => {
+      if (!onProgress) return;
+      const { progress = 0 } = progressEvent;
+
+      Log.debug(`Upload progress: ${progress * 100}%`);
+      onProgress(progress);
+    },
+    headers: {
+      'Content-Type': DOCUMENT_FILE_CONTENT_TYPES[format],
+    },
+    signal,
+  });
+
+  if (response.status === 200 || response.status === 204) {
+    return;
+  }
+
+  return Promise.reject({
+    code: -1,
+    message: `Upload ${format} file failed. ${response.statusText}`,
+  });
+}
+
+export async function getDocumentFileImportStatus(
+  workspaceId: string,
+  taskId: string
+): Promise<DocumentFileImportStatusResponse> {
+  const url = `/api/import/${encodeURIComponent(workspaceId)}/document/${encodeURIComponent(taskId)}`;
+
+  return executeAPIRequest<DocumentFileImportStatusResponse>(() =>
+    getAxios()?.get<APIResponse<DocumentFileImportStatusResponse>>(url)
+  );
 }

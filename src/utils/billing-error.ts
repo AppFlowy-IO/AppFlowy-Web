@@ -1,9 +1,5 @@
-import i18next from 'i18next';
-
 import { ERROR_CODE } from '@/application/constants';
-import { isOfficialHostedServer } from '@/utils/server-info';
-
-const PRO_WORKSPACE_REQUIRED = 'Upgrade this workspace to Pro to use this feature or increase its limits.';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 
 // Only include errors whose remedy is a Pro workspace. AI Max, paid-plan
 // quotas, payload limits and app-version upgrades have different remedies.
@@ -36,17 +32,7 @@ export function isWorkspaceLimitError(error: unknown): boolean {
 
 /** Add actionable upgrade guidance without replacing more specific server guidance. */
 export function getBillingErrorMessage(error: unknown): string | undefined {
-  // These codes can also describe administrator-configured self-hosted limits.
-  // Use the same server-info decision as the UI, including localhost.
-  if (!isOfficialHostedServer()) return undefined;
   const payload = getWorkspaceLimitError(error);
 
-  if (!payload) return undefined;
-  const { message } = payload;
-
-  if (typeof message === 'string' && /\bPro\b/i.test(message)) return message;
-
-  return (
-    i18next.t('billingLimits.workspaceProRequired', { defaultValue: PRO_WORKSPACE_REQUIRED }) || PRO_WORKSPACE_REQUIRED
-  );
+  return payload ? getWorkspacePlanPolicy().getUpgradeMessage(payload.message) : undefined;
 }

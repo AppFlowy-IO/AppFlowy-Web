@@ -290,6 +290,13 @@
     "databaseFromV010": "Database from v0.1.0",
     "notionZip": "Notion Exported Zip File",
     "confluenceZip": "Confluence HTML or CSV (.zip)",
+    "html": "HTML",
+    "word": "Word (.docx)",
+    "pdf": "PDF",
+    "importedWithWarnings": "{{name}} imported, but some content could not be converted: {{summary}}",
+    "fileTooLarge": "{{name}} is larger than the {{limit}} MB limit",
+    "storageLimitExceeded": "This workspace does not have enough storage for this import. Upgrade the workspace plan or contact your workspace administrator.",
+    "storageLimitAdministrator": "This workspace does not have enough storage for this import. Contact your workspace administrator.",
     "csv": "CSV",
     "database": "Database",
     "success": "Imported successfully",
@@ -4250,6 +4257,7 @@
       "hasJoined": "You've joined to\n<workspace />"
     },
     "error": {
+      "administratorLimitDescription": "The server rejected this request because a configured limit was reached. Contact your workspace administrator.",
       "title": "Something went wrong",
       "description": "This might be due to a network issue or a temporary server error. Please check your internet connection or try again later.\n\nIf the problem persists, contact <support/>.",
       "retry": "Retry"

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { Subscription, SubscriptionPlan } from '@/application/types';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { useServerHostingMode, useServerInfoState } from '@/components/app/hooks/useServerInfo';
 import { getProAccessPlanFromSubscriptions } from '@/utils/subscription';
 
@@ -185,8 +186,9 @@ export function useSubscriptionPlan(
   const { cacheKey, enabled = true } = options;
   const hostingMode = useServerHostingMode();
   const serverInfo = useServerInfoState();
-  const isHosted = hostingMode === 'cloud';
-  const isSelfHosted = hostingMode === 'self-hosted';
+  const policy = getWorkspacePlanPolicy(hostingMode);
+  const isHosted = policy.usesHostedBilling;
+  const isSelfHosted = policy.bypassesPlanLimits;
   const identity = cacheKey ?? getSubscriptions;
   const usesSharedCache = Boolean(cacheKey && getSubscriptions);
   const initialPlan = isHosted
@@ -371,7 +373,7 @@ export function useSubscriptionPlan(
 
   return {
     activeSubscriptionPlan,
-    isPro: activeSubscriptionPlan === SubscriptionPlan.Pro || isSelfHosted,
+    isPro: policy.hasProAccess(activeSubscriptionPlan),
     isLoading: currentState.status === 'loading',
     hasError: currentState.status === 'error',
     loadSubscription,
