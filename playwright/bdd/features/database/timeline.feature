@@ -246,7 +246,7 @@ Feature: Timeline view interactions
     Given "Design" has a progress field at 40 percent
     When I show "Progress" as a table column
     Then the table has a "Progress" column reading 40 for "Design"
-    And the docked table is 150 px wider
+    And the docked table is 140 px wider
     And the "Progress" column header, cells and calculation line up
     When I set the "Progress" column calculation to "Sum"
     Then the "Progress" column calculation reads "Sum40"

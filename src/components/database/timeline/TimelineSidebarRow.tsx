@@ -14,7 +14,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 
 import { TimelineRowModel } from './hooks/useTimelineRows';
-import { TimelineTableViewport, timelinePropertyColumnWidth, useTimelineTableColumnWidths } from './TimelineTable';
+import { timelineColumnWidthStyle } from './table-layout';
+import { TimelineTableViewport } from './TimelineTable';
 
 import type { TimelineRowActions } from './TimelineRow';
 
@@ -58,7 +59,6 @@ export const TimelineSidebarRow = memo(
     onDropRow,
   }: TimelineSidebarRowProps) => {
     const { t } = useTranslation();
-    const columnWidths = useTimelineTableColumnWidths();
     const meta = useRowMetaSelector(row.rowId);
     const icon = meta?.icon ?? '';
     const cellRef = useRef<HTMLDivElement | null>(null);
@@ -131,7 +131,7 @@ export const TimelineSidebarRow = memo(
             <div
               key={fieldId}
               className='flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2'
-              style={{ width: timelinePropertyColumnWidth(columnWidths, fieldId) }}
+              style={timelineColumnWidthStyle(fieldId)}
               data-testid={`timeline-table-cell-${row.rowId}-${fieldId}`}
             >
               <CardField rowId={row.rowId} fieldId={fieldId} />

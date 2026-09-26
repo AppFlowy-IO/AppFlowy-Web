@@ -1,9 +1,5 @@
 import { createContext, ReactNode, UIEvent, useCallback, useContext, useLayoutEffect, useMemo, useRef } from 'react';
 
-import { TIMELINE_TABLE_COLUMN_WIDTH } from './constants';
-
-const EMPTY_COLUMN_WIDTHS: ReadonlyMap<string, number> = new Map();
-
 /** Leave room for dates even when every property is shown. */
 export function timelineTableViewportWidth(contentWidth: number, availableWidth: number) {
   return Math.min(contentWidth, Math.max(0, availableWidth) * 0.6);
@@ -12,7 +8,6 @@ export function timelineTableViewportWidth(contentWidth: number, availableWidth:
 interface TableScroll {
   contentWidth: number;
   viewportWidth: number;
-  columnWidths: ReadonlyMap<string, number>;
   register: (element: HTMLDivElement) => () => void;
   onScroll: (event: UIEvent<HTMLDivElement>) => void;
 }
@@ -23,12 +18,10 @@ const TableScrollContext = createContext<TableScroll | null>(null);
 export function TimelineTableProvider({
   contentWidth,
   viewportWidth,
-  columnWidths = EMPTY_COLUMN_WIDTHS,
   children,
 }: {
   contentWidth: number;
   viewportWidth: number;
-  columnWidths?: ReadonlyMap<string, number>;
   children: ReactNode;
 }) {
   const elements = useRef(new Set<HTMLDivElement>());
@@ -58,19 +51,11 @@ export function TimelineTableProvider({
   }, [contentWidth, viewportWidth]);
 
   const value = useMemo(
-    () => ({ contentWidth, viewportWidth, columnWidths, register, onScroll }),
-    [contentWidth, viewportWidth, columnWidths, register, onScroll]
+    () => ({ contentWidth, viewportWidth, register, onScroll }),
+    [contentWidth, viewportWidth, register, onScroll]
   );
 
   return <TableScrollContext.Provider value={value}>{children}</TableScrollContext.Provider>;
-}
-
-export function useTimelineTableColumnWidths() {
-  return useContext(TableScrollContext)?.columnWidths ?? EMPTY_COLUMN_WIDTHS;
-}
-
-export function timelinePropertyColumnWidth(widths: ReadonlyMap<string, number>, fieldId: string) {
-  return widths.get(fieldId) ?? TIMELINE_TABLE_COLUMN_WIDTH;
 }
 
 export function TimelineTableViewport({ children, scrollbar = false }: { children?: ReactNode; scrollbar?: boolean }) {

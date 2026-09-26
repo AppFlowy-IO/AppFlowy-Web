@@ -57,7 +57,6 @@ import {
   TIMELINE_MIN_PRIMARY_COLUMN_WIDTH,
   TIMELINE_MIN_TABLE_COLUMN_WIDTH,
   TIMELINE_ROW_HEIGHT,
-  TIMELINE_SIDEBAR_WIDTH,
   TIMELINE_TABLE_CONTROL_WIDTH,
   TIMELINE_TODAY_ANCHOR,
 } from './constants';
@@ -75,6 +74,8 @@ import { useTimelinePermissions } from './hooks/useTimelinePermissions';
 import { useTimelineRange } from './hooks/useTimelineRange';
 import { useTimelineRects } from './hooks/useTimelineRects';
 import { TimelineRowModel, useTimelineRows } from './hooks/useTimelineRows';
+import { useTimelineSavedColumnWidths } from './hooks/useTimelineSavedColumnWidths';
+import { useTimelineTableFieldIds } from './hooks/useTimelineTableFieldIds';
 import { useTimelineVirtualizer } from './hooks/useTimelineVirtualizer';
 import { buildDependencyGraph, collectDependents, linkOf } from './scale/dependencies';
 import {
@@ -88,6 +89,13 @@ import {
   totalWidth,
   xToDate,
 } from './scale/geometry';
+import {
+  TIMELINE_DEFAULT_PRIMARY_COLUMN_WIDTH,
+  TimelineColumnResize,
+  timelineColumnWidthVars,
+  timelinePropertyColumnWidth,
+  timelineTableColumnWidths,
+} from './table-layout';
 import { hitTestLink, TimelineArrows, TimelineLinkSelection } from './TimelineArrows';
 import { TimelineBarDragLabel } from './TimelineBar';
 import { TimelineCalculation } from './TimelineCalculation';
@@ -98,21 +106,12 @@ import { TimelineGroupFooter, TimelineGroupRow } from './TimelineGroupRow';
 import { TimelineHeader } from './TimelineHeader';
 import { TimelineLinkEditor } from './TimelineLinkEditor';
 import { TimelineRow, TimelineRowActions } from './TimelineRow';
-import {
-  TimelineTableProvider,
-  TimelineTableViewport,
-  timelinePropertyColumnWidth,
-  timelineTableViewportWidth,
-} from './TimelineTable';
-import { TimelineColumnResize, timelineTableColumnWidths } from './table-layout';
+import { TimelineTableProvider, TimelineTableViewport, timelineTableViewportWidth } from './TimelineTable';
 import { TimelineToolbar } from './TimelineToolbar';
 
-// Table columns are selected independently of the bar's visible properties.
-const TABLE_FIELD_VISIBILITIES = [
-  FieldVisibility.AlwaysShown,
-  FieldVisibility.HideWhenEmpty,
-  FieldVisibility.AlwaysHidden,
-];
+// Calendar cards carry only the title; a timeline bar adds chips solely for
+// properties the user set to "always shown" in this view's Properties menu.
+const CARD_FIELD_VISIBILITIES = [FieldVisibility.AlwaysShown];
 
 function dragLabelFor(preview: TimelineDragPreview): TimelineBarDragLabel {
   if (preview.mode === 'progress') return { side: 'end', text: `${preview.progress ?? 0}%` };
@@ -171,11 +170,8 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const showSidebar = localOverride?.showTable ?? setting.showTable;
   // Only columns whose field still exists are shown, in the setting's order.
   const databaseFields = useDatabaseFields();
-  const fields = useFieldsSelector(TABLE_FIELD_VISIBILITIES);
-  const tableFieldIds = useMemo(
-    () => setting.tableFieldIds.filter((fieldId) => fieldId !== primaryFieldId && databaseFields?.has(fieldId)),
-    [databaseFields, primaryFieldId, setting.tableFieldIds]
-  );
+  const savedColumnWidths = useTimelineSavedColumnWidths();
+  const tableFieldIds = useTimelineTableFieldIds(setting.tableFieldIds, primaryFieldId);
   const [columnResize, setColumnResize] = useState<(TimelineColumnResize & { viewId: string }) | null>(null);
   const activeColumnResize =
     showSidebar &&
@@ -185,11 +181,12 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
       ? columnResize
       : null;
   const columnWidths = useMemo(
-    () => timelineTableColumnWidths(fields, primaryFieldId, tableFieldIds, activeColumnResize),
-    [fields, primaryFieldId, tableFieldIds, activeColumnResize]
+    () => timelineTableColumnWidths(savedColumnWidths, primaryFieldId, tableFieldIds, activeColumnResize),
+    [savedColumnWidths, primaryFieldId, tableFieldIds, activeColumnResize]
   );
+  const columnWidthVars = useMemo(() => timelineColumnWidthVars(columnWidths), [columnWidths]);
   const primaryColumnWidth =
-    (primaryFieldId && columnWidths.get(primaryFieldId)) || TIMELINE_SIDEBAR_WIDTH - TIMELINE_TABLE_CONTROL_WIDTH;
+    (primaryFieldId && columnWidths.get(primaryFieldId)) || TIMELINE_DEFAULT_PRIMARY_COLUMN_WIDTH;
   const handleColumnResize = useCallback(
     (fieldId: string, width: number | null) => {
       setColumnResize((current) => {
@@ -289,6 +286,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     sidebarWidth,
   });
 
+  const fields = useFieldsSelector(CARD_FIELD_VISIBILITIES);
   const propertyFields = useMemo(
     () =>
       fields.filter(
@@ -648,7 +646,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const lastVisibleIndex = virtualItems[virtualItems.length - 1]?.index ?? -1;
 
   return (
-    <TimelineTableProvider contentWidth={tableContentWidth} viewportWidth={sidebarWidth} columnWidths={columnWidths}>
+    <TimelineTableProvider contentWidth={tableContentWidth} viewportWidth={sidebarWidth}>
       <div
         className={cn(
           'mx-24 flex flex-col max-sm:!mx-6',
@@ -657,7 +655,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
         )}
         // Same inline margins as the calendar: the page's gutters on desktop, or
         // whatever an embedding document block dictates.
-        style={{ marginLeft: paddingStart, marginRight: paddingEnd }}
+        style={{ ...columnWidthVars, marginLeft: paddingStart, marginRight: paddingEnd }}
         data-testid='timeline-view'
       >
         <TimelineToolbar
@@ -704,26 +702,30 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                     </div>
                   ) : null}
                   {showSidebar
-                    ? tableFieldIds.map((fieldId) => (
-                        <div
-                          key={fieldId}
-                          className='relative flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2 text-sm text-text-secondary'
-                          style={{ width: timelinePropertyColumnWidth(columnWidths, fieldId) }}
-                          data-testid={`timeline-table-header-${fieldId}`}
-                        >
-                          <FieldDisplay fieldId={fieldId} className='min-w-0 [&_svg]:h-4 [&_svg]:w-4' />
-                          {permissions.editable ? (
-                            <TimelineColumnResizeHandle
-                              key={viewId}
-                              fieldId={fieldId}
-                              width={timelinePropertyColumnWidth(columnWidths, fieldId)}
-                              minWidth={TIMELINE_MIN_TABLE_COLUMN_WIDTH}
-                              onResize={handleColumnResize}
-                              onCommit={resizeColumn}
-                            />
-                          ) : null}
-                        </div>
-                      ))
+                    ? tableFieldIds.map((fieldId) => {
+                        const width = timelinePropertyColumnWidth(columnWidths, fieldId);
+
+                        return (
+                          <div
+                            key={fieldId}
+                            className='relative flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2 text-sm text-text-secondary'
+                            style={{ width }}
+                            data-testid={`timeline-table-header-${fieldId}`}
+                          >
+                            <FieldDisplay fieldId={fieldId} className='min-w-0 [&_svg]:h-4 [&_svg]:w-4' />
+                            {permissions.editable ? (
+                              <TimelineColumnResizeHandle
+                                key={viewId}
+                                fieldId={fieldId}
+                                width={width}
+                                minWidth={TIMELINE_MIN_TABLE_COLUMN_WIDTH}
+                                onResize={handleColumnResize}
+                                onCommit={resizeColumn}
+                              />
+                            ) : null}
+                          </div>
+                        );
+                      })
                     : null}
                   <Tooltip>
                     <TooltipTrigger asChild>
