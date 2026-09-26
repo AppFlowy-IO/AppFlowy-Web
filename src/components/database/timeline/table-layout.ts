@@ -9,6 +9,8 @@ import {
 import type { CSSProperties } from 'react';
 
 export const TIMELINE_DEFAULT_PRIMARY_COLUMN_WIDTH = TIMELINE_SIDEBAR_WIDTH - TIMELINE_TABLE_CONTROL_WIDTH;
+export const TIMELINE_SIDEBAR_WIDTH_PROPERTY = '--timeline-sidebar-width';
+export const TIMELINE_SIDEBAR_WIDTH_CSS = `var(${TIMELINE_SIDEBAR_WIDTH_PROPERTY}, 0px)`;
 
 export interface TimelineColumnResize {
   fieldId: string;
@@ -53,9 +55,10 @@ function columnWidthVar(fieldId: string) {
  * Widths published as CSS variables on the view root, so memoized rows follow
  * a resize through layout alone instead of re-rendering for every width.
  */
-export function timelineColumnWidthVars(widths: ReadonlyMap<string, number>) {
+export function timelineColumnWidthVars(widths: ReadonlyMap<string, number>, sidebarWidth?: number) {
   const vars: Record<string, string> = {};
 
+  if (sidebarWidth !== undefined) vars[TIMELINE_SIDEBAR_WIDTH_PROPERTY] = `${sidebarWidth}px`;
   widths.forEach((width, fieldId) => {
     vars[columnWidthVar(fieldId)] = `${width}px`;
   });

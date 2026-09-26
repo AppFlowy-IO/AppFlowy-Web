@@ -1,9 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { ComponentProps } from 'react';
+import { ComponentProps, ReactNode } from 'react';
 
 import { FieldVisibility } from '@/application/database-yjs';
 
 import { TimelineBar } from '../TimelineBar';
+import { TimelineTableProvider } from '../TimelineTable';
 
 const mockIconClick = jest.fn();
 const mockCheckboxClick = jest.fn();
@@ -31,16 +32,25 @@ jest.mock('@/components/database/fullcalendar/event/eventAppearance', () => ({
   useCalendarEventPast: () => false,
 }));
 jest.mock('@/components/ui/tooltip', () => ({
-  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Tooltip: ({ children, onOpenChange }: { children: React.ReactNode; onOpenChange: (open: boolean) => void }) => (
+    <div onMouseEnter={() => onOpenChange(true)} onMouseLeave={() => onOpenChange(false)} data-testid='tooltip'>
+      {children}
+    </div>
+  ),
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  TooltipContent: () => null,
+  TooltipContent: ({ collisionPadding }: { collisionPadding: { left: number } }) => (
+    <output data-testid='tooltip-left-padding'>{collisionPadding.left}</output>
+  ),
 }));
 
-function setup(overrides: Partial<ComponentProps<typeof TimelineBar>> = {}) {
+function setup(
+  overrides: Partial<ComponentProps<typeof TimelineBar>> = {},
+  wrapper?: React.ComponentType<{ children: ReactNode }>
+) {
   const onPointerDown = jest.fn();
   const onOpen = jest.fn();
 
-  render(
+  const bar = (
     <TimelineBar
       row={{ rowId: 'row', title: 'Task', start: new Date(2026, 8, 16), allDay: true, isRange: false }}
       rect={{ left: 20, width: 300 }}
@@ -52,7 +62,9 @@ function setup(overrides: Partial<ComponentProps<typeof TimelineBar>> = {}) {
       {...overrides}
     />
   );
-  return { onPointerDown, onOpen };
+  const rendered = render(bar, { wrapper });
+
+  return { ...rendered, bar, onPointerDown, onOpen };
 }
 
 beforeEach(() => jest.clearAllMocks());
@@ -98,4 +110,34 @@ test('system date bindings disable only date gestures', () => {
   fireEvent.pointerDown(screen.getByTestId('timeline-handle-progress-row'));
   expect(onPointerDown).toHaveBeenCalledWith(expect.anything(), 'progress');
   expect(screen.getByTestId('timeline-link-row')).not.toBeNull();
+});
+
+test('a hover card reads the resized table boundary only when opened', () => {
+  const boundary = document.createElement('div');
+  const bounds = jest.spyOn(boundary, 'getBoundingClientRect').mockReturnValue({ left: 96 } as DOMRect);
+  let width = 280;
+  const Wrapper = ({ children }: { children: ReactNode }) => (
+    <TimelineTableProvider contentWidth={width} viewportWidth={width}>
+      {children}
+    </TimelineTableProvider>
+  );
+  const { bar, rerender } = setup({ hoverCardBoundary: boundary }, Wrapper);
+
+  expect(bounds).not.toHaveBeenCalled();
+  fireEvent.mouseEnter(screen.getByTestId('tooltip'));
+  expect(screen.getByTestId('tooltip-left-padding').textContent).toBe('376');
+  fireEvent.mouseLeave(screen.getByTestId('tooltip'));
+  // The closed card does not measure on a resize; its next opening uses the
+  // latest width even though the bar's props never changed.
+  width = 480;
+  rerender(bar);
+  expect(bounds).toHaveBeenCalledTimes(1);
+  fireEvent.mouseEnter(screen.getByTestId('tooltip'));
+  expect(screen.getByTestId('tooltip-left-padding').textContent).toBe('576');
+  expect(bounds).toHaveBeenCalledTimes(2);
+  // A remote resize while it is open still keeps the card clear of the table.
+  width = 580;
+  rerender(bar);
+  expect(screen.getByTestId('tooltip-left-padding').textContent).toBe('676');
+  bounds.mockRestore();
 });

@@ -184,7 +184,6 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     () => timelineTableColumnWidths(savedColumnWidths, primaryFieldId, tableFieldIds, activeColumnResize),
     [savedColumnWidths, primaryFieldId, tableFieldIds, activeColumnResize]
   );
-  const columnWidthVars = useMemo(() => timelineColumnWidthVars(columnWidths), [columnWidths]);
   const primaryColumnWidth =
     (primaryFieldId && columnWidths.get(primaryFieldId)) || TIMELINE_DEFAULT_PRIMARY_COLUMN_WIDTH;
   const handleColumnResize = useCallback(
@@ -206,6 +205,10 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     : TIMELINE_COLLAPSED_SIDEBAR_WIDTH;
   const scroll = useScrollWindow(scrollerRef);
   const sidebarWidth = timelineTableViewportWidth(tableContentWidth, scroll.clientWidth);
+  const columnWidthVars = useMemo(
+    () => timelineColumnWidthVars(columnWidths, sidebarWidth),
+    [columnWidths, sidebarWidth]
+  );
 
   const { rows, emptyEvents, rowOrders, hasEndField } = useTimelineRows(showSidebar);
   const grouping = useTimelineGrouping();
@@ -855,7 +858,6 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                       rect={rect}
                       offscreenLeft={offscreenLeft}
                       offscreenRight={offscreenRight}
-                      sidebarWidth={sidebarWidth}
                       showSidebar={showSidebar}
                       propertyFields={propertyFields}
                       editable={permissions.editable}
