@@ -16,9 +16,9 @@ import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   AppendBreadcrumb,
+  BindViewSync,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
   DuplicatePageOperationOptions,
@@ -149,7 +149,7 @@ export interface Database2Props {
   canShare?: boolean;
   createRow?: CreateRow;
   loadView?: LoadView;
-  bindViewSync?: (doc: YDoc) => SyncContext | null;
+  bindViewSync?: BindViewSync;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   /**
    * Load a row sub-document (document content inside a database row).

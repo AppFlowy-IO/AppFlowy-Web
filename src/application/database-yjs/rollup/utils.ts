@@ -17,6 +17,7 @@ const NUMERIC_ROLLUP_CALCULATIONS = new Set<CalculationType>([
   CalculationType.CountUnchecked,
   CalculationType.PercentChecked,
   CalculationType.PercentUnchecked,
+  CalculationType.PercentValue,
   CalculationType.PercentEmpty,
   CalculationType.PercentNotEmpty,
   CalculationType.CountUnique,

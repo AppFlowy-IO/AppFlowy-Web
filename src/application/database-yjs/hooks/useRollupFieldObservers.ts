@@ -17,12 +17,14 @@ import { getEffectiveFiltersSnapshot } from '@/application/database-yjs/filter';
 import type { FormulaRowSources } from '@/application/database-yjs/formula/useFormulaRelationTitles';
 import { invalidateRelationCell } from '@/application/database-yjs/relation/cache';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
+import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
+import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
 import { invalidateRollupCell } from '@/application/database-yjs/rollup/cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { YDatabase, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
-import { rememberRollupTarget, migrateRollupFilters } from '../rollup/filter';
+import { rememberRollupTarget, migrateRollupFilters, resolvedRollupSourceType } from '../rollup/filter';
 
 const ROLLUP_OBSERVER_POOL_SIZE = 4;
 const NO_ROLLUP_FIELDS: readonly string[] = [];
@@ -60,11 +62,13 @@ export function useRollupFieldObservers(
   const view = useDatabaseView();
   const sorts = view?.get(YjsDatabaseKey.sorts);
   const filters = view?.get(YjsDatabaseKey.filters);
-  const { loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { loadView, createRow, getViewIdFromDatabaseId, workspaceId, bindViewSync, scheduleDeferredCleanup } =
+    useDatabaseContext();
   const [observerRevision, setObserverRevision] = useState(0);
 
   useEffect(() => {
-    if ((!liveRows && !getCachedRowDocs) || !fields || !database || !loadView || !createRow || !getViewIdFromDatabaseId) return;
+    if ((!liveRows && !getCachedRowDocs) || !fields || !database || !loadView || !createRow || !getViewIdFromDatabaseId)
+      return;
     if (!observeConditions && additionalRollupFieldIds.length === 0) return;
 
     // Find relation and rollup fields used in sorts/filters.
@@ -108,6 +112,7 @@ export function useRollupFieldObservers(
     const observerCleanups: Array<() => void> = [];
     const rowDocCache = new Map<string, YDoc>();
     const relatedDocCache = new Map<string, YDoc | null>();
+    const retainedMetadata = new Set<YDoc>();
     const viewIdCache = new Map<string, string | null>();
     const debouncedChange = debounce(onConditionsChange, 200);
     const selectedIds = rowIdsKey ? new Set<string>(JSON.parse(rowIdsKey)) : undefined;
@@ -151,7 +156,9 @@ export function useRollupFieldObservers(
             | YDatabaseRow
             | undefined;
 
-          return JSON.stringify(relationIds.map((id) => getRelationRowIdsFromCell(row?.get(YjsDatabaseKey.cells)?.get(id))));
+          return JSON.stringify(
+            relationIds.map((id) => getRelationRowIdsFromCell(row?.get(YjsDatabaseKey.cells)?.get(id)))
+          );
         };
 
         let previousDoc = rowSource(rowId);
@@ -198,6 +205,11 @@ export function useRollupFieldObservers(
       });
 
       if (cancelled) return null;
+      if (doc && !retainedMetadata.has(doc)) {
+        retainedMetadata.add(doc);
+        observerCleanups.push(retainRollupSource({ bindViewSync, scheduleDeferredCleanup }, doc));
+      }
+
       relatedDocCache.set(databaseId, doc);
       return doc;
     };
@@ -312,6 +324,54 @@ export function useRollupFieldObservers(
           debouncedChange();
         };
 
+        const targetFieldType = () =>
+          Number(
+            (relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined)
+              ?.get(YjsDatabaseKey.fields)
+              ?.get(rollupOption.target_field_id)
+              ?.get(YjsDatabaseKey.type)
+          );
+
+        if (targetFieldType() === FieldType.Formula) {
+          for (const [rowId, rowDoc] of Object.entries(rows)) {
+            const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as
+              | YDatabaseRow
+              | undefined;
+
+            if (!row) continue;
+            observerCleanups.push(
+              observeRollupCell(
+                {
+                  baseDoc: database.doc as YDoc,
+                  database,
+                  rollupField,
+                  row,
+                  rowId,
+                  fieldId: rollupFieldId,
+                  loadView,
+                  createRow,
+                  getViewIdFromDatabaseId,
+                  workspaceId,
+                  bindViewSync,
+                  scheduleDeferredCleanup,
+                },
+                () => {
+                  const sourceType = resolvedRollupSourceType(rollupField);
+
+                  if (!readOnly && sourceType !== undefined) {
+                    database.doc?.transact(() => migrateRollupFilters(database, rollupFieldId, sourceType));
+                  }
+
+                  debouncedChange();
+                }
+              )
+            );
+          }
+
+          continue;
+        }
+
+        let observedTargetType = targetFieldType();
         const readTargetRelationOption = () => {
           const relatedDatabase = relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as
             | YDatabase
@@ -336,7 +396,8 @@ export function useRollupFieldObservers(
           invalidateRelatedRollupValues();
           const nextTargetDatabaseId = readTargetRelationOption()?.database_id ?? '';
 
-          if (nextTargetDatabaseId !== observedTargetDatabaseId) {
+          if (nextTargetDatabaseId !== observedTargetDatabaseId || targetFieldType() !== observedTargetType) {
+            observedTargetType = targetFieldType();
             observedTargetDatabaseId = nextTargetDatabaseId;
             setObserverRevision((revision) => revision + 1);
           }
@@ -462,6 +523,9 @@ export function useRollupFieldObservers(
     loadView,
     createRow,
     getViewIdFromDatabaseId,
+    workspaceId,
+    bindViewSync,
+    scheduleDeferredCleanup,
     sorts,
     filters,
     onConditionsChange,

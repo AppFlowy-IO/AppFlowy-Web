@@ -132,25 +132,57 @@ describe('useRollupData Desktop interactions', () => {
     });
   });
 
-  it('excludes formula targets from the picker and automatic selection, including live type changes', async () => {
+  it('includes computed formula targets and refreshes calculations when their result type changes', async () => {
     const fields = relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database).get(YjsDatabaseKey.fields);
+    const formula = fields.get('Amount');
+    const options = new Y.Map();
+    const option = new Y.Map();
 
-    // Amount is first in the related schema; it must not become the default target.
-    fields.get('Amount').set(YjsDatabaseKey.type, FieldType.Formula);
+    options.set(String(FieldType.Formula), option);
+    option.set('expression', '1 + 2');
+    formula.set(YjsDatabaseKey.type_option, options);
+    formula.set(YjsDatabaseKey.type, FieldType.Formula);
     const { result, rerender } = renderHook(() => useRollupData('rollup'));
 
-    await act(async () => { await result.current.selectRelationField(result.current.relationFields[0]); });
-    expect(mockUpdateRollupTypeOption).toHaveBeenLastCalledWith(expect.objectContaining({ target_field_id: 'Name' }));
+    await act(async () => {
+      await result.current.selectRelationField(result.current.relationFields[0]);
+    });
+    expect(mockUpdateRollupTypeOption).toHaveBeenLastCalledWith(
+      expect.objectContaining({ target_field_id: 'Amount', target_field_type: FieldType.Number })
+    );
     fieldClock += 1;
     rerender();
-    await waitFor(() => expect(result.current.relatedFields.map(({ id }) => id)).toEqual(['Name']));
+    await waitFor(() => expect(result.current.relatedFields.map(({ id }) => id)).toEqual(['Amount', 'Name']));
     const previousTarget = result.current.relatedFields[0];
 
-    act(() => { fields.get('Name').set(YjsDatabaseKey.type, FieldType.Formula); });
-    expect(result.current.relatedFields).toEqual([]);
+    act(() => {
+      option.set('expression', 'true');
+    });
+    expect(result.current.relatedFields[0].effectiveType).toBe(FieldType.Checkbox);
     mockUpdateRollupTypeOption.mockClear();
-    act(() => { result.current.selectTargetField(previousTarget); });
-    expect(mockUpdateRollupTypeOption).not.toHaveBeenCalled();
+    act(() => {
+      result.current.selectTargetField(previousTarget);
+    });
+    expect(mockUpdateRollupTypeOption).toHaveBeenCalledWith(
+      expect.objectContaining({ target_field_type: FieldType.Checkbox })
+    );
+  });
+
+  it('keeps a persisted percentage condition after reloading the settings', async () => {
+    const fields = relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database).get(YjsDatabaseKey.fields);
+
+    fields.get('Amount').set(YjsDatabaseKey.type, FieldType.MultiSelect);
+    const option = rollupField.get(YjsDatabaseKey.type_option).get(String(FieldType.Rollup));
+
+    option.set(YjsDatabaseKey.relation_field_id, 'relation');
+    option.set(YjsDatabaseKey.target_field_id, 'Amount');
+    option.set(YjsDatabaseKey.calculation_type, CalculationType.PercentValue);
+    option.set(YjsDatabaseKey.condition_value, '["done","progress"]');
+    const { result } = renderHook(() => useRollupData('rollup'));
+
+    await waitFor(() => expect(result.current.targetField?.id).toBe('Amount'));
+    expect(result.current.rollupOption.condition_value).toBe('["done","progress"]');
+    expect(mockUpdateRollupTypeOption).not.toHaveBeenCalledWith(expect.objectContaining({ condition_value: '' }));
   });
 
   it('never exposes fields from the previous relation while the next relation loads', async () => {

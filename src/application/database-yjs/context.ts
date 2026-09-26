@@ -3,8 +3,8 @@ import EventEmitter from 'events';
 import { AxiosInstance } from 'axios';
 import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
+  BindViewSync,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
   CreateRow,
@@ -96,7 +96,7 @@ export interface DatabaseContextState {
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;
-  bindViewSync?: (doc: YDoc) => SyncContext | null;
+  bindViewSync?: BindViewSync;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
   createRow?: CreateRow;
   loadViewMeta?: LoadViewMeta;

@@ -5,6 +5,7 @@ const percentCalculationTypes = new Set<CalculationType>([
   CalculationType.PercentNotEmpty,
   CalculationType.PercentChecked,
   CalculationType.PercentUnchecked,
+  CalculationType.PercentValue,
 ]);
 
 export const MAX_ROLLUP_VISUALIZATION_DIVISOR = 2_147_483_647;

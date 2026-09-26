@@ -45,7 +45,7 @@ export function getAvailableRollupCalculations(fieldType?: FieldType) {
       break;
     case FieldType.SingleSelect:
     case FieldType.MultiSelect:
-      calculationTypes.push(CalculationType.CountValue);
+      calculationTypes.push(CalculationType.CountValue, CalculationType.PercentValue);
       break;
     default:
       break;
@@ -84,6 +84,7 @@ const calculationGroups: Array<{
       CalculationType.PercentNotEmpty,
       CalculationType.PercentChecked,
       CalculationType.PercentUnchecked,
+      CalculationType.PercentValue,
     ],
   },
   {
