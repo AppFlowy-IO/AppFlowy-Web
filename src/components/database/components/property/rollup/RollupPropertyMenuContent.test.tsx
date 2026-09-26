@@ -135,6 +135,46 @@ describe('RollupPropertyMenuContent Calculate menu', () => {
     expect(mockUpdateRollupTypeOption).toHaveBeenCalledWith({ show_as: RollupDisplayMode.UniqueList });
   });
 
+  it('persists multiple option IDs and retains them when switching to Percent values', () => {
+    setRollupData({
+      targetFieldType: FieldType.MultiSelect,
+      showAs: RollupDisplayMode.Calculated,
+      calculationType: CalculationType.CountValue,
+    });
+    const initial = mockUseRollupData();
+
+    initial.selectOptions = [
+      { id: 'option-1', name: 'In progress' },
+      { id: 'option-2', name: 'Done' },
+    ];
+    mockUseRollupData.mockReturnValue(initial);
+    const { rerender } = render(<RollupPropertyMenuContent fieldId='rollup-field' />);
+
+    fireEvent.click(screen.getByText('Done'));
+    expect(mockUpdateRollupTypeOption).toHaveBeenLastCalledWith({ condition_value: '["option-1","option-2"]' });
+    initial.rollupOption.condition_value = '["option-1","option-2"]';
+    rerender(<RollupPropertyMenuContent fieldId='rollup-field' />);
+    fireEvent.click(screen.getByTestId(`rollup-calculation-${CalculationType.PercentValue}`));
+    expect(mockUpdateRollupTypeOption).toHaveBeenLastCalledWith({
+      calculation_type: CalculationType.PercentValue,
+      show_as: RollupDisplayMode.Calculated,
+      condition_value: '["option-1","option-2"]',
+    });
+    fireEvent.click(screen.getByText('Done'));
+    expect(mockUpdateRollupTypeOption).toHaveBeenLastCalledWith({ condition_value: 'option-1' });
+  });
+
+  it('offers checkbox calculations for a boolean Formula target', () => {
+    const initial = mockUseRollupData();
+
+    initial.targetField.type = FieldType.Formula;
+    initial.targetField.effectiveType = FieldType.Checkbox;
+    mockUseRollupData.mockReturnValue(initial);
+    render(<RollupPropertyMenuContent fieldId='rollup-field' />);
+    expect(screen.getByTestId(`rollup-calculation-${CalculationType.PercentChecked}`)).toBeTruthy();
+    expect(screen.queryByTestId(`rollup-calculation-${CalculationType.Sum}`)).toBeNull();
+  });
+
   it('does not show the Count value condition while the rollup is displayed as a list', () => {
     setRollupData({
       calculationType: CalculationType.CountValue,

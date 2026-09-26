@@ -193,6 +193,37 @@ function fixture(expression: string) {
   };
 }
 
+function memberFormulaRollupFixture() {
+  const f = fixture('prop("Rollup").join(", ")');
+  const relatedDatabase = f.relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+  const relatedFields = relatedDatabase.get(YjsDatabaseKey.fields);
+
+  relatedFields.get('amount').set(YjsDatabaseKey.type, FieldType.Person);
+  const cell = f.relatedRow.get(YjsDatabaseKey.cells).get('amount');
+
+  cell.set(YjsDatabaseKey.field_type, FieldType.Person);
+  cell.set(YjsDatabaseKey.data, '["person-ada"]');
+  const computed = createFields([
+    {
+      id: 'person-name',
+      name: 'Person name',
+      type: FieldType.Formula,
+      typeOption: { expression: 'join(prop("amount"), ", ")' },
+    },
+  ])
+    .get('person-name')
+    .clone();
+
+  relatedFields.set('person-name', computed);
+  f.option('rollup').set(YjsDatabaseKey.target_field_id, 'person-name');
+  f.option('rollup').set(YjsDatabaseKey.show_as, RollupDisplayMode.OriginalList);
+  jest.mocked(loadMentionableUsers).mockImplementation(async (workspaceId) => {
+    if (workspaceId !== f.context.workspaceId) throw new Error('Wrong workspace for formula member names');
+    return [{ uid: '42', person_id: 'person-ada', name: 'Ada' } as MentionablePerson];
+  });
+  return f;
+}
+
 function dataFilter(condition: number, content = '') {
   const filter = new Y.Map() as YDatabaseFilter;
 
@@ -520,6 +551,47 @@ describe('formula conversion resolves external dependencies', () => {
       }
     }
   );
+
+  it.each(['cell', 'footer', 'condition'] as const)(
+    'resolves Formula rollup member names for the %s reader',
+    async (reader) => {
+      const f = memberFormulaRollupFixture();
+
+      f.filters.push([dataFilter(TextFilterCondition.TextContains, 'Ada')]);
+      const readers = {
+        useCell: () => useCellSelector({ rowId: f.rowId, fieldId: 'formula' })?.data,
+        useFooter: () => useFormulaColumnEvaluator('formula')?.(f.rowId, f.row),
+        useCondition: () =>
+          useRowOrdersSelector()
+            ?.map(({ id }) => id)
+            .join(','),
+      };
+      const useReader =
+        reader === 'cell' ? readers.useCell : reader === 'footer' ? readers.useFooter : readers.useCondition;
+      const { result, unmount } = renderHook(useReader, { wrapper: f.wrapper });
+
+      try {
+        await waitFor(() => expect(result.current).toBe(reader === 'condition' ? f.rowId : 'Ada'));
+      } finally {
+        unmount();
+      }
+    }
+  );
+
+  it('materializes member names through Formula → Rollup → Formula dependencies in the owning workspace', async () => {
+    const f = memberFormulaRollupFixture();
+    const { result, unmount } = renderHook(useSwitchPropertyType, { wrapper: f.wrapper });
+
+    try {
+      await act(async () => {
+        await result.current('formula', FieldType.RichText);
+      });
+      expect(f.fields.get('formula').get(YjsDatabaseKey.type)).toBe(FieldType.RichText);
+      expect(f.row.get(YjsDatabaseKey.cells).get('formula').get(YjsDatabaseKey.data)).toBe('Ada');
+    } finally {
+      unmount();
+    }
+  });
 
   it('materializes a cold count rollup before the rollup column has mounted', async () => {
     const f = fixture('prop("Rollup") * 10');

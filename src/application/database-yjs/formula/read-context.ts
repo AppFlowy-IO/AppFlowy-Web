@@ -51,6 +51,8 @@ type RelatedViewLoader = (
 ) => Promise<YDoc | null>;
 
 export interface RelatedRowLoaders {
+  /** Computed rollup targets resolve people in the owning workspace. */
+  workspaceId?: string;
   loadView?: RelatedViewLoader;
   createRow?: (rowKey: string) => Promise<YDoc>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
@@ -197,7 +199,7 @@ export function useFormulaReadContext({
   rowClock: number;
 }): { context: ReadFieldValueContext; revision: string } {
   const database = useDatabase();
-  const { databaseDoc, dataSource, rowMap, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { databaseDoc, dataSource, rowMap, loadView, createRow, getViewIdFromDatabaseId, workspaceId } = useDatabaseContext();
   const history = dataSource?.type === 'history' || isDatabaseHistoryDocumentImmutable(databaseDoc);
   // Recomputed references to the same fields keep one identity, so a draft
   // being typed does not re-subscribe on every keystroke.
@@ -205,11 +207,11 @@ export function useFormulaReadContext({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const references = useMemo(() => nextReferences, [referencesKey]);
   const clock = useFormulaClock(!history && references.clock);
-  const loadersRef = useRef<RelatedRowLoaders>({ loadView, createRow, getViewIdFromDatabaseId });
+  const loadersRef = useRef<RelatedRowLoaders>({ loadView, createRow, getViewIdFromDatabaseId, workspaceId });
 
   useEffect(() => {
-    loadersRef.current = { loadView, createRow, getViewIdFromDatabaseId };
-  }, [loadView, createRow, getViewIdFromDatabaseId]);
+    loadersRef.current = { loadView, createRow, getViewIdFromDatabaseId, workspaceId };
+  }, [loadView, createRow, getViewIdFromDatabaseId, workspaceId]);
 
   // Member names (Person, Created by, Last edited by).
   const { users } = useMentionableUsersWithAutoFetch(!history && references.people);
@@ -286,9 +288,10 @@ export function useFormulaReadContext({
         rowId,
         fieldId: entry.id,
         ...loadersRef.current,
+        workspaceId,
       }).catch((error: unknown) => console.error('[Formula] Failed to refresh rollup', error));
     });
-  }, [history, database, databaseDoc, row, rowId, references.rollups]);
+  }, [history, database, databaseDoc, row, rowId, references.rollups, workspaceId]);
 
   // The observer tracks relation membership; unrelated row edits need no reload.
   useRollupFieldObservers(refreshRollups, 0, {

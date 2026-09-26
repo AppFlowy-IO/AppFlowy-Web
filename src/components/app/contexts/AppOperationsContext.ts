@@ -1,8 +1,8 @@
 import { createContext } from 'react';
 
 import { CollabVersionRecord } from '@/application/collab-version.type';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
+  BindViewSync,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
   CreateOrphanedViewPayload,
@@ -66,7 +66,7 @@ export interface AppOperationsContextType {
   /** Create a new row in a database view. */
   createRow?: CreateRow;
   /** Bind a Yjs document to the WebSocket sync layer. Returns a SyncContext or null. */
-  bindViewSync?: (doc: YDoc) => SyncContext | null;
+  bindViewSync?: BindViewSync;
 
   // ── Page CRUD ──────────────────────────────────────────────────────
   /** Create a new page under the given parent. */

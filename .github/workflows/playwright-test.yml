@@ -8,7 +8,14 @@ on:
   workflow_dispatch:
 
 env:
-  CLOUD_VERSION: latest-amd64
+  # Keep the migration owner (Cloud) and its workers on one completed release.
+  # The partial 0.18.61 publish left latest-amd64 images on incompatible schemas:
+  # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/36148705160
+  # Update version and revision together after all three Rust images publish.
+  CLOUD_VERSION: 0.18.60-amd64
+  CLOUD_REVISION: 69a888e2fc3dbfa99441c2dc2c01ef49ea217831
+  # AI is published independently from the Rust services.
+  AI_VERSION: latest-amd64
   # Public Form APIs and uploads reject plaintext requests at the backend proxy.
   APPFLOWY_BASE_URL: https://localhost
   APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: 'true'
@@ -136,7 +143,9 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/embedded-grid-bottom-rows.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/grid-row-handle.feature.spec.js
-            description: 'Database row and undo/redo BDD workflows'
+              playwright/.features-gen/playwright/bdd/features/database/rollup-formula-select.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/rollup-formula-workflows.feature.spec.js
+            description: 'Database row, undo/redo, Formula, and Rollup BDD workflows'
             bdd: 'true'
             shard: ''
           - name: 'form-timeline-bdd'
@@ -216,7 +225,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: AppFlowy-IO/AppFlowy-Cloud-Premium
-          ref: main
+          ref: ${{ env.CLOUD_REVISION }}
           token: ${{ secrets.CI_TOKEN }}
           path: AppFlowy-Cloud-Premium
 
@@ -257,11 +266,12 @@ jobs:
       - name: Install deps and pull Docker images (parallel)
         env:
           APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
-          APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_AI_VERSION: ${{ env.AI_VERSION }}
           APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
         run: |
           # Start Docker pull in background
-          (cd AppFlowy-Cloud-Premium && docker compose pull appflowy_cloud gotrue ai appflowy_worker) &
+          (cd AppFlowy-Cloud-Premium && docker compose pull appflowy_cloud gotrue ai appflowy_worker appflowy_search) &
           DOCKER_PID=$!
 
           # Get pnpm store path and install deps concurrently
@@ -269,6 +279,17 @@ jobs:
 
           # Wait for Docker pull to complete
           wait $DOCKER_PID
+
+      - name: Verify backend image revisions
+        run: |
+          for service in appflowy_cloud appflowy_worker appflowy_search; do
+            image="appflowyinc/${service}_premium:${CLOUD_VERSION}"
+            revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")
+            if [ "$revision" != "$CLOUD_REVISION" ]; then
+              echo "::error::$image was built from $revision; expected $CLOUD_REVISION"
+              exit 1
+            fi
+          done
 
       - name: Cache Playwright browsers
         id: playwright-cache
@@ -298,8 +319,9 @@ jobs:
         working-directory: AppFlowy-Cloud-Premium
         env:
           APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
-          APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_AI_VERSION: ${{ env.AI_VERSION }}
           APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
           RUST_LOG: appflowy_cloud=info
         run: |
           docker compose \

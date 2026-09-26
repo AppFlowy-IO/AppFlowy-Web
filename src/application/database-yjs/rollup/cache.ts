@@ -10,6 +10,8 @@ import { EnhancedBigStats } from '@/application/database-yjs/fields/number/Enhan
 import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
 import { parseNumberTypeOptions, stringifyDesktopNumberValue } from '@/application/database-yjs/fields/number/parse';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
+import { readRollupCondition } from '@/application/database-yjs/fields/rollup/condition';
+import { formulaPredicateFieldType, formulaResultToDateCell } from '@/application/database-yjs/formula/filter';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
@@ -31,6 +33,8 @@ import {
 import { canonicalizeUserUid } from '@/application/user-uid';
 
 import { rememberRollupTarget } from './filter';
+import { ComputedDependencyError, ComputedSession, enterComputedCell, evaluateRollupFormula } from './computed';
+import type { RollupSourceSync } from './source-sync';
 
 export type RollupFilterCell = {
   data: unknown;
@@ -39,6 +43,7 @@ export type RollupFilterCell = {
 };
 
 export type RollupCellValue = {
+  error?: string;
   value: string;
   rawNumeric?: number;
   rawDate?: DateTimeCell;
@@ -61,7 +66,10 @@ type RollupCacheEntry = RollupCellValue & {
   updatedAt: number;
 };
 
-type RollupComputeContext = {
+export type RollupComputeContext = RollupSourceSync & {
+  workspaceId?: string;
+  /** Scoped source observers own their document cache and must see load failures. */
+  loadSourceDocumentsDirectly?: boolean;
   requireLoadedSources?: boolean;
   baseDoc: YDoc;
   database: YDatabase;
@@ -113,6 +121,8 @@ const generations = new Map<string, number>();
 const listeners = new Map<string, Set<(value: RollupCellValue) => void>>();
 const globalListeners = new Set<() => void>();
 const relatedDocCache = new Map<string, Promise<YDoc | null>>();
+const loaderIds = new WeakMap<RelatedViewLoader, number>();
+let nextLoaderId = 0;
 let lastPruneAt = 0;
 
 function getGeneration(cellId: string) {
@@ -212,7 +222,13 @@ function touchRelatedDocCache(viewId: string, promise: Promise<YDoc | null>) {
   }
 }
 
-async function loadRelatedDoc(viewId: string, databaseId: string, loadView?: RelatedViewLoader, requireLoadedSources = false) {
+async function loadRelatedDoc(
+  viewId: string,
+  databaseId: string,
+  loadView?: RelatedViewLoader,
+  requireLoadedSources = false,
+  direct = false
+) {
   if (requireLoadedSources) {
     const doc = await loadView?.(viewId, false, false, { databaseId, databaseMetadataOnly: true });
 
@@ -224,7 +240,15 @@ async function loadRelatedDoc(viewId: string, databaseId: string, loadView?: Rel
   }
 
   if (!loadView) return null;
-  const cacheKey = `${databaseId}:${viewId}`;
+  if (direct) return loadView(viewId, false, false, { databaseId, databaseMetadataOnly: true });
+  let loaderId = loaderIds.get(loadView);
+
+  if (loaderId === undefined) {
+    loaderId = ++nextLoaderId;
+    loaderIds.set(loadView, loaderId);
+  }
+
+  const cacheKey = `${loaderId}:${databaseId}:${viewId}`;
   const cached = relatedDocCache.get(cacheKey);
 
   if (cached) {
@@ -232,13 +256,18 @@ async function loadRelatedDoc(viewId: string, databaseId: string, loadView?: Rel
     return cached.then((doc) => relatedDocCache.get(cacheKey) === cached ? doc : null);
   }
 
-  const promise: Promise<YDoc | null> = loadView(viewId, false, false, { databaseId, databaseMetadataOnly: true })
-    .then((doc) => relatedDocCache.get(cacheKey) === promise ? doc : null)
-    .catch(() => {
-      // A rejected pre-restore request must not evict a newer replacement request.
+  const promise: Promise<YDoc | null> = loadView(viewId, false, false, { databaseId, databaseMetadataOnly: true }).then(
+    (doc) => {
+      // A pre-restore request must not return or evict a newer replacement request.
+      if (relatedDocCache.get(cacheKey) !== promise) return null;
+      if (!doc) relatedDocCache.delete(cacheKey);
+      return doc;
+    },
+    () => {
       if (relatedDocCache.get(cacheKey) === promise) relatedDocCache.delete(cacheKey);
       return null;
-    });
+    }
+  );
 
   touchRelatedDocCache(cacheKey, promise);
   return promise;
@@ -278,7 +307,13 @@ async function createRelationTargetResolver(
 
   if (!viewId) return null;
 
-  const doc = await loadRelatedDoc(viewId, targetRelationOption.database_id, context.loadView, context.requireLoadedSources);
+  const doc = await loadRelatedDoc(
+    viewId,
+    targetRelationOption.database_id,
+    context.loadView,
+    context.requireLoadedSources,
+    context.loadSourceDocumentsDirectly
+  );
 
   if (!doc) return null;
 
@@ -395,7 +430,7 @@ function formatDuration(seconds: number): string {
 function formatNumericResult(field: YDatabaseField, value: number): string {
   const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 
-  if (fieldType === FieldType.Number) {
+  if (fieldType === FieldType.Number || fieldType === FieldType.Formula) {
     const format = parseNumberTypeOptions(field).format;
 
     return EnhancedBigStats.formatValue(value.toFixed(2), format);
@@ -404,7 +439,7 @@ function formatNumericResult(field: YDatabaseField, value: number): string {
   return value.toFixed(2);
 }
 
-function formatDateValue(field: YDatabaseField, timestampSeconds: number): string {
+function formatDateValue(field: YDatabaseField, timestampSeconds: number, cellIncludesTime?: boolean): string {
   const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 
   if (fieldType === FieldType.CreatedTime || fieldType === FieldType.LastEditedTime) {
@@ -414,7 +449,8 @@ function formatDateValue(field: YDatabaseField, timestampSeconds: number): strin
   const typeOptionMap = field.get(YjsDatabaseKey.type_option);
   const typeOption = typeOptionMap?.get(String(FieldType.DateTime));
   const includeTimeRaw = typeOption?.get(YjsDatabaseKey.include_time);
-  const includeTime = typeof includeTimeRaw === 'boolean' ? includeTimeRaw : Boolean(includeTimeRaw);
+  const includeTime =
+    cellIncludesTime ?? (typeof includeTimeRaw === 'boolean' ? includeTimeRaw : Boolean(includeTimeRaw));
   const dateCell: DateTimeCell = {
     createdAt: 0,
     lastModified: 0,
@@ -429,7 +465,59 @@ function formatDateValue(field: YDatabaseField, timestampSeconds: number): strin
   return getDateCellStr({ cell: dateCell, field });
 }
 
-async function computeRollupCellValue(context: RollupComputeContext): Promise<RollupCellValue> {
+async function computeRollupInSession(context: RollupComputeContext, parent: ComputedSession): Promise<RollupCellValue> {
+  const session = enterComputedCell(context, parent);
+
+  return computeRollupCellValue(
+    {
+      ...context,
+      createRow: context.createRow
+        ? async (key) => {
+            if (session.signal?.aborted) throw new DOMException('Rollup observation cancelled', 'AbortError');
+            const doc = await context.createRow!(key);
+
+            if (session.signal?.aborted) throw new DOMException('Rollup observation cancelled', 'AbortError');
+            if (doc) session.observe?.(doc);
+            return doc;
+          }
+        : undefined,
+    },
+    session
+  );
+}
+
+/** Child computations bypass the outer semaphore and shared in-flight cache. */
+export async function evaluateRollupCell(
+  context: RollupComputeContext,
+  session?: ComputedSession
+): Promise<RollupCellValue> {
+  try {
+    return await computeRollupInSession(context, session ?? { path: new Set(), now: Date.now() });
+  } catch (error) {
+    if (error instanceof ComputedDependencyError && !context.requireLoadedSources)
+      return { value: '', error: error.message };
+    if (context.requireLoadedSources || context.loadSourceDocumentsDirectly) throw error;
+    return { value: '', error: error instanceof Error ? error.message : 'Rollup source could not be loaded' };
+  }
+}
+
+export async function inspectRollupCell(
+  context: RollupComputeContext,
+  session: ComputedSession
+): Promise<RollupCellValue> {
+  const release = await semaphore.acquire();
+
+  try {
+    return await evaluateRollupCell(context, session);
+  } finally {
+    release();
+  }
+}
+
+async function computeRollupCellValue(
+  context: RollupComputeContext,
+  session: ComputedSession
+): Promise<RollupCellValue> {
   const { rollupField, database, row } = context;
   const rollupOption = parseRollupTypeOption(rollupField);
 
@@ -458,6 +546,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   const calculationType = (rollupOption.calculation_type ?? CalculationType.Count) as CalculationType;
   const totalRelated = relatedRowIds.length;
   const conditionValue = rollupOption.condition_value ?? '';
+  const conditionIds = new Set(readRollupCondition(conditionValue));
 
   if (!rollupOption.target_field_id) {
     if (showAs === RollupDisplayMode.Calculated && calculationType === CalculationType.Count) {
@@ -471,10 +560,17 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
   if (!viewId) return { value: '' };
 
-  const relatedDoc = await loadRelatedDoc(viewId, relationOption.database_id, context.loadView, context.requireLoadedSources);
+  const relatedDoc = await loadRelatedDoc(
+    viewId,
+    relationOption.database_id,
+    context.loadView,
+    context.requireLoadedSources,
+    context.loadSourceDocumentsDirectly
+  );
 
   if (!relatedDoc) return { value: '' };
 
+  session.observe?.(relatedDoc);
   const relatedRoot = relatedDoc.getMap(YjsEditorKey.data_section);
   const relatedDatabase = relatedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
   const relatedFields = relatedDatabase?.get(YjsDatabaseKey.fields);
@@ -483,7 +579,9 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   if (!relatedDatabase || !targetField) return { value: '' };
 
   rememberRollupTarget(rollupField, targetField);
-  const targetFieldType = Number(targetField.get(YjsDatabaseKey.type)) as FieldType;
+  const storedTargetType = Number(targetField.get(YjsDatabaseKey.type)) as FieldType;
+  const targetFieldType =
+    storedTargetType === FieldType.Formula ? formulaPredicateFieldType(targetField, relatedFields) : storedTargetType;
   const withTargetFieldType = (result: RollupCellValue): RollupCellValue => ({
     ...result,
     targetFieldType,
@@ -504,7 +602,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
       case CalculationType.CountUnchecked:
         return withTargetFieldType({ value: '0', rawNumeric: 0 });
       case CalculationType.CountValue:
-        return withTargetFieldType(conditionValue ? { value: '0', rawNumeric: 0 } : { value: '' });
+        return withTargetFieldType(conditionIds.size ? { value: '0', rawNumeric: 0 } : { value: '' });
       default:
         return withTargetFieldType({ value: '' });
     }
@@ -512,9 +610,12 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
   const relationTargetResolver =
     targetFieldType === FieldType.Relation ? await createRelationTargetResolver(targetField, context) : null;
+
+  if (relationTargetResolver) session.observe?.(relationTargetResolver.doc);
   const values: string[] = [];
   const numericValues: number[] = [];
   const timestampValues: number[] = [];
+  const datesByTimestamp = new Map<number, DateTimeCell>();
   const checkboxValues: boolean[] = [];
   const selectValues: string[][] = [];
   const nonEmptyFlags: boolean[] = [];
@@ -522,16 +623,19 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   const filterCells: RollupFilterCell[] = [];
 
   for (const relatedRowId of relatedRowIds) {
+    if (session.signal?.aborted) throw new DOMException('Rollup observation cancelled', 'AbortError');
     if (!context.createRow) continue;
     const rowKey = getRowKey(relatedDoc.guid, relatedRowId);
     const relatedRowDoc = await context.createRow(rowKey);
+
+    session.observe?.(relatedRowDoc);
     const relatedRowRoot = relatedRowDoc.getMap(YjsEditorKey.data_section);
     const relatedRow = relatedRowRoot?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
 
     if (!relatedRow) continue;
     const cell = relatedRow.get(YjsDatabaseKey.cells)?.get(rollupOption.target_field_id);
     const parsedCell = cell ? parseYDatabaseCellToCell(cell, targetField) : undefined;
-    const parsedData = parsedCell?.data;
+    let parsedData = parsedCell?.data;
     let filterData = parsedData;
     let date: DateTimeCell | undefined;
 
@@ -541,7 +645,27 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
     let text = '';
 
-    if (targetFieldType === FieldType.CreatedTime) {
+    if (storedTargetType === FieldType.Formula) {
+      const result = await evaluateRollupFormula(
+        {
+          ...context,
+          baseDoc: relatedDoc,
+          database: relatedDatabase,
+          rollupField: targetField,
+          fieldId: rollupOption.target_field_id,
+          row: relatedRow,
+          rowId: relatedRowId,
+        },
+        session,
+        computeRollupInSession
+      );
+
+      text = result.error ? '' : result.text;
+      parsedData = result.rawNumeric ?? result.rawBoolean ?? result.rawDate?.start ?? text;
+      filterData = parsedData;
+      date = formulaResultToDateCell(result) ?? undefined;
+      if (result.rawDate) timestampValues.push(result.rawDate.start);
+    } else if (targetFieldType === FieldType.CreatedTime) {
       const ts = normalizeTimestamp(relatedRow.get(YjsDatabaseKey.created_at));
 
       if (ts !== null) {
@@ -595,6 +719,12 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
       } catch {
         filterData = '';
       }
+    }
+
+    if (date) {
+      const timestamp = normalizeTimestamp(date.data);
+
+      if (timestamp !== null) datesByTimestamp.set(timestamp, date);
     }
 
     filterCells.push({ data: filterData, text, date });
@@ -735,12 +865,13 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
         const earliest = Math.min(...timestampValues);
 
         return {
-          value: formatDateValue(targetField, earliest),
+          value: formatDateValue(targetField, earliest, datesByTimestamp.get(earliest)?.includeTime),
           rawDate: {
             data: String(earliest),
             fieldType: FieldType.DateTime,
             createdAt: 0,
             lastModified: 0,
+            includeTime: datesByTimestamp.get(earliest)?.includeTime,
           } as DateTimeCell,
         };
       }
@@ -750,12 +881,13 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
         const latest = Math.max(...timestampValues);
 
         return {
-          value: formatDateValue(targetField, latest),
+          value: formatDateValue(targetField, latest, datesByTimestamp.get(latest)?.includeTime),
           rawDate: {
             data: String(latest),
             fieldType: FieldType.DateTime,
             createdAt: 0,
             lastModified: 0,
+            includeTime: datesByTimestamp.get(latest)?.includeTime,
           } as DateTimeCell,
         };
       }
@@ -771,6 +903,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
             data: String(min),
             endTimestamp: String(max),
             isRange: true,
+            includeTime: Boolean(datesByTimestamp.get(min)?.includeTime || datesByTimestamp.get(max)?.includeTime),
             fieldType: FieldType.DateTime,
             createdAt: 0,
             lastModified: 0,
@@ -843,12 +976,19 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
         return { value: String(count), rawNumeric: count };
       }
 
-      case CalculationType.CountValue: {
-        if (![FieldType.SingleSelect, FieldType.MultiSelect].includes(targetFieldType) || conditionValue.trim() === '') {
+      case CalculationType.CountValue:
+      case CalculationType.PercentValue: {
+        if (![FieldType.SingleSelect, FieldType.MultiSelect].includes(targetFieldType) || conditionIds.size === 0) {
           return { value: '' };
         }
 
-        const count = selectValues.filter((ids) => ids.includes(conditionValue)).length;
+        const count = selectValues.filter((ids) => ids.some((id) => conditionIds.has(id))).length;
+
+        if (calculationType === CalculationType.PercentValue) {
+          const percent = (count / totalRelated) * 100;
+
+          return { value: `${percent.toFixed(1)}%`, rawNumeric: percent };
+        }
 
         return { value: String(count), rawNumeric: count };
       }
@@ -877,7 +1017,7 @@ export async function resolveRollupCell(context: RollupComputeContext): Promise<
   const release = await semaphore.acquire();
 
   try {
-    return await computeRollupCellValue({
+    return await evaluateRollupCell({
       ...context,
       requireLoadedSources: true,
       getViewIdFromDatabaseId: async (databaseId) => {
@@ -912,6 +1052,7 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
   if (cached && isEntryFresh(cached, generation)) {
     return {
       value: cached.value,
+      error: cached.error,
       rawNumeric: cached.rawNumeric,
       list: cached.list,
       listItems: cached.listItems,
@@ -929,12 +1070,13 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
       const release = await semaphore.acquire();
 
       try {
-        const value = await computeRollupCellValue(context);
+        const value = await evaluateRollupCell(context);
         const currentGen = getGeneration(cellId);
 
         if (currentGen === generation) {
           cache.set(cellId, {
             value: value.value,
+            error: value.error,
             rawNumeric: value.rawNumeric,
             list: value.list,
             listItems: value.listItems,
@@ -969,6 +1111,7 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
   if (currentCached && isEntryFresh(currentCached, currentGen)) {
     return {
       value: currentCached.value,
+      error: currentCached.error,
       rawNumeric: currentCached.rawNumeric,
       list: currentCached.list,
       listItems: currentCached.listItems,
@@ -997,6 +1140,7 @@ export function readRollupCellSync(context: RollupComputeContext): RollupCellVal
   if (cached && isEntryFresh(cached, generation)) {
     return {
       value: cached.value,
+      error: cached.error,
       rawNumeric: cached.rawNumeric,
       list: cached.list,
       listItems: cached.listItems,
@@ -1012,12 +1156,13 @@ export function readRollupCellSync(context: RollupComputeContext): RollupCellVal
       const release = await semaphore.acquire();
 
       try {
-        const value = await computeRollupCellValue(context);
+        const value = await evaluateRollupCell(context);
         const currentGen = getGeneration(cellId);
 
         if (currentGen === generation) {
           cache.set(cellId, {
             value: value.value,
+            error: value.error,
             rawNumeric: value.rawNumeric,
             list: value.list,
             listItems: value.listItems,
@@ -1047,6 +1192,7 @@ export function readRollupCellSync(context: RollupComputeContext): RollupCellVal
   return cached
     ? {
         value: cached.value,
+        error: cached.error,
         rawNumeric: cached.rawNumeric,
         list: cached.list,
         listItems: cached.listItems,

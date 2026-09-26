@@ -230,7 +230,11 @@ export const dateFunctions: FormulaFunctionSpec[] = [
       const second = asDate(b, position);
 
       if (first === null || second === null) return EMPTY;
-      return num(dayjs(first.start).diff(dayjs(second.start), parseUnit(unit, position) as OpUnitType));
+      // Date-only cells may retain hidden times; compare them at local midnight.
+      const firstStart = first.includeTime ? dayjs(first.start) : dayjs(first.start).startOf('day');
+      const secondStart = second.includeTime ? dayjs(second.start) : dayjs(second.start).startOf('day');
+
+      return num(firstStart.diff(secondStart, parseUnit(unit, position) as OpUnitType));
     },
   },
   {

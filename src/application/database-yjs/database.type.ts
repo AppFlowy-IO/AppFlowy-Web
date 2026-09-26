@@ -67,6 +67,7 @@ export enum CalculationType {
   CountValue = 18,
   PercentChecked = 19,
   PercentUnchecked = 20,
+  PercentValue = 21,
 }
 
 export enum RollupDisplayMode {

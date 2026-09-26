@@ -102,6 +102,8 @@ import {
   subscribeRelationCache,
   subscribeRelationGroupLabels,
 } from '@/application/database-yjs/relation/cache';
+import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
+import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { readHistoricalRelationText } from '@/application/database-yjs/relation/history';
 import {
@@ -2310,6 +2312,7 @@ export function useRowOrdersSelector() {
   const {
     dataSource,
     databaseDoc,
+    workspaceId,
     loadView,
     createRow,
     getViewIdFromDatabaseId,
@@ -2562,6 +2565,7 @@ export function useRowOrdersSelector() {
       if (!row) return { value: '' };
       return readRollupCellSync({
         baseDoc: databaseDoc,
+        workspaceId,
         database,
         rollupField: field,
         row,
@@ -2572,7 +2576,7 @@ export function useRowOrdersSelector() {
         getViewIdFromDatabaseId,
       });
     },
-    [rowDocsForConditions, fields, database, databaseDoc, loadView, createRow, getViewIdFromDatabaseId]
+    [rowDocsForConditions, fields, database, databaseDoc, loadView, createRow, getViewIdFromDatabaseId, workspaceId]
   );
 
   const formulaContextGetter = useCallback(
@@ -2923,7 +2927,16 @@ function useRollupCellValue({
   fieldClock: number;
 }) {
   const database = useDatabase();
-  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId, dataSource } = useDatabaseContext();
+  const {
+    databaseDoc,
+    loadView,
+    createRow,
+    getViewIdFromDatabaseId,
+    workspaceId,
+    bindViewSync,
+    scheduleDeferredCleanup,
+    dataSource,
+  } = useDatabaseContext();
   const [value, setValue] = useState<RollupCellValue>({ value: '' });
   const [relationRowIdsKey, setRelationRowIdsKey] = useState('');
   const [relatedObserverRevision, setRelatedObserverRevision] = useState(0);
@@ -2948,8 +2961,14 @@ function useRollupCellValue({
       loadView,
       createRow,
       getViewIdFromDatabaseId,
+      workspaceId,
+      bindViewSync,
+      scheduleDeferredCleanup,
     };
-  }, [database, row, field, rowId, fieldId, databaseDoc, loadView, createRow, getViewIdFromDatabaseId, dataSource]);
+  }, [
+    database, row, field, rowId, fieldId, databaseDoc, loadView, createRow,
+    getViewIdFromDatabaseId, workspaceId, bindViewSync, scheduleDeferredCleanup, dataSource,
+  ]);
 
   useEffect(() => {
     if (!rollupContext || fieldType !== FieldType.Rollup) {
@@ -2959,6 +2978,9 @@ function useRollupCellValue({
 
     let cancelled = false;
 
+    // Empty relations attach no replacement Formula observer after a membership
+    // change. The display read must rerun even if the previous observer disposed
+    // after invalidating an in-flight read.
     invalidateRollupCell(cellId);
     void readRollupCell(rollupContext).then((next) => {
       if (!cancelled) {
@@ -2976,7 +2998,7 @@ function useRollupCellValue({
       cancelled = true;
       unsubscribe();
     };
-  }, [rollupContext, fieldType, cellId, fieldClock, restoreRevision]);
+  }, [rollupContext, fieldType, cellId, fieldClock, relationRowIdsKey, restoreRevision]);
 
   useEffect(() => {
     if (!rollupContext || fieldType !== FieldType.Rollup) return;
@@ -3041,6 +3063,20 @@ function useRollupCellValue({
         void readRollupCell(rollupContext);
       };
 
+      const targetFieldType = () => {
+        const relatedDatabase = relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
+
+        return Number(relatedDatabase?.get(YjsDatabaseKey.fields)?.get(rollupOption.target_field_id)?.get(YjsDatabaseKey.type));
+      };
+
+      if (targetFieldType() === FieldType.Formula) {
+        observerCleanups.push(observeRollupCell(rollupContext, refreshRollup));
+        return;
+      }
+
+      observerCleanups.push(retainRollupSource(rollupContext, relatedDoc));
+
+      let observedTargetType = targetFieldType();
       const readTargetRelationOption = () => {
         const relatedDatabase = relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as
           | YDatabase
@@ -3057,7 +3093,8 @@ function useRollupCellValue({
         refreshRollup();
         const nextTargetDatabaseId = readTargetRelationOption()?.database_id ?? '';
 
-        if (nextTargetDatabaseId !== observedTargetDatabaseId) {
+        if (nextTargetDatabaseId !== observedTargetDatabaseId || targetFieldType() !== observedTargetType) {
+          observedTargetType = targetFieldType();
           observedTargetDatabaseId = nextTargetDatabaseId;
           setRelatedObserverRevision((revision) => revision + 1);
         }
@@ -3085,6 +3122,7 @@ function useRollupCellValue({
 
       if (cancelled) return;
       if (nestedRelatedDoc) {
+        observerCleanups.push(retainRollupSource(rollupContext, nestedRelatedDoc));
         observerCleanups.push(subscribeSharedYjsDeep(nestedRelatedDoc.getMap(YjsEditorKey.data_section), refreshRollup));
       }
 
@@ -3866,7 +3904,7 @@ export function useFormulaColumnEvaluator(fieldId: string, rowSources?: FormulaR
   // Only a formula column recalculates when another field changes.
   const fieldsVersion = useDatabaseFieldsVersion(isFormula);
   const database = useDatabase();
-  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId, dataSource } = useDatabaseContext();
+  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId, workspaceId, dataSource } = useDatabaseContext();
   const isHistory = dataSource?.type === 'history';
   const references = useMemo(() => {
     void fieldsVersion;
@@ -3909,7 +3947,7 @@ export function useFormulaColumnEvaluator(fieldId: string, rowSources?: FormulaR
     void externalRevision;
     void clock;
     const schema = readFormulaSchema(fields);
-    const loaders = { loadView, createRow, getViewIdFromDatabaseId };
+    const loaders = { loadView, createRow, getViewIdFromDatabaseId, workspaceId };
 
     return (rowId: string, row: YDatabaseRow): number | string => {
       const result = evaluateFormulaCell({
@@ -3940,6 +3978,7 @@ export function useFormulaColumnEvaluator(fieldId: string, rowSources?: FormulaR
     loadView,
     createRow,
     getViewIdFromDatabaseId,
+    workspaceId,
     isHistory,
     rowMap,
   ]);

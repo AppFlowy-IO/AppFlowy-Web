@@ -12,7 +12,7 @@ import { YDatabase, YDatabaseField, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEdito
 import { loadMentionableUsers } from '@/components/database/components/cell/person/useMentionableUsers';
 
 /** A permanent conversion must not mistake unhydrated row orders for live membership. */
-function waitForRelationMembership(doc: YDoc): Promise<ReadonlySet<string>> {
+export function waitForRelationMembership(doc: YDoc): Promise<ReadonlySet<string>> {
   const existing = readRelationMembership(doc);
 
   if (existing) return Promise.resolve(existing);
@@ -103,6 +103,7 @@ export async function resolveFormulaRowContext({
               row,
               rowId,
               ...loaders,
+              workspaceId,
             }),
           ] as const
       )
