@@ -31,3 +31,26 @@ test.each([-365, 365])('pixel navigation expands the range to reach a bar %i day
   );
   expect(scroller.scrollLeft).toBeCloseTo(dateToX(geometry, target) - 250, 3);
 });
+
+test('resizing keeps navigation callbacks stable and uses the current canvas width', () => {
+  const scroller = document.createElement('div');
+  const scrollerRef = { current: scroller };
+
+  Object.defineProperty(scroller, 'clientWidth', { value: 1280 });
+  scroller.scrollTo = jest.fn();
+  const { result, rerender } = renderHook(
+    ({ sidebarWidth }) => useTimelineRange({ layout: TimelineLayout.Month, scrollerRef, sidebarWidth }),
+    { initialProps: { sidebarWidth: 280 } }
+  );
+  const { scrollToX, scrollToDate, scrollByColumns } = result.current;
+
+  rerender({ sidebarWidth: 480 });
+  expect(result.current.scrollToX).toBe(scrollToX);
+  expect(result.current.scrollToDate).toBe(scrollToDate);
+  expect(result.current.scrollByColumns).toBe(scrollByColumns);
+  const target = new Date();
+  const x = dateToX(result.current.geometry, target);
+
+  act(() => scrollToDate(target, 0.25));
+  expect(scroller.scrollTo).toHaveBeenLastCalledWith({ left: x - 200, behavior: 'smooth' });
+});

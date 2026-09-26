@@ -16,6 +16,7 @@ import { TIMELINE_BAR_INSET, TIMELINE_ROW_HEIGHT } from './constants';
 import { TimelineDragMode } from './hooks/useTimelineDrag';
 import { TimelineRowModel } from './hooks/useTimelineRows';
 import { BarRect, calendarDaysBetween, getBarSpan, ICON_ONLY_BAR_WIDTH } from './scale/geometry';
+import { useTimelineTableViewportWidth } from './TimelineTable';
 
 const CONTENT_GAP = 4;
 const HANDLE_WIDTH = 8;
@@ -55,11 +56,10 @@ interface TimelineBarProps {
   /** Suppresses the hover card, e.g. during any drag. */
   hoverDisabled?: boolean;
   /**
-   * The element the hover card stays inside, and how much of its left edge
-   * the docked table covers: the card must never sit over the table cells.
+   * The element the hover card stays inside. Only the open card subscribes
+   * to the table width, so resizing leaves the bar's content unchanged.
    */
   hoverCardBoundary?: Element | null;
-  hoverCardInset?: number;
   /** User-preference time formatter, owned by the view so bars don't subscribe individually. */
   formatTime: (date: Date) => string;
   /** A dependency field is bound: show the connector handle and accept link drops. */
@@ -74,18 +74,17 @@ interface TimelineBarProps {
 /**
  * The tooltip content, kept clear of the docked table: the viewport stays
  * the collision boundary (so the card still sits above the bar), padded on
- * the left up to the table's right edge. Mounted only while the card is
- * open, so the one layout read happens per opening, not per render.
+ * the left up to the table's right edge. Closed cards neither measure layout
+ * nor subscribe to table width changes.
  */
 function BarHoverCardContent({
   boundary,
-  inset,
   children,
 }: {
   boundary?: Element | null;
-  inset: number;
   children: ReactNode;
 }) {
+  const inset = useTimelineTableViewportWidth();
   const [leftPadding, setLeftPadding] = useState(0);
 
   useLayoutEffect(() => {
@@ -155,7 +154,6 @@ export const TimelineBar = memo(
     progressPreview,
     hoverDisabled,
     hoverCardBoundary,
-    hoverCardInset = 0,
     formatTime,
     linkable,
     linkTarget,
@@ -165,6 +163,7 @@ export const TimelineBar = memo(
   }: TimelineBarProps) => {
     const { rowId, title } = row;
     const { t } = useTranslation();
+    const [hoverOpen, setHoverOpen] = useState(false);
     // Too narrow for text: show the icon-only chip and let the title spill past it.
     const iconOnly = rect.width < ICON_ONLY_BAR_WIDTH;
     const spilledLabelOffset = rect.width + CONTENT_GAP;
@@ -293,13 +292,13 @@ export const TimelineBar = memo(
 
         {/* Keep the element structure stable: swapping the bar between a bare div
             and a Tooltip subtree would remount every visible bar on each press. */}
-        <Tooltip delayDuration={350} disableHoverableContent>
+        <Tooltip delayDuration={350} disableHoverableContent onOpenChange={setHoverOpen}>
           <TooltipTrigger asChild>{bar}</TooltipTrigger>
-          {hoverDisabled ? null : (
-            <BarHoverCardContent boundary={hoverCardBoundary} inset={hoverCardInset}>
+          {!hoverDisabled && hoverOpen ? (
+            <BarHoverCardContent boundary={hoverCardBoundary}>
               <BarHoverCard row={row} progress={progress} />
             </BarHoverCardContent>
-          )}
+          ) : null}
         </Tooltip>
 
         {editable ? (
