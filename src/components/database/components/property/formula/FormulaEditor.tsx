@@ -390,7 +390,7 @@ export function FormulaEditor({
           ariaLabel={t('grid.formula.title', { defaultValue: 'Formula' })}
           placeholder={t('grid.formula.placeholder', { defaultValue: 'Type a formula, e.g. prop("Price") * 2' })}
           className={
-            'min-h-[72px] w-full whitespace-pre-wrap break-words rounded-400 border border-border-primary px-3 py-2 font-mono text-sm leading-6 text-text-primary outline-none focus-visible:border-border-theme-thick focus:border-border-theme-thick'
+            'appflowy-scroller max-h-[40vh] min-h-[72px] w-full overflow-y-auto overscroll-y-contain whitespace-pre-wrap break-words rounded-400 border border-border-primary px-3 py-2 font-mono text-sm leading-6 text-text-primary outline-none focus-visible:border-border-theme-thick focus:border-border-theme-thick'
           }
         />
         {suggestions.length > 0 ? (

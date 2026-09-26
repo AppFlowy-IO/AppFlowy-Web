@@ -2,8 +2,14 @@ import { RE2JS } from 're2js';
 
 import { asList, asNumber, asText, asTextWithBudget } from '../coerce';
 import { FormulaError, SourcePosition } from '../errors';
-import { EvalContext, FormulaFunctionSpec } from '../registry';
+import { EvalContext, FormulaFunctionSpec, FormulaParam } from '../registry';
 import { bool, EMPTY, FormulaValue, list, listOf, num, text } from '../values';
+
+// style() and unstyle(): the text, then any number of Notion style names.
+const STYLE_PARAMS: FormulaParam[] = [
+  { name: 'text', type: 'text' },
+  { name: 'styles', type: 'text', rest: true },
+];
 
 const regexCache = new Map<string, RE2JS | string>();
 
@@ -253,6 +259,30 @@ export const textFunctions: FormulaFunctionSpec[] = [
     params: [{ name: 'text', type: 'text' }],
     returnType: 'text',
     impl: ([value]) => text(asText(value).trim()),
+  },
+  // Formula cells show plain text, so styles are accepted for Notion
+  // compatibility and dropped: the text comes back unchanged.
+  {
+    name: 'style',
+    category: 'text',
+    signature: 'style(text, style1, style2, ...)',
+    description:
+      'Accepts Notion text styles ("b", "i", "u", "s", "c", colors and "_background" colors) so pasted formulas work. Formula results show as plain text, so the styles are not applied.',
+    examples: [{ expression: 'style("Done", "b", "green")', result: '"Done"' }],
+    params: STYLE_PARAMS,
+    returnType: 'text',
+    impl: ([value]) => text(asText(value)),
+  },
+  {
+    name: 'unstyle',
+    category: 'text',
+    signature: 'unstyle(text, style1, style2, ...)',
+    description:
+      'Accepts Notion text styles to remove so pasted formulas work. Formula results show as plain text, so the text is returned unchanged.',
+    examples: [{ expression: 'unstyle("Done", "b")', result: '"Done"' }],
+    params: STYLE_PARAMS,
+    returnType: 'text',
+    impl: ([value]) => text(asText(value)),
   },
   {
     name: 'split',
