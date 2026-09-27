@@ -13,7 +13,7 @@
  *       └─ AppOperationsContext  (CRUD callbacks, publish, history)
  */
 
-import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
+import { PricingCatalog, SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { AppNavigationContextType } from '@/components/app/contexts/AppNavigationContext';
 import { AppOperationsContextType } from '@/components/app/contexts/AppOperationsContext';
 import { AppOutlineContextType } from '@/components/app/contexts/AppOutlineContext';
@@ -100,6 +100,7 @@ export const mockAuthInternalValue: AuthInternalContextType = {
   },
   currentWorkspaceId: 'storybook-workspace-id',
   isAuthenticated: true,
+  isOfficialHosted: true,
   onChangeWorkspace: async () => {},
 };
 
@@ -115,6 +116,123 @@ export const mockNavigationValue: AppNavigationContextType = {
 export const mockOutlineValue: AppOutlineContextType = {
   outline: [],
   loadViews: async () => [],
+};
+
+/** Pricing catalog mock — mirrors `GET /billing/api/v1/pricing` on the official cloud. */
+export const mockPricingCatalog: PricingCatalog = {
+  version: 1,
+  currency: 'USD',
+  annual_discount_percent: 20,
+  plans: [
+    {
+      id: 'free',
+      kind: 'workspace_plan',
+      name: 'Free',
+      description: 'For individuals up to 2 members to organize everything',
+      prices: [],
+      features: [
+        { key: 'members', label: 'Up to 2 members', value: { kind: 'quantity', amount: 2, unit: 'members', display: 'Up to 2' } },
+        { key: 'storage', label: '5 GB storage', value: { kind: 'quantity', amount: 5, unit: 'gb', display: '5 GB' } },
+        { key: 'realtime_collaboration', label: 'Real-time collaboration', value: { kind: 'included', display: 'yes' } },
+        {
+          key: 'ai_responses',
+          label: '10 lifetime AI responses',
+          value: { kind: 'quantity', amount: 10, unit: 'responses_lifetime', display: '10 lifetime' },
+        },
+        {
+          key: 'ai_images',
+          label: '2 lifetime AI images',
+          value: { kind: 'quantity', amount: 2, unit: 'images_lifetime', display: '2 lifetime' },
+        },
+        { key: 'file_uploads', label: 'File uploads up to 7 MB', value: { kind: 'quantity', amount: 7, unit: 'mb', display: 'Up to 7 MB' } },
+        { key: 'version_history', label: '7 days version history', value: { kind: 'quantity', amount: 7, unit: 'days', display: '7 days' } },
+      ],
+    },
+    {
+      id: 'pro',
+      kind: 'workspace_plan',
+      name: 'Pro',
+      description: 'For small teams to manage projects and team knowledge',
+      prices: [
+        { interval: SubscriptionInterval.Month, price_cents: 1250 },
+        { interval: SubscriptionInterval.Year, price_cents: 12000 },
+      ],
+      features: [
+        { key: 'storage', label: 'Unlimited storage', value: { kind: 'unlimited', display: 'Unlimited' } },
+        { key: 'members', label: 'Up to 10 workspace members', value: { kind: 'quantity', amount: 10, unit: 'members', display: 'Up to 10' } },
+        { key: 'guests', label: 'Up to 10 guest editors', value: { kind: 'quantity', amount: 10, unit: 'guests', display: 'Up to 10' } },
+        { key: 'ai_responses', label: 'Unlimited AI responses', value: { kind: 'unlimited', display: 'Unlimited' } },
+        {
+          key: 'ai_images',
+          label: '10 AI images per month',
+          value: { kind: 'quantity', amount: 10, unit: 'images_per_month', display: '10 images per month' },
+        },
+        { key: 'file_uploads', label: 'Unlimited file upload size', value: { kind: 'unlimited', display: 'Unlimited' } },
+        { key: 'version_history', label: '30 days version history', value: { kind: 'quantity', amount: 30, unit: 'days', display: '30 days' } },
+        { key: 'custom_namespace', label: 'Custom namespace for your published site', value: { kind: 'included', display: 'yes' } },
+      ],
+    },
+    {
+      id: 'ai_max',
+      kind: 'workspace_add_on',
+      name: 'AI Max',
+      description: 'Unlimited AI responses, and choose from latest advanced AI models',
+      prices: [
+        { interval: SubscriptionInterval.Month, price_cents: 1000 },
+        { interval: SubscriptionInterval.Year, price_cents: 9600 },
+      ],
+      features: [
+        { key: 'ai_responses', label: 'Unlimited AI responses', value: { kind: 'unlimited', display: 'Unlimited' } },
+        { key: 'ai_models', label: 'Choose from the latest advanced AI models', value: { kind: 'included', display: 'yes' } },
+        {
+          key: 'ai_images',
+          label: '50 AI images per month',
+          value: { kind: 'quantity', amount: 50, unit: 'images_per_month', display: '50 images per month' },
+        },
+        { key: 'file_uploads', label: 'Unlimited file upload size', value: { kind: 'unlimited', display: 'Unlimited' } },
+      ],
+    },
+    {
+      id: 'vault_workspace',
+      kind: 'account_add_on',
+      name: 'Vault Workspace',
+      description: 'Private and offline— AI runs locally, no data transfer',
+      prices: [
+        { interval: SubscriptionInterval.Month, price_cents: 750 },
+        { interval: SubscriptionInterval.Year, price_cents: 7200 },
+      ],
+      features: [{ key: 'vault', label: 'Privacy Vault for your workspace', value: { kind: 'included', display: 'yes' } }],
+    },
+  ],
+  comparison: [
+    {
+      key: 'members',
+      label: 'Members',
+      tooltip: null,
+      values: {
+        free: { kind: 'quantity', amount: 2, unit: 'members', display: 'Up to 2' },
+        pro: { kind: 'quantity', amount: 10, unit: 'members', display: 'Up to 10' },
+      },
+    },
+    {
+      key: 'storage',
+      label: 'Storage',
+      tooltip: null,
+      values: {
+        free: { kind: 'quantity', amount: 5, unit: 'gb', display: '5 GB' },
+        pro: { kind: 'unlimited', display: 'Unlimited' },
+      },
+    },
+    {
+      key: 'guests',
+      label: 'Guest editors',
+      tooltip: 'Collaborate on specific pages with non-members',
+      values: {
+        free: { kind: 'excluded', display: 'no' },
+        pro: { kind: 'quantity', amount: 10, unit: 'guests', display: 'Up to 10' },
+      },
+    },
+  ],
 };
 
 /** AppOperationsContext mock — CRUD callbacks. */
@@ -143,6 +261,7 @@ export const mockOperationsValue = {
       },
     ];
   },
+  getPricingCatalog: async () => mockPricingCatalog,
 } as unknown as AppOperationsContextType;
 
 /** AppSyncContext mock — event bus and awareness. */

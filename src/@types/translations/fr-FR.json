@@ -953,7 +953,7 @@
         "title": "Pro",
         "description": "Pour les petites équipes pour gérer les projets et les bases de connaissance",
         "price": "{}",
-        "priceInfo": "par utilisateur et par mois\nfacturé annuellement\n\n{} facturé mensuellement"
+        "priceInfo": "par utilisateur et par mois\nfacturé annuellement"
       },
       "planLabels": {
         "itemOne": "Espaces de travail",

@@ -1,6 +1,6 @@
 import { memo } from 'react';
 
-import { AppProvider } from '@/components/app/app.hooks';
+import { AppProvider } from '@/components/app/AppProvider';
 import MainLayout from '@/components/app/MainLayout';
 import MobileMainLayout from '@/components/app/MobileMainLayout';
 import { getPlatform } from '@/utils/platform';

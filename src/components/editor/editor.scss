@@ -60,6 +60,7 @@
     &[data-block-type="numbered_list"],
     &[data-block-type="divider"],
     &[data-block-type="sub_page"],
+    &[data-block-type="linked_page"],
     {
       @apply bg-content-blue-100;
     }

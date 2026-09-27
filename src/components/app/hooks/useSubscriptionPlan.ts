@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { Subscription, SubscriptionPlan } from '@/application/types';
-import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
+import { useServerHostingMode, useServerInfoState } from '@/components/app/hooks/useServerInfo';
+import { getProAccessPlanFromSubscriptions } from '@/utils/subscription';
 
 const SUBSCRIPTION_PLAN_CACHE_TTL_MS = 60_000;
 
@@ -182,7 +184,11 @@ export function useSubscriptionPlan(
   loadSubscription: () => Promise<SubscriptionPlan | null>;
 } {
   const { cacheKey, enabled = true } = options;
-  const isHosted = isAppFlowyHosted();
+  const hostingMode = useServerHostingMode();
+  const serverInfo = useServerInfoState();
+  const policy = getWorkspacePlanPolicy(hostingMode);
+  const isHosted = policy.usesHostedBilling;
+  const isSelfHosted = policy.bypassesPlanLimits;
   const identity = cacheKey ?? getSubscriptions;
   const usesSharedCache = Boolean(cacheKey && getSubscriptions);
   const initialPlan = isHosted
@@ -260,7 +266,8 @@ export function useSubscriptionPlan(
   const loadSubscription = useCallback(async (): Promise<SubscriptionPlan | null> => {
     const identityGeneration = identityGenerationRef.current;
 
-    if (!isHosted) return SubscriptionPlan.Pro;
+    if (isSelfHosted) return SubscriptionPlan.Pro;
+    if (!isHosted) return null;
     if (!getSubscriptions) {
       if (isCurrentIdentity(identityGeneration)) {
         setLocalState({ identity, plan: SubscriptionPlan.Free, status: 'ready' });
@@ -295,7 +302,7 @@ export function useSubscriptionPlan(
     }
 
     return null;
-  }, [cacheKey, getSubscriptions, identity, isCurrentIdentity, isHosted, usesSharedCache]);
+  }, [cacheKey, getSubscriptions, identity, isCurrentIdentity, isHosted, isSelfHosted, usesSharedCache]);
 
   useEffect(() => {
     if (!enabled || !isHosted || !getSubscriptions) return;
@@ -335,7 +342,7 @@ export function useSubscriptionPlan(
   ]);
 
   const currentState: SubscriptionPlanState = !isHosted
-    ? { identity, plan: null, status: 'ready' }
+    ? { identity, plan: null, status: isSelfHosted ? 'ready' : serverInfo.status === 'unavailable' ? 'error' : 'loading' }
     : usesSharedCache
       ? {
           identity,
@@ -358,7 +365,7 @@ export function useSubscriptionPlan(
 
   return {
     activeSubscriptionPlan,
-    isPro: activeSubscriptionPlan === SubscriptionPlan.Pro || !isHosted,
+    isPro: policy.hasProAccess(activeSubscriptionPlan),
     isLoading: currentState.status === 'loading',
     hasError: currentState.status === 'error',
     loadSubscription,

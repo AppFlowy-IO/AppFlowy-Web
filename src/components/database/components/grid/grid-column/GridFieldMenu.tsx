@@ -42,6 +42,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 
 type FieldOperation = {
+  testId: string;
   label: string;
   icon: React.ReactNode;
   onSelect: () => void;
@@ -111,6 +112,7 @@ function GridFieldMenu({
 
     if (!isEditingDisabled) {
       items.push({
+        testId: 'edit-property',
         label: t('grid.field.editProperty'),
         icon: <EditIcon />,
         onSelect: () => {
@@ -122,6 +124,7 @@ function GridFieldMenu({
 
     items.push(
       {
+        testId: 'insert-left',
         label: t('grid.field.insertLeft'),
         icon: <LeftIcon />,
         onSelect: () => {
@@ -131,6 +134,7 @@ function GridFieldMenu({
         },
       },
       {
+        testId: 'insert-right',
         label: t('grid.field.insertRight'),
         icon: <RightIcon />,
         onSelect: () => {
@@ -140,6 +144,7 @@ function GridFieldMenu({
         },
       },
       {
+        testId: 'hide',
         label: t('grid.field.hide'),
         icon: <HideIcon />,
         onSelect: () => {
@@ -149,6 +154,7 @@ function GridFieldMenu({
       ...(canCreateFilter
         ? [
             {
+              testId: 'filter',
               label: t('grid.settings.filter'),
               icon: <FilterIcon />,
               onSelect: handleCreateFilter,
@@ -156,6 +162,7 @@ function GridFieldMenu({
           ]
         : []),
       {
+        testId: 'duplicate',
         label: t('grid.field.duplicate'),
         icon: <DuplicateIcon />,
         disabled: isPrimary,
@@ -163,14 +170,21 @@ function GridFieldMenu({
           onDuplicateProperty(fieldId);
         },
       },
+      // A formula column has no stored cells, so there is nothing to clear.
+      ...(type === FieldType.Formula
+        ? []
+        : [
+            {
+              testId: 'clear',
+              label: t('grid.field.clear'),
+              icon: <EraserIcon />,
+              onSelect: () => {
+                setClearCellsConfirmOpen(true);
+              },
+            },
+          ]),
       {
-        label: t('grid.field.clear'),
-        icon: <EraserIcon />,
-        onSelect: () => {
-          setClearCellsConfirmOpen(true);
-        },
-      },
-      {
+        testId: 'delete',
         label: t('grid.field.delete'),
         icon: <DeleteIcon />,
         variant: 'destructive',
@@ -195,6 +209,7 @@ function GridFieldMenu({
     isEditingDisabled,
     canCreateFilter,
     handleCreateFilter,
+    type,
   ]);
 
   const secondItemRef = useRef<HTMLDivElement | null>(null);
@@ -227,7 +242,7 @@ function GridFieldMenu({
           <DropdownMenuGroup>
             {operations.map((operation, index) => (
               <DropdownMenuItem
-                data-testid={operation.label === t('grid.field.editProperty') ? 'grid-field-edit-property' : undefined}
+                data-testid={`grid-field-${operation.testId}`}
                 onPointerMove={(e) => e.preventDefault()}
                 onPointerEnter={(e) => e.preventDefault()}
                 onPointerLeave={(e) => e.preventDefault()}
@@ -245,6 +260,8 @@ function GridFieldMenu({
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuItem
+              data-testid={'grid-field-wrap'}
+              data-state={wrap ? 'checked' : 'unchecked'}
               onPointerMove={(e) => e.preventDefault()}
               onPointerEnter={(e) => e.preventDefault()}
               onPointerLeave={(e) => e.preventDefault()}

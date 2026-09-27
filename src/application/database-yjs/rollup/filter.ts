@@ -1,3 +1,4 @@
+import { formulaPredicateFieldType } from '@/application/database-yjs/formula/filter';
 import { YDatabase, YDatabaseField, YDatabaseFilter, YjsDatabaseKey } from '@/application/types';
 
 import { CalculationType, FieldType, RollupDisplayMode } from '../database.type';
@@ -40,7 +41,12 @@ export function rememberRollupTarget(field: YDatabaseField, target: YDatabaseFie
   const option = parseRollupTypeOption(field);
 
   const signature = JSON.stringify(
-    [option?.relation_field_id, option?.target_field_id, target.toJSON()],
+    [
+      option?.relation_field_id,
+      option?.target_field_id,
+      target.toJSON(),
+      Number(target.get(YjsDatabaseKey.type)) === FieldType.Formula ? formulaPredicateFieldType(target) : undefined,
+    ],
     (_key, value) => (typeof value === 'bigint' ? value.toString() : value)
   );
 
@@ -67,7 +73,11 @@ export function resolvedRollupTarget(field?: YDatabaseField) {
 export function resolvedRollupSourceType(field?: YDatabaseField): FieldType | undefined {
   const target = resolvedRollupTarget(field);
 
-  return target ? Number(target.get(YjsDatabaseKey.type)) : undefined;
+  return target
+    ? Number(target.get(YjsDatabaseKey.type)) === FieldType.Formula
+      ? formulaPredicateFieldType(target)
+      : Number(target.get(YjsDatabaseKey.type))
+    : undefined;
 }
 
 export function parseRollupFilterMetadata(value: unknown): RollupFilterMetadata | undefined {

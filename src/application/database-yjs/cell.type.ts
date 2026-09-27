@@ -2,6 +2,8 @@ import React from 'react';
 import * as Y from 'yjs';
 
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
+import type { FormulaType, FormulaValue } from '@/application/database-yjs/fields/formula/values';
+import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
 import { RollupVisualizationOption } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { DateFormat, FieldId, RowId, TimeFormat } from '@/application/types';
 
@@ -119,6 +121,27 @@ export interface RollupCell extends Cell {
   targetFieldType?: FieldType;
   calculationType?: CalculationType;
   showAs?: RollupDisplayMode;
+  visualization?: RollupVisualizationOption;
+}
+
+export interface FormulaCell extends Cell {
+  fieldType: FieldType.Formula;
+  /** Result as text, with the field's number format and the default date format. */
+  data: string;
+  /** The evaluated value; the cell shows its dates in the viewer's date and time formats. */
+  value?: FormulaValue;
+  /** Static result type of the expression: text, number, boolean, date, list<...>, empty or any. */
+  resultType: FormulaType;
+  rawNumeric?: number;
+  rawBoolean?: boolean;
+  rawDate?: { start: number; end?: number; includeTime: boolean };
+  /** Parse/type/evaluation error to surface in the cell. */
+  error?: string;
+  /** Missing prop() reference, as distinct from other formula errors. */
+  missingPropertyRef?: string;
+  /** True when the field has no expression yet. */
+  isBlank?: boolean;
+  numberFormat?: NumberFormat;
   visualization?: RollupVisualizationOption;
 }
 

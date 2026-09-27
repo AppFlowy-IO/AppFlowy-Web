@@ -51,7 +51,7 @@ describe('web/server compatibility', () => {
 
   it('warns above the installed version, including at the clamp', () => {
     for (const floor of ['0.17.2', policy.max_enforceable_client_floor]) {
-      expect(evaluate('0.18.1', floor)).toMatchObject({
+      expect(evaluate('0.18.10', floor)).toMatchObject({
         type: 'client-too-old',
         requiredClientVersion: floor,
         remedyReachable: true,

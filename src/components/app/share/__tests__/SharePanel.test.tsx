@@ -16,6 +16,12 @@ let mockWorkspaceRole: Role | undefined = Role.Member;
 let mockWorkspaceOwnerUid: string | number = '101';
 let mockCurrentUserUid: string | number = '202';
 
+jest.mock('@/components/app/hooks/useServerInfo', () => ({
+  useIsOfficialHosted: () => mockIsHosted,
+  useServerHostingMode: () => (mockIsHosted ? 'cloud' : 'self-hosted'),
+  useServerInfoState: () => ({ status: 'available' }),
+}));
+
 jest.mock('@/components/app/app.hooks', () => ({
   useGetSubscriptions: () => mockGetSubscriptions,
   useLoadMentionableUsers: () => mockLoadMentionableUsers,
@@ -35,11 +41,6 @@ jest.mock('@/components/_shared/notify', () => ({
   notify: {
     error: jest.fn(),
   },
-}));
-
-jest.mock('@/utils/subscription', () => ({
-  getProAccessPlanFromSubscriptions: () => null,
-  isAppFlowyHosted: () => mockIsHosted,
 }));
 
 jest.mock('../InviteGuest', () => ({
@@ -156,17 +157,13 @@ describe('SharePanel', () => {
   it('only lets workspace owners expand group rows to explore members', () => {
     renderSharePanel(AccessLevel.ReadOnly);
 
-    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(
-      expect.objectContaining({ canExploreGroupMembers: false })
-    );
+    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(expect.objectContaining({ canExploreGroupMembers: false }));
 
     mockPeopleWithAccessProps.mockClear();
     mockWorkspaceRole = Role.Owner;
     renderSharePanel(AccessLevel.ReadOnly);
 
-    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(
-      expect.objectContaining({ canExploreGroupMembers: true })
-    );
+    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(expect.objectContaining({ canExploreGroupMembers: true }));
   });
 
   it('forwards the database row-page person access restriction', () => {

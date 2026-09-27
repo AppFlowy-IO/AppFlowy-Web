@@ -12,6 +12,11 @@
       "client_from": "0.17.1",
       "min_server": "0.18.1",
       "reason": "The current web client requires the AppFlowy-Cloud 0.18.1 API baseline."
+    },
+    {
+      "client_from": "0.18.2",
+      "min_server": "0.18.10",
+      "reason": "AppFlowy Web 0.18.2 requires AppFlowy-Cloud 0.18.10 as its minimum supported server version."
     }
   ]
 }

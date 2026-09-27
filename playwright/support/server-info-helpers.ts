@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 
 export interface MockServerInfo {
+  self_hosted?: boolean;
   version?: string;
   min_web_client_version?: string;
   enable_page_history: boolean;

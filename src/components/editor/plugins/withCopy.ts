@@ -6,6 +6,7 @@ import { isEmbedBlockTypes, TEXT_BLOCK_TYPES } from '@/application/slate-yjs/com
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { BlockType, YjsEditorKey } from '@/application/types';
 import { stripInlineCommentIds } from '@/components/editor/clipboard/inline-comment-metadata';
+import { markSubpageClipboard } from '@/components/editor/subpage/subpage-operations';
 
 export const clipboardFormatKey = 'x-appflowy-fragment';
 
@@ -54,7 +55,7 @@ function unwrapUnselectedTextBlockAncestors(nodes: Node[]): Node[] {
 export const withCopy = (editor: ReactEditor) => {
   const { setFragmentData } = editor;
 
-  editor.setFragmentData = (data: Pick<DataTransfer, 'getData' | 'setData'>) => {
+  editor.setFragmentData = (data: Pick<DataTransfer, 'getData' | 'setData'>, origin) => {
     const { selection } = editor;
 
     if (!selection) {
@@ -69,7 +70,7 @@ export const withCopy = (editor: ReactEditor) => {
       const [node] = entry;
 
       if (node && isEmbedBlockTypes(node.type as BlockType)) {
-        const fragment = stripInlineCommentIds(editor.getFragment());
+        const fragment = markSubpageClipboard(stripInlineCommentIds(editor.getFragment()), origin === 'cut');
         const string = JSON.stringify(fragment);
         const encoded = window.btoa(encodeURIComponent(string));
 
@@ -79,7 +80,10 @@ export const withCopy = (editor: ReactEditor) => {
       return;
     }
 
-    const fragment = stripInlineCommentIds(unwrapUnselectedTextBlockAncestors(editor.getFragment()));
+    const fragment = markSubpageClipboard(
+      stripInlineCommentIds(unwrapUnselectedTextBlockAncestors(editor.getFragment())),
+      origin === 'cut'
+    );
     const tsvText = fragmentToTSV(fragment);
 
     setCopiedFragmentData(editor, setFragmentData, data, fragment);

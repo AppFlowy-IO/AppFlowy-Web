@@ -684,7 +684,7 @@ describe('useGroup', () => {
     });
   });
 
-  it('clears the persisted Board grouping when switching to Grid', () => {
+  it('clears the persisted Board grouping when switching to Grid', async () => {
     const fieldId = 'field-id';
     const viewId = 'board-view-id';
     const databaseDoc = createDatabaseDoc({
@@ -701,13 +701,15 @@ describe('useGroup', () => {
       wrapper: createWrapper(databaseDoc, viewId),
     });
 
-    act(() => result.current(DatabaseViewLayout.Grid));
+    await act(async () => {
+      await result.current(DatabaseViewLayout.Grid);
+    });
 
     expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Grid);
     expect(view?.get(YjsDatabaseKey.groups)?.length).toBe(0);
   });
 
-  it('preserves existing field settings when switching to an ungrouped List', () => {
+  it('preserves existing field settings when switching to an ungrouped List', async () => {
     const primaryFieldId = 'field-id';
     const viewId = 'board-view-id';
     const databaseDoc = createDatabaseDoc({
@@ -731,7 +733,9 @@ describe('useGroup', () => {
       wrapper: createWrapper(databaseDoc, viewId),
     });
 
-    act(() => result.current(DatabaseViewLayout.List));
+    await act(async () => {
+      await result.current(DatabaseViewLayout.List);
+    });
 
     const listSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('4');
     const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
@@ -753,7 +757,7 @@ describe('useGroup', () => {
     expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.width)).toBe('420');
   });
 
-  it('initializes a default Board group when the view has no persisted groups', () => {
+  it('initializes a default Board group when the view has no persisted groups', async () => {
     const fieldId = 'field-id';
     const viewId = 'grid-view-id';
     const databaseDoc = createDatabaseDoc({
@@ -775,7 +779,9 @@ describe('useGroup', () => {
       wrapper: createWrapper(databaseDoc, viewId),
     });
 
-    act(() => result.current(DatabaseViewLayout.Board));
+    await act(async () => {
+      await result.current(DatabaseViewLayout.Board);
+    });
 
     expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Board);
     expect(view?.get(YjsDatabaseKey.groups)?.length).toBe(1);
@@ -788,7 +794,7 @@ describe('useGroup', () => {
     ['a Number field', FieldType.Number],
     ['a URL field', FieldType.URL],
     ['a DateTime field', FieldType.DateTime],
-  ])('replaces a persisted Board group that references %s', (_description, fieldType) => {
+  ])('replaces a persisted Board group that references %s', async (_description, fieldType) => {
     const fieldId = 'incompatible-field-id';
     const fallbackFieldId = 'board-field-id';
     const viewId = 'grid-view-id';
@@ -821,7 +827,9 @@ describe('useGroup', () => {
       wrapper: createWrapper(databaseDoc, viewId),
     });
 
-    act(() => result.current(DatabaseViewLayout.Board));
+    await act(async () => {
+      await result.current(DatabaseViewLayout.Board);
+    });
 
     const boardGroups = view?.get(YjsDatabaseKey.groups);
 
@@ -831,7 +839,7 @@ describe('useGroup', () => {
     expect(boardGroups?.get(0)?.get(YjsDatabaseKey.type)).toBe(FieldType.Checkbox);
   });
 
-  it('preserves field settings, layout settings, and Board groups across a Gallery round trip', () => {
+  it('preserves field settings, layout settings, and Board groups across a Gallery round trip', async () => {
     const fieldId = 'selected-field-id';
     const fallbackFieldId = 'fallback-field-id';
     const viewId = 'board-view-id';
@@ -888,7 +896,9 @@ describe('useGroup', () => {
       wrapper: createWrapper(databaseDoc, viewId),
     });
 
-    act(() => result.current(DatabaseViewLayout.Gallery));
+    await act(async () => {
+      await result.current(DatabaseViewLayout.Gallery);
+    });
 
     expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Gallery);
     expect(view?.get(YjsDatabaseKey.groups)).toBe(persistedGroups);
@@ -909,7 +919,9 @@ describe('useGroup', () => {
     expect(gallerySetting.get(YjsDatabaseKey.card_size)).toBe(GalleryCardSize.Large);
     expect(gallerySetting.get(YjsDatabaseKey.card_width)).toBe(420);
 
-    act(() => result.current(DatabaseViewLayout.Board));
+    await act(async () => {
+      await result.current(DatabaseViewLayout.Board);
+    });
 
     expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Board);
     expect(view?.get(YjsDatabaseKey.groups)).toBe(persistedGroups);
@@ -928,7 +940,7 @@ describe('useGroup', () => {
     expect(view?.get(YjsDatabaseKey.layout_settings)?.get('5')).toBe(gallerySetting);
   });
 
-  it('preserves other layouts and existing Calendar settings when switching to Calendar', () => {
+  it('preserves other layouts and existing Calendar settings when switching to Calendar', async () => {
     const fieldId = 'date-field-id';
     const viewId = 'grid-view-id';
     const databaseDoc = createDatabaseDoc({
@@ -970,7 +982,9 @@ describe('useGroup', () => {
       wrapper: createWrapper(databaseDoc, viewId),
     });
 
-    act(() => result.current(DatabaseViewLayout.Calendar));
+    await act(async () => {
+      await result.current(DatabaseViewLayout.Calendar);
+    });
 
     expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Calendar);
     expect(view?.get(YjsDatabaseKey.field_settings)).toBe(fieldSettings);
@@ -985,7 +999,7 @@ describe('useGroup', () => {
   it.each([
     ['deleted', true],
     ['converted', false],
-  ])('refreshes a %s Calendar field while preserving the other Calendar options', (_state, deleted) => {
+  ])('refreshes a %s Calendar field while preserving the other Calendar options', async (_state, deleted) => {
     const invalidFieldId = 'invalid-date-field-id';
     const replacementFieldId = 'replacement-date-field-id';
     const viewId = 'grid-view-id';
@@ -1024,7 +1038,9 @@ describe('useGroup', () => {
       wrapper: createWrapper(databaseDoc, viewId),
     });
 
-    act(() => result.current(DatabaseViewLayout.Calendar));
+    await act(async () => {
+      await result.current(DatabaseViewLayout.Calendar);
+    });
 
     expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Calendar);
     expect(view?.get(YjsDatabaseKey.layout_settings)?.get('2')).toBe(calendarSetting);

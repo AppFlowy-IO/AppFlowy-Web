@@ -10,6 +10,7 @@ import { getRollupVisualizationColor } from '@/components/database/components/pr
 import { cn } from '@/lib/utils';
 
 import { RollupPersonList } from './RollupPersonList';
+import { ShowAsVisualization } from './ShowAsVisualization';
 
 const RollupCellMenu = lazy(() =>
   import('./RollupCellMenu').then(({ RollupCellMenu: Component }) => ({ default: Component }))
@@ -49,54 +50,15 @@ function RollupVisualization({ cell, value }: { cell: RollupCellType; value: str
     cell.calculationType ?? CalculationType.Count,
     option.divisor
   );
-  const color = getRollupVisualizationColor(option.color);
-  const showValue = option.showNumber && value;
-
-  if (option.type === RollupShowAsType.Bar) {
-    return (
-      <div
-        role={'progressbar'}
-        aria-label={value}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(ratio * 100)}
-        aria-valuetext={value}
-        className={'flex w-full items-center gap-2'}
-        data-testid={'rollup-bar-visualization'}
-      >
-        {showValue ? <span className={'shrink-0'}>{value}</span> : null}
-        <div className={'h-1 min-w-8 flex-1 overflow-hidden rounded-full bg-fill-secondary'}>
-          <div className={'h-full rounded-full'} style={{ background: color, width: `${ratio * 100}%` }} />
-        </div>
-      </div>
-    );
-  }
-
-  const radius = 6.5;
-  const circumference = 2 * Math.PI * radius;
 
   return (
-    <div className={'flex items-center gap-2'} data-testid={'rollup-ring-visualization'}>
-      {showValue ? <span>{value}</span> : null}
-      <svg
-        className={'h-4 w-4 -rotate-90'}
-        viewBox={'0 0 16 16'}
-        role={'img'}
-        aria-label={`${Math.round(ratio * 100)}%`}
-      >
-        <circle cx={'8'} cy={'8'} r={radius} fill={'none'} stroke={'var(--fill-secondary)'} strokeWidth={'3'} />
-        <circle
-          cx={'8'}
-          cy={'8'}
-          r={radius}
-          fill={'none'}
-          stroke={color}
-          strokeWidth={'3'}
-          strokeLinecap={'round'}
-          strokeDasharray={`${ratio * circumference} ${circumference}`}
-        />
-      </svg>
-    </div>
+    <ShowAsVisualization
+      type={option.type}
+      ratio={ratio}
+      color={getRollupVisualizationColor(option.color)}
+      value={value}
+      showValue={Boolean(option.showNumber && value)}
+    />
   );
 }
 

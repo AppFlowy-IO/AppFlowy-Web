@@ -62,6 +62,17 @@ describe('import panel count strings', () => {
     expect(t('importPanel.importingProgress', { current: 2, total: 7 })).toBe('Importing file 2 of 7');
   });
 
+  it('explains how to resolve an import storage limit in English and Chinese', async () => {
+    expect(t('importPanel.storageLimitExceeded')).toBe(
+      'This workspace does not have enough storage for this import. Upgrade the workspace plan or contact your workspace administrator.'
+    );
+    const chinese = await createI18n('zh-CN');
+
+    expect(chinese.t('importPanel.storageLimitExceeded')).toBe(
+      '此工作区的存储空间不足，无法完成导入。请升级工作区套餐，或联系工作区管理员。'
+    );
+  });
+
   it('identifies Confluence HTML and CSV space exports and reports background import status', async () => {
     expect(t('importPanel.confluenceZip')).toBe('Confluence HTML or CSV (.zip)');
     expect(t('web.dropConfluenceFile')).toBe(

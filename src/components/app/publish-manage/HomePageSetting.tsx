@@ -9,7 +9,7 @@ import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
 import { Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import { isAppFlowyHosted } from '@/utils/subscription';
+import { useIsOfficialHosted, useIsSelfHosted } from '@/components/app/hooks/useServerInfo';
 
 interface HomePageSettingProps {
   onRemoveHomePage: () => Promise<void>;
@@ -33,6 +33,8 @@ function HomePageSetting({
   const [removeLoading, setRemoveLoading] = React.useState<boolean>(false);
   const [updateLoading, setUpdateLoading] = React.useState<boolean>(false);
   const { t } = useTranslation();
+  const isHosted = useIsOfficialHosted();
+  const isSelfHosted = useIsSelfHosted();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
 
   const [searchText, setSearchText] = React.useState<string>('');
@@ -43,24 +45,19 @@ function HomePageSetting({
 
   const [, setSearch] = useSearchParams();
   const handleUpgrade = useCallback(async () => {
-    if (!isOwner) return;
+    if (!isHosted || !isOwner) return;
     setSearch((prev) => {
       prev.set('action', 'change_plan');
       return prev;
     });
-  }, [setSearch, isOwner]);
+  }, [setSearch, isOwner, isHosted]);
 
   // Don't show homepage setting when namespace is not editable (e.g., UUID namespace)
   if (!canEdit) {
     return null;
   }
 
-  if (activePlan && activePlan !== SubscriptionPlan.Pro) {
-    // Only show upgrade button on official hosts (self-hosted instances have Pro features enabled by default)
-    if (!isAppFlowyHosted()) {
-      return null;
-    }
-
+  if (isHosted && activePlan && activePlan !== SubscriptionPlan.Pro) {
     return (
       <Tooltip title={!isOwner ? t('settings.sites.namespace.pleaseAskOwnerToSetHomePage') : undefined}>
         <Button
@@ -76,6 +73,8 @@ function HomePageSetting({
       </Tooltip>
     );
   }
+
+  if (!isSelfHosted && !(isHosted && activePlan === SubscriptionPlan.Pro)) return null;
 
   return (
     <div className={'flex flex-1 items-center overflow-hidden'} data-testid="homepage-setting">

@@ -35,10 +35,12 @@ jest.mock('@/components/app/app.hooks', () => ({
   useUserWorkspaceInfo: () => ({
     workspaces: [{ id: 'current-workspace', owner: { uid: 42 } }],
   }),
+  useIsOfficialHosted: () => false,
 }));
 
 jest.mock('@/components/main/app.hooks', () => ({
   useCurrentUser: () => ({ uid: mockCurrentUserUid }),
+  useCurrentUserOptional: () => ({ uid: mockCurrentUserUid }),
   useIsAuthenticatedOptional: () => true,
 }));
 

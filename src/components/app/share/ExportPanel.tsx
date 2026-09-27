@@ -8,6 +8,7 @@ import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { ReactComponent as PDFIcon } from '@/assets/icons/pdf.svg';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
 import { useAppView, useCurrentWorkspaceId, useGetSubscriptions } from '@/components/app/app.hooks';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -19,7 +20,8 @@ function ExportPanel({ viewId }: { viewId: string }) {
   const viewIdResolved = view?.view_id;
   const workspaceId = useCurrentWorkspaceId();
   const getSubscriptions = useGetSubscriptions();
-  const { isPro } = useSubscriptionPlan(getSubscriptions);
+  const { isPro, isLoading, hasError } = useSubscriptionPlan(getSubscriptions);
+  const isHosted = useIsOfficialHosted();
   const { showBlockingLoader, hideBlockingLoader } = useAppOverlayContext();
   const [linkedPagesOverride, setLinkedPagesOverride] = useState<boolean | null>(null);
   const includeLinkedPages = linkedPagesOverride ?? isPro;
@@ -60,7 +62,7 @@ function ExportPanel({ viewId }: { viewId: string }) {
   const handleLinkedPagesChange = useCallback(
     async (checked: boolean) => {
       if (checked && !isPro) {
-        if (!workspaceId) return;
+        if (!isHosted || isLoading || hasError || !workspaceId) return;
         try {
           const link = await BillingService.getSubscriptionLink(
             workspaceId,
@@ -79,7 +81,7 @@ function ExportPanel({ viewId }: { viewId: string }) {
 
       setLinkedPagesOverride(checked);
     },
-    [isPro, workspaceId, t],
+    [isPro, isHosted, isLoading, hasError, workspaceId, t],
   );
 
   return (
@@ -106,7 +108,7 @@ function ExportPanel({ viewId }: { viewId: string }) {
       <div className='flex items-center justify-between gap-4'>
         <div className='flex flex-col'>
           <span className='text-sm text-text-primary'>{t('shareAction.exportPdfIncludeLinkedPages')}</span>
-          {!isPro && (
+          {isHosted && !isPro && !isLoading && !hasError && (
             <span className='text-xs text-text-tertiary'>{t('shareAction.exportPdfIncludeLinkedPagesPro')}</span>
           )}
         </div>
@@ -114,7 +116,7 @@ function ExportPanel({ viewId }: { viewId: string }) {
           data-testid='export-include-linked-pages-switch'
           checked={includeLinkedPages}
           onCheckedChange={handleLinkedPagesChange}
-          disabled={exporting}
+          disabled={exporting || isLoading || hasError}
         />
       </div>
     </div>

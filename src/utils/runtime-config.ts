@@ -37,3 +37,8 @@ export function getConfigValue(key: keyof RuntimeConfig, defaultValue: string): 
 export function isDevelopmentOrTestEnvironment(): boolean {
   return import.meta.env.DEV || import.meta.env.MODE === 'test';
 }
+
+/** True only under the Vite dev server (`pnpm dev`); production builds and Jest return false. */
+export function isLocalDevelopment(): boolean {
+  return import.meta.env.DEV === true;
+}

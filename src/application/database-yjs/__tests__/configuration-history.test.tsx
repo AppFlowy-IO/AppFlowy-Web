@@ -726,13 +726,15 @@ describe('configuration production hooks use database history', () => {
     expect(getSelectOptionIds(fixture)).toEqual([secondOptionId]);
   });
 
-  it('switches Grid to Board and undoes and redoes the generated layout configuration', () => {
+  it('switches Grid to Board and undoes and redoes the generated layout configuration', async () => {
     const fixture = createFixture();
 
     fixture.sorts.delete(0, fixture.sorts.length);
     const { result } = renderHook(useConfigurationHistory, { wrapper: createWrapper(fixture) });
 
-    act(() => result.current.updateLayout(DatabaseViewLayout.Board));
+    await act(async () => {
+      await result.current.updateLayout(DatabaseViewLayout.Board);
+    });
     expect(Number(fixture.view.get(YjsDatabaseKey.layout))).toBe(DatabaseViewLayout.Board);
     expect(fixture.view.get(YjsDatabaseKey.groups).get(0).get(YjsDatabaseKey.field_id)).toBe(checkboxFieldId);
     expect(fixture.view.get(YjsDatabaseKey.field_settings).get(textFieldId).get(YjsDatabaseKey.visibility)).toBe(

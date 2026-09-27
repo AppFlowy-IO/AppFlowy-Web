@@ -34,6 +34,7 @@ const properties = [
   FieldType.LastEditedBy,
   FieldType.Relation,
   FieldType.Rollup,
+  FieldType.Formula,
   FieldType.Summary,
   FieldType.Translate,
   FieldType.Person,
@@ -47,10 +48,13 @@ export function PropertySelectTrigger({
   fieldId,
   disabled,
   onRequestRelation,
+  onRequestFormula,
 }: {
   fieldId: string;
   disabled?: boolean;
   onRequestRelation?: () => void;
+  /** Called after a switch to Formula so the host can open the editor right away. */
+  onRequestFormula?: () => void;
 }) {
   const { field } = useFieldSelector(fieldId);
   const type = Number(field?.get(YjsDatabaseKey.type)) as unknown as FieldType;
@@ -62,14 +66,17 @@ export function PropertySelectTrigger({
     [aiEnabled]
   );
 
-  const handleSelect = async (property: FieldType) => {
-    if (disabled) return;
-    if (!aiEnabled && isAIFieldType(property)) return;
+  /** Resolves to whether the field switched to `property`. */
+  const handleSelect = async (property: FieldType): Promise<boolean> => {
+    if (disabled) return false;
+    if (!aiEnabled && isAIFieldType(property)) return false;
 
     try {
       await switchType(fieldId, property);
+      return true;
     } catch (error) {
       Log.warn('[PropertySelectTrigger] Failed to switch field type', { fieldId, property, error });
+      return false;
     }
   };
 
@@ -91,6 +98,9 @@ export function PropertySelectTrigger({
       [FieldType.LastEditedBy]: t('tooltip.lastEditedByField'),
       [FieldType.Relation]: t('tooltip.relationField'),
       [FieldType.Rollup]: t('tooltip.rollupField', { defaultValue: 'Rollup' }),
+      [FieldType.Formula]: t('tooltip.formulaField', {
+        defaultValue: 'Compute a value from other properties with a formula',
+      }),
       [FieldType.Summary]: t('tooltip.AISummaryField'),
       [FieldType.Translate]: t('tooltip.AITranslateField'),
       [FieldType.Media]: t('tooltip.mediaField'),
@@ -131,6 +141,16 @@ export function PropertySelectTrigger({
                             e.preventDefault();
                             setOpen(false);
                             onRequestRelation?.();
+                            return;
+                          }
+
+                          if (property === FieldType.Formula && onRequestFormula && type !== FieldType.Formula) {
+                            e.preventDefault();
+                            setOpen(false);
+                            // Only open the editor on a field that actually became a formula.
+                            void handleSelect(property).then((switched) => {
+                              if (switched) onRequestFormula();
+                            });
                             return;
                           }
 

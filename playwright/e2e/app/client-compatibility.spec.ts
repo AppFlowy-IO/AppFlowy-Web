@@ -25,7 +25,7 @@ test('compatibility warnings allow editing and follow server changes and tab-ses
   const secondClientFloor = inc(firstClientFloor, 'patch')!;
 
   await page.clock.install();
-  const server = await mockServerInfo(page, { version: '0.18.0', min_web_client_version: '0.0.0' });
+  const server = await mockServerInfo(page, { version: '0.18.9', min_web_client_version: '0.0.0' });
   let legacyWebProjection = true;
 
   await page.route('**/api/server-info', async (route) => {
@@ -43,7 +43,7 @@ test('compatibility warnings allow editing and follow server changes and tab-ses
   const dismiss = page.getByRole('button', { name: 'Dismiss compatibility warning' });
 
   await signInAndWaitForApp(page, request, generateRandomEmail());
-  await expect(banner).toContainText(`AppFlowy Web ${clientVersion} requires server 0.18.1`);
+  await expect(banner).toContainText('Requires server 0.18.10 or later. Some features may be unavailable.');
   await expect(reload).toHaveCount(0);
 
   await createDocumentPageAndNavigate(page);
@@ -74,12 +74,12 @@ test('compatibility warnings allow editing and follow server changes and tab-ses
   try {
     const mobilePage = await mobileContext.newPage();
 
-    await mockServerInfo(mobilePage, { version: '0.18.0' });
+    await mockServerInfo(mobilePage, { version: '0.18.9' });
     await mobilePage.goto(page.url(), { waitUntil: 'domcontentloaded' });
     await expect(mobilePage.locator('.appflowy-mobile-layout')).toBeVisible();
     const mobileBanner = mobilePage.getByTestId('client-compatibility-banner');
 
-    await expect(mobileBanner).toContainText(`AppFlowy Web ${clientVersion} requires server 0.18.1`);
+    await expect(mobileBanner).toContainText('Requires server 0.18.10 or later. Some features may be unavailable.');
     const bounds = await mobileBanner.boundingBox();
 
     expect(bounds).not.toBeNull();
@@ -92,7 +92,7 @@ test('compatibility warnings allow editing and follow server changes and tab-ses
     await mobileContext.close();
   }
 
-  server.setServerInfo({ version: '0.18.1' });
+  server.setServerInfo({ version: '0.18.10' });
   legacyWebProjection = false;
   await refreshServerInfo(page);
   await expect(banner).toHaveCount(0);
@@ -115,7 +115,7 @@ test('compatibility warnings allow editing and follow server changes and tab-ses
   await refreshServerInfo(page);
   await expect(banner).toHaveCount(0);
 
-  server.setServerInfo({ version: '0.18.1', min_web_client_version: firstClientFloor });
+  server.setServerInfo({ version: '0.18.10', min_web_client_version: firstClientFloor });
   await refreshServerInfo(page);
   await expect(reload).toBeVisible();
   // The updated deployment is ready; the action loads it into this tab.

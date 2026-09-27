@@ -28,7 +28,6 @@ test('a connector identifies the pressed occurrence of a row shared by groups', 
           row={row}
           rect={rect}
           rowIndex={rowIndex}
-          sidebarWidth={280}
           showSidebar
           editable
           dateEditable

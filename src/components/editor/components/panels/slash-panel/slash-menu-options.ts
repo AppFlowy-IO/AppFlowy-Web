@@ -33,6 +33,7 @@ export const SLASH_MENU_GROUP_ORDER = [
 ] as const;
 
 export const SIMPLE_TABLE_EXCLUDED_OPTION_KEYS = new Set([
+  'document',
   'askAIAnything',
   'continueWriting',
   'simpleTable',

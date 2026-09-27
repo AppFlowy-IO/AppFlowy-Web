@@ -35,11 +35,12 @@ function app(info?: Partial<ServerInfo>, serverUrl = 'https://server', pageKey =
 }
 
 describe('compatibility banner', () => {
-  it('shows server versions, leaves editing available, and stays dismissed across navigation and refreshes', () => {
+  it('explains the server requirement, leaves editing available, and stays dismissed across navigation and refreshes', () => {
     const view = render(app({ version: '0.17.0' }));
 
-    expect(screen.getByRole('status').textContent).toContain(`AppFlowy Web ${CLIENT} requires server ${REQUIRED_SERVER}`);
-    expect(screen.getByRole('status').textContent).toContain('Your server is 0.17.0');
+    expect(screen.getByRole('status').textContent).toContain(
+      `Requires server ${REQUIRED_SERVER} or later. Some features may be unavailable.`
+    );
     expect(screen.queryByRole('button', { name: 'Reload web app' })).toBeNull();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Still editable' } });
     expect(screen.getByRole<HTMLInputElement>('textbox').value).toBe('Still editable');
@@ -67,14 +68,14 @@ describe('compatibility banner', () => {
   });
 
   it('hides unknown data, restores confirmed demands, and clears old dismissals on compatibility', () => {
-    const view = render(app({ version: '0.17.0' }));
+    const view = render(app({ version: '0.18.9' }));
 
     view.rerender(app(undefined));
     expect(screen.queryByRole('status')).toBeNull();
-    view.rerender(app({ version: '0.17.0' }));
+    view.rerender(app({ version: '0.18.9' }));
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss compatibility warning' }));
     view.rerender(app({ version: REQUIRED_SERVER }));
-    view.rerender(app({ version: '0.17.0' }));
+    view.rerender(app({ version: '0.18.9' }));
     expect(screen.getByRole('status')).toBeTruthy();
   });
 

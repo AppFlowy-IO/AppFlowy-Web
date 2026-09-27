@@ -1,10 +1,11 @@
 import { act, render, screen } from '@testing-library/react';
 
 import { FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
+import { parseRollupPersonIds } from '@/application/database-yjs/fields/rollup/person';
 import { MentionablePerson } from '@/application/types';
 
 import { RollupCell } from './RollupCell';
-import { RollupPersonList, parseRollupPersonIds } from './RollupPersonList';
+import { RollupPersonList } from './RollupPersonList';
 
 let mockUsers: MentionablePerson[] = [];
 const mockFetchUsers = jest.fn();

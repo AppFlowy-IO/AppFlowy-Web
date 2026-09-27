@@ -24,6 +24,10 @@ function DrawerContent({
     updatePage,
     addPage,
     deletePage,
+    restorePage,
+    loadTrashViews,
+    movePage,
+    duplicatePage,
     setWordCount,
     uploadFile,
     bindViewSync,
@@ -214,6 +218,10 @@ function DrawerContent({
             updatePage={updatePage}
             addPage={addPage}
             deletePage={deletePage}
+            restorePage={restorePage}
+            loadTrashViews={loadTrashViews}
+            movePage={movePage}
+            duplicatePage={duplicatePage}
             openPageModal={openPageModal}
             loadViews={loadViews}
             onWordCountChange={setWordCount}

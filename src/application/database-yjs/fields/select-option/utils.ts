@@ -1,8 +1,10 @@
 import { nanoid } from 'nanoid';
 import * as Y from 'yjs';
 
-import { FieldType, SelectOption, SelectOptionColor } from '@/application/database-yjs';
+import { FieldType } from '@/application/database-yjs/database.type';
 import { YDatabaseCell, YjsDatabaseKey } from '@/application/types';
+
+import { SelectOption, SelectOptionColor } from './select_option.type';
 
 export function createSelectOptionCell (fieldId: string, type: FieldType, data: string) {
   const cell = new Y.Map() as YDatabaseCell;

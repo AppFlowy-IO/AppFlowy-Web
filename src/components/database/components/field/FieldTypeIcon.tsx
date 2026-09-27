@@ -13,6 +13,7 @@ import { ReactComponent as SingleSelectSvg } from '@/assets/icons/database/singl
 import { ReactComponent as TextSvg } from '@/assets/icons/database/text.svg';
 import { ReactComponent as URLSvg } from '@/assets/icons/database/url.svg';
 import { ReactComponent as DateSvg } from '@/assets/icons/date.svg';
+import { ReactComponent as FormulaSvg } from '@/assets/icons/formula.svg';
 import { ReactComponent as LastEditedTimeSvg } from '@/assets/icons/last_modified.svg';
 import { ReactComponent as RelationSvg } from '@/assets/icons/relation.svg';
 import { ReactComponent as TimeSvg } from '@/assets/icons/time.svg'; // Import TimeSvg
@@ -38,6 +39,7 @@ export const FieldTypeSvgMap: Record<FieldType, FC<React.SVGProps<SVGSVGElement>
   [FieldType.Rollup]: RelationSvg,
   [FieldType.CreatedBy]: PersonSvg,
   [FieldType.LastEditedBy]: PersonSvg,
+  [FieldType.Formula]: FormulaSvg,
 };
 
 export const FieldTypeIcon: FC<{ type: FieldType; className?: string }> = memo(({ type, ...props }) => {

@@ -54,6 +54,7 @@ function RowPropertyCell({
 
   const placeholder = useMemo(() => {
     if (fieldType === FieldType.Rollup) return '';
+    if (fieldType === FieldType.Formula) return t('grid.formula.editFormula', { defaultValue: 'Edit formula' });
     return `${t('button.add')} ${fieldName}`;
   }, [fieldName, t, fieldType]);
 

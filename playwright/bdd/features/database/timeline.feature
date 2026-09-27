@@ -79,7 +79,7 @@ Feature: Timeline view interactions
 
   Scenario: Dependencies draw arrows, dependents keep their gap, and a dependent may be dragged over its dependency
     Given "Build" depends on "Design" through a relation field
-    And dependents shift with "Keep the time between items"
+    And dependents shift with "Shift & maintain time between items"
     Then the timeline draws 1 dependency arrow
     When I drag the "Design" bar 2 columns later
     Then the "Build" bar moved 2 columns later
@@ -147,6 +147,15 @@ Feature: Timeline view interactions
     And I choose the "Quarter" timeline scale
     Then the timeline quarter labels fall on Mondays
 
+  Scenario: Timeline settings contain long field names and keep shift options readable
+    Given a relation field is bound as the dependency field
+    And the timeline dependency field is renamed to "Related appflowy_timeline_dependencies_demo_with_a_long_name"
+    When I open the timeline settings menu
+    Then the timeline settings contain the field name "Related appflowy_timeline_dependencies_demo_with_a_long_name"
+    And the timeline shift settings are fully readable
+    When I open the timeline table properties menu
+    Then the timeline table properties contain the field name "Related appflowy_timeline_dependencies_demo_with_a_long_name"
+
   Scenario: The Layout menu converts a view to a timeline and back
     When I switch to the "Calendar" view tab
     And I change the view layout to "Timeline"
@@ -163,7 +172,7 @@ Feature: Timeline view interactions
 
   Scenario: Extending a bar's end pushes its dependents along
     Given "Build" depends on "Design" through a relation field
-    And dependents shift with "Keep the time between items"
+    And dependents shift with "Shift & maintain time between items"
     When I drag the end handle of "Design" 3 columns later
     Then the "Design" bar grew by 3 columns
     And the "Build" bar moved 3 columns later
@@ -179,7 +188,7 @@ Feature: Timeline view interactions
 
   Scenario: With shifting off, dependents stay put
     Given "Build" depends on "Design" through a relation field
-    And dependents shift with "Never"
+    And dependents shift with "Do not automatically shift"
     When I drag the "Design" bar 3 columns later
     Then the "Build" bar is back where it started
     When I drag the "Build" bar 6 columns earlier
@@ -233,7 +242,7 @@ Feature: Timeline view interactions
     When I choose no timeline end date field
     Then the "Design" bar spans 1 columns
 
-  Scenario: Table properties add columns with a calculations footer
+  Scenario: Table columns resize and preserve their widths after reloading
     Given "Design" has a progress field at 40 percent
     When I show "Progress" as a table column
     Then the table has a "Progress" column reading 40 for "Design"
@@ -241,8 +250,30 @@ Feature: Timeline view interactions
     And the "Progress" column header, cells and calculation line up
     When I set the "Progress" column calculation to "Sum"
     Then the "Progress" column calculation reads "Sum40"
+
+    When I resize the timeline title column to 240 px
+    Then the timeline title column is 240 px wide
+    When I resize the "Progress" timeline table column to 220 px
+    Then the "Progress" timeline table column is 220 px wide
+    And the "Progress" column header, cells and calculation line up
+    And the "Progress" column calculation reads "Sum40"
+
+    When I cancel resizing the "Progress" timeline table column to 260 px
+    Then the "Progress" timeline table column is 220 px wide
+    And the "Progress" column header, cells and calculation line up
+
+    When I reload the timeline
+    Then the timeline title column is 240 px wide
+    And the "Progress" timeline table column is 220 px wide
+    And the "Progress" column header, cells and calculation line up
+    And the "Progress" column calculation reads "Sum40"
+
+    When I resize the "Progress" timeline table column to 100 px
+    Then the "Progress" timeline table column is 100 px wide
     When I hide the "Progress" table column
     Then the table has no "Progress" column
+    When I show "Progress" as a table column
+    Then the "Progress" timeline table column is 100 px wide
 
   Scenario: Grouping by a select field stacks the rows under group headers
     Given a "Status" select field where "Design" is "Doing" and "Build" is "Done"
@@ -297,7 +328,7 @@ Feature: Timeline view interactions
 
   Scenario: Dragging a bar with dependents writes nothing until it is dropped
     Given "Build" depends on "Design" through a relation field
-    And dependents shift with "Keep the time between items"
+    And dependents shift with "Shift & maintain time between items"
     When I start counting writes to "Design" and "Build"
     And I press the "Design" bar and move it 3 columns later without releasing
     Then the "Design" and "Build" bars have moved 3 columns on screen

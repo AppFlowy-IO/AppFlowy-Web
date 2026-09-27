@@ -2,9 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
+import { WorkspaceService } from '@/application/services/domains';
 import { Workspace } from '@/application/types';
-import { isSameUserUid } from '@/application/user-uid';
-import { ReactComponent as UpgradeAIMaxIcon } from '@/assets/icons/ai.svg';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as TipIcon } from '@/assets/icons/help.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
@@ -14,20 +13,19 @@ import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
 import Import from '@/components/_shared/more-actions/importer/Import';
 import { notify } from '@/components/_shared/notify';
 import {
-  useAIEnabled,
   useAppOperations,
   useCurrentWorkspaceId,
+  useIsOfficialHosted,
   useRefreshUserWorkspaceInfo,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
+import { SettingsDialog } from '@/components/app/settings';
 import CurrentWorkspace from '@/components/app/workspaces/CurrentWorkspace';
 import DeleteWorkspace from '@/components/app/workspaces/DeleteWorkspace';
 import EditWorkspace from '@/components/app/workspaces/EditWorkspace';
 import LeaveWorkspace from '@/components/app/workspaces/LeaveWorkspace';
 import WorkspaceList from '@/components/app/workspaces/WorkspaceList';
-import UpgradeAIMax from '@/components/billing/UpgradeAIMax';
 import UpgradePlan from '@/components/billing/UpgradePlan';
-import { WorkspaceService } from '@/application/services/domains';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import {
   DropdownMenu,
@@ -43,10 +41,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { isAppFlowyHosted } from '@/utils/subscription';
+import { canManageWorkspaceBilling } from '@/utils/subscription';
 import { openUrl } from '@/utils/url';
-
-import { SettingsDialog } from '@/components/app/settings';
 
 export function Workspaces() {
   const { t } = useTranslation();
@@ -54,10 +50,8 @@ export function Workspaces() {
   const refreshUserWorkspaceInfo = useRefreshUserWorkspaceInfo();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
-  const aiEnabled = useAIEnabled();
-  const isHosted = isAppFlowyHosted();
+  const isHosted = useIsOfficialHosted();
   const [openUpgradePlan, setOpenUpgradePlan] = useState(false);
-  const [openUpgradeAIMax, setOpenUpgradeAIMax] = useState(false);
   const [open, setOpen] = useState(false);
   const [hoveredHeader, setHoveredHeader] = useState<boolean>(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -71,7 +65,7 @@ export function Workspaces() {
   const [openLeaveWorkspace, setOpenLeaveWorkspace] = useState<Workspace | null>(null);
   const [openSettings, setOpenSettings] = useState(false);
 
-  const isOwner = isSameUserUid(currentWorkspace?.owner?.uid, currentUser?.uid);
+  const canManageBilling = canManageWorkspaceBilling(currentWorkspace, currentUser?.uid, isHosted);
 
   useEffect(() => {
     setCurrentWorkspace(userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === currentWorkspaceId));
@@ -246,7 +240,7 @@ export function Workspaces() {
                 <div className={'flex-1 text-left'}>{t('web.settings')}</div>
               </DropdownMenuItem>
             </DropdownMenuGroup>
-            {isOwner && isHosted && (
+            {canManageBilling && (
               <DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -258,43 +252,20 @@ export function Workspaces() {
                   <UpgradeIcon />
                   {t('subscribe.changePlan')}
                 </DropdownMenuItem>
-                {aiEnabled && (
-                  <DropdownMenuItem
-                    data-testid='upgrade-ai-max-button'
-                    onSelect={() => {
-                      setOpenUpgradeAIMax(true);
-                      setOpen(false);
-                    }}
-                  >
-                    <UpgradeAIMaxIcon />
-                    {t('subscribe.getAIMax')}
-                  </DropdownMenuItem>
-                )}
               </DropdownMenuGroup>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
-      {isOwner && isHosted && (
-        <>
-          <UpgradePlan
-            onOpen={() => {
-              setOpenUpgradePlan(true);
-            }}
-            open={openUpgradePlan}
-            onClose={() => setOpenUpgradePlan(false)}
-          />
-          {aiEnabled && (
-            <UpgradeAIMax
-              onOpen={() => {
-                setOpenUpgradeAIMax(true);
-              }}
-              open={openUpgradeAIMax}
-              onClose={() => setOpenUpgradeAIMax(false)}
-            />
-          )}
-        </>
+      {canManageBilling && (
+        <UpgradePlan
+          onOpen={() => {
+            setOpenUpgradePlan(true);
+          }}
+          open={openUpgradePlan}
+          onClose={() => setOpenUpgradePlan(false)}
+        />
       )}
 
       <Import />

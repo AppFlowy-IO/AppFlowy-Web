@@ -20,6 +20,9 @@ import { clipboardFormatKey } from '@/components/editor/plugins/withCopy';
 import { useInlineCommentEditorRegistration } from '@/components/inline-comment/editor/useInlineCommentEditorRegistration';
 import { useInlineCommentEditorBridgeOptional } from '@/components/inline-comment/InlineCommentContext';
 import { Log } from '@/utils/log';
+import { observeSubpageLifecycle } from '@/components/editor/subpage/subpage-lifecycle';
+import { notify } from '@/components/_shared/notify';
+import { getErrorMessage } from '@/utils/errors';
 import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 import { getTextCount } from '@/utils/word';
 
@@ -84,6 +87,9 @@ function CollaborativeEditor({
   onSelectionChange?: (editor: YjsEditor) => void;
 }) {
   const context = useEditorContext();
+  const contextRef = useRef(context);
+
+  contextRef.current = context;
   const previewId = useEditorPreviewId();
   const inlineCommentBridge = useInlineCommentEditorBridgeOptional();
   const inlineComments = previewId ? null : inlineCommentBridge;
@@ -267,7 +273,8 @@ function CollaborativeEditor({
             })
           ),
           clipboardFormatKey
-        )
+        ),
+        () => contextRef.current
       ) as YjsEditor),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [viewId, doc]
@@ -320,6 +327,7 @@ function CollaborativeEditor({
     if (!editor) return;
 
     editor.connect();
+    const stopSubpages = observeSubpageLifecycle(editor, () => contextRef.current, (error) => notify.error(getErrorMessage(error)));
 
     setIsConnected(true);
     onEditorConnected?.(editor);
@@ -353,6 +361,7 @@ function CollaborativeEditor({
         clearTimeout(timeoutId);
       }
 
+      stopSubpages();
       pendingDatabaseViewDeletion.clear();
       databaseBlocksRef.current.clear();
 

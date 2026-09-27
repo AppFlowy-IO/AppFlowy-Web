@@ -21,8 +21,18 @@ export const SubPage = memo(
       return classList.join(' ');
     }, [attributes.className]);
 
-    const pageId = node.data.view_id;
+    const pageId = node.data?.view_id;
     const readOnly = useReadOnly();
+
+    if (typeof pageId !== 'string' || !pageId) {
+      // Keep Slate's children mounted even when an incomplete reference has
+      // no page to display.
+      return (
+        <div {...attributes} ref={ref} className='hidden' contentEditable={false}>
+          {children}
+        </div>
+      );
+    }
 
     return (
       <div {...attributes} contentEditable={readOnly ? false : undefined} className={className}>

@@ -18,6 +18,7 @@ import type { Subscription } from '@/application/types';
 import { ReactComponent as ChartIcon } from '@/assets/icons/chart.svg';
 import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { CHART_AGGREGATION_LABELS } from '@/components/database/chart/widgets/numberChartUtils';
 import { FieldDisplay } from '@/components/database/components/field';
@@ -51,8 +52,8 @@ const CHART_TYPES = [
  * Mirrors desktop's `_isPremiumChartType`: only the basic Bar chart is free.
  * On AppFlowy-hosted instances without a Pro plan, all other types are gated
  * behind an upgrade prompt. Self-hosted instances have all chart types free
- * (handled by `useSubscriptionPlan` returning `isPro = true` for non-official
- * hosts).
+ * (handled by `useSubscriptionPlan` returning `isPro = true` for self-hosted
+ * servers).
  */
 function isPremiumChartType(type: ChartType): boolean {
   return (
@@ -124,6 +125,7 @@ const DATE_CONDITIONS = [
 
 function ChartLayoutSettings() {
   const { t } = useTranslation();
+  const isHosted = useIsOfficialHosted();
   const readOnly = useReadOnly();
   const chartSetting = useChartLayoutSetting();
   const updateChartSetting = useUpdateChartSetting();
@@ -146,11 +148,12 @@ function ChartLayoutSettings() {
   // pattern as `HomePageSetting` and `InviteMember`.
   const [, setSearch] = useSearchParams();
   const handleUpgradePrompt = useCallback(() => {
+    if (!isHosted) return;
     setSearch((prev) => {
       prev.set('action', 'change_plan');
       return prev;
     });
-  }, [setSearch]);
+  }, [isHosted, setSearch]);
 
   const { properties: allProperties } = usePropertiesSelector(false);
 
@@ -436,7 +439,12 @@ function ChartLayoutSettings() {
                 key={type}
                 className={'w-full'}
                 data-testid={testId}
-                aria-label={locked ? `${label} (${t('chart.upgradeRequired', 'Upgrade Required')})` : undefined}
+                disabled={locked && !isHosted}
+                aria-label={
+                  locked && isHosted
+                    ? `${label} (${t('chart.upgradeRequired', 'Upgrade Required')})`
+                    : undefined
+                }
                 onSelect={(e) => {
                   e.preventDefault();
 
@@ -449,7 +457,7 @@ function ChartLayoutSettings() {
                 }}
               >
                 <span>{label}</span>
-                {locked && (
+                {locked && isHosted && (
                   <CrownIcon
                     className='ml-auto h-4 w-4 text-icon-warning-thick'
                     aria-label={t('chart.upgradeRequired', 'Upgrade Required')}

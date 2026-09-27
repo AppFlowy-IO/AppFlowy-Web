@@ -2,12 +2,14 @@ import { execFileSync } from 'node:child_process';
 
 import type { Page } from '@playwright/test';
 
+import { mockServerInfo } from './server-info-helpers';
+
 /**
- * CI serves a production build against localhost, which follows hosted plan
- * checks but has no billing service. Feature tests for Pro workspaces must
- * provide both the workspace's active plans and the subscription details.
+ * Pro feature fixtures explicitly model an official cloud server, independent
+ * of CI's localhost URL, and provide its active plans and subscription details.
  */
 export async function mockProSubscription(page: Page): Promise<void> {
+  await mockServerInfo(page, { self_hosted: false });
   await page.route('**/billing/api/v1/active-subscription/**', async (route) => {
     await route.fulfill({
       status: 200,

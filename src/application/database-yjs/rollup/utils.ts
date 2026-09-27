@@ -1,5 +1,5 @@
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
-import { parseRollupTypeOption } from '@/application/database-yjs/fields';
+import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
 
 const NUMERIC_ROLLUP_CALCULATIONS = new Set<CalculationType>([
@@ -17,6 +17,7 @@ const NUMERIC_ROLLUP_CALCULATIONS = new Set<CalculationType>([
   CalculationType.CountUnchecked,
   CalculationType.PercentChecked,
   CalculationType.PercentUnchecked,
+  CalculationType.PercentValue,
   CalculationType.PercentEmpty,
   CalculationType.PercentNotEmpty,
   CalculationType.CountUnique,

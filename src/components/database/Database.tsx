@@ -19,9 +19,9 @@ import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { getOverlayTarget, observeOverlayConditions } from '@/application/database-yjs/view-conditions-overlay';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   AppendBreadcrumb,
+  BindViewSync,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
   DuplicatePageOperationOptions,
@@ -153,7 +153,7 @@ export interface Database2Props {
   canShare?: boolean;
   createRow?: CreateRow;
   loadView?: LoadView;
-  bindViewSync?: (doc: YDoc) => SyncContext | null;
+  bindViewSync?: BindViewSync;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   /**
    * Load a row sub-document (document content inside a database row).
@@ -234,6 +234,9 @@ export interface Database2Props {
    * This is used by database tab delete to sync with the sidebar.
    */
   deletePage?: (viewId: string) => Promise<void>;
+  restorePage?: (viewId: string) => Promise<void>;
+  loadTrashViews?: () => Promise<View[]>;
+  movePage?: (viewId: string, parentId: string) => Promise<void>;
   /**
    * Event emitter for app-wide events like OUTLINE_LOADED.
    * Used by DatabaseTabs to listen for outline updates after rename/delete.
@@ -1518,6 +1521,9 @@ function Database(props: Database2Props) {
       createDatabaseView: props.createDatabaseView,
       updatePage: props.updatePage,
       deletePage: props.deletePage,
+      restorePage: props.restorePage,
+      loadTrashViews: props.loadTrashViews,
+      movePage: props.movePage,
       duplicatePage: props.duplicatePage,
       eventEmitter: props.eventEmitter,
       getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
@@ -1569,6 +1575,9 @@ function Database(props: Database2Props) {
       props.createDatabaseView,
       props.updatePage,
       props.deletePage,
+      props.restorePage,
+      props.loadTrashViews,
+      props.movePage,
       props.duplicatePage,
       props.eventEmitter,
       props.getViewIdFromDatabaseId,

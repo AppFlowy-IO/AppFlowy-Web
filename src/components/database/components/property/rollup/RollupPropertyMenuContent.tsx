@@ -2,6 +2,11 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
+import {
+  readRollupCondition,
+  writeRollupCondition,
+  usesRollupCondition,
+} from '@/application/database-yjs/fields/rollup/condition';
 import { RollupShowAsType, RollupVisualizationOption } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { ReactComponent as FormulaIcon } from '@/assets/icons/formula.svg';
 import { ReactComponent as RelationIcon } from '@/assets/icons/relation.svg';
@@ -78,6 +83,8 @@ export function getRollupCalculationLabel(t: Translation, type: CalculationType)
       return t('grid.calculationTypeLabel.countUnique', { defaultValue: 'Count unique values' });
     case CalculationType.CountValue:
       return t('grid.calculationTypeLabel.countValue', { defaultValue: 'Count values' });
+    case CalculationType.PercentValue:
+      return t('grid.calculationTypeLabel.percentValue', { defaultValue: 'Percent values' });
     default:
       return t('grid.calculationTypeLabel.count', { defaultValue: 'Count all' });
   }
@@ -121,7 +128,11 @@ function getCalculationTooltip(t: Translation, type: CalculationType) {
       });
     case CalculationType.CountValue:
       return t('grid.rollup.countValuesTooltip', {
-        defaultValue: 'Counts the selected value across related pages.',
+        defaultValue: 'Counts related items matching any selected option.',
+      });
+    case CalculationType.PercentValue:
+      return t('grid.rollup.percentValuesTooltip', {
+        defaultValue: 'Percentage of all related items matching any selected option.',
       });
     case CalculationType.CountUnique:
       return t('grid.rollup.countUniqueValuesTooltip', {
@@ -208,8 +219,9 @@ function RollupPropertyMenuContent({ fieldId, variant = 'field' }: { fieldId: st
   const calculationType = rollupOption.calculation_type as CalculationType;
   const showAs = rollupOption.show_as as RollupDisplayMode;
   const visualization = rollupOption.visualization ?? defaultVisualization;
-  const calculationGroups = getRollupCalculationGroups(targetField?.type);
-  const displayModes = getAvailableRollupDisplayModes(targetField?.type);
+  const selectedOptionIds = readRollupCondition(rollupOption.condition_value);
+  const calculationGroups = getRollupCalculationGroups(targetField?.effectiveType ?? targetField?.type);
+  const displayModes = getAvailableRollupDisplayModes(targetField?.effectiveType ?? targetField?.type);
   const normalizedSearch = propertySearch.trim().toLocaleLowerCase();
   const filteredRelatedFields = normalizedSearch
     ? relatedFields.filter((relatedField) => relatedField.name.toLocaleLowerCase().includes(normalizedSearch))
@@ -380,7 +392,7 @@ function RollupPropertyMenuContent({ fieldId, variant = 'field' }: { fieldId: st
                             updateRollupTypeOption({
                               calculation_type: type,
                               show_as: RollupDisplayMode.Calculated,
-                              condition_value: type === CalculationType.CountValue ? rollupOption.condition_value : '',
+                              condition_value: usesRollupCondition(type) ? rollupOption.condition_value : '',
                             })
                           }
                         >
@@ -419,7 +431,7 @@ function RollupPropertyMenuContent({ fieldId, variant = 'field' }: { fieldId: st
       ) : null}
 
       {showAs === RollupDisplayMode.Calculated &&
-      calculationType === CalculationType.CountValue &&
+      usesRollupCondition(calculationType) &&
       targetField &&
       [FieldType.SingleSelect, FieldType.MultiSelect].includes(targetField.type) ? (
         <DropdownMenuGroup className={'px-1'}>
@@ -431,8 +443,10 @@ function RollupPropertyMenuContent({ fieldId, variant = 'field' }: { fieldId: st
               variant={variant}
               title={t('grid.rollup.value', { defaultValue: 'Value' })}
               value={
-                selectOptions.find((option) => option.id === rollupOption.condition_value)?.name ||
-                t('grid.rollup.selectOption', { defaultValue: 'Select an option' })
+                selectOptions
+                  .filter((option) => selectedOptionIds.includes(option.id))
+                  .map((option) => option.name)
+                  .join(', ') || t('grid.rollup.selectOption', { defaultValue: 'Select an option' })
               }
               icon={<span className={'text-xs'}>#</span>}
             />
@@ -446,10 +460,17 @@ function RollupPropertyMenuContent({ fieldId, variant = 'field' }: { fieldId: st
                   selectOptions.map((option) => (
                     <DropdownMenuItem
                       key={option.id}
-                      onSelect={() => updateRollupTypeOption({ condition_value: option.id })}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        const next = selectedOptionIds.includes(option.id)
+                          ? selectedOptionIds.filter((id) => id !== option.id)
+                          : [...selectedOptionIds, option.id];
+
+                        updateRollupTypeOption({ condition_value: writeRollupCondition(next) });
+                      }}
                     >
                       {option.name}
-                      {option.id === rollupOption.condition_value ? <DropdownMenuItemTick /> : null}
+                      {selectedOptionIds.includes(option.id) ? <DropdownMenuItemTick /> : null}
                     </DropdownMenuItem>
                   ))
                 )}

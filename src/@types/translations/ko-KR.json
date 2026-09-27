@@ -962,7 +962,7 @@
         "title": "Pro",
         "description": "프로젝트와 팀 지식을 관리하기 위한 소규모 팀에게 적합",
         "price": "{}",
-        "priceInfo": "연간 청구되는 사용자당 월별\n\n{} 월별 청구"
+        "priceInfo": "연간 청구되는 사용자당 월별"
       },
       "planLabels": {
         "itemOne": "작업 공간",

@@ -47,7 +47,7 @@ export function calculateFieldValue({
       }
     }
 
-    if (!data) {
+    if (!data && data !== 0) {
       return CalculationType.CountEmpty;
     }
 

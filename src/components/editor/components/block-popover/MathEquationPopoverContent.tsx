@@ -1,6 +1,5 @@
 import { Button, TextField } from '@mui/material';
-import { debounce } from 'lodash-es';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NodeEntry } from 'slate';
 import { useSlateStatic } from 'slate-react';
@@ -33,14 +32,6 @@ function MathEquationPopoverContent({
     handleClose();
   }, [blockId, handleClose, editor]);
 
-  const debounceSave = useMemo(() => {
-    return debounce((formula: string) => {
-      CustomEditor.setBlockData(editor, blockId, {
-        formula,
-      } as MathEquationBlockData);
-    }, 300);
-  }, [blockId, editor]);
-
   useEffect(() => {
     const entry = findSlateEntryByBlockId(editor, blockId) as NodeEntry<MathEquationNode>;
 
@@ -56,19 +47,16 @@ function MathEquationPopoverContent({
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
+  useEffect(() => {
+    const timeoutId = setTimeout(() => inputRef.current?.select(), 50);
+
+    return () => clearTimeout(timeoutId);
+  }, [blockId, editor]);
+
   return (
     <div className={'flex flex-col p-4 gap-3 w-[400px]'}>
       <TextField
-        inputRef={(input: HTMLTextAreaElement) => {
-          if (!input) return;
-          if (!inputRef.current) {
-            setTimeout(() => {
-              input.setSelectionRange(0, input.value.length);
-            }, 50);
-            inputRef.current = input;
-          }
-
-        }}
+        inputRef={inputRef}
         rows={4}
         multiline
         fullWidth
@@ -76,7 +64,6 @@ function MathEquationPopoverContent({
         value={formula}
         onChange={(e) => {
           setFormula(e.target.value);
-          debounceSave(e.target.value);
         }}
         placeholder={`E.g. x^2 + y^2 = z^2`}
         autoComplete={'off'}

@@ -100,7 +100,9 @@ function AppConfig({ children }: { children: React.ReactNode }) {
       window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
-  useAppLanguage();
+  const savedLanguage = currentUser?.uuid === userId ? currentUser?.metadata?.[MetadataKey.Language] : undefined;
+
+  useAppLanguage(typeof savedLanguage === 'string' ? savedLanguage : undefined);
 
   const timezoneInfo = useUserTimezone({ updateInterval: 0 });
 

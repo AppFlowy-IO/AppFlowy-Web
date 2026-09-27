@@ -218,12 +218,14 @@ async function openSidebarMoreMenuForPage(page: Page, pageName: string): Promise
 
   await expect(pageItem).toBeVisible({ timeout: 30000 });
   await pageItem.scrollIntoViewIfNeeded();
-  await pageItem.hover({ force: true });
+  await pageItem.hover();
 
   const moreActionsButton = pageItem.getByTestId('page-more-actions').first();
 
   await expect(moreActionsButton).toBeVisible({ timeout: 10000 });
-  await moreActionsButton.click({ force: true });
+  // A low sidebar row may be behind the fixed footer. Let Playwright scroll
+  // and hit-test the button instead of force-clicking the quick-note control.
+  await moreActionsButton.click();
   await expect(ViewActionSelectors.popover(page)).toBeVisible({ timeout: 15000 });
 }
 
@@ -232,7 +234,8 @@ async function openPageFromSidebar(page: Page, pageName: string): Promise<void> 
 
   await expect(pageItem).toBeVisible({ timeout: 30000 });
   await pageItem.scrollIntoViewIfNeeded();
-  await pageItem.getByTestId('page-name').click({ force: true });
+  // Hit-test the label so a row behind the fixed footer cannot open Trash.
+  await pageItem.getByTestId('page-name').click();
   await expect(page.locator('main').getByText(pageName, { exact: true }).first()).toBeVisible({ timeout: 30000 });
 }
 

@@ -21,7 +21,7 @@ function parseGoogleDriveUrl(rawUrl: string) {
 export function isGoogleDriveUrl(rawUrl: string) {
   const url = parseGoogleDriveUrl(rawUrl);
 
-  if (!url) return false;
+  if (!url || !['https:', 'http:'].includes(url.protocol)) return false;
 
   const host = url.hostname.toLowerCase();
   const matchesHost = supportedGoogleDriveHosts.some((supportedHost) => host === supportedHost);
@@ -40,6 +40,13 @@ export function isGoogleDriveUrl(rawUrl: string) {
     path.includes('/folders/') ||
     hasDriveQueryId
   );
+}
+
+export function getGoogleDriveFileId(rawUrl: string) {
+  if (!isGoogleDriveUrl(rawUrl)) return undefined;
+  const url = parseGoogleDriveUrl(rawUrl)!;
+
+  return extractGoogleDriveId(url, url.pathname.split('/').filter(Boolean)) ?? undefined;
 }
 
 function extractGoogleDriveId(url: URL, segments: string[]) {

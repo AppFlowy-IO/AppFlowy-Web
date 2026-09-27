@@ -103,6 +103,7 @@ export function GridCalculateRowCellWithValues({ fieldId, cells, ready }: GridCa
           if (readOnly) return;
           setOpen(true);
         }}
+        data-testid={`grid-calculate-cell-${fieldId}`}
         className={cn(
           !readOnly && 'hover:cursor-pointer hover:bg-fill-content-hover',
           'relative flex h-full w-full items-center justify-end'

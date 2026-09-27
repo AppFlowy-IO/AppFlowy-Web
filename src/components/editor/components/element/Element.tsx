@@ -213,6 +213,7 @@ export const Element = ({
       case BlockType.GalleryBlock:
         return GalleryBlock;
       case BlockType.SubpageBlock:
+      case BlockType.LinkedPageBlock:
         return SubPage;
       case BlockType.SimpleTableBlock:
         return SimpleTable;

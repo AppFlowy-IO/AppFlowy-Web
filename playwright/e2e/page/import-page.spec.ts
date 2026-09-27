@@ -94,6 +94,14 @@ test.describe('Feature: Import', () => {
         accept: '.zip,application/zip,application/x-zip,application/x-zip-compressed',
         multiple: false,
       },
+      // Notion-parity file imports: one page per file, several files at once.
+      { format: 'html', accept: '.html,.htm,text/html', multiple: true },
+      {
+        format: 'docx',
+        accept: '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        multiple: true,
+      },
+      { format: 'pdf', accept: '.pdf,application/pdf', multiple: true },
     ];
 
     for (const { format, accept, multiple } of formats) {
@@ -264,6 +272,182 @@ test.describe('Feature: Import', () => {
     await test.step('And the client navigates to the new view returned by the server', async () => {
       // toView() pushes the view_id onto the URL — assert the URL ends with the fake id
       await expect.poll(() => page.url(), { timeout: 10000 }).toContain(fakeViewId);
+    });
+  });
+
+  test('Scenario: Importing Word files creates Document pages one file at a time (server flow mocked)', async ({
+    page,
+    request,
+  }) => {
+    // Two files: the batch must create a task, upload, and poll each one sequentially
+    // (the server caps pending import tasks), then open the first page and surface the
+    // converter warning reported for the second.
+    const fakeViewIds = ['00000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-00000000000b'];
+    const createdTasks: { file_name: string; format: string; parent_view_id: string }[] = [];
+    const uploads: { taskId: string; contentType: string | undefined }[] = [];
+    const polls: Record<string, number> = {};
+
+    await test.step('Given the document import server endpoints are mocked end-to-end', async () => {
+      await page.route('**/api/import/**/document', (route) => {
+        if (route.request().method() !== 'POST') return route.fallback();
+        const body = route.request().postDataJSON() as { file_name: string; format: string; parent_view_id: string };
+        const index = createdTasks.push(body);
+
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 0,
+            data: {
+              task_id: `docx-task-${index}`,
+              presigned_url: `https://example.test/docx-upload/${index}`,
+              expires_in_secs: 1800,
+            },
+            message: 'success',
+          }),
+        });
+      });
+
+      await page.route('https://example.test/docx-upload/*', (route) => {
+        const taskId = `docx-task-${route.request().url().split('/').pop()}`;
+
+        uploads.push({ taskId, contentType: route.request().headers()['content-type'] });
+        route.fulfill({ status: 200, body: '' });
+      });
+
+      await page.route('**/api/import/**/document/docx-task-*', (route) => {
+        const taskId = route.request().url().split('/').pop() as string;
+        const index = Number(taskId.replace('docx-task-', '')) - 1;
+
+        polls[taskId] = (polls[taskId] ?? 0) + 1;
+        const done = polls[taskId] >= 2;
+
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 0,
+            data: {
+              task_id: taskId,
+              status: done ? 'Completed' : 'Processing',
+              ...(done ? { view_id: fakeViewIds[index] } : {}),
+              ...(done && index === 1
+                ? {
+                    diagnostics: {
+                      warnings: [
+                        { code: 'docx_footnotes_dropped', count: 2, message: 'Footnotes and endnotes are not imported' },
+                      ],
+                    },
+                  }
+                : {}),
+            },
+            message: 'success',
+          }),
+        });
+      });
+    });
+
+    await test.step('And a signed-in user', async () => {
+      await signInAndWaitForApp(page, request, testEmail);
+      await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
+      await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
+      await page.waitForTimeout(1500);
+    });
+
+    await test.step('When the user picks two .docx files via Import → Word', async () => {
+      await openImportDialogFromAddMenu(page);
+
+      const docx = { mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+
+      await ImportSelectors.docxInput(page).setInputFiles([
+        { name: 'plan.docx', buffer: Buffer.from('PK\u0003\u0004 fake docx one', 'utf-8'), ...docx },
+        { name: 'notes.docx', buffer: Buffer.from('PK\u0003\u0004 fake docx two', 'utf-8'), ...docx },
+      ]);
+    });
+
+    await test.step('Then each file is staged, uploaded with the Word content type, and polled in turn', async () => {
+      await expect(ImportSelectors.dialog(page)).not.toBeVisible({ timeout: 20000 });
+      expect(createdTasks.map((task) => task.file_name)).toEqual(['plan.docx', 'notes.docx']);
+      expect(createdTasks.every((task) => task.format === 'docx')).toBe(true);
+      expect(uploads.map((upload) => upload.taskId)).toEqual(['docx-task-1', 'docx-task-2']);
+      expect(
+        uploads.every(
+          (upload) =>
+            upload.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+      ).toBe(true);
+      expect(polls['docx-task-1']).toBeGreaterThanOrEqual(2);
+      expect(polls['docx-task-2']).toBeGreaterThanOrEqual(2);
+    });
+
+    await test.step('And the converter warning for the second file is shown', async () => {
+      await expect(page.getByText(/some content could not be converted/).first()).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText(/Footnotes and endnotes are not imported/).first()).toBeVisible({ timeout: 5000 });
+    });
+
+    await test.step('And the client opens the first imported page', async () => {
+      await expect.poll(() => page.url(), { timeout: 10000 }).toContain(fakeViewIds[0]);
+    });
+  });
+
+  test('Scenario: A PDF that fails on the server is reported per file and the dialog stays open', async ({
+    page,
+    request,
+  }) => {
+    await test.step('Given the server rejects the scanned PDF after conversion', async () => {
+      await page.route('**/api/import/**/document', (route) => {
+        if (route.request().method() !== 'POST') return route.fallback();
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 0,
+            data: { task_id: 'pdf-task', presigned_url: 'https://example.test/pdf-upload', expires_in_secs: 1800 },
+            message: 'success',
+          }),
+        });
+      });
+      await page.route('https://example.test/pdf-upload', (route) => route.fulfill({ status: 200, body: '' }));
+      await page.route('**/api/import/**/document/pdf-task', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 0,
+            data: {
+              task_id: 'pdf-task',
+              status: 'Failed',
+              error: 'this PDF has no selectable text on its 1 page(s); run OCR on it before importing',
+            },
+            message: 'success',
+          }),
+        })
+      );
+      await page.route('**/api/import/tasks/pdf-task/cancel', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, message: 'ok' }) })
+      );
+    });
+
+    await test.step('And a signed-in user', async () => {
+      await signInAndWaitForApp(page, request, testEmail);
+      await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
+      await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
+      await page.waitForTimeout(1500);
+    });
+
+    await test.step('When the user picks a scanned PDF via Import → PDF', async () => {
+      await openImportDialogFromAddMenu(page);
+      await ImportSelectors.pdfInput(page).setInputFiles({
+        name: 'scan.pdf',
+        mimeType: 'application/pdf',
+        buffer: Buffer.from('%PDF-1.4 fake scanned pdf', 'utf-8'),
+      });
+    });
+
+    await test.step("Then the server's message is shown for that file and the dialog stays open", async () => {
+      await expect(page.getByText(/run OCR on it before importing/).first()).toBeVisible({ timeout: 15000 });
+      await expect(ImportSelectors.dialog(page)).toBeVisible();
+      await expect(ImportSelectors.pdfButton(page)).toBeEnabled({ timeout: 10000 });
     });
   });
 });

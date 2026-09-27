@@ -155,6 +155,7 @@ function PersonCellMenu({ open, onOpenChange, fieldId, rowId, selectedUserIds }:
               return (
                 <div
                   key={user.person_id}
+                  data-testid={`person-option-${user.person_id}`}
                   className={cn(
                     'flex min-h-[36px] cursor-pointer items-center gap-2 rounded-md px-2 py-1',
                     'hover:bg-fill-content-hover',

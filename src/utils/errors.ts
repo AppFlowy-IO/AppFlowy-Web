@@ -1,4 +1,10 @@
+import { ERROR_CODE } from '@/application/constants';
+import { getBillingErrorMessage } from '@/utils/billing-error';
+
 export function getErrorMessage(error: unknown, fallback = 'Request failed'): string {
+  const billingMessage = getBillingErrorMessage(error);
+
+  if (billingMessage) return billingMessage;
   if (error instanceof Error) return error.message;
   if (typeof error === 'object' && error !== null && 'message' in error) {
     const message = (error as { message?: unknown }).message;
@@ -10,7 +16,21 @@ export function getErrorMessage(error: unknown, fallback = 'Request failed'): st
 }
 
 export function isAPIErrorCode(error: unknown, code: number): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === code;
+  return getAPIErrorCode(error) === code;
+}
+
+export function getAPIErrorCode(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return undefined;
+  const code = (error as { code?: unknown }).code;
+
+  return typeof code === 'number' ? code : undefined;
+}
+
+export function isStorageLimitError(error: unknown): boolean {
+  return (
+    isAPIErrorCode(error, ERROR_CODE.FILE_STORAGE_LIMIT_EXCEEDED) ||
+    isAPIErrorCode(error, ERROR_CODE.STORAGE_SPACE_NOT_ENOUGH)
+  );
 }
 
 /**

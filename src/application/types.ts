@@ -53,6 +53,7 @@ export enum BlockType {
   FileBlock = 'file',
   GalleryBlock = 'multi_image',
   SubpageBlock = 'sub_page',
+  LinkedPageBlock = 'linked_page',
   SimpleTableBlock = 'simple_table',
   SimpleTableRowBlock = 'simple_table_row',
   SimpleTableCellBlock = 'simple_table_cell',
@@ -199,6 +200,7 @@ export interface AudioBlockData extends BlockData {
 }
 
 export interface GoogleDriveBlockData extends BlockData {
+  file_id?: string;
   url?: string;
   name?: string;
   email?: string;
@@ -208,6 +210,10 @@ export interface GoogleDriveBlockData extends BlockData {
 }
 
 export interface AIMeetingBlockData extends BlockData {
+  meeting_source?: string;
+  meeting_app_name?: string;
+  scheduled_start_time?: string;
+  scheduled_end_time?: string;
   title?: string;
   date?: string | number;
   audio_file_path?: string;
@@ -603,6 +609,10 @@ export enum YjsDatabaseKey {
   rollup_show_as_color = '__rollup_show_as_color__',
   rollup_show_as_divisor = '__rollup_show_as_divisor__',
   rollup_show_as_show_number = '__rollup_show_as_show_number__',
+  // Formula field: the expression source, with property references stored
+  // as prop("<field_id>") so renames never break a formula. Key name matches
+  // the collab crate's FormulaTypeOption (AppFlowy-Cloud-Premium PR #412).
+  expression = 'expression',
   field_orders = 'field_orders',
   field_settings = 'field_settings',
   /// Per-view form-builder map (`form_field_settings` key on each view in
@@ -1280,6 +1290,10 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.format): string;
 
+  // Formula
+  // eslint-disable-next-line @typescript-eslint/unified-signatures
+  get(key: YjsDatabaseKey.expression): string | undefined;
+
   // AI Translate
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.auto_fill): boolean;
@@ -1395,6 +1409,8 @@ export interface PublishViewMetaData {
 export type AppendBreadcrumb = (view?: View) => void;
 
 export type CreateRow = (rowKey: string, options?: { forceSync?: boolean }) => Promise<YDoc>;
+/** Retained callers own one sync reference and must schedule its cleanup. */
+export type BindViewSync = (doc: YDoc, options?: { retain?: boolean }) => SyncContext | null;
 export interface LoadViewOptions {
   databaseId?: string | null;
   /** Load only the canonical database collab, without page-view row_data. */
@@ -1420,7 +1436,7 @@ export interface LoadViewMetaOptions {
   /** Resolve display fields from the flat workspace metadata index when possible. */
   metadataOnly?: boolean;
   /**
-   * Bypass the materialized outline and service caches. Metadata-only callers
+   * Bypass the materialized outline, rendered trash list, and service caches. Metadata-only callers
    * refresh through the shared flat resolver; full callers retain the direct
    * response's immediate children for navigation and recovery flows.
    */
@@ -1941,6 +1957,8 @@ export interface View {
   is_locked?: boolean;
   last_edited_time?: string;
   favorited_at?: string;
+  /** Server timestamp of this trash entry, distinct from the page's edit time. */
+  deleted_at?: string;
   last_viewed_at?: string;
   created_at?: string;
   database_relations?: DatabaseRelations;
@@ -2078,6 +2096,134 @@ export interface Subscription {
 
 export type Subscriptions = Subscription[];
 
+/** Stripe subscription lifecycle states as reported by the billing service. */
+export enum SubscriptionStatus {
+  Active = 'active',
+  Canceled = 'canceled',
+  Incomplete = 'incomplete',
+  IncompleteExpired = 'incomplete_expired',
+  PastDue = 'past_due',
+  Paused = 'paused',
+  Trialing = 'trialing',
+  Unpaid = 'unpaid',
+}
+
+/** One workspace subscription from `GET /billing/api/v1/subscription-status/{workspace_id}`. */
+export interface WorkspaceSubscriptionStatus {
+  workspace_id: string;
+  workspace_plan: SubscriptionPlan | 'ai_local';
+  recurring_interval: SubscriptionInterval;
+  subscription_status: SubscriptionStatus;
+  subscription_quantity: number;
+  /** Unix seconds when a canceled subscription ends; `null` while it still renews. */
+  cancel_at: number | null;
+  /** Unix seconds when the current billing period ends. */
+  current_period_end: number;
+}
+
+/** `GET /api/workspace/{workspace_id}/usage-and-limit`. Optional fields are absent on older servers. */
+export interface WorkspaceUsageAndLimit {
+  member_count: number;
+  member_count_limit: number;
+  storage_bytes: number;
+  storage_bytes_limit: number;
+  storage_bytes_unlimited: boolean;
+  single_upload_limit: number;
+  single_upload_unlimited: boolean;
+  ai_responses_count: number;
+  ai_responses_count_limit: number;
+  ai_image_responses_count?: number;
+  ai_image_responses_count_limit?: number;
+  ai_transcription_seconds?: number;
+  ai_transcription_seconds_limit?: number;
+  local_ai: boolean;
+  ai_responses_unlimited: boolean;
+}
+
+/** Client-side view of a workspace's subscriptions, mirroring the desktop `WorkspaceSubscriptionInfoPB`. */
+export interface WorkspaceSubscriptionInfo {
+  /** The workspace plan: Free, Pro or Team. Add-ons never appear here. */
+  plan: SubscriptionPlan;
+  /** The paid workspace plan's subscription, or `null` on Free. */
+  subscription: WorkspaceSubscriptionStatus | null;
+  /** Workspace add-on subscriptions (AI Max, AI On-device). */
+  addOns: WorkspaceSubscriptionStatus[];
+}
+
+/** Widens a literal union so unknown server values still type-check while keeping autocomplete. */
+type LooseString = string & Record<never, never>;
+
+/** `plans[].kind` in the billing pricing catalog. */
+export type PricingPlanKind = 'workspace_plan' | 'workspace_add_on' | 'account_add_on';
+
+/** `plans[].id` values the billing pricing catalog publishes today. */
+export type PricingPlanId = SubscriptionPlan | 'ai_local' | 'vault_workspace';
+
+/** Units a `quantity` feature value can carry. Unknown units fall back to `display`. */
+export type FeatureValueUnit =
+  | 'members'
+  | 'guests'
+  | 'gb'
+  | 'mb'
+  | 'days'
+  | 'hours'
+  | 'images_per_month'
+  | 'responses_lifetime'
+  | 'images_lifetime'
+  | 'workspaces';
+
+/**
+ * Typed feature value from the billing pricing catalog. `display` is the
+ * server's English fallback and is always present.
+ */
+export type FeatureValue =
+  | { kind: 'unlimited'; display: string }
+  | { kind: 'included'; display: string }
+  | { kind: 'excluded'; display: string }
+  | { kind: 'quantity'; amount: number; unit: FeatureValueUnit | LooseString; display: string }
+  | { kind: 'text'; display: string };
+
+export interface PricingPrice {
+  interval: SubscriptionInterval;
+  /** Total for the interval: a yearly price is the whole year, not per month. */
+  price_cents: number;
+}
+
+export interface PricingFeature {
+  key: string;
+  /** English plan-card sentence, e.g. "Unlimited storage". */
+  label: string;
+  value: FeatureValue;
+}
+
+export interface PricingPlan {
+  id: PricingPlanId | LooseString;
+  kind: PricingPlanKind | LooseString;
+  name: string;
+  description: string;
+  /** Month then year; empty for the free plan. */
+  prices: PricingPrice[];
+  /** Ordered plan-card bullets. */
+  features: PricingFeature[];
+}
+
+export interface PricingComparisonRow {
+  key: string;
+  label: string;
+  tooltip: string | null;
+  /** Keyed by the `workspace_plan` ids present in `plans`. */
+  values: Record<string, FeatureValue>;
+}
+
+/** Response of `GET /billing/api/v1/pricing` on the official AppFlowy cloud. */
+export interface PricingCatalog {
+  version: number;
+  currency: string;
+  annual_discount_percent: number;
+  plans: PricingPlan[];
+  comparison: PricingComparisonRow[];
+}
+
 export interface UpdatePagePayload {
   name: string;
   icon?: {
@@ -2152,7 +2298,7 @@ export interface ViewComponentProps {
   loadViewMeta?: LoadViewMeta;
   createRow?: CreateRow;
   loadView?: LoadView;
-  bindViewSync?: (doc: YDoc) => SyncContext | null;
+  bindViewSync?: BindViewSync;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   /**
    * Load a row sub-document (document content inside a database row).
@@ -2172,6 +2318,9 @@ export interface ViewComponentProps {
   updatePage?: (viewId: string, data: UpdatePagePayload) => Promise<void>;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
+  restorePage?: (viewId: string) => Promise<void>;
+  loadTrashViews?: () => Promise<View[]>;
+  movePage?: (viewId: string, parentId: string) => Promise<void>;
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   variant?: UIVariant;
@@ -2240,6 +2389,8 @@ export interface DuplicatePageOptions {
 }
 
 export interface DuplicatePageOperationOptions extends DuplicatePageOptions {
+  /** Registers the created view for cleanup; duplication may still fail after this callback. */
+  onDuplicated?: (viewId: string) => void;
   /**
    * Client-only lifecycle hook. Runs after the pre-duplicate collab sync and
    * before the duplicate API request; it is not sent to the server.
@@ -2321,6 +2472,49 @@ export interface DatabaseCsvImportStatusResponse {
   error?: string;
 }
 
+/** Formats accepted by `POST /api/import/{workspace_id}/document` (one file → one page). */
+export type DocumentFileImportFormat = 'html' | 'docx' | 'pdf';
+
+export interface DocumentFileImportRequest {
+  content_length: number;
+  md5_base64?: string;
+  /** Original file name; its stem becomes the page name unless `name` is given. */
+  file_name: string;
+  format: DocumentFileImportFormat;
+  parent_view_id: string;
+  name?: string;
+}
+
+export interface DocumentFileImportCreateResponse {
+  task_id: string;
+  presigned_url: string;
+  expires_in_secs: number;
+}
+
+/** Server `ImportTaskState`; `Processing` is reported while the worker converts. */
+export type ImportTaskStatus = DatabaseCsvImportStatus | 'Processing';
+
+export interface ImportDiagnosticsWarning {
+  code: string;
+  count: number;
+  message: string;
+}
+
+export interface ImportDiagnostics {
+  warnings: ImportDiagnosticsWarning[];
+  omitted_warning_count?: number;
+}
+
+export interface DocumentFileImportStatusResponse {
+  task_id: string;
+  status: ImportTaskStatus;
+  view_id?: string;
+  error?: string;
+  /** Stable application error code; older workers report only the message. */
+  error_code?: number;
+  diagnostics?: ImportDiagnostics;
+}
+
 export interface CreateSpacePayload {
   name?: string;
   space_icon?: string;
@@ -2383,7 +2577,10 @@ export enum SettingMenuItem {
   WORKSPACE = 'WORKSPACE',
   MEMBERS = 'MEMBERS',
   MANAGE_DATA = 'MANAGE_DATA',
+  CONNECTIONS = 'CONNECTIONS',
   SITES = 'SITES',
+  PLAN = 'PLAN',
+  BILLING = 'BILLING',
 }
 
 export interface GenerateAISummaryRowPayload {

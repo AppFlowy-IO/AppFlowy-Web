@@ -1,7 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { CalculationType, FieldType, useFieldType } from '@/application/database-yjs';
+import { CalculationType, FieldType } from '@/application/database-yjs';
+import { useCalculationFieldType } from '@/application/database-yjs/selector';
 import { ICalculationCell } from '@/components/database/components/grid/grid-calculation-cell/CalculationCell';
 import {
   DropdownMenu,
@@ -18,7 +19,8 @@ function CalcationMenu ({ calculation, fieldId, open, onOpenChange, onClear, onC
   onClear: () => void;
   onChangeType: (type: CalculationType) => void;
 }) {
-  const fieldType = useFieldType(fieldId);
+  // Formulas calculate like the native type of their result.
+  const fieldType = useCalculationFieldType(fieldId);
   const { t } = useTranslation();
 
   const isCheckbox = fieldType === FieldType.Checkbox;
@@ -123,6 +125,7 @@ function CalcationMenu ({ calculation, fieldId, open, onOpenChange, onClear, onC
           <DropdownMenuItem
             key={option.value}
             className={'w-full'}
+            data-testid={`calculation-option-${option.value}`}
             onSelect={() => {
               onChangeType(option.value);
             }}

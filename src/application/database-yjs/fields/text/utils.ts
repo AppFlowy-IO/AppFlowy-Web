@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import * as Y from 'yjs';
 
-import { FieldType } from '@/application/database-yjs';
+import { FieldType } from '@/application/database-yjs/database.type';
 import {
   DateFormat,
   TimeFormat,

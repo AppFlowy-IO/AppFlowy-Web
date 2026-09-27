@@ -16,3 +16,4 @@ export * as QuickNoteService from './quick-note';
 export * as RowService from './row';
 export * as NotificationService from './notification';
 export * as InlineCommentService from './inline-comment';
+export * as IntegrationService from './integration';

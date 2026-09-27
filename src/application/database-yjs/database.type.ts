@@ -28,6 +28,7 @@ export enum FieldType {
   Rollup = 16,
   CreatedBy = 17,
   LastEditedBy = 18,
+  Formula = 19,
 }
 
 export const ATTRIBUTION_FIELD_TYPES = [FieldType.CreatedBy, FieldType.LastEditedBy] as const;
@@ -66,6 +67,7 @@ export enum CalculationType {
   CountValue = 18,
   PercentChecked = 19,
   PercentUnchecked = 20,
+  PercentValue = 21,
 }
 
 export enum RollupDisplayMode {

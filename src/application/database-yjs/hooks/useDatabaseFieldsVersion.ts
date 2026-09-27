@@ -67,10 +67,14 @@ function getFieldsVersionStore(fields: YDatabaseFields | undefined): FieldsVersi
  * The Y.Map returned by `useDatabaseFields` is identity-stable across
  * mutations, so memos keyed on `fields` alone never re-run. Include the
  * value of this hook in the dep array to opt in to invalidation.
+ *
+ * Pass `enabled = false` from hooks mounted for every cell that only need
+ * the version in some cases (e.g. formula fields); they then neither
+ * subscribe nor re-render on unrelated field edits and read 0.
  */
-export function useDatabaseFieldsVersion(): number {
+export function useDatabaseFieldsVersion(enabled = true): number {
   const fields = useDatabaseFields();
-  const store = getFieldsVersionStore(fields);
+  const store = enabled ? getFieldsVersionStore(fields) : EMPTY_STORE;
 
   return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 }

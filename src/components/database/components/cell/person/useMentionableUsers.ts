@@ -32,6 +32,30 @@ function getMemoryCachedUsers(workspaceId: string | undefined): MentionablePerso
   return isMemoryCacheValid(cached) ? cached.users : EMPTY_USERS;
 }
 
+/**
+ * The last member list loaded for a workspace, however old. For one-off reads
+ * outside React (e.g. keeping member names when a formula is converted).
+ */
+export function peekMentionableUsers(workspaceId: string | undefined): readonly MentionablePerson[] {
+  return (workspaceId && cache.get(workspaceId)?.users) || EMPTY_USERS;
+}
+
+/** Await names before persisting a derived value; a cold cache is not an empty member list. */
+export async function loadMentionableUsers(workspaceId: string | undefined): Promise<readonly MentionablePerson[]> {
+  if (!workspaceId) throw new Error('A workspace is required to resolve formula member names');
+  const cached = cache.get(workspaceId);
+
+  if (isMemoryCacheValid(cached)) return cached.users;
+  const { users, fresh } = await loadFromDiskDeduplicated(workspaceId);
+
+  if (fresh) {
+    cache.set(workspaceId, { users, timestamp: Date.now() });
+    return users;
+  }
+
+  return refreshFromApi(workspaceId);
+}
+
 /** Build one lossless UID index per shared member-list snapshot. */
 export function getMentionableUserIndex(
   users: readonly MentionablePerson[]

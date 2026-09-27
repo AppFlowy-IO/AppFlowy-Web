@@ -8,6 +8,7 @@ import {
   ShareSelectors,
   SidebarSelectors,
 } from '../../support/selectors';
+import { mockServerInfo } from '../../support/server-info-helpers';
 import { generateRandomEmail } from '../../support/test-config';
 
 /**
@@ -18,9 +19,9 @@ import { generateRandomEmail } from '../../support/test-config';
  *   - "Export to PDF" button (always visible)
  *   - "Include linked pages" switch (Pro-gated; clicking on Free opens upgrade)
  *
- * Self-host (`isAppFlowyHosted()=false`) auto-enables Pro features. To force
- * "free cloud user" behavior in tests, we keep the default hosted detection and
- * mock the subscriptions endpoint to return an empty plan list.
+ * Confirmed self-hosted servers enable Pro export features. The Free cloud
+ * scenario explicitly mocks cloud server information and an empty subscription
+ * list, independently of the test server's hostname.
  */
 async function openSharePopover(page: Page): Promise<void> {
   await expect(ShareSelectors.shareButton(page)).toBeVisible({ timeout: 10000 });
@@ -137,7 +138,8 @@ test.describe('Feature: Export to PDF', () => {
   }) => {
     let upgradeLinkRequested = false;
 
-    await test.step('Given billing endpoints report no active subscription (Free)', async () => {
+    await test.step('Given a cloud server with no active subscription (Free)', async () => {
+      await mockServerInfo(page, { self_hosted: false });
       await mockBillingEndpoints(page);
       // Match the actual URL — `getSubscriptionLink` hits
       // /billing/api/v1/subscription-link?workspace_subscription_plan=...&workspace_id=...
@@ -178,19 +180,18 @@ test.describe('Feature: Export to PDF', () => {
         (window as unknown as { __originalOpen: typeof original }).__originalOpen = original;
       });
 
-      await ExportSelectors.includeLinkedPagesSwitch(page).click({ force: true });
-      await page.waitForTimeout(1500);
+      const includeLinkedPages = ExportSelectors.includeLinkedPagesSwitch(page);
+
+      await expect(includeLinkedPages).toBeEnabled();
+      await expect(includeLinkedPages).toHaveAttribute('data-state', 'unchecked');
+      await includeLinkedPages.click();
     });
 
     await test.step('Then the subscription-link endpoint is hit and a checkout URL is opened', async () => {
-      expect(upgradeLinkRequested).toBe(true);
-
-      const opened = await page.evaluate(() =>
-        ((window as unknown as { __opened?: string[] }).__opened ?? []).slice()
-      );
-
-      expect(opened.length).toBeGreaterThan(0);
-      expect(opened[0]).toContain('checkout');
+      await expect.poll(() => upgradeLinkRequested).toBe(true);
+      await expect.poll(() => page.evaluate(() =>
+        (window as unknown as { __opened?: string[] }).__opened ?? []
+      )).toContain('https://example.com/checkout/test-session');
     });
 
     await test.step('And the toggle did NOT flip to checked (still Free)', async () => {

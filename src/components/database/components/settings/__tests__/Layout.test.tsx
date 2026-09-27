@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { toast } from 'sonner';
 
 import { DatabaseViewLayout } from '@/application/types';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -10,10 +11,12 @@ let mockCreationEnabled = false;
 let mockIsDashboardWidget = false;
 
 jest.mock('@/application/constants', () => ({
+  ...jest.requireActual('@/application/constants'),
   get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
     return mockCreationEnabled;
   },
 }));
+jest.mock('sonner', () => ({ toast: { error: jest.fn() } }));
 jest.mock('@/application/database-yjs', () => ({
   useDatabaseContext: () => ({ isDashboardWidget: mockIsDashboardWidget }),
   useDatabaseViewId: () => 'view-id',
@@ -43,7 +46,8 @@ describe('database Layout', () => {
   beforeEach(() => {
     mockCreationEnabled = false;
     mockIsDashboardWidget = false;
-    mockUpdateLayout.mockClear();
+    jest.clearAllMocks();
+    mockUpdateLayout.mockReset();
   });
 
   it('hides Timeline and Dashboard conversion when web creation is disabled', async () => {
@@ -105,5 +109,17 @@ describe('database Layout', () => {
 
     expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`)).toBeNull();
     expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`)).toBeTruthy();
+  });
+
+  it('shows a connection message when Chart conversion is rejected without changing the selected layout', async () => {
+    const message = 'Connect to the internet to create Form or Chart views.';
+
+    mockUpdateLayout.mockRejectedValueOnce(new Error(message));
+    await openLayout(DatabaseViewLayout.Grid);
+    fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Chart}`));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    expect(mockUpdateLayout).toHaveBeenCalledTimes(1);
+    expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Chart);
   });
 });

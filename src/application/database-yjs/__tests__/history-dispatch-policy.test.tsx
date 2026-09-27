@@ -782,7 +782,9 @@ describe('database history production dispatch policies', () => {
         { wrapper: createWrapper(fixture.databaseDoc, {}, { createRow }) }
       );
 
-      act(() => hook.result.current.updateLayout(DatabaseViewLayout.Calendar));
+      await act(async () => {
+        await hook.result.current.updateLayout(DatabaseViewLayout.Calendar);
+      });
       await act(async () => {
         await hook.result.current.createEvent({ startTimestamp: '100', endTimestamp: '200', includeTime: true });
       });

@@ -712,8 +712,16 @@ export const ImportSelectors = {
   dialog: (page: Page) => page.getByTestId('import-dialog'),
   markdownButton: (page: Page) => page.getByTestId('import-markdown'),
   csvButton: (page: Page) => page.getByTestId('import-csv'),
+  htmlButton: (page: Page) => page.getByTestId('import-html'),
+  docxButton: (page: Page) => page.getByTestId('import-docx'),
+  pdfButton: (page: Page) => page.getByTestId('import-pdf'),
   markdownInput: (page: Page) => page.getByTestId('import-markdown-input'),
   csvInput: (page: Page) => page.getByTestId('import-csv-input'),
+  htmlInput: (page: Page) => page.getByTestId('import-html-input'),
+  docxInput: (page: Page) => page.getByTestId('import-docx-input'),
+  pdfInput: (page: Page) => page.getByTestId('import-pdf-input'),
+  /** Per-format batch counter shown while several files import one by one. */
+  batchProgress: (page: Page, format: string) => page.getByTestId(`import-${format}-progress`),
 };
 
 /**

@@ -1434,6 +1434,9 @@ export namespace notification {
 
         /** WorkspaceNotification commentChanged */
         commentChanged?: (notification.ICommentChanged|null);
+
+        /** WorkspaceNotification storageLimitExceeded */
+        storageLimitExceeded?: (notification.IStorageLimitExceeded|null);
     }
 
     /** Represents a WorkspaceNotification. */
@@ -1478,8 +1481,11 @@ export namespace notification {
         /** WorkspaceNotification commentChanged. */
         public commentChanged?: (notification.ICommentChanged|null);
 
+        /** WorkspaceNotification storageLimitExceeded. */
+        public storageLimitExceeded?: (notification.IStorageLimitExceeded|null);
+
         /** WorkspaceNotification payload. */
-        public payload?: ("profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged");
+        public payload?: ("profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"storageLimitExceeded");
 
         /**
          * Creates a new WorkspaceNotification instance using the specified properties.
@@ -3227,6 +3233,115 @@ export namespace notification {
 
         /**
          * Gets the default type url for CommentChanged
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    /** Properties of a StorageLimitExceeded. */
+    interface IStorageLimitExceeded {
+
+        /** StorageLimitExceeded objectId */
+        objectId?: (string|null);
+
+        /** StorageLimitExceeded code */
+        code?: (number|null);
+
+        /** StorageLimitExceeded message */
+        message?: (string|null);
+    }
+
+    /** Represents a StorageLimitExceeded. */
+    class StorageLimitExceeded implements IStorageLimitExceeded {
+
+        /**
+         * Constructs a new StorageLimitExceeded.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: notification.IStorageLimitExceeded);
+
+        /** StorageLimitExceeded objectId. */
+        public objectId: string;
+
+        /** StorageLimitExceeded code. */
+        public code: number;
+
+        /** StorageLimitExceeded message. */
+        public message: string;
+
+        /**
+         * Creates a new StorageLimitExceeded instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns StorageLimitExceeded instance
+         */
+        public static create(properties?: notification.IStorageLimitExceeded): notification.StorageLimitExceeded;
+
+        /**
+         * Encodes the specified StorageLimitExceeded message. Does not implicitly {@link notification.StorageLimitExceeded.verify|verify} messages.
+         * @param message StorageLimitExceeded message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: notification.IStorageLimitExceeded, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified StorageLimitExceeded message, length delimited. Does not implicitly {@link notification.StorageLimitExceeded.verify|verify} messages.
+         * @param message StorageLimitExceeded message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: notification.IStorageLimitExceeded, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a StorageLimitExceeded message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns StorageLimitExceeded
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.StorageLimitExceeded;
+
+        /**
+         * Decodes a StorageLimitExceeded message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns StorageLimitExceeded
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.StorageLimitExceeded;
+
+        /**
+         * Verifies a StorageLimitExceeded message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a StorageLimitExceeded message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns StorageLimitExceeded
+         */
+        public static fromObject(object: { [k: string]: any }): notification.StorageLimitExceeded;
+
+        /**
+         * Creates a plain object from a StorageLimitExceeded message. Also converts values to other types if specified.
+         * @param message StorageLimitExceeded
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: notification.StorageLimitExceeded, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this StorageLimitExceeded to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for StorageLimitExceeded
          * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
          * @returns The default type url
          */

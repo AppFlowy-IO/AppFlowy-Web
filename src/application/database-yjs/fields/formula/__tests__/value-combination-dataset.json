@@ -1,0 +1,2089 @@
+{
+  "version": 1,
+  "time_zone": "UTC",
+  "now_ms": 1790409600000,
+  "description": "Authored concrete inputs and independent expectations. Exhaustive combinations mean every realizable ordered pair/triple of these listed values, not arbitrary unbounded values or formulas. Expected data must never be used to fabricate evaluator inputs.",
+  "options": [
+    {
+      "id": "design",
+      "name": "Design"
+    },
+    {
+      "id": "build",
+      "name": "Build"
+    },
+    {
+      "id": "design-copy",
+      "name": "Design"
+    },
+    {
+      "id": "unicode",
+      "name": "设计 🚀"
+    },
+    {
+      "id": "comma",
+      "name": "QA, review"
+    }
+  ],
+  "people": [
+    {
+      "id": "10000000-0000-4000-8000-000000000001",
+      "uid": 101,
+      "name": "Ada Lovelace"
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000002",
+      "uid": 202,
+      "name": "林 🚀"
+    }
+  ],
+  "related_rows": [
+    {
+      "id": "20000000-0000-4000-8000-000000000001",
+      "title": "Design",
+      "amount": "8",
+      "checked": true
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000002",
+      "title": "Build",
+      "amount": "20",
+      "checked": true
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000003",
+      "title": "QA testing",
+      "amount": "6",
+      "checked": false
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000004",
+      "title": "",
+      "amount": null,
+      "checked": false
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000005",
+      "title": "Design",
+      "amount": "-8",
+      "checked": false
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000006",
+      "title": "设计 🚀",
+      "amount": "19.99",
+      "checked": true
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000007",
+      "title": "QA, review",
+      "amount": "0",
+      "checked": false
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000008",
+      "title": "Unrelated",
+      "amount": "1000",
+      "checked": true
+    }
+  ],
+  "value_sets": {
+    "text": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true
+        }
+      },
+      {
+        "id": "blank",
+        "input": {
+          "text": ""
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true
+        }
+      },
+      {
+        "id": "spaces",
+        "input": {
+          "text": "  "
+        },
+        "expected": {
+          "normalized": "  ",
+          "truth": false,
+          "empty": false
+        }
+      },
+      {
+        "id": "task-name",
+        "input": {
+          "text": "Launch website"
+        },
+        "expected": {
+          "normalized": "Launch website",
+          "truth": true,
+          "empty": false
+        }
+      },
+      {
+        "id": "case-sensitive",
+        "input": {
+          "text": "launch website"
+        },
+        "expected": {
+          "normalized": "launch website",
+          "truth": false,
+          "empty": false
+        }
+      },
+      {
+        "id": "unicode",
+        "input": {
+          "text": "设计 🚀 café"
+        },
+        "expected": {
+          "normalized": "设计 🚀 café",
+          "truth": false,
+          "empty": false
+        }
+      },
+      {
+        "id": "quoted-multiline",
+        "input": {
+          "text": "Launch \"v2\"\nready\t✓"
+        },
+        "expected": {
+          "normalized": "Launch \"v2\"\nready\t✓",
+          "truth": true,
+          "empty": false
+        }
+      },
+      {
+        "id": "long-text",
+        "input": {
+          "text": "Launch xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        "expected": {
+          "normalized": "Launch xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "truth": true,
+          "empty": false
+        }
+      }
+    ],
+    "number": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "number": null
+        }
+      },
+      {
+        "id": "blank",
+        "input": {
+          "text": ""
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "number": null
+        }
+      },
+      {
+        "id": "zero",
+        "input": {
+          "text": "0"
+        },
+        "expected": {
+          "normalized": "0",
+          "truth": false,
+          "empty": true,
+          "number": 0
+        }
+      },
+      {
+        "id": "negative-zero",
+        "input": {
+          "text": "-0"
+        },
+        "expected": {
+          "normalized": "0",
+          "truth": false,
+          "empty": true,
+          "number": 0
+        }
+      },
+      {
+        "id": "positive",
+        "input": {
+          "text": "8"
+        },
+        "expected": {
+          "normalized": "8",
+          "truth": true,
+          "empty": false,
+          "number": 8
+        }
+      },
+      {
+        "id": "negative",
+        "input": {
+          "text": "-8"
+        },
+        "expected": {
+          "normalized": "-8",
+          "truth": false,
+          "empty": false,
+          "number": -8
+        }
+      },
+      {
+        "id": "price",
+        "input": {
+          "text": "19.99"
+        },
+        "expected": {
+          "normalized": "19.99",
+          "truth": true,
+          "empty": false,
+          "number": 19.99
+        }
+      },
+      {
+        "id": "negative-fraction",
+        "input": {
+          "text": "-3.5"
+        },
+        "expected": {
+          "normalized": "-3.5",
+          "truth": false,
+          "empty": false,
+          "number": -3.5
+        }
+      },
+      {
+        "id": "tiny-fraction",
+        "input": {
+          "text": "0.000001"
+        },
+        "expected": {
+          "normalized": "0.000001",
+          "truth": true,
+          "empty": false,
+          "number": 1e-06
+        }
+      },
+      {
+        "id": "large-integer",
+        "input": {
+          "text": "9007199254740991"
+        },
+        "expected": {
+          "normalized": "9007199254740991",
+          "truth": true,
+          "empty": false,
+          "number": 9007199254740991
+        }
+      },
+      {
+        "id": "malformed",
+        "input": {
+          "text": "not-a-number"
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "number": null
+        }
+      }
+    ],
+    "time": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "number": null
+        }
+      },
+      {
+        "id": "blank",
+        "input": {
+          "text": ""
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "number": null
+        }
+      },
+      {
+        "id": "zero",
+        "input": {
+          "text": "0"
+        },
+        "expected": {
+          "normalized": "0",
+          "truth": false,
+          "empty": true,
+          "number": 0
+        }
+      },
+      {
+        "id": "negative",
+        "input": {
+          "text": "-60000"
+        },
+        "expected": {
+          "normalized": "-60000",
+          "truth": false,
+          "empty": false,
+          "number": -60000
+        }
+      },
+      {
+        "id": "minutes",
+        "input": {
+          "text": "900000"
+        },
+        "expected": {
+          "normalized": "900000",
+          "truth": false,
+          "empty": false,
+          "number": 900000
+        }
+      },
+      {
+        "id": "threshold",
+        "input": {
+          "text": "3600000"
+        },
+        "expected": {
+          "normalized": "3600000",
+          "truth": false,
+          "empty": false,
+          "number": 3600000
+        }
+      },
+      {
+        "id": "duration",
+        "input": {
+          "text": "1h30m"
+        },
+        "expected": {
+          "normalized": "5400000",
+          "truth": true,
+          "empty": false,
+          "number": 5400000
+        }
+      },
+      {
+        "id": "clock",
+        "input": {
+          "text": "08:30"
+        },
+        "expected": {
+          "normalized": "30600000",
+          "truth": true,
+          "empty": false,
+          "number": 30600000
+        }
+      }
+    ],
+    "checkbox": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "false",
+          "truth": false,
+          "empty": true,
+          "boolean": false
+        }
+      },
+      {
+        "id": "unchecked",
+        "input": {
+          "checked": false
+        },
+        "expected": {
+          "normalized": "false",
+          "truth": false,
+          "empty": true,
+          "boolean": false
+        }
+      },
+      {
+        "id": "checked",
+        "input": {
+          "checked": true
+        },
+        "expected": {
+          "normalized": "true",
+          "truth": true,
+          "empty": false,
+          "boolean": true
+        }
+      }
+    ],
+    "checklist": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "number": null
+        }
+      },
+      {
+        "id": "no-items",
+        "input": {
+          "done": 0,
+          "total": 0
+        },
+        "expected": {
+          "normalized": "0",
+          "truth": false,
+          "empty": true,
+          "number": 0
+        }
+      },
+      {
+        "id": "none-done",
+        "input": {
+          "done": 0,
+          "total": 3
+        },
+        "expected": {
+          "normalized": "0",
+          "truth": false,
+          "empty": true,
+          "number": 0
+        }
+      },
+      {
+        "id": "one-third",
+        "input": {
+          "done": 1,
+          "total": 3
+        },
+        "expected": {
+          "normalized": "33",
+          "truth": false,
+          "empty": false,
+          "number": 33
+        }
+      },
+      {
+        "id": "half",
+        "input": {
+          "done": 1,
+          "total": 2
+        },
+        "expected": {
+          "normalized": "50",
+          "truth": false,
+          "empty": false,
+          "number": 50
+        }
+      },
+      {
+        "id": "two-thirds",
+        "input": {
+          "done": 2,
+          "total": 3
+        },
+        "expected": {
+          "normalized": "67",
+          "truth": true,
+          "empty": false,
+          "number": 67
+        }
+      },
+      {
+        "id": "all-done",
+        "input": {
+          "done": 3,
+          "total": 3
+        },
+        "expected": {
+          "normalized": "100",
+          "truth": true,
+          "empty": false,
+          "number": 100
+        }
+      }
+    ],
+    "select": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true
+        }
+      },
+      {
+        "id": "blank",
+        "input": {
+          "ids": []
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true
+        }
+      },
+      {
+        "id": "design",
+        "input": {
+          "ids": [
+            "design"
+          ]
+        },
+        "expected": {
+          "normalized": "Design",
+          "truth": true,
+          "empty": false
+        }
+      },
+      {
+        "id": "build",
+        "input": {
+          "ids": [
+            "build"
+          ]
+        },
+        "expected": {
+          "normalized": "Build",
+          "truth": false,
+          "empty": false
+        }
+      },
+      {
+        "id": "unicode",
+        "input": {
+          "ids": [
+            "unicode"
+          ]
+        },
+        "expected": {
+          "normalized": "设计 🚀",
+          "truth": false,
+          "empty": false
+        }
+      },
+      {
+        "id": "comma",
+        "input": {
+          "ids": [
+            "comma"
+          ]
+        },
+        "expected": {
+          "normalized": "QA, review",
+          "truth": false,
+          "empty": false
+        }
+      }
+    ],
+    "multi-select": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "items": []
+        }
+      },
+      {
+        "id": "empty",
+        "input": {
+          "ids": []
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "items": []
+        }
+      },
+      {
+        "id": "one",
+        "input": {
+          "ids": [
+            "design"
+          ]
+        },
+        "expected": {
+          "normalized": "Design",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Design"
+          ]
+        }
+      },
+      {
+        "id": "nonmatch",
+        "input": {
+          "ids": [
+            "build"
+          ]
+        },
+        "expected": {
+          "normalized": "Build",
+          "truth": false,
+          "empty": false,
+          "items": [
+            "Build"
+          ]
+        }
+      },
+      {
+        "id": "two",
+        "input": {
+          "ids": [
+            "design",
+            "build"
+          ]
+        },
+        "expected": {
+          "normalized": "Design|Build",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Design",
+            "Build"
+          ]
+        }
+      },
+      {
+        "id": "reversed",
+        "input": {
+          "ids": [
+            "build",
+            "design"
+          ]
+        },
+        "expected": {
+          "normalized": "Build|Design",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Build",
+            "Design"
+          ]
+        }
+      },
+      {
+        "id": "duplicate-names",
+        "input": {
+          "ids": [
+            "design",
+            "design-copy"
+          ]
+        },
+        "expected": {
+          "normalized": "Design|Design",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Design",
+            "Design"
+          ]
+        }
+      },
+      {
+        "id": "unicode-comma",
+        "input": {
+          "ids": [
+            "unicode",
+            "comma"
+          ]
+        },
+        "expected": {
+          "normalized": "设计 🚀|QA, review",
+          "truth": false,
+          "empty": false,
+          "items": [
+            "设计 🚀",
+            "QA, review"
+          ]
+        }
+      }
+    ],
+    "media": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "items": []
+        }
+      },
+      {
+        "id": "empty",
+        "input": {
+          "names": []
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "items": []
+        }
+      },
+      {
+        "id": "one",
+        "input": {
+          "names": [
+            "Design"
+          ]
+        },
+        "expected": {
+          "normalized": "Design",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Design"
+          ]
+        }
+      },
+      {
+        "id": "nonmatch",
+        "input": {
+          "names": [
+            "Build"
+          ]
+        },
+        "expected": {
+          "normalized": "Build",
+          "truth": false,
+          "empty": false,
+          "items": [
+            "Build"
+          ]
+        }
+      },
+      {
+        "id": "two",
+        "input": {
+          "names": [
+            "Design",
+            "Build"
+          ]
+        },
+        "expected": {
+          "normalized": "Design|Build",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Design",
+            "Build"
+          ]
+        }
+      },
+      {
+        "id": "reversed",
+        "input": {
+          "names": [
+            "Build",
+            "Design"
+          ]
+        },
+        "expected": {
+          "normalized": "Build|Design",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Build",
+            "Design"
+          ]
+        }
+      },
+      {
+        "id": "duplicate-names",
+        "input": {
+          "names": [
+            "Design",
+            "Design"
+          ]
+        },
+        "expected": {
+          "normalized": "Design|Design",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Design",
+            "Design"
+          ]
+        }
+      },
+      {
+        "id": "unicode-comma",
+        "input": {
+          "names": [
+            "设计 🚀",
+            "QA, review"
+          ]
+        },
+        "expected": {
+          "normalized": "设计 🚀|QA, review",
+          "truth": false,
+          "empty": false,
+          "items": [
+            "设计 🚀",
+            "QA, review"
+          ]
+        }
+      }
+    ],
+    "person": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "items": []
+        }
+      },
+      {
+        "id": "empty",
+        "input": {
+          "people": []
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "items": []
+        }
+      },
+      {
+        "id": "one",
+        "input": {
+          "people": [
+            "10000000-0000-4000-8000-000000000001"
+          ]
+        },
+        "expected": {
+          "normalized": "Ada Lovelace",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Ada Lovelace"
+          ]
+        }
+      },
+      {
+        "id": "nonmatch",
+        "input": {
+          "people": [
+            "10000000-0000-4000-8000-000000000002"
+          ]
+        },
+        "expected": {
+          "normalized": "林 🚀",
+          "truth": false,
+          "empty": false,
+          "items": [
+            "林 🚀"
+          ]
+        }
+      },
+      {
+        "id": "two",
+        "input": {
+          "people": [
+            "10000000-0000-4000-8000-000000000001",
+            "10000000-0000-4000-8000-000000000002"
+          ]
+        },
+        "expected": {
+          "normalized": "Ada Lovelace|林 🚀",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Ada Lovelace",
+            "林 🚀"
+          ]
+        }
+      },
+      {
+        "id": "reversed",
+        "input": {
+          "people": [
+            "10000000-0000-4000-8000-000000000002",
+            "10000000-0000-4000-8000-000000000001"
+          ]
+        },
+        "expected": {
+          "normalized": "林 🚀|Ada Lovelace",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "林 🚀",
+            "Ada Lovelace"
+          ]
+        }
+      },
+      {
+        "id": "anonymous",
+        "input": {
+          "people": [
+            "00000000-0000-0000-0000-000000000000"
+          ]
+        },
+        "expected": {
+          "normalized": "Anonymous",
+          "truth": false,
+          "empty": false,
+          "items": [
+            "Anonymous"
+          ]
+        }
+      }
+    ],
+    "member": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "items": []
+        }
+      },
+      {
+        "id": "ada",
+        "input": {
+          "uid": 101
+        },
+        "expected": {
+          "normalized": "Ada Lovelace",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Ada Lovelace"
+          ]
+        }
+      },
+      {
+        "id": "unicode",
+        "input": {
+          "uid": 202
+        },
+        "expected": {
+          "normalized": "林 🚀",
+          "truth": false,
+          "empty": false,
+          "items": [
+            "林 🚀"
+          ]
+        }
+      },
+      {
+        "id": "unknown",
+        "input": {
+          "uid": 404
+        },
+        "expected": {
+          "normalized": "User 404",
+          "truth": false,
+          "empty": false,
+          "items": [
+            "User 404"
+          ]
+        }
+      }
+    ],
+    "relation": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "items": []
+        }
+      },
+      {
+        "id": "empty",
+        "input": {
+          "rows": []
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "items": []
+        }
+      },
+      {
+        "id": "one",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        },
+        "expected": {
+          "normalized": "Design",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Design"
+          ]
+        }
+      },
+      {
+        "id": "nonmatch",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000002"
+          ]
+        },
+        "expected": {
+          "normalized": "Build",
+          "truth": false,
+          "empty": false,
+          "items": [
+            "Build"
+          ]
+        }
+      },
+      {
+        "id": "two",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001",
+            "20000000-0000-4000-8000-000000000002"
+          ]
+        },
+        "expected": {
+          "normalized": "Design|Build",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Design",
+            "Build"
+          ]
+        }
+      },
+      {
+        "id": "reversed",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000002",
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        },
+        "expected": {
+          "normalized": "Build|Design",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Build",
+            "Design"
+          ]
+        }
+      },
+      {
+        "id": "duplicate-titles",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001",
+            "20000000-0000-4000-8000-000000000005"
+          ]
+        },
+        "expected": {
+          "normalized": "Design|Design",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Design",
+            "Design"
+          ]
+        }
+      },
+      {
+        "id": "untitled",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000004"
+          ]
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": false,
+          "items": [
+            ""
+          ]
+        }
+      },
+      {
+        "id": "unicode-comma",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000006",
+            "20000000-0000-4000-8000-000000000007"
+          ]
+        },
+        "expected": {
+          "normalized": "设计 🚀|QA, review",
+          "truth": false,
+          "empty": false,
+          "items": [
+            "设计 🚀",
+            "QA, review"
+          ]
+        }
+      }
+    ],
+    "rollup-number": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "number": null
+        }
+      },
+      {
+        "id": "no-links",
+        "input": {
+          "rows": []
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "number": null
+        }
+      },
+      {
+        "id": "blank-target",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000004"
+          ]
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "number": null
+        },
+        "note": "AppFlowy Sum has no numeric result when every related Formula is empty; a related numeric zero remains a numeric zero."
+      },
+      {
+        "id": "zero-target",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000007"
+          ]
+        },
+        "expected": {
+          "normalized": "0",
+          "truth": false,
+          "empty": true,
+          "number": 0
+        }
+      },
+      {
+        "id": "single",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        },
+        "expected": {
+          "normalized": "8",
+          "truth": true,
+          "empty": false,
+          "number": 8
+        }
+      },
+      {
+        "id": "sum",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001",
+            "20000000-0000-4000-8000-000000000002"
+          ]
+        },
+        "expected": {
+          "normalized": "28",
+          "truth": true,
+          "empty": false,
+          "number": 28
+        }
+      },
+      {
+        "id": "cancel",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001",
+            "20000000-0000-4000-8000-000000000005"
+          ]
+        },
+        "expected": {
+          "normalized": "0",
+          "truth": false,
+          "empty": true,
+          "number": 0
+        }
+      },
+      {
+        "id": "negative",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000005"
+          ]
+        },
+        "expected": {
+          "normalized": "-8",
+          "truth": false,
+          "empty": false,
+          "number": -8
+        }
+      },
+      {
+        "id": "fraction",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000006"
+          ]
+        },
+        "expected": {
+          "normalized": "19.99",
+          "truth": true,
+          "empty": false,
+          "number": 19.99
+        }
+      },
+      {
+        "id": "blank-and-number",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000004",
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        },
+        "expected": {
+          "normalized": "8",
+          "truth": true,
+          "empty": false,
+          "number": 8
+        }
+      }
+    ],
+    "rollup-list": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "items": []
+        }
+      },
+      {
+        "id": "no-links",
+        "input": {
+          "rows": []
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "items": []
+        }
+      },
+      {
+        "id": "blank-target",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000004"
+          ]
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "items": []
+        }
+      },
+      {
+        "id": "single",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        },
+        "expected": {
+          "normalized": "Design",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Design"
+          ]
+        }
+      },
+      {
+        "id": "two",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001",
+            "20000000-0000-4000-8000-000000000002"
+          ]
+        },
+        "expected": {
+          "normalized": "Design|Build",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Design",
+            "Build"
+          ]
+        }
+      },
+      {
+        "id": "reversed",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000002",
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        },
+        "expected": {
+          "normalized": "Build|Design",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Build",
+            "Design"
+          ]
+        }
+      },
+      {
+        "id": "duplicate-titles",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001",
+            "20000000-0000-4000-8000-000000000005"
+          ]
+        },
+        "expected": {
+          "normalized": "Design|Design",
+          "truth": true,
+          "empty": false,
+          "items": [
+            "Design",
+            "Design"
+          ]
+        }
+      },
+      {
+        "id": "unicode-comma",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000006",
+            "20000000-0000-4000-8000-000000000007"
+          ]
+        },
+        "expected": {
+          "normalized": "设计 🚀|QA, review",
+          "truth": false,
+          "empty": false,
+          "items": [
+            "设计 🚀",
+            "QA, review"
+          ]
+        }
+      }
+    ],
+    "rollup-percent": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "number": null
+        }
+      },
+      {
+        "id": "no-links",
+        "input": {
+          "rows": []
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "number": null
+        }
+      },
+      {
+        "id": "unchecked",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000003"
+          ]
+        },
+        "expected": {
+          "normalized": "0",
+          "truth": false,
+          "empty": true,
+          "number": 0
+        }
+      },
+      {
+        "id": "checked",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        },
+        "expected": {
+          "normalized": "100",
+          "truth": true,
+          "empty": false,
+          "number": 100
+        }
+      },
+      {
+        "id": "half",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001",
+            "20000000-0000-4000-8000-000000000003"
+          ]
+        },
+        "expected": {
+          "normalized": "50",
+          "truth": true,
+          "empty": false,
+          "number": 50
+        }
+      },
+      {
+        "id": "all-checked",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001",
+            "20000000-0000-4000-8000-000000000002"
+          ]
+        },
+        "expected": {
+          "normalized": "100",
+          "truth": true,
+          "empty": false,
+          "number": 100
+        }
+      },
+      {
+        "id": "blank-in-denominator",
+        "input": {
+          "rows": [
+            "20000000-0000-4000-8000-000000000001",
+            "20000000-0000-4000-8000-000000000004"
+          ]
+        },
+        "expected": {
+          "normalized": "50",
+          "truth": true,
+          "empty": false,
+          "number": 50
+        }
+      }
+    ],
+    "date": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "start_ms": null,
+          "end_ms": null
+        }
+      },
+      {
+        "id": "epoch",
+        "input": {
+          "start": 0,
+          "include_time": true
+        },
+        "expected": {
+          "normalized": "0",
+          "truth": false,
+          "empty": false,
+          "start_ms": 0,
+          "end_ms": null,
+          "include_time": true
+        }
+      },
+      {
+        "id": "before-epoch",
+        "input": {
+          "start": -86400,
+          "include_time": true
+        },
+        "expected": {
+          "normalized": "-86400000",
+          "truth": false,
+          "empty": false,
+          "start_ms": -86400000,
+          "end_ms": null,
+          "include_time": true
+        }
+      },
+      {
+        "id": "leap-day",
+        "input": {
+          "start": 1709251199,
+          "include_time": true
+        },
+        "expected": {
+          "normalized": "1709251199000",
+          "truth": false,
+          "empty": false,
+          "start_ms": 1709251199000,
+          "end_ms": null,
+          "include_time": true
+        }
+      },
+      {
+        "id": "hidden-time",
+        "input": {
+          "start": 1790467020,
+          "include_time": false
+        },
+        "expected": {
+          "normalized": "1790467020000",
+          "truth": true,
+          "empty": false,
+          "start_ms": 1790467020000,
+          "end_ms": null,
+          "include_time": false
+        }
+      },
+      {
+        "id": "year-range",
+        "input": {
+          "start": 1767139200,
+          "include_time": false,
+          "end": 1767312000
+        },
+        "expected": {
+          "normalized": "1767139200000",
+          "truth": false,
+          "empty": false,
+          "start_ms": 1767139200000,
+          "end_ms": 1767312000000,
+          "include_time": false
+        }
+      },
+      {
+        "id": "dst-first",
+        "input": {
+          "start": 1730611800,
+          "include_time": true
+        },
+        "expected": {
+          "normalized": "1730611800000",
+          "truth": false,
+          "empty": false,
+          "start_ms": 1730611800000,
+          "end_ms": null,
+          "include_time": true
+        }
+      },
+      {
+        "id": "dst-second",
+        "input": {
+          "start": 1730615400,
+          "include_time": true
+        },
+        "expected": {
+          "normalized": "1730615400000",
+          "truth": false,
+          "empty": false,
+          "start_ms": 1730615400000,
+          "end_ms": null,
+          "include_time": true
+        }
+      }
+    ],
+    "metadata-date": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true,
+          "start_ms": null,
+          "end_ms": null
+        }
+      },
+      {
+        "id": "first-second",
+        "input": {
+          "start": 1
+        },
+        "expected": {
+          "normalized": "1000",
+          "truth": false,
+          "empty": false,
+          "start_ms": 1000,
+          "end_ms": null,
+          "include_time": true
+        }
+      },
+      {
+        "id": "leap-day",
+        "input": {
+          "start": 1709251199
+        },
+        "expected": {
+          "normalized": "1709251199000",
+          "truth": false,
+          "empty": false,
+          "start_ms": 1709251199000,
+          "end_ms": null,
+          "include_time": true
+        }
+      },
+      {
+        "id": "year-boundary",
+        "input": {
+          "start": 1767225600
+        },
+        "expected": {
+          "normalized": "1767225600000",
+          "truth": true,
+          "empty": false,
+          "start_ms": 1767225600000,
+          "end_ms": null,
+          "include_time": true
+        }
+      },
+      {
+        "id": "current-year",
+        "input": {
+          "start": 1790414100
+        },
+        "expected": {
+          "normalized": "1790414100000",
+          "truth": true,
+          "empty": false,
+          "start_ms": 1790414100000,
+          "end_ms": null,
+          "include_time": true
+        }
+      }
+    ],
+    "url": [
+      {
+        "id": "missing",
+        "input": null,
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true
+        }
+      },
+      {
+        "id": "blank",
+        "input": {
+          "text": ""
+        },
+        "expected": {
+          "normalized": "",
+          "truth": false,
+          "empty": true
+        }
+      },
+      {
+        "id": "https",
+        "input": {
+          "text": "https://example.com/Launch"
+        },
+        "expected": {
+          "normalized": "https://example.com/Launch",
+          "truth": true,
+          "empty": false
+        }
+      },
+      {
+        "id": "query",
+        "input": {
+          "text": "https://example.com/tasks?state=done&n=0"
+        },
+        "expected": {
+          "normalized": "https://example.com/tasks?state=done&n=0",
+          "truth": false,
+          "empty": false
+        }
+      },
+      {
+        "id": "unicode",
+        "input": {
+          "text": "https://example.com/设计"
+        },
+        "expected": {
+          "normalized": "https://example.com/设计",
+          "truth": false,
+          "empty": false
+        }
+      },
+      {
+        "id": "fragment",
+        "input": {
+          "text": "https://example.com/#Launch"
+        },
+        "expected": {
+          "normalized": "https://example.com/#Launch",
+          "truth": true,
+          "empty": false
+        }
+      },
+      {
+        "id": "email",
+        "input": {
+          "text": "mailto:ada@example.com"
+        },
+        "expected": {
+          "normalized": "mailto:ada@example.com",
+          "truth": false,
+          "empty": false
+        }
+      }
+    ]
+  },
+  "contracts": [
+    {
+      "id": "text",
+      "field_type": 0,
+      "source_type": 0,
+      "kind": "text",
+      "value_set": "text",
+      "predicate": "contains($, \"Launch\")",
+      "normalize": "$"
+    },
+    {
+      "id": "number",
+      "field_type": 1,
+      "source_type": 1,
+      "kind": "number",
+      "value_set": "number",
+      "predicate": "$ > 0",
+      "normalize": "format($)"
+    },
+    {
+      "id": "date",
+      "field_type": 2,
+      "source_type": 2,
+      "kind": "date",
+      "value_set": "date",
+      "predicate": "not(empty($)) and timestamp($) >= 1767225600000",
+      "normalize": "if(empty($), \"\", format(timestamp($)))"
+    },
+    {
+      "id": "select",
+      "field_type": 3,
+      "source_type": 3,
+      "kind": "text",
+      "value_set": "select",
+      "predicate": "$ == \"Design\"",
+      "normalize": "$"
+    },
+    {
+      "id": "multi-select",
+      "field_type": 4,
+      "source_type": 4,
+      "kind": "list",
+      "value_set": "multi-select",
+      "predicate": "includes($, \"Design\")",
+      "normalize": "join($, \"|\")"
+    },
+    {
+      "id": "checkbox",
+      "field_type": 5,
+      "source_type": 5,
+      "kind": "boolean",
+      "value_set": "checkbox",
+      "predicate": "$",
+      "normalize": "if($, \"true\", \"false\")"
+    },
+    {
+      "id": "url",
+      "field_type": 6,
+      "source_type": 6,
+      "kind": "text",
+      "value_set": "url",
+      "predicate": "contains($, \"Launch\")",
+      "normalize": "$"
+    },
+    {
+      "id": "checklist",
+      "field_type": 7,
+      "source_type": 7,
+      "kind": "number",
+      "value_set": "checklist",
+      "predicate": "$ > 50",
+      "normalize": "format($)"
+    },
+    {
+      "id": "edited-time",
+      "field_type": 8,
+      "source_type": 8,
+      "kind": "date",
+      "value_set": "metadata-date",
+      "predicate": "not(empty($)) and timestamp($) >= 1767225600000",
+      "normalize": "if(empty($), \"\", format(timestamp($)))"
+    },
+    {
+      "id": "created-time",
+      "field_type": 9,
+      "source_type": 9,
+      "kind": "date",
+      "value_set": "metadata-date",
+      "predicate": "not(empty($)) and timestamp($) >= 1767225600000",
+      "normalize": "if(empty($), \"\", format(timestamp($)))"
+    },
+    {
+      "id": "relation",
+      "field_type": 10,
+      "source_type": 10,
+      "kind": "list",
+      "value_set": "relation",
+      "predicate": "includes($, \"Design\")",
+      "normalize": "join($, \"|\")"
+    },
+    {
+      "id": "summary",
+      "field_type": 11,
+      "source_type": 11,
+      "kind": "text",
+      "value_set": "text",
+      "predicate": "contains($, \"Launch\")",
+      "normalize": "$"
+    },
+    {
+      "id": "translation",
+      "field_type": 12,
+      "source_type": 12,
+      "kind": "text",
+      "value_set": "text",
+      "predicate": "contains($, \"Launch\")",
+      "normalize": "$"
+    },
+    {
+      "id": "time",
+      "field_type": 13,
+      "source_type": 13,
+      "kind": "number",
+      "value_set": "time",
+      "predicate": "$ > 3600000",
+      "normalize": "format($)"
+    },
+    {
+      "id": "media",
+      "field_type": 14,
+      "source_type": 14,
+      "kind": "list",
+      "value_set": "media",
+      "predicate": "includes($, \"Design\")",
+      "normalize": "join($, \"|\")"
+    },
+    {
+      "id": "person",
+      "field_type": 15,
+      "source_type": 15,
+      "kind": "list",
+      "value_set": "person",
+      "predicate": "includes($, \"Ada Lovelace\")",
+      "normalize": "join($, \"|\")"
+    },
+    {
+      "id": "rollup-number",
+      "field_type": 16,
+      "source_type": 16,
+      "kind": "number",
+      "value_set": "rollup-number",
+      "predicate": "$ > 0",
+      "normalize": "format($)",
+      "rollup": {
+        "target": "amount",
+        "formula": "prop(\"Amount\")",
+        "calculation": "Sum",
+        "show_as": "Calculated"
+      }
+    },
+    {
+      "id": "rollup-list",
+      "field_type": 16,
+      "source_type": 16,
+      "kind": "list",
+      "value_set": "rollup-list",
+      "predicate": "includes($, \"Design\")",
+      "normalize": "join($, \"|\")",
+      "rollup": {
+        "target": "title",
+        "formula": "prop(\"Title\")",
+        "calculation": "Sum",
+        "show_as": "OriginalList"
+      }
+    },
+    {
+      "id": "rollup-percent",
+      "field_type": 16,
+      "source_type": 16,
+      "kind": "number",
+      "value_set": "rollup-percent",
+      "predicate": "$ > 0",
+      "normalize": "format($)",
+      "rollup": {
+        "target": "checked",
+        "formula": "prop(\"Checked\")",
+        "calculation": "PercentChecked",
+        "show_as": "Calculated"
+      }
+    },
+    {
+      "id": "created-by",
+      "field_type": 17,
+      "source_type": 17,
+      "kind": "list",
+      "value_set": "member",
+      "predicate": "includes($, \"Ada Lovelace\")",
+      "normalize": "join($, \"|\")"
+    },
+    {
+      "id": "edited-by",
+      "field_type": 18,
+      "source_type": 18,
+      "kind": "list",
+      "value_set": "member",
+      "predicate": "includes($, \"Ada Lovelace\")",
+      "normalize": "join($, \"|\")"
+    },
+    {
+      "id": "formula-text",
+      "field_type": 19,
+      "source_type": 0,
+      "kind": "text",
+      "value_set": "text",
+      "predicate": "contains($, \"Launch\")",
+      "normalize": "$",
+      "formula": "prop(\"$source\")"
+    },
+    {
+      "id": "formula-number",
+      "field_type": 19,
+      "source_type": 1,
+      "kind": "number",
+      "value_set": "number",
+      "predicate": "$ > 0",
+      "normalize": "format($)",
+      "formula": "prop(\"$source\")"
+    },
+    {
+      "id": "formula-date",
+      "field_type": 19,
+      "source_type": 2,
+      "kind": "date",
+      "value_set": "date",
+      "predicate": "not(empty($)) and timestamp($) >= 1767225600000",
+      "normalize": "if(empty($), \"\", format(timestamp($)))",
+      "formula": "prop(\"$source\")"
+    },
+    {
+      "id": "formula-boolean",
+      "field_type": 19,
+      "source_type": 5,
+      "kind": "boolean",
+      "value_set": "checkbox",
+      "predicate": "$",
+      "normalize": "if($, \"true\", \"false\")",
+      "formula": "prop(\"$source\")"
+    },
+    {
+      "id": "formula-list",
+      "field_type": 19,
+      "source_type": 4,
+      "kind": "list",
+      "value_set": "multi-select",
+      "predicate": "includes($, \"Design\")",
+      "normalize": "join($, \"|\")",
+      "formula": "prop(\"$source\")"
+    }
+  ],
+  "coverage": {
+    "field_types": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "contracts": 26,
+    "contract_values": 187,
+    "ordered_contract_pairs": 676,
+    "ordered_contract_triples": 17576,
+    "ordered_value_pairs": 34905,
+    "ordered_value_triples": 6503827,
+    "excluded_metadata_pairs": 64,
+    "excluded_metadata_triples": 35376
+  }
+}

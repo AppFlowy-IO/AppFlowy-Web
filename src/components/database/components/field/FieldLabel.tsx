@@ -27,6 +27,7 @@ function FieldLabel ({ type, ...props }: { type: FieldType } & React.HTMLAttribu
       [FieldType.Person]: t('grid.field.personFieldName'),
       [FieldType.Time]: t('grid.field.timeFieldName'),
       [FieldType.Rollup]: t('grid.field.rollupFieldName', { defaultValue: 'Rollup' }),
+      [FieldType.Formula]: t('grid.field.formulaFieldName', { defaultValue: 'Formula' }),
     }[type];
   }, [t, type]);
 

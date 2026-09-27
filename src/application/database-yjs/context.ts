@@ -5,8 +5,8 @@ import { createContext, useContext, useEffect, useState, useSyncExternalStore } 
 
 import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
 import { getOverlayTarget } from '@/application/database-yjs/view-conditions-overlay';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
+  BindViewSync,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
   CreateRow,
@@ -104,7 +104,7 @@ export interface DatabaseContextState {
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;
-  bindViewSync?: (doc: YDoc) => SyncContext | null;
+  bindViewSync?: BindViewSync;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
   createRow?: CreateRow;
   loadViewMeta?: LoadViewMeta;
@@ -134,6 +134,9 @@ export interface DatabaseContextState {
   ) => Promise<import('@/application/types').CreatePageResponse>;
   openPageModal?: (viewId: string) => void;
   deletePage?: (viewId: string) => Promise<void>;
+  restorePage?: (viewId: string) => Promise<void>;
+  loadTrashViews?: () => Promise<View[]>;
+  movePage?: (viewId: string, parentId: string) => Promise<void>;
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;

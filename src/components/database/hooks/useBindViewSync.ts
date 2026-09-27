@@ -14,7 +14,7 @@ export function useBindViewSync() {
   const registerSyncContext = syncContext?.registerSyncContext;
 
   return useCallback(
-    (doc: YDoc): SyncContext | null => {
+    (doc: YDoc, options?: { retain?: boolean }): SyncContext | null => {
       if (!registerSyncContext) {
         Log.warn('[useBindViewSync] registerSyncContext not available');
         return null;
@@ -23,7 +23,7 @@ export function useBindViewSync() {
       const docWithMeta = doc as YDocWithMeta;
 
       // Skip if already bound
-      if (docWithMeta._syncBound) {
+      if (docWithMeta._syncBound && !options?.retain) {
         Log.debug('[useBindViewSync] skipped - already bound', {
           viewId: docWithMeta.view_id,
           objectId: docWithMeta.object_id,
@@ -53,7 +53,8 @@ export function useBindViewSync() {
 
       const result = registerSyncContext({ doc, collabType });
 
-      docWithMeta._syncBound = true;
+      // Auxiliary ownership must not suppress a later page-owned binding.
+      if (!options?.retain) docWithMeta._syncBound = true;
 
       Log.debug('[useBindViewSync] complete', {
         viewId,

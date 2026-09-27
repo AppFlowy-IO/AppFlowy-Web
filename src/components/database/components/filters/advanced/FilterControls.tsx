@@ -51,6 +51,11 @@ import AdvancedDateFilterValueInput from './AdvancedDateFilterValueInput';
 const selectBoxClass =
   'flex h-8 items-center justify-between gap-1 overflow-hidden rounded-md border border-border-primary bg-transparent px-2 text-sm text-text-primary data-[state=open]:border-border-theme-thick disabled:opacity-50';
 
+// Desktop parity: ConditionButton — the borderless caption trigger used in the
+// compact editor header. It may shrink and truncate so the header never overflows.
+export const inlineSelectTriggerClass =
+  'flex h-7 min-w-0 items-center gap-1 rounded-300 px-2 text-xs font-medium text-text-primary hover:bg-fill-content-hover disabled:pointer-events-none disabled:text-text-tertiary';
+
 // Condition Selector Component - Shows only conditions dropdown
 interface ConditionSelectorProps {
   filter: Filter;
@@ -58,9 +63,18 @@ interface ConditionSelectorProps {
   field?: YDatabaseField;
   onConditionChange: (condition: number) => void;
   disabled?: boolean;
+  /** 'box' is the advanced panel select box; 'inline' is the compact editor header trigger. */
+  variant?: 'box' | 'inline';
 }
 
-export function ConditionSelector({ filter, fieldType, field, onConditionChange, disabled }: ConditionSelectorProps) {
+export function ConditionSelector({
+  filter,
+  fieldType,
+  field,
+  onConditionChange,
+  disabled,
+  variant = 'box',
+}: ConditionSelectorProps) {
   const { t } = useTranslation();
   const baseConditions = useConditionsForFieldType(fieldType, t, field);
   const isEnd = fieldType === FieldType.DateTime && isEndDateCondition(filter.condition);
@@ -77,43 +91,47 @@ export function ConditionSelector({ filter, fieldType, field, onConditionChange,
     return conditions.find((c) => c.value === filter.condition);
   }, [filter.condition, conditions, fieldType]);
 
+  const inline = variant === 'inline';
+
   // For Checkbox, the condition dropdown is non-interactive (just shows "Is")
   if (fieldType === FieldType.Checkbox) {
-    return (
+    return inline ? (
+      <span className='truncate px-2 text-xs font-medium text-text-primary'>{selectedCondition?.text}</span>
+    ) : (
       <div className={cn(selectBoxClass, 'min-w-0 flex-[7] border-transparent')}>
         <span className='truncate'>{selectedCondition?.text}</span>
       </div>
     );
   }
 
-  return (
-    <div className='min-w-0 flex-[7]'>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild disabled={disabled}>
-          <button
-            className={cn(selectBoxClass, 'w-full')}
-            title={selectedCondition?.text}
-            data-testid='filter-condition-selector'
+  const menu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild disabled={disabled}>
+        <button
+          className={inline ? inlineSelectTriggerClass : cn(selectBoxClass, 'w-full')}
+          title={selectedCondition?.text}
+          data-testid='filter-condition-selector'
+        >
+          <span className='truncate'>{selectedCondition?.text || t('grid.filter.conditon')}</span>
+          <ArrowDownSvg className={cn('h-5 w-5 shrink-0', inline ? 'text-icon-secondary' : 'text-icon-primary')} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align='start' className='max-h-[300px] w-[240px] overflow-y-auto'>
+        {conditions.map((condition) => (
+          <DropdownMenuItem
+            key={condition.value}
+            data-testid={`filter-condition-${condition.value}`}
+            onSelect={() => onConditionChange(condition.value)}
           >
-            <span className='truncate'>{selectedCondition?.text || t('grid.filter.conditon')}</span>
-            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align='start' className='max-h-[300px] w-[240px] overflow-y-auto'>
-          {conditions.map((condition) => (
-            <DropdownMenuItem
-              key={condition.value}
-              data-testid={`filter-condition-${condition.value}`}
-              onSelect={() => onConditionChange(condition.value)}
-            >
-              {condition.text}
-              {condition.value === filter.condition && <DropdownMenuItemTick />}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+            {condition.text}
+            {condition.value === filter.condition && <DropdownMenuItemTick />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
+
+  return inline ? menu : <div className='min-w-0 flex-[7]'>{menu}</div>;
 }
 
 // Get conditions based on field type
@@ -311,6 +329,15 @@ export function ValueInput({ filter, fieldType, field, disabled }: ValueInputPro
   return null;
 }
 
+// A condition without a value (e.g. "is empty"). The advanced row keeps an empty
+// slot so its columns stay aligned; the compact editor stacks the value below
+// its header and renders nothing instead.
+function EmptyValueSlot() {
+  const collapse = useFilterEditorContext()?.collapseEmptyValue;
+
+  return collapse ? null : <div className='min-w-0 flex-[7]' />;
+}
+
 // Text Value Input — uses lightweight in-place updater (no tree rebuild on every keystroke)
 function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: boolean }) {
   const { t } = useTranslation();
@@ -334,7 +361,7 @@ function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: b
     [updateValue]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[7]' />;
+  if (!showInput) return <EmptyValueSlot />;
 
   return (
     <div className='min-w-0 flex-[7]'>
@@ -400,7 +427,7 @@ function RelationValueInput({ filter, disabled }: { filter: Filter; disabled?: b
     [filter.id, filter.fieldId, updateFilter]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[7]' />;
+  if (!showInput) return <EmptyValueSlot />;
 
   return (
     <div className='min-w-0 flex-[7]'>
@@ -459,7 +486,7 @@ function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled
     [updateValue]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[7]' />;
+  if (!showInput) return <EmptyValueSlot />;
 
   return (
     <div className='min-w-0 flex-[7]'>
@@ -490,7 +517,7 @@ function DateValueInput({ filter, disabled }: { filter: DateFilter; disabled?: b
     ].includes(filter.condition);
   }, [filter.condition]);
 
-  if (!showInput) return <div className='min-w-0 flex-[7]' />;
+  if (!showInput) return <EmptyValueSlot />;
 
   return (
     <div className='min-w-0 flex-[7]'>
@@ -536,7 +563,7 @@ function SelectOptionValueInput({ filter, disabled }: { filter: SelectOptionFilt
     [filter.id, filter.fieldId, updateFilter]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[7]' />;
+  if (!showInput) return <EmptyValueSlot />;
 
   return (
     <div className='min-w-0 flex-[7]'>
@@ -727,7 +754,7 @@ function PersonValueInput({
     return `${selectedUserIds.length} selected`;
   }, [mentionableUserOptions, selectedUserIds, t]);
 
-  if (!showInput) return <div className='min-w-0 flex-[7]' />;
+  if (!showInput) return <EmptyValueSlot />;
 
   return (
     <div className='min-w-0 flex-[7]'>

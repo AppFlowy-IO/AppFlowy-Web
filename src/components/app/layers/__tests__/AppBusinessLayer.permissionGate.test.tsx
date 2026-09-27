@@ -194,7 +194,8 @@ function OperationsProbe({
               setLoadedName(view?.name ?? '');
               setRelations(JSON.stringify(view?.database_relations));
               setChildIds(JSON.stringify(view?.children.map((child) => child.view_id) ?? []));
-            });
+            })
+            .catch(() => setLoadedName('View unavailable'));
         }}
       >
         load metadata
@@ -211,7 +212,8 @@ function renderBusinessLayer(
   eventEmitter: EventEmitter,
   outline: View[],
   modalTargetId = modalViewId,
-  child: ReactNode = <NavigationProbe modalTargetId={modalTargetId} />
+  child: ReactNode = <NavigationProbe modalTargetId={modalTargetId} />,
+  trashList: View[] = []
 ) {
   const stableOutlineRef = { current: outline } as MutableRefObject<View[]>;
 
@@ -219,7 +221,7 @@ function renderBusinessLayer(
     outline,
     favoriteViews: [],
     recentViews: [],
-    trashList: [],
+    trashList,
     workspaceDatabases: {},
     stableOutlineRef,
     loadedViewIds: new Set<string>(),
@@ -451,6 +453,27 @@ describe('AppBusinessLayer permission gates', () => {
     expect(resolveWorkspaceViewMetadata).not.toHaveBeenCalled();
     expect(ViewService.get).not.toHaveBeenCalledWith(workspaceId, modalViewId);
     expect(ViewService.refresh).toHaveBeenCalledWith(workspaceId, modalViewId);
+  });
+
+  it.each([false, true])('only bypasses the rendered trash cache for authoritative lookups (%s)', async (authoritative) => {
+    const restoredView = { ...createView(modalViewId), name: 'Restored page' };
+
+    (ViewService.refresh as jest.Mock).mockResolvedValue(restoredView);
+    renderBusinessLayer(
+      new EventEmitter(),
+      [createView(routeViewId)],
+      modalViewId,
+      <OperationsProbe targetViewId={modalViewId} authoritative={authoritative} />,
+      [createView(modalViewId)]
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'load metadata' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loaded-metadata-name').textContent).toBe(authoritative ? 'Restored page' : 'View unavailable');
+    });
+    if (authoritative) expect(ViewService.refresh).toHaveBeenCalledWith(workspaceId, modalViewId);
+    else expect(ViewService.refresh).not.toHaveBeenCalledWith(workspaceId, modalViewId);
   });
 
   it('loads metadata-only off-outline values from the global index before using the network resolver', async () => {

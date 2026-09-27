@@ -1,8 +1,8 @@
 import { createContext } from 'react';
 
 import { CollabVersionRecord } from '@/application/collab-version.type';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
+  BindViewSync,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
   CreateOrphanedViewPayload,
@@ -19,6 +19,7 @@ import {
   LoadRowDocument,
   LoadView,
   LoadViewMeta,
+  PricingCatalog,
   PublishConfigPatch,
   Subscription,
   TestDatabasePromptConfig,
@@ -47,6 +48,7 @@ import {
  * **Narrower hooks** (read a subset of this context):
  * - `useToView()` — just the `toView` navigation callback
  * - `useGetSubscriptions()` — just `getSubscriptions`
+ * - `usePricingCatalog()` — `getPricingCatalog` behind a shared, TTL-cached store
  * - `usePublishing()` — memoized `{ publish, unpublish }`
  * - `useCollabHistory()` — memoized `{ getCollabHistory, previewCollabVersion, revertCollabVersion }`
  *
@@ -64,7 +66,7 @@ export interface AppOperationsContextType {
   /** Create a new row in a database view. */
   createRow?: CreateRow;
   /** Bind a Yjs document to the WebSocket sync layer. Returns a SyncContext or null. */
-  bindViewSync?: (doc: YDoc) => SyncContext | null;
+  bindViewSync?: BindViewSync;
 
   // ── Page CRUD ──────────────────────────────────────────────────────
   /** Create a new page under the given parent. */
@@ -87,6 +89,8 @@ export interface AppOperationsContextType {
   deleteTrash?: (viewId?: string) => Promise<void>;
   /** Restore a page from trash. */
   restorePage?: (viewId?: string) => Promise<void>;
+  /** Load current trash metadata without relying on the rendered sidebar state. */
+  loadTrashViews?: () => Promise<View[]>;
 
   // ── Space operations ───────────────────────────────────────────────
   /** Create a new workspace space (top-level folder). */
@@ -107,6 +111,8 @@ export interface AppOperationsContextType {
   // ── Billing / Subscriptions ────────────────────────────────────────
   /** Fetch the workspace's active subscriptions. Hook: `useGetSubscriptions()`. */
   getSubscriptions?: () => Promise<Subscription[]>;
+  /** Fetch the public plan pricing catalog. Hook: `usePricingCatalog()` (shared, TTL-cached). */
+  getPricingCatalog?: () => Promise<PricingCatalog>;
 
   // ── Publishing ─────────────────────────────────────────────────────
   /** Publish a view to the web. Hook: `usePublishing()`. */

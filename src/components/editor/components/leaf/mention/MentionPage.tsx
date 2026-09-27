@@ -35,47 +35,48 @@ function MentionPage({
   const eventEmitter = context.eventEmitter;
 
   const { navigateToView, loadViewMeta, loadView } = context;
-  const [noAccess, setNoAccess] = useState(false);
-  const [meta, setMeta] = useState<View | null>(null);
+  const [metadata, setMetadata] = useState<{ pageId: string; view: View | null; noAccess: boolean } | null>(null);
+  // Keep the current page visible while revalidating, without showing the
+  // previous page's metadata when this component receives a new reference.
+  const meta = metadata?.pageId === pageId ? metadata.view : null;
+  const noAccess = metadata?.pageId === pageId && metadata.noAccess;
   const [content, setContent] = useState<string>('');
 
   useEffect(() => {
-    void (async () => {
-      if (loadViewMeta) {
-        setNoAccess(false);
-        try {
-          const meta = await loadViewMeta(pageId);
+    let current = true;
+    let receivedUpdate = false;
 
-          setMeta(meta);
-        } catch (e) {
-          setNoAccess(true);
-          if (e && (e as View).name) {
-            setMeta(e as View);
-          }
-        }
-      }
-    })();
-  }, [loadViewMeta, pageId]);
+    const handleView = (view: View) => {
+      if (view.view_id !== pageId) return;
+      receivedUpdate = true;
+      setMetadata({ pageId, view, noAccess: false });
+    };
 
-  useEffect(() => {
     const handleOutlineLoaded = (outline: View[]) => {
       const view = findView(outline, pageId);
 
-      if (view) {
-        setMeta(view);
-      }
+      if (view) handleView(view);
     };
 
-    if (eventEmitter) {
-      eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
-    }
-
+    eventEmitter?.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
+    eventEmitter?.on(APP_EVENTS.VIEW_META_CHANGED, handleView);
+    void loadViewMeta?.(pageId).then((view) => {
+      if (current && !receivedUpdate) setMetadata({ pageId, view, noAccess: false });
+    }).catch(() => {
+      if (current && !receivedUpdate) {
+        setMetadata((previous) => ({
+          pageId,
+          view: previous?.pageId === pageId ? previous.view : null,
+          noAccess: true,
+        }));
+      }
+    });
     return () => {
-      if (eventEmitter) {
-        eventEmitter.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
-      }
+      current = false;
+      eventEmitter?.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
+      eventEmitter?.off(APP_EVENTS.VIEW_META_CHANGED, handleView);
     };
-  }, [eventEmitter, pageId]);
+  }, [eventEmitter, loadViewMeta, pageId]);
 
   const icon = useMemo(() => {
     return meta?.icon;

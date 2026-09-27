@@ -192,7 +192,7 @@ export interface DatabaseNode extends BlockNode {
 }
 
 export interface SubpageNode extends BlockNode {
-  type: BlockType.SubpageBlock;
+  type: BlockType.SubpageBlock | BlockType.LinkedPageBlock;
   blockId: string;
   data: SubpageNodeData;
 }

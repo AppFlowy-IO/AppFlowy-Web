@@ -280,7 +280,9 @@ Many components behave differently based on whether they're running on official 
 
 ### How It Works
 
-The `isAppFlowyHosted()` function in `src/utils/subscription.ts` checks `window.location.hostname`. For Storybook, we mock this using a global variable.
+Hosting is resolved from the shared server-info snapshot in `src/utils/server-info.ts`. Feature gates use the reactive hooks in `useServerInfo.ts`; error formatters read the same snapshot. Loading or failed information stays unknown, with no cloud billing or self-hosted Pro bypass.
+
+The shared hostname decorators set `APPFLOWY_BASE_URL` and provide a legacy server-info fixture without `self_hosted`. The production resolver handles that fixture. To model explicit server responses (including cloud on localhost), use `updateServerInfo` with `self_hosted: false` or `true`, and clear the fixture on cleanup.
 
 ### Using Shared Hostname Decorators
 
@@ -742,4 +744,3 @@ If you encounter issues not covered here:
 8. Clear Storybook cache: `rm -rf node_modules/.cache/storybook`
 
 For more help, refer to existing story files in the codebase for examples.
-

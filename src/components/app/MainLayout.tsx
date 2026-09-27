@@ -10,6 +10,7 @@ import { useAppViewId, useOpenModalViewId, useViewErrorStatus } from '@/componen
 import { ClientCompatibilityBanner } from '@/components/app/compatibility/ClientCompatibilityBanner';
 import { ConnectBanner } from '@/components/app/ConnectBanner';
 import { AppHeader } from '@/components/app/header';
+import { GoogleCalendarIntegration } from '@/components/app/integrations/GoogleCalendarIntegration';
 import Main from '@/components/app/Main';
 import SideBar from '@/components/app/SideBar';
 import DeletedPageComponent from '@/components/error/PageHasBeenDeleted';
@@ -69,6 +70,7 @@ function MainLayoutContent() {
 
   return (
     <div className={'h-screen w-screen'}>
+      <GoogleCalendarIntegration />
       <AFScroller
         overflowXHidden
         overflowYHidden={false}

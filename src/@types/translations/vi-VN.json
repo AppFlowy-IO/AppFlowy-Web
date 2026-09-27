@@ -841,7 +841,7 @@
         "title": "Pro",
         "description": "Dành cho các nhóm nhỏ để quản lý dự án và kiến thức của nhóm",
         "price": "{}",
-        "priceInfo": "cho mỗi người dùng mỗi tháng\nđược thanh toán hàng năm\n\n{} được thanh toán hàng tháng"
+        "priceInfo": "cho mỗi người dùng mỗi tháng\nđược thanh toán hàng năm"
       },
       "planLabels": {
         "itemOne": "Không gian làm việc",

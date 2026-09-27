@@ -11,6 +11,7 @@ import { TIMELINE_ROW_HEIGHT } from './constants';
 import { TimelineDragMode } from './hooks/useTimelineDrag';
 import { TimelineRowModel } from './hooks/useTimelineRows';
 import { BarRect } from './scale/geometry';
+import { TIMELINE_SIDEBAR_WIDTH_CSS } from './table-layout';
 import { TimelineBar, TimelineBarDragLabel } from './TimelineBar';
 import { TimelineSidebarRow } from './TimelineSidebarRow';
 
@@ -28,7 +29,6 @@ interface TimelineRowProps {
   offscreenLeft: boolean;
   offscreenRight: boolean;
   rowIndex: number;
-  sidebarWidth: number;
   showSidebar: boolean;
   propertyFields: Column[];
   editable: boolean;
@@ -77,11 +77,9 @@ interface TimelineRowProps {
 
 function OffscreenPill({
   direction,
-  offset,
   onClick,
 }: {
   direction: 'left' | 'right';
-  offset: number;
   onClick: () => void;
 }) {
   const { t } = useTranslation();
@@ -97,7 +95,11 @@ function OffscreenPill({
         onClick();
       }}
       className='pointer-events-auto sticky z-[5] my-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-200 border border-border-primary bg-background-primary text-icon-secondary hover:bg-fill-content-hover'
-      style={direction === 'left' ? { left: offset, marginLeft: 6 } : { right: offset, marginRight: 6 }}
+      style={
+        direction === 'left'
+          ? { left: `calc(${TIMELINE_SIDEBAR_WIDTH_CSS} + 6px)`, marginLeft: 6 }
+          : { right: 6, marginRight: 6 }
+      }
     >
       <Icon aria-hidden className='h-3.5 w-3.5' />
     </button>
@@ -111,7 +113,6 @@ export const TimelineRow = memo(
     rect,
     offscreenLeft,
     offscreenRight,
-    sidebarWidth,
     showSidebar,
     propertyFields,
     editable,
@@ -201,7 +202,7 @@ export const TimelineRow = memo(
               'sticky left-0 z-10 h-full shrink-0 border-b border-r border-border-primary bg-background-primary',
               selected && 'before:pointer-events-none before:absolute before:inset-0 before:bg-fill-theme-select'
             )}
-            style={{ width: sidebarWidth }}
+            style={{ width: TIMELINE_SIDEBAR_WIDTH_CSS }}
           />
         )}
 
@@ -234,7 +235,6 @@ export const TimelineRow = memo(
               progressPreview={progressPreview}
               hoverDisabled={anyDragging}
               hoverCardBoundary={hoverCardBoundary}
-              hoverCardInset={sidebarWidth}
               formatTime={formatTime}
               linkable={linkable}
               linkTarget={linkTarget}
@@ -246,12 +246,12 @@ export const TimelineRow = memo(
 
           {showLeftPill && rect ? (
             <div className='pointer-events-none absolute inset-0 z-[5] flex'>
-              <OffscreenPill direction='left' offset={sidebarWidth + 6} onClick={() => onScrollTo?.(rect.left)} />
+              <OffscreenPill direction='left' onClick={() => onScrollTo?.(rect.left)} />
             </div>
           ) : null}
           {showRightPill && rect ? (
             <div className='pointer-events-none absolute inset-0 z-[5] flex justify-end'>
-              <OffscreenPill direction='right' offset={6} onClick={() => onScrollTo?.(rect.left + rect.width)} />
+              <OffscreenPill direction='right' onClick={() => onScrollTo?.(rect.left + rect.width)} />
             </div>
           ) : null}
         </div>

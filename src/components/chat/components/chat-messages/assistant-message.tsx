@@ -3,13 +3,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as Error } from '@/assets/icons/error.svg';
+import { useIsOfficialHosted } from '@/components/app/app.hooks';
 import { Alert, AlertDescription } from '@/components/chat/components/ui/alert';
 import LoadingDots from '@/components/chat/components/ui/loading-dots';
+import { ERROR_CODE_NO_LIMIT } from '@/components/chat/lib/const';
 import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
 import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
 import { useResponseFormatContext } from '@/components/chat/provider/response-format-provider';
 import { useSuggestionsContext } from '@/components/chat/provider/suggestions-provider';
 import { ChatInputMode } from '@/components/chat/types';
+import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
 
 import { AnswerMd } from '../chat-messages/answer-md';
 import { MessageActions } from '../chat-messages/message-actions';
@@ -21,6 +24,7 @@ import MessageCheckbox from './message-checkbox';
 const MAX_PROGRESS_STEPS = 5;
 
 export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boolean }) {
+  const isOfficialHosted = useIsOfficialHosted();
   const isInitialLoad = useRef(true);
   const { getMessage } = useChatMessagesContext();
   const { responseFormat, responseMode } = useResponseFormatContext();
@@ -35,7 +39,7 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
   const resolvedSources = useResolvedMessageSources(sources);
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<boolean>(false);
+  const [error, setError] = useState<{ message: string; isResponseLimit: boolean } | null>(null);
   const [content, setContent] = useState<string>('');
   const [done, setDone] = useState<boolean>(false);
   const [progressSteps, setProgressSteps] = useState<{ id: number; text: string }[]>([]);
@@ -78,14 +82,16 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
           },
           handleProgress
         );
-        // eslint-disable-next-line
-      } catch (e: any) {
+      } catch (e) {
         console.error(e);
-        setError(true);
+        setError({
+          message: getErrorMessage(e, '') || t('chat.errors.responseUnavailable'),
+          isResponseLimit: isAPIErrorCode(e, ERROR_CODE_NO_LIMIT),
+        });
         setLoading(false);
       }
     })();
-  }, [fetchAnswerStream, questionId, responseFormat, responseMode, loading, handleProgress]);
+  }, [fetchAnswerStream, questionId, responseFormat, responseMode, loading, handleProgress, t]);
 
   const suggestions = useMemo(() => {
     if (!questionId) return null;
@@ -100,8 +106,8 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
             <Alert className={'border-none bg-fill-error-light text-foreground'}>
               <AlertDescription>
                 <div className='flex items-center gap-3'>
-                  <Error className='!min-h-5 !min-w-5 text-icon-error-thick'/>
-                  {t('chat.errors.noLimit')}
+                  <Error className='!min-h-5 !min-w-5 text-icon-error-thick' />
+                  {isOfficialHosted && error.isResponseLimit ? t('chat.errors.responseLimit') : error.message}
                 </div>
               </AlertDescription>
             </Alert>
@@ -112,7 +118,10 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
           {progressSteps.length > 0 ? (
             <>
               {progressSteps.map((step, i) => (
-                <div key={step.id} className={`flex items-center gap-2 ${i === progressSteps.length - 1 ? 'opacity-100' : 'opacity-50'}`}>
+                <div
+                  key={step.id}
+                  className={`flex items-center gap-2 ${i === progressSteps.length - 1 ? 'opacity-100' : 'opacity-50'}`}
+                >
                   <span className={'text-sm text-foreground'}>{step.text}</span>
                 </div>
               ))}

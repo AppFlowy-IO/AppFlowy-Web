@@ -309,7 +309,9 @@ export function useAddFilter() {
 
             if (rollupTargetFieldType !== undefined) {
               filter.set(YjsDatabaseKey.rollup_target_type, rollupTargetFieldType);
-              if (field) filter.set(YjsDatabaseKey.rollup_meta, newRollupFilterMetadata(field));
+              if (field && fieldType === FieldType.Rollup) {
+                filter.set(YjsDatabaseKey.rollup_meta, newRollupFilterMetadata(field));
+              }
             }
 
             filters.push([filter]);
@@ -593,7 +595,9 @@ export function useAddAdvancedFilter() {
 
             if (rollupTargetFieldType !== undefined) {
               filter.set(YjsDatabaseKey.rollup_target_type, rollupTargetFieldType);
-              if (field) filter.set(YjsDatabaseKey.rollup_meta, newRollupFilterMetadata(field));
+              if (field && fieldType === FieldType.Rollup) {
+                filter.set(YjsDatabaseKey.rollup_meta, newRollupFilterMetadata(field));
+              }
             }
 
             children.push([filter]);

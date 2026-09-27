@@ -65,9 +65,17 @@ export function useTimelineRange({ layout, scrollerRef, sidebarWidth }: UseTimel
 
   geometryRef.current = geometry;
 
+  // Navigation reads the current width when invoked; resizing must not
+  // replace the callbacks passed to every memoized row.
+  const sidebarWidthRef = useRef(sidebarWidth);
+
+  useLayoutEffect(() => {
+    sidebarWidthRef.current = sidebarWidth;
+  }, [sidebarWidth]);
+
   const visibleCanvasWidth = useCallback(
-    () => Math.max(0, (scrollerRef.current?.clientWidth ?? 0) - sidebarWidth),
-    [scrollerRef, sidebarWidth]
+    () => Math.max(0, (scrollerRef.current?.clientWidth ?? 0) - sidebarWidthRef.current),
+    [scrollerRef]
   );
 
   // A layout change rebuilds the range around the date at the centre of the
@@ -77,7 +85,8 @@ export function useTimelineRange({ layout, scrollerRef, sidebarWidth }: UseTimel
   if (previousZoomRef.current !== layout) {
     previousZoomRef.current = layout;
     const scroller = scrollerRef.current;
-    const centre = xToDate(geometryRef.current, (scroller?.scrollLeft ?? 0) + visibleCanvasWidth() / 2);
+    const canvasWidth = Math.max(0, (scroller?.clientWidth ?? 0) - sidebarWidth);
+    const centre = xToDate(geometryRef.current, (scroller?.scrollLeft ?? 0) + canvasWidth / 2);
 
     pendingRef.current = { deltaX: 0, target: { date: centre, anchor: 0.5, behavior: 'auto' } };
     setRange(buildRange(layout, centre));

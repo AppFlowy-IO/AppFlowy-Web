@@ -1,31 +1,42 @@
-import { CircularProgress, Dialog, IconButton } from '@mui/material';
+import { CircularProgress, Dialog } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { ViewLayout } from '@/application/types';
-import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { DocumentFileImportFormat, ViewLayout } from '@/application/types';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { ReactComponent as ConfluenceIcon } from '@/assets/icons/confluence.svg';
 import { ReactComponent as DatabaseIcon } from '@/assets/icons/database.svg';
+import { ReactComponent as DocIcon } from '@/assets/icons/doc.svg';
+import { ReactComponent as HtmlIcon } from '@/assets/icons/inline_code.svg';
 import { ReactComponent as NotionIcon } from '@/assets/icons/notion.svg';
+import { ReactComponent as PdfIcon } from '@/assets/icons/pdf.svg';
 import { ReactComponent as TextIcon } from '@/assets/icons/text.svg';
 import { useAppOperations, useCurrentWorkspaceId, useOpenPageModal, useToView } from '@/components/app/app.hooks';
 import {
   ImportAbortError,
-  ImportCsvBatchItem,
+  ImportFileBatchItem,
   importConfluenceZipToView,
   importCsvFilesAsDatabases,
+  importDocumentFiles,
   importNotionZipToView,
   populateDocumentWithMarkdown,
   stripFileExtension,
 } from '@/components/app/import/import-service';
+import { Button } from '@/components/ui/button';
+import { isStorageLimitError } from '@/utils/errors';
 
 const MARKDOWN_ACCEPT = '.md,.markdown,.txt,text/markdown,text/plain';
 const CSV_ACCEPT = '.csv,text/csv';
 const ZIP_ACCEPT = '.zip,application/zip,application/x-zip,application/x-zip-compressed';
+const HTML_ACCEPT = '.html,.htm,text/html';
+const DOCX_ACCEPT = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const PDF_ACCEPT = '.pdf,application/pdf';
 
 // Enough failed names to be actionable in a toast without turning it into a wall of text.
 const MAX_REPORTED_FAILURES = 3;
+// Warnings per file are already aggregated by the server; two messages keep the toast readable.
+const MAX_REPORTED_WARNINGS = 2;
 
 // File names and server messages are raw user/server data, and i18next escapes interpolated
 // values by default — without this a file called `Q1&Q2.csv` shows up as `Q1&amp;Q2.csv`.
@@ -33,9 +44,12 @@ const MAX_REPORTED_FAILURES = 3;
 const RAW_INTERPOLATION = { interpolation: { escapeValue: false } };
 
 type ZipImportFormat = 'notion' | 'confluence';
-type ImportFormat = 'markdown' | 'csv' | ZipImportFormat;
+type ImportFormat = 'markdown' | 'csv' | ZipImportFormat | DocumentFileImportFormat;
 
-interface CsvProgress {
+/** Formats imported one file at a time through a server task, sharing the batch UI. */
+type BatchImportFormat = 'csv' | DocumentFileImportFormat;
+
+interface BatchProgress {
   current: number;
   total: number;
 }
@@ -47,6 +61,24 @@ interface ImportDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const DOCUMENT_TILES: {
+  format: DocumentFileImportFormat;
+  labelKey: 'importPanel.html' | 'importPanel.word' | 'importPanel.pdf';
+  accept: string;
+}[] = [
+  { format: 'html', labelKey: 'importPanel.html', accept: HTML_ACCEPT },
+  { format: 'docx', labelKey: 'importPanel.word', accept: DOCX_ACCEPT },
+  { format: 'pdf', labelKey: 'importPanel.pdf', accept: PDF_ACCEPT },
+];
+
+function DocumentTileIcon({ format }: { format: DocumentFileImportFormat }) {
+  const className = 'h-5 w-5 shrink-0 text-icon-primary';
+
+  if (format === 'pdf') return <PdfIcon className={className} />;
+  if (format === 'docx') return <DocIcon className={className} />;
+  return <HtmlIcon className={className} />;
+}
+
 export default function ImportDialog({ open, parentViewId, prevViewId, onOpenChange }: ImportDialogProps) {
   const { t } = useTranslation();
   const workspaceId = useCurrentWorkspaceId();
@@ -54,12 +86,21 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
   const openPageModal = useOpenPageModal();
   const toView = useToView();
   const [active, setActive] = useState<ImportFormat | null>(null);
-  const [csvProgress, setCsvProgress] = useState<CsvProgress | null>(null);
+  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const markdownInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const notionInputRef = useRef<HTMLInputElement>(null);
   const confluenceInputRef = useRef<HTMLInputElement>(null);
+  const htmlInputRef = useRef<HTMLInputElement>(null);
+  const docxInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const documentInputRefs: Record<DocumentFileImportFormat, React.RefObject<HTMLInputElement>> = {
+    html: htmlInputRef,
+    docx: docxInputRef,
+    pdf: pdfInputRef,
+  };
 
   // Abort any in-flight import on unmount so polling doesn't keep running
   // after the dialog is torn down.
@@ -72,7 +113,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
 
   const close = useCallback(() => {
     setActive(null);
-    setCsvProgress(null);
+    setBatchProgress(null);
     onOpenChange(false);
   }, [onOpenChange]);
 
@@ -83,10 +124,10 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
     onOpenChange(false);
   }, [active, onOpenChange]);
 
-  // A CSV batch and a ZIP upload can both run for minutes, so the close button doubles as
+  // A file batch and a ZIP upload can both run for minutes, so the close button doubles as
   // a cancel for them and keeps whatever already imported. Markdown blocks the button instead:
   // it is two round trips, and its page already exists by the time the upload starts.
-  const cancellable = active === 'csv' || active === 'notion' || active === 'confluence';
+  const cancellable = active !== null && active !== 'markdown';
   const closeDisabled = active !== null && !cancellable;
 
   // The button doubles as the cancel control during a batch, so it has to say so.
@@ -123,77 +164,119 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
     [workspaceId, addPage, parentViewId, prevViewId, openPageModal, close, t]
   );
 
-  const handleCsv = useCallback(
-    async (files: File[]) => {
+  /**
+   * Report a finished batch: success/partial toasts, failed file names, converter warnings,
+   * and whether the dialog should close and navigate to the first page.
+   */
+  const reportBatch = useCallback(
+    (items: ImportFileBatchItem[], aborted: boolean, total: number): string | null => {
+      const importedViewIds: string[] = [];
+      const failed: ImportFileBatchItem[] = [];
+      let storageLimitReached = false;
+
+      for (const item of items) {
+        if (item.viewId) importedViewIds.push(item.viewId);
+        else if (isStorageLimitError(item)) storageLimitReached = true;
+        else failed.push(item);
+      }
+
+      // Cancelling — or a batch-fatal server error such as the pending-task cap — leaves the
+      // remaining files unattempted, so `total` is not a denominator we can honestly report.
+      // Only claim "x of y" when every selected file actually got a turn.
+      const attemptedAll = !aborted && items.length === total;
+
+      if (importedViewIds.length > 0) {
+        if (attemptedAll && importedViewIds.length < total) {
+          toast.success(t('importPanel.partialSuccess', { success: importedViewIds.length, count: total }));
+        } else {
+          toast.success(
+            importedViewIds.length === 1
+              ? t('importPanel.success')
+              : t('importPanel.successCount', { count: importedViewIds.length })
+          );
+        }
+      }
+
+      // Files that were attempted and broke are reported even when the batch was cancelled
+      // afterwards: cancelling hides the files never started, not the ones that already failed.
+      // Keep a storage denial visible even when earlier files had unrelated conversion failures.
+      if (storageLimitReached) {
+        toast.error(
+          getWorkspacePlanPolicy().usesHostedBilling
+            ? t('importPanel.storageLimitExceeded')
+            : t('importPanel.storageLimitAdministrator', {
+                defaultValue: 'This workspace does not have enough storage for this import. Contact your workspace administrator.',
+              })
+        );
+      }
+
+      if (failed.length === 1) {
+        toast.error(
+          t('importPanel.failedFile', {
+            name: failed[0].fileName,
+            reason: failed[0].error || t('importPanel.failed'),
+            ...RAW_INTERPOLATION,
+          })
+        );
+      } else if (failed.length > 1) {
+        const shown = failed.slice(0, MAX_REPORTED_FAILURES).map((item) => item.fileName);
+        const names = shown.join(', ');
+        const extra = failed.length - shown.length;
+
+        toast.error(
+          extra > 0
+            ? t('importPanel.failedFilesOverflow', { names, count: extra, ...RAW_INTERPOLATION })
+            : t('importPanel.failedFiles', { names, ...RAW_INTERPOLATION })
+        );
+      }
+
+      // Converter warnings are per file and already aggregated server-side; surface them so the
+      // user knows what to check in the imported page (e.g. images that were dropped).
+      for (const item of items) {
+        if (!item.viewId || !item.warnings || item.warnings.length === 0) continue;
+        const summary = item.warnings
+          .slice(0, MAX_REPORTED_WARNINGS)
+          .map((warning) => warning.message)
+          .join('; ');
+
+        toast.warning(t('importPanel.importedWithWarnings', { name: item.fileName, summary, ...RAW_INTERPOLATION }));
+      }
+
+      // Files left unattempted mean there is still work here — keep the dialog open so the
+      // user can retry them instead of navigating away from a half-finished batch.
+      if (storageLimitReached || !attemptedAll || importedViewIds.length === 0) return null;
+
+      return importedViewIds[0];
+    },
+    [t]
+  );
+
+  const runBatch = useCallback(
+    async (
+      format: BatchImportFormat,
+      files: File[],
+      run: (
+        signal: AbortSignal,
+        onFileStart: (index: number, total: number) => void
+      ) => Promise<{ items: ImportFileBatchItem[]; aborted: boolean }>
+    ) => {
       if (!workspaceId || files.length === 0) return;
       const controller = new AbortController();
 
       abortRef.current?.abort();
       abortRef.current = controller;
-      setActive('csv');
-      setCsvProgress({ current: 1, total: files.length });
+      setActive(format);
+      setBatchProgress({ current: 1, total: files.length });
       try {
-        const { items, aborted } = await importCsvFilesAsDatabases({
-          workspaceId,
-          parentViewId,
-          files,
-          signal: controller.signal,
-          onFileStart: (index, total) => setCsvProgress({ current: index + 1, total }),
-        });
+        const { items, aborted } = await run(controller.signal, (index, total) =>
+          setBatchProgress({ current: index + 1, total })
+        );
+        const firstViewId = reportBatch(items, aborted || controller.signal.aborted, files.length);
 
-        const importedViewIds: string[] = [];
-        const failed: ImportCsvBatchItem[] = [];
-
-        for (const item of items) {
-          if (item.viewId) importedViewIds.push(item.viewId);
-          else failed.push(item);
-        }
-
-        // Cancelling — or a batch-fatal server error such as the pending-task cap — leaves the
-        // remaining files unattempted, so `files.length` is not a denominator we can honestly
-        // report. Only claim "x of y" when every selected file actually got a turn.
-        const attemptedAll = !aborted && items.length === files.length;
-
-        if (importedViewIds.length > 0) {
-          if (attemptedAll && importedViewIds.length < files.length) {
-            toast.success(t('importPanel.partialSuccess', { success: importedViewIds.length, count: files.length }));
-          } else {
-            toast.success(
-              importedViewIds.length === 1
-                ? t('importPanel.success')
-                : t('importPanel.successCount', { count: importedViewIds.length })
-            );
-          }
-        }
-
-        // Files that were attempted and broke are reported even when the batch was cancelled
-        // afterwards: cancelling hides the files never started, not the ones that already failed.
-        if (failed.length === 1) {
-          toast.error(
-            t('importPanel.failedFile', {
-              name: failed[0].fileName,
-              reason: failed[0].error || t('importPanel.failed'),
-              ...RAW_INTERPOLATION,
-            })
-          );
-        } else if (failed.length > 1) {
-          const shown = failed.slice(0, MAX_REPORTED_FAILURES).map((item) => item.fileName);
-          const names = shown.join(', ');
-          const extra = failed.length - shown.length;
-
-          toast.error(
-            extra > 0
-              ? t('importPanel.failedFilesOverflow', { names, count: extra, ...RAW_INTERPOLATION })
-              : t('importPanel.failedFiles', { names, ...RAW_INTERPOLATION })
-          );
-        }
-
-        // Files left unattempted mean there is still work here — keep the dialog open so the
-        // user can retry them instead of navigating away from a half-finished batch.
-        if (!attemptedAll || importedViewIds.length === 0) return;
+        if (!firstViewId) return;
 
         close();
-        void toView(importedViewIds[0]);
+        void toView(firstViewId);
         // eslint-disable-next-line
       } catch (e: any) {
         if (e instanceof ImportAbortError) return;
@@ -201,10 +284,30 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
         setActive(null);
-        setCsvProgress(null);
+        setBatchProgress(null);
       }
     },
-    [workspaceId, parentViewId, toView, close, t]
+    [workspaceId, reportBatch, close, toView, t]
+  );
+
+  const handleCsv = useCallback(
+    (files: File[]) => {
+      if (!workspaceId) return;
+      void runBatch('csv', files, (signal, onFileStart) =>
+        importCsvFilesAsDatabases({ workspaceId, parentViewId, files, signal, onFileStart })
+      );
+    },
+    [workspaceId, parentViewId, runBatch]
+  );
+
+  const handleDocumentFiles = useCallback(
+    (files: File[], format: DocumentFileImportFormat) => {
+      if (!workspaceId) return;
+      void runBatch(format, files, (signal, onFileStart) =>
+        importDocumentFiles({ workspaceId, parentViewId, files, format, signal, onFileStart })
+      );
+    },
+    [workspaceId, parentViewId, runBatch]
   );
 
   const handleZip = useCallback(
@@ -256,9 +359,19 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
       const files = Array.from(event.target.files ?? []);
 
       event.target.value = '';
-      if (files.length > 0) void handleCsv(files);
+      if (files.length > 0) handleCsv(files);
     },
     [handleCsv]
+  );
+
+  const onDocumentFilesPicked = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>, format: DocumentFileImportFormat) => {
+      const files = Array.from(event.target.files ?? []);
+
+      event.target.value = '';
+      if (files.length > 0) handleDocumentFiles(files, format);
+    },
+    [handleDocumentFiles]
   );
 
   const onNotionPicked = useCallback(
@@ -281,6 +394,42 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
     [handleZip]
   );
 
+  const batchCounter = (format: BatchImportFormat) =>
+    active === format ? (
+      <span className='ml-auto flex items-center gap-2'>
+        {batchProgress && batchProgress.total > 1 ? (
+          <span className='text-xs text-text-secondary' data-testid={`import-${format}-progress`}>
+            {t('importPanel.importingCount', { current: batchProgress.current, total: batchProgress.total })}
+          </span>
+        ) : null}
+        <CircularProgress size={14} />
+      </span>
+    ) : null;
+
+  // Matches the desktop import sheet: outlined two-column cards with the icon and label on one line.
+  const tileClassName =
+    'flex min-h-[64px] items-center gap-3 rounded-400 border border-border-primary px-4 py-3 text-left text-text-primary hover:border-border-primary-hover hover:bg-fill-content-hover disabled:opacity-60';
+
+  const renderDocumentTile = (format: DocumentFileImportFormat) => {
+    const tile = DOCUMENT_TILES.find((item) => item.format === format);
+
+    if (!tile) return null;
+    return (
+      <button
+        key={format}
+        type='button'
+        disabled={!!active}
+        onClick={() => documentInputRefs[format].current?.click()}
+        className={tileClassName}
+        data-testid={`import-${format}`}
+      >
+        <DocumentTileIcon format={format} />
+        <span className='text-sm'>{t(tile.labelKey)}</span>
+        {batchCounter(format)}
+      </button>
+    );
+  };
+
   return (
     <Dialog
       open={open}
@@ -288,32 +437,18 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
       keepMounted={false}
       PaperProps={{
         'data-testid': 'import-dialog',
-        className: 'w-[480px] max-w-[90vw] rounded-500',
+        className: 'w-[640px] max-w-[90vw] rounded-500',
       }}
     >
-      <div className='relative flex flex-col gap-4 p-5'>
-        <div className='flex w-full items-center justify-between text-base font-medium'>
-          <span className='flex-1 truncate font-medium'>{t('importPanel.title')}</span>
-          <IconButton
-            size='small'
-            color='inherit'
-            className='-right-1.5 h-6 w-6'
-            data-testid='import-dialog-close'
-            title={closeLabel}
-            aria-label={closeLabel}
-            onClick={handleCloseClick}
-            disabled={closeDisabled}
-          >
-            <CloseIcon />
-          </IconButton>
-        </div>
+      <div className='relative flex flex-col gap-5 p-6'>
+        <div className='truncate text-xl font-medium text-text-primary'>{t('importPanel.title')}</div>
 
-        <div className='grid grid-cols-2 gap-3'>
+        <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
           <button
             type='button'
             disabled={!!active}
             onClick={() => markdownInputRef.current?.click()}
-            className='flex items-center gap-3 rounded-300 bg-fill-content px-4 py-3 text-left text-text-primary hover:bg-fill-content-hover disabled:opacity-60'
+            className={tileClassName}
             data-testid='import-markdown'
           >
             <TextIcon className='h-5 w-5 text-icon-primary' />
@@ -325,28 +460,23 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
             type='button'
             disabled={!!active}
             onClick={() => csvInputRef.current?.click()}
-            className='flex items-center gap-3 rounded-300 bg-fill-content px-4 py-3 text-left text-text-primary hover:bg-fill-content-hover disabled:opacity-60'
+            className={tileClassName}
             data-testid='import-csv'
           >
             <DatabaseIcon className='h-5 w-5 text-icon-primary' />
             <span className='text-sm'>{t('importPanel.csv')}</span>
-            {active === 'csv' ? (
-              <span className='ml-auto flex items-center gap-2'>
-                {csvProgress && csvProgress.total > 1 ? (
-                  <span className='text-xs text-text-secondary' data-testid='import-csv-progress'>
-                    {t('importPanel.importingCount', { current: csvProgress.current, total: csvProgress.total })}
-                  </span>
-                ) : null}
-                <CircularProgress size={14} />
-              </span>
-            ) : null}
+            {batchCounter('csv')}
           </button>
+
+          {renderDocumentTile('pdf')}
+          {renderDocumentTile('docx')}
+          {renderDocumentTile('html')}
 
           <button
             type='button'
             disabled={!!active}
             onClick={() => notionInputRef.current?.click()}
-            className='flex items-center gap-3 rounded-300 bg-fill-content px-4 py-3 text-left text-text-primary hover:bg-fill-content-hover disabled:opacity-60'
+            className={tileClassName}
             data-testid='import-notion'
           >
             <NotionIcon className='h-5 w-5 text-icon-primary' />
@@ -358,7 +488,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
             type='button'
             disabled={!!active}
             onClick={() => confluenceInputRef.current?.click()}
-            className='flex items-center gap-3 rounded-300 bg-fill-content px-4 py-3 text-left text-text-primary hover:bg-fill-content-hover disabled:opacity-60'
+            className={tileClassName}
             data-testid='import-confluence'
           >
             <ConfluenceIcon className='h-5 w-5 shrink-0 text-icon-primary' />
@@ -367,11 +497,29 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
           </button>
         </div>
 
+        <div className='flex justify-end'>
+          <Button
+            variant='ghost'
+            data-testid='import-dialog-close'
+            title={closeLabel}
+            aria-label={closeLabel}
+            onClick={handleCloseClick}
+            disabled={closeDisabled}
+          >
+            {closeLabel}
+          </Button>
+        </div>
+
         {/* The visible counter sits inside a disabled button, which assistive tech skips, so the
             batch reports its progress from a live region that stays in the accessibility tree. */}
         <span aria-live='polite' className='sr-only' data-testid='import-csv-progress-announcement'>
-          {active === 'csv' && csvProgress && csvProgress.total > 1
-            ? t('importPanel.importingProgress', { current: csvProgress.current, total: csvProgress.total })
+          {active &&
+          active !== 'markdown' &&
+          active !== 'notion' &&
+          active !== 'confluence' &&
+          batchProgress &&
+          batchProgress.total > 1
+            ? t('importPanel.importingProgress', { current: batchProgress.current, total: batchProgress.total })
             : ''}
         </span>
 
@@ -392,6 +540,18 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
           data-testid='import-csv-input'
           onChange={onCsvPicked}
         />
+        {DOCUMENT_TILES.map(({ format, accept }) => (
+          <input
+            key={format}
+            ref={documentInputRefs[format]}
+            type='file'
+            accept={accept}
+            multiple
+            className='hidden'
+            data-testid={`import-${format}-input`}
+            onChange={(event) => onDocumentFilesPicked(event, format)}
+          />
+        ))}
         <input
           ref={notionInputRef}
           type='file'

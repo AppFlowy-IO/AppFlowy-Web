@@ -21,6 +21,7 @@ import { ReactComponent as ViewIcon } from '@/assets/icons/show.svg';
 import { notify } from '@/components/_shared/notify';
 import { AccessService, BillingService, WorkspaceService } from '@/application/services/domains';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -36,7 +37,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { isAppFlowyHosted } from '@/utils/subscription';
 
 import { EmailTag, InviteInput } from './InviteInput';
 import { InviteSuggestion, PersonSuggestionItem } from './PersonSuggestionItem';
@@ -79,6 +79,7 @@ export function InviteGuest({
   isWorkspaceOwner,
 }: InviteGuestProps) {
   const { t } = useTranslation();
+  const isHosted = useIsOfficialHosted();
   const [searchValue, setSearchValue] = useState<string>('');
   const [emailTags, setEmailTags] = useState<EmailTag[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -563,17 +564,12 @@ export function InviteGuest({
   ]);
 
   const handleUpgrade = useCallback(async () => {
-    if (!currentWorkspaceId) return;
+    if (!isHosted || !currentWorkspaceId) return;
     const workspaceId = currentWorkspaceId;
 
     if (!workspaceId) return;
     if (!isWorkspaceOwner) {
       toast.error('Please ask the workspace owner to upgrade to Pro to unlock guest editors.');
-      return;
-    }
-
-    if (!isAppFlowyHosted()) {
-      // Self-hosted instances have Pro features enabled by default
       return;
     }
 
@@ -592,7 +588,7 @@ export function InviteGuest({
     } finally {
       setUpgradeLoading(false);
     }
-  }, [currentWorkspaceId, isWorkspaceOwner]);
+  }, [currentWorkspaceId, isHosted, isWorkspaceOwner]);
 
   const handleSendInvites = useCallback(async () => {
     if (!currentWorkspaceId) return;
@@ -670,7 +666,7 @@ export function InviteGuest({
           error.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED ||
           error.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED
         ) {
-          if (isAppFlowyHosted()) {
+          if (isHosted) {
             setUpgradeModalOpen(true);
           } else {
             notify.error(error.message ?? t('settings.appearance.members.inviteFailedDialogTitle'));
@@ -689,7 +685,7 @@ export function InviteGuest({
         setInviteLoading(false);
       }
     }
-  }, [canManageGroupAccess, currentWorkspaceId, emailTags, onInviteSuccess, viewId, t, effectiveAccessLevel]);
+  }, [canManageGroupAccess, currentWorkspaceId, emailTags, isHosted, onInviteSuccess, viewId, t, effectiveAccessLevel]);
 
   const commitCurrentSearchValue = useCallback(
     (preferSuggestion: boolean) => {
@@ -889,7 +885,7 @@ export function InviteGuest({
       </div>
 
       {/* Upgrade Confirmation Dialog */}
-      <Dialog open={upgradeModalOpen} onOpenChange={setUpgradeModalOpen}>
+      <Dialog open={isHosted && upgradeModalOpen} onOpenChange={setUpgradeModalOpen}>
         <DialogContent size='sm'>
           <DialogHeader>
             <DialogTitle>{t('shareAction.upgradeConfirmTitle')}</DialogTitle>

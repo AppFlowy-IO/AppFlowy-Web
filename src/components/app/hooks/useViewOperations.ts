@@ -355,11 +355,11 @@ export function useViewOperations({
    * @returns The sync context, or null if already bound or invalid doc
    */
   const bindViewSync = useCallback(
-    (doc: YDoc) => {
+    (doc: YDoc, options?: { retain?: boolean }) => {
       const docWithMeta = doc as YDocWithMeta;
 
       // Skip if already bound
-      if (docWithMeta._syncBound) {
+      if (docWithMeta._syncBound && !options?.retain) {
         Log.debug('[useViewOperations] bindViewSync skipped - already bound', {
           viewId: docWithMeta.view_id,
           objectId: docWithMeta.object_id,
@@ -393,7 +393,9 @@ export function useViewOperations({
 
       const syncContext = registerSyncContext({ doc, collabType, awareness });
 
-      docWithMeta._syncBound = true;
+      // Retained auxiliary readers own independent references. They must not
+      // make a page's later default binding skip acquiring its own reference.
+      if (!options?.retain) docWithMeta._syncBound = true;
 
       Log.debug('[useViewOperations] bindViewSync complete', {
         viewId,

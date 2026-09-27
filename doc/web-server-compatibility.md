@@ -18,8 +18,10 @@ new `min_server`. A build whose version is newer than
 untouched means the current requirements still apply. Advance
 `reviewed_through_client_version` when you review the table for a release; it is
 also the version source builds report. The initial policy requires server 0.18.1
-for web 0.17.1. Web versions that cannot be parsed do not produce old-server
-warnings. There is no appcast or native update gate on web.
+for web 0.17.1. Web 0.18.2 or later requires server 0.18.10. The old-server banner
+shows the required version and warns that some features may be unavailable.
+Web versions that cannot be parsed do not produce old-server warnings. There is
+no appcast or native update gate on web.
 
 `GET /api/server-info`, with `x-platform: web`, must expose:
 

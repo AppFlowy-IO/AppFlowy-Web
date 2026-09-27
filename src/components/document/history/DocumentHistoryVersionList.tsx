@@ -10,6 +10,7 @@ import { ReactComponent as FilterIcon } from '@/assets/icons/filter.svg';
 import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
 import { ReactComponent as TimeIcon } from '@/assets/icons/time.svg';
 import { ReactComponent as UserIcon } from '@/assets/icons/user.svg';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -49,6 +50,7 @@ export const VersionList = memo(function VersionList({
   onClose?: () => void;
 }) {
   const { t } = useTranslation();
+  const isHosted = useIsOfficialHosted();
   const handleSelectAll = useCallback((event: Event) => {
     event.preventDefault();
     onDateFilterChange('all');
@@ -155,7 +157,7 @@ export const VersionList = memo(function VersionList({
           );
         })}
       </div>
-      {!isPro && (
+      {isHosted && !isPro && (
         <div className='m-3 flex items-center gap-2 rounded-300 bg-fill-featured-light p-3'>
           <CrownIcon className='h-5 w-5' />
           <span className='text-xs text-text-featured'>

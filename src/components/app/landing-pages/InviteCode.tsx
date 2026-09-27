@@ -3,18 +3,23 @@ import { Trans, useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 
 import { ERROR_CODE } from '@/application/constants';
+import { WorkspaceService } from '@/application/services/domains';
 import { Workspace } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
-import { WorkspaceService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
+import { useIsOfficialHosted, useServerInfo } from '@/components/app/hooks/useServerInfo';
+import { defaultConfig } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
 function InviteCode() {
   const { t } = useTranslation();
+
+  useServerInfo(true, defaultConfig.baseURL);
+  const isHosted = useIsOfficialHosted();
   const params = useParams();
   const [loading, setLoading] = useState(false);
   const [hasJoined, setHasJoined] = useState(false);
@@ -120,7 +125,7 @@ function InviteCode() {
         error={error}
         title={isMemberLimitError ? t('landingPage.inviteCode.memberLimitTitle') : undefined}
         description={
-          isMemberLimitError
+          isMemberLimitError && isHosted
             ? t('landingPage.inviteCode.memberLimitDescription', {
                 workspaceName: workspace?.name || t('workspace.defaultName'),
               })

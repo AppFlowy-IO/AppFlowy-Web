@@ -4,6 +4,8 @@ import { useDatabase, useDatabaseContext, useReadOnly } from '@/application/data
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import { useUpdateRollupTypeOption } from '@/application/database-yjs/dispatch';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
+import { usesRollupCondition } from '@/application/database-yjs/fields/rollup/condition';
+import { formulaPredicateFieldType } from '@/application/database-yjs/formula/filter';
 import { parseRollupTypeOption, parseRollupVisualizationOption } from '@/application/database-yjs/fields/rollup/parse';
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
@@ -24,6 +26,7 @@ export type TargetFieldOption = {
   id: string;
   name: string;
   type: FieldType;
+  effectiveType: FieldType;
   field: YDatabaseField;
 };
 
@@ -45,10 +48,13 @@ function readTargetFields(doc: YDoc | null): TargetFieldOption[] {
   const options: TargetFieldOption[] = [];
 
   fields.forEach((field: YDatabaseField, id: string) => {
+    const type = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
     options.push({
       id,
       name: field.get(YjsDatabaseKey.name) || '',
-      type: Number(field.get(YjsDatabaseKey.type)) as FieldType,
+      type,
+      effectiveType: type === FieldType.Formula ? formulaPredicateFieldType(field, fields) : type,
       field,
     });
   });
@@ -218,10 +224,13 @@ export function useRollupData(fieldId: string) {
   useEffect(() => {
     if (!field || !targetField) return;
     rememberRollupTarget(field, targetField.field);
-    if (!readOnly) database.doc?.transact(() => migrateRollupFilters(database, fieldId, targetField.type));
+    if (!readOnly) database.doc?.transact(() => migrateRollupFilters(database, fieldId, targetField.effectiveType));
   }, [database, field, fieldId, targetField, readOnly]);
 
-  const availableCalculations = useMemo(() => getAvailableRollupCalculations(targetField?.type), [targetField?.type]);
+  const availableCalculations = useMemo(
+    () => getAvailableRollupCalculations(targetField?.effectiveType),
+    [targetField?.effectiveType]
+  );
 
   // Keep imported/remote options valid even when another client changes the target.
   useEffect(() => {
@@ -232,7 +241,12 @@ export function useRollupData(fieldId: string) {
   }, [availableCalculations, rollupOption.calculation_type, targetField?.type, updateRollupTypeOption, readOnly]);
 
   useEffect(() => {
-    if (readOnly || rollupOption.calculation_type === CalculationType.CountValue || !rollupOption.condition_value) return;
+    if (
+      readOnly ||
+      usesRollupCondition(rollupOption.calculation_type as CalculationType) ||
+      !rollupOption.condition_value
+    )
+      return;
 
     updateRollupTypeOption({ condition_value: '' });
   }, [rollupOption.calculation_type, rollupOption.condition_value, updateRollupTypeOption, readOnly]);
@@ -268,7 +282,7 @@ export function useRollupData(fieldId: string) {
         }
 
         updateRollupTypeOption({
-          target_field_type: firstTarget.type,
+          target_field_type: firstTarget.effectiveType,
           target_field_id: firstTarget.id,
           calculation_type: CalculationType.Count,
           condition_value: '',
@@ -284,12 +298,14 @@ export function useRollupData(fieldId: string) {
     (target: TargetFieldOption) => {
       relationSelectionRequest.current += 1;
       const currentCalculation = rollupOption.calculation_type as CalculationType;
-      const nextCalculation = getAvailableRollupCalculations(target.type).includes(currentCalculation)
+      const liveType = Number(target.field.get(YjsDatabaseKey.type) ?? target.type) as FieldType;
+      const effectiveType = liveType === FieldType.Formula ? formulaPredicateFieldType(target.field) : liveType;
+      const nextCalculation = getAvailableRollupCalculations(effectiveType).includes(currentCalculation)
         ? currentCalculation
         : CalculationType.Count;
 
       updateRollupTypeOption({
-        target_field_type: target.type,
+        target_field_type: effectiveType,
         target_field_id: target.id,
         calculation_type: nextCalculation,
         condition_value: '',
