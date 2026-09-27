@@ -14,6 +14,11 @@ interface TableScroll {
 
 const TableScrollContext = createContext<TableScroll | null>(null);
 
+/** Only an open hover card subscribes; bars keep stable props during resizing. */
+export function useTimelineTableViewportWidth() {
+  return useContext(TableScrollContext)?.viewportWidth ?? 0;
+}
+
 /** Sync native horizontal scrolling without re-rendering virtualized rows. */
 export function TimelineTableProvider({
   contentWidth,

@@ -468,10 +468,74 @@ Given('a relation field is bound as the dependency field', async ({ page }) => {
   await chooseTimelineSettingsOption(page, 'timeline-dependency-field-rel-deps');
 });
 
+Given('the timeline dependency field is renamed to {string}', async ({ page }, name) => {
+  await page.evaluate((name) => {
+    const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: any }).__TEST_DATABASE_CONTEXT__;
+
+    ctx.databaseDoc.transact(() => {
+      ctx.databaseDoc.getMap('data').get('database').get('fields').get('rel-deps').set('name', name);
+    });
+  }, name);
+});
+
+When('I open the timeline settings menu', async ({ page }) => {
+  await page.getByTestId('database-actions-settings').click();
+  await TimelineSelectors.settingsTrigger(page).click();
+});
+
+Then('the timeline settings contain the field name {string}', async ({ page }, name) => {
+  const item = page.getByTestId('timeline-dependency-field-rel-deps');
+
+  await expect(item.getByText(name, { exact: true })).toBeVisible();
+  await expect.poll(() => item.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+});
+
+Then('the timeline shift settings are fully readable', async ({ page }) => {
+  for (const text of [
+    'Shift dependents',
+    'Only when dates overlap',
+    'Shift & maintain time between items',
+    'Do not automatically shift',
+  ]) {
+    const label = page.getByText(text, { exact: true });
+
+    await label.scrollIntoViewIfNeeded();
+    await expect(label).toBeVisible();
+    const fits = await label.evaluate((element) => {
+      const range = document.createRange();
+
+      range.selectNodeContents(element);
+      const bounds = element.getBoundingClientRect();
+
+      return Array.from(range.getClientRects()).every(
+        (rect) => rect.left >= bounds.left && rect.right <= bounds.right && rect.bottom <= bounds.bottom
+      );
+    });
+
+    expect(fits).toBe(true);
+  }
+});
+
+When('I open the timeline table properties menu', async ({ page }) => {
+  await openTimelineTableProperties(page);
+});
+
+Then('the timeline table properties contain the field name {string}', async ({ page }, name) => {
+  const item = page.getByTestId('timeline-table-field-rel-deps');
+
+  await expect(item.getByText(name, { exact: true })).toBeVisible();
+  await expect.poll(() => item.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+  const label = await item.getByText(name, { exact: true }).boundingBox();
+  const toggle = await item.getByRole('switch').boundingBox();
+
+  if (!label || !toggle) throw new Error('The field name and toggle must be visible');
+  expect(label.x + label.width).toBeLessThanOrEqual(toggle.x);
+});
+
 const SHIFT_OPTION: Record<string, number> = {
   'Only when dates overlap': 0,
-  'Keep the time between items': 1,
-  Never: 2,
+  'Shift & maintain time between items': 1,
+  'Do not automatically shift': 2,
 };
 
 Given('dependents shift with {string}', async ({ page }, option) => {
@@ -603,12 +667,11 @@ Then('the {string} due date is {int} days from today', async ({ page }, title, d
 
 const TABLE_FIELD_ID: Record<string, string> = { Progress: 'num-progress', Due: 'due' };
 
-async function toggleTableColumn(page: Page, name: string) {
-  await page.getByTestId('database-actions-settings').click();
+async function openTimelineTableProperties(page: Page) {
   const settingsTrigger = TimelineSelectors.settingsTrigger(page);
-
-  await settingsTrigger.click();
   const nestedTrigger = page.getByTestId('timeline-table-properties-trigger');
+
+  await nestedTrigger.scrollIntoViewIfNeeded();
   const from = await settingsTrigger.boundingBox();
   const to = await nestedTrigger.boundingBox();
 
@@ -618,6 +681,12 @@ async function toggleTableColumn(page: Page, name: string) {
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 25 });
   await nestedTrigger.click();
+}
+
+async function toggleTableColumn(page: Page, name: string) {
+  await page.getByTestId('database-actions-settings').click();
+  await TimelineSelectors.settingsTrigger(page).click();
+  await openTimelineTableProperties(page);
   await page.getByTestId(`timeline-table-field-${TABLE_FIELD_ID[name]}`).click();
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
@@ -658,6 +727,79 @@ Then('the {string} column header, cells and calculation line up', async ({ page 
   expect(cell.x).toBeCloseTo(header.x, 0);
   expect(calculation.x).toBeCloseTo(header.x, 0);
   expect(cell.width).toBeCloseTo(header.width, 0);
+  expect(calculation.width).toBeCloseTo(header.width, 0);
+});
+
+async function resizeTableColumn(page: Page, fieldId: string, width: number, options: { cancel?: boolean } = {}) {
+  const header = page.getByTestId(`timeline-table-header-${fieldId}`);
+  const handle = page.getByTestId(`timeline-column-resize-${fieldId}`);
+
+  await handle.scrollIntoViewIfNeeded();
+  const headerBox = await header.boundingBox();
+  const handleBox = await handle.boundingBox();
+
+  if (!headerBox || !handleBox) throw new Error('The column resize handle must be visible');
+  const x = handleBox.x + handleBox.width / 2;
+  const y = handleBox.y + handleBox.height / 2;
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + width - headerBox.width, y, { steps: 12 });
+  if (options.cancel) {
+    await expect(header).toHaveCSS('width', `${width}px`);
+    await page.keyboard.press('Escape');
+    // Movement after cancellation must not revive the discarded preview.
+    await page.mouse.move(x + width - headerBox.width + 20, y);
+  }
+  await page.mouse.up();
+}
+
+async function expectTableColumnWidth(page: Page, fieldId: string, width: number) {
+  await expect(page.getByTestId(`timeline-table-header-${fieldId}`)).toHaveCSS('width', `${width}px`);
+  await expect(page.getByTestId(`timeline-calculation-${fieldId}`)).toHaveCSS('width', `${width}px`);
+  // Check the view's actual shared settings, not just a transient drag preview.
+  await expect
+    .poll(() =>
+      page.evaluate((id) => {
+        const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: any }).__TEST_DATABASE_CONTEXT__;
+
+        return Number(
+          ctx.databaseDoc
+            .getMap('data')
+            .get('database')
+            .get('views')
+            .get(ctx.activeViewId)
+            .get('field_settings')
+            .get(id)
+            ?.get('width')
+        );
+      }, fieldId)
+    )
+    .toBe(width);
+}
+
+When('I resize the timeline title column to {int} px', async ({ page }, width) => {
+  const { primaryFieldId } = await getCurrentDatabaseInfo(page);
+
+  await resizeTableColumn(page, primaryFieldId, width);
+});
+
+When('I resize the {string} timeline table column to {int} px', async ({ page }, name, width) => {
+  await resizeTableColumn(page, await tableFieldIdByName(page, name), width);
+});
+
+When('I cancel resizing the {string} timeline table column to {int} px', async ({ page }, name, width) => {
+  await resizeTableColumn(page, await tableFieldIdByName(page, name), width, { cancel: true });
+});
+
+Then('the timeline title column is {int} px wide', async ({ page }, width) => {
+  const { primaryFieldId } = await getCurrentDatabaseInfo(page);
+
+  await expectTableColumnWidth(page, primaryFieldId, width);
+});
+
+Then('the {string} timeline table column is {int} px wide', async ({ page }, name, width) => {
+  await expectTableColumnWidth(page, await tableFieldIdByName(page, name), width);
 });
 
 When('I set the {string} column calculation to {string}', async ({ page }, name, calculation) => {

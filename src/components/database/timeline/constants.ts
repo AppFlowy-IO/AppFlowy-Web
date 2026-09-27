@@ -8,8 +8,10 @@ export const TIMELINE_HEADER_HEIGHT = 36;
 export const TIMELINE_SIDEBAR_WIDTH = 280;
 /** Width reserved for the expand toggle when the table is hidden. */
 export const TIMELINE_COLLAPSED_SIDEBAR_WIDTH = 32;
-/** Width of each extra property column in the docked table. */
+/** Default width of each extra property column in the docked table. */
 export const TIMELINE_TABLE_COLUMN_WIDTH = 140;
+export const TIMELINE_MIN_PRIMARY_COLUMN_WIDTH = 100;
+export const TIMELINE_MIN_TABLE_COLUMN_WIDTH = 50;
 /** Width reserved for the table toggle and each row's open button. */
 export const TIMELINE_TABLE_CONTROL_WIDTH = 28;
 /** Vertical inset of a bar inside its row: 36px rows hold the calendar's 22px event chips. */
