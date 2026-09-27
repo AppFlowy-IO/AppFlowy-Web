@@ -1,11 +1,17 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { StrictMode } from 'react';
+import { ReactNode, StrictMode } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
-import { moveDashboardWidget, updateDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
+import {
+  moveDashboardWidget,
+  readDashboardLayoutSetting,
+  updateDashboardLayoutSetting,
+} from '@/application/database-yjs/dashboard-layout';
 import { DashboardRow } from '@/application/database-yjs/dashboard.type';
+import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import { DatabaseViewLayout, YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 
 import { WIDGET_GRID_ROW_GUTTER, WIDGET_INLINE_PADDING } from '../constants';
 import {
@@ -17,9 +23,12 @@ import {
 } from '../DashboardContext';
 import { DashboardGrid } from '../DashboardGrid';
 import { DashboardHostContext, DashboardUiContext } from '../DashboardUiContext';
+import { WidgetActions } from '../WidgetContext';
 
 const mockWidgetViews = new Map<string, YDatabaseView>();
 const mockWidgetPaddings = new Map<string, number | undefined>();
+const mockWidgetActions = new Map<string, WidgetActions>();
+const mockSourceDocs = new Map<string, YDoc>();
 
 jest.mock('@/utils/runtime-config', () => ({ getConfigValue: (_key: string, fallback: string) => fallback }));
 jest.mock('react-i18next', () => {
@@ -30,24 +39,55 @@ jest.mock('react-i18next', () => {
 jest.mock('@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box', () => ({ DropIndicator: () => null }));
 jest.mock('@/components/database', () => ({
   Database: ({
+    doc,
     activeViewId,
     paddingStart,
     viewConditionsOverlay,
   }: {
+    doc: YDoc;
     activeViewId: string;
     paddingStart?: number;
     viewConditionsOverlay?: YDatabaseView;
   }) => {
+    const { useWidgetContext } = jest.requireActual<typeof import('../WidgetContext')>('../WidgetContext');
+    const { DatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs')>(
+      '@/application/database-yjs'
+    );
+    const { DatabaseHistoryScope } = jest.requireActual<typeof import('@/components/database/DatabaseHistoryScope')>(
+      '@/components/database/DatabaseHistoryScope'
+    );
+
+    mockWidgetActions.set(activeViewId, useWidgetContext().actions);
     if (viewConditionsOverlay) mockWidgetViews.set(activeViewId, viewConditionsOverlay);
     mockWidgetPaddings.set(activeViewId, paddingStart);
-    return null;
+    return (
+      <DatabaseContext.Provider
+        value={{
+          databaseDoc: doc,
+          databasePageId: activeViewId,
+          activeViewId,
+          readOnly: false,
+          rowMap: {},
+          workspaceId: 'workspace-id',
+        }}
+      >
+        <DatabaseHistoryScope>
+          <button data-testid={`widget-surface-${activeViewId}`}>Widget content</button>
+        </DatabaseHistoryScope>
+      </DatabaseContext.Provider>
+    );
   },
 }));
 jest.mock('@/application/publish-snapshot/database-yjs-render-bridge', () => ({
   getPublishedDatabaseRenderRowMap: () => undefined,
 }));
 jest.mock('@/components/editor/components/blocks/database/hooks/useDocumentLoader', () => ({
-  useDocumentLoader: () => ({ doc: null, notFound: false, noAccess: false, setNotFound: jest.fn() }),
+  useDocumentLoader: ({ databaseId }: { databaseId: string }) => ({
+    doc: mockSourceDocs.get(databaseId) ?? null,
+    notFound: false,
+    noAccess: false,
+    setNotFound: jest.fn(),
+  }),
 }));
 jest.mock('@/components/editor/components/blocks/database/hooks/useDatabaseDeletionStatus', () => ({
   useDatabaseDeletionStatus: () => 'none',
@@ -56,7 +96,11 @@ jest.mock('@/components/editor/components/blocks/database/hooks/useViewMeta', ()
   useViewMeta: () => ({ viewMeta: null }),
 }));
 jest.mock('@/components/editor/components/blocks/database/hooks/useEmbeddedDatabasePermissions', () => ({
-  EmbeddedDatabasePermissionsResolver: () => null,
+  EmbeddedDatabasePermissionsResolver: ({
+    children,
+  }: {
+    children: (permissions: { readOnly: boolean; canWrite: boolean; canShare: boolean }) => ReactNode;
+  }) => children({ readOnly: false, canWrite: true, canShare: false }),
 }));
 jest.mock('../hooks/useDashboardDnd', () => ({
   useDraggableWidget: () => undefined,
@@ -104,12 +148,12 @@ function TestDashboard() {
       <DashboardGrid />
       <output data-testid='private-changes'>{localWidgetChanges}</output>
       <button onClick={resetViewOverlays}>Reset</button>
-      <button onClick={commitViewOverlays}>Save</button>
+      <button onClick={() => commitViewOverlays()}>Save</button>
     </DashboardUiContext.Provider>
   );
 }
 
-function setup(strict = false, readOnly = false) {
+function setup(strict = false, readOnly = false, sourceDoc?: YDoc) {
   const doc = new Y.Doc({ guid: 'db' }) as YDoc;
   const database = new Y.Map() as YDatabase;
   const views = new Y.Map<YDatabaseView>();
@@ -123,7 +167,12 @@ function setup(strict = false, readOnly = false) {
   views.set('other-dashboard', otherDashboard);
   views.set('v1', makeView());
   views.set('v2', makeView());
-  updateDashboardLayoutSetting(dashboard, { rows: ROWS });
+  const rows = sourceDoc
+    ? ROWS.map((row) => ({ ...row, widgets: row.widgets.map((widget) => ({ ...widget, databaseId: 'source-db' })) }))
+    : ROWS;
+
+  if (sourceDoc) mockSourceDocs.set('source-db', sourceDoc);
+  updateDashboardLayoutSetting(dashboard, { rows });
   updateDashboardLayoutSetting(otherDashboard, { rows: ROWS });
   const host: DatabaseContextState = {
     databaseDoc: doc,
@@ -137,9 +186,11 @@ function setup(strict = false, readOnly = false) {
     const content = (
       <DatabaseContext.Provider value={{ ...host, activeViewId }}>
         <DashboardHostContext.Provider value={host}>
-          <DashboardProvider>
-            <TestDashboard />
-          </DashboardProvider>
+          <DatabaseHistoryScope>
+            <DashboardProvider>
+              <TestDashboard />
+            </DashboardProvider>
+          </DatabaseHistoryScope>
         </DashboardHostContext.Provider>
       </DatabaseContext.Provider>
     );
@@ -152,6 +203,7 @@ function setup(strict = false, readOnly = false) {
   return {
     ...rendered,
     doc,
+    database,
     views,
     switchDashboard: () => rendered.rerender(tree('other-dashboard')),
     writeRows: (rows: DashboardRow[]) => act(() => updateDashboardLayoutSetting(dashboard, { rows })),
@@ -176,6 +228,48 @@ function editConditions() {
 beforeEach(() => {
   mockWidgetViews.clear();
   mockWidgetPaddings.clear();
+  mockWidgetActions.clear();
+  mockSourceDocs.clear();
+});
+
+it.each(['duplicate', 'move'] as const)('undoes the host layout after the widget %s action', (action) => {
+  const sourceDoc = new Y.Doc({ guid: 'source-db' }) as YDoc;
+  const sourceDatabase = new Y.Map() as YDatabase;
+  const sourceViews = new Y.Map<YDatabaseView>();
+  const sourceView = makeView();
+
+  sourceDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, sourceDatabase);
+  sourceDatabase.set(YjsDatabaseKey.id, 'source-db');
+  sourceDatabase.set(YjsDatabaseKey.views, sourceViews);
+  sourceViews.set('v1', sourceView);
+  sourceViews.set('v2', makeView());
+  const sourceHistory = getOrCreateDatabaseHistoryManager(sourceDoc);
+
+  runDatabaseAction(sourceDoc, { type: 'test.source-edit' }, () => sourceView.set(YjsDatabaseKey.name, 'Source edit'));
+  const { doc, database, unmount } = setup(false, false, sourceDoc);
+  const before = readDashboardLayoutSetting(database, 'dashboard').rows;
+
+  fireEvent.pointerDown(screen.getByTestId('widget-surface-v1'));
+  // Invoke the actual WidgetSource callbacks supplied to the nested header's
+  // menu. Both layout actions must override that header's source history.
+  act(() => {
+    const actions = mockWidgetActions.get('v1');
+
+    expect(actions).toBeDefined();
+    if (action === 'duplicate') actions?.duplicate();
+    else actions?.move('down');
+  });
+  expect(readDashboardLayoutSetting(database, 'dashboard').rows).not.toEqual(before);
+  const modifier = /Mac|iPod|iPhone|iPad/.test(window.navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+
+  fireEvent.keyDown(document, { key: 'z', code: 'KeyZ', keyCode: 90, which: 90, ...modifier });
+  expect(readDashboardLayoutSetting(database, 'dashboard').rows).toEqual(before);
+  expect(sourceView.get(YjsDatabaseKey.name)).toBe('Source edit');
+  expect(sourceHistory.canUndo()).toBe(true);
+
+  unmount();
+  doc.destroy();
+  sourceDoc.destroy();
 });
 
 it.each([false, true])(

@@ -217,12 +217,12 @@ describe('GlobalFilterBar', () => {
     );
 
     fireEvent.click(screen.getByTestId('dashboard-global-filter-save-for-everybody'));
-    expect(mockContext.updateSetting).toHaveBeenCalledWith({ globalFilters: local });
+    expect(mockContext.commitViewOverlays).toHaveBeenCalledWith(local);
     expect(mockContext.setLocalGlobalFilters).toHaveBeenCalledWith(null);
 
     fireEvent.click(screen.getByTestId('dashboard-global-filter-reset'));
     expect(mockContext.setLocalGlobalFilters).toHaveBeenCalledTimes(2);
-    expect(mockContext.updateSetting).toHaveBeenCalledTimes(1);
+    expect(mockContext.commitViewOverlays).toHaveBeenCalledTimes(1);
   });
 
   it('only offers a reset to readers', () => {

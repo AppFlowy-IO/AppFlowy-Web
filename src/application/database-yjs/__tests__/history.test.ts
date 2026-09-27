@@ -15,6 +15,7 @@ import {
   getOrCreateDatabaseRowHistoryController,
   runDatabaseAction,
   runDatabaseHistoryGroup,
+  runDatabaseHistoryGroupForDatabase,
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
@@ -602,6 +603,199 @@ describe('database row history', () => {
 
     expect(rowOrders.toJSON()).toEqual([{ id: rowId, height: 36 }]);
     expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('after');
+  });
+
+  it('undoes a multi-database action from its owner without consuming ordinary source actions', () => {
+    const host = createDatabaseDoc();
+    const first = createDatabaseDoc();
+    const second = createDatabaseDoc();
+    const hostHistory = getOrCreateDatabaseHistoryManager(host.databaseDoc);
+    const firstHistory = getOrCreateDatabaseHistoryManager(first.databaseDoc);
+    const secondHistory = getOrCreateDatabaseHistoryManager(second.databaseDoc);
+
+    runDatabaseAction(host.databaseDoc, { type: 'dashboard.layout' }, () => {
+      host.rowOrders.push([{ id: 'older-layout', height: 36 }]);
+    });
+    runDatabaseAction(first.databaseDoc, { type: 'view.rename' }, () => {
+      first.view.set(YjsDatabaseKey.name, 'Renamed before save');
+    });
+    runDatabaseHistoryGroupForDatabase(host.databaseDoc, () => {
+      runDatabaseAction(host.databaseDoc, { type: 'dashboard.global-filters' }, () => {
+        host.view.set(YjsDatabaseKey.name, 'Saved global filters');
+      });
+      for (const source of [first, second]) {
+        runDatabaseAction(source.databaseDoc, { type: 'view.conditions' }, () => {
+          source.rowOrders.push([{ id: 'saved-condition', height: 36 }]);
+        });
+      }
+    });
+    runDatabaseAction(first.databaseDoc, { type: 'view.layout' }, () => {
+      first.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    });
+
+    hostHistory.undo();
+    expect(host.rowOrders.toJSON()).toEqual([{ id: 'older-layout', height: 36 }]);
+    expect(host.view.get(YjsDatabaseKey.name)).toBe('Grid');
+    expect(first.rowOrders.toJSON()).toEqual([]);
+    expect(second.rowOrders.toJSON()).toEqual([]);
+    expect(first.view.get(YjsDatabaseKey.name)).toBe('Renamed before save');
+    expect(first.view.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Board);
+    expect(secondHistory.canUndo()).toBe(false);
+
+    hostHistory.redo();
+    expect(host.view.get(YjsDatabaseKey.name)).toBe('Saved global filters');
+    expect(first.rowOrders.toJSON()).toEqual([{ id: 'saved-condition', height: 36 }]);
+    expect(second.rowOrders.toJSON()).toEqual([{ id: 'saved-condition', height: 36 }]);
+
+    firstHistory.undo();
+    expect(first.view.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Grid);
+    firstHistory.undo();
+    expect(first.view.get(YjsDatabaseKey.name)).toBe('Grid');
+    expect(first.rowOrders.toJSON()).toEqual([{ id: 'saved-condition', height: 36 }]);
+    expect(firstHistory.canUndo()).toBe(false);
+  });
+
+  it('keeps source redo independent from an owner action and owner history clearing', () => {
+    const host = createDatabaseDoc();
+    const source = createDatabaseDoc();
+    const hostHistory = getOrCreateDatabaseHistoryManager(host.databaseDoc);
+    const sourceHistory = getOrCreateDatabaseHistoryManager(source.databaseDoc);
+
+    runDatabaseAction(source.databaseDoc, { type: 'view.rename' }, () => {
+      source.view.set(YjsDatabaseKey.name, 'Source rename');
+    });
+    sourceHistory.undo();
+    runDatabaseHistoryGroupForDatabase(host.databaseDoc, () => {
+      runDatabaseAction(source.databaseDoc, { type: 'view.conditions' }, () => {
+        source.rowOrders.push([{ id: 'saved-condition', height: 36 }]);
+      });
+    });
+
+    expect(sourceHistory.canRedo()).toBe(true);
+    hostHistory.clear();
+    expect(sourceHistory.canRedo()).toBe(true);
+    sourceHistory.redo();
+    expect(source.view.get(YjsDatabaseKey.name)).toBe('Source rename');
+    sourceHistory.undo();
+    expect(source.view.get(YjsDatabaseKey.name)).toBe('Grid');
+    expect(source.rowOrders.toJSON()).toEqual([{ id: 'saved-condition', height: 36 }]);
+  });
+
+  it('preserves an owner redo when the source records and clears its own history', () => {
+    const host = createDatabaseDoc();
+    const source = createDatabaseDoc();
+    const hostHistory = getOrCreateDatabaseHistoryManager(host.databaseDoc);
+    const sourceHistory = getOrCreateDatabaseHistoryManager(source.databaseDoc);
+
+    runDatabaseHistoryGroupForDatabase(host.databaseDoc, () => {
+      runDatabaseAction(source.databaseDoc, { type: 'view.conditions' }, () => {
+        source.rowOrders.push([{ id: 'saved-condition', height: 36 }]);
+      });
+    });
+    hostHistory.undo();
+    runDatabaseAction(source.databaseDoc, { type: 'view.rename' }, () => {
+      source.view.set(YjsDatabaseKey.name, 'Source rename');
+    });
+    sourceHistory.clear();
+
+    expect(hostHistory.canRedo()).toBe(true);
+    hostHistory.redo();
+    expect(source.rowOrders.toJSON()).toEqual([{ id: 'saved-condition', height: 36 }]);
+    expect(source.view.get(YjsDatabaseKey.name)).toBe('Source rename');
+  });
+
+  it('preserves remote edits while undoing and redoing a foreign database action', () => {
+    const host = createDatabaseDoc();
+    const source = createDatabaseDoc();
+    const hostHistory = getOrCreateDatabaseHistoryManager(host.databaseDoc);
+
+    runDatabaseHistoryGroupForDatabase(host.databaseDoc, () => {
+      runDatabaseAction(source.databaseDoc, { type: 'view.conditions' }, () => {
+        source.rowOrders.push([{ id: 'saved-condition', height: 36 }]);
+      });
+    });
+    source.databaseDoc.transact(() => {
+      source.rowOrders.push([{ id: 'remote-condition', height: 36 }]);
+    }, 'remote');
+
+    hostHistory.undo();
+    expect(source.rowOrders.toJSON()).toEqual([{ id: 'remote-condition', height: 36 }]);
+    hostHistory.redo();
+    expect(source.rowOrders.toJSON()).toEqual([
+      { id: 'saved-condition', height: 36 },
+      { id: 'remote-condition', height: 36 },
+    ]);
+  });
+
+  it('prunes only the owner actions while retaining source undo history', () => {
+    const host = createDatabaseDoc();
+    const source = createDatabaseDoc();
+    const hostHistory = getOrCreateDatabaseHistoryManager(host.databaseDoc);
+    const sourceHistory = getOrCreateDatabaseHistoryManager(source.databaseDoc);
+
+    runDatabaseAction(source.databaseDoc, { type: 'source.row' }, () => {
+      source.rowOrders.push([{ id: 'source-row', height: 36 }]);
+    });
+    for (let index = 0; index < 105; index += 1) {
+      runDatabaseHistoryGroupForDatabase(host.databaseDoc, () => {
+        runDatabaseAction(source.databaseDoc, { type: 'view.conditions' }, () => {
+          source.view.set(YjsDatabaseKey.name, `Save ${index}`);
+        });
+      });
+    }
+
+    for (let index = 0; index < 100; index += 1) {
+      expect(hostHistory.undo()).not.toBeNull();
+    }
+
+    expect(hostHistory.canUndo()).toBe(false);
+    expect(source.view.get(YjsDatabaseKey.name)).toBe('Save 4');
+    sourceHistory.undo();
+    expect(source.rowOrders.toJSON()).toEqual([]);
+    expect(sourceHistory.canUndo()).toBe(false);
+  });
+
+  it('keeps nested groups, row actions, and skip policies while restoring ownership after a throw', () => {
+    const host = createDatabaseDoc();
+    const source = createDatabaseDoc();
+    const rowDoc = createRowDoc(rowId, databaseId, {
+      [textFieldId]: { fieldType: FieldType.RichText, data: 'before' },
+    });
+    const hostHistory = getOrCreateDatabaseHistoryManager(host.databaseDoc);
+    const sourceHistory = getOrCreateDatabaseHistoryManager(source.databaseDoc);
+
+    hostHistory.registerRowDoc(rowId, rowDoc);
+    expect(() => {
+      runDatabaseHistoryGroup(() => {
+        runDatabaseHistoryGroupForDatabase(host.databaseDoc, () => {
+          runDatabaseHistoryGroupForDatabase(source.databaseDoc, () => {
+            runDatabaseAction(source.databaseDoc, { type: 'view.conditions' }, () => {
+              source.rowOrders.push([{ id: 'saved-condition', height: 36 }]);
+            });
+          });
+          runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId }, () => {
+            setCellData(rowDoc, textFieldId, 'after');
+          });
+          runDatabaseAction(source.databaseDoc, { type: 'view.rename', policy: 'skip' }, () => {
+            source.view.set(YjsDatabaseKey.name, 'Untracked rename');
+          });
+          throw new Error('stop');
+        });
+      });
+    }).toThrow('stop');
+    runDatabaseAction(source.databaseDoc, { type: 'view.layout' }, () => {
+      source.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    });
+
+    hostHistory.undo();
+    expect(source.rowOrders.toJSON()).toEqual([]);
+    expect(source.view.get(YjsDatabaseKey.name)).toBe('Untracked rename');
+    expect(source.view.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Board);
+    expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('before');
+    expect(hostHistory.canUndo()).toBe(false);
+    sourceHistory.undo();
+    expect(source.view.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Grid);
+    expect(sourceHistory.canUndo()).toBe(false);
   });
 
   it('clears every registered source stack', () => {

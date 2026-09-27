@@ -1,12 +1,17 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, fireEvent, renderHook, screen } from '@testing-library/react';
 import { type ReactNode } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
-import { readDashboardLayoutSetting, updateDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
+import {
+  duplicateDashboardWidget,
+  moveDashboardWidget,
+  readDashboardLayoutSetting,
+  updateDashboardLayoutSetting,
+} from '@/application/database-yjs/dashboard-layout';
 import { DashboardGlobalFilter, DashboardRow } from '@/application/database-yjs/dashboard.type';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
+import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import { YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import {
   DashboardProvider,
@@ -17,6 +22,7 @@ import {
   useDashboardSourceRegistry,
   useDashboardSources,
 } from '@/components/database/dashboard/DashboardContext';
+import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
@@ -263,6 +269,80 @@ describe('DashboardProvider', () => {
       expect(updates).not.toHaveBeenCalled();
     });
   });
+
+  it.each(['duplicate', 'move', 'setting'] as const)(
+    'routes keyboard undo and redo to the host after a %s action from a source widget',
+    (action) => {
+      const host = createDatabaseDoc();
+      const source = createDatabaseDoc();
+      const sourceHistory = getOrCreateDatabaseHistoryManager(source.doc);
+      const hostContext: DatabaseContextState = {
+        databaseDoc: host.doc,
+        databasePageId: DASHBOARD_VIEW_ID,
+        activeViewId: DASHBOARD_VIEW_ID,
+        readOnly: false,
+        rowMap: {},
+        workspaceId: 'workspace-id',
+      };
+
+      source.database.set(YjsDatabaseKey.id, 'other-database');
+      runDatabaseAction(source.doc, { type: 'test.source-edit' }, () => {
+        source.view.set(YjsDatabaseKey.name, 'Source edit');
+      });
+      const { result, unmount } = renderHook(() => useDashboardContext(), {
+        wrapper: ({ children }) => (
+          <DatabaseContext.Provider value={hostContext}>
+            <DatabaseHistoryScope>
+              <DashboardProvider>
+                {children}
+                <DatabaseContext.Provider value={{ ...hostContext, databaseDoc: source.doc }}>
+                  <DatabaseHistoryScope>
+                    <button data-testid='source-widget'>Source widget</button>
+                  </DatabaseHistoryScope>
+                </DatabaseContext.Provider>
+              </DashboardProvider>
+            </DatabaseHistoryScope>
+          </DatabaseContext.Provider>
+        ),
+      });
+      const widget = screen.getByTestId('source-widget');
+      const before = readDashboardLayoutSetting(host.database, DASHBOARD_VIEW_ID);
+      const modifier = /Mac|iPod|iPhone|iPad/.test(window.navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+      const historyKey = { key: 'z', code: 'KeyZ', keyCode: 90, which: 90, ...modifier };
+
+      // The widget header and its portaled menu activate the nested source
+      // scope. Menu actions and the dashboard's drop handler share updateRows.
+      fireEvent.pointerDown(widget);
+      act(() => {
+        if (action === 'duplicate') result.current.updateRows((rows) => duplicateDashboardWidget(rows, 'w2'));
+        if (action === 'move') {
+          result.current.updateRows((rows) => moveDashboardWidget(rows, 'w2', { type: 'new_row', rowIndex: 1 }));
+        }
+
+        if (action === 'setting') result.current.updateSetting({ showWidgetTitles: false });
+      });
+      const changed = readDashboardLayoutSetting(host.database, DASHBOARD_VIEW_ID);
+
+      expect(changed).not.toEqual(before);
+      fireEvent.keyDown(widget, historyKey);
+      expect(readDashboardLayoutSetting(host.database, DASHBOARD_VIEW_ID)).toEqual(before);
+      expect(source.view.get(YjsDatabaseKey.name)).toBe('Source edit');
+      expect(sourceHistory.canUndo()).toBe(true);
+
+      fireEvent.keyDown(widget, { ...historyKey, shiftKey: true });
+      expect(readDashboardLayoutSetting(host.database, DASHBOARD_VIEW_ID)).toEqual(changed);
+
+      // Interacting with source content again returns undo to its own edits.
+      fireEvent.pointerDown(widget);
+      fireEvent.keyDown(widget, historyKey);
+      expect(source.view.get(YjsDatabaseKey.name)).toBeUndefined();
+      expect(readDashboardLayoutSetting(host.database, DASHBOARD_VIEW_ID)).toEqual(changed);
+
+      unmount();
+      host.doc.destroy();
+      source.doc.destroy();
+    }
+  );
 
   describe('updateRows', () => {
     it('persists changed rows through the history-aware dispatcher', () => {

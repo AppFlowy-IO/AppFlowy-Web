@@ -14,7 +14,9 @@ import {
   useReadOnly,
   useUpdateDashboardSetting,
 } from '@/application/database-yjs';
+import { runDatabaseHistoryGroupForDatabase } from '@/application/database-yjs/history';
 import { YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
+import { useDatabaseHistoryScopeContext } from '@/components/database/DatabaseHistoryScope';
 
 import { readGlobalFilterSourceFields } from './global-filters/global-filter.source-fields';
 import { detachRemovedGlobalFilterSources, GlobalFilterSource } from './global-filters/global-filter.utils';
@@ -72,7 +74,10 @@ export interface DashboardLayoutContextValue {
 
 // The unsaved counts live in their own context: every widget reads this one,
 // and only the filter bar needs the counts.
-export interface DashboardFiltersContextValue extends Omit<DashboardViewOverlays, keyof DashboardLocalWidgetChanges> {
+export interface DashboardFiltersContextValue
+  extends Omit<DashboardViewOverlays, keyof DashboardLocalWidgetChanges | 'commitViewOverlays'> {
+  /** Save writable widget conditions and optional global filters as one dashboard undo action. */
+  commitViewOverlays: (globalFilters?: DashboardGlobalFilter[]) => void;
   /** Persisted global filters (mappings of databases without a widget left out). */
   globalFilters: DashboardGlobalFilter[];
   /** Persisted global filters unless the viewer changed them locally. */
@@ -158,7 +163,18 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   const dashboardViewId = useDatabaseViewId();
   const readOnly = useReadOnly();
   const storedSetting = useDashboardLayoutSetting();
-  const updateSetting = useUpdateDashboardSetting();
+  const persistSetting = useUpdateDashboardSetting();
+  const hostHistoryScope = useDatabaseHistoryScopeContext();
+  const updateSetting = useCallback(
+    (update: DashboardLayoutUpdate) => {
+      if (readOnly) return;
+      // Widget menus and drag handles live inside the source database's
+      // history scope, but every dashboard layout write belongs to the host.
+      hostHistoryScope?.activateHistoryScope();
+      persistSetting(update);
+    },
+    [hostHistoryScope, persistSetting, readOnly]
+  );
   const getDatabase = useCallback(
     () => (databaseDoc.getMap(YjsEditorKey.data_section) as YSharedRoot).get(YjsEditorKey.database),
     [databaseDoc]
@@ -193,8 +209,25 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   if (!readOnly && editMode === 'auto' && rows.length > 0) setEditMode('off');
   const isEditing = !readOnly && (editMode === 'on' || (editMode === 'auto' && rows.length === 0));
 
-  const { unsaved, savable, getViewOverlay, setViewOverlayWritable, resetViewOverlays, commitViewOverlays } =
-    useDashboardViewOverlays(dashboardViewId, rows);
+  const {
+    unsaved,
+    savable,
+    getViewOverlay,
+    setViewOverlayWritable,
+    resetViewOverlays,
+    commitViewOverlays: persistViewOverlays,
+  } = useDashboardViewOverlays(dashboardViewId, rows);
+  const commitViewOverlays = useCallback(
+    (globalFilters?: DashboardGlobalFilter[]) => {
+      if (readOnly) return;
+      hostHistoryScope?.activateHistoryScope();
+      runDatabaseHistoryGroupForDatabase(databaseDoc, () => {
+        if (globalFilters) persistSetting({ globalFilters });
+        persistViewOverlays();
+      });
+    },
+    [databaseDoc, hostHistoryScope, persistSetting, persistViewOverlays, readOnly]
+  );
 
   // Docs the widgets registered; the host doc is derived, so a replaced host
   // doc never leaves a render with the previous one.

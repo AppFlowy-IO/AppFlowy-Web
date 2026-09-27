@@ -1,5 +1,5 @@
 import { Dialog, DialogContent, DialogTitle } from '@mui/material';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabaseContext, useFieldSelector, usePrimaryFieldId, useRowMap } from '@/application/database-yjs';
@@ -62,8 +62,28 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
   // row again per arrival is quadratic in the page size.
   const [loadedRevision, setLoadedRevision] = useState(0);
   const rowMetasRef = useRef(rowMetas);
+  const refreshTimerRef = useRef<number>();
 
   rowMetasRef.current = rowMetas;
+
+  const rebuild = useCallback(() => {
+    window.clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = undefined;
+    setLoadedRevision((revision) => revision + 1);
+  }, []);
+
+  // Resets and canonical-row loading can replace documents that were already
+  // present. Batch all row-map changes, even when this popup has no rows to load.
+  useEffect(() => {
+    if (refreshTimerRef.current === undefined) {
+      refreshTimerRef.current = window.setTimeout(rebuild, LOADED_ROWS_REFRESH_MS);
+    }
+  }, [rowMetas, rebuild]);
+
+  useEffect(() => () => {
+    window.clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = undefined;
+  }, []);
 
   useEffect(() => {
     if (!ensureRow) return;
@@ -71,28 +91,16 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
 
     if (missing.length === 0) return;
     let cancelled = false;
-    let timer: number | undefined;
-    const rebuild = () => {
-      window.clearTimeout(timer);
-      timer = undefined;
-      setLoadedRevision((revision) => revision + 1);
-    };
-
-    const scheduleRebuild = () => {
-      if (timer === undefined) timer = window.setTimeout(rebuild, LOADED_ROWS_REFRESH_MS);
-    };
 
     void ensureRowsWithConcurrency(missing, ensureRow, {
       isCancelled: () => cancelled,
-      onLoaded: scheduleRebuild,
     }).then(() => {
       if (!cancelled) rebuild();
     });
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
     };
-  }, [ensureRow, visibleRowIds]);
+  }, [ensureRow, visibleRowIds, rebuild]);
 
   const rows = useMemo<RowItem[]>(() => {
     void primaryFieldClock;

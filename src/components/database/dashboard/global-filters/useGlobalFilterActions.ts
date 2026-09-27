@@ -109,14 +109,12 @@ export function useGlobalFilterActions() {
     const local = localRef.current;
 
     if (!canEdit) return;
+    commitViewOverlays(local ?? undefined);
     if (local) {
       persistedRef.current = local;
-      updateSetting({ globalFilters: local });
       setLocal(null);
     }
-
-    commitViewOverlays();
-  }, [canEdit, commitViewOverlays, setLocal, updateSetting]);
+  }, [canEdit, commitViewOverlays, setLocal]);
 
   return {
     filters: effectiveGlobalFilters,

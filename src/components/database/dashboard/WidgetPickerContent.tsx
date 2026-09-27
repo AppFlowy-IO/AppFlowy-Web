@@ -2,6 +2,7 @@ import { KeyboardEvent, memo, useCallback, useDeferredValue, useMemo, useRef, us
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { findDashboardWidget } from '@/application/database-yjs/dashboard-layout';
 import { DatabaseViewLayout, UIVariant, ViewLayout } from '@/application/types';
@@ -276,6 +277,7 @@ export function WidgetPickerContent({ request, onPick, createView, canCreateInOt
 
   const handleCreate = async (layout: DatabaseViewLayout) => {
     if (creating || !selectedDatabase) return;
+    if (layout === DatabaseViewLayout.Timeline && !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED) return;
     setCreatingLayout(layout);
 
     try {
@@ -423,6 +425,7 @@ export function WidgetPickerContent({ request, onPick, createView, canCreateInOt
               </div>
               <div className='grid grid-cols-4 gap-2 max-sm:grid-cols-2'>
                 {WIDGET_PICKER_LAYOUTS.map((layout) => {
+                  if (layout === DatabaseViewLayout.Timeline && !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED) return null;
                   const viewLayout = databaseLayoutToViewLayout(layout);
                   const label = getLayoutLabel(viewLayout);
                   const creatingThis = creatingLayout === layout;
