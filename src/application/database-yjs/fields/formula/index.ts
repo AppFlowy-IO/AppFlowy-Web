@@ -25,6 +25,8 @@ export { tokenize } from './lexer';
 export type { Token, TokenKind } from './lexer';
 export { parseFormulaTypeOption, parseFormulaVisualizationOption } from './parse';
 export { parseFormula } from './parser';
+export { findFormulaPropCalls } from './prop-calls';
+export type { FormulaPropCall } from './prop-calls';
 export {
   collectExpressionExternalReferences,
   collectFormulaExternalReferences,

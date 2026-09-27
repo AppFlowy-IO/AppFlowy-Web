@@ -15,9 +15,9 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-const FormulaEditorDialog = lazy(() =>
-  import('@/components/database/components/property/formula/FormulaEditorDialog').then(
-    ({ FormulaEditorDialog: Component }) => ({ default: Component })
+const FormulaEditorPopover = lazy(() =>
+  import('@/components/database/components/property/formula/FormulaEditorPopover').then(
+    ({ FormulaEditorPopover: Component }) => ({ default: Component })
   )
 );
 
@@ -134,7 +134,8 @@ export function FormulaCell({
       data-testid={`formula-cell-${rowId}-${fieldId}`}
       data-result-type={cell?.resultType}
       className={cn(
-        'formula-cell relative flex w-full items-center gap-1',
+        // Not positioned: the editor anchors to the host cell (grid cell or row page value) around it.
+        'formula-cell flex w-full items-center gap-1',
         isEmpty && placeholder ? 'text-text-tertiary' : '',
         cell?.resultType === 'number' && !canVisualize ? 'justify-end text-right' : '',
         wrap
@@ -159,7 +160,7 @@ export function FormulaCell({
       ) : null}
       {editing && !readOnly ? (
         <Suspense fallback={null}>
-          <FormulaEditorDialog fieldId={fieldId} rowId={rowId} open={editing} onOpenChange={handleOpenChange} />
+          <FormulaEditorPopover fieldId={fieldId} rowId={rowId} open={editing} onOpenChange={handleOpenChange} />
         </Suspense>
       ) : null}
     </div>

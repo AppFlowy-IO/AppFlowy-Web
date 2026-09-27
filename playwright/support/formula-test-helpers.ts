@@ -5,7 +5,7 @@
  * test-only `__TEST_DATABASE_CONTEXT__` hook so scenarios stay fast; every
  * formula behaviour under test goes through the production UI.
  */
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 import { addFieldWithType } from './field-type-helpers';
 import { DatabaseGridSelectors, FieldType, GridFieldSelectors, PropertyMenuSelectors } from './selectors';
@@ -518,6 +518,96 @@ export async function openFormulaEditorFromCell(page: Page, fieldId: string, row
   await cell.scrollIntoViewIfNeeded();
   await cell.evaluate((element) => (element as HTMLElement).click());
   await expect(formulaDialog(page)).toBeVisible({ timeout: 15000 });
+}
+
+/** How far the editor may sit from the cell's left edge (or the window's right edge) and still count as aligned. */
+const PLACEMENT_TOLERANCE = 16;
+/** Space between the cell and the editor, on either side; the desktop app uses the same gap. */
+const CELL_GAP = 4;
+/** Rounding slack for the gap: device-pixel snapping and the host cell's 1px border. */
+const GAP_TOLERANCE = 1.5;
+
+export interface FormulaEditorPlacement {
+  /** Which side of the cell the editor should open on. */
+  side?: 'bottom' | 'top';
+  /** True: it must have been shifted left to fit the window; false: it must not have been. */
+  shifted?: boolean;
+}
+
+/**
+ * Asserts the cell's formula editor is a popover placed like the date picker:
+ * CELL_GAP below the cell (or above it, when flipped) and left-aligned with it
+ * unless shifted to fit, fully inside the window and never covering the cell.
+ *
+ * `cell` must be the element the popover anchors to: the grid cell
+ * (`.grid-row-cell`) or the row page's property value box.
+ */
+export async function expectFormulaEditorNextToCell(
+  page: Page,
+  cell: Locator,
+  { side = 'bottom', shifted }: FormulaEditorPlacement = {}
+) {
+  const editor = formulaDialog(page);
+
+  await expect(editor).toBeVisible({ timeout: 15000 });
+  await expect(editor).toHaveAttribute('data-slot', 'popover-content');
+  await expect(editor).toHaveAttribute('data-side', side);
+  // Measure the settled layout, not the open animation's scaled frame.
+  await editor.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+
+  const [cellBox, anchorBox, editorBox] = await Promise.all([
+    cell.boundingBox(),
+    cell.getByTestId('formula-editor-anchor').boundingBox(),
+    editor.boundingBox(),
+  ]);
+  const viewport = page.viewportSize();
+
+  if (!cellBox || !anchorBox || !editorBox || !viewport) {
+    throw new Error('The cell, the editor anchor or the formula editor has no layout box');
+  }
+
+  const cellBottom = cellBox.y + cellBox.height;
+  const editorRight = editorBox.x + editorBox.width;
+  const editorBottom = editorBox.y + editorBox.height;
+
+  // The popover is placed from this cell: its anchor fills the cell (inside its 1px border).
+  expect(Math.abs(anchorBox.x - cellBox.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(anchorBox.y - cellBox.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(anchorBox.x + anchorBox.width - (cellBox.x + cellBox.width))).toBeLessThanOrEqual(1);
+  expect(Math.abs(anchorBox.y + anchorBox.height - cellBottom)).toBeLessThanOrEqual(1);
+
+  if (side === 'bottom') {
+    // CELL_GAP below the cell's bottom edge.
+    expect(Math.abs(editorBox.y - (cellBottom + CELL_GAP))).toBeLessThanOrEqual(GAP_TOLERANCE);
+  } else {
+    // CELL_GAP above the cell's top edge.
+    expect(Math.abs(editorBottom - (cellBox.y - CELL_GAP))).toBeLessThanOrEqual(GAP_TOLERANCE);
+  }
+
+  // Fully inside the window.
+  expect(editorBox.x).toBeGreaterThanOrEqual(0);
+  expect(editorBox.y).toBeGreaterThanOrEqual(0);
+  expect(editorRight).toBeLessThanOrEqual(viewport.width);
+  expect(editorBottom).toBeLessThanOrEqual(viewport.height);
+  // Left-aligned with the cell, unless it was shifted left to fit the window.
+  const shiftedToFit = editorRight >= viewport.width - PLACEMENT_TOLERANCE && editorBox.x < cellBox.x - 1;
+
+  if (shifted !== undefined) expect(shiftedToFit).toBe(shifted);
+  if (!shiftedToFit) expect(Math.abs(editorBox.x - cellBox.x)).toBeLessThanOrEqual(PLACEMENT_TOLERANCE);
+  // Never covers the cell.
+  const overlaps =
+    editorBox.x < cellBox.x + cellBox.width &&
+    editorRight > cellBox.x &&
+    editorBox.y < cellBottom - 1 &&
+    editorBottom > cellBox.y + 1;
+
+  expect(overlaps).toBe(false);
+  return { cellBox, editorBox };
+}
+
+/** The editor opened from a cell sits below it when there is room. */
+export function expectFormulaEditorBelowCell(page: Page, cell: Locator) {
+  return expectFormulaEditorNextToCell(page, cell, { side: 'bottom' });
 }
 
 /**

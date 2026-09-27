@@ -54,20 +54,76 @@ Feature: Formula editor
     Then the formula editor title shows "Double"
     And the formula editor contains "prop("Price") * 2"
 
-  Scenario: Clicking a formula cell opens the editor previewing that row
+  Scenario: Clicking a formula cell opens the editor below the cell, previewing that row
     Given a formula property "Double" with the expression "prop("Price") * 2"
     When I open the formula editor of "Double" by clicking its cell in row 2
-    Then the formula editor contains "prop("Price") * 2"
+    Then the formula editor opens below the clicked cell
+    And the clicked cell is selected
+    And the formula editor has focus
+    And the formula editor title shows "Double"
+    And the formula editor contains "prop("Price") * 2"
     And the preview row is "Two"
     And the formula preview shows "8"
+    When I close the formula editor with "the Cancel button"
+    Then the clicked cell is not selected
 
-  Scenario: The row page opens the editor for its row
+  Scenario: The editor opened from a cell discards or saves the draft like the dialog
+    Given a formula property "Double" with the expression "prop("Price") * 2"
+    When I open the formula editor of "Double" by clicking its cell in row 1
+    And I type the formula "prop("Price") * 100"
+    And I close the formula editor with "a click outside"
+    Then the clicked cell is not selected
+    # Modal, like the dialog: clicking another cell only closes the editor.
+    When I open the formula editor of "Double" by clicking its cell in row 2
+    And I type the formula "prop("Price") * 100"
+    And I click the formula cell of "Double" in row 1 while the editor is open
+    Then the formula editor is closed
+    And no formula cell of "Double" is selected
+    When I open the formula editor of "Double" by clicking its cell in row 1
+    Then the formula editor contains "prop("Price") * 2"
+    When I type the formula "prop("Price") * 100"
+    And I close the formula editor with "Escape"
+    And I open the formula editor of "Double" by clicking its cell in row 1
+    Then the formula editor contains "prop("Price") * 2"
+    When I type the formula "prop("Price") * 100"
+    And I close the formula editor with "the close button"
+    Then the formula "Double" shows these values
+      | 25 |
+      | 8  |
+    When I open the formula editor of "Double" by clicking its cell in row 1
+    And I type the formula "prop("Price") * 10"
+    And I close the formula editor with "Cmd+Enter"
+    Then the formula "Double" shows these values
+      | 125 |
+      | 40  |
+
+  Scenario: The row page opens the editor below the formula, for its row
     Given a formula property "Label" with the expression "prop("Name") + "!""
-    When I open the row page of row 2
+    When the window is 1440 by 1400 pixels
+    And I open the row page of row 2
     Then the row page shows the formula "Label" as "Two!"
     When I click the formula "Label" on the row page
-    Then the formula editor contains "prop("Name") + "!""
+    Then the formula editor opens below the clicked cell
+    And the formula editor contains "prop("Name") + "!""
     And the preview row is "Two"
+
+  Scenario: The editor flips above a cell without room below it
+    Given a formula property "Label" with the expression "prop("Name") + "!""
+    When the window is 1440 by 800 pixels
+    And I open the row page of row 2
+    And I click the formula "Label" on the row page
+    Then the formula editor opens above the clicked cell
+    And the formula editor has focus
+    And scrolling the catalogue and docs keeps the formula input and Done in view
+    When I close the formula editor with "the Done button"
+    Then the row page shows the formula "Label" as "Two!"
+
+  Scenario: The editor shifts left to stay inside a narrow window
+    Given a formula property "Double" with the expression "prop("Price") * 2"
+    When the window is 1000 by 900 pixels
+    And I open the formula editor of "Double" by clicking its cell in row 1
+    Then the formula editor opens below the clicked cell, shifted left to stay inside the window
+    And the formula editor contains "prop("Price") * 2"
 
   # ---------------------------------------------------------------------------
   # Committing and discarding

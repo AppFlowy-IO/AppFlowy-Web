@@ -10,6 +10,7 @@ import {
   setupFieldTypeTest,
   typeTextIntoCell,
 } from '../../support/field-type-helpers';
+import { expectFormulaEditorBelowCell } from '../../support/formula-test-helpers';
 import { DatabaseGridSelectors, GridFieldSelectors, PropertyMenuSelectors } from '../../support/selectors';
 
 test.describe('Formula field', () => {
@@ -90,17 +91,20 @@ test.describe('Formula field', () => {
       .poll(async () => (await getAllCellContents(page, formulaFieldId)).slice(0, 2), { timeout: 15000 })
       .toEqual(['$30', '$40']);
 
-    // Clicking a formula cell opens the editor for that row (Notion parity),
-    // pre-filled with the saved expression and previewing that row.
+    // Clicking a formula cell opens the editor for that row (Notion parity) as a
+    // popover below the cell, pre-filled with the saved expression and previewing that row.
     const cell = DatabaseGridSelectors.dataRowCellsForField(page, formulaFieldId).nth(1);
 
     await cell.scrollIntoViewIfNeeded();
     await cell.evaluate((element) => (element as HTMLElement).click());
     await expect(dialog).toBeVisible({ timeout: 15000 });
+    await expectFormulaEditorBelowCell(page, cell);
+    await expect(cell).toHaveAttribute('data-active-cell', 'true');
     await expect(page.getByTestId('formula-editor-input')).toHaveAttribute('data-value', 'prop("Numbers") * 2');
     await expect(page.getByTestId('formula-preview-value')).toHaveText('$40');
     await page.getByTestId('formula-editor-cancel').click();
     await expect(dialog).toBeHidden({ timeout: 10000 });
+    await expect(cell).not.toHaveAttribute('data-active-cell', 'true');
   });
 
   test('reports type errors in the editor and disables Done', async ({ page, request }) => {

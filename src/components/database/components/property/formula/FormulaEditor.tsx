@@ -1,4 +1,4 @@
-import { KeyboardEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FocusEvent, KeyboardEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabase, useDatabaseFields, useDatabaseView, useRowMap } from '@/application/database-yjs/context';
@@ -39,7 +39,7 @@ import { SearchInput } from '@/components/ui/search-input';
 import { cn } from '@/lib/utils';
 
 import { FormulaDocsPanel, FormulaDocsItem } from './FormulaDocsPanel';
-import { FormulaSourceInput, FormulaSourceInputHandle } from './FormulaSourceInput';
+import { FormulaSourceChange, FormulaSourceInput, FormulaSourceInputHandle } from './FormulaSourceInput';
 
 const PREVIEW_ROW_LIMIT = 50;
 const AUTOCOMPLETE_LIMIT = 8;
@@ -123,8 +123,9 @@ export function FormulaEditor({
   // leaves so its examples can be reached and inserted.
   const [selected, setSelected] = useState<FormulaDocsItem | null>(null);
   // The highlighted suggestion belongs to the word it was picked for; typing
-  // another word starts again at the first suggestion.
-  const [activeState, setActiveState] = useState({ word: '', index: 0 });
+  // another word starts again at the first suggestion. It is kept by identity,
+  // not position, so properties a collaborator changes cannot move it.
+  const [activeState, setActiveState] = useState<{ word: string; key: string | null }>({ word: '', key: null });
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [previewRowId, setPreviewRowId] = useState<string | undefined>(initialPreviewRowId);
 
@@ -137,6 +138,16 @@ export function FormulaEditor({
       ),
     [schema, fieldId]
   );
+  // The selected item as the catalogue lists it now: a collaborator can rename
+  // or delete the selected property, and the item kept from the hover or focus
+  // would still document it as it was.
+  const currentSelected = useMemo<FormulaDocsItem | null>(() => {
+    if (selected?.kind !== 'property') return selected;
+    const entry = referenceableFields.find((field) => field.id === selected.entry.id);
+
+    if (!entry) return null;
+    return entry === selected.entry ? selected : { kind: 'property', entry };
+  }, [selected, referenceableFields]);
 
   // Compile what the user typed (names resolve like ids) so error positions
   // point into the visible text rather than the id-rewritten storage form.
@@ -269,10 +280,19 @@ export function FormulaEditor({
   }, [currentWord.query, suggestionsDismissed, referenceableFields]);
 
   const activeSuggestion =
-    activeState.word === currentWord.query && activeState.index < suggestions.length ? activeState.index : 0;
+    activeState.word === currentWord.query && activeState.key !== null
+      ? Math.max(
+          0,
+          suggestions.findIndex((suggestion) => docsItemKey(suggestion) === activeState.key)
+        )
+      : 0;
   const setActiveSuggestion = useCallback(
-    (index: number) => setActiveState({ word: currentWord.query, index }),
-    [currentWord.query]
+    (index: number) => {
+      const suggestion = suggestions[index];
+
+      setActiveState({ word: currentWord.query, key: suggestion ? docsItemKey(suggestion) : null });
+    },
+    [currentWord.query, suggestions]
   );
 
   const autocompleteOpen = suggestions.length > 0;
@@ -280,6 +300,31 @@ export function FormulaEditor({
   useEffect(() => {
     onAutocompleteOpenChange?.(autocompleteOpen);
   }, [autocompleteOpen, onAutocompleteOpenChange]);
+
+  // The list is not tall enough for all eight suggestions; keep the one picked
+  // with the arrow keys in view. Hovering picks a visible one, so it does not scroll.
+  const autocompleteRef = useRef<HTMLDivElement>(null);
+  const revealActiveSuggestionRef = useRef(false);
+
+  useEffect(() => {
+    if (!revealActiveSuggestionRef.current) return;
+    revealActiveSuggestionRef.current = false;
+    const list = autocompleteRef.current;
+    const option = list?.children[activeSuggestion] as HTMLElement | undefined;
+
+    if (!list || !option) return;
+    if (option.offsetTop < list.scrollTop) {
+      list.scrollTop = option.offsetTop;
+    } else if (option.offsetTop + option.offsetHeight > list.scrollTop + list.clientHeight) {
+      list.scrollTop = option.offsetTop + option.offsetHeight - list.clientHeight;
+    }
+  }, [activeSuggestion]);
+
+  // Suggestions follow the caret: once focus leaves the input they close, so
+  // Escape pressed elsewhere closes the editor rather than a list nobody is typing into.
+  const handleInputBlur = useCallback((event: FocusEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSuggestionsDismissed(true);
+  }, []);
 
   const acceptSuggestion = useCallback(
     (suggestion: Suggestion) => {
@@ -307,12 +352,14 @@ export function FormulaEditor({
       if (suggestions.length > 0) {
         if (event.key === 'ArrowDown') {
           event.preventDefault();
+          revealActiveSuggestionRef.current = true;
           setActiveSuggestion((activeSuggestion + 1) % suggestions.length);
           return;
         }
 
         if (event.key === 'ArrowUp') {
           event.preventDefault();
+          revealActiveSuggestionRef.current = true;
           setActiveSuggestion((activeSuggestion - 1 + suggestions.length) % suggestions.length);
           return;
         }
@@ -341,9 +388,10 @@ export function FormulaEditor({
   );
 
   const handleSourceChange = useCallback(
-    (next: string) => {
+    (next: string, change: FormulaSourceChange) => {
       onChange(next);
-      setSuggestionsDismissed(false);
+      // Tokens rewritten for a collaborator's change do not bring back suggestions the user dismissed.
+      if (change === 'edit') setSuggestionsDismissed(false);
     },
     [onChange]
   );
@@ -367,7 +415,7 @@ export function FormulaEditor({
   const activeSuggestionItem = suggestions.length > 0 ? suggestions[activeSuggestion] ?? suggestions[0] : undefined;
   const nextDocsItem =
     activeSuggestionItem ??
-    selected ??
+    currentSelected ??
     (catalogue.properties[0] ? ({ kind: 'property', entry: catalogue.properties[0] } as const) : null) ??
     (catalogue.functions[0] ? ({ kind: 'function', spec: catalogue.functions[0] } as const) : null);
   // Keep one object per documented item (and schema) so the memoized panel
@@ -378,27 +426,32 @@ export function FormulaEditor({
   const insertDocsExample = useCallback((text: string) => insertAtCaret(text, text.length), [insertAtCaret]);
 
   return (
-    <div className={'flex min-h-0 flex-col gap-3'} data-testid={'formula-editor'}>
-      <div className={'relative'}>
+    // The input, type and preview rows keep their size; only the catalogue and
+    // docs below them shrink and scroll, so a short host keeps the formula in view.
+    <div className={'flex min-h-0 flex-1 flex-col gap-3'} data-testid={'formula-editor'}>
+      <div className={'relative shrink-0'} onBlur={handleInputBlur}>
         <FormulaSourceInput
           ref={inputRef}
           value={value}
           schema={schema}
+          clipboardScope={database?.get(YjsDatabaseKey.id)}
           onChange={handleSourceChange}
           onCaretChange={setCaret}
           onKeyDown={handleKeyDown}
           ariaLabel={t('grid.formula.title', { defaultValue: 'Formula' })}
           placeholder={t('grid.formula.placeholder', { defaultValue: 'Type a formula, e.g. prop("Price") * 2' })}
           className={
-            'appflowy-scroller max-h-[40vh] min-h-[72px] w-full overflow-y-auto overscroll-y-contain whitespace-pre-wrap break-words rounded-400 border border-border-primary px-3 py-2 font-mono text-sm leading-6 text-text-primary outline-none focus-visible:border-border-theme-thick focus:border-border-theme-thick'
+            'appflowy-scroller max-h-[min(40vh,160px)] min-h-[72px] w-full overflow-y-auto overscroll-y-contain whitespace-pre-wrap break-words rounded-400 border border-border-primary px-3 py-2 font-mono text-sm leading-6 text-text-primary outline-none focus-visible:border-border-theme-thick focus:border-border-theme-thick'
           }
         />
         {suggestions.length > 0 ? (
           <div
+            ref={autocompleteRef}
             role={'listbox'}
             data-testid={'formula-autocomplete'}
+            // Fits the space the rows and the catalogue's minimum height keep below the input.
             className={
-              'absolute left-0 top-full z-10 mt-1 max-h-64 w-64 overflow-y-auto rounded-400 border border-border-primary bg-surface-primary p-1 shadow-md'
+              'absolute left-0 top-full z-10 mt-1 max-h-60 w-64 overflow-y-auto overscroll-contain rounded-400 border border-border-primary bg-surface-primary p-1 shadow-md'
             }
           >
             {suggestions.map((suggestion, index) => (
@@ -432,7 +485,7 @@ export function FormulaEditor({
         ) : null}
       </div>
 
-      <div className={'flex min-h-6 flex-wrap items-center gap-x-4 gap-y-1 text-xs'}>
+      <div className={'flex min-h-6 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs'}>
         {errorMessage ? (
           <span className={'flex min-w-0 items-center gap-1 text-text-error'} data-testid={'formula-editor-error'}>
             <WarningSvg className={'h-4 w-4 shrink-0'} />
@@ -454,7 +507,7 @@ export function FormulaEditor({
       </div>
 
       {previewRows.length > 0 ? (
-        <div className={'flex min-h-8 items-center gap-2 text-sm'} data-testid={'formula-editor-preview'}>
+        <div className={'flex min-h-8 shrink-0 items-center gap-2 text-sm'} data-testid={'formula-editor-preview'}>
           <span className={'shrink-0 text-text-secondary'}>
             {t('grid.formula.previewWith', { defaultValue: 'Preview with' })}
           </span>
@@ -479,7 +532,12 @@ export function FormulaEditor({
         </div>
       ) : null}
 
-      <div className={'grid min-h-[280px] grid-cols-1 gap-3 border-t border-border-primary pt-3 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)]'}>
+      {/* Side by side, the catalogue and the docs each scroll inside the row; stacked, the grid scrolls. */}
+      <div
+        className={
+          'grid min-h-[160px] flex-auto grid-cols-1 gap-3 overflow-y-auto border-t border-border-primary pt-3 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden'
+        }
+      >
         <FormulaCatalogue
           schema={schema}
           search={search}
@@ -487,7 +545,7 @@ export function FormulaEditor({
           properties={catalogue.properties}
           builtins={catalogue.builtins}
           functions={catalogue.functions}
-          selected={selected}
+          selected={currentSelected}
           onSelect={setSelected}
           onInsert={insertAtCaret}
         />
@@ -547,12 +605,16 @@ const FormulaCatalogue = memo(function FormulaCatalogue({
   return (
     <div className={'flex min-h-0 flex-col gap-1'}>
       <SearchInput
+        className={'shrink-0'}
         placeholder={t('search.label', { defaultValue: 'Search' })}
         value={search}
         onChange={(event) => onSearchChange(event.target.value)}
         data-testid={'formula-catalogue-search'}
       />
-      <div className={'appflowy-scroller max-h-[320px] min-h-0 overflow-y-auto pr-1'} data-testid={'formula-catalogue'}>
+      <div
+        className={'appflowy-scroller max-h-[320px] min-h-0 flex-auto overflow-y-auto overscroll-contain pr-1'}
+        data-testid={'formula-catalogue'}
+      >
         {isEmpty ? (
           <div className={'px-2 py-3 text-sm text-text-tertiary'}>{t('grid.rollup.noResult', { defaultValue: 'No result' })}</div>
         ) : null}

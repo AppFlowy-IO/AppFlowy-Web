@@ -1,7 +1,7 @@
 import { FieldType } from '@/application/database-yjs/database.type';
 import { YDatabaseField, YDatabaseFields, YjsDatabaseKey } from '@/application/types';
 
-import { tokenize } from './lexer';
+import { findFormulaPropCalls } from './prop-calls';
 
 /** The part of a field a formula needs: identity, type and the Yjs handle for cell decoding. */
 export interface FormulaFieldSchema {
@@ -139,34 +139,19 @@ function quote(value: string): string {
 /**
  * Rewrites every `prop("...")` argument through `map`, leaving the rest of the
  * source (including other strings and comments) untouched. Completed references
- * remain bound even while another part of the draft is incomplete.
+ * remain bound even while another part of the draft is incomplete. References
+ * are the calls the editor draws as tokens (see {@link findFormulaPropCalls}).
  */
 function rewritePropRefs(source: string, map: (ref: string) => string | undefined): string {
-  const tokens = tokenize(source, true);
-
   let output = '';
   let cursor = 0;
 
-  for (let index = 0; index + 3 < tokens.length; index += 1) {
-    const [ident, open, ref, close] = tokens.slice(index, index + 4);
-
-    if (
-      ident.kind !== 'ident' ||
-      ident.value !== 'prop' ||
-      open.kind !== 'punct' ||
-      open.value !== '(' ||
-      ref.kind !== 'string' ||
-      close.kind !== 'punct' ||
-      close.value !== ')'
-    ) {
-      continue;
-    }
-
-    const replacement = map(ref.value);
+  for (const call of findFormulaPropCalls(source)) {
+    const replacement = map(call.ref);
 
     if (replacement === undefined) continue;
-    output += source.slice(cursor, ref.position.offset) + quote(replacement);
-    cursor = ref.end;
+    output += source.slice(cursor, call.refStart) + quote(replacement);
+    cursor = call.refEnd;
   }
 
   return output + source.slice(cursor);

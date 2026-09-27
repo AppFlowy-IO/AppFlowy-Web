@@ -27,6 +27,7 @@ import {
   formulaCellText,
   formulaDialog,
   clearFormula,
+  expectFormulaEditorNextToCell,
   expectFormulaSource,
   formulaInput,
   type FormulaInputType,
@@ -92,6 +93,8 @@ interface ScenarioState {
   rows: string[];
   /** Row id shown on the open row page. */
   rowPage?: string;
+  /** The cell the formula editor was last opened from. */
+  editorCell?: Locator;
 }
 
 const scenarioState = new WeakMap<Page, ScenarioState>();
@@ -377,9 +380,117 @@ When('I open the formula editor of {string} from the property menu', async ({ pa
 When(
   'I open the formula editor of {string} by clicking its cell in row {int}',
   async ({ page }, name: string, row: number) => {
-    await openFormulaEditorFromCell(page, await fieldId(page, name), row - 1);
+    const id = await fieldId(page, name);
+
+    await openFormulaEditorFromCell(page, id, row - 1);
+    state(page).editorCell = DatabaseGridSelectors.dataRowCellsForField(page, id).nth(row - 1);
   }
 );
+
+function editorCell(page: Page): Locator {
+  const cell = state(page).editorCell;
+
+  if (!cell) throw new Error('The formula editor was not opened from a cell');
+  return cell;
+}
+
+/** Records the placement in the report: layout is easier to judge from a picture. */
+async function attachPlacement(page: Page, name: string) {
+  await test.info().attach(name, { body: await page.screenshot(), contentType: 'image/png' });
+}
+
+Then('the formula editor opens below the clicked cell', async ({ page }) => {
+  await expectFormulaEditorNextToCell(page, editorCell(page), { side: 'bottom' });
+  await attachPlacement(page, 'formula editor below the clicked cell');
+});
+
+Then('the formula editor opens above the clicked cell', async ({ page }) => {
+  await expectFormulaEditorNextToCell(page, editorCell(page), { side: 'top' });
+  await attachPlacement(page, 'formula editor above the clicked cell');
+});
+
+Then('the formula editor opens below the clicked cell, shifted left to stay inside the window', async ({ page }) => {
+  await expectFormulaEditorNextToCell(page, editorCell(page), { side: 'bottom', shifted: true });
+  await attachPlacement(page, 'formula editor shifted inside the window');
+});
+
+When('the window is {int} by {int} pixels', async ({ page }, width: number, height: number) => {
+  await page.setViewportSize({ width, height });
+});
+
+// Grid cells show the selection outline while their editor is open, like the date picker's.
+Then('the clicked cell is selected', async ({ page }) => {
+  await expect(editorCell(page)).toHaveAttribute('data-active-cell', 'true');
+});
+
+Then('the clicked cell is not selected', async ({ page }) => {
+  await expect(editorCell(page)).not.toHaveAttribute('data-active-cell', 'true');
+});
+
+// The editor is modal: the page behind it takes no pointer events, so this
+// clicks the other cell's position with the mouse, as a user would. A locator
+// click would wait for the cell to become clickable.
+When(
+  'I click the formula cell of {string} in row {int} while the editor is open',
+  async ({ page }, name: string, row: number) => {
+    const editor = formulaDialog(page);
+
+    await expect(editor).toBeVisible();
+    const cell = DatabaseGridSelectors.dataRowCellsForField(page, await fieldId(page, name)).nth(row - 1);
+    const [box, editorBox] = await Promise.all([cell.boundingBox(), editor.boundingBox()]);
+
+    if (!box || !editorBox) throw new Error(`The formula cell in row ${row} or the editor has no layout box`);
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    const onEditor =
+      x >= editorBox.x && x <= editorBox.x + editorBox.width && y >= editorBox.y && y <= editorBox.y + editorBox.height;
+
+    // Pick a cell the editor does not cover (e.g. a row above it), or this clicks the editor.
+    if (onEditor) throw new Error(`The formula editor covers the formula cell in row ${row}`);
+    await page.mouse.click(x, y);
+  }
+);
+
+Then('no formula cell of {string} is selected', async ({ page }, name: string) => {
+  const cells = DatabaseGridSelectors.dataRowCellsForField(page, await fieldId(page, name));
+
+  await expect(cells.and(page.locator('[data-active-cell="true"]'))).toHaveCount(0);
+});
+
+// The formula rows stay pinned under the header; only the catalogue and docs scroll.
+Then('scrolling the catalogue and docs keeps the formula input and Done in view', async ({ page }) => {
+  const editor = formulaDialog(page);
+  const scrollToEnd = async (scroller: Locator) => {
+    // The editor is short enough here that there is something to scroll.
+    await expect
+      .poll(() => scroller.evaluate((element) => element.scrollHeight - element.clientHeight))
+      .toBeGreaterThan(0);
+    await scroller.hover();
+    await page.mouse.wheel(0, 5000);
+    await expect
+      .poll(() => scroller.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight))
+      .toBeLessThanOrEqual(1);
+  };
+
+  await scrollToEnd(editor.getByTestId('formula-catalogue'));
+  // empty() has the longest docs: a long description and three examples.
+  await catalogueItem(page, 'function-empty').hover();
+  await expect(docsPanel(page)).toContainText('empty()');
+  await scrollToEnd(editor.getByTestId('formula-docs'));
+
+  const [editorBox, inputBox] = await Promise.all([editor.boundingBox(), formulaInput(page).boundingBox()]);
+  const viewport = page.viewportSize();
+
+  if (!editorBox || !inputBox || !viewport) throw new Error('The formula editor or its input has no layout box');
+  expect(inputBox.y).toBeGreaterThanOrEqual(editorBox.y);
+  expect(inputBox.y + inputBox.height).toBeLessThanOrEqual(editorBox.y + editorBox.height);
+  expect(inputBox.y).toBeGreaterThanOrEqual(0);
+  expect(inputBox.y + inputBox.height).toBeLessThanOrEqual(viewport.height);
+  await expect(page.getByTestId('formula-editor-done')).toBeInViewport();
+  // Nothing else moved: the editor body itself did not scroll.
+  await expect.poll(() => page.getByTestId('formula-editor').evaluate((element) => element.parentElement?.scrollTop)).toBe(0);
+  await attachPlacement(page, 'formula editor with the catalogue and docs scrolled');
+});
 
 When('I save the formula', async ({ page }) => {
   await saveFormula(page);
@@ -1193,8 +1304,12 @@ Then('the row page shows the formula {string} as {string}', async ({ page }, nam
 });
 
 When('I click the formula {string} on the row page', async ({ page }, name: string) => {
-  await (await rowPageFormula(page, name)).click();
+  const formula = await rowPageFormula(page, name);
+
+  await formula.click();
   await expect(formulaDialog(page)).toBeVisible({ timeout: 15000 });
+  // The clicked cell is the property value box around the formula.
+  state(page).editorCell = formula.locator('xpath=..');
 });
 
 When('I add a {string} view', async ({ page }, layout: string) => {

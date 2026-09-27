@@ -1,7 +1,7 @@
-import { Descendant, Editor, Element, Node, Point, Range, Text, Transforms } from 'slate';
-import { HistoryEditor } from 'slate-history';
+import { Descendant, Editor, Element, Node, Operation, Path, Point, Range, Text, Transforms } from 'slate';
+import { History, HistoryEditor } from 'slate-history';
 
-import { tokenize } from '@/application/database-yjs/fields/formula/lexer';
+import { findFormulaPropCalls } from '@/application/database-yjs/fields/formula/prop-calls';
 
 /**
  * The formula editor is a small Slate document: one `formula-line` element per
@@ -40,52 +40,33 @@ function isFormulaLine(node: unknown): node is Element {
 }
 
 /**
- * Complete `prop("...")` calls in one line of source. A reference after a dot
- * (`current.prop("Status")`) reads another database, so it stays text.
+ * Complete `prop("...")` calls in formula source, read the way the formula
+ * language and the draft rewrite read them ({@link findFormulaPropCalls}).
+ * Pass the whole source: a string or comment can span lines, and a call inside
+ * one is text. A reference after a dot (`current.prop("Status")`) reads
+ * another database, so it stays text.
  */
 export function findPropReferences(text: string): FormulaPropMatch[] {
-  if (!text.includes('prop')) return [];
-  let tokens;
+  return findFormulaPropCalls(text).map(({ start, end, ref }) => ({ start, end, ref }));
+}
 
-  try {
-    tokens = tokenize(text, true);
-  } catch {
-    return [];
-  }
+/** Whether `source` is exactly one complete `prop("...")` call, i.e. a token's source. */
+function isWholePropCall(source: string): boolean {
+  const [match] = findPropReferences(source);
 
-  const matches: FormulaPropMatch[] = [];
-
-  for (let index = 0; index + 3 < tokens.length; index += 1) {
-    const [ident, open, ref, close] = tokens.slice(index, index + 4);
-    const previous = tokens[index - 1];
-
-    if (
-      ident.kind === 'ident' &&
-      ident.value === 'prop' &&
-      open.kind === 'punct' &&
-      open.value === '(' &&
-      ref.kind === 'string' &&
-      close.kind === 'punct' &&
-      close.value === ')' &&
-      !(previous?.kind === 'punct' && previous.value === '.')
-    ) {
-      matches.push({ start: ident.position.offset, end: close.end, ref: ref.value });
-      index += 3;
-    }
-  }
-
-  return matches;
+  return match !== undefined && match.start === 0 && match.end === source.length;
 }
 
 function propElement(source: string, ref: string): FormulaPropElement {
   return { type: FORMULA_PROP, source, ref, children: [{ text: '' }] };
 }
 
-function lineChildren(line: string): Descendant[] {
+/** A line's children: its text, with `matches` (offsets into the line) as tokens. */
+function lineChildren(line: string, matches: FormulaPropMatch[]): Descendant[] {
   const children: Descendant[] = [];
   let cursor = 0;
 
-  for (const match of findPropReferences(line)) {
+  for (const match of matches) {
     children.push({ text: line.slice(cursor, match.start) });
     children.push(propElement(line.slice(match.start, match.end), match.ref) as unknown as Descendant);
     cursor = match.end;
@@ -96,7 +77,21 @@ function lineChildren(line: string): Descendant[] {
 }
 
 export function sourceToNodes(source: string): Descendant[] {
-  return source.split('\n').map((line) => ({ type: FORMULA_LINE, children: lineChildren(line) } as Descendant));
+  // References are read off the whole source, since a string or comment can
+  // span lines; a call split over lines stays text.
+  const references = findPropReferences(source);
+  let lineStart = 0;
+
+  return source.split('\n').map((line) => {
+    const start = lineStart;
+    const end = start + line.length;
+    const matches = references
+      .filter((match) => match.start >= start && match.end <= end)
+      .map((match) => ({ ...match, start: match.start - start, end: match.end - start }));
+
+    lineStart = end + 1;
+    return { type: FORMULA_LINE, children: lineChildren(line, matches) } as Descendant;
+  });
 }
 
 function nodeSource(node: Node): string {
@@ -194,6 +189,21 @@ export function tokenRanges(editor: Editor): Array<{ start: number; end: number 
   });
 
   return ranges;
+}
+
+/** The source range of the token at `path` (or holding it), or null when there is none. */
+export function tokenRangeAt(editor: Editor, path: Path): { start: number; end: number } | null {
+  if (!Node.has(editor, path)) return null;
+  const entry = isFormulaProp(Node.get(editor, path))
+    ? [Node.get(editor, path), path]
+    : Editor.above(editor, { at: path, match: isFormulaProp, voids: true });
+
+  if (!entry) return null;
+  const token = entry[0] as unknown as FormulaPropElement;
+  // A point inside a token sits after it.
+  const end = pointToOffset(editor, Editor.start(editor, entry[1] as Path));
+
+  return { start: end - token.source.length, end };
 }
 
 /**
@@ -309,6 +319,172 @@ export function resetSource(editor: Editor, source: string, caret?: number) {
   }
 }
 
+/**
+ * Where `offset` in `before` falls in `after`: text the change left alone
+ * keeps its place, and an offset inside the changed text goes after its
+ * replacement.
+ */
+export function remapOffset(before: string, after: string, offset: number): number {
+  const shorter = Math.min(before.length, after.length);
+  let prefix = 0;
+
+  while (prefix < shorter && before[prefix] === after[prefix]) prefix += 1;
+  if (offset <= prefix) return offset;
+  let suffix = 0;
+
+  while (suffix < shorter - prefix && before[before.length - 1 - suffix] === after[after.length - 1 - suffix]) {
+    suffix += 1;
+  }
+
+  return after.length - Math.min(before.length - offset, suffix);
+}
+
+/** Rewrites one `prop("...")` call, e.g. to name a renamed property by its new name. */
+export type PropSourceRebinder = (source: string) => string;
+
+type HistoryBatch = History['undos'][number];
+
+/**
+ * `props` with its token source rewritten and its reference decoded again, or
+ * the same object when nothing changed. A rewrite that is no longer one
+ * complete call is ignored, so a token always stays a token.
+ */
+function rebindTokenProps<T extends object>(props: T, rebind: PropSourceRebinder): T {
+  const { source } = props as { source?: unknown };
+
+  if (typeof source !== 'string') return props;
+  const next = rebind(source);
+
+  if (next === source || !isWholePropCall(next)) return props;
+  const [match] = findPropReferences(next);
+
+  return { ...props, source: next, ...('ref' in props ? { ref: match.ref } : null) };
+}
+
+function rebindNode<T extends Node>(node: T, rebind: PropSourceRebinder): T {
+  if (isFormulaProp(node)) return rebindTokenProps(node, rebind);
+  if (!Element.isElement(node)) return node;
+  let changed = false;
+  const children = node.children.map((child) => {
+    const next = rebindNode(child, rebind);
+
+    changed ||= next !== child;
+    return next;
+  });
+
+  return changed ? { ...node, children } : node;
+}
+
+/** Tokens travel in inserted and removed nodes, and as the properties of split, merged or set nodes. */
+function rebindOperation(op: Operation, rebind: PropSourceRebinder): Operation {
+  switch (op.type) {
+    case 'insert_node':
+    case 'remove_node': {
+      const node = rebindNode(op.node, rebind);
+
+      return node === op.node ? op : { ...op, node };
+    }
+
+    case 'split_node':
+    case 'merge_node': {
+      const properties = rebindTokenProps(op.properties, rebind);
+
+      return properties === op.properties ? op : { ...op, properties };
+    }
+
+    case 'set_node': {
+      const properties = rebindTokenProps(op.properties, rebind);
+      const newProperties = rebindTokenProps(op.newProperties, rebind);
+
+      return properties === op.properties && newProperties === op.newProperties
+        ? op
+        : { ...op, properties, newProperties };
+    }
+
+    default:
+      return op;
+  }
+}
+
+function rebindBatch(batch: HistoryBatch, rebind: PropSourceRebinder): HistoryBatch {
+  const operations = batch.operations.map((op) => rebindOperation(op, rebind));
+
+  return operations.every((op, index) => op === batch.operations[index]) ? batch : { ...batch, operations };
+}
+
+/**
+ * Rewrites every token in the document and in its undo and redo history, so
+ * an undo restores tokens written the same way as the document. Nothing else
+ * moves: a token is a void with empty text, so no text offset, selection or
+ * history path changes. Returns whether the document changed.
+ */
+export function rebindTokens(editor: Editor, rebind: PropSourceRebinder): boolean {
+  const rebound = new Map<string, string>();
+  const cachedRebind: PropSourceRebinder = (source) => {
+    let next = rebound.get(source);
+
+    if (next === undefined) {
+      next = rebind(source);
+      rebound.set(source, next);
+    }
+
+    return next;
+  };
+
+  const updates: Array<{ path: Path; source: string; ref: string }> = [];
+
+  for (const [node, path] of Node.descendants(editor)) {
+    if (!isFormulaProp(node)) continue;
+    const next = rebindTokenProps(node, cachedRebind);
+
+    if (next !== node) updates.push({ path, source: next.source, ref: next.ref });
+  }
+
+  const apply = () => {
+    Editor.withoutNormalizing(editor, () => {
+      updates.forEach(({ path, source, ref }) => {
+        Transforms.setNodes(editor, { source, ref } as unknown as Partial<Element>, { at: path, voids: true });
+      });
+    });
+  };
+
+  if (HistoryEditor.isHistoryEditor(editor)) {
+    editor.history = {
+      undos: editor.history.undos.map((batch) => rebindBatch(batch, cachedRebind)),
+      redos: editor.history.redos.map((batch) => rebindBatch(batch, cachedRebind)),
+    };
+    HistoryEditor.withoutSaving(editor, apply);
+  } else {
+    apply();
+  }
+
+  return updates.length > 0;
+}
+
+/**
+ * The document's source with each `prop("...")` call that is still text
+ * rewritten, e.g. one split over lines, which the formula reads as a call but
+ * the editor never draws as a token; tokens are left as they are (see {@link
+ * rebindTokens}). The document is not changed.
+ */
+export function rebindTextCalls(editor: Editor, rebind: PropSourceRebinder): string {
+  const source = editorSource(editor);
+  const tokens = new Set(tokenRanges(editor).map(({ start, end }) => `${start}:${end}`));
+  let out = source;
+
+  findPropReferences(source)
+    .filter(({ start, end }) => !tokens.has(`${start}:${end}`))
+    .reverse()
+    .forEach(({ start, end }) => {
+      const next = rebind(source.slice(start, end));
+
+      // A rewrite that is no longer one complete call is ignored, as for tokens.
+      if (isWholePropCall(next)) out = out.slice(0, start) + next + out.slice(end);
+    });
+
+  return out;
+}
+
 /** Source offset of every text node, keyed by path, for syntax decorations. */
 export function textOffsets(nodes: Descendant[]): Map<string, number> {
   const offsets = new Map<string, number>();
@@ -333,6 +509,144 @@ export function selectedSource(editor: Editor): string {
   return editorSource(editor).slice(offsets.start, offsets.end);
 }
 
+/** The source around the selection a paste replaces. */
+export interface FormulaPasteContext {
+  before: string;
+  after: string;
+}
+
+/**
+ * Clipboard type for what copied source's tokens name; other apps ignore it.
+ * Its data is JSON: the `scope` it was copied in, the copied `text`, and
+ * `[start, end, bound]` for each token in the text that {@link
+ * FormulaTokenClipboard.bind} changed.
+ */
+export const FORMULA_CLIPBOARD_TYPE = 'application/x-appflowy-formula';
+
+/**
+ * Keeps copied tokens naming what they named when copied: a copy records
+ * each token in a form that outlives renames (e.g. by property id), and a
+ * paste in the same scope writes each one again for the properties as they
+ * are now, the way the tokens in the editor are rewritten.
+ */
+export interface FormulaTokenClipboard {
+  /** Where a copy's tokens can be read again, e.g. the database; undefined for nowhere. */
+  scope: () => string | undefined;
+  /** A token's `prop("...")` call → a form that outlives renames. */
+  bind: (source: string) => string;
+  /** That form → the token's `prop("...")` call now. */
+  unbind: (bound: string) => string;
+}
+
+// Slate draws an empty text, like the ones on either side of a token, as a
+// zero-width U+FEFF, so text taken off the editor's DOM holds them.
+const ZERO_WIDTH = '\uFEFF';
+
+/** The clipboard data recording the tokens in the selection, or undefined when there is nothing to record. */
+function copiedTokens(editor: Editor, clipboard: FormulaTokenClipboard): string | undefined {
+  const scope = clipboard.scope();
+  const offsets = selectionOffsets(editor);
+
+  if (!scope || !offsets) return;
+  const source = editorSource(editor);
+  const tokens: Array<[number, number, string]> = [];
+
+  tokenRanges(editor).forEach(({ start, end }) => {
+    if (start < offsets.start || end > offsets.end) return;
+    const token = source.slice(start, end);
+    const bound = clipboard.bind(token);
+
+    if (bound !== token) tokens.push([start - offsets.start, end - offsets.start, bound]);
+  });
+  if (tokens.length === 0) return;
+  return JSON.stringify({ scope, text: source.slice(offsets.start, offsets.end), tokens });
+}
+
+/**
+ * `text` with each token its clipboard data records written for the current
+ * properties, or undefined when the data is not from this scope or not about
+ * `text`: then the text pastes as it is.
+ */
+function reboundPaste(text: string, data: string, clipboard: FormulaTokenClipboard): string | undefined {
+  let copy: unknown;
+
+  try {
+    copy = JSON.parse(data);
+  } catch {
+    return;
+  }
+
+  const scope = clipboard.scope();
+  const { scope: copyScope, text: copyText, tokens } = (copy ?? {}) as Record<string, unknown>;
+  // The system clipboard can turn "\n" into "\r\n".
+  const lines = text.replace(/\r\n?/g, '\n');
+
+  if (!scope || copyScope !== scope || copyText !== lines || !Array.isArray(tokens)) return;
+  let out = '';
+  let cursor = 0;
+
+  for (const token of tokens as unknown[]) {
+    const [start, end, bound] = Array.isArray(token) ? token : [];
+
+    if (!Number.isInteger(start) || !Number.isInteger(end) || typeof bound !== 'string') return;
+    if (start < cursor || end <= start || end > lines.length || !isWholePropCall(lines.slice(start, end))) return;
+    const next = clipboard.unbind(bound);
+
+    out += lines.slice(cursor, start) + (isWholePropCall(next) ? next : lines.slice(start, end));
+    cursor = end;
+  }
+
+  return out + lines.slice(cursor);
+}
+
+/**
+ * Every reference in the source that lies inside one text node, i.e. a
+ * complete `prop("...")` call that is not a token yet, with its offsets into
+ * that text, last first. The source is read as a whole, so a call inside a
+ * string or comment spanning lines is not one, and a call an edit on another
+ * line (e.g. closing a string) turns from text into code is.
+ */
+function untokenizedReferences(editor: Editor): Array<{ path: Path; match: FormulaPropMatch }> {
+  const references = findPropReferences(editorSource(editor));
+  const found: Array<{ path: Path; match: FormulaPropMatch }> = [];
+
+  if (references.length === 0) return found;
+  let offset = 0;
+
+  for (let lineIndex = 0; lineIndex < editor.children.length; lineIndex += 1) {
+    const line = editor.children[lineIndex];
+
+    if (lineIndex > 0) offset += 1;
+    if (!isFormulaLine(line)) {
+      offset += nodeSource(line).length;
+      continue;
+    }
+
+    for (let childIndex = 0; childIndex < line.children.length; childIndex += 1) {
+      const child = line.children[childIndex];
+      const start = offset;
+      const end = start + nodeSource(child).length;
+
+      if (Text.isText(child)) {
+        references
+          .filter((reference) => reference.start >= start && reference.end <= end)
+          .forEach((reference) => {
+            found.push({
+              path: [lineIndex, childIndex],
+              match: { ...reference, start: reference.start - start, end: reference.end - start },
+            });
+          });
+      }
+
+      offset = end;
+    }
+  }
+
+  // Inserting a token splits its text node, which leaves the paths and
+  // offsets of everything before it as they were.
+  return found.reverse();
+}
+
 /**
  * Makes tokens inline voids, turns every completed `prop("...")` in a text
  * node into a token (typed, pasted or inserted), keeps the document a list of
@@ -340,19 +654,65 @@ export function selectedSource(editor: Editor): string {
  */
 export function withFormulaTokens<T extends Editor>(
   editor: T,
-  /** Rewrites pasted text before it is inserted, e.g. bare property names into prop("..."). */
-  preparePaste: (text: string) => string = (text) => text
+  /**
+   * Rewrites pasted text before it is inserted, e.g. bare property names into
+   * prop("..."); `context` tells where it lands, e.g. inside a string.
+   */
+  preparePaste: (text: string, context: FormulaPasteContext) => string = (text) => text,
+  /** Keeps copied tokens bound to what they named; without it they paste by name. */
+  clipboard?: FormulaTokenClipboard
 ): T {
-  const { isInline, isVoid, normalizeNode } = editor;
+  const { insertText, isInline, isVoid, normalizeNode, shouldNormalize } = editor;
+  // Tokens made in the current normalization run.
+  let tokenized = 0;
 
   editor.isInline = (element) => element.type === FORMULA_PROP || isInline(element);
   editor.isVoid = (element) => element.type === FORMULA_PROP || isVoid(element);
+
+  // Slate stops a normalization run after a number of steps set by how much
+  // the edit dirtied, to catch normalizers that never settle. Making a token
+  // dirties the nodes around it, so one pasted line holding many calls needs
+  // more steps than its few dirty paths allow: each token made earns the steps
+  // of one more dirty path.
+  editor.shouldNormalize = (options) => {
+    if (options.iteration === 0) tokenized = 0;
+    return shouldNormalize({ ...options, initialDirtyPathsLength: options.initialDirtyPathsLength + tokenized });
+  };
 
   editor.normalizeNode = (entry) => {
     const [node, path] = entry;
 
     if (path.length === 0 && editor.children.length === 0) {
       Transforms.insertNodes(editor, sourceToNodes(''), { at: [0] });
+      return;
+    }
+
+    // Every edit dirties the whole document, and one can change how the
+    // source around it reads (a quote typed on one line opens or closes a
+    // string over the next), so references are found on the whole source.
+    const unbound = path.length === 0 ? untokenizedReferences(editor) : [];
+
+    // All of them in one step, so a pasted line is lexed once, not once per call.
+    if (unbound.length > 0) {
+      tokenized += unbound.length;
+      const caret = editor.selection && Range.isCollapsed(editor.selection) ? editor.selection.anchor : null;
+      const caretOffset = caret ? pointToOffset(editor, caret) : null;
+
+      Editor.withoutNormalizing(editor, () => {
+        unbound.forEach(({ path: textPath, match }) => {
+          const text = (Node.get(editor, textPath) as Text).text;
+          const at = { anchor: { path: textPath, offset: match.start }, focus: { path: textPath, offset: match.end } };
+
+          // The text after the token gives the caret somewhere to land right away.
+          Transforms.insertNodes(
+            editor,
+            [propElement(text.slice(match.start, match.end), match.ref) as unknown as Node, { text: '' }],
+            { at }
+          );
+        });
+      });
+      // The source is unchanged, so the caret keeps its source offset.
+      if (caretOffset !== null) Transforms.select(editor, offsetToPoint(editor, caretOffset));
       return;
     }
 
@@ -372,37 +732,52 @@ export function withFormulaTokens<T extends Editor>(
       return;
     }
 
-    if (Text.isText(node) && path.length === 2) {
-      const [match] = findPropReferences(node.text);
-
-      if (match) {
-        const at = { anchor: { path, offset: match.start }, focus: { path, offset: match.end } };
-        const source = node.text.slice(match.start, match.end);
-        const caret = editor.selection && Range.isCollapsed(editor.selection) ? editor.selection.anchor : null;
-        const caretOffset = caret ? pointToOffset(editor, caret) : null;
-
-        // The text after the token gives the caret somewhere to land right away.
-        Transforms.insertNodes(editor, [propElement(source, match.ref) as unknown as Node, { text: '' }], { at });
-        // The source is unchanged, so the caret keeps its source offset.
-        if (caretOffset !== null) Transforms.select(editor, offsetToPoint(editor, caretOffset));
-        return;
-      }
-    }
-
     normalizeNode(entry);
   };
 
+  // Copies, cuts and drags carry only the formula source. A drag starts with
+  // the browser's HTML of the selection, which shows tokens by name.
   editor.setFragmentData = (data) => {
     const text = selectedSource(editor);
+    const tokens = clipboard && copiedTokens(editor, clipboard);
 
+    if (typeof data.clearData === 'function') data.clearData();
     data.setData('text/plain', text);
+    if (tokens) data.setData(FORMULA_CLIPBOARD_TYPE, tokens);
   };
 
-  // Only plain text is pasted; an empty paste still replaces the selection.
+  // Reads `text` as pasted where the selection is.
+  const insertPasted = (text: string) => {
+    // The paste replaces the selection once its edges are outside tokens.
+    selectOutsideTokens(editor);
+    const source = editorSource(editor);
+    const { start, end } = selectionOffsets(editor) ?? { start: source.length, end: source.length };
+
+    insertSource(editor, preparePaste(text, { before: source.slice(0, start), after: source.slice(end) }));
+  };
+
+  // Only plain text is pasted, its tokens named as they are now when a copy
+  // here recorded them; an empty paste still replaces the selection.
   editor.insertData = (data) => {
-    if (Array.from(data.types ?? []).includes('text/plain') || data.getData('text/plain')) {
-      insertSource(editor, preparePaste(data.getData('text/plain')));
+    if (!Array.from(data.types ?? []).includes('text/plain') && !data.getData('text/plain')) return;
+    const text = data.getData('text/plain');
+    const tokens = clipboard ? data.getData(FORMULA_CLIPBOARD_TYPE) : '';
+    const rebound = clipboard && tokens ? reboundPaste(text, tokens, clipboard) : undefined;
+
+    insertPasted(rebound ?? text);
+  };
+
+  // Typed-in text holding a zero-width U+FEFF was taken off the editor's DOM,
+  // e.g. by the macOS kill ring that Ctrl+K fills and Ctrl+Y yanks back. It
+  // shows tokens by name, so read it the way a paste is read, which turns the
+  // names back into tokens.
+  editor.insertText = (text, options) => {
+    if (!text.includes(ZERO_WIDTH) || options?.at || !editor.selection) {
+      insertText(text, options);
+      return;
     }
+
+    insertPasted(text.split(ZERO_WIDTH).join(''));
   };
 
   return editor;
