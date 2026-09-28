@@ -1,3 +1,4 @@
+import { WEB_CLIENT_VERSION } from '@/application/compatibility/client-version';
 import {
   AuthProvider,
   CUSTOM_PROVIDER_PREFIX,
@@ -145,6 +146,7 @@ export async function getServerInfo(signal?: AbortSignal): Promise<ServerInfo> {
     getAxios()?.get<APIResponse<ServerInfo>>(url, {
       headers: {
         'x-platform': 'web',
+        'client-version': WEB_CLIENT_VERSION,
       },
       timeout: SERVER_INFO_REQUEST_TIMEOUT_MS,
       ...(signal ? { signal } : {}),
