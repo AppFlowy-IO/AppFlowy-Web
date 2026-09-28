@@ -23,6 +23,7 @@ import { DatabaseSearchProvider } from '@/components/database/components/conditi
 import { DatabaseTabs } from '@/components/database/components/tabs';
 import { WIDGET_CONDITIONS_BAR_HEIGHT, WIDGET_MIN_VIEWPORT_HEIGHT } from '@/components/database/dashboard/constants';
 import { DashboardProvider } from '@/components/database/dashboard/DashboardContext';
+import { HistoricalDashboardPlaceholder } from '@/components/database/dashboard/HistoricalDashboardPlaceholder';
 import { WidgetBody } from '@/components/database/dashboard/WidgetBody';
 import { useWidgetContextOptional } from '@/components/database/dashboard/WidgetContext';
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
@@ -110,7 +111,8 @@ function DatabaseViews({
   const databaseContext = useDatabaseContext();
   const { isDocumentBlock, variant, isDashboardWidget, dataSource, readOnly } = databaseContext;
   const widgetContext = useWidgetContextOptional();
-  const persistViewOrder = dataSource?.type !== 'history';
+  const isHistory = dataSource?.type === 'history';
+  const persistViewOrder = !isHistory;
   const database = useDatabase();
   const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
   const views = database?.get(YjsDatabaseKey.views);
@@ -392,11 +394,15 @@ function DatabaseViews({
       case DatabaseViewLayout.Dashboard:
         // Dashboards never nest: a widget whose view became a dashboard shows
         // a placeholder rendered by the widget itself.
-        return isDashboardWidget ? null : <Dashboard key={activeViewId} />;
+        if (isDashboardWidget) return null;
+        // Widgets mount their own live databases, which would load current
+        // rows and bind realtime sync inside an immutable history preview.
+        if (isHistory) return <HistoricalDashboardPlaceholder />;
+        return <Dashboard key={activeViewId} />;
       default:
         return null;
     }
-  }, [activeViewId, effectiveLayout, isDashboardWidget]);
+  }, [activeViewId, effectiveLayout, isDashboardWidget, isHistory]);
   // A dashboard widget has a fixed slot: when its filter / sort row is open
   // the viewport gives that row its height instead of overflowing the card.
   const viewportHeight =
@@ -473,7 +479,8 @@ function DatabaseViews({
     [setExpanded, setOpenFilterId, setAdvancedMode, setAdvancedPanelOpen, setSortMenuOpen]
   );
 
-  const isDashboardHost = effectiveLayout === DatabaseViewLayout.Dashboard && !isDashboardWidget;
+  const isDashboardLayout = effectiveLayout === DatabaseViewLayout.Dashboard && !isDashboardWidget;
+  const isDashboardHost = isDashboardLayout && !isHistory;
   const viewport = (
     <div
       className={cn(
@@ -532,7 +539,7 @@ function DatabaseViews({
               />
 
               {/* A dashboard shows its global filters inside the grid instead. */}
-              {isDashboardHost ? null : <DatabaseConditionsPanel />}
+              {isDashboardLayout ? null : <DatabaseConditionsPanel />}
 
               {viewport}
             </>

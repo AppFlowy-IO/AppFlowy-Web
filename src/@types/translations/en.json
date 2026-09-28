@@ -4515,6 +4515,7 @@
     "emptyTitle": "Build your dashboard",
     "emptyHint": "Add widgets to show charts, tables, boards and more from any database.",
     "emptyViewerHint": "This dashboard has no widgets yet.",
+    "historyPreviewUnavailable": "Dashboards are not previewed in version history.",
     "widgetLimit": "Dashboards support up to {{count}} widgets.",
     "rowLimit": "A row holds up to {{count}} widgets.",
     "widget": {
