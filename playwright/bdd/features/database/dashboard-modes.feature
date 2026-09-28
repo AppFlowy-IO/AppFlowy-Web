@@ -28,7 +28,7 @@ Feature: Dashboard View and Edit modes
     And I save the global filters for everybody
     Then no global filter shows the local changes badge
     And the "Projects Grid" view has 1 saved filters
-    When I wait for the dashboard layout to reach the server
+    When I wait for the dashboard and widget conditions to reach the server
     And I reload the dashboard
     Then I see the "Projects Grid" widget with 1 rows
 
@@ -79,7 +79,7 @@ Feature: Dashboard View and Edit modes
     And I save the global filters for everybody
     Then no global filter shows the local changes badge
     And the saved "Status" filter matches "Doing, Done"
-    When I wait for the dashboard layout to reach the server
+    When I wait for the dashboard and widget conditions to reach the server
     And I reload the dashboard
     Then the "Projects Grid" widget shows the rows "Website launch, API cleanup"
     And the "Tasks Grid" widget shows the rows "Write launch plan, Ship"

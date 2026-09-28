@@ -162,10 +162,12 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/database/dashboard-widgets.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/dashboard-layout.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/dashboard-modes.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-private-conditions.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-save-history.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/dashboard-global-filters.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/dashboard-number-chart.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/dashboard-integration.feature.spec.js
-            description: 'Dashboard view creation, layout editing, widgets, global filters and Number charts'
+            description: 'Dashboard creation, layout, widgets, private conditions, save history and Number charts'
             bdd: 'true'
             shard: ''
           - name: 'dashboard-usecase-bdd'
