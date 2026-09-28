@@ -29,6 +29,7 @@ import { useDatabaseContext, useDatabaseFields, useRowMap, useRowOrdersSelector 
 import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
 import { ChartAggregationType, ChartLayoutSettings, ChartType } from '@/application/database-yjs/chart.type';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
+import { DatabaseHistoryRowStore } from '@/application/database-yjs/history-row-store';
 import {
   YDatabaseField,
   YDatabaseFields,
@@ -469,4 +470,45 @@ describe('sortByFieldOrder', () => {
     expect(sortByFieldOrder(fields, orders(['a', 'b'])).map((f) => f.id)).toEqual(['a', 'b', 'x', 'y']);
     expect(sortByFieldOrder(fields, undefined)).toBe(fields);
   });
+});
+
+it('aggregates all historical rows through the bounded snapshot accessor without live hydration', async () => {
+  const doc = new Y.Doc();
+  const fields = doc.getMap('fields') as YDatabaseFields;
+
+  addField(fields, 'category', FieldType.Checkbox);
+  addField(fields, 'amount', FieldType.Number);
+  const store = new DatabaseHistoryRowStore('history:chart');
+  const rows = Array.from({ length: 400 }, (_, i) => ({ id: String(i) }));
+
+  rows.forEach(({ id }, i) => {
+    const row = createRowDoc(id, 'chart', {
+      category: createCell(FieldType.Checkbox, i % 2 ? 'Yes' : 'No'),
+      amount: createCell(FieldType.Number, String(i)),
+    });
+
+    store.add(id, Y.encodeStateAsUpdate(row), 1);
+    row.destroy();
+  });
+  const ensureRow = jest.fn();
+
+  (useDatabaseFields as jest.Mock).mockReturnValue(fields);
+  (useRowOrdersSelector as jest.Mock).mockReturnValue(rows);
+  (useRowMap as jest.Mock).mockReturnValue(store.rows);
+  (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow, dataSource: { type: 'history', id: 'chart' } });
+  const { result, unmount } = renderHook(() => useChartData({ settings: {
+    chartType: ChartType.Bar, xFieldId: 'category', yFieldId: 'amount', showEmptyValues: true,
+    aggregationType: ChartAggregationType.Sum, cumulative: false, dateCondition: DateGroupCondition.Month,
+  } }));
+
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  expect(result.current.chartData).toEqual(expect.arrayContaining([
+    expect.objectContaining({ label: 'Checked', value: 40000 }),
+    expect.objectContaining({ label: 'Unchecked', value: 39800 }),
+  ]));
+  expect(ensureRow).not.toHaveBeenCalled();
+  expect(store.cachedDocumentCount).toBeLessThanOrEqual(128);
+  unmount();
+  store.destroy();
+  doc.destroy();
 });

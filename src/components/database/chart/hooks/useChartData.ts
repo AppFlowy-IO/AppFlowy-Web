@@ -635,7 +635,8 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   const fields = useDatabaseFields();
   const rowOrders = useRowOrdersSelector();
   const rowMetas = useRowMap();
-  const { ensureRow } = useDatabaseContext();
+  const { ensureRow, dataSource } = useDatabaseContext();
+  const isHistory = dataSource?.type === 'history';
 
   // Yjs mutates the `fields` Y.Map in place when fields are added, renamed,
   // or have their type changed, so its reference identity is a stale
@@ -694,6 +695,11 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
 
   // Lazily request row docs that haven't been loaded yet.
   useEffect(() => {
+    if (isHistory) {
+      setRowsLoaded(Boolean(rowOrders));
+      return;
+    }
+
     if (!rowOrders || !ensureRow) {
       // Inputs not yet available — keep the loading indicator up.
       return;
@@ -745,7 +751,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowOrdersReady, rowIdsKey, ensureRow, needsRowDocs]);
+  }, [rowOrdersReady, rowIdsKey, ensureRow, needsRowDocs, isHistory]);
 
   // Find all groupable fields
   const groupableFields = useMemo<GroupableField[]>(() => {
@@ -847,11 +853,13 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   // whenever any row doc of the database arrives or is canonicalised, so keep
   // the previous list while every charted doc is the same object: the
   // observers below then stay attached instead of re-subscribing every row.
+  // History snapshots are immutable and decode rows through a bounded cache,
+  // so they are never collected (which would pin every decoded doc).
   const chartedDocsRef = useRef<YDoc[]>(EMPTY_ROW_DOCS);
   const chartedDocs = useMemo(() => {
     const next: YDoc[] = [];
 
-    if (stableRowOrders && rowMetas) {
+    if (!isHistory && stableRowOrders && rowMetas) {
       stableRowOrders.forEach((row) => {
         const doc = rowMetas[row.id];
 
@@ -864,7 +872,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     if (previous.length === next.length && previous.every((doc, index) => doc === next[index])) return previous;
     chartedDocsRef.current = next;
     return next;
-  }, [rowMetas, stableRowOrders]);
+  }, [isHistory, rowMetas, stableRowOrders]);
 
   useEffect(() => {
     if (!needsRowDocs || !rowsLoaded) return;

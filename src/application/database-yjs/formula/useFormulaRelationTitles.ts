@@ -1,7 +1,9 @@
 import { useLayoutEffect } from 'react';
 
+import { useDatabaseContext } from '@/application/database-yjs/context';
 import { FormulaFieldSchema } from '@/application/database-yjs/fields/formula';
 import type { BackgroundRowDocChange } from '@/application/database-yjs/hooks/useBackgroundRowDocLoader';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { retainRelationGroupLabels } from '@/application/database-yjs/relation/cache';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
@@ -20,9 +22,12 @@ export function useFormulaRelationTitles(
   relations: FormulaFieldSchema[],
   { rows, rowIds, getCachedRowDocs, subscribeToCachedRowDocChanges }: FormulaRowSources
 ) {
+  const { dataSource, databaseDoc } = useDatabaseContext();
+  const history = dataSource?.type === 'history' || isDatabaseHistoryDocumentImmutable(databaseDoc);
+
   // Acquire retention before consumers evaluate, including timeline layout effects.
   useLayoutEffect(() => {
-    if (relations.length === 0) return;
+    if (history || relations.length === 0) return;
     const selectedIds = rowIds ? new Set(rowIds) : undefined;
     const cached = new Map<string, YDoc>();
     const observed = new Map<YDoc, () => void>();
@@ -94,5 +99,5 @@ export function useFormulaRelationTitles(
       unsubscribeCached?.();
       observed.forEach((cleanup) => cleanup());
     };
-  }, [relations, rows, rowIds, getCachedRowDocs, subscribeToCachedRowDocChanges]);
+  }, [history, relations, rows, rowIds, getCachedRowDocs, subscribeToCachedRowDocChanges]);
 }

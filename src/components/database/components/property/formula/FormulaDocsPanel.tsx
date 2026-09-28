@@ -156,7 +156,7 @@ function FormulaDocsPanelContent({
   }
 
   return (
-    <div className={'flex min-h-0 flex-col gap-2 overflow-y-auto text-sm'} data-testid={'formula-docs'}>
+    <div className={'flex min-h-0 flex-col gap-2 overflow-y-auto overscroll-contain text-sm'} data-testid={'formula-docs'}>
       <div className={'text-base font-medium text-text-primary'}>{title}</div>
       <div className={'font-mono text-xs text-text-secondary'}>{signature}</div>
       <p className={'text-text-secondary'}>{description}</p>

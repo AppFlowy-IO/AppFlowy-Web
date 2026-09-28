@@ -1,7 +1,7 @@
 import { expect } from '@jest/globals';
 import * as Y from 'yjs';
 
-import { deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { captureDatabaseStorageFence, deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
 import { fetchDatabaseCollab, fetchPageCollab, fetchRowDocumentCollab } from '@/application/services/js-services/fetch';
@@ -13,6 +13,7 @@ jest.mock('@/application/db', () => ({
   openCollabDB: jest.fn(),
   openCollabDBWithProvider: jest.fn(),
   deleteCollabDB: jest.fn(),
+  captureDatabaseStorageFence: jest.fn(),
 }));
 
 jest.mock('@/application/services/js-services/cached-api', () => ({
@@ -98,6 +99,43 @@ function createProvider(doc: YDoc) {
 describe('view-loader database cache identity', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    localStorage.clear();
+    jest.mocked(captureDatabaseStorageFence).mockImplementation(async (databaseId) => ({
+      databaseId, epoch: null, cacheEpoch: null,
+    }));
+  });
+
+  it.each(['durable epoch', 'shadow epoch', 'restore during open'])('does not migrate discarded view state after a %s', async (scenario) => {
+    const viewId = '00000000-0000-4000-8000-000000000001';
+    const databaseId = '00000000-0000-4000-8000-000000000002';
+    const canonicalDoc = createCompleteDatabaseDoc(databaseId, databaseId, viewId);
+    const legacyDoc = createEmptyDoc(viewId);
+
+    Y.applyUpdate(legacyDoc, Y.encodeStateAsUpdate(canonicalDoc));
+    const legacyDatabase = legacyDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+
+    legacyDatabase.get(YjsDatabaseKey.views).set('discarded-view', new Y.Map());
+    if (scenario !== 'restore during open') {
+      jest.mocked(captureDatabaseStorageFence).mockResolvedValue({
+        databaseId, epoch: scenario === 'durable epoch' ? 'restore-new' : null,
+        cacheEpoch: scenario === 'shadow epoch' ? 'restore-new' : null,
+      });
+    }
+
+    mockOpenCollabDBWithProvider.mockImplementation(async (name) => {
+      if (name === databaseId) return createProvider(canonicalDoc) as never;
+      if (scenario === 'restore during open') localStorage.setItem(`af_database_blob_epoch:${databaseId}`, 'restore-new');
+      return createProvider(legacyDoc) as never;
+    });
+
+    const result = await openView('workspace-id', viewId, ViewLayout.Grid, { databaseId });
+
+    expect(result.doc).toBe(canonicalDoc);
+    expect(canonicalDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)
+      .get(YjsDatabaseKey.views).has('discarded-view')).toBe(false);
+    expect(mockEnqueueOutboxUpdate).not.toHaveBeenCalled();
+    canonicalDoc.destroy();
+    legacyDoc.destroy();
   });
 
   it('opens database views from the canonical databaseId cache and migrates legacy viewId data', async () => {

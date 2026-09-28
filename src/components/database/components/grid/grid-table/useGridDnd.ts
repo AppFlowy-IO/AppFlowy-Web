@@ -57,6 +57,7 @@ export function useGridDndRow(virtualizer: Virtualizer<Element, Element>) {
 
   const reorderRow = useCallback(
     ({ startIndex, indexOfTarget, closestEdgeOfTarget }: ReorderPayload) => {
+      if (readOnly) return;
       const finishIndex = getReorderDestinationIndex({
         startIndex,
         closestEdgeOfTarget,
@@ -90,7 +91,7 @@ export function useGridDndRow(virtualizer: Virtualizer<Element, Element>) {
 
       reorderRowDispatch(rowId, beforeId);
     },
-    [reorderRowDispatch, setRows]
+    [readOnly, reorderRowDispatch, setRows]
   );
 
   useEffect(() => {
@@ -172,10 +173,11 @@ export function useGridDndRow(virtualizer: Virtualizer<Element, Element>) {
   }, [readOnly, isGrouped, instanceId, data, reorderRow, virtualizer.scrollElement]);
 
   useEffect(() => {
+    if (readOnly) return;
     return () => {
       liveRegion.cleanup();
     };
-  }, []);
+  }, [readOnly]);
 
   return useMemo(
     () => ({
@@ -189,6 +191,7 @@ export function useGridDndRow(virtualizer: Virtualizer<Element, Element>) {
 }
 
 export function useGridDndColumn(data: RenderColumn[], virtualizer: Virtualizer<HTMLDivElement, Element>) {
+  const readOnly = useReadOnly();
   const viewId = useDatabaseViewId();
   const reorderColumnDispatch = useReorderColumnDispatch();
   const stableData = useRef<RenderColumn[]>(data);
@@ -209,6 +212,7 @@ export function useGridDndColumn(data: RenderColumn[], virtualizer: Virtualizer<
 
   const reorderColumn = useCallback(
     ({ startIndex, indexOfTarget, closestEdgeOfTarget }: ReorderPayload) => {
+      if (readOnly) return;
       const finishIndex = getReorderDestinationIndex({
         startIndex,
         closestEdgeOfTarget,
@@ -236,7 +240,7 @@ export function useGridDndColumn(data: RenderColumn[], virtualizer: Virtualizer<
 
       reorderColumnDispatch(columnId, beforeColumnId);
     },
-    [reorderColumnDispatch]
+    [readOnly, reorderColumnDispatch]
   );
 
   useEffect(() => {
@@ -264,7 +268,7 @@ export function useGridDndColumn(data: RenderColumn[], virtualizer: Virtualizer<
   useEffect(() => {
     const scrollContainer = virtualizer.scrollElement;
 
-    if (!scrollContainer) return;
+    if (readOnly || !scrollContainer) return;
 
     // Clean up previous registration to prevent duplicate autoScroll warnings
     if (cleanupRef.current) {
@@ -315,13 +319,14 @@ export function useGridDndColumn(data: RenderColumn[], virtualizer: Virtualizer<
     cleanupRef.current = cleanup;
 
     return cleanup;
-  }, [instanceId, data, reorderColumn, virtualizer.scrollElement]);
+  }, [readOnly, instanceId, data, reorderColumn, virtualizer.scrollElement]);
 
   useEffect(() => {
+    if (readOnly) return;
     return () => {
       liveRegion.cleanup();
     };
-  }, []);
+  }, [readOnly]);
 
   return useMemo(
     () => ({

@@ -14,6 +14,7 @@ import { TextFilterCondition } from '@/application/database-yjs/fields';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import { useRollupFieldObservers } from '@/application/database-yjs/hooks/useRollupFieldObservers';
+import { invalidateDatabaseDependenciesAfterRestore } from '@/application/database-yjs/restore-dependencies';
 import * as rollupCache from '@/application/database-yjs/rollup/cache';
 import {
   LoadView,
@@ -701,4 +702,43 @@ describe('rollup target database loading', () => {
       expect(result.current?.data).toBe('Edited before observers attached');
     });
   });
+});
+
+
+it('keeps a mounted dependent cell current across repeated restores', async () => {
+  invalidateDatabaseDependenciesAfterRestore();
+  const fixture = createFixture();
+  const database = fixture.contextValue.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+
+  database.get(YjsDatabaseKey.fields).get(rollupFieldId).get(YjsDatabaseKey.type_option)
+    .get(String(FieldType.Rollup)).set(YjsDatabaseKey.show_as, RollupDisplayMode.OriginalList);
+  const opened = renderHook(() => useCellSelector({ rowId: baseRowId, fieldId: rollupFieldId }),
+    { wrapper: fixture.wrapper });
+
+  await waitFor(() => expect(opened.result.current?.data).toBe('Related value'));
+  let previousRoot = await fixture.loadView(relatedViewId);
+  let previousRow = fixture.relatedRowDoc;
+
+  for (const title of ['Older version', 'Newer version']) {
+    const replacement = createFixture();
+    const nextRoot = await replacement.loadView(relatedViewId);
+
+    setCellData(replacement.relatedRowDoc, targetFieldId, title);
+    act(() => {
+      previousRoot?.destroy();
+      previousRow.destroy();
+      fixture.loadView.mockResolvedValue(nextRoot);
+      (fixture.contextValue.createRow as jest.Mock).mockResolvedValue(replacement.relatedRowDoc);
+      invalidateDatabaseDependenciesAfterRestore();
+    });
+    await waitFor(() => expect(opened.result.current?.data).toBe(title));
+    act(() => setCellData(replacement.relatedRowDoc, targetFieldId, `${title} edited`));
+    await waitFor(() => {
+      expect(opened.result.current?.data).toBe(`${title} edited`);
+    });
+    previousRoot = nextRoot;
+    previousRow = replacement.relatedRowDoc;
+  }
+
+  opened.unmount();
 });

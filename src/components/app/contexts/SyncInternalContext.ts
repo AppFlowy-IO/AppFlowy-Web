@@ -13,6 +13,7 @@ import { RegisterSyncContext } from '@/components/ws/useSync';
 // re-render every consumer per message. Message routing happens in useSync,
 // which receives the transports directly in AppSyncLayer.
 export interface SyncInternalContextType {
+  reloadDatabaseAfterRestore?: (databaseId: string, restoreId: string) => Promise<void>;
   registerSyncContext: (params: RegisterSyncContext) => SyncContext;
   rebindSyncContext: (objectId: string) => YDoc | undefined;
   revertCollabVersion: (viewId: string, version: string) => Promise<void>;

@@ -342,7 +342,15 @@ export function useSubscriptionPlan(
   ]);
 
   const currentState: SubscriptionPlanState = !isHosted
-    ? { identity, plan: null, status: isSelfHosted ? 'ready' : serverInfo.status === 'unavailable' ? 'error' : 'loading' }
+    ? {
+        identity,
+        plan: null,
+        status: isSelfHosted
+          ? 'ready'
+          : serverInfo.status === 'unavailable' || serverInfo.status === 'unsupported'
+            ? 'error'
+            : 'loading',
+      }
     : usesSharedCache
       ? {
           identity,

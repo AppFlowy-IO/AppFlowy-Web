@@ -26,6 +26,7 @@ let mockSnapshot = decidedSnapshot;
 let mockFields: Map<string, Map<string, unknown>> | undefined;
 let mockReadOnly = false;
 let mockCanShare = true;
+let mockDataSource: { type: 'history'; id: string } | undefined;
 let mockOnDragEnd: ((result: DropResult) => void) | undefined;
 
 jest.mock('@/application/database-yjs', () => ({
@@ -38,6 +39,7 @@ jest.mock('@/application/database-yjs', () => ({
 jest.mock('@/application/database-yjs/context', () => ({
   useDatabaseContextOptional: () => ({
     readOnly: mockReadOnly,
+    dataSource: mockDataSource,
     canShare: mockCanShare,
     activeViewId: 'form-view-id',
     databaseDoc: {
@@ -126,7 +128,25 @@ describe('FormBuilderView scrolling', () => {
     mockFields = undefined;
     mockReadOnly = false;
     mockCanShare = true;
+    mockDataSource = undefined;
     mockOnDragEnd = undefined;
+  });
+
+  it('renders historical questions without mounting live sharing or form submission controls', () => {
+    mockReadOnly = true;
+    mockDataSource = { type: 'history', id: 'preview-session' };
+    mockSnapshot = { ...decidedSnapshot, decided: false };
+
+    render(<FormBuilderView />);
+
+    expect(screen.getByTestId('form-builder-scroll-container')).toBeTruthy();
+    expect(screen.queryByTestId('form-share-provider')).toBeNull();
+    expect(screen.queryByTestId('form-share-button')).toBeNull();
+    expect(screen.queryByTestId('form-preview-button')).toBeNull();
+    expect(screen.queryByTestId('form-access-banner')).toBeNull();
+    expect(screen.queryByTestId('form-auto-create')).toBeNull();
+    expect(screen.queryByTestId('form-question-type-picker')).toBeNull();
+    expect(mockWriter.setRespondentTitle).not.toHaveBeenCalled();
   });
 
   it('owns vertical scrolling inside fixed database viewports', () => {

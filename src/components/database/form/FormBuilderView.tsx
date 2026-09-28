@@ -58,6 +58,10 @@ export function FormBuilderView() {
   const ctx = useDatabaseContextOptional();
   const readOnly = ctx?.readOnly ?? false;
 
+  if (ctx?.dataSource?.type === 'history') {
+    return <FormBuilderBody readOnly />;
+  }
+
   return (
     <FormShareProvider canUpdateSettings={ctx?.canShare === true}>
       <FormBuilderBody readOnly={readOnly} />
@@ -67,6 +71,7 @@ export function FormBuilderView() {
 
 function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
   const ctx = useDatabaseContextOptional();
+  const isHistory = ctx?.dataSource?.type === 'history';
   const snapshot = useFormLayoutSnapshot();
   const fields = useDatabaseFields();
   const fieldsVersion = useDatabaseFieldsVersion();
@@ -203,10 +208,12 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
         page permission to disable every mutation. Auto-create and question
         editing remain author-only.
       */}
-        <header className='flex items-center justify-end gap-2'>
-          <FormPreviewButton snapshot={snapshot} fieldsMap={fields} fieldsVersion={fieldsVersion} />
-          <FormShareButton />
-        </header>
+        {!isHistory && (
+          <header className='flex items-center justify-end gap-2'>
+            <FormPreviewButton snapshot={snapshot} fieldsMap={fields} fieldsVersion={fieldsVersion} />
+            <FormShareButton />
+          </header>
+        )}
         <section data-testid='form-respondent-copy' className='flex flex-col gap-1'>
           <FormRespondentTitle
             key={`respondent-title-${activeViewId ?? ''}`}
@@ -221,7 +228,7 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
             onChange={writer.setFormDescription}
           />
         </section>
-        <FormAccessBanner />
+        {!isHistory && <FormAccessBanner />}
         {autoCreatePending && (
           <FormAutoCreate
             snapshot={snapshot}

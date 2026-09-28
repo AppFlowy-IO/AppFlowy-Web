@@ -1,3 +1,4 @@
+import { WEB_CLIENT_VERSION } from '@/application/compatibility/client-version';
 import {
   AuthProvider,
   CUSTOM_PROVIDER_PREFIX,
@@ -20,6 +21,8 @@ export interface ServerInfo {
   /** Web uses a separate release line from the native min_client_version field. */
   min_web_client_version?: string;
   enable_page_history: boolean;
+  /** Database aggregate snapshots and the complete web history contract. Absent means disabled. */
+  enable_database_history?: boolean;
   ai_enabled?: boolean;
   /**
    * Whether this deployment is self-hosted. Only the official AppFlowy cloud
@@ -143,6 +146,7 @@ export async function getServerInfo(signal?: AbortSignal): Promise<ServerInfo> {
     getAxios()?.get<APIResponse<ServerInfo>>(url, {
       headers: {
         'x-platform': 'web',
+        'client-version': WEB_CLIENT_VERSION,
       },
       timeout: SERVER_INFO_REQUEST_TIMEOUT_MS,
       ...(signal ? { signal } : {}),

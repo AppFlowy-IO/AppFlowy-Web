@@ -66,6 +66,7 @@ import { createRollupField } from '@/application/database-yjs/fields/rollup/util
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
 import { assertViewCreationOnline, onlineViewCreationRequiredError } from '@/application/view-online-policy';
 import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
@@ -1402,6 +1403,8 @@ export function useDeleteRowDispatch() {
 
   return useCallback(
     (rowId: string) => {
+      if (sharedRoot.doc && isDatabaseHistoryDocumentImmutable(sharedRoot.doc as YDoc)) return;
+
       executeOperationWithAllViews(
         sharedRoot,
         database,
@@ -1435,6 +1438,8 @@ export function useBulkDeleteRowDispatch() {
 
   return useCallback(
     (rowIds: string[], historyGroup?: object) => {
+      if (sharedRoot.doc && isDatabaseHistoryDocumentImmutable(sharedRoot.doc as YDoc)) return;
+
       executeOperationWithAllViews(
         sharedRoot,
         database,

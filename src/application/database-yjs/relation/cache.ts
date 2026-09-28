@@ -1,6 +1,7 @@
 import { FieldType } from '@/application/database-yjs/database.type';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { getLiveDatabaseRowIds } from '@/application/database-yjs/relation/row-orders';
 import { getRowKey } from '@/application/database-yjs/row_meta';
@@ -352,13 +353,16 @@ async function loadRelatedDoc(viewId: string, databaseId: string, loadView?: Rel
 
   if (cached) {
     touchRelatedDocCache(cacheKey, cached);
-    return cached;
+    return cached.then((doc) => relatedDocCache.get(cacheKey) === cached ? doc : null);
   }
 
-  const promise = loadView(viewId, false, false, { databaseId, databaseMetadataOnly: true }).catch(() => {
-    relatedDocCache.delete(cacheKey);
-    return null;
-  });
+  const promise: Promise<YDoc | null> = loadView(viewId, false, false, { databaseId, databaseMetadataOnly: true })
+    .then((doc) => relatedDocCache.get(cacheKey) === promise ? doc : null)
+    .catch(() => {
+      // A rejected pre-restore request must not evict a newer replacement request.
+      if (relatedDocCache.get(cacheKey) === promise) relatedDocCache.delete(cacheKey);
+      return null;
+    });
 
   touchRelatedDocCache(cacheKey, promise);
   return promise;
@@ -434,7 +438,8 @@ async function computeRelationCellValue(context: RelationComputeContext): Promis
 
 async function computeRelationGroupLabel(
   context: RelationGroupLabelContext,
-  labelId: string
+  labelId: string,
+  isCurrent: () => boolean
 ): Promise<RelationCellValue> {
   try {
     if (Number(context.relationField.get(YjsDatabaseKey.type)) !== FieldType.Relation) {
@@ -455,6 +460,7 @@ async function computeRelationGroupLabel(
 
     if (!relatedDoc) return { value: '' };
 
+    if (!isCurrent()) return { value: '' };
     if (observeGroupLabelDatabase(relatedDoc, labelId, context.relatedRowId) === false) return { value: '' };
     const relatedDatabase = getDatabaseFromDoc(relatedDoc);
     const primaryFieldId = relatedDatabase ? getPrimaryFieldId(relatedDatabase) : undefined;
@@ -464,6 +470,7 @@ async function computeRelationGroupLabel(
 
     const relatedRowDoc = await context.createRow(getRowKey(relatedDoc.guid, context.relatedRowId));
 
+    if (!isCurrent()) return { value: '' };
     // createRow can resolve with a sync-bound but still empty document. Install
     // the observer before the first read so later hydration invalidates the
     // empty result and schedules a fresh lookup through subscribers.
@@ -519,6 +526,21 @@ export function subscribeRelationGroupLabel(context: RelationGroupLabelKey, cb: 
   };
 }
 
+/** Related roots, titles and membership all belong to the discarded generation. */
+export function invalidateRelationCacheAfterRestore() {
+  relatedDocCache.clear();
+  new Set([...cache.keys(), ...inflight.keys()]).forEach(bumpGeneration);
+  const labels = new Set([
+    ...groupLabelCache.keys(), ...groupLabelInflight.keys(), ...retainedGroupLabels.keys(),
+    ...groupLabelKeyListeners.keys(),
+  ]);
+
+  labels.forEach(bumpGroupLabelGeneration);
+  groupLabelMembership.clear();
+  emit();
+  emitGroupLabels(labels);
+}
+
 export function invalidateRelationCell(cellId: string) {
   bumpGeneration(cellId);
 }
@@ -572,6 +594,10 @@ export function retainRelationGroupLabels(contexts: readonly RelationGroupLabelK
  * mutates module state. Pair it with ensureRelationGroupLabel in an effect.
  */
 export function readRelationGroupLabel(context: RelationGroupLabelKey): string {
+  if (context.relationField.doc && isDatabaseHistoryDocumentImmutable(context.relationField.doc as YDoc)) {
+    return context.relatedRowId;
+  }
+
   const labelId = getGroupLabelId(context);
 
   if (!labelId || groupLabelMembership.get(labelId) === false) return '';
@@ -581,6 +607,10 @@ export function readRelationGroupLabel(context: RelationGroupLabelKey): string {
 
 /** Unlike a blank title, a known deleted row is absent from a formula's list. */
 export function readFormulaRelationTitle(context: RelationGroupLabelKey): string | null {
+  if (context.relationField.doc && isDatabaseHistoryDocumentImmutable(context.relationField.doc as YDoc)) {
+    return context.relatedRowId;
+  }
+
   const labelId = getGroupLabelId(context);
 
   if (labelId && groupLabelMembership.get(labelId) === false) return null;
@@ -593,6 +623,8 @@ export function readFormulaRelationTitle(context: RelationGroupLabelKey): string
  * effect rather than during render.
  */
 export function ensureRelationGroupLabel(context: RelationGroupLabelContext): void {
+  if (context.relationField.doc && isDatabaseHistoryDocumentImmutable(context.relationField.doc as YDoc)) return;
+
   pruneCache();
   const labelId = getGroupLabelId(context);
 
@@ -609,7 +641,7 @@ export function ensureRelationGroupLabel(context: RelationGroupLabelContext): vo
     const release = await semaphore.acquire();
 
     try {
-      const value = await computeRelationGroupLabel(context, labelId);
+      const value = await computeRelationGroupLabel(context, labelId, () => getGroupLabelGeneration(labelId) === generation);
 
       if (getGroupLabelGeneration(labelId) === generation) {
         const changed = cached?.value !== value.value || wasLive !== groupLabelMembership.get(labelId);
@@ -638,6 +670,10 @@ export function ensureRelationGroupLabel(context: RelationGroupLabelContext): vo
 }
 
 export function readRelationCellText(context: RelationComputeContext): string {
+  if (isDatabaseHistoryDocumentImmutable(context.baseDoc)) {
+    return getRelationRowIdsFromCell(context.row.get(YjsDatabaseKey.cells)?.get(context.fieldId)).join(', ');
+  }
+
   pruneCache();
   if (!context.row || !context.relationField || !context.database) return '';
   const cellId = `${context.rowId}:${context.fieldId}`;
@@ -668,7 +704,7 @@ export function readRelationCellText(context: RelationComputeContext): string {
         return value;
       } finally {
         release();
-        inflight.delete(cellId);
+        if (getGeneration(cellId) === generation) inflight.delete(cellId);
       }
     })();
 

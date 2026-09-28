@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 
 import { FieldType } from '@/application/database-yjs';
 import { RelationCell } from '@/application/database-yjs/cell.type';
+import { invalidateDatabaseDependenciesAfterRestore } from '@/application/database-yjs/restore-dependencies';
 import { YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import RelationItems from '@/components/database/components/cell/relation/RelationItems';
 
@@ -94,6 +95,45 @@ function renderItems(rowIds: string[], onTextChange?: (text: string) => void) {
 }
 
 describe('RelationItems loading state', () => {
+  it('replaces mounted relation labels after restore and ignores an older pending row load', async () => {
+    const row = (title: string) => {
+      const doc = new Y.Doc() as YDoc;
+      const value = new Y.Map();
+      const cells = new Y.Map();
+      const cell = new Y.Map();
+
+      cell.set(YjsDatabaseKey.field_type, FieldType.RichText);
+      cell.set(YjsDatabaseKey.data, title);
+      cells.set(PRIMARY_FIELD_ID, cell);
+      value.set(YjsDatabaseKey.cells, cells);
+      doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database_row, value);
+      return doc;
+    };
+
+    const delayed = deferred<YDoc>();
+
+    mockDatabaseContext.loadView.mockResolvedValue(createRelatedDatabaseDoc(['row-1']));
+    mockDatabaseContext.createRow.mockReturnValueOnce(delayed.promise);
+    const onTextChange = jest.fn();
+
+    renderItems(['row-1'], onTextChange);
+    await waitFor(() => expect(mockDatabaseContext.createRow).toHaveBeenCalled());
+    for (const title of ['Restored older', 'Restored newer']) {
+      act(() => {
+        mockDatabaseContext.loadView.mockResolvedValue(createRelatedDatabaseDoc(['row-1']));
+        mockDatabaseContext.createRow.mockResolvedValue(row(title));
+        invalidateDatabaseDependenciesAfterRestore();
+      });
+      await waitFor(() => expect(screen.getByText(title)).toBeTruthy());
+      expect(onTextChange).toHaveBeenLastCalledWith(title);
+    }
+
+    await act(async () => delayed.resolve(row('Discarded old load')));
+    expect(screen.queryByText('Discarded old load')).toBeNull();
+    expect(screen.getByText('Restored newer')).toBeTruthy();
+  });
+
+
   let consoleError: jest.SpyInstance;
 
   beforeEach(() => {

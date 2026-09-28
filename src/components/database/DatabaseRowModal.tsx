@@ -11,6 +11,7 @@ import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/full_screen.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { AFScroller } from '@/components/_shared/scroller';
+import { useDatabaseRestoreNotice } from '@/components/app/DatabaseRestoreNotice';
 import { DatabaseRow } from '@/components/database/DatabaseRow';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,6 +42,8 @@ function DatabaseRowModal({
   const duplicateRow = useDuplicateRowDispatch();
   const deleteRows = useTrashAwareDeleteRowsDispatch();
   const [duplicateLoading, setDuplicateLoading] = useState(false);
+
+  useDatabaseRestoreNotice(context?.workspaceId || '', open ? context?.databaseDoc?.guid : undefined);
 
   return (
     <Dialog

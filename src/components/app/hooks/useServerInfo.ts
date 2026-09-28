@@ -69,10 +69,13 @@ export function useServerInfo(enabled: boolean, serverUrl: string): ServerInfoSt
       } catch (error) {
         if (controller.signal.aborted) return;
         Log.error('[AppAuthLayer] Failed to load server info:', error);
-        // A failed refresh cannot confirm a previous compatibility warning.
-        updateServerInfo(serverUrl, { status: 'unavailable' });
+
         const unsupported = (error as { code?: number } | null)?.code === 404;
 
+        // A missing endpoint confirms legacy capabilities; transient failures
+        // cannot safely decide whether database restore fencing is required.
+        // Neither failure can confirm a previous compatibility warning.
+        updateServerInfo(serverUrl, { status: unsupported ? 'unsupported' : 'unavailable' });
         if (!unsupported) {
           nextDelay = Math.min(30_000, 1_000 * 2 ** retryAttempt);
           retryAttempt = Math.min(retryAttempt + 1, 5);

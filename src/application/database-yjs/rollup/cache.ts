@@ -14,6 +14,7 @@ import { readRollupCondition } from '@/application/database-yjs/fields/rollup/co
 import { formulaPredicateFieldType, formulaResultToDateCell } from '@/application/database-yjs/formula/filter';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
@@ -169,6 +170,16 @@ export function subscribeRollupCache(cb: () => void) {
   };
 }
 
+/** Retire derived values and outstanding loads before notifying mounted consumers. */
+export function invalidateRollupCacheAfterRestore() {
+  relatedDocCache.clear();
+  const cells = new Set([...cache.keys(), ...inflight.keys(), ...listeners.keys()]);
+
+  cells.forEach(bumpGeneration);
+  cells.forEach((cellId) => listeners.get(cellId)?.forEach((notify) => notify({ value: '' })));
+  globalListeners.forEach((notify) => notify());
+}
+
 export function invalidateRollupCell(cellId: string) {
   bumpGeneration(cellId);
 }
@@ -242,16 +253,18 @@ async function loadRelatedDoc(
 
   if (cached) {
     touchRelatedDocCache(cacheKey, cached);
-    return cached;
+    return cached.then((doc) => relatedDocCache.get(cacheKey) === cached ? doc : null);
   }
 
-  const promise = loadView(viewId, false, false, { databaseId, databaseMetadataOnly: true }).then(
+  const promise: Promise<YDoc | null> = loadView(viewId, false, false, { databaseId, databaseMetadataOnly: true }).then(
     (doc) => {
+      // A pre-restore request must not return or evict a newer replacement request.
+      if (relatedDocCache.get(cacheKey) !== promise) return null;
       if (!doc) relatedDocCache.delete(cacheKey);
       return doc;
     },
     () => {
-      relatedDocCache.delete(cacheKey);
+      if (relatedDocCache.get(cacheKey) === promise) relatedDocCache.delete(cacheKey);
       return null;
     }
   );
@@ -988,8 +1001,19 @@ async function computeRollupCellValue(
   return withTargetFieldType(calculatedValue);
 }
 
+function readStoredRollupValue(context: RollupComputeContext): RollupCellValue {
+  const raw = context.row.get(YjsDatabaseKey.cells)?.get(context.fieldId)?.get(YjsDatabaseKey.data);
+
+  return {
+    value: typeof raw === 'string' || typeof raw === 'number' ? String(raw) : '',
+    rawNumeric: typeof raw === 'number' ? raw : undefined,
+  };
+}
+
 /** A fresh, fully hydrated value for materialization, independent of display caches. */
 export async function resolveRollupCell(context: RollupComputeContext): Promise<RollupCellValue> {
+  if (isDatabaseHistoryDocumentImmutable(context.baseDoc)) return readStoredRollupValue(context);
+
   const release = await semaphore.acquire();
 
   try {
@@ -1018,6 +1042,8 @@ export async function resolveRollupCell(context: RollupComputeContext): Promise<
 }
 
 export async function readRollupCell(context: RollupComputeContext): Promise<RollupCellValue> {
+  if (isDatabaseHistoryDocumentImmutable(context.baseDoc)) return readStoredRollupValue(context);
+
   pruneCache();
   const cellId = `${context.rowId}:${context.fieldId}`;
   const generation = getGeneration(cellId);
@@ -1104,6 +1130,8 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
 }
 
 export function readRollupCellSync(context: RollupComputeContext): RollupCellValue {
+  if (isDatabaseHistoryDocumentImmutable(context.baseDoc)) return readStoredRollupValue(context);
+
   pruneCache();
   const cellId = `${context.rowId}:${context.fieldId}`;
   const generation = getGeneration(cellId);

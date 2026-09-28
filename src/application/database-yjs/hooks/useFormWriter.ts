@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-import { useDatabaseView } from '@/application/database-yjs/context';
+import { useDatabaseView, useReadOnly } from '@/application/database-yjs/context';
 import { createFormWriter, FormWriter } from '@/application/database-yjs/form-writer';
 
 // Single shared sentinel — the read-only fallback callers fall back on when
@@ -37,6 +37,7 @@ const NOOP_WRITER: FormWriter = {
  */
 export function useFormWriter(): FormWriter {
   const view = useDatabaseView();
+  const readOnly = useReadOnly();
 
-  return useMemo(() => (view ? createFormWriter(view) : NOOP_WRITER), [view]);
+  return useMemo(() => (view && !readOnly ? createFormWriter(view) : NOOP_WRITER), [readOnly, view]);
 }

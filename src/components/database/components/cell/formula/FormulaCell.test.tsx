@@ -11,6 +11,12 @@ import { AFConfigContext } from '@/components/main/app.hooks';
 
 import { FormulaCell } from './FormulaCell';
 
+jest.mock('@/components/database/components/property/formula/FormulaEditorPopover', () => ({
+  FormulaEditorPopover: ({ rowId, fieldId }: { rowId?: string; fieldId: string }) => (
+    <div data-testid={'mock-formula-editor-popover'} data-row-id={rowId} data-field-id={fieldId} />
+  ),
+}));
+
 jest.mock('@/components/database/components/property/formula/FormulaEditorDialog', () => ({
   FormulaEditorDialog: () => <div data-testid={'mock-formula-editor-dialog'} />,
 }));
@@ -226,9 +232,42 @@ describe('FormulaCell', () => {
     expect(screen.getByTestId('formula-cell-r1-f1').textContent).toBe('$42');
   });
 
-  it('mounts the (lazy) editor dialog while editing', async () => {
-    render(<FormulaCell cell={createCell()} rowId={'r1'} fieldId={'f1'} wrap={false} editing setEditing={jest.fn()} />);
+  it('mounts the (lazy) editor popover for its row while editing, never the dialog', async () => {
+    const { rerender } = render(
+      <FormulaCell cell={createCell()} rowId={'r1'} fieldId={'f1'} wrap={false} editing setEditing={jest.fn()} />
+    );
+    const popover = await screen.findByTestId('mock-formula-editor-popover');
 
-    expect(await screen.findByTestId('mock-formula-editor-dialog')).not.toBeNull();
+    expect(popover.getAttribute('data-row-id')).toBe('r1');
+    expect(popover.getAttribute('data-field-id')).toBe('f1');
+    expect(screen.queryByTestId('mock-formula-editor-dialog')).toBeNull();
+    // The popover anchors to the host cell, so the formula cell itself is not positioned.
+    expect(screen.getByTestId('formula-cell-r1-f1').className).not.toMatch(/\brelative\b/);
+
+    rerender(
+      <FormulaCell
+        cell={createCell()}
+        rowId={'r1'}
+        fieldId={'f1'}
+        wrap={false}
+        editing={false}
+        setEditing={jest.fn()}
+      />
+    );
+    expect(screen.queryByTestId('mock-formula-editor-popover')).toBeNull();
+  });
+
+  it('does not open the editor in a read-only cell', async () => {
+    const { rerender } = render(
+      <FormulaCell cell={createCell()} rowId={'r1'} fieldId={'f1'} wrap={false} editing setEditing={jest.fn()} />
+    );
+
+    // Wait for the lazy popover module first, so its absence below cannot come
+    // from the module not having loaded yet.
+    await screen.findByTestId('mock-formula-editor-popover');
+    rerender(
+      <FormulaCell cell={createCell()} rowId={'r1'} fieldId={'f1'} wrap={false} editing readOnly setEditing={jest.fn()} />
+    );
+    expect(screen.queryByTestId('mock-formula-editor-popover')).toBeNull();
   });
 });

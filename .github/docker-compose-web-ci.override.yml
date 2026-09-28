@@ -6,3 +6,5 @@ services:
       APPFLOWY_S3_PRESIGNED_URL_ENDPOINT: ${APPFLOWY_BASE_URL}/minio-api
       # Share links must open the web app, which CI serves separately from the API.
       APPFLOWY_WEB_URL: http://localhost:3000
+      # Database version history is advertised only after the restore permission fence is ready.
+      APPFLOWY_DATABASE_HISTORY_RESTORE_PERMISSION_FENCE_READY: 'true'

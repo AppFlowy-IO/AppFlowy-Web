@@ -50,7 +50,9 @@ export function HoverControls () {
         onMouseDown={(e) => {
           e.preventDefault();
         }}
-        className={`absolute hover-controls w-[64px] px-1 z-10 opacity-0 flex items-center justify-end ${cssProperty} ${isDragging ? 'pointer-events-none opacity-0' : ''}`}
+        // Until a hovered block positions it (inline pointer-events: auto), the invisible
+        // strip sits over the first block's center and would swallow clicks and hovers.
+        className={`pointer-events-none absolute hover-controls w-[64px] px-1 z-10 opacity-0 flex items-center justify-end ${cssProperty} ${isDragging ? 'pointer-events-none opacity-0' : ''}`}
       >
         {/* Ensure the toolbar in middle */}
         <div className={`invisible hover-controls-placeholder`}>$</div>

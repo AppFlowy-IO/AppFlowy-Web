@@ -2,7 +2,7 @@ import type { ServerInfo } from '@/application/services/js-services/http/auth-ap
 import { getConfigValue } from '@/utils/runtime-config';
 
 export type ServerInfoState =
-  | { status: 'loading' | 'unavailable'; info?: undefined }
+  | { status: 'loading' | 'unavailable' | 'unsupported'; info?: undefined }
   | { status: 'available'; info: ServerInfo };
 
 export const SERVER_INFO_LOADING: ServerInfoState = { status: 'loading' };

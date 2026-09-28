@@ -280,7 +280,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
   const { containerRef: scrollRef } = useScrollNavigation(currentView, calendarApi);
 
   // Dynamic day max event rows
-  const { dayMaxEventRows, updateDayMaxEventRows } = useDynamicDayMaxEventRows(currentView);
+  const { dayMaxEventRows, updateDayMaxEventRows } = useDynamicDayMaxEventRows(currentView, calendarElement);
 
   // Sticky header handling
   const { parentRef: stickyHeaderRef, showStickyToolbar } = useCalendarStickyHeader(calendarApi, normalToolbarRef);

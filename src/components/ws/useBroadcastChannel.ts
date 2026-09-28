@@ -8,6 +8,12 @@ export type BroadcastChannelType = {
   postMessage: (msg: messages.IMessage, keep?: boolean) => void;
   postDurableMessage: (msg: messages.IMessage) => void;
   subscribeProtocolMessages: (listener: (message: messages.Message) => void) => () => void;
+  /**
+   * Receives every collab message in arrival order. While subscribed, collab
+   * messages bypass `lastBroadcastMessage`, whose last-value state would keep
+   * only the final message of a burst.
+   */
+  subscribeCollabMessages?: (listener: (message: messages.Message) => void) => () => void;
   postOutboxReady: (workspaceId: string, objectId: string) => void;
   subscribeOutboxReady: (listener: (workspaceId: string, objectId: string) => void) => () => void;
   postTransportSignal: (signal: WorkspaceTransportSignal) => void;
@@ -144,6 +150,7 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
   // sends after cleanup remain intentionally dropped.
   const pendingInitialPostsRef = useRef<unknown[] | null>([]);
   const protocolMessageListenersRef = useRef(new Set<(message: messages.Message) => void>());
+  const collabMessageListenersRef = useRef(new Set<(message: messages.Message) => void>());
   const outboxReadyListenersRef = useRef(new Set<(workspaceId: string, objectId: string) => void>());
   const transportSignalListenersRef = useRef(new Set<(signal: WorkspaceTransportSignal) => void>());
   const [lastMessageState, setLastMessageState] = useState<ChannelMessageState | null>(null);
@@ -194,7 +201,14 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
         return;
       }
 
-      setLastMessageState({ channelName, message });
+      if (message.collabMessage && collabMessageListenersRef.current.size > 0) {
+        // Several updates can arrive before React commits a render. Dropping any
+        // of them leaves Yjs holding every later update from that client pending.
+        collabMessageListenersRef.current.forEach((listener) => listener(message));
+      } else {
+        setLastMessageState({ channelName, message });
+      }
+
       if (!isDurableMessage) {
         protocolMessageListenersRef.current.forEach((listener) => listener(message));
       }
@@ -269,6 +283,14 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
 
     return () => {
       protocolMessageListenersRef.current.delete(listener);
+    };
+  }, []);
+
+  const subscribeCollabMessages = useCallback((listener: (message: messages.Message) => void) => {
+    collabMessageListenersRef.current.add(listener);
+
+    return () => {
+      collabMessageListenersRef.current.delete(listener);
     };
   }, []);
 
@@ -364,6 +386,7 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
     postMessage: sendMessage,
     postDurableMessage,
     subscribeProtocolMessages,
+    subscribeCollabMessages,
     postOutboxReady,
     subscribeOutboxReady,
     postTransportSignal,

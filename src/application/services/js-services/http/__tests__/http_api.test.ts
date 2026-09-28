@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
+import { WEB_CLIENT_VERSION } from '@/application/compatibility/client-version';
 import {
   AccessLevel,
   AuthProvider,
@@ -570,7 +571,7 @@ describe('http_api client (unit)', () => {
     warnSpy.mockRestore();
   });
 
-  it('bounds and cancels server-info requests while identifying the web platform', async () => {
+  it('bounds and cancels server-info requests while identifying the web platform and bundle version', async () => {
     const module = await import('../http_api');
     module.initAPIService(baseConfig);
     const abortController = new AbortController();
@@ -597,6 +598,7 @@ describe('http_api client (unit)', () => {
     expect(mockAxiosInstance.get).toHaveBeenCalledWith('/api/server-info', {
       headers: {
         'x-platform': 'web',
+        'client-version': WEB_CLIENT_VERSION,
       },
       signal: abortController.signal,
       timeout: 10_000,

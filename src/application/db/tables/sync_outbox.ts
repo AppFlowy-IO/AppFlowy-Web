@@ -7,6 +7,8 @@ export interface SyncOutboxRecord {
   objectId: string;
   collabType: number;
   version?: string | null;
+  /** Restore identity captured with these bytes; never upgraded while draining. */
+  databaseRestoreId?: string;
   payload: Uint8Array;
   createdAt: number;
   // Yjs state vector (lib0 v1) of the doc state before this local edit, so the
