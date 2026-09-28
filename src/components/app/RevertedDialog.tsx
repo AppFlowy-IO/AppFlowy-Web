@@ -1,5 +1,5 @@
 import Dialog from '@mui/material/Dialog';
-import { useId } from 'react';
+import { useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as RestoreIcon } from '@/assets/icons/restore.svg';
@@ -15,6 +15,7 @@ export function RevertedDialog({ open, onDismiss, kind = 'document' }: RevertedD
   const { t } = useTranslation();
   const titleId = useId();
   const descriptionId = useId();
+  const confirmRef = useRef<HTMLButtonElement>(null);
 
   return (
     // Row editors, history and page modals share MUI's focus manager. Joining
@@ -22,6 +23,15 @@ export function RevertedDialog({ open, onDismiss, kind = 'document' }: RevertedD
     <Dialog
       open={open}
       onClose={onDismiss}
+      onFocus={(event) => {
+        const confirm = confirmRef.current;
+        const target: Node = event.target;
+
+        // A restore can remount an interrupted editor that autofocuses after this
+        // notice opens. The focus trap then returns focus to its frame, not to
+        // the acknowledgement, so forward it to keep Enter dismissing the notice.
+        if (confirm && target !== confirm && target.contains(confirm)) confirm.focus();
+      }}
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
       maxWidth={false}
@@ -42,7 +52,7 @@ export function RevertedDialog({ open, onDismiss, kind = 'document' }: RevertedD
         )}
       </p>
       <div className='mt-5 flex justify-end'>
-        <Button autoFocus data-testid='reverted-dialog-confirm' onClick={onDismiss}>
+        <Button ref={confirmRef} autoFocus data-testid='reverted-dialog-confirm' onClick={onDismiss}>
           {t('versionHistory.revertedDismiss')}
         </Button>
       </div>

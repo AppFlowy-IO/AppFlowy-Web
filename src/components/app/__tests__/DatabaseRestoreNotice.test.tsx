@@ -173,6 +173,22 @@ describe('database restore notice', () => {
     expect(events.listenerCount(APP_EVENTS.COLLAB_DOC_RESET)).toBe(0);
   });
 
+  it('keeps focus on the acknowledgement when a replaced editor autofocuses after the notice opens', async () => {
+    // A restore can remount the interrupted cell editor after the notice has opened.
+    const page = (editorMounted: boolean) => (
+      <>
+        {editorMounted && <textarea aria-label='Replaced editor' autoFocus />}
+        <RevertedDialog kind='database' open onDismiss={jest.fn()} />
+      </>
+    );
+    const view = render(page(false));
+    const confirm = screen.getByRole('button', { name: 'Got it' });
+
+    await waitFor(() => expect(document.activeElement).toBe(confirm));
+    view.rerender(page(true));
+    await waitFor(() => expect(document.activeElement).toBe(confirm));
+  });
+
   it('preserves the existing document restore message', () => {
     const dismiss = jest.fn();
 
