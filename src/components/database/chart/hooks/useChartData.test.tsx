@@ -41,7 +41,13 @@ import {
   YMapFieldTypeOption,
 } from '@/application/types';
 
-import { sortByFieldOrder, touchesChartedRowData, useChartData } from './useChartData';
+import {
+  computeNumberChartData,
+  ROW_LOAD_CONCURRENCY,
+  sortByFieldOrder,
+  touchesChartedRowData,
+  useChartData,
+} from './useChartData';
 
 function addField(
   fields: YDatabaseFields,
@@ -415,6 +421,165 @@ describe('useChartData Number chart', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.chartData).toEqual([expect.objectContaining({ value: 0, rowIds: [] })]);
     expect(result.current.numberValue).toBe(0);
+  });
+});
+
+describe('useChartData rows added after the first load', () => {
+  const databaseId = 'added-rows-database';
+  const doneFieldId = 'done';
+  const settings: ChartLayoutSettings = {
+    chartType: ChartType.Bar,
+    xFieldId: doneFieldId,
+    showEmptyValues: true,
+    aggregationType: ChartAggregationType.Count,
+    cumulative: false,
+    dateCondition: DateGroupCondition.Month,
+  };
+
+  function setup() {
+    const fields = new Y.Doc().getMap('fields') as YDatabaseFields;
+
+    addField(fields, doneFieldId, FieldType.Checkbox);
+    const docs = {
+      r1: createRowDoc('r1', databaseId, { [doneFieldId]: createCell(FieldType.Checkbox, 'Yes') }),
+      r2: createRowDoc('r2', databaseId, { [doneFieldId]: createCell(FieldType.Checkbox, 'Yes') }),
+    };
+    let deliverR2: () => void = () => undefined;
+    const r2Loaded = new Promise<void>((resolve) => {
+      deliverR2 = resolve;
+    });
+    const ensureRow = jest.fn((rowId: string) => (rowId === 'r2' ? r2Loaded : Promise.resolve()));
+
+    (useDatabaseFields as jest.Mock).mockReturnValue(fields);
+    (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r1' }]);
+    (useRowMap as jest.Mock).mockReturnValue({ r1: docs.r1 });
+    (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow, activeViewId: 'view-1' });
+
+    // The row map gains r2 once its load resolves, as `Database` does.
+    const arrive = async () => {
+      (useRowMap as jest.Mock).mockReturnValue(docs);
+      await act(async () => {
+        deliverR2();
+        await r2Loaded;
+      });
+    };
+
+    return { arrive, docs, ensureRow };
+  }
+
+  it('keeps the chart, not the spinner, while the new row loads and counts it once it arrives', async () => {
+    const { arrive, ensureRow } = setup();
+    const { result, rerender } = renderHook(() => useChartData({ settings }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.chartData).toEqual([expect.objectContaining({ label: 'Checked', value: 1, rowIds: ['r1'] })]);
+
+    // A row created in a grid next to this chart on a dashboard.
+    (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r1' }, { id: 'r2' }]);
+    rerender();
+
+    expect(ensureRow).toHaveBeenCalledWith('r2');
+    expect(result.current.isLoading).toBe(false);
+    // Not an "Unchecked" / empty bucket for a row whose cells are unknown yet.
+    expect(result.current.chartData).toEqual([expect.objectContaining({ label: 'Checked', value: 1, rowIds: ['r1'] })]);
+
+    await arrive();
+    rerender();
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.chartData).toEqual([
+      expect.objectContaining({ label: 'Checked', value: 2, rowIds: ['r1', 'r2'] }),
+    ]);
+  });
+
+  it('shows the spinner again while another view loads its rows', async () => {
+    const { arrive, ensureRow } = setup();
+    const { result, rerender } = renderHook(() => useChartData({ settings }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // Switching chart tabs keeps this hook mounted.
+    (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow, activeViewId: 'view-2' });
+    (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r1' }, { id: 'r2' }]);
+    rerender();
+
+    expect(result.current.isLoading).toBe(true);
+
+    await arrive();
+    rerender();
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.chartData).toEqual([
+      expect.objectContaining({ label: 'Checked', value: 2, rowIds: ['r1', 'r2'] }),
+    ]);
+  });
+
+  it('shows the spinner while a bulk change loads its rows', async () => {
+    const { docs } = setup();
+    let deliverBulk: () => void = () => undefined;
+    const bulkLoaded = new Promise<void>((resolve) => {
+      deliverBulk = resolve;
+    });
+    const ensureRow = jest.fn((rowId: string) => (rowId === 'r1' ? Promise.resolve() : bulkLoaded));
+
+    (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow, activeViewId: 'view-1' });
+    const { result, rerender } = renderHook(() => useChartData({ settings }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // An import, or a widened filter: more rows than one round of loads.
+    const bulkIds = Array.from({ length: ROW_LOAD_CONCURRENCY + 1 }, (_, index) => `bulk-${index}`);
+
+    (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r1' }, ...bulkIds.map((id) => ({ id }))]);
+    rerender();
+
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.chartData).toEqual([]);
+
+    const bulkDocs = Object.fromEntries(
+      bulkIds.map((id) => [id, createRowDoc(id, databaseId, { [doneFieldId]: createCell(FieldType.Checkbox, 'Yes') })])
+    );
+
+    (useRowMap as jest.Mock).mockReturnValue({ r1: docs.r1, ...bulkDocs });
+    await act(async () => {
+      deliverBulk();
+      await bulkLoaded;
+    });
+    rerender();
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.chartData).toEqual([
+      expect.objectContaining({ label: 'Checked', value: ROW_LOAD_CONCURRENCY + 2 }),
+    ]);
+  });
+});
+
+describe('computeNumberChartData', () => {
+  it('leaves a row out of the aggregate until its doc arrives', () => {
+    const databaseId = 'number-pending-database';
+    const fields = new Y.Doc().getMap('fields') as YDatabaseFields;
+    const doneField = addField(fields, 'done', FieldType.Checkbox);
+    const rowMetas = { r1: createRowDoc('r1', databaseId, { done: createCell(FieldType.Checkbox, 'Yes') }) };
+
+    // A missing checkbox cell reads as 0, which would halve the average.
+    expect(
+      computeNumberChartData({
+        settings: { aggregationType: ChartAggregationType.Average },
+        rowOrders: [{ id: 'r1' }, { id: 'r2' }],
+        rowMetas,
+        yField: doneField,
+      })
+    ).toEqual([expect.objectContaining({ value: 1, rowIds: ['r1'] })]);
+
+    // A row count needs no doc.
+    expect(
+      computeNumberChartData({
+        settings: { aggregationType: ChartAggregationType.Count },
+        rowOrders: [{ id: 'r1' }, { id: 'r2' }],
+        rowMetas,
+        yField: doneField,
+      })
+    ).toEqual([expect.objectContaining({ value: 2, rowIds: ['r1', 'r2'] })]);
   });
 });
 

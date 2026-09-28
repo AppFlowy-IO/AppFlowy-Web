@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { CSSProperties, useRef, useSyncExternalStore } from 'react';
+import { CSSProperties, useRef, useState, useSyncExternalStore } from 'react';
 
 import {
   DASHBOARD_MAX_ROW_HEIGHT,
@@ -87,9 +87,11 @@ function HeightProbe({
   const rowRef = useRef<HTMLDivElement>(null);
   const resize = useRowHeightResize({ height, enabled, onCommit, getRowElement: () => rowRef.current });
   const preview = useSyncExternalStore(resize.preview.subscribe, resize.preview.get);
+  // Like DashboardRow: the style prop only seeds the variable, the hook owns it.
+  const [initialHeight] = useState(height);
 
   return (
-    <div data-testid='row' ref={rowRef} style={{ [ROW_HEIGHT_CSS_VARIABLE]: `${height}px` } as CSSProperties}>
+    <div data-testid='row' ref={rowRef} style={{ [ROW_HEIGHT_CSS_VARIABLE]: `${initialHeight}px` } as CSSProperties}>
       <output data-testid='height'>{preview ?? height}</output>
       <output data-testid='previewing'>{String(resize.dragging)}</output>
       <div
@@ -100,6 +102,27 @@ function HeightProbe({
         tabIndex={0}
       />
     </div>
+  );
+}
+
+/** Persists every commit, as the dashboard's layout store does. */
+function PersistingHeightProbe({
+  initialHeight,
+  onCommit,
+}: {
+  initialHeight: number;
+  onCommit: (height: number) => void;
+}) {
+  const [height, setHeight] = useState(initialHeight);
+
+  return (
+    <HeightProbe
+      height={height}
+      onCommit={(next) => {
+        onCommit(next);
+        setHeight(next);
+      }}
+    />
   );
 }
 
@@ -215,6 +238,46 @@ describe('useWidthResize', () => {
     expect(onCommit).not.toHaveBeenCalled();
   });
 
+  it('follows the grabbed pair when a collaborator inserts a widget before it', () => {
+    const onCommit = jest.fn();
+    const { rerender } = render(<WidthProbe items={widgets(4, 4, 4)} onCommit={onCommit} />);
+
+    pressHandle(500);
+    movePointer(700);
+    expect(screen.getByTestId('widths').textContent).toBe('6,2,4');
+
+    // The grabbed w0|w1 pair is now the second boundary of the row.
+    const inserted = [{ id: 'new', viewId: 'new-view', databaseId: 'db', width: 3 }, ...widgets(3, 3, 3)];
+
+    rerender(<WidthProbe items={inserted} onCommit={onCommit} />);
+    expect(screen.getByTestId('widths').textContent).toBe('3,5,1,3');
+    movePointer(600);
+    expect(screen.getByTestId('widths').textContent).toBe('3,4,2,3');
+
+    releasePointer();
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith(1, 1);
+  });
+
+  it('cancels the drag when a collaborator separates the grabbed pair', () => {
+    const onCommit = jest.fn();
+    const { rerender } = render(<WidthProbe items={widgets(4, 4, 4)} onCommit={onCommit} />);
+
+    pressHandle(500);
+    movePointer(700);
+    // w1 is gone: w0 now borders w2, a pair the user never grabbed.
+    const [first, , last] = widgets(4, 4, 4);
+
+    rerender(<WidthProbe items={[{ ...first, width: 8 }, last]} onCommit={onCommit} />);
+    expect(screen.getByTestId('widths').textContent).toBe('8,4');
+    expect(document.body.style.cursor).toBe('');
+
+    movePointer(800);
+    releasePointer();
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('widths').textContent).toBe('8,4');
+  });
+
   it('nudges one column with the arrow keys', () => {
     const onCommit = jest.fn();
     const { rerender } = render(<WidthProbe items={widgets(6, 6)} onCommit={onCommit} />);
@@ -253,6 +316,43 @@ describe('useRowHeightResize', () => {
     expect(screen.getByTestId('previewing').textContent).toBe('false');
     expect(screen.getByTestId('height').textContent).toBe('360');
     expect(rowHeightVariable()).toBe('360px');
+  });
+
+  it('writes the committed height to the row once the drag ends', () => {
+    const onCommit = jest.fn();
+
+    render(<PersistingHeightProbe initialHeight={360} onCommit={onCommit} />);
+    pressHandle(0, 100);
+    movePointer(0, 220);
+    releasePointer();
+
+    // The row re-rendered throughout the drag, so its style prop has nothing
+    // new to write: the committed height must come from the hook.
+    expect(onCommit).toHaveBeenCalledWith(480);
+    expect(screen.getByTestId('height').textContent).toBe('480');
+    expect(rowHeightVariable()).toBe('480px');
+
+    fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowDown' });
+    expect(rowHeightVariable()).toBe(`${480 + DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP}px`);
+  });
+
+  it('keeps the preview over a collaborator height until the drag ends', () => {
+    const onCommit = jest.fn();
+    const { rerender } = render(<HeightProbe height={360} onCommit={onCommit} />);
+
+    pressHandle(0, 100);
+    movePointer(0, 220);
+    rerender(<HeightProbe height={300} onCommit={onCommit} />);
+    expect(rowHeightVariable()).toBe('480px');
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(rowHeightVariable()).toBe('300px');
+
+    rerender(<HeightProbe height={420} onCommit={onCommit} />);
+    expect(rowHeightVariable()).toBe('420px');
   });
 
   it('clamps the preview to the supported range', () => {

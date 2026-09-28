@@ -1,7 +1,13 @@
 import { expect } from '@jest/globals';
 import * as Y from 'yjs';
 
-import { captureDatabaseStorageFence, deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import {
+  captureDatabaseStorageFence,
+  deleteCollabDB,
+  getCachedProviderDoc,
+  openCollabDB,
+  openCollabDBWithProvider,
+} from '@/application/db';
 import { getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
 import { fetchDatabaseCollab, fetchPageCollab, fetchRowDocumentCollab } from '@/application/services/js-services/fetch';
@@ -14,6 +20,7 @@ jest.mock('@/application/db', () => ({
   openCollabDBWithProvider: jest.fn(),
   deleteCollabDB: jest.fn(),
   captureDatabaseStorageFence: jest.fn(),
+  getCachedProviderDoc: jest.fn(),
 }));
 
 jest.mock('@/application/services/js-services/cached-api', () => ({
@@ -42,6 +49,7 @@ jest.mock('@/application/sync-outbox', () => ({
 const mockOpenCollabDB = openCollabDB as jest.MockedFunction<typeof openCollabDB>;
 const mockOpenCollabDBWithProvider = openCollabDBWithProvider as jest.MockedFunction<typeof openCollabDBWithProvider>;
 const mockDeleteCollabDB = deleteCollabDB as jest.MockedFunction<typeof deleteCollabDB>;
+const mockGetCachedProviderDoc = getCachedProviderDoc as jest.MockedFunction<typeof getCachedProviderDoc>;
 const mockInvalidateViewCache = invalidateViewCache as jest.MockedFunction<typeof invalidateViewCache>;
 const mockGetOrCreateRowSubDoc = getOrCreateRowSubDoc as jest.MockedFunction<typeof getOrCreateRowSubDoc>;
 const mockFetchDatabaseCollab = fetchDatabaseCollab as jest.MockedFunction<typeof fetchDatabaseCollab>;
@@ -321,6 +329,243 @@ describe('view-loader database cache identity', () => {
     expect(result.doc).toBe(canonicalDoc);
     expect(result.fromCache).toBe(true);
     expect(getDatabaseIdFromDoc(canonicalDoc)).toBe(databaseId);
+  });
+});
+
+describe('view-loader shared database fetches', () => {
+  const workspaceId = 'workspace-id';
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+
+    return { promise, resolve, reject };
+  }
+
+  function serveDocs(databaseId: string, viewIds: string[]) {
+    const canonicalDoc = createEmptyDoc(databaseId);
+    const docs = new Map<string, YDoc>([[databaseId, canonicalDoc]]);
+
+    viewIds.forEach((viewId) => docs.set(viewId, createEmptyDoc(viewId)));
+    mockOpenCollabDBWithProvider.mockImplementation(async (name: string) => {
+      const doc = docs.get(name);
+
+      if (!doc) throw new Error(`Unexpected open ${name}`);
+      return createProvider(doc) as never;
+    });
+    mockGetCachedProviderDoc.mockImplementation((name: string) => docs.get(name));
+    // Like the provider cache: an eviction destroys the doc, and the next open
+    // starts from a fresh one.
+    mockDeleteCollabDB.mockImplementation(async (name: string) => {
+      docs.get(name)?.destroy();
+      docs.set(name, createEmptyDoc(name));
+      return true;
+    });
+    return canonicalDoc;
+  }
+
+  // One server-side history, so successive snapshots merge like real ones.
+  function createServer(databaseId: string, viewIds: string[]) {
+    const doc = createCompleteDatabaseDoc(databaseId, databaseId, viewIds[0]);
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as Y.Map<unknown>;
+    const views = database.get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+    const addView = (viewId: string) => views.set(viewId, new Y.Map());
+
+    viewIds.slice(1).forEach(addView);
+    return { addView, snapshot: () => ({ data: Y.encodeStateAsUpdate(doc), rows: {} }) };
+  }
+
+  function hasView(doc: YDoc, viewId: string) {
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as Y.Map<unknown>;
+
+    return (database.get(YjsDatabaseKey.views) as Y.Map<unknown>).has(viewId);
+  }
+
+  // Lets every concurrent open reach its cache check.
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDeleteCollabDB.mockResolvedValue(undefined);
+  });
+
+  it('downloads a database once for views of it opened together on a cold cache', async () => {
+    const databaseId = '00000000-0000-4000-8000-000000000031';
+    const viewA = '00000000-0000-4000-8000-000000000032';
+    const viewB = '00000000-0000-4000-8000-000000000033';
+    const canonicalDoc = serveDocs(databaseId, [viewA, viewB]);
+    const server = createServer(databaseId, [viewA, viewB]);
+    const response = deferred<Awaited<ReturnType<typeof fetchPageCollab>>>();
+
+    mockFetchPageCollab.mockReturnValue(response.promise);
+
+    const first = openView(workspaceId, viewA, ViewLayout.Grid, { databaseId });
+    const second = openView(workspaceId, viewB, ViewLayout.Chart, { databaseId });
+
+    await settle();
+    response.resolve(server.snapshot());
+    const [resultA, resultB] = await Promise.all([first, second]);
+
+    expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
+    expect(mockFetchPageCollab).toHaveBeenCalledWith(workspaceId, viewA);
+    expect(resultA.doc).toBe(canonicalDoc);
+    expect(resultB.doc).toBe(canonicalDoc);
+    expect(resultB.fromCache).toBe(false);
+    expect(hasView(canonicalDoc, viewB)).toBe(true);
+  });
+
+  it('fetches its own view when the shared download does not contain it', async () => {
+    const databaseId = '00000000-0000-4000-8000-000000000034';
+    const viewA = '00000000-0000-4000-8000-000000000035';
+    const viewB = '00000000-0000-4000-8000-000000000036';
+    const canonicalDoc = serveDocs(databaseId, [viewA, viewB]);
+    const server = createServer(databaseId, [viewA]);
+    // The shared download predates view B.
+    const staleSnapshot = server.snapshot();
+    const response = deferred<Awaited<ReturnType<typeof fetchPageCollab>>>();
+
+    server.addView(viewB);
+    mockFetchPageCollab.mockImplementation(async (_workspaceId: string, viewId: string) =>
+      viewId === viewA ? response.promise : server.snapshot()
+    );
+
+    const first = openView(workspaceId, viewA, ViewLayout.Grid, { databaseId });
+    const second = openView(workspaceId, viewB, ViewLayout.Grid, { databaseId });
+
+    await settle();
+    expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
+    response.resolve(staleSnapshot);
+    await Promise.all([first, second]);
+
+    expect(mockFetchPageCollab.mock.calls).toEqual([
+      [workspaceId, viewA],
+      [workspaceId, viewB],
+    ]);
+    expect(hasView(canonicalDoc, viewB)).toBe(true);
+  });
+
+  it('keeps a failed download to its own caller and never blocks later loads', async () => {
+    const databaseId = '00000000-0000-4000-8000-000000000037';
+    const viewA = '00000000-0000-4000-8000-000000000038';
+    const viewB = '00000000-0000-4000-8000-000000000039';
+    const canonicalDoc = serveDocs(databaseId, [viewA, viewB]);
+    const server = createServer(databaseId, [viewB]);
+    const response = deferred<Awaited<ReturnType<typeof fetchPageCollab>>>();
+
+    mockFetchPageCollab.mockImplementation(async (_workspaceId: string, viewId: string) =>
+      viewId === viewA ? response.promise : server.snapshot()
+    );
+
+    const first = openView(workspaceId, viewA, ViewLayout.Grid, { databaseId });
+    const second = openView(workspaceId, viewB, ViewLayout.Grid, { databaseId });
+    const firstRejection = expect(first).rejects.toMatchObject({ code: 1012 });
+
+    await settle();
+    response.reject({ code: 1012, message: 'user is not allowed to access this view' });
+    await firstRejection;
+    const resultB = await second;
+    const freshDoc = mockGetCachedProviderDoc(databaseId);
+
+    // The refusal destroyed the shared doc: view B loads into a fresh one
+    // instead of a doc without persistence or sync.
+    expect(mockDeleteCollabDB).toHaveBeenCalledWith(databaseId, { destroyDoc: true });
+    expect(resultB.doc).not.toBe(canonicalDoc);
+    expect(resultB.doc).toBe(freshDoc);
+    expect(hasView(resultB.doc, viewB)).toBe(true);
+
+    // A later load of the refused view asks the server again.
+    server.addView(viewA);
+    mockFetchPageCollab.mockResolvedValue(server.snapshot());
+    await expect(openView(workspaceId, viewA, ViewLayout.Grid, { databaseId })).resolves.toMatchObject({
+      doc: freshDoc,
+    });
+    expect(mockFetchPageCollab.mock.calls).toEqual([
+      [workspaceId, viewA],
+      [workspaceId, viewB],
+      [workspaceId, viewA],
+    ]);
+  });
+
+  it("never holds a waiting view through the first view's retries", async () => {
+    jest.useFakeTimers();
+
+    try {
+      const databaseId = '00000000-0000-4000-8000-000000000043';
+      const viewA = '00000000-0000-4000-8000-000000000044';
+      const viewB = '00000000-0000-4000-8000-000000000045';
+      const canonicalDoc = serveDocs(databaseId, [viewA, viewB]);
+      const server = createServer(databaseId, [viewA, viewB]);
+      const response = deferred<Awaited<ReturnType<typeof fetchPageCollab>>>();
+
+      mockFetchPageCollab.mockReturnValueOnce(response.promise).mockResolvedValue(server.snapshot());
+
+      const first = openView(workspaceId, viewA, ViewLayout.Grid, { databaseId });
+      const second = openView(workspaceId, viewB, ViewLayout.Grid, { databaseId });
+
+      await jest.advanceTimersByTimeAsync(0);
+      // A view since deleted from the database: its own load retries after a backoff.
+      response.reject({ code: -2, message: 'Record not found' });
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(mockFetchPageCollab.mock.calls).toEqual([
+        [workspaceId, viewA],
+        [workspaceId, viewB],
+      ]);
+      await expect(second).resolves.toMatchObject({ doc: canonicalDoc });
+      await jest.runAllTimersAsync();
+      await expect(first).resolves.toMatchObject({ doc: canonicalDoc });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('opens every view a shared download holds, even one its own request would be refused', async () => {
+    const databaseId = '00000000-0000-4000-8000-000000000046';
+    const viewA = '00000000-0000-4000-8000-000000000047';
+    const viewB = '00000000-0000-4000-8000-000000000048';
+    const canonicalDoc = serveDocs(databaseId, [viewA, viewB]);
+    const server = createServer(databaseId, [viewA, viewB]);
+    const response = deferred<Awaited<ReturnType<typeof fetchPageCollab>>>();
+
+    // Access is per database on this client, as for a cached database: the
+    // download of view A holds view B, so B is never asked for separately.
+    mockFetchPageCollab.mockImplementation(async (_workspaceId: string, viewId: string) => {
+      if (viewId === viewA) return response.promise;
+      throw { code: 1012, message: 'user is not allowed to access this view' };
+    });
+
+    const first = openView(workspaceId, viewA, ViewLayout.Grid, { databaseId });
+    const second = openView(workspaceId, viewB, ViewLayout.Grid, { databaseId });
+
+    await settle();
+    response.resolve(server.snapshot());
+    await expect(Promise.all([first, second])).resolves.toMatchObject([{ doc: canonicalDoc }, { doc: canonicalDoc }]);
+    await expect(openView(workspaceId, viewB, ViewLayout.Grid, { databaseId })).resolves.toMatchObject({
+      doc: canonicalDoc,
+      fromCache: true,
+    });
+    expect(mockFetchPageCollab.mock.calls).toEqual([[workspaceId, viewA]]);
+    expect(mockDeleteCollabDB).not.toHaveBeenCalled();
+  });
+
+  it('never shares a forced load', async () => {
+    const databaseId = '00000000-0000-4000-8000-000000000040';
+    const viewA = '00000000-0000-4000-8000-000000000041';
+    const viewB = '00000000-0000-4000-8000-000000000042';
+
+    serveDocs(databaseId, [viewA, viewB]);
+    mockFetchPageCollab.mockResolvedValue(createServer(databaseId, [viewA, viewB]).snapshot());
+
+    await Promise.all([
+      openView(workspaceId, viewA, ViewLayout.Grid, { databaseId, forceFetch: true }),
+      openView(workspaceId, viewB, ViewLayout.Grid, { databaseId, forceFetch: true }),
+    ]);
+
+    expect(mockFetchPageCollab).toHaveBeenCalledTimes(2);
   });
 });
 

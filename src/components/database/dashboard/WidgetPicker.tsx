@@ -1,5 +1,7 @@
 import { lazy, Suspense } from 'react';
 
+import { getWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
+import { UIVariant } from '@/application/types';
 import { Dialog } from '@/components/ui/dialog';
 
 import { WidgetPickerRequest } from './DashboardUiContext';
@@ -11,9 +13,16 @@ import { CreateWidgetViewRequest } from './hooks/useCreateWidgetView';
 const loadWidgetPickerContent = () => import('./WidgetPickerContent');
 const WidgetPickerContent = lazy(loadWidgetPickerContent);
 
-/** Fetch the picker's code ahead of a click (on hover / focus of an add button). */
-export function preloadWidgetPicker() {
+/**
+ * Fetch the picker's code, and the workspace catalog it lists, ahead of a
+ * click (on hover / focus of an add button). The picker then reads the
+ * catalog snapshot or joins the request in flight instead of starting its own;
+ * a published dashboard's picker never loads the catalog.
+ */
+export function preloadWidgetPicker(workspaceId: string | undefined, variant: UIVariant | undefined) {
   void loadWidgetPickerContent();
+  // A failure is left to the picker, which retries and shows it.
+  if (workspaceId && variant !== UIVariant.Publish) void getWorkspaceDatabaseCatalog(workspaceId).catch(() => undefined);
 }
 
 interface WidgetPickerProps {

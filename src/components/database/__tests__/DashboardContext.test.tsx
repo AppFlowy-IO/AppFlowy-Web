@@ -188,16 +188,32 @@ describe('DashboardProvider', () => {
       expect(result.current.isEditing).toBe(false);
     });
 
-    it('leaves edit mode when write access is lost', () => {
+    it('is off without write access and comes back when access returns', () => {
       const { doc } = createDatabaseDoc();
       const { result, update } = renderDashboard(doc);
 
       act(() => result.current.setEditing(true));
       expect(result.current.isEditing).toBe(true);
 
+      // The app drops write access while it re-probes permissions (back on the tab, a reconnect).
       act(() => update({ readOnly: true }));
       expect(result.current.isEditing).toBe(false);
       expect(result.current.canEdit).toBe(false);
+
+      act(() => update({ readOnly: false }));
+      expect(result.current.isEditing).toBe(true);
+      expect(result.current.canEdit).toBe(true);
+    });
+
+    it('keeps View mode chosen with Done when access returns', () => {
+      const { doc } = createDatabaseDoc();
+      const { result, update } = renderDashboard(doc);
+
+      act(() => result.current.setEditing(true));
+      act(() => result.current.setEditing(false));
+      act(() => update({ readOnly: true }));
+      act(() => update({ readOnly: false }));
+      expect(result.current.isEditing).toBe(false);
     });
 
     it('resets edit mode and local filters when the dashboard view changes', () => {

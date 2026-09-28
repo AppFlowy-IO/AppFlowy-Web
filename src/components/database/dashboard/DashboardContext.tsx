@@ -41,7 +41,8 @@ import {
  *   names) that mounted widgets expose so the global filter editor can list
  *   every source's properties.
  * - `DashboardSourceRegistryContext`: only the (stable) registration
- *   callbacks, for components that register sources without reading them.
+ *   callbacks, for components that register sources without reading them,
+ *   and the docs widgets show (a moved widget starts from its own).
  *
  * All of them are mounted by `DashboardProvider`, which `DatabaseViews`
  * renders around the dashboard content (tab bar included), so both the
@@ -99,10 +100,16 @@ export interface DashboardSourcesContextValue {
   registerSourceName: (databaseId: string, name: string) => void;
 }
 
-export type DashboardSourceRegistryContextValue = Pick<
-  DashboardSourcesContextValue,
-  'registerSourceDoc' | 'registerSourceName'
->;
+export interface DashboardSourceRegistryContextValue
+  extends Pick<DashboardSourcesContextValue, 'registerSourceDoc' | 'registerSourceName'> {
+  /** Record the doc a widget shows as ready, until the returned cleanup runs. */
+  markWidgetShown: (widgetId: string, viewId: string, doc: YDoc) => () => void;
+  /**
+   * The doc this widget showed for this view, read at call time: a widget that
+   * remounts (moved to another row) starts from it instead of loading again.
+   */
+  getShownDoc: (widgetId: string, viewId: string) => YDoc | null;
+}
 
 export const DashboardContext = createContext<DashboardContextValue | null>(null);
 export const DashboardLayoutContext = createContext<DashboardLayoutContextValue | null>(null);
@@ -147,7 +154,7 @@ export function useDashboardLocalWidgetChanges(): DashboardLocalWidgetChanges {
   return useContext(DashboardLocalWidgetChangesContext);
 }
 
-/** The registration callbacks alone: never re-renders when a source registers. */
+/** The registration callbacks and shown-doc lookup alone: never re-renders when a source registers. */
 export function useDashboardSourceRegistry(): DashboardSourceRegistryContextValue {
   return required(useContext(DashboardSourceRegistryContext), 'DashboardSourceRegistryContext');
 }
@@ -202,10 +209,11 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
     setLocalGlobalFilters(null);
   }
 
-  // Derived during render, so no frame shows the wrong mode: losing write
-  // access leaves Edit mode, and the automatic mode is decided once write
-  // access is known.
-  if (readOnly && editMode === 'on') setEditMode('off');
+  // Derived during render, so no frame shows the wrong mode. Without write
+  // access nothing is editable, yet the editor's choice is kept: access is
+  // briefly unknown while it is re-probed (back on the tab, a reconnect), and
+  // Edit mode must come back with it. The automatic mode is decided once
+  // write access is known.
   if (!readOnly && editMode === 'auto' && rows.length > 0) setEditMode('off');
   const isEditing = !readOnly && (editMode === 'on' || (editMode === 'auto' && rows.length === 0));
 
@@ -332,6 +340,25 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
     });
   }, []);
 
+  // What each widget of another database shows as ready, by widget. A moved
+  // widget's new instance reads it while rendering, before the old instance's
+  // cleanup releases it in the commit.
+  const shownDocsRef = useRef(new Map<string, { viewId: string; doc: YDoc }>());
+  const markWidgetShown = useCallback((widgetId: string, viewId: string, doc: YDoc) => {
+    const shown = shownDocsRef.current;
+    const entry = { viewId, doc };
+
+    shown.set(widgetId, entry);
+    return () => {
+      if (shown.get(widgetId) === entry) shown.delete(widgetId);
+    };
+  }, []);
+  const getShownDoc = useCallback((widgetId: string, viewId: string) => {
+    const entry = shownDocsRef.current.get(widgetId);
+
+    return entry?.viewId === viewId ? entry.doc : null;
+  }, []);
+
   const registerSourceName = useCallback((databaseId: string, name: string) => {
     setSourceNames((previous) => (previous[databaseId] === name ? previous : { ...previous, [databaseId]: name }));
   }, []);
@@ -385,8 +412,8 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   );
 
   const registryValue = useMemo<DashboardSourceRegistryContextValue>(
-    () => ({ registerSourceDoc, registerSourceName }),
-    [registerSourceDoc, registerSourceName]
+    () => ({ registerSourceDoc, registerSourceName, markWidgetShown, getShownDoc }),
+    [getShownDoc, markWidgetShown, registerSourceDoc, registerSourceName]
   );
 
   return (

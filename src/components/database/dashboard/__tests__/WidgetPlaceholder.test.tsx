@@ -21,6 +21,7 @@ const READY: WidgetStatusInput = {
   hasDatabase: true,
   viewExists: true,
   layout: DatabaseViewLayout.Grid,
+  seeded: false,
 };
 
 describe('getWidgetStatus', () => {
@@ -47,9 +48,17 @@ describe('getWidgetStatus', () => {
     ['the doc is loading', { hasDoc: false }],
     ['the database is syncing', { hasDatabase: false }],
     ['the view has not arrived yet', { viewExists: false }],
-    ['the trash state is unknown', { deletionStatus: null }],
+    ['the trash state is pending', { deletionStatus: null }],
+    ['the doc and the trash state are both pending', { hasDoc: false, deletionStatus: null }],
   ])('keeps loading while %s', (_name, overrides) => {
     expect(getWidgetStatus({ ...READY, ...overrides })).toBe('loading');
+  });
+
+  it('keeps showing a remounted widget while its trash probe runs again', () => {
+    // A widget moved to another row must not flash the placeholder.
+    expect(getWidgetStatus({ ...READY, deletionStatus: null, seeded: true })).toBe('ready');
+    expect(getWidgetStatus({ ...READY, deletionStatus: 'inTrash', seeded: true })).toBe('not-found');
+    expect(getWidgetStatus({ ...READY, noAccess: true, seeded: true })).toBe('no-access');
   });
 
   it('refuses to nest a dashboard', () => {

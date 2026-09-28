@@ -1,4 +1,13 @@
-import { CSSProperties, KeyboardEvent, memo, PointerEvent, useCallback, useRef, useSyncExternalStore } from 'react';
+import {
+  CSSProperties,
+  KeyboardEvent,
+  memo,
+  PointerEvent,
+  useCallback,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { resizeDashboardWidget, setDashboardRowHeight } from '@/application/database-yjs/dashboard-layout';
@@ -17,7 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 
 import { DASHBOARD_COLUMN_GAP, DASHBOARD_EDIT_ROW_GAP, DASHBOARD_ROW_GAP } from './constants';
-import { useDashboardDraggingWidgetId, useDashboardUi } from './DashboardUiContext';
+import { useDashboardDraggingWidgetId, useDashboardHost, useDashboardUi } from './DashboardUiContext';
 import { DashboardWidget } from './DashboardWidget';
 import { ROW_HEIGHT_CSS_VARIABLE, RowHeightPreview, useRowHeightResize } from './hooks/useRowHeightResize';
 import { applyWidthPreview, useWidthResize } from './hooks/useWidthResize';
@@ -128,6 +137,7 @@ export const DashboardRow = memo(function DashboardRow({
 }: DashboardRowProps) {
   const { t } = useTranslation();
   const { openPicker, showLimitMessage, updateRows } = useDashboardUi();
+  const { workspaceId, variant } = useDashboardHost();
   const draggingWidgetId = useDashboardDraggingWidgetId();
   const editing = isEditing && canEdit;
   const gridRef = useRef<HTMLDivElement>(null);
@@ -159,9 +169,11 @@ export const DashboardRow = memo(function DashboardRow({
   const rowFull = row.widgets.length >= DASHBOARD_MAX_WIDGETS_PER_ROW;
   const isDraggingWidget = draggingWidgetId !== null;
   const isResizing = widthResize.preview !== null || heightResize.dragging;
-  // The drag writes the variable itself; a render during a drag (a
-  // collaborator's edit) must not put the persisted height back.
-  const rowHeight = heightResize.preview.get() ?? row.height;
+  // Seeds the row height variable for the first paint only: `useRowHeightResize`
+  // writes it from then on, so a render during a drag (a collaborator's edit)
+  // cannot put the persisted height back, nor skip writing a committed one.
+  const [initialRowHeight] = useState(row.height);
+  const preloadPicker = useCallback(() => preloadWidgetPicker(workspaceId, variant), [variant, workspaceId]);
 
   const boundaries = row.widgets.slice(0, -1).map((widget, index) => ({
     key: widget.id,
@@ -192,8 +204,8 @@ export const DashboardRow = memo(function DashboardRow({
       data-testid='dashboard-insert-row-button'
       disabled={dashboardFull}
       onClick={() => openPicker({ mode: 'add', placement: { type: 'new_row', rowIndex: rowIndex + 1 } })}
-      onFocus={preloadWidgetPicker}
-      onPointerEnter={preloadWidgetPicker}
+      onFocus={preloadPicker}
+      onPointerEnter={preloadPicker}
       size='icon-sm'
       type='button'
       variant='ghost'
@@ -212,8 +224,8 @@ export const DashboardRow = memo(function DashboardRow({
       onClick={() =>
         openPicker({ mode: 'add', placement: { type: 'existing_row', rowId: row.id, index: row.widgets.length } })
       }
-      onFocus={preloadWidgetPicker}
-      onPointerEnter={preloadWidgetPicker}
+      onFocus={preloadPicker}
+      onPointerEnter={preloadPicker}
       size='icon-sm'
       type='button'
       variant='ghost'
@@ -240,7 +252,7 @@ export const DashboardRow = memo(function DashboardRow({
             rowGap: DASHBOARD_ROW_GAP,
             // The grid and its cards read the row height from this variable, so
             // a height drag is one style write instead of a render per pixel.
-            [ROW_HEIGHT_CSS_VARIABLE]: `${rowHeight}px`,
+            [ROW_HEIGHT_CSS_VARIABLE]: `${initialRowHeight}px`,
             height: stacked ? undefined : `var(${ROW_HEIGHT_CSS_VARIABLE})`,
           } as CSSProperties
         }

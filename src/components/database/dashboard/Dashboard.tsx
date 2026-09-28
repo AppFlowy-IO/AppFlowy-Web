@@ -46,6 +46,8 @@ export function Dashboard() {
   const hostServices = useDashboardHostServices();
   const editing = isEditing && canEdit;
   const [pickerRequest, setPickerRequest] = useState<WidgetPickerRequest | null>(null);
+  // The request whose view is being created from the picker.
+  const [creatingRequest, setCreatingRequest] = useState<WidgetPickerRequest | null>(null);
   const [limitMessage, setLimitMessage] = useState<{ reason: DashboardLimitReason; key: number } | null>(null);
   const [dndInstanceId] = useState(() => Symbol('dashboard'));
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -60,7 +62,9 @@ export function Dashboard() {
 
   // The picker only makes sense while editing (Edit mode itself, including
   // the automatic one of an empty dashboard, is derived by DashboardProvider).
-  if (!editing && pickerRequest) setPickerRequest(null);
+  // Leaving Edit mode (Done) drops it; write access that is only being
+  // re-checked (back on the tab, a reconnect) hides it until Edit mode returns.
+  if (canEdit && !isEditing && pickerRequest) setPickerRequest(null);
 
   const acquireSourceDoc = useSourceDocRegistry(registerSourceDoc, hostDatabaseId);
   const { createView, canCreateInOtherDatabases, bridge } = useCreateWidgetView();
@@ -178,11 +182,16 @@ export function Dashboard() {
         return null;
       }
 
-      const viewId = await createView(createRequest);
+      setCreatingRequest(request);
+      try {
+        const viewId = await createView(createRequest);
 
-      setPickerRequest((current) => (current === request ? null : current));
-      applyPick(request, viewId, createRequest.databaseId);
-      return viewId;
+        setPickerRequest((current) => (current === request ? null : current));
+        applyPick(request, viewId, createRequest.databaseId);
+        return viewId;
+      } finally {
+        setCreatingRequest((current) => (current === request ? null : current));
+      }
     },
     [applyPick, createView, showLimitMessage]
   );
@@ -220,6 +229,10 @@ export function Dashboard() {
     [openPicker]
   );
 
+  // Kept mounted mid-creation even without Edit mode: a remount would unlock
+  // the picker and let a second view be created for the same request.
+  const visiblePickerRequest = editing || pickerRequest === creatingRequest ? pickerRequest : null;
+
   return (
     <DashboardHostContext.Provider value={hostServices}>
       <DashboardUiContext.Provider value={uiValue}>
@@ -254,7 +267,7 @@ export function Dashboard() {
             createView={handleCreateView}
             onClose={() => setPickerRequest(null)}
             onPick={handlePick}
-            request={editing ? pickerRequest : null}
+            request={visiblePickerRequest}
           />
           {bridge}
         </DashboardDraggingContext.Provider>

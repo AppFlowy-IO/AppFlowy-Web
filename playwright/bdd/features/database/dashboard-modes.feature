@@ -54,6 +54,13 @@ Feature: Dashboard View and Edit modes
     When I reload the dashboard
     Then the dashboard is in View mode
 
+  Scenario: Edit mode survives coming back to the browser tab
+    When I click the dashboard Edit button
+    Then the dashboard is in Edit mode
+    When I come back to the browser tab and the permissions are re-checked
+    Then the dashboard is in Edit mode
+    And the dashboard shows width handles
+
   Scenario: A read-only member does not get the Edit button
     Given a workspace member with "read-only" access to the dashboard space
     When the member opens the dashboard

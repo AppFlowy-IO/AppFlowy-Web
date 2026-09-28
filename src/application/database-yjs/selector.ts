@@ -258,6 +258,25 @@ const ROLLUP_CELL_OBSERVER_POOL_SIZE = 4;
 const defaultVisible = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty];
 
 type ConditionReference = { id: string; fieldId: string };
+type ConditionEntry = { get: (key: string) => unknown };
+
+/**
+ * The filter or sort with this id, read through `get` whether it is a Y.Map or
+ * a plain object synced from desktop.
+ */
+function findCondition(conditions: YDatabaseFilters | YDatabaseSorts, id: string): ConditionEntry | undefined {
+  for (const entry of conditions.toArray() as unknown[]) {
+    if (!entry || typeof entry !== 'object') continue;
+    const condition =
+      typeof (entry as ConditionEntry).get === 'function'
+        ? (entry as ConditionEntry)
+        : { get: (key: string) => (entry as Record<string, unknown>)[key] };
+
+    if (condition.get(YjsDatabaseKey.id) === id) return condition;
+  }
+
+  return undefined;
+}
 
 function areConditionReferencesEqual(left: ConditionReference[], right: ConditionReference[]) {
   return (
@@ -690,39 +709,41 @@ export function useFilterSelector(filterId: string) {
   const database = useDatabase();
   const fields = database?.get(YjsDatabaseKey.fields);
   const view = useDatabaseView();
-  const filter = view
-    ?.get(YjsDatabaseKey.filters)
-    ?.toArray()
-    .find((filter) => filter.get(YjsDatabaseKey.id) === filterId);
+  const filters = view?.get(YjsDatabaseKey.filters);
   const [filterValue, setFilterValue] = useState<Filter | null>(null);
 
   useEffect(() => {
-    if (!filter || !fields) {
+    if (!filters || !fields) {
       setFilterValue(null);
       return;
     }
 
+    // Look the filter up on every change: a reset, save or reorder can replace
+    // its Y.Map with a copy under the same id.
     const observerEvent = () => {
-      const field = fields.get(filter.get(YjsDatabaseKey.field_id));
+      const filter = findCondition(filters, filterId);
+      const field = filter && fields.get(filter.get(YjsDatabaseKey.field_id) as string);
 
-      if (!field) {
+      if (!filter || !field) {
         setFilterValue(null);
         return;
       }
 
       const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+      const next = parseFilter(fieldType, filter as Parameters<typeof parseFilter>[1], fields);
 
-      setFilterValue(parseFilter(fieldType, filter, fields));
+      // Edits to other filters leave this one's value, and its chip, alone.
+      setFilterValue((prev) => (prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
     };
 
     observerEvent();
     fields.observeDeep(observerEvent);
-    filter.observeDeep(observerEvent);
+    filters.observeDeep(observerEvent);
     return () => {
       fields.unobserveDeep(observerEvent);
-      filter.unobserveDeep(observerEvent);
+      filters.unobserveDeep(observerEvent);
     };
-  }, [fields, filter]);
+  }, [fields, filters, filterId]);
   return filterValue;
 }
 
@@ -1032,32 +1053,42 @@ export interface Sort {
 export function useSortSelector(sortId: SortId) {
   const [sortValue, setSortValue] = useState<Sort | null>(null);
   const view = useDatabaseView();
-  const sort = view
-    ?.get(YjsDatabaseKey.sorts)
-    ?.toArray()
-    .find((sort) => sort.get(YjsDatabaseKey.id) === sortId);
+  const sorts = view?.get(YjsDatabaseKey.sorts);
 
   useEffect(() => {
-    if (!sort) {
+    if (!sorts) {
       setSortValue(null);
       return;
     }
 
+    // Look the sort up on every change: a reset, save or reorder can replace
+    // its Y.Map with a copy under the same id.
     const observerEvent = () => {
-      setSortValue({
-        fieldId: sort.get(YjsDatabaseKey.field_id),
+      const sort = findCondition(sorts, sortId);
+
+      if (!sort) {
+        setSortValue(null);
+        return;
+      }
+
+      const next: Sort = {
+        fieldId: sort.get(YjsDatabaseKey.field_id) as FieldId,
         condition: Number(sort.get(YjsDatabaseKey.condition)),
-        id: sort.get(YjsDatabaseKey.id),
-      });
+        id: sortId,
+      };
+
+      setSortValue((prev) =>
+        prev && prev.id === next.id && prev.fieldId === next.fieldId && prev.condition === next.condition ? prev : next
+      );
     };
 
     observerEvent();
-    sort.observe(observerEvent);
+    sorts.observeDeep(observerEvent);
 
     return () => {
-      sort.unobserve(observerEvent);
+      sorts.unobserveDeep(observerEvent);
     };
-  }, [sort]);
+  }, [sorts, sortId]);
 
   return sortValue;
 }

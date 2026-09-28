@@ -1,7 +1,10 @@
 import * as Y from 'yjs';
 
-import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
-import { YDatabaseView, YjsDatabaseKey, YSharedRoot } from '@/application/types';
+import {
+  executeDatabaseOperations as executeOperations,
+  registerLocalConditionsDoc,
+} from '@/application/database-yjs/history';
+import { YDatabaseView, YDoc, YjsDatabaseKey, YSharedRoot } from '@/application/types';
 
 /**
  * A viewer's local copy of one view's filters and sorts.
@@ -60,9 +63,17 @@ export function observeOverlayConditions(view: YDatabaseView, listener: () => vo
 
 type Plain = Record<string, unknown>;
 
+/** Enum values that older clients, or earlier copies, stored as numeric strings. */
+const ENUM_KEYS: ReadonlySet<string> = new Set([
+  YjsDatabaseKey.condition,
+  YjsDatabaseKey.filter_type,
+  YjsDatabaseKey.type,
+]);
+
 function cloneInto(value: unknown): unknown {
-  // Yjs can decode native BigInt values but cannot insert them into shared types.
-  if (typeof value === 'bigint') return value.toString();
+  // Yjs can decode native BigInt values but cannot insert them into shared
+  // types; the web dispatchers write enum values as numbers.
+  if (typeof value === 'bigint') return Number(value);
 
   if (value instanceof Y.Map) {
     const map = new Y.Map();
@@ -81,16 +92,65 @@ function cloneInto(value: unknown): unknown {
   return value;
 }
 
-function replaceContents(target: Y.Array<unknown>, source: Y.Array<unknown> | undefined) {
-  if (target.length > 0) target.delete(0, target.length);
-  if (source && source.length > 0) target.push(source.toArray().map(cloneInto));
-}
+// Desktop-authored BigInts, their numeric-string copies and the numbers the
+// web writes are the same condition, whatever order a client set its keys in.
+const normalize = (key: string, value: unknown) => {
+  if (typeof value === 'bigint') return Number(value);
+  if (ENUM_KEYS.has(key) && typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+
+  if (value && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+  }
+
+  return value;
+};
+
+const sameJSON = (a: unknown, b: unknown) => JSON.stringify(a, normalize) === JSON.stringify(b, normalize);
 
 function sameContents(a: Y.Array<unknown>, b: Y.Array<unknown> | undefined) {
-  // Compare native integers with the string values used when cloning them into Yjs.
-  const replacer = (_key: string, value: unknown) => (typeof value === 'bigint' ? value.toString() : value);
+  return sameJSON(a, b ?? []);
+}
 
-  return JSON.stringify(a.toJSON(), replacer) === JSON.stringify(b?.toJSON() ?? [], replacer);
+const conditionId = (value: unknown) => (value instanceof Y.Map ? value.get(YjsDatabaseKey.id) : undefined);
+
+function reconcileMap(target: Y.Map<unknown>, source: Y.Map<unknown>) {
+  Array.from(target.keys()).forEach((key) => {
+    if (!source.has(key)) target.delete(key);
+  });
+  source.forEach((value, key) => {
+    const current = target.get(key);
+
+    if (current instanceof Y.Map && value instanceof Y.Map) reconcileMap(current, value);
+    else if (current instanceof Y.Array && value instanceof Y.Array) replaceContents(current, value);
+    else if (!target.has(key) || !sameJSON({ [key]: current }, { [key]: value })) target.set(key, cloneInto(value));
+  });
+}
+
+/**
+ * Makes `target` equal to `source`, keeping each condition map that is still
+ * at its index: observers and collaborators then see only the changed keys.
+ */
+function replaceContents(target: Y.Array<unknown>, source: Y.Array<unknown> | undefined) {
+  const next = source?.toArray() ?? [];
+
+  next.forEach((value, index) => {
+    if (index >= target.length) {
+      target.push([cloneInto(value)]);
+      return;
+    }
+
+    const current = target.get(index);
+
+    if (current instanceof Y.Map && value instanceof Y.Map && conditionId(current) === conditionId(value)) {
+      reconcileMap(current, value);
+    } else if (!sameJSON(current, value)) {
+      target.delete(index, 1);
+      target.insert(index, [cloneInto(value)]);
+    }
+  });
+  if (target.length > next.length) target.delete(next.length, target.length - next.length);
 }
 
 export function createViewConditionsOverlay(initialView: YDatabaseView): ViewConditionsOverlay {
@@ -104,6 +164,9 @@ export function createViewConditionsOverlay(initialView: YDatabaseView): ViewCon
   let dirty = false;
   let destroyed = false;
   const listeners = new Set<() => void>();
+  // A dispatcher's writes to the local copy land in one transaction, like its
+  // writes to the real doc, so local observers see only the final state.
+  let unregisterLocalDoc = registerLocalConditionsDoc(initialView.doc as YDoc | null, localDoc);
   const setDirty = (next: boolean) => {
     if (dirty === next) return;
     dirty = next;
@@ -219,6 +282,11 @@ export function createViewConditionsOverlay(initialView: YDatabaseView): ViewCon
     rebind(nextView) {
       if (destroyed || nextView === realView) return;
       realView.unobserve(onRealViewChange);
+      if (nextView.doc !== realView.doc) {
+        unregisterLocalDoc();
+        unregisterLocalDoc = registerLocalConditionsDoc(nextView.doc as YDoc | null, localDoc);
+      }
+
       realView = nextView;
       // A new proxy makes selectors resubscribe to the replacement's row
       // orders and settings; the local filter/sort arrays keep their identity.
@@ -274,6 +342,7 @@ export function createViewConditionsOverlay(initialView: YDatabaseView): ViewCon
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      unregisterLocalDoc();
       detachReal?.();
       realView.unobserve(onRealViewChange);
       local.unobserveDeep(onLocalChange);

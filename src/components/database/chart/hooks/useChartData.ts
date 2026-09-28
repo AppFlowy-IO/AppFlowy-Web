@@ -336,7 +336,7 @@ export function computeNumberChartData({
     return [];
   }
 
-  const rowIds = rowOrders.map((row) => row.id);
+  let rowIds = rowOrders.map((row) => row.id);
   const aggregationType = settings?.aggregationType ?? ChartAggregationType.Count;
   let value: number;
 
@@ -344,6 +344,8 @@ export function computeNumberChartData({
     value = rowIds.length;
   } else {
     if (!rowMetas) return [];
+    // A row added after the first load counts once `ensureRow` delivers its doc.
+    rowIds = rowIds.filter((rowId) => rowMetas[rowId]);
     const numericValues = rowIds
       .map((rowId) => getCellNumericValue(rowId, yField, rowMetas))
       .filter((v): v is number => v !== null);
@@ -413,6 +415,9 @@ function computeChartData({
 
   rowOrders.forEach((row) => {
     const rowId = row.id;
+
+    // A row added after the first load counts once `ensureRow` delivers its doc.
+    if (!rowMetas[rowId]) return;
     const groupValues = getCellGroupValue(rowId, xAxisField, rowMetas, dateCondition);
 
     if (groupValues.length === 0) {
@@ -571,7 +576,7 @@ const EMPTY_ROW_ORDERS_GRACE_MS = 300;
  * stalls the main thread. A small worker pool keeps the pipeline saturated
  * without the burst.
  */
-const ROW_LOAD_CONCURRENCY = 16;
+export const ROW_LOAD_CONCURRENCY = 16;
 
 /**
  * `ensureRow` every id through a pool of `ROW_LOAD_CONCURRENCY` workers.
@@ -635,7 +640,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   const fields = useDatabaseFields();
   const rowOrders = useRowOrdersSelector();
   const rowMetas = useRowMap();
-  const { ensureRow, dataSource } = useDatabaseContext();
+  const { ensureRow, dataSource, activeViewId } = useDatabaseContext();
   const isHistory = dataSource?.type === 'history';
 
   // Yjs mutates the `fields` Y.Map in place when fields are added, renamed,
@@ -673,6 +678,11 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   const rowIdsKey = useMemo(() => rowOrders?.map((r) => r.id).join(',') ?? '', [rowOrders]);
 
   const loadedRowIdsRef = useRef<Set<string>>(new Set());
+  // The view whose rows finished their first load. A few rows added to it
+  // later (a row created in a grid next to this chart, a collaborator's row)
+  // load in the background, so the chart stays mounted; another view, which a
+  // chart tab switch shows through this same hook, gets the spinner again.
+  const hydratedViewIdRef = useRef<string | null>(null);
   // Always start in the loading state. The effect below decides when to
   // transition to `true` — either after rows are ensured (populated grid)
   // or after a short grace period in which no rows arrived (empty grid).
@@ -723,11 +733,17 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     const rowsToLoad = rowOrders.filter((row) => !loadedRowIdsRef.current.has(row.id));
 
     if (rowsToLoad.length === 0) {
+      hydratedViewIdRef.current = activeViewId;
       setRowsLoaded(true);
       return;
     }
 
-    setRowsLoaded(false);
+    // A few new rows (one added in a neighbouring grid, a collaborator's row)
+    // load behind the mounted chart, which leaves them out until their doc
+    // arrives. A view's first load or a bulk change (an import, a widened
+    // filter) shows the spinner: streaming it in would chart partial data and
+    // recompute and re-observe every row per arrival.
+    if (hydratedViewIdRef.current !== activeViewId || rowsToLoad.length > ROW_LOAD_CONCURRENCY) setRowsLoaded(false);
 
     let cancelled = false;
     const loadAll = async () => {
@@ -742,7 +758,10 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
         }
       );
 
-      if (!cancelled) setRowsLoaded(true);
+      if (!cancelled) {
+        hydratedViewIdRef.current = activeViewId;
+        setRowsLoaded(true);
+      }
     };
 
     void loadAll();
@@ -751,7 +770,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowOrdersReady, rowIdsKey, ensureRow, needsRowDocs, isHistory]);
+  }, [rowOrdersReady, rowIdsKey, ensureRow, needsRowDocs, isHistory, activeViewId]);
 
   // Find all groupable fields
   const groupableFields = useMemo<GroupableField[]>(() => {

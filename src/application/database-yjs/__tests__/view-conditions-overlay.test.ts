@@ -1,14 +1,14 @@
 import * as Y from 'yjs';
 
 import { FieldType, FilterType } from '@/application/database-yjs/database.type';
-import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
+import { executeDatabaseOperations, getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
 import {
   createViewConditionsOverlay,
   getOverlayTarget,
   observeOverlayConditions,
   readOverlayConditions,
 } from '@/application/database-yjs/view-conditions-overlay';
-import { YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 
 import { viewConditionsYrsDelta, viewConditionsYrsInitial } from './fixtures/view-conditions-yrs';
 
@@ -60,7 +60,7 @@ function sortMap(id: string, fieldId = 'name') {
 }
 
 describe('createViewConditionsOverlay', () => {
-  it('mirrors native Yrs maps without rewriting equivalent values and saves them with undo', () => {
+  it('mirrors native Yrs maps as numbers without rewriting equivalent values and saves them with undo', () => {
     const doc = new Y.Doc() as YDoc;
 
     Y.applyUpdate(doc, Uint8Array.from(Buffer.from(viewConditionsYrsInitial, 'base64')), 'remote');
@@ -78,26 +78,29 @@ describe('createViewConditionsOverlay', () => {
     const firstFilter = filters.get(0);
     const firstSort = sorts.get(0);
 
-    expect(firstFilter.toJSON()).toMatchObject({ condition: '1', ty: '10', filter_type: '2' });
-    expect(firstSort.get(YjsDatabaseKey.condition)).toBe('1');
+    expect(firstFilter.toJSON()).toMatchObject({ condition: 1, ty: 10, filter_type: 2 });
+    expect(firstSort.get(YjsDatabaseKey.condition)).toBe(1);
     expect(sourceFilters.get(0).get(YjsDatabaseKey.condition)).toBe(BigInt(1));
     expect(sourceSorts.get(0).get(YjsDatabaseKey.condition)).toBe(BigInt(1));
     expect(overlay.isDirty()).toBe(false);
     expect(updates).not.toHaveBeenCalled();
 
-    // A clean reset compares the native BigInts with their cloned strings as equal.
+    // A clean reset compares the native BigInts with their cloned numbers as equal.
     overlay.reset();
     expect(filters.get(0)).toBe(firstFilter);
     expect(sorts.get(0)).toBe(firstSort);
 
     Y.applyUpdate(doc, Uint8Array.from(Buffer.from(viewConditionsYrsDelta, 'base64')), 'remote');
-    expect(filters.get(0).get(YjsDatabaseKey.condition)).toBe('0');
-    expect(sorts.get(0).get(YjsDatabaseKey.condition)).toBe('0');
+    expect(filters.get(0).get(YjsDatabaseKey.condition)).toBe(0);
+    expect(sorts.get(0).get(YjsDatabaseKey.condition)).toBe(0);
+    // Followed in place: the condition maps keep their identity.
+    expect(filters.get(0)).toBe(firstFilter);
+    expect(sorts.get(0)).toBe(firstSort);
     expect(overlay.isDirty()).toBe(false);
 
     filters.get(0).set(YjsDatabaseKey.condition, 1);
     overlay.reset();
-    expect(filters.get(0).get(YjsDatabaseKey.condition)).toBe('0');
+    expect(filters.get(0).get(YjsDatabaseKey.condition)).toBe(0);
     expect(overlay.isDirty()).toBe(false);
 
     filters.get(0).set(YjsDatabaseKey.condition, 1);
@@ -107,13 +110,15 @@ describe('createViewConditionsOverlay', () => {
     overlay.commit();
     expect(sourceFilters.get(0).get(YjsDatabaseKey.condition)).toBe(1);
     expect(sourceSorts.get(0).get(YjsDatabaseKey.condition)).toBe(1);
+    // Only the changed key is written: the unchanged enums stay native.
+    expect(sourceFilters.get(0).get(YjsDatabaseKey.type)).toBe(BigInt(10));
     expect(overlay.isDirty()).toBe(false);
 
     getOrCreateDatabaseHistoryManager(doc).undo();
     expect(sourceFilters.get(0).get(YjsDatabaseKey.condition)).toBe(BigInt(0));
     expect(sourceSorts.get(0).get(YjsDatabaseKey.condition)).toBe(BigInt(0));
-    expect(filters.get(0).get(YjsDatabaseKey.condition)).toBe('0');
-    expect(sorts.get(0).get(YjsDatabaseKey.condition)).toBe('0');
+    expect(filters.get(0).get(YjsDatabaseKey.condition)).toBe(0);
+    expect(sorts.get(0).get(YjsDatabaseKey.condition)).toBe(0);
     overlay.destroy();
     doc.destroy();
   });
@@ -317,6 +322,176 @@ describe('createViewConditionsOverlay', () => {
 
     overlay.rebind(replacement);
     expect(getOverlayTarget(overlay.view)).toBe(replacement);
+    overlay.destroy();
+  });
+
+  it('follows a hand-reverted desktop-authored condition again', () => {
+    const doc = new Y.Doc() as YDoc;
+
+    Y.applyUpdate(doc, Uint8Array.from(Buffer.from(viewConditionsYrsInitial, 'base64')), 'remote');
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const overlay = createViewConditionsOverlay(database.get(YjsDatabaseKey.views).get('view-1'));
+    const sort = overlay.view.get(YjsDatabaseKey.sorts).get(0);
+
+    // The real sort holds BigInt(1); the dispatchers write plain numbers.
+    sort.set(YjsDatabaseKey.condition, 0);
+    expect(overlay.isDirty()).toBe(true);
+    sort.set(YjsDatabaseKey.condition, 1);
+    expect(overlay.isDirty()).toBe(false);
+    overlay.destroy();
+    doc.destroy();
+  });
+
+  it('compares enum values stored as numeric strings with numbers', () => {
+    const { view, sorts } = createRealView();
+    const stringified = sortMap('s1');
+
+    // An earlier reorder of a desktop-authored sort stored its enum as a string.
+    stringified.set(YjsDatabaseKey.condition, '1');
+    sorts.push([stringified]);
+    const overlay = createViewConditionsOverlay(view);
+    const local = overlay.view.get(YjsDatabaseKey.sorts).get(0);
+
+    local.set(YjsDatabaseKey.condition, 0);
+    expect(overlay.isDirty()).toBe(true);
+    local.set(YjsDatabaseKey.condition, 1);
+    expect(overlay.isDirty()).toBe(false);
+    overlay.destroy();
+  });
+
+  it('saves and resets by patching the condition maps in place', () => {
+    const { doc, view, filters, sorts } = createRealView();
+
+    filters.push([filterMap('f1')]);
+    sorts.push([sortMap('s1'), sortMap('s2', 'status')]);
+    const overlay = createViewConditionsOverlay(view);
+    const localSorts = overlay.view.get(YjsDatabaseKey.sorts);
+    const localFirst = localSorts.get(0);
+    const realFirst = sorts.get(0);
+    const realSecond = sorts.get(1);
+    const realEvents = jest.fn();
+
+    localFirst.set(YjsDatabaseKey.condition, 1);
+    sorts.observeDeep(realEvents);
+    overlay.commit();
+
+    expect(sorts.get(0)).toBe(realFirst);
+    expect(sorts.get(1)).toBe(realSecond);
+    expect(realFirst.get(YjsDatabaseKey.condition)).toBe(1);
+    // One key changed on one map, and nothing else.
+    expect(realEvents).toHaveBeenCalledTimes(1);
+    expect(realEvents.mock.calls[0][0]).toHaveLength(1);
+    expect(realEvents.mock.calls[0][0][0].target).toBe(realFirst);
+    expect([...realEvents.mock.calls[0][0][0].keysChanged]).toEqual([YjsDatabaseKey.condition]);
+    sorts.unobserveDeep(realEvents);
+
+    // A local reorder moves the maps out of place; a reset puts copies of the real ones back.
+    localSorts.delete(0, 1);
+    localSorts.push([sortMap('s1')]);
+    expect(overlay.isDirty()).toBe(true);
+    overlay.reset();
+    expect(readOverlayConditions(overlay).sorts).toEqual(sorts.toJSON());
+    expect(overlay.isDirty()).toBe(false);
+
+    getOrCreateDatabaseHistoryManager(doc).undo();
+    expect(realFirst.get(YjsDatabaseKey.condition)).toBe(0);
+    expect(readOverlayConditions(overlay).sorts).toEqual(sorts.toJSON());
+    overlay.destroy();
+  });
+
+  it("batches a dispatcher's private writes into one local change without an undo step", () => {
+    const { doc, view, filters } = createRealView();
+    const overlay = createViewConditionsOverlay(view);
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const localSorts = overlay.view.get(YjsDatabaseKey.sorts);
+    const localChanges = jest.fn();
+    const dirtyChanges = jest.fn();
+    const history = getOrCreateDatabaseHistoryManager(doc);
+
+    observeOverlayConditions(overlay.view, localChanges);
+    overlay.subscribe(dirtyChanges);
+    executeDatabaseOperations(
+      sharedRoot,
+      [
+        () => {
+          localSorts.push([sortMap('s1')]);
+          localSorts.push([sortMap('s2', 'status')]);
+          localSorts.get(0).set(YjsDatabaseKey.condition, 1);
+        },
+      ],
+      'addSorts'
+    );
+
+    expect(localChanges).toHaveBeenCalledTimes(1);
+    expect(dirtyChanges).toHaveBeenCalledTimes(1);
+    expect(overlay.isDirty()).toBe(true);
+    expect(readOverlayConditions(overlay).sorts.map((sort) => sort.id)).toEqual(['s1', 's2']);
+    // Private writes never enter the shared doc's history.
+    expect(history.canUndo()).toBe(false);
+
+    // A clear-and-rebuild that ends where it started notifies local observers once and leaves the dirty state alone.
+    executeDatabaseOperations(
+      sharedRoot,
+      [
+        () => {
+          localSorts.delete(0, localSorts.length);
+          localSorts.push([sortMap('s1'), sortMap('s2', 'status')]);
+          localSorts.get(0).set(YjsDatabaseKey.condition, 1);
+        },
+      ],
+      'rebuildSorts'
+    );
+    expect(localChanges).toHaveBeenCalledTimes(2);
+    expect(dirtyChanges).toHaveBeenCalledTimes(1);
+
+    // A shared write in the same action is still one undo step of its own.
+    executeDatabaseOperations(
+      sharedRoot,
+      [
+        () => {
+          localSorts.delete(0, localSorts.length);
+          filters.push([filterMap('shared')]);
+        },
+      ],
+      'mixed'
+    );
+    expect(localChanges).toHaveBeenCalledTimes(3);
+    expect(history.canUndo()).toBe(true);
+    history.undo();
+    expect(filters.length).toBe(0);
+    expect(readOverlayConditions(overlay).sorts).toEqual([]);
+
+    // Once destroyed, the overlay's doc is no longer part of the database's actions.
+    overlay.destroy();
+    expect(() => executeDatabaseOperations(sharedRoot, [() => filters.push([filterMap('after')])], 'after')).not.toThrow();
+    expect(filters.length).toBe(1);
+  });
+
+  it('moves the batching to the doc of a rebound view', () => {
+    const first = createRealView();
+    const second = createRealView();
+    const overlay = createViewConditionsOverlay(first.view);
+    const localSorts = overlay.view.get(YjsDatabaseKey.sorts);
+    const localChanges = jest.fn();
+    const twoPushes = (doc: YDoc) =>
+      executeDatabaseOperations(
+        doc.getMap(YjsEditorKey.data_section) as YSharedRoot,
+        [
+          () => {
+            localSorts.push([sortMap('a')]);
+            localSorts.push([sortMap('b')]);
+          },
+        ],
+        'twoPushes'
+      );
+
+    overlay.rebind(second.view);
+    observeOverlayConditions(overlay.view, localChanges);
+    twoPushes(second.doc);
+    expect(localChanges).toHaveBeenCalledTimes(1);
+    // The previous doc's actions no longer open a local transaction.
+    twoPushes(first.doc);
+    expect(localChanges).toHaveBeenCalledTimes(3);
     overlay.destroy();
   });
 });

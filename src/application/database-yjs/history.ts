@@ -641,20 +641,53 @@ export function getOrCreateDatabaseRowHistoryController(rowDoc: YDoc, rowId?: Ro
   return controller;
 }
 
+const localConditionsDocs = new WeakMap<YDoc, Set<Y.Doc>>();
+
+/**
+ * Batches a never-synced doc that stands in for part of this database (a
+ * viewer's private filters and sorts) with the database's actions: an action
+ * that writes it several times notifies its observers once. Returns the
+ * unregister function.
+ */
+export function registerLocalConditionsDoc(databaseDoc: YDoc | null | undefined, localDoc: Y.Doc) {
+  if (!databaseDoc) return () => undefined;
+  let docs = localConditionsDocs.get(databaseDoc);
+
+  if (!docs) {
+    docs = new Set();
+    localConditionsDocs.set(databaseDoc, docs);
+  }
+
+  docs.add(localDoc);
+  return () => {
+    docs?.delete(localDoc);
+  };
+}
+
+function withLocalConditionsDocs(databaseDoc: YDoc, mutate: () => void) {
+  const docs = localConditionsDocs.get(databaseDoc);
+
+  if (!docs?.size) return mutate;
+  // The local transactions close inside the database one, with no origin: the
+  // writes stay viewer edits and never reach this database's undo history.
+  return Array.from(docs).reduce<() => void>((inner, doc) => () => doc.transact(inner), mutate);
+}
+
 export function runDatabaseAction(databaseDoc: YDoc, action: DatabaseHistoryAction, mutate: () => void) {
   if (isDatabaseHistoryDocumentImmutable(databaseDoc)) return;
+  const run = withLocalConditionsDocs(databaseDoc, mutate);
 
   runDatabaseHistoryGroup(() => {
     if (getDatabaseHistoryPolicy(action) === 'capture') {
       if (activeDatabaseHistoryOwner && activeDatabaseHistoryOwner.databaseDoc !== databaseDoc) {
-        databaseDoc.transact(mutate, activeDatabaseHistoryOwner.createForeignDatabaseHistoryOrigin(databaseDoc, action));
+        databaseDoc.transact(run, activeDatabaseHistoryOwner.createForeignDatabaseHistoryOrigin(databaseDoc, action));
         return;
       }
 
       getOrCreateDatabaseHistoryManager(databaseDoc);
     }
 
-    databaseDoc.transact(mutate, createDatabaseHistoryOrigin(action));
+    databaseDoc.transact(run, createDatabaseHistoryOrigin(action));
   }, action.historyGroup);
 }
 

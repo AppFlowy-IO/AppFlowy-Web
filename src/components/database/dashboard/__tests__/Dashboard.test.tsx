@@ -151,25 +151,31 @@ function createDatabaseDoc(rows: DashboardRow[]) {
 
 function renderDashboard(rows: DashboardRow[], { readOnly = false } = {}) {
   const { doc, database, view } = createDatabaseDoc(rows);
-  const value: DatabaseContextState = {
-    readOnly,
-    databaseDoc: doc,
-    databasePageId: VIEW_ID,
-    activeViewId: VIEW_ID,
-    rowMap: {},
-    workspaceId: 'workspace-id',
+  const tree = (nextReadOnly: boolean) => {
+    const value: DatabaseContextState = {
+      readOnly: nextReadOnly,
+      databaseDoc: doc,
+      databasePageId: VIEW_ID,
+      activeViewId: VIEW_ID,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+    };
+
+    return (
+      <DatabaseContext.Provider value={value}>
+        <DashboardProvider>
+          <DashboardActions />
+          <Dashboard />
+        </DashboardProvider>
+      </DatabaseContext.Provider>
+    );
   };
 
-  render(
-    <DatabaseContext.Provider value={value}>
-      <DashboardProvider>
-        <DashboardActions />
-        <Dashboard />
-      </DashboardProvider>
-    </DatabaseContext.Provider>
-  );
+  const { rerender } = render(tree(readOnly));
 
   return {
+    // The app drops write access while it re-probes permissions (back on the tab, a reconnect).
+    setReadOnly: (nextReadOnly: boolean) => rerender(tree(nextReadOnly)),
     persistedRows: () => readDashboardLayoutSetting(database, VIEW_ID).rows,
     writeRows: (next: DashboardRow[]) =>
       act(() => {
@@ -471,6 +477,75 @@ describe('Dashboard', () => {
 
       fireEvent.click(screen.getByTestId('dashboard-done-button'));
       expect(screen.queryByTestId('dashboard-widget-picker')).toBeNull();
+
+      // Closed for good: entering Edit mode again does not bring it back.
+      fireEvent.click(screen.getByTestId('dashboard-edit-button'));
+      expect(screen.queryByTestId('dashboard-widget-picker')).toBeNull();
+    });
+
+    it('keeps Edit mode while write access is re-checked', () => {
+      const { setReadOnly } = renderDashboard(makeRows(['a', 'b']));
+
+      fireEvent.click(screen.getByTestId('dashboard-edit-button'));
+      expect(dashboard().getAttribute('data-editing')).toBe('true');
+
+      // Nothing is editable while access is unknown.
+      setReadOnly(true);
+      expect(dashboard().getAttribute('data-editing')).toBe('false');
+      expect(screen.queryByTestId('dashboard-done-button')).toBeNull();
+      expect(screen.queryByTestId('dashboard-edit-button')).toBeNull();
+      expect(screen.queryByTestId('dashboard-width-handle')).toBeNull();
+      expect(screen.queryByTestId('dashboard-add-widget-button')).toBeNull();
+
+      setReadOnly(false);
+      expect(dashboard().getAttribute('data-editing')).toBe('true');
+      expect(screen.getByTestId('dashboard-done-button')).toBeTruthy();
+      expect(screen.getAllByTestId('dashboard-width-handle')).toHaveLength(1);
+      expect(visibleAddWidgetButton().hasAttribute('disabled')).toBe(false);
+    });
+
+    it('hides the picker while write access is re-checked and brings it back with Edit mode', () => {
+      const { setReadOnly } = renderDashboard(makeRows(['a']));
+
+      fireEvent.click(screen.getByTestId('dashboard-edit-button'));
+      fireEvent.click(rowAddButton('r1'));
+      expect(screen.getByTestId('dashboard-widget-picker')).toBeTruthy();
+
+      setReadOnly(true);
+      expect(screen.queryByTestId('dashboard-widget-picker')).toBeNull();
+
+      setReadOnly(false);
+      expect(JSON.parse(screen.getByTestId('dashboard-widget-picker').getAttribute('data-placement') ?? '{}')).toEqual({
+        type: 'existing_row',
+        rowId: 'r1',
+        index: 1,
+      });
+    });
+
+    it('keeps the picker of an in-flight view creation mounted while write access is re-checked', async () => {
+      const creation = deferred<string>();
+
+      mockCreateView.mockReturnValueOnce(creation.promise);
+      const { persistedRows, setReadOnly } = renderDashboard(makeRows(['a']));
+
+      fireEvent.click(screen.getByTestId('dashboard-edit-button'));
+      fireEvent.click(rowAddButton('r1'));
+      fireEvent.click(screen.getByTestId('create-board'));
+      const picker = screen.getByTestId('dashboard-widget-picker');
+
+      // A remount would unlock the picker mid-creation.
+      setReadOnly(true);
+      expect(screen.getByTestId('dashboard-widget-picker')).toBe(picker);
+      setReadOnly(false);
+      expect(screen.getByTestId('dashboard-widget-picker')).toBe(picker);
+
+      await act(async () => {
+        creation.resolve('notes-board');
+        await creation.promise;
+      });
+
+      expect(screen.queryByTestId('dashboard-widget-picker')).toBeNull();
+      expect(persistedRows()[0].widgets.map((item) => item.viewId)).toEqual(['view-a', 'notes-board']);
     });
 
     it('explains a full row instead of opening the picker', () => {

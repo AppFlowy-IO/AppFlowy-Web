@@ -43,7 +43,7 @@ import {
   WIDGET_INLINE_PADDING,
   WIDGET_MISSING_GRACE_MS,
 } from './constants';
-import { useDashboardFilters } from './DashboardContext';
+import { useDashboardFilters, useDashboardSourceRegistry } from './DashboardContext';
 import { useDashboardHost, useDashboardUi } from './DashboardUiContext';
 import { useDraggableWidget, useWidgetDropTarget } from './hooks/useDashboardDnd';
 import { ROW_HEIGHT_CSS_VARIABLE, RowHeightPreview } from './hooks/useRowHeightResize';
@@ -131,6 +131,7 @@ const WidgetSource = memo(function WidgetSource({
   const { effectiveGlobalFilters, getViewOverlay } = useDashboardFilters();
   const { hostDatabaseId, openPicker, showLimitMessage, dndInstanceId, acquireSourceDoc, getRows, updateRows } =
     useDashboardUi();
+  const { markWidgetShown, getShownDoc } = useDashboardSourceRegistry();
   const isHost = widget.databaseId === hostDatabaseId;
   const isPublish = hostContext.variant === UIVariant.Publish;
   const editing = isEditing && canEdit;
@@ -149,7 +150,15 @@ const WidgetSource = memo(function WidgetSource({
     bindViewSync: hostContext.bindViewSync,
     eventEmitter,
   });
-  const doc: YDoc | null = isHost ? hostContext.databaseDoc : loadedDoc;
+  // A widget moved to another row remounts: until its load confirms the doc,
+  // it keeps showing what it showed itself instead of flashing the loading
+  // placeholder. A widget that showed a placeholder (trash, no access) starts
+  // over, even if another widget holds its database's doc.
+  const [seedDoc] = useState(() => (isHost ? null : getShownDoc(widget.id, widget.viewId)));
+  const doc: YDoc | null = isHost ? hostContext.databaseDoc : loadedDoc ?? seedDoc;
+  // Only an opened doc can prove the view or its database missing: the load
+  // may still fetch what a seeded doc lacks.
+  const docOpened = Boolean(isHost ? doc : loadedDoc);
   const snapshot = useWidgetViewSnapshot(doc, widget.viewId);
   const meta = useWidgetViewMeta(widget.viewId);
   const trackDeletion = !isHost && !isPublish && Boolean(eventEmitter);
@@ -175,8 +184,8 @@ const WidgetSource = memo(function WidgetSource({
     setNotFound: setProbeNotFound,
   });
   const effectiveDeletionStatus = trackDeletion ? deletionStatus : 'none';
-  const databaseMissing = useDelayedFlag(Boolean(doc) && !snapshot.hasDatabase, MISSING_DATABASE_GRACE_MS);
-  const viewMissing = useDelayedFlag(Boolean(doc) && snapshot.hasDatabase && !snapshot.exists, WIDGET_MISSING_GRACE_MS);
+  const databaseMissing = useDelayedFlag(docOpened && !snapshot.hasDatabase, MISSING_DATABASE_GRACE_MS);
+  const viewMissing = useDelayedFlag(docOpened && snapshot.hasDatabase && !snapshot.exists, WIDGET_MISSING_GRACE_MS);
 
   const status = getWidgetStatus({
     noAccess,
@@ -188,6 +197,7 @@ const WidgetSource = memo(function WidgetSource({
     hasDatabase: snapshot.hasDatabase,
     viewExists: snapshot.exists,
     layout: snapshot.layout,
+    seeded: Boolean(seedDoc),
   });
 
   const hasSourceDatabase = Boolean(doc) && snapshot.hasDatabase;
@@ -235,6 +245,12 @@ const WidgetSource = memo(function WidgetSource({
     if (!doc || !hasSourceDatabase || isHost) return;
     return acquireSourceDoc(widget.databaseId, doc);
   }, [acquireSourceDoc, doc, hasSourceDatabase, isHost, widget.databaseId]);
+
+  // What this widget shows, for its next instance after a move.
+  useEffect(() => {
+    if (!doc || isHost || status !== 'ready') return;
+    return markWidgetShown(widget.id, widget.viewId, doc);
+  }, [doc, isHost, markWidgetShown, status, widget.id, widget.viewId]);
 
   const layout: ViewLayout =
     snapshot.layout !== null ? databaseLayoutToViewLayout(snapshot.layout) : meta.layout ?? ViewLayout.Grid;

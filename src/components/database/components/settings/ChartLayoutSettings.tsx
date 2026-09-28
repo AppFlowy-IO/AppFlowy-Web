@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { MutableRefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
@@ -71,11 +71,22 @@ const NUMBER_FORMATS: ReadonlyArray<{ value: ChartNumberFormat; labelKey: string
 ];
 
 /**
- * Title input for the Number chart. Keeps a local draft and commits on blur or
- * Enter so every keystroke doesn't create a Yjs transaction / undo step.
- * Key events are stopped so the dropdown's typeahead doesn't steal focus.
+ * Title input for the Number chart. Keeps a local draft and commits on blur,
+ * Enter or unmount so every keystroke doesn't create a Yjs transaction / undo
+ * step. Closing the menu removes the focused input without a blur event, so
+ * the unmount save keeps the draft; Escape (flagged in `cancelledRef`)
+ * discards it. Key events are stopped so the dropdown's typeahead doesn't
+ * steal focus.
  */
-function NumberChartTitleInput({ value, onCommit }: { value: string; onCommit: (value: string) => void }) {
+function NumberChartTitleInput({
+  value,
+  onCommit,
+  cancelledRef,
+}: {
+  value: string;
+  onCommit: (value: string) => void;
+  cancelledRef: MutableRefObject<boolean>;
+}) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(value);
   const [previousValue, setPreviousValue] = useState(value);
@@ -87,9 +98,31 @@ function NumberChartTitleInput({ value, onCommit }: { value: string; onCommit: (
     if (draft === previousValue) setDraft(value);
   }
 
+  // The unmount save reads the last render. `writtenRef` holds the title
+  // written until it comes back as `value`, so a blur and an unmount before
+  // that write only once.
+  const latestRef = useRef({ draft, value, onCommit });
+  const writtenRef = useRef<string | null>(null);
+
+  useLayoutEffect(() => {
+    if (latestRef.current.value !== value) writtenRef.current = null;
+    latestRef.current = { draft, value, onCommit };
+  });
+
   const commit = useCallback(() => {
-    if (draft !== value) onCommit(draft);
-  }, [draft, value, onCommit]);
+    const latest = latestRef.current;
+
+    if (latest.draft === latest.value || latest.draft === writtenRef.current) return;
+    writtenRef.current = latest.draft;
+    latest.onCommit(latest.draft);
+  }, []);
+
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => {
+      if (!cancelledRef.current) commit();
+    };
+  }, [cancelledRef, commit]);
 
   return (
     <div className='px-2 pb-1'>
@@ -105,8 +138,6 @@ function NumberChartTitleInput({ value, onCommit }: { value: string; onCommit: (
           if (e.key === 'Enter') {
             e.preventDefault();
             commit();
-          } else if (e.key === 'Escape') {
-            setDraft(value);
           }
         }}
         className='w-full'
@@ -221,6 +252,19 @@ function ChartLayoutSettings() {
     [updateChartSetting]
   );
 
+  // Radix closes the menu on Escape from a document capture listener, before
+  // the title input sees the key, so the flag is set here.
+  const titleCancelledRef = useRef(false);
+  const handleEscapeKeyDown = useCallback(() => {
+    titleCancelledRef.current = true;
+  }, []);
+
+  // Losing edit rights removes the input like a close; don't save its draft.
+  // This layout effect runs before the removed input's unmount save.
+  useLayoutEffect(() => {
+    if (readOnly) titleCancelledRef.current = true;
+  }, [readOnly]);
+
   if (readOnly) {
     return null;
   }
@@ -232,7 +276,10 @@ function ChartLayoutSettings() {
         {t('grid.settings.chartSettings', 'Chart settings')}
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuSubContent className={'appflowy-scroller max-w-[260px] overflow-y-auto'}>
+        <DropdownMenuSubContent
+          className={'appflowy-scroller max-w-[260px] overflow-y-auto'}
+          onEscapeKeyDown={handleEscapeKeyDown}
+        >
           {isNumberChart ? (
             <>
               {/* Number chart: one value over all rows — no x-axis / grouping */}
@@ -302,7 +349,11 @@ function ChartLayoutSettings() {
 
               <DropdownMenuSeparator />
               <DropdownMenuLabel>{t('chart.number.title', { defaultValue: 'Title' })}</DropdownMenuLabel>
-              <NumberChartTitleInput value={currentTitleText} onCommit={handleTitleCommit} />
+              <NumberChartTitleInput
+                value={currentTitleText}
+                onCommit={handleTitleCommit}
+                cancelledRef={titleCancelledRef}
+              />
 
               <DropdownMenuSeparator />
             </>

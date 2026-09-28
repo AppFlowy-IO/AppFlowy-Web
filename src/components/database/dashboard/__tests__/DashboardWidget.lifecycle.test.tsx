@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import EventEmitter from 'events';
 import { ReactNode, StrictMode } from 'react';
 import * as Y from 'yjs';
 
@@ -13,22 +14,29 @@ import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/applicat
 import { DatabaseViewLayout, YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 
-import { WIDGET_GRID_ROW_GUTTER, WIDGET_INLINE_PADDING } from '../constants';
+import { WIDGET_GRID_ROW_GUTTER, WIDGET_INLINE_PADDING, WIDGET_MISSING_GRACE_MS } from '../constants';
 import {
   DashboardProvider,
   useDashboardContext,
   useDashboardFilters,
   useDashboardLayout,
   useDashboardLocalWidgetChanges,
+  useDashboardSourceRegistry,
 } from '../DashboardContext';
 import { DashboardGrid } from '../DashboardGrid';
 import { DashboardHostContext, DashboardUiContext } from '../DashboardUiContext';
+import { useSourceDocRegistry } from '../hooks/useSourceDocRegistry';
 import { WidgetActions } from '../WidgetContext';
 
 const mockWidgetViews = new Map<string, YDatabaseView>();
 const mockWidgetPaddings = new Map<string, number | undefined>();
 const mockWidgetActions = new Map<string, WidgetActions>();
 const mockSourceDocs = new Map<string, YDoc>();
+// Widgets mounted while set have neither their load nor their trash probe settled.
+let mockLoadPending = false;
+// Views whose own load the server refuses, and whether the source database is in the trash.
+const mockNoAccessViews = new Set<string>();
+let mockSourceInTrash = false;
 
 jest.mock('@/utils/runtime-config', () => ({ getConfigValue: (_key: string, fallback: string) => fallback }));
 jest.mock('react-i18next', () => {
@@ -82,15 +90,25 @@ jest.mock('@/application/publish-snapshot/database-yjs-render-bridge', () => ({
   getPublishedDatabaseRenderRowMap: () => undefined,
 }));
 jest.mock('@/components/editor/components/blocks/database/hooks/useDocumentLoader', () => ({
-  useDocumentLoader: ({ databaseId }: { databaseId: string }) => ({
-    doc: mockSourceDocs.get(databaseId) ?? null,
-    notFound: false,
-    noAccess: false,
-    setNotFound: jest.fn(),
-  }),
+  useDocumentLoader: ({ viewId, databaseId }: { viewId: string; databaseId: string }) => {
+    const [pending] = jest.requireActual<typeof import('react')>('react').useState(() => mockLoadPending);
+    const noAccess = !pending && mockNoAccessViews.has(viewId);
+
+    return {
+      doc: pending || noAccess ? null : mockSourceDocs.get(databaseId) ?? null,
+      notFound: noAccess,
+      noAccess,
+      setNotFound: jest.fn(),
+    };
+  },
 }));
 jest.mock('@/components/editor/components/blocks/database/hooks/useDatabaseDeletionStatus', () => ({
-  useDatabaseDeletionStatus: () => 'none',
+  useDatabaseDeletionStatus: () => {
+    const [pending] = jest.requireActual<typeof import('react')>('react').useState(() => mockLoadPending);
+
+    if (pending) return null;
+    return mockSourceInTrash ? 'inTrash' : 'none';
+  },
 }));
 jest.mock('@/components/editor/components/blocks/database/hooks/useViewMeta', () => ({
   useViewMeta: () => ({ viewMeta: null }),
@@ -132,6 +150,8 @@ function TestDashboard() {
   const { rows } = useDashboardLayout();
   const { resetViewOverlays, commitViewOverlays } = useDashboardFilters();
   const { unsaved: localWidgetChanges } = useDashboardLocalWidgetChanges();
+  const { registerSourceDoc } = useDashboardSourceRegistry();
+  const acquireSourceDoc = useSourceDocRegistry(registerSourceDoc, 'db');
 
   return (
     <DashboardUiContext.Provider
@@ -142,7 +162,7 @@ function TestDashboard() {
         updateRows,
         openPicker: jest.fn(),
         showLimitMessage: jest.fn(),
-        acquireSourceDoc: () => jest.fn(),
+        acquireSourceDoc,
       }}
     >
       <DashboardGrid />
@@ -181,6 +201,8 @@ function setup(strict = false, readOnly = false, sourceDoc?: YDoc) {
     rowMap: {},
     databasePageId: 'dashboard',
     activeViewId: 'dashboard',
+    // Widgets of other databases probe the trash through it.
+    eventEmitter: new EventEmitter(),
   };
   const tree = (activeViewId = 'dashboard') => {
     const content = (
@@ -225,11 +247,101 @@ function editConditions() {
   expect(screen.getByTestId('private-changes').textContent).toBe('1');
 }
 
+function createSourceDoc() {
+  const sourceDoc = new Y.Doc({ guid: 'source-db' }) as YDoc;
+  const sourceDatabase = new Y.Map() as YDatabase;
+  const sourceViews = new Y.Map<YDatabaseView>();
+
+  sourceDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, sourceDatabase);
+  sourceDatabase.set(YjsDatabaseKey.id, 'source-db');
+  sourceDatabase.set(YjsDatabaseKey.views, sourceViews);
+  sourceViews.set('v1', makeView());
+  sourceViews.set('v2', makeView());
+  return sourceDoc;
+}
+
 beforeEach(() => {
   mockWidgetViews.clear();
   mockWidgetPaddings.clear();
   mockWidgetActions.clear();
   mockSourceDocs.clear();
+  mockLoadPending = false;
+  mockNoAccessViews.clear();
+  mockSourceInTrash = false;
+  jest.useRealTimers();
+});
+
+function widgetPlaceholder(widgetId: string) {
+  return document.querySelector<HTMLElement>(
+    `[data-widget-id="${widgetId}"] [data-testid="dashboard-widget-placeholder"]`
+  );
+}
+
+it('keeps showing a widget of another database while it moves to another row', () => {
+  const sourceDoc = createSourceDoc();
+  const { writeRows, doc, unmount } = setup(false, false, sourceDoc);
+  const rows = ROWS.map((row) => ({
+    ...row,
+    widgets: row.widgets.map((widget) => ({ ...widget, databaseId: 'source-db' })),
+  }));
+
+  expect(screen.getByTestId('widget-surface-v1')).toBeTruthy();
+  // The moved widget remounts; its own load and trash probe take a while.
+  mockLoadPending = true;
+  writeRows(moveDashboardWidget(rows, 'w1', { type: 'existing_row', rowId: 'r2' }));
+
+  expect(screen.getByTestId('widget-surface-v1')).toBeTruthy();
+  expect(screen.queryByTestId('dashboard-widget-placeholder')).toBeNull();
+  unmount();
+  doc.destroy();
+  sourceDoc.destroy();
+});
+
+it.each([
+  // Its source is in the trash.
+  ['not-found', () => (mockSourceInTrash = true)],
+  // Only its own view is refused; the other widget loaded the database.
+  ['no-access', () => mockNoAccessViews.add('v1')],
+] as const)('starts a moved widget that showed %s over instead of rendering its database', (reason, arrange) => {
+  const sourceDoc = createSourceDoc();
+
+  arrange();
+  const { writeRows, doc, unmount } = setup(false, false, sourceDoc);
+  const rows = ROWS.map((row) => ({
+    ...row,
+    widgets: row.widgets.map((widget) => ({ ...widget, databaseId: 'source-db' })),
+  }));
+
+  expect(widgetPlaceholder('w1')?.dataset.reason).toBe(reason);
+  // The moved widget starts over; its load and trash probe are still running.
+  mockLoadPending = true;
+  writeRows(moveDashboardWidget(rows, 'w1', { type: 'existing_row', rowId: 'r2' }));
+
+  expect(screen.queryByTestId('widget-surface-v1')).toBeNull();
+  expect(widgetPlaceholder('w1')?.dataset.reason).toBe('loading');
+  unmount();
+  doc.destroy();
+  sourceDoc.destroy();
+});
+
+it('leaves a view missing from the dashboard doc to its own load', () => {
+  jest.useFakeTimers();
+  const sourceDoc = createSourceDoc();
+  const { writeRows, doc, unmount } = setup(false, false, sourceDoc);
+
+  // A view created after the doc was loaded: only the widget's load fetches it.
+  mockLoadPending = true;
+  writeRows([
+    { id: 'r3', height: 360, widgets: [{ id: 'w3', viewId: 'v3', databaseId: 'source-db', width: 12 }] },
+  ]);
+  act(() => {
+    jest.advanceTimersByTime(WIDGET_MISSING_GRACE_MS * 2);
+  });
+
+  expect(screen.getByTestId('dashboard-widget-placeholder').dataset.reason).toBe('loading');
+  unmount();
+  doc.destroy();
+  sourceDoc.destroy();
 });
 
 it.each(['duplicate', 'move'] as const)('undoes the host layout after the widget %s action', (action) => {

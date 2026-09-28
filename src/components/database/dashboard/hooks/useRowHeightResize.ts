@@ -1,4 +1,4 @@
-import { KeyboardEvent, PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { KeyboardEvent, PointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP } from '../constants';
 import { clampRowHeight } from '../utils';
@@ -22,7 +22,10 @@ interface UseRowHeightResizeOptions {
   height: number;
   enabled: boolean;
   onCommit: (height: number) => void;
-  /** The element carrying `ROW_HEIGHT_CSS_VARIABLE`; a drag writes the variable directly. */
+  /**
+   * The element carrying `ROW_HEIGHT_CSS_VARIABLE`. Its style prop may seed
+   * the variable on mount; from then on this hook is its only writer.
+   */
   getRowElement: () => HTMLElement | null;
 }
 
@@ -33,7 +36,8 @@ interface UseRowHeightResizeOptions {
  *
  * A pointer move updates the CSS variable and the `preview` store, not React
  * state: the row and its cards resize through CSS, so the row never
- * re-renders per pixel. Only `dragging` is state.
+ * re-renders per pixel. Only `dragging` is state. Outside a drag the variable
+ * holds the persisted `height`.
  */
 export function useRowHeightResize({ height, enabled, onCommit, getRowElement }: UseRowHeightResizeOptions) {
   const [dragging, setDragging] = useState(false);
@@ -64,11 +68,20 @@ export function useRowHeightResize({ height, enabled, onCommit, getRowElement }:
   const setPreview = useCallback((next: number | null) => {
     if (previewRef.current === next) return;
     previewRef.current = next;
-    // `null` puts the persisted height back; a commit then re-renders the row
-    // with the new one in the same task, so nothing flashes.
+    // `null` puts the persisted height back; a commit then writes the new one
+    // from the layout effect below before the next paint, so nothing flashes.
     getRowElementRef.current()?.style.setProperty(ROW_HEIGHT_CSS_VARIABLE, `${next ?? heightRef.current}px`);
     listenersRef.current.forEach((listener) => listener());
   }, []);
+
+  // A committed height (a drag, the keyboard, a collaborator) is written here
+  // rather than through React's style prop: React diffs against the value it
+  // last rendered, not the DOM the drag wrote, and could skip the write. A
+  // running drag keeps its preview; its end puts the latest height back.
+  useLayoutEffect(() => {
+    if (previewRef.current !== null) return;
+    getRowElementRef.current()?.style.setProperty(ROW_HEIGHT_CSS_VARIABLE, `${height}px`);
+  }, [height]);
 
   useEffect(() => () => cancelRef.current?.(), []);
 
