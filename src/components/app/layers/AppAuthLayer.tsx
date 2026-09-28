@@ -74,8 +74,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const serverInfo = useServerInfo(!!isAuthenticated, defaultConfig.baseURL);
   const enablePageHistory = serverInfo.info?.enable_page_history ??
     (serverInfo.status === 'unavailable' || serverInfo.status === 'unsupported' ? true : undefined);
-  const enableDatabaseHistory = serverInfo.info?.enable_database_history === true &&
-    serverInfo.info?.enable_database_history_version_ui === true;
+  const enableDatabaseHistory = serverInfo.info?.enable_database_history === true;
   const databaseHistoryCapabilityLoaded = serverInfo.status === 'available' || serverInfo.status === 'unsupported';
 
   const aiEnabled = serverInfo.status === 'loading' ? false : serverInfo.info?.ai_enabled ?? true;

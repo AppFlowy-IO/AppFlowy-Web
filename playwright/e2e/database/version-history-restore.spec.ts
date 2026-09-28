@@ -129,15 +129,13 @@ test.describe('Database version history restore notices', () => {
   test.beforeEach(async ({ request }) => {
     const capabilities = await responseData<{
       enable_database_history: boolean;
-      enable_database_history_version_ui: boolean;
     }>(
       await request.get(`${TestConfig.apiUrl}/api/server-info`, { headers: clientHeaders }),
       'Read database history capabilities'
     );
 
-    expect(capabilities, 'Database history browser tests require both history capabilities').toMatchObject({
+    expect(capabilities, 'Database history browser tests require the history capability').toMatchObject({
       enable_database_history: true,
-      enable_database_history_version_ui: true,
     });
   });
 

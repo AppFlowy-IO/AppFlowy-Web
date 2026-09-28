@@ -82,15 +82,13 @@ describe('AppAuthLayer workspace info loading', () => {
   });
 
   it.each([
-    [undefined, undefined, false],
-    [true, undefined, false],
-    [undefined, true, false],
-    [false, true, false],
-    [true, true, true],
-  ])('gates database history on both server capabilities (%s, %s)', async (history, ui, enabled) => {
+    [undefined, false],
+    [false, false],
+    [true, true],
+  ])('gates database history on the server capability (%s)', async (history, enabled) => {
     mockGetWorkspaceInfo.mockResolvedValue(createWorkspaceInfo('workspace-old'));
     mockGetServerInfo.mockResolvedValue({ enable_page_history: true,
-      enable_database_history: history, enable_database_history_version_ui: ui });
+      enable_database_history: history });
     function Capability() {
       return <span data-testid='database-history-enabled'>{String(useContext(AuthInternalContext)?.enableDatabaseHistory)}</span>;
     }
@@ -383,7 +381,6 @@ describe('AppAuthLayer workspace info loading', () => {
     mockGetServerInfo.mockReset().mockRejectedValueOnce({ code: 404 }).mockResolvedValue({
       enable_page_history: true,
       enable_database_history: true,
-      enable_database_history_version_ui: true,
       max_update_bytes: 8_000_000,
       max_slow_sync_update_bytes: 64_000_000,
     });

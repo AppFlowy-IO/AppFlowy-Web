@@ -22,7 +22,6 @@ export interface ServerInfo {
   enable_page_history: boolean;
   /** Database aggregate snapshots and the complete web history contract. Absent means disabled. */
   enable_database_history?: boolean;
-  enable_database_history_version_ui?: boolean;
   ai_enabled?: boolean;
   /**
    * Whether this deployment is self-hosted. Only the official AppFlowy cloud
