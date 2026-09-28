@@ -189,7 +189,9 @@ test('legacy currency list comparisons use source numbers and keep metadata abse
   // The simple editor must honor the saved Number discriminator even for a list.
   const chip = page.getByTestId('database-filter-condition');
 
-  if (!(await chip.isVisible())) await page.getByTestId('database-actions-filter').click();
+  // Adding the first filter auto-expands the conditions bar. Clicking the filter
+  // button while that expansion is still rendering would collapse the bar instead.
+  await expect(chip).toBeVisible();
   await chip.click();
   await expect(page.getByTestId('advanced-filter-number-input')).toHaveValue('5');
   await expect(page.getByTestId('rollup-filter-mode')).toHaveCount(0);
