@@ -213,6 +213,35 @@ describe('useBroadcastChannel', () => {
     expect(protocolListener).not.toHaveBeenCalled();
   });
 
+  it('delivers every collab message in a burst to collab subscribers in arrival order', () => {
+    const { result } = renderHook(({ name }) => useBroadcastChannel(name), {
+      initialProps: { name: 'workspace:A' },
+    });
+    const received: string[] = [];
+    const unsubscribe = result.current.subscribeCollabMessages!((incoming) => {
+      received.push(incoming.collabMessage!.objectId!);
+    });
+    const encode = (objectId: string) =>
+      messages.Message.encode({ collabMessage: { objectId, collabType: 0 } }).finish();
+
+    // Both frames arrive before React commits a render; last-value state would
+    // keep only the second one.
+    act(() => {
+      MockBroadcastChannel.instances[0].emitMessage({ type: 'durable-message', payload: encode('first') });
+      MockBroadcastChannel.instances[0].emitMessage({ type: 'durable-message', payload: encode('second') });
+    });
+
+    expect(received).toEqual(['first', 'second']);
+    expect(result.current.lastBroadcastMessage).toBeNull();
+
+    unsubscribe();
+    act(() => {
+      MockBroadcastChannel.instances[0].emitMessage({ type: 'durable-message', payload: encode('third') });
+    });
+    expect(received).toEqual(['first', 'second']);
+    expect(result.current.lastBroadcastMessage?.collabMessage?.objectId).toBe('third');
+  });
+
   it('closes the previous channel when the channel name changes', () => {
     const { result, rerender } = renderHook(({ name }) => useBroadcastChannel(name), {
       initialProps: { name: 'workspace:A' },

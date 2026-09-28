@@ -8,6 +8,7 @@ import { deleteCollabDB, openCollabDB, openRowCollabDBWithProvider } from '@/app
 import { cacheCanonicalRowDoc } from '@/application/services/js-services/cache';
 import { handleMessage, SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, YDoc } from '@/application/types';
+import type { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
 import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
@@ -45,7 +46,8 @@ export function useCollabMessageHandler(
   eventEmitter: EventEmitter,
   registerSyncContext: (context: RegisterSyncContext) => SyncContext,
   scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void,
-  beforeApply?: (objectId: string, type: Types, marker?: string, rootVersionChanged?: boolean) => Promise<boolean>
+  beforeApply?: (objectId: string, type: Types, marker?: string, rootVersionChanged?: boolean) => Promise<boolean>,
+  subscribeBcCollabMessages?: BroadcastChannelType['subscribeCollabMessages']
 ) {
   const lastHandledWsMessageRef = useRef<ICollabMessage | null>(null);
   const lastHandledBcMessageRef = useRef<ICollabMessage | null>(null);
@@ -536,6 +538,20 @@ export function useCollabMessageHandler(
       Log.error('Failed to enqueue BroadcastChannel collab message', error);
     });
   }, [bcCollabMessage, enqueueIncomingCollabMessage]);
+
+  // Sibling-tab updates are queued as they arrive rather than through the
+  // last-value message above, so a burst cannot lose an intermediate update.
+  useEffect(() => {
+    if (!subscribeBcCollabMessages) return;
+
+    return subscribeBcCollabMessages((message) => {
+      if (!message.collabMessage) return;
+
+      void enqueueIncomingCollabMessage(message.collabMessage).catch((error) => {
+        Log.error('Failed to enqueue BroadcastChannel collab message', error);
+      });
+    });
+  }, [subscribeBcCollabMessages, enqueueIncomingCollabMessage]);
 
   return { applyCollabMessage, enqueueIncomingCollabMessage };
 }

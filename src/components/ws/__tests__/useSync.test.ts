@@ -2239,6 +2239,44 @@ describe('useSync queue guards and dedupe', () => {
     await waitFor(() => expect(mockedHandleMessage).toHaveBeenCalledTimes(1));
   });
 
+  it('applies every sibling-tab collab message of a burst in arrival order', async () => {
+    type BroadcastMessage = NonNullable<BroadcastChannelType['lastBroadcastMessage']>;
+    let deliver: ((message: BroadcastMessage) => void) | undefined;
+    const ws = createWs();
+    const bc = {
+      ...createBroadcastChannel(),
+      subscribeCollabMessages: jest.fn((listener: (message: BroadcastMessage) => void) => {
+        deliver = listener;
+        return () => {
+          deliver = undefined;
+        };
+      }),
+    } as unknown as BroadcastChannelType;
+    const doc = createDoc('f3333333-3333-4333-8333-333333333333') as Y.Doc & { version?: string };
+    const version = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b303';
+
+    doc.version = version;
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+    });
+    const keystrokes = [1, 2, 3].map((clock) => ({
+      objectId: doc.guid,
+      collabType: Types.Document,
+      update: { version, payload: new Uint8Array([clock]) },
+    }));
+
+    // Several frames can arrive before React renders. Losing one would leave Yjs
+    // holding every later update from that tab as pending.
+    act(() => {
+      keystrokes.forEach((collabMessage) => deliver!({ collabMessage } as BroadcastMessage));
+    });
+
+    await waitFor(() => expect(mockedHandleMessage).toHaveBeenCalledTimes(3));
+    expect(mockedHandleMessage.mock.calls.map((call) => call[1])).toEqual(keystrokes);
+  });
+
   it('skips queueing messages that do not have objectId', async () => {
     const warnSpy = jest.spyOn(Log, 'warn').mockImplementation(() => undefined);
     const ws = createWs();

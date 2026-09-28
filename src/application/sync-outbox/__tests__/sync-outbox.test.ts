@@ -182,6 +182,25 @@ describe('sync outbox live send', () => {
     setCurrentSession(null);
   });
 
+  it('keeps immediate sibling fan-out and sends for non-database collabs behind the restore barrier', async () => {
+    const beforeSend = jest.fn(async () => true);
+    const send = jest.fn();
+    const broadcast = jest.fn();
+
+    configureDrain({ userId, workspaceId, send, broadcast, isReady: () => true, beforeSend });
+    const first = enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('H') });
+    const second = enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('He') });
+
+    // Each keystroke reaches sibling tabs and the server in order before IndexedDB
+    // commits, so sibling tabs never receive a burst of document updates.
+    expect(broadcast).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(2);
+    await Promise.all([first, second]);
+    await flushPromises();
+    expect(broadcast).toHaveBeenCalledTimes(2);
+    expect(beforeSend).not.toHaveBeenCalled();
+  });
+
   it('persists edits while the restore check is pending and gates all sibling/server sends', async () => {
     const gate = createDeferred<boolean>();
     const beforeSend = jest.fn(() => gate.promise);

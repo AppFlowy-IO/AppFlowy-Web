@@ -66,7 +66,8 @@ interface DrainConfig {
   isReady: OutboxReady;
   /**
    * Verify the current database restore identity before transmitting captured
-   * bytes. False leaves durable records queued; a reset may discard them.
+   * Database/DatabaseRow bytes; other collab types never wait on it. False
+   * leaves durable records queued; a reset may discard them.
    * A callback that discards this object must use skipActiveDrain to avoid
    * waiting for the drain that is awaiting this callback.
    */
@@ -240,7 +241,7 @@ export function enqueueOutboxUpdate(
   // the durable outbox row remains the fallback when it is not.
   const broadcast = drainConfig?.broadcast;
 
-  if (options?.broadcast !== false && broadcast && drainConfig?.workspaceId === workspaceId && !drainConfig.beforeSend) {
+  if (options?.broadcast !== false && broadcast && drainConfig?.workspaceId === workspaceId && !isRestoreGated(drainConfig, record.collabType)) {
     try {
       broadcast(buildUpdateMessage(record, drainConfig));
     } catch (error) {
@@ -275,7 +276,7 @@ export function enqueueOutboxUpdate(
   // frame limit before the slow lane gets a chance to run.
   if (
     activeConfig &&
-    !activeConfig.beforeSend &&
+    !isRestoreGated(activeConfig, record.collabType) &&
     activeConfig.userId === enqueueUserId &&
     activeConfig.workspaceId === enqueueWorkspaceId &&
     !isPurging &&
@@ -299,7 +300,7 @@ export function enqueueOutboxUpdate(
 
   return addPromise
     .then(async (id) => {
-      if (activeConfig?.beforeSend) {
+      if (activeConfig && isRestoreGated(activeConfig, record.collabType)) {
         const allowed = await maySendOutboxUpdate(
           activeConfig,
           record.objectId,
@@ -449,7 +450,7 @@ export function enqueueOutboxUpdate(
       }
 
       if (
-        activeConfig.beforeSend &&
+        isRestoreGated(activeConfig, record.collabType) &&
         !(await maySendOutboxUpdate(activeConfig, record.objectId, record.collabType as Types, record.databaseRestoreId))
       ) {
         return false;
@@ -1204,6 +1205,15 @@ function sameDrainSession(left: DrainConfig | null, right: DrainConfig | null): 
   return Boolean(left && right && left.userId === right.userId && left.workspaceId === right.workspaceId);
 }
 
+/**
+ * Only Database collabs wait for restore authority. Every other collab keeps the
+ * immediate per-update sibling fan-out and realtime send: delaying them until
+ * IndexedDB commits delivers keystrokes to sibling tabs in bursts.
+ */
+function isRestoreGated(config: DrainConfig | null | undefined, collabType: number): boolean {
+  return Boolean(config?.beforeSend) && (collabType === Types.Database || collabType === Types.DatabaseRow);
+}
+
 function wireDatabaseRestoreId(
   config: DrainConfig | null,
   collabType: number,
@@ -1417,7 +1427,7 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
           const lockedIds = recordIds(lockedBatch.records);
 
           if (
-            config.beforeSend &&
+            isRestoreGated(config, lockedLastRecord.collabType) &&
             !(await maySendOutboxUpdate(
               config,
               objectId,
@@ -1515,7 +1525,7 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
     const lastRecord = realtimeBatch.records[realtimeBatch.records.length - 1];
 
     if (
-      config.beforeSend &&
+      isRestoreGated(config, lastRecord.collabType) &&
       !(await maySendOutboxUpdate(config, objectId, lastRecord.collabType as Types, lastRecord.databaseRestoreId))
     )
       return;

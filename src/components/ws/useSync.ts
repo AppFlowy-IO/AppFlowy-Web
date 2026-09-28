@@ -158,7 +158,7 @@ export const useSync = (
   historyOptions?: { enabled?: boolean; capabilityLoaded?: boolean }
 ): SyncContextType => {
   const { sendMessage, lastMessage, readyState } = ws;
-  const { postMessage, lastBroadcastMessage } = bc;
+  const { postMessage, lastBroadcastMessage, subscribeCollabMessages } = bc;
   const currentUser = useCurrentUserOptional();
 
   // Extract specific values to use as primitive dependencies.
@@ -317,7 +317,8 @@ export const useSync = (
     eventEmitter,
     registerSyncContext,
     scheduleDeferredCleanup,
-    historyOptions ? beforeDatabaseSend : undefined
+    historyOptions ? beforeDatabaseSend : undefined,
+    subscribeCollabMessages
   );
 
   const applyHttpFullSyncResult = useCallback(
