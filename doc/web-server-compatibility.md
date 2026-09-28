@@ -11,6 +11,11 @@ back to the reviewed version in
 Both Docker builds pass their `VERSION` build argument to Vite. Runtime endpoint
 configuration cannot change the version of a bundle already loaded by a browser.
 
+Server-info requests send that embedded version in `Client-Version` alongside
+`X-Platform: web`. The server uses it to advertise version-dependent capabilities,
+including database history for web `0.18.6` or later. The UI follows the returned
+`enable_database_history` flag; it does not infer availability from the version alone.
+
 The policy is maintained by hand and never blocks a build. When a web release
 needs a newer AppFlowy-Cloud, add a row with the release's `client_from` and the
 new `min_server`. A build whose version is newer than
