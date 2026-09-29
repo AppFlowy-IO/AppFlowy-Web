@@ -14,6 +14,10 @@ when disconnected. Workspace permissions still apply normally.
 | Chart/Timeline and linked variants preserve slash text and editor content on click/Enter | Same BDD scenario; `SlashPanel.creation.test.tsx` |
 | Owner crowns; members/guests disabled without crowns | `DatabaseViewCreationAccess.test.tsx`; `useDatabaseViewCreation.test.tsx` |
 | Loading/error state has no crown; quotas update while the menu remains open | Same menu and hook tests |
+| Known crowns survive slow/failed refreshes; stale allowances stay disabled until confirmed; disconnect clears the snapshot | `useDatabaseViewCreation.test.tsx`; `DatabaseViewCreationAccess.test.tsx` |
+| Blocked attempts toast the reason and refetch status; per-layout owner upgrade messages | `useDatabaseViewCreation.test.tsx` |
+| Tab-bar checkout shows progress on the clicked item, ignores other items, then closes; sidebar/slash menus close first | `DatabaseViewCreationAccess.test.tsx`; `useDatabaseViewCreation.test.tsx` |
+| A reopened menu never trusts a remembered allowance; e2e helpers wait for an enabled, crown-free item | `useDatabaseViewCreation.test.tsx`; `support/view-creation-availability.ts` |
 | Self-hosted creation online/offline, beyond hosted allowances, with no billing/quota reads | `DatabaseViewCreationAccess.test.tsx` |
 | Self-hosted local Form/Chart conversion; hosted conversion cannot bypass server admission | `Layout.test.tsx`; `useAddDatabaseView.test.tsx` |
 | Shared billing requests/TTL, event invalidation, no idle polling, account/workspace isolation | `useDatabaseViewCreation.test.tsx` |

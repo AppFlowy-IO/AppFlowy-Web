@@ -3,8 +3,8 @@ import EventEmitter from 'events';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
-import { Role, SubscriptionInterval, SubscriptionPlan, View, ViewLayout, Workspace } from '@/application/types';
 import { APP_EVENTS } from '@/application/constants';
+import { Role, SubscriptionInterval, SubscriptionPlan, View, ViewLayout, Workspace } from '@/application/types';
 import { AppEventEmitter, AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import AddPageActions from '@/components/app/view-actions/AddPageActions';
@@ -160,37 +160,120 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     await waitFor(() => expect(surface === 'page' ? mockAddPage : mockAddView).toHaveBeenCalledTimes(1));
   });
   it.each(['timeline', 'chart', 'form'] as const)(
-    'offers the owner a %s crown and checkout without creating a view',
+    'offers the owner a %s crown and checkout with Desktop feedback, without creating a view',
     async (layout) => {
       mockWorkspaceId = `${surface}-${layout}-owner`;
       mockRole = Role.Owner;
       mockGetSubscriptions.mockResolvedValue([]);
       mockQuota.mockResolvedValue({ can_create_form: false, can_create_chart: false });
-      const openWindow = jest.spyOn(window, 'open').mockReturnValue(null);
+      let resolveLink!: (link: string) => void;
 
-      render(<CreationMenu surface={surface} />);
-      if (surface === 'view') fireEvent.keyDown(screen.getByTestId('add-view-button'), { key: 'ArrowDown' });
-      const item =
-        layout === 'timeline'
-          ? await screen.findByTestId(`add-timeline-${surface}-button`)
-          : layout === 'form'
-          ? await screen.findByTestId(surface === 'view' ? 'add-form-view-option' : 'add-form-button')
-          : surface === 'page'
-          ? await screen.findByTestId('add-chart-button')
-          : await screen.findByText('chart.menuName');
-
-      await waitFor(() => expect(within(item).getByLabelText('Pro')).toBeTruthy());
-      expect(item.hasAttribute('data-disabled')).toBe(false);
-      fireEvent.click(item);
-      await waitFor(() =>
-        expect(mockCheckout).toHaveBeenCalledWith(mockWorkspaceId, SubscriptionPlan.Pro, SubscriptionInterval.Year)
+      mockCheckout.mockReturnValue(
+        new Promise<string>((done) => {
+          resolveLink = done;
+        })
       );
+      jest.spyOn(window, 'open').mockReturnValue(null);
+      openMenu();
+      const clicked = await waitFor(() => {
+        const element = item(layout);
+
+        expect(within(element).getByLabelText('Pro')).toBeTruthy();
+        return element;
+      });
+
+      expect(clicked.hasAttribute('data-disabled')).toBe(false);
+      fireEvent.click(clicked);
+      // A second click before the progress frame must not start another checkout.
+      fireEvent.click(clicked);
+      expect(mockCheckout).toHaveBeenCalledTimes(1);
+      expect(mockCheckout).toHaveBeenCalledWith(mockWorkspaceId, SubscriptionPlan.Pro, SubscriptionInterval.Year);
+
+      if (surface === 'page') {
+        // Desktop's sidebar menu closes before checkout opens.
+        await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      } else {
+        // Desktop's tab-bar menu stays open with progress on the clicked item.
+        const progress = within(clicked).getByRole('progressbar', { name: 'databaseViewCreation.openingCheckout' });
+
+        expect(progress).toBeTruthy();
+        expect(screen.getAllByRole('progressbar')).toHaveLength(1);
+        expect(within(clicked).queryByLabelText('Pro')).toBeNull();
+        expect(clicked.getAttribute('aria-busy')).toBe('true');
+        const other = item(layout === 'form' ? 'chart' : 'form');
+
+        expect(within(other).getByLabelText('Pro')).toBeTruthy();
+        expect(other.getAttribute('aria-disabled')).toBe('true');
+        fireEvent.click(other);
+        fireEvent.click(screen.getByText('grid.menuName'));
+        expect(mockCheckout).toHaveBeenCalledTimes(1);
+      }
+
+      await act(async () => resolveLink('https://checkout.example/pro'));
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(screen.queryByRole('progressbar')).toBeNull();
       expect(mockAddPage).not.toHaveBeenCalled();
       expect(mockAddView).not.toHaveBeenCalled();
-      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
-      openWindow.mockRestore();
+      if (surface === 'view') {
+        fireEvent.keyDown(screen.getByTestId('add-view-button'), { key: 'ArrowDown' });
+        await waitFor(() => expect(within(item(layout)).getByLabelText('Pro')).toBeTruthy());
+        expect(item(layout).hasAttribute('data-disabled')).toBe(false);
+        expect(screen.queryByRole('progressbar')).toBeNull();
+      }
     }
   );
+
+  if (surface === 'view') {
+    it('ends checkout progress after a failure and closes the menu', async () => {
+      mockWorkspaceId = 'view-checkout-failure';
+      mockRole = Role.Owner;
+      mockQuota.mockResolvedValue({ can_create_form: false, can_create_chart: true });
+      let rejectLink!: (error: Error) => void;
+
+      mockCheckout.mockReturnValue(
+        new Promise<string>((_, fail) => {
+          rejectLink = fail;
+        })
+      );
+      jest.spyOn(window, 'open').mockReturnValue(null);
+      openMenu();
+      await waitFor(() => expect(within(item('form')).getByLabelText('Pro')).toBeTruthy());
+      fireEvent.click(item('form'));
+      expect(within(item('form')).getByRole('progressbar')).toBeTruthy();
+      await act(async () => rejectLink(new Error('Billing unavailable')));
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(screen.queryByRole('progressbar')).toBeNull();
+      expect(mockAddView).not.toHaveBeenCalled();
+    });
+
+    it('completes checkout safely after the add button unmounts', async () => {
+      mockWorkspaceId = 'view-checkout-unmount';
+      mockRole = Role.Owner;
+      mockQuota.mockResolvedValue({ can_create_form: false, can_create_chart: false });
+      let resolveLink!: (link: string) => void;
+
+      mockCheckout.mockReturnValue(
+        new Promise<string>((done) => {
+          resolveLink = done;
+        })
+      );
+      const popup = { location: { replace: jest.fn() }, closed: false, opener: window, close: jest.fn() };
+
+      jest.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+      const errors = jest.spyOn(console, 'error');
+      const menu = render(<CreationMenu surface={surface} />);
+
+      fireEvent.keyDown(screen.getByTestId('add-view-button'), { key: 'ArrowDown' });
+      await waitFor(() => expect(within(item('timeline')).getByLabelText('Pro')).toBeTruthy());
+      fireEvent.click(item('timeline'));
+      expect(screen.getByRole('progressbar')).toBeTruthy();
+      menu.unmount();
+      await act(async () => resolveLink('https://checkout.example/pro'));
+      expect(popup.location.replace).toHaveBeenCalledWith('https://checkout.example/pro');
+      expect(mockCheckout).toHaveBeenCalledTimes(1);
+      expect(errors).not.toHaveBeenCalled();
+    });
+  }
 
   it.each(['form', 'chart'] as const)('allows the first %s without a crown', async (layout) => {
     mockWorkspaceId = `${surface}-first-${layout}`;
@@ -266,7 +349,10 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     act(() => {
       emitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED);
     });
-    expect(chart.hasAttribute('data-disabled')).toBe(false);
+    // Desktop parity: the known Form crown survives the refresh, while the stale
+    // Chart allowance stays disabled until the server confirms it again.
+    expect(within(form).getByLabelText('Pro')).toBeTruthy();
+    expect(chart.hasAttribute('data-disabled')).toBe(true);
     await waitFor(() => expect(within(chart).getByLabelText('Pro')).toBeTruthy());
     expect(within(form).queryByLabelText('Pro')).toBeNull();
     expect(mockGetSubscriptions).toHaveBeenCalledTimes(1);

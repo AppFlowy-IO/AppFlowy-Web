@@ -11,6 +11,7 @@ import {
   DatabaseGridSelectors,
   DatabaseViewSelectors,
 } from './selectors';
+import { expectViewCreationAvailable } from './view-creation-availability';
 
 export { mockProSubscription } from './subscription-test-helpers';
 
@@ -29,7 +30,10 @@ export async function waitForChartReady(page: Page): Promise<void> {
 export async function addChartViewTab(page: Page): Promise<void> {
   await DatabaseViewSelectors.addViewButton(page).click({ force: true });
   await page.waitForTimeout(1000);
-  await DatabaseViewSelectors.viewTypeOption(page, 'Chart').click({ force: true });
+  const chartOption = DatabaseViewSelectors.viewTypeOption(page, 'Chart');
+
+  await expectViewCreationAvailable(chartOption);
+  await chartOption.click({ force: true });
   await page.waitForTimeout(3000);
 }
 

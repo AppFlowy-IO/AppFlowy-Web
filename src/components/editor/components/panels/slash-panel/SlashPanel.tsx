@@ -1836,12 +1836,18 @@ export function SlashPanel({
 
   const optionGroups = useMemo(() => groupSlashMenuOptions(options), [options]);
   const orderedOptions = useMemo(() => optionGroups.flatMap(({ options }) => options), [optionGroups]);
+  const showsLimitedOption = open && options.some((option) => isLimitedDatabaseViewLayout(option.creationLayout));
+  // Once a limited option appears, keep checking for the rest of this slash session;
+  // otherwise typing back and forth across a match would refetch the quota each time.
+  const [creationCheckLatched, setCreationCheckLatched] = useState(false);
+
+  if (showsLimitedOption && !creationCheckLatched) setCreationCheckLatched(true);
+  if (!open && creationCheckLatched) setCreationCheckLatched(false);
+
   const { getAction, checkCreation } = useDatabaseViewCreation({
     workspaceId,
     getSubscriptions: editorContext.getSubscriptions,
-    enabled:
-      (open && options.some((option) => isLimitedDatabaseViewLayout(option.creationLayout))) ||
-      isLimitedDatabaseViewLayout(linkedPicker?.layout),
+    enabled: showsLimitedOption || creationCheckLatched || isLimitedDatabaseViewLayout(linkedPicker?.layout),
   });
   const linkedAction = linkedPicker ? getAction(linkedPicker.layout) : undefined;
 

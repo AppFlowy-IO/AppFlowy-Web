@@ -2,6 +2,7 @@ import { Page, APIRequestContext, expect } from '@playwright/test';
 
 import { signInAndCreateDatabaseView } from './database-ui-helpers';
 import { DatabaseGridSelectors, DatabaseViewSelectors, FormSelectors } from './selectors';
+import { expectViewCreationAvailable } from './view-creation-availability';
 
 /**
  * Field-type ids used by the form question type picker. Mirrors the
@@ -89,7 +90,10 @@ export async function addFormViewToTabBarRaw(page: Page): Promise<void> {
 
   const menu = page.locator('[data-slot="dropdown-menu-content"]');
   await expect(menu).toBeVisible({ timeout: 5000 });
-  await FormSelectors.addFormViewOption(page).click({ force: true });
+  const formOption = FormSelectors.addFormViewOption(page);
+
+  await expectViewCreationAvailable(formOption);
+  await formOption.click({ force: true });
 
   // FormBuilderView's toolbar mounts after the layout swap. The Preview
   // button is mounted unconditionally in the authoring header, so

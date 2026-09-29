@@ -7,8 +7,8 @@ import { useDatabaseContext } from '@/application/database-yjs/context';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
-import { ViewIcon } from '@/components/_shared/view-icon';
 import { DatabaseViewCreationItem } from '@/components/_shared/DatabaseViewCreationItem';
+import { ViewIcon } from '@/components/_shared/view-icon';
 import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -28,11 +28,14 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
   const [addLoading, setAddLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { getSubscriptions, workspaceId } = useDatabaseContext();
-  const { getAction, checkCreation } = useDatabaseViewCreation({
+  const { getAction, checkCreation, startCheckout } = useDatabaseViewCreation({
     getSubscriptions,
     workspaceId,
     enabled: menuOpen,
   });
+  // Desktop parity: an upgrade keeps this menu open with progress on the clicked
+  // item until checkout opens. Every other item waits for it.
+  const [checkoutLayout, setCheckoutLayout] = useState<ViewLayout | null>(null);
   const mountedRef = useRef(true);
   const actionScopeRevisionRef = useRef(0);
   const completionCallbacksRef = useRef({ onAfterAddView, onViewAdded });
@@ -59,6 +62,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
   useLayoutEffect(() => {
     actionScopeRevisionRef.current += 1;
     setAddLoading(false);
+    setCheckoutLayout(null);
     setMenuOpen(false);
 
     return () => {
@@ -101,6 +105,20 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
         }
       }
     }
+  };
+
+  const handleUpgrade = (viewLayout: ViewLayout) => {
+    const checkout = startCheckout(viewLayout);
+
+    if (!checkout) return;
+    const actionScopeRevision = actionScopeRevisionRef.current;
+
+    setCheckoutLayout(viewLayout);
+    void checkout.finally(() => {
+      if (!mountedRef.current || actionScopeRevisionRef.current !== actionScopeRevision) return;
+      setCheckoutLayout(null);
+      setMenuOpen(false);
+    });
   };
 
   const options = [
@@ -169,8 +187,17 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
             key={layout}
             layout={viewLayout}
             action={getAction(viewLayout)}
+            loading={checkoutLayout === viewLayout}
+            disabled={checkoutLayout !== null}
             data-testid={testId}
-            onSelect={() => {
+            onSelect={(event) => {
+              if (getAction(viewLayout).type === 'upgrade') {
+                // Keep the menu open to show checkout progress on this item.
+                event.preventDefault();
+                handleUpgrade(viewLayout);
+                return;
+              }
+
               void handleAddView(layout, viewLayout, name);
             }}
           >

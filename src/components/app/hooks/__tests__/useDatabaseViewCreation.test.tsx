@@ -171,6 +171,58 @@ describe('workspace database view creation', () => {
     expect(popup.location.replace).toHaveBeenCalledWith('https://checkout.example/pro');
   });
 
+  it('starts one checkout only for an upgrade action and settles once checkout opens', async () => {
+    const pending = deferred<string>();
+    const close = jest.fn();
+    const popup = { location: { replace: jest.fn() }, closed: false, opener: window, close: jest.fn() };
+
+    jest.mocked(window.open).mockReturnValue(popup as unknown as Window);
+    checkout.mockReturnValue(pending.promise);
+    quota.mockResolvedValue({ can_create_form: true, can_create_chart: false });
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.getAction(ViewLayout.Chart).type).toBe('upgrade'));
+    expect(result.current.startCheckout(ViewLayout.Form)).toBeUndefined();
+    expect(result.current.startCheckout(ViewLayout.Grid)).toBeUndefined();
+    expect(window.open).not.toHaveBeenCalled();
+    const started = result.current.startCheckout(ViewLayout.Chart);
+    let settled = false;
+
+    expect(started).toBeInstanceOf(Promise);
+    void started?.then(() => {
+      settled = true;
+    });
+    // Tab-bar progress and other menus share the pending checkout.
+    expect(result.current.startCheckout(ViewLayout.Timeline)).toBe(started);
+    expect(result.current.checkCreation(ViewLayout.Chart, close)).toBe(false);
+    expect(close).not.toHaveBeenCalled();
+    expect(window.open).toHaveBeenCalledTimes(1);
+    expect(checkout).toHaveBeenCalledTimes(1);
+    await act(async () => undefined);
+    expect(settled).toBe(false);
+    await act(async () => pending.resolve('https://checkout.example/pro'));
+    expect(settled).toBe(true);
+    expect(popup.location.replace).toHaveBeenCalledWith('https://checkout.example/pro');
+  });
+
+  it('settles a failed checkout after reporting it, then allows another attempt', async () => {
+    checkout.mockRejectedValueOnce(new Error('Billing unavailable'));
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.getAction(ViewLayout.Timeline).type).toBe('upgrade'));
+    await act(async () => {
+      await result.current.startCheckout(ViewLayout.Timeline);
+    });
+    expect(toast.error).toHaveBeenCalledWith('Billing unavailable');
+    const retry = result.current.startCheckout(ViewLayout.Timeline);
+
+    expect(retry).toBeInstanceOf(Promise);
+    await act(async () => {
+      await retry;
+    });
+    expect(checkout).toHaveBeenCalledTimes(2);
+  });
+
   it('offers a clickable checkout link if the browser blocks the new tab', async () => {
     const { result } = mount();
 
@@ -192,7 +244,7 @@ describe('workspace database view creation', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Billing unavailable'));
   });
 
-  it('keeps quota and billing failures unavailable instead of showing a crown, and retries on reopen', async () => {
+  it('keeps quota and billing failures unavailable instead of showing a crown, and retries a blocked attempt', async () => {
     quota.mockRejectedValueOnce(new Error('Old server'));
     subscriptions.mockRejectedValueOnce(new Error('Billing unavailable'));
     const { result, rerender } = mount();
@@ -203,10 +255,13 @@ describe('workspace database view creation', () => {
     expect(result.current.getAction(ViewLayout.Chart).requiresPro).toBeUndefined();
     expect(result.current.getAction(ViewLayout.Timeline).requiresPro).toBeUndefined();
     expect(result.current.checkCreation(ViewLayout.Chart)).toBe(false);
-    rerender({ open: false });
-    rerender({ open: true });
+    expect(toast.error).toHaveBeenCalledWith('databaseViewCreation.unavailable');
+    // Desktop parity: a blocked attempt refetches, so trying again can succeed.
     await waitFor(() => expect(result.current.getAction(ViewLayout.Chart).type).toBe('create'));
     expect(quota).toHaveBeenCalledTimes(2);
+    rerender({ open: false });
+    rerender({ open: true });
+    await waitFor(() => expect(quota).toHaveBeenCalledTimes(3));
   });
 
   it('can use a free Form allowance even if billing fails', async () => {
@@ -379,7 +434,7 @@ describe('workspace database view creation', () => {
     await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(2));
   });
 
-  it('keeps known hints during a background refresh without another billing read', async () => {
+  it('keeps known crowns but not stale allowances during a background refresh, without another billing read', async () => {
     const pending = deferred<typeof allowed>();
     const { result } = mount();
 
@@ -388,12 +443,97 @@ describe('workspace database view creation', () => {
     act(() => {
       emitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED);
     });
-    expect(result.current.getAction(ViewLayout.Form).type).toBe('create');
+    expect(result.current.getAction(ViewLayout.Form)).toMatchObject({
+      type: 'disabled',
+      reason: 'databaseViewCreation.checking',
+    });
     expect(result.current.getAction(ViewLayout.Timeline).type).toBe('upgrade');
     await act(async () => pending.resolve({ can_create_form: false, can_create_chart: true }));
     expect(result.current.getAction(ViewLayout.Form)).toMatchObject({ type: 'upgrade', requiresPro: true });
     expect(result.current.getAction(ViewLayout.Chart).type).toBe('create');
     expect(subscriptions).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a confirmed crown after a failed refresh while the stale allowance stays unavailable', async () => {
+    quota.mockResolvedValueOnce({ can_create_form: true, can_create_chart: false });
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.getAction(ViewLayout.Chart).type).toBe('upgrade'));
+    quota.mockRejectedValueOnce(new Error('Server unavailable'));
+    await act(async () => {
+      emitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED);
+    });
+    expect(result.current.getAction(ViewLayout.Chart)).toMatchObject({ type: 'upgrade', requiresPro: true });
+    expect(result.current.getAction(ViewLayout.Form)).toMatchObject({
+      type: 'disabled',
+      reason: 'databaseViewCreation.unavailable',
+    });
+  });
+
+  it('uses the Desktop upgrade message for each limited layout', async () => {
+    quota.mockResolvedValue({ can_create_form: false, can_create_chart: false });
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.getAction(ViewLayout.Form).type).toBe('upgrade'));
+    await waitFor(() => expect(result.current.getAction(ViewLayout.Timeline).type).toBe('upgrade'));
+    expect(result.current.getAction(ViewLayout.Form).reason).toBe('databaseViewCreation.upgradeForm');
+    expect(result.current.getAction(ViewLayout.Chart).reason).toBe('databaseViewCreation.upgradeChart');
+    expect(result.current.getAction(ViewLayout.Timeline).reason).toBe('databaseViewCreation.upgradeTimeline');
+  });
+
+  it('does not trust a remembered allowance when the menu reopens, but keeps known crowns', async () => {
+    quota.mockResolvedValueOnce({ can_create_form: true, can_create_chart: false });
+    // Record every render: an effect could hide a stale first frame from result.current.
+    const rendered: Array<{ open: boolean; form: string; chart: string }> = [];
+    const { result, rerender } = renderHook(
+      ({ open }) => {
+        const creation = useDatabaseViewCreation({ workspaceId, getSubscriptions: subscriptions, enabled: open });
+
+        rendered.push({
+          open,
+          form: creation.getAction(ViewLayout.Form).type,
+          chart: creation.getAction(ViewLayout.Chart).type,
+        });
+        return creation;
+      },
+      { initialProps: { open: true }, wrapper: Wrapper }
+    );
+
+    await waitFor(() => expect(result.current.getAction(ViewLayout.Form).type).toBe('create'));
+    const pending = deferred<typeof allowed>();
+
+    quota.mockReturnValueOnce(pending.promise);
+    rerender({ open: false });
+    rendered.length = 0;
+    rerender({ open: true });
+    expect(rendered.length).toBeGreaterThan(0);
+    for (const frame of rendered) expect(frame).toEqual({ open: true, form: 'disabled', chart: 'upgrade' });
+    await act(async () => pending.resolve({ can_create_form: true, can_create_chart: false }));
+    expect(result.current.getAction(ViewLayout.Form).type).toBe('create');
+  });
+
+  it('clears the quota snapshot when the connection drops', async () => {
+    quota.mockResolvedValueOnce({ can_create_form: false, can_create_chart: true });
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.getAction(ViewLayout.Form).type).toBe('upgrade'));
+    const pending = deferred<typeof allowed>();
+
+    quota.mockReturnValueOnce(pending.promise);
+    act(() => {
+      emitter.webSocketReadyState = 3;
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS);
+    });
+    act(() => {
+      emitter.webSocketReadyState = 1;
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS);
+    });
+    expect(result.current.getAction(ViewLayout.Form)).toMatchObject({
+      type: 'disabled',
+      reason: 'databaseViewCreation.checking',
+    });
+    await act(async () => pending.resolve({ can_create_form: false, can_create_chart: true }));
+    expect(result.current.getAction(ViewLayout.Form).type).toBe('upgrade');
   });
 
   it('does not restore an invalidated in-flight plan after another menu fetches the new plan', async () => {

@@ -1,9 +1,11 @@
 import { ComponentProps, ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { ViewLayout } from '@/application/types';
 import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { DatabaseViewCreationAction } from '@/components/app/hooks/useDatabaseViewCreation';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isLimitedDatabaseViewLayout } from '@/utils/subscription';
 
@@ -35,17 +37,36 @@ export function DatabaseViewProBadge() {
 export function DatabaseViewCreationItem({
   action,
   layout,
+  loading = false,
+  disabled = false,
   children,
   ...props
 }: ComponentProps<typeof DropdownMenuItem> & {
   action: DatabaseViewCreationAction;
   layout?: ViewLayout;
+  /** Checkout is opening from this item; its progress replaces the crown. */
+  loading?: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <DatabaseViewCreationHint enabled={isLimitedDatabaseViewLayout(layout)} reason={action.reason}>
-      <DropdownMenuItem {...props} disabled={action.type === 'disabled'}>
+      <DropdownMenuItem
+        {...props}
+        aria-busy={loading || undefined}
+        disabled={disabled || loading || action.type === 'disabled'}
+      >
         {children}
-        {action.requiresPro && <DatabaseViewProBadge />}
+        {loading ? (
+          <Progress
+            role='progressbar'
+            aria-label={t('databaseViewCreation.openingCheckout')}
+            variant='primary'
+            className='ml-auto'
+          />
+        ) : (
+          action.requiresPro && <DatabaseViewProBadge />
+        )}
       </DropdownMenuItem>
     </DatabaseViewCreationHint>
   );

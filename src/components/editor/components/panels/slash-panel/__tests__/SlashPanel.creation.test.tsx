@@ -104,6 +104,16 @@ describe('slash database view admission', () => {
     expect(mockCreationOptions).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }));
   });
 
+  it('keeps checking for the rest of the slash session after a limited option was shown', () => {
+    mockSearch = 'chart';
+    const { rerender } = render(<SlashPanel setEmojiPosition={jest.fn()} />);
+
+    expect(mockCreationOptions).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: true }));
+    mockSearch = 'heading';
+    rerender(<SlashPanel setEmojiPosition={jest.fn()} />);
+    expect(mockCreationOptions).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: true }));
+  });
+
   it('uses the latest admission decision on Enter without reattaching the keyboard listener', () => {
     mockSearch = 'chart';
     mockAction = { type: 'create' };

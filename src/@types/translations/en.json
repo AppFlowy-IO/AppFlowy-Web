@@ -3,12 +3,15 @@
     "onlineRequired": "Connect to the internet to create Form or Chart views.",
     "connectionRequired": "Connect to the server to create this view.",
     "checking": "Checking view availability…",
-    "unavailable": "Unable to check view availability. Close this menu and try again.",
-    "upgrade": "Upgrade this workspace to Pro to create this view.",
+    "unavailable": "Workspace information is unavailable. Please try again.",
+    "upgradeTimeline": "Upgrade this workspace to Pro to create a Timeline view.",
+    "upgradeForm": "Upgrade this workspace to Pro to create more Form views.",
+    "upgradeChart": "Upgrade this workspace to Pro to create more Chart views.",
     "askOwner": "Ask the workspace owner to upgrade to Pro to create this view.",
     "checkoutFailed": "Unable to open checkout. Try again.",
     "checkoutReady": "Your Pro checkout is ready.",
     "openCheckout": "Open checkout",
+    "openingCheckout": "Opening checkout…",
     "useAddView": "Use Add view to create Form or Chart views."
   },
   "billingLimits": {
