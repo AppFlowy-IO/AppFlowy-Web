@@ -37,6 +37,13 @@ const mockScheduleDeferredCleanup = jest.fn();
 const mockMenuSelectPreventDefault = jest.fn();
 let mockExperimentalDatabaseViewCreationEnabled = false;
 
+jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({
+  useDatabaseViewCreation: () => ({
+    getAction: () => ({ type: 'create' }),
+    checkCreation: () => true,
+  }),
+}));
+
 jest.mock('@/application/constants', () => ({
   ...jest.requireActual('@/application/constants'),
   get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {

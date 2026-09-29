@@ -1,6 +1,7 @@
 import dayjs from 'dayjs';
+import { t } from 'i18next';
 import { nanoid } from 'nanoid';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import * as Y from 'yjs';
 
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
@@ -64,7 +65,6 @@ import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
-import { assertViewCreationOnline, onlineViewCreationRequiredError } from '@/application/view-online-policy';
 import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { observeFormulaRelatedDocuments, resolveFormulaRowContext } from '@/application/database-yjs/formula/materialize';
 import {
@@ -3206,16 +3206,10 @@ export function useDuplicateDatabaseView() {
 export function useUpdateDatabaseLayout(viewId: string) {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
-  const { workspaceId } = useDatabaseContext();
-  const requestRevision = useRef(0);
-
-  useEffect(() => () => { requestRevision.current += 1; }, [database, viewId, workspaceId]);
-
   const enhanceCalendarLayoutByFieldExists = useEnhanceCalendarLayoutByFieldExists();
 
   return useCallback(
     (layout: DatabaseViewLayout) => {
-      const revision = ++requestRevision.current;
       const applyLayout = () => executeOperations(
         sharedRoot,
         [
@@ -3314,31 +3308,21 @@ export function useUpdateDatabaseLayout(viewId: string) {
 
       const planPolicy = getWorkspacePlanPolicy();
 
-      // Hosted Forms need the atomic creation endpoint to enforce the quota.
-      // Self-hosted instances retain the local layout-conversion path.
-      if (layout === DatabaseViewLayout.Form && planPolicy.requiresOnlineViewCreation(ViewLayout.Form)) {
-        return Promise.reject(new Error('Use Add view to create a Form.'));
+      // Hosted Forms and Charts need atomic server admission. A local Yjs
+      // conversion would bypass the workspace quota, even after an online read.
+      if (
+        !planPolicy.bypassesPlanLimits &&
+        (layout === DatabaseViewLayout.Form || layout === DatabaseViewLayout.Chart)
+      ) {
+        const message = 'Use Add view to create Form or Chart views.';
+
+        // Before i18next initializes, even a defaultValue can return undefined.
+        return Promise.reject(new Error(t('databaseViewCreation.useAddView', { defaultValue: message }) || message));
       }
 
-      if (layout !== DatabaseViewLayout.Chart || !planPolicy.requiresOnlineViewCreation(ViewLayout.Chart)) {
-        applyLayout();
-        return;
-      }
-
-      // Layout conversion edits an existing view through realtime rather than
-      // creating a server view. Require a fresh authorized read first: cached
-      // metadata and navigator.onLine alone cannot establish server reachability.
-      return (async () => {
-        assertViewCreationOnline(ViewLayout.Chart);
-        if (!workspaceId) throw onlineViewCreationRequiredError();
-        const { getView } = await import('@/application/services/js-services/http/view-api');
-
-        await getView(workspaceId, viewId, 0);
-        assertViewCreationOnline(ViewLayout.Chart);
-        if (revision === requestRevision.current) applyLayout();
-      })();
+      applyLayout();
     },
-    [database, enhanceCalendarLayoutByFieldExists, sharedRoot, viewId, workspaceId]
+    [database, enhanceCalendarLayoutByFieldExists, sharedRoot, viewId]
   );
 }
 

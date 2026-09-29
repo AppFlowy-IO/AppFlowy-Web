@@ -1,5 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { toast } from 'sonner';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import { DatabaseViewLayout } from '@/application/types';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -8,6 +7,8 @@ import Layout from '../Layout';
 
 const mockUpdateLayout = jest.fn();
 let mockCreationEnabled = false;
+let mockSelfHosted = false;
+let mockTimelineAllowed = true;
 
 jest.mock('@/application/constants', () => ({
   ...jest.requireActual('@/application/constants'),
@@ -15,6 +16,11 @@ jest.mock('@/application/constants', () => ({
     return mockCreationEnabled;
   },
 }));
+jest.mock('@/application/database-yjs/context', () => ({ useDatabaseContext: () => ({ workspaceId: 'workspace' }) }));
+jest.mock('@/components/app/hooks/useServerInfo', () => ({ useServerHostingMode: () => mockSelfHosted ? 'self-hosted' : 'cloud' }));
+jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({ useDatabaseViewCreation: () => ({
+  getAction: () => mockTimelineAllowed ? { type: 'create' } : { type: 'upgrade', reason: 'Requires Pro' },
+}) }));
 jest.mock('sonner', () => ({ toast: { error: jest.fn() } }));
 jest.mock('@/application/database-yjs', () => ({ useDatabaseViewId: () => 'view-id' }));
 jest.mock('@/application/database-yjs/dispatch', () => ({ useUpdateDatabaseLayout: () => mockUpdateLayout }));
@@ -41,6 +47,8 @@ async function openLayout(currentLayout: DatabaseViewLayout) {
 describe('database Layout', () => {
   beforeEach(() => {
     mockCreationEnabled = false;
+    mockSelfHosted = false;
+    mockTimelineAllowed = true;
     jest.clearAllMocks();
     mockUpdateLayout.mockReset();
   });
@@ -76,15 +84,36 @@ describe('database Layout', () => {
     expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Timeline);
   });
 
-  it('shows a connection message when Chart conversion is rejected without changing the selected layout', async () => {
-    const message = 'Connect to the internet to create Form or Chart views.';
-
-    mockUpdateLayout.mockRejectedValueOnce(new Error(message));
+  it('hides hosted Form and Chart conversion while preserving the selected Chart', async () => {
     await openLayout(DatabaseViewLayout.Grid);
-    fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Chart}`));
+    expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Chart}`)).toBeNull();
+    expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Form}`)).toBeNull();
+  });
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
-    expect(mockUpdateLayout).toHaveBeenCalledTimes(1);
-    expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Chart);
+  it('keeps an existing hosted Chart selected without creating another Chart', async () => {
+    const trigger = await openLayout(DatabaseViewLayout.Chart);
+
+    expect(trigger.textContent).toContain('chart.menuName');
+    fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Chart}`));
+    expect(mockUpdateLayout).not.toHaveBeenCalled();
+  });
+
+  it('blocks Timeline conversion when creation requires Pro', async () => {
+    mockCreationEnabled = true;
+    mockTimelineAllowed = false;
+    await openLayout(DatabaseViewLayout.Grid);
+    const timeline = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`);
+
+    expect(timeline.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(timeline);
+    expect(mockUpdateLayout).not.toHaveBeenCalled();
+  });
+
+  it.each([DatabaseViewLayout.Form, DatabaseViewLayout.Chart])('allows self-hosted conversion to %s', async (layout) => {
+    mockCreationEnabled = true;
+    mockSelfHosted = true;
+    await openLayout(DatabaseViewLayout.Grid);
+    fireEvent.click(screen.getByTestId(`database-layout-option-${layout}`));
+    expect(mockUpdateLayout).toHaveBeenCalledWith(layout);
   });
 });

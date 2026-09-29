@@ -2,6 +2,7 @@ import {
   Role,
   Subscription,
   SubscriptionPlan,
+  ViewLayout,
   Workspace,
   WorkspaceSubscriptionInfo,
   WorkspaceSubscriptionStatus,
@@ -9,6 +10,10 @@ import {
 import { isSameUserUid, UserUid } from '@/application/user-uid';
 
 const PRO_ACCESS_PLANS = new Set([SubscriptionPlan.Pro, SubscriptionPlan.Team]);
+
+export function isLimitedDatabaseViewLayout(layout?: ViewLayout): boolean {
+  return layout === ViewLayout.Timeline || layout === ViewLayout.Form || layout === ViewLayout.Chart;
+}
 
 /** Shared access rule for billing settings and the dialog that handles their Change plan action. */
 export function canManageWorkspaceBilling(

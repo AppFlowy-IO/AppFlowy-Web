@@ -1,6 +1,15 @@
 {
   "databaseViewCreation": {
-    "onlineRequired": "Connect to the internet to create Form or Chart views."
+    "onlineRequired": "Connect to the internet to create Form or Chart views.",
+    "connectionRequired": "Connect to the server to create this view.",
+    "checking": "Checking view availability…",
+    "unavailable": "Unable to check view availability. Close this menu and try again.",
+    "upgrade": "Upgrade this workspace to Pro to create this view.",
+    "askOwner": "Ask the workspace owner to upgrade to Pro to create this view.",
+    "checkoutFailed": "Unable to open checkout. Try again.",
+    "checkoutReady": "Your Pro checkout is ready.",
+    "openCheckout": "Open checkout",
+    "useAddView": "Use Add view to create Form or Chart views."
   },
   "billingLimits": {
     "workspaceProRequired": "Upgrade this workspace to Pro to use this feature or increase its limits.",

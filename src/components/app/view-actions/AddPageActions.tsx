@@ -8,6 +8,7 @@ import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gal
 import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
 import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as UploadIcon } from '@/assets/icons/upload.svg';
+import { DatabaseViewCreationItem } from '@/components/_shared/DatabaseViewCreationItem';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { buildInitialAIChatSettings } from '@/components/ai-chat/chat-settings';
 import { isSpaceView } from '@/components/ai-chat/rag-scope';
@@ -19,12 +20,15 @@ import {
   useScheduleDeferredCleanup,
   useToView,
 } from '@/components/app/app.hooks';
-import { useTimelineCreationDisabledReason } from '@/components/app/hooks/useTimelineCreationDisabledReason';
-import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
+import { DropdownMenuGroup } from '@/components/ui/dropdown-menu';
 import { getErrorMessage } from '@/utils/errors';
 
-function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (view: View) => void }) {
+function AddPageActions({ view, onImportClick, onClose }: {
+  view: View;
+  onImportClick?: (view: View) => void;
+  onClose?: () => void;
+}) {
   const { t } = useTranslation();
   const {
     addPage,
@@ -42,16 +46,16 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
   const toView = useToView();
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
-  const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
+  const { getAction, checkCreation } = useDatabaseViewCreation({
+    getSubscriptions,
     workspaceId: currentWorkspaceId,
-    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
   });
   const lastChildViewId = view.children?.[view.children.length - 1]?.view_id;
   const handleAddPage = useCallback(
     async (layout: ViewLayout, name?: string) => {
       if (!addPage) return;
       if (layout === ViewLayout.AIChat && !aiEnabled) return;
-      if (layout === ViewLayout.Timeline && timelineDisabledReason) return;
+      if (!checkCreation(layout, onClose)) return;
       const loadingToastId = toast.loading(t('document.creating'));
 
       try {
@@ -180,7 +184,8 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
       openPageModal,
       scheduleDeferredCleanup,
       t,
-      timelineDisabledReason,
+      checkCreation,
+      onClose,
       toView,
       updatePage,
       view,
@@ -191,8 +196,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
     label: string;
     icon: ReactNode;
     testId?: string;
-    disabled?: boolean;
-    tooltip?: string;
+    layout?: ViewLayout;
     onSelect: () => void | Promise<void>;
   }[] = useMemo(
     () => [
@@ -232,8 +236,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
               label: t('timeline.menuName', { defaultValue: 'Timeline' }),
               icon: <ViewIcon layout={ViewLayout.Timeline} size={'medium'} />,
               testId: 'add-timeline-page-button',
-              disabled: Boolean(timelineDisabledReason),
-              tooltip: timelineDisabledReason,
+              layout: ViewLayout.Timeline,
               onSelect: () => {
                 void handleAddPage(ViewLayout.Timeline, t('document.plugins.database.newDatabase'));
               },
@@ -256,6 +259,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         label: t('chart.menuName'),
         icon: <ViewIcon layout={ViewLayout.Chart} size={'small'} />,
         testId: 'add-chart-button',
+        layout: ViewLayout.Chart,
         onSelect: () => {
           void handleAddPage(ViewLayout.Chart, t('document.plugins.database.newDatabase'));
         },
@@ -266,6 +270,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
               label: t('form.menuName'),
               icon: <ViewIcon layout={ViewLayout.Form} size={'small'} />,
               testId: 'add-form-button',
+              layout: ViewLayout.Form,
               onSelect: () => handleAddPage(ViewLayout.Form, t('document.plugins.database.newDatabase')),
             },
           ]
@@ -303,36 +308,23 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         },
       },
     ],
-    [aiEnabled, handleAddPage, t, onImportClick, timelineDisabledReason, view]
+    [aiEnabled, handleAddPage, t, onImportClick, view]
   );
 
   return (
     <DropdownMenuGroup>
-      {actions.map((action) =>
-        action.disabled && action.tooltip ? (
-          <Tooltip key={action.label}>
-            <TooltipTrigger asChild>
-              <div>
-                <DropdownMenuItem data-testid={action.testId} disabled>
-                  {action.icon}
-                  {action.label}
-                </DropdownMenuItem>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>{action.tooltip}</TooltipContent>
-          </Tooltip>
-        ) : (
-          <DropdownMenuItem
-            key={action.label}
-            data-testid={action.testId}
-            disabled={action.disabled}
-            onSelect={() => void action.onSelect()}
-          >
-            {action.icon}
-            {action.label}
-          </DropdownMenuItem>
-        )
-      )}
+      {actions.map((action) => (
+        <DatabaseViewCreationItem
+          key={action.label}
+          layout={action.layout}
+          action={getAction(action.layout)}
+          data-testid={action.testId}
+          onSelect={() => void action.onSelect()}
+        >
+          {action.icon}
+          {action.label}
+        </DatabaseViewCreationItem>
+      ))}
     </DropdownMenuGroup>
   );
 }

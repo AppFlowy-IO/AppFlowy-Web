@@ -151,6 +151,7 @@ jobs:
           - name: 'form-timeline-bdd'
             spec: >-
               playwright/.features-gen/playwright/bdd/features/form/
+              playwright/.features-gen/playwright/bdd/features/database/form-chart-quota.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/timeline.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/timeline-integration.feature.spec.js
             description: 'Form and Timeline creation and interactions'

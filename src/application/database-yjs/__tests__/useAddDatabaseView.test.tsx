@@ -179,7 +179,7 @@ function getDatabase(databaseDoc: YDoc): Y.Map<unknown> {
   return databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as Y.Map<unknown>;
 }
 
-describe('online Chart layout conversion', () => {
+describe('database layout conversion admission', () => {
   beforeEach(() => {
     updateServerInfo('https://test.appflowy.cloud', {
       status: 'available', info: { enable_page_history: true, self_hosted: false },
@@ -219,7 +219,7 @@ describe('online Chart layout conversion', () => {
     const fixture = setup();
 
     await expect(fixture.result.current(DatabaseViewLayout.Chart)).rejects.toThrow(
-      'Connect to the internet to create Form or Chart views.'
+      'Use Add view to create Form or Chart views.'
     );
     expect(getView).not.toHaveBeenCalled();
     expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(fixture.before);
@@ -242,65 +242,28 @@ describe('online Chart layout conversion', () => {
     expect(fixture.onUpdate).toHaveBeenCalled();
   });
 
-  it('requires the server creation path for Forms instead of converting an existing view', async () => {
+  it.each([DatabaseViewLayout.Form, DatabaseViewLayout.Chart])(
+    'requires atomic server creation for hosted layout %s even while online', async (layout) => {
+      jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+      const fixture = setup();
+
+      await expect(fixture.result.current(layout)).rejects.toThrow('Use Add view to create Form or Chart views.');
+      expect(getView).not.toHaveBeenCalled();
+      expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(fixture.before);
+      expect(fixture.onUpdate).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([DatabaseViewLayout.Form, DatabaseViewLayout.Chart])('keeps existing hosted layout %s usable', (layout) => {
     const fixture = setup();
-
-    await expect(fixture.result.current(DatabaseViewLayout.Form)).rejects.toThrow('Use Add view to create a Form.');
-    expect(getView).not.toHaveBeenCalled();
-    expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(fixture.before);
-    expect(fixture.onUpdate).not.toHaveBeenCalled();
-  });
-
-  it('does not trust navigator.onLine when the server is unreachable', async () => {
-    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
-    const error = { code: -1, message: 'Network Error' };
-
-    jest.mocked(getView).mockRejectedValue(error);
-    const fixture = setup();
-
-    await expect(fixture.result.current(DatabaseViewLayout.Chart)).rejects.toBe(error);
-    expect(getView).toHaveBeenCalledWith('workspace-id', 'base-view-id', 0);
-    expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(fixture.before);
-    expect(fixture.onUpdate).not.toHaveBeenCalled();
-  });
-
-  it('waits for a fresh server read before applying a Chart conversion', async () => {
-    let acceptRead!: (view: View) => void;
-
-    jest.mocked(getView).mockImplementation(() => new Promise<View>((resolve) => { acceptRead = resolve; }));
-    const fixture = setup();
-    const pending = fixture.result.current(DatabaseViewLayout.Chart);
-
-    await act(async () => { await Promise.resolve(); });
-    expect(getView).toHaveBeenCalledTimes(1);
-    expect(fixture.onUpdate).not.toHaveBeenCalled();
-    await act(async () => {
-      acceptRead(createView({ view_id: 'base-view-id', layout: ViewLayout.Grid }));
-      await pending;
-    });
-
     const views = getDatabase(fixture.databaseDoc).get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
 
-    expect(views.get('base-view-id')?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Chart);
-  });
-
-  it('does not let a pending Chart conversion replace a later layout choice', async () => {
-    let acceptRead!: (view: View) => void;
-
-    jest.mocked(getView).mockImplementation(() => new Promise<View>((resolve) => { acceptRead = resolve; }));
-    const fixture = setup();
-    const pending = fixture.result.current(DatabaseViewLayout.Chart);
-
-    await act(async () => { await Promise.resolve(); });
-    act(() => { void fixture.result.current(DatabaseViewLayout.Grid); });
-    await act(async () => {
-      acceptRead(createView({ view_id: 'base-view-id', layout: ViewLayout.Grid }));
-      await pending;
-    });
-
-    expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(fixture.before);
+    act(() => { views.get('base-view-id')?.set(YjsDatabaseKey.layout, layout); });
+    fixture.onUpdate.mockClear();
+    act(() => { void fixture.result.current(layout); });
     expect(fixture.onUpdate).not.toHaveBeenCalled();
   });
+
 });
 
 describe('useAddDatabaseView', () => {

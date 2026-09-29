@@ -12,6 +12,13 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 const mockAddView = jest.fn();
 let mockExperimentalDatabaseViewCreationEnabled = false;
 
+jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({
+  useDatabaseViewCreation: () => ({
+    getAction: () => ({ type: 'create' }),
+    checkCreation: () => true,
+  }),
+}));
+
 jest.mock('@/application/constants', () => ({
   ...jest.requireActual('@/application/constants'),
   get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
@@ -52,8 +59,8 @@ jest.mock('@/components/ui/button', () => ({
 jest.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button {...props}>{children}</button>
+  DropdownMenuItem: ({ children, onSelect, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { onSelect?: () => void }) => (
+    <button {...props} onClick={onSelect}>{children}</button>
   ),
   DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));

@@ -5,6 +5,7 @@ export {
   deleteWorkspace as remove,
   leaveWorkspace as leave,
   getWorkspaces as getAll,
+  getDatabaseViewCreationStatus,
   getWorkspaceFolder as getFolder,
   inviteMembers,
   removeMembers,
