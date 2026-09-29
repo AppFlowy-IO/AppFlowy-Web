@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ChecklistFilter, ChecklistFilterCondition, useReadOnly } from '@/application/database-yjs';
+import { ChecklistFilter, ChecklistFilterCondition, useConditionsReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import { DropdownMenuItemTick, dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
@@ -13,7 +13,7 @@ import { useConditionsContext } from '../../conditions/context';
 // value list (Is complete / Is incomplete) and picking a value closes the popover.
 function ChecklistFilterMenu({ filter }: { filter: ChecklistFilter }) {
   const { t } = useTranslation();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const updateFilter = useUpdateFilter();
   const setOpenFilterId = useConditionsContext()?.setOpenFilterId;
 

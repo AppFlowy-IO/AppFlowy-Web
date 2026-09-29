@@ -48,7 +48,7 @@ export function formatValue(value: number): string {
  * Supports negative `min`, so Sum/Avg/Min on Number fields with negative
  * values doesn't get clipped at zero.
  */
-export function generateNiceTicks(min: number, max: number, targetCount = 8): number[] {
+export function generateNiceTicks(min: number, max: number, targetCount = 8, integerOnly = false): number[] {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return [0];
   if (min === max) {
     if (min === 0) return [0];
@@ -66,15 +66,20 @@ export function generateNiceTicks(min: number, max: number, targetCount = 8): nu
   else if (fraction < 7) niceFraction = 5;
   else niceFraction = 10;
 
-  const step = niceFraction * Math.pow(10, exp);
+  // Counts (and other whole-number data) never get fractional ticks.
+  const rawStep = niceFraction * Math.pow(10, exp);
+  const step = integerOnly ? Math.max(1, Math.round(rawStep)) : rawStep;
+  // Decimal places of the step: 0.1 → 1, 0.25 → 2, 5 → 0.
+  const decimals = Math.max(0, -Math.floor(Math.log10(step) + 1e-9)) + (niceFraction === 1 || integerOnly ? 0 : 1);
   const niceMin = Math.floor(min / step) * step;
   const niceMax = Math.ceil(max / step) * step;
   const ticks: number[] = [];
   const epsilon = step * 1e-9;
 
   for (let v = niceMin; v <= niceMax + epsilon; v += step) {
-    // Avoid float drift accumulated by repeated addition.
-    ticks.push(Math.round(v / step) * step);
+    // Round to the step's precision: repeated float multiplication yields
+    // values like 0.30000000000000004, which render as garbage axis labels.
+    ticks.push(Number((Math.round(v / step) * step).toFixed(decimals)));
   }
 
   return ticks;
@@ -119,7 +124,8 @@ export function computeValueAxis(data: ChartDataItem[]): {
     if (item.value > dataMax) dataMax = item.value;
   }
 
-  const ticks = generateNiceTicks(dataMin, dataMax);
+  const integerOnly = data.every((item) => Number.isInteger(item.value));
+  const ticks = generateNiceTicks(dataMin, dataMax, 8, integerOnly);
 
   // `generateNiceTicks` always returns at least one tick (`[0]` for the
   // all-zero case), so direct indexing is safe.

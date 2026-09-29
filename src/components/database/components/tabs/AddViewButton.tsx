@@ -32,6 +32,14 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
     workspaceId,
     enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && menuOpen,
   });
+  // The server applies the same Pro policy to Dashboard views.
+  const dashboardDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
+    workspaceId,
+    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && menuOpen,
+    requiresProMessage: t('dashboard.creationRequiresPro', {
+      defaultValue: 'Creating a Dashboard view requires a Pro workspace.',
+    }),
+  });
   const mountedRef = useRef(true);
   const actionScopeRevisionRef = useRef(0);
   const completionCallbacksRef = useRef({ onAfterAddView, onViewAdded });
@@ -67,6 +75,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
 
   const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
     if (layout === DatabaseViewLayout.Timeline && timelineDisabledReason) return;
+    if (layout === DatabaseViewLayout.Dashboard && dashboardDisabledReason) return;
     const actionScopeRevision = actionScopeRevisionRef.current;
     const isCurrentActionScope = () => mountedRef.current && actionScopeRevisionRef.current === actionScopeRevision;
 
@@ -112,6 +121,19 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
     >
       <ViewIcon layout={ViewLayout.Timeline} size={'small'} />
       {t('timeline.menuName', { defaultValue: 'Timeline' })}
+    </DropdownMenuItem>
+  );
+
+  const dashboardAction = (
+    <DropdownMenuItem
+      data-testid='add-dashboard-view-button'
+      disabled={Boolean(dashboardDisabledReason)}
+      onClick={() => {
+        void handleAddView(DatabaseViewLayout.Dashboard, t('dashboard.menuName', { defaultValue: 'Dashboard' }));
+      }}
+    >
+      <ViewIcon layout={ViewLayout.Dashboard} size={'small'} />
+      {t('dashboard.menuName', { defaultValue: 'Dashboard' })}
     </DropdownMenuItem>
   );
 
@@ -166,6 +188,18 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
             </Tooltip>
           ) : (
             timelineAction
+          ))}
+
+        {EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED &&
+          (dashboardDisabledReason ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>{dashboardAction}</div>
+              </TooltipTrigger>
+              <TooltipContent>{dashboardDisabledReason}</TooltipContent>
+            </Tooltip>
+          ) : (
+            dashboardAction
           ))}
 
         <DropdownMenuItem

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldType, useReadOnly, useSortsSelector } from '@/application/database-yjs';
+import { FieldType, useConditionsReadOnly, useSortsSelector } from '@/application/database-yjs';
 import { useAddSort } from '@/application/database-yjs/dispatch';
 import { ReactComponent as SortIcon } from '@/assets/icons/sort.svg';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
@@ -23,7 +23,7 @@ function SortsButton({
   const sorts = useSortsSelector();
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const addSort = useAddSort();
   const conditionsContext = useConditionsContext();
   const setExpanded = conditionsContext?.setExpanded;

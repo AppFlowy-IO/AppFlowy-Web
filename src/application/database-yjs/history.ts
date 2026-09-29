@@ -59,13 +59,14 @@ class DatabaseHistorySourceController {
     readonly kind: HistorySourceKind,
     readonly doc: YDoc,
     private readonly scope: Y.AbstractType<Y.YMapEvent<unknown>>,
-    readonly rowId?: RowId
+    readonly rowId?: RowId,
+    trackedOrigins = new Set<unknown>([DatabaseHistoryOrigin, DatabaseRowHistoryOrigin])
   ) {
     // Register first so redo keep references are released before this pinned
     // Yjs UndoManager replaces redoStack in its own afterTransaction handler.
     this.doc.on('afterTransaction', this.handleTrackedTransactionBeforeUndoManager);
     this.undoManager = new Y.UndoManager(this.scope, {
-      trackedOrigins: new Set([DatabaseHistoryOrigin, DatabaseRowHistoryOrigin]),
+      trackedOrigins,
       captureTimeout: 0,
     });
 
@@ -201,6 +202,12 @@ class DatabaseHistorySourceController {
 
   private handleTrackedTransactionBeforeUndoManager = (transaction: Y.Transaction) => {
     if (!(transaction.origin instanceof DatabaseHistoryOrigin)) return;
+    if (
+      !this.undoManager.trackedOrigins.has(transaction.origin) &&
+      !this.undoManager.trackedOrigins.has(transaction.origin.constructor)
+    ) {
+      return;
+    }
 
     const scope = this.scope as unknown as Y.AbstractType<Y.YEvent>;
 
@@ -226,6 +233,10 @@ type DatabaseHistoryStackGroup = {
 
 export class DatabaseHistoryManager {
   private databaseSource: DatabaseHistorySourceController | null = null;
+  private foreignDatabaseSources = new WeakMap<YDoc, DatabaseHistorySourceController>();
+  // Yjs matches origin constructors exactly. A private subclass lets this
+  // manager own foreign writes without adding them to the source's history.
+  private readonly foreignDatabaseOrigin = class extends DatabaseHistoryOrigin {};
   private rowSources = new WeakMap<YDoc, DatabaseHistorySourceController>();
   private sourceUnsubscribers = new WeakMap<DatabaseHistorySourceController, () => void>();
   private sourceSubscribers = new WeakMap<DatabaseHistorySourceController, () => void>();
@@ -308,6 +319,27 @@ export class DatabaseHistoryManager {
     this.attachSource(controller);
     this.rowSources.set(rowDoc, controller);
     return controller;
+  }
+
+  createForeignDatabaseHistoryOrigin(databaseDoc: YDoc, action: DatabaseHistoryAction) {
+    if (!this.foreignDatabaseSources.has(databaseDoc)) {
+      const scope = getDatabaseHistoryScope(databaseDoc);
+
+      if (scope) {
+        const source = new DatabaseHistorySourceController(
+          'database',
+          databaseDoc,
+          scope,
+          undefined,
+          new Set([this.foreignDatabaseOrigin])
+        );
+
+        this.foreignDatabaseSources.set(databaseDoc, source);
+        this.attachSource(source);
+      }
+    }
+
+    return new this.foreignDatabaseOrigin(action, action.historyGroup ?? activeDatabaseHistoryGroup);
   }
 
   subscribe(subscriber: HistorySubscriber) {
@@ -463,6 +495,7 @@ const databaseHistoryManagers = new WeakMap<YDoc, DatabaseHistoryManager>();
 const databaseHistoryRowDocs = new WeakMap<YDoc, Map<YDoc, RowId>>();
 const rowDocManagers = new WeakMap<YDoc, Set<DatabaseHistoryManager>>();
 let activeDatabaseHistoryGroup: DatabaseHistoryGroup | null = null;
+let activeDatabaseHistoryOwner: DatabaseHistoryManager | null = null;
 
 function registerRowDocManager(rowDoc: YDoc, manager: DatabaseHistoryManager) {
   let managers = rowDocManagers.get(rowDoc);
@@ -512,6 +545,24 @@ export function runDatabaseHistoryGroup<T>(mutate: () => T, historyGroup?: objec
     return mutate();
   } finally {
     activeDatabaseHistoryGroup = null;
+  }
+}
+
+/**
+ * Groups synchronous database writes under one database's undo history, even
+ * when an action updates views in other database documents. Foreign sources
+ * have separate controllers so clearing or replaying this history cannot
+ * consume unrelated actions from the source database's own history.
+ */
+export function runDatabaseHistoryGroupForDatabase<T>(databaseDoc: YDoc, mutate: () => T): T {
+  if (activeDatabaseHistoryOwner) return runDatabaseHistoryGroup(mutate);
+
+  activeDatabaseHistoryOwner = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+  try {
+    return runDatabaseHistoryGroup(mutate);
+  } finally {
+    activeDatabaseHistoryOwner = null;
   }
 }
 
@@ -590,15 +641,53 @@ export function getOrCreateDatabaseRowHistoryController(rowDoc: YDoc, rowId?: Ro
   return controller;
 }
 
+const localConditionsDocs = new WeakMap<YDoc, Set<Y.Doc>>();
+
+/**
+ * Batches a never-synced doc that stands in for part of this database (a
+ * viewer's private filters and sorts) with the database's actions: an action
+ * that writes it several times notifies its observers once. Returns the
+ * unregister function.
+ */
+export function registerLocalConditionsDoc(databaseDoc: YDoc | null | undefined, localDoc: Y.Doc) {
+  if (!databaseDoc) return () => undefined;
+  let docs = localConditionsDocs.get(databaseDoc);
+
+  if (!docs) {
+    docs = new Set();
+    localConditionsDocs.set(databaseDoc, docs);
+  }
+
+  docs.add(localDoc);
+  return () => {
+    docs?.delete(localDoc);
+  };
+}
+
+function withLocalConditionsDocs(databaseDoc: YDoc, mutate: () => void) {
+  const docs = localConditionsDocs.get(databaseDoc);
+
+  if (!docs?.size) return mutate;
+  // The local transactions close inside the database one, with no origin: the
+  // writes stay viewer edits and never reach this database's undo history.
+  return Array.from(docs).reduce<() => void>((inner, doc) => () => doc.transact(inner), mutate);
+}
+
 export function runDatabaseAction(databaseDoc: YDoc, action: DatabaseHistoryAction, mutate: () => void) {
   if (isDatabaseHistoryDocumentImmutable(databaseDoc)) return;
+  const run = withLocalConditionsDocs(databaseDoc, mutate);
 
   runDatabaseHistoryGroup(() => {
     if (getDatabaseHistoryPolicy(action) === 'capture') {
+      if (activeDatabaseHistoryOwner && activeDatabaseHistoryOwner.databaseDoc !== databaseDoc) {
+        databaseDoc.transact(run, activeDatabaseHistoryOwner.createForeignDatabaseHistoryOrigin(databaseDoc, action));
+        return;
+      }
+
       getOrCreateDatabaseHistoryManager(databaseDoc);
     }
 
-    databaseDoc.transact(mutate, createDatabaseHistoryOrigin(action));
+    databaseDoc.transact(run, createDatabaseHistoryOrigin(action));
   }, action.historyGroup);
 }
 

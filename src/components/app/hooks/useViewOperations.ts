@@ -500,6 +500,7 @@ export function useViewOperations({
           case ViewLayout.Gallery:
           case ViewLayout.Feed:
           case ViewLayout.Timeline:
+          case ViewLayout.Dashboard:
             searchParams.set('r', blockId);
             break;
           default:

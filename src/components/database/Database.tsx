@@ -11,10 +11,13 @@ import {
   retainDatabaseRowDocSeedCache,
 } from '@/application/database-blob';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
-import { hasEffectiveFilters } from '@/application/database-yjs/filter';
+import { DatabaseExtraFiltersContext, DatabaseViewOverlayContext } from '@/application/database-yjs/context';
+import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
+import { combineFilters, hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@/application/database-yjs/history';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
+import { getOverlayTarget, observeOverlayConditions } from '@/application/database-yjs/view-conditions-overlay';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
 import {
   AppendBreadcrumb,
@@ -42,6 +45,7 @@ import {
   YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
+  YDatabaseView,
 } from '@/application/types';
 import { useDatabaseRestoreNotice } from '@/components/app/DatabaseRestoreNotice';
 import { DatabaseRow } from '@/components/database/DatabaseRow';
@@ -197,6 +201,12 @@ export interface Database2Props {
   variant?: UIVariant;
   onRendered?: () => void;
   isDocumentBlock?: boolean;
+  /** Render as a dashboard widget: widget header instead of tabs, viewport = row height. */
+  isDashboardWidget?: boolean;
+  /** Dashboard global filters resolved for this database; AND-ed with the view filters. */
+  extraFilters?: DashboardExtraFilter[];
+  /** A dashboard widget in View mode: the viewer's local filters / sorts (see `view-conditions-overlay.ts`). */
+  viewConditionsOverlay?: YDatabaseView;
   paddingStart?: number;
   paddingEnd?: number;
   showActions?: boolean;
@@ -272,6 +282,9 @@ function Database(props: Database2Props) {
     modalRowId,
     isDocumentBlock: _isDocumentBlock,
     embeddedHeight,
+    isDashboardWidget,
+    extraFilters,
+    viewConditionsOverlay,
     onViewIdsChanged,
     onReorderViews,
     workspaceId,
@@ -486,13 +499,18 @@ function Database(props: Database2Props) {
     const isGroupedView =
       [DatabaseViewLayout.Grid, DatabaseViewLayout.Board, DatabaseViewLayout.List].includes(layout) &&
       (view?.get(YjsDatabaseKey.groups)?.length ?? 0) > 0;
+    // A dashboard widget filters and sorts with the viewer's private copy and
+    // the dashboard's global filters, which need every row as much as the view's own.
+    const conditionsView =
+      viewConditionsOverlay && view && getOverlayTarget(viewConditionsOverlay) === view ? viewConditionsOverlay : view;
+    const filters = combineFilters(conditionsView?.get(YjsDatabaseKey.filters), extraFilters, fields);
 
     return (
       isGroupedView ||
-      hasEffectiveFilters(view?.get(YjsDatabaseKey.filters), fields) ||
-      (view?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0
+      hasEffectiveFilters(filters, fields) ||
+      (conditionsView?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0
     );
-  }, [doc, activeViewId]);
+  }, [doc, activeViewId, viewConditionsOverlay, extraFilters]);
 
   const activeViewNeedsFullRowData = useSyncExternalStore(
     useCallback(
@@ -503,8 +521,13 @@ function Database(props: Database2Props) {
 
         if (view) {
           view.observeDeep(onStoreChange);
+          const unobserveOverlay = viewConditionsOverlay
+            ? observeOverlayConditions(viewConditionsOverlay, onStoreChange)
+            : undefined;
+
           return () => {
             view.unobserveDeep(onStoreChange);
+            unobserveOverlay?.();
           };
         }
 
@@ -517,7 +540,7 @@ function Database(props: Database2Props) {
 
         return () => undefined;
       },
-      [doc, activeViewId]
+      [doc, activeViewId, viewConditionsOverlay]
     ),
     getActiveViewNeedsFullRowData,
     getActiveViewNeedsFullRowData
@@ -1481,6 +1504,7 @@ function Database(props: Database2Props) {
       paddingEnd: props.paddingEnd,
       isDocumentBlock: _isDocumentBlock,
       embeddedHeight,
+      isDashboardWidget,
       navigateToRow: handleOpenRow,
       loadView,
       bindViewSync,
@@ -1534,6 +1558,7 @@ function Database(props: Database2Props) {
       props.paddingEnd,
       _isDocumentBlock,
       embeddedHeight,
+      isDashboardWidget,
       handleOpenRow,
       loadView,
       bindViewSync,
@@ -1616,42 +1641,46 @@ function Database(props: Database2Props) {
   }
 
   return (
-    <div className={'flex min-h-0 w-full flex-1 justify-center'}>
-      <DatabaseContextProvider value={mainContextValue}>
-        {rowId ? (
-          <DatabaseRow appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
-        ) : (
-          <div
-            className={cn(
-              'appflowy-database relative flex w-full select-text flex-col',
-              shouldUseFixedViewport ? 'min-h-0 flex-1 overflow-hidden' : 'overflow-visible'
+    <DatabaseViewOverlayContext.Provider value={viewConditionsOverlay}>
+      <DatabaseExtraFiltersContext.Provider value={extraFilters}>
+        <div className={'flex min-h-0 w-full flex-1 justify-center'}>
+          <DatabaseContextProvider value={mainContextValue}>
+            {rowId ? (
+              <DatabaseRow appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
+            ) : (
+              <div
+                className={cn(
+                  'appflowy-database relative flex w-full select-text flex-col',
+                  shouldUseFixedViewport ? 'min-h-0 flex-1 overflow-hidden' : 'overflow-visible'
+                )}
+              >
+                <DatabaseViews
+                  visibleViewIds={visibleViewIds}
+                  databasePageId={databasePageId}
+                  viewName={databaseName}
+                  onChangeView={onChangeView}
+                  onViewAdded={onViewAdded}
+                  activeViewId={activeViewId}
+                  fixedHeight={embeddedHeight}
+                  onViewIdsChanged={onViewIdsChanged}
+                  onReorderViews={onReorderViews}
+                />
+              </div>
             )}
-          >
-            <DatabaseViews
-              visibleViewIds={visibleViewIds}
-              databasePageId={databasePageId}
-              viewName={databaseName}
-              onChangeView={onChangeView}
-              onViewAdded={onViewAdded}
-              activeViewId={activeViewId}
-              fixedHeight={embeddedHeight}
-              onViewIdsChanged={onViewIdsChanged}
-              onReorderViews={onReorderViews}
-            />
-          </div>
-        )}
-      </DatabaseContextProvider>
-      {modalState.rowId && modalContextValue && (
-        <DatabaseContextProvider value={modalContextValue}>
-          <DatabaseRowModal
-            rowId={modalState.rowId}
-            open={Boolean(modalState.rowId)}
-            openPage={onOpenRowPage}
-            onOpenChange={handleModalOpenChange}
-          />
-        </DatabaseContextProvider>
-      )}
-    </div>
+          </DatabaseContextProvider>
+          {modalState.rowId && modalContextValue && (
+            <DatabaseContextProvider value={modalContextValue}>
+              <DatabaseRowModal
+                rowId={modalState.rowId}
+                open={Boolean(modalState.rowId)}
+                openPage={onOpenRowPage}
+                onOpenChange={handleModalOpenChange}
+              />
+            </DatabaseContextProvider>
+          )}
+        </div>
+      </DatabaseExtraFiltersContext.Provider>
+    </DatabaseViewOverlayContext.Provider>
   );
 }
 

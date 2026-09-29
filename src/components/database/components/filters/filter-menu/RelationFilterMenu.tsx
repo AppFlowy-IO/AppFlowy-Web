@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Filter, RelationFilterCondition, useReadOnly } from '@/application/database-yjs';
+import { Filter, RelationFilterCondition, useConditionsReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import RelationCellMenuContent from '@/components/database/components/cell/relation/RelationCellMenuContent';
 import ClearSelectionItem from '@/components/database/components/filters/filter-menu/ClearSelectionItem';
@@ -24,7 +24,7 @@ function parseRelationFilterRowIds(content: string | undefined) {
 
 function RelationFilterMenu({ filter }: { filter: Filter }) {
   const { t } = useTranslation();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const updateFilter = useUpdateFilter();
   const showPicker = [
     RelationFilterCondition.RelationContains,

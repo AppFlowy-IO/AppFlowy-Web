@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { TextFilter, TextFilterCondition, useReadOnly } from '@/application/database-yjs';
+import { TextFilter, TextFilterCondition, useConditionsReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import TextFilterConditionsSelect
@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 
 function TextFilterMenu ({ filter }: { filter: TextFilter }) {
   const { t } = useTranslation();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const updateFilter = useUpdateFilter();
   const { value, updateValue } = useDebouncedFilterInput({
     content: filter.content,

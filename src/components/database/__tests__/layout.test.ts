@@ -112,4 +112,43 @@ describe('shouldUseFixedDatabaseViewport', () => {
     expect(shouldScrollEmbeddedDatabaseViewport(input)).toBe(false);
     expect(getDatabaseViewportStyle(input)).toEqual({ height: '600px', maxHeight: '600px' });
   });
+
+  it('never auto-shrinks or scrolls an embedded dashboard (it owns its scroll container)', () => {
+    const input = {
+      embeddedHeight: 600,
+      isDocumentBlock: true,
+      layout: DatabaseViewLayout.Dashboard,
+    };
+
+    expect(shouldUseFixedDatabaseViewport(input)).toBe(true);
+    expect(shouldAutoShrinkDatabaseViewport(input)).toBe(false);
+    expect(shouldScrollEmbeddedDatabaseViewport(input)).toBe(false);
+    expect(getDatabaseViewportStyle(input)).toEqual({ height: '600px', maxHeight: '600px' });
+  });
+
+  it('gives a standalone dashboard the fixed app viewport without a height cap', () => {
+    const input = { layout: DatabaseViewLayout.Dashboard, variant: UIVariant.App };
+
+    expect(shouldUseFixedDatabaseViewport(input)).toBe(true);
+    expect(shouldAutoShrinkDatabaseViewport(input)).toBe(false);
+    expect(getDatabaseViewportStyle(input)).toBeUndefined();
+  });
+
+  it('lets a published standalone dashboard flow with the page', () => {
+    expect(shouldUseFixedDatabaseViewport({ variant: UIVariant.Publish })).toBe(false);
+    expect(getDatabaseViewportStyle({ layout: DatabaseViewLayout.Dashboard, variant: UIVariant.Publish })).toBeUndefined();
+  });
+
+  it('treats a dashboard widget (a document-block style embed) like other embedded layouts', () => {
+    const grid = { embeddedHeight: 320, isDocumentBlock: true, layout: DatabaseViewLayout.Grid };
+    const board = { embeddedHeight: 320, isDocumentBlock: true, layout: DatabaseViewLayout.Board };
+
+    expect(getDatabaseViewportStyle(grid)).toEqual({ maxHeight: '320px' });
+    expect(getDatabaseViewportStyle(board)).toEqual({ height: '320px', maxHeight: '320px' });
+  });
+
+  it('does not auto-shrink when the layout is still unknown', () => {
+    expect(shouldAutoShrinkDatabaseViewport({ embeddedHeight: 600, isDocumentBlock: true, layout: null })).toBe(false);
+    expect(shouldAutoShrinkDatabaseViewport({ embeddedHeight: 600, isDocumentBlock: true })).toBe(false);
+  });
 });

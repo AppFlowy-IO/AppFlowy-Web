@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { NumberFilter, NumberFilterCondition, useReadOnly } from '@/application/database-yjs';
+import { NumberFilter, NumberFilterCondition, useConditionsReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
@@ -25,7 +25,7 @@ function NumberFilterMenu({
   conditionLabelStyle?: 'words' | 'symbols';
 }) {
   const { t } = useTranslation();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const updateFilter = useUpdateFilter();
   const { value, updateValue } = useDebouncedFilterInput({
     content: filter.content,

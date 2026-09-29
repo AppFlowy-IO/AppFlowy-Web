@@ -12,7 +12,13 @@
 
 import * as Y from 'yjs';
 
-import { captureDatabaseStorageFence, deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import {
+  captureDatabaseStorageFence,
+  deleteCollabDB,
+  getCachedProviderDoc,
+  openCollabDB,
+  openCollabDBWithProvider,
+} from '@/application/db';
 import { isDatabaseStorageFenceCurrent, withDatabaseStorageFence } from '@/application/db/database-storage-fence';
 import { getOrCreateRowSubDoc, hasCollabCache } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
@@ -50,6 +56,14 @@ export interface OpenViewOptions {
 
 const DEFAULT_ROW_DOCUMENT_MAX_ATTEMPTS = 6;
 
+/**
+ * Server loads in flight per canonical database. Views of one database opened
+ * together (dashboard widgets, linked-database blocks) share one Y.Doc, and
+ * each download carries the whole database: later views wait for the running
+ * request instead of fetching the same collab again.
+ */
+const inflightDatabaseFetches = new Map<string, Promise<void>>();
+
 // ============================================================================
 // Layout to CollabType Mapping
 // ============================================================================
@@ -65,6 +79,7 @@ const LAYOUT_COLLAB_TYPE_MAP: Partial<Record<ViewLayout, Types>> = {
   [ViewLayout.Feed]: Types.Database,
   [ViewLayout.Form]: Types.Database,
   [ViewLayout.Timeline]: Types.Database,
+  [ViewLayout.Dashboard]: Types.Database,
 };
 
 const DOC_KEY_COLLAB_TYPE_MAP: Record<string, Types> = {
@@ -201,8 +216,13 @@ async function mergeLegacyDatabaseViewCache(viewId: string, databaseId: string, 
   }
 }
 
+/** The database whose canonical Y.Doc holds this view, if it is a database view. */
+function getCanonicalDatabaseId(layout: ViewLayout | undefined, options: OpenViewOptions): string | undefined {
+  return layout === undefined || isDatabaseLayout(layout) ? options.databaseId ?? undefined : undefined;
+}
+
 async function openCollabDocForView(viewId: string, layout?: ViewLayout, options: OpenViewOptions = {}): Promise<YDoc> {
-  const databaseId = layout === undefined || isDatabaseLayout(layout) ? options.databaseId ?? undefined : undefined;
+  const databaseId = getCanonicalDatabaseId(layout, options);
 
   if (!databaseId) {
     return openCollabDB(viewId);
@@ -301,6 +321,185 @@ async function fetchRowDocumentAndApply(
   applyYDoc(doc, data);
 }
 
+/**
+ * Whether the local doc already serves this view without a server fetch.
+ */
+function canUseLocalDoc(doc: YDoc, viewId: string, options: OpenViewOptions): boolean {
+  if (options.forceFetch || !hasCollabCache(doc)) return false;
+
+  // Detect empty-shell documents that were cached during a previous load when
+  // the server hadn't finished duplication yet.
+  const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
+  const document = sharedRoot?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
+  const blocks = document?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
+  const blockCount = blocks?.size ?? 0;
+
+  // If the cached document is an empty shell (≤2 blocks = page + empty paragraph),
+  // treat it as uncached so we re-fetch from the server.
+  if (document && blockCount <= 2) {
+    const meta = document.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+    const textMap = meta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
+    const hasTextContent = textMap
+      ? Array.from(textMap.values()).some((v) => {
+          if (v instanceof Y.Text) return v.toJSON().length > 0;
+          if (typeof v === 'string') return v.length > 0;
+          return false;
+        })
+      : false;
+
+    if (!hasTextContent) {
+      Log.debug('[ViewLoader] cached document is empty shell, re-fetching', { viewId, blockCount });
+      return false;
+    }
+  }
+
+  // A database root alone is enough for the generic cache detector, but not
+  // enough to render relation labels or populate the relation picker. These
+  // metadata-only consumers do not bind database realtime, so force the raw
+  // canonical fetch when fields/views have only been partially cached.
+  if (options.databaseMetadataOnly && !databaseDocHasCompleteMetadata(doc, viewId)) {
+    Log.debug('[ViewLoader] cached database metadata is incomplete, re-fetching', {
+      viewId,
+      databaseId: options.databaseId,
+    });
+    return false;
+  }
+
+  if (options.databaseId && viewId !== options.databaseId && databaseDocContainsView(doc, viewId) === false) {
+    Log.debug('[ViewLoader] cached database is missing linked view, re-fetching', {
+      viewId,
+      databaseId: options.databaseId,
+    });
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * One server fetch. A permission denial is permanent for this load: every
+ * local copy keyed to it is evicted before the error propagates, since a cached
+ * collab (or the positive view-meta cache) would otherwise pin the failure and
+ * suppress the refetch after the server grants access.
+ */
+async function fetchAndApplyOrEvict(
+  workspaceId: string,
+  viewId: string,
+  doc: YDoc,
+  options: OpenViewOptions
+): Promise<void> {
+  try {
+    await fetchAndApply(workspaceId, viewId, doc, options);
+  } catch (e) {
+    if (determineErrorType(e).type === ErrorType.Forbidden) {
+      const docKey = options.databaseId ?? viewId;
+
+      Log.debug('[ViewLoader] permission denial — evicting local caches', {
+        viewId,
+        docKey,
+      });
+      invalidateViewCache(workspaceId, viewId);
+      await deleteCollabDB(docKey, { destroyDoc: true }).catch(() => undefined);
+    }
+
+    throw e;
+  }
+}
+
+/**
+ * Fetch and apply with backoff — after page duplication the server worker may
+ * need a moment to persist all row documents. `firstAttempt` is a request for
+ * this view already running, awaited in place of the loop's own first one.
+ */
+async function fetchAndApplyWithRetry(
+  workspaceId: string,
+  viewId: string,
+  doc: YDoc,
+  options: OpenViewOptions,
+  firstAttempt?: Promise<void>
+): Promise<void> {
+  const MAX_RETRIES = 3;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await (attempt === 1 && firstAttempt ? firstAttempt : fetchAndApplyOrEvict(workspaceId, viewId, doc, options));
+      return;
+    } catch (e) {
+      // Retrying cannot repair a permission denial. (404s must keep retrying:
+      // they cover the post-duplication race.)
+      if (determineErrorType(e).type === ErrorType.Forbidden || attempt === MAX_RETRIES) throw e;
+      Log.debug('[ViewLoader] openView fetch retry', {
+        viewId,
+        attempt,
+        maxRetries: MAX_RETRIES,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+
+/**
+ * Fetch a view the local doc cannot serve, and resolve to the doc it loaded
+ * into. A database view first waits for a request for its database already in
+ * flight, and fetches its own only if that snapshot still lacks it (a newer
+ * view, or a failed request).
+ *
+ * Access is per database on this client, not per view: the server hands the
+ * whole database collab, every view included, to whoever may open one of its
+ * views, and a cached database serves its other views without asking again.
+ * So a view that a sibling's download holds opens even when its own request
+ * would have been refused; only a view that fetches for itself can come back
+ * as no access.
+ */
+async function fetchViewFromServer(
+  workspaceId: string,
+  viewId: string,
+  doc: YDoc,
+  layout: ViewLayout | undefined,
+  options: OpenViewOptions
+): Promise<YDoc> {
+  const databaseId = getCanonicalDatabaseId(layout, options);
+  // A forced load must reflect the server as of its own call: it neither waits
+  // for an earlier download nor stands in for later ones.
+  const key =
+    databaseId && !options.forceFetch
+      ? `${workspaceId}:${databaseId}:${options.databaseMetadataOnly ? 'metadata' : 'page'}`
+      : null;
+  const inflight = key ? inflightDatabaseFetches.get(key) : undefined;
+  let target = doc;
+
+  if (inflight && databaseId) {
+    // Its own caller reports a failure; this view then fetches for itself.
+    await inflight.catch(() => undefined);
+    // A refused request evicted the doc it loaded into: continue in a fresh one.
+    if (getCachedProviderDoc(databaseId) !== target) target = await openCollabDocForView(viewId, layout, options);
+
+    if (canUseLocalDoc(target, viewId, options)) {
+      Log.debug('[ViewLoader] view served by an in-flight database fetch', { viewId, databaseId });
+      return target;
+    }
+  }
+
+  if (!key) {
+    await fetchAndApplyWithRetry(workspaceId, viewId, target, options);
+    return target;
+  }
+
+  // Only the request is shared: a view waiting on it never sits out this
+  // view's retries (a deleted view's 404, a 5xx), it fetches for itself.
+  const firstAttempt = fetchAndApplyOrEvict(workspaceId, viewId, target, options);
+
+  inflightDatabaseFetches.set(key, firstAttempt);
+  void firstAttempt
+    .catch(() => undefined)
+    .finally(() => {
+      if (inflightDatabaseFetches.get(key) === firstAttempt) inflightDatabaseFetches.delete(key);
+    });
+  await fetchAndApplyWithRetry(workspaceId, viewId, target, options, firstAttempt);
+  return target;
+}
+
 // ============================================================================
 // Main API
 // ============================================================================
@@ -330,61 +529,10 @@ export async function openView(
   Log.debug('[ViewLoader] openView start', { workspaceId, viewId, layout, databaseId: options.databaseId });
 
   // Step 1: Open from IndexedDB
-  const doc = await openCollabDocForView(viewId, layout, options);
+  let doc = await openCollabDocForView(viewId, layout, options);
 
-  // Step 2: Check cache — also detect empty-shell documents that were cached
-  // during a previous load when the server hadn't finished duplication yet.
-  let fromCache = options.forceFetch ? false : hasCollabCache(doc);
-
-  if (fromCache) {
-    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
-    const document = sharedRoot?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
-    const blocks = document?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
-    const blockCount = blocks?.size ?? 0;
-
-    // If the cached document is an empty shell (≤2 blocks = page + empty paragraph),
-    // treat it as uncached so we re-fetch from the server.
-    if (document && blockCount <= 2) {
-      const meta = document.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
-      const textMap = meta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
-      const hasTextContent = textMap
-        ? Array.from(textMap.values()).some((v) => {
-            if (v instanceof Y.Text) return v.toJSON().length > 0;
-            if (typeof v === 'string') return v.length > 0;
-            return false;
-          })
-        : false;
-
-      if (!hasTextContent) {
-        Log.debug('[ViewLoader] cached document is empty shell, re-fetching', { viewId, blockCount });
-        fromCache = false;
-      }
-    }
-  }
-
-  // A database root alone is enough for the generic cache detector, but not
-  // enough to render relation labels or populate the relation picker. These
-  // metadata-only consumers do not bind database realtime, so force the raw
-  // canonical fetch when fields/views have only been partially cached.
-  if (fromCache && options.databaseMetadataOnly && !databaseDocHasCompleteMetadata(doc, viewId)) {
-    Log.debug('[ViewLoader] cached database metadata is incomplete, re-fetching', {
-      viewId,
-      databaseId: options.databaseId,
-    });
-    fromCache = false;
-  }
-
-  if (fromCache && options.databaseId && viewId !== options.databaseId) {
-    const containsLinkedView = databaseDocContainsView(doc, viewId);
-
-    if (containsLinkedView === false) {
-      Log.debug('[ViewLoader] cached database is missing linked view, re-fetching', {
-        viewId,
-        databaseId: options.databaseId,
-      });
-      fromCache = false;
-    }
-  }
+  // Step 2: Check cache
+  const fromCache = canUseLocalDoc(doc, viewId, options);
 
   Log.debug('[ViewLoader] cache check', {
     viewId,
@@ -394,43 +542,8 @@ export async function openView(
   });
 
   // Step 3: Fetch from server if not cached (or cache was an empty shell).
-  // Retry with backoff — after page duplication the server worker may need
-  // a moment to persist all row documents.
   if (!fromCache) {
-    const MAX_RETRIES = 3;
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        await fetchAndApply(workspaceId, viewId, doc, options);
-        break;
-      } catch (e) {
-        // Permission denials are permanent for this attempt — retrying cannot
-        // succeed. Evict every local copy keyed to this load before rethrowing:
-        // a cached collab (or the positive view-meta cache) would otherwise pin
-        // the failure and suppress the refetch after the server grants access.
-        // (404s must keep retrying: they cover the post-duplication race.)
-        if (determineErrorType(e).type === ErrorType.Forbidden) {
-          const docKey = options.databaseId ?? viewId;
-
-          Log.debug('[ViewLoader] permission denial — evicting local caches', {
-            viewId,
-            docKey,
-          });
-          invalidateViewCache(workspaceId, viewId);
-          await deleteCollabDB(docKey, { destroyDoc: true }).catch(() => undefined);
-          throw e;
-        }
-
-        if (attempt === MAX_RETRIES) throw e;
-        Log.debug('[ViewLoader] openView fetch retry', {
-          viewId,
-          attempt,
-          maxRetries: MAX_RETRIES,
-          error: e instanceof Error ? e.message : String(e),
-        });
-        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-      }
-    }
+    doc = await fetchViewFromServer(workspaceId, viewId, doc, layout, options);
   }
 
   // Step 4: Detect collab type

@@ -74,6 +74,10 @@ describe('view-utils', () => {
       expect(isDatabaseLayout(ViewLayout.Timeline)).toBe(true);
     });
 
+    it('should return true for Dashboard layout', () => {
+      expect(isDatabaseLayout(ViewLayout.Dashboard)).toBe(true);
+    });
+
     it('should return false for Document layout', () => {
       expect(isDatabaseLayout(ViewLayout.Document)).toBe(false);
     });
@@ -838,6 +842,7 @@ describe('view-utils', () => {
         ViewLayout.Feed,
         ViewLayout.Form,
         ViewLayout.Timeline,
+        ViewLayout.Dashboard,
       ];
       const parentView = createMockView({
         view_id: 'parent-doc',

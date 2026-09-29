@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { useReadOnly } from '@/application/database-yjs';
+import { useConditionsReadOnly } from '@/application/database-yjs';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
  */
 function ClearSelectionItem({ onClear }: { onClear: () => void }) {
   const { t } = useTranslation();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
 
   if (readOnly) return null;
 

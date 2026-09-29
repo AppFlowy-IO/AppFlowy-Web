@@ -1,7 +1,12 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useDatabaseContext, useDatabaseViewLayout, useReadOnly } from '@/application/database-yjs';
+import {
+  useDatabaseContext,
+  useDatabaseViewLayout,
+  useConditionsReadOnly,
+  useReadOnly,
+} from '@/application/database-yjs';
 import { DatabaseViewLayout } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/full_screen.svg';
@@ -16,6 +21,31 @@ import { DatabaseTemplateButton } from '@/components/database/components/templat
 import { useOpenDatabaseAsPage } from '@/components/database/hooks';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+
+// Only dashboards render it, so its global filter editor stays out of every
+// other view's bundle.
+const DashboardActions = lazy(() => import('@/components/database/dashboard/DashboardActions'));
+
+/** Layouts whose toolbar offers sorting. */
+const SORTABLE_LAYOUTS = new Set<DatabaseViewLayout>([
+  DatabaseViewLayout.Grid,
+  DatabaseViewLayout.List,
+  DatabaseViewLayout.Gallery,
+  DatabaseViewLayout.Feed,
+  DatabaseViewLayout.Timeline,
+]);
+
+/** Layouts whose toolbar offers the template button. */
+const TEMPLATE_LAYOUTS = new Set<DatabaseViewLayout>([
+  DatabaseViewLayout.Grid,
+  DatabaseViewLayout.Board,
+  DatabaseViewLayout.Calendar,
+  DatabaseViewLayout.Chart,
+  DatabaseViewLayout.List,
+  DatabaseViewLayout.Gallery,
+  DatabaseViewLayout.Feed,
+  DatabaseViewLayout.Timeline,
+]);
 
 function DatabaseSearchAction() {
   const { t } = useTranslation();
@@ -109,33 +139,27 @@ export function DatabaseActions() {
 
   const layout = useDatabaseViewLayout() as DatabaseViewLayout;
   const readOnly = useReadOnly();
+  // Filters and sorts stay usable in a View-mode dashboard widget (local to the viewer).
+  const conditionsReadOnly = useConditionsReadOnly();
   const conditionsContext = useConditionsContext();
-  const { activeViewId, isDocumentBlock, databasePageId } = useDatabaseContext();
+  const { activeViewId, isDocumentBlock, databasePageId, isDashboardWidget } = useDatabaseContext();
   const { canOpen, isOpening, openDatabaseAsPage } = useOpenDatabaseAsPage({ fallbackViewId: databasePageId });
 
-  const showSorts = [
-    DatabaseViewLayout.Grid,
-    DatabaseViewLayout.List,
-    DatabaseViewLayout.Gallery,
-    DatabaseViewLayout.Feed,
-    DatabaseViewLayout.Timeline,
-  ].includes(layout);
-  const showSearch = layout === DatabaseViewLayout.Gallery || layout === DatabaseViewLayout.Feed;
-  const showTemplates = [
-    DatabaseViewLayout.Grid,
-    DatabaseViewLayout.Board,
-    DatabaseViewLayout.Calendar,
-    DatabaseViewLayout.Chart,
-    DatabaseViewLayout.List,
-    DatabaseViewLayout.Gallery,
-    DatabaseViewLayout.Feed,
-    DatabaseViewLayout.Timeline,
-  ].includes(layout);
+  // The dashboard's own toolbar: Edit / Done and global filters replace the
+  // view conditions; Settings stays for the layout switcher.
+  const isDashboard = layout === DatabaseViewLayout.Dashboard && !isDashboardWidget;
+  const showFilters = !isDashboard;
+  const showSorts = !isDashboard && SORTABLE_LAYOUTS.has(layout);
+  const supportsSearch = layout === DatabaseViewLayout.Gallery || layout === DatabaseViewLayout.Feed;
+  // A widget header has no room for the search field or the template button.
+  const showSearch = supportsSearch && !isDashboardWidget;
+  const showTemplates = !isDashboardWidget && TEMPLATE_LAYOUTS.has(layout);
+  const compact = showSearch || Boolean(isDashboardWidget);
   const settingsButton = (
     <Button
       aria-label={t('settings.title')}
       data-testid='database-actions-settings'
-      size={showSearch ? 'icon-sm' : 'icon'}
+      size={compact ? 'icon-sm' : 'icon'}
       type='button'
       variant='ghost'
     >
@@ -143,15 +167,16 @@ export function DatabaseActions() {
     </Button>
   );
 
-  if (readOnly && !isDocumentBlock && !showSearch) return null;
+  if (readOnly && conditionsReadOnly && !isDocumentBlock && !showSearch && !isDashboard) return null;
 
   return (
     <div
-      className={`flex min-w-fit items-center justify-end ${showSearch ? 'gap-0.5' : 'gap-1.5'}`}
+      className={`flex min-w-fit items-center justify-end ${compact ? 'gap-0.5' : 'gap-1.5'}`}
+      data-dashboard-widget={isDashboardWidget ? 'true' : undefined}
       data-testid='database-actions'
     >
-      {!readOnly ? <FiltersButton {...conditionsContext} compact={showSearch} /> : null}
-      {!readOnly && showSorts ? <SortsButton {...conditionsContext} compact={showSearch} /> : null}
+      {!conditionsReadOnly && showFilters ? <FiltersButton {...conditionsContext} compact={compact} /> : null}
+      {!conditionsReadOnly && showSorts ? <SortsButton {...conditionsContext} compact={compact} /> : null}
       {isDocumentBlock && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -161,7 +186,7 @@ export function DatabaseActions() {
               disabled={!canOpen}
               loading={isOpening}
               onClick={() => void openDatabaseAsPage()}
-              size={showSearch ? 'icon-sm' : 'icon'}
+              size={compact ? 'icon-sm' : 'icon'}
               type='button'
               variant='ghost'
             >
@@ -189,6 +214,11 @@ export function DatabaseActions() {
         <div className={showSearch ? 'ml-1' : undefined}>
           <DatabaseTemplateButton compact={showSearch} />
         </div>
+      ) : null}
+      {isDashboard ? (
+        <Suspense fallback={null}>
+          <DashboardActions />
+        </Suspense>
       ) : null}
     </div>
   );

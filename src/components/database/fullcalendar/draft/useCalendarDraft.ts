@@ -1,9 +1,15 @@
 import { EventInput } from '@fullcalendar/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useCalendarLayoutSetting, useDatabaseContext, usePrimaryFieldId } from '@/application/database-yjs';
+import {
+  useCalendarLayoutSetting,
+  useDatabaseContext,
+  useDatabaseExtraFilters,
+  useDatabaseView,
+  usePrimaryFieldId,
+} from '@/application/database-yjs';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
-import { YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { YjsDatabaseKey } from '@/application/types';
 
 import { CalendarDraftSelection, CalendarEventDraft } from './CalendarEventDraft';
 
@@ -18,6 +24,10 @@ export function useCalendarDraft(events: EventInput[], emptyEvents: EventInput[]
   const setting = useCalendarLayoutSetting();
   const primary = usePrimaryFieldId();
   const createRow = useNewRowDispatch();
+  // A dashboard widget also filters with the viewer's private conditions and
+  // the dashboard's global filters.
+  const conditionsView = useDatabaseView();
+  const extraFilters = useDatabaseExtraFilters();
   const active = useRef<CalendarEventDraft | null>(null);
   const [model, setModel] = useState<CalendarEventDraft | null>(null);
   const [revision, setRevision] = useState(0);
@@ -102,25 +112,25 @@ export function useCalendarDraft(events: EventInput[], emptyEvents: EventInput[]
 
   useEffect(() => {
     if (!model) return;
-    const database = context.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
-    const filters = database.get(YjsDatabaseKey.views).get(context.activeViewId)?.get(YjsDatabaseKey.filters);
+    const filterCount = (conditionsView?.get(YjsDatabaseKey.filters)?.length ?? 0) + (extraFilters?.length ?? 0);
     const isListed = [...events, ...emptyEvents].some((event) => event.id === model.savedId);
 
     // A saved row may be unscheduled or hidden by the view's filters. Such a
     // row must not keep a placeholder alive while waiting for a dated event.
-    if (model.savedId && (isListed || (filters?.length ?? 0) > 0)) remove(model);
+    if (model.savedId && (isListed || filterCount > 0)) remove(model);
     else if (
       !model.saving &&
       (context.readOnly || context.canWrite === false || model.context.activeViewId !== context.activeViewId)
     )
       remove(model);
   }, [
+    conditionsView,
     context.activeViewId,
-    context.databaseDoc,
     context.readOnly,
     context.canWrite,
     events,
     emptyEvents,
+    extraFilters,
     model,
     remove,
     revision,

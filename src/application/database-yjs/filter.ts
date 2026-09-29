@@ -167,6 +167,93 @@ function wrapPlainObjectAsFilter(obj: Record<string, unknown>): YDatabaseFilter 
   } as unknown as YDatabaseFilter;
 }
 
+type FilterObserver = Parameters<YDatabaseFilters['observeDeep']>[0];
+
+/**
+ * A read-only stand-in for a `Y.Array` of filters built from plain filter
+ * nodes (for example dashboard global filters). It exposes the subset of the
+ * array surface the evaluators use (`length`, `get`, `toArray`, `toJSON`,
+ * `forEach`, `map`, `slice`) and never changes, so observing it is a no-op.
+ */
+export function createVirtualFilters(nodes: readonly object[]): YDatabaseFilters {
+  const wrapped = nodes.map((node) => wrapPlainObjectAsFilter(node as Record<string, unknown>));
+  const virtual = {
+    length: wrapped.length,
+    get: (index: number) => wrapped[index],
+    toArray: () => wrapped,
+    toJSON: () => nodes.map((node) => ({ ...node })),
+    forEach: (callback: (value: YDatabaseFilter, index: number) => void) => wrapped.forEach(callback),
+    map: <T>(callback: (value: YDatabaseFilter, index: number) => T) => wrapped.map(callback),
+    slice: (start?: number, end?: number) => wrapped.slice(start, end),
+    observeDeep: (_callback: FilterObserver) => undefined,
+    unobserveDeep: (_callback: FilterObserver) => undefined,
+  };
+
+  return virtual as unknown as YDatabaseFilters;
+}
+
+/**
+ * Whether an injected node still fits its field: its condition and content are
+ * encoded for the type it was made for (`ty`), so once the field changes type
+ * the same condition number means something else and the node must not apply.
+ * Unknown fields are kept; the evaluators skip them anyway.
+ */
+function injectedNodeMatchesField(node: object, fields: YDatabaseFields | undefined) {
+  const expected = (node as { ty?: unknown }).ty;
+
+  if (!fields || expected === undefined || expected === null) return true;
+  const field = fields.get(String((node as { field_id?: unknown }).field_id ?? ''));
+
+  if (!field) return true;
+  return Number(field.get(YjsDatabaseKey.type)) === Number(expected);
+}
+
+/**
+ * The view's own filters plus dashboard-injected ones, AND-ed at the top level
+ * (`filterBy` ANDs top-level entries). Returns the original array untouched
+ * when there is nothing to add so identity-based memoisation keeps working.
+ *
+ * The combined list reads `viewFilters` (and, when given, the field types) on
+ * every access: callers memoise it on the Y.Array / Y.Map identities, which
+ * survive in-place edits. Observers are forwarded to the real array, since the
+ * injected nodes never change in place (new global filters produce a new
+ * combined list) and field changes are observed by the caller.
+ */
+export function combineFilters(
+  viewFilters: YDatabaseFilters | undefined,
+  extraNodes: readonly object[] | undefined,
+  fields?: YDatabaseFields
+): YDatabaseFilters | undefined {
+  if (!extraNodes || extraNodes.length === 0) return viewFilters;
+  const wrapped = extraNodes.map((node) => ({
+    node,
+    filter: wrapPlainObjectAsFilter(node as Record<string, unknown>),
+  }));
+  const applicable = () => wrapped.filter(({ node }) => injectedNodeMatchesField(node, fields));
+  const extra = () => applicable().map(({ filter }) => filter);
+  const viewLength = () => viewFilters?.length ?? 0;
+  const all = (): YDatabaseFilter[] => [...(viewFilters?.toArray() ?? []), ...extra()];
+  const virtual = {
+    get length() {
+      return viewLength() + applicable().length;
+    },
+    get: (index: number) => {
+      const baseLength = viewLength();
+
+      return index < baseLength ? viewFilters?.get(index) : extra()[index - baseLength];
+    },
+    toArray: all,
+    toJSON: () => [...(viewFilters?.toJSON() ?? []), ...applicable().map(({ node }) => ({ ...node }))],
+    forEach: (callback: (value: YDatabaseFilter, index: number) => void) => all().forEach(callback),
+    map: <T>(callback: (value: YDatabaseFilter, index: number) => T) => all().map(callback),
+    slice: (start?: number, end?: number) => all().slice(start, end),
+    observeDeep: (callback: FilterObserver) => viewFilters?.observeDeep(callback),
+    unobserveDeep: (callback: FilterObserver) => viewFilters?.unobserveDeep(callback),
+  };
+
+  return virtual as unknown as YDatabaseFilters;
+}
+
 export function normalizeFilterNode(node: unknown): YDatabaseFilter | null {
   if (node === null || typeof node !== 'object') return null;
 
@@ -301,17 +388,20 @@ function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField, f
         isRelativeDateCondition(condition)
       )
         return true;
-      if (actualType !== FieldType.Rollup) return hasTextFilterContent(content);
+      if (actualType !== FieldType.Rollup && !hasTextFilterContent(content)) return false;
       try {
         const date = JSON.parse(content || '{}');
         const valid = (value: unknown) =>
           value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
 
+        // Like desktop's `get_strategy`, a filter without its date (a cleared
+        // picker writes `{"timestamp":null}`) or half a range does not narrow rows.
         return [DateFilterCondition.DateStartsBetween, DateFilterCondition.DateEndsBetween].includes(condition)
           ? valid(date.start) && valid(date.end)
           : valid(date.timestamp);
       } catch {
-        return false;
+        // Malformed view-filter content falls back to "starts on today" in parseFilter.
+        return actualType !== FieldType.Rollup;
       }
 
     case FieldType.Checkbox:
@@ -1091,12 +1181,24 @@ export function checklistFilterCheck(data: unknown, content: string, condition: 
   return percentage !== 1;
 }
 
+/**
+ * Date filter values as strings. Persisted content may hold `null` for a
+ * missing date, which a destructuring default would not replace.
+ */
+function dateFilterValues(filter: DateFilter) {
+  const text = (value: number | string | null | undefined) =>
+    value === null || value === undefined ? '' : String(value);
+
+  return { end: text(filter.end), start: text(filter.start), timestamp: text(filter.timestamp) };
+}
+
 export function rowTimeFilterCheck(data: string, filter: DateFilter) {
   if (isRelativeDateCondition(filter.condition)) {
     return relativeDateRangeMatches(data, filter);
   }
 
-  const { condition, end = '', start = '', timestamp = '' } = filter;
+  const { condition } = filter;
+  const { end, start, timestamp } = dateFilterValues(filter);
 
   switch (condition) {
     case DateFilterCondition.DateStartIsEmpty:
@@ -1152,7 +1254,8 @@ function relativeDateRangeMatches(data: string, filter: DateFilter, endTimestamp
 }
 
 export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
-  const { condition, end = '', start = '', timestamp = '' } = filter;
+  const { condition } = filter;
+  const { end, start, timestamp } = dateFilterValues(filter);
 
   const { data = '', endTimestamp = '' } = cell || {};
 
@@ -1342,15 +1445,16 @@ export function dateFilterFillData(filter: YDatabaseFilter): {
   }
 
   try {
-    const {
-      timestamp = today,
-      start = '',
-      end = '',
-    } = (JSON.parse(content) as {
-      timestamp?: string;
-      start?: string;
-      end?: string;
-    }) || {};
+    const parsed =
+      (JSON.parse(content) as {
+        timestamp?: string | null;
+        start?: string | null;
+        end?: string | null;
+      } | null) || {};
+    // A cleared picker stores `null`, which destructuring defaults would keep.
+    const timestamp = parsed.timestamp ?? today;
+    const start = parsed.start ?? '';
+    const end = parsed.end ?? '';
 
     const beforeTimestamp = dayjs.unix(Number(timestamp)).subtract(1, 'day').startOf('day').unix().toString();
     const afterTimestamp = dayjs.unix(Number(timestamp)).add(1, 'day').startOf('day').unix().toString();

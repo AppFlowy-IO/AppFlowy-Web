@@ -39,7 +39,8 @@ export function isDatabaseLayout(layout: ViewLayout): boolean {
     layout === ViewLayout.Gallery ||
     layout === ViewLayout.Feed ||
     layout === ViewLayout.Form ||
-    layout === ViewLayout.Timeline
+    layout === ViewLayout.Timeline ||
+    layout === ViewLayout.Dashboard
   );
 }
 

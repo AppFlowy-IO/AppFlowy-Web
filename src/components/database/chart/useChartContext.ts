@@ -7,7 +7,7 @@ import {
   ChartType,
 } from '@/application/database-yjs/chart.type';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { SelectOption } from '@/application/database-yjs/fields';
+import { NumberFormat, SelectOption } from '@/application/database-yjs/fields';
 import { YDatabaseField } from '@/application/types';
 
 export interface ChartContextValue {
@@ -29,6 +29,14 @@ export interface ChartContextValue {
   selectOptions: SelectOption[];
   /** Whether there are any groupable fields in the database */
   hasGroupableFields: boolean;
+  /** Y field (only when the aggregation uses one) */
+  yAxisField: YDatabaseField | null;
+  /** Current Y field name */
+  yFieldName: string;
+  /** Y field number format when the Y field is a Number field */
+  yNumberFormat: NumberFormat | null;
+  /** Number chart only: aggregated value over all filtered rows */
+  numberValue: number | null;
   /** Callback when a chart element is clicked (for drill-down) */
   onElementClick?: (item: ChartDataItem) => void;
 }
@@ -43,6 +51,10 @@ const defaultContext: ChartContextValue = {
   aggregationType: ChartAggregationType.Count,
   selectOptions: [],
   hasGroupableFields: false,
+  yAxisField: null,
+  yFieldName: '',
+  yNumberFormat: null,
+  numberValue: null,
 };
 
 export const ChartContext = createContext<ChartContextValue>(defaultContext);
