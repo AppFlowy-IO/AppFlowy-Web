@@ -61,7 +61,8 @@ BASE_URL=http://localhost:3011 pnpm exec playwright test -c playwright.bdd.confi
   playwright/.features-gen/playwright/bdd/features/database/form-chart-quota.feature.spec.js --workers=1
 ```
 
-The scenario is registered in the `form-timeline-bdd` CI group. Its current Cloud
-pin, `0.18.60-amd64` (`69a888e2fc3dbfa99441c2dc2c01ef49ea217831`), predates the
-creation-status endpoint. That server dependency must be updated before this
-scenario can pass in CI; the Web change does not alter the pin.
+The scenario is registered in the `form-timeline-bdd` CI group. CI pins Cloud
+`0.19.8-amd64` (`f5f1880d74f0bd419b22d27c196d7484a41d8091`), the first completed
+release with the creation-status endpoint. Older hosted servers return 404 for it,
+so every Form and Chart creation item stays unavailable. The Chart and Form e2e
+helpers then time out waiting for an enabled item.
