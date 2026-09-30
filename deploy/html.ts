@@ -60,6 +60,11 @@ export type PublishPageSsr = {
    * to inline (the client then fetches it as it would without SSR).
    */
   snapshot?: unknown;
+  /**
+   * Plain-text description derived from the page content, replacing the
+   * generic default in the description meta tags. Undefined keeps the default.
+   */
+  description?: string;
 };
 
 export type RenderPublishPageOptions = {
@@ -148,7 +153,9 @@ export const renderPublishPage = ({
   const htmlData = fs.readFileSync(indexPath, 'utf8');
   const $ = load(htmlData);
 
-  const description = DEFAULT_DESCRIPTION;
+  // Only server-rendered pages get a content-derived description; every other
+  // page keeps the default so its response stays exactly as before SSR.
+  const description = ssr?.description ?? DEFAULT_DESCRIPTION;
   let title = 'AppFlowy';
   const url = `https://${hostname ?? ''}${pathname}`;
   let image = DEFAULT_IMAGE;
@@ -259,12 +266,25 @@ const appendPublishErrorScript = ($: CheerioAPI, error: PublishErrorPayload) => 
   );
 };
 
+/**
+ * Sets a meta tag's `content`, creating the tag in <head> if the template lacks it.
+ *
+ * Content is frequently user-controlled (page titles, descriptions), so both
+ * paths go through cheerio's `attr`, which escapes attribute values. The
+ * creation path must never build the tag by string interpolation: a page named
+ * `"><script>…` would otherwise inject markup whenever a tag is missing from
+ * the template.
+ *
+ * @param selector - A `meta[<attribute>="<value>"]` selector identifying the tag.
+ * @param attribute - The identifying attribute (`name` or `property`).
+ * @param content - The value to set; any string, escaped on output.
+ */
 const setOrUpdateMetaTag = ($: CheerioAPI, selector: string, attribute: string, content: string) => {
   if ($(selector).length === 0) {
     const valueMatch = selector.match(/\[.*?="([^"]+)"\]/);
     const value = valueMatch?.[1] ?? '';
 
-    $('head').append(`<meta ${attribute}="${value}" content="${content}">`);
+    $('head').append($('<meta>').attr(attribute, value).attr('content', content));
   } else {
     $(selector).attr('content', content);
   }

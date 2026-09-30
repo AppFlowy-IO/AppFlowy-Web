@@ -733,3 +733,139 @@ export const collectLinkedViewIds = (snapshot: unknown): string[] => {
     return [];
   }
 };
+
+// ---------------------------------------------------------------------------
+// Meta description
+// ---------------------------------------------------------------------------
+
+/** Longest generated description, in characters, including the ellipsis. */
+export const DESCRIPTION_MAX_LENGTH = 155;
+
+// Blocks whose text reads as prose. Headings repeat the title or structure,
+// code and equations are not prose, and embeds have no text of their own.
+const DESCRIPTION_BLOCK_TYPES = new Set<string>([
+  BLOCK.paragraph,
+  BLOCK.quote,
+  BLOCK.callout,
+  BLOCK.bulletedList,
+  BLOCK.numberedList,
+  BLOCK.todoList,
+  BLOCK.toggleList,
+]);
+
+// Containers whose nested blocks are not read for the description.
+const DESCRIPTION_SKIPPED_CONTAINERS = new Set<string>([BLOCK.code, BLOCK.equation, BLOCK.simpleTable, BLOCK.table]);
+
+// Same labels the HTML path renders for mentions, as plain text.
+const mentionText = (mention: JsonObject, viewNames: Map<string, string>): string | undefined => {
+  if (isDatabaseReference(mention)) return mentionTitle(mention) ?? pageMentionLabel(mention, viewNames);
+  if (linkablePageMentionId(mention)) return pageMentionLabel(mention, viewNames);
+  if (mention.type === 'date') return formatMentionDate(mention.date);
+  if (mention.type === 'externalLink') return asString(mention.url);
+  if (mention.type === 'person') return asString(mention.person_name);
+
+  return undefined;
+};
+
+const leafText = (leaf: unknown, viewNames: Map<string, string>): string => {
+  if (!isObject(leaf)) return '';
+  if (isObject(leaf.mention)) return mentionText(leaf.mention, viewNames) ?? '';
+  if (typeof leaf.formula === 'string') return leaf.formula;
+
+  return typeof leaf.text === 'string' ? leaf.text : '';
+};
+
+/**
+ * Collects prose text from blocks in document order, stopping as soon as
+ * enough has been gathered: a long document never costs more than a few blocks.
+ */
+const collectProse = (blocks: unknown[], viewNames: Map<string, string>, parts: string[], state: { length: number }, depth: number) => {
+  if (depth > MAX_DEPTH) return;
+
+  for (const block of blocks) {
+    if (state.length > DESCRIPTION_MAX_LENGTH) return;
+    if (!isObject(block) || typeof block.type !== 'string') continue;
+
+    const children = asArray(block.children);
+
+    if (DESCRIPTION_BLOCK_TYPES.has(block.type)) {
+      const text = children
+        .filter(isTextElement)
+        .map((element) => asArray(element.children).map((leaf) => leafText(leaf, viewNames)).join(''))
+        .join(' ')
+        .trim();
+
+      if (text) {
+        parts.push(text);
+        state.length += text.length + 1;
+      }
+    }
+
+    // Nested content (list children, toggle bodies, columns, callout bodies)
+    // is read in order, but never inside non-prose containers: table cells
+    // hold paragraphs too, yet tabular data makes a poor description.
+    if (!DESCRIPTION_SKIPPED_CONTAINERS.has(block.type)) {
+      collectProse(children.filter((child) => !isTextElement(child)), viewNames, parts, state, depth + 1);
+    }
+  }
+};
+
+/**
+ * Joins block texts into one line. A block that ends a sentence is followed by
+ * a space; one that does not (list items, link-only lines on index pages) by a
+ * comma, so "Create a page" + "Share it" reads "Create a page, Share it"
+ * rather than running the two together.
+ */
+const joinProse = (parts: string[]): string =>
+  parts.reduce((joined, part) => {
+    if (!joined) return part;
+
+    return `${joined}${/[.!?…:;]$/.test(joined) ? ' ' : ', '}${part}`;
+  }, '');
+
+/**
+ * Cuts text to at most `maxLength` characters, at a word boundary where
+ * possible, adding an ellipsis when anything was removed.
+ */
+const truncateAtWord = (text: string, maxLength: number): string => {
+  if (text.length <= maxLength) return text;
+
+  const cut = text.slice(0, maxLength - 1);
+  const lastSpace = cut.lastIndexOf(' ');
+  // Only back up to a space if it keeps most of the text; a single very long
+  // word (a URL, say) is cut mid-word instead of leaving almost nothing.
+  const trimmed = lastSpace > maxLength / 2 ? cut.slice(0, lastSpace) : cut;
+
+  return `${trimmed.replace(/[\s,;:.\-–—]+$/, '')}…`;
+};
+
+/**
+ * Derives a meta description from the opening prose of a document page.
+ *
+ * Reads paragraph-like blocks in document order (skipping headings, code,
+ * equations, tables and embeds), collapses whitespace, and truncates to
+ * `DESCRIPTION_MAX_LENGTH` characters at a word boundary.
+ *
+ * The result is plain text, not HTML: the caller must set it through an API
+ * that escapes attribute values.
+ *
+ * @param snapshot - The untrusted snapshot JSON.
+ * @returns The description, or undefined when the snapshot is not a document
+ *   or has no prose — callers then keep the default description. Never throws.
+ */
+export const extractPageDescription = (snapshot: unknown): string | undefined => {
+  if (!isObject(snapshot) || snapshot.kind !== 'document' || !isObject(snapshot.document)) return undefined;
+
+  try {
+    const viewNames = buildViewNames(isObject(snapshot.view) ? snapshot.view : {});
+    const parts: string[] = [];
+
+    collectProse(asArray(snapshot.document.children), viewNames, parts, { length: 0 }, 0);
+
+    const text = joinProse(parts.map((part) => part.replace(/\s+/g, ' ').trim())).trim();
+
+    return text ? truncateAtWord(text, DESCRIPTION_MAX_LENGTH) : undefined;
+  } catch {
+    return undefined;
+  }
+};

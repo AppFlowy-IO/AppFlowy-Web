@@ -14,7 +14,7 @@ import {
 import { logger } from './logger';
 import { type PublishErrorPayload } from './publish-error';
 import { resolveViewHrefs } from './publish-links';
-import { collectLinkedViewIds, serializePublishedPage } from './publish-serializer';
+import { collectLinkedViewIds, extractPageDescription, serializePublishedPage } from './publish-serializer';
 import { type RequestContext } from './server';
 import { readSsrSettings, type SsrSettings } from './ssr-config';
 
@@ -357,6 +357,7 @@ const buildSsrBody = async (
     return {
       bodyHtml: serialized.html,
       snapshot: inlineSize <= settings.maxInlineBytes ? result.snapshot : undefined,
+      description: extractPageDescription(result.snapshot),
     };
   } catch (error) {
     logger.error(`SSR failed unexpectedly, serving shell: ${context} error=${error}`);

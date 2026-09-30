@@ -10,7 +10,9 @@ import { BlockType } from '@/application/types';
 
 import {
   collectLinkedViewIds,
+  DESCRIPTION_MAX_LENGTH,
   escapeHtml,
+  extractPageDescription,
   sanitizeUrl,
   SERIALIZER_BLOCK_COVERAGE,
   serializePublishedPage,
@@ -472,5 +474,125 @@ describe('page mentions with a denormalized title', () => {
   it('renders nothing for a page mention with neither a known name nor a title', () => {
     expect(serialize(snapshot({ type: 'page', page_id: 'unknown' }))).toBe('<article data-appflowy-ssr></article>');
     expect(collectLinkedViewIds(snapshot({ type: 'page', page_id: 'unknown' }))).toEqual([]);
+  });
+});
+
+describe('extractPageDescription', () => {
+  const describePage = (children: unknown[], extraView: object = {}) =>
+    extractPageDescription(doc(children, 'Page title', extraView));
+
+  it('uses the opening prose of the rich fixture', () => {
+    expect(extractPageDescription(publishedRichDocumentPayload)).toBe(
+      'Plain, bold, bold italic, code, struck, underlined and a link. First bullet, Nested bullet, Second bullet, Step one, Step two, Done task, Open task…'
+    );
+  });
+
+  it('never includes the page title', () => {
+    expect(describePage([blk('paragraph', [leaf('Body text.')])])).toBe('Body text.');
+  });
+
+  it.each([
+    ['heading', blk('heading', [leaf('Heading')], { level: 1 })],
+    ['code', blk('code', [leaf('const x = 1;')])],
+    ['equation', blk('math_equation', null, { formula: 'E=mc^2' })],
+    [
+      'table',
+      blk('simple_table', null, {}, [
+        blk('simple_table_row', null, {}, [blk('simple_table_cell', null, {}, [blk('paragraph', [leaf('Cell')])])]),
+      ]),
+    ],
+    ['unknown block', blk('future_block', [leaf('Future')])],
+  ])('skips %s text', (_label, block) => {
+    expect(describePage([block, blk('paragraph', [leaf('Prose.')])])).toBe('Prose.');
+  });
+
+  it('reads nested prose in document order', () => {
+    expect(
+      describePage([
+        blk('toggle_list', [leaf('Question?')], {}, [blk('paragraph', [leaf('Answer.')])]),
+        blk('simple_columns', null, {}, [blk('simple_column', null, {}, [blk('paragraph', [leaf('Column.')])])]),
+      ])
+    ).toBe('Question? Answer. Column.');
+  });
+
+  it('uses mention labels instead of their placeholder text', () => {
+    expect(
+      describePage(
+        [
+          blk('paragraph', [
+            leaf('Ask '),
+            leaf('$', { mention: { type: 'person', person_id: 'p', person_name: 'Ada' } }),
+            leaf(' about '),
+            leaf('$', { mention: { type: 'page', page_id: 'c' } }),
+            leaf(' by '),
+            leaf('$', { mention: { type: 'date', date: '2026-09-30T00:00:00.000Z' } }),
+            leaf('.'),
+          ]),
+        ],
+        { childViews: [{ view_id: 'c', name: 'Child' }] }
+      )
+    ).toBe('Ask Ada about Child by 2026-09-30.');
+  });
+
+  it('separates blocks that do not end a sentence with commas', () => {
+    expect(
+      describePage([
+        blk('paragraph', [leaf('Intro sentence.')]),
+        blk('bulleted_list', [leaf('First item')]),
+        blk('bulleted_list', [leaf('Second item')]),
+        blk('paragraph', [leaf('Question?')]),
+        blk('paragraph', [leaf('Answer')]),
+      ])
+    ).toBe('Intro sentence. First item, Second item, Question? Answer');
+  });
+
+  it('collapses whitespace and line breaks', () => {
+    expect(describePage([blk('paragraph', [leaf('  a\n\n  b\t c  ')]), blk('paragraph', [leaf('d')])])).toBe(
+      'a b c, d'
+    );
+  });
+
+  it('truncates at a word boundary with an ellipsis', () => {
+    const words = Array.from({ length: 60 }, (_, i) => `word${i}`).join(' ');
+    const description = describePage([blk('paragraph', [leaf(words)])]) ?? '';
+
+    expect(description.length).toBeLessThanOrEqual(DESCRIPTION_MAX_LENGTH);
+    expect(description.endsWith('…')).toBe(true);
+    expect(words.startsWith(description.slice(0, -1))).toBe(true);
+    expect(description.slice(0, -1)).toMatch(/word\d+$/);
+  });
+
+  it('drops trailing punctuation before the ellipsis', () => {
+    const text = `${'a'.repeat(100)}, ${'b'.repeat(100)}`;
+
+    expect(describePage([blk('paragraph', [leaf(text)])])).toBe(`${'a'.repeat(100)}…`);
+  });
+
+  it('cuts a single overlong word rather than returning almost nothing', () => {
+    const description = describePage([blk('paragraph', [leaf(`https://example.com/${'x'.repeat(300)}`)])]) ?? '';
+
+    expect(description.length).toBe(DESCRIPTION_MAX_LENGTH);
+    expect(description.endsWith('…')).toBe(true);
+  });
+
+  it('keeps text of exactly the maximum length untouched', () => {
+    const text = 'x'.repeat(DESCRIPTION_MAX_LENGTH);
+
+    expect(describePage([blk('paragraph', [leaf(text)])])).toBe(text);
+  });
+
+  it('returns plain text, leaving escaping to the caller', () => {
+    expect(describePage([blk('paragraph', [leaf('Tom & "Jerry" <b>')])])).toBe('Tom & "Jerry" <b>');
+  });
+
+  it.each([
+    ['an empty document', doc([])],
+    ['a document with only headings', doc([blk('heading', [leaf('H')], { level: 1 })])],
+    ['whitespace-only prose', doc([blk('paragraph', [leaf('   ')])])],
+    ['a database snapshot', publishedDatabasePayload],
+    ['null', null],
+    ['a malformed document', { kind: 'document', document: { children: 'nope' } }],
+  ])('returns undefined for %s', (_label, input) => {
+    expect(extractPageDescription(input)).toBeUndefined();
   });
 });

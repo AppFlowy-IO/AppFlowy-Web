@@ -85,6 +85,15 @@ added in front of these pages, purge it too.
 - `deploy/publish-serializer.test.ts` fails when a new `BlockType` is added
   without deciding how the serializer treats it.
 
+## Meta descriptions
+
+Server-rendered pages replace the generic description (`description`,
+`og:description`, `twitter:description`) with one taken from the page's opening
+prose: paragraphs, lists, quotes, callouts and toggles, in document order,
+skipping headings, code, equations and tables. It is cut to 155 characters at a
+word boundary. Pages with no prose keep the default. Shell pages always keep the
+default, so their response is unchanged.
+
 ## Links to other pages
 
 Sub-page blocks and page mentions render as real links, so crawlers can follow

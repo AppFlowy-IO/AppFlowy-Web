@@ -442,6 +442,121 @@ describe('published page SSR', () => {
   });
 });
 
+describe('meta descriptions', () => {
+  // This file's template lacks every description tag, so each one is created
+  // by setOrUpdateMetaTag's creation path.
+  let createServer: typeof import('./server').createServer;
+
+  const DEFAULT_DESCRIPTION = 'Write, share, and publish docs quickly on AppFlowy.\nGet started for free.';
+  const descriptions = (html: string) => {
+    const $ = load(html);
+
+    return [
+      $('meta[name="description"]').attr('content'),
+      $('meta[property="og:description"]').attr('content'),
+      $('meta[name="twitter:description"]').attr('content'),
+    ];
+  };
+
+  const serve = (snapshot: unknown, metadataName = 'Doc') => {
+    mockBunFetch.mockImplementation((url: string) => {
+      if (url.endsWith('/snapshot')) return json({ code: 0, data: snapshot });
+      if (url.includes('/published-info/')) return json({ code: -2 });
+
+      return json({ code: 0, data: { view: { name: metadataName, icon: null, extra: null } } });
+    });
+  };
+
+  const request = async (path: string) =>
+    (await createServer(new Request(`https://appflowy.test${path}`, { headers: { host: 'appflowy.test' } }))).text();
+
+  beforeAll(async () => {
+    ({ createServer } = await import('./server'));
+  });
+
+  beforeEach(() => {
+    mockBunFetch.mockReset();
+    clearViewRouteCache();
+    SSR_ENV_KEYS.forEach((key) => delete process.env[key]);
+  });
+
+  afterAll(() => {
+    SSR_ENV_KEYS.forEach((key) => delete process.env[key]);
+  });
+
+  it('server-rendered pages describe themselves from their content', async () => {
+    process.env.APPFLOWY_INDEXABLE_NAMESPACES = 'docs';
+    serve(publishedRichDocumentPayload);
+
+    const [description, og, twitter] = descriptions(await request('/docs/page'));
+
+    expect(description).toMatch(/^Plain, bold, bold italic/);
+    expect(og).toBe(description);
+    expect(twitter).toBe(description);
+  });
+
+  it('shell pages keep the default description', async () => {
+    serve(publishedRichDocumentPayload);
+
+    expect(descriptions(await request('/docs/page'))).toEqual([
+      DEFAULT_DESCRIPTION,
+      DEFAULT_DESCRIPTION,
+      DEFAULT_DESCRIPTION,
+    ]);
+  });
+
+  it('server-rendered pages without prose keep the default description', async () => {
+    process.env.APPFLOWY_INDEXABLE_NAMESPACES = 'docs';
+    serve({ ...publishedRichDocumentPayload, document: { children: [] } });
+
+    expect(descriptions(await request('/docs/page'))[0]).toBe(DEFAULT_DESCRIPTION);
+  });
+
+  it('escapes hostile page text in the description', async () => {
+    process.env.APPFLOWY_INDEXABLE_NAMESPACES = 'docs';
+
+    const hostile = '"><script>alert(1)</script>';
+
+    serve({
+      ...publishedRichDocumentPayload,
+      document: {
+        children: [
+          {
+            type: 'paragraph',
+            blockId: 'b',
+            data: {},
+            children: [{ type: 'text', textId: 't', children: [{ text: hostile }] }],
+          },
+        ],
+      },
+    });
+
+    const html = await request('/docs/page');
+    const $ = load(html);
+
+    // Round-trips as an attribute value; no element was injected. The one
+    // script is the inlined snapshot.
+    expect(descriptions(html)).toEqual([hostile, hostile, hostile]);
+    expect($('head script').length).toBe(1);
+    expect($('#appflowy-publish-snapshot').length).toBe(1);
+  });
+
+  it('escapes a hostile page title when a meta tag is missing from the template', async () => {
+    // Default mode: this path predates SSR. Before the fix, the missing
+    // og:title/twitter:title tags were built by string interpolation.
+    const hostile = '"><script>alert(1)</script>';
+
+    serve(publishedRichDocumentPayload, hostile);
+
+    const html = await request('/customer/page');
+    const $ = load(html);
+
+    expect($('script').length).toBe(0);
+    expect($('meta[property="og:title"]').attr('content')).toBe(`${hostile} | AppFlowy`);
+    expect($('meta[name="twitter:title"]').attr('content')).toBe(`${hostile} | AppFlowy`);
+  });
+});
+
 describe('renderPublishPage ssr-noindex support', () => {
   // No input produces ssr-noindex yet, so the renderer's handling is tested
   // directly: body rendered and the robots meta present together.
