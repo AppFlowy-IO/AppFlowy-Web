@@ -57,6 +57,16 @@ describe('resolveViewHrefs', () => {
     expect(Object.fromEntries(hrefs)).toEqual({ b: '/docs/b' });
   });
 
+  it('with no time left, links cached targets only and starts no lookups', async () => {
+    await resolve(['a'], async () => route('docs', 'a'));
+
+    const fetchRoute = jest.fn<FetchRoute>(async (viewId) => route('docs', viewId));
+    const hrefs = await resolve(['a', 'b'], fetchRoute, { timeoutMs: 0 });
+
+    expect(Object.fromEntries(hrefs)).toEqual({ a: '/docs/a' });
+    expect(fetchRoute).not.toHaveBeenCalled();
+  });
+
   it('deduplicates and caps the number of lookups', async () => {
     const fetchRoute = jest.fn<FetchRoute>(async (viewId) => route('docs', viewId));
     const ids = Array.from({ length: MAX_LINK_TARGETS + 20 }, (_, i) => `v${i}`);
@@ -136,6 +146,26 @@ describe('resolveViewHrefs', () => {
     clock = 60_001;
     await resolve(['a', 'b'], fetchRoute, { now });
     expect(fetchRoute).toHaveBeenCalledTimes(4);
+  });
+
+  it('evicts the oldest entries beyond 1000, keeping the cache bounded', async () => {
+    const fetchRoute = jest.fn<FetchRoute>(async (viewId) => route('docs', viewId));
+    const ids = Array.from({ length: 1001 }, (_, i) => `view-${i}`);
+
+    // One call resolves at most MAX_LINK_TARGETS, so fill the cache in batches.
+    for (let i = 0; i < ids.length; i += MAX_LINK_TARGETS) {
+      await resolve(ids.slice(i, i + MAX_LINK_TARGETS), fetchRoute);
+    }
+
+    expect(fetchRoute).toHaveBeenCalledTimes(1001);
+    fetchRoute.mockClear();
+
+    // The newest entry is still cached; the very first one was evicted.
+    await resolve(['view-1000'], fetchRoute);
+    expect(fetchRoute).not.toHaveBeenCalled();
+
+    await resolve(['view-0'], fetchRoute);
+    expect(fetchRoute).toHaveBeenCalledWith('view-0', expect.anything());
   });
 
   it('does not cache transient failures', async () => {

@@ -53,7 +53,10 @@ const writeCache = (viewId: string, route: PublishedViewRoute | null, now: numbe
 export interface ResolveViewHrefsOptions {
   /** Upstream lookup; returns null for "not published", throws for transient errors. */
   fetchRoute: (viewId: string, signal: AbortSignal) => Promise<PublishedViewRoute | null>;
-  /** Overall deadline for all lookups; whatever resolved by then is used. */
+  /**
+   * Time allowed for all lookups; whatever resolved by then is used. Zero or
+   * less means cached routes only.
+   */
   timeoutMs: number;
   /**
    * Whether a target's namespace may be linked. A link makes a page
@@ -89,7 +92,9 @@ export const resolveViewHrefs = async (
     else pending.push(viewId);
   }
 
-  if (pending.length > 0) {
+  // No time left: link only what the cache already knows, without starting
+  // lookups that would be aborted at once.
+  if (pending.length > 0 && timeoutMs > 0) {
     const controller = new AbortController();
     const queue = [...pending];
 

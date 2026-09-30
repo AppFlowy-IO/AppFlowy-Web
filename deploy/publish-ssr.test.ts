@@ -9,7 +9,10 @@ import {
   richDocumentChildViewId,
 } from '@/application/publish-snapshot/__fixtures__/published-page-snapshots';
 
-import { clearViewRouteCache } from './publish-links';
+import * as publishLinks from './publish-links';
+import * as publishSerializer from './publish-serializer';
+
+const { clearViewRouteCache } = publishLinks;
 
 const mockBunFetch = jest.fn<(url: string, init?: Record<string, unknown>) => Promise<unknown>>();
 
@@ -90,10 +93,9 @@ describe('published page SSR', () => {
   const snapshotCalls = () => mockBunFetch.mock.calls.filter(([url]) => url.endsWith('/snapshot'));
 
   const inlinedSnapshot = (html: string) => {
-    const script = load(html)('#appflowy-publish-snapshot').html();
-    const match = script?.match(/^window\.__APPFLOWY_PUBLISH_SNAPSHOT__ = (.*);$/s);
+    const script = load(html)('script[type="application/json"]#appflowy-publish-snapshot').html();
 
-    return match ? JSON.parse(match[1]) : undefined;
+    return script ? JSON.parse(script) : undefined;
   };
 
   const expectShell = async (response: Response, robots: string | null = null) => {
@@ -168,6 +170,9 @@ describe('published page SSR', () => {
         '#root:has(> [data-appflowy-ssr]){height:100%;overflow-y:auto}'
       );
       expect(inlinedSnapshot(html)).toEqual(publishedRichDocumentPayload);
+      // A data block after the article, so it never delays painting the body.
+      expect($('#root + #appflowy-publish-snapshot').length).toBe(1);
+      expect($('head #appflowy-publish-snapshot').length).toBe(0);
       // Head metadata is still produced as before.
       expect($('title').text()).toBe('Doc | AppFlowy');
     });
@@ -285,6 +290,97 @@ describe('published page SSR', () => {
       expect($('#root a[href^="/docs/child"]').length).toBe(0);
     });
 
+    it('caches a 4xx lookup as "not published" but retries after a 5xx', async () => {
+      const status = (code: number) => () => Promise.resolve({ ok: false, status: code, json: async () => ({}) });
+
+      mockUpstream({ viewInfo: status(404) });
+      await request('/docs/page');
+      await request('/docs/page');
+      // The API's answer for an unpublished view: cached, looked up once.
+      expect(viewInfoCalls()).toHaveLength(1);
+
+      clearViewRouteCache();
+      mockBunFetch.mockClear();
+      mockUpstream({ viewInfo: status(503) });
+      await request('/docs/page');
+      await request('/docs/page');
+      // Transient: never cached as "not published", so looked up each time.
+      expect(viewInfoCalls()).toHaveLength(2);
+    });
+
+    it('renders names without links if link resolution fails unexpectedly', async () => {
+      const resolveViewHrefs = jest.spyOn(publishLinks, 'resolveViewHrefs').mockRejectedValue(new Error('boom'));
+
+      try {
+        mockUpstream({ viewInfo: childInfo('docs') });
+
+        const response = await request('/docs/page');
+        const $ = load(await response.text());
+
+        expect(resolveViewHrefs).toHaveBeenCalled();
+        expect(response.status).toBe(200);
+        expect($('[data-appflowy-ssr]').length).toBe(1);
+        expect($('#root a[href^="/docs/child"]').length).toBe(0);
+        expect($('#root').text()).toContain('Child page');
+      } finally {
+        resolveViewHrefs.mockRestore();
+      }
+    });
+
+    it('lookups share the snapshot budget: none start once it is spent', async () => {
+      // The snapshot arrives just as the budget runs out (the clock is moved
+      // rather than waited on), so the links get no time of their own.
+      process.env.APPFLOWY_SSR_SNAPSHOT_TIMEOUT_MS = '1500';
+
+      let clock = Date.now();
+      const now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+
+      try {
+        mockUpstream({
+          snapshot: () => {
+            clock += 1500;
+            return snapshotOk()();
+          },
+          viewInfo: childInfo('docs'),
+        });
+
+        const html = await (await request('/docs/page')).text();
+        const $ = load(html);
+
+        expect($('[data-appflowy-ssr]').length).toBe(1);
+        expect(viewInfoCalls()).toHaveLength(0);
+        expect($('#root a[href="/docs/child-page"]').length).toBe(0);
+      } finally {
+        now.mockRestore();
+      }
+    });
+
+    it('a spent budget still links targets already in the cache', async () => {
+      mockUpstream({ viewInfo: childInfo('docs') });
+      await request('/docs/page');
+      mockBunFetch.mockClear();
+
+      let clock = Date.now();
+      const now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+
+      try {
+        mockUpstream({
+          snapshot: () => {
+            clock += 1500;
+            return snapshotOk()();
+          },
+          viewInfo: childInfo('docs'),
+        });
+
+        const html = await (await request('/docs/page')).text();
+
+        expect(viewInfoCalls()).toHaveLength(0);
+        expect(load(html)('#root a[href="/docs/child-page"]').length).toBe(2);
+      } finally {
+        now.mockRestore();
+      }
+    });
+
     it('a slow lookup does not hold the page past the deadline', async () => {
       process.env.APPFLOWY_SSR_SNAPSHOT_TIMEOUT_MS = '100';
       mockUpstream({ viewInfo: () => new Promise(() => undefined) });
@@ -358,6 +454,21 @@ describe('published page SSR', () => {
       mockUpstream({ snapshot });
 
       await expectShell(await request('/docs/page'));
+    });
+
+    it('an unexpected exception while rendering serves the shell, not an error', async () => {
+      const serialize = jest.spyOn(publishSerializer, 'serializePublishedPage').mockImplementation(() => {
+        throw new Error('serializer bug');
+      });
+
+      try {
+        mockUpstream();
+
+        await expectShell(await request('/docs/page'));
+        expect(serialize).toHaveBeenCalled();
+      } finally {
+        serialize.mockRestore();
+      }
     });
 
     it('a snapshot that never arrives times out', async () => {
@@ -535,10 +646,10 @@ describe('meta descriptions', () => {
     const $ = load(html);
 
     // Round-trips as an attribute value; no element was injected. The one
-    // script is the inlined snapshot.
+    // script is the inlined snapshot, a non-executing data block.
     expect(descriptions(html)).toEqual([hostile, hostile, hostile]);
-    expect($('head script').length).toBe(1);
-    expect($('#appflowy-publish-snapshot').length).toBe(1);
+    expect($('script').length).toBe(1);
+    expect($('#appflowy-publish-snapshot').attr('type')).toBe('application/json');
   });
 
   it('escapes a hostile page title when a meta tag is missing from the template', async () => {

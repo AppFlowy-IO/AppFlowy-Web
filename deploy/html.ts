@@ -56,10 +56,11 @@ export type PublishPageSsr = {
   /** Serialized page body from `serializePublishedPage`, already escaped. */
   bodyHtml: string;
   /**
-   * The snapshot to inline for the client, or undefined when it is too large
-   * to inline (the client then fetches it as it would without SSR).
+   * The snapshot to inline for the client, already serialized with
+   * `JSON.stringify`, or undefined when it is too large to inline (the client
+   * then fetches it as it would without SSR).
    */
-  snapshot?: unknown;
+  snapshotJson?: string;
   /**
    * Plain-text description derived from the page content, replacing the
    * generic default in the description meta tags. Undefined keeps the default.
@@ -114,14 +115,14 @@ const LINE_SEPARATOR = new RegExp(String.fromCharCode(0x2028), 'g');
 const PARAGRAPH_SEPARATOR = new RegExp(String.fromCharCode(0x2029), 'g');
 
 /**
- * Serializes a value as a JavaScript expression safe to embed in an inline
- * <script>. JSON alone is not enough: "</script>" or "<!--" inside a string
- * would end the script element early, and U+2028/U+2029 are line terminators
- * in older JavaScript engines. Escaping <, >, & and those two characters as
- * \uXXXX keeps the JSON value identical once parsed.
+ * Makes serialized JSON safe to embed in a <script> element. JSON alone is not
+ * enough: "</script>" or "<!--" inside a string would end the script element
+ * early, and U+2028/U+2029 are line terminators in older JavaScript engines.
+ * Escaping <, >, & and those two characters as \uXXXX keeps the JSON value
+ * identical once parsed.
  */
-const toInlineScriptJson = (value: unknown) =>
-  JSON.stringify(value)
+const toInlineScriptJson = (json: string) =>
+  json
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')
@@ -240,15 +241,20 @@ export const renderPublishPage = ({
 
   if (ssr) {
     $('head').append(`<style id="appflowy-ssr-style">${SSR_STYLE}</style>`);
-    // The client mounts with createRoot, not hydrateRoot: React discards this
-    // markup and renders the app normally, so it never has to match React's output.
+    // The client mounts with createRoot, not hydrateRoot, so this markup never
+    // has to match React's output. The client keeps the article on screen
+    // through its route-loading fallbacks and drops it once the page commits
+    // (src/components/_shared/ServerRenderedFallback.tsx), which relies on the
+    // article being the direct `[data-appflowy-ssr]` child of #root.
     $('#root').html(ssr.bodyHtml);
 
-    if (ssr.snapshot !== undefined) {
-      $('head').append(
-        `<script id="appflowy-publish-snapshot">window.__APPFLOWY_PUBLISH_SNAPSHOT__ = ${toInlineScriptJson(
-          ssr.snapshot
-        )};</script>`
+    // A data block after #root rather than an executable script in <head>: the
+    // browser does not have to download and run up to a megabyte of script
+    // before it can paint the article above, and the client reads it with
+    // JSON.parse, which is faster than evaluating an object literal that size.
+    if (ssr.snapshotJson !== undefined) {
+      $('#root').after(
+        `<script type="application/json" id="appflowy-publish-snapshot">${toInlineScriptJson(ssr.snapshotJson)}</script>`
       );
     }
   }

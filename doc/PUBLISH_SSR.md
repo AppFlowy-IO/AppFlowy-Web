@@ -2,7 +2,10 @@
 
 The Bun server in `deploy/` can include a published page's content in the initial
 HTML, so crawlers that do not run JavaScript (most LLM and answer-engine crawlers)
-can read it. The client app still mounts over it with `createRoot`, exactly as before.
+can read it. The client app still mounts over it with `createRoot`, exactly as before,
+but keeps the server-rendered article on screen while its route chunks load
+instead of flashing a spinner, and reuses the inlined snapshot (a
+`<script type="application/json">` block after `#root`) instead of fetching it again.
 
 **It is off by default.** With no configuration, every published page gets
 byte-for-byte the response it had before this feature existed: head metadata, an
@@ -40,7 +43,7 @@ that line after changing them, since a misspelled variable is silently ignored.
 |---|---|---|
 | `APPFLOWY_INDEXABLE_NAMESPACES` | empty (none) | Comma-separated publish namespaces to server-render, e.g. `docs,guide`. Exact, case-sensitive match. |
 | `APPFLOWY_SSR_KILL_SWITCH` | off | `true`, `1`, `yes` or `on` disables SSR everywhere, overriding everything else. |
-| `APPFLOWY_SSR_SNAPSHOT_TIMEOUT_MS` | `1500` | How long to wait for the page snapshot before serving the shell. Clamped to 100–5000. |
+| `APPFLOWY_SSR_SNAPSHOT_TIMEOUT_MS` | `1500` | Total time SSR may spend upstream: the page snapshot, then link lookups with whatever is left. A snapshot that misses it serves the shell. Clamped to 100–5000. |
 | `APPFLOWY_SSR_MAX_INLINE_BYTES` | `1048576` | Largest snapshot inlined into the page for the client to reuse. Larger pages are still server-rendered; the client fetches the snapshot itself. |
 
 Changing a variable requires restarting the container; it is not instant.
@@ -104,8 +107,10 @@ looks each one up (`/api/workspace/v1/published-info/{view_id}`, anonymous):
 - A target is linked only if it is published **and** is in the same namespace
   or an allowlisted one. SSR never hands crawlers a URL into a namespace that
   has not opted in. Everything else renders as the plain page name.
-- At most 50 targets per page and 6 lookups at a time, all within
-  `APPFLOWY_SSR_SNAPSHOT_TIMEOUT_MS` (so a server-rendered page waits at most
-  twice that value upstream). Results are cached in memory for 60 seconds, so
-  an unpublished or renamed page stops being linked within a minute.
+- At most 50 targets per page and 6 lookups at a time. The lookups share the
+  snapshot's `APPFLOWY_SSR_SNAPSHOT_TIMEOUT_MS` budget: they get whatever the
+  snapshot fetch left, so SSR waits at most that value upstream in total. When
+  nothing is left, only already-cached targets are linked. Results are cached
+  in memory for 60 seconds, so an unpublished or renamed page stops being
+  linked within a minute.
 - Any lookup failure or timeout drops that link, never the page.

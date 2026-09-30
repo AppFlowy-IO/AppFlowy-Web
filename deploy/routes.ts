@@ -276,15 +276,27 @@ const publishRoute = async ({ req, url, hostname }: RequestContext) => {
   });
 };
 
+type PendingSnapshot = {
+  result: Promise<SnapshotFetchResult>;
+  /**
+   * When all SSR upstream work for this page must be done (`Date.now()` ms).
+   * The snapshot fetch and the link lookups that follow it share this one
+   * budget, so SSR adds at most `snapshotTimeoutMs` to the response.
+   */
+  deadline: number;
+};
+
 /**
  * Starts the snapshot fetch, guaranteeing the returned promise never rejects,
  * so an early (speculative) fetch that ends up unused can never surface as an
  * unhandled rejection.
  */
-const startSnapshotFetch = (namespace: string, publishName: string, timeoutMs: number) =>
-  Promise.resolve()
+const startSnapshotFetch = (namespace: string, publishName: string, timeoutMs: number): PendingSnapshot => ({
+  result: Promise.resolve()
     .then(() => fetchPublishSnapshot(namespace, publishName, timeoutMs))
-    .catch((): SnapshotFetchResult => ({ ok: false, reason: 'network_error' }));
+    .catch((): SnapshotFetchResult => ({ ok: false, reason: 'network_error' })),
+  deadline: Date.now() + timeoutMs,
+});
 
 /**
  * Resolves published URLs for the pages a snapshot links to.
@@ -326,7 +338,7 @@ const resolveLinkHrefs = async (
  *   never become an error response.
  */
 const buildSsrBody = async (
-  pending: Promise<SnapshotFetchResult>,
+  pending: PendingSnapshot,
   settings: SsrSettings,
   namespace: string,
   publishName: string
@@ -334,14 +346,16 @@ const buildSsrBody = async (
   const context = `namespace="${namespace}" publishName="${publishName}"`;
 
   try {
-    const result = await pending;
+    const result = await pending.result;
 
     if (!result.ok) {
       logger.warn(`SSR snapshot unavailable (${result.reason}), serving shell: ${context}`);
       return undefined;
     }
 
-    const viewHrefs = await resolveLinkHrefs(result.snapshot, namespace, settings.snapshotTimeoutMs);
+    // Links get whatever is left of the snapshot's budget; cached routes still
+    // resolve when nothing is left.
+    const viewHrefs = await resolveLinkHrefs(result.snapshot, namespace, pending.deadline - Date.now());
     const serialized = serializePublishedPage(result.snapshot, { viewHrefs });
 
     if (!serialized.ok) {
@@ -352,11 +366,12 @@ const buildSsrBody = async (
     // Inlining lets the client skip its own fetch, but the snapshot also carries
     // the raw block data, roughly doubling large pages. Past the limit, keep the
     // server-rendered body and let the client fetch the snapshot as it does today.
-    const inlineSize = Buffer.byteLength(JSON.stringify(result.snapshot), 'utf8');
+    const snapshotJson = JSON.stringify(result.snapshot);
+    const inlineSize = Buffer.byteLength(snapshotJson, 'utf8');
 
     return {
       bodyHtml: serialized.html,
-      snapshot: inlineSize <= settings.maxInlineBytes ? result.snapshot : undefined,
+      snapshotJson: inlineSize <= settings.maxInlineBytes ? snapshotJson : undefined,
       description: extractPageDescription(result.snapshot),
     };
   } catch (error) {

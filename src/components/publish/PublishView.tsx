@@ -3,8 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 
 import { PublishProvider } from '@/application/publish';
 import { createPublishSnapshotDataSource } from '@/application/publish-snapshot/data-source';
-import { takeInlinedPublishSnapshot } from '@/application/publish-snapshot/inlined';
+import { peekInlinedPublishSnapshot, releaseInlinedPublishSnapshot } from '@/application/publish-snapshot/inlined';
 import type { PublishedPageSnapshot, PublishSnapshotDataSource } from '@/application/publish-snapshot/types';
+import { releaseServerRenderedMarkup } from '@/components/_shared/ServerRenderedFallback';
 import NotFound from '@/components/error/NotFound';
 import PublishLayout from '@/components/publish/PublishLayout';
 import PublishMobileLayout from '@/components/publish/PublishMobileLayout';
@@ -17,21 +18,32 @@ export interface PublishViewProps {
 
 export function PublishView({ namespace, publishName }: PublishViewProps) {
   // When the server rendered this page it also inlined the snapshot; start
-  // from it instead of fetching. Absent or unusable → undefined, and the
-  // effect below fetches as usual.
-  const [inlinedSnapshot] = useState(() => takeInlinedPublishSnapshot(namespace, publishName));
-  const [snapshot, setSnapshot] = useState<PublishedPageSnapshot | undefined>(inlinedSnapshot);
+  // from it instead of fetching. Absent, unusable or for another page →
+  // undefined, and the effect below fetches as usual.
+  const [snapshot, setSnapshot] = useState<PublishedPageSnapshot | undefined>(() =>
+    peekInlinedPublishSnapshot(namespace, publishName)
+  );
   const [notFound, setNotFound] = useState<boolean>(false);
   const [dataSource] = useState<PublishSnapshotDataSource>(() => createPublishSnapshotDataSource());
-  const pendingInlinedSnapshot = useRef(inlinedSnapshot);
+  // The page whose snapshot came inlined, until the reader navigates away.
+  const inlinedPage = useRef(snapshot ? { namespace, publishName } : undefined);
+
+  // Released on commit rather than during render, so a render React discards
+  // can still find them. From here on every page is fetched and every route
+  // fallback is the normal spinner.
+  useEffect(() => {
+    releaseInlinedPublishSnapshot();
+    releaseServerRenderedMarkup();
+  }, []);
 
   useEffect(() => {
-    // Skip only the first fetch, and only for the page the snapshot belongs to.
-    // Any later navigation fetches normally.
-    const inlined = pendingInlinedSnapshot.current;
+    // Already showing this page from the inlined snapshot. Left set on a match
+    // (so StrictMode's repeated effect does not refetch) and cleared on any
+    // navigation, so every later page, including a return to this one, fetches.
+    const inlined = inlinedPage.current;
 
-    pendingInlinedSnapshot.current = undefined;
-    if (inlined && inlined.namespace === namespace && inlined.publishName === publishName) return;
+    if (inlined?.namespace === namespace && inlined.publishName === publishName) return;
+    inlinedPage.current = undefined;
 
     let cancelled = false;
 

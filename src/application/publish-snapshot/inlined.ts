@@ -1,59 +1,95 @@
 import { normalizePublishedPageSnapshot } from './normalize';
 import type { PublishedPageSnapshot, PublishedPageSnapshotPayload } from './types';
 
-declare global {
-  interface Window {
-    /**
-     * Snapshot inlined by the server when it server-renders a published page
-     * (see deploy/html.ts), so the client does not fetch it a second time.
-     * Absent in local dev, on the static deployment, and for non-SSR pages.
-     */
-    __APPFLOWY_PUBLISH_SNAPSHOT__?: unknown;
-  }
-}
+/**
+ * Id of the `<script type="application/json">` block the server emits after
+ * #root when it server-renders a published page (see deploy/html.ts), so the
+ * client does not fetch the snapshot a second time. Absent in local dev, on
+ * the static deployment, for non-SSR pages, and for snapshots too large to
+ * inline.
+ */
+export const INLINED_PUBLISH_SNAPSHOT_ID = 'appflowy-publish-snapshot';
+
+type InlinedEntry = { namespace: string; publishName: string; snapshot: PublishedPageSnapshot };
+
+// undefined: the block has not been read yet. null: nothing usable.
+let entry: InlinedEntry | null | undefined;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/**
- * Takes the server-inlined snapshot for a published page, if there is a usable one.
- *
- * The global is removed on first read so it is used at most once: after an
- * in-app navigation the page must be fetched normally, never served from a
- * snapshot that belonged to the first page loaded.
- *
- * @param namespace - Namespace of the page being rendered.
- * @param publishName - Publish name of the page being rendered.
- * @returns The normalized snapshot, or undefined when the global is absent,
- *   malformed, for a different page, or fails to normalize. Callers fall back
- *   to fetching, exactly as they did before SSR existed.
- */
-export function takeInlinedPublishSnapshot(
-  namespace: string,
-  publishName: string
-): PublishedPageSnapshot | undefined {
-  if (typeof window === 'undefined') return undefined;
+const readEntry = (): InlinedEntry | null => {
+  const text = document.getElementById(INLINED_PUBLISH_SNAPSHOT_ID)?.textContent;
 
-  const raw = window.__APPFLOWY_PUBLISH_SNAPSHOT__;
+  if (!text) return null;
 
-  if (raw === undefined) return undefined;
+  let raw: unknown;
 
-  delete window.__APPFLOWY_PUBLISH_SNAPSHOT__;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
 
   if (
     !isObject(raw) ||
     raw.schemaVersion !== 1 ||
     (raw.kind !== 'document' && raw.kind !== 'database') ||
     !isObject(raw.view) ||
-    raw.namespace !== namespace ||
-    raw.publishName !== publishName
+    typeof raw.namespace !== 'string' ||
+    typeof raw.publishName !== 'string'
   ) {
-    return undefined;
+    return null;
   }
 
   try {
-    return normalizePublishedPageSnapshot(raw as unknown as PublishedPageSnapshotPayload);
+    return {
+      namespace: raw.namespace,
+      publishName: raw.publishName,
+      snapshot: normalizePublishedPageSnapshot(raw as unknown as PublishedPageSnapshotPayload),
+    };
   } catch {
-    return undefined;
+    return null;
   }
+};
+
+/**
+ * Returns the server-inlined snapshot for a published page, if there is a usable one.
+ *
+ * Side-effect free apart from caching the parse, so it is safe to call during
+ * render: a render React throws away (a suspended first mount, StrictMode's
+ * double invocation) can call it again and get the same result. Call
+ * `releaseInlinedPublishSnapshot` once the page has committed.
+ *
+ * @param namespace - Namespace of the page being rendered.
+ * @param publishName - Publish name of the page being rendered.
+ * @returns The normalized snapshot, or undefined when the block is absent,
+ *   released, malformed, for a different page, or fails to normalize. Callers
+ *   fall back to fetching, exactly as they did before SSR existed.
+ */
+export function peekInlinedPublishSnapshot(
+  namespace: string,
+  publishName: string
+): PublishedPageSnapshot | undefined {
+  if (typeof document === 'undefined') return undefined;
+
+  entry ??= readEntry();
+
+  if (!entry || entry.namespace !== namespace || entry.publishName !== publishName) return undefined;
+
+  return entry.snapshot;
+}
+
+/**
+ * Drops the inlined snapshot so it is used at most once: after an in-app
+ * navigation a page must be fetched normally, never served from a snapshot
+ * that belonged to the first page loaded. Also frees the parsed copy and the
+ * (possibly large) JSON text in the DOM.
+ */
+export function releaseInlinedPublishSnapshot() {
+  if (typeof document === 'undefined') return;
+
+  document.getElementById(INLINED_PUBLISH_SNAPSHOT_ID)?.remove();
+  // Back to "not read": the block is gone, so a later peek finds nothing.
+  entry = undefined;
 }

@@ -7,7 +7,10 @@ const MAX_SNAPSHOT_TIMEOUT_MS = 5000;
 export const DEFAULT_MAX_INLINE_BYTES = 1024 * 1024;
 
 export interface SsrSettings {
-  /** How long to wait for the page snapshot before serving the shell instead. */
+  /**
+   * Upstream budget for SSR: the snapshot must arrive within it (else the shell
+   * is served), and link lookups get whatever it leaves.
+   */
   snapshotTimeoutMs: number;
   /**
    * Largest snapshot (serialized JSON, in bytes) inlined into the page for the
