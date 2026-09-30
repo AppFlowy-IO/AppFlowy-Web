@@ -1,0 +1,68 @@
+status: 200
+cache-control: no-cache
+content-type: text/html
+
+<!DOCTYPE html><html lang="en" translate="no"><head>
+    <meta charset="UTF-8">
+    <meta name="google" content="notranslate">
+    <link rel="icon" type="image/svg+xml" href="/appflowy.ico">
+    <link rel="canonical" href="https://appflowy.test/space/offline">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AppFlowy</title>
+    <meta name="description" content="Write, share, and publish docs quickly on AppFlowy.
+Get started for free.">
+    <meta property="og:title" content="AppFlowy">
+    <meta property="og:site_name" content="AppFlowy">
+    <meta property="og:description" content="Write, share, and publish docs quickly on AppFlowy.
+Get started for free.">
+    <meta property="og:image" content="/og-image.png">
+    <meta property="og:url" content="https://appflowy.test/space/offline">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="AppFlowy">
+    <meta name="twitter:description" content="Write, share, and publish docs quickly on AppFlowy.
+Get started for free.">
+    <meta name="twitter:image" content="/og-image.png">
+    <meta name="twitter:site" content="@appflowy">
+    <meta name="twitter:creator" content="@appflowy">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&amp;display=swap" rel="stylesheet">
+<meta property="og:type" content="website"><script id="appflowy-publish-error">window.__APPFLOWY_PUBLISH_ERROR__ = {"code":"FETCH_ERROR","message":"Unable to load this page. Please check your internet connection and try again.","namespace":"space","publishName":"offline","detail":"network down"};</script></head>
+<body id="body">
+<div id="root"></div>
+<script type="module" src="/src/main.tsx"></script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const body = document.body;
+    const isWin = userAgent.indexOf('win') > -1;
+    const isMac = userAgent.indexOf('mac') > -1;
+    const isLinux = userAgent.indexOf('linux') > -1;
+    const isFirefox = userAgent.indexOf('firefox') > -1;
+    const isChrome = userAgent.indexOf('chrome') > -1;
+    const isSafari = userAgent.indexOf('safari') > -1;
+    if (isWin) {
+      body.setAttribute('data-os', 'windows');
+    } else if (isMac) {
+      body.setAttribute('data-os', 'mac');
+    } else if (isLinux) {
+      body.setAttribute('data-os', 'linux');
+    } else {
+      body.setAttribute('data-os', 'unknown');
+    }
+
+    if (isFirefox) {
+      body.setAttribute('data-browser', 'firefox');
+    } else if (isChrome) {
+      body.setAttribute('data-browser', 'chrome');
+    } else if (isSafari) {
+      body.setAttribute('data-browser', 'safari');
+    } else {
+      body.setAttribute('data-browser', 'unknown');
+    }
+  });
+</script>
+
+
+
+
+</body></html>
