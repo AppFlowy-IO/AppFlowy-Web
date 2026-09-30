@@ -1,0 +1,86 @@
+# Published page SSR
+
+The Bun server in `deploy/` can include a published page's content in the initial
+HTML, so crawlers that do not run JavaScript (most LLM and answer-engine crawlers)
+can read it. The client app still mounts over it with `createRoot`, exactly as before.
+
+**It is off by default.** With no configuration, every published page gets
+byte-for-byte the response it had before this feature existed: head metadata, an
+empty `<div id="root">`, and no robots directives. This is enforced by
+`deploy/publish-golden.test.ts`.
+
+## How a page's mode is decided
+
+`deploy/indexing-policy.ts` makes the decision once per request. First match wins:
+
+| # | Condition | Mode | Robots directive |
+|---|---|---|---|
+| 0 | Namespace is an app path (`app`, `login`, `auth`, …) | shell | none |
+| 1 | `APPFLOWY_SSR_KILL_SWITCH` is on | shell | none |
+| 2 | Publisher set `indexing_enabled: false` | shell | `noindex, nofollow, noarchive, nosnippet` |
+| 3 | Publisher set `indexing_enabled: true` | server-rendered | none |
+| 4 | Namespace is in `APPFLOWY_INDEXABLE_NAMESPACES` | server-rendered | none |
+| 5 | Anything else | shell | none |
+
+Rules 2 and 3 read `config.indexing_enabled` from the published-metadata
+response. AppFlowy-Cloud does not send that field yet, so today these rules never
+match and only the namespace allowlist enables SSR.
+
+"Shell" is the pre-SSR response. Any failure while server-rendering (snapshot
+fetch error or timeout, a database page, a malformed snapshot) also serves the
+shell, never an error.
+
+## Environment variables
+
+Set these on the web container (the same place as `APPFLOWY_BASE_URL`). They are
+read on every request; the effective values are logged once at startup — check
+that line after changing them, since a misspelled variable is silently ignored.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `APPFLOWY_INDEXABLE_NAMESPACES` | empty (none) | Comma-separated publish namespaces to server-render, e.g. `docs,guide`. Exact, case-sensitive match. |
+| `APPFLOWY_SSR_KILL_SWITCH` | off | `true`, `1`, `yes` or `on` disables SSR everywhere, overriding everything else. |
+| `APPFLOWY_SSR_SNAPSHOT_TIMEOUT_MS` | `1500` | How long to wait for the page snapshot before serving the shell. Clamped to 100–5000. |
+| `APPFLOWY_SSR_MAX_INLINE_BYTES` | `1048576` | Largest snapshot inlined into the page for the client to reuse. Larger pages are still server-rendered; the client fetches the snapshot itself. |
+
+Changing a variable requires restarting the container; it is not instant.
+
+## Enabling for AppFlowy's docs and guides
+
+```bash
+APPFLOWY_INDEXABLE_NAMESPACES=docs,guide
+```
+
+Verify after the restart:
+
+```bash
+# Allowlisted page: content is in the HTML, no robots restriction.
+curl -s https://appflowy.com/guide/getting-started-with-appflowy | grep -c 'data-appflowy-ssr'   # 1
+curl -sI https://appflowy.com/guide/getting-started-with-appflowy | grep -i x-robots-tag         # (nothing)
+
+# Any other namespace: unchanged. Capture before enabling, compare after.
+curl -s -D before.h https://appflowy.com/<namespace>/<page> -o before.html   # before
+curl -s -D after.h  https://appflowy.com/<namespace>/<page> -o after.html    # after
+diff before.html after.html
+diff <(grep -iv '^date:' before.h) <(grep -iv '^date:' after.h)
+
+# App routes never server-render.
+curl -s https://appflowy.com/app | grep -c 'data-appflowy-ssr'   # 0
+```
+
+## Turning it off
+
+Set `APPFLOWY_SSR_KILL_SWITCH=true` and restart, or remove the namespace from
+`APPFLOWY_INDEXABLE_NAMESPACES`. Either returns pages to their pre-SSR response.
+Content crawlers already fetched stays in their indexes; if an HTML cache is ever
+added in front of these pages, purge it too.
+
+## Scope and limits
+
+- Only document pages are server-rendered. Database pages (grid, board,
+  calendar, gallery) always get the shell.
+- The server-rendered markup is plain semantic HTML with minimal styling
+  (`deploy/publish-serializer.ts`). It is independent of the React editor by
+  design; unknown block types keep their text in a neutral wrapper.
+- `deploy/publish-serializer.test.ts` fails when a new `BlockType` is added
+  without deciding how the serializer treats it.

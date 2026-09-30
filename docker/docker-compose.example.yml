@@ -11,4 +11,8 @@ services:
       - APPFLOWY_BASE_URL=https://your-backend.example.com
       - APPFLOWY_GOTRUE_BASE_URL=https://your-backend.example.com/gotrue
       - APPFLOWY_WS_BASE_URL=wss://your-backend.example.com/ws/v2
+      # OPTIONAL: server-render published pages in these namespaces for crawlers.
+      # Off by default; see doc/PUBLISH_SSR.md before enabling.
+      # - APPFLOWY_INDEXABLE_NAMESPACES=docs,guide
+      # - APPFLOWY_SSR_KILL_SWITCH=true
     restart: unless-stopped
