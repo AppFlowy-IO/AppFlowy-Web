@@ -110,6 +110,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      # Publish namespaces the SSR server renders (deploy/indexing-policy.ts).
+      # Both the server and the tests read it: playwright/e2e/page/publish-ssr.spec.ts
+      # moves its workspace to one of these; every other test keeps a random
+      # namespace and so the default, non-SSR response.
+      APPFLOWY_INDEXABLE_NAMESPACES: e2e-ssr-a,e2e-ssr-b,e2e-ssr-c
     strategy:
       fail-fast: false
       matrix:

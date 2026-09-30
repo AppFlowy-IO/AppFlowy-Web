@@ -114,3 +114,21 @@ looks each one up (`/api/workspace/v1/published-info/{view_id}`, anonymous):
   in memory for 60 seconds, so an unpublished or renamed page stops being
   linked within a minute.
 - Any lookup failure or timeout drops that link, never the page.
+
+## Testing
+
+- `deploy/*.test.ts` (Jest): the policy, serializer, link resolution and full
+  request handling against a mocked upstream API; `publish-golden.test.ts`
+  pins the default response byte for byte.
+- `deploy/publish-ssr-client.test.ts`: feeds the server's real HTML to the
+  client code that reads it (inlined snapshot, server-rendered article).
+- `playwright/e2e/page/publish-ssr.spec.ts`: end to end against the Bun server
+  and a real Cloud. It moves its workspace to one of the namespaces in
+  `APPFLOWY_INDEXABLE_NAMESPACES` and checks the rendered HTML, then that a real
+  browser shows the article before any script runs and hands it to the app
+  with no spinner in between. CI sets the variable for the whole Playwright job.
+  Without it, the spec is skipped (e.g. against the Vite dev server).
+
+To run the end-to-end spec locally, build the app, start `bun deploy/server.ts`
+with `APPFLOWY_INDEXABLE_NAMESPACES=e2e-ssr-a,e2e-ssr-b,e2e-ssr-c`, and run
+Playwright with the same variable and `BASE_URL` pointing at that server.
