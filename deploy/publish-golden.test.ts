@@ -13,6 +13,11 @@
  * implementation. Do not regenerate them to make a failing test pass: a diff
  * here means default behaviour changed. Regenerate (`UPDATE_GOLDEN=1`) only for
  * a deliberate, reviewed change to the default response.
+ *
+ * The HTML template is a frozen copy (`__golden__/template.html`) of the
+ * `index.html` the goldens were recorded with, not the live file. This test
+ * guards the server's rendering logic; edits to `index.html` are ordinary app
+ * changes and must not fail it.
  */
 
 import { jest } from '@jest/globals';
@@ -21,8 +26,8 @@ import path from 'path';
 const actualFs = jest.requireActual<typeof import('fs')>('fs');
 const mockBunFetch = jest.fn();
 
-// The real Vite entry HTML, so the golden output reflects the production template.
-const indexTemplate = actualFs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+// Frozen copy of the Vite entry HTML at recording time (see header comment).
+const indexTemplate = actualFs.readFileSync(path.join(__dirname, '__golden__', 'template.html'), 'utf8');
 
 jest.mock('pino', () => () => ({
   info: jest.fn(),

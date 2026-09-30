@@ -162,6 +162,11 @@ describe('published page SSR', () => {
       expect($('#root > article[data-appflowy-ssr] > h1').text()).toBe('Rich document');
       expect($('#root').text()).toContain('Cell A1');
       expect($('#appflowy-ssr-style').length).toBe(1);
+      // The app's global CSS disables body scrolling; #root scrolls the article
+      // until React replaces it (scoped with :has so the app is unaffected).
+      expect($('#appflowy-ssr-style').text()).toContain(
+        '#root:has(> [data-appflowy-ssr]){height:100%;overflow-y:auto}'
+      );
       expect(inlinedSnapshot(html)).toEqual(publishedRichDocumentPayload);
       // Head metadata is still produced as before.
       expect($('title').text()).toBe('Doc | AppFlowy');

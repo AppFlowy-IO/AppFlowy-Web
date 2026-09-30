@@ -101,6 +101,29 @@ describe('resolveViewHrefs', () => {
     expect(signals.every((signal) => signal.aborted)).toBe(true);
   });
 
+  it('starts no new lookups once the deadline has passed', async () => {
+    // A lookup that honours its abort signal, like Bun's fetch, and otherwise
+    // never answers.
+    const fetchRoute = jest.fn<FetchRoute>(
+      (_viewId, signal) =>
+        new Promise((_resolve, reject) => {
+          if (signal.aborted) reject(new Error('aborted'));
+          signal.addEventListener('abort', () => reject(new Error('aborted')));
+        })
+    );
+
+    await resolve(
+      Array.from({ length: 20 }, (_, i) => `v${i}`),
+      fetchRoute,
+      { timeoutMs: 50 }
+    );
+    // Let the aborted workers settle before counting.
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Only the six in-flight lookups; the remaining queue is left untouched.
+    expect(fetchRoute).toHaveBeenCalledTimes(6);
+  });
+
   it('caches results, including "not published", until the TTL expires', async () => {
     let clock = 0;
     const now = () => clock;

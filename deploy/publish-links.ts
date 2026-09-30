@@ -95,6 +95,10 @@ export const resolveViewHrefs = async (
 
     const worker = async () => {
       for (let viewId = queue.shift(); viewId !== undefined; viewId = queue.shift()) {
+        // Past the deadline: leave the rest of the queue alone rather than
+        // starting lookups that are doomed to be aborted.
+        if (controller.signal.aborted) return;
+
         try {
           const route = await fetchRoute(viewId, controller.signal);
 

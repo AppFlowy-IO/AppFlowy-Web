@@ -80,7 +80,15 @@ export type RenderPublishPageOptions = {
 // the app will draw it, and the swap when React mounts looks like a restyle
 // rather than a jump. Scoped to [data-appflowy-ssr] and only injected in SSR
 // modes, so default-mode pages are unaffected.
-const SSR_STYLE = `[data-appflowy-ssr]{box-sizing:border-box;max-width:952px;margin:0 auto;padding:96px 96px 48px;line-height:1.6;overflow-wrap:anywhere}
+//
+// The app's global CSS sets `html, body { height: 100%; overflow: hidden }`
+// because the app scrolls inside its own containers. Before the app mounts,
+// #root is the only thing that can scroll the article, so it becomes the
+// scroll container while — and only while — it holds the SSR article: once
+// React replaces the article, `:has()` stops matching and the app's layout is
+// untouched.
+const SSR_STYLE = `#root:has(> [data-appflowy-ssr]){height:100%;overflow-y:auto}
+[data-appflowy-ssr]{box-sizing:border-box;max-width:952px;margin:0 auto;padding:96px 96px 48px;line-height:1.6;overflow-wrap:anywhere}
 [data-appflowy-ssr] h1{font-size:2.5rem;font-weight:700;line-height:1.2;margin:0 0 1.5rem}
 [data-appflowy-ssr] h2{font-size:1.875rem;font-weight:600;margin:1.5rem 0 .5rem}
 [data-appflowy-ssr] h3{font-size:1.5rem;font-weight:600;margin:1.25rem 0 .5rem}
