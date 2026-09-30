@@ -26,12 +26,22 @@ import { setupPageErrorHandling, TestConfig } from './test-config';
 
 export { DatabaseViewLayout, FieldType };
 
-/** `layout_settings` key of the dashboard layout. */
-export const DASHBOARD_LAYOUT_KEY = '9';
-export const DASHBOARD_MAX_WIDGETS = 12;
-export const DASHBOARD_MAX_WIDGETS_PER_ROW = 4;
-export const DASHBOARD_GRID_COLUMNS = 12;
-export const DASHBOARD_DEFAULT_ROW_HEIGHT = 360;
+// The `layout_settings` key and the limits come from the app (bound to `dashboard-parity/tokens.json`).
+import {
+  DASHBOARD_DEFAULT_ROW_HEIGHT,
+  DASHBOARD_GRID_COLUMNS,
+  DASHBOARD_MAX_WIDGETS,
+  DASHBOARD_MAX_WIDGETS_PER_ROW,
+} from '../../src/application/database-yjs/dashboard-geometry';
+import { DASHBOARD_LAYOUT_KEY } from '../../src/application/database-yjs/dashboard.type';
+
+export {
+  DASHBOARD_DEFAULT_ROW_HEIGHT,
+  DASHBOARD_GRID_COLUMNS,
+  DASHBOARD_LAYOUT_KEY,
+  DASHBOARD_MAX_WIDGETS,
+  DASHBOARD_MAX_WIDGETS_PER_ROW,
+};
 export const DASHBOARD_STACK_BREAKPOINT = 768;
 
 const FIXTURE_TIMEOUT_MS = 45_000;

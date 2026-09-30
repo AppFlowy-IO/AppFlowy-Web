@@ -133,6 +133,9 @@ describe('DashboardProvider', () => {
     expect(result.current.localGlobalFilters).toBeNull();
     expect(result.current.canEdit).toBe(true);
     expect(result.current.isEditing).toBe(false);
+    expect(result.current.mobileContext).toBe(false);
+    expect(result.current.canEnterEdit).toBe(true);
+    expect(result.current.editPreference).toBe('off');
     expect(result.current.sourceDocs).toEqual({ [DATABASE_ID]: doc });
     expect(result.current.sourceNames).toEqual({});
   });
@@ -648,14 +651,17 @@ describe('DashboardProvider', () => {
     it('keeps callbacks stable across renders', () => {
       const { doc } = createDatabaseDoc();
       const { result, rerender } = renderDashboard(doc);
-      const { registerSourceDoc, registerSourceName, setLocalGlobalFilters } = result.current;
+      const { registerSourceDoc, registerSourceName, setLocalGlobalFilters, setEditing, pinEditing } = result.current;
 
       rerender();
       act(() => result.current.registerSourceName('x', 'X'));
+      act(() => result.current.setEditing(true));
 
       expect(result.current.registerSourceDoc).toBe(registerSourceDoc);
       expect(result.current.registerSourceName).toBe(registerSourceName);
       expect(result.current.setLocalGlobalFilters).toBe(setLocalGlobalFilters);
+      expect(result.current.setEditing).toBe(setEditing);
+      expect(result.current.pinEditing).toBe(pinEditing);
     });
   });
 });

@@ -198,4 +198,34 @@ describe('database Layout', () => {
     expect(mockUpdateLayout).toHaveBeenCalledTimes(1);
     expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Chart);
   });
+
+  describe('in a mobile context (a 390px window)', () => {
+    const initialWidth = window.innerWidth;
+
+    beforeEach(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 390 });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: initialWidth });
+    });
+
+    it('offers no Dashboard conversion, whatever the creation flag', async () => {
+      mockCreationEnabled = true;
+      await openLayout(DatabaseViewLayout.Grid);
+
+      expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`)).toBeNull();
+      expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`)).toBeTruthy();
+      expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Board}`)).toBeTruthy();
+    });
+
+    it('still reads Dashboard for a Dashboard view', async () => {
+      mockCreationEnabled = true;
+      const trigger = await openLayout(DatabaseViewLayout.Dashboard);
+      const currentOption = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`);
+
+      expect(trigger.textContent).toContain('Dashboard');
+      expect(currentOption.querySelector('[data-slot="dropdown-menu-tick"]')).not.toBeNull();
+    });
+  });
 });

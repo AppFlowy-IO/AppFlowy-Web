@@ -40,7 +40,7 @@ import { WidgetPicker } from './WidgetPicker';
 /** The Dashboard layout: global filters, then the widget grid (or its empty state). */
 export function Dashboard() {
   const { paddingStart, paddingEnd, workspaceId, variant } = useDatabaseContext();
-  const { isEditing, canEdit, setEditing, updateRows, hostDatabaseId } = useDashboardContext();
+  const { isEditing, canEdit, canEnterEdit, pinEditing, updateRows, hostDatabaseId } = useDashboardContext();
   const { rows } = useDashboardLayout();
   const { registerSourceDoc, registerSourceName } = useDashboardSourceRegistry();
   const hostServices = useDashboardHostServices();
@@ -62,8 +62,9 @@ export function Dashboard() {
 
   // The picker only makes sense while editing (Edit mode itself, including
   // the automatic one of an empty dashboard, is derived by DashboardProvider).
-  // Leaving Edit mode (Done) drops it; write access that is only being
-  // re-checked (back on the tab, a reconnect) hides it until Edit mode returns.
+  // Leaving Edit mode (Done, or a window narrowed to a mobile context) drops
+  // it; write access that is only being re-checked (back on the tab, a
+  // reconnect) hides it until Edit mode returns.
   if (canEdit && !isEditing && pickerRequest) setPickerRequest(null);
 
   const acquireSourceDoc = useSourceDocRegistry(registerSourceDoc, hostDatabaseId);
@@ -120,9 +121,9 @@ export function Dashboard() {
 
   const openPicker = useCallback(
     (request: WidgetPickerRequest) => {
-      if (!canEdit) return;
+      if (!canEnterEdit) return;
       // The editor started building: keep Edit mode whatever the sync brings.
-      setEditing(true);
+      pinEditing();
 
       if (request.mode === 'add' && !canAddDashboardWidget(rowsRef.current, request.placement)) {
         const dashboardFull = !canAddDashboardWidget(rowsRef.current);
@@ -133,7 +134,7 @@ export function Dashboard() {
 
       setPickerRequest(request);
     },
-    [canEdit, setEditing, showLimitMessage]
+    [canEnterEdit, pinEditing, showLimitMessage]
   );
 
   const applyPick = useCallback(

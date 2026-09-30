@@ -70,6 +70,10 @@ function createDashboardContext(): DashboardContextValue {
     canEdit: true,
     isEditing: true,
     setEditing: jest.fn(),
+    mobileContext: false,
+    canEnterEdit: true,
+    editPreference: 'on',
+    pinEditing: jest.fn(),
     updateSetting: jest.fn(),
     updateRows: jest.fn(),
   };

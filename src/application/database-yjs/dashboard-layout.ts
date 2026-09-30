@@ -11,6 +11,13 @@ import {
 } from '@/application/types';
 
 import {
+  EMPTY_DASHBOARD_GLOBAL_FILTERS,
+  parseDashboardGlobalFilters,
+  sameDashboardGlobalFilters,
+  serializeDashboardGlobalFilters,
+  shareDashboardGlobalFilters,
+} from './dashboard-global-filters';
+import {
   DASHBOARD_DEFAULT_ROW_HEIGHT,
   DASHBOARD_GRID_COLUMNS,
   DASHBOARD_LAYOUT_KEY,
@@ -18,47 +25,44 @@ import {
   DASHBOARD_MAX_WIDGETS,
   DASHBOARD_MAX_WIDGETS_PER_ROW,
   DASHBOARD_MIN_ROW_HEIGHT,
-  DashboardGlobalFilter,
   DashboardLayoutSetting,
   DashboardLayoutUpdate,
   DashboardRow,
   DashboardWidget,
   DashboardWidgetPlacement,
 } from './dashboard.type';
-import { FieldType } from './database.type';
+import { clampInteger, isPlainRecord, nonEmptyString, pickUnknownKeys, toPlainValue } from './layout-codec';
+
+// The global-filter codec lives in `dashboard-global-filters.ts`.
+export {
+  indexGlobalFilterExtras,
+  sameDashboardGlobalFilters,
+  serializeDashboardGlobalFilters,
+  shareDashboardGlobalFilters,
+} from './dashboard-global-filters';
 
 const EMPTY_ROWS: DashboardRow[] = [];
-const EMPTY_FILTERS: DashboardGlobalFilter[] = [];
 // Plain values keep their identity until the key is rewritten, so parsed
 // results can be cached per stored value (same trick as the timeline links).
 const parsedRows = new WeakMap<object, DashboardRow[]>();
-const parsedFilters = new WeakMap<object, DashboardGlobalFilter[]>();
+
+/**
+ * The keys this client writes on a stored row / widget. Any other key belongs
+ * to another (newer) client and is carried over by id (ARCHITECTURE §3.1.4); a
+ * key in these sets always comes from the writer. Same sets as Rust
+ * `ROW_KNOWN_KEYS` / `WIDGET_KNOWN_KEYS`.
+ */
+const DASHBOARD_ROW_KEYS: ReadonlySet<string> = new Set(['id', 'height', 'widgets']);
+const DASHBOARD_WIDGET_KEYS: ReadonlySet<string> = new Set(['id', 'view_id', 'database_id', 'width']);
 
 export const DEFAULT_DASHBOARD_LAYOUT_SETTING: DashboardLayoutSetting = {
   rows: EMPTY_ROWS,
-  globalFilters: EMPTY_FILTERS,
+  globalFilters: EMPTY_DASHBOARD_GLOBAL_FILTERS,
   showWidgetTitles: true,
 };
 
 export function generateDashboardId(prefix: 'w' | 'r' | 'gf') {
   return `${prefix}:${nanoid(8)}`;
-}
-
-function clampInteger(value: unknown, min: number, max: number, fallback: number) {
-  if (typeof value !== 'number' && typeof value !== 'bigint') return fallback;
-  const number = Math.round(Number(value));
-
-  if (!Number.isFinite(number)) return fallback;
-  return Math.min(max, Math.max(min, number));
-}
-
-function nonEmptyString(value: unknown): string | undefined {
-  return typeof value === 'string' && value !== '' ? value : undefined;
-}
-
-function toPlain(value: unknown): unknown {
-  if (value instanceof Y.Array || value instanceof Y.Map) return value.toJSON();
-  return value;
 }
 
 /**
@@ -150,7 +154,7 @@ export function normalizeDashboardRows(rows: DashboardRow[]): DashboardRow[] {
 }
 
 function parseRows(value: unknown): DashboardRow[] {
-  const raw = toPlain(value);
+  const raw = toPlainValue(value);
 
   if (!Array.isArray(raw)) return EMPTY_ROWS;
   const cached = parsedRows.get(raw);
@@ -201,81 +205,6 @@ function parseRows(value: unknown): DashboardRow[] {
   return stable;
 }
 
-/**
- * A global filter's `targets` in their stored order. The first mapping is the
- * primary one (select content refers to its options), but `targets` is a JSON
- * object, which Yrs decodes into a hash map and re-encodes in arbitrary key
- * order. The order therefore lives in the `target_order` array; mappings it
- * does not list (older data) follow in sorted order so every client agrees.
- */
-function parseGlobalFilterTargets(targetsValue: unknown, orderValue: unknown): Record<string, string> {
-  const targetsRaw = toPlain(targetsValue);
-  const entries = new Map<string, string>();
-
-  if (targetsRaw && typeof targetsRaw === 'object' && !Array.isArray(targetsRaw)) {
-    Object.entries(targetsRaw as Record<string, unknown>).forEach(([databaseId, fieldId]) => {
-      const id = nonEmptyString(fieldId);
-
-      if (databaseId && id) entries.set(databaseId, id);
-    });
-  }
-
-  const orderRaw = toPlain(orderValue);
-  const listed = Array.isArray(orderRaw)
-    ? orderRaw.filter((databaseId): databaseId is string => typeof databaseId === 'string' && entries.has(databaseId))
-    : [];
-  const ordered = [...new Set(listed)];
-  const listedSet = new Set(ordered);
-  const rest = [...entries.keys()].filter((databaseId) => !listedSet.has(databaseId)).sort();
-  const targets: Record<string, string> = {};
-
-  [...ordered, ...rest].forEach((databaseId) => {
-    targets[databaseId] = entries.get(databaseId) as string;
-  });
-  return targets;
-}
-
-function parseGlobalFilters(value: unknown): DashboardGlobalFilter[] {
-  const raw = toPlain(value);
-
-  if (!Array.isArray(raw)) return EMPTY_FILTERS;
-  const cached = parsedFilters.get(raw);
-
-  if (cached) return cached;
-  const filters: DashboardGlobalFilter[] = [];
-
-  raw.forEach((item, index) => {
-    if (!item || typeof item !== 'object') return;
-    const record = item as {
-      id?: unknown;
-      name?: unknown;
-      ty?: unknown;
-      condition?: unknown;
-      content?: unknown;
-      targets?: unknown;
-      target_order?: unknown;
-    };
-    const fieldType = clampInteger(record.ty, 0, 1000, -1);
-
-    if (fieldType < 0) return;
-
-    filters.push({
-      // Positional, like the row fallback ids (see `parseRows`).
-      id: nonEmptyString(record.id) ?? `gf:${index}`,
-      name: typeof record.name === 'string' ? record.name : '',
-      fieldType: fieldType as FieldType,
-      condition: clampInteger(record.condition, 0, 1000, 0),
-      content: typeof record.content === 'string' ? record.content : '',
-      targets: parseGlobalFilterTargets(record.targets, record.target_order),
-    });
-  });
-
-  const stable = filters.length === 0 ? EMPTY_FILTERS : filters;
-
-  parsedFilters.set(raw, stable);
-  return stable;
-}
-
 export function readDashboardLayoutSetting(database: YDatabase | undefined, viewId: string): DashboardLayoutSetting {
   const setting = database
     ?.get(YjsDatabaseKey.views)
@@ -288,35 +217,77 @@ export function readDashboardLayoutSetting(database: YDatabase | undefined, view
 
   return {
     rows: parseRows(setting.get(YjsDatabaseKey.dashboard_rows)),
-    globalFilters: parseGlobalFilters(setting.get(YjsDatabaseKey.dashboard_global_filters)),
+    globalFilters: parseDashboardGlobalFilters(setting.get(YjsDatabaseKey.dashboard_global_filters)),
     showWidgetTitles: typeof showWidgetTitles === 'boolean' ? showWidgetTitles : true,
   };
 }
 
-/** Serialize rows in the persisted snake_case shape. */
-export function serializeDashboardRows(rows: DashboardRow[]) {
+export interface DashboardRowExtras {
+  rows: Map<string, Record<string, unknown>>;
+  widgets: Map<string, Record<string, unknown>>;
+}
+
+/**
+ * The unknown keys of the stored rows and widgets, by effective id: the stored
+ * `id`, or `r:{rowIndex}` / `w:{rowIndex}:{widgetIndex}` counting every entry
+ * exactly as `parseRows` does. Widgets are indexed across all rows, so their
+ * extras follow a widget into another row. The first occurrence of an id wins,
+ * as in Rust `index_dashboard_row_extras`.
+ */
+export function indexDashboardRowExtras(stored: unknown): DashboardRowExtras {
+  const extras: DashboardRowExtras = { rows: new Map(), widgets: new Map() };
+  const raw = toPlainValue(stored);
+
+  if (!Array.isArray(raw)) return extras;
+  const seenRows = new Set<string>();
+  const seenWidgets = new Set<string>();
+
+  raw.forEach((row, rowIndex) => {
+    if (!isPlainRecord(row)) return;
+    const rowId = nonEmptyString(row.id) ?? `r:${rowIndex}`;
+
+    if (!seenRows.has(rowId)) {
+      seenRows.add(rowId);
+      const unknown = pickUnknownKeys(row, DASHBOARD_ROW_KEYS);
+
+      if (unknown) extras.rows.set(rowId, unknown);
+    }
+
+    if (!Array.isArray(row.widgets)) return;
+    row.widgets.forEach((widget, index) => {
+      if (!isPlainRecord(widget)) return;
+      const widgetId = nonEmptyString(widget.id) ?? `w:${rowIndex}:${index}`;
+
+      if (seenWidgets.has(widgetId)) return;
+      seenWidgets.add(widgetId);
+      const unknown = pickUnknownKeys(widget, DASHBOARD_WIDGET_KEYS);
+
+      if (unknown) extras.widgets.set(widgetId, unknown);
+    });
+  });
+  return extras;
+}
+
+/**
+ * Serialize rows in the persisted snake_case shape. With `stored` (the current
+ * value of the key), each row and widget keeps the unknown keys of the stored
+ * entry with the same id (ARCHITECTURE §3.1.4).
+ */
+export function serializeDashboardRows(rows: DashboardRow[], stored?: unknown) {
+  const extras = indexDashboardRowExtras(stored);
+
   return rows.map((row) => ({
+    ...extras.rows.get(row.id),
     id: row.id,
     height: row.height,
     widgets: row.widgets.map((widget) => ({
+      // Keyed by widget id across all rows: extras follow a moved widget.
+      ...extras.widgets.get(widget.id),
       id: widget.id,
       view_id: widget.viewId,
       database_id: widget.databaseId,
       width: widget.width,
     })),
-  }));
-}
-
-export function serializeDashboardGlobalFilters(filters: DashboardGlobalFilter[]) {
-  return filters.map((filter) => ({
-    id: filter.id,
-    name: filter.name,
-    ty: filter.fieldType,
-    condition: filter.condition,
-    content: filter.content,
-    targets: { ...filter.targets },
-    // Arrays keep their order through Yrs; the object above does not.
-    target_order: Object.keys(filter.targets),
   }));
 }
 
@@ -342,20 +313,41 @@ function getOrCreateDashboardLayoutSetting(view: YDatabaseView): YDatabaseDashbo
  * Patch the dashboard setting. Rows and global filters are whole-value writes
  * (last writer wins for concurrent layout edits, which Notion also serializes
  * behind its Edit mode); `showWidgetTitles` is a separate key.
+ *
+ * A key is written only when its parsed value changes, as Rust
+ * `into_layout_patch` does, so an identical write creates no Yjs item and no
+ * undo step. A rewritten `rows` / `global_filters` keeps the unknown keys
+ * another client stored on its entries, read from the current value.
  */
 export function updateDashboardLayoutSetting(view: YDatabaseView, update: DashboardLayoutUpdate) {
   const setting = getOrCreateDashboardLayoutSetting(view);
 
   if (update.rows !== undefined) {
-    setting.set(YjsDatabaseKey.dashboard_rows, serializeDashboardRows(normalizeDashboardRows(update.rows)));
+    const stored = setting.get(YjsDatabaseKey.dashboard_rows);
+    const rows = normalizeDashboardRows(update.rows);
+
+    if (!sameDashboardRows(parseRows(stored), rows)) {
+      setting.set(YjsDatabaseKey.dashboard_rows, serializeDashboardRows(rows, stored));
+    }
   }
 
   if (update.globalFilters !== undefined) {
-    setting.set(YjsDatabaseKey.dashboard_global_filters, serializeDashboardGlobalFilters(update.globalFilters));
+    const stored = setting.get(YjsDatabaseKey.dashboard_global_filters);
+
+    if (!sameDashboardGlobalFilters(parseDashboardGlobalFilters(stored), update.globalFilters)) {
+      setting.set(
+        YjsDatabaseKey.dashboard_global_filters,
+        serializeDashboardGlobalFilters(update.globalFilters, stored)
+      );
+    }
   }
 
   if (update.showWidgetTitles !== undefined) {
-    setting.set(YjsDatabaseKey.show_widget_titles, update.showWidgetTitles);
+    const stored = setting.get(YjsDatabaseKey.show_widget_titles);
+
+    if ((typeof stored === 'boolean' ? stored : true) !== update.showWidgetTitles) {
+      setting.set(YjsDatabaseKey.show_widget_titles, update.showWidgetTitles);
+    }
   }
 }
 
@@ -387,31 +379,6 @@ export function sameDashboardRows(a: DashboardRow[], b: DashboardRow[]) {
   );
 }
 
-function sameGlobalFilterTargets(a: Record<string, string>, b: Record<string, string>) {
-  if (a === b) return true;
-  const keys = Object.keys(a);
-  const otherKeys = Object.keys(b);
-
-  // Order matters: the first mapping is the primary one.
-  return keys.length === otherKeys.length && keys.every((key, index) => key === otherKeys[index] && a[key] === b[key]);
-}
-
-function sameGlobalFilter(a: DashboardGlobalFilter, b: DashboardGlobalFilter) {
-  return (
-    a === b ||
-    (a.id === b.id &&
-      a.name === b.name &&
-      a.fieldType === b.fieldType &&
-      a.condition === b.condition &&
-      a.content === b.content &&
-      sameGlobalFilterTargets(a.targets, b.targets))
-  );
-}
-
-export function sameDashboardGlobalFilters(a: DashboardGlobalFilter[], b: DashboardGlobalFilter[]) {
-  return a === b || (a.length === b.length && a.every((filter, index) => sameGlobalFilter(filter, b[index])));
-}
-
 /**
  * `next`, reusing every row and widget of `previous` that did not change, so
  * memoized rows and widgets skip the render when another part of the layout
@@ -434,25 +401,6 @@ export function shareDashboardRows(previous: DashboardRow[], next: DashboardRow[
 
     if (kept && kept.height === row.height && sameWidgets(kept.widgets, widgets)) return kept;
     return widgets.every((widget, index) => widget === row.widgets[index]) ? row : { ...row, widgets };
-  });
-}
-
-/** `next`, reusing every unchanged filter (and unchanged `targets`) of `previous`. */
-export function shareDashboardGlobalFilters(
-  previous: DashboardGlobalFilter[],
-  next: DashboardGlobalFilter[]
-): DashboardGlobalFilter[] {
-  if (sameDashboardGlobalFilters(previous, next)) return previous;
-  const previousFilters = new Map(previous.map((filter): [string, DashboardGlobalFilter] => [filter.id, filter]));
-
-  return next.map((filter) => {
-    const kept = previousFilters.get(filter.id);
-
-    if (!kept) return filter;
-    if (sameGlobalFilter(kept, filter)) return kept;
-    return kept.targets !== filter.targets && sameGlobalFilterTargets(kept.targets, filter.targets)
-      ? { ...filter, targets: kept.targets }
-      : filter;
   });
 }
 

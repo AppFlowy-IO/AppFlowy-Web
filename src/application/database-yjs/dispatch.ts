@@ -14,12 +14,8 @@ import {
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
-import {
-  ChartLayoutField,
-  ChartLayoutKeys,
-  ChartNumberFormat,
-  writeChartLayoutValue,
-} from '@/application/database-yjs/chart.type';
+import type { ChartExtendedSettingsUpdate } from '@/application/database-yjs/chart-extended-settings';
+import { applyChartLayoutUpdate, type ChartLayoutSetting } from '@/application/database-yjs/chart.type';
 import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import {
   useDatabase,
@@ -5396,24 +5392,20 @@ export {
   useUpdateAdvancedFilterAndRebuild,
 } from './dispatch/sort-filter';
 
-export interface ChartLayoutSetting {
-  chartType?: number;
-  xFieldId?: string;
-  showEmptyValues?: boolean;
-  aggregationType?: number;
-  yFieldId?: string;
-  cumulative?: boolean;
-  dateCondition?: number;
-  numberFormat?: ChartNumberFormat;
-  titleText?: string;
-}
+export type { ChartLayoutSetting } from '@/application/database-yjs/chart.type';
 
+/**
+ * Write chart settings: the base fields in `settings` and the
+ * `chart-extended-settings.ts` fields in `extended` (`null` resets one), in one
+ * undoable operation. Only the fields passed in are written, and unchanged
+ * values are skipped (see `applyChartLayoutUpdate`).
+ */
 export function useUpdateChartSetting() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (settings: Partial<ChartLayoutSetting>) => {
+    (settings: Partial<ChartLayoutSetting>, extended?: ChartExtendedSettingsUpdate) => {
       executeOperations(
         sharedRoot,
         [
@@ -5436,15 +5428,7 @@ export function useUpdateChartSetting() {
               layoutSettings.set('3', layoutSetting as unknown as YDatabaseChartLayoutSetting);
             }
 
-            // Only the fields passed in are written, each under its collab
-            // key plus the legacy web key (see `writeChartLayoutValue`).
-            for (const field of Object.keys(ChartLayoutKeys) as ChartLayoutField[]) {
-              const value = settings[field];
-
-              if (value !== undefined) {
-                writeChartLayoutValue(layoutSetting, field, value);
-              }
-            }
+            applyChartLayoutUpdate(layoutSetting, settings, extended);
           },
         ],
         'updateChartSetting'

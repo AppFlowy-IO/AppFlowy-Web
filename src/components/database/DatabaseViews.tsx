@@ -23,6 +23,7 @@ import { DatabaseSearchProvider } from '@/components/database/components/conditi
 import { DatabaseTabs } from '@/components/database/components/tabs';
 import { WIDGET_CONDITIONS_BAR_HEIGHT, WIDGET_MIN_VIEWPORT_HEIGHT } from '@/components/database/dashboard/constants';
 import { DashboardProvider } from '@/components/database/dashboard/DashboardContext';
+import { useDashboardModeStore } from '@/components/database/dashboard/hooks/useDashboardModeStore';
 import { HistoricalDashboardPlaceholder } from '@/components/database/dashboard/HistoricalDashboardPlaceholder';
 import { WidgetBody } from '@/components/database/dashboard/WidgetBody';
 import { useWidgetContextOptional } from '@/components/database/dashboard/WidgetContext';
@@ -123,6 +124,8 @@ function DatabaseViews({
   const pendingExpectedViewIdsRef = useRef<string[] | null>(null);
   const pendingViewAppendBaseRef = useRef<string[] | null>(null);
   const tabReorderRequestSeqRef = useRef(0);
+  // Each dashboard's Edit preference survives switching to another tab and back.
+  const dashboardModeStore = useDashboardModeStore();
   const hasAuthoritativeVisibleOrder = Boolean(visibleViewIds && visibleViewIds.length > 0);
 
   const fallbackViewIds = useMemo(() => {
@@ -565,7 +568,11 @@ function DatabaseViews({
       // The tab bar's toolbar (Edit / Done, global filters) and the grid
       // share one dashboard state.
       if (isDashboardHost) {
-        groupedContent = <DashboardProvider viewIds={displayedViewIds}>{content}</DashboardProvider>;
+        groupedContent = (
+          <DashboardProvider modeStore={dashboardModeStore} viewIds={displayedViewIds}>
+            {content}
+          </DashboardProvider>
+        );
       }
 
       break;

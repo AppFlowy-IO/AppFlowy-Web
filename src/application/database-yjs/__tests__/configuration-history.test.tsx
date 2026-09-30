@@ -815,6 +815,12 @@ describe('configuration production hooks use database history', () => {
     expect(getChartSetting()?.get('aggregation_type')).toBe(4);
     expect(getChartSetting()?.get('show_empty_values')).toBe(true);
     expect(fixture.layoutSettings.get('2').get(YjsDatabaseKey.field_id)).toBe(numberFieldId);
+
+    // Re-selecting the stored values writes nothing, so it records no undo step.
+    act(() => result.current.history.clear());
+    act(() => result.current.updateChartSetting({ chartType: 2, aggregationType: 4, cumulative: true }));
+    expect(result.current.history.canUndo).toBe(false);
+    expect(getChartSetting()?.get('chart_type')).toBe(2);
   });
 
   it('updates visibility, wrapping, and width with an undo/redo round trip for each field-display setting', () => {

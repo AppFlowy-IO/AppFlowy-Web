@@ -1,0 +1,120 @@
+/**
+ * Dashboard and chart design tokens (`--dash-*`, `--chart-*`), light and dark.
+ *
+ * Source of truth: `src/application/database-yjs/__fixtures__/dashboard-parity/tokens.json`,
+ * which desktop reads too. `dashboard-tokens.test.ts` binds every variable here to it
+ * (including the resolved colors of the default theme) and rejects any variable the
+ * fixture does not know, so change the fixture first. Colors refer to the semantic
+ * theme variables wherever they can, so custom themes follow.
+ */
+
+:root {
+  /* Colors */
+  --dash-accent: var(--fill-theme-thick);
+  --dash-edit-title: var(--text-action);
+  --dash-edit-icon: var(--fill-theme-thick);
+  --dash-edit-tint: color-mix(in srgb, var(--fill-theme-thick) 6%, transparent);
+  --dash-edit-ring: color-mix(in srgb, var(--fill-theme-thick) 14%, transparent);
+  --dash-row-control-bg: var(--fill-theme-select);
+  /* The card is the page, so a dark card is ring-only. */
+  --dash-card-bg: var(--background-primary);
+  --dash-card-ring: rgba(31, 35, 41, 0.08);
+  --dash-title: var(--text-secondary);
+  --dash-tool-icon: var(--icon-secondary);
+  --dash-hover-fill: var(--fill-content-hover);
+  --dash-unsaved-dot: var(--icon-warning-thick);
+  --dash-save-bg: var(--fill-warning-light);
+  --dash-save-fg: var(--text-warning);
+  --dash-pill-bg-active: var(--fill-theme-select);
+  --dash-pill-fg-active: var(--text-action);
+  --dash-pill-bg: var(--fill-content-hover);
+  --dash-pill-fg: var(--text-secondary);
+  --dash-toast-bg: var(--surface-inverse);
+  --chart-grid: var(--border-primary);
+  --chart-tick: var(--text-secondary);
+  --chart-data-label: var(--text-secondary);
+  --chart-outside-label: var(--text-tertiary);
+  --chart-hover-band: var(--fill-content-hover);
+  --chart-empty: #f1f1ef;
+  --chart-tooltip-bg: var(--surface-primary);
+  --chart-tooltip-border: var(--border-primary);
+  --chart-number-default: var(--text-primary);
+  --chart-number-gray: #787774;
+  --chart-number-brown: #9f6b53;
+  --chart-number-orange: #d9730d;
+  --chart-number-yellow: #cb912f;
+  --chart-number-green: #448361;
+  --chart-number-blue: #337ea9;
+  --chart-number-purple: #9065b0;
+  --chart-number-pink: #c14c8a;
+  --chart-number-red: #d44c47;
+
+  /* Shadows. The card shadow is listed with the ring: `var(--dash-card-shadow), 0 0 0 1px var(--dash-card-ring)`. */
+  --dash-card-shadow: 0 12px 32px 0 rgba(31, 35, 41, 0.03);
+  --chart-tooltip-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.1);
+  --dash-drilldown-shadow: 0 24px 48px 0 rgba(25, 25, 25, 0.24), 0 4px 12px 0 rgba(25, 25, 25, 0.14);
+  --dash-side-peek-shadow: -9px 0 24px 0 rgba(15, 15, 15, 0.06);
+
+  /* Chart grid dots, `stroke-dasharray` (desktop draws [2, 3] too). */
+  --chart-grid-dash: 2 3;
+
+  /* Motion */
+  --dash-motion-fast: 150ms;
+  --dash-motion-reflow: 200ms;
+  --dash-motion-ease: ease-in-out;
+
+  /* Geometry */
+  --dash-column-gap: 12px;
+  --dash-row-gap: 16px;
+  --dash-header-height: 40px;
+  --dash-box-radius: 16px;
+  --dash-card-radius: 12px;
+  --dash-card-inset: 46px;
+}
+
+:root[data-dark-mode=true] {
+  --dash-edit-tint: color-mix(in srgb, var(--fill-theme-thick) 8%, transparent);
+  --dash-edit-ring: color-mix(in srgb, var(--fill-theme-thick) 25%, transparent);
+  --dash-card-ring: rgba(255, 255, 255, 0.08);
+  --chart-empty: rgba(255, 255, 255, 0.1);
+  --chart-number-gray: #9b9b9b;
+  --chart-number-brown: #ba856f;
+  --chart-number-orange: #c77d48;
+  --chart-number-yellow: #ca9849;
+  --chart-number-green: #529e72;
+  --chart-number-blue: #5e87c9;
+  --chart-number-purple: #9d68d3;
+  --chart-number-pink: #d15796;
+  --chart-number-red: #df5452;
+  /* Not `none`, so consumers can list it with the ring. */
+  --dash-card-shadow: 0 0 0 0 transparent;
+  --dash-side-peek-shadow: -9px 0 24px 0 rgba(0, 0, 0, 0.3);
+}
+
+/*
+ * A custom property with an unsupported value does not fall back to an earlier
+ * declaration, so browsers without `color-mix` get the default accent hue.
+ */
+@supports not (color: color-mix(in srgb, red 50%, transparent)) {
+  :root {
+    --dash-edit-tint: rgba(0, 181, 255, 0.06);
+    --dash-edit-ring: rgba(0, 181, 255, 0.14);
+  }
+
+  :root[data-dark-mode=true] {
+    --dash-edit-tint: rgba(0, 181, 255, 0.08);
+    --dash-edit-ring: rgba(0, 181, 255, 0.25);
+  }
+}
+
+/* The widget card surface (WP03): the page color, a 1px ring drawn as a shadow, never a border. */
+.dash-card {
+  background-color: var(--dash-card-bg);
+  border-radius: var(--dash-card-radius);
+  box-shadow: var(--dash-card-shadow), 0 0 0 1px var(--dash-card-ring);
+  transition: box-shadow var(--dash-motion-fast) var(--dash-motion-ease);
+}
+
+.dash-card[data-editing='true'] {
+  box-shadow: var(--dash-card-shadow), 0 0 0 1px var(--dash-edit-ring);
+}

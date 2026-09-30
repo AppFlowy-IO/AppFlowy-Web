@@ -1,0 +1,50 @@
+{
+  "fixture": "layouts/chart-style-keys",
+  "version": 1,
+  "chartCases": [
+    {
+      "name": "desktop-written style keys parse and survive an unrelated write",
+      "stored": { "chart_type": { "$bigint": "0" }, "x_field_id": "f:owner", "decimal_places": { "$bigint": "2" },
+                  "color_theme": "blue", "show_data_labels": false, "legend_position": "bottom",
+                  "zz_parity_probe": { "from": "newer-app" } },
+      "parsed": { "decimal_places": 2, "color_theme": "blue", "show_data_labels": false, "legend_position": "bottom" },
+      "write": { "x_field_id": "f:stage" },
+      "writtenKeys": ["x_field_id"],
+      "expected": { "chart_type": 0, "x_field_id": "f:stage", "decimal_places": 2, "color_theme": "blue",
+                    "show_data_labels": false, "legend_position": "bottom", "zz_parity_probe": { "from": "newer-app" } }
+    },
+    {
+      "name": "web-written JS numbers read the same",
+      "stored": { "decimal_places": 0, "color_theme": "colorless" },
+      "parsed": { "decimal_places": 0, "color_theme": "colorless", "show_data_labels": true, "legend_position": "auto" }
+    },
+    {
+      "name": "unknown enum strings read as defaults and are never rewritten",
+      "stored": { "color_theme": "neon", "legend_position": "left", "decimal_places": 9, "show_data_labels": "no" },
+      "parsed": { "decimal_places": null, "color_theme": "auto", "show_data_labels": true, "legend_position": "auto" },
+      "write": { "cumulative": true },
+      "writtenKeys": ["cumulative"],
+      "expected": { "color_theme": "neon", "legend_position": "left", "decimal_places": 9, "show_data_labels": "no", "cumulative": true }
+    },
+    {
+      "name": "side is reserved and reads as bottom without a rewrite",
+      "stored": { "legend_position": "side" },
+      "parsed": { "legend_position": "bottom" }
+    },
+    {
+      "name": "Auto decimal places writes null, which reads as auto",
+      "stored": { "decimal_places": 3 },
+      "write": { "decimal_places": null },
+      "writtenKeys": ["decimal_places"],
+      "expected": { "decimal_places": null },
+      "reparsed": { "decimal_places": null }
+    },
+    {
+      "name": "each style key is written alone",
+      "stored": { "color_theme": "green" },
+      "write": { "show_data_labels": false },
+      "writtenKeys": ["show_data_labels"],
+      "expected": { "color_theme": "green", "show_data_labels": false }
+    }
+  ]
+}

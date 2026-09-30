@@ -314,4 +314,28 @@ describe('AddViewButton', () => {
       expect(onViewAdded).toHaveBeenCalledWith('form-view-id');
     });
   });
+
+  it('offers no Dashboard in a mobile context (a 390px window), whatever the creation flag', () => {
+    const initialWidth = window.innerWidth;
+
+    mockExperimentalDatabaseViewCreationEnabled = true;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 390 });
+
+    try {
+      render(
+        <MemoryRouter>
+          <AddViewButton databasePageId='database-page-id' onViewAdded={jest.fn()} />
+        </MemoryRouter>
+      );
+
+      expect(screen.queryByTestId('add-dashboard-view-button')).toBeNull();
+      // Every other layout can still be created there.
+      expect(screen.getByTestId('add-timeline-view-button')).toBeTruthy();
+      expect(screen.getByTestId('add-form-view-option')).toBeTruthy();
+      expect(screen.getByTestId('add-list-view-button')).toBeTruthy();
+      expect(mockAddView).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: initialWidth });
+    }
+  });
 });

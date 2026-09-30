@@ -152,6 +152,7 @@ import { useMentionableUsersWithAutoFetch } from '@/components/database/componen
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
+import { sameChartExtendedSettings } from './chart-extended-settings';
 import { ChartLayoutSettings, parseChartLayoutSettings } from './chart.type';
 import {
   CalculationType,
@@ -4356,7 +4357,9 @@ function chartSettingsEqual(a: ChartLayoutSettings | null, b: ChartLayoutSetting
     a.cumulative === b.cumulative &&
     a.dateCondition === b.dateCondition &&
     a.numberFormat === b.numberFormat &&
-    a.titleText === b.titleText
+    a.titleText === b.titleText &&
+    // The `chart-extended-settings.ts` keys compare there, so chart packages add keys without editing this file.
+    sameChartExtendedSettings(a.extended, b.extended)
   );
 }
 

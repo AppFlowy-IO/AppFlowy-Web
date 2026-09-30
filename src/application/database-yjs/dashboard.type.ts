@@ -1,16 +1,21 @@
-import { FieldType, FilterType } from './database.type';
+import type { DashboardGlobalFilter } from './dashboard-global-filters';
+
+// The limits live in `dashboard-geometry.ts`, bound to `dashboard-parity/tokens.json`.
+export {
+  DASHBOARD_DEFAULT_ROW_HEIGHT,
+  DASHBOARD_GRID_COLUMNS,
+  DASHBOARD_MAX_ROW_HEIGHT,
+  DASHBOARD_MAX_WIDGETS,
+  DASHBOARD_MAX_WIDGETS_PER_ROW,
+  DASHBOARD_MIN_ROW_HEIGHT,
+} from './dashboard-geometry';
+// The global-filter model and its per-widget resolution live in `dashboard-global-filters.ts`.
+export { resolveExtraFiltersForDatabase, toExtraFilter } from './dashboard-global-filters';
+export type { DashboardExtraFilter, DashboardGlobalFilter } from './dashboard-global-filters';
 
 /** Layout-settings key for `DatabaseViewLayout.Dashboard` (`DatabaseLayout::Dashboard = 9`). */
 export const DASHBOARD_LAYOUT_KEY = '9';
 
-/** Notion parity: a dashboard holds at most 12 widgets, 4 per row. */
-export const DASHBOARD_MAX_WIDGETS = 12;
-export const DASHBOARD_MAX_WIDGETS_PER_ROW = 4;
-/** Widget widths are shares of a 12-column grid; a row's widths always sum to this. */
-export const DASHBOARD_GRID_COLUMNS = 12;
-export const DASHBOARD_MIN_ROW_HEIGHT = 240;
-export const DASHBOARD_MAX_ROW_HEIGHT = 1200;
-export const DASHBOARD_DEFAULT_ROW_HEIGHT = 360;
 /** Below this viewport width every widget spans the full row (widgets stack). */
 export const DASHBOARD_STACK_BREAKPOINT = 768;
 
@@ -43,23 +48,6 @@ export interface DashboardRow {
   widgets: DashboardWidget[];
 }
 
-/**
- * A dashboard-level filter applied to every widget whose source database has a
- * mapping in `targets`. `condition` / `content` use the same encoding as a view
- * filter of `fieldType`, so the existing filter menus can edit it and
- * `filterBy` can evaluate it unchanged.
- */
-export interface DashboardGlobalFilter {
-  id: string;
-  /** Display name shown on the chip (defaults to the first mapped property's name). */
-  name: string;
-  fieldType: FieldType;
-  condition: number;
-  content: string;
-  /** database id → field id of that database the filter applies to. */
-  targets: Record<string, string>;
-}
-
 export interface DashboardLayoutSetting {
   rows: DashboardRow[];
   globalFilters: DashboardGlobalFilter[];
@@ -72,48 +60,3 @@ export type DashboardLayoutUpdate = Partial<DashboardLayoutSetting>;
 export type DashboardWidgetPlacement =
   | { type: 'new_row'; rowIndex?: number }
   | { type: 'existing_row'; rowId: string; index?: number };
-
-/**
- * A global filter resolved for one widget: a plain filter node in the persisted
- * view-filter shape (`filter_type`, `field_id`, `ty`, `condition`, `content`).
- * `filterBy` wraps plain objects, so the node needs no Yjs container.
- */
-export interface DashboardExtraFilter {
-  id: string;
-  filter_type: FilterType.Data;
-  field_id: string;
-  ty: FieldType;
-  condition: number;
-  content: string;
-}
-
-export function toExtraFilter(filter: DashboardGlobalFilter, fieldId: string): DashboardExtraFilter {
-  return {
-    id: filter.id,
-    filter_type: FilterType.Data,
-    field_id: fieldId,
-    ty: filter.fieldType,
-    condition: filter.condition,
-    content: filter.content,
-  };
-}
-
-/**
- * The global filters that apply to a widget of `databaseId`, resolved to its
- * field ids. Each node keeps the filter's type in `ty`; `combineFilters` skips
- * a node whose field has since changed type, reading the type live.
- */
-export function resolveExtraFiltersForDatabase(
-  globalFilters: DashboardGlobalFilter[],
-  databaseId: string
-): DashboardExtraFilter[] {
-  const resolved: DashboardExtraFilter[] = [];
-
-  globalFilters.forEach((filter) => {
-    const fieldId = filter.targets[databaseId];
-
-    if (fieldId) resolved.push(toExtraFilter(filter, fieldId));
-  });
-
-  return resolved;
-}

@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { createBdd, type DataTable } from 'playwright-bdd';
 
+import { expectDashboardViewMode } from '../../support/dashboard-platform-helpers';
 import {
   addDashboardView,
   addFixtureDatabase,
@@ -237,7 +238,8 @@ Then('the dashboard is in Edit mode', async ({ page }) => {
 });
 
 Then('the dashboard is in View mode', async ({ page }) => {
-  await expectDashboardMode(page, 'View');
+  // No Edit button either while Edit mode cannot be entered (WP14a).
+  await expectDashboardViewMode(page);
 });
 
 Then('the dashboard shows width handles', async ({ page }) => {

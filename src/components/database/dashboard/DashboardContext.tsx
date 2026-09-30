@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   dashboardSourceDatabaseIds,
@@ -14,12 +14,28 @@ import {
   useReadOnly,
   useUpdateDashboardSetting,
 } from '@/application/database-yjs';
+import {
+  consumeDashboardCreatedThisSession,
+  wasDashboardCreatedThisSession,
+} from '@/application/database-yjs/dashboard-session';
 import { runDatabaseHistoryGroupForDatabase } from '@/application/database-yjs/history';
 import { YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
+import { useMobileContext } from '@/components/_shared/hooks/useMobileContext';
 import { useDatabaseHistoryScopeContext } from '@/components/database/DatabaseHistoryScope';
+import { Log } from '@/utils/log';
 
+import {
+  canEnterDashboardEdit,
+  DashboardEditPreference,
+  DashboardModeEvent,
+  DashboardModeInputs,
+  reduceDashboardEditPreference,
+  resolveDashboardEditing,
+  touchesEditOnlyKeys,
+} from './dashboard-mode';
 import { readGlobalFilterSourceFields } from './global-filters/global-filter.source-fields';
 import { detachRemovedGlobalFilterSources, GlobalFilterSource } from './global-filters/global-filter.utils';
+import { DashboardModeSnapshot, DashboardModeStore } from './hooks/useDashboardModeStore';
 import {
   DashboardLocalWidgetChanges,
   DashboardViewOverlays,
@@ -30,8 +46,9 @@ import {
  * Shared state of one dashboard view, split by how often it changes so a
  * consumer only re-renders for what it reads:
  *
- * - `DashboardContext`: the Edit / View mode toggle, write access and the
- *   layout writers; changes only when the mode or the access does.
+ * - `DashboardContext`: the Edit / View mode (R-MODE, `dashboard-mode.ts`),
+ *   write access, the mobile context and the layout writers; changes only
+ *   when the mode, the access or the mobile context does.
  * - `DashboardLayoutContext`: the persisted rows and display settings, for
  *   the grid and everything that reads the rows. Kept apart so the toolbar
  *   and the filter bar do not re-render for every resize or move.
@@ -55,12 +72,28 @@ export interface DashboardContextValue {
   hostDatabaseId: string;
   /** Whether the viewer can persist layout / filter changes. */
   canEdit: boolean;
-  /** Edit mode is local UI state: never persisted, never synced. */
+  /**
+   * Whether the dashboard is in Edit mode right now: the editor's preference
+   * applied to the current write access and mobile context. Edit mode is local
+   * UI state: never persisted, never synced.
+   */
   isEditing: boolean;
+  /** Edit / Done. Entering Edit mode is ignored while `canEnterEdit` is false. */
   setEditing: (editing: boolean) => void;
-  /** Persist a partial update; a no-op for read-only viewers. */
+  /**
+   * A phone or a web viewport below 768px: the dashboard is view-only there,
+   * and every edit-only write is refused.
+   */
+  mobileContext: boolean;
+  /** Write access outside a mobile context: whether Edit mode can be offered. */
+  canEnterEdit: boolean;
+  /** The Edit preference behind `isEditing` (for tests and diagnostics). */
+  editPreference: DashboardEditPreference;
+  /** The editor started building (the add flow): keep Edit mode whatever the sync brings. */
+  pinEditing: () => void;
+  /** Persist a partial update; a no-op for read-only viewers and edit-only keys in a mobile context. */
   updateSetting: (update: DashboardLayoutUpdate) => void;
-  /** Persist a row transformation computed from the latest rows. */
+  /** Persist a row transformation computed from the latest rows; a no-op in a mobile context. */
   updateRows: (updater: (rows: DashboardRow[]) => DashboardRow[]) => void;
 }
 
@@ -165,22 +198,126 @@ function hasDetachedTargets(filters: DashboardGlobalFilter[], widgetDatabaseIds:
   return filters.some((filter) => Object.keys(filter.targets).some((databaseId) => !widgetDatabaseIds.has(databaseId)));
 }
 
-export function DashboardProvider({ children, viewIds }: { children: ReactNode; viewIds?: string[] }) {
+interface DashboardModeState extends DashboardModeSnapshot {
+  viewId: string;
+}
+
+export function DashboardProvider({
+  children,
+  viewIds,
+  modeStore,
+}: {
+  children: ReactNode;
+  viewIds?: string[];
+  /** Keeps the Edit preference across tab switches (owned by `DatabaseViews`). */
+  modeStore?: DashboardModeStore;
+}) {
   const { databaseDoc } = useDatabaseContext();
   const dashboardViewId = useDatabaseViewId();
   const readOnly = useReadOnly();
+  const mobileContext = useMobileContext();
   const storedSetting = useDashboardLayoutSetting();
   const persistSetting = useUpdateDashboardSetting();
   const hostHistoryScope = useDatabaseHistoryScopeContext();
+  const rows = storedSetting.rows;
+  const rowsEmpty = rows.length === 0;
+
+  // Write access and the mobile context are inputs of R-MODE, never events:
+  // losing access for a moment (a re-probe on returning to the tab, a
+  // reconnect) or narrowing the window hides Edit mode, and the editor's
+  // preference applies again when they come back. Read by the callbacks at
+  // call time, so they stay stable.
+  const inputs = useMemo<DashboardModeInputs>(
+    () => ({ canEdit: !readOnly, mobileContext }),
+    [readOnly, mobileContext]
+  );
+  const inputsRef = useRef(inputs);
+
+  inputsRef.current = inputs;
+
+  // `reset` then `loaded`: a remembered preference (the page switched tabs
+  // and back), otherwise the first layout snapshot decides. `auto` opens an
+  // empty dashboard, or one created in this session, in Edit mode.
+  const initialMode = (viewId: string): DashboardModeState => {
+    const stored = modeStore?.get(viewId);
+
+    if (stored) return { viewId, ...stored };
+    return {
+      viewId,
+      rowsEmpty,
+      preference: reduceDashboardEditPreference(
+        'auto',
+        { type: 'loaded', rowsEmpty, createdThisSession: wasDashboardCreatedThisSession(viewId) },
+        inputs
+      ),
+    };
+  };
+
+  const [mode, setMode] = useState(() => initialMode(dashboardViewId));
+  const [localGlobalFilters, setLocalGlobalFilters] = useState<DashboardGlobalFilter[] | null>(null);
+
+  // Switching to another dashboard view (the provider stays mounted) starts
+  // that view's mode and drops the local filters. Reset during render, so the
+  // next view's first render never sees the previous view's state.
+  if (mode.viewId !== dashboardViewId) {
+    setMode(initialMode(dashboardViewId));
+    setLocalGlobalFilters(null);
+  } else if (mode.rowsEmpty !== rowsEmpty) {
+    // Rows that became non-empty without a write of this client (a stale local
+    // cache catching up, a collaborator) end an automatic Edit mode. Local
+    // writes dispatch `local_write` before they land, so they never do.
+    setMode((current) =>
+      current.viewId !== dashboardViewId || current.rowsEmpty === rowsEmpty
+        ? current
+        : {
+            ...current,
+            rowsEmpty,
+            preference: reduceDashboardEditPreference(
+              current.preference,
+              { type: 'remote_rows', wasEmpty: current.rowsEmpty, isEmpty: rowsEmpty },
+              inputs
+            ),
+          }
+    );
+  }
+
+  const dispatchMode = useCallback((event: DashboardModeEvent) => {
+    setMode((current) => {
+      const preference = reduceDashboardEditPreference(current.preference, event, inputsRef.current);
+
+      return preference === current.preference ? current : { ...current, preference };
+    });
+  }, []);
+
+  useEffect(() => {
+    modeStore?.set(mode.viewId, { preference: mode.preference, rowsEmpty: mode.rowsEmpty });
+  }, [modeStore, mode]);
+
+  // The created-this-session mark only decides the first open (read by the
+  // initializer above, which may run twice in StrictMode).
+  useEffect(() => {
+    consumeDashboardCreatedThisSession(dashboardViewId);
+  }, [dashboardViewId]);
+
+  const isEditing = resolveDashboardEditing(mode.preference, inputs);
+  const canEnterEdit = canEnterDashboardEdit(inputs);
+
   const updateSetting = useCallback(
     (update: DashboardLayoutUpdate) => {
       if (readOnly) return;
+      // Defensive: a mobile context never offers Edit-only controls.
+      if (inputsRef.current.mobileContext && touchesEditOnlyKeys(update)) {
+        Log.warn('[Dashboard] edit-only write refused on mobile', Object.keys(update));
+        return;
+      }
+
+      dispatchMode({ type: 'local_write' });
       // Widget menus and drag handles live inside the source database's
       // history scope, but every dashboard layout write belongs to the host.
       hostHistoryScope?.activateHistoryScope();
       persistSetting(update);
     },
-    [hostHistoryScope, persistSetting, readOnly]
+    [dispatchMode, hostHistoryScope, persistSetting, readOnly]
   );
   const getDatabase = useCallback(
     () => (databaseDoc.getMap(YjsEditorKey.data_section) as YSharedRoot).get(YjsEditorKey.database),
@@ -190,32 +327,6 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
     () => (getDatabase()?.get(YjsDatabaseKey.id) as string | undefined) ?? databaseDoc.guid,
     [getDatabase, databaseDoc]
   );
-
-  // 'auto': a dashboard without widgets has nothing to view, so an editor
-  // starts building it right away (Notion parity); widgets that arrive before
-  // the editor chose a mode (a stale local cache, a collaborator) settle it to
-  // View mode. 'on' / 'off': the editor's choice.
-  const [editMode, setEditMode] = useState<'auto' | 'on' | 'off'>('auto');
-  const [localGlobalFilters, setLocalGlobalFilters] = useState<DashboardGlobalFilter[] | null>(null);
-  const [stateViewId, setStateViewId] = useState(dashboardViewId);
-  const rows = storedSetting.rows;
-
-  // Switching to another dashboard view (the provider stays mounted) leaves
-  // Edit mode and drops the local filters. Reset during render, so the next
-  // view's first render never sees the previous view's state.
-  if (stateViewId !== dashboardViewId) {
-    setStateViewId(dashboardViewId);
-    setEditMode('auto');
-    setLocalGlobalFilters(null);
-  }
-
-  // Derived during render, so no frame shows the wrong mode. Without write
-  // access nothing is editable, yet the editor's choice is kept: access is
-  // briefly unknown while it is re-probed (back on the tab, a reconnect), and
-  // Edit mode must come back with it. The automatic mode is decided once
-  // write access is known.
-  if (!readOnly && editMode === 'auto' && rows.length > 0) setEditMode('off');
-  const isEditing = !readOnly && (editMode === 'on' || (editMode === 'auto' && rows.length === 0));
 
   const {
     unsaved,
@@ -281,11 +392,10 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   const hostViewIds = useMemo(() => (viewIdsKey ? viewIdsKey.split(',') : EMPTY_VIEW_IDS), [viewIdsKey]);
 
   const setEditing = useCallback(
-    (editing: boolean) => {
-      setEditMode(editing && !readOnly ? 'on' : 'off');
-    },
-    [readOnly]
+    (editing: boolean) => dispatchMode({ type: 'set_editing', editing }),
+    [dispatchMode]
   );
+  const pinEditing = useCallback(() => dispatchMode({ type: 'pin' }), [dispatchMode]);
 
   // Reads the Y.Doc at call time (writes are synchronous), so consecutive
   // updates in one tick build on each other instead of on the last render.
@@ -295,6 +405,12 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
   const updateRows = useCallback(
     (updater: (rows: DashboardRow[]) => DashboardRow[]) => {
       if (readOnly) return;
+      // Every rows write is Edit-only (add, move, resize, remove, replace).
+      if (inputsRef.current.mobileContext) {
+        Log.warn('[Dashboard] edit-only write refused on mobile', ['rows']);
+        return;
+      }
+
       const current = readDashboardLayoutSetting(getDatabase(), dashboardViewId);
       const next = updater(current.rows);
 
@@ -372,10 +488,26 @@ export function DashboardProvider({ children, viewIds }: { children: ReactNode; 
       canEdit: !readOnly,
       isEditing,
       setEditing,
+      mobileContext,
+      canEnterEdit,
+      editPreference: mode.preference,
+      pinEditing,
       updateSetting,
       updateRows,
     }),
-    [dashboardViewId, hostDatabaseId, readOnly, isEditing, setEditing, updateSetting, updateRows]
+    [
+      dashboardViewId,
+      hostDatabaseId,
+      readOnly,
+      isEditing,
+      setEditing,
+      mobileContext,
+      canEnterEdit,
+      mode.preference,
+      pinEditing,
+      updateSetting,
+      updateRows,
+    ]
   );
 
   const layoutValue = useMemo<DashboardLayoutContextValue>(

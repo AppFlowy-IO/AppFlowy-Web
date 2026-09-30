@@ -87,6 +87,7 @@ describe('chart layout keys', () => {
       dateCondition: DateGroupCondition.Relative,
       numberFormat: 'compact',
       titleText: 'Revenue',
+      extended: {},
     });
   });
 
@@ -141,6 +142,7 @@ describe('chart layout keys', () => {
       dateCondition: DateGroupCondition.Month,
       numberFormat: 'auto',
       titleText: '',
+      extended: {},
     });
   });
 
@@ -191,5 +193,38 @@ describe('chart layout keys', () => {
       xFieldId: 'status',
       dateCondition: DateGroupCondition.Relative,
     });
+  });
+
+  it('writes nothing when the stored value is selected again', () => {
+    const { chart, context } = createFixture({
+      chart_type: ChartType.Donut,
+      chartType: ChartType.Donut,
+      aggregation_type: ChartAggregationType.Sum,
+      aggregationType: ChartAggregationType.Sum,
+      titleText: 'Revenue',
+    });
+    const { result } = renderHook(() => ({ setting: useChartLayoutSetting(), update: useUpdateChartSetting() }), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={context}>{children}</DatabaseContext.Provider>,
+    });
+    const changed: string[] = [];
+
+    chart.observe((event) => event.keysChanged.forEach((key) => changed.push(key)));
+    const setting = result.current.setting;
+
+    act(() =>
+      result.current.update({
+        chartType: ChartType.Donut,
+        aggregationType: ChartAggregationType.Sum,
+        titleText: 'Revenue',
+      })
+    );
+
+    expect(changed).toEqual([]);
+    expect(result.current.setting).toBe(setting);
+
+    act(() => result.current.update({ chartType: ChartType.Bar, titleText: 'Revenue' }));
+
+    expect(changed.sort()).toEqual(['chartType', 'chart_type']);
+    expect(chart.get('titleText')).toBe('Revenue');
   });
 });

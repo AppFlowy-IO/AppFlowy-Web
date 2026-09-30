@@ -202,4 +202,36 @@ describe('Save for everybody history', () => {
       [host, ...sources, readOnly].forEach(({ doc }) => doc.destroy());
     }
   );
+
+  it('records no dashboard step when the saved global filters are unchanged', () => {
+    const host = createDatabase('host', DASHBOARD_VIEW_ID);
+    const source = createDatabase('source-1', WIDGET_VIEW_ID);
+    const rows: DashboardRow[] = [
+      { id: 'row', height: 360, widgets: [{ id: 'widget', viewId: WIDGET_VIEW_ID, databaseId: 'source-1', width: 12 }] },
+    ];
+
+    updateDashboardLayoutSetting(host.view, { rows, globalFilters: [GLOBAL_FILTER] });
+    const hostHistory = getOrCreateDatabaseHistoryManager(host.doc);
+    const storedFilters = () =>
+      host.view.get(YjsDatabaseKey.layout_settings).get('9').get(YjsDatabaseKey.dashboard_global_filters);
+    const before = storedFilters();
+    const { result, unmount } = renderHook(() => useDashboardFilters(), {
+      wrapper: ({ children }) => (
+        <DatabaseContext.Provider value={context(host.doc, DASHBOARD_VIEW_ID)}>
+          <DatabaseHistoryScope>
+            <DashboardProvider>{children}</DashboardProvider>
+          </DatabaseHistoryScope>
+        </DatabaseContext.Provider>
+      ),
+    });
+
+    // Publishing filters equal to the saved ones writes nothing (Notion records no step either).
+    act(() => result.current.commitViewOverlays([{ ...GLOBAL_FILTER, targets: { ...GLOBAL_FILTER.targets } }]));
+
+    expect(storedFilters()).toBe(before);
+    expect(hostHistory.canUndo()).toBe(false);
+
+    unmount();
+    [host, source].forEach(({ doc }) => doc.destroy());
+  });
 });

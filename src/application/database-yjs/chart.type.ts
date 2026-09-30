@@ -1,6 +1,18 @@
+import * as Y from 'yjs';
+
 import { RowId } from '@/application/types';
 
+import {
+  ChartExtendedField,
+  ChartExtendedLayoutKeys,
+  ChartExtendedSettings,
+  ChartExtendedSettingsUpdate,
+  parseChartExtendedSettings,
+  writeChartExtendedValue,
+} from './chart-extended-settings';
 import { DateGroupCondition, FieldType } from './database.type';
+import { SelectOptionColor } from './fields/select-option/select_option.type';
+import { setLayoutKeyIfChanged } from './layout-codec';
 
 /**
  * Chart type enum matching Flutter's ChartTypePB
@@ -63,6 +75,24 @@ export interface ChartLayoutSettings {
   numberFormat?: ChartNumberFormat;
   /** Number chart only: custom title. Empty/undefined uses the generated title. */
   titleText?: string;
+  /** Settings under the keys of `chart-extended-settings.ts` (`parseChartLayoutSettings` always fills it). */
+  extended?: ChartExtendedSettings;
+}
+
+/**
+ * A typed chart write (`useUpdateChartSetting`, `applyChartLayoutUpdate`):
+ * only the fields present are written.
+ */
+export interface ChartLayoutSetting {
+  chartType?: number;
+  xFieldId?: string;
+  showEmptyValues?: boolean;
+  aggregationType?: number;
+  yFieldId?: string;
+  cumulative?: boolean;
+  dateCondition?: number;
+  numberFormat?: ChartNumberFormat;
+  titleText?: string;
 }
 
 /**
@@ -108,6 +138,115 @@ export const EMPTY_VALUE_COLOR = '#BFBFBF';
 export const CHECKBOX_CHECKED_COLOR = '#5AD8A6'; // Green
 export const CHECKBOX_UNCHECKED_COLOR = '#BFBFBF'; // Gray
 
+// ---------------------------------------------------------------------------
+// Notion chart palette, exactly `dashboard-parity/tokens.json` `chart` (bound by
+// `dashboard-tokens.test.ts`). It sits beside the AntV constants above until
+// WP10 moves the chart components onto it and deletes those.
+// ---------------------------------------------------------------------------
+
+/** Series colors in `colorful` order: blue, yellow, green, purple, orange, pink, teal, red, gray. */
+export const CHART_SERIES_PALETTE = [
+  '#5E9FE8',
+  '#EAC26B',
+  '#72BC8F',
+  '#BF8EDA',
+  '#DE9255',
+  '#DF84A8',
+  '#4FB9C9',
+  '#E97366',
+  '#C7C6C4',
+] as const;
+
+export const CHART_CHECKBOX_COLORS = { checked: '#72BC8F', unchecked: '#C7C6C4' } as const;
+
+/** The chart color of each select option color. Mint and after (and LightPink, Lime) are inferred. */
+export const CHART_OPTION_COLORS: Record<SelectOptionColor, string> = {
+  [SelectOptionColor.OptionColor1]: '#BF8EDA',
+  [SelectOptionColor.OptionColor2]: '#DF84A8',
+  [SelectOptionColor.OptionColor3]: '#E9A3BF',
+  [SelectOptionColor.OptionColor4]: '#DE9255',
+  [SelectOptionColor.OptionColor5]: '#EAC26B',
+  [SelectOptionColor.OptionColor6]: '#A9C46A',
+  [SelectOptionColor.OptionColor7]: '#72BC8F',
+  [SelectOptionColor.OptionColor8]: '#4FB9C9',
+  [SelectOptionColor.OptionColor9]: '#5E9FE8',
+  [SelectOptionColor.OptionColor10]: '#C7C6C4',
+  [SelectOptionColor.OptionColor11]: '#8B7FD6',
+  [SelectOptionColor.OptionColor12]: '#9D6BC7',
+  [SelectOptionColor.OptionColor13]: '#C76B93',
+  [SelectOptionColor.OptionColor14]: '#C9774A',
+  [SelectOptionColor.OptionColor15]: '#C99A3F',
+  [SelectOptionColor.OptionColor16]: '#8FA84A',
+  [SelectOptionColor.OptionColor17]: '#5A9A5F',
+  [SelectOptionColor.OptionColor18]: '#3F9E86',
+  [SelectOptionColor.OptionColor19]: '#3E86C9',
+  [SelectOptionColor.OptionColor20]: '#8C8B89',
+};
+
+/** The persisted `color_theme` values (ARCHITECTURE §3.2). */
+export type ChartColorTheme =
+  | 'auto'
+  | 'colorful'
+  | 'colorless'
+  | 'blue'
+  | 'yellow'
+  | 'green'
+  | 'purple'
+  | 'teal'
+  | 'orange'
+  | 'pink'
+  | 'red';
+
+/** Base hue of each single-hue theme; category i is drawn at `CHART_OPACITY_STEPS[i % 5]`. */
+export const CHART_SINGLE_HUE: Record<Exclude<ChartColorTheme, 'auto' | 'colorful' | 'colorless'>, string> = {
+  blue: '#5E9FE8',
+  yellow: '#EAC26B',
+  green: '#72BC8F',
+  purple: '#BF8EDA',
+  teal: '#4FB9C9',
+  orange: '#DE9255',
+  pink: '#DF84A8',
+  red: '#E97366',
+};
+
+/** Base hue of the `colorless` theme. */
+export const CHART_COLORLESS_BASE = '#908D8C';
+
+export const CHART_OPACITY_STEPS = [1, 0.7, 0.5, 0.35, 0.2] as const;
+
+/** The persisted `number_color` values (ARCHITECTURE §2.2). */
+export type ChartNumberColor =
+  | 'default'
+  | 'gray'
+  | 'brown'
+  | 'orange'
+  | 'yellow'
+  | 'green'
+  | 'blue'
+  | 'purple'
+  | 'pink'
+  | 'red';
+
+/** Number card value colors; the variables switch with the theme (`dashboard-tokens.css`). */
+export const CHART_NUMBER_COLOR_VARS: Record<ChartNumberColor, string> = {
+  default: 'var(--chart-number-default)',
+  gray: 'var(--chart-number-gray)',
+  brown: 'var(--chart-number-brown)',
+  orange: 'var(--chart-number-orange)',
+  yellow: 'var(--chart-number-yellow)',
+  green: 'var(--chart-number-green)',
+  blue: 'var(--chart-number-blue)',
+  purple: 'var(--chart-number-purple)',
+  pink: 'var(--chart-number-pink)',
+  red: 'var(--chart-number-red)',
+};
+
+/** "No {field}" group fill and the empty donut ring. */
+export const CHART_EMPTY_FILL = 'var(--chart-empty)';
+
+/** `stroke-dasharray` of the dotted value-axis grid lines (desktop draws `[2, 3]` too). */
+export const CHART_GRID_DASH = '2 3';
+
 /**
  * YJS keys for chart layout settings.
  * The base keys are the snake_case names of collab's `ChartLayoutSetting`,
@@ -151,16 +290,48 @@ export function readChartLayoutValue(map: { get(key: string): unknown }, field: 
   return value === undefined && legacyKey ? map.get(legacyKey) : value;
 }
 
-/** Writes a chart setting under its collab key and, while old web builds are around, its legacy key. */
+/**
+ * Writes a chart setting under its collab key and, while old web builds are
+ * around, its legacy key. A spelling that already holds the value is not
+ * rewritten (numbers compare by value, so a desktop bigint equals a web
+ * number); a legacy-only chart still gets its collab key on its first edit.
+ */
 export function writeChartLayoutValue(
-  map: { set(key: string, value: unknown): unknown },
+  map: { get(key: string): unknown; set(key: string, value: unknown): unknown },
   field: ChartLayoutField,
   value: unknown
 ) {
   const legacyKey = LEGACY_CHART_LAYOUT_KEYS[field];
 
-  map.set(ChartLayoutKeys[field], value);
-  if (legacyKey) map.set(legacyKey, value);
+  setLayoutKeyIfChanged(map, ChartLayoutKeys[field], value);
+  if (legacyKey) setLayoutKeyIfChanged(map, legacyKey, value);
+}
+
+/**
+ * Applies a typed chart write to the chart layout map: each field present in
+ * `settings` through `writeChartLayoutValue`, each field present in `extended`
+ * through `writeChartExtendedValue` (`null` resets). Unchanged values are not
+ * written, and keys this client does not know are never touched.
+ */
+export function applyChartLayoutUpdate(
+  map: Y.Map<unknown>,
+  settings: Partial<ChartLayoutSetting>,
+  extended?: ChartExtendedSettingsUpdate
+) {
+  for (const field of Object.keys(ChartLayoutKeys) as ChartLayoutField[]) {
+    const value = settings[field];
+
+    if (value !== undefined) writeChartLayoutValue(map, field, value);
+  }
+
+  if (!extended) return;
+  const values: Partial<Record<ChartExtendedField, unknown>> = extended;
+
+  for (const field of Object.keys(ChartExtendedLayoutKeys) as ChartExtendedField[]) {
+    const value = values[field];
+
+    if (value !== undefined) writeChartExtendedValue(map, field, value);
+  }
 }
 
 /**
@@ -194,6 +365,7 @@ export function parseChartLayoutSettings(map: { get(key: string): unknown }): Ch
       : Number(dateConditionRaw)) as DateGroupCondition,
     numberFormat: parseChartNumberFormat(read('numberFormat')),
     titleText: String(read('titleText') ?? ''),
+    extended: parseChartExtendedSettings(map),
   };
 }
 

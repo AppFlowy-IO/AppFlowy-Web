@@ -12,6 +12,7 @@ import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/full_screen.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
+import { useMobileContext } from '@/components/_shared/hooks/useMobileContext';
 import { useConditionsContext } from '@/components/database/components/conditions/context';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
 import FiltersButton from '@/components/database/components/conditions/FiltersButton';
@@ -144,10 +145,14 @@ export function DatabaseActions() {
   const conditionsContext = useConditionsContext();
   const { activeViewId, isDocumentBlock, databasePageId, isDashboardWidget } = useDatabaseContext();
   const { canOpen, isOpening, openDatabaseAsPage } = useOpenDatabaseAsPage({ fallbackViewId: databasePageId });
+  const mobileContext = useMobileContext();
 
   // The dashboard's own toolbar: Edit / Done and global filters replace the
   // view conditions; Settings stays for the layout switcher.
   const isDashboard = layout === DatabaseViewLayout.Dashboard && !isDashboardWidget;
+  // A dashboard is view-only in a mobile context and its settings (layout
+  // conversion, widget titles) only edit, so it offers no Settings there.
+  const showSettings = !readOnly && !(isDashboard && mobileContext);
   const showFilters = !isDashboard;
   const showSorts = !isDashboard && SORTABLE_LAYOUTS.has(layout);
   const supportsSearch = layout === DatabaseViewLayout.Gallery || layout === DatabaseViewLayout.Feed;
@@ -198,7 +203,7 @@ export function DatabaseActions() {
         </Tooltip>
       )}
       {showSearch ? <DatabaseSearchAction key={activeViewId} /> : null}
-      {!readOnly ? (
+      {showSettings ? (
         layout === DatabaseViewLayout.Gallery ? (
           <Settings layout={layout}>{settingsButton}</Settings>
         ) : (

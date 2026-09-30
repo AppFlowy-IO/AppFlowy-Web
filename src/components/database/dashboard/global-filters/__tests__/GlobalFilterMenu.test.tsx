@@ -136,6 +136,10 @@ function Harness({ canEdit, isEditing, initial, onPersist, onLocal, onClose = je
     canEdit,
     isEditing,
     setEditing: jest.fn(),
+    mobileContext: false,
+    canEnterEdit: canEdit,
+    editPreference: isEditing ? 'on' : 'off',
+    pinEditing: jest.fn(),
     updateSetting: (update: DashboardLayoutUpdate) => {
       onPersist(update);
       if (update.globalFilters) setPersisted(update.globalFilters);
@@ -289,6 +293,10 @@ describe('GlobalFilterMenu', () => {
         canEdit: false,
         isEditing: false,
         setEditing: jest.fn(),
+        mobileContext: false,
+        canEnterEdit: false,
+        editPreference: 'off',
+        pinEditing: jest.fn(),
         updateSetting: jest.fn(),
         updateRows: jest.fn(),
         sourceDocs: checkboxDocs,

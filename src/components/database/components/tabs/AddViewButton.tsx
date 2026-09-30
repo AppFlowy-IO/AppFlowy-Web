@@ -7,6 +7,7 @@ import { useDatabaseContext } from '@/application/database-yjs/context';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { useMobileContext } from '@/components/_shared/hooks/useMobileContext';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { useTimelineCreationDisabledReason } from '@/components/app/hooks/useTimelineCreationDisabledReason';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,9 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
   const [addLoading, setAddLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { getSubscriptions, workspaceId } = useDatabaseContext();
+  // Dashboards are view-only in a mobile context, so none is created there.
+  const mobileContext = useMobileContext();
+  const canCreateDashboard = EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && !mobileContext;
   const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
     workspaceId,
     enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && menuOpen,
@@ -35,7 +39,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
   // The server applies the same Pro policy to Dashboard views.
   const dashboardDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
     workspaceId,
-    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && menuOpen,
+    enabled: canCreateDashboard && menuOpen,
     requiresProMessage: t('dashboard.creationRequiresPro', {
       defaultValue: 'Creating a Dashboard view requires a Pro workspace.',
     }),
@@ -75,7 +79,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
 
   const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
     if (layout === DatabaseViewLayout.Timeline && timelineDisabledReason) return;
-    if (layout === DatabaseViewLayout.Dashboard && dashboardDisabledReason) return;
+    if (layout === DatabaseViewLayout.Dashboard && (!canCreateDashboard || dashboardDisabledReason)) return;
     const actionScopeRevision = actionScopeRevisionRef.current;
     const isCurrentActionScope = () => mountedRef.current && actionScopeRevisionRef.current === actionScopeRevision;
 
@@ -190,7 +194,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
             timelineAction
           ))}
 
-        {EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED &&
+        {canCreateDashboard &&
           (dashboardDisabledReason ? (
             <Tooltip>
               <TooltipTrigger asChild>

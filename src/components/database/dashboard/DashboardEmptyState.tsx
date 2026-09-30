@@ -12,12 +12,13 @@ import { AddWidgetButton } from './DashboardGrid';
  *
  * - Edit mode: invites the editor to build the dashboard with a large "Add
  *   widget" button.
- * - View mode: tells every viewer the dashboard is empty; editors also get an
- *   Edit button (the toolbar has one too, this one is simply closer).
+ * - View mode: tells every viewer the dashboard is empty; editors outside a
+ *   mobile context also get an Edit button (the toolbar has one too, this one
+ *   is simply closer).
  */
 export function DashboardEmptyState({ onAddWidget }: { onAddWidget: () => void }) {
   const { t } = useTranslation();
-  const { canEdit, isEditing, setEditing } = useDashboardContext();
+  const { canEdit, canEnterEdit, isEditing, setEditing } = useDashboardContext();
   const editing = isEditing && canEdit;
 
   return (
@@ -46,7 +47,7 @@ export function DashboardEmptyState({ onAddWidget }: { onAddWidget: () => void }
           <div className='text-sm text-text-secondary'>
             {t('dashboard.emptyViewerHint', { defaultValue: 'This dashboard has no widgets yet.' })}
           </div>
-          {canEdit ? (
+          {canEnterEdit ? (
             <Button
               className='mt-2'
               data-testid='dashboard-empty-edit-button'

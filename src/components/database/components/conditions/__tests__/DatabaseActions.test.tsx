@@ -388,6 +388,43 @@ describe('DatabaseActions in dashboards', () => {
     expect(screen.getByTestId('database-actions').getAttribute('data-dashboard-widget')).toBeNull();
   });
 
+  describe('in a mobile context', () => {
+    const initialWidth = window.innerWidth;
+
+    beforeEach(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 390 });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: initialWidth });
+    });
+
+    it('offers an editor of a dashboard no Settings, only the dashboard toolbar (view-only)', async () => {
+      mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Dashboard);
+      mockUseDatabaseContext.mockReturnValue({
+        activeViewId: 'dashboard-view',
+        isDocumentBlock: false,
+      } as ReturnType<typeof useDatabaseContext>);
+
+      render(<DatabaseActions />);
+      await screen.findByTestId('dashboard-toolbar');
+
+      expect(toolbarTestIds()).toEqual(['dashboard-toolbar']);
+    });
+
+    it('keeps Settings for the other layouts', () => {
+      mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Grid);
+      mockUseDatabaseContext.mockReturnValue({
+        activeViewId: 'grid-view',
+        isDocumentBlock: false,
+      } as ReturnType<typeof useDatabaseContext>);
+
+      render(<DatabaseActions />);
+
+      expect(screen.getByTestId('database-actions-settings')).toBeTruthy();
+    });
+  });
+
   it('still offers the dashboard toolbar (global filters) to read-only viewers', async () => {
     mockUseReadOnly.mockReturnValue(true);
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Dashboard);

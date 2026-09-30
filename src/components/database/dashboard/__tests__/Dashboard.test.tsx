@@ -204,6 +204,13 @@ function visibleAddWidgetButton() {
   return screen.getByTestId('dashboard-add-widget-button');
 }
 
+function resizeTo(width: number) {
+  act(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+    window.dispatchEvent(new Event('resize'));
+  });
+}
+
 describe('Dashboard', () => {
   beforeEach(() => {
     mockCreateView.mockReset();
@@ -297,6 +304,27 @@ describe('Dashboard', () => {
       expect(screen.queryByTestId('dashboard-empty-edit-button')).toBeNull();
       expect(screen.queryByTestId('dashboard-edit-button')).toBeNull();
       expect(screen.getByTestId('global-filter-button-stub')).toBeTruthy();
+    });
+
+    it('offers no Edit button to editors in a mobile context', () => {
+      const initialWidth = window.innerWidth;
+
+      resizeTo(390);
+      try {
+        renderDashboard([]);
+
+        expect(dashboard().getAttribute('data-editing')).toBe('false');
+        expect(screen.getByTestId('dashboard-empty-state').textContent).toContain('This dashboard has no widgets yet.');
+        expect(screen.queryByTestId('dashboard-add-widget-button')).toBeNull();
+        expect(screen.queryByTestId('dashboard-empty-edit-button')).toBeNull();
+        expect(screen.queryByTestId('dashboard-edit-button')).toBeNull();
+        expect(screen.queryByTestId('dashboard-done-button')).toBeNull();
+      } finally {
+        resizeTo(initialWidth);
+      }
+
+      // Wide again: the automatic Edit mode of the empty dashboard applies.
+      expect(dashboard().getAttribute('data-editing')).toBe('true');
     });
   });
 
@@ -480,6 +508,27 @@ describe('Dashboard', () => {
 
       // Closed for good: entering Edit mode again does not bring it back.
       fireEvent.click(screen.getByTestId('dashboard-edit-button'));
+      expect(screen.queryByTestId('dashboard-widget-picker')).toBeNull();
+    });
+
+    it('closes the picker when the window narrows to a mobile context', () => {
+      const initialWidth = window.innerWidth;
+
+      renderDashboard(makeRows(['a']));
+      fireEvent.click(screen.getByTestId('dashboard-edit-button'));
+      fireEvent.click(visibleAddWidgetButton());
+      expect(screen.getByTestId('dashboard-widget-picker')).toBeTruthy();
+
+      resizeTo(390);
+      try {
+        expect(dashboard().getAttribute('data-editing')).toBe('false');
+        expect(screen.queryByTestId('dashboard-widget-picker')).toBeNull();
+      } finally {
+        resizeTo(initialWidth);
+      }
+
+      // Edit mode comes back with the wide window; the closed picker does not.
+      expect(dashboard().getAttribute('data-editing')).toBe('true');
       expect(screen.queryByTestId('dashboard-widget-picker')).toBeNull();
     });
 

@@ -968,8 +968,16 @@ describe('createDashboardLayoutStore', () => {
     expect(withRows.rows).toEqual(rows);
     expect(store.getSnapshot()).toBe(withRows);
 
-    // Rewriting identical rows (a new stored value) keeps the snapshot.
+    // Writing identical rows writes nothing (the stored value is kept), so the snapshot is kept.
+    const storedBefore = view
+      .get(YjsDatabaseKey.layout_settings)
+      .get(DASHBOARD_LAYOUT_KEY)
+      .get(YjsDatabaseKey.dashboard_rows);
+
     doc.transact(() => updateDashboardLayoutSetting(view, { rows: rows.map((item) => ({ ...item })) }));
+    expect(view.get(YjsDatabaseKey.layout_settings).get(DASHBOARD_LAYOUT_KEY).get(YjsDatabaseKey.dashboard_rows)).toBe(
+      storedBefore
+    );
     expect(notify).toHaveBeenCalledTimes(1);
     expect(store.getSnapshot()).toBe(withRows);
 

@@ -9,7 +9,8 @@ import { GlobalFilterButton } from './global-filters/GlobalFilterButton';
 
 /**
  * Dashboard toolbar in the database tab bar: the global filter button (for
- * everyone) and the Edit / Done toggle (for users with write access).
+ * everyone) and the Edit / Done toggle (for users with write access). A mobile
+ * context is view-only, so it shows the global filter button alone.
  *
  * Renders nothing outside a `DashboardProvider`, e.g. for the one render in
  * which the tab bar still reports the previous view's layout.
@@ -22,12 +23,20 @@ export const DashboardActions = memo(function DashboardActions({ compact = false
   const dashboard = useDashboardContextOptional();
 
   if (!dashboard) return null;
-  const { canEdit, isEditing, setEditing } = dashboard;
+  const { canEnterEdit, isEditing, setEditing, mobileContext } = dashboard;
+
+  if (mobileContext) {
+    return (
+      <div className='flex items-center gap-1.5' data-mobile='true' data-testid='dashboard-actions'>
+        <GlobalFilterButton />
+      </div>
+    );
+  }
 
   return (
     <div className='flex items-center gap-1.5' data-testid='dashboard-actions'>
       <GlobalFilterButton />
-      {canEdit ? (
+      {canEnterEdit ? (
         isEditing ? (
           <Button
             data-testid='dashboard-done-button'
