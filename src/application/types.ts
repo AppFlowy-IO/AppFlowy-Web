@@ -1950,6 +1950,13 @@ export interface View {
 export interface PublishConfig {
   comments_enabled: boolean;
   duplicate_enabled: boolean;
+  /**
+   * Whether the publisher allows search engines and AI crawlers to index the
+   * page (server-rendered body, no noindex). Not yet sent by AppFlowy-Cloud;
+   * the web server treats anything other than a real boolean as "not set".
+   * See doc/PUBLISH_SSR.md.
+   */
+  indexing_enabled?: boolean;
 }
 
 export type PublishConfigPatch = Partial<PublishConfig>;

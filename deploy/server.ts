@@ -1,6 +1,7 @@
 import { baseURL } from './config';
 import { logger } from './logger';
 import { routes } from './routes';
+import { describeSsrConfig } from './ssr-config';
 
 export type RequestContext = {
   req: Request;
@@ -61,6 +62,7 @@ export const start = () => {
     });
     logger.info('Server is running on port 3000');
     logger.info(`Base URL: ${baseURL}`);
+    logger.info(describeSsrConfig(process.env));
   } catch (err) {
     logger.error(err);
     process.exit(1);
