@@ -71,6 +71,26 @@ describe('slash-menu-options', () => {
 
       expect(result.map((item) => item.key)).toEqual(['dateOrReminder']);
     });
+
+    it('hides dashboard and linked dashboard inside simple table cells and AI meeting blocks', () => {
+      const dashboardOptions = [
+        option({ key: 'text' }),
+        option({ key: 'dashboard', group: SlashMenuGroupKey.Database }),
+        option({ key: 'linkedDashboard', group: SlashMenuGroupKey.Database }),
+      ];
+
+      expect(filterSlashMenuOptions(dashboardOptions, {}).map((item) => item.key)).toEqual([
+        'text',
+        'dashboard',
+        'linkedDashboard',
+      ]);
+      expect(
+        filterSlashMenuOptions(dashboardOptions, { isInsideSimpleTableCell: true }).map((item) => item.key)
+      ).toEqual(['text']);
+      expect(filterSlashMenuOptions(dashboardOptions, { isInsideAIMeeting: true }).map((item) => item.key)).toEqual([
+        'text',
+      ]);
+    });
   });
 
   describe('groupSlashMenuOptions', () => {

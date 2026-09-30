@@ -1,6 +1,7 @@
 import { initializeDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
+  BindViewSync,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
   CreatePageResponse,
@@ -127,5 +128,74 @@ export async function createDatabaseDashboardPageViaGrid(params: {
         });
       }
     }
+  }
+}
+
+/**
+ * A linked Dashboard view of an existing database: the `/linked` dashboard
+ * slash command and a duplicated linked dashboard block.
+ *
+ * Desktop seeds every linked Dashboard view (`resolve_linked_view_layout_deps`)
+ * and the server seeds none, so seed the empty rows / global filters here as the
+ * tab bar's "+" and `/dashboard` do. The server has already created the view, so
+ * a failed seed is logged rather than thrown: readers tolerate a missing setting.
+ */
+export async function createLinkedDatabaseDashboardView(params: {
+  requestViewId: string;
+  payload: Omit<CreateDatabaseViewPayload, 'layout'>;
+  createDatabaseView: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
+  loadView?: LoadView;
+  bindViewSync?: BindViewSync;
+  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
+}): Promise<CreateDatabaseViewResponse> {
+  const response = await params.createDatabaseView(params.requestViewId, {
+    ...params.payload,
+    layout: ViewLayout.Dashboard,
+  });
+
+  try {
+    await seedLinkedDashboardView(response, params);
+  } catch (error) {
+    Log.warn('[Dashboard creation] failed to seed the linked dashboard setting', {
+      viewId: response.view_id,
+      error,
+    });
+  }
+
+  return response;
+}
+
+async function seedLinkedDashboardView(
+  response: CreateDatabaseViewResponse,
+  params: Parameters<typeof createLinkedDatabaseDashboardView>[0]
+) {
+  const { bindViewSync, loadView, scheduleDeferredCleanup } = params;
+
+  if (!loadView || !response.view_id) return;
+
+  const databaseDoc = await loadView(response.view_id, false, false, {
+    databaseId: response.database_id || params.payload.database_id,
+  });
+  // A retained owner persists the seed whether or not the database is already
+  // open elsewhere, and releasing it drops only this reference.
+  const syncContext = scheduleDeferredCleanup ? bindViewSync?.(databaseDoc, { retain: true }) ?? null : null;
+
+  try {
+    if (response.database_update?.length) {
+      applyYDoc(databaseDoc, new Uint8Array(response.database_update));
+    }
+
+    const dashboardView = (databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as
+      | YDatabase
+      | undefined)
+      ?.get(YjsDatabaseKey.views)
+      ?.get(response.view_id);
+
+    if (!dashboardView) throw new Error('The linked Dashboard view is not in the database');
+
+    databaseDoc.transact(() => initializeDashboardLayoutSetting(dashboardView), 'initializeDashboardLayout');
+    void syncContext?.flush?.();
+  } finally {
+    if (syncContext && scheduleDeferredCleanup) scheduleDeferredCleanup(syncContext.doc.guid);
   }
 }

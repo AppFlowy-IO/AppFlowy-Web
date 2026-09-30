@@ -3,7 +3,7 @@ import { WorkspaceDatabaseCatalogRecord } from '@/application/db/tables/workspac
 import { WorkspaceDatabaseViewItem, WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { EventType, on } from '@/application/session/event';
 import { getTokenParsed } from '@/application/session/token';
-import { View } from '@/application/types';
+import { View, ViewLayout } from '@/application/types';
 import { Log } from '@/utils/log';
 
 import { listWorkspaceDatabases } from './http/view-api';
@@ -168,11 +168,22 @@ export function getDatabaseContainerView(database: WorkspaceDatabaseWithViews): 
   return database.views.find((view) => view.is_container);
 }
 
+// A dashboard shows other views and has no rows of its own, so, as on desktop,
+// it never becomes the view that relations or linked databases target.
+function isQueryableDatabaseView(view: WorkspaceDatabaseViewItem): boolean {
+  return !view.is_container && Number(view.layout) !== ViewLayout.Dashboard;
+}
+
 export function getDatabasePrimaryView(database: WorkspaceDatabaseWithViews): WorkspaceDatabaseViewItem | undefined {
   return (
-    database.views.find((view) => !view.is_container && !view.embedded) ??
-    database.views.find((view) => !view.is_container)
+    database.views.find((view) => isQueryableDatabaseView(view) && !view.embedded) ??
+    database.views.find(isQueryableDatabaseView)
   );
+}
+
+/** Like desktop's `default_view_id`: a dashboard-only database still resolves to a view. */
+function getDatabaseDefaultView(database: WorkspaceDatabaseWithViews): WorkspaceDatabaseViewItem | undefined {
+  return getDatabasePrimaryView(database) ?? database.views.find((view) => !view.is_container);
 }
 
 export interface DatabaseContainerCatalogEntry {
@@ -346,7 +357,7 @@ export async function getViewIdFromWorkspaceCatalog(workspaceId: string, databas
   if (catalogSnapshot) {
     const database = catalogSnapshot.find((entry) => entry.database_id === databaseId);
 
-    return database ? getDatabasePrimaryView(database)?.view_id ?? null : null;
+    return database ? getDatabaseDefaultView(database)?.view_id ?? null : null;
   }
 
   const cached = invalidatedCatalogs.has(key) ? [] : await cachedDatabaseRecords(userId, workspaceId, databaseId);
@@ -361,7 +372,7 @@ export async function getViewIdFromWorkspaceCatalog(workspaceId: string, databas
       database_id: databaseId,
       views: cached.sort((left, right) => left.view_order - right.view_order).map((record) => record.view),
     };
-    const cachedView = getDatabasePrimaryView(cachedDatabase);
+    const cachedView = getDatabaseDefaultView(cachedDatabase);
 
     if (cachedView) return cachedView.view_id;
   }
@@ -371,5 +382,5 @@ export async function getViewIdFromWorkspaceCatalog(workspaceId: string, databas
   if (!isSameSession(requestSessionGeneration, userId)) throw sessionChangedError();
   const database = databases.find((entry) => entry.database_id === databaseId);
 
-  return database ? getDatabasePrimaryView(database)?.view_id ?? null : null;
+  return database ? getDatabaseDefaultView(database)?.view_id ?? null : null;
 }

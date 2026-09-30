@@ -1590,6 +1590,7 @@ export interface ChartLayoutSnapshot {
   yFieldId?: string;
 }
 
+/** Reads collab's snake_case chart keys, the ones desktop and the server decode. */
 export async function readChartSetting(page: Page, viewId: string): Promise<ChartLayoutSnapshot | null> {
   return page.evaluate((id) => {
     const bridge = (window as any).__DASHBOARD_TEST__;
@@ -1598,9 +1599,9 @@ export async function readChartSetting(page: Page, viewId: string): Promise<Char
 
     if (!setting) return null;
     return {
-      chartType: Number(setting.get('chartType') ?? 0),
-      aggregationType: Number(setting.get('aggregationType') ?? 0),
-      yFieldId: setting.get('yFieldId') ? String(setting.get('yFieldId')) : undefined,
+      chartType: Number(setting.get('chart_type') ?? 0),
+      aggregationType: Number(setting.get('aggregation_type') ?? 0),
+      yFieldId: setting.get('y_field_id') ? String(setting.get('y_field_id')) : undefined,
     };
   }, viewId);
 }

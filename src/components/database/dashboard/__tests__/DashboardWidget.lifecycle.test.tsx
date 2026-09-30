@@ -12,6 +12,7 @@ import {
 import { DashboardRow } from '@/application/database-yjs/dashboard.type';
 import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import { DatabaseViewLayout, YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { AppOperationsContext, AppOperationsContextType } from '@/components/app/contexts/AppOperationsContext';
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 
 import { WIDGET_GRID_ROW_GUTTER, WIDGET_INLINE_PADDING, WIDGET_MISSING_GRACE_MS } from '../constants';
@@ -31,6 +32,7 @@ import { WidgetActions } from '../WidgetContext';
 const mockWidgetViews = new Map<string, YDatabaseView>();
 const mockWidgetPaddings = new Map<string, number | undefined>();
 const mockWidgetActions = new Map<string, WidgetActions>();
+const mockWidgetSubscriptions = new Map<string, unknown>();
 const mockSourceDocs = new Map<string, YDoc>();
 // Widgets mounted while set have neither their load nor their trash probe settled.
 let mockLoadPending = false;
@@ -51,11 +53,13 @@ jest.mock('@/components/database', () => ({
     activeViewId,
     paddingStart,
     viewConditionsOverlay,
+    getSubscriptions,
   }: {
     doc: YDoc;
     activeViewId: string;
     paddingStart?: number;
     viewConditionsOverlay?: YDatabaseView;
+    getSubscriptions?: unknown;
   }) => {
     const { useWidgetContext } = jest.requireActual<typeof import('../WidgetContext')>('../WidgetContext');
     const { DatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs')>(
@@ -68,6 +72,7 @@ jest.mock('@/components/database', () => ({
     mockWidgetActions.set(activeViewId, useWidgetContext().actions);
     if (viewConditionsOverlay) mockWidgetViews.set(activeViewId, viewConditionsOverlay);
     mockWidgetPaddings.set(activeViewId, paddingStart);
+    mockWidgetSubscriptions.set(activeViewId, getSubscriptions);
     return (
       <DatabaseContext.Provider
         value={{
@@ -173,7 +178,7 @@ function TestDashboard() {
   );
 }
 
-function setup(strict = false, readOnly = false, sourceDoc?: YDoc) {
+function setup(strict = false, readOnly = false, sourceDoc?: YDoc, appOperations?: AppOperationsContextType) {
   const doc = new Y.Doc({ guid: 'db' }) as YDoc;
   const database = new Y.Map() as YDatabase;
   const views = new Y.Map<YDatabaseView>();
@@ -217,7 +222,13 @@ function setup(strict = false, readOnly = false, sourceDoc?: YDoc) {
       </DatabaseContext.Provider>
     );
 
-    return strict ? <StrictMode>{content}</StrictMode> : content;
+    const withApp = appOperations ? (
+      <AppOperationsContext.Provider value={appOperations}>{content}</AppOperationsContext.Provider>
+    ) : (
+      content
+    );
+
+    return strict ? <StrictMode>{withApp}</StrictMode> : withApp;
   };
 
   const rendered = render(tree());
@@ -264,6 +275,7 @@ beforeEach(() => {
   mockWidgetViews.clear();
   mockWidgetPaddings.clear();
   mockWidgetActions.clear();
+  mockWidgetSubscriptions.clear();
   mockSourceDocs.clear();
   mockLoadPending = false;
   mockNoAccessViews.clear();
@@ -276,6 +288,15 @@ function widgetPlaceholder(widgetId: string) {
     `[data-widget-id="${widgetId}"] [data-testid="dashboard-widget-placeholder"]`
   );
 }
+
+it("forwards the app's subscription lookup, so the widget's layout switcher can check the plan", () => {
+  const getSubscriptions = jest.fn().mockResolvedValue([]);
+  const { doc, unmount } = setup(false, false, undefined, { getSubscriptions } as unknown as AppOperationsContextType);
+
+  expect(mockWidgetSubscriptions.get('v1')).toBe(getSubscriptions);
+  unmount();
+  doc.destroy();
+});
 
 it('keeps showing a widget of another database while it moves to another row', () => {
   const sourceDoc = createSourceDoc();

@@ -1,4 +1,4 @@
-import { Button } from '@mui/material';
+import { Button, Tooltip } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -7,7 +7,10 @@ import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { isDatabaseBlockType } from '@/application/database-block';
-import { createDatabaseDashboardPageViaGrid } from '@/application/database-yjs/dashboard-page';
+import {
+  createDatabaseDashboardPageViaGrid,
+  createLinkedDatabaseDashboardView,
+} from '@/application/database-yjs/dashboard-page';
 import { createDatabaseFeedPageViaGrid, createLinkedDatabaseFeedView } from '@/application/database-yjs/feed-layout';
 import {
   createDatabaseGalleryPageViaGrid,
@@ -96,6 +99,7 @@ import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAIEnabled } from '@/components/app/app.hooks';
+import { useTimelineCreationDisabledReason } from '@/components/app/hooks/useTimelineCreationDisabledReason';
 import { useAIWriter } from '@/components/chat';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
@@ -128,6 +132,8 @@ type DatabaseOption = {
 interface SlashMenuOption extends SlashMenuOptionBase {
   icon: React.ReactNode;
   onClick?: () => void;
+  /** Keeps the option visible but not selectable, with this reason as its tooltip. */
+  disabledReason?: string;
 }
 
 const AI_MEETING_BLOCK_TYPES = new Set<BlockType>([
@@ -269,6 +275,7 @@ export function SlashPanel({
     updatePage,
     getMoreAIContext,
     createDatabaseView,
+    getSubscriptions,
   } = useEditorContext();
   const editorContext = useEditorContext();
   const [viewName, setViewName] = useState('');
@@ -295,6 +302,20 @@ export function SlashPanel({
   const open = useMemo(() => {
     return isPanelOpen(PanelType.Slash);
   }, [isPanelOpen]);
+
+  // Inline and linked Timeline/Dashboard blocks create those views, so they
+  // follow the same workspace Pro policy as the database tab "+" menu.
+  const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
+    workspaceId,
+    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && open,
+  });
+  const dashboardDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
+    workspaceId,
+    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && open,
+    requiresProMessage: t('dashboard.creationRequiresPro', {
+      defaultValue: 'Creating a Dashboard view requires a Pro workspace.',
+    }),
+  });
 
   const getIsInsideAIMeeting = useCallback(() => {
     const { selection } = editor;
@@ -813,6 +834,20 @@ export function SlashPanel({
                 deletePage,
                 scheduleDeferredCleanup,
               })
+            : linkedPicker.layout === ViewLayout.Dashboard
+            ? await createLinkedDatabaseDashboardView({
+                requestViewId: documentId,
+                payload: {
+                  parent_view_id: documentId,
+                  database_id: databaseId,
+                  name: referencedName,
+                  embedded: true,
+                },
+                createDatabaseView,
+                loadView,
+                bindViewSync,
+                scheduleDeferredCleanup,
+              })
             : await createDatabaseView(documentId, {
                 parent_view_id: documentId,
                 database_id: databaseId,
@@ -832,6 +867,7 @@ export function SlashPanel({
           linkedPicker.layout !== ViewLayout.List &&
           linkedPicker.layout !== ViewLayout.Gallery &&
           linkedPicker.layout !== ViewLayout.Feed &&
+          linkedPicker.layout !== ViewLayout.Dashboard &&
           response.database_update?.length &&
           loadView
         ) {
@@ -1433,6 +1469,7 @@ export function SlashPanel({
         label: t('document.slashMenu.name.timeline', { defaultValue: 'Timeline' }),
         key: 'timeline',
         disabled: !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
+        disabledReason: timelineDisabledReason,
         icon: <TimelineIcon />,
         group: SlashMenuGroupKey.Database,
         keywords: ['timeline', 'gantt', 'date', 'database', 'schedule'],
@@ -1445,6 +1482,7 @@ export function SlashPanel({
         label: t('document.slashMenu.name.linkedTimeline', { defaultValue: 'Linked Timeline' }),
         key: 'linkedTimeline',
         disabled: !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
+        disabledReason: timelineDisabledReason,
         icon: <TimelineIcon />,
         group: SlashMenuGroupKey.Database,
         keywords: ['linked', 'timeline', 'gantt', 'date', 'database'],
@@ -1457,6 +1495,7 @@ export function SlashPanel({
         label: t('document.slashMenu.name.dashboard', { defaultValue: 'Dashboard' }),
         key: 'dashboard',
         disabled: !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
+        disabledReason: dashboardDisabledReason,
         icon: <DashboardIcon />,
         group: SlashMenuGroupKey.Database,
         keywords: ['dashboard', 'dash', 'widgets', 'overview', 'kpi', 'database'],
@@ -1469,6 +1508,7 @@ export function SlashPanel({
         label: t('document.slashMenu.name.linkedDashboard', { defaultValue: 'Linked Dashboard' }),
         key: 'linkedDashboard',
         disabled: !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
+        disabledReason: dashboardDisabledReason,
         icon: <DashboardIcon />,
         group: SlashMenuGroupKey.Database,
         keywords: ['linked', 'dashboard', 'widgets', 'overview', 'database'],
@@ -1869,6 +1909,8 @@ export function SlashPanel({
     editor,
     getIsInsideAIMeeting,
     getIsInsideSimpleTableCell,
+    timelineDisabledReason,
+    dashboardDisabledReason,
   ]);
 
   const optionGroups = useMemo(() => groupSlashMenuOptions(options), [options]);
@@ -1921,6 +1963,11 @@ export function SlashPanel({
           if (orderedOptions.length === 0) return;
 
           const item = orderedOptions.find((option) => option.key === selectedOptionRef.current) ?? orderedOptions[0];
+
+          if (item.disabledReason) {
+            notify.error(item.disabledReason);
+            return;
+          }
 
           handleSelectOption(item.key);
           item.onClick?.();
@@ -2014,25 +2061,38 @@ export function SlashPanel({
             optionGroups.map(({ group, options: groupOptions }) => (
               <div key={group} className={'flex flex-col gap-1'}>
                 <div className={'px-2 py-1 text-xs font-medium text-text-secondary'}>{groupLabels[group]}</div>
-                {groupOptions.map((option) => (
-                  <Button
-                    size={'small'}
-                    color={'inherit'}
-                    startIcon={option.icon}
-                    key={option.key}
-                    data-testid={`slash-menu-${option.key}`}
-                    data-option-key={option.key}
-                    onClick={() => {
-                      handleSelectOption(option.key);
-                      option.onClick?.();
-                    }}
-                    className={`scroll-m-2 justify-start hover:bg-fill-content-hover ${
-                      selectedOption === option.key ? 'bg-fill-content-hover' : ''
-                    }`}
-                  >
-                    {option.label}
-                  </Button>
-                ))}
+                {groupOptions.map((option) => {
+                  const button = (
+                    <Button
+                      size={'small'}
+                      color={'inherit'}
+                      startIcon={option.icon}
+                      key={option.key}
+                      data-testid={`slash-menu-${option.key}`}
+                      data-option-key={option.key}
+                      disabled={Boolean(option.disabledReason)}
+                      onClick={() => {
+                        if (option.disabledReason) return;
+                        handleSelectOption(option.key);
+                        option.onClick?.();
+                      }}
+                      className={`scroll-m-2 justify-start hover:bg-fill-content-hover ${
+                        selectedOption === option.key ? 'bg-fill-content-hover' : ''
+                      }`}
+                    >
+                      {option.label}
+                    </Button>
+                  );
+
+                  // A disabled button receives no pointer events; its wrapper shows the reason.
+                  return option.disabledReason ? (
+                    <Tooltip key={option.key} title={option.disabledReason} placement={'right'} disableInteractive>
+                      <span className={'flex flex-col'}>{button}</span>
+                    </Tooltip>
+                  ) : (
+                    button
+                  );
+                })}
               </div>
             ))
           ) : (

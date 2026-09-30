@@ -10,6 +10,8 @@ import {
 import { FieldType } from '@/application/database-yjs/database.type';
 import { SelectOptionColorMap } from '@/components/database/components/cell/cell.const';
 
+import { CHECKBOX_CHECKED_KEY, CHECKBOX_UNCHECKED_KEY } from './chartGrouping';
+
 /**
  * Map SelectOptionColor enum to chart-friendly hex colors
  * These are approximate hex values matching the CSS variables
@@ -70,8 +72,11 @@ export interface UseChartColorsOptions {
 }
 
 export interface UseChartColorsReturn {
-  /** Get color for a category by label/optionId */
-  getColorForCategory: (label: string, optionId?: string, index?: number) => string;
+  /**
+   * Get color for a category by label / stable key (the option id of a select
+   * field, the checked / unchecked key of a checkbox field)
+   */
+  getColorForCategory: (label: string, categoryKey?: string, index?: number) => string;
   /** Get color for empty category */
   emptyColor: string;
   /** Get all colors from the palette */
@@ -97,22 +102,22 @@ export function useChartColors({ fieldType, selectOptions }: UseChartColorsOptio
   }, [selectOptions]);
 
   // Get color for a specific category
-  const getColorForCategory = useCallback((label: string, optionId?: string, index: number = 0): string => {
-    // For checkbox fields, use specific colors
+  const getColorForCategory = useCallback((label: string, categoryKey?: string, index: number = 0): string => {
+    // For checkbox fields, use specific colors. Matched by key, since the
+    // label is translated.
     if (fieldType === FieldType.Checkbox) {
-      // Match Flutter's naming convention
-      if (label === 'Checked' || label === 'Yes') {
+      if (categoryKey === CHECKBOX_CHECKED_KEY) {
         return CHECKBOX_CHECKED_COLOR;
       }
 
-      if (label === 'Unchecked' || label === 'No') {
+      if (categoryKey === CHECKBOX_UNCHECKED_KEY) {
         return CHECKBOX_UNCHECKED_COLOR;
       }
     }
 
     // Try to get color from option map (by ID first, then by name)
-    if (optionId && optionColorMap.has(optionId)) {
-      return optionColorMap.get(optionId)!;
+    if (categoryKey && optionColorMap.has(categoryKey)) {
+      return optionColorMap.get(categoryKey)!;
     }
 
     if (optionColorMap.has(label)) {

@@ -717,13 +717,13 @@ async function configureView(page: Page, databaseId: string, viewId: string, con
         if (config.chart) {
           const chart = new Yjs.Map();
 
-          chart.set('chartType', config.chart.chartType);
-          chart.set('xFieldId', config.chart.xFieldId);
-          chart.set('aggregationType', config.chart.aggregationType);
-          if (config.chart.yFieldId) chart.set('yFieldId', config.chart.yFieldId);
-          chart.set('showEmptyValues', true);
+          chart.set('chart_type', config.chart.chartType);
+          chart.set('x_field_id', config.chart.xFieldId);
+          chart.set('aggregation_type', config.chart.aggregationType);
+          if (config.chart.yFieldId) chart.set('y_field_id', config.chart.yFieldId);
+          chart.set('show_empty_values', true);
           chart.set('cumulative', false);
-          chart.set('dateCondition', 3);
+          chart.set('date_condition', 3);
           layoutSettings().set('3', chart);
         }
 

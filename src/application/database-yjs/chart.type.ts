@@ -109,20 +109,93 @@ export const CHECKBOX_CHECKED_COLOR = '#5AD8A6'; // Green
 export const CHECKBOX_UNCHECKED_COLOR = '#BFBFBF'; // Gray
 
 /**
- * YJS keys for chart layout settings
- * These match the protobuf field names (camelCase)
+ * YJS keys for chart layout settings.
+ * The base keys are the snake_case names of collab's `ChartLayoutSetting`,
+ * which the server and desktop read and write (`date_condition` and
+ * `cumulative` sit beside it the same way). `numberFormat` and `titleText`
+ * are camelCase on every client.
  */
 export const ChartLayoutKeys = {
+  chartType: 'chart_type',
+  xFieldId: 'x_field_id',
+  showEmptyValues: 'show_empty_values',
+  aggregationType: 'aggregation_type',
+  yFieldId: 'y_field_id',
+  cumulative: 'cumulative',
+  dateCondition: 'date_condition',
+  numberFormat: 'numberFormat',
+  titleText: 'titleText',
+} as const;
+
+export type ChartLayoutField = keyof typeof ChartLayoutKeys;
+
+/**
+ * camelCase keys earlier web builds wrote instead of the collab names.
+ * Readers fall back to them for charts saved by those builds, and writers
+ * keep them in sync so those builds still see charts saved now.
+ */
+export const LEGACY_CHART_LAYOUT_KEYS: Partial<Record<ChartLayoutField, string>> = {
   chartType: 'chartType',
   xFieldId: 'xFieldId',
   showEmptyValues: 'showEmptyValues',
   aggregationType: 'aggregationType',
   yFieldId: 'yFieldId',
-  cumulative: 'cumulative',
   dateCondition: 'dateCondition',
-  numberFormat: 'numberFormat',
-  titleText: 'titleText',
-} as const;
+};
+
+/** Reads a chart setting from its collab key, falling back to the legacy web key. */
+export function readChartLayoutValue(map: { get(key: string): unknown }, field: ChartLayoutField): unknown {
+  const value = map.get(ChartLayoutKeys[field]);
+  const legacyKey = LEGACY_CHART_LAYOUT_KEYS[field];
+
+  return value === undefined && legacyKey ? map.get(legacyKey) : value;
+}
+
+/** Writes a chart setting under its collab key and, while old web builds are around, its legacy key. */
+export function writeChartLayoutValue(
+  map: { set(key: string, value: unknown): unknown },
+  field: ChartLayoutField,
+  value: unknown
+) {
+  const legacyKey = LEGACY_CHART_LAYOUT_KEYS[field];
+
+  map.set(ChartLayoutKeys[field], value);
+  if (legacyKey) map.set(legacyKey, value);
+}
+
+/**
+ * Projects the persisted chart map onto `ChartLayoutSettings`. Numbers may be
+ * stored as JS numbers (web) or bigints (desktop), and are cast to the enum
+ * types here so consumers don't have to project again.
+ */
+export function parseChartLayoutSettings(map: { get(key: string): unknown }): ChartLayoutSettings {
+  const read = (field: ChartLayoutField) => readChartLayoutValue(map, field);
+  // Persisted Yjs cells may be missing for fields that haven't been
+  // explicitly written yet (e.g. only the aggregation was changed).
+  // Apply desktop-parity defaults for those — most importantly
+  // `showEmptyValues = true`, otherwise an empty grid renders "No data"
+  // instead of a single "No <field>" bar after a partial write.
+  const showEmptyRaw = read('showEmptyValues');
+  // `DateGroupCondition.Relative` persists as `0`, so we must use an
+  // undefined-only fallback — `|| 3` would silently coerce Relative back
+  // to Month every time the chart loads.
+  const dateConditionRaw = read('dateCondition');
+  const yFieldId = read('yFieldId');
+
+  return {
+    chartType: Number(read('chartType') || 0) as ChartType,
+    xFieldId: String(read('xFieldId') || ''),
+    showEmptyValues: showEmptyRaw === undefined ? true : Boolean(showEmptyRaw),
+    aggregationType: Number(read('aggregationType') || 0) as ChartAggregationType,
+    yFieldId: yFieldId ? String(yFieldId) : undefined,
+    cumulative: Boolean(read('cumulative')),
+    dateCondition: (dateConditionRaw === undefined || dateConditionRaw === null
+      ? DateGroupCondition.Month
+      : Number(dateConditionRaw)) as DateGroupCondition,
+    numberFormat: parseChartNumberFormat(read('numberFormat')),
+    titleText: String(read('titleText') ?? ''),
+  };
+}
 
 /**
  * Layout settings key for Chart (DatabaseViewLayout.Chart = 3)

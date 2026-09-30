@@ -1083,10 +1083,14 @@ export interface YDatabaseDashboardLayoutSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.show_widget_titles): boolean | undefined;
 }
 
+/// Chart state uses collab's snake_case keys; charts saved by earlier web
+/// builds carry the camelCase ones instead (see `chart.type.ts`).
 export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
-  get(key: 'chartType' | 'aggregationType' | 'dateCondition'): string;
-  get(key: 'xFieldId' | 'yFieldId'): string | undefined;
-  get(key: 'showEmptyValues' | 'cumulative'): boolean;
+  get(
+    key: 'chart_type' | 'aggregation_type' | 'date_condition' | 'chartType' | 'aggregationType' | 'dateCondition'
+  ): number | bigint | undefined;
+  get(key: 'x_field_id' | 'y_field_id' | 'xFieldId' | 'yFieldId' | 'numberFormat' | 'titleText'): string | undefined;
+  get(key: 'show_empty_values' | 'showEmptyValues' | 'cumulative'): boolean | undefined;
 }
 
 export interface YDatabaseListLayoutSetting extends Y.Map<unknown> {

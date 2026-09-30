@@ -1,8 +1,13 @@
 import * as Y from 'yjs';
 
-import { createDatabaseDashboardPageViaGrid, NEW_DASHBOARD_VIEW_NAME } from '@/application/database-yjs/dashboard-page';
+import {
+  createDatabaseDashboardPageViaGrid,
+  createLinkedDatabaseDashboardView,
+  NEW_DASHBOARD_VIEW_NAME,
+} from '@/application/database-yjs/dashboard-page';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { DatabaseViewLayout, ViewLayout, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { Log } from '@/utils/log';
 
 import { DASHBOARD_LAYOUT_KEY } from '../dashboard.type';
 
@@ -146,5 +151,105 @@ describe('createDatabaseDashboardPageViaGrid', () => {
 
     await expect(createDatabaseDashboardPageViaGrid(params)).rejects.toThrow('plan required');
     expect(params.deletePage).toHaveBeenCalledWith(GRID_VIEW_ID);
+  });
+});
+
+describe('createLinkedDatabaseDashboardView', () => {
+  const payload = {
+    parent_view_id: 'document-id',
+    database_id: DATABASE_ID,
+    name: 'View of Tasks',
+    embedded: true,
+  };
+
+  beforeEach(() => {
+    jest.spyOn(Log, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  function createLinkedParams(databaseDoc: YDoc) {
+    const flush = jest.fn().mockResolvedValue(true);
+
+    return {
+      requestViewId: 'document-id',
+      payload,
+      createDatabaseView: jest.fn().mockResolvedValue({
+        view_id: DASHBOARD_VIEW_ID,
+        database_id: DATABASE_ID,
+        database_update: createDashboardUpdate(databaseDoc),
+      }),
+      loadView: jest.fn().mockResolvedValue(databaseDoc),
+      bindViewSync: jest.fn(() => ({ doc: databaseDoc, flush } as unknown as SyncContext)),
+      scheduleDeferredCleanup: jest.fn(),
+      flush,
+    };
+  }
+
+  function getDashboardSetting(databaseDoc: YDoc) {
+    return getDatabase(databaseDoc)
+      .get(YjsDatabaseKey.views)
+      .get(DASHBOARD_VIEW_ID)
+      ?.get(YjsDatabaseKey.layout_settings)
+      ?.get(DASHBOARD_LAYOUT_KEY);
+  }
+
+  it('seeds the linked dashboard setting like every other dashboard creation path', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+    const params = createLinkedParams(databaseDoc);
+
+    const response = await createLinkedDatabaseDashboardView(params);
+
+    expect(params.createDatabaseView).toHaveBeenCalledWith('document-id', {
+      ...payload,
+      layout: ViewLayout.Dashboard,
+    });
+    expect(response.view_id).toBe(DASHBOARD_VIEW_ID);
+    expect(params.loadView).toHaveBeenCalledWith(DASHBOARD_VIEW_ID, false, false, { databaseId: DATABASE_ID });
+    expect(getDashboardSetting(databaseDoc)?.get(YjsDatabaseKey.dashboard_rows)).toEqual([]);
+    expect(getDashboardSetting(databaseDoc)?.get(YjsDatabaseKey.dashboard_global_filters)).toEqual([]);
+    // A retained owner persists the seed even when the database is already open, and is released.
+    expect(params.bindViewSync).toHaveBeenCalledWith(databaseDoc, { retain: true });
+    expect(params.flush).toHaveBeenCalled();
+    expect(params.scheduleDeferredCleanup).toHaveBeenCalledWith(databaseDoc.guid);
+  });
+
+  it('keeps the created view when seeding fails', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+    const params = createLinkedParams(databaseDoc);
+
+    params.loadView.mockRejectedValue(new Error('offline'));
+
+    await expect(createLinkedDatabaseDashboardView(params)).resolves.toMatchObject({ view_id: DASHBOARD_VIEW_ID });
+    expect(params.bindViewSync).not.toHaveBeenCalled();
+    expect(params.scheduleDeferredCleanup).not.toHaveBeenCalled();
+    expect(Log.warn).toHaveBeenCalledWith(
+      '[Dashboard creation] failed to seed the linked dashboard setting',
+      expect.objectContaining({ viewId: DASHBOARD_VIEW_ID })
+    );
+  });
+
+  it('releases its sync owner when the returned update lacks the dashboard view', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+    const params = createLinkedParams(databaseDoc);
+
+    params.createDatabaseView.mockResolvedValue({ view_id: DASHBOARD_VIEW_ID, database_id: DATABASE_ID });
+
+    await expect(createLinkedDatabaseDashboardView(params)).resolves.toMatchObject({ view_id: DASHBOARD_VIEW_ID });
+    expect(getDashboardSetting(databaseDoc)).toBeUndefined();
+    expect(params.flush).not.toHaveBeenCalled();
+    expect(params.scheduleDeferredCleanup).toHaveBeenCalledWith(databaseDoc.guid);
+  });
+
+  it('propagates a failure to create the view', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+    const params = createLinkedParams(databaseDoc);
+
+    params.createDatabaseView.mockRejectedValue(new Error('plan required'));
+
+    await expect(createLinkedDatabaseDashboardView(params)).rejects.toThrow('plan required');
+    expect(params.loadView).not.toHaveBeenCalled();
   });
 });

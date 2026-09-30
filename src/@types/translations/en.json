@@ -4375,6 +4375,10 @@
     "cumulative": "Cumulative",
     "dateCondition": "Date grouping",
     "noGroupableFields": "No groupable fields available",
+    "emptyValue": "Empty",
+    "noFieldValue": "No {}",
+    "checked": "Checked",
+    "unchecked": "Unchecked",
     "emptyState": {
       "title": "No data to display",
       "description": "Add rows with data to see the chart",

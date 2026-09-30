@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import dayjs from 'dayjs';
 import * as Y from 'yjs';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -24,6 +25,16 @@ jest.mock('./useChartColors', () => ({
     getColorForCategory: () => '#category',
   }),
 }));
+
+// English defaults unless a test sets a translation. `t` keeps its identity, as it does per language.
+const mockTranslations: Record<string, string> = {};
+
+jest.mock('react-i18next', () => {
+  const t = (key: string, options?: { defaultValue?: string }) =>
+    mockTranslations[key] ?? options?.defaultValue ?? key;
+
+  return { useTranslation: () => ({ t }) };
+});
 
 import { useDatabaseContext, useDatabaseFields, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
 import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
@@ -123,6 +134,130 @@ describe('useChartData desktop-model field conversion', () => {
         expect.objectContaining({ label: 'Checked', value: 1, rowIds: [rowId] }),
       ]);
     });
+  });
+});
+
+describe('useChartData category labels', () => {
+  const databaseId = 'labels-database';
+  // Only `Date` is faked, so the relative buckets see a fixed today.
+  const REAL_TIMERS = [
+    'hrtime',
+    'nextTick',
+    'performance',
+    'queueMicrotask',
+    'requestAnimationFrame',
+    'cancelAnimationFrame',
+    'requestIdleCallback',
+    'cancelIdleCallback',
+    'setImmediate',
+    'clearImmediate',
+    'setInterval',
+    'clearInterval',
+    'setTimeout',
+    'clearTimeout',
+  ] as const;
+  const now = new Date(2026, 2, 15, 12);
+  const daysFromNow = (days: number) => String(dayjs(now).add(days, 'day').unix());
+
+  afterEach(() => {
+    Object.keys(mockTranslations).forEach((key) => delete mockTranslations[key]);
+    jest.useRealTimers();
+  });
+
+  function renderChart(fieldType: FieldType, cells: Record<string, string | undefined>, dateCondition: DateGroupCondition) {
+    const fields = new Y.Doc().getMap('fields') as YDatabaseFields;
+
+    addField(fields, 'Due', fieldType);
+    const rowIds = Object.keys(cells);
+    const rowMetas = Object.fromEntries(
+      rowIds.map((rowId) => {
+        const value = cells[rowId];
+
+        return [rowId, createRowDoc(rowId, databaseId, value === undefined ? {} : { Due: createCell(fieldType, value) })];
+      })
+    );
+
+    (useDatabaseFields as jest.Mock).mockReturnValue(fields);
+    (useRowOrdersSelector as jest.Mock).mockReturnValue(rowIds.map((id) => ({ id })));
+    (useRowMap as jest.Mock).mockReturnValue(rowMetas);
+    (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow: jest.fn().mockResolvedValue(undefined) });
+
+    return renderHook(() =>
+      useChartData({
+        settings: {
+          chartType: ChartType.Bar,
+          xFieldId: 'Due',
+          showEmptyValues: true,
+          aggregationType: ChartAggregationType.Count,
+          cumulative: false,
+          dateCondition,
+        },
+      })
+    );
+  }
+
+  it('orders relative date buckets like desktop, with the empty category last', async () => {
+    jest.useFakeTimers({ now, doNotFake: [...REAL_TIMERS] });
+    const { result } = renderChart(
+      FieldType.DateTime,
+      {
+        later: daysFromNow(45),
+        yesterday: daysFromNow(-1),
+        nextMonth: daysFromNow(20),
+        none: undefined,
+        lastMonth: daysFromNow(-20),
+        today: daysFromNow(0),
+        lastWeek: daysFromNow(-3),
+        nextWeek: daysFromNow(5),
+        tomorrow: daysFromNow(1),
+        lastWeekToo: daysFromNow(-6),
+      },
+      DateGroupCondition.Relative
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.chartData.map(({ label, value }) => [label, value])).toEqual([
+      ['Last 30 days', 1],
+      ['Last 7 days', 2],
+      ['Yesterday', 1],
+      ['Today', 1],
+      ['Tomorrow', 1],
+      ['Next 7 days', 1],
+      ['Next 30 days', 1],
+      ['Apr 2026', 1],
+      ['No Due', 1],
+    ]);
+  });
+
+  it('labels day and week buckets like desktop, in the current language', async () => {
+    Object.assign(mockTranslations, {
+      'board.dateCondition.weekOf': 'Semaine du {} au {}',
+      'chart.noFieldValue': 'Sans {}',
+    });
+    const cells = { a: String(dayjs(new Date(2026, 2, 11)).unix()), b: undefined };
+    const day = renderChart(FieldType.DateTime, cells, DateGroupCondition.Day);
+
+    await waitFor(() => expect(day.result.current.isLoading).toBe(false));
+    expect(day.result.current.chartData.map((item) => item.label)).toEqual(['March 11, 2026', 'Sans Due']);
+
+    const week = renderChart(FieldType.DateTime, cells, DateGroupCondition.Week);
+
+    await waitFor(() => expect(week.result.current.isLoading).toBe(false));
+    expect(week.result.current.chartData.map((item) => item.label)).toEqual([
+      'Semaine du Mar 09 au 15 2026',
+      'Sans Due',
+    ]);
+  });
+
+  it('translates the checkbox categories', async () => {
+    Object.assign(mockTranslations, { 'chart.checked': 'Coché', 'chart.unchecked': 'Non coché' });
+    const { result } = renderChart(FieldType.Checkbox, { a: 'Yes', b: 'No', c: 'Yes' }, DateGroupCondition.Month);
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.chartData).toEqual([
+      expect.objectContaining({ label: 'Coché', rowIds: ['a', 'c'] }),
+      expect.objectContaining({ label: 'Non coché', rowIds: ['b'] }),
+    ]);
   });
 });
 

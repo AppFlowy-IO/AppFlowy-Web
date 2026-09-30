@@ -6,6 +6,7 @@ import { Path, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { prefetchDatabaseBlobDiff } from '@/application/database-blob';
+import { createLinkedDatabaseDashboardView } from '@/application/database-yjs/dashboard-page';
 import { createLinkedDatabaseFeedView } from '@/application/database-yjs/feed-layout';
 import { createLinkedDatabaseGalleryView } from '@/application/database-yjs/gallery-layout';
 import { createLinkedDatabaseListView } from '@/application/database-yjs/list-layout';
@@ -361,6 +362,20 @@ function ControlsMenu({
                 loadView,
                 bindViewSync,
                 deletePage,
+                scheduleDeferredCleanup,
+              });
+            } else if (layout === ViewLayout.Dashboard) {
+              response = await createLinkedDatabaseDashboardView({
+                requestViewId: parentId,
+                payload: {
+                  parent_view_id: parentId,
+                  database_id: databaseId,
+                  name: sourceView?.name,
+                  embedded: true,
+                },
+                createDatabaseView,
+                loadView,
+                bindViewSync,
                 scheduleDeferredCleanup,
               });
             } else {

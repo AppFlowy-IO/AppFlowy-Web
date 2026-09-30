@@ -20,7 +20,10 @@ When('I come back to the browser tab and the permissions are re-checked', async 
   );
 
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-  expect((await reprobe).ok()).toBe(true);
+  const response = await reprobe;
+
+  // The server's HTTP cache answers a repeated probe with 304 Not Modified.
+  expect(response.ok() || response.status() === 304).toBe(true);
   // Write access is back once the dashboard offers Edit or Done again.
   await expect(DashboardSelectors.editButton(page).or(DashboardSelectors.doneButton(page))).toBeVisible();
 });

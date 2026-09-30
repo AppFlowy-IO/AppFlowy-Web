@@ -1,5 +1,6 @@
 import dayjs, { Dayjs } from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
 import {
@@ -40,71 +41,31 @@ import {
 
 import { chartDataEqual } from '../widgets/chartUtils';
 
+import {
+  bucketDate,
+  ChartLabels,
+  CHECKBOX_CHECKED_KEY,
+  CHECKBOX_UNCHECKED_KEY,
+  createChartLabels,
+  GroupValue,
+} from './chartGrouping';
 import { useChartColors, UseChartColorsReturn } from './useChartColors';
 
 interface GroupedData {
   label: string;
-  optionId?: string;
+  /** Stable key (option id, checkbox key or date bucket); unset for the empty category. */
+  groupKey?: string;
   rowIds: RowId[];
   isEmptyCategory: boolean;
-  /** Lexicographically sortable key for chronological ordering of date buckets */
+  /** Code-unit sortable key for chronological ordering of date buckets */
   sortKey?: string;
 }
 
-interface GroupValue {
-  label: string;
-  /** Used to merge buckets across rows (e.g., date bucket key like "2026-03"). */
-  groupKey: string;
-  /** Chronological sort hint for date buckets. */
-  sortKey?: string;
-}
-
-function bucketDate(date: Dayjs, condition: DateGroupCondition): GroupValue {
-  switch (condition) {
-    case DateGroupCondition.Day: {
-      const key = date.format('YYYY-MM-DD');
-
-      return { label: key, groupKey: key, sortKey: key };
-    }
-
-    case DateGroupCondition.Week: {
-      // Week of year (ISO-style): start on Monday
-      const monday = date.day() === 0 ? date.subtract(6, 'day') : date.subtract(date.day() - 1, 'day');
-      const key = monday.format('YYYY-MM-DD');
-
-      return { label: `Week of ${key}`, groupKey: key, sortKey: key };
-    }
-
-    case DateGroupCondition.Month: {
-      const key = date.format('YYYY-MM');
-
-      return { label: date.format('MMM YYYY'), groupKey: key, sortKey: key };
-    }
-
-    case DateGroupCondition.Year: {
-      const key = date.format('YYYY');
-
-      return { label: key, groupKey: key, sortKey: key };
-    }
-
-    case DateGroupCondition.Relative:
-    default: {
-      const now = dayjs();
-      const startOfDay = date.startOf('day');
-      const today = now.startOf('day');
-      const diffDays = startOfDay.diff(today, 'day');
-
-      if (diffDays === 0) return { label: 'Today', groupKey: 'rel-0', sortKey: '01' };
-      if (diffDays === -1) return { label: 'Yesterday', groupKey: 'rel--1', sortKey: '00' };
-      if (diffDays === 1) return { label: 'Tomorrow', groupKey: 'rel-1', sortKey: '02' };
-      if (diffDays >= -7 && diffDays < -1) return { label: 'Last 7 days', groupKey: 'rel-last7', sortKey: '00a' };
-      if (diffDays > 1 && diffDays <= 7) return { label: 'Next 7 days', groupKey: 'rel-next7', sortKey: '03' };
-      // Fallback: month bucket
-      const key = date.format('YYYY-MM');
-
-      return { label: date.format('MMM YYYY'), groupKey: key, sortKey: key };
-    }
-  }
+interface GroupingContext {
+  dateCondition: DateGroupCondition;
+  labels: ChartLabels;
+  /** Captured once per computation, so every row buckets against the same day. */
+  now: Dayjs;
 }
 
 function isFieldId(value: string | null | undefined): value is string {
@@ -146,7 +107,7 @@ function getCellGroupValue(
   rowId: string,
   field: YDatabaseField,
   rowMetas: Record<RowId, YDoc>,
-  dateCondition: DateGroupCondition
+  { dateCondition, labels, now }: GroupingContext
 ): GroupValue[] {
   const fieldId = field.get(YjsDatabaseKey.id);
   const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
@@ -179,10 +140,10 @@ function getCellGroupValue(
 
     case FieldType.Checkbox: {
       if (data === 'Yes' || data === true) {
-        return [{ label: 'Checked', groupKey: 'Checked' }];
+        return [{ label: labels.checked, groupKey: CHECKBOX_CHECKED_KEY }];
       }
 
-      return [{ label: 'Unchecked', groupKey: 'Unchecked' }];
+      return [{ label: labels.unchecked, groupKey: CHECKBOX_UNCHECKED_KEY }];
     }
 
     case FieldType.DateTime:
@@ -213,7 +174,7 @@ function getCellGroupValue(
 
       if (!date.isValid()) return [];
 
-      return [bucketDate(date, dateCondition)];
+      return [bucketDate(date, dateCondition, labels, now)];
     }
 
     default:
@@ -373,6 +334,7 @@ interface ComputeChartDataInput {
   fields: YDatabaseFields | undefined;
   optionIdToName: Map<string, string>;
   colors: UseChartColorsReturn;
+  labels: ChartLabels;
 }
 
 /**
@@ -390,6 +352,7 @@ function computeChartData({
   fields,
   optionIdToName,
   colors,
+  labels,
 }: ComputeChartDataInput): ChartDataItem[] {
   if (!rowOrders || !rowMetas || !xAxisField || !resolvedXFieldId || !fieldType) {
     return [];
@@ -408,27 +371,26 @@ function computeChartData({
   const isDateBucketed = isDateGroupableFieldType(fieldType);
   const groups = new Map<string, GroupedData>();
   const emptyGroup: GroupedData = {
-    label: `No ${xAxisField.get(YjsDatabaseKey.name) || 'Value'}`,
+    label: labels.noFieldValue(String(xAxisField.get(YjsDatabaseKey.name) || '')),
     rowIds: [],
     isEmptyCategory: true,
   };
+  const context: GroupingContext = { dateCondition, labels, now: dayjs() };
 
   rowOrders.forEach((row) => {
     const rowId = row.id;
 
     // A row added after the first load counts once `ensureRow` delivers its doc.
     if (!rowMetas[rowId]) return;
-    const groupValues = getCellGroupValue(rowId, xAxisField, rowMetas, dateCondition);
+    const groupValues = getCellGroupValue(rowId, xAxisField, rowMetas, context);
 
     if (groupValues.length === 0) {
       emptyGroup.rowIds.push(rowId);
     } else {
       groupValues.forEach((gv) => {
         let label = gv.label;
-        let optionId: string | undefined;
 
         if (fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect) {
-          optionId = gv.groupKey;
           label = optionIdToName.get(gv.groupKey) || gv.label;
         }
 
@@ -437,7 +399,7 @@ function computeChartData({
         if (!groups.has(key)) {
           groups.set(key, {
             label,
-            optionId,
+            groupKey: key,
             rowIds: [],
             isEmptyCategory: false,
             sortKey: gv.sortKey,
@@ -477,7 +439,7 @@ function computeChartData({
 
     const color = group.isEmptyCategory
       ? colors.emptyColor
-      : colors.getColorForCategory(group.label, group.optionId, colorIndex);
+      : colors.getColorForCategory(group.label, group.groupKey, colorIndex);
 
     data.push({
       label: group.label,
@@ -509,7 +471,8 @@ function computeChartData({
       const ak = sortKeyByLabel.get(a.label) ?? a.label;
       const bk = sortKeyByLabel.get(b.label) ?? b.label;
 
-      return ak.localeCompare(bk);
+      // Code-unit order, like desktop's `compareTo`, so the key prefixes hold.
+      return ak < bk ? -1 : ak > bk ? 1 : 0;
     }
 
     return a.label.localeCompare(b.label);
@@ -823,6 +786,9 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   }, [xAxisField, fieldType, fieldsClock]);
 
   const colors = useChartColors({ fieldType, selectOptions });
+  const { t } = useTranslation();
+  // `t` changes only with the language, which re-translates the categories.
+  const labels = useMemo(() => createChartLabels(t), [t]);
 
   const { yFieldName, yNumberFormat } = useMemo(() => {
     void fieldsClock;
@@ -975,6 +941,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
       fields,
       optionIdToName,
       colors,
+      labels,
     });
   }, [
     rowsLoaded,
@@ -990,6 +957,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     rowDataClock,
     optionIdToName,
     colors,
+    labels,
   ]);
 
   const chartData = isNumberChart ? numberChartData : groupedChartData;

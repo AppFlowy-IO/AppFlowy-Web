@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import {
@@ -22,6 +22,7 @@ import {
   startOfTodayUnix,
   statusOptionId,
   toggleGlobalFilterOption,
+  waitForDashboardSync,
   writeDashboardSetting,
   type PersistedGlobalFilter,
 } from '../../support/dashboard-test-helpers';
@@ -45,11 +46,13 @@ async function savedFilter(page: Page, name: string): Promise<PersistedGlobalFil
   return (await readDashboardSetting(page)).global_filters.find((filter) => filter.name === name);
 }
 
-async function appendSavedFilter(page: Page, filter: PersistedGlobalFilter) {
+async function appendSavedFilter(page: Page, request: APIRequestContext, filter: PersistedGlobalFilter) {
   const { global_filters: current } = await readDashboardSetting(page);
 
   await writeDashboardSetting(page, { global_filters: [...current, filter] });
   await expect(globalFilterChip(page, filter.name)).toBeVisible(WIDGET_TIMEOUT);
+  // A "saved" filter is on the server, so a following reload cannot drop it.
+  await waitForDashboardSync(page, request);
 }
 
 /** Toggle an option of a saved filter from its chip, as any viewer would in View mode. */
@@ -140,7 +143,7 @@ When('the saved {string} filter keeps dates on or after today', async ({ page },
 Given(
   'the dashboard has a saved {string} filter for {string} mapped to {string} in {string} and {string} in {string}',
   async (
-    { page },
+    { page, request },
     name: string,
     options: string,
     firstProperty: string,
@@ -150,15 +153,16 @@ Given(
   ) => {
     const mapping = parseMapping(pairs(firstProperty, firstDatabase, secondProperty, secondDatabase));
 
-    await appendSavedFilter(page, selectGlobalFilter(page, name, splitList(options), mapping));
+    await appendSavedFilter(page, request, selectGlobalFilter(page, name, splitList(options), mapping));
   }
 );
 
 Given(
   'the dashboard has a saved {string} filter for {string} mapped to {string} in {string}',
-  async ({ page }, name: string, options: string, property: string, database: string) => {
+  async ({ page, request }, name: string, options: string, property: string, database: string) => {
     await appendSavedFilter(
       page,
+      request,
       selectGlobalFilter(page, name, splitList(options), parseMapping(pairs(property, database)))
     );
   }
@@ -167,7 +171,7 @@ Given(
 Given(
   'the dashboard has a saved checked {string} filter mapped to {string} in {string} and {string} in {string}',
   async (
-    { page },
+    { page, request },
     name: string,
     firstProperty: string,
     firstDatabase: string,
@@ -176,7 +180,11 @@ Given(
   ) => {
     const mapping = parseMapping(pairs(firstProperty, firstDatabase, secondProperty, secondDatabase));
 
-    await appendSavedFilter(page, buildGlobalFilter(page, name, FieldType.Checkbox, CHECKBOX_IS_CHECKED, '', mapping));
+    await appendSavedFilter(
+      page,
+      request,
+      buildGlobalFilter(page, name, FieldType.Checkbox, CHECKBOX_IS_CHECKED, '', mapping)
+    );
   }
 );
 

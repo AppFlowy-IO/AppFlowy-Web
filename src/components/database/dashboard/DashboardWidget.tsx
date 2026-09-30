@@ -356,6 +356,9 @@ const WidgetSource = memo(function WidgetSource({
   const extraFilters = useWidgetExtraFilters(effectiveGlobalFilters, widget.databaseId);
   const visibleViewIds = useMemo(() => [widget.viewId], [widget.viewId]);
   const createRow = appOperations?.createRow ?? hostContext.createRow;
+  // The widget's layout switcher checks the workspace plan before offering
+  // Timeline; without this it would report the plan as unavailable.
+  const getSubscriptions = appOperations?.getSubscriptions;
   const initialRowMap = useMemo(() => (isPublish ? getPublishedDatabaseRenderRowMap(doc) : undefined), [doc, isPublish]);
   const handleOpenRowPage = useCallback(
     (rowIdToOpen: string) => {
@@ -426,6 +429,7 @@ const WidgetSource = memo(function WidgetSource({
             extraFilters={extraFilters}
             generateAISummaryForRow={generateAISummaryForRow}
             generateAITranslateForRow={generateAITranslateForRow}
+            getSubscriptions={getSubscriptions}
             getViewIdFromDatabaseId={getViewIdFromDatabaseId}
             initialRowMap={initialRowMap}
             isDashboardWidget
@@ -471,6 +475,7 @@ const WidgetSource = memo(function WidgetSource({
       extraFilters,
       generateAISummaryForRow,
       generateAITranslateForRow,
+      getSubscriptions,
       getViewIdFromDatabaseId,
       handleOpenRowPage,
       initialRowMap,

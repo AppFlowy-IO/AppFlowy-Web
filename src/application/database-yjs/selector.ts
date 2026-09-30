@@ -152,10 +152,9 @@ import { useMentionableUsersWithAutoFetch } from '@/components/database/componen
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
-import { ChartLayoutKeys, ChartLayoutSettings, parseChartNumberFormat } from './chart.type';
+import { ChartLayoutSettings, parseChartLayoutSettings } from './chart.type';
 import {
   CalculationType,
-  DateGroupCondition,
   FieldType,
   FieldVisibility,
   Filter,
@@ -4371,9 +4370,8 @@ function chartSettingsEqual(a: ChartLayoutSettings | null, b: ChartLayoutSetting
  * downstream consumers — is gated by `chartSettingsEqual`, so the wider
  * observer only costs a handful of equality checks per Yjs event.
  *
- * Returns the strongly-typed `ChartLayoutSettings`. Persisted Yjs values are
- * stored as numbers/strings/booleans and cast to enum types here so consumers
- * don't have to project again.
+ * Returns the strongly-typed `ChartLayoutSettings` (see
+ * `parseChartLayoutSettings` for the key fallback and defaults).
  */
 export function useChartLayoutSetting(): ChartLayoutSettings | null {
   const database = useDatabase();
@@ -4395,31 +4393,7 @@ export function useChartLayoutSetting(): ChartLayoutSettings | null {
         return;
       }
 
-      // Persisted Yjs cells may be missing for fields that haven't been
-      // explicitly written yet (e.g. only `aggregationType` was changed).
-      // Apply desktop-parity defaults for those — most importantly
-      // `showEmptyValues = true`, otherwise an empty grid renders "No data"
-      // instead of a single "No <field>" bar after a partial write.
-      const showEmptyRaw = chartSettingMap.get('showEmptyValues');
-      // `DateGroupCondition.Relative` persists as `0`, so we must use an
-      // undefined-only fallback — `|| 3` would silently coerce Relative back
-      // to Month every time the chart loads.
-      const dateConditionRaw = chartSettingMap.get('dateCondition');
-      // Number-chart keys aren't part of the typed Yjs setting interface.
-      const untypedChartSettingMap = chartSettingMap as unknown as { get(key: string): unknown };
-      const next: ChartLayoutSettings = {
-        chartType: Number(chartSettingMap.get('chartType') || 0) as ChartLayoutSettings['chartType'],
-        xFieldId: String(chartSettingMap.get('xFieldId') || ''),
-        showEmptyValues: showEmptyRaw === undefined ? true : Boolean(showEmptyRaw),
-        aggregationType: Number(chartSettingMap.get('aggregationType') || 0) as ChartLayoutSettings['aggregationType'],
-        yFieldId: chartSettingMap.get('yFieldId') ? String(chartSettingMap.get('yFieldId')) : undefined,
-        cumulative: Boolean(chartSettingMap.get('cumulative')),
-        dateCondition: (dateConditionRaw === undefined || dateConditionRaw === null
-          ? DateGroupCondition.Month
-          : Number(dateConditionRaw)) as ChartLayoutSettings['dateCondition'],
-        numberFormat: parseChartNumberFormat(untypedChartSettingMap.get(ChartLayoutKeys.numberFormat)),
-        titleText: String(untypedChartSettingMap.get(ChartLayoutKeys.titleText) ?? ''),
-      };
+      const next = parseChartLayoutSettings(chartSettingMap);
 
       setSetting((prev) => (chartSettingsEqual(prev, next) ? prev : next));
     };

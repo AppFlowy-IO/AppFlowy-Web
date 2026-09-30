@@ -14,7 +14,12 @@ import {
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
-import { ChartLayoutKeys, ChartNumberFormat } from '@/application/database-yjs/chart.type';
+import {
+  ChartLayoutField,
+  ChartLayoutKeys,
+  ChartNumberFormat,
+  writeChartLayoutValue,
+} from '@/application/database-yjs/chart.type';
 import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import {
   useDatabase,
@@ -5431,40 +5436,14 @@ export function useUpdateChartSetting() {
               layoutSettings.set('3', layoutSetting as unknown as YDatabaseChartLayoutSetting);
             }
 
-            if (settings.chartType !== undefined) {
-              layoutSetting.set('chartType', settings.chartType);
-            }
+            // Only the fields passed in are written, each under its collab
+            // key plus the legacy web key (see `writeChartLayoutValue`).
+            for (const field of Object.keys(ChartLayoutKeys) as ChartLayoutField[]) {
+              const value = settings[field];
 
-            if (settings.xFieldId !== undefined) {
-              layoutSetting.set('xFieldId', settings.xFieldId);
-            }
-
-            if (settings.showEmptyValues !== undefined) {
-              layoutSetting.set('showEmptyValues', settings.showEmptyValues);
-            }
-
-            if (settings.aggregationType !== undefined) {
-              layoutSetting.set('aggregationType', settings.aggregationType);
-            }
-
-            if (settings.yFieldId !== undefined) {
-              layoutSetting.set('yFieldId', settings.yFieldId);
-            }
-
-            if (settings.cumulative !== undefined) {
-              layoutSetting.set('cumulative', settings.cumulative);
-            }
-
-            if (settings.dateCondition !== undefined) {
-              layoutSetting.set('dateCondition', settings.dateCondition);
-            }
-
-            if (settings.numberFormat !== undefined) {
-              layoutSetting.set(ChartLayoutKeys.numberFormat, settings.numberFormat);
-            }
-
-            if (settings.titleText !== undefined) {
-              layoutSetting.set(ChartLayoutKeys.titleText, settings.titleText);
+              if (value !== undefined) {
+                writeChartLayoutValue(layoutSetting, field, value);
+              }
             }
           },
         ],
