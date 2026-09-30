@@ -26,11 +26,14 @@ let stopTrackingRootScroll: (() => void) | undefined;
 /**
  * Captures the server-rendered article in #root, if any. Call once, before
  * `createRoot(root).render(...)`.
+ *
+ * @returns Whether there was one, i.e. whether this is a server-rendered
+ *   published page.
  */
-export function captureServerRenderedMarkup(root: HTMLElement) {
+export function captureServerRenderedMarkup(root: HTMLElement): boolean {
   const node = root.querySelector(':scope > [data-appflowy-ssr]');
 
-  if (!node) return;
+  if (!node) return false;
 
   const markup: CapturedMarkup = { node, pathname: window.location.pathname, scrollTop: root.scrollTop };
 
@@ -43,6 +46,7 @@ export function captureServerRenderedMarkup(root: HTMLElement) {
   root.addEventListener('scroll', onScroll, { passive: true });
   stopTrackingRootScroll = () => root.removeEventListener('scroll', onScroll);
   captured = markup;
+  return true;
 }
 
 /**
@@ -81,8 +85,10 @@ function CapturedArticle({ markup }: { markup: CapturedMarkup }) {
   }, [markup]);
 
   // The article carries its own layout styles (deploy/html.ts SSR_STYLE); this
-  // only takes over #root's role as its full-viewport scroll container.
-  return <div ref={containerRef} aria-busy='true' className='fixed inset-0 overflow-y-auto' />;
+  // only takes over #root's role as its full-viewport scroll container. Not
+  // aria-busy: the article is complete, readable content, and a busy region
+  // may be held back from screen readers.
+  return <div ref={containerRef} data-testid='server-rendered-fallback' className='fixed inset-0 overflow-y-auto' />;
 }
 
 /**

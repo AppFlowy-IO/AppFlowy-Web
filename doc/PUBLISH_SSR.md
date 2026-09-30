@@ -4,8 +4,11 @@ The Bun server in `deploy/` can include a published page's content in the initia
 HTML, so crawlers that do not run JavaScript (most LLM and answer-engine crawlers)
 can read it. The client app still mounts over it with `createRoot`, exactly as before,
 but keeps the server-rendered article on screen while its route chunks load
-instead of flashing a spinner, and reuses the inlined snapshot (a
-`<script type="application/json">` block after `#root`) instead of fetching it again.
+instead of flashing a spinner, fetches those chunks in parallel, and reuses the
+inlined snapshot (a `<script type="application/json">` block after `#root`)
+instead of fetching it again. An inline script in `index.html` applies the
+reader's light or dark theme before the first paint, so the article does not
+flip theme when the app mounts.
 
 **It is off by default.** With no configuration, every published page gets
 byte-for-byte the response it had before this feature existed: head metadata, an
@@ -125,8 +128,9 @@ looks each one up (`/api/workspace/v1/published-info/{view_id}`, anonymous):
 - `playwright/e2e/page/publish-ssr.spec.ts`: end to end against the Bun server
   and a real Cloud. It moves its workspace to one of the namespaces in
   `APPFLOWY_INDEXABLE_NAMESPACES` and checks the rendered HTML, then that a real
-  browser shows the article before any script runs and hands it to the app
-  with no spinner in between. CI sets the variable for the whole Playwright job.
+  browser shows the article in the reader's theme before any script runs,
+  loads the route chunks in parallel, and hands the article to the app with no
+  spinner in between. CI sets the variable for the whole Playwright job.
   Without it, the spec is skipped (e.g. against the Vite dev server).
 
 To run the end-to-end spec locally, build the app, start `bun deploy/server.ts`

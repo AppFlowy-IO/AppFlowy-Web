@@ -16,6 +16,36 @@
             name="viewport"
             content="width=device-width, initial-scale=1.0"
     >
+    <script id="appflowy-theme-init">
+      // Apply the theme before the first paint. The app sets it only once its
+      // code has loaded (useAppThemeMode), so until then a server-rendered
+      // page would show in the light theme and flip to dark. Mirrors
+      // useAppThemeMode; src/components/main/__tests__/themeInitScript.test.ts
+      // keeps the two in step.
+      (function () {
+        try {
+          var search = window.location.search;
+          var fixed = search.indexOf('theme') > -1 ? new URLSearchParams(search).get('theme') : null;
+          var dark;
+
+          if (fixed === 'dark') {
+            dark = true;
+          } else if (fixed === 'light') {
+            dark = false;
+          } else {
+            var stored = window.localStorage.getItem('dark-mode');
+
+            dark = stored === null && !fixed
+              ? window.matchMedia('(prefers-color-scheme: dark)').matches
+              : stored === 'true';
+          }
+
+          document.documentElement.setAttribute('data-dark-mode', dark ? 'true' : 'false');
+        } catch (e) {
+          // Storage or media queries unavailable: the app applies the theme on mount.
+        }
+      })();
+    </script>
     <title>AppFlowy</title>
     <meta
             name="description"

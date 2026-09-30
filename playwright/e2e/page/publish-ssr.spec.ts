@@ -8,9 +8,10 @@
  * - the live snapshot endpoint produces a server-rendered article with the
  *   page's title, text and description;
  * - SSR stays off for a namespace that is not allowlisted;
- * - a real browser shows that article before any JavaScript runs, keeps it on
- *   screen until the app takes over (no loading spinner in between), and the
- *   app reuses the inlined snapshot instead of fetching it again.
+ * - a real browser shows that article before any JavaScript runs, already in
+ *   the reader's theme, keeps it on screen until the app takes over (no
+ *   loading spinner in between), fetches the app's route chunks in parallel,
+ *   and reuses the inlined snapshot instead of fetching it again.
  *
  * SSR is opt-in per namespace, so the server must be started with
  * APPFLOWY_INDEXABLE_NAMESPACES. CI's Playwright job sets it (see
@@ -297,13 +298,28 @@ test.describe('Published page SSR', () => {
         publishName: publishName,
       });
 
-      // When: a reader opens the page, with the app's scripts held back at first
+      // When: a reader whose system is in dark mode opens the page, with the
+      // app's scripts held back at first
       const snapshotRequests: string[] = [];
       const snapshotPath = `/v2/published/${namespace}/${publishName}/snapshot`;
+      // Route chunks are named after their module (vite.config.ts chunkFileNames).
+      const isChunk = (url: string, name: string) =>
+        new RegExp(`/static/js/${name}-[^/]+\\.js$`).test(new URL(url).pathname);
+      let mainAppRoutesLoaded = false;
+      let publishPageRequestedWhileMainAppRoutesLoading: boolean | undefined;
 
       page.on('request', (req) => {
-        if (new URL(req.url()).pathname.endsWith(snapshotPath)) snapshotRequests.push(req.url());
+        const url = req.url();
+
+        if (new URL(url).pathname.endsWith(snapshotPath)) snapshotRequests.push(url);
+        if (isChunk(url, 'PublishPage') && publishPageRequestedWhileMainAppRoutesLoading === undefined) {
+          publishPageRequestedWhileMainAppRoutesLoading = !mainAppRoutesLoaded;
+        }
       });
+      page.on('requestfinished', (req) => {
+        if (isChunk(req.url(), 'MainAppRoutes')) mainAppRoutesLoaded = true;
+      });
+      await page.emulateMedia({ colorScheme: 'dark' });
 
       let releaseScripts: () => void = () => undefined;
       const scriptsReleased = new Promise<void>((resolve) => {
@@ -325,6 +341,9 @@ test.describe('Published page SSR', () => {
 
       await expect(ssrArticle.locator('h1')).toHaveText(pageName);
       await expect(ssrArticle.getByText(paragraphText)).toBeVisible();
+
+      // And: already in the reader's theme, set by index.html's inline script
+      await expect(page.locator('html')).toHaveAttribute('data-dark-mode', 'true');
 
       // When: the app loads
       releaseScripts();
@@ -348,6 +367,13 @@ test.describe('Published page SSR', () => {
         spinnerBeforeApp: false,
         articleGapBeforeApp: false,
       });
+
+      // And: the theme never flipped when the app took over
+      await expect(page.locator('html')).toHaveAttribute('data-dark-mode', 'true');
+
+      // And: the page's route chunk was fetched alongside MainAppRoutes, not
+      // after it (every chunk is held for 250ms, so "after" is unmistakable)
+      expect(publishPageRequestedWhileMainAppRoutesLoading).toBe(true);
 
       // And: the app reused the inlined snapshot rather than fetching it
       expect(snapshotRequests).toEqual([]);

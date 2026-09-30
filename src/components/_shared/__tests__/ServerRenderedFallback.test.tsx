@@ -70,7 +70,7 @@ describe('ServerRenderedFallback', () => {
     const { root, article } = serverRenderedRoot();
     const page = deferredLazy(() => <main data-testid="app-page">App page</main>);
 
-    captureServerRenderedMarkup(root);
+    expect(captureServerRenderedMarkup(root)).toBe(true);
     mount(
       root,
       <Suspense fallback={<ServerRenderedFallback label="Loading page" />}>
@@ -83,7 +83,8 @@ describe('ServerRenderedFallback', () => {
     expect(article.isConnected).toBe(true);
     expect(root.contains(article)).toBe(true);
     expect(article.parentElement).not.toBe(root);
-    expect(article.parentElement?.getAttribute('aria-busy')).toBe('true');
+    expect(article.parentElement?.dataset.testid).toBe('server-rendered-fallback');
+    expect(article.parentElement?.hasAttribute('aria-busy')).toBe(false);
     expect(spinner()).toBeNull();
 
     await act(async () => page.load());
@@ -142,7 +143,7 @@ describe('ServerRenderedFallback', () => {
     const root = document.getElementById('root') as HTMLElement;
     const page = deferredLazy(() => null);
 
-    captureServerRenderedMarkup(root);
+    expect(captureServerRenderedMarkup(root)).toBe(false);
     mount(
       root,
       <Suspense fallback={<ServerRenderedFallback label="Loading page" />}>
@@ -159,7 +160,7 @@ describe('ServerRenderedFallback', () => {
     const root = document.getElementById('root') as HTMLElement;
     const page = deferredLazy(() => null);
 
-    captureServerRenderedMarkup(root);
+    expect(captureServerRenderedMarkup(root)).toBe(false);
     mount(
       root,
       <Suspense fallback={<ServerRenderedFallback label="Loading page" />}>
