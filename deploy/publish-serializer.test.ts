@@ -4,10 +4,12 @@ import {
   publishedDatabasePayload,
   publishedDocumentPayload,
   publishedRichDocumentPayload,
+  richDocumentChildViewId,
 } from '@/application/publish-snapshot/__fixtures__/published-page-snapshots';
 import { BlockType } from '@/application/types';
 
 import {
+  collectLinkedViewIds,
   escapeHtml,
   sanitizeUrl,
   SERIALIZER_BLOCK_COVERAGE,
@@ -303,6 +305,98 @@ describe('serializePublishedPage', () => {
   });
 });
 
+describe('links to other published pages', () => {
+  const childId = richDocumentChildViewId;
+  const withChild = (children: unknown[]) =>
+    doc(children, '', { childViews: [{ view_id: childId, name: 'Child page' }] });
+  const pageMention = (mention: object) => blk('paragraph', [leaf('$', { mention })]);
+  const render = (children: unknown[], viewHrefs: Map<string, string>) => {
+    const result = serializePublishedPage(withChild(children), { viewHrefs });
+
+    if (!result.ok) throw new Error(result.reason);
+
+    return result.html.replace(/^<article data-appflowy-ssr>|<\/article>$/g, '');
+  };
+
+  const hrefs = new Map([[childId, '/docs/child-page']]);
+
+  it('links sub-page blocks and page mentions when their URL resolved', () => {
+    expect(render([blk('sub_page', null, { view_id: childId })], hrefs)).toBe(
+      '<p><a href="/docs/child-page">Child page</a></p>'
+    );
+    expect(render([pageMention({ type: 'page', page_id: childId })], hrefs)).toBe(
+      '<p><a href="/docs/child-page">Child page</a></p>'
+    );
+    expect(render([pageMention({ type: 'childPage', page_id: childId })], hrefs)).toBe(
+      '<p><a href="/docs/child-page">Child page</a></p>'
+    );
+  });
+
+  it('renders plain names when a URL did not resolve', () => {
+    expect(render([blk('sub_page', null, { view_id: childId })], new Map())).toBe('<p>Child page</p>');
+    expect(render([pageMention({ type: 'page', page_id: childId })], new Map())).toBe(
+      '<p><span>Child page</span></p>'
+    );
+  });
+
+  it('does not link database-row mentions', () => {
+    expect(render([pageMention({ type: 'page', page_id: childId, row_id: 'r1' })], hrefs)).toBe(
+      '<p><span>Child page</span></p>'
+    );
+  });
+
+  it('still sanitizes and escapes resolved URLs', () => {
+    expect(render([blk('sub_page', null, { view_id: childId })], new Map([[childId, 'javascript:alert(1)']]))).toBe(
+      '<p>Child page</p>'
+    );
+    expect(render([blk('sub_page', null, { view_id: childId })], new Map([[childId, '/a"b']]))).toBe(
+      '<p><a href="/a&quot;b">Child page</a></p>'
+    );
+  });
+});
+
+describe('collectLinkedViewIds', () => {
+  it('lists the rich fixture sub-page and page mention once', () => {
+    expect(collectLinkedViewIds(publishedRichDocumentPayload)).toEqual([richDocumentChildViewId]);
+  });
+
+  it('finds targets in nested blocks, in document order', () => {
+    const snapshot = doc(
+      [
+        blk('toggle_list', [leaf('t')], {}, [
+          blk('paragraph', [leaf('$', { mention: { type: 'page', page_id: 'b' } })]),
+        ]),
+        blk('sub_page', null, { view_id: 'a' }),
+        blk('linked_page', null, { view_id: 'c' }),
+      ],
+      'T',
+      { childViews: [{ view_id: 'a', name: 'A' }, { view_id: 'b', name: 'B' }, { view_id: 'c', name: 'C' }] }
+    );
+
+    expect(collectLinkedViewIds(snapshot)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('skips targets with no name, database mentions and non-page mentions', () => {
+    const snapshot = doc(
+      [
+        blk('sub_page', null, { view_id: 'unnamed' }),
+        blk('paragraph', [
+          leaf('$', { mention: { type: 'page', page_id: 'a', database_row_id: 'r' } }),
+          leaf('$', { mention: { type: 'person', person_id: 'a' } }),
+        ]),
+      ],
+      'T',
+      { childViews: [{ view_id: 'a', name: 'A' }] }
+    );
+
+    expect(collectLinkedViewIds(snapshot)).toEqual([]);
+  });
+
+  it.each([null, 'x', publishedDatabasePayload, { kind: 'document' }])('returns [] for %p', (input) => {
+    expect(collectLinkedViewIds(input)).toEqual([]);
+  });
+});
+
 describe('sanitizeUrl', () => {
   it.each([
     ['https://a.b/c', 'https://a.b/c'],
@@ -345,5 +439,38 @@ describe('block type coverage', () => {
     );
 
     expect(stale).toEqual([]);
+  });
+});
+
+describe('page mentions with a denormalized title', () => {
+  // Shapes taken from the published "Getting Started With AppFlowy" guide page.
+  const titledPageMention = { type: 'page', page_id: 'outside-tree', data: { title: 'Space-level permissions' } };
+  const databaseReference = { type: 'page', page_id: 'db-view', database_id: 'db', data: { title: 'Tasks' } };
+  const snapshot = (mention: object) => doc([blk('paragraph', [leaf('$', { mention })])], '');
+
+  it('uses the title when the page is outside the view tree, and links it', () => {
+    const result = serializePublishedPage(snapshot(titledPageMention), {
+      viewHrefs: new Map([['outside-tree', '/guide/space-level-permissions']]),
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      html: '<article data-appflowy-ssr><p><a href="/guide/space-level-permissions">Space-level permissions</a></p></article>',
+    });
+    expect(collectLinkedViewIds(snapshot(titledPageMention))).toEqual(['outside-tree']);
+  });
+
+  it('renders a database reference by title without linking it', () => {
+    const result = serializePublishedPage(snapshot(databaseReference), {
+      viewHrefs: new Map([['db-view', '/docs/tasks']]),
+    });
+
+    expect(result).toEqual({ ok: true, html: '<article data-appflowy-ssr><p><span>Tasks</span></p></article>' });
+    expect(collectLinkedViewIds(snapshot(databaseReference))).toEqual([]);
+  });
+
+  it('renders nothing for a page mention with neither a known name nor a title', () => {
+    expect(serialize(snapshot({ type: 'page', page_id: 'unknown' }))).toBe('<article data-appflowy-ssr></article>');
+    expect(collectLinkedViewIds(snapshot({ type: 'page', page_id: 'unknown' }))).toEqual([]);
   });
 });

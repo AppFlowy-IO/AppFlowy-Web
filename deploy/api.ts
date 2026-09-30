@@ -96,3 +96,51 @@ export const fetchPublishSnapshot = async (
     clearTimeout(timer);
   }
 };
+
+export type PublishedViewRoute = { namespace: string; publishName: string };
+
+/**
+ * Looks up where a view is published, so a server-rendered page can link to
+ * its published sub-pages and page mentions. The client does the same lookup
+ * when a reader clicks the link.
+ *
+ * Anonymous, like the other published endpoints. The response also carries
+ * the publisher's email; only `namespace` and `publish_name` are read, and the
+ * body is never logged.
+ *
+ * @param viewId - The view to look up.
+ * @param signal - Aborts the request when the caller's deadline passes.
+ * @returns The route, or null when the view is not published (the API
+ *   answers `code != 0` or a 4xx). Throws on network errors and 5xx, which are
+ *   transient and must not be cached as "not published".
+ */
+export const fetchPublishedViewRoute = async (
+  viewId: string,
+  signal: AbortSignal
+): Promise<PublishedViewRoute | null> => {
+  const url = `${baseURL}/api/workspace/v1/published-info/${encodeURIComponent(viewId)}`;
+  const response = await fetch(url, { verbose: false, signal });
+
+  if (response.status >= 500) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
+  }
+
+  if (!response.ok) return null;
+
+  const body = await response.json();
+  const data = body?.code === 0 ? body.data : undefined;
+
+  if (
+    !data ||
+    typeof data.namespace !== 'string' ||
+    data.namespace.length === 0 ||
+    typeof data.publish_name !== 'string' ||
+    data.publish_name.length === 0 ||
+    // Defensive: never link to a page the API reports as unpublished.
+    (data.unpublished_timestamp !== null && data.unpublished_timestamp !== undefined)
+  ) {
+    return null;
+  }
+
+  return { namespace: data.namespace, publishName: data.publish_name };
+};

@@ -6,7 +6,10 @@ import { load } from 'cheerio';
 import {
   publishedDatabasePayload,
   publishedRichDocumentPayload,
+  richDocumentChildViewId,
 } from '@/application/publish-snapshot/__fixtures__/published-page-snapshots';
+
+import { clearViewRouteCache } from './publish-links';
 
 const mockBunFetch = jest.fn<(url: string, init?: Record<string, unknown>) => Promise<unknown>>();
 
@@ -55,7 +58,10 @@ const metadata = (config?: unknown) => ({
 type Upstream = {
   metadata?: () => Promise<unknown>;
   snapshot?: () => Promise<unknown>;
+  viewInfo?: (url: string) => Promise<unknown>;
 };
+
+const NOT_PUBLISHED = () => json({ code: -2, message: 'Record not found' });
 
 const snapshotOk = (snapshot: unknown = publishedRichDocumentPayload) => () => json({ code: 0, data: snapshot });
 
@@ -63,9 +69,20 @@ describe('published page SSR', () => {
   let createServer: typeof import('./server').createServer;
   let APP_PATHS: string[];
 
-  const mockUpstream = ({ metadata: meta = () => json(metadata()), snapshot = snapshotOk() }: Upstream = {}) => {
-    mockBunFetch.mockImplementation((url: string) => (url.endsWith('/snapshot') ? snapshot() : meta()));
+  const mockUpstream = ({
+    metadata: meta = () => json(metadata()),
+    snapshot = snapshotOk(),
+    viewInfo = NOT_PUBLISHED,
+  }: Upstream = {}) => {
+    mockBunFetch.mockImplementation((url: string) => {
+      if (url.endsWith('/snapshot')) return snapshot();
+      if (url.includes('/published-info/')) return viewInfo(url);
+
+      return meta();
+    });
   };
+
+  const viewInfoCalls = () => mockBunFetch.mock.calls.filter(([url]) => url.includes('/published-info/'));
 
   const request = (path: string) =>
     createServer(new Request(`https://appflowy.test${path}`, { headers: { host: 'appflowy.test' } }));
@@ -103,6 +120,7 @@ describe('published page SSR', () => {
 
   beforeEach(() => {
     mockBunFetch.mockReset();
+    clearViewRouteCache();
     SSR_ENV_KEYS.forEach((key) => delete process.env[key]);
   });
 
@@ -196,6 +214,84 @@ describe('published page SSR', () => {
     });
   });
 
+  describe('links to other published pages', () => {
+    const childInfo = (namespace: string, publishName = 'child-page') => () =>
+      json({
+        code: 0,
+        data: {
+          namespace,
+          publish_name: publishName,
+          view_id: richDocumentChildViewId,
+          publisher_email: 'someone@example.com',
+          unpublished_timestamp: null,
+        },
+      });
+
+    beforeEach(() => {
+      process.env.APPFLOWY_INDEXABLE_NAMESPACES = 'docs,guide';
+    });
+
+    it('links sub-pages and page mentions in the same namespace', async () => {
+      mockUpstream({ viewInfo: childInfo('docs') });
+
+      const html = await (await request('/docs/page')).text();
+      const links = load(html)('#root a[href="/docs/child-page"]');
+
+      // The rich fixture has a sub-page block and a page mention to the same child.
+      expect(links.length).toBe(2);
+      expect(links.first().text()).toBe('Child page');
+      expect(html).not.toContain('someone@example.com');
+      expect(viewInfoCalls().map(([url, init]) => [url, init && 'headers' in init])).toEqual([
+        [`https://api.example.com/api/workspace/v1/published-info/${richDocumentChildViewId}`, false],
+      ]);
+    });
+
+    it('links targets in another allowlisted namespace', async () => {
+      mockUpstream({ viewInfo: childInfo('guide') });
+
+      const html = await (await request('/docs/page')).text();
+
+      expect(load(html)('#root a[href="/guide/child-page"]').length).toBe(2);
+    });
+
+    it('does not link targets in a namespace that is not allowlisted', async () => {
+      mockUpstream({ viewInfo: childInfo('customer') });
+
+      const html = await (await request('/docs/page')).text();
+      const $ = load(html);
+
+      expect($('#root a[href^="/customer"]').length).toBe(0);
+      expect($('#root').text()).toContain('Child page');
+    });
+
+    it.each([
+      ['not published', NOT_PUBLISHED],
+      ['HTTP 500', () => json({}, false)],
+      ['network error', () => Promise.reject(new Error('down'))],
+      ['unpublished timestamp set', () => json({ code: 0, data: { namespace: 'docs', publish_name: 'x', unpublished_timestamp: 't' } })],
+    ])('renders the name without a link when the lookup is %s', async (_label, viewInfo) => {
+      mockUpstream({ viewInfo });
+
+      const html = await (await request('/docs/page')).text();
+      const $ = load(html);
+
+      expect($('[data-appflowy-ssr]').length).toBe(1);
+      expect($('#root p').filter((_, el) => $(el).text() === 'Child page').length).toBe(1);
+      expect($('#root a[href^="/docs/child"]').length).toBe(0);
+    });
+
+    it('a slow lookup does not hold the page past the deadline', async () => {
+      process.env.APPFLOWY_SSR_SNAPSHOT_TIMEOUT_MS = '100';
+      mockUpstream({ viewInfo: () => new Promise(() => undefined) });
+
+      const started = Date.now();
+      const html = await (await request('/docs/page')).text();
+
+      expect(load(html)('[data-appflowy-ssr]').length).toBe(1);
+      expect(Date.now() - started).toBeLessThan(2000);
+    });
+  });
+
   describe('publisher flag (rules 2 and 3)', () => {
     it('opt-out beats the allowlist: shell with noindex header and meta', async () => {
       process.env.APPFLOWY_INDEXABLE_NAMESPACES = 'docs';
@@ -212,10 +308,14 @@ describe('published page SSR', () => {
 
       expect(load(html)('[data-appflowy-ssr]').length).toBe(1);
       expect(response.headers.get('X-Robots-Tag')).toBeNull();
-      expect(mockBunFetch.mock.calls.map(([url]) => url)).toEqual([
+      expect(
+        mockBunFetch.mock.calls.map(([url]) => url).filter((url) => !url.includes('/published-info/'))
+      ).toEqual([
         'https://api.example.com/api/workspace/v1/published/customer/page',
         'https://api.example.com/api/workspace/v2/published/customer/page/snapshot',
       ]);
+      // Link lookups happen only after the snapshot arrives.
+      expect(viewInfoCalls()).toHaveLength(1);
     });
   });
 

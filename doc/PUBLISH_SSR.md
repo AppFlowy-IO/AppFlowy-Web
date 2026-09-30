@@ -84,3 +84,19 @@ added in front of these pages, purge it too.
   design; unknown block types keep their text in a neutral wrapper.
 - `deploy/publish-serializer.test.ts` fails when a new `BlockType` is added
   without deciding how the serializer treats it.
+
+## Links to other pages
+
+Sub-page blocks and page mentions render as real links, so crawlers can follow
+them to the rest of a site. The snapshot only contains view ids, so the server
+looks each one up (`/api/workspace/v1/published-info/{view_id}`, anonymous):
+
+- Only in server-rendered mode; shell pages make no extra requests.
+- A target is linked only if it is published **and** is in the same namespace
+  or an allowlisted one. SSR never hands crawlers a URL into a namespace that
+  has not opted in. Everything else renders as the plain page name.
+- At most 50 targets per page and 6 lookups at a time, all within
+  `APPFLOWY_SSR_SNAPSHOT_TIMEOUT_MS` (so a server-rendered page waits at most
+  twice that value upstream). Results are cached in memory for 60 seconds, so
+  an unpublished or renamed page stops being linked within a minute.
+- Any lookup failure or timeout drops that link, never the page.

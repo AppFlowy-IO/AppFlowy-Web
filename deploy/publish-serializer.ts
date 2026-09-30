@@ -47,7 +47,17 @@ interface ViewRef {
 interface RenderContext {
   /** view id → view name, for page mentions and sub-page blocks. */
   viewNames: Map<string, string>;
+  /** view id → published URL, for the targets that resolved (see publish-links.ts). */
+  viewHrefs: Map<string, string>;
   depth: number;
+}
+
+export interface SerializeOptions {
+  /**
+   * Published URLs of linked pages, keyed by view id. Targets present here
+   * render as links; the rest render as plain names.
+   */
+  viewHrefs?: Map<string, string>;
 }
 
 // Nested blocks recurse; a hostile or corrupt snapshot could nest deeply enough
@@ -202,6 +212,18 @@ const collectViewNames = (views: unknown, into: Map<string, string>) => {
   }
 };
 
+// view id → name for the page itself, its children and its ancestors: every
+// page a mention or sub-page block in this document can name.
+const buildViewNames = (view: JsonObject): Map<string, string> => {
+  const viewNames = new Map<string, string>();
+
+  collectViewNames([view], viewNames);
+  collectViewNames(view.childViews, viewNames);
+  collectViewNames(view.ancestorViews, viewNames);
+
+  return viewNames;
+};
+
 // ---------------------------------------------------------------------------
 // Inline content
 // ---------------------------------------------------------------------------
@@ -216,20 +238,70 @@ const formatMentionDate = (raw: unknown): string | undefined => {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString().slice(0, 10);
 };
 
+// A linked page's name, as a link when its published URL resolved. The URL
+// still goes through sanitizeUrl even though this server built it.
+const renderPageName = (viewId: string, name: string, ctx: RenderContext, fallbackTag: 'span' | 'p') => {
+  const href = sanitizeUrl(ctx.viewHrefs.get(viewId));
+  const link = href ? `<a href="${escapeHtml(href)}">${escapeHtml(name)}</a>` : undefined;
+
+  if (fallbackTag === 'p') return `<p>${link ?? escapeHtml(name)}</p>`;
+
+  return link ?? `<span>${escapeHtml(name)}</span>`;
+};
+
+// Denormalized display title some mentions carry (newer page mentions and
+// database references), used when the page is not in the snapshot's view tree.
+const mentionTitle = (mention: JsonObject) => (isObject(mention.data) ? asString(mention.data.title) : undefined);
+
+// Mirrors `isDatabaseReference` in MentionLeaf.tsx: a database row reference,
+// or a database reference with a display title. These render their label but
+// are not linked, because their route depends on the database container, not
+// on the mentioned id.
+const isDatabaseReference = (mention: JsonObject) => {
+  const rowId = asString(mention.row_id) ?? asString(mention.database_row_id);
+  const databaseId = asString(mention.database_id);
+
+  return (
+    mention.type === 'page' &&
+    ((rowId !== undefined &&
+      (databaseId ?? asString(mention.database_view_id) ?? asString(mention.page_id)) !== undefined) ||
+      (databaseId !== undefined && mentionTitle(mention) !== undefined))
+  );
+};
+
+// A page mention the serializer may link: the id to resolve, or undefined.
+const linkablePageMentionId = (mention: JsonObject): string | undefined =>
+  (mention.type === 'page' || mention.type === 'childPage') && !isDatabaseReference(mention)
+    ? asString(mention.page_id)
+    : undefined;
+
+// The label of a page mention: the page's name from the view tree, else the
+// mention's own denormalized title.
+const pageMentionLabel = (mention: JsonObject, viewNames: Map<string, string>) => {
+  const pageId = asString(mention.page_id);
+
+  return (pageId ? viewNames.get(pageId) : undefined) ?? mentionTitle(mention);
+};
+
 // Mention leaves carry a hidden placeholder character as their text; the app
 // renders the label from the mention data instead, and so do we. Mentions we
-// cannot label (e.g. a page outside the published tree) render as nothing
-// rather than as a stray placeholder.
+// cannot label (e.g. a page outside the published tree with no title) render
+// as nothing rather than as a stray placeholder.
 const renderMention = (mention: JsonObject, ctx: RenderContext): string => {
   const type = mention.type;
-  const databaseTitle = isObject(mention.data) ? asString(mention.data.title) : undefined;
 
-  if (databaseTitle) return `<span>${escapeHtml(databaseTitle)}</span>`;
+  if (isDatabaseReference(mention)) {
+    const label = mentionTitle(mention) ?? pageMentionLabel(mention, ctx.viewNames);
 
-  if ((type === 'page' || type === 'childPage') && typeof mention.page_id === 'string') {
-    const name = ctx.viewNames.get(mention.page_id);
+    return label ? `<span>${escapeHtml(label)}</span>` : '';
+  }
 
-    return name ? `<span>${escapeHtml(name)}</span>` : '';
+  const linkableId = linkablePageMentionId(mention);
+
+  if (linkableId) {
+    const label = pageMentionLabel(mention, ctx.viewNames);
+
+    return label ? renderPageName(linkableId, label, ctx, 'span') : '';
   }
 
   if (type === 'date') {
@@ -493,7 +565,7 @@ const renderBlock = (block: JsonObject, ctx: RenderContext): string => {
       const viewId = asString(data.view_id);
       const name = viewId ? ctx.viewNames.get(viewId) : undefined;
 
-      return name ? `<p>${escapeHtml(name)}</p>` : '';
+      return viewId && name ? renderPageName(viewId, name, ctx, 'p') : '';
     }
 
     case BLOCK.outline:
@@ -562,6 +634,7 @@ const renderBlocks = (blocks: unknown[], ctx: RenderContext): string => {
  *
  * @param snapshot - The untrusted snapshot JSON from the v2 `/snapshot`
  *   endpoint (the `data` field of the API response).
+ * @param options - Optional resolved URLs for linked pages.
  * @returns `{ ok: true, html }` with an `<article data-appflowy-ssr>` element
  *   for document snapshots. Returns `{ ok: false, reason }` — never throws — for
  *   anything it cannot render with confidence: a non-object, an unknown schema
@@ -569,7 +642,7 @@ const renderBlocks = (blocks: unknown[], ctx: RenderContext): string => {
  *   document body, excessive nesting, or an unexpected internal error. Callers
  *   serve the head-only shell in that case.
  */
-export const serializePublishedPage = (snapshot: unknown): SerializeResult => {
+export const serializePublishedPage = (snapshot: unknown, options: SerializeOptions = {}): SerializeResult => {
   if (!isObject(snapshot)) return { ok: false, reason: 'not_an_object' };
   if (snapshot.schemaVersion !== 1) return { ok: false, reason: 'unsupported_schema_version' };
   if (snapshot.kind !== 'document') return { ok: false, reason: 'unsupported_kind' };
@@ -582,14 +655,13 @@ export const serializePublishedPage = (snapshot: unknown): SerializeResult => {
 
   try {
     const view: JsonObject = isObject(snapshot.view) ? snapshot.view : {};
-    const viewNames = new Map<string, string>();
-
-    collectViewNames([view], viewNames);
-    collectViewNames(view.childViews, viewNames);
-    collectViewNames(view.ancestorViews, viewNames);
-
+    const viewNames = buildViewNames(view);
     const title = asString(view.name);
-    const body = renderBlocks(document.children, { viewNames, depth: 0 });
+    const body = renderBlocks(document.children, {
+      viewNames,
+      viewHrefs: options.viewHrefs ?? new Map(),
+      depth: 0,
+    });
 
     return {
       ok: true,
@@ -597,5 +669,67 @@ export const serializePublishedPage = (snapshot: unknown): SerializeResult => {
     };
   } catch (error) {
     return { ok: false, reason: error instanceof TooDeepError ? 'too_deep' : 'serializer_error' };
+  }
+};
+
+// Only targets the serializer can render as a link are collected: ones with a
+// label, so no lookup is wasted on a link that would have no text.
+const collectFromBlocks = (blocks: unknown[], viewNames: Map<string, string>, into: string[], depth: number) => {
+  // Same bound as rendering; a snapshot too deep to render has no links to resolve.
+  if (depth > MAX_DEPTH) return;
+
+  for (const block of blocks) {
+    if (!isObject(block)) continue;
+
+    if ((block.type === BLOCK.subpage || block.type === BLOCK.linkedPage) && isObject(block.data)) {
+      const viewId = asString(block.data.view_id);
+
+      if (viewId && viewNames.has(viewId)) into.push(viewId);
+    }
+
+    for (const child of asArray(block.children)) {
+      if (isTextElement(child)) {
+        for (const leaf of asArray(child.children)) {
+          if (!isObject(leaf) || !isObject(leaf.mention)) continue;
+
+          const viewId = linkablePageMentionId(leaf.mention);
+
+          if (viewId && pageMentionLabel(leaf.mention, viewNames)) into.push(viewId);
+        }
+      }
+    }
+
+    collectFromBlocks(
+      asArray(block.children).filter((child) => !isTextElement(child)),
+      viewNames,
+      into,
+      depth + 1
+    );
+  }
+};
+
+/**
+ * Lists the view ids a document links to — sub-page blocks and page mentions —
+ * in document order, deduplicated. The caller resolves their published URLs
+ * and passes them back through `SerializeOptions.viewHrefs`.
+ *
+ * Only targets the serializer can actually render as a link are listed.
+ *
+ * @param snapshot - The untrusted snapshot JSON.
+ * @returns View ids; empty for anything that is not a well-formed document
+ *   snapshot. Never throws.
+ */
+export const collectLinkedViewIds = (snapshot: unknown): string[] => {
+  if (!isObject(snapshot) || snapshot.kind !== 'document' || !isObject(snapshot.document)) return [];
+
+  try {
+    const viewNames = buildViewNames(isObject(snapshot.view) ? snapshot.view : {});
+    const ids: string[] = [];
+
+    collectFromBlocks(asArray(snapshot.document.children), viewNames, ids, 0);
+
+    return [...new Set(ids)];
+  } catch {
+    return [];
   }
 };

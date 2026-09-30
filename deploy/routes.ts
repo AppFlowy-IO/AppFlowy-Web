@@ -1,16 +1,22 @@
 import fs from 'fs';
 import path from 'path';
 
-import { fetchPublishMetadata, fetchPublishSnapshot, type SnapshotFetchResult } from './api';
+import { fetchPublishedViewRoute, fetchPublishMetadata, fetchPublishSnapshot, type SnapshotFetchResult } from './api';
 import { APP_PATHS, matchesAppPath } from './app-paths';
 import { defaultSite, distDir } from './config';
 import { type PublishPageSsr, renderMarketingPage, renderPublishPage } from './html';
-import { type IndexingDecision, modeRendersBody, resolvePublishRenderMode } from './indexing-policy';
+import {
+  type IndexingDecision,
+  modeRendersBody,
+  parseNamespaceAllowlist,
+  resolvePublishRenderMode,
+} from './indexing-policy';
 import { logger } from './logger';
 import { type PublishErrorPayload } from './publish-error';
-import { serializePublishedPage } from './publish-serializer';
+import { resolveViewHrefs } from './publish-links';
+import { collectLinkedViewIds, serializePublishedPage } from './publish-serializer';
 import { type RequestContext } from './server';
-import { readSsrSettings } from './ssr-config';
+import { readSsrSettings, type SsrSettings } from './ssr-config';
 
 
 type RouteHandler = (context: RequestContext) => Promise<Response | undefined>;
@@ -239,7 +245,7 @@ const publishRoute = async ({ req, url, hostname }: RequestContext) => {
     if (modeRendersBody(decision.mode)) {
       // Opted in via metadata (rule 3) and not fetched early: fetch now.
       pendingSnapshot ??= startSnapshotFetch(namespace, publishName, ssrSettings.snapshotTimeoutMs);
-      ssr = await buildSsrBody(pendingSnapshot, ssrSettings.maxInlineBytes, namespace, publishName);
+      ssr = await buildSsrBody(pendingSnapshot, ssrSettings, namespace, publishName);
     }
 
     const level = decision.reason === 'default_off' ? 'debug' : 'info';
@@ -281,6 +287,36 @@ const startSnapshotFetch = (namespace: string, publishName: string, timeoutMs: n
     .catch((): SnapshotFetchResult => ({ ok: false, reason: 'network_error' }));
 
 /**
+ * Resolves published URLs for the pages a snapshot links to.
+ *
+ * Only targets in the current namespace or in an allowlisted namespace are
+ * linked. A link hands crawlers a URL, so SSR must never become the path by
+ * which a namespace that has not opted in gets crawled. (The client app shows
+ * all these links to readers regardless; this only limits the server markup.)
+ *
+ * @returns view id → URL. Empty on any failure, so the page still renders
+ *   with plain names rather than losing SSR over its links.
+ */
+const resolveLinkHrefs = async (
+  snapshot: unknown,
+  namespace: string,
+  timeoutMs: number
+): Promise<Map<string, string>> => {
+  try {
+    const allowlist = parseNamespaceAllowlist(process.env.APPFLOWY_INDEXABLE_NAMESPACES);
+
+    return await resolveViewHrefs(collectLinkedViewIds(snapshot), {
+      fetchRoute: fetchPublishedViewRoute,
+      timeoutMs,
+      isLinkableNamespace: (target) => target === namespace || allowlist.has(target),
+    });
+  } catch (error) {
+    logger.warn(`SSR link resolution failed, rendering names without links: namespace="${namespace}" error=${error}`);
+    return new Map();
+  }
+};
+
+/**
  * Turns a snapshot fetch into the SSR body for `renderPublishPage`.
  *
  * @returns The body and, when small enough, the snapshot to inline. Returns
@@ -291,7 +327,7 @@ const startSnapshotFetch = (namespace: string, publishName: string, timeoutMs: n
  */
 const buildSsrBody = async (
   pending: Promise<SnapshotFetchResult>,
-  maxInlineBytes: number,
+  settings: SsrSettings,
   namespace: string,
   publishName: string
 ): Promise<PublishPageSsr | undefined> => {
@@ -305,7 +341,8 @@ const buildSsrBody = async (
       return undefined;
     }
 
-    const serialized = serializePublishedPage(result.snapshot);
+    const viewHrefs = await resolveLinkHrefs(result.snapshot, namespace, settings.snapshotTimeoutMs);
+    const serialized = serializePublishedPage(result.snapshot, { viewHrefs });
 
     if (!serialized.ok) {
       logger.warn(`SSR serializer declined (${serialized.reason}), serving shell: ${context}`);
@@ -319,7 +356,7 @@ const buildSsrBody = async (
 
     return {
       bodyHtml: serialized.html,
-      snapshot: inlineSize <= maxInlineBytes ? result.snapshot : undefined,
+      snapshot: inlineSize <= settings.maxInlineBytes ? result.snapshot : undefined,
     };
   } catch (error) {
     logger.error(`SSR failed unexpectedly, serving shell: ${context} error=${error}`);
