@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { PublishProvider } from '@/application/publish';
 import { createPublishSnapshotDataSource } from '@/application/publish-snapshot/data-source';
+import { takeInlinedPublishSnapshot } from '@/application/publish-snapshot/inlined';
 import type { PublishedPageSnapshot, PublishSnapshotDataSource } from '@/application/publish-snapshot/types';
 import NotFound from '@/components/error/NotFound';
 import PublishLayout from '@/components/publish/PublishLayout';
@@ -15,11 +16,23 @@ export interface PublishViewProps {
 }
 
 export function PublishView({ namespace, publishName }: PublishViewProps) {
-  const [snapshot, setSnapshot] = useState<PublishedPageSnapshot | undefined>();
+  // When the server rendered this page it also inlined the snapshot; start
+  // from it instead of fetching. Absent or unusable → undefined, and the
+  // effect below fetches as usual.
+  const [inlinedSnapshot] = useState(() => takeInlinedPublishSnapshot(namespace, publishName));
+  const [snapshot, setSnapshot] = useState<PublishedPageSnapshot | undefined>(inlinedSnapshot);
   const [notFound, setNotFound] = useState<boolean>(false);
   const [dataSource] = useState<PublishSnapshotDataSource>(() => createPublishSnapshotDataSource());
+  const pendingInlinedSnapshot = useRef(inlinedSnapshot);
 
   useEffect(() => {
+    // Skip only the first fetch, and only for the page the snapshot belongs to.
+    // Any later navigation fetches normally.
+    const inlined = pendingInlinedSnapshot.current;
+
+    pendingInlinedSnapshot.current = undefined;
+    if (inlined && inlined.namespace === namespace && inlined.publishName === publishName) return;
+
     let cancelled = false;
 
     setNotFound(false);
