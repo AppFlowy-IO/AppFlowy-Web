@@ -228,21 +228,35 @@ const buildViewNames = (view: JsonObject): Map<string, string> => {
 // Inline content
 // ---------------------------------------------------------------------------
 
-const formatMentionDate = (raw: unknown): string | undefined => {
+const formatMentionDate = (raw: unknown, includeTime: boolean): string | undefined => {
   if (typeof raw !== 'string' && typeof raw !== 'number') return undefined;
 
   // Dates are ISO strings in current data, millisecond timestamps in older data.
   const value = typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : raw;
   const date = new Date(value);
 
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString().slice(0, 10);
+  if (Number.isNaN(date.getTime())) return undefined;
+
+  // SSR has no reader timezone; ISO preserves the instant without depending
+  // on the server's timezone. Date-only mentions keep their existing label.
+  const iso = date.toISOString();
+
+  return includeTime ? iso : iso.slice(0, 10);
 };
 
 // A linked page's name, as a link when its published URL resolved. The URL
 // still goes through sanitizeUrl even though this server built it.
-const renderPageName = (viewId: string, name: string, ctx: RenderContext, fallbackTag: 'span' | 'p') => {
+const renderPageName = (
+  viewId: string,
+  name: string,
+  ctx: RenderContext,
+  fallbackTag: 'span' | 'p',
+  blockId?: string
+) => {
   const href = sanitizeUrl(ctx.viewHrefs.get(viewId));
-  const link = href ? `<a href="${escapeHtml(href)}">${escapeHtml(name)}</a>` : undefined;
+  // Resolved URLs are /namespace/publish-name paths with no query or fragment.
+  const targetHref = href && blockId ? `${href}?${new URLSearchParams({ blockId })}` : href;
+  const link = targetHref ? `<a href="${escapeHtml(targetHref)}">${escapeHtml(name)}</a>` : undefined;
 
   if (fallbackTag === 'p') return `<p>${link ?? escapeHtml(name)}</p>`;
 
@@ -301,11 +315,11 @@ const renderMention = (mention: JsonObject, ctx: RenderContext): string => {
   if (linkableId) {
     const label = pageMentionLabel(mention, ctx.viewNames);
 
-    return label ? renderPageName(linkableId, label, ctx, 'span') : '';
+    return label ? renderPageName(linkableId, label, ctx, 'span', asString(mention.block_id)) : '';
   }
 
   if (type === 'date') {
-    const date = formatMentionDate(mention.date);
+    const date = formatMentionDate(mention.date, mention.include_time === true);
 
     return date ? `<time datetime="${escapeHtml(date)}">${escapeHtml(date)}</time>` : '';
   }
@@ -760,7 +774,7 @@ const DESCRIPTION_SKIPPED_CONTAINERS = new Set<string>([BLOCK.code, BLOCK.equati
 const mentionText = (mention: JsonObject, viewNames: Map<string, string>): string | undefined => {
   if (isDatabaseReference(mention)) return mentionTitle(mention) ?? pageMentionLabel(mention, viewNames);
   if (linkablePageMentionId(mention)) return pageMentionLabel(mention, viewNames);
-  if (mention.type === 'date') return formatMentionDate(mention.date);
+  if (mention.type === 'date') return formatMentionDate(mention.date, mention.include_time === true);
   if (mention.type === 'externalLink') return asString(mention.url);
   if (mention.type === 'person') return asString(mention.person_name);
 

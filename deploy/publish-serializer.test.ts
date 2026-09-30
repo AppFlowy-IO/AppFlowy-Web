@@ -250,6 +250,20 @@ describe('serializePublishedPage', () => {
       expect(body([blk('paragraph', [leaf('$', { mention })])])).toBe(expected ? `<p>${expected}</p>` : '');
     });
 
+    it.each([
+      ['2026-09-30T18:30:00Z', true, '2026-09-30T18:30:00.000Z'],
+      ['2026-09-30T18:30:00Z', false, '2026-09-30'],
+      ['2026-10-01T02:30:00+08:00', true, '2026-09-30T18:30:00.000Z'],
+      [1790793000000, true, '2026-09-30T18:30:00.000Z'],
+      ['1790793000000', true, '2026-09-30T18:30:00.000Z'],
+      ['not a date', true, undefined],
+    ])('preserves date mention %p with include_time=%p in the article and description', (date, includeTime, expected) => {
+      const children = [blk('paragraph', [leaf('$', { mention: { type: 'date', date, include_time: includeTime } })])];
+
+      expect(body(children)).toBe(expected ? `<p><time datetime="${expected}">${expected}</time></p>` : '');
+      expect(extractPageDescription(doc(children))).toBe(expected);
+    });
+
     it('resolves page mentions against ancestor views', () => {
       const html = serialize(
         doc([blk('paragraph', [leaf('$', { mention: { type: 'page', page_id: 'anc' } })])], 'T', {
@@ -339,6 +353,31 @@ describe('links to other published pages', () => {
     expect(render([pageMention({ type: 'page', page_id: childId })], new Map())).toBe(
       '<p><span>Child page</span></p>'
     );
+  });
+
+  it.each(['page', 'childPage'])('preserves block targets in %s mentions', (type) => {
+    expect(render([pageMention({ type, page_id: childId, block_id: 'target-block' })], hrefs)).toBe(
+      '<p><a href="/docs/child-page?blockId=target-block">Child page</a></p>'
+    );
+  });
+
+  it('encodes block IDs as query values', () => {
+    expect(render([pageMention({ type: 'page', page_id: childId, block_id: 'block &?#"' })], hrefs)).toBe(
+      '<p><a href="/docs/child-page?blockId=block+%26%3F%23%22">Child page</a></p>'
+    );
+  });
+
+  it.each([undefined, '', 42])('omits empty or malformed block target %p', (blockId) => {
+    expect(render([pageMention({ type: 'page', page_id: childId, block_id: blockId })], hrefs)).toBe(
+      '<p><a href="/docs/child-page">Child page</a></p>'
+    );
+  });
+
+  it('keeps unresolved or unsafe block mentions as plain names', () => {
+    const mention = pageMention({ type: 'page', page_id: childId, block_id: 'target-block' });
+
+    expect(render([mention], new Map())).toBe('<p><span>Child page</span></p>');
+    expect(render([mention], new Map([[childId, 'javascript:alert(1)']]))).toBe('<p><span>Child page</span></p>');
   });
 
   it('does not link database-row mentions', () => {

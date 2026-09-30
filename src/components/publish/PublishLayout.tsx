@@ -1,6 +1,7 @@
 import type { PublishedPageSnapshot } from '@/application/publish-snapshot/types';
 import { useOutlineDrawer } from '@/components/_shared/outline/outline.hooks';
 import { AFScroller } from '@/components/_shared/scroller';
+import { restoreServerRenderedScroll } from '@/components/_shared/ServerRenderedFallback';
 import { PublishViewHeader } from '@/components/publish/header';
 import PublishMain from '@/components/publish/PublishMain';
 import SideBar from '@/components/publish/SideBar';
@@ -33,6 +34,7 @@ function PublishLayout({
       }
     >
       <AFScroller
+        setScrollableContainer={restoreServerRenderedScroll}
         overflowXHidden
         overflowYHidden={isTemplateThumb}
         style={{

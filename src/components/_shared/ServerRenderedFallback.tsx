@@ -10,7 +10,7 @@ import { FullScreenLoading } from '@/components/_shared/FullScreenLoading';
  * this, a reader would see article → full-screen spinner → article. Instead,
  * the article's DOM node is captured before mounting and moved into each
  * fallback, so it stays in place (with its scroll position, and without
- * re-decoding images) until the published page itself commits.
+ * re-decoding images) until the published page commits with its snapshot.
  */
 
 type CapturedMarkup = {
@@ -50,13 +50,25 @@ export function captureServerRenderedMarkup(root: HTMLElement): boolean {
 }
 
 /**
- * Forgets the captured article. Call once the published page has committed:
+ * Forgets the captured article. Call once the published snapshot has committed:
  * from then on, route fallbacks show the normal spinner.
  */
 export function releaseServerRenderedMarkup() {
   stopTrackingRootScroll?.();
   stopTrackingRootScroll = undefined;
   captured = null;
+}
+
+/** Whether the current URL still has an article to show while its snapshot loads. */
+export function hasServerRenderedMarkup(): boolean {
+  return captured !== null && captured.pathname === window.location.pathname;
+}
+
+/** Restore during the client layout's commit, before PublishView releases the article. */
+export function restoreServerRenderedScroll(container: HTMLDivElement | null) {
+  if (container && captured && hasServerRenderedMarkup()) {
+    container.scrollTop = captured.scrollTop;
+  }
 }
 
 function CapturedArticle({ markup }: { markup: CapturedMarkup }) {
@@ -79,6 +91,7 @@ function CapturedArticle({ markup }: { markup: CapturedMarkup }) {
     container.addEventListener('scroll', onScroll, { passive: true });
 
     return () => {
+      markup.scrollTop = container.scrollTop;
       container.removeEventListener('scroll', onScroll);
       if (markup.node.parentNode === container) container.removeChild(markup.node);
     };
@@ -92,12 +105,11 @@ function CapturedArticle({ markup }: { markup: CapturedMarkup }) {
 }
 
 /**
- * Suspense fallback for app-level route boundaries: the captured
- * server-rendered article when there is one for the current URL, otherwise
- * the usual full-screen spinner.
+ * Fallback while a route chunk or published snapshot loads: the captured
+ * article for the current URL, otherwise the usual full-screen spinner.
  */
 export function ServerRenderedFallback({ label }: { label: string }) {
-  const markup = captured && captured.pathname === window.location.pathname ? captured : null;
+  const markup = hasServerRenderedMarkup() ? captured : null;
 
   return markup ? <CapturedArticle markup={markup} /> : <FullScreenLoading label={label} />;
 }
