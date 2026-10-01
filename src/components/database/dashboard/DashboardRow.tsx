@@ -82,6 +82,7 @@ const RowHeightHandle = memo(function RowHeightHandle({
         inert && 'pointer-events-none'
       )}
       data-active={dragging ? 'true' : undefined}
+      data-parity-id='dash-resize-height-handle'
       data-row-id={rowId}
       data-testid='dashboard-height-handle'
       onKeyDown={onKeyDown}
@@ -97,6 +98,7 @@ const RowHeightHandle = memo(function RowHeightHandle({
             ? 'w-full bg-fill-theme-thick'
             : 'w-10 bg-transparent group-hover/height:w-full group-hover/height:!bg-fill-theme-thick group-hover/row:bg-border-primary group-focus-visible/height:w-full group-focus-visible/height:!bg-fill-theme-thick'
         )}
+        data-parity-id='dash-resize-height-handle__band'
       />
       {dragging ? (
         <span className='absolute right-0 top-full mt-1 rounded-200 bg-surface-inverse px-1.5 py-0.5 text-xs text-text-on-fill'>
@@ -218,6 +220,7 @@ export const DashboardRow = memo(function DashboardRow({
     <Button
       aria-label={t('dashboard.addWidget', { defaultValue: 'Add widget' })}
       className={EDGE_BUTTON_CLASS}
+      data-parity-id='dash-row-control-add'
       data-row-id={row.id}
       data-testid='dashboard-add-widget-row-button'
       disabled={Boolean(addDisabledReason)}
@@ -230,13 +233,14 @@ export const DashboardRow = memo(function DashboardRow({
       type='button'
       variant='ghost'
     >
-      <PlusIcon aria-hidden='true' className='h-5 w-5' />
+      <PlusIcon aria-hidden='true' className='h-5 w-5' data-parity-id='dash-row-control-add__icon' />
     </Button>
   );
 
   return (
     <div
       className='group/row relative w-full'
+      data-parity-id='dash-row'
       data-resizing={isResizing ? 'true' : undefined}
       data-row-id={row.id}
       data-row-index={rowIndex}
@@ -290,6 +294,7 @@ export const DashboardRow = memo(function DashboardRow({
                 )}
                 data-active={active ? 'true' : undefined}
                 data-index={boundary.index}
+                data-parity-id='dash-resize-width-handle'
                 data-row-id={row.id}
                 data-testid='dashboard-width-handle'
                 key={boundary.key}
@@ -306,6 +311,7 @@ export const DashboardRow = memo(function DashboardRow({
                       ? 'bg-fill-theme-thick'
                       : 'bg-transparent group-hover/handle:!bg-fill-theme-thick group-hover/row:bg-border-primary group-focus-visible/handle:!bg-fill-theme-thick'
                   )}
+                  data-parity-id='dash-resize-width-handle__pill'
                 />
               </div>
             );

@@ -80,6 +80,7 @@ function HorizontalBarChartWidgetImpl({ data, onBarClick }: HorizontalBarChartWi
           barSize={barHeight - 16}
         >
           <CartesianGrid
+            data-parity-id="dash-chart-grid-line"
             horizontal={false}
             stroke="var(--border-primary)"
             strokeOpacity={0.5}
@@ -111,12 +112,14 @@ function HorizontalBarChartWidgetImpl({ data, onBarClick }: HorizontalBarChartWi
           >
             {data.map((entry, index) => (
               <Cell
+                data-parity-id="dash-chart-bar"
                 key={`cell-${index}`}
                 fill={entry.color}
                 onMouseEnter={(e) => handleMouseEnter(entry, index, e as unknown as React.MouseEvent)}
               />
             ))}
             <LabelList
+              data-parity-id="dash-chart-data-label"
               dataKey="value"
               position="right"
               formatter={formatValue}

@@ -36,6 +36,7 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
 
   return (
     <div
+      data-parity-id='dash-global-filter-bar'
       data-testid='dashboard-global-filter-bar'
       className={cn('flex min-h-[36px] flex-wrap items-center gap-1.5 py-1', className)}
     >
@@ -47,18 +48,22 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
             <Button
               variant='ghost'
               size='sm'
+              data-parity-id='dash-global-filter-add'
               data-testid='dashboard-global-filter-bar-add'
               className='h-7 rounded-full px-2 font-medium text-text-secondary'
               onFocus={preloadGlobalFilterMenu}
               onPointerEnter={preloadGlobalFilterMenu}
             >
-              <PlusIcon className='h-4 w-4 text-icon-secondary' />
-              {t('dashboard.globalFilters.add', { defaultValue: 'Add global filter' })}
+              <PlusIcon className='h-4 w-4 text-icon-secondary' data-parity-id='dash-global-filter-add__icon' />
+              <span data-parity-id='dash-global-filter-add__label'>
+                {t('dashboard.globalFilters.add', { defaultValue: 'Add global filter' })}
+              </span>
             </Button>
           </PopoverTrigger>
           <PopoverContent
             align='start'
             className='w-[360px]'
+            data-parity-id='dash-global-filter-popover'
             onCloseAutoFocus={(event) => event.preventDefault()}
             onClick={(event) => event.stopPropagation()}
           >
@@ -79,6 +84,7 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
             variant='ghost'
             size='sm'
             className='h-7 px-2'
+            data-parity-id='dash-global-filter-reset'
             data-testid='dashboard-global-filter-reset'
             onClick={resetLocal}
           >
@@ -88,6 +94,7 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
             <Button
               size='sm'
               className='h-7 px-2'
+              data-parity-id='dash-global-filter-save'
               data-testid='dashboard-global-filter-save-for-everybody'
               onClick={saveForEverybody}
             >

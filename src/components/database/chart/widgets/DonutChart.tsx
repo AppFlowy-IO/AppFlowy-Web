@@ -61,10 +61,10 @@ function CenterTotal({ total }: { total: number }) {
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ marginBottom: '60px' }}>
       <div className="text-center">
-        <div className="text-3xl font-semibold text-text-primary">
+        <div className="text-3xl font-semibold text-text-primary" data-parity-id="dash-donut-total">
           {Math.round(total)}
         </div>
-        <div className="text-sm text-text-secondary">
+        <div className="text-sm text-text-secondary" data-parity-id="dash-donut-caption">
           Total
         </div>
       </div>
@@ -103,6 +103,7 @@ function renderCustomLabel({
       textAnchor={x > cx ? 'start' : 'end'}
       dominantBaseline="central"
       className="text-xs"
+      data-parity-id="dash-donut-outside-label"
       style={{ fill: 'var(--text-secondary)', fontWeight: 500 }}
     >
       {formatLabel(value, percent)}

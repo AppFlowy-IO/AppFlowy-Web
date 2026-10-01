@@ -29,15 +29,17 @@ function GlobalFilterButtonContent({ compact }: { compact: boolean }) {
               size={compact ? 'icon-sm' : 'icon'}
               aria-label={label}
               className='relative'
+              data-parity-id='dash-toolbar-filter'
               data-testid='dashboard-global-filter-button'
               data-count={count}
               style={{ color: count > 0 ? 'var(--icon-info-thick)' : undefined }}
               onFocus={preloadGlobalFilterMenu}
               onPointerEnter={preloadGlobalFilterMenu}
             >
-              <FilterIcon aria-hidden='true' className='h-5 w-5' />
+              <FilterIcon aria-hidden='true' className='h-5 w-5' data-parity-id='dash-toolbar-filter__icon' />
               {count > 0 && (
                 <span
+                  data-parity-id='dash-toolbar-filter__badge'
                   data-testid='dashboard-global-filter-button-badge'
                   className='absolute -right-1 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-fill-theme-thick px-1 text-[10px] font-medium leading-none text-text-on-fill'
                 >
@@ -54,6 +56,7 @@ function GlobalFilterButtonContent({ compact }: { compact: boolean }) {
       <PopoverContent
         align='end'
         className='w-[360px]'
+        data-parity-id='dash-global-filter-popover'
         onCloseAutoFocus={(event) => event.preventDefault()}
         onClick={(event) => event.stopPropagation()}
       >

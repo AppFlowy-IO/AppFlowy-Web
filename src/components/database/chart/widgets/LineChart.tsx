@@ -80,6 +80,7 @@ function LineChartWidgetImpl({ data, onPointClick }: LineChartWidgetProps) {
             </linearGradient>
           </defs>
           <CartesianGrid
+            data-parity-id="dash-chart-grid-line"
             vertical={false}
             stroke="var(--border-primary)"
             strokeOpacity={0.5}
@@ -128,6 +129,7 @@ function LineChartWidgetImpl({ data, onPointClick }: LineChartWidgetProps) {
             }}
           >
             <LabelList
+              data-parity-id="dash-chart-data-label"
               dataKey="value"
               position="top"
               formatter={formatValue}

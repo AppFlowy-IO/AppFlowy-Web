@@ -27,36 +27,43 @@ export const DashboardActions = memo(function DashboardActions({ compact = false
 
   if (mobileContext) {
     return (
-      <div className='flex items-center gap-1.5' data-mobile='true' data-testid='dashboard-actions'>
+      <div
+        className='flex items-center gap-1.5'
+        data-mobile='true'
+        data-parity-id='dash-toolbar'
+        data-testid='dashboard-actions'
+      >
         <GlobalFilterButton />
       </div>
     );
   }
 
   return (
-    <div className='flex items-center gap-1.5' data-testid='dashboard-actions'>
+    <div className='flex items-center gap-1.5' data-parity-id='dash-toolbar' data-testid='dashboard-actions'>
       <GlobalFilterButton />
       {canEnterEdit ? (
         isEditing ? (
           <Button
+            data-parity-id='dash-toolbar-done-button'
             data-testid='dashboard-done-button'
             onClick={() => setEditing(false)}
             size={compact ? 'sm' : 'default'}
             type='button'
             variant='default'
           >
-            {t('dashboard.done', { defaultValue: 'Done' })}
+            <span data-parity-id='dash-toolbar-done-button__label'>{t('dashboard.done', { defaultValue: 'Done' })}</span>
           </Button>
         ) : (
           <Button
+            data-parity-id='dash-toolbar-edit-button'
             data-testid='dashboard-edit-button'
             onClick={() => setEditing(true)}
             size={compact ? 'sm' : 'default'}
             type='button'
             variant='outline'
           >
-            <EditIcon aria-hidden='true' className='h-4 w-4' />
-            {t('dashboard.edit', { defaultValue: 'Edit' })}
+            <EditIcon aria-hidden='true' className='h-4 w-4' data-parity-id='dash-toolbar-edit-button__icon' />
+            <span data-parity-id='dash-toolbar-edit-button__label'>{t('dashboard.edit', { defaultValue: 'Edit' })}</span>
           </Button>
         )
       ) : null}

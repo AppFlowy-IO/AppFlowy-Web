@@ -27,6 +27,7 @@ export const GlobalFilterChip = memo(function GlobalFilterChip({
       <PopoverTrigger asChild>
         <button
           type='button'
+          data-parity-id='dash-global-filter-pill'
           data-testid='dashboard-global-filter-chip'
           data-filter-id={filter.id}
           data-active={active}
@@ -41,10 +42,12 @@ export const GlobalFilterChip = memo(function GlobalFilterChip({
           )}
         >
           <FieldTypeIcon
+            data-parity-id='dash-global-filter-pill__icon'
             type={filter.fieldType}
             className={cn('h-4 w-4 shrink-0', active ? 'text-other-colors-text-event' : 'text-icon-primary')}
           />
           <span
+            data-parity-id='dash-global-filter-pill__label'
             data-testid='dashboard-global-filter-chip-label'
             className={cn(
               'ml-1 min-w-0 truncate whitespace-nowrap text-sm font-medium',
@@ -54,6 +57,7 @@ export const GlobalFilterChip = memo(function GlobalFilterChip({
             {text}
           </span>
           <span
+            data-parity-id='dash-global-filter-pill__badge'
             data-testid='dashboard-global-filter-chip-count'
             aria-label={sourceLabel}
             title={sourceLabel}
@@ -66,12 +70,14 @@ export const GlobalFilterChip = memo(function GlobalFilterChip({
           </span>
           <ArrowDown
             className={cn('ml-0.5 h-4 w-4 shrink-0', active ? 'text-icon-info-thick' : 'text-icon-secondary')}
+            data-parity-id='dash-global-filter-pill__chevron'
           />
         </button>
       </PopoverTrigger>
       <PopoverContent
         align='start'
         className='w-[360px]'
+        data-parity-id='dash-global-filter-popover'
         onCloseAutoFocus={(event) => event.preventDefault()}
         onClick={(event) => event.stopPropagation()}
       >

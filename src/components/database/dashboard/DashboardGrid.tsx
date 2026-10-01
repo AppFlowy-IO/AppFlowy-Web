@@ -50,7 +50,16 @@ function RowGapDropZone({ rowIndex, height }: { rowIndex: number; height: number
   );
 }
 
-export function AddWidgetButton({ onAdd, className }: { onAdd: () => void; className?: string }) {
+export function AddWidgetButton({
+  onAdd,
+  className,
+  emptyState = false,
+}: {
+  onAdd: () => void;
+  className?: string;
+  /** Rendered by the empty dashboard (its "New view" slot) rather than after the last row. */
+  emptyState?: boolean;
+}) {
   const { t } = useTranslation();
   const { rows } = useDashboardLayout();
   const { showLimitMessage } = useDashboardUi();
@@ -63,6 +72,7 @@ export function AddWidgetButton({ onAdd, className }: { onAdd: () => void; class
         'w-full justify-center border border-dashed border-border-primary text-text-secondary hover:border-border-primary-hover hover:text-text-primary',
         className
       )}
+      data-parity-id={emptyState ? 'dash-empty-new-view' : 'dash-grid-add-row'}
       data-testid='dashboard-add-widget-button'
       disabled={full}
       onClick={onAdd}
@@ -72,8 +82,14 @@ export function AddWidgetButton({ onAdd, className }: { onAdd: () => void; class
       type='button'
       variant='ghost'
     >
-      <PlusIcon aria-hidden='true' className='h-5 w-5' />
-      {t('dashboard.addWidget', { defaultValue: 'Add widget' })}
+      <PlusIcon
+        aria-hidden='true'
+        className='h-5 w-5'
+        data-parity-id={emptyState ? 'dash-empty-new-view__icon' : 'dash-grid-add-row__icon'}
+      />
+      <span data-parity-id={emptyState ? 'dash-empty-new-view__label' : 'dash-grid-add-row__label'}>
+        {t('dashboard.addWidget', { defaultValue: 'Add widget' })}
+      </span>
     </Button>
   );
 
@@ -118,6 +134,7 @@ export const DashboardGrid = memo(function DashboardGrid() {
   return (
     <div
       className='flex w-full flex-col'
+      data-parity-id='dash-grid'
       data-stacked={stacked ? 'true' : 'false'}
       data-testid='dashboard-grid'
       ref={gridRef}

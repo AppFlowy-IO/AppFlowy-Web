@@ -19,7 +19,10 @@ export function ChartTooltip({ label, value, color, percent, showDrilldownHint =
     : value?.toLocaleString();
 
   return (
-    <div className="rounded-lg border border-border-primary bg-fill-primary px-3 py-2 shadow-lg">
+    <div
+      className="rounded-lg border border-border-primary bg-fill-primary px-3 py-2 shadow-lg"
+      data-parity-id="dash-chart-tooltip"
+    >
       <div className="flex items-center gap-2">
         <div
           className="h-3 w-3 rounded-sm"
@@ -31,7 +34,7 @@ export function ChartTooltip({ label, value, color, percent, showDrilldownHint =
         {displayValue}
       </div>
       {showDrilldownHint && (
-        <div className="mt-1 text-xs text-text-secondary">
+        <div className="mt-1 text-xs text-text-secondary" data-parity-id="dash-chart-tooltip__footer">
           {t('chart.tooltip.clickToView', 'Click to view data')}
         </div>
       )}

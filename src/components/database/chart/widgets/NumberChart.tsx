@@ -53,6 +53,7 @@ function NumberChart({ item, title, numberFormat, aggregationType, fieldNumberFo
       ) : (
         <button
           type='button'
+          data-parity-id='dash-number-value'
           data-testid='number-chart-value'
           disabled={!clickable}
           onClick={clickable ? handleClick : undefined}
@@ -67,7 +68,11 @@ function NumberChart({ item, title, numberFormat, aggregationType, fieldNumberFo
         </button>
       )}
       {title && (
-        <div data-testid='number-chart-title' className='max-w-full truncate text-sm text-text-secondary'>
+        <div
+          data-parity-id='dash-number-caption'
+          data-testid='number-chart-title'
+          className='max-w-full truncate text-sm text-text-secondary'
+        >
           {title}
         </div>
       )}

@@ -596,6 +596,7 @@ export const DashboardWidget = memo(function DashboardWidget({
       className='group/widget relative isolate flex min-w-0 flex-col'
       data-database-id={widget.databaseId}
       data-dragging={isDragging ? 'true' : undefined}
+      data-parity-id='dash-widget-box'
       data-testid='dashboard-widget'
       data-view-id={widget.viewId}
       data-widget-id={widget.id}

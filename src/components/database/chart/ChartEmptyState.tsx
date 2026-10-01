@@ -22,7 +22,10 @@ export function ChartEmptyState({ type }: ChartEmptyStateProps) {
   };
 
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-8 text-center">
+    <div
+      className="flex h-full w-full flex-col items-center justify-center gap-4 p-8 text-center"
+      data-parity-id="dash-chart-empty"
+    >
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-fill-secondary">
         <ChartIcon className="h-8 w-8 text-icon-secondary" />
       </div>

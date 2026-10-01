@@ -1,0 +1,1849 @@
+{
+  "schema": "appflowy.dashboard-parity.icons",
+  "version": 1,
+  "normalization": "svg-norm/1: see parity-plan/VISUAL-PARITY.md §4. Strip BOM, XML declaration, DOCTYPE, comments, <title>/<desc>/<metadata> and whitespace-only text; collapse whitespace in attribute values; paint attributes (fill, stroke, color, stop-color, flood-color, lighting-color) other than none/transparent/url(...) become currentColor; drop root width, height, class, style, role, focusable, version, id, xmlns:xlink, xml:space, aria-* and data-*; sort attributes by name; serialize with no whitespace between tags and <x/> for empty elements; sha256 of the UTF-8 result.",
+  "roots": { "web": "AppFlowy-Web", "desktop": "AppFlowy-Premium/frontend" },
+  "canonicalRule": "The canonical glyph is the AppFlowy glyph whose shape matches Notion's reference images (scratchpad/notion-ui); among equal matches, one already present in both repos; otherwise the web asset. Notion SVG paths are never copied into either repo.",
+  "desktopNaming": "A desktop target that does not exist yet is a byte copy of the canonical file named dashboard_<name>.svg in resources/flowy_icons/16x/, so only dashboard chrome changes; app-wide assets (scope app-wide) overwrite the existing desktop asset instead (OD-3).",
+  "probe": "The icons probe fails an icon until web.target and desktop.target both hash to canonical.sha256 (a null canonical fails). The status decides whether that failure blocks: pending reports it, enforced fails the build, waived skips it with a reason.",
+  "statusValues": {
+    "pending": "measured and reported, not blocking",
+    "enforced": "blocking; set at the close of the icon wave",
+    "waived": "not checked; needs a waiver reason"
+  },
+  "icons": [
+    {
+      "name": "filter",
+      "role": "Widget Filter tool and dashboard toolbar Filter (global filters).",
+      "notion": "filterSmall: three horizontal bars of decreasing length (live/icon-filterSmall.svg, live/mktkpi-08b-light-minimize-and-filter-buttons-crop.png).",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-widget-tool-filter__icon", "size": "geometry.widget.toolButton.icon", "wave": 2 },
+        {
+          "parityId": "dash-toolbar-filter__icon",
+          "size": { "calc": "geometry.toolbar.button.size - 2 * geometry.toolbar.button.padding" },
+          "wave": 2
+        }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/filter.svg",
+          "sha256": "3a98388b1b84af12519bb251b6cc839494f9630a61b2105f0e2b9c8a0d81770e",
+          "usages": [
+            "src/components/database/components/conditions/FiltersButton.tsx",
+            "src/components/database/dashboard/global-filters/GlobalFilterButton.tsx"
+          ]
+        },
+        "target": {
+          "asset": "src/assets/icons/filter.svg",
+          "exists": true,
+          "sha256": "3a98388b1b84af12519bb251b6cc839494f9630a61b2105f0e2b9c8a0d81770e"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.filter_s",
+          "asset": "resources/flowy_icons/16x/filter.svg",
+          "sha256": "3a98388b1b84af12519bb251b6cc839494f9630a61b2105f0e2b9c8a0d81770e",
+          "usages": [
+            "appflowy_flutter/lib/plugins/database/grid/presentation/widgets/toolbar/filter_button.dart",
+            "appflowy_flutter/lib/plugins/database/dashboard/presentation/global_filters/global_filter_button.dart"
+          ]
+        },
+        "target": {
+          "symbol": "FlowySvgs.filter_s",
+          "asset": "resources/flowy_icons/16x/filter.svg",
+          "exists": true,
+          "sha256": "3a98388b1b84af12519bb251b6cc839494f9630a61b2105f0e2b9c8a0d81770e"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/filter.svg",
+        "sha256": "3a98388b1b84af12519bb251b6cc839494f9630a61b2105f0e2b9c8a0d81770e",
+        "reason": "Same glyph in both repos (they differ only in paint) and it is the Notion shape."
+      },
+      "currentlyIdentical": true,
+      "currentMatchesCanonical": { "web": true, "desktop": true },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "sort",
+      "role": "Widget Sort tool.",
+      "notion": "Two opposed vertical arrows (official/crop-view-mode-widget-hover-toolbar.png).",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-widget-tool-sort__icon", "size": "geometry.widget.toolButton.icon", "wave": 2 }],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/sort.svg",
+          "sha256": "f69e3394bd4564f4923483b10efb2f2e84e4eb53c05a67055b3053dcf5ac48e5",
+          "usages": ["src/components/database/components/conditions/SortsButton.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/sort.svg",
+          "exists": true,
+          "sha256": "f69e3394bd4564f4923483b10efb2f2e84e4eb53c05a67055b3053dcf5ac48e5"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.sort_s",
+          "asset": "resources/flowy_icons/16x/sort.svg",
+          "sha256": "f69e3394bd4564f4923483b10efb2f2e84e4eb53c05a67055b3053dcf5ac48e5",
+          "usages": ["appflowy_flutter/lib/plugins/database/grid/presentation/widgets/toolbar/sort_button.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.sort_s",
+          "asset": "resources/flowy_icons/16x/sort.svg",
+          "exists": true,
+          "sha256": "f69e3394bd4564f4923483b10efb2f2e84e4eb53c05a67055b3053dcf5ac48e5"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/sort.svg",
+        "sha256": "f69e3394bd4564f4923483b10efb2f2e84e4eb53c05a67055b3053dcf5ac48e5",
+        "reason": "Same glyph in both repos; Notion shape."
+      },
+      "currentlyIdentical": true,
+      "currentMatchesCanonical": { "web": true, "desktop": true },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "search",
+      "role": "Widget Search tool (grid, list, board), the glyph inside the expanded search field, drill-down Search.",
+      "notion": "Magnifier with the handle to the bottom right (official/crop-view-mode-widget-hover-toolbar.png).",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-widget-tool-search__icon", "size": "geometry.widget.toolButton.icon", "wave": 4 },
+        { "parityId": "dash-widget-search-field__icon", "size": 12, "wave": 4 },
+        { "parityId": "dash-drilldown-search__icon", "size": 16, "wave": 5 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/search.svg",
+          "sha256": "63877abc0afe4348d1423c7d8735e682e7190733dcc08ae10f6e93f7d2baf988",
+          "usages": ["src/components/database/components/conditions/DatabaseActions.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/search.svg",
+          "exists": true,
+          "sha256": "63877abc0afe4348d1423c7d8735e682e7190733dcc08ae10f6e93f7d2baf988"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.search_v2_s",
+          "asset": "resources/flowy_icons/16x/search_v2.svg",
+          "sha256": "7bef9358284594383018a6e8ba01987877fc153bc8601559c81ffa3eefdb159c",
+          "usages": ["appflowy_flutter/lib/plugins/database/grid/presentation/widgets/toolbar/search_button.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.dashboard_search_s",
+          "asset": "resources/flowy_icons/16x/dashboard_search.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "web:src/assets/icons/search.svg"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/search.svg",
+        "sha256": "63877abc0afe4348d1423c7d8735e682e7190733dcc08ae10f6e93f7d2baf988",
+        "reason": "Both are the Notion magnifier; the web path is the minimal one (desktop search_v2 adds zero-length segments). No desktop asset holds it yet."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 4,
+      "status": "pending"
+    },
+    {
+      "name": "settings",
+      "role": "Edit-mode widget Settings tool, dashboard toolbar Settings, widget menu \"Edit view\".",
+      "notion": "Sliders: two horizontal lines with offset knobs (official/crop-edit-mode-widget-chrome-zoom.png, thirdparty/chloeforbesk/dashboard-view-create-new-database-view.png).",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-widget-tool-settings__icon", "size": "geometry.widget.toolButton.icon", "wave": 2 },
+        {
+          "parityId": "dash-toolbar-settings__icon",
+          "size": { "calc": "geometry.toolbar.button.size - 2 * geometry.toolbar.button.padding" },
+          "wave": 2
+        },
+        { "parityId": "dash-widget-menu-item-edit-view__icon", "size": 16, "wave": 3 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/settings.svg",
+          "sha256": "66cc73f1da64d03c341c22a1a2083bb40ae59fb54f3427b6f84422c75099b6e5",
+          "usages": ["src/components/database/components/conditions/DatabaseActions.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/controller.svg",
+          "exists": true,
+          "sha256": "8ca2046f7d2b1b2036bf8930633f38a809413f7def005be47189b86631d3d1f1"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.settings_s",
+          "asset": "resources/flowy_icons/16x/settings.svg",
+          "sha256": "66cc73f1da64d03c341c22a1a2083bb40ae59fb54f3427b6f84422c75099b6e5",
+          "usages": ["appflowy_flutter/lib/plugins/database/widgets/setting/setting_button.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.controller_s",
+          "asset": "resources/flowy_icons/16x/controller.svg",
+          "exists": true,
+          "sha256": "8ca2046f7d2b1b2036bf8930633f38a809413f7def005be47189b86631d3d1f1"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/controller.svg",
+        "sha256": "8ca2046f7d2b1b2036bf8930633f38a809413f7def005be47189b86631d3d1f1",
+        "reason": "Both clients render a gear today (identical glyph) but Notion shows sliders. The sliders glyph already exists byte-equivalent in both repos as controller.svg, so WP03 must not add a new sliders.svg (WP03 §2.4 step 24, §3.6): use controller.svg / FlowySvgs.controller_s."
+      },
+      "currentlyIdentical": true,
+      "currentMatchesCanonical": { "web": false, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "open-as-page",
+      "role": "Dashboard toolbar \"Open as full page\" (embedded dashboards only).",
+      "notion": "Two diagonal arrows pointing apart (thirdparty/chloeforbesk/dashboard-view-create-new-database-view.png).",
+      "scope": "dashboard",
+      "contexts": [
+        {
+          "parityId": "dash-toolbar-open-as-page__icon",
+          "size": { "calc": "geometry.toolbar.button.size - 2 * geometry.toolbar.button.padding" },
+          "wave": 2
+        }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/full_screen.svg",
+          "sha256": "6789997bbdb062270671159858d9768f280033efcdf32d456b3aaed92d26f5c8",
+          "usages": ["src/components/database/components/conditions/DatabaseActions.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/full_screen.svg",
+          "exists": true,
+          "sha256": "6789997bbdb062270671159858d9768f280033efcdf32d456b3aaed92d26f5c8"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.database_fullscreen_s",
+          "asset": "resources/flowy_icons/16x/database_fullscreen.svg",
+          "sha256": "eff0e3a3075983a8ce06e04d1fbf94d8dc41fa98906a2925054cbdaeb753617c",
+          "usages": ["appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.full_screen_m",
+          "asset": "resources/flowy_icons/20x/full_screen.svg",
+          "exists": true,
+          "sha256": "6789997bbdb062270671159858d9768f280033efcdf32d456b3aaed92d26f5c8"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/full_screen.svg",
+        "sha256": "6789997bbdb062270671159858d9768f280033efcdf32d456b3aaed92d26f5c8",
+        "reason": "Notion shape; desktop already has the same glyph as 20x/full_screen.svg. WP03 §3.5 step 21 names FlowySvgs.full_view_s, a different glyph: use FlowySvgs.full_screen_m at 16px instead."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "more",
+      "role": "\"Widget options\" button of the hidden-title capsule; drill-down \"...\" menu.",
+      "notion": "Three horizontal dots.",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-widget-options-button__icon", "size": "geometry.widget.toolButton.icon", "wave": 2 },
+        { "parityId": "dash-drilldown-more__icon", "size": 16, "wave": 5 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/more.svg",
+          "sha256": "23f433f5a1f9a8db740350ccfa23c7fbbc019574535b9a720ae82f2ef1a89e21",
+          "usages": ["src/components/database/dashboard/WidgetHeader.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/more.svg",
+          "exists": true,
+          "sha256": "23f433f5a1f9a8db740350ccfa23c7fbbc019574535b9a720ae82f2ef1a89e21"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.three_dots_s",
+          "asset": "resources/flowy_icons/16x/three-dots.svg",
+          "sha256": "3fd376b78f6bf4bd3fbaa64c92d35419debd04f8cd39dd5da64b475d7c9e14c1",
+          "usages": ["appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.more_m",
+          "asset": "resources/flowy_icons/20x/more.svg",
+          "exists": true,
+          "sha256": "23f433f5a1f9a8db740350ccfa23c7fbbc019574535b9a720ae82f2ef1a89e21"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/more.svg",
+        "sha256": "23f433f5a1f9a8db740350ccfa23c7fbbc019574535b9a720ae82f2ef1a89e21",
+        "reason": "Desktop already has the web glyph as 20x/more.svg (FlowySvgs.more_m)."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "dashboard-tab",
+      "role": "Dashboard layout icon in the view tab of the dashboard page (dashboards are never widgets, so no title-pill context).",
+      "notion": "viewDashboard: four rounded tiles (live/icon-viewDashboard.svg). AppFlowy keeps its own four-tile glyph; Notion artwork is reference only.",
+      "scope": "app-wide",
+      "contexts": [{ "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 }],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/dashboard.svg",
+          "sha256": "f4f26adf83317df6a8d2f3a497e4b8b64bf51eee666c3ed2383c4ee232e940ff",
+          "usages": ["src/components/_shared/view-icon/ViewIcon.tsx", "src/components/_shared/view-icon/PageIcon.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/dashboard.svg",
+          "exists": true,
+          "sha256": "f4f26adf83317df6a8d2f3a497e4b8b64bf51eee666c3ed2383c4ee232e940ff"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.dashboard_view_s",
+          "asset": "resources/flowy_icons/16x/dashboard_view.svg",
+          "sha256": "73ada53c0245b6087d1135bc77db16b4f26dc6d6ece9c4a384fd916884886666",
+          "usages": [
+            "appflowy_flutter/lib/plugins/database/dashboard/dashboard.dart",
+            "appflowy_flutter/lib/workspace/application/view/view_ext.dart"
+          ]
+        },
+        "target": {
+          "symbol": "FlowySvgs.dashboard_view_m",
+          "asset": "resources/flowy_icons/20x/dashboard_view.svg",
+          "exists": true,
+          "sha256": "f4f26adf83317df6a8d2f3a497e4b8b64bf51eee666c3ed2383c4ee232e940ff"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/dashboard.svg",
+        "sha256": "f4f26adf83317df6a8d2f3a497e4b8b64bf51eee666c3ed2383c4ee232e940ff",
+        "reason": "Desktop already has the web glyph as 20x/dashboard_view.svg; its 16x variant is a different drawing. view_ext.dart _pickSvg must pick dashboard_view_m for the 16px tab."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "layout-grid",
+      "role": "Grid / table layout icon: view tabs on the dashboard page, widget title icon (\"Show icons in heading\"), breadcrumb tooltip, widget picker rows.",
+      "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
+      "scope": "app-wide",
+      "contexts": [
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/grid.svg",
+          "sha256": "1c5b579672cdc19f07c69e74be09b461889aea4f9f196c98ac0f2703451e4ce0",
+          "usages": ["src/components/_shared/view-icon/ViewIcon.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/grid.svg",
+          "exists": true,
+          "sha256": "1c5b579672cdc19f07c69e74be09b461889aea4f9f196c98ac0f2703451e4ce0"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.grid_s",
+          "asset": "resources/flowy_icons/16x/grid.svg",
+          "sha256": "7e646ea755efb50a6e1adc364f2d45bb0db188bc534b78c750d8595be8c980a9",
+          "usages": ["appflowy_flutter/lib/workspace/application/view/view_ext.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.grid_s",
+          "asset": "resources/flowy_icons/16x/grid.svg",
+          "exists": true,
+          "sha256": "7e646ea755efb50a6e1adc364f2d45bb0db188bc534b78c750d8595be8c980a9"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/grid.svg",
+        "sha256": "1c5b579672cdc19f07c69e74be09b461889aea4f9f196c98ac0f2703451e4ce0",
+        "reason": "No Notion-specific glyph to prefer; the web glyph is canonical. App-wide asset: desktop overwrites the content of its target asset with a byte copy of the web file (OD-3) instead of adding a dashboard-only copy, so the tab bar stays consistent."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "layout-board",
+      "role": "Board layout icon: view tabs on the dashboard page, widget title icon (\"Show icons in heading\"), breadcrumb tooltip, widget picker rows.",
+      "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
+      "scope": "app-wide",
+      "contexts": [
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/board.svg",
+          "sha256": "95361d15e38e63a81d484c766d1da847539c4ef16fe0a7d88ac82c551507f081",
+          "usages": ["src/components/_shared/view-icon/ViewIcon.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/board.svg",
+          "exists": true,
+          "sha256": "95361d15e38e63a81d484c766d1da847539c4ef16fe0a7d88ac82c551507f081"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.board_s",
+          "asset": "resources/flowy_icons/16x/board.svg",
+          "sha256": "2dc70b437210d19ac4a6f16e991bb30c149ab5d0e6206dde67df6ed17999901e",
+          "usages": ["appflowy_flutter/lib/workspace/application/view/view_ext.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.board_s",
+          "asset": "resources/flowy_icons/16x/board.svg",
+          "exists": true,
+          "sha256": "2dc70b437210d19ac4a6f16e991bb30c149ab5d0e6206dde67df6ed17999901e"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/board.svg",
+        "sha256": "95361d15e38e63a81d484c766d1da847539c4ef16fe0a7d88ac82c551507f081",
+        "reason": "No Notion-specific glyph to prefer; the web glyph is canonical. App-wide asset: desktop overwrites the content of its target asset with a byte copy of the web file (OD-3) instead of adding a dashboard-only copy, so the tab bar stays consistent."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "layout-calendar",
+      "role": "Calendar layout icon: view tabs on the dashboard page, widget title icon (\"Show icons in heading\"), breadcrumb tooltip, widget picker rows.",
+      "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
+      "scope": "app-wide",
+      "contexts": [
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/calendar.svg",
+          "sha256": "b064b919ab91735273a84578a97e209bbf00be641908d05e7c2d5c9c8ae5c882",
+          "usages": ["src/components/_shared/view-icon/ViewIcon.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/calendar.svg",
+          "exists": true,
+          "sha256": "b064b919ab91735273a84578a97e209bbf00be641908d05e7c2d5c9c8ae5c882"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.calendar_s",
+          "asset": "resources/flowy_icons/16x/calendar.svg",
+          "sha256": "b064b919ab91735273a84578a97e209bbf00be641908d05e7c2d5c9c8ae5c882",
+          "usages": ["appflowy_flutter/lib/workspace/application/view/view_ext.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.calendar_s",
+          "asset": "resources/flowy_icons/16x/calendar.svg",
+          "exists": true,
+          "sha256": "b064b919ab91735273a84578a97e209bbf00be641908d05e7c2d5c9c8ae5c882"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/calendar.svg",
+        "sha256": "b064b919ab91735273a84578a97e209bbf00be641908d05e7c2d5c9c8ae5c882",
+        "reason": "No Notion-specific glyph to prefer; the web glyph is canonical. App-wide asset: desktop overwrites the content of its target asset with a byte copy of the web file (OD-3) instead of adding a dashboard-only copy, so the tab bar stays consistent."
+      },
+      "currentlyIdentical": true,
+      "currentMatchesCanonical": { "web": true, "desktop": true },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "layout-chart",
+      "role": "Chart layout icon: view tabs on the dashboard page, widget title icon (\"Show icons in heading\"), breadcrumb tooltip, widget picker rows.",
+      "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
+      "scope": "app-wide",
+      "contexts": [
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/chart.svg",
+          "sha256": "687e2ddbce5911614f83503cce2cf900c50aafc916c5315a936d006c8f1ea687",
+          "usages": ["src/components/_shared/view-icon/ViewIcon.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/chart.svg",
+          "exists": true,
+          "sha256": "687e2ddbce5911614f83503cce2cf900c50aafc916c5315a936d006c8f1ea687"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.pie_chart_s",
+          "asset": "resources/flowy_icons/16x/pie_chart.svg",
+          "sha256": "49c41091ce576e3b06e85f0921967ece12fa2b0ea064a12f6f586e5b33d493e4",
+          "usages": ["appflowy_flutter/lib/workspace/application/view/view_ext.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.pie_chart_s",
+          "asset": "resources/flowy_icons/16x/pie_chart.svg",
+          "exists": true,
+          "sha256": "49c41091ce576e3b06e85f0921967ece12fa2b0ea064a12f6f586e5b33d493e4"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/chart.svg",
+        "sha256": "687e2ddbce5911614f83503cce2cf900c50aafc916c5315a936d006c8f1ea687",
+        "reason": "No Notion-specific glyph to prefer; the web glyph is canonical. App-wide asset: desktop overwrites the content of its target asset with a byte copy of the web file (OD-3) instead of adding a dashboard-only copy, so the tab bar stays consistent."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "layout-list",
+      "role": "List layout icon: view tabs on the dashboard page, widget title icon (\"Show icons in heading\"), breadcrumb tooltip, widget picker rows.",
+      "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
+      "scope": "app-wide",
+      "contexts": [
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/list.svg",
+          "sha256": "bc8b228077e70f85df7d7b970056ee19afcb282da8706182ec0953a58bb64d54",
+          "usages": ["src/components/_shared/view-icon/ViewIcon.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/list.svg",
+          "exists": true,
+          "sha256": "bc8b228077e70f85df7d7b970056ee19afcb282da8706182ec0953a58bb64d54"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.multi_select_s",
+          "asset": "resources/flowy_icons/16x/multi_select.svg",
+          "sha256": "0e4a166db9552815254594fa7cd09c2d7191ad2066ce6a71af93f53e6950832a",
+          "usages": ["appflowy_flutter/lib/workspace/application/view/view_ext.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.multi_select_s",
+          "asset": "resources/flowy_icons/16x/multi_select.svg",
+          "exists": true,
+          "sha256": "0e4a166db9552815254594fa7cd09c2d7191ad2066ce6a71af93f53e6950832a"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/list.svg",
+        "sha256": "bc8b228077e70f85df7d7b970056ee19afcb282da8706182ec0953a58bb64d54",
+        "reason": "No Notion-specific glyph to prefer; the web glyph is canonical. App-wide asset: desktop overwrites the content of its target asset with a byte copy of the web file (OD-3) instead of adding a dashboard-only copy, so the tab bar stays consistent."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "layout-gallery",
+      "role": "Gallery layout icon: view tabs on the dashboard page, widget title icon (\"Show icons in heading\"), breadcrumb tooltip, widget picker rows.",
+      "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
+      "scope": "app-wide",
+      "contexts": [
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/gallery.svg",
+          "sha256": "dfa3c7afd4e3babda690ba775c36c840453599630cfe00f9b4a25dfef8431bfc",
+          "usages": ["src/components/_shared/view-icon/ViewIcon.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/gallery.svg",
+          "exists": true,
+          "sha256": "dfa3c7afd4e3babda690ba775c36c840453599630cfe00f9b4a25dfef8431bfc"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.gallery_view_s",
+          "asset": "resources/flowy_icons/16x/gallery_view.svg",
+          "sha256": "c2bccc3c7bf2961a0733a4ec98c6e4469fce77bf06e44860398aee54b802e8a8",
+          "usages": ["appflowy_flutter/lib/workspace/application/view/view_ext.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.gallery_view_s",
+          "asset": "resources/flowy_icons/16x/gallery_view.svg",
+          "exists": true,
+          "sha256": "c2bccc3c7bf2961a0733a4ec98c6e4469fce77bf06e44860398aee54b802e8a8"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/gallery.svg",
+        "sha256": "dfa3c7afd4e3babda690ba775c36c840453599630cfe00f9b4a25dfef8431bfc",
+        "reason": "No Notion-specific glyph to prefer; the web glyph is canonical. App-wide asset: desktop overwrites the content of its target asset with a byte copy of the web file (OD-3) instead of adding a dashboard-only copy, so the tab bar stays consistent."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "layout-feed",
+      "role": "Feed layout icon: view tabs on the dashboard page, widget title icon (\"Show icons in heading\"), breadcrumb tooltip, widget picker rows.",
+      "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
+      "scope": "app-wide",
+      "contexts": [
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/feed.svg",
+          "sha256": "aee333f160f6241b9be42b54e608d03d78ad3447abdce7bdb6a22d92a812cfe9",
+          "usages": ["src/components/_shared/view-icon/ViewIcon.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/feed.svg",
+          "exists": true,
+          "sha256": "aee333f160f6241b9be42b54e608d03d78ad3447abdce7bdb6a22d92a812cfe9"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.feed_s",
+          "asset": "resources/flowy_icons/16x/feed.svg",
+          "sha256": "aee333f160f6241b9be42b54e608d03d78ad3447abdce7bdb6a22d92a812cfe9",
+          "usages": ["appflowy_flutter/lib/workspace/application/view/view_ext.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.feed_s",
+          "asset": "resources/flowy_icons/16x/feed.svg",
+          "exists": true,
+          "sha256": "aee333f160f6241b9be42b54e608d03d78ad3447abdce7bdb6a22d92a812cfe9"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/feed.svg",
+        "sha256": "aee333f160f6241b9be42b54e608d03d78ad3447abdce7bdb6a22d92a812cfe9",
+        "reason": "No Notion-specific glyph to prefer; the web glyph is canonical. App-wide asset: desktop overwrites the content of its target asset with a byte copy of the web file (OD-3) instead of adding a dashboard-only copy, so the tab bar stays consistent."
+      },
+      "currentlyIdentical": true,
+      "currentMatchesCanonical": { "web": true, "desktop": true },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "layout-timeline",
+      "role": "Timeline layout icon: view tabs on the dashboard page, widget title icon (\"Show icons in heading\"), breadcrumb tooltip, widget picker rows.",
+      "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
+      "scope": "app-wide",
+      "contexts": [
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/timeline.svg",
+          "sha256": "4b2d4cc97b40cc4fc23516151a0d25e0400a8adfebfdf5020b87bde112c5737f",
+          "usages": ["src/components/_shared/view-icon/ViewIcon.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/timeline.svg",
+          "exists": true,
+          "sha256": "4b2d4cc97b40cc4fc23516151a0d25e0400a8adfebfdf5020b87bde112c5737f"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.timeline_s",
+          "asset": "resources/flowy_icons/16x/timeline.svg",
+          "sha256": "cea9dde57e4afa80f6b118b786aeaf1acc366ab8a7ae4732ca28b12f9ca04596",
+          "usages": ["appflowy_flutter/lib/workspace/application/view/view_ext.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.timeline_s",
+          "asset": "resources/flowy_icons/16x/timeline.svg",
+          "exists": true,
+          "sha256": "cea9dde57e4afa80f6b118b786aeaf1acc366ab8a7ae4732ca28b12f9ca04596"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/timeline.svg",
+        "sha256": "4b2d4cc97b40cc4fc23516151a0d25e0400a8adfebfdf5020b87bde112c5737f",
+        "reason": "No Notion-specific glyph to prefer; the web glyph is canonical. App-wide asset: desktop overwrites the content of its target asset with a byte copy of the web file (OD-3) instead of adding a dashboard-only copy, so the tab bar stays consistent."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "field-type-text",
+      "role": "Text property icon in the grid header inside grid widgets (the \"Name\" column of the user report).",
+      "notion": "Text properties show a paragraph-lines glyph; the title property shows \"Aa\" (live/mktbudget-02-light-table-widget.png).",
+      "scope": "app-wide",
+      "contexts": [{ "parityId": "dash-widget-grid-header-cell__icon", "size": 16, "wave": 2 }],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/database/text.svg",
+          "sha256": "bc8b228077e70f85df7d7b970056ee19afcb282da8706182ec0953a58bb64d54",
+          "usages": ["src/components/database/components/field/FieldTypeIcon.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/database/text.svg",
+          "exists": true,
+          "sha256": "bc8b228077e70f85df7d7b970056ee19afcb282da8706182ec0953a58bb64d54"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.text_s",
+          "asset": "resources/flowy_icons/16x/text.svg",
+          "sha256": "85c9d369d4385f86e6dfa082678be2f8b363b8177daa73601e5ece65ce2f8d86",
+          "usages": ["appflowy_flutter/lib/util/field_type_extension.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.text_s",
+          "asset": "resources/flowy_icons/16x/text.svg",
+          "exists": true,
+          "sha256": "85c9d369d4385f86e6dfa082678be2f8b363b8177daa73601e5ece65ce2f8d86"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/database/text.svg",
+        "sha256": "bc8b228077e70f85df7d7b970056ee19afcb282da8706182ec0953a58bb64d54",
+        "reason": "Lines glyph matches Notion text properties; desktop shows a \"T\". App-wide asset (OD-3): desktop overwrites 16x/text.svg with the web glyph, or OD-3 waives the whole field-type group."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "field-type-single-select",
+      "role": "Single-select property icon in the grid header inside grid widgets.",
+      "notion": "Circle with a down chevron.",
+      "scope": "app-wide",
+      "contexts": [{ "parityId": "dash-widget-grid-header-cell__icon", "size": 16, "wave": 2 }],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/database/single_select.svg",
+          "sha256": "16403e153d62108d310778dfbf452b60f373db3f2f2ab52397f51cf2afd9da4b",
+          "usages": ["src/components/database/components/field/FieldTypeIcon.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/database/single_select.svg",
+          "exists": true,
+          "sha256": "16403e153d62108d310778dfbf452b60f373db3f2f2ab52397f51cf2afd9da4b"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.single_select_s",
+          "asset": "resources/flowy_icons/16x/single_select.svg",
+          "sha256": "7f610a581d97da1083eca3d757c7ebb4df917bfc2a184438aecd255d1f08a380",
+          "usages": ["appflowy_flutter/lib/util/field_type_extension.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.single_select_m",
+          "asset": "resources/flowy_icons/20x/single_select.svg",
+          "exists": true,
+          "sha256": "16403e153d62108d310778dfbf452b60f373db3f2f2ab52397f51cf2afd9da4b"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/database/single_select.svg",
+        "sha256": "16403e153d62108d310778dfbf452b60f373db3f2f2ab52397f51cf2afd9da4b",
+        "reason": "Desktop already has the web glyph as 20x/single_select.svg (and 16x/type_selection.svg); field_type_extension.dart picks it at 16px."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "field-type-number",
+      "role": "Number property icon in the grid header; Number chart type button.",
+      "notion": "\"#\" (spec §8.1).",
+      "scope": "app-wide",
+      "contexts": [
+        { "parityId": "dash-widget-grid-header-cell__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-chart-type-button-number__icon", "size": 20, "wave": 3 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/database/number.svg",
+          "sha256": "76a6aa2a7cd024a1d9add554108dbb22da381ba810aaf0a2be15f20d07c3b2bc",
+          "usages": ["src/components/database/components/field/FieldTypeIcon.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/hashtag.svg",
+          "exists": true,
+          "sha256": "76a6aa2a7cd024a1d9add554108dbb22da381ba810aaf0a2be15f20d07c3b2bc"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.hashtag_s",
+          "asset": "resources/flowy_icons/16x/hashtag.svg",
+          "sha256": "76a6aa2a7cd024a1d9add554108dbb22da381ba810aaf0a2be15f20d07c3b2bc",
+          "usages": ["appflowy_flutter/lib/util/field_type_extension.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.hashtag_s",
+          "asset": "resources/flowy_icons/16x/hashtag.svg",
+          "exists": true,
+          "sha256": "76a6aa2a7cd024a1d9add554108dbb22da381ba810aaf0a2be15f20d07c3b2bc"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/hashtag.svg",
+        "sha256": "76a6aa2a7cd024a1d9add554108dbb22da381ba810aaf0a2be15f20d07c3b2bc",
+        "reason": "Already identical in both repos (web database/number.svg = hashtag.svg = desktop hashtag_s)."
+      },
+      "currentlyIdentical": true,
+      "currentMatchesCanonical": { "web": true, "desktop": true },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "row-move-up",
+      "role": "Edit-mode row control \"Move up\" (left gutter).",
+      "notion": "Arrow with a stem, pointing up, in a light-blue pill (official/crop-edit-mode-row-move-up-down-control.png).",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-row-control-move-up__icon", "size": 16, "wave": 3 }],
+      "web": {
+        "current": null,
+        "currentNote": "no row move control today (WidgetMenu has \"Move up\" with arrow_up.svg; WP04 removes it)",
+        "target": {
+          "asset": "src/assets/icons/arrow_up.svg",
+          "exists": true,
+          "sha256": "a7672473f914355c08b15bfa4485594b23d7800786dbde7ec3854879374e738e"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.arrow_up_s",
+          "asset": "resources/flowy_icons/16x/arrow_up.svg",
+          "sha256": "ef88c71c071cb02b9a1de8b6a00ea8fea068d1cd6210ed7ec6e43da419e9a155",
+          "usages": ["appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.dashboard_arrow_up_s",
+          "asset": "resources/flowy_icons/16x/dashboard_arrow_up.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "web:src/assets/icons/arrow_up.svg"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/arrow_up.svg",
+        "sha256": "a7672473f914355c08b15bfa4485594b23d7800786dbde7ec3854879374e738e",
+        "reason": "Notion shows stemmed arrows; desktop arrow_up_s is a rotated chevron."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": false, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "row-move-down",
+      "role": "Edit-mode row control \"Move down\" (left gutter).",
+      "notion": "Arrow with a stem, pointing down (official/crop-edit-mode-widget-chrome-zoom.png).",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-row-control-move-down__icon", "size": 16, "wave": 3 }],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/arrow_down.svg",
+          "sha256": "906b846268e9be8db2716c7b5166d17ad7dad5680d517062ac68204d86515883",
+          "usages": ["src/components/database/dashboard/DashboardRow.tsx", "src/components/database/dashboard/WidgetMenu.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/arrow_down.svg",
+          "exists": true,
+          "sha256": "906b846268e9be8db2716c7b5166d17ad7dad5680d517062ac68204d86515883"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.arrow_down_s",
+          "asset": "resources/flowy_icons/16x/arrow_down.svg",
+          "sha256": "18e53667cad7299ac4b08c4e55000b7a6a8fc6e5329b4a2035fa686ca2eaca6c",
+          "usages": [
+            "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_grid.dart",
+            "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart"
+          ]
+        },
+        "target": {
+          "symbol": "FlowySvgs.dashboard_arrow_down_s",
+          "asset": "resources/flowy_icons/16x/dashboard_arrow_down.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "web:src/assets/icons/arrow_down.svg"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/arrow_down.svg",
+        "sha256": "906b846268e9be8db2716c7b5166d17ad7dad5680d517062ac68204d86515883",
+        "reason": "Notion shows stemmed arrows; desktop arrow_down_s is a rotated chevron."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "move-left",
+      "role": "Widget menu \"Move left\".",
+      "notion": "Stemmed arrow left (spec §7.1).",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-widget-menu-item-move-left__icon", "size": 16, "wave": 3 }],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/arrow_left.svg",
+          "sha256": "4ad60d801da6f43d5845c6c505d15e638125f0761e9b3b793a8755b806cd1f91",
+          "usages": ["src/components/database/dashboard/WidgetMenu.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/arrow_left.svg",
+          "exists": true,
+          "sha256": "4ad60d801da6f43d5845c6c505d15e638125f0761e9b3b793a8755b806cd1f91"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.arrow_left_s",
+          "asset": "resources/flowy_icons/16x/arrow_left.svg",
+          "sha256": "fa173a87dcca8bd96071bfd4b9c3b7244db2fca3b0f6960a06b09cb2cc430e4d",
+          "usages": ["appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.dashboard_arrow_left_s",
+          "asset": "resources/flowy_icons/16x/dashboard_arrow_left.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "web:src/assets/icons/arrow_left.svg"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/arrow_left.svg",
+        "sha256": "4ad60d801da6f43d5845c6c505d15e638125f0761e9b3b793a8755b806cd1f91",
+        "reason": "Notion shows stemmed arrows; desktop arrow_left_s is a chevron."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "move-right",
+      "role": "Widget menu \"Move right\".",
+      "notion": "Stemmed arrow right (spec §7.1).",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-widget-menu-item-move-right__icon", "size": 16, "wave": 3 }],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/arrow_right.svg",
+          "sha256": "579e2eba5c6ca59456d3485d16da42359c029f2db0a10c3967a79535f0c4d4f1",
+          "usages": ["src/components/database/dashboard/WidgetMenu.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/arrow_right.svg",
+          "exists": true,
+          "sha256": "579e2eba5c6ca59456d3485d16da42359c029f2db0a10c3967a79535f0c4d4f1"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.arrow_right_s",
+          "asset": "resources/flowy_icons/16x/arrow_right.svg",
+          "sha256": "dfeb047c9ea3aebddd3f7912bd37d4b9f619756c457d407de3ff1e203311b694",
+          "usages": ["appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.dashboard_arrow_right_s",
+          "asset": "resources/flowy_icons/16x/dashboard_arrow_right.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "web:src/assets/icons/arrow_right.svg"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/arrow_right.svg",
+        "sha256": "579e2eba5c6ca59456d3485d16da42359c029f2db0a10c3967a79535f0c4d4f1",
+        "reason": "Notion shows stemmed arrows; desktop arrow_right_s is a chevron."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "move-to-row",
+      "role": "Widget menu \"Move to row\".",
+      "notion": "Up-down arrow (spec §7.1).",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-widget-menu-item-move-to-row__icon", "size": 16, "wave": 3 }],
+      "web": {
+        "current": null,
+        "target": { "asset": "src/assets/icons/dashboard_move_to_row.svg", "exists": false, "sha256": null }
+      },
+      "desktop": {
+        "current": null,
+        "target": {
+          "symbol": "FlowySvgs.dashboard_move_to_row_s",
+          "asset": "resources/flowy_icons/16x/dashboard_move_to_row.svg",
+          "exists": false,
+          "sha256": null
+        }
+      },
+      "canonical": {
+        "source": "new",
+        "sha256": null,
+        "reason": "WP04 §2.2 authors one new SVG committed byte-identically to both repos and records its hash here in the same commit."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": false, "desktop": false },
+      "targetsMatchCanonical": { "web": false, "desktop": false },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "row-above",
+      "role": "Widget menu \"Create new row above\".",
+      "notion": "Arrow up to a bar (spec §7.1).",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-widget-menu-item-row-above__icon", "size": 16, "wave": 3 }],
+      "web": {
+        "current": null,
+        "target": { "asset": "src/assets/icons/dashboard_row_above.svg", "exists": false, "sha256": null }
+      },
+      "desktop": {
+        "current": null,
+        "target": {
+          "symbol": "FlowySvgs.dashboard_row_above_s",
+          "asset": "resources/flowy_icons/16x/dashboard_row_above.svg",
+          "exists": false,
+          "sha256": null
+        }
+      },
+      "canonical": { "source": "new", "sha256": null, "reason": "New WP04 asset, byte-identical in both repos." },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": false, "desktop": false },
+      "targetsMatchCanonical": { "web": false, "desktop": false },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "row-below",
+      "role": "Widget menu \"Create new row below\".",
+      "notion": "Arrow down to a bar (spec §7.1).",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-widget-menu-item-row-below__icon", "size": 16, "wave": 3 }],
+      "web": {
+        "current": null,
+        "target": { "asset": "src/assets/icons/dashboard_row_below.svg", "exists": false, "sha256": null }
+      },
+      "desktop": {
+        "current": null,
+        "target": {
+          "symbol": "FlowySvgs.dashboard_row_below_s",
+          "asset": "resources/flowy_icons/16x/dashboard_row_below.svg",
+          "exists": false,
+          "sha256": null
+        }
+      },
+      "canonical": { "source": "new", "sha256": null, "reason": "New WP04 asset, byte-identical in both repos." },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": false, "desktop": false },
+      "targetsMatchCanonical": { "web": false, "desktop": false },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "view-data-source",
+      "role": "Read-only widget menu \"View data source\".",
+      "notion": "Arrow pointing up and right (live/mktkpi-07-light-widget-options-menu.png).",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-widget-menu-item-view-data-source__icon", "size": 16, "wave": 3 }],
+      "web": { "current": null, "target": { "asset": "src/assets/icons/arrow_up_right.svg", "exists": false, "sha256": null } },
+      "desktop": {
+        "current": null,
+        "target": {
+          "symbol": "FlowySvgs.arrow_up_right_s",
+          "asset": "resources/flowy_icons/16x/arrow_up_right.svg",
+          "exists": false,
+          "sha256": null
+        }
+      },
+      "canonical": { "source": "new", "sha256": null, "reason": "New WP04 asset, byte-identical in both repos." },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": false, "desktop": false },
+      "targetsMatchCanonical": { "web": false, "desktop": false },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "duplicate",
+      "role": "Widget menu \"Duplicate\".",
+      "notion": "Two overlapping rounded squares, no plus (spec §7.1).",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-widget-menu-item-duplicate__icon", "size": 16, "wave": 3 }],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/duplicate.svg",
+          "sha256": "98c551c130b823ee85c040d6dd3cdb238d5ee49adb4e45a3521e5748208d39cd",
+          "usages": ["src/components/database/dashboard/WidgetMenu.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/database-template/duplicate.svg",
+          "exists": true,
+          "sha256": "244249c94f3f20dca70b074ef78cb8e2594f118ba00ef1c3ec84ca4154c68fda"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.duplicate_s",
+          "asset": "resources/flowy_icons/16x/duplicate.svg",
+          "sha256": "244249c94f3f20dca70b074ef78cb8e2594f118ba00ef1c3ec84ca4154c68fda",
+          "usages": ["appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.duplicate_s",
+          "asset": "resources/flowy_icons/16x/duplicate.svg",
+          "exists": true,
+          "sha256": "244249c94f3f20dca70b074ef78cb8e2594f118ba00ef1c3ec84ca4154c68fda"
+        }
+      },
+      "canonical": {
+        "source": "desktop:resources/flowy_icons/16x/duplicate.svg",
+        "sha256": "244249c94f3f20dca70b074ef78cb8e2594f118ba00ef1c3ec84ca4154c68fda",
+        "reason": "The desktop glyph matches Notion (web duplicate.svg adds a plus) and web already holds it as database-template/duplicate.svg."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": false, "desktop": true },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "delete",
+      "role": "Widget menu \"Delete\"; placeholder \"Remove\".",
+      "notion": "Trash can, neutral colour.",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-widget-menu-item-delete__icon", "size": 16, "wave": 3 }],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/delete.svg",
+          "sha256": "9b9daf429a95bc5714daeef12ba5d8115636a399471527050763fe4d8cb83a29",
+          "usages": [
+            "src/components/database/dashboard/WidgetMenu.tsx",
+            "src/components/database/dashboard/WidgetPlaceholder.tsx"
+          ]
+        },
+        "target": {
+          "asset": "src/assets/icons/delete.svg",
+          "exists": true,
+          "sha256": "9b9daf429a95bc5714daeef12ba5d8115636a399471527050763fe4d8cb83a29"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.delete_s",
+          "asset": "resources/flowy_icons/16x/delete.svg",
+          "sha256": "9b9daf429a95bc5714daeef12ba5d8115636a399471527050763fe4d8cb83a29",
+          "usages": ["appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.delete_s",
+          "asset": "resources/flowy_icons/16x/delete.svg",
+          "exists": true,
+          "sha256": "9b9daf429a95bc5714daeef12ba5d8115636a399471527050763fe4d8cb83a29"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/delete.svg",
+        "sha256": "9b9daf429a95bc5714daeef12ba5d8115636a399471527050763fe4d8cb83a29",
+        "reason": "Already identical in both repos."
+      },
+      "currentlyIdentical": true,
+      "currentMatchesCanonical": { "web": true, "desktop": true },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "add",
+      "role": "Row \"+\" (Add to row), bottom \"+\" (Add to new row), global filter \"+ Filter\", \"+ Add filter\" in the Filters popover, empty-state \"+ New view\" pill, widget \"+\" split segment, grid \"+ New page\" row.",
+      "notion": "Thin plus (official/crop-edit-mode-row-add-widget-plus.png).",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-row-control-add__icon", "size": 16, "wave": 3 },
+        { "parityId": "dash-grid-add-row__icon", "size": 16, "wave": 3 },
+        { "parityId": "dash-global-filter-add__icon", "size": 16, "wave": 3 },
+        { "parityId": "dash-empty-new-view__icon", "size": 16, "wave": 4 },
+        { "parityId": "dash-widget-tool-new__icon", "size": 16, "wave": 4 },
+        { "parityId": "dash-widget-grid-new-row__icon", "size": 16, "wave": 4 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/plus.svg",
+          "sha256": "0dc0e8238453668095d42b1841793f5f42df9b8c762cb78b627d0ca7c11a11fa",
+          "usages": [
+            "src/components/database/dashboard/DashboardGrid.tsx", "src/components/database/dashboard/DashboardRow.tsx",
+            "src/components/database/dashboard/global-filters/GlobalFilterBar.tsx"
+          ]
+        },
+        "target": {
+          "asset": "src/assets/icons/plus.svg",
+          "exists": true,
+          "sha256": "0dc0e8238453668095d42b1841793f5f42df9b8c762cb78b627d0ca7c11a11fa"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.add_s",
+          "asset": "resources/flowy_icons/16x/add.svg",
+          "sha256": "357d04c80397828584772167e78822806e6c26de74168b28f08c9856ff155b6f",
+          "usages": [
+            "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_grid.dart",
+            "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/add_widget_button.dart",
+            "appflowy_flutter/lib/plugins/database/dashboard/presentation/global_filters/global_filter_bar.dart",
+            "appflowy_flutter/lib/plugins/database/grid/presentation/widgets/footer/grid_footer.dart"
+          ]
+        },
+        "target": {
+          "symbol": "FlowySvgs.plus_s",
+          "asset": "resources/flowy_icons/16x/plus.svg",
+          "exists": true,
+          "sha256": "0dc0e8238453668095d42b1841793f5f42df9b8c762cb78b627d0ca7c11a11fa"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/plus.svg",
+        "sha256": "0dc0e8238453668095d42b1841793f5f42df9b8c762cb78b627d0ca7c11a11fa",
+        "reason": "Desktop already has the web glyph as 16x/plus.svg (FlowySvgs.plus_s); add_s is drawn from two rects. WP06 §3 and WP09 §3 name FlowySvgs.add_s: use plus_s."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "drag",
+      "role": "Drag handles of filter and sort rules in the widget popovers and of Number \"Dynamic color\" rules. The widget header drag glyph is removed in W2 (no context).",
+      "notion": "Six dots in two columns.",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-widget-filters-popover-rule__drag-icon", "size": 16, "wave": 3 },
+        { "parityId": "dash-number-color-rule__drag-icon", "size": 16, "wave": 3 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/drag.svg",
+          "sha256": "f60b20b02d6aba70c060649eb79652edb8da8ec2e4031242cf8bea581e7c0726",
+          "usages": ["src/components/database/dashboard/WidgetHeader.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/drag.svg",
+          "exists": true,
+          "sha256": "f60b20b02d6aba70c060649eb79652edb8da8ec2e4031242cf8bea581e7c0726"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.drag_element_s",
+          "asset": "resources/flowy_icons/16x/drag_element.svg",
+          "sha256": "47bc241c80cbbcdb75ad9add6bad9b8cf51ce3651ed86f8f4cecc02b09560168",
+          "usages": ["appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.drag_s",
+          "asset": "resources/flowy_icons/16x/drag.svg",
+          "exists": true,
+          "sha256": "f60b20b02d6aba70c060649eb79652edb8da8ec2e4031242cf8bea581e7c0726"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/drag.svg",
+        "sha256": "f60b20b02d6aba70c060649eb79652edb8da8ec2e4031242cf8bea581e7c0726",
+        "reason": "Notion dots; desktop already has the web glyph as 16x/drag.svg (FlowySvgs.drag_s); drag_element_s uses squares."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "close",
+      "role": "Round close button of the widget settings host, Filters and Sorts popovers, picker, global filter builder, drill-down dismiss.",
+      "notion": "Small x in a round button (spec §7.2, §8.8).",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-widget-settings-close__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-filters-popover-close__icon", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-picker-close__icon", "size": 16, "wave": 4 },
+        { "parityId": "dash-drilldown-dismiss__icon", "size": 16, "wave": 5 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/close.svg",
+          "sha256": "adf8e4166f4227d77a473b270e7227dce9c6b23078442cbbdc988b816ffd9fcb",
+          "usages": [
+            "src/components/database/dashboard/global-filters/GlobalFilterEditor.tsx",
+            "src/components/database/components/conditions/DatabaseActions.tsx"
+          ]
+        },
+        "target": {
+          "asset": "src/assets/icons/close.svg",
+          "exists": true,
+          "sha256": "adf8e4166f4227d77a473b270e7227dce9c6b23078442cbbdc988b816ffd9fcb"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.close_s",
+          "asset": "resources/flowy_icons/16x/close.svg",
+          "sha256": "995b1eecdd5d88f02b237f17168059c1d935ee0c8b5a7ba6f808699e0bc2ed4d",
+          "usages": [
+            "appflowy_flutter/lib/plugins/database/dashboard/presentation/global_filters/global_filter_editor.dart",
+            "appflowy_flutter/lib/plugins/database/dashboard/presentation/widget_picker/widget_picker_dialog.dart"
+          ]
+        },
+        "target": {
+          "symbol": "FlowySvgs.dashboard_close_s",
+          "asset": "resources/flowy_icons/16x/dashboard_close.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "web:src/assets/icons/close.svg"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/close.svg",
+        "sha256": "adf8e4166f4227d77a473b270e7227dce9c6b23078442cbbdc988b816ffd9fcb",
+        "reason": "Equivalent x glyphs; no desktop asset holds the web drawing (close_s is two rotated rects, close_v2 and 20x/close are different sizes), so desktop adds a dashboard copy."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "chevron-down",
+      "role": "Global filter pill chevron, widget \"+\" split chevron, filter rule chips.",
+      "notion": "Small down chevron (spec §9).",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-global-filter-pill__chevron", "size": 12, "wave": 3 },
+        { "parityId": "dash-widget-tool-new__chevron", "size": 16, "wave": 4 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/alt_arrow_down.svg",
+          "sha256": "8836cdc4764da20c9b732acbe07e7bb459989dea218fefaa1c9924672fd5497f",
+          "usages": [
+            "src/components/database/dashboard/global-filters/GlobalFilterChip.tsx",
+            "src/components/database/dashboard/global-filters/GlobalFilterEditor.tsx"
+          ]
+        },
+        "target": {
+          "asset": "src/assets/icons/alt_arrow_down.svg",
+          "exists": true,
+          "sha256": "8836cdc4764da20c9b732acbe07e7bb459989dea218fefaa1c9924672fd5497f"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.arrow_down_s",
+          "asset": "resources/flowy_icons/16x/arrow_down.svg",
+          "sha256": "18e53667cad7299ac4b08c4e55000b7a6a8fc6e5329b4a2035fa686ca2eaca6c",
+          "usages": ["appflowy_flutter/lib/plugins/database/dashboard/presentation/global_filters/global_filter_bar.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.alt_arrow_down_s",
+          "asset": "resources/flowy_icons/16x/alt_arrow_down.svg",
+          "exists": true,
+          "sha256": "8836cdc4764da20c9b732acbe07e7bb459989dea218fefaa1c9924672fd5497f"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/alt_arrow_down.svg",
+        "sha256": "8836cdc4764da20c9b732acbe07e7bb459989dea218fefaa1c9924672fd5497f",
+        "reason": "Already identical in both repos as alt_arrow_down; desktop arrow_down_s is a different chevron. WP08 §1.5 names FlowySvgs.arrow_down_s: use alt_arrow_down_s."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "chevron-left",
+      "role": "Back button of chart-panel sub-pages, the global filter builder and the picker.",
+      "notion": "Left chevron.",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-chart-panel-back__icon", "size": 16, "wave": 3 },
+        { "parityId": "dash-global-filter-back__icon", "size": 16, "wave": 3 },
+        { "parityId": "dash-widget-picker-back__icon", "size": 16, "wave": 4 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/alt_arrow_left.svg",
+          "sha256": "4144772f3677639d3cd5bb72075cfe288b39cf7a9c24aa45cc4ddd4a11599f44",
+          "usages": [
+            "src/components/database/dashboard/global-filters/GlobalFilterMenu.tsx",
+            "src/components/database/dashboard/global-filters/GlobalFilterEditor.tsx"
+          ]
+        },
+        "target": {
+          "asset": "src/assets/icons/alt_arrow_left.svg",
+          "exists": true,
+          "sha256": "4144772f3677639d3cd5bb72075cfe288b39cf7a9c24aa45cc4ddd4a11599f44"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.arrow_left_s",
+          "asset": "resources/flowy_icons/16x/arrow_left.svg",
+          "sha256": "fa173a87dcca8bd96071bfd4b9c3b7244db2fca3b0f6960a06b09cb2cc430e4d",
+          "usages": ["appflowy_flutter/lib/plugins/database/dashboard/presentation/global_filters/global_filter_button.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.dashboard_chevron_left_s",
+          "asset": "resources/flowy_icons/16x/dashboard_chevron_left.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "web:src/assets/icons/alt_arrow_left.svg"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/alt_arrow_left.svg",
+        "sha256": "4144772f3677639d3cd5bb72075cfe288b39cf7a9c24aa45cc4ddd4a11599f44",
+        "reason": "No glyph is shared (desktop alt_arrow_left_s sits 0.5px further left); web is canonical by the tie rule. WP11 §1.2 names FlowySvgs.arrow_left_s: use the dashboard copy."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "chevron-right",
+      "role": "Trailing chevron of navigation rows (settings host \"Layout ›\", menu \"Move to row ›\", chart panel rows).",
+      "notion": "Right chevron.",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-widget-settings-row__chevron", "size": 16, "wave": 2 },
+        { "parityId": "dash-widget-menu-item-move-to-row__chevron", "size": 16, "wave": 3 },
+        { "parityId": "dash-chart-panel-row__chevron", "size": 16, "wave": 3 }
+      ],
+      "web": {
+        "current": {
+          "asset": "src/assets/icons/alt_arrow_right.svg",
+          "sha256": "87d38dadbe8f1b8710673facb284dc3ac9fa59706bec058f42052a7e9ad8ba30",
+          "usages": ["src/components/database/components/conditions/DatabaseConditions.tsx"]
+        },
+        "target": {
+          "asset": "src/assets/icons/alt_arrow_right.svg",
+          "exists": true,
+          "sha256": "87d38dadbe8f1b8710673facb284dc3ac9fa59706bec058f42052a7e9ad8ba30"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.alt_arrow_right_s",
+          "asset": "resources/flowy_icons/16x/alt_arrow_right.svg",
+          "sha256": "d2eda4c8f367638acbd86a4d41e549495131e9153063c8efab9de987daafb077",
+          "usages": ["appflowy_flutter/lib/plugins/database/widgets/setting/database_setting_action.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.dashboard_chevron_right_s",
+          "asset": "resources/flowy_icons/16x/dashboard_chevron_right.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "web:src/assets/icons/alt_arrow_right.svg"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/alt_arrow_right.svg",
+        "sha256": "87d38dadbe8f1b8710673facb284dc3ac9fa59706bec058f42052a7e9ad8ba30",
+        "reason": "No shared glyph; web is canonical by the tie rule."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 2,
+      "status": "pending"
+    },
+    {
+      "name": "chevron-up",
+      "role": "Chart panel \"What to show\" row icon.",
+      "notion": "Up arrow glyph on the axis rows (spec §8.2).",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-chart-panel-row-what-to-show__icon", "size": 16, "wave": 3 }],
+      "web": {
+        "current": null,
+        "target": {
+          "asset": "src/assets/icons/alt_arrow_up.svg",
+          "exists": true,
+          "sha256": "d87b0ffbdf9f1cf6cc940417ceacded2a916bb606184d558fe1bec730d7129ac"
+        }
+      },
+      "desktop": {
+        "current": null,
+        "target": {
+          "symbol": "FlowySvgs.alt_arrow_up_s",
+          "asset": "resources/flowy_icons/16x/alt_arrow_up.svg",
+          "exists": true,
+          "sha256": "d87b0ffbdf9f1cf6cc940417ceacded2a916bb606184d558fe1bec730d7129ac"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/alt_arrow_up.svg",
+        "sha256": "d87b0ffbdf9f1cf6cc940417ceacded2a916bb606184d558fe1bec730d7129ac",
+        "reason": "Already identical in both repos as alt_arrow_up. WP11 §1.2 names FlowySvgs.arrow_up_s (a rotated chevron): use alt_arrow_up_s."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": false, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "chart-type-bar",
+      "role": "\"Vertical bar\" button of the chart type row (chart settings panel); also a faint glyph of the empty edit-mode placeholder.",
+      "notion": "Five square outlined buttons: bars, horizontal bars, line, ring, # (spec §8.1).",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-chart-type-button-bar__icon", "size": 20, "wave": 3 },
+        { "parityId": "dash-empty-type-icon-bar", "size": 24, "wave": 4 }
+      ],
+      "web": {
+        "current": null,
+        "currentNote": "the web chart type menu is text-only today",
+        "target": {
+          "asset": "src/assets/icons/chart_type_bar.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "desktop:resources/flowy_icons/16x/chart_type_bar.svg"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.chart_type_bar_s",
+          "asset": "resources/flowy_icons/16x/chart_type_bar.svg",
+          "sha256": "919d5518a2ee541a3fe34307c9d81069b3f6d5a679b0a883af9a6d0bfe64fb42",
+          "usages": ["appflowy_flutter/lib/plugins/database/chart/presentation/toolbar/chart_type_button.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.chart_type_bar_s",
+          "asset": "resources/flowy_icons/16x/chart_type_bar.svg",
+          "exists": true,
+          "sha256": "919d5518a2ee541a3fe34307c9d81069b3f6d5a679b0a883af9a6d0bfe64fb42"
+        }
+      },
+      "canonical": {
+        "source": "desktop:resources/flowy_icons/16x/chart_type_bar.svg",
+        "sha256": "919d5518a2ee541a3fe34307c9d81069b3f6d5a679b0a883af9a6d0bfe64fb42",
+        "reason": "Only desktop has chart type glyphs; WP11 §6 copies them to web byte for byte."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": false, "desktop": true },
+      "targetsMatchCanonical": { "web": false, "desktop": true },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "chart-type-horizontal-bar",
+      "role": "\"Horizontal bar\" button of the chart type row (chart settings panel); chart settings only.",
+      "notion": "Five square outlined buttons: bars, horizontal bars, line, ring, # (spec §8.1).",
+      "scope": "dashboard",
+      "contexts": [{ "parityId": "dash-chart-type-button-horizontal-bar__icon", "size": 20, "wave": 3 }],
+      "web": {
+        "current": null,
+        "currentNote": "the web chart type menu is text-only today",
+        "target": {
+          "asset": "src/assets/icons/chart_type_horizontal_bar.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "desktop:resources/flowy_icons/16x/chart_type_horizontal_bar.svg"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.chart_type_horizontal_bar_s",
+          "asset": "resources/flowy_icons/16x/chart_type_horizontal_bar.svg",
+          "sha256": "bf181fd7c63c63ac13a06a8ac67dfe194499429842090523fb6642fceda22123",
+          "usages": ["appflowy_flutter/lib/plugins/database/chart/presentation/toolbar/chart_type_button.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.chart_type_horizontal_bar_s",
+          "asset": "resources/flowy_icons/16x/chart_type_horizontal_bar.svg",
+          "exists": true,
+          "sha256": "bf181fd7c63c63ac13a06a8ac67dfe194499429842090523fb6642fceda22123"
+        }
+      },
+      "canonical": {
+        "source": "desktop:resources/flowy_icons/16x/chart_type_horizontal_bar.svg",
+        "sha256": "bf181fd7c63c63ac13a06a8ac67dfe194499429842090523fb6642fceda22123",
+        "reason": "Only desktop has chart type glyphs; WP11 §6 copies them to web byte for byte."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": false, "desktop": true },
+      "targetsMatchCanonical": { "web": false, "desktop": true },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "chart-type-line",
+      "role": "\"Line\" button of the chart type row (chart settings panel); also a faint glyph of the empty edit-mode placeholder.",
+      "notion": "Five square outlined buttons: bars, horizontal bars, line, ring, # (spec §8.1).",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-chart-type-button-line__icon", "size": 20, "wave": 3 },
+        { "parityId": "dash-empty-type-icon-line", "size": 24, "wave": 4 }
+      ],
+      "web": {
+        "current": null,
+        "currentNote": "the web chart type menu is text-only today",
+        "target": {
+          "asset": "src/assets/icons/chart_type_line.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "desktop:resources/flowy_icons/16x/chart_type_line.svg"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.chart_type_line_s",
+          "asset": "resources/flowy_icons/16x/chart_type_line.svg",
+          "sha256": "afea5675e3448196388f550dcec8c47199610ecce1d1ad01adb03376be58d6da",
+          "usages": ["appflowy_flutter/lib/plugins/database/chart/presentation/toolbar/chart_type_button.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.chart_type_line_s",
+          "asset": "resources/flowy_icons/16x/chart_type_line.svg",
+          "exists": true,
+          "sha256": "afea5675e3448196388f550dcec8c47199610ecce1d1ad01adb03376be58d6da"
+        }
+      },
+      "canonical": {
+        "source": "desktop:resources/flowy_icons/16x/chart_type_line.svg",
+        "sha256": "afea5675e3448196388f550dcec8c47199610ecce1d1ad01adb03376be58d6da",
+        "reason": "Only desktop has chart type glyphs; WP11 §6 copies them to web byte for byte."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": false, "desktop": true },
+      "targetsMatchCanonical": { "web": false, "desktop": true },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "chart-type-donut",
+      "role": "\"Donut\" button of the chart type row (chart settings panel); also a faint glyph of the empty edit-mode placeholder.",
+      "notion": "Five square outlined buttons: bars, horizontal bars, line, ring, # (spec §8.1).",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-chart-type-button-donut__icon", "size": 20, "wave": 3 },
+        { "parityId": "dash-empty-type-icon-donut", "size": 24, "wave": 4 }
+      ],
+      "web": {
+        "current": null,
+        "currentNote": "the web chart type menu is text-only today",
+        "target": {
+          "asset": "src/assets/icons/chart_type_donut.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "desktop:resources/flowy_icons/16x/chart_type_donut.svg"
+        }
+      },
+      "desktop": {
+        "current": {
+          "symbol": "FlowySvgs.chart_type_donut_s",
+          "asset": "resources/flowy_icons/16x/chart_type_donut.svg",
+          "sha256": "8948f983c90f0df4bde7ceba2850fdefedd095fa25546ece31f0c61b9d5667a2",
+          "usages": ["appflowy_flutter/lib/plugins/database/chart/presentation/toolbar/chart_type_button.dart"]
+        },
+        "target": {
+          "symbol": "FlowySvgs.chart_type_donut_s",
+          "asset": "resources/flowy_icons/16x/chart_type_donut.svg",
+          "exists": true,
+          "sha256": "8948f983c90f0df4bde7ceba2850fdefedd095fa25546ece31f0c61b9d5667a2"
+        }
+      },
+      "canonical": {
+        "source": "desktop:resources/flowy_icons/16x/chart_type_donut.svg",
+        "sha256": "8948f983c90f0df4bde7ceba2850fdefedd095fa25546ece31f0c61b9d5667a2",
+        "reason": "Only desktop has chart type glyphs; WP11 §6 copies them to web byte for byte."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": false, "desktop": true },
+      "targetsMatchCanonical": { "web": false, "desktop": true },
+      "wave": 3,
+      "status": "pending"
+    },
+    {
+      "name": "empty-list-glyph",
+      "role": "List glyph of the five faint icons in the empty edit-mode placeholder.",
+      "notion": "Five faint icons: list, vertical bar, donut, table, line (spec §10.3).",
+      "scope": "dashboard",
+      "contexts": [
+        { "parityId": "dash-empty-type-icon-list", "size": 24, "wave": 4 },
+        { "parityId": "dash-empty-type-icon-table", "size": 24, "wave": 4, "note": "the table glyph is layout-grid" }
+      ],
+      "web": {
+        "current": null,
+        "target": {
+          "asset": "src/assets/icons/list.svg",
+          "exists": true,
+          "sha256": "bc8b228077e70f85df7d7b970056ee19afcb282da8706182ec0953a58bb64d54"
+        }
+      },
+      "desktop": {
+        "current": null,
+        "target": {
+          "symbol": "FlowySvgs.dashboard_list_s",
+          "asset": "resources/flowy_icons/16x/dashboard_list.svg",
+          "exists": false,
+          "sha256": null,
+          "createFrom": "web:src/assets/icons/list.svg"
+        }
+      },
+      "canonical": {
+        "source": "web:src/assets/icons/list.svg",
+        "sha256": "bc8b228077e70f85df7d7b970056ee19afcb282da8706182ec0953a58bb64d54",
+        "reason": "WP06 §3 names FlowySvgs.list_s, which does not exist; desktop adds a copy of the web list glyph (or reuses the layout-list target once OD-3 lands)."
+      },
+      "currentlyIdentical": false,
+      "currentMatchesCanonical": { "web": false, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "wave": 4,
+      "status": "pending"
+    }
+  ],
+  "nonGlyph": [
+    {
+      "name": "edit-pencil",
+      "note": "The toolbar Edit button and the empty-state \"Edit dashboard\" button are text-only (WP03 §1.10, WP06 §1.9). Today web edit.svg and desktop FlowySvgs.edit_s render there. Checked by visual-metrics iconCount 0.",
+      "parityIds": ["dash-toolbar-edit-button", "dash-empty-edit-button"],
+      "wave": 2
+    },
+    {
+      "name": "widget-header-drag",
+      "note": "The widget header drag glyph (web drag.svg, desktop drag_element_s) is removed; the header band itself is the drag handle (WP03 §1.1).",
+      "parityIds": ["dash-widget-header"],
+      "wave": 2
+    },
+    {
+      "name": "widget-open-button",
+      "note": "The per-widget expand button (desktop _OpenViewButton, web database-actions-open-as-page inside widgets) is removed (WP03 §1.1, addendum §1.2).",
+      "parityIds": ["dash-widget-tools"],
+      "wave": 2
+    },
+    {
+      "name": "resize-handles",
+      "note": "Width and height resize handles are drawn pills and bands, not icons (WP02 §1.4). Desktop FlowySvgs.resize_s is not used in dashboard chrome.",
+      "parityIds": ["dash-resize-width-handle", "dash-resize-height-handle"],
+      "wave": 2
+    },
+    {
+      "name": "unsaved-dot",
+      "note": "The 6px orange unsaved dot is drawn (color.unsavedDot), not an icon (WP07).",
+      "parityIds": ["dash-toolbar-filter__dot"],
+      "wave": 3
+    },
+    {
+      "name": "cloud-off",
+      "note": "web-only offline placeholder (WP03 §1.12); desktop is local-first and has no counterpart, so it is not a parity item.",
+      "parityIds": [],
+      "wave": null
+    }
+  ],
+  "normalizationVectors": [
+    {
+      "name": "xml declaration, comment, attribute order, paint and root size",
+      "input": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!-- exported -->\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" fill=\"none\" viewBox=\"0 0 20 20\">\n  <path stroke-linecap=\"round\" stroke=\"#21232A\" d=\"M17 5H3M15 10H5M13 15H7\"/>\n</svg>\n",
+      "normalized": "<svg fill=\"none\" viewBox=\"0 0 20 20\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M17 5H3M15 10H5M13 15H7\" stroke=\"currentColor\" stroke-linecap=\"round\"/></svg>",
+      "sha256": "3a98388b1b84af12519bb251b6cc839494f9630a61b2105f0e2b9c8a0d81770e"
+    },
+    {
+      "name": "same glyph written the web way",
+      "input": "<svg width=\"16\" height=\"16\" viewBox=\"0 0 20 20\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n<path d=\"M17 5H3M15 10H5M13 15H7\" stroke=\"currentColor\" stroke-linecap=\"round\"/>\n</svg>\n",
+      "normalized": "<svg fill=\"none\" viewBox=\"0 0 20 20\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M17 5H3M15 10H5M13 15H7\" stroke=\"currentColor\" stroke-linecap=\"round\"/></svg>",
+      "sha256": "3a98388b1b84af12519bb251b6cc839494f9630a61b2105f0e2b9c8a0d81770e"
+    },
+    {
+      "name": "multi-line attributes, single quotes, explicit end tag, none kept",
+      "input": "<svg viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg' class='icon' aria-hidden='true' role='img'>\n    <rect x=\"10.4751\" y=\"4.81812\"\n        width=\"1\" height=\"8\" rx=\"0.5\" fill='#333333'></rect>\n    <circle cx=\"8\" cy=\"8\" r=\"2\" fill=\"none\" stroke=\"rgb(0,0,0)\"/>\n</svg>\n",
+      "normalized": "<svg viewBox=\"0 0 16 16\" xmlns=\"http://www.w3.org/2000/svg\"><rect fill=\"currentColor\" height=\"8\" rx=\"0.5\" width=\"1\" x=\"10.4751\" y=\"4.81812\"/><circle cx=\"8\" cy=\"8\" fill=\"none\" r=\"2\" stroke=\"currentColor\"/></svg>",
+      "sha256": "6bf9df9ac10324eeedca3feb38d48a882f0a329061d6b39a5eeee47a67038073"
+    },
+    {
+      "name": "title, desc and whitespace-only text are dropped; nested group kept",
+      "input": "<svg viewBox=\"0 0 16 16\" xmlns=\"http://www.w3.org/2000/svg\"><title>Search</title><desc>x</desc>\n<g opacity=\"0.7\">\n  <path d=\"M1   2\n  L3 4\" stroke=\"#000\" stroke-width=\"1.03333\"/>\n</g></svg>",
+      "normalized": "<svg viewBox=\"0 0 16 16\" xmlns=\"http://www.w3.org/2000/svg\"><g opacity=\"0.7\"><path d=\"M1 2 L3 4\" stroke=\"currentColor\" stroke-width=\"1.03333\"/></g></svg>",
+      "sha256": "169f09c74c9b41c6816be302cb86954415675e2a5c1f2d8f13df503f5be01dbc"
+    }
+  ]
+}

@@ -21,6 +21,7 @@ export function WidgetBody({ children }: { children: ReactNode }) {
         'relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-background-primary',
         framed && 'rounded-400 border border-border-primary'
       )}
+      data-parity-id='dash-widget-card'
       data-testid='dashboard-widget-body'
     >
       {children}

@@ -29,6 +29,18 @@ import {
 } from './picker-options';
 import { databaseLayoutToViewLayout, getLayoutLabel } from './utils';
 
+/** Visual parity ids of the "New view" layout choices (`dashboard-parity/visual-metrics.json`). */
+const PICKER_LAYOUT_PARITY_IDS: Partial<Record<DatabaseViewLayout, string>> = {
+  [DatabaseViewLayout.Grid]: 'dash-widget-picker-layout-grid',
+  [DatabaseViewLayout.Board]: 'dash-widget-picker-layout-board',
+  [DatabaseViewLayout.Calendar]: 'dash-widget-picker-layout-calendar',
+  [DatabaseViewLayout.Chart]: 'dash-widget-picker-layout-chart',
+  [DatabaseViewLayout.List]: 'dash-widget-picker-layout-list',
+  [DatabaseViewLayout.Gallery]: 'dash-widget-picker-layout-gallery',
+  [DatabaseViewLayout.Feed]: 'dash-widget-picker-layout-feed',
+  [DatabaseViewLayout.Timeline]: 'dash-widget-picker-layout-timeline',
+};
+
 type PickerTab = 'existing' | 'new';
 
 const OPTION_SELECTOR = '[data-picker-focusable="true"]:not([disabled])';
@@ -342,6 +354,7 @@ export function WidgetPickerContent({ request, onPick, createView, canCreateInOt
       closeLabel={t('button.close', { defaultValue: 'Close' })}
       data-creating={creating ? 'true' : undefined}
       data-mode={request.mode}
+      data-parity-id='dash-widget-picker'
       data-testid='dashboard-widget-picker'
       onEscapeKeyDown={keepOpenWhileCreating}
       onInteractOutside={keepOpenWhileCreating}
@@ -350,10 +363,11 @@ export function WidgetPickerContent({ request, onPick, createView, canCreateInOt
       size='md'
     >
       <DialogHeader className='mb-0'>
-        <DialogTitle>{title}</DialogTitle>
+        <DialogTitle data-parity-id='dash-widget-picker__title'>{title}</DialogTitle>
       </DialogHeader>
       <SearchInput
         autoFocus
+        data-parity-id='dash-widget-picker-search'
         data-testid='dashboard-widget-picker-search'
         onChange={(event) => setQuery(event.target.value)}
         onKeyDown={handleSearchKeyDown}
@@ -439,6 +453,7 @@ export function WidgetPickerContent({ request, onPick, createView, canCreateInOt
                         'disabled:cursor-not-allowed disabled:opacity-60'
                       )}
                       data-layout={layout}
+                      data-parity-id={PICKER_LAYOUT_PARITY_IDS[layout]}
                       data-picker-focusable='true'
                       data-testid='dashboard-widget-picker-layout-option'
                       disabled={creating || !selectedDatabase}

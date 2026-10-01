@@ -74,6 +74,7 @@ function BarChartWidgetImpl({ data, onBarClick }: BarChartWidgetProps) {
           margin={{ top: 24, right: 0, left: 0, bottom: 40 }}
         >
           <CartesianGrid
+            data-parity-id="dash-chart-grid-line"
             vertical={false}
             stroke="var(--border-primary)"
             strokeOpacity={0.5}
@@ -105,12 +106,14 @@ function BarChartWidgetImpl({ data, onBarClick }: BarChartWidgetProps) {
           >
             {data.map((entry, index) => (
               <Cell
+                data-parity-id="dash-chart-bar"
                 key={`cell-${index}`}
                 fill={entry.color}
                 onMouseEnter={(e) => handleMouseEnter(entry, index, e as unknown as React.MouseEvent)}
               />
             ))}
             <LabelList
+              data-parity-id="dash-chart-data-label"
               dataKey="value"
               position="top"
               formatter={formatValue}
