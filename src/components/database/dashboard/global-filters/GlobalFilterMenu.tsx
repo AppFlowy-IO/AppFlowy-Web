@@ -86,10 +86,11 @@ function PropertyTypePicker({
           variant='ghost'
           size='icon-sm'
           aria-label={t('button.back', { defaultValue: 'Back' })}
+          data-parity-id='dash-global-filter-back'
           data-testid='dashboard-global-filter-back'
           onClick={onBack}
         >
-          <ArrowLeftSvg className='h-4 w-4' />
+          <ArrowLeftSvg className='h-4 w-4' data-parity-id='dash-global-filter-back__icon' />
         </Button>
         <span className='text-xs font-medium text-text-tertiary'>
           {t('dashboard.globalFilters.property', { defaultValue: 'Property' })}

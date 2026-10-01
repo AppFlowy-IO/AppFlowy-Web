@@ -1,5 +1,6 @@
 # dashboard-parity v1: sha256 of every file here except this one, LC_ALL=C path order. Regenerate: see README.md
-e432066ddf2cdf52458de8acd761f6b13d636c0def171a1fede198e0ddfb9e7d  README.md
+c0f936fd088928500a047443063849dc26f7ed532aaeac10c4f3e9a7fe46b0c6  README.md
+fe3e297bbef006ce3f0d0a41e43c33c6e1e49b979011f45878d716c8737bb6c3  icons.json
 3f7410afa87dd6b7b1e303714424b0de0c5e221c5c6eed27593591922ea9babd  layouts/chart-style-keys.json
 9473bdddb0a6b828476a17075efd9f8c37e53918f05ebe7fdf566ab6ebadb3c8  layouts/converted-seed.json
 4166a99e9d75de4b41de54657c8dcc4d4ee0a46bb43dc7c237b7411b3235b66a  layouts/remap.json
@@ -7,3 +8,4 @@ e432066ddf2cdf52458de8acd761f6b13d636c0def171a1fede198e0ddfb9e7d  README.md
 5c523cfb3db4b934ec876577dffc0a05be00d9590e0c2879e8cdcd486c6e5af4  layouts/unknown-keys.json
 37a04de28b2e4243d77ed19f4a6636667b6b9eab0e18e38b31f485c5635a95dc  mode-transitions.json
 3ee92b6498628cc52694ab59f884e564608ab34712462406287a6ebea664fb10  tokens.json
+a56cda5d575665ff607d8ef92ca4b510a14cc9de4b98f4278c7e34be208a93d0  visual-metrics.json

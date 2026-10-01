@@ -33,30 +33,31 @@ export function DashboardEmptyState({ onAddWidget }: { onAddWidget: () => void }
           <div className='text-base font-medium text-text-primary'>
             {t('dashboard.emptyTitle', { defaultValue: 'Build your dashboard' })}
           </div>
-          <div className='max-w-[420px] text-sm text-text-secondary'>
+          <div className='max-w-[420px] text-sm text-text-secondary' data-parity-id='dash-empty-text'>
             {t('dashboard.emptyHint', {
               defaultValue: 'Add widgets to show charts, tables, boards and more from any database.',
             })}
           </div>
           <div className='mt-2 w-full max-w-[320px]'>
-            <AddWidgetButton onAdd={onAddWidget} />
+            <AddWidgetButton emptyState onAdd={onAddWidget} />
           </div>
         </>
       ) : (
         <>
-          <div className='text-sm text-text-secondary'>
+          <div className='text-sm text-text-secondary' data-parity-id='dash-empty-text'>
             {t('dashboard.emptyViewerHint', { defaultValue: 'This dashboard has no widgets yet.' })}
           </div>
           {canEnterEdit ? (
             <Button
               className='mt-2'
+              data-parity-id='dash-empty-edit-button'
               data-testid='dashboard-empty-edit-button'
               onClick={() => setEditing(true)}
               type='button'
               variant='outline'
             >
-              <EditIcon aria-hidden='true' className='h-4 w-4' />
-              {t('dashboard.edit', { defaultValue: 'Edit' })}
+              <EditIcon aria-hidden='true' className='h-4 w-4' data-parity-id='dash-empty-edit-button__icon' />
+              <span data-parity-id='dash-empty-edit-button__label'>{t('dashboard.edit', { defaultValue: 'Edit' })}</span>
             </Button>
           ) : null}
         </>

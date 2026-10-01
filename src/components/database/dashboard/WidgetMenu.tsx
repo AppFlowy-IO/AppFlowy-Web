@@ -119,6 +119,39 @@ const ENTRY_ICONS: Record<WidgetMenuEntryId, ComponentType<SVGProps<SVGSVGElemen
   delete: DeleteIcon,
 };
 
+/**
+ * Visual parity ids of the entries that have a counterpart in the desktop
+ * menu (`dashboard-parity/visual-metrics.json`); "Open view" is the reader's
+ * "View data source".
+ */
+const ENTRY_PARITY_IDS: Partial<Record<WidgetMenuEntryId, { item: string; icon: string; label: string }>> = {
+  open: {
+    item: 'dash-widget-menu-item-view-data-source',
+    icon: 'dash-widget-menu-item-view-data-source__icon',
+    label: 'dash-widget-menu-item-view-data-source__label',
+  },
+  duplicate: {
+    item: 'dash-widget-menu-item-duplicate',
+    icon: 'dash-widget-menu-item-duplicate__icon',
+    label: 'dash-widget-menu-item-duplicate__label',
+  },
+  'move-left': {
+    item: 'dash-widget-menu-item-move-left',
+    icon: 'dash-widget-menu-item-move-left__icon',
+    label: 'dash-widget-menu-item-move-left__label',
+  },
+  'move-right': {
+    item: 'dash-widget-menu-item-move-right',
+    icon: 'dash-widget-menu-item-move-right__icon',
+    label: 'dash-widget-menu-item-move-right__label',
+  },
+  delete: {
+    item: 'dash-widget-menu-item-delete',
+    icon: 'dash-widget-menu-item-delete__icon',
+    label: 'dash-widget-menu-item-delete__label',
+  },
+};
+
 function runEntry(id: WidgetMenuEntryId, actions: WidgetActions) {
   switch (id) {
     case 'open':
@@ -182,6 +215,7 @@ function WidgetMenuItems() {
     <>
       {entries.map((entry, index) => {
         const Icon = ENTRY_ICONS[entry.id];
+        const parity = ENTRY_PARITY_IDS[entry.id];
         const previous = entries[index - 1];
 
         return (
@@ -190,14 +224,15 @@ function WidgetMenuItems() {
             <DropdownMenuItem
               className={cn(entry.limitReached && 'text-text-tertiary')}
               data-limit-reached={entry.limitReached ? 'true' : undefined}
+              data-parity-id={parity?.item}
               data-testid={`dashboard-widget-menu-${entry.id}`}
               disabled={entry.disabled}
               onSelect={() => runEntry(entry.id, actions)}
               title={entry.limitReached ? limitText : undefined}
               variant={entry.group === 'danger' ? 'destructive' : 'default'}
             >
-              <Icon aria-hidden='true' />
-              <span>{t(entry.labelKey, { defaultValue: entry.defaultLabel })}</span>
+              <Icon aria-hidden='true' data-parity-id={parity?.icon} />
+              <span data-parity-id={parity?.label}>{t(entry.labelKey, { defaultValue: entry.defaultLabel })}</span>
             </DropdownMenuItem>
           </Fragment>
         );
@@ -214,6 +249,7 @@ export function WidgetMenu({ open, onOpenChange, children }: WidgetMenuProps) {
       <DropdownMenuContent
         align='end'
         className='!min-w-[200px]'
+        data-parity-id='dash-widget-menu'
         data-testid='dashboard-widget-menu'
         onClick={(event) => event.stopPropagation()}
         onCloseAutoFocus={(event) => event.preventDefault()}

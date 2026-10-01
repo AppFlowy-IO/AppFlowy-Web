@@ -30,6 +30,7 @@ function WidgetTitle({ className, onOpenMenu }: { className?: string; onOpenMenu
         'hover:text-text-primary focus-visible:ring-1 focus-visible:ring-border-theme-thick',
         className
       )}
+      data-parity-id='dash-widget-title-pill'
       data-testid='dashboard-widget-title-button'
       onClick={(event) => {
         event.stopPropagation();
@@ -38,7 +39,12 @@ function WidgetTitle({ className, onOpenMenu }: { className?: string; onOpenMenu
       type='button'
     >
       <PageIcon className='!h-5 !w-5 shrink-0 text-base leading-[1.3rem]' iconSize={16} view={{ icon, layout }} />
-      <span className='truncate' data-testid='dashboard-widget-title' title={name}>
+      <span
+        className='truncate'
+        data-parity-id='dash-widget-title-pill__label'
+        data-testid='dashboard-widget-title'
+        title={name}
+      >
         {name || t('untitled')}
       </span>
     </button>
@@ -76,6 +82,7 @@ export function WidgetHeaderFrame({ actions }: WidgetHeaderFrameProps) {
           'flex shrink-0 cursor-grab items-center gap-1 border-b border-border-primary bg-fill-content-hover pl-1 pr-1.5 text-sm font-medium text-text-primary',
           isDragging && 'cursor-grabbing'
         )}
+        data-parity-id='dash-widget-header'
         data-testid='dashboard-widget-header'
         onContextMenu={handleContextMenu}
         ref={setDragHandle}
@@ -89,13 +96,14 @@ export function WidgetHeaderFrame({ actions }: WidgetHeaderFrameProps) {
           <Button
             aria-label={t('dashboard.widget.menu', { defaultValue: 'Widget options' })}
             className='shrink-0'
+            data-parity-id='dash-widget-options-button'
             data-testid='dashboard-widget-menu-button'
             onClick={(event) => event.stopPropagation()}
             size='icon-sm'
             type='button'
             variant='ghost'
           >
-            <MoreIcon aria-hidden='true' className='h-5 w-5' />
+            <MoreIcon aria-hidden='true' className='h-5 w-5' data-parity-id='dash-widget-options-button__icon' />
           </Button>
         </WidgetMenu>
       </div>
@@ -119,7 +127,10 @@ export function WidgetHeaderFrame({ actions }: WidgetHeaderFrameProps) {
         onContextMenu={handleContextMenu}
       >
         {actions ? (
-          <div className='pointer-events-auto flex items-center rounded-300 border border-border-primary bg-surface-primary p-0.5 shadow-card'>
+          <div
+            className='pointer-events-auto flex items-center rounded-300 border border-border-primary bg-surface-primary p-0.5 shadow-card'
+            data-parity-id='dash-widget-capsule'
+          >
             {actions}
           </div>
         ) : null}
@@ -131,6 +142,7 @@ export function WidgetHeaderFrame({ actions }: WidgetHeaderFrameProps) {
   return (
     <div
       className='flex shrink-0 items-center gap-1 px-1 text-sm font-medium text-text-secondary'
+      data-parity-id='dash-widget-header'
       data-testid='dashboard-widget-header'
       onContextMenu={handleContextMenu}
       style={{ height: WIDGET_TITLE_HEIGHT }}

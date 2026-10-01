@@ -15,6 +15,8 @@ Each file has one owning package. A later package adds its own line here.
 | `layouts/show-icons-in-heading.json` | WP03 | The dashboard `show_icons_in_heading` flag: how it reads (absent or wrong type is `false`) and a toggle that keeps every other key. |
 | `layouts/remap.json` | WP05 | `remapDashboardLayout` for a database copy and a dashboard duplicate (widgets, global filter targets, unknown keys, malformed values, no-op identity) and `remapDashboardOwner` vectors. |
 | `layouts/converted-seed.json` | WP05 | The rows a view converted to Dashboard starts with (its owned copy as one full-width widget, ids masked) and when the seed is written. |
+| `visual-metrics.json` | VP | The visual parity contract: every measurable dashboard element by its stable `dash-*` parity id, with its box, typography, colour and spacing metrics per state (View/Edit × light/dark) as `tokens.json` references, `ref:` colour variables, `calc` expressions or literals, plus scenes (with the Notion reference captures the comparator shows beside each state, scene and interaction), interactions, element order checks, text checks, the wave that makes each entry match and its status. Design: `parity-plan/VISUAL-PARITY.md`. |
+| `icons.json` | VP | Every dashboard chrome icon: its contexts (parity id and rendered size), the web asset and desktop `FlowySvgs` symbol in use today and the target each client must render, the svg-norm/1 hash of each and of the canonical glyph, and the normalization vectors both probes must reproduce. |
 | `FIXTURES.sha256` | generated | The manifest below. Never edit it by hand. |
 
 ## Byte rules
