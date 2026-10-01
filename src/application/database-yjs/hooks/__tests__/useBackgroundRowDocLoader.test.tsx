@@ -388,6 +388,271 @@ describe('useBackgroundRowDocLoader', () => {
     databaseDoc.destroy();
   });
 
+  it('hydrates the pages a walk in flight delivers and drops seed docs the seed cache destroys', async () => {
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const rowIds = ['page-row-1', 'page-row-2', 'page-row-3'];
+    const seedDocs: Record<string, YDoc> = {};
+    // The Database's seeds-progress store: a revision and its subscribers.
+    const seedsProgress = { revision: 0, subscribers: new Set<() => void>() };
+    const publishSeedsProgress = (revision: number) => {
+      seedsProgress.revision = revision;
+      seedsProgress.subscribers.forEach((subscriber) => subscriber());
+    };
+
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      blobPrefetchComplete: false,
+      databaseDoc,
+      databasePageId: viewId,
+      peekRowDocFromSeed: (rowId) => seedDocs[rowId] ?? null,
+      readOnly: false,
+      rowMap: {},
+      seedsReady: false,
+      getSeedsRevision: () => seedsProgress.revision,
+      subscribeToSeedsProgress: (onStoreChange) => {
+        seedsProgress.subscribers.add(onStoreChange);
+        return () => seedsProgress.subscribers.delete(onStoreChange);
+      },
+      workspaceId: 'workspace-id',
+    };
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { result, unmount } = renderHook(() => useBackgroundRowDocLoader(true, 'provisional-pages').cachedRowDocs, {
+      wrapper,
+    });
+
+    // A seed doc nobody announced yet is not read.
+    seedDocs['page-row-1'] = createRowDoc('page-row-1', databaseId, {});
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current).toEqual({});
+    expect(seedsProgress.subscribers.size).toBe(1);
+
+    // The first page arrives before the walk's terminal page.
+    act(() => publishSeedsProgress(1));
+    await waitFor(() => expect(Object.keys(result.current)).toEqual(['page-row-1']));
+
+    // A restart destroys the doc that page built.
+    act(() => {
+      seedDocs['page-row-1'].destroy();
+      delete seedDocs['page-row-1'];
+    });
+    await waitFor(() => expect(result.current).toEqual({}));
+
+    // The replacement walk delivers the rows again.
+    seedDocs['page-row-1'] = createRowDoc('page-row-1', databaseId, {});
+    seedDocs['page-row-2'] = createRowDoc('page-row-2', databaseId, {});
+    act(() => publishSeedsProgress(3));
+    await waitFor(() => expect(Object.keys(result.current).sort()).toEqual(['page-row-1', 'page-row-2']));
+    expect(result.current['page-row-1']).toBe(seedDocs['page-row-1']);
+
+    unmount();
+    expect(seedsProgress.subscribers.size).toBe(0);
+    Object.values(seedDocs).forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
+  });
+
+  it('publishes the docs of a walk in flight at once, then a few times a second, and never a dropped one', async () => {
+    jest.useFakeTimers();
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const seedDocs: Record<string, YDoc> = {};
+    const seedsProgress = { revision: 0, subscribers: new Set<() => void>() };
+    const publishSeedsProgress = () => {
+      seedsProgress.revision += 1;
+      seedsProgress.subscribers.forEach((subscriber) => subscriber());
+    };
+
+    let contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      blobPrefetchComplete: false,
+      databaseDoc,
+      databasePageId: viewId,
+      peekRowDocFromSeed: (rowId) => seedDocs[rowId] ?? null,
+      readOnly: false,
+      rowMap: {},
+      seedsReady: false,
+      getSeedsRevision: () => seedsProgress.revision,
+      subscribeToSeedsProgress: (onStoreChange) => {
+        seedsProgress.subscribers.add(onStoreChange);
+        return () => seedsProgress.subscribers.delete(onStoreChange);
+      },
+      workspaceId: 'workspace-id',
+    };
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(['row-1', 'row-2', 'row-3', 'row-4'].map((id) => ({ id, height: 44 })));
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { result, rerender, unmount } = renderHook(
+      () => useBackgroundRowDocLoader(true, 'provisional-publish-cadence').cachedRowDocs,
+      { wrapper }
+    );
+    const advance = async (ms: number) => {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(ms);
+      });
+    };
+
+    try {
+      // The first page is published at once.
+      seedDocs['row-1'] = createRowDoc('row-1', databaseId, {});
+      act(() => publishSeedsProgress());
+      await advance(20);
+      expect(Object.keys(result.current)).toEqual(['row-1']);
+
+      // The next page waits for the end of the first interval.
+      seedDocs['row-2'] = createRowDoc('row-2', databaseId, {});
+      act(() => publishSeedsProgress());
+      await advance(100);
+      expect(Object.keys(result.current)).toEqual(['row-1']);
+      await advance(200);
+      expect(Object.keys(result.current).sort()).toEqual(['row-1', 'row-2']);
+
+      // A restart destroys a doc before its publish: it is never published.
+      seedDocs['row-3'] = createRowDoc('row-3', databaseId, {});
+      act(() => publishSeedsProgress());
+      await advance(100);
+      expect(result.current['row-3']).toBeUndefined();
+      act(() => {
+        seedDocs['row-3'].destroy();
+        delete seedDocs['row-3'];
+      });
+      await advance(1000);
+      expect(Object.keys(result.current).sort()).toEqual(['row-1', 'row-2']);
+
+      // Committed seeds are published every frame again.
+      seedDocs['row-3'] = createRowDoc('row-3', databaseId, {});
+      seedDocs['row-4'] = createRowDoc('row-4', databaseId, {});
+      contextValue = { ...contextValue, seedsReady: true };
+      rerender();
+      await advance(20);
+      expect(Object.keys(result.current).sort()).toEqual(['row-1', 'row-2', 'row-3', 'row-4']);
+      expect(result.current['row-3']).toBe(seedDocs['row-3']);
+    } finally {
+      unmount();
+      Object.values(seedDocs).forEach((doc) => doc.destroy());
+      databaseDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('hydrates the rows of a walk in flight in row order, whichever page delivered them first', async () => {
+    jest.useFakeTimers();
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    // More rows than one frame hydrates, so the pass is still running when the next page arrives.
+    const rowIds = Array.from({ length: 300 }, (_, index) => `ordered-row-${index}`);
+    const seedDocs: Record<string, YDoc> = {};
+    const peeked: string[] = [];
+    const seedsProgress = { revision: 0, subscribers: new Set<() => void>() };
+    const publishSeedsProgress = () => {
+      seedsProgress.revision += 1;
+      seedsProgress.subscribers.forEach((subscriber) => subscriber());
+    };
+
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      blobPrefetchComplete: false,
+      databaseDoc,
+      databasePageId: viewId,
+      peekRowDocFromSeed: (rowId) => {
+        const doc = seedDocs[rowId] ?? null;
+
+        if (doc) peeked.push(rowId);
+        return doc;
+      },
+      readOnly: false,
+      rowMap: {},
+      seedsReady: false,
+      getSeedsRevision: () => seedsProgress.revision,
+      subscribeToSeedsProgress: (onStoreChange) => {
+        seedsProgress.subscribers.add(onStoreChange);
+        return () => seedsProgress.subscribers.delete(onStoreChange);
+      },
+      workspaceId: 'workspace-id',
+    };
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { unmount } = renderHook(() => useBackgroundRowDocLoader(true, 'provisional-row-order').cachedRowDocs, {
+      wrapper,
+    });
+    const nextFrame = async () => {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(16);
+      });
+    };
+
+    try {
+      // The first page holds every row but the first ten.
+      rowIds.slice(10).forEach((id) => {
+        seedDocs[id] = createRowDoc(id, databaseId, {});
+      });
+      act(() => publishSeedsProgress());
+      await nextFrame();
+      expect(peeked[0]).toBe('ordered-row-10');
+      const firstFrame = peeked.length;
+
+      // The next page brings the first ten rows while the pass still runs.
+      rowIds.slice(0, 10).forEach((id) => {
+        seedDocs[id] = createRowDoc(id, databaseId, {});
+      });
+      act(() => publishSeedsProgress());
+      await nextFrame();
+
+      expect(peeked.slice(firstFrame, firstFrame + 11)).toEqual([...rowIds.slice(0, 10), rowIds[10 + firstFrame]]);
+    } finally {
+      unmount();
+      Object.values(seedDocs).forEach((doc) => doc.destroy());
+      databaseDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not follow the pages of a walk in flight while it has no conditions to evaluate', async () => {
+    const { databaseDoc, databaseId, viewId } = createDatabaseFixture();
+    const seedDoc = createRowDoc('initial-row', databaseId, {});
+    const subscribeToSeedsProgress = jest.fn(() => () => undefined);
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      blobPrefetchComplete: false,
+      databaseDoc,
+      databasePageId: viewId,
+      peekRowDocFromSeed: () => seedDoc,
+      readOnly: false,
+      rowMap: {},
+      seedsReady: false,
+      getSeedsRevision: () => 4,
+      subscribeToSeedsProgress,
+      workspaceId: 'workspace-id',
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { result, unmount } = renderHook(
+      () => useBackgroundRowDocLoader(false, 'inactive-provisional-pages').cachedRowDocs,
+      { wrapper }
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(subscribeToSeedsProgress).not.toHaveBeenCalled();
+    expect(result.current).toEqual({});
+
+    unmount();
+    seedDoc.destroy();
+    databaseDoc.destroy();
+  });
+
   it('hydrates a row inserted collaboratively after the initial loading pass', async () => {
     const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
     const initialRowDoc = createRowDoc('initial-row', databaseId, {});

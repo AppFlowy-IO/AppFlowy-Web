@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 import { FieldType, useReadOnly } from '@/application/database-yjs';
-import type { GridGrouping, Row, SelectOption } from '@/application/database-yjs';
+import type { GridGrouping, Row, RowOrdersHydration, SelectOption } from '@/application/database-yjs';
 
 export enum RenderRowType {
   Header = 'header',
@@ -37,10 +37,23 @@ export function getRenderRowKey(row: RenderRow): string {
 export const EMBEDDED_GRID_INITIAL_ROW_LIMIT = 25;
 export const EMBEDDED_GRID_LOAD_MORE_INCREMENT = 25;
 
-export function useRenderRows(rows?: Row[], options?: { visibleRowLimit?: number; grouping?: GridGrouping }) {
+/**
+ * The grid's virtualized row stream. `rows` undefined is the loading state
+ * (header, loading row). With `hydrating`, `rows` are the first rows of a
+ * result still being read: they render above a loading row, and never as a
+ * finished (possibly empty) result. The stream only depends on whether rows
+ * are still read; the loading row reads the progress itself
+ * (`GridHydrationContext`), so the rows shown do not re-render as it grows.
+ */
+export function useRenderRows(
+  rows?: Row[],
+  options?: { visibleRowLimit?: number; grouping?: GridGrouping; hydrating?: RowOrdersHydration }
+) {
   const readOnly = useReadOnly();
   const visibleRowLimit = options?.visibleRowLimit;
-  const grouping = options?.grouping;
+  // An ungrouped stream only reads `rows`; a new grouping object must not rebuild it.
+  const grouping = options?.grouping?.isGrouped ? options.grouping : undefined;
+  const hydrating = Boolean(options?.hydrating);
 
   const renderRows = useMemo(() => {
     const placeholderRows = [
@@ -145,14 +158,19 @@ export function useRenderRows(rows?: Row[], options?: { visibleRowLimit?: number
         remainingRowCount,
       },
 
+      hydrating && {
+        type: RenderRowType.PlaceholderRow,
+      },
+
       !readOnly && {
         type: RenderRowType.NewRow,
       },
-      {
+      // Calculations summarize the complete result only.
+      !hydrating && {
         type: RenderRowType.CalculateRow,
       },
     ].filter(Boolean) as RenderRow[];
-  }, [grouping, readOnly, rows, visibleRowLimit]);
+  }, [grouping, hydrating, readOnly, rows, visibleRowLimit]);
 
   const visibleDataRows = useMemo(() => renderRows.filter((row) => row.type === RenderRowType.Row), [renderRows]);
   const loadMoreRow = useMemo(() => renderRows.find((row) => row.type === RenderRowType.LoadMoreRow), [renderRows]);

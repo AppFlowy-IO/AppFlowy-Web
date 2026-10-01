@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useSyncExternalStore } from 'react';
 
-import type { Row } from '@/application/database-yjs';
+import type { Row, RowOrdersHydration } from '@/application/database-yjs';
 import type { RenderRow } from '@/components/database/components/grid/grid-row';
 
 export type GridActiveCell = {
@@ -175,6 +175,17 @@ export type GridContextType = {
 };
 
 export const GridContext = createContext<GridContextType | undefined>(undefined);
+
+/**
+ * How far an ungrouped grid still reading its rows got. Kept out of
+ * `GridContext` and the render rows: it changes as rows load, and only the
+ * loading row shows it, so the rows found so far do not re-render with it.
+ */
+export const GridHydrationContext = createContext<RowOrdersHydration | undefined>(undefined);
+
+export function useGridHydration() {
+  return useContext(GridHydrationContext);
+}
 
 export function useGridContext() {
   const context = useContext(GridContext);

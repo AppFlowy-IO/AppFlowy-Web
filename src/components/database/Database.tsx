@@ -58,6 +58,11 @@ import { Log } from '@/utils/log';
 import { DatabaseContextProvider } from './DatabaseContext';
 
 const PRIORITY_ROW_SEED_LIMIT = 200;
+/**
+ * Provisional blob pages can arrive every few milliseconds; each publish
+ * re-runs filter/sort over the rows read so far, so publish at most this often.
+ */
+const SEEDS_PROGRESS_INTERVAL_MS = 250;
 
 function createDeferredGate() {
   let resolve!: () => void;
@@ -319,6 +324,42 @@ function Database(props: Database2Props) {
   const seedsGateRef = useRef(createDeferredGate());
   const [blobPrefetchComplete, setBlobPrefetchComplete] = useState(false);
   const [seedsReady, setSeedsReady] = useState(false);
+  // Counts provisional blob pages (and their drops) before `seedsReady`, so
+  // filter/sort can evaluate the rows a long walk already delivered. It is a
+  // subscription rather than context state: only the row loaders of views with
+  // conditions read it, and every cell would re-render on a context change.
+  const seedsProgressRef = useRef<{
+    revision: number;
+    publishedAt: number;
+    timer: ReturnType<typeof setTimeout> | null;
+    subscribers: Set<() => void>;
+  }>({ revision: 0, publishedAt: 0, timer: null, subscribers: new Set() });
+  const publishSeedsProgress = useCallback(() => {
+    const progress = seedsProgressRef.current;
+
+    progress.publishedAt = Date.now();
+    progress.revision += 1;
+    progress.subscribers.forEach((subscriber) => subscriber());
+  }, []);
+  const resetSeedsProgress = useCallback(() => {
+    const progress = seedsProgressRef.current;
+
+    if (progress.timer !== null) clearTimeout(progress.timer);
+    progress.timer = null;
+    progress.publishedAt = 0;
+    if (progress.revision === 0) return;
+    progress.revision = 0;
+    progress.subscribers.forEach((subscriber) => subscriber());
+  }, []);
+  const subscribeToSeedsProgress = useCallback((onStoreChange: () => void) => {
+    const { subscribers } = seedsProgressRef.current;
+
+    subscribers.add(onStoreChange);
+    return () => {
+      subscribers.delete(onStoreChange);
+    };
+  }, []);
+  const getSeedsRevision = useCallback(() => seedsProgressRef.current.revision, []);
   const registerRowDocWithHistory = useCallback(
     (rowId: RowId, rowDoc: YDoc) => {
       registerDatabaseHistoryRowDoc(doc, rowId, rowDoc);
@@ -949,6 +990,25 @@ function Database(props: Database2Props) {
     const promise = prefetchDatabaseBlobDiff(workspaceId, databaseId, {
       priorityRowIds,
       forceFullSync,
+      onSeedsProgress: () => {
+        if (!isCurrentPrefetch()) return;
+        const progress = seedsProgressRef.current;
+
+        // A publish is already scheduled; it reads every page staged until then.
+        if (progress.timer !== null) return;
+        const wait = progress.publishedAt + SEEDS_PROGRESS_INTERVAL_MS - Date.now();
+
+        if (wait <= 0) {
+          publishSeedsProgress();
+          return;
+        }
+
+        // The lifecycle cleanup cancels this timer.
+        progress.timer = setTimeout(() => {
+          progress.timer = null;
+          publishSeedsProgress();
+        }, wait);
+      },
       onSeedsReady: () => {
         if (!isCurrentPrefetch()) return;
 
@@ -976,7 +1036,15 @@ function Database(props: Database2Props) {
     prefetchPromisesRef.current.set(prefetchKey, promise);
     blobPrefetchPromiseRef.current = promise;
     return promise;
-  }, [readOnly, workspaceId, getDatabaseId, getPriorityRowIds, activeViewNeedsFullRowData, runBatchPreload]);
+  }, [
+    readOnly,
+    workspaceId,
+    getDatabaseId,
+    getPriorityRowIds,
+    activeViewNeedsFullRowData,
+    runBatchPreload,
+    publishSeedsProgress,
+  ]);
 
   useEffect(() => {
     retainDatabaseRowDocSeedCache(currentDatabaseId);
@@ -1369,8 +1437,11 @@ function Database(props: Database2Props) {
     setRowMap(initialRowMap);
     setBlobPrefetchComplete(false);
     setSeedsReady(false);
+    resetSeedsProgress();
 
     return () => {
+      // A page of this lifecycle's walk must not publish into the next one.
+      resetSeedsProgress();
       if (activeDatabaseLifecycleRef.current === databaseLifecycleIdentity) {
         activeDatabaseLifecycleRef.current = null;
       }
@@ -1383,7 +1454,7 @@ function Database(props: Database2Props) {
       lifecycleRowSyncRegistrations.clear();
       lifecycleGate.resolve();
     };
-  }, [databaseLifecycleIdentity, doc, props.initialRowMap, publishCellLocalMutationChange]);
+  }, [databaseLifecycleIdentity, doc, props.initialRowMap, publishCellLocalMutationChange, resetSeedsProgress]);
 
   // Trigger blob prefetch when database opens
   useEffect(() => {
@@ -1500,6 +1571,8 @@ function Database(props: Database2Props) {
       subscribeToCellLocalMutations,
       blobPrefetchComplete,
       seedsReady,
+      getSeedsRevision,
+      subscribeToSeedsProgress,
       paddingStart: props.paddingStart,
       paddingEnd: props.paddingEnd,
       isDocumentBlock: _isDocumentBlock,
@@ -1554,6 +1627,8 @@ function Database(props: Database2Props) {
       subscribeToCellLocalMutations,
       blobPrefetchComplete,
       seedsReady,
+      getSeedsRevision,
+      subscribeToSeedsProgress,
       props.paddingStart,
       props.paddingEnd,
       _isDocumentBlock,

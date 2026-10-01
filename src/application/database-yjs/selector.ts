@@ -1515,8 +1515,14 @@ export interface GridGroup {
 
 export interface GridGrouping {
   isGrouped: boolean;
-  /** The filtered and sorted rows used to build group membership. */
+  /**
+   * The filtered and sorted rows used to build group membership. For an
+   * ungrouped grid still reading its rows (`hydrating`), the first rows of
+   * the result found so far.
+   */
   rowOrders?: Row[];
+  /** Set while an ungrouped grid's rows are still being read. */
+  hydrating?: RowOrdersHydration;
   groupId?: string;
   fieldId?: string;
   fieldType?: FieldType;
@@ -1719,6 +1725,14 @@ function createDatabaseGroupingRowsStore(fieldId?: string): DatabaseGroupingRows
   };
 }
 
+/** Same rows, in the same order, with the same heights. */
+function haveSameRows(left: Row[], right: Row[]) {
+  return (
+    left.length === right.length &&
+    left.every((row, index) => row.id === right[index].id && row.height === right[index].height)
+  );
+}
+
 function haveSameRowOrder(left?: Row[], right?: Row[]) {
   return Boolean(
     left &&
@@ -1835,7 +1849,9 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const viewId = useDatabaseViewId();
   const database = useDatabase();
   const fields = useDatabaseFields();
-  const rowOrders = useRowOrdersSelector();
+  const { rows: progressiveRowOrders, hydrating } = useProgressiveRowOrdersSelector();
+  // Groups, their counts and their metadata need every row.
+  const rowOrders = hydrating ? undefined : progressiveRowOrders;
   const rows = useRowMap();
   const persistedGroups = view?.get(YjsDatabaseKey.groups);
   const persistedGroup = persistedGroups?.toArray()?.[0];
@@ -2269,7 +2285,14 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     isHistory,
   ]);
 
-  return grouping;
+  // An ungrouped grid shows the rows read so far, followed by a loading row.
+  return useMemo(
+    () =>
+      layout === DatabaseViewLayout.Grid && hydrating && !grouping.isGrouped
+        ? { ...grouping, rowOrders: progressiveRowOrders, hydrating }
+        : grouping,
+    [grouping, hydrating, layout, progressiveRowOrders]
+  );
 }
 
 export function useGridGroupingSelector(): GridGrouping {
@@ -2312,8 +2335,42 @@ function formulaConditionExternalReferences(
   };
 }
 
+/** How far a conditioned view got through reading its rows. */
+export interface RowOrdersHydration {
+  /** Rows whose data the conditions have read, or that cannot be loaded. */
+  ready: number;
+  total: number;
+}
+
+export interface RowOrdersSnapshot {
+  /**
+   * The sorted and filtered rows. While `hydrating`, the matches among the
+   * leading rows the conditions could all read: always the first rows of the
+   * final result, so later rows never move them. Undefined until a row can be
+   * shown, and for sorted views until every row was read.
+   */
+  rows?: Row[];
+  /** Set until every row was read; a partial result, even an empty one, is never final. */
+  hydrating?: RowOrdersHydration;
+}
+
+const EMPTY_ROW_ORDERS_SNAPSHOT: RowOrdersSnapshot = {};
+
 /**
- * Hook to get sorted and filtered row orders.
+ * Sorted and filtered rows once every row was read, and undefined while they
+ * load. Consumers that can show a partial result (the ungrouped grid) use
+ * `useProgressiveRowOrdersSelector`; charts, calculations, groups and other
+ * whole-view consumers keep waiting for the complete result.
+ */
+export function useRowOrdersSelector() {
+  const { rows, hydrating } = useProgressiveRowOrdersSelector();
+
+  return hydrating ? undefined : rows;
+}
+
+/**
+ * Hook to get sorted and filtered row orders, including the partial result of
+ * a filtered view whose rows are still loading.
  *
  * This hook is composed of smaller, focused hooks (like BLoC pattern):
  * - useBackgroundRowDocLoader: Handles background loading of row docs
@@ -2323,7 +2380,7 @@ function formulaConditionExternalReferences(
  * - Applying sorts and filters to row orders
  * - Observing data changes to trigger re-computation
  */
-export function useRowOrdersSelector() {
+export function useProgressiveRowOrdersSelector(): RowOrdersSnapshot {
   const rows = useRowMap();
   const view = useDatabaseView();
   const rowOrders = view?.get(YjsDatabaseKey.row_orders);
@@ -2399,14 +2456,39 @@ export function useRowOrdersSelector() {
 
   const [rowOrdersState, setRowOrdersState] = useState<{
     rows?: Row[];
+    hydrating?: RowOrdersHydration;
     conditionSignature: string;
     /** The view and the (combined) filters the rows were computed for. */
     viewId?: string;
     filters?: YDatabaseFilters;
   }>({ conditionSignature: '' });
   const publishRows = useCallback(
-    (rows: Row[] | undefined, conditionSignature: string) =>
-      setRowOrdersState({ rows, conditionSignature, viewId, filters }),
+    (rows: Row[] | undefined, conditionSignature: string, hydrating?: RowOrdersHydration) =>
+      setRowOrdersState((previous) => {
+        const republishesPartialResult =
+          hydrating &&
+          previous.hydrating &&
+          previous.conditionSignature === conditionSignature &&
+          previous.viewId === viewId &&
+          previous.filters === filters;
+
+        if (!republishesPartialResult) return { rows, hydrating, conditionSignature, viewId, filters };
+
+        // A partial result is published again each time more rows were read.
+        // Keep what did not change, so the rows already shown do not re-render.
+        const sameRows = rows === previous.rows || Boolean(rows && previous.rows && haveSameRows(rows, previous.rows));
+        const sameProgress =
+          hydrating.ready === previous.hydrating?.ready && hydrating.total === previous.hydrating?.total;
+
+        if (sameRows && sameProgress) return previous;
+        return {
+          rows: sameRows ? previous.rows : rows,
+          hydrating: sameProgress ? previous.hydrating : hydrating,
+          conditionSignature,
+          viewId,
+          filters,
+        };
+      }),
     [filters, viewId]
   );
   const [rollupWatchVersion, setRollupWatchVersion] = useState(0);
@@ -2697,18 +2779,46 @@ export function useRowOrdersSelector() {
     }
 
     const rowsWithDocs = originalRowOrders.filter((row) => hasRowConditionData(rowDocsForConditions[row.id]));
-    const unresolvedRows = originalRowOrders.filter(
-      (row) => !hasRowConditionData(rowDocsForConditions[row.id]) && !unavailableConditionRowsRef.current.has(row.id)
-    );
+    const isUnresolved = (row: Row) =>
+      !hasRowConditionData(rowDocsForConditions[row.id]) && !unavailableConditionRowsRef.current.has(row.id);
+    const unresolvedRows = originalRowOrders.filter(isUnresolved);
 
     // Keep conditioned views in an explicit loading state until every row can
     // be evaluated. Otherwise an early zero-match partial result renders as a
     // blank grid, which looks like the database finished with no rows.
     if (unresolvedRows.length > 0) {
       requestMissingConditionRows(unresolvedRows);
+      let partialRowOrders: Row[] | undefined;
 
       if (!filtersAppliedRef.current) {
-        publishRows(undefined, conditionStateKey);
+        const hydrating = {
+          ready: originalRowOrders.length - unresolvedRows.length,
+          total: originalRowOrders.length,
+        };
+
+        // A filter keeps row order, so its matches among the leading rows that
+        // are all readable are exactly the first rows of the final result and
+        // can show now: later rows only ever append below them. A sort can
+        // move any row, so a sorted view waits for every row. Either way the
+        // result stays `hydrating`, so an empty partial result never reads as
+        // a finished empty view.
+        if (!sorts?.length) {
+          const firstUnresolvedIndex = originalRowOrders.findIndex(isUnresolved);
+          const readablePrefix = originalRowOrders
+            .slice(0, firstUnresolvedIndex)
+            .filter((row) => hasRowConditionData(rowDocsForConditions[row.id]));
+
+          partialRowOrders = filters?.length
+            ? filterBy(readablePrefix, filters, fields, rowDocsForConditions, {
+                getRelationCellText: relationTextGetter,
+                getRollupCellText: rollupTextGetter,
+                getRollupCellValue: rollupValueGetter,
+                getFormulaContext: formulaContextGetter,
+              })
+            : readablePrefix;
+        }
+
+        publishRows(partialRowOrders, conditionStateKey, hydrating);
       } else {
         // New rows cannot be filtered until their docs load, but removals are
         // authoritative in row_orders. Prune them from the last complete result
@@ -2730,7 +2840,7 @@ export function useRowOrdersSelector() {
         });
       }
 
-      logConditionCompute(rowsWithDocs.length);
+      logConditionCompute(rowsWithDocs.length, partialRowOrders?.length);
       return;
     }
 
@@ -2943,14 +3053,20 @@ export function useRowOrdersSelector() {
   useRelativeDateFilterRefresh(filters, fields, onConditionsChange);
 
   const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
-
-  if (rowOrdersState.conditionSignature === liveConditionSignature) return rowOrdersState.rows;
   // Dashboard global filters arrive through React, not a Yjs observer, so the
   // render that brings new ones (a new combined list) precedes their recompute
   // (an effect). Keep this view's last result for that render instead of
   // flashing the loading state, which unmounts every row and replays chart
   // animations.
-  return rowOrdersState.viewId === viewId && rowOrdersState.filters !== filters ? rowOrdersState.rows : undefined;
+  const isCurrentResult =
+    rowOrdersState.conditionSignature === liveConditionSignature ||
+    (rowOrdersState.viewId === viewId && rowOrdersState.filters !== filters);
+  const { rows: publishedRows, hydrating: publishedHydration } = rowOrdersState;
+
+  return useMemo(
+    () => (isCurrentResult ? { rows: publishedRows, hydrating: publishedHydration } : EMPTY_ROW_ORDERS_SNAPSHOT),
+    [isCurrentResult, publishedHydration, publishedRows]
+  );
 }
 
 export function useRowDataSelector(rowId: string) {

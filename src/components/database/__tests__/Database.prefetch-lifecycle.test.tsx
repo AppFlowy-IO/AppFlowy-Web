@@ -724,6 +724,86 @@ describe('Database blob prefetch lifecycle', () => {
     }
   });
 
+  it('publishes the provisional seed pages of the current lifecycle at most every 250 ms', async () => {
+    jest.useFakeTimers();
+    const firstDoc = createDatabaseDoc('database-id');
+    const secondDoc = createDatabaseDoc('database-id');
+    const { rerender, unmount } = render(<Database {...databaseProps(firstDoc)} />);
+    const onProgress = jest.fn();
+
+    try {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(0);
+      });
+      expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+      const firstWalk = mockedPrefetch.mock.calls[0][2];
+      const unsubscribe = mockDatabaseContext?.subscribeToSeedsProgress?.(onProgress);
+
+      const contextBeforeProgress = mockDatabaseContext;
+
+      expect(mockDatabaseContext?.getSeedsRevision?.()).toBe(0);
+
+      // The first page publishes at once; the next ones within 250 ms are
+      // published together when the interval ends.
+      act(() => {
+        firstWalk?.onSeedsProgress?.();
+      });
+      expect(mockDatabaseContext?.getSeedsRevision?.()).toBe(1);
+      expect(onProgress).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        firstWalk?.onSeedsProgress?.();
+        firstWalk?.onSeedsProgress?.();
+      });
+      expect(mockDatabaseContext?.getSeedsRevision?.()).toBe(1);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(249);
+      });
+      expect(mockDatabaseContext?.getSeedsRevision?.()).toBe(1);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1);
+      });
+      expect(mockDatabaseContext?.getSeedsRevision?.()).toBe(2);
+      expect(onProgress).toHaveBeenCalledTimes(2);
+      // Progress is not context state: the context consumers did not re-render.
+      expect(mockDatabaseContext).toBe(contextBeforeProgress);
+      expect(mockDatabaseContext?.seedsReady).toBe(false);
+
+      // A page staged right before the lifecycle ends is never published into the next one.
+      act(() => {
+        firstWalk?.onSeedsProgress?.();
+      });
+      unsubscribe?.();
+      rerender(<Database {...databaseProps(secondDoc)} />);
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(0);
+      });
+      expect(mockedPrefetch).toHaveBeenCalledTimes(2);
+      expect(mockDatabaseContext?.getSeedsRevision?.()).toBe(0);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1000);
+      });
+      act(() => {
+        firstWalk?.onSeedsProgress?.();
+      });
+      expect(mockDatabaseContext?.getSeedsRevision?.()).toBe(0);
+
+      act(() => {
+        mockedPrefetch.mock.calls[1][2]?.onSeedsProgress?.();
+      });
+      expect(mockDatabaseContext?.getSeedsRevision?.()).toBe(1);
+      expect(onProgress).toHaveBeenCalledTimes(2);
+    } finally {
+      unmount();
+      firstDoc.destroy();
+      secondDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
   it('starts a new prefetch when the Y.Doc instance changes but its guid stays the same', async () => {
     const firstDoc = createDatabaseDoc('database-id');
     const secondDoc = createDatabaseDoc('database-id');

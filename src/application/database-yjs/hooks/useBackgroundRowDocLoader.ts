@@ -19,6 +19,33 @@ import { YDatabaseRowOrders, YDoc, YjsDatabaseKey } from '@/application/types';
 const BACKGROUND_BATCH_SIZE = 24;
 const BACKGROUND_CONCURRENCY = 12;
 const SEED_HYDRATE_BATCH_SIZE = 128;
+/**
+ * Rows checked per frame. While a walk is in flight most rows have no seed
+ * yet; checking them is cheap, so only rows that yield a doc use the batch.
+ */
+const SEED_HYDRATE_SCAN_LIMIT = 4096;
+/**
+ * While a walk is still in flight, each frame builds docs for at most this
+ * long, so the next page's response is not starved of the main thread.
+ */
+const PROVISIONAL_SEED_HYDRATE_FRAME_BUDGET_MS = 8;
+/**
+ * While a walk is still in flight, the docs built so far are published on a
+ * growing interval: the first ones at once, then after 250 ms, 500 ms and every
+ * second. Each publish copies the cached-doc map, re-runs filter and sort over
+ * every row and re-renders the rows found so far; doing that every frame takes
+ * the main thread from the walk and its commit, which the final result waits on.
+ */
+const PROVISIONAL_SEED_PUBLISH_INTERVAL_MS = 250;
+const PROVISIONAL_SEED_PUBLISH_MAX_INTERVAL_MS = 1000;
+
+function provisionalSeedPublishInterval(publishCount: number) {
+  if (publishCount === 0) return 0;
+  return Math.min(
+    PROVISIONAL_SEED_PUBLISH_INTERVAL_MS * 2 ** (publishCount - 1),
+    PROVISIONAL_SEED_PUBLISH_MAX_INTERVAL_MS
+  );
+}
 
 type RowDocMap = Record<string, YDoc>;
 type EnsureRow = (rowId: string) => Promise<YDoc | undefined> | void;
@@ -156,6 +183,9 @@ type LoaderStore = {
   subscribers: Set<() => void>;
   rowDocChangeSubscribers: Set<(change: BackgroundRowDocChange) => void>;
   sharedCachedRowDocIds: Set<string>;
+  /** Unsubscribes from the `destroy` event of each shared seed doc in the cache. */
+  sharedDocDestroyListeners: Map<string, () => void>;
+  pendingDestroyedDocs: Map<string, YDoc>;
   cachedRowDocPending: Map<string, Promise<YDoc | undefined>>;
   backgroundQueue: Set<string>;
   backgroundLoading: boolean;
@@ -167,6 +197,17 @@ type LoaderStore = {
   seedHydrateRun: number;
   seedHydrateActive: boolean;
   seedHydrateQueue: Set<string>;
+  /** Time a seed-pass frame may take; bounded until the walk's seeds are committed. */
+  seedHydrateFrameBudgetMs: number;
+  /** Docs a seed pass built from a walk in flight and has not published yet. */
+  seedHydratePending: RowDocMap;
+  /** Unsubscribes from the `destroy` event of each unpublished doc. */
+  seedHydratePendingUnwatch: Map<string, () => void>;
+  seedHydratePublishedAt: number;
+  /** Publishes of docs from the walk in flight; 0 once its seeds are committed. */
+  seedHydratePublishCount: number;
+  /** Publishes the unpublished docs of a drained pass once the interval ends. */
+  seedHydratePublishTimer: ReturnType<typeof setTimeout> | null;
   seedHydratePromise: Promise<void> | null;
   resolveSeedHydration: (() => void) | null;
   rows: RowDocMap | null | undefined;
@@ -188,6 +229,8 @@ function createLoaderStore(key: string): LoaderStore {
     subscribers: new Set(),
     rowDocChangeSubscribers: new Set(),
     sharedCachedRowDocIds: new Set(),
+    sharedDocDestroyListeners: new Map(),
+    pendingDestroyedDocs: new Map(),
     cachedRowDocPending: new Map(),
     backgroundQueue: new Set(),
     backgroundLoading: false,
@@ -199,6 +242,12 @@ function createLoaderStore(key: string): LoaderStore {
     seedHydrateRun: 0,
     seedHydrateActive: false,
     seedHydrateQueue: new Set(),
+    seedHydrateFrameBudgetMs: Number.POSITIVE_INFINITY,
+    seedHydratePending: {},
+    seedHydratePendingUnwatch: new Map(),
+    seedHydratePublishedAt: Number.NEGATIVE_INFINITY,
+    seedHydratePublishCount: 0,
+    seedHydratePublishTimer: null,
     seedHydratePromise: null,
     resolveSeedHydration: null,
     rows: undefined,
@@ -229,6 +278,47 @@ function disposeStoreDoc(store: LoaderStore, rowId: string, doc: YDoc) {
   releaseOwnedRowDoc(doc);
 }
 
+function unwatchSharedDoc(store: LoaderStore, rowId: string) {
+  store.sharedDocDestroyListeners.get(rowId)?.();
+  store.sharedDocDestroyListeners.delete(rowId);
+}
+
+/** Drops shared seed docs the seed cache destroyed (a restarted walk, a reset row). */
+function evictDestroyedSharedDocs(store: LoaderStore) {
+  const destroyedDocs = Array.from(store.pendingDestroyedDocs);
+
+  store.pendingDestroyedDocs.clear();
+  setStoreCachedRowDocs(store, (prev) => {
+    const removed: RowDocMap = {};
+
+    destroyedDocs.forEach(([rowId, doc]) => {
+      if (prev[rowId] !== doc) return;
+      removed[rowId] = doc;
+      store.sharedCachedRowDocIds.delete(rowId);
+    });
+    if (Object.keys(removed).length === 0) return { added: {}, next: prev, removed };
+    const next = { ...prev };
+
+    Object.keys(removed).forEach((rowId) => delete next[rowId]);
+    return { added: {}, next, removed };
+  });
+}
+
+function watchSharedDoc(store: LoaderStore, rowId: string, doc: YDoc) {
+  // Re-watching removes the previous listener, so only the current one fires.
+  unwatchSharedDoc(store, rowId);
+  const handleDestroy = () => {
+    store.sharedDocDestroyListeners.delete(rowId);
+    if (store.cachedRowDocs[rowId] !== doc) return;
+    // Many docs are destroyed in one pass; evict them together.
+    if (store.pendingDestroyedDocs.size === 0) queueMicrotask(() => evictDestroyedSharedDocs(store));
+    store.pendingDestroyedDocs.set(rowId, doc);
+  };
+
+  doc.on('destroy', handleDestroy);
+  store.sharedDocDestroyListeners.set(rowId, () => doc.off('destroy', handleDestroy));
+}
+
 function setStoreCachedRowDocs(
   store: LoaderStore,
   updater: (prev: RowDocMap) => { added: RowDocMap; next: RowDocMap; removed: RowDocMap }
@@ -237,6 +327,10 @@ function setStoreCachedRowDocs(
 
   if (next === store.cachedRowDocs) return;
   store.cachedRowDocs = next;
+  Object.keys(removed).forEach((rowId) => unwatchSharedDoc(store, rowId));
+  Object.entries(added).forEach(([rowId, doc]) => {
+    if (store.sharedCachedRowDocIds.has(rowId)) watchSharedDoc(store, rowId, doc);
+  });
   if (Object.keys(added).length > 0 || Object.keys(removed).length > 0) {
     const change = { added, removed };
 
@@ -276,10 +370,48 @@ function finishSeedHydration(store: LoaderStore) {
   store.seedHydratePromise = null;
 }
 
+/**
+ * Holds a doc built from a walk in flight until the next publish. A restart
+ * can destroy it before then; it is dropped instead of published.
+ */
+function holdPendingSeedDoc(store: LoaderStore, rowId: string, doc: YDoc) {
+  store.seedHydratePendingUnwatch.get(rowId)?.();
+  const handleDestroy = () => {
+    store.seedHydratePendingUnwatch.delete(rowId);
+    if (store.seedHydratePending[rowId] === doc) delete store.seedHydratePending[rowId];
+  };
+
+  store.seedHydratePending[rowId] = doc;
+  doc.on('destroy', handleDestroy);
+  store.seedHydratePendingUnwatch.set(rowId, () => doc.off('destroy', handleDestroy));
+}
+
+/** Takes the unpublished docs; the cache watches the ones it adds. */
+function takePendingSeedDocs(store: LoaderStore) {
+  const docs = store.seedHydratePending;
+
+  if (store.seedHydratePublishTimer !== null) clearTimeout(store.seedHydratePublishTimer);
+  store.seedHydratePublishTimer = null;
+  store.seedHydratePending = {};
+  store.seedHydratePendingUnwatch.forEach((unwatch) => unwatch());
+  store.seedHydratePendingUnwatch.clear();
+  return docs;
+}
+
+function publishPendingSeedDocs(store: LoaderStore) {
+  const additions = takePendingSeedDocs(store);
+
+  store.seedHydratePublishedAt = performance.now();
+  if (Number.isFinite(store.seedHydrateFrameBudgetMs)) store.seedHydratePublishCount += 1;
+  startTransition(() => cacheSharedSeedDocs(store, additions));
+}
+
 function cancelSeedHydration(store: LoaderStore) {
   store.seedHydrateRun += 1;
   if (store.seedHydrateFrame !== null) cancelAnimationFrame(store.seedHydrateFrame);
   store.seedHydrateQueue.clear();
+  // Shared seed docs belong to the seed cache: unpublished ones are only dropped.
+  takePendingSeedDocs(store);
   finishSeedHydration(store);
 }
 
@@ -316,6 +448,9 @@ function destroyStore(store: LoaderStore) {
   store.cachedRowDocs = {};
   store.syncedRowDocs = {};
   store.rowDocChangeSubscribers.clear();
+  store.sharedDocDestroyListeners.forEach((unwatch) => unwatch());
+  store.sharedDocDestroyListeners.clear();
+  store.pendingDestroyedDocs.clear();
   store.sharedCachedRowDocIds.clear();
   store.cachedRowDocPending.clear();
   loaderStores.delete(store.key);
@@ -338,11 +473,28 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
   const rowOrders = view?.get(YjsDatabaseKey.row_orders);
-  const { databaseDoc, ensureRow, loadRowFromSeed, peekRowDocFromSeed, blobPrefetchComplete, seedsReady, dataSource } =
-    useDatabaseContext();
+  const {
+    databaseDoc,
+    ensureRow,
+    loadRowFromSeed,
+    peekRowDocFromSeed,
+    blobPrefetchComplete,
+    seedsReady,
+    getSeedsRevision,
+    subscribeToSeedsProgress,
+    dataSource,
+  } = useDatabaseContext();
   const isHistory = dataSource?.type === 'history';
   // Historical snapshots are complete and provide their own bounded synchronous accessor.
   const active = requestedActive && !isHistory;
+  // Only an active loader follows the pages of a walk in flight.
+  const subscribeSeedsProgress = useCallback(
+    (onStoreChange: () => void) =>
+      active && subscribeToSeedsProgress ? subscribeToSeedsProgress(onStoreChange) : () => undefined,
+    [active, subscribeToSeedsProgress]
+  );
+  const readSeedsRevision = useCallback(() => (active ? getSeedsRevision?.() ?? 0 : 0), [active, getSeedsRevision]);
+  const seedsRevision = useSyncExternalStore(subscribeSeedsProgress, readSeedsRevision, readSeedsRevision);
   const storeKey = `${dataSource?.id ?? databaseDoc.guid}:${viewId ?? 'unknown'}:${scope}:${mode}`;
   const store = useMemo(() => getLoaderStore(storeKey), [storeKey]);
   const [rowOrderRevision, setRowOrderRevision] = useState(0);
@@ -481,14 +633,32 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
 
   // The bounded seed pass belongs to the shared store. A consumer unmounting
   // must not cancel hydration while another consumer still needs these rows.
+  // It also runs for each page a walk in flight delivers (`seedsRevision`),
+  // so conditions can start on those rows before the terminal page.
   useEffect(() => {
-    if (!active || !seedsReady || !peekRowDocFromSeed) return;
+    if (!active || !(seedsReady || seedsRevision > 0) || !peekRowDocFromSeed) return;
 
     const orderedRows = rowOrders?.toArray() as { id: string; is_deleted?: boolean }[] | undefined;
 
     if (!orderedRows) return;
+    store.seedHydrateFrameBudgetMs = seedsReady ? Number.POSITIVE_INFINITY : PROVISIONAL_SEED_HYDRATE_FRAME_BUDGET_MS;
+    if (seedsReady) {
+      // Committed seeds publish every frame again, starting with what the walk left.
+      store.seedHydratePublishCount = 0;
+      if (Object.keys(store.seedHydratePending).length > 0) publishPendingSeedDocs(store);
+    }
+
+    // Rebuilt in row order: a pass drops the rows a walk in flight has not
+    // delivered yet, and re-adding them at the end would hydrate later rows
+    // first. Filter results can only show from the first row on.
+    store.seedHydrateQueue.clear();
     orderedRows.forEach(({ id, is_deleted }) => {
-      if (!is_deleted && !hasRowConditionData(store.rows?.[id]) && !hasRowConditionData(store.cachedRowDocs[id])) {
+      if (
+        !is_deleted &&
+        !hasRowConditionData(store.rows?.[id]) &&
+        !hasRowConditionData(store.cachedRowDocs[id]) &&
+        !hasRowConditionData(store.seedHydratePending[id])
+      ) {
         store.seedHydrateQueue.add(id);
       }
     });
@@ -502,13 +672,16 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
     });
     const processBatch = () => {
       if (store.seedHydrateRun !== runId) return;
-      const additions: RowDocMap = {};
-      let processed = 0;
+      const frameStartedAt = performance.now();
+      const walkInFlight = Number.isFinite(store.seedHydrateFrameBudgetMs);
+      let hydrated = 0;
+      let scanned = 0;
 
       for (const rowId of store.seedHydrateQueue) {
-        if (processed >= SEED_HYDRATE_BATCH_SIZE) break;
+        if (hydrated >= SEED_HYDRATE_BATCH_SIZE || scanned >= SEED_HYDRATE_SCAN_LIMIT) break;
+        if (hydrated > 0 && performance.now() - frameStartedAt > store.seedHydrateFrameBudgetMs) break;
         store.seedHydrateQueue.delete(rowId);
-        processed += 1;
+        scanned += 1;
         if (
           hasRowConditionData(store.rows?.[rowId]) ||
           hasRowConditionData(store.cachedRowDocs[rowId]) ||
@@ -518,10 +691,30 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
 
         const doc = store.peekRowDocFromSeed?.(rowId);
 
-        if (doc) additions[rowId] = doc;
+        if (doc) {
+          holdPendingSeedDoc(store, rowId, doc);
+          hydrated += 1;
+        }
       }
 
-      startTransition(() => cacheSharedSeedDocs(store, additions));
+      const publishDueAt = walkInFlight
+        ? store.seedHydratePublishedAt + provisionalSeedPublishInterval(store.seedHydratePublishCount)
+        : frameStartedAt;
+
+      if (frameStartedAt >= publishDueAt) {
+        publishPendingSeedDocs(store);
+      } else if (
+        store.seedHydrateQueue.size === 0 &&
+        store.seedHydratePublishTimer === null &&
+        Object.keys(store.seedHydratePending).length > 0
+      ) {
+        // The pass ends here; the next page starts another one.
+        store.seedHydratePublishTimer = setTimeout(() => {
+          store.seedHydratePublishTimer = null;
+          publishPendingSeedDocs(store);
+        }, publishDueAt - frameStartedAt);
+      }
+
       if (store.seedHydrateRun !== runId) return;
       if (store.seedHydrateQueue.size > 0) {
         store.seedHydrateFrame = requestAnimationFrame(processBatch);
@@ -531,7 +724,7 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
     };
 
     store.seedHydrateFrame = requestAnimationFrame(processBatch);
-  }, [active, seedsReady, peekRowDocFromSeed, store, rowOrders, rowOrderRevision]);
+  }, [active, seedsReady, seedsRevision, peekRowDocFromSeed, store, rowOrders, rowOrderRevision]);
 
   // After detached hydration, recover rows absent from the blob through the
   // main row loader, realtime, or a read-only IndexedDB document.

@@ -94,6 +94,13 @@ export interface DatabaseContextState {
   blobPrefetchComplete?: boolean;
   /** True as soon as row seeds are cached (before IndexedDB persist completes). */
   seedsReady?: boolean;
+  /**
+   * Revision of the row seeds readable through `peekRowDocFromSeed` before
+   * `seedsReady`: 0 until a page of a blob walk still in flight was staged,
+   * then it changes with each staged page (and when a restart drops them).
+   */
+  getSeedsRevision?: () => number;
+  subscribeToSeedsProgress?: (onStoreChange: () => void) => () => void;
   isDatabaseRowPage?: boolean;
   paddingStart?: number;
   paddingEnd?: number;

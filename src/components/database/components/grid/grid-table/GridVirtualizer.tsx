@@ -1,4 +1,5 @@
 import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
@@ -14,7 +15,7 @@ import { PADDING_INLINE, useGridVirtualizer } from '@/components/database/compon
 import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
 import DatabaseStickyHorizontalScrollbar from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
-import { useGridContext } from '@/components/database/grid/useGridContext';
+import { useGridContext, useGridHydration } from '@/components/database/grid/useGridContext';
 import { getEmbeddedGridViewportStyle } from '@/components/database/layout';
 import { cn } from '@/lib/utils';
 
@@ -37,6 +38,37 @@ const gridLoadingDots = (
     ))}
   </div>
 );
+
+/**
+ * The loading row. For a view still reading its rows it reports how many it
+ * read, so a slow, large source never looks like an empty result.
+ */
+function GridLoadingRow() {
+  const { t } = useTranslation();
+  const hydration = useGridHydration();
+
+  return (
+    <div
+      data-testid={'grid-loading-indicator'}
+      data-loaded-row-count={hydration?.ready}
+      data-total-row-count={hydration?.total}
+      className={'flex h-9 w-full items-center justify-center gap-2'}
+      aria-label={'Loading rows'}
+      role={'status'}
+    >
+      {gridLoadingDots}
+      {hydration ? (
+        <span className={'text-xs text-text-tertiary'} data-testid={'grid-loading-progress'}>
+          {t('grid.row.loadingRowsProgress', {
+            loaded: hydration.ready,
+            total: hydration.total,
+            defaultValue: 'Loading rows… {{loaded}}/{{total}}',
+          })}
+        </span>
+      ) : null}
+    </div>
+  );
+}
 
 function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { rows: data, rowResizeStore } = useGridContext();
@@ -240,14 +272,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                 }}
               >
                 {isPlaceholderRow ? (
-                  <div
-                    data-testid={'grid-loading-indicator'}
-                    className={'flex h-9 w-full items-center justify-center'}
-                    aria-label={'Loading rows'}
-                    role={'status'}
-                  >
-                    {gridLoadingDots}
-                  </div>
+                  <GridLoadingRow />
                 ) : isFullWidthControlRow ? (
                   <div
                     style={{
