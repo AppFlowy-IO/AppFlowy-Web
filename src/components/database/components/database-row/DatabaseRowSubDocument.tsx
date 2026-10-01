@@ -248,6 +248,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   const deniedDocumentIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const [deniedDocumentId, setDeniedDocumentId] = useState<string | null>(null);
+  const [failedDocumentId, setFailedDocumentId] = useState<string | null>(null);
   const loadedDocMatchesCurrent = Boolean(doc && documentId && loadedDocumentIdRef.current === documentId);
   const noAccess = Boolean(documentId && deniedDocumentId === documentId);
 
@@ -762,6 +763,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
     setDoc(null);
     setDeniedDocumentId(null);
+    setFailedDocumentId(null);
     setLoading(Boolean(documentId));
   }, [documentId]);
 
@@ -789,6 +791,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           documentId,
           retryCount,
         });
+        setFailedDocumentId(documentId);
         setLoading(false);
         return;
       }
@@ -1237,6 +1240,18 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
   if (loading || (doc && documentId && !loadedDocMatchesCurrent)) {
     return <EditorSkeleton />;
+  }
+
+  if (documentId && failedDocumentId === documentId && !loadedDocMatchesCurrent) {
+    return (
+      <div
+        role='alert'
+        data-testid='row-document-load-error'
+        className='flex min-h-[300px] w-full items-center justify-center px-8 py-10 text-center text-sm text-text-secondary'
+      >
+        {t('chat.openPagePreviewFailedToast')}
+      </div>
+    );
   }
 
   if (!document || !doc || !documentId || !row || !workspaceId || !context) return null;

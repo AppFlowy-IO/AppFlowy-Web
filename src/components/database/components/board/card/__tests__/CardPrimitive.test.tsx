@@ -88,4 +88,41 @@ describe('CardPrimitive', () => {
     expect(setEditingCardId).not.toHaveBeenCalled();
     expect(navigateToRow).not.toHaveBeenCalled();
   });
+
+  it('opens a card title inside a non-editable board embedded in an editable document', () => {
+    mockUseBoardSelection.mockReturnValue({
+      editingCardId: null,
+      selectedCardIds: [],
+    } as ReturnType<typeof useBoardSelection>);
+
+    render(
+      <div contentEditable suppressContentEditableWarning>
+        <div contentEditable={false}>
+          <CardPrimitive columnId='todo' groupFieldId='status-field' rowId='row-1' />
+        </div>
+      </div>
+    );
+
+    fireEvent.click(screen.getByText('Card title'));
+
+    expect(navigateToRow).toHaveBeenCalledWith('row-1');
+  });
+
+  it('keeps the embedded title editor interactive while allowing clicks on the card surface', () => {
+    const { container } = render(
+      <div contentEditable suppressContentEditableWarning>
+        <div contentEditable={false}>
+          <CardPrimitive columnId='todo' groupFieldId='status-field' rowId='row-1' />
+        </div>
+      </div>
+    );
+
+    fireEvent.click(screen.getByRole('textbox', { name: 'card title' }));
+    expect(navigateToRow).not.toHaveBeenCalled();
+    expect(setEditingCardId).not.toHaveBeenCalled();
+
+    fireEvent.click(container.querySelector('[data-card-id="todo/row-1"]') as Element);
+    expect(setEditingCardId).toHaveBeenCalledWith(null);
+    expect(navigateToRow).toHaveBeenCalledWith('row-1');
+  });
 });

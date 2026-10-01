@@ -12,6 +12,10 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 import { DatabaseRowSubDocument } from '../DatabaseRowSubDocument';
 
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
 jest.mock('@/application/database-yjs', () => ({
   ...jest.requireActual('@/application/database-yjs'),
   useDatabase: jest.fn(),
@@ -293,6 +297,7 @@ describe('DatabaseRowSubDocument', () => {
     expect(createRowDocument).not.toHaveBeenCalled();
     expect(screen.queryByTestId('row-document-editor')).toBeNull();
     expect(screen.queryByTestId('row-document-no-access')).toBeNull();
+    expect(screen.getByRole('alert').textContent).toBe('chat.openPagePreviewFailedToast');
     expect(jest.getTimerCount()).toBe(0);
   });
 
@@ -328,6 +333,7 @@ describe('DatabaseRowSubDocument', () => {
     });
 
     expect(screen.getByTestId('row-document-editor').getAttribute('data-read-only')).toBe('true');
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(loadRowDocument).toHaveBeenCalledTimes(2);
 
     for (const attempt of [1, 2]) {
@@ -343,6 +349,40 @@ describe('DatabaseRowSubDocument', () => {
 
     expect(createRowDocument).not.toHaveBeenCalled();
     expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('clears the exhausted-load error when another row is opened', async () => {
+    jest.useFakeTimers();
+
+    const readyDoc = new Y.Doc({ guid: 'ready-document' }) as YDoc;
+
+    Y.applyUpdate(readyDoc, createRowDocumentState('ready-document'));
+    const loadRowDocument = jest.fn().mockImplementation(async (documentId: string) => {
+      if (documentId === 'failed-document') throw new Error('Request failed');
+      return readyDoc;
+    });
+
+    configureRowDocumentTest({
+      documentIds: { 'failed-row': 'failed-document', 'ready-row': 'ready-document' },
+      cachedDocs: new Map([['ready-document', readyDoc]]),
+      loadRowDocument,
+      createRowDocument: jest.fn(),
+      checkIfRowDocumentExists: jest.fn().mockResolvedValue(true),
+    });
+    const { rerender } = render(<DatabaseRowSubDocument rowId='failed-row' />);
+
+    await act(flushAsyncWork);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10000);
+      await flushAsyncWork();
+    });
+    expect(screen.getByRole('alert').textContent).toBe('chat.openPagePreviewFailedToast');
+
+    rerender(<DatabaseRowSubDocument rowId='ready-row' />);
+    await act(flushAsyncWork);
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByTestId('row-document-editor').getAttribute('data-view-id')).toBe('ready-document');
   });
 
   it('reads an empty document that appears before a failed creation is retried', async () => {

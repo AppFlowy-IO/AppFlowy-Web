@@ -22,8 +22,14 @@ import { coverOffsetToObjectPosition } from '@/utils/cover';
 const CARD_INTERACTIVE_TARGET_SELECTOR =
   '.custom-icon, a, button, input, label, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="button"]';
 
-export function isBoardCardInteractiveTarget(target: EventTarget | null) {
-  return target instanceof Element && Boolean(target.closest(CARD_INTERACTIVE_TARGET_SELECTOR));
+export function isBoardCardInteractiveTarget(target: EventTarget | null, card: HTMLElement) {
+  if (!(target instanceof Element)) return false;
+
+  const interactiveTarget = target.closest(CARD_INTERACTIVE_TARGET_SELECTOR);
+
+  // An embedded board sits inside the document's editable root. Only controls
+  // inside this card should prevent its row from opening.
+  return interactiveTarget !== null && card.contains(interactiveTarget);
 }
 
 export interface CardProps {
@@ -144,7 +150,7 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
             return;
           }
 
-          if (isBoardCardInteractiveTarget(target)) return;
+          if (isBoardCardInteractiveTarget(target, e.currentTarget)) return;
 
           if (editing) setEditing(false);
           navigateToRow?.(rowId);
