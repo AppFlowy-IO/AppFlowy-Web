@@ -265,6 +265,7 @@ function DatabaseRowHeader({
         icon={meta?.icon}
         name={cell?.data as string}
         richText={(cell as TextCell | undefined)?.richText}
+        richTextReadOnly={(cell as TextCell | undefined)?.richTextReadOnly}
         hasCover={!!cover}
         onEdited={onTitleEdited}
         templateStyle={templateStyle}

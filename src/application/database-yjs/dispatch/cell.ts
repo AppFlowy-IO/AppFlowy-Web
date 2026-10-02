@@ -15,6 +15,13 @@ import { setCellStoredType } from '@/application/database-yjs/cell.field-type';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import {
+  CellWriteIntent,
+  CellWriteStatus,
+  checkExistingCellWrite,
+  writeStatusFor,
+} from '@/application/database-yjs/fields/text/rich-text-guard';
+import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
+import {
   getOrCreateDatabaseHistoryManager,
   runDatabaseHistoryGroup,
   runDatabaseRowAction,
@@ -53,6 +60,8 @@ type CellHistoryOptions = {
    * the cell had, since that formatting described the replaced text.
    */
   richText?: string;
+  /** Recheck a deferred editor save against the current cell inside its write transaction. */
+  shouldWrite?: (cell: YDatabaseCell | undefined) => boolean;
 };
 
 type WritableRowTarget = {
@@ -167,6 +176,40 @@ function waitForWritableRowTarget(rowDoc: YDoc): Promise<WritableRowTarget | nul
   });
 }
 
+/**
+ * The keys a cell write would set and delete, for the rich text guard. It
+ * mirrors the branches below.
+ */
+function cellWriteIntent(
+  cell: YDatabaseCell,
+  data: CellUpdateData,
+  richText: string | undefined,
+  dateOpts: DateCellOptions | undefined
+): CellWriteIntent {
+  const set: Record<string, unknown> = { [YjsDatabaseKey.data]: data };
+  const deleted: string[] = [YjsDatabaseKey.source_field_type];
+
+  if (richText) {
+    set[YjsDatabaseKey.rich_text] = richText;
+  } else if (richText === '' || cell.get(YjsDatabaseKey.data) !== data) {
+    deleted.push(YjsDatabaseKey.rich_text);
+  }
+
+  if (dateOpts && typeof data === 'string') {
+    if (dateOpts.endTimestamp !== undefined) set[YjsDatabaseKey.end_timestamp] = dateOpts.endTimestamp;
+    if (dateOpts.includeTime !== undefined) set[YjsDatabaseKey.include_time] = dateOpts.includeTime;
+    if (dateOpts.isRange !== undefined) set[YjsDatabaseKey.is_range] = dateOpts.isRange;
+    if (dateOpts.reminderId !== undefined) set[YjsDatabaseKey.reminder_id] = dateOpts.reminderId;
+  }
+
+  return { set, delete: deleted };
+}
+
+/**
+ * Writes one cell. A cell whose formatting needs a newer client is never
+ * changed: a write that would change nothing a reader shows writes nothing
+ * (`noop`), any other write is refused (rich text spec R49).
+ */
 export function writeCellToRow({
   rowDoc,
   row,
@@ -189,13 +232,21 @@ export function writeCellToRow({
   dateOpts?: DateCellOptions;
   historyOptions?: CellHistoryOptions;
   actorUid?: AttributionUid;
-}) {
-  const cell = cells.get(fieldId);
-  const { richText: requestedRichText, ...historyDescriptor } = historyOptions ?? {};
+}): CellWriteStatus {
+  const { richText: requestedRichText, shouldWrite, ...historyDescriptor } = historyOptions ?? {};
   // Formatting belongs to Text cells only (URL cells share the text editor).
   const richText = fieldType === FieldType.RichText ? requestedRichText : undefined;
+  let status: CellWriteStatus = 'written';
 
   runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId, fieldId, fieldType, ...historyDescriptor }, () => {
+    // Read in the transaction that writes, so nothing comes in between (R50).
+    const cell = cells.get(fieldId);
+
+    if (shouldWrite && !shouldWrite(cell)) {
+      status = 'cancelled';
+      return;
+    }
+
     if (!cell) {
       const newCell = new Y.Map() as YDatabaseCell;
 
@@ -214,6 +265,13 @@ export function writeCellToRow({
 
       cells.set(fieldId, newCell);
     } else {
+      const check = checkExistingCellWrite(cell, cellWriteIntent(cell, data, richText, dateOpts));
+
+      if (check !== 'proceed') {
+        status = writeStatusFor(check);
+        return;
+      }
+
       const previousData = cell.get(YjsDatabaseKey.data);
 
       cell.set(YjsDatabaseKey.data, data);
@@ -243,6 +301,14 @@ export function writeCellToRow({
 
     touchRowAttribution(row, actorUid);
   });
+
+  return status;
+}
+
+/** Marks a written cell, and tells the user about a refused write (R54). */
+function reportCellWrite(status: CellWriteStatus, onWritten: () => void) {
+  if (status === 'written') onWritten();
+  if (status === 'refused-rich-text-newer') notifyRichTextNewer();
 }
 
 export function useUpdateCellDispatch(rowId: string, fieldId: string) {
@@ -253,7 +319,9 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
 
   return useCallback(
     (data: CellUpdateData, dateOpts?: DateCellOptions, historyOptions?: CellHistoryOptions) => {
-      void (async () => {
+      // Callers that do not need the outcome ignore it; a refusal has already
+      // been reported to the user.
+      return (async (): Promise<CellWriteStatus | undefined> => {
         if (!field) {
           Log.warn('[useUpdateCellDispatch] Field not found', { rowId, fieldId });
           return;
@@ -277,7 +345,7 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
         // database-wide history stack.
         getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
 
-        writeCellToRow({
+        const status = writeCellToRow({
           rowDoc,
           row: target.row,
           cells: target.cells,
@@ -289,9 +357,12 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
           historyOptions,
           actorUid,
         });
-        markCellLocalMutation?.(rowId, fieldId);
+
+        reportCellWrite(status, () => markCellLocalMutation?.(rowId, fieldId));
+        return status;
       })().catch((error: unknown) => {
         Log.error('[useUpdateCellDispatch] failed to update cell', { rowId, fieldId, error });
+        return undefined;
       });
     },
     [actorUid, databaseDoc, ensureRow, field, fieldId, markCellLocalMutation, rowMap, rowId]
@@ -310,7 +381,7 @@ export function useUpdateAnyCellDispatch() {
 
   return useCallback(
     (rowId: string, fieldId: string, data: CellUpdateData, historyOptions?: CellHistoryOptions) => {
-      void (async () => {
+      return (async (): Promise<CellWriteStatus | undefined> => {
         const field = database?.get(YjsDatabaseKey.fields)?.get(fieldId);
 
         if (!field) {
@@ -333,7 +404,7 @@ export function useUpdateAnyCellDispatch() {
 
         getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
 
-        writeCellToRow({
+        const status = writeCellToRow({
           rowDoc,
           row: target.row,
           cells: target.cells,
@@ -344,9 +415,12 @@ export function useUpdateAnyCellDispatch() {
           historyOptions,
           actorUid,
         });
-        markCellLocalMutation?.(rowId, fieldId);
+
+        reportCellWrite(status, () => markCellLocalMutation?.(rowId, fieldId));
+        return status;
       })().catch((error: unknown) => {
         Log.error('[useUpdateAnyCellDispatch] failed to update cell', { rowId, fieldId, error });
+        return undefined;
       });
     },
     [actorUid, database, databaseDoc, ensureRow, markCellLocalMutation, rowMap]
@@ -378,6 +452,17 @@ export type DateCellUpdate = {
   endTimestamp?: string;
   isAllDay?: boolean;
 };
+
+function dateRangeWriteIntent({ startTimestamp, endTimestamp, isAllDay }: DateCellUpdate): CellWriteIntent {
+  const set: Record<string, unknown> = {
+    [YjsDatabaseKey.data]: startTimestamp,
+    [YjsDatabaseKey.is_range]: !!endTimestamp,
+    [YjsDatabaseKey.include_time]: !isAllDay,
+  };
+
+  if (endTimestamp !== undefined) set[YjsDatabaseKey.end_timestamp] = endTimestamp;
+  return { set, delete: [YjsDatabaseKey.source_field_type] };
+}
 
 /** Resolve every writable row before committing a date edit as one undo group. */
 export function useUpdateStartEndTimeCells() {
@@ -455,10 +540,23 @@ export function useUpdateStartEndTimeCells() {
           targets.set(rowId, target);
         }
 
+        // A drag that would change a cell needing a newer client is refused
+        // as a whole, before any row is written (rich text spec R49).
+        const checks = updates.map((update) =>
+          checkExistingCellWrite(targets.get(update.rowId)?.cells.get(update.fieldId), dateRangeWriteIntent(update))
+        );
+
+        if (checks.includes('refuse')) {
+          notifyRichTextNewer();
+          return;
+        }
+
         runDatabaseHistoryGroup(() => {
-          updates.forEach(({ rowId, fieldId, startTimestamp, endTimestamp, isAllDay }) => {
+          updates.forEach((update) => {
+            const { rowId, fieldId, startTimestamp, endTimestamp, isAllDay } = update;
             const rowDoc = docs.get(rowId)!;
             const target = targets.get(rowId)!;
+            let written = true;
 
             history.registerRowDoc(rowId, rowDoc);
             runDatabaseRowAction(
@@ -466,6 +564,12 @@ export function useUpdateStartEndTimeCells() {
               { type: 'cell.update-date-range', rowId, fieldId, fieldType: FieldType.DateTime, ...historyOptions },
               () => {
                 let cell = target.cells.get(fieldId);
+
+                // Re-checked in the transaction that writes (R50).
+                if (checkExistingCellWrite(cell, dateRangeWriteIntent(update)) !== 'proceed') {
+                  written = false;
+                  return;
+                }
 
                 if (!cell) {
                   cell = new Y.Map() as YDatabaseCell;
@@ -485,7 +589,7 @@ export function useUpdateStartEndTimeCells() {
                 touchRowAttribution(target.row, actorUid);
               }
             );
-            markCellLocalMutation?.(rowId, fieldId);
+            if (written) markCellLocalMutation?.(rowId, fieldId);
           });
         }, historyOptions?.historyGroup);
       } catch (error) {

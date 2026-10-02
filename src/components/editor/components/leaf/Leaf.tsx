@@ -9,8 +9,7 @@ import { InlineReference } from '@/components/editor/components/leaf/reference/I
 import { parseInlineReference } from '@/components/editor/components/leaf/reference/utils';
 import { getInlineCommentIds } from '@/components/inline-comment/editor/anchors';
 import { useInlineCommentLeafContextOptional } from '@/components/inline-comment/InlineCommentContext';
-import { cn } from '@/lib/utils';
-import { renderColor } from '@/utils/color';
+import { applyRegisteredMarks } from '@/components/editor/components/leaf/mark-style';
 import { getFontFamily } from '@/utils/font';
 
 import './inline-leaf.scss';
@@ -45,56 +44,20 @@ function inlineCommentHighlightColor(alpha: number): string {
 
 export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
   const inlineComments = useInlineCommentLeafContextOptional();
-  let newChildren = children;
+  // Bold, italic, colors, code, ...: shared with the Text cell's static
+  // renderer, so a mark looks the same everywhere.
+  const marks = applyRegisteredMarks(leaf, children, {
+    inlineObject: Boolean(leaf.formula || leaf.mention || leaf.reference),
+  });
+  let newChildren = marks.children;
 
-  const classList = [leaf.prism_token, leaf.prism_token && 'token', leaf.class_name].filter(Boolean);
-
-  if (leaf.underline) {
-    newChildren = <u>{newChildren}</u>;
-  }
-
-  if (leaf.strikethrough) {
-    newChildren = <s>{newChildren}</s>;
-  }
-
-  if (leaf.italic) {
-    newChildren = <em>{newChildren}</em>;
-  }
-
-  if (leaf.bold) {
-    newChildren = <strong>{newChildren}</strong>;
-  }
-
-  const style: CSSProperties = {};
+  const classList = [leaf.prism_token, leaf.prism_token && 'token', leaf.class_name, ...marks.classList].filter(
+    Boolean
+  );
+  const style: CSSProperties = marks.style;
   const inlineCommentIds = inlineComments?.active
     ? getInlineCommentIds(leaf).filter((commentId) => inlineComments.openCommentIds.has(commentId))
     : EMPTY_COMMENT_IDS;
-
-  if (leaf.font_color) {
-    classList.push('text-color');
-    style['color'] = renderColor(leaf.font_color);
-  }
-
-  if (leaf.bg_color) {
-    classList.push('bg-color');
-    style['backgroundColor'] = renderColor(leaf.bg_color);
-  }
-
-  if (leaf.af_text_color) {
-    if (!classList.includes('text-color')) {
-      classList.push('text-color');
-    }
-
-    style['color'] = renderColor(leaf.af_text_color);
-  }
-
-  if (leaf.af_background_color) {
-    if (!classList.includes('bg-color')) {
-      classList.push('bg-color');
-    }
-
-    style['backgroundColor'] = renderColor(leaf.af_background_color);
-  }
 
   // The comment decorator is an interaction state, so it must win over
   // persisted text background marks. Applying it last keeps overlap/focus
@@ -109,14 +72,6 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
     style['textDecorationColor'] = inlineCommentHighlightColor(focused ? FOCUSED_UNDERLINE_ALPHA : alpha);
     if (focused) style['textDecorationThickness'] = '1.5px';
     style['cursor'] = 'pointer';
-  }
-
-  if (leaf.code && !(leaf.formula || leaf.mention || leaf.reference)) {
-    newChildren = (
-      <span className={cn('bg-border-primary font-medium', style['color'] ? undefined : 'text-[#EB5757]')}>
-        {newChildren}
-      </span>
-    );
   }
 
   if (leaf.href && text.text?.trim()) {

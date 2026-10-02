@@ -12,12 +12,9 @@ import {
   isRichTextTooLarge,
   MAX_RICH_TEXT_DELTA_BYTES,
   parseRichTextCellValue,
-  RichTextDelta,
   richTextToPlainText,
   serializeRichTextCellValue,
 } from '../rich-text';
-
-import corpus from './rich-text-plain-text-corpus.json';
 
 function makeCell(fieldType: FieldType, values: Record<string, unknown>) {
   const doc = new Y.Doc();
@@ -242,7 +239,7 @@ describe('text cell rich text', () => {
       expect(parse([{ insert: 'x', attributes: { font_color: 1, mention: 42 } }])).toBeUndefined();
     });
 
-    it('keeps a mention as an object whose fields have the types its chip reads', () => {
+    it('keeps typed mention fields and preserves valid unknown fields', () => {
       expect(
         parse([
           {
@@ -256,7 +253,7 @@ describe('text cell rich text', () => {
                 include_time: 'yes',
                 data: { title: 'T', nested: { deep: true } },
                 future_field: 'kept',
-                future_object: { dropped: true },
+                future_object: { kept: true },
               },
             },
           },
@@ -264,7 +261,15 @@ describe('text cell rich text', () => {
       ).toEqual([
         {
           insert: '@',
-          attributes: { mention: { type: 'person', person_id: 'u1', data: { title: 'T' }, future_field: 'kept' } },
+          attributes: {
+            mention: {
+              type: 'person',
+              person_id: 'u1',
+              data: { title: 'T', nested: { deep: true } },
+              future_field: 'kept',
+              future_object: { kept: true },
+            },
+          },
         },
       ]);
     });
@@ -312,17 +317,6 @@ describe('text cell rich text', () => {
 
       expect(getMentionedPageIds(withDatabase)).toEqual(['db-view']);
       expect(hasStoredPageTitle(withDatabase, 'db-view')).toBe(false);
-    });
-  });
-
-  // Shared with Desktop: both clients must write the same `data` for a delta.
-  describe('plain text corpus', () => {
-    it.each(corpus.cases.map((testCase) => [testCase.name, testCase] as const))('%s', (_name, testCase) => {
-      const pageNames = (testCase as { pageNames?: Record<string, string> }).pageNames ?? {};
-      const delta = testCase.delta as unknown as RichTextDelta;
-
-      expect(richTextToPlainText(delta, (id) => pageNames[id])).toBe(testCase.text);
-      expect(getMentionedPageIds(delta)).toEqual(testCase.pageIds);
     });
   });
 

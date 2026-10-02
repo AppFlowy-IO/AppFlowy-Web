@@ -20,7 +20,7 @@ import { isFileMediaItem } from '@/application/database-yjs/fields/media/parse';
 import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
 import { SelectOption, SelectOptionColor } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { generateOptionId } from '@/application/database-yjs/fields/select-option/utils';
-import { readRichTextFromCell } from '@/application/database-yjs/fields/text/rich-text';
+import { readRichTextCell } from '@/application/database-yjs/fields/text/rich-text';
 import {
   parseCheckboxValue,
   parseDesktopCheckboxValue,
@@ -65,10 +65,13 @@ export function parseYDatabaseCellToCell(
       : '';
   }
 
-  if (options?.richText && targetType === FieldType.RichText && storedType === FieldType.RichText) {
-    const richText = readRichTextFromCell(cell);
+  if (options?.richText && targetType === FieldType.RichText) {
+    // Only a Text-written cell's formatting describes its text; a cell that
+    // needs a newer client shows what this version can read of it, read-only.
+    const { state, delta } = readRichTextCell(cell, targetType);
 
-    if (richText) value = { ...value, richText } as TextCell;
+    if (delta) value = { ...value, richText: delta } as TextCell;
+    if (state === 'newer') value = { ...value, richTextReadOnly: true } as TextCell;
   }
 
   if (targetType === FieldType.DateTime) {

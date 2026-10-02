@@ -5,7 +5,11 @@ import { Editor, Transforms } from 'slate';
 import { ReactEditor, RenderLeafProps } from 'slate-react';
 
 import { APP_EVENTS } from '@/application/constants';
-import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
+import {
+  isRichTextTooLarge,
+  packRichTextDelta,
+  type RichTextDelta,
+} from '@/application/database-yjs/fields/text/rich-text';
 import { MentionType, View } from '@/application/types';
 import * as selectionToolbarUtils from '@/components/editor/components/toolbar/selection-toolbar/utils';
 
@@ -15,6 +19,7 @@ import RichTextCellEditor, { RichTextCellEditorProps } from '../RichTextCellEdit
 
 const mockUpdateCell = jest.fn();
 const mockNotifyError = jest.fn();
+const mockNotifyPerson = jest.fn();
 const mockEditors: ReactEditor[] = [];
 let mockContext: Record<string, unknown> = {};
 
@@ -33,6 +38,9 @@ jest.mock('@/components/editor/components/panels/mention-panel/MentionPanel', ()
 
     return activePanel ? <div data-testid='mention-panel' /> : null;
   },
+}));
+jest.mock('@/components/editor/components/panels/mention-panel/useNotifyPersonMention', () => ({
+  useNotifyPersonMention: () => mockNotifyPerson,
 }));
 jest.mock('@/components/editor/components/leaf/href/HrefPopover', () => ({ __esModule: true, default: () => null }));
 jest.mock('../RichTextCellToolbar', () => ({
@@ -127,6 +135,8 @@ function savedTexts() {
 describe('RichTextCellEditor', () => {
   beforeEach(() => {
     mockUpdateCell.mockReset();
+    mockUpdateCell.mockResolvedValue('written');
+    mockNotifyPerson.mockReset();
     mockNotifyError.mockReset();
     mockEditors.length = 0;
     clearPageNameCache();
@@ -182,7 +192,7 @@ describe('RichTextCellEditor', () => {
       await flush();
       expect(addListener.mock.calls.filter(([type]) => type === 'mousedown')).toHaveLength(0);
 
-      act(() => {
+      await act(async () => {
         fireEvent.mouseDown(document.body);
       });
       expect(savedTexts()).toEqual(['Hello!']);
@@ -356,6 +366,45 @@ describe('RichTextCellEditor', () => {
   });
 
   describe('page names', () => {
+    it.each(['Changed remotely', 'Undone', ''])(
+      'discards a deferred title save after replacement with %j',
+      async (replacement) => {
+        const name = deferredView();
+
+        mockContext.loadViewMeta = jest.fn(() => name.promise);
+        const { editor, rerenderWith } = await renderEditor({
+          variant: 'title',
+          value: 'Plan',
+          richText: [pageMention('pending-page')],
+        });
+
+        await typeAtEnd(editor, '!');
+        rerenderWith({ value: replacement, richText: undefined });
+        await flush();
+        expect(Editor.string(editor, [])).toBe(replacement);
+        await act(async () => name.resolve(view('pending-page', 'Plan')));
+        await flush();
+        expect(mockUpdateCell).not.toHaveBeenCalled();
+      }
+    );
+
+    it('keeps the editor open when a resolved page name exceeds the text limit', async () => {
+      const name = deferredView();
+
+      mockContext.loadViewMeta = jest.fn(() => name.promise);
+      const { editor, editable, onExit } = await renderEditor({ value: 'Plan', richText: [pageMention('large-page')] });
+
+      await typeAtEnd(editor, '!');
+      await pressEnter(editable);
+      expect(onExit).not.toHaveBeenCalled();
+      await act(async () => name.resolve(view('large-page', 'P'.repeat(10_001))));
+      await flush();
+      expect(onExit).not.toHaveBeenCalled();
+      expect(mockUpdateCell).not.toHaveBeenCalled();
+      expect(editable.textContent).toBe('@!');
+      expect(mockNotifyError).toHaveBeenCalledWith('grid.row.textTooLong');
+    });
+
     it('saves a page renamed since the last edit with its new name', async () => {
       let name = 'Roadmap';
       const loadViewMeta = jest.fn(async (id: string) => view(id, name));
@@ -618,6 +667,250 @@ describe('RichTextCellEditor', () => {
       const { editable } = await renderEditor({ variant: 'title', testId: 'row-title-input', ariaLabel: 'Row title' });
 
       expect(editable.getAttribute('aria-multiline')).toBe('false');
+    });
+  });
+
+  describe('format version 1', () => {
+    it.each(['written', 'refused-rich-text-newer', undefined])(
+      'notifies newly added people only after a %s save',
+      async (status) => {
+        let resolveSave!: (value: string | undefined) => void;
+
+        mockUpdateCell.mockReturnValueOnce(
+          new Promise<string | undefined>((resolve) => {
+            resolveSave = resolve;
+          })
+        );
+        const { editor, editable, onExit } = await renderEditor();
+
+        await act(async () => {
+          Transforms.insertFragment(
+            editor,
+            richTextToSlateValue([
+              {
+                insert: '@',
+                attributes: {
+                  mention: { type: MentionType.Person, person_id: 'ada', person_name: 'Ada' },
+                },
+              },
+            ])
+          );
+        });
+        expect(mockNotifyPerson).not.toHaveBeenCalled();
+        await pressEnter(editable);
+        expect(mockNotifyPerson).not.toHaveBeenCalled();
+        await act(async () => resolveSave(status));
+        expect(mockNotifyPerson).toHaveBeenCalledTimes(status === 'written' ? 1 : 0);
+        expect(onExit).toHaveBeenCalledTimes(status === 'written' ? 1 : 0);
+      }
+    );
+
+    it('does not notify a person removed from the unsaved draft', async () => {
+      const { editor, editable } = await renderEditor();
+
+      await act(async () => {
+        Transforms.insertFragment(
+          editor,
+          richTextToSlateValue([
+            {
+              insert: '@',
+              attributes: {
+                mention: { type: MentionType.Person, person_id: 'ada', person_name: 'Ada' },
+              },
+            },
+          ])
+        );
+      });
+      await act(async () => {
+        Transforms.select(editor, Editor.range(editor, []));
+        editor.insertText('No mention');
+      });
+      await pressEnter(editable);
+      expect(mockNotifyPerson).not.toHaveBeenCalled();
+      expect(savedTexts()).toEqual(['No mention']);
+    });
+
+    it('keeps the draft open when adding mention labels exceeds the final delta limit', async () => {
+      const { editor, editable, onExit } = await renderEditor({
+        value: '@Ada',
+        richText: [
+          {
+            insert: '@',
+            attributes: {
+              href: 'h'.repeat(190_000),
+              mention: { type: MentionType.Person, person_id: 'ada', person_name: 'A'.repeat(6_000) },
+            },
+          },
+        ],
+      });
+
+      await act(async () => {
+        Transforms.select(editor, Editor.range(editor, []));
+        Editor.addMark(editor, 'bold', true);
+      });
+      expect(isRichTextTooLarge(slateValueToRichText(editor.children))).toBe(false);
+      await pressEnter(editable);
+      expect(mockUpdateCell).not.toHaveBeenCalled();
+      expect(onExit).not.toHaveBeenCalled();
+      expect(editable.textContent).toBe('@');
+      expect(mockNotifyError).toHaveBeenCalledWith('grid.row.textTooLong');
+    });
+
+    it('waits for a confirmed save before leaving or reporting onSaved', async () => {
+      let resolveSave!: (status: string) => void;
+
+      mockUpdateCell.mockReturnValueOnce(
+        new Promise<string>((resolve) => {
+          resolveSave = resolve;
+        })
+      );
+      const onSaved = jest.fn();
+      const { editor, editable, onExit } = await renderEditor({ onSaved });
+
+      await typeAtEnd(editor, '!');
+      await pressEnter(editable);
+      await pressEnter(editable);
+      expect(onExit).not.toHaveBeenCalled();
+      expect(onSaved).not.toHaveBeenCalled();
+      await act(async () => resolveSave('refused-rich-text-newer'));
+      expect(onExit).not.toHaveBeenCalled();
+      expect(onSaved).not.toHaveBeenCalled();
+      expect(editable.textContent).toBe('Hello!');
+    });
+
+    it('does not retry a refused save after a newer cell value replaces it', async () => {
+      let resolveSave!: (status: string) => void;
+
+      mockUpdateCell.mockReturnValueOnce(
+        new Promise<string>((resolve) => {
+          resolveSave = resolve;
+        })
+      );
+      const { editor, editable, onExit, rerenderWith } = await renderEditor();
+
+      await typeAtEnd(editor, '!');
+      await pressEnter(editable);
+      rerenderWith({ value: 'Changed remotely' });
+      await flush();
+      await act(async () => resolveSave('refused-rich-text-newer'));
+      await pressEnter(editable);
+      expect(mockUpdateCell).toHaveBeenCalledTimes(1);
+      expect(editable.textContent).toBe('Changed remotely');
+      expect(onExit).toHaveBeenCalledTimes(1);
+    });
+
+    function savedRichTexts() {
+      return mockUpdateCell.mock.calls.map(([, , options]) => {
+        const raw = (options as { richText?: string } | undefined)?.richText;
+
+        return raw ? JSON.parse(raw) : raw;
+      });
+    }
+
+    it('saves a version 1 envelope whose known mentions are labelled with the text written for them', async () => {
+      const ada = { type: MentionType.Person, person_id: 'u1', person_name: 'Ada' };
+      const { editor, editable } = await renderEditor({
+        value: 'Hi @Ada',
+        richText: [{ insert: 'Hi ' }, { insert: '@', attributes: { mention: ada } }],
+      });
+
+      await typeAtEnd(editor, '!');
+      await pressEnter(editable);
+      expect(savedTexts()).toEqual(['Hi @Ada!']);
+      expect(savedRichTexts()).toEqual([
+        {
+          v: 1,
+          text: 'Hi @Ada!',
+          delta: [
+            { insert: 'Hi ' },
+            { insert: '@', attributes: { mention: { ...ada, label: '@Ada' } } },
+            { insert: '!' },
+          ],
+        },
+      ]);
+    });
+
+    it('writes attributes from a newer client back unchanged after an edit', async () => {
+      const stored = [{ insert: 'Hello', attributes: { bold: true, font_size: 14 } }];
+      const { editor, editable } = await renderEditor({ value: 'Hello', richText: packRichTextDelta(stored) });
+
+      await typeAtEnd(editor, '!');
+      await pressEnter(editable);
+      expect(savedRichTexts()).toEqual([
+        { v: 1, text: 'Hello!', delta: [{ insert: 'Hello!', attributes: { bold: true, font_size: 14 } }] },
+      ]);
+    });
+
+    it('refuses a draft whose plain text Desktop could not save, and keeps it open (R48)', async () => {
+      const text = 'a'.repeat(10_000);
+      const { editor, editable, onExit } = await renderEditor({ value: text });
+
+      await typeAtEnd(editor, '!');
+      await pressEnter(editable);
+      expect(mockUpdateCell).not.toHaveBeenCalled();
+      expect(onExit).not.toHaveBeenCalled();
+      expect(mockNotifyError).toHaveBeenCalledWith('grid.row.textTooLong');
+
+      // Trimming it back under the limit saves.
+      await act(async () => {
+        Transforms.select(editor, Editor.end(editor, []));
+        editor.deleteBackward('character');
+        editor.deleteBackward('character');
+      });
+      await pressEnter(editable);
+      expect(savedTexts()).toEqual(['a'.repeat(9_999)]);
+    });
+
+    it('cleans unpaired surrogates out of what it saves (R21)', async () => {
+      const { editor, editable } = await renderEditor({
+        value: 'x',
+        richText: [{ insert: 'x', attributes: { bold: true } }],
+      });
+
+      await typeAtEnd(editor, '\ud800');
+      await pressEnter(editable);
+      expect(savedTexts()).toEqual(['x\ufffd']);
+      expect(savedRichTexts()[0].text).toBe('x\ufffd');
+    });
+
+    it('keeps a title clean when its labelled save comes back (R37b)', async () => {
+      const ada = { type: MentionType.Person, person_id: 'u1', person_name: 'Ada' };
+      const { editor, editable, rerenderWith } = await renderEditor({
+        variant: 'title',
+        testId: 'row-title-input',
+        value: 'Hi @Ada',
+        richText: [{ insert: 'Hi ' }, { insert: '@', attributes: { mention: ada } }],
+      });
+
+      await typeAtEnd(editor, '!');
+      const children = editor.children;
+      const caret = editor.selection;
+      const undos = editor.history.undos.length;
+      const [[text, , options]] = mockUpdateCell.mock.calls;
+      const echo = JSON.parse((options as { richText: string }).richText);
+
+      // The echo carries labels the draft does not hold: still this editor's own save.
+      expect(echo.delta[1].attributes.mention.label).toBe('@Ada');
+      rerenderWith({ value: text as string, richText: packRichTextDelta(echo.delta) });
+      await flush();
+      // Not replaced: same content, caret and undo history.
+      expect(editor.children).toBe(children);
+      expect(editable.textContent).toBe('Hi @!');
+      expect(editor.selection).toEqual(caret);
+      expect(editor.history.undos.length).toBe(undos);
+    });
+
+    it('keeps a draft the cell refused to save dirty, so it is saved again', async () => {
+      mockUpdateCell.mockResolvedValueOnce('refused-rich-text-newer');
+      const { editor, editable } = await renderEditor();
+
+      await typeAtEnd(editor, '!');
+      act(() => {
+        window.dispatchEvent(new Event('blur'));
+      });
+      await flush();
+      await pressEnter(editable);
+      expect(savedTexts()).toEqual(['Hello!', 'Hello!']);
     });
   });
 });

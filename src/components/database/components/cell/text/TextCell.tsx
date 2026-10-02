@@ -1,9 +1,11 @@
-import { Suspense, useCallback, useMemo, useRef } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
+import { useTranslation } from 'react-i18next';
 
 import { FieldType } from '@/application/database-yjs';
 import { Cell, CellProps, TextCell as TextCellType } from '@/application/database-yjs/cell.type';
 import { useDatabaseContextOptional } from '@/application/database-yjs/context';
+import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { YjsDatabaseKey } from '@/application/types';
 import { usePlainTextCellEditing } from '@/components/database/components/cell/text/PlainTextCellEditing';
@@ -38,7 +40,11 @@ export function TextCell({
   // dropped when the template is applied.
   const isRichText = cellType === FieldType.RichText && templateEditingRowId !== rowId;
   const richText = isRichText ? (cell as TextCellType | undefined)?.richText : undefined;
+  // Formatting saved by a newer version of AppFlowy is shown, never edited:
+  // a request to edit shows the update notice instead (rich text spec R53).
+  const requiresNewerClient = cellType === FieldType.RichText && Boolean((cell as TextCellType | undefined)?.richTextReadOnly);
   const editsAsPlainText = usePlainTextCellEditing();
+  const { t } = useTranslation();
 
   const middleware = useCallback((data: unknown) => {
     if (typeof data !== 'string' && typeof data !== 'number') {
@@ -70,6 +76,14 @@ export function TextCell({
   const exitEditing = useCallback(() => {
     setEditing?.(false);
   }, [setEditing]);
+
+  const blocked = Boolean(editing && requiresNewerClient);
+
+  useEffect(() => {
+    if (!blocked) return;
+    notifyRichTextNewer();
+    exitEditing();
+  }, [blocked, exitEditing]);
 
   const plainTextEditor = editing ? (
     <TextCellEditing
@@ -106,12 +120,23 @@ export function TextCell({
           wrap ? ' whitespace-pre-wrap break-words' : 'whitespace-nowrap'
         )}
       >
-        {!editing ? (
-          richText ? (
-            <RichTextCellContent rowId={rowId} delta={richText} text={value} wrap={wrap} />
-          ) : (
-            <>{value || placeholder || ''}</>
-          )
+        {!editing || blocked ? (
+          <>
+            {richText ? (
+              <RichTextCellContent rowId={rowId} delta={richText} text={value} wrap={wrap} />
+            ) : (
+              <>{value || placeholder || ''}</>
+            )}
+            {requiresNewerClient && !readOnly && isHovering ? (
+              <span
+                data-testid={'rich-text-read-only-badge'}
+                title={t('grid.row.richTextRequiresNewerVersion')}
+                className={'absolute right-1 top-1 rounded bg-fill-content-hover px-1 text-xs text-text-tertiary'}
+              >
+                {t('grid.row.richTextReadOnlyBadge')}
+              </span>
+            ) : null}
+          </>
         ) : isRichText && !editsAsPlainText ? (
           // The cell still edits, as plain text, when the rich editor cannot
           // be loaded (see rich-text/load.ts).

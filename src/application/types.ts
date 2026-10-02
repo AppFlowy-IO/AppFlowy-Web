@@ -350,6 +350,10 @@ export interface Mention {
   // Optional denormalized display data for mention types that cannot be
   // resolved from the outline alone, such as database rows.
   data?: Record<string, unknown>;
+
+  // The plain text the mention was saved as (database Text cells). Readers
+  // compute it for known types and show it for types they do not know.
+  label?: string;
 }
 
 export enum MentionTargetKind {
@@ -802,6 +806,9 @@ export interface YDatabaseCell extends Y.Map<unknown> {
 
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.rich_text): string | undefined;
+
+  // Preserve Y.Map's generic lookup for dynamic and future cell keys.
+  get(key: string): unknown;
 }
 
 export interface YSharedRoot extends Y.Map<unknown> {

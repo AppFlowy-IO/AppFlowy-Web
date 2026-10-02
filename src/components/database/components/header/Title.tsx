@@ -1,9 +1,11 @@
 import { Suspense, useCallback, useMemo, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
+import { useTranslation } from 'react-i18next';
 
 import { RowMetaKey, useDatabaseContext, useReadOnly } from '@/application/database-yjs';
 import { useUpdateCellDispatch, useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
+import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
 import { RowCoverType, ViewIconType } from '@/application/types';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { RichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
@@ -18,6 +20,7 @@ export function Title({
   icon,
   name,
   richText,
+  richTextReadOnly = false,
   rowId,
   fieldId,
   hasCover,
@@ -29,12 +32,15 @@ export function Title({
   name?: string;
   /** The title's formatting, when it still describes `name`. */
   richText?: RichTextDelta;
+  /** The title was formatted by a newer version of AppFlowy: shown, never edited. */
+  richTextReadOnly?: boolean;
   hasCover: boolean;
   fieldId: string;
   onEdited?: (value: string) => void;
   templateStyle?: boolean;
 }) {
   const readOnly = useReadOnly();
+  const { t } = useTranslation();
   const value = name || '';
   const updateCell = useUpdateCellDispatch(rowId, fieldId);
 
@@ -171,22 +177,37 @@ export function Title({
         <div className={'flex w-full gap-2'}>
           {!templateStyle ? renderIcon() : null}
           <div className={cn('w-full py-2', templateStyle && 'pb-0 pt-2')}>
-            {templateStyle && !readOnly ? (
+            {templateStyle && !readOnly && !richTextReadOnly ? (
               // Row templates store plain values, so the template title is
               // edited as plain text (formatting there would be dropped when
               // the template is applied).
               renderPlainTextEditor({ ariaLabel: 'Template name', autoFocus: true })
-            ) : readOnly ? (
-              // The page's heading, named by its own text (as a document's
-              // title is). A role rather than an <h1>: formatted titles render
-              // block elements inside it.
-              <div data-testid='row-title-input' role={'heading'} aria-level={1} className={titleClassName}>
-                {richText ? (
-                  <RichTextCellContent rowId={rowId} delta={richText} text={value} wrap />
-                ) : (
-                  value || <span className={'text-text-tertiary'}>{'Untitled'}</span>
-                )}
-              </div>
+            ) : readOnly || richTextReadOnly ? (
+              <>
+                {/* The page's heading, named by its own text (as a document's
+                    title is). A role rather than an <h1>: formatted titles
+                    render block elements inside it. */}
+                <div
+                  data-testid='row-title-input'
+                  role={'heading'}
+                  aria-level={1}
+                  className={titleClassName}
+                  // A title formatted by a newer version is never edited: a
+                  // click shows the update notice (rich text spec R53).
+                  onClick={!readOnly && richTextReadOnly ? notifyRichTextNewer : undefined}
+                >
+                  {richText ? (
+                    <RichTextCellContent rowId={rowId} delta={richText} text={value} wrap />
+                  ) : (
+                    value || <span className={'text-text-tertiary'}>{'Untitled'}</span>
+                  )}
+                </div>
+                {!readOnly && richTextReadOnly ? (
+                  <div data-testid='row-title-read-only-hint' className={'text-xs text-text-tertiary'}>
+                    {t('grid.row.richTextRequiresNewerVersion')}
+                  </div>
+                ) : null}
+              </>
             ) : (
               // The title still edits, as plain text, when the rich editor
               // cannot be loaded (see rich-text/load.ts). That editor may

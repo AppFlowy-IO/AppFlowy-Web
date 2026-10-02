@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next';
 import { Editor as SlateEditor, Element as SlateElement, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
-import { WorkspaceService } from '@/application/services/domains';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
@@ -56,6 +55,8 @@ import {
   normalizeMentionSearchSectionsForPicker,
   shouldCacheMentionSearchSections,
 } from './mentionUtils';
+
+import { useNotifyPersonMention } from './useNotifyPersonMention';
 
 enum MentionTag {
   Result = 'result',
@@ -386,9 +387,9 @@ function MentionPanelLoadingState() {
   );
 }
 
-export function MentionPanel() {
+export function MentionPanel({ notifyOnInsert = true }: { notifyOnInsert?: boolean } = {}) {
   const { isPanelOpen, panelPosition, closePanel, searchText, removeContent, activePanel } = usePanelContext();
-  const { workspaceId, viewId, searchMentions, mentionContext, loadViewMeta, loadViews, addPage, openPageModal } =
+  const { workspaceId, viewId, searchMentions, mentionContext, loadViews, addPage, openPageModal } =
     useEditorContext();
   const currentUser = useCurrentUserOptional();
   const { t } = useTranslation();
@@ -913,43 +914,7 @@ export function MentionPanel() {
     [addPage, handleAddMention, openPageModal, searchText, viewId]
   );
 
-  const notifyPersonMention = useCallback(
-    async (mention: Mention) => {
-      if (mention.type !== MentionType.Person || !mention.person_id || !workspaceId) return;
-
-      const targetViewId = mention.page_id || mentionContext?.view_id || viewId;
-
-      if (!targetViewId) return;
-
-      const rowId = mention.row_id || mentionContext?.row_id;
-      let viewName = t('menuAppHeader.defaultNewPageName');
-      let viewLayout: ViewLayout | undefined;
-
-      try {
-        const meta = await loadViewMeta?.(targetViewId);
-
-        viewName = meta?.name || viewName;
-        viewLayout = meta?.layout;
-      } catch {
-        // Keep the stored mention usable even when metadata is unavailable.
-      }
-
-      try {
-        await WorkspaceService.updatePageMention(workspaceId, targetViewId, {
-          person_id: mention.person_id,
-          block_id: mention.block_id ?? null,
-          row_id: rowId ?? null,
-          require_notification: true,
-          view_name: viewName,
-          view_layout: viewLayout,
-          is_row_document: Boolean(rowId),
-        });
-      } catch (error) {
-        console.error('Failed to update page mention:', error);
-      }
-    },
-    [loadViewMeta, mentionContext?.row_id, mentionContext?.view_id, t, viewId, workspaceId]
-  );
+  const notifyPersonMention = useNotifyPersonMention();
 
   const handleSelectedSearchResult = useCallback(
     (result: MentionPanelSearchResult) => {
@@ -964,11 +929,11 @@ export function MentionPanel() {
             }
           : result.mention;
 
-      if (handleAddMention(mention) && mention.type === MentionType.Person) {
+      if (handleAddMention(mention) && mention.type === MentionType.Person && notifyOnInsert) {
         void notifyPersonMention(mention);
       }
     },
-    [editor, handleAddMention, mentionContext?.row_id, mentionContext?.view_id, notifyPersonMention, viewId]
+    [editor, handleAddMention, mentionContext?.row_id, mentionContext?.view_id, notifyOnInsert, notifyPersonMention, viewId]
   );
 
   const handlePanelKeyDown = useCallback(

@@ -2,7 +2,14 @@ import { createEditor, Editor, Node, Text, Transforms } from 'slate';
 import { withHistory } from 'slate-history';
 import { ReactEditor, withReact } from 'slate-react';
 
-import { RichTextDelta, richTextToPlainText } from '@/application/database-yjs/fields/text/rich-text';
+import {
+  packRichTextDelta,
+  RichTextDelta,
+  richTextToPlainText,
+  toWellFormedDeep,
+  unpackRichTextDelta,
+  withMentionLabels,
+} from '@/application/database-yjs/fields/text/rich-text';
 
 import {
   flattenFragmentToTexts,
@@ -559,5 +566,171 @@ describe('rich text cell slate model', () => {
       toggleEquation(editor);
       expect(delta(editor)).toEqual([{ insert: 'ask ' }, { insert: '@', attributes: { mention } }, { insert: ' now' }]);
     });
+  });
+
+  describe('attributes from a newer client (rich text spec section 8.4)', () => {
+    const stored: RichTextDelta = [
+      { insert: 'Hello ' },
+      { insert: 'world', attributes: { bold: true, font_size: 14, glow: { a: 1 } } },
+    ];
+
+    function preservedEditor() {
+      const editor = makeEditor();
+
+      editor.children = richTextToSlateValue(packRichTextDelta(stored));
+      return editor;
+    }
+
+    it('are packed out of the marks renderers read, and written back unchanged', () => {
+      const editor = preservedEditor();
+      const [, world] = Array.from(Node.texts(editor), ([text]) => text);
+
+      // Leaf never sees them as marks (R30).
+      expect(world).toEqual({ text: 'world', bold: true, _preserved: { font_size: 14, glow: { a: 1 } } });
+      expect(unpackRichTextDelta(delta(editor))).toEqual(stored);
+    });
+
+    it('are inherited by text typed inside, at the end of and at the start of the run', () => {
+      const editor = preservedEditor();
+
+      Transforms.select(editor, { path: [0, 1], offset: 2 });
+      editor.insertText('X');
+      Transforms.select(editor, Editor.end(editor, []));
+      typeText(editor, '!');
+      Transforms.select(editor, { path: [0, 1], offset: 0 });
+      editor.insertText('>');
+
+      expect(unpackRichTextDelta(delta(editor))).toEqual([
+        { insert: 'Hello ' },
+        { insert: '>woXrld!', attributes: { bold: true, font_size: 14, glow: { a: 1 } } },
+      ]);
+    });
+
+    it('stay when a registered mark is removed (R36)', () => {
+      const editor = preservedEditor();
+
+      Transforms.select(editor, { anchor: { path: [0, 1], offset: 0 }, focus: { path: [0, 1], offset: 5 } });
+      editor.removeMark('bold');
+      expect(unpackRichTextDelta(delta(editor))).toEqual([
+        { insert: 'Hello ' },
+        { insert: 'world', attributes: { font_size: 14, glow: { a: 1 } } },
+      ]);
+    });
+
+    it('follow text typed next to an atom, like its marks (R35)', () => {
+      const editor = makeEditor();
+
+      editor.children = richTextToSlateValue(
+        packRichTextDelta([{ insert: '$', attributes: { formula: 'x', italic: true, display_mode: 'block' } }])
+      );
+      Transforms.select(editor, Editor.end(editor, []));
+      editor.insertText('a');
+      expect(unpackRichTextDelta(delta(editor))).toEqual([
+        { insert: '$', attributes: { formula: 'x', italic: true, display_mode: 'block' } },
+        { insert: 'a', attributes: { italic: true, display_mode: 'block' } },
+      ]);
+    });
+
+    it('merge runs whose attributes differ only in key order (R33)', () => {
+      expect(
+        slateValueToRichText(
+          richTextToSlateValue(
+            packRichTextDelta([
+              { insert: 'a', attributes: { glow: { x: 1, y: 2 }, font_size: 14 } },
+              { insert: 'b', attributes: { font_size: 14, glow: { y: 2, x: 1 } } },
+            ])
+          )
+        )
+      ).toEqual([{ insert: 'ab', preserved: { font_size: 14, glow: { x: 1, y: 2 } } }]);
+    });
+
+    it('are re-checked when saved: reserved and invalid keys never come back', () => {
+      expect(
+        slateValueToRichText([
+          {
+            type: 'paragraph',
+            children: [{ text: 'x', bold: true, _preserved: { font_size: 14, atom_key: 'k', Bad: 1, gone: false } }],
+          },
+        ])
+      ).toEqual([{ insert: 'x', attributes: { bold: true }, preserved: { font_size: 14 } }]);
+    });
+
+    it('are never copied to the clipboard (R31b)', () => {
+      const editor = preservedEditor();
+
+      Transforms.select(editor, Editor.range(editor, []));
+      expect(JSON.stringify(editor.getFragment())).not.toMatch(/_preserved|font_size|glow/);
+      expect(editor.getFragment()).toEqual([
+        {
+          type: 'paragraph',
+          data: {},
+          children: [{ type: 'text', children: [{ text: 'Hello ' }, { text: 'world', bold: true }] }],
+        },
+      ]);
+    });
+
+    it('are never taken from pasted content (R31)', () => {
+      const editor = makeEditor('hi ');
+      const fragment = encodeFragment([{ text: 'pwn', bold: true, font_family: 'Inter', _preserved: { font_size: 9 } }]);
+
+      editor.insertData(transfer({ 'text/html': `<span data-slate-fragment="${fragment}">pwn</span>` }));
+      expect(delta(editor)).toEqual([{ insert: 'hi ' }, { insert: 'pwn', attributes: { bold: true } }]);
+    });
+  });
+
+  describe('mentions on the clipboard', () => {
+    it('paste a mention of an unknown type as its label, with its other marks (R31)', () => {
+      const editor = makeEditor('a ');
+      const fragment = encodeFragment([
+        { text: '@', bold: true, mention: { type: 'task', task_id: 't1', label: '#T-1 Ship' } },
+        { text: '@', mention: { type: 'task' } },
+      ]);
+
+      editor.insertData(transfer({ 'text/html': `<span data-slate-fragment="${fragment}">@</span>` }));
+      expect(delta(editor)).toEqual([{ insert: 'a ' }, { insert: '#T-1 Ship', attributes: { bold: true } }]);
+    });
+
+    it('paste a known mention with its registered fields only', () => {
+      const editor = makeEditor();
+      const fragment = encodeFragment([
+        { text: '@', mention: { type: 'person', person_id: 'u1', person_name: 'Ada', label: '@Old', avatar: 'x' } },
+      ]);
+
+      editor.insertData(transfer({ 'text/html': `<span data-slate-fragment="${fragment}">@</span>` }));
+      expect(delta(editor)).toEqual([
+        { insert: '@', attributes: { mention: { type: 'person', person_id: 'u1', person_name: 'Ada' } } },
+      ]);
+    });
+
+    it('hold no label of a known type in the editor, so a labelled save reads back as the same draft (R37b)', () => {
+      const ada = { type: 'person', person_id: 'u1', person_name: 'Ada' };
+      const draft: RichTextDelta = [{ insert: 'Hi ' }, { insert: '@', attributes: { mention: ada } }];
+      const saved = withMentionLabels(draft);
+
+      expect(saved[1].attributes?.mention).toEqual({ ...ada, label: '@Ada' });
+      expect(slateValueToRichText(richTextToSlateValue(saved))).toEqual(draft);
+      // An unknown type's label is its content and stays.
+      const task = { type: 'task', label: '#T-1' };
+
+      expect(slateValueToRichText(richTextToSlateValue([{ insert: '@', attributes: { mention: task } }]))).toEqual([
+        { insert: '@', attributes: { mention: task } },
+      ]);
+    });
+  });
+
+  it('cleans unpaired surrogates from every string it saves (R21)', () => {
+    const lone = '\ud800';
+    const cleaned = toWellFormedDeep(
+      packRichTextDelta([
+        { insert: `a${lone}`, attributes: { href: `https://x/${lone}`, glow: { [`k${lone}`]: [lone] } } },
+        { insert: '@', attributes: { mention: { type: 'task', label: `T${lone}` } } },
+      ])
+    );
+
+    expect(JSON.stringify(unpackRichTextDelta(cleaned))).not.toMatch(/\\ud800/);
+    expect(unpackRichTextDelta(cleaned)).toEqual([
+      { insert: 'a\ufffd', attributes: { href: 'https://x/\ufffd', glow: { 'k\ufffd': ['\ufffd'] } } },
+      { insert: '@', attributes: { mention: { type: 'task', label: 'T\ufffd' } } },
+    ]);
   });
 });

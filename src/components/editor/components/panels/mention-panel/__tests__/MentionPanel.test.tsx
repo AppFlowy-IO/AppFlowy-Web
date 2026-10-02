@@ -3,7 +3,7 @@ import { ReactNode } from 'react';
 import { createEditor, Editor, Transforms } from 'slate';
 import { Editable, Slate, withReact } from 'slate-react';
 
-import { View, ViewLayout } from '@/application/types';
+import { MentionSearchRequest, MentionTargetKind, View, ViewLayout } from '@/application/types';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 
 import { MentionPanel } from '../MentionPanel';
@@ -13,6 +13,7 @@ const mockRemoveContent = jest.fn();
 const mockAddMark = jest.fn();
 const mockTranslate = (key: string) => key;
 const mockLoadViews = jest.fn();
+const mockNotifyPerson = jest.fn();
 const mockPanelContext = {
   activePanel: PanelType.PageReference,
   isPanelOpen: (panel: PanelType) => panel === PanelType.PageReference,
@@ -21,10 +22,11 @@ const mockPanelContext = {
   closePanel: mockClosePanel,
   removeContent: mockRemoveContent,
 };
-const mockEditorContext = { workspaceId: 'workspace', loadViews: mockLoadViews };
+const mockEditorContext: Record<string, unknown> = { workspaceId: 'workspace', loadViews: mockLoadViews };
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockTranslate }) }));
 jest.mock('@/application/services/domains', () => ({ WorkspaceService: {} }));
+jest.mock('../useNotifyPersonMention', () => ({ useNotifyPersonMention: () => mockNotifyPerson }));
 jest.mock('@/application/slate-yjs/command', () => ({
   CustomEditor: { addMark: (...args: unknown[]) => mockAddMark(...args) },
 }));
@@ -42,10 +44,57 @@ jest.mock('@/components/_shared/popover', () => ({
 describe('MentionPanel composition', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPanelContext.activePanel = PanelType.PageReference;
+    mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.PageReference;
+    mockPanelContext.searchText = 'Target';
+    mockEditorContext.searchMentions = undefined;
     mockLoadViews.mockResolvedValue([{ view_id: 'target-page', name: 'Target', layout: ViewLayout.Document } as View]);
   });
 
   afterEach(cleanup);
+
+  it.each([true, false])('only notifies immediately when notifyOnInsert is %s', async (notifyOnInsert) => {
+    mockPanelContext.activePanel = PanelType.Mention;
+    mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.Mention;
+    mockPanelContext.searchText = 'Ada';
+    mockEditorContext.searchMentions = jest.fn(async (request: MentionSearchRequest) => ({
+      sections: request.include?.includes(MentionTargetKind.Person)
+        ? [
+            {
+              kind: 'people',
+              title: 'People',
+              items: [
+                {
+                  kind: 'person',
+                  object_id: 'ada',
+                  title: 'Ada',
+                  mention: { type: 'person', person_id: 'ada', person_name: 'Ada' },
+                },
+              ],
+            },
+          ]
+        : [{ kind: 'database_rows', items: [], status: 'ready' }],
+    }));
+    const editor = Object.assign(withReact(createEditor()), { flushLocalChanges: jest.fn() });
+
+    render(
+      <Slate editor={editor} initialValue={[{ type: 'paragraph', children: [{ text: '@Ada' }] }]}>
+        <Editable />
+        <MentionPanel notifyOnInsert={notifyOnInsert} />
+      </Slate>
+    );
+    await act(async () => {
+      Transforms.select(editor, Editor.end(editor, []));
+    });
+    const person = await screen.findByRole('button', { name: /Ada/ });
+
+    await act(async () => {
+      fireEvent.mouseDown(person);
+      fireEvent.click(person);
+    });
+    expect(mockAddMark).toHaveBeenCalledTimes(1);
+    expect(mockNotifyPerson).toHaveBeenCalledTimes(notifyOnInsert ? 1 : 0);
+  });
 
   it.each([false, true])('leaves composing Enter to the IME (highlighted result: %s)', async (highlighted) => {
     const editor = Object.assign(withReact(createEditor()), { flushLocalChanges: jest.fn() });

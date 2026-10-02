@@ -1,9 +1,8 @@
-import { CSSProperties, memo, ReactNode, Suspense, useMemo } from 'react';
+import { memo, ReactNode, Suspense, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import type { RichTextDelta, RichTextInsert } from '@/application/database-yjs/fields/text/rich-text';
-import { cn } from '@/lib/utils';
-import { renderColor } from '@/utils/color';
+import { applyRegisteredMarks } from '@/components/editor/components/leaf/mark-style';
 import { openUrl } from '@/utils/url';
 
 import { RichTextCellDocument } from './load';
@@ -20,46 +19,21 @@ function hasChips(delta: RichTextDelta) {
 }
 
 /**
- * One run of marked text, drawn the way the document's `Leaf` draws it (same
- * elements, classes and colors), for cells without mentions or equations.
+ * One run of marked text, drawn with the document's `Leaf` mark mapping
+ * (same elements, classes and colors), for cells without mentions or
+ * equations. Only registered attributes reach it: preserved ones are never
+ * rendered (rich text spec R13).
  */
 function StaticRun({ insert, attributes = {} }: RichTextInsert) {
-  const marks = attributes as Record<string, string | boolean | undefined>;
-  const classList: string[] = [];
-  const style: CSSProperties = {};
-  let children: ReactNode = insert;
-
-  if (marks.underline) children = <u>{children}</u>;
-  if (marks.strikethrough) children = <s>{children}</s>;
-  if (marks.italic) children = <em>{children}</em>;
-  if (marks.bold) children = <strong>{children}</strong>;
-
-  const textColor = marks.af_text_color || marks.font_color;
-  const backgroundColor = marks.af_background_color || marks.bg_color;
-
-  if (typeof textColor === 'string') {
-    classList.push('text-color');
-    style.color = renderColor(textColor);
-  }
-
-  if (typeof backgroundColor === 'string') {
-    classList.push('bg-color');
-    style.backgroundColor = renderColor(backgroundColor);
-  }
-
-  if (marks.code) {
-    children = (
-      <span className={cn('bg-border-primary font-medium', style.color ? undefined : 'text-[#EB5757]')}>{children}</span>
-    );
-  }
-
-  const href = marks.href;
+  const marks = applyRegisteredMarks(attributes, insert);
+  let children: ReactNode = marks.children;
+  const href = attributes.href;
 
   if (typeof href === 'string' && insert.trim()) {
     children = (
       <span
         onClick={() => void openUrl(href, '_blank')}
-        style={{ color: style.color || 'var(--text-action)' }}
+        style={{ color: marks.style.color || 'var(--text-action)' }}
         className={'href-link cursor-pointer select-auto py-0.5 underline'}
       >
         {children}
@@ -68,7 +42,7 @@ function StaticRun({ insert, attributes = {} }: RichTextInsert) {
   }
 
   return (
-    <span style={style} className={classList.join(' ')}>
+    <span style={marks.style} className={marks.classList.join(' ')}>
       {children}
     </span>
   );

@@ -10,18 +10,32 @@ import { useDatabaseContextOptional } from '@/application/database-yjs/context';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import { createDatabaseHistoryGroup } from '@/application/database-yjs/history';
 import {
+  encodeRichTextCellValue,
   getMentionedPageIds,
   hasStoredPageTitle,
-  isPlainRichText,
+  isRichTextTextTooLong,
   isRichTextTooLarge,
   plainTextToRichText,
   RichTextDelta,
+  richTextDeltaKey,
+  RichTextPageNameResolver,
   richTextToPlainText,
-  serializeRichTextCellValue,
+  sanitizeMention,
+  toWellFormedDeep,
+  toWellFormedText,
+  withMentionLabels,
 } from '@/application/database-yjs/fields/text/rich-text';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
-import { FieldId, View } from '@/application/types';
+import {
+  FieldId,
+  MentionType,
+  View,
+  YDatabaseCell,
+  YDatabaseRow,
+  YjsDatabaseKey,
+  YjsEditorKey,
+} from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { findView } from '@/components/_shared/outline/utils';
 import { isDatabaseHistoryHotkey } from '@/components/database/hooks/useDatabaseRowHistoryHotkeys';
@@ -29,6 +43,7 @@ import HrefPopover from '@/components/editor/components/leaf/href/HrefPopover';
 import { Leaf } from '@/components/editor/components/leaf/Leaf';
 import { useLeafContext } from '@/components/editor/components/leaf/leaf.hooks';
 import { MentionPanel } from '@/components/editor/components/panels/mention-panel/MentionPanel';
+import { useNotifyPersonMention } from '@/components/editor/components/panels/mention-panel/useNotifyPersonMention';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelProvider, PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { cn } from '@/lib/utils';
@@ -89,22 +104,38 @@ function isEditableElement(element: Element | null) {
   return (element as HTMLElement).isContentEditable;
 }
 
+/** A delta's content as one comparable key, in any key order. */
 function serializeDelta(delta: RichTextDelta) {
-  return JSON.stringify(delta);
+  return richTextDeltaKey(delta);
 }
 
 /**
- * A delta in the editor's own shape (key order, merged runs, kept marks), so
- * a value saved by another client in a different JSON layout compares equal
- * to the same content typed here.
+ * A delta in the editor's own shape (merged runs, kept marks, known mentions
+ * without their label), so a value saved by another client in a different
+ * JSON layout, or this editor's own save coming back labelled, compares
+ * equal to the same content typed here (rich text spec R37b).
  */
 function canonicalKey(delta: RichTextDelta) {
   return serializeDelta(slateValueToRichText(richTextToSlateValue(delta)));
 }
 
+/** The base of a draft whose save did not go through: it stays dirty until saved. */
+const UNSAVED_BASE_KEY = '\u0000unsaved';
+
 /** The page ids a delta's plain text names, as one comparable key. */
 function mentionedPagesKey(delta: RichTextDelta) {
   return getMentionedPageIds(delta).sort().join(',');
+}
+
+function personMentions(delta: RichTextDelta) {
+  const people = new Map<string, NonNullable<ReturnType<typeof sanitizeMention>>>();
+
+  delta.forEach(({ attributes }) => {
+    const mention = sanitizeMention(attributes?.mention);
+
+    if (mention?.type === MentionType.Person && mention.person_id) people.set(mention.person_id, mention);
+  });
+  return people;
 }
 
 type TestEditableElement = HTMLElement & { __richTextCellSelection?: () => string };
@@ -184,15 +215,19 @@ function RichTextCellEditorInner({
   const isTitle = variant === 'title';
   const { t } = useTranslation();
   const onUpdateCell = useUpdateCellDispatch(rowId, fieldId);
+  const notifyPersonMention = useNotifyPersonMention();
   const databaseContext = useDatabaseContextOptional();
   const loadViewMeta = databaseContext?.loadViewMeta;
   const workspaceId = databaseContext?.workspaceId ?? '';
+  const rowDoc = databaseContext?.rowMap?.[rowId];
+  const cellKey = JSON.stringify([workspaceId, rowId, fieldId]);
   const eventEmitter = databaseContext?.eventEmitter;
   const { activePanel, closePanel } = usePanelContext();
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const incoming = useMemo(() => richText ?? plainTextToRichText(value), [richText, value]);
   const incomingKey = useMemo(() => canonicalKey(incoming), [incoming]);
+  const savedPeopleRef = useRef(new Set(personMentions(incoming).keys()));
   // The content the draft started from: what "clean" compares against.
   const baseKeyRef = useRef(incomingKey);
   const [dirty, setDirty] = useState(false);
@@ -210,10 +245,16 @@ function RichTextCellEditorInner({
   const warmedPagesRef = useRef('');
   // A draft too large to save is reported once until it changes.
   const tooLargeReportedRef = useRef(false);
+  const pendingCommitRef = useRef<Promise<boolean>>();
+  const observedIncomingRef = useRef(JSON.stringify([value, incomingKey]));
 
   // External changes (undo/redo, remote sync) replace a clean draft; a dirty
   // draft keeps owning the editor until it is committed.
   useEffect(() => {
+    const observedKey = JSON.stringify([value, incomingKey]);
+    const changed = observedIncomingRef.current !== observedKey;
+
+    observedIncomingRef.current = observedKey;
     const acknowledgedIndex = pendingKeysRef.current.lastIndexOf(incomingKey);
 
     if (acknowledgedIndex !== -1) {
@@ -221,6 +262,12 @@ function RichTextCellEditorInner({
       // a save, earlier values must be allowed to arrive as remote changes.
       pendingKeysRef.current.splice(0, acknowledgedIndex + 1);
       return;
+    }
+
+    if (changed) {
+      pendingCellSaves.delete(cellKey);
+      pendingCommitRef.current = undefined;
+      savedPeopleRef.current = new Set(personMentions(incoming).keys());
     }
 
     if (incomingKey === baseKeyRef.current) return;
@@ -236,7 +283,7 @@ function RichTextCellEditorInner({
     });
     editor.onChange();
     setEmpty(Editor.string(editor, []) === '');
-  }, [editor, incoming, incomingKey]);
+  }, [cellKey, editor, incoming, incomingKey, value]);
 
   // Look mentioned pages up ahead of the save, so it can use their current
   // names without waiting. A page that cannot be named is not retried on
@@ -283,15 +330,51 @@ function RichTextCellEditorInner({
     };
   }, [editor, eventEmitter, workspaceId]);
 
+  /** The names a save writes for the pages a delta mentions. */
+  const pageNameResolver = useCallback(
+    (delta: RichTextDelta): RichTextPageNameResolver =>
+      (id) =>
+        getCachedPageName(workspaceId, id) ??
+        (hasStoredPageTitle(delta, id) ? undefined : t('menuAppHeader.defaultNewPageName')),
+    [t, workspaceId]
+  );
+
+  /** Reports a draft that cannot be saved once, until it changes. */
+  const reportTooLong = useCallback(() => {
+    if (tooLargeReportedRef.current) return;
+    tooLargeReportedRef.current = true;
+    notify.error(t('grid.row.textTooLong'));
+  }, [t]);
+
+  /** A save that did not go through leaves the draft dirty, to be saved again. */
+  const keepDraftUnsaved = useCallback(() => {
+    baseKeyRef.current = UNSAVED_BASE_KEY;
+    dirtyRef.current = true;
+    setDirty(true);
+  }, []);
+
   const write = useCallback(
-    (delta: RichTextDelta, key: string) => {
-      const text = richTextToPlainText(
-        delta,
-        (id) =>
-          getCachedPageName(workspaceId, id) ??
-          (hasStoredPageTitle(delta, id) ? undefined : t('menuAppHeader.defaultNewPageName'))
-      );
-      const formatted = !isPlainRichText(delta);
+    async (
+      draft: RichTextDelta,
+      key: string,
+      shouldWrite: (cell: YDatabaseCell | undefined) => boolean,
+      isCurrent: () => boolean
+    ) => {
+      const resolvePageName = pageNameResolver(draft);
+      // Every known mention is labelled with the text written for it (R37),
+      // and nothing stored holds an unpaired surrogate (R21).
+      const delta = toWellFormedDeep(withMentionLabels(draft, resolvePageName));
+      const text = toWellFormedText(richTextToPlainText(delta, resolvePageName));
+      // '' clears formatting even when the text is unchanged (un-bolding).
+      const richText = encodeRichTextCellValue(text, delta);
+
+      // Page names resolved since the commit can make the value too large.
+      if (isRichTextTextTooLong(text) || isRichTextTooLarge(delta)) {
+        reportTooLong();
+        keepDraftUnsaved();
+        return false;
+      }
+
       let historyGroup: object | undefined;
 
       if (isTitle) {
@@ -306,45 +389,53 @@ function RichTextCellEditorInner({
       }
 
       pendingKeysRef.current.push(key);
-      onUpdateCell(text, undefined, {
-        historyGroup,
-        // '' clears formatting even when the text is unchanged (un-bolding).
-        richText: formatted ? serializeRichTextCellValue(text, delta) : '',
-      });
-      onSaved?.(text);
+      const status = await onUpdateCell(text, undefined, { historyGroup, richText, shouldWrite });
+
+      if (status !== 'written' && status !== 'noop') {
+        const pendingIndex = pendingKeysRef.current.lastIndexOf(key);
+
+        if (pendingIndex !== -1) pendingKeysRef.current.splice(pendingIndex, 1);
+        if (status !== 'cancelled' && isCurrent()) keepDraftUnsaved();
+        return false;
+      }
+
+      if (status === 'written') {
+        const people = personMentions(delta);
+        const added = [...people].filter(([id]) => !savedPeopleRef.current.has(id));
+
+        savedPeopleRef.current = new Set(people.keys());
+        added.forEach(([, mention]) => {
+          void notifyPersonMention(mention);
+        });
+        onSaved?.(text);
+      }
+
+      return true;
     },
-    [isTitle, onSaved, onUpdateCell, t, workspaceId]
+    [isTitle, keepDraftUnsaved, notifyPersonMention, onSaved, onUpdateCell, pageNameResolver, reportTooLong]
   );
 
   /**
-   * Saves a dirty draft. Returns false when the draft is too large to save.
+   * Saves a dirty draft. Resolves false if validation or the write fails.
    * A caller that has just read the draft passes it, so it is not read twice.
    */
   const commit = useCallback(
     (draft?: { delta: RichTextDelta; key: string }) => {
-      if (!dirtyRef.current) return true;
+      if (!dirtyRef.current) return pendingCommitRef.current ?? Promise.resolve(true);
 
       const delta = draft?.delta ?? slateValueToRichText(editor.children);
       const key = draft?.key ?? serializeDelta(delta);
 
       // Desktop could not save any later edit of the cell: refuse, as Desktop
-      // does for its own limits, and keep the draft for the user to trim.
-      if (isRichTextTooLarge(delta, key)) {
-        if (!tooLargeReportedRef.current) {
-          tooLargeReportedRef.current = true;
-          notify.error(t('grid.row.textTooLong'));
-        }
-
-        return false;
+      // does for its own limits (R48), and keep the draft for the user to trim.
+      if (isRichTextTooLarge(delta, key) || isRichTextTextTooLong(richTextToPlainText(delta, pageNameResolver(delta)))) {
+        reportTooLong();
+        return Promise.resolve(false);
       }
 
       tooLargeReportedRef.current = false;
       dirtyRef.current = false;
       setDirty(false);
-
-      const cellKey = JSON.stringify([workspaceId, rowId, fieldId]);
-
-      pendingCellSaves.delete(cellKey);
 
       baseKeyRef.current = key;
 
@@ -355,38 +446,60 @@ function RichTextCellEditorInner({
           !isPageNameUnavailable(workspaceId, id)
       );
 
-      // Nearly always the names are known (loaded when the editor opened, or
-      // stored with the mention): save now, so the cell never shows the old
-      // value.
-      if (unresolved.length === 0 || !loadViewMeta) {
-        write(delta, key);
-        return true;
-      }
-
       const token = Symbol();
+      const deferred = unresolved.length > 0 && Boolean(loadViewMeta);
+      const row = rowDoc?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
+      const originalCell = row?.get(YjsDatabaseKey.cells)?.get(fieldId);
+      const originalData = originalCell?.get(YjsDatabaseKey.data);
+      const originalRichText = originalCell?.get(YjsDatabaseKey.rich_text);
+      const isCurrent = () => pendingCellSaves.get(cellKey) === token;
+      const shouldWrite = (cell: YDatabaseCell | undefined) =>
+        isCurrent() &&
+        (!deferred ||
+          !rowDoc ||
+          (cell === originalCell &&
+            cell?.get(YjsDatabaseKey.data) === originalData &&
+            cell?.get(YjsDatabaseKey.rich_text) === originalRichText));
 
       pendingCellSaves.set(cellKey, token);
-      void warmPageNames(delta)
-        .then(() => {
-          // A newer save went out while the names loaded; this one is stale.
-          if (pendingCellSaves.get(cellKey) === token) write(delta, key);
-        })
+      const save = () => (isCurrent() ? write(delta, key, shouldWrite, isCurrent) : Promise.resolve(false));
+      const pending = (deferred ? warmPageNames(delta).then(save) : save())
         .catch((error: unknown) => {
           Log.error('[RichTextCellEditor] failed to save cell', { rowId, fieldId, error });
+          if (isCurrent()) keepDraftUnsaved();
+          return false;
         })
         .finally(() => {
-          if (pendingCellSaves.get(cellKey) === token) pendingCellSaves.delete(cellKey);
+          if (isCurrent()) pendingCellSaves.delete(cellKey);
+          if (pendingCommitRef.current === pending) pendingCommitRef.current = undefined;
         });
-      return true;
+
+      pendingCommitRef.current = pending;
+      return pending;
     },
-    [editor, fieldId, loadViewMeta, rowId, t, warmPageNames, workspaceId, write]
+    [
+      cellKey,
+      editor,
+      fieldId,
+      keepDraftUnsaved,
+      loadViewMeta,
+      pageNameResolver,
+      reportTooLong,
+      rowDoc,
+      rowId,
+      warmPageNames,
+      workspaceId,
+      write,
+    ]
   );
 
   const exit = useCallback(() => {
     if (exitedRef.current) return;
-    if (!commit()) return;
-    exitedRef.current = true;
-    onExit?.();
+    void commit().then((saved) => {
+      if (!saved || dirtyRef.current || exitedRef.current) return;
+      exitedRef.current = true;
+      onExit?.();
+    });
   }, [commit, onExit]);
 
   // The listeners below are attached once and read the latest of these.
@@ -400,7 +513,7 @@ function RichTextCellEditorInner({
   // unmounts) still saves the draft, unless the editor failed to render it.
   useEffect(
     () => () => {
-      if (!crashedRef.current) commitRef.current();
+      if (!crashedRef.current) void commitRef.current();
     },
     [crashedRef]
   );
@@ -408,7 +521,10 @@ function RichTextCellEditorInner({
   // Switching tabs or closing the window keeps the draft: save it without
   // leaving the cell.
   useEffect(() => {
-    const save = () => commitRef.current();
+    const save = () => {
+      void commitRef.current();
+    };
+
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') save();
     };
@@ -474,7 +590,7 @@ function RichTextCellEditorInner({
     }
 
     // The title saves as it is typed, like the page title.
-    if (isTitle && isDirty) commit({ delta, key });
+    if (isTitle && isDirty) void commit({ delta, key });
   }, [commit, editor, isTitle, warmPageNames]);
 
   changeRef.current = handleChange;
@@ -650,12 +766,13 @@ function RichTextCellEditorInner({
 
           // Focus moving to a popover the editor opened stays in the session;
           // focus leaving the window keeps the draft for when it comes back.
-          if (!next || isInsideOverlay(next, containerRef.current) || containerRef.current?.contains(next as Node)) return;
+          if (!next || isInsideOverlay(next, containerRef.current) || containerRef.current?.contains(next as Node))
+            return;
           exit();
         }}
       />
       <RichTextCellToolbar />
-      <MentionPanel />
+      <MentionPanel notifyOnInsert={false} />
       {/* The link hover card's "Edit" opens this, as in the document editor. */}
       <HrefPopover open={!!linkOpen} onClose={() => closeLinkPopover?.()} />
     </div>

@@ -20,6 +20,11 @@ export interface TextCell extends Cell {
   data: string;
   /** Formatting for `data`, present only while it still describes `data`. */
   richText?: RichTextDelta;
+  /**
+   * The formatting was saved by a newer version of AppFlowy that this one
+   * may not change: the cell is shown, never edited.
+   */
+  richTextReadOnly?: boolean;
 }
 
 export interface AICell extends Cell {

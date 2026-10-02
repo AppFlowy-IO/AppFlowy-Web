@@ -1,7 +1,15 @@
 import { Descendant, Editor, Element, Node, Path, Range, Text, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
 
-import { type RichTextDelta, sanitizeRichTextAttributes } from '@/application/database-yjs/fields/text/rich-text';
+import {
+  isKnownMentionType,
+  jsonDeepEqual,
+  partitionRichTextAttributes,
+  type RichTextDelta,
+  type RichTextInsert,
+  sanitizePreservedAttributes,
+  sanitizeRichTextAttributes,
+} from '@/application/database-yjs/fields/text/rich-text';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { extractAppFlowyClipboardFragment } from '@/components/editor/clipboard/appflowy-fragment';
 import { isSingleURLText, processUrl } from '@/utils/url';
@@ -14,9 +22,46 @@ import { isSingleURLText, processUrl } from '@/utils/url';
 
 export const RICH_TEXT_CELL_ELEMENT = 'paragraph';
 
-/** The marks a Text cell keeps, in the shape it reads them; see `sanitizeRichTextAttributes`. */
+/**
+ * The marks the clipboard carries into or out of a Text cell: registered
+ * keys only (see `sanitizeRichTextAttributes`). Unknown attributes, and the
+ * editor's packed `_preserved`, never come from or go to the clipboard
+ * (rich text spec R31, R31b).
+ */
 function pickMarks(source: Record<string, unknown>) {
   return sanitizeRichTextAttributes(source);
+}
+
+/**
+ * The text property that carries a run's unknown attributes through edits
+ * (rich text spec R34). Slate's `insertText` types into the current text
+ * node, so typed text keeps them exactly when it keeps the run's marks. It is
+ * never stored as such, and renderers never read it.
+ */
+export const PRESERVED_ATTRIBUTES_KEY = '_preserved';
+
+/**
+ * A stored insert's attributes as text properties: registered marks (known
+ * mentions without their label, which every save recomputes) plus the
+ * unknown attributes packed into `_preserved`.
+ */
+function insertMarks({ attributes, preserved }: RichTextInsert): Record<string, unknown> {
+  const flat = preserved ? { ...attributes, ...preserved } : attributes;
+  const { known, preserved: unknown } = partitionRichTextAttributes(flat, { dropKnownLabel: true });
+
+  return Object.keys(unknown).length > 0 ? { ...known, [PRESERVED_ATTRIBUTES_KEY]: unknown } : known;
+}
+
+/** A text node's properties as an insert: registered marks and the re-checked `_preserved`. */
+function nodeInsert(insert: string, properties: Record<string, unknown>): RichTextInsert {
+  const { [PRESERVED_ATTRIBUTES_KEY]: packed, ...rest } = properties;
+  const { known } = partitionRichTextAttributes(rest, { dropKnownLabel: true });
+  const preserved = sanitizePreservedAttributes(packed);
+  const op: RichTextInsert = { insert };
+
+  if (Object.keys(known).length > 0) op.attributes = known;
+  if (preserved) op.preserved = preserved;
+  return op;
 }
 
 /** Marks that turn a text run into one inline object (a chip). */
@@ -86,8 +131,9 @@ function splitAtomText(text: string) {
 export function richTextToSlateValue(delta: RichTextDelta): Descendant[] {
   const children: Text[] = delta
     .filter(({ insert }) => insert.length > 0)
-    .flatMap(({ insert, attributes }) => {
-      const marks = pickMarks(attributes ?? {});
+    .flatMap((op) => {
+      const { insert } = op;
+      const marks = insertMarks(op);
 
       if (!ATOMIC_MARKS.some((mark) => mark in marks)) return [{ ...marks, text: insert } as Text];
 
@@ -113,23 +159,25 @@ export function slateValueToRichText(nodes: Descendant[]): RichTextDelta {
     for (const [text] of Node.texts(node)) {
       if (!text.text) continue;
       const { text: insert, ...rest } = text;
-      const attributes = pickMarks(rest as Record<string, unknown>);
+      const op = nodeInsert(insert, rest as Record<string, unknown>);
       const last = delta[delta.length - 1];
 
-      // Adjacent runs with the same marks are one insert, as in a Y.Text delta.
+      // Adjacent runs with the same marks, registered and preserved, are one
+      // insert, as in a Y.Text delta (compared by value, in any key order).
       // Mentions and equations stay separate: each placeholder character is
       // its own inline object.
       if (
         last &&
-        !attributes.mention &&
-        !attributes.formula &&
-        JSON.stringify(last.attributes ?? {}) === JSON.stringify(attributes)
+        !op.attributes?.mention &&
+        !op.attributes?.formula &&
+        jsonDeepEqual(last.attributes ?? {}, op.attributes ?? {}) &&
+        jsonDeepEqual(last.preserved ?? {}, op.preserved ?? {})
       ) {
         last.insert += insert;
         continue;
       }
 
-      delta.push(Object.keys(attributes).length > 0 ? { insert, attributes } : { insert });
+      delta.push(op);
     }
   });
 
@@ -178,10 +226,20 @@ export function flattenFragmentToTexts(fragment: Node[], lineBreak = '\n'): Text
       if (index > 0) result.push({ text: lineBreak });
       line.forEach((text) => {
         const { text: value, ...rest } = text;
+        const marks = pickMarks(rest as Record<string, unknown>);
+        const mention = marks.mention as { type?: unknown; label?: unknown } | undefined;
+        let content = value;
+
+        // A mention of a type this version does not know is carried as the
+        // text it reads as, with the run's other marks (R31).
+        if (mention && !isKnownMentionType(mention.type)) {
+          content = typeof mention.label === 'string' ? mention.label : '';
+          delete marks.mention;
+        }
 
         result.push({
-          ...pickMarks(rest as Record<string, unknown>),
-          text: lineBreak === '\n' ? value : value.replace(/\r\n?|\n/g, lineBreak),
+          ...marks,
+          text: lineBreak === '\n' ? content : content.replace(/\r\n?|\n/g, lineBreak),
         } as Text);
       });
     });
