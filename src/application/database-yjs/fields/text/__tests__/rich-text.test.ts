@@ -122,6 +122,18 @@ describe('text cell rich text', () => {
     expect(richTextToPlainText(delta, () => undefined)).toBe('Old');
   });
 
+  it('preserves long link attributes accepted by Desktop within the shared delta limit', () => {
+    // Desktop's rich_text.rs also tests hrefs longer than 32 KB. The limit
+    // applies to the entire delta, not an individual attribute's length.
+    const href = `https://example.com/${'a'.repeat(33_000)}`;
+    const delta = [{ insert: 'Link', attributes: { href } }];
+    const stored = serializeRichTextCellValue('Link', delta);
+
+    expect(isRichTextTooLarge(delta)).toBe(false);
+    expect(parseRichTextCellValue(stored, 'Link')).toEqual(delta);
+    expect(serializeRichTextCellValue('Link', parseRichTextCellValue(stored, 'Link')!)).toBe(stored);
+  });
+
   it('treats inserts without attributes (or only false ones) as plain', () => {
     expect(isPlainRichText([{ insert: 'a' }, { insert: 'b', attributes: { bold: false } }])).toBe(true);
     expect(isPlainRichText(boldDelta)).toBe(false);

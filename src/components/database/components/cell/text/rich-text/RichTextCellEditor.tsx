@@ -112,6 +112,11 @@ type TestEditableElement = HTMLElement & { __richTextCellSelection?: () => strin
 // Bursts of title typing are one undo step, as they were in the textarea.
 const TITLE_UNDO_PAUSE_MS = 1000;
 
+// A page-name lookup can outlive the editor that started it. Track only
+// outstanding saves, shared across sessions, so a newer commit to the same
+// cell invalidates the older lookup without dropping saves on unmount.
+const pendingCellSaves = new Map<string, symbol>();
+
 type EditorWithFlush = ReactEditor & HistoryEditor & { flushLocalChanges?: () => void };
 
 function createCellEditor(singleLine: boolean) {
@@ -198,8 +203,7 @@ function RichTextCellEditorInner({
   const titleUndoGroupRef = useRef<{ group: object; timer?: number } | null>(null);
   // Values this editor saved that may not have come back yet: their echo is
   // not an external change, even when a newer save already went out.
-  const pendingKeysRef = useRef(new Set<string>());
-  const commitSeqRef = useRef(0);
+  const pendingKeysRef = useRef<string[]>([]);
   // The content the last change handled, so selection-only changes are skipped.
   const changeKeyRef = useRef(incomingKey);
   // The pages last looked up, so a lookup runs only when the mentions change.
@@ -210,11 +214,22 @@ function RichTextCellEditorInner({
   // External changes (undo/redo, remote sync) replace a clean draft; a dirty
   // draft keeps owning the editor until it is committed.
   useEffect(() => {
-    if (pendingKeysRef.current.delete(incomingKey)) return;
+    const acknowledgedIndex = pendingKeysRef.current.lastIndexOf(incomingKey);
+
+    if (acknowledgedIndex !== -1) {
+      // React can coalesce several saves into one echo. Once it acknowledges
+      // a save, earlier values must be allowed to arrive as remote changes.
+      pendingKeysRef.current.splice(0, acknowledgedIndex + 1);
+      return;
+    }
+
     if (incomingKey === baseKeyRef.current) return;
     baseKeyRef.current = incomingKey;
     if (dirtyRef.current) return;
 
+    // Local operations describe the previous value and cannot be replayed
+    // against this replacement from database history or another client.
+    editor.history = { undos: [], redos: [] };
     Editor.withoutNormalizing(editor, () => {
       editor.children = richTextToSlateValue(incoming);
       Transforms.select(editor, Editor.end(editor, []));
@@ -290,7 +305,7 @@ function RichTextCellEditorInner({
         historyGroup = burst.group;
       }
 
-      pendingKeysRef.current.add(key);
+      pendingKeysRef.current.push(key);
       onUpdateCell(text, undefined, {
         historyGroup,
         // '' clears formatting even when the text is unchanged (un-bolding).
@@ -327,7 +342,9 @@ function RichTextCellEditorInner({
       dirtyRef.current = false;
       setDirty(false);
 
-      const seq = ++commitSeqRef.current;
+      const cellKey = JSON.stringify([workspaceId, rowId, fieldId]);
+
+      pendingCellSaves.delete(cellKey);
 
       baseKeyRef.current = key;
 
@@ -346,13 +363,19 @@ function RichTextCellEditorInner({
         return true;
       }
 
+      const token = Symbol();
+
+      pendingCellSaves.set(cellKey, token);
       void warmPageNames(delta)
         .then(() => {
           // A newer save went out while the names loaded; this one is stale.
-          if (seq === commitSeqRef.current) write(delta, key);
+          if (pendingCellSaves.get(cellKey) === token) write(delta, key);
         })
         .catch((error: unknown) => {
           Log.error('[RichTextCellEditor] failed to save cell', { rowId, fieldId, error });
+        })
+        .finally(() => {
+          if (pendingCellSaves.get(cellKey) === token) pendingCellSaves.delete(cellKey);
         });
       return true;
     },
@@ -488,9 +511,19 @@ function RichTextCellEditorInner({
     (e: ReactKeyboardEvent<HTMLDivElement>): boolean => {
       const event = e.nativeEvent;
 
-      // A clean draft lets undo/redo reach the database history. Reported as
-      // handled so Slate does not also run (and preventDefault) its own undo.
-      if (activePanel === undefined && !dirtyRef.current && isDatabaseHistoryHotkey(event)) return true;
+      // Leave confirmation to the IME, without Slate interpreting it as a
+      // newline or the panel submitting the draft. Keep browser defaults.
+      if (event.isComposing) {
+        e.stopPropagation();
+        return true;
+      }
+
+      // Undo can restore a clean draft while leaving formatting to redo
+      // locally. Other clean-draft history shortcuts reach database history.
+      // Report them as handled so Slate does not also run its own history.
+      const hasLocalRedo = isRedoHotkey(event) && editor.history.redos.length > 0;
+
+      if (activePanel === undefined && !dirtyRef.current && !hasLocalRedo && isDatabaseHistoryHotkey(event)) return true;
 
       // Escape leaves the title and still reaches the dialog, which closes.
       if (isTitle && activePanel === undefined && isEscapeHotkey(event)) {
@@ -517,7 +550,6 @@ function RichTextCellEditorInner({
 
       // The mention panel owns Enter/Escape/arrows while it is open.
       if (e.defaultPrevented || activePanel !== undefined) return true;
-      if (event.isComposing) return false;
 
       // Undo/redo of the draft. Handled here with the app's hotkeys (which
       // detect the platform from navigator.platform) rather than left to

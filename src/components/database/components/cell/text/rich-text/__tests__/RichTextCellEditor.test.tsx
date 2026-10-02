@@ -1,13 +1,16 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import EventEmitter from 'events';
+
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Editor, Transforms } from 'slate';
 import { ReactEditor, RenderLeafProps } from 'slate-react';
 
 import { APP_EVENTS } from '@/application/constants';
 import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
 import { MentionType, View } from '@/application/types';
+import * as selectionToolbarUtils from '@/components/editor/components/toolbar/selection-toolbar/utils';
 
 import { clearPageNameCache } from '../page-name-cache';
+import { richTextToSlateValue, slateValueToRichText } from '../rich-text-slate';
 import RichTextCellEditor, { RichTextCellEditorProps } from '../RichTextCellEditor';
 
 const mockUpdateCell = jest.fn();
@@ -23,7 +26,14 @@ jest.mock('@/application/database-yjs/context', () => ({ useDatabaseContextOptio
 jest.mock('@/components/_shared/notify', () => ({
   notify: { error: (...args: unknown[]) => mockNotifyError(...args) },
 }));
-jest.mock('@/components/editor/components/panels/mention-panel/MentionPanel', () => ({ MentionPanel: () => null }));
+jest.mock('@/components/editor/components/panels/mention-panel/MentionPanel', () => ({
+  MentionPanel: () => {
+    const { usePanelContext } = jest.requireActual('@/components/editor/components/panels/Panels.hooks');
+    const { activePanel } = usePanelContext();
+
+    return activePanel ? <div data-testid='mention-panel' /> : null;
+  },
+}));
 jest.mock('@/components/editor/components/leaf/href/HrefPopover', () => ({ __esModule: true, default: () => null }));
 jest.mock('../RichTextCellToolbar', () => ({
   RICH_TEXT_CELL_OVERLAY_ATTR: 'data-rich-text-cell-overlay',
@@ -57,6 +67,15 @@ const pageMention = (pageId: string, title?: string): RichTextDelta[number] => (
 
 function view(id: string, name: string) {
   return { view_id: id, name } as View;
+}
+
+function deferredView() {
+  let resolve: (value: View) => void = () => undefined;
+  const promise = new Promise<View>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
 }
 
 async function flush() {
@@ -209,6 +228,82 @@ describe('RichTextCellEditor', () => {
       expect(editable.textContent).toBe('Xab');
     });
 
+    it('accepts a remote title equal to an older save after a newer save is acknowledged', async () => {
+      const { editor, editable, rerenderWith } = await renderEditor({ variant: 'title', value: 'X' });
+
+      await typeAtEnd(editor, 'ab');
+      expect(savedTexts()).toEqual(['Xa', 'Xab']);
+
+      // React may coalesce both local save echoes into only the latest value.
+      rerenderWith({ value: 'Xab' });
+      await flush();
+      rerenderWith({ value: 'Xa' });
+      await flush();
+      expect(editable.textContent).toBe('Xa');
+
+      await typeAtEnd(editor, 'c');
+      expect(savedTexts()).toEqual(['Xa', 'Xab', 'Xac']);
+    });
+
+    it('redoes local formatting after undo restores the saved text', async () => {
+      const { editor, editable } = await renderEditor();
+      const modifier = /Mac|iPod|iPhone|iPad/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+      const databaseHistory = jest.fn();
+
+      await act(async () => {
+        Transforms.select(editor, Editor.range(editor, []));
+        fireEvent.keyDown(editable, { key: 'b', keyCode: 66, which: 66, ...modifier });
+      });
+      expect(slateValueToRichText(editor.children)).toEqual([{ insert: 'Hello', attributes: { bold: true } }]);
+
+      await act(async () => {
+        fireEvent.keyDown(editable, { key: 'z', keyCode: 90, which: 90, ...modifier });
+      });
+      expect(slateValueToRichText(editor.children)).toEqual([{ insert: 'Hello' }]);
+      expect(mockUpdateCell).not.toHaveBeenCalled();
+
+      // Database history listens above the cell; local redo must not reach it.
+      document.addEventListener('keydown', databaseHistory);
+      try {
+        await act(async () => {
+          fireEvent.keyDown(editable, { key: 'z', keyCode: 90, which: 90, shiftKey: true, ...modifier });
+        });
+        expect(slateValueToRichText(editor.children)).toEqual([{ insert: 'Hello', attributes: { bold: true } }]);
+        expect(databaseHistory).not.toHaveBeenCalled();
+      } finally {
+        document.removeEventListener('keydown', databaseHistory);
+      }
+    });
+
+    it('discards local redo when a remote value replaces the clean draft', async () => {
+      const { editor, editable, rerenderWith } = await renderEditor();
+      const modifier = /Mac|iPod|iPhone|iPad/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+      const databaseHistory = jest.fn();
+
+      await act(async () => {
+        Transforms.select(editor, Editor.range(editor, []));
+        fireEvent.keyDown(editable, { key: 'b', keyCode: 66, which: 66, ...modifier });
+      });
+      await act(async () => {
+        fireEvent.keyDown(editable, { key: 'z', keyCode: 90, which: 90, ...modifier });
+      });
+      rerenderWith({ value: 'Remote' });
+      await flush();
+      expect(editable.textContent).toBe('Remote');
+
+      document.addEventListener('keydown', databaseHistory);
+      try {
+        await act(async () => {
+          fireEvent.keyDown(editable, { key: 'z', keyCode: 90, which: 90, shiftKey: true, ...modifier });
+        });
+        expect(slateValueToRichText(editor.children)).toEqual([{ insert: 'Remote' }]);
+        expect(databaseHistory).toHaveBeenCalledTimes(1);
+        expect(mockUpdateCell).not.toHaveBeenCalled();
+      } finally {
+        document.removeEventListener('keydown', databaseHistory);
+      }
+    });
+
     it.each([
       ['Chrome, which reports key code 229 while composing', 229],
       ['engines that report Enter itself', 13],
@@ -221,6 +316,25 @@ describe('RichTextCellEditor', () => {
       expect(mockUpdateCell).not.toHaveBeenCalled();
 
       await pressEnter(editable);
+      expect(onExit).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps an unhighlighted mention panel open when Enter confirms IME text', async () => {
+      // jsdom has no DOM Range geometry; the panel can use the editor's bounds.
+      jest.spyOn(selectionToolbarUtils, 'getRangeRect').mockReturnValue(null);
+      const { editor, editable, onExit } = await renderEditor();
+
+      await typeAtEnd(editor, ' @か');
+      expect(screen.queryByTestId('mention-panel')).not.toBeNull();
+
+      await pressEnter(editable, { isComposing: true });
+      expect(onExit).not.toHaveBeenCalled();
+      expect(mockUpdateCell).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('mention-panel')).not.toBeNull();
+      expect(editable.textContent).toBe('Hello @か');
+
+      await pressEnter(editable);
+      expect(savedTexts()).toEqual(['Hello @か']);
       expect(onExit).toHaveBeenCalledTimes(1);
     });
 
@@ -356,6 +470,127 @@ describe('RichTextCellEditor', () => {
       });
       await flush();
       expect(savedTexts()).toEqual(['A Planxy']);
+    });
+
+    it('drops a delayed save from an earlier session after the reopened cell saves replacement text', async () => {
+      let resolveName: (value: View) => void = () => undefined;
+
+      mockContext.loadViewMeta = jest.fn(
+        () =>
+          new Promise<View>((resolve) => {
+            resolveName = resolve;
+          })
+      );
+      const props = { value: 'See Plan', richText: [{ insert: 'See ' }, pageMention('p3')] };
+      const first = await renderEditor(props);
+
+      await typeAtEnd(first.editor, ' old');
+      await pressEnter(first.editable);
+      first.unmount();
+      expect(mockUpdateCell).not.toHaveBeenCalled();
+
+      const second = await renderEditor(props);
+
+      await act(async () => {
+        Transforms.select(second.editor, Editor.range(second.editor, []));
+        second.editor.insertText('Replacement');
+      });
+      await pressEnter(second.editable);
+      expect(savedTexts()).toEqual(['Replacement']);
+
+      await act(async () => {
+        resolveName(view('p3', 'Plan'));
+      });
+      await flush();
+      expect(savedTexts()).toEqual(['Replacement']);
+    });
+
+    it('finishes a delayed save after unmount when no newer save replaces it', async () => {
+      const name = deferredView();
+
+      mockContext.loadViewMeta = jest.fn(() => name.promise);
+      const { editor, unmount } = await renderEditor({
+        value: 'See Plan',
+        richText: [{ insert: 'See ' }, pageMention('p4')],
+      });
+
+      await typeAtEnd(editor, '!');
+      unmount();
+      expect(mockUpdateCell).not.toHaveBeenCalled();
+
+      await act(async () => {
+        name.resolve(view('p4', 'Plan'));
+      });
+      await flush();
+      expect(savedTexts()).toEqual(['See Plan!']);
+    });
+
+    it.each(['older', 'newer'] as const)(
+      'keeps the newest delayed save across sessions when the %s lookup finishes first',
+      async (firstResolved) => {
+        const oldName = deferredView();
+        const newName = deferredView();
+
+        mockContext.loadViewMeta = jest.fn((id: string) => (id === 'old-page' ? oldName.promise : newName.promise));
+        const props = { value: 'See Old', richText: [{ insert: 'See ' }, pageMention('old-page')] };
+        const first = await renderEditor(props);
+
+        await typeAtEnd(first.editor, '!');
+        first.unmount();
+
+        const second = await renderEditor(props);
+
+        await act(async () => {
+          Transforms.select(second.editor, Editor.range(second.editor, []));
+          Transforms.insertFragment(second.editor, richTextToSlateValue([{ insert: 'See ' }, pageMention('new-page')]));
+        });
+        second.unmount();
+        expect(mockUpdateCell).not.toHaveBeenCalled();
+
+        await act(async () => {
+          if (firstResolved === 'older') oldName.resolve(view('old-page', 'Old'));
+          else newName.resolve(view('new-page', 'New'));
+        });
+        await flush();
+        expect(savedTexts()).toEqual(firstResolved === 'older' ? [] : ['See New']);
+
+        await act(async () => {
+          if (firstResolved === 'older') newName.resolve(view('new-page', 'New'));
+          else oldName.resolve(view('old-page', 'Old'));
+        });
+        await flush();
+        expect(savedTexts()).toEqual(['See New']);
+      }
+    );
+
+    it.each([
+      { dimension: 'row', props: { rowId: 'row-2' }, workspaceId: 'ws' },
+      { dimension: 'field', props: { fieldId: 'field-2' }, workspaceId: 'ws' },
+      { dimension: 'workspace', props: {}, workspaceId: 'other-ws' },
+    ])('keeps a delayed save when a different $dimension commits', async ({ props, workspaceId }) => {
+      const name = deferredView();
+
+      mockContext.loadViewMeta = jest.fn(() => name.promise);
+      const first = await renderEditor({
+        value: 'See Plan',
+        richText: [{ insert: 'See ' }, pageMention('p5')],
+      });
+
+      await typeAtEnd(first.editor, '!');
+      first.unmount();
+      mockContext.workspaceId = workspaceId;
+
+      const second = await renderEditor(props);
+
+      await typeAtEnd(second.editor, '!');
+      await pressEnter(second.editable);
+      expect(savedTexts()).toEqual(['Hello!']);
+
+      await act(async () => {
+        name.resolve(view('p5', 'Plan'));
+      });
+      await flush();
+      expect(savedTexts()).toEqual(['Hello!', 'See Plan!']);
     });
   });
 

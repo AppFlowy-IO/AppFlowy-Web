@@ -973,6 +973,10 @@ export function MentionPanel() {
 
   const handlePanelKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      // This native listener runs before the host editor's React handler.
+      // Let the IME confirm text without selecting a result or cancelling it.
+      if (e.isComposing) return;
+
       const { key } = e;
 
       switch (key) {

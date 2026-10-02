@@ -9,9 +9,9 @@ import { Mention, MentionType, YDatabaseCell, YjsDatabaseKey } from '@/applicati
  * server (search, AI indexing, export) and every web consumer (filter, sort,
  * group, formula, field conversion) read. The formatting lives beside it
  * under `rich_text` as JSON `{ text, delta }`, where `text` is the `data` the
- * delta was saved with. A client that rewrites only `data` (Desktop keeps
- * unknown cell keys but never updates them) leaves `text` behind, so the
- * delta is ignored until the web saves formatting again.
+ * delta was saved with. Web and Desktop use this same envelope and inline
+ * delta format. If a plain-text-only writer rewrites `data` and leaves the
+ * formatting behind, the stale delta is ignored by both clients.
  */
 
 export interface RichTextInsert {
@@ -34,9 +34,6 @@ export type RichTextPageNameResolver = (pageId: string) => string | undefined;
 const FLAG_MARKS = new Set(['bold', 'italic', 'underline', 'strikethrough', 'code']);
 const STRING_MARKS = new Set(['href', 'formula', 'font_color', 'af_text_color', 'bg_color', 'af_background_color']);
 const MENTION_MARK = 'mention';
-
-// A link, equation or color longer than a whole cell's text is no real value.
-const MAX_MARK_VALUE_LENGTH = 10000;
 
 // Mention fields the leaf renderers read as strings.
 const MENTION_STRING_FIELDS = new Set([
@@ -158,7 +155,7 @@ export function sanitizeRichTextAttributes(attributes: unknown): Record<string, 
     }
 
     if (STRING_MARKS.has(key)) {
-      if (typeof value === 'string' && value && value.length <= MAX_MARK_VALUE_LENGTH) kept[key] = value;
+      if (typeof value === 'string' && value) kept[key] = value;
       return;
     }
 
