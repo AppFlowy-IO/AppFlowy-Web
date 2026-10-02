@@ -2463,7 +2463,7 @@ export interface DatabaseCsvImportStatusResponse {
 }
 
 /** Formats accepted by `POST /api/import/{workspace_id}/document` (one file → one page). */
-export type DocumentFileImportFormat = 'html' | 'docx' | 'pdf';
+export type DocumentFileImportFormat = 'html' | 'doc' | 'docx' | 'pdf';
 
 export interface DocumentFileImportRequest {
   content_length: number;
