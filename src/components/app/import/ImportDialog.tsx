@@ -30,7 +30,7 @@ const MARKDOWN_ACCEPT = '.md,.markdown,.txt,text/markdown,text/plain';
 const CSV_ACCEPT = '.csv,text/csv';
 const ZIP_ACCEPT = '.zip,application/zip,application/x-zip,application/x-zip-compressed';
 const HTML_ACCEPT = '.html,.htm,text/html';
-const DOCX_ACCEPT = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const WORD_ACCEPT = '.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const PDF_ACCEPT = '.pdf,application/pdf';
 
 // Enough failed names to be actionable in a toast without turning it into a wall of text.
@@ -44,6 +44,8 @@ const MAX_REPORTED_WARNINGS = 2;
 const RAW_INTERPOLATION = { interpolation: { escapeValue: false } };
 
 type ZipImportFormat = 'notion' | 'confluence';
+// A single Word tile accepts both binary/HTML .doc exports and OOXML .docx files.
+type DocumentTileFormat = Exclude<DocumentFileImportFormat, 'doc'>;
 type ImportFormat = 'markdown' | 'csv' | ZipImportFormat | DocumentFileImportFormat;
 
 /** Formats imported one file at a time through a server task, sharing the batch UI. */
@@ -62,12 +64,12 @@ interface ImportDialogProps {
 }
 
 const DOCUMENT_TILES: {
-  format: DocumentFileImportFormat;
+  format: DocumentTileFormat;
   labelKey: 'importPanel.html' | 'importPanel.word' | 'importPanel.pdf';
   accept: string;
 }[] = [
   { format: 'html', labelKey: 'importPanel.html', accept: HTML_ACCEPT },
-  { format: 'docx', labelKey: 'importPanel.word', accept: DOCX_ACCEPT },
+  { format: 'docx', labelKey: 'importPanel.word', accept: WORD_ACCEPT },
   { format: 'pdf', labelKey: 'importPanel.pdf', accept: PDF_ACCEPT },
 ];
 
@@ -96,7 +98,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const documentInputRefs: Record<DocumentFileImportFormat, React.RefObject<HTMLInputElement>> = {
+  const documentInputRefs: Record<DocumentTileFormat, React.RefObject<HTMLInputElement>> = {
     html: htmlInputRef,
     docx: docxInputRef,
     pdf: pdfInputRef,
@@ -410,7 +412,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
   const tileClassName =
     'flex min-h-[64px] items-center gap-3 rounded-400 border border-border-primary px-4 py-3 text-left text-text-primary hover:border-border-primary-hover hover:bg-fill-content-hover disabled:opacity-60';
 
-  const renderDocumentTile = (format: DocumentFileImportFormat) => {
+  const renderDocumentTile = (format: DocumentTileFormat) => {
     const tile = DOCUMENT_TILES.find((item) => item.format === format);
 
     if (!tile) return null;

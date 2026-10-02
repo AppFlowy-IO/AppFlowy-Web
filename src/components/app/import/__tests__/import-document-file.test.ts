@@ -137,6 +137,22 @@ describe('importDocumentFile', () => {
     expect(upload).toHaveBeenCalledWith('https://s3.test/doc', big, format, undefined, undefined);
   });
 
+  it('uses each Word file extension for task creation and upload in a mixed batch', async () => {
+    getStatus.mockResolvedValue({ task_id: 'task-1', status: 'Completed', view_id: 'view-1' });
+    // Browsers may leave MIME types empty or report a generic type for Word exports.
+    const files = [file('legacy.DOC', ''), file('modern.docx', 'application/octet-stream')];
+
+    const result = await importDocumentFiles({
+      workspaceId: WORKSPACE_ID, parentViewId: PARENT_VIEW_ID, files, format: 'docx',
+    });
+
+    expect(result.items).toHaveLength(2);
+    expect(createTask.mock.calls.map(([, request]) => request.format)).toEqual(['doc', 'docx']);
+    expect(upload.mock.calls.map(([, uploadedFile, format]) => [uploadedFile, format])).toEqual([
+      [files[0], 'doc'], [files[1], 'docx'],
+    ]);
+  });
+
   it('surfaces the configured server size limit without uploading a rejected file', async () => {
     const error = new Error('PDF exceeds the configured 5 MiB limit');
     const oversized = file('large.pdf');

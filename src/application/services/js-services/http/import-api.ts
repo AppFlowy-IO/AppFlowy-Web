@@ -337,6 +337,7 @@ export async function cancelDatabaseCsvImportTask(workspaceId: string, taskId: s
  * same value or S3 rejects the signature.
  */
 export const DOCUMENT_FILE_CONTENT_TYPES: Record<DocumentFileImportFormat, string> = {
+  doc: 'application/msword',
   html: 'text/html',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   pdf: 'application/pdf',
