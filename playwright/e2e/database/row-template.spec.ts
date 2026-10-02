@@ -60,7 +60,7 @@ async function createTemplate(page: Page, name: string): Promise<Locator> {
 
   await expect(editor).toBeVisible({ timeout: 30000 });
   await editor.getByTestId('row-title-input').fill(name);
-  await expect(editor.getByTestId('row-title-input')).toHaveValue(name);
+  await expect(editor.getByTestId('row-title-input')).toHaveText(name);
   return editor;
 }
 

@@ -190,7 +190,7 @@ test.describe('List view-scoped filter and sort state (Flutter desktop parity)',
 
     await DatabaseListSelectors.newRowButton(page).click();
     await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 15_000 });
-    await expect(RowDetailSelectors.titleInput(page)).toHaveValue('');
+    await expect(RowDetailSelectors.titleInput(page)).toHaveText('');
 
     // The new row starts outside the active text filter. Updating it through
     // row detail must notify the mounted List immediately and sort it between

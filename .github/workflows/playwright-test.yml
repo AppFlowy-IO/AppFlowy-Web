@@ -156,6 +156,11 @@ jobs:
             description: 'Database row, undo/redo, Formula, and Rollup BDD workflows'
             bdd: 'true'
             shard: ''
+          - name: 'rich-text-bdd'
+            spec: 'playwright/.features-gen/playwright/bdd/features/database/text-cell-rich-text.feature.spec.js'
+            description: 'Rich text in database Text cells and row titles: formatting, storage contract, mentions, clipboard'
+            bdd: 'true'
+            shard: ''
           - name: 'form-timeline-bdd'
             spec: >-
               playwright/.features-gen/playwright/bdd/features/form/

@@ -411,20 +411,6 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
 }
 
 
-.formula-inline, .mention {
-  &.selected {
-    @apply rounded-[2px] bg-content-blue-100;
-    .mention-inline {
-      @apply bg-content-blue-100 select-all;
-    }
-  }
-}
-
-.formula-inline {
-  @apply whitespace-pre;
-}
-
-
 .numbered-icon {
   &:after {
     content: attr(data-number) ".";
@@ -459,25 +445,6 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
 
 }
 
-
-.mention-inline {
-  height: inherit;
-  overflow: hidden;
-  @apply inline-flex gap-1 relative truncate max-w-full;
-  text-underline-position: under;
-  //text-underline-offset: 5px;
-
-
-  .mention-icon {
-    @apply absolute top-1/2 transform -translate-y-1/2;
-    font-size: 1em;
-  }
-
-  .mention-content {
-    @apply ml-[1.5em]  truncate max-w-full flex-1;
-  }
-
-}
 
 .text-block-icon {
   @apply flex items-center justify-center;

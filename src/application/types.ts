@@ -633,6 +633,9 @@ export enum YjsDatabaseKey {
   include_time = 'include_time',
   is_range = 'is_range',
   reminder_id = 'reminder_id',
+  // Text cell formatting, stored beside the plain-text `data` so Desktop,
+  // search and export keep reading `data`. See fields/text/rich-text.ts.
+  rich_text = 'rich_text',
   time_format = 'time_format_v2',
   date_format = 'date_format_v2',
   calculations = 'calculations',
@@ -796,6 +799,9 @@ export interface YDatabaseCell extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.is_range): boolean;
 
   get(key: YjsDatabaseKey.reminder_id): ReminderId;
+
+  // eslint-disable-next-line @typescript-eslint/unified-signatures
+  get(key: YjsDatabaseKey.rich_text): string | undefined;
 }
 
 export interface YSharedRoot extends Y.Map<unknown> {

@@ -1,0 +1,126 @@
+{
+  "description": "How a Text cell's formatting delta is written to its plain text (`data`), and which page names that text needs. Both clients must agree, or the same content gets different `data` depending on which one saved it. Web: rich-text.test.ts runs it against richTextToPlainText / getMentionedPageIds. Desktop (richTextDeltaToPlainText / mentionedPageIds in rich_text_cell_data.dart) should load the same file. `pageNames` is what the page-name resolver knows; dates have no time zone so they read the same anywhere.",
+  "cases": [
+    {
+      "name": "mentions and equations are written the way they read",
+      "delta": [
+        { "insert": "Ask " },
+        { "insert": "$", "attributes": { "mention": { "type": "person", "person_id": "u1", "person_name": "Ada" } } },
+        { "insert": " about " },
+        { "insert": "$", "attributes": { "mention": { "type": "page", "page_id": "p1" } } },
+        { "insert": " on " },
+        { "insert": "$", "attributes": { "mention": { "type": "date", "date": "2026-09-30T12:00:00.000" } } },
+        { "insert": ": " },
+        { "insert": "$", "attributes": { "formula": "E=mc^2" } },
+        { "insert": " " },
+        { "insert": "$", "attributes": { "mention": { "type": "externalLink", "url": "https://appflowy.io" } } }
+      ],
+      "pageNames": { "p1": "Roadmap" },
+      "text": "Ask @Ada about Roadmap on @Sep 30, 2026: E=mc^2 https://appflowy.io",
+      "pageIds": ["p1"]
+    },
+    {
+      "name": "a date with a time includes it",
+      "delta": [
+        {
+          "insert": "$",
+          "attributes": { "mention": { "type": "date", "date": "2026-09-30T08:05:00.000", "include_time": true } }
+        }
+      ],
+      "text": "@Sep 30, 2026 8:05 AM",
+      "pageIds": []
+    },
+    {
+      "name": "a legacy reminder reads as a date",
+      "delta": [
+        { "insert": "Due " },
+        { "insert": "$", "attributes": { "mention": { "type": "reminder", "date": "2026-09-30T08:05:00" } } }
+      ],
+      "text": "Due @Sep 30, 2026",
+      "pageIds": []
+    },
+    {
+      "name": "a page falls back to the title stored with the mention",
+      "delta": [
+        { "insert": "@", "attributes": { "mention": { "type": "page", "page_id": "p1", "data": { "title": "Stored" } } } }
+      ],
+      "text": "Stored",
+      "pageIds": ["p1"]
+    },
+    {
+      "name": "a page's current name wins over its stored title",
+      "delta": [
+        { "insert": "@", "attributes": { "mention": { "type": "page", "page_id": "p1", "data": { "title": "Old" } } } }
+      ],
+      "pageNames": { "p1": "Renamed" },
+      "text": "Renamed",
+      "pageIds": ["p1"]
+    },
+    {
+      "name": "a child page reads as its name",
+      "delta": [{ "insert": "@", "attributes": { "mention": { "type": "childPage", "page_id": "p2" } } }],
+      "pageNames": { "p2": "Notes" },
+      "text": "Notes",
+      "pageIds": ["p2"]
+    },
+    {
+      "name": "a database row reads as the row's stored title, never its database view's name",
+      "delta": [
+        { "insert": "See " },
+        {
+          "insert": "@",
+          "attributes": {
+            "mention": {
+              "type": "page",
+              "page_id": "db-view",
+              "database_view_id": "db-view",
+              "row_id": "row-1",
+              "database_row_id": "row-1",
+              "data": { "title": "Task A" }
+            }
+          }
+        }
+      ],
+      "pageNames": { "db-view": "Projects" },
+      "text": "See Task A",
+      "pageIds": []
+    },
+    {
+      "name": "a person without a name reads as its id",
+      "delta": [{ "insert": "@", "attributes": { "mention": { "type": "person", "person_id": "u7", "person_name": "  " } } }],
+      "text": "@u7",
+      "pageIds": []
+    },
+    {
+      "name": "a mention stored as JSON text still reads",
+      "delta": [
+        { "insert": "$", "attributes": { "mention": "{\"type\":\"person\",\"person_id\":\"u2\",\"person_name\":\"Lin\"}" } }
+      ],
+      "text": "@Lin",
+      "pageIds": []
+    },
+    {
+      "name": "a mention of a type from a newer client reads as nothing",
+      "delta": [{ "insert": "a" }, { "insert": "@", "attributes": { "mention": { "type": "future" } } }, { "insert": "b" }],
+      "text": "ab",
+      "pageIds": []
+    },
+    {
+      "name": "attributes of unexpected types read as the text they sit on",
+      "delta": [
+        { "insert": "a", "attributes": { "mention": 42 } },
+        { "insert": "b", "attributes": { "mention": [1] } },
+        { "insert": "c", "attributes": { "mention": "not json" } },
+        { "insert": "d", "attributes": { "formula": 3 } },
+        { "insert": "e", "attributes": "bold" },
+        { "insert": 5 },
+        { "insert": "$", "attributes": { "mention": { "type": "person", "person_id": 6, "person_name": 5 } } },
+        { "insert": "$", "attributes": { "mention": { "type": "date", "date": 5 } } },
+        { "insert": "$", "attributes": { "mention": { "type": "page", "page_id": 5, "data": "x" } } },
+        { "insert": "$", "attributes": { "mention": { "type": "externalLink", "url": 5 } } }
+      ],
+      "text": "abcde@5@",
+      "pageIds": []
+    }
+  ]
+}

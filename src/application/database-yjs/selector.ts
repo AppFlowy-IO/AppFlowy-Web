@@ -3374,6 +3374,9 @@ export function useFormulaResultType(fieldId: string): FormulaType {
   }, [field, isFormula, fields, fieldId, fieldsVersion, clock]);
 }
 
+// Cell components render a Text cell's formatting, so they read it too.
+const CELL_RENDER_PARSE = { richText: true };
+
 export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: string }) {
   const { dataSource } = useDatabaseContext();
   const { row } = useRowDataSelector(rowId);
@@ -3390,7 +3393,7 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
   // from that same live type, so a value that lags even one render describes the
   // previous type and reaches a renderer that cannot read it.
   const cellValue = useMemo(() => {
-    return cell ? parseYDatabaseCellToCell(cell, field) : undefined;
+    return cell ? parseYDatabaseCellToCell(cell, field, CELL_RENDER_PARSE) : undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cell, field, fieldType, fieldClock, clock]);
 
@@ -3420,7 +3423,7 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
     // effect (which attaches the observers), and nothing reports it. Re-render
     // once when the value the UI rendered is already stale.
     const current = cells.get(fieldId);
-    const fresh = current ? parseYDatabaseCellToCell(current, field) : undefined;
+    const fresh = current ? parseYDatabaseCellToCell(current, field, CELL_RENDER_PARSE) : undefined;
 
     if (JSON.stringify(fresh) !== JSON.stringify(cellValueRef.current)) {
       bump();

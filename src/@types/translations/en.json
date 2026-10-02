@@ -2059,7 +2059,8 @@
       "noContent": "No content",
       "reorderRowDescription": "reorder row",
       "createRowAboveDescription": "create a row above",
-      "createRowBelowDescription": "insert a row below"
+      "createRowBelowDescription": "insert a row below",
+      "textTooLong": "This text is too long to save"
     },
     "rowTemplate": {
       "templatesFor": "Templates for {{databaseName}}",

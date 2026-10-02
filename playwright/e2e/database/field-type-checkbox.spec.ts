@@ -9,6 +9,7 @@ import {
   DatabaseGridSelectors,
   CheckboxSelectors,
   FieldType,
+  TEXT_CELL_EDITOR_SELECTOR,
 } from '../../support/selectors';
 import {
   generateRandomEmail,
@@ -40,7 +41,7 @@ test.describe('Field Type - Checkbox', () => {
     await firstCell.scrollIntoViewIfNeeded();
     await firstCell.click();
     await page.waitForTimeout(1500);
-    const textarea1 = page.locator('textarea:visible').first();
+    const textarea1 = page.locator(TEXT_CELL_EDITOR_SELECTOR).first();
     await expect(textarea1).toBeVisible({ timeout: 5000 });
     await textarea1.clear();
     await textarea1.pressSequentially('yes', { delay: 30 });
@@ -52,7 +53,7 @@ test.describe('Field Type - Checkbox', () => {
     await secondCell.scrollIntoViewIfNeeded();
     await secondCell.click();
     await page.waitForTimeout(1500);
-    const textarea2 = page.locator('textarea:visible').first();
+    const textarea2 = page.locator(TEXT_CELL_EDITOR_SELECTOR).first();
     await expect(textarea2).toBeVisible({ timeout: 5000 });
     await textarea2.clear();
     await textarea2.pressSequentially('no', { delay: 30 });

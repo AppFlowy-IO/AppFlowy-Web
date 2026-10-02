@@ -13,6 +13,8 @@ import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
 import { getFontFamily } from '@/utils/font';
 
+import './inline-leaf.scss';
+
 // Inline comment highlight, ported from the desktop
 // `buildOverlapAwareCommentTextSpanDecorator`: one amber base color whose alpha
 // deepens with the number of overlapping comments, and a stronger underline

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useMemo, useState } from 'react';
 
 import { RowMetaKey, useDatabaseContext, useReadOnly } from '@/application/database-yjs';
 import { useUpdateCellDispatch, useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
+import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
 import { RowCoverType, ViewIconType } from '@/application/types';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
+import { RichTextCellContent, RichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import AddIconCover from '@/components/view-meta/AddIconCover';
 import { cn } from '@/lib/utils';
@@ -13,6 +15,7 @@ import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 export function Title({
   icon,
   name,
+  richText,
   rowId,
   fieldId,
   hasCover,
@@ -22,24 +25,18 @@ export function Title({
   rowId: string;
   icon?: string;
   name?: string;
+  /** The title's formatting, when it still describes `name`. */
+  richText?: RichTextDelta;
   hasCover: boolean;
   fieldId: string;
   onEdited?: (value: string) => void;
   templateStyle?: boolean;
 }) {
   const readOnly = useReadOnly();
-  const [value, setValue] = useState(name || '');
-
-  useEffect(() => {
-    if (name) {
-      setValue(name);
-    } else {
-      setValue('');
-    }
-  }, [name]);
+  const value = name || '';
+  const updateCell = useUpdateCellDispatch(rowId, fieldId);
 
   const { uploadFile } = useDatabaseContext();
-  const updateCell = useUpdateCellDispatch(rowId, fieldId);
 
   const updateRowMeta = useUpdateRowMetaDispatch(rowId);
   const [isHover, setIsHover] = useState(false);
@@ -92,6 +89,11 @@ export function Title({
       </CustomIconPopover>
     );
   };
+
+  const titleClassName = cn(
+    'h-full w-full rounded-none px-0 text-3xl font-semibold',
+    templateStyle && 'text-[28px] font-normal leading-[34px]'
+  );
 
   const toolbarHeight = templateStyle
     ? icon
@@ -147,34 +149,56 @@ export function Title({
         <div className={'flex w-full gap-2'}>
           {!templateStyle ? renderIcon() : null}
           <div className={cn('w-full py-2', templateStyle && 'pb-0 pt-2')}>
-            <TextareaAutosize
-              autoFocus
-              aria-label={templateStyle ? 'Template name' : 'Row title'}
-              placeholder={'Untitled'}
-              value={value}
-              data-testid='row-title-input'
-              onChange={(e) => {
-                if (readOnly) return;
-
-                updateCell(e.target.value);
-
-                setValue(e.target.value);
-                onEdited?.(e.target.value);
-              }}
-              onKeyDown={(e) => {
-                if (createHotkey(HOT_KEY_NAME.ESCAPE)(e.nativeEvent)) {
-                  return;
-                }
-
-                e.stopPropagation();
-              }}
-              variant={'ghost'}
-              readOnly={readOnly}
-              className={cn(
-                'h-full w-full rounded-none px-0 text-3xl font-semibold',
-                templateStyle && 'text-[28px] font-normal leading-[34px]'
-              )}
-            />
+            {templateStyle && !readOnly ? (
+              // Row templates store plain values, so the template title is
+              // edited as plain text (formatting there would be dropped when
+              // the template is applied).
+              <TextareaAutosize
+                autoFocus
+                aria-label={'Template name'}
+                placeholder={'Untitled'}
+                value={value}
+                data-testid='row-title-input'
+                onChange={(e) => {
+                  updateCell(e.target.value);
+                  onEdited?.(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (createHotkey(HOT_KEY_NAME.ESCAPE)(e.nativeEvent)) return;
+                  e.stopPropagation();
+                }}
+                variant={'ghost'}
+                className={titleClassName}
+              />
+            ) : readOnly ? (
+              // The page's heading, named by its own text (as a document's
+              // title is). A role rather than an <h1>: formatted titles render
+              // block elements inside it.
+              <div data-testid='row-title-input' role={'heading'} aria-level={1} className={titleClassName}>
+                {richText ? (
+                  <Suspense fallback={value}>
+                    <RichTextCellContent rowId={rowId} delta={richText} text={value} wrap />
+                  </Suspense>
+                ) : (
+                  value || <span className={'text-text-tertiary'}>{'Untitled'}</span>
+                )}
+              </div>
+            ) : (
+              <Suspense fallback={<div className={titleClassName}>{value}</div>}>
+                <RichTextCellEditor
+                  variant={'title'}
+                  testId={'row-title-input'}
+                  ariaLabel={templateStyle ? 'Template name' : 'Row title'}
+                  rowId={rowId}
+                  fieldId={fieldId}
+                  value={value}
+                  richText={richText}
+                  placeholder={'Untitled'}
+                  className={titleClassName}
+                  onSaved={onEdited}
+                />
+              </Suspense>
+            )}
           </div>
         </div>
       </div>

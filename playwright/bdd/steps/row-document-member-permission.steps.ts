@@ -335,7 +335,7 @@ Then('the invited member can read and edit the issue 8958 row document', async (
     .not.toBe('loading');
   expect(outcome, `row document did not open; requests: ${state.memberLoadRequests.join(', ') || 'none'}`).toBe('ready');
 
-  const editor = modal.locator('[data-slate-editor="true"]').first();
+  const editor = modal.locator('[data-testid="editor-content"]').first();
   const memberEdit = ` — edited by invited member ${state.runId.slice(0, 8)}`;
 
   await expect(editor).toHaveAttribute('contenteditable', 'true');

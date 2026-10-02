@@ -47,6 +47,12 @@ type DateCellOptions = {
 type CellHistoryOptions = {
   historyGroup?: object;
   policy?: DatabaseHistoryPolicy;
+  /**
+   * Serialized Text-cell formatting (see fields/text/rich-text.ts), written in
+   * the same transaction as `data`. A write without it drops any formatting
+   * the cell had, since that formatting described the replaced text.
+   */
+  richText?: string;
 };
 
 type WritableRowTarget = {
@@ -161,7 +167,7 @@ function waitForWritableRowTarget(rowDoc: YDoc): Promise<WritableRowTarget | nul
   });
 }
 
-function writeCellToRow({
+export function writeCellToRow({
   rowDoc,
   row,
   cells,
@@ -185,14 +191,18 @@ function writeCellToRow({
   actorUid?: AttributionUid;
 }) {
   const cell = cells.get(fieldId);
+  const { richText: requestedRichText, ...historyDescriptor } = historyOptions ?? {};
+  // Formatting belongs to Text cells only (URL cells share the text editor).
+  const richText = fieldType === FieldType.RichText ? requestedRichText : undefined;
 
-  runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId, fieldId, fieldType, ...historyOptions }, () => {
+  runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId, fieldId, fieldType, ...historyDescriptor }, () => {
     if (!cell) {
       const newCell = new Y.Map() as YDatabaseCell;
 
       newCell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
       setCellStoredType(newCell, fieldType);
       newCell.set(YjsDatabaseKey.data, data);
+      if (richText) newCell.set(YjsDatabaseKey.rich_text, richText);
       newCell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 
       if (dateOpts && (typeof data === 'string' || typeof data === 'number')) {
@@ -204,7 +214,21 @@ function writeCellToRow({
 
       cells.set(fieldId, newCell);
     } else {
+      const previousData = cell.get(YjsDatabaseKey.data);
+
       cell.set(YjsDatabaseKey.data, data);
+
+      if (richText) {
+        cell.set(YjsDatabaseKey.rich_text, richText);
+      } else if (richText === '') {
+        // The editor saved this text without formatting.
+        if (cell.has(YjsDatabaseKey.rich_text)) cell.delete(YjsDatabaseKey.rich_text);
+      } else if (cell.has(YjsDatabaseKey.rich_text) && previousData !== data) {
+        // New plain text: the formatting described the text it replaces. A
+        // plain write of the same text (e.g. pressing Enter in an unchanged
+        // calendar title) keeps it.
+        cell.delete(YjsDatabaseKey.rich_text);
+      }
 
       if (dateOpts && (typeof data === 'string' || typeof data === 'number')) {
         updateDateCell(cell, {

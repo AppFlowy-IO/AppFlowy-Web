@@ -120,6 +120,7 @@ const MentionExternalLink = memo(function MentionExternalLink ({
       <PopoverAnchor asChild>
         <span
           ref={setAnchor}
+          data-mention-link
           onClick={handleOpenLink}
           onMouseEnter={handleEnter}
           onMouseLeave={handleLeave}

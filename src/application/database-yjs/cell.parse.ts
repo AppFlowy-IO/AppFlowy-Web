@@ -20,6 +20,7 @@ import { isFileMediaItem } from '@/application/database-yjs/fields/media/parse';
 import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
 import { SelectOption, SelectOptionColor } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { generateOptionId } from '@/application/database-yjs/fields/select-option/utils';
+import { readRichTextFromCell } from '@/application/database-yjs/fields/text/rich-text';
 import {
   parseCheckboxValue,
   parseDesktopCheckboxValue,
@@ -29,7 +30,7 @@ import {
 import { User, YDatabaseCell, YDatabaseField, YjsDatabaseKey } from '@/application/types';
 
 import { getCellFieldTypeContext } from './cell.field-type';
-import { Cell, DateTimeCell, FileMediaCell, FileMediaCellData } from './cell.type';
+import { Cell, DateTimeCell, FileMediaCell, FileMediaCellData, TextCell } from './cell.type';
 
 export function parseYDatabaseCommonCellToCell(cell: YDatabaseCell, fieldType?: FieldType): Cell {
   return {
@@ -40,7 +41,20 @@ export function parseYDatabaseCommonCellToCell(cell: YDatabaseCell, fieldType?: 
   };
 }
 
-export function parseYDatabaseCellToCell(cell: YDatabaseCell, field?: YDatabaseField): Cell {
+export interface ParseCellOptions {
+  /**
+   * Also read a Text cell's formatting (`TextCell.richText`). Only renderers
+   * need it; filters, sorts, groups, calculations and the rest read `data`,
+   * and parsing the formatting for them would be wasted work.
+   */
+  richText?: boolean;
+}
+
+export function parseYDatabaseCellToCell(
+  cell: YDatabaseCell,
+  field?: YDatabaseField,
+  options?: ParseCellOptions
+): Cell {
   const { storedType, targetType } = getCellFieldTypeContext(cell, field);
 
   let value = parseYDatabaseCommonCellToCell(cell, targetType);
@@ -49,6 +63,12 @@ export function parseYDatabaseCellToCell(cell: YDatabaseCell, field?: YDatabaseF
     value.data = isCellDataTransformable(storedType, targetType)
       ? transformCellData(cell, storedType, targetType, field)
       : '';
+  }
+
+  if (options?.richText && targetType === FieldType.RichText && storedType === FieldType.RichText) {
+    const richText = readRichTextFromCell(cell);
+
+    if (richText) value = { ...value, richText } as TextCell;
   }
 
   if (targetType === FieldType.DateTime) {
