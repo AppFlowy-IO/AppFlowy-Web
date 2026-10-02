@@ -1,0 +1,3797 @@
+{
+  "description": "Shared conformance cases for rich text in database Text cells (spec: RICH_TEXT_FORMAT.md). Copies must stay byte-identical: AppFlowy-Web src/application/database-yjs/fields/text/__tests__/rich-text-conformance.json and AppFlowy-Premium frontend/resources/rich_text/rich_text_conformance.json (read by the Dart tests and the Rust tests). Dates have no time zone so they read the same in every zone. `pageNames` is what the page-name resolver knows.",
+  "formatVersion": 1,
+  "limits": {
+    "maxTextBytes": 10000,
+    "maxDeltaBytes": 200000,
+    "maxSnapshotBytes": 32768,
+    "unknownMaxDepth": 4,
+    "unknownMaxKeys": 32,
+    "unknownKeyPattern": "^[a-z][a-z0-9_]{0,63}$",
+    "forbiddenKeys": [
+      "__proto__",
+      "constructor",
+      "prototype"
+    ],
+    "reservedKeys": [
+      "atom_key",
+      "find_bg_color",
+      "auto_complete",
+      "transparent",
+      "prism_token",
+      "class_name"
+    ],
+    "maxSafeInteger": 9007199254740991,
+    "notificationTitleMaxCodeUnits": 256,
+    "maxMentionNotificationsPerFlush": 20
+  },
+  "sections": {
+    "plainText": {
+      "description": "delta (+ pageNames) -> the plain text written to `data` and the page ids whose names it needs. Runners: web richTextToPlainText/getMentionedPageIds, Dart richTextDeltaToPlainText/mentionedPageIds. Cases pt-001..pt-011 are the former rich-text-plain-text-corpus.json, verbatim (with `id` and `description` added).",
+      "cases": [
+        {
+          "id": "pt-001-mentions-and-equations",
+          "description": "mentions and equations are written the way they read",
+          "name": "mentions and equations are written the way they read",
+          "delta": [
+            {
+              "insert": "Ask "
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_id": "u1",
+                  "person_name": "Ada"
+                }
+              }
+            },
+            {
+              "insert": " about "
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p1"
+                }
+              }
+            },
+            {
+              "insert": " on "
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "date",
+                  "date": "2026-09-30T12:00:00.000"
+                }
+              }
+            },
+            {
+              "insert": ": "
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "formula": "E=mc^2"
+              }
+            },
+            {
+              "insert": " "
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "externalLink",
+                  "url": "https://appflowy.io"
+                }
+              }
+            }
+          ],
+          "pageNames": {
+            "p1": "Roadmap"
+          },
+          "text": "Ask @Ada about Roadmap on @Sep 30, 2026: E=mc^2 https://appflowy.io",
+          "pageIds": [
+            "p1"
+          ]
+        },
+        {
+          "id": "pt-002-date-with-time",
+          "description": "a date with a time includes it",
+          "name": "a date with a time includes it",
+          "delta": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "date",
+                  "date": "2026-09-30T08:05:00.000",
+                  "include_time": true
+                }
+              }
+            }
+          ],
+          "text": "@Sep 30, 2026 8:05 AM",
+          "pageIds": []
+        },
+        {
+          "id": "pt-003-legacy-reminder",
+          "description": "a legacy reminder reads as a date",
+          "name": "a legacy reminder reads as a date",
+          "delta": [
+            {
+              "insert": "Due "
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "reminder",
+                  "date": "2026-09-30T08:05:00"
+                }
+              }
+            }
+          ],
+          "text": "Due @Sep 30, 2026",
+          "pageIds": []
+        },
+        {
+          "id": "pt-004-page-stored-title",
+          "description": "a page falls back to the title stored with the mention",
+          "name": "a page falls back to the title stored with the mention",
+          "delta": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p1",
+                  "data": {
+                    "title": "Stored"
+                  }
+                }
+              }
+            }
+          ],
+          "text": "Stored",
+          "pageIds": [
+            "p1"
+          ]
+        },
+        {
+          "id": "pt-005-page-current-name-wins",
+          "description": "a page's current name wins over its stored title",
+          "name": "a page's current name wins over its stored title",
+          "delta": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p1",
+                  "data": {
+                    "title": "Old"
+                  }
+                }
+              }
+            }
+          ],
+          "pageNames": {
+            "p1": "Renamed"
+          },
+          "text": "Renamed",
+          "pageIds": [
+            "p1"
+          ]
+        },
+        {
+          "id": "pt-006-child-page-name",
+          "description": "a child page reads as its name",
+          "name": "a child page reads as its name",
+          "delta": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "childPage",
+                  "page_id": "p2"
+                }
+              }
+            }
+          ],
+          "pageNames": {
+            "p2": "Notes"
+          },
+          "text": "Notes",
+          "pageIds": [
+            "p2"
+          ]
+        },
+        {
+          "id": "pt-007-row-mention-title",
+          "description": "a database row reads as the row's stored title, never its database view's name",
+          "name": "a database row reads as the row's stored title, never its database view's name",
+          "delta": [
+            {
+              "insert": "See "
+            },
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "db-view",
+                  "database_view_id": "db-view",
+                  "row_id": "row-1",
+                  "database_row_id": "row-1",
+                  "data": {
+                    "title": "Task A"
+                  }
+                }
+              }
+            }
+          ],
+          "pageNames": {
+            "db-view": "Projects"
+          },
+          "text": "See Task A",
+          "pageIds": []
+        },
+        {
+          "id": "pt-008-person-without-name",
+          "description": "a person without a name reads as its id",
+          "name": "a person without a name reads as its id",
+          "delta": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_id": "u7",
+                  "person_name": "  "
+                }
+              }
+            }
+          ],
+          "text": "@u7",
+          "pageIds": []
+        },
+        {
+          "id": "pt-009-mention-as-json-text",
+          "description": "a mention stored as JSON text still reads",
+          "name": "a mention stored as JSON text still reads",
+          "delta": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": "{\"type\":\"person\",\"person_id\":\"u2\",\"person_name\":\"Lin\"}"
+              }
+            }
+          ],
+          "text": "@Lin",
+          "pageIds": []
+        },
+        {
+          "id": "pt-010-unknown-type-without-label",
+          "description": "a mention of a type from a newer client reads as nothing",
+          "name": "a mention of a type from a newer client reads as nothing",
+          "delta": [
+            {
+              "insert": "a"
+            },
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "future"
+                }
+              }
+            },
+            {
+              "insert": "b"
+            }
+          ],
+          "text": "ab",
+          "pageIds": []
+        },
+        {
+          "id": "pt-011-unexpected-value-types",
+          "description": "attributes of unexpected types read as the text they sit on",
+          "name": "attributes of unexpected types read as the text they sit on",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "mention": 42
+              }
+            },
+            {
+              "insert": "b",
+              "attributes": {
+                "mention": [
+                  1
+                ]
+              }
+            },
+            {
+              "insert": "c",
+              "attributes": {
+                "mention": "not json"
+              }
+            },
+            {
+              "insert": "d",
+              "attributes": {
+                "formula": 3
+              }
+            },
+            {
+              "insert": "e",
+              "attributes": "bold"
+            },
+            {
+              "insert": 5
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_id": 6,
+                  "person_name": 5
+                }
+              }
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "date",
+                  "date": 5
+                }
+              }
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": 5,
+                  "data": "x"
+                }
+              }
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "externalLink",
+                  "url": 5
+                }
+              }
+            }
+          ],
+          "text": "abcde@5@",
+          "pageIds": []
+        },
+        {
+          "id": "pt-012-unknown-type-uses-label",
+          "description": "a mention of a type this version does not know reads as its label",
+          "delta": [
+            {
+              "insert": "a"
+            },
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "task",
+                  "task_id": "t1",
+                  "label": "#T-1 Ship"
+                }
+              }
+            },
+            {
+              "insert": "b"
+            }
+          ],
+          "text": "a#T-1 Shipb",
+          "pageIds": []
+        },
+        {
+          "id": "pt-013-known-type-ignores-label",
+          "description": "a known mention type is computed; a stale label is ignored",
+          "delta": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_id": "u1",
+                  "person_name": "Ada",
+                  "label": "@Old"
+                }
+              }
+            }
+          ],
+          "text": "@Ada",
+          "pageIds": []
+        },
+        {
+          "id": "pt-014-page-label-ignored",
+          "description": "a page mention reads as its name or stored title, never its label",
+          "delta": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p1",
+                  "data": {
+                    "title": "Stored"
+                  },
+                  "label": "Label"
+                }
+              }
+            }
+          ],
+          "pageNames": {},
+          "text": "Stored",
+          "pageIds": [
+            "p1"
+          ]
+        },
+        {
+          "id": "pt-015-unknown-type-non-string-label",
+          "description": "an unknown mention type whose label is not a string reads as nothing",
+          "delta": [
+            {
+              "insert": "x"
+            },
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "task",
+                  "label": 5
+                }
+              }
+            }
+          ],
+          "text": "x",
+          "pageIds": []
+        },
+        {
+          "id": "pt-016-unknown-attributes-do-not-change-text",
+          "description": "unknown attributes on text never change its plain text",
+          "delta": [
+            {
+              "insert": "big",
+              "attributes": {
+                "font_size": 14,
+                "bold": true
+              }
+            },
+            {
+              "insert": " end"
+            }
+          ],
+          "text": "big end",
+          "pageIds": []
+        },
+        {
+          "id": "pt-017-mention-without-type-is-text",
+          "description": "a mention without a type is no mention: its placeholder character is written",
+          "delta": [
+            {
+              "insert": "a"
+            },
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "person_id": "u1"
+                }
+              }
+            }
+          ],
+          "text": "a@",
+          "pageIds": []
+        },
+        {
+          "id": "pt-018-line-attributes-keep-newline",
+          "description": "a line break carrying unknown line attributes is still a line break",
+          "delta": [
+            {
+              "insert": "a"
+            },
+            {
+              "insert": "\n",
+              "attributes": {
+                "list": "bullet"
+              }
+            },
+            {
+              "insert": "b"
+            }
+          ],
+          "text": "a\nb",
+          "pageIds": []
+        }
+      ]
+    },
+    "envelope": {
+      "description": "a cell (stored field_type, data, raw rich_text; an absent key means the cell has none) under a field of type fieldType -> state plain|invalid|stale|rich|newer, whether this version may edit it, and the sanitized delta it shows (null: show data). Runners: web parse, Rust state/editable only (Rust does not sanitize), Dart rt64/editable helper.",
+      "cases": [
+        {
+          "id": "env-001-absent",
+          "description": "a cell without rich_text is plain",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world"
+          },
+          "expected": {
+            "state": "plain",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-002-empty-string",
+          "description": "an empty rich_text (cleared by Desktop) is plain",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": ""
+          },
+          "expected": {
+            "state": "plain",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-003-null",
+          "description": "a null rich_text reads like an absent one",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": null
+          },
+          "expected": {
+            "state": "plain",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-004-no-version",
+          "description": "an envelope without v (pre-versioning builds) reads as version 1",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-005-v1",
+          "description": "a version 1 envelope is rich and editable",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-006-min-v-1",
+          "description": "min_v 1 is no requirement for version 1",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"min_v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-007-min-v-integer-valued",
+          "description": "an integer-valued min_v written as 1.0 is 1",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"min_v\":1.0,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-008-v2-additive",
+          "description": "a newer writer's additive formatting (no min_v) stays editable and keeps the unknown attribute",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true,
+                  "font_size": 14
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-009-min-v-2",
+          "description": "min_v above this version makes the cell read-only; known formatting still shows",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true,
+                  "font_size": 14
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-010-min-v-2-embed",
+          "description": "a newer envelope whose delta this version cannot read is read-only and shows data",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello world\"},{\"insert\":{\"image\":\"https://example.com/a.png\"}}]}"
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-011-min-v-string",
+          "description": "a min_v that is not a number is unknown: read-only",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"min_v\":\"2\",\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-012-min-v-fraction",
+          "description": "a fractional min_v is malformed: read-only",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"min_v\":1.5,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-013-min-v-zero",
+          "description": "min_v 0 is malformed: read-only",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"min_v\":0,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-014-min-v-negative",
+          "description": "a negative min_v is malformed: read-only",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"min_v\":-1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-015-min-v-boolean",
+          "description": "a boolean min_v is malformed: read-only",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"min_v\":true,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-016-min-v-null",
+          "description": "a null min_v reads like an absent one",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"min_v\":null,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-017-min-v-huge",
+          "description": "a huge but finite integer-valued min_v is newer",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"min_v\":1e300,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-018-non-finite-number",
+          "description": "a number outside the double range anywhere makes the value unparseable (as serde_json rejects it)",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"min_v\":1e400,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-019-stale-newer",
+          "description": "staleness is checked before min_v: a stale newer envelope is stale and editable",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Old\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "expected": {
+            "state": "stale",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-020-stale",
+          "description": "formatting saved for other text is stale",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Old\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "stale",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-021-not-json",
+          "description": "a value that is not JSON is invalid",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{not json"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-022-json-array",
+          "description": "a JSON value that is not an object is invalid",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-023-text-missing",
+          "description": "an envelope without text is invalid",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-024-text-not-string",
+          "description": "an envelope whose text is not a string is invalid",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":5,\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-025-delta-not-array",
+          "description": "a version 1 envelope whose delta is not a list is invalid",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":{\"insert\":\"Hello world\"}}"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-026-non-string-insert",
+          "description": "a version 1 delta with a non-string insert is invalid",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello world\"},{\"insert\":{\"image\":\"https://example.com/a.png\"}}]}"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-027-attributes-array",
+          "description": "attributes that are a list make a version 1 delta invalid",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello world\",\"attributes\":[\"bold\"]}]}"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-028-formats-nothing",
+          "description": "a delta that formats nothing (null attributes) is plain",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello world\",\"attributes\":null}]}"
+          },
+          "expected": {
+            "state": "plain",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-029-only-false-values",
+          "description": "attributes that are only false or null format nothing",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello world\",\"attributes\":{\"bold\":false,\"italic\":null}}]}"
+          },
+          "expected": {
+            "state": "plain",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-030-v-malformed",
+          "description": "a malformed v is informational and ignored",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":\"x\",\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-031-unknown-top-level-key",
+          "description": "unknown top-level envelope keys are ignored",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}],\"origin\":\"import\"}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-032-non-string-rich-text",
+          "description": "a rich_text that is not a string can only come from a newer representation: read-only",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": {
+              "blocks": []
+            }
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-033-written-as-number",
+          "description": "formatting in a cell written by another type is ignored",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 1,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "plain",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-034-url-field-newer-text-cell",
+          "description": "a Text-written newer cell under a field now typed URL shows plain but stays read-only",
+          "fieldType": 6,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "plain",
+            "editable": false,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-035-lone-surrogate",
+          "description": "an escaped lone surrogate makes the value unparseable (serde_json rejects it)",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\\ud800\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-036-duplicate-keys",
+          "description": "with duplicate keys the last one wins in every parser",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"text\":\"Other\",\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-037-empty-object",
+          "description": "an empty object is invalid",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{}"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-038-json-text-mention",
+          "description": "a mention stored as JSON text reads as an object",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hi @Lin",
+            "rich_text": "{\"v\":1,\"text\":\"Hi @Lin\",\"delta\":[{\"insert\":\"Hi \"},{\"insert\":\"$\",\"attributes\":{\"mention\":\"{\\\"type\\\":\\\"person\\\",\\\"person_id\\\":\\\"u2\\\",\\\"person_name\\\":\\\"Lin\\\"}\"}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hi "
+              },
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "person",
+                    "person_id": "u2",
+                    "person_name": "Lin"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-039-newer-only-unknown",
+          "description": "a newer envelope with only unknown attributes is still read-only",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":3,\"min_v\":3,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello world\",\"attributes\":{\"glow\":true}}]}"
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": [
+              {
+                "insert": "Hello world",
+                "attributes": {
+                  "glow": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-040-v1-unknown-only",
+          "description": "a version 1 delta whose only attribute is unknown is formatted (kept)",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello world\",\"attributes\":{\"glow\":true}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello world",
+                "attributes": {
+                  "glow": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-041-duplicate-min-v",
+          "description": "with a duplicate min_v the last one wins in every parser, including Rust (no derived struct)",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":1,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-042-non-finite-in-delta",
+          "description": "a number outside the double range inside the delta makes the whole value unparseable, even with min_v 2",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello world\",\"attributes\":{\"size\":1e400}}]}"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-043-lone-surrogate-in-delta",
+          "description": "an escaped lone surrogate inside the delta makes the whole value unparseable, even with min_v 2",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello world\\ud800\"}]}"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-044-lone-surrogate-in-key",
+          "description": "an escaped lone surrogate in an object key makes the value unparseable",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello world\",\"attributes\":{\"bold\":true,\"x\\udc00\":1}}]}"
+          },
+          "expected": {
+            "state": "invalid",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-045-field-type-absent-text-field",
+          "description": "a cell without field_type is Text-written",
+          "fieldType": 0,
+          "cell": {
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-046-field-type-absent-url-field",
+          "description": "a cell without field_type is Text-written whatever the field is now: a newer one stays read-only",
+          "fieldType": 6,
+          "cell": {
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "expected": {
+            "state": "plain",
+            "editable": false,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-047-field-type-null",
+          "description": "a null field_type reads like an absent one",
+          "fieldType": 0,
+          "cell": {
+            "field_type": null,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-048-field-type-string-zero",
+          "description": "a field_type stored as the string \"0\" (older web) is Text-written",
+          "fieldType": 0,
+          "cell": {
+            "field_type": "0",
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-049-field-type-string-other",
+          "description": "a field_type stored as the string \"6\" is not Text-written",
+          "fieldType": 0,
+          "cell": {
+            "field_type": "6",
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "plain",
+            "editable": true,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-050-legacy-source-text",
+          "description": "a legacy source_field_type 0 makes the cell Text-written even if field_type says otherwise",
+          "fieldType": 6,
+          "cell": {
+            "field_type": 6,
+            "source_field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "expected": {
+            "state": "plain",
+            "editable": false,
+            "delta": null
+          }
+        },
+        {
+          "id": "env-051-legacy-source-other",
+          "description": "field_type 0 is Text-written even with a legacy source_field_type of another type",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "source_field_type": 6,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true,
+                  "font_size": 14
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-052-field-type-float-zero",
+          "description": "an integer-valued float field_type 0.0 is 0",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0.0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "expected": {
+            "state": "rich",
+            "editable": true,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "env-053-field-type-garbage",
+          "description": "a field_type that is not an integer (here a boolean) reads like an absent one: Text-written",
+          "fieldType": 0,
+          "cell": {
+            "field_type": true,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "expected": {
+            "state": "newer",
+            "editable": false,
+            "delta": [
+              {
+                "insert": "Hello "
+              },
+              {
+                "insert": "world",
+                "attributes": {
+                  "bold": true,
+                  "font_size": 14
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "sanitize": {
+      "description": "a structurally valid delta -> the delta a version 1 client keeps and would write back unchanged: known attributes sanitized, unknown attributes preserved or dropped per the unknown-value rules, one output insert per input insert. There is no per-value size cap (RICH_TEXT_FORMAT.md R27.5 was removed on 2026-10-02); ids san-018 and san-026 belonged to it and are retired, not reused. Runners: web and Dart sanitizers; Rust does not sanitize.",
+      "cases": [
+        {
+          "id": "san-001-flag-marks",
+          "description": "on/off marks are kept only as true",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "bold": true,
+                "italic": false,
+                "underline": "true",
+                "strikethrough": 1,
+                "code": null
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "bold": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-002-string-marks",
+          "description": "links and equations are kept only as non-empty strings",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "href": "https://appflowy.io"
+              }
+            },
+            {
+              "insert": "b",
+              "attributes": {
+                "href": ""
+              }
+            },
+            {
+              "insert": "c",
+              "attributes": {
+                "href": 5
+              }
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "formula": "x^2"
+              }
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "formula": ""
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "href": "https://appflowy.io"
+              }
+            },
+            {
+              "insert": "b"
+            },
+            {
+              "insert": "c"
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "formula": "x^2"
+              }
+            },
+            {
+              "insert": "$"
+            }
+          ]
+        },
+        {
+          "id": "san-003-long-href",
+          "description": "a known string mark has no length cap of its own (the delta limit bounds it)",
+          "delta": [
+            {
+              "insert": "link",
+              "attributes": {
+                "href": "https://example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "link",
+              "attributes": {
+                "href": "https://example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-004-colors",
+          "description": "colors are kept as hex, rgb(a) or theme tokens; anything else is dropped",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "font_color": "0xffe8e0ff",
+                "bg_color": "#FF0000"
+              }
+            },
+            {
+              "insert": "b",
+              "attributes": {
+                "af_text_color": "text-color-14",
+                "af_background_color": "appflowy_them_color_tint1"
+              }
+            },
+            {
+              "insert": "c",
+              "attributes": {
+                "font_color": "rgba(1, 2, 3, 0.5)"
+              }
+            },
+            {
+              "insert": "d",
+              "attributes": {
+                "font_color": "red; background:url(x)",
+                "bg_color": "",
+                "af_text_color": "Text Color"
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "font_color": "0xffe8e0ff",
+                "bg_color": "#FF0000"
+              }
+            },
+            {
+              "insert": "b",
+              "attributes": {
+                "af_text_color": "text-color-14",
+                "af_background_color": "appflowy_them_color_tint1"
+              }
+            },
+            {
+              "insert": "c",
+              "attributes": {
+                "font_color": "rgba(1, 2, 3, 0.5)"
+              }
+            },
+            {
+              "insert": "d"
+            }
+          ]
+        },
+        {
+          "id": "san-005-mention-json-text",
+          "description": "a mention stored as JSON text is written back as an object",
+          "delta": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": "{\"type\":\"person\",\"person_id\":\"u2\",\"person_name\":\"Lin\"}"
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_id": "u2",
+                  "person_name": "Lin"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-006-mention-without-type",
+          "description": "a mention without a non-empty type is dropped; other attributes stay",
+          "delta": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "person_id": "u1"
+                },
+                "bold": true
+              }
+            },
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": ""
+                }
+              }
+            },
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": "not json"
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "@",
+              "attributes": {
+                "bold": true
+              }
+            },
+            {
+              "insert": "@"
+            },
+            {
+              "insert": "@"
+            }
+          ]
+        },
+        {
+          "id": "san-007-mention-field-types",
+          "description": "registered mention fields keep only their type; a numeric person_name becomes its digits",
+          "delta": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_id": 6,
+                  "person_name": 5,
+                  "page_id": "v1",
+                  "include_time": "yes"
+                }
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_name": "5",
+                  "page_id": "v1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-008-mention-unknown-fields",
+          "description": "unknown mention fields are preserved by the unknown-value rules",
+          "delta": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_id": "u1",
+                  "person_name": "Ada",
+                  "avatar_hint": "A",
+                  "ref": {
+                    "kind": "x",
+                    "ids": [
+                      1,
+                      2
+                    ]
+                  },
+                  "Bad-Key": 1,
+                  "constructor": "x",
+                  "gone": null
+                }
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_id": "u1",
+                  "person_name": "Ada",
+                  "avatar_hint": "A",
+                  "ref": {
+                    "kind": "x",
+                    "ids": [
+                      1,
+                      2
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-009-legacy-reminder",
+          "description": "a legacy reminder mention is written as a date mention",
+          "delta": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "reminder",
+                  "date": "2026-09-30T08:05:00",
+                  "reminder_id": "r1"
+                }
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "date",
+                  "date": "2026-09-30T08:05:00",
+                  "reminder_id": "r1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-010-mention-data",
+          "description": "a mention's data object keeps title as a string and unknown members by the unknown-value rules",
+          "delta": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p1",
+                  "data": {
+                    "title": "T",
+                    "icon": {
+                      "ty": 0,
+                      "value": "x"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p2",
+                  "data": "x"
+                }
+              }
+            },
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p3",
+                  "data": {
+                    "title": 5
+                  }
+                }
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p1",
+                  "data": {
+                    "title": "T",
+                    "icon": {
+                      "ty": 0,
+                      "value": "x"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p2"
+                }
+              }
+            },
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p3"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-011-unknown-primitives",
+          "description": "unknown attributes with valid keys and values are preserved",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "font_size": 14,
+                "font_family": "Inter",
+                "glow": true,
+                "ratio": 1.5
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "font_size": 14,
+                "font_family": "Inter",
+                "glow": true,
+                "ratio": 1.5
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-012-unknown-false-null",
+          "description": "unknown attributes that are false or null are absent",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "glow": false,
+                "halo": null,
+                "bold": true
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "bold": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-013-key-pattern",
+          "description": "unknown keys must be lower snake case, start with a letter and be at most 64 characters",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "Bad": 1,
+                "has-dash": 1,
+                "9lives": 1,
+                "comment-ids": [
+                  "c1"
+                ],
+                "kxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": 1,
+                "kxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": 1,
+                "ok_2": 2
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "kxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": 1,
+                "ok_2": 2
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-014-prototype-keys",
+          "description": "prototype keys are never kept, at any depth",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "__proto__": {
+                  "polluted": true
+                },
+                "constructor": "x",
+                "prototype": 1,
+                "safe": {
+                  "constructor": 1
+                },
+                "fine": {
+                  "a": 1
+                }
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "fine": {
+                  "a": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-015-reserved-keys",
+          "description": "editor-internal and document-transient keys are reserved and never stored",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "atom_key": "atom-1",
+                "find_bg_color": "0xff00ff00",
+                "auto_complete": true,
+                "transparent": true,
+                "prism_token": "k",
+                "class_name": "x",
+                "_preserved": {
+                  "a": 1
+                },
+                "bold": true
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "bold": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-016-depth",
+          "description": "unknown values nest at most 4 levels; a deeper value is dropped whole",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "d4": {
+                  "a": {
+                    "b": {
+                      "c": [
+                        1
+                      ]
+                    }
+                  }
+                },
+                "d5": {
+                  "a": {
+                    "b": {
+                      "c": {
+                        "d": [
+                          1
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "d4": {
+                  "a": {
+                    "b": {
+                      "c": [
+                        1
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-017-unsafe-integer",
+          "description": "integers beyond 2^53-1 are dropped (they cannot round-trip through JavaScript)",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "big": 9007199254740993,
+                "max": 9007199254740991,
+                "neg": -9007199254740991
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "max": 9007199254740991,
+                "neg": -9007199254740991
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-019-key-count",
+          "description": "at most 32 unknown keys per attributes object are kept: the first 32 in UTF-16 code-unit order of their keys",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "k00": 0,
+                "k01": 1,
+                "k02": 2,
+                "k03": 3,
+                "k04": 4,
+                "k05": 5,
+                "k06": 6,
+                "k07": 7,
+                "k08": 8,
+                "k09": 9,
+                "k10": 10,
+                "k11": 11,
+                "k12": 12,
+                "k13": 13,
+                "k14": 14,
+                "k15": 15,
+                "k16": 16,
+                "k17": 17,
+                "k18": 18,
+                "k19": 19,
+                "k20": 20,
+                "k21": 21,
+                "k22": 22,
+                "k23": 23,
+                "k24": 24,
+                "k25": 25,
+                "k26": 26,
+                "k27": 27,
+                "k28": 28,
+                "k29": 29,
+                "k30": 30,
+                "k31": 31,
+                "k32": 32,
+                "k33": 33
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "k00": 0,
+                "k01": 1,
+                "k02": 2,
+                "k03": 3,
+                "k04": 4,
+                "k05": 5,
+                "k06": 6,
+                "k07": 7,
+                "k08": 8,
+                "k09": 9,
+                "k10": 10,
+                "k11": 11,
+                "k12": 12,
+                "k13": 13,
+                "k14": 14,
+                "k15": 15,
+                "k16": 16,
+                "k17": 17,
+                "k18": 18,
+                "k19": 19,
+                "k20": 20,
+                "k21": 21,
+                "k22": 22,
+                "k23": 23,
+                "k24": 24,
+                "k25": 25,
+                "k26": 26,
+                "k27": 27,
+                "k28": 28,
+                "k29": 29,
+                "k30": 30,
+                "k31": 31
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-020-unknown-on-atom",
+          "description": "unknown attributes on a mention or equation are preserved",
+          "delta": [
+            {
+              "insert": "$",
+              "attributes": {
+                "formula": "E=mc^2",
+                "display_mode": "block"
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "$",
+              "attributes": {
+                "formula": "E=mc^2",
+                "display_mode": "block"
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-021-arrays",
+          "description": "arrays of valid values are preserved",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "tags": [
+                  "x",
+                  "y",
+                  1,
+                  true,
+                  null,
+                  {
+                    "k": "v"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "tags": [
+                  "x",
+                  "y",
+                  1,
+                  true,
+                  null,
+                  {
+                    "k": "v"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-022-empty-attributes",
+          "description": "attributes that end up empty are omitted",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {}
+            },
+            {
+              "insert": "b",
+              "attributes": null
+            },
+            {
+              "insert": "c",
+              "attributes": {
+                "zzz-": 1
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a"
+            },
+            {
+              "insert": "b"
+            },
+            {
+              "insert": "c"
+            }
+          ]
+        },
+        {
+          "id": "san-023-unknown-mention-type",
+          "description": "a mention of an unknown type is preserved with its label",
+          "delta": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "task",
+                  "task_id": "t1",
+                  "label": "#T-1 Ship"
+                }
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "task",
+                  "task_id": "t1",
+                  "label": "#T-1 Ship"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-024-label-not-string",
+          "description": "a mention label that is not a string is dropped",
+          "delta": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "task",
+                  "label": 5
+                }
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "task"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-025-key-count-sorted-not-inserted",
+          "description": "the 32 kept keys are chosen by sorted key order, not by the order they appear in the input",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "zz": 1,
+                "k00": 0,
+                "k01": 1,
+                "k02": 2,
+                "k03": 3,
+                "k04": 4,
+                "k05": 5,
+                "k06": 6,
+                "k07": 7,
+                "k08": 8,
+                "k09": 9,
+                "k10": 10,
+                "k11": 11,
+                "k12": 12,
+                "k13": 13,
+                "k14": 14,
+                "k15": 15,
+                "k16": 16,
+                "k17": 17,
+                "k18": 18,
+                "k19": 19,
+                "k20": 20,
+                "k21": 21,
+                "k22": 22,
+                "k23": 23,
+                "k24": 24,
+                "k25": 25,
+                "k26": 26,
+                "k27": 27,
+                "k28": 28,
+                "k29": 29,
+                "k30": 30,
+                "k31": 31
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "k00": 0,
+                "k01": 1,
+                "k02": 2,
+                "k03": 3,
+                "k04": 4,
+                "k05": 5,
+                "k06": 6,
+                "k07": 7,
+                "k08": 8,
+                "k09": 9,
+                "k10": 10,
+                "k11": 11,
+                "k12": 12,
+                "k13": 13,
+                "k14": 14,
+                "k15": 15,
+                "k16": 16,
+                "k17": 17,
+                "k18": 18,
+                "k19": 19,
+                "k20": 20,
+                "k21": 21,
+                "k22": 22,
+                "k23": 23,
+                "k24": 24,
+                "k25": 25,
+                "k26": 26,
+                "k27": 27,
+                "k28": 28,
+                "k29": 29,
+                "k30": 30,
+                "k31": 31
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-027-empty-containers",
+          "description": "an empty array or object has depth 1 and is preserved; depth is counted through empty containers",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "e1": {},
+                "e2": [],
+                "d4": {
+                  "a": {
+                    "b": {
+                      "c": {}
+                    }
+                  }
+                },
+                "d5": {
+                  "a": {
+                    "b": {
+                      "c": {
+                        "d": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "e1": {},
+                "e2": [],
+                "d4": {
+                  "a": {
+                    "b": {
+                      "c": {}
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-028-mention-false-kept",
+          "description": "inside a mention, unknown fields and data members keep false; only null is dropped",
+          "delta": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_id": "u1",
+                  "muted": false,
+                  "gone": null,
+                  "data": {
+                    "title": "T",
+                    "pinned": false,
+                    "x": null
+                  }
+                }
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "@",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_id": "u1",
+                  "muted": false,
+                  "data": {
+                    "title": "T",
+                    "pinned": false
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-029-no-value-size-cap",
+          "description": "an unknown value has no size cap of its own (only the 200,000-byte delta cap bounds it): large strings and arrays within the structural rules are kept",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "big_arr": [
+                  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "big_str": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "big_arr": [
+                  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "big_str": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-030-integer-valued-floats",
+          "description": "an integer-valued float is an integer for the safe-integer rule: 1.0 and -9007199254740991.0 are kept, 9007199254740992.0 and 1e21 are dropped",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "one": 1.0,
+                "min": -9007199254740991.0,
+                "over": 9007199254740992.0,
+                "huge": 1e+21,
+                "nested": [
+                  1.0,
+                  2.5,
+                  {
+                    "k": 3.0
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "min": -9007199254740991.0,
+                "nested": [
+                  1.0,
+                  2.5,
+                  {
+                    "k": 3.0
+                  }
+                ],
+                "one": 1.0
+              }
+            }
+          ]
+        },
+        {
+          "id": "san-031-nested-keys-uncapped",
+          "description": "the 32-key cap (R27.6) applies only to attributes objects, mentions and mention data: an object nested inside a kept unknown value keeps all its keys",
+          "delta": [
+            {
+              "insert": "a",
+              "attributes": {
+                "meta": {
+                  "n00": 0,
+                  "n01": 1,
+                  "n02": 2,
+                  "n03": 3,
+                  "n04": 4,
+                  "n05": 5,
+                  "n06": 6,
+                  "n07": 7,
+                  "n08": 8,
+                  "n09": 9,
+                  "n10": 10,
+                  "n11": 11,
+                  "n12": 12,
+                  "n13": 13,
+                  "n14": 14,
+                  "n15": 15,
+                  "n16": 16,
+                  "n17": 17,
+                  "n18": 18,
+                  "n19": 19,
+                  "n20": 20,
+                  "n21": 21,
+                  "n22": 22,
+                  "n23": 23,
+                  "n24": 24,
+                  "n25": 25,
+                  "n26": 26,
+                  "n27": 27,
+                  "n28": 28,
+                  "n29": 29,
+                  "n30": 30,
+                  "n31": 31,
+                  "n32": 32,
+                  "n33": 33,
+                  "n34": 34,
+                  "n35": 35,
+                  "n36": 36,
+                  "n37": 37,
+                  "n38": 38,
+                  "n39": 39
+                }
+              }
+            }
+          ],
+          "expected": [
+            {
+              "insert": "a",
+              "attributes": {
+                "meta": {
+                  "n00": 0,
+                  "n01": 1,
+                  "n02": 2,
+                  "n03": 3,
+                  "n04": 4,
+                  "n05": 5,
+                  "n06": 6,
+                  "n07": 7,
+                  "n08": 8,
+                  "n09": 9,
+                  "n10": 10,
+                  "n11": 11,
+                  "n12": 12,
+                  "n13": 13,
+                  "n14": 14,
+                  "n15": 15,
+                  "n16": 16,
+                  "n17": 17,
+                  "n18": 18,
+                  "n19": 19,
+                  "n20": 20,
+                  "n21": 21,
+                  "n22": 22,
+                  "n23": 23,
+                  "n24": 24,
+                  "n25": 25,
+                  "n26": 26,
+                  "n27": 27,
+                  "n28": 28,
+                  "n29": 29,
+                  "n30": 30,
+                  "n31": 31,
+                  "n32": 32,
+                  "n33": 33,
+                  "n34": 34,
+                  "n35": 35,
+                  "n36": 36,
+                  "n37": 37,
+                  "n38": 38,
+                  "n39": 39
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "mentionLabels": {
+      "description": "delta (+ pageNames) -> the delta a version 1 writer stores (every known mention labelled with its plain text; unknown mentions untouched) and its plain text. Runners: web withMentionLabels, Dart withRichTextMentionLabels.",
+      "cases": [
+        {
+          "id": "lb-001-known-types",
+          "description": "a writer labels every known mention with the text it writes for it",
+          "delta": [
+            {
+              "insert": "Ask "
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_id": "u1",
+                  "person_name": "Ada"
+                }
+              }
+            },
+            {
+              "insert": " about "
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p1"
+                }
+              }
+            },
+            {
+              "insert": " on "
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "date",
+                  "date": "2026-09-30T12:00:00.000"
+                }
+              }
+            },
+            {
+              "insert": " "
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "externalLink",
+                  "url": "https://appflowy.io"
+                }
+              }
+            },
+            {
+              "insert": " "
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "childPage",
+                  "page_id": "p2"
+                }
+              }
+            },
+            {
+              "insert": " "
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "db-view",
+                  "row_id": "row-1",
+                  "data": {
+                    "title": "Task A"
+                  }
+                }
+              }
+            }
+          ],
+          "pageNames": {
+            "p1": "Roadmap",
+            "p2": "Notes",
+            "db-view": "Projects"
+          },
+          "expected": {
+            "delta": [
+              {
+                "insert": "Ask "
+              },
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "person",
+                    "person_id": "u1",
+                    "person_name": "Ada",
+                    "label": "@Ada"
+                  }
+                }
+              },
+              {
+                "insert": " about "
+              },
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "page",
+                    "page_id": "p1",
+                    "label": "Roadmap"
+                  }
+                }
+              },
+              {
+                "insert": " on "
+              },
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "date",
+                    "date": "2026-09-30T12:00:00.000",
+                    "label": "@Sep 30, 2026"
+                  }
+                }
+              },
+              {
+                "insert": " "
+              },
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "externalLink",
+                    "url": "https://appflowy.io",
+                    "label": "https://appflowy.io"
+                  }
+                }
+              },
+              {
+                "insert": " "
+              },
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "childPage",
+                    "page_id": "p2",
+                    "label": "Notes"
+                  }
+                }
+              },
+              {
+                "insert": " "
+              },
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "page",
+                    "page_id": "db-view",
+                    "row_id": "row-1",
+                    "data": {
+                      "title": "Task A"
+                    },
+                    "label": "Task A"
+                  }
+                }
+              }
+            ],
+            "text": "Ask @Ada about Roadmap on @Sep 30, 2026 https://appflowy.io Notes Task A"
+          }
+        },
+        {
+          "id": "lb-002-stale-label-recomputed",
+          "description": "a known mention's label is recomputed on every write",
+          "delta": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p1",
+                  "data": {
+                    "title": "Old"
+                  },
+                  "label": "Old"
+                }
+              }
+            }
+          ],
+          "pageNames": {
+            "p1": "Renamed"
+          },
+          "expected": {
+            "delta": [
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "page",
+                    "page_id": "p1",
+                    "data": {
+                      "title": "Old"
+                    },
+                    "label": "Renamed"
+                  }
+                }
+              }
+            ],
+            "text": "Renamed"
+          }
+        },
+        {
+          "id": "lb-003-unknown-type-label-kept",
+          "description": "an unknown mention keeps its label as written, and gets none if it had none",
+          "delta": [
+            {
+              "insert": "a"
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "task",
+                  "task_id": "t1",
+                  "label": "#T-1 Ship"
+                }
+              }
+            },
+            {
+              "insert": "b"
+            },
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "future"
+                }
+              }
+            }
+          ],
+          "expected": {
+            "delta": [
+              {
+                "insert": "a"
+              },
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "task",
+                    "task_id": "t1",
+                    "label": "#T-1 Ship"
+                  }
+                }
+              },
+              {
+                "insert": "b"
+              },
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "future"
+                  }
+                }
+              }
+            ],
+            "text": "a#T-1 Shipb"
+          }
+        },
+        {
+          "id": "lb-004-json-text-mention",
+          "description": "a mention stored as JSON text is written as an object with its label",
+          "delta": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": "{\"type\":\"person\",\"person_id\":\"u2\",\"person_name\":\"Lin\"}"
+              }
+            }
+          ],
+          "expected": {
+            "delta": [
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "person",
+                    "person_id": "u2",
+                    "person_name": "Lin",
+                    "label": "@Lin"
+                  }
+                }
+              }
+            ],
+            "text": "@Lin"
+          }
+        },
+        {
+          "id": "lb-005-unnamed-page",
+          "description": "a page with no known name and no stored title is labelled with an empty string",
+          "delta": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "page",
+                  "page_id": "p9"
+                }
+              }
+            }
+          ],
+          "pageNames": {},
+          "expected": {
+            "delta": [
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "page",
+                    "page_id": "p9",
+                    "label": ""
+                  }
+                }
+              }
+            ],
+            "text": ""
+          }
+        },
+        {
+          "id": "lb-006-person-without-name",
+          "description": "a person without a name is labelled with its id",
+          "delta": [
+            {
+              "insert": "$",
+              "attributes": {
+                "mention": {
+                  "type": "person",
+                  "person_id": "u7",
+                  "person_name": "  "
+                }
+              }
+            }
+          ],
+          "expected": {
+            "delta": [
+              {
+                "insert": "$",
+                "attributes": {
+                  "mention": {
+                    "type": "person",
+                    "person_id": "u7",
+                    "person_name": "  ",
+                    "label": "@u7"
+                  }
+                }
+              }
+            ],
+            "text": "@u7"
+          }
+        }
+      ]
+    },
+    "editability": {
+      "description": "an existing cell (or none), the field's current type, and a write -> result allowed (performed) | noop (nothing written, reported as success) | refused (nothing written, the update notice is shown) | skipped (a bulk operation proceeds for other cells and leaves this one untouched), and what happens to the formatting: kept | cleared | written | copied (the copy's rich_text is byte-identical and the copy is Text-written exactly when the original is). Write kinds: setText, setRichText, clearFormatting, clearCell (also clear field), duplicateRow, moveCard (board group move), setRelation, setDateRange (calendar/timeline drag), undoOwnEdit (database undo/redo restoring data), switchFieldType {from,to} (bulk materializers), normalizeLegacyFieldType (web legacy source_field_type normalizer). Runners: web (every guarded helper of RICH_TEXT_FORMAT.md section 13.3), Rust (update_cell, batch_update_cells, update_rich_text_cell, clear_cell, clear_field, duplicate_row, switch_to_field_type materializers).",
+      "cases": [
+        {
+          "id": "ed-001-rich-set-text",
+          "description": "a plain write of new text to a version 1 cell clears its formatting",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "write": {
+            "kind": "setText",
+            "data": "Hello world!"
+          },
+          "expected": {
+            "result": "allowed",
+            "formatting": "cleared"
+          }
+        },
+        {
+          "id": "ed-002-rich-same-text",
+          "description": "a plain write of the same text keeps the formatting",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "write": {
+            "kind": "setText",
+            "data": "Hello world"
+          },
+          "expected": {
+            "result": "allowed",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-003-rich-set-rich",
+          "description": "a rich write to a version 1 cell stores a version 1 envelope",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":1,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true}}]}"
+          },
+          "write": {
+            "kind": "setRichText",
+            "data": "Hello world",
+            "delta": [
+              {
+                "insert": "Hello world",
+                "attributes": {
+                  "italic": true
+                }
+              }
+            ]
+          },
+          "expected": {
+            "result": "allowed",
+            "formatting": "written"
+          }
+        },
+        {
+          "id": "ed-004-newer-set-text",
+          "description": "new text on a newer cell is refused",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "setText",
+            "data": "Hello world!"
+          },
+          "expected": {
+            "result": "refused",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-005-newer-same-text",
+          "description": "a plain write of the same text to a newer cell writes nothing at all (not even last_modified) and reports success",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "setText",
+            "data": "Hello world"
+          },
+          "expected": {
+            "result": "noop",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-006-newer-set-rich",
+          "description": "a rich write to a newer cell is refused even with the same text",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "setRichText",
+            "data": "Hello world",
+            "delta": [
+              {
+                "insert": "Hello world",
+                "attributes": {
+                  "italic": true
+                }
+              }
+            ]
+          },
+          "expected": {
+            "result": "refused",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-007-newer-clear-formatting",
+          "description": "clearing a newer cell's formatting is refused",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "clearFormatting",
+            "data": "Hello world"
+          },
+          "expected": {
+            "result": "refused",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-008-newer-clear-cell",
+          "description": "clearing a newer cell (clear cell, clear field) is refused",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "clearCell"
+          },
+          "expected": {
+            "result": "refused",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-009-newer-stale",
+          "description": "a stale newer envelope is already unusable: writes are allowed",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Old\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "setText",
+            "data": "Hello world!"
+          },
+          "expected": {
+            "result": "allowed",
+            "formatting": "cleared"
+          }
+        },
+        {
+          "id": "ed-010-non-string-rich-text",
+          "description": "a non-string rich_text is treated as newer: writes are refused",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": {
+              "blocks": []
+            }
+          },
+          "write": {
+            "kind": "setText",
+            "data": "Hello world!"
+          },
+          "expected": {
+            "result": "refused",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-011-newer-under-url-field",
+          "description": "a Text-written newer cell refuses new text even after its field became URL",
+          "fieldType": 6,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "setText",
+            "data": "Hello world!"
+          },
+          "expected": {
+            "result": "refused",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-012-newer-duplicate",
+          "description": "duplicating a row copies a newer cell verbatim, keeping it Text-written",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "duplicateRow"
+          },
+          "expected": {
+            "result": "allowed",
+            "formatting": "copied"
+          }
+        },
+        {
+          "id": "ed-013-newer-written-as-number",
+          "description": "a newer envelope in a cell written by another type does not apply",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 1,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "setText",
+            "data": "Hello world!"
+          },
+          "expected": {
+            "result": "allowed",
+            "formatting": "cleared"
+          }
+        },
+        {
+          "id": "ed-014-invalid",
+          "description": "an unparseable rich_text does not block writes",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{not json"
+          },
+          "write": {
+            "kind": "setText",
+            "data": "Hello world!"
+          },
+          "expected": {
+            "result": "allowed",
+            "formatting": "cleared"
+          }
+        },
+        {
+          "id": "ed-015-new-cell",
+          "description": "a rich write to a missing cell creates a version 1 envelope",
+          "fieldType": 0,
+          "cell": null,
+          "write": {
+            "kind": "setRichText",
+            "data": "Hello world",
+            "delta": [
+              {
+                "insert": "Hello world",
+                "attributes": {
+                  "italic": true
+                }
+              }
+            ]
+          },
+          "expected": {
+            "result": "allowed",
+            "formatting": "written"
+          }
+        },
+        {
+          "id": "ed-016-newer-same-text-url-field",
+          "description": "a same-text save from a URL editor (e.g. mobile Done) on a Text-written newer cell is a no-op: field_type stays 0",
+          "fieldType": 6,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "setText",
+            "data": "Hello world"
+          },
+          "expected": {
+            "result": "noop",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-017-newer-board-move",
+          "description": "moving a board card grouped by a Select field off a Text-written newer cell is refused",
+          "fieldType": 3,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "moveCard",
+            "data": "opt-done"
+          },
+          "expected": {
+            "result": "refused",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-018-newer-relation-set",
+          "description": "setting a relation on a Text-written newer cell is refused",
+          "fieldType": 10,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "setRelation",
+            "data": [
+              "row-2"
+            ]
+          },
+          "expected": {
+            "result": "refused",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-019-newer-date-range-drag",
+          "description": "a calendar or timeline drag onto a Text-written newer cell is refused",
+          "fieldType": 2,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "setDateRange",
+            "data": "1767225600",
+            "end_timestamp": "1767312000"
+          },
+          "expected": {
+            "result": "refused",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-020-newer-undo",
+          "description": "undo or redo that would change a newer cell's data is refused",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "undoOwnEdit",
+            "data": "Hello"
+          },
+          "expected": {
+            "result": "refused",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-021-newer-leave-created-time",
+          "description": "leaving a Created time field does not materialize the timestamp into a Text-written newer cell",
+          "fieldType": 9,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "switchFieldType",
+            "from": 9,
+            "to": 0
+          },
+          "expected": {
+            "result": "skipped",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-022-newer-enter-created-by",
+          "description": "switching to Created by does not delete a Text-written newer cell",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "switchFieldType",
+            "from": 0,
+            "to": 17
+          },
+          "expected": {
+            "result": "skipped",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-023-newer-leave-formula",
+          "description": "leaving a Formula field does not materialize the result into a Text-written newer cell",
+          "fieldType": 19,
+          "cell": {
+            "field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "switchFieldType",
+            "from": 19,
+            "to": 0
+          },
+          "expected": {
+            "result": "skipped",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-024-newer-legacy-normalize",
+          "description": "the legacy field-type normalizer does not turn a Text-written newer cell into a cell of another type",
+          "fieldType": 0,
+          "cell": {
+            "field_type": 0,
+            "source_field_type": 6,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "normalizeLegacyFieldType"
+          },
+          "expected": {
+            "result": "skipped",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-025-legacy-normalize-to-text",
+          "description": "the normalizer may move a legacy source_field_type 0 into field_type: the cell stays Text-written",
+          "fieldType": 6,
+          "cell": {
+            "field_type": 6,
+            "source_field_type": 0,
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "normalizeLegacyFieldType"
+          },
+          "expected": {
+            "result": "allowed",
+            "formatting": "kept"
+          }
+        },
+        {
+          "id": "ed-026-newer-duplicate-absent-field-type",
+          "description": "a duplicate of a newer cell without field_type under a URL field stays Text-written (no field-type fallback)",
+          "fieldType": 6,
+          "cell": {
+            "data": "Hello world",
+            "rich_text": "{\"v\":2,\"min_v\":2,\"text\":\"Hello world\",\"delta\":[{\"insert\":\"Hello \"},{\"insert\":\"world\",\"attributes\":{\"bold\":true,\"font_size\":14}}]}"
+          },
+          "write": {
+            "kind": "duplicateRow"
+          },
+          "expected": {
+            "result": "allowed",
+            "formatting": "copied"
+          }
+        }
+      ]
+    },
+    "write": {
+      "description": "what a version 1 writer stores for data + an already sanitized and labelled delta: the parsed rich_text envelope (compare parsed JSON, not strings), or null for none. Runners: web serializeRichTextCellValue, Rust build_rich_text_value.",
+      "cases": [
+        {
+          "id": "wr-001-v1-envelope",
+          "description": "a version 1 writer stores {v:1, text, delta} and no min_v",
+          "data": "Hello world",
+          "delta": [
+            {
+              "insert": "Hello "
+            },
+            {
+              "insert": "world",
+              "attributes": {
+                "bold": true
+              }
+            }
+          ],
+          "expected": {
+            "rich_text": {
+              "v": 1,
+              "text": "Hello world",
+              "delta": [
+                {
+                  "insert": "Hello "
+                },
+                {
+                  "insert": "world",
+                  "attributes": {
+                    "bold": true
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "wr-002-preserved-attribute",
+          "description": "preserved unknown attributes are written back unchanged",
+          "data": "Hello world",
+          "delta": [
+            {
+              "insert": "Hello "
+            },
+            {
+              "insert": "world",
+              "attributes": {
+                "bold": true,
+                "font_size": 14
+              }
+            }
+          ],
+          "expected": {
+            "rich_text": {
+              "v": 1,
+              "text": "Hello world",
+              "delta": [
+                {
+                  "insert": "Hello "
+                },
+                {
+                  "insert": "world",
+                  "attributes": {
+                    "bold": true,
+                    "font_size": 14
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "wr-003-formats-nothing",
+          "description": "a delta that formats nothing stores no envelope",
+          "data": "Hello world",
+          "delta": [
+            {
+              "insert": "Hello world"
+            }
+          ],
+          "expected": {
+            "rich_text": null
+          }
+        }
+      ]
+    },
+    "notificationTitle": {
+      "description": "a row title (the primary field's plain text) -> the view_name a cell or title mention notification sends (MENTION_NOTIFICATIONS.md section 4): line breaks become spaces, the result is trimmed, and a title longer than notificationTitleMaxCodeUnits UTF-16 code units is cut to at most one less at an extended grapheme cluster boundary and ends with U+2026. null means: send the client's localized placeholder. Runners: web (Intl.Segmenter), Dart (package:characters).",
+      "cases": [
+        {
+          "id": "nt-001-short",
+          "description": "a short title is sent as is",
+          "title": "Plan Q3",
+          "expected": "Plan Q3"
+        },
+        {
+          "id": "nt-002-line-breaks",
+          "description": "every line break (\\r\\n, \\r or \\n) becomes one space",
+          "title": "Line one\nLine two\r\nthree\rfour",
+          "expected": "Line one Line two three four"
+        },
+        {
+          "id": "nt-003-blank",
+          "description": "a title that is empty after trimming sends the client's localized placeholder (null here)",
+          "title": "  \n ",
+          "expected": null
+        },
+        {
+          "id": "nt-004-exactly-256",
+          "description": "a title of exactly 256 UTF-16 code units is not cut",
+          "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "id": "nt-005-257",
+          "description": "a longer title is cut to at most 255 code units at a grapheme boundary, plus an ellipsis",
+          "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…"
+        },
+        {
+          "id": "nt-006-surrogate-pair-at-cut",
+          "description": "a surrogate pair that would straddle the cut is left out whole",
+          "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa😀bbbbbbbbbb",
+          "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…"
+        },
+        {
+          "id": "nt-007-combining-mark-at-cut",
+          "description": "a base letter and its combining mark are one grapheme and are cut together",
+          "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaéxxxxx",
+          "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…"
+        },
+        {
+          "id": "nt-008-trimmed",
+          "description": "leading and trailing spaces are trimmed after line breaks are replaced",
+          "title": "\n  Ship it  \n",
+          "expected": "Ship it"
+        }
+      ]
+    }
+  }
+}
