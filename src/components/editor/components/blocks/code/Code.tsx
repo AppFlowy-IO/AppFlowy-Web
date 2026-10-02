@@ -33,7 +33,7 @@ export const CodeBlock = forwardRef<HTMLDivElement, EditorElementProps<CodeNode>
             style={{
               visibility: showToolbar ? 'visible' : 'hidden',
             }}
-            className={'absolute flex h-12 w-full select-none items-center px-2'}
+            className={'absolute z-10 flex h-12 w-full select-none items-center px-2'}
           >
             <LanguageSelect
               readOnly={readOnly}
