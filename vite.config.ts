@@ -2,7 +2,7 @@ import react from '@vitejs/plugin-react';
 import type { IncomingMessage, ServerResponse } from 'http';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { defineConfig, type ViteDevServer } from 'vite';
+import { defineConfig, loadEnv, type ViteDevServer } from 'vite';
 import istanbul from 'vite-plugin-istanbul';
 import svgr from 'vite-plugin-svgr';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
@@ -187,6 +187,8 @@ async function localDevProxyConfig() {
 }
 
 export default defineConfig(async ({ command, mode }) => {
+  // Vite evaluates this config before loading .env files into the app environment.
+  const env = loadEnv(mode, process.cwd(), 'EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED');
   // Dev server only; `vite build` (production) and config loads in test mode skip the proxies.
   const localDevProxy = command === 'serve' && mode !== 'test' ? await localDevProxyConfig() : {};
 
@@ -194,7 +196,7 @@ export default defineConfig(async ({ command, mode }) => {
     define: {
       __APPFLOWY_WEB_VERSION__: JSON.stringify(webClientVersion),
       'process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED': JSON.stringify(
-        process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED ?? 'false'
+        env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED ?? 'false'
       ),
     },
     plugins: [
