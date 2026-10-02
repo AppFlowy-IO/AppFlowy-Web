@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { RenderLeafProps } from 'slate-react';
 
 import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
@@ -6,12 +6,18 @@ import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-
 import RichTextCellContent from '../RichTextCellContent';
 
 const mockOpenUrl = jest.fn();
+const mockDocumentLoaded = jest.fn();
 
 jest.mock('@/utils/url', () => ({
   ...jest.requireActual('@/utils/url'),
   openUrl: (...args: unknown[]) => mockOpenUrl(...args),
 }));
 jest.mock('@/application/database-yjs/context', () => ({ useDatabaseContextOptional: () => ({}) }));
+// The renderer of mentions and equations (a Slate editor) loads on first use.
+jest.mock('../RichTextCellDocument', () => {
+  mockDocumentLoaded();
+  return jest.requireActual('../RichTextCellDocument');
+});
 // Chips render through the document's leaves; "boom" stands in for content
 // a renderer chokes on.
 jest.mock('@/components/editor/components/leaf/Leaf', () => ({
@@ -43,22 +49,21 @@ describe('RichTextCellContent', () => {
     render(<div />);
   });
 
-  function selectionListenersAddedBy(renderCells: () => void) {
+  function selectionListeners() {
     const addListener = jest.spyOn(document, 'addEventListener');
 
-    renderCells();
-    return addListener.mock.calls.filter(([type]) => type === 'selectionchange').length;
+    return () => addListener.mock.calls.filter(([type]) => type === 'selectionchange').length;
   }
 
-  it('draws formatting the way document leaves do, without an editor per cell', () => {
-    let container: HTMLElement = document.body;
-    const listeners = selectionListenersAddedBy(() => {
-      container = render(<RichTextCellContent rowId='row-1' delta={formatted} text='Bold red code link' />).container;
-    });
+  it('draws formatting the way document leaves do, without an editor per cell or its code', () => {
+    const listeners = selectionListeners();
+    const { container } = render(<RichTextCellContent rowId='row-1' delta={formatted} text='Bold red code link' />);
 
     // Each editor would track every selection change of the page.
-    expect(listeners).toBe(0);
+    expect(listeners()).toBe(0);
     expect(container.querySelector('[data-slate-editor]')).toBeNull();
+    // Nothing was loaded for it: such a cell shows at once.
+    expect(mockDocumentLoaded).not.toHaveBeenCalled();
 
     expect(container.querySelector('strong em')?.textContent).toBe('Bold');
 
@@ -86,35 +91,40 @@ describe('RichTextCellContent', () => {
     expect(onCellClick).not.toHaveBeenCalled();
   });
 
-  it('keeps the document renderers (in a read-only editor) for mentions and equations', () => {
-    let container: HTMLElement = document.body;
-    const listeners = selectionListenersAddedBy(() => {
-      container = render(
-        <RichTextCellContent
-          rowId='row-1'
-          delta={[{ insert: 'Area ' }, { insert: '$', attributes: { formula: 'a^2' } }]}
-          text='Area a^2'
-          wrap
-        />
-      ).container;
-    });
+  it('keeps the document renderers (in a read-only editor) for mentions and equations', async () => {
+    const listeners = selectionListeners();
+    const { container } = render(
+      <RichTextCellContent
+        rowId='row-1'
+        delta={[{ insert: 'Area ' }, { insert: '$', attributes: { formula: 'a^2' } }]}
+        text='Area a^2'
+        wrap
+      />
+    );
 
-    expect(listeners).toBe(1);
-    expect(container.querySelector('[data-slate-editor]')).not.toBeNull();
+    // The cell reads as its plain text until the renderers have loaded.
+    expect(screen.getByTestId('rich-text-cell-content').textContent).toBe('Area a^2');
+    expect(container.querySelector('[data-slate-editor]')).toBeNull();
+
+    await waitFor(() => expect(container.querySelector('[data-slate-editor]')).not.toBeNull());
+    expect(mockDocumentLoaded).toHaveBeenCalledTimes(1);
+    expect(listeners()).toBe(1);
     expect(container.querySelector('.formula-inline')).not.toBeNull();
     expect(container.querySelector('[data-rich-text-cell-line]')?.className).toContain('whitespace-pre-wrap');
   });
 
-  it("shows the cell's plain text when its content cannot be rendered", () => {
-    jest.spyOn(console, 'error').mockImplementation(() => undefined);
-
-    render(
+  it("shows the cell's plain text when its content cannot be rendered", async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { container } = render(
       <RichTextCellContent
         rowId='row-1'
         delta={[{ insert: 'boom ' }, { insert: '$', attributes: { formula: 'x' } }]}
         text='boom x'
       />
     );
+
+    await waitFor(() => expect(consoleError).toHaveBeenCalled());
     expect(screen.getByTestId('rich-text-cell-content').textContent).toBe('boom x');
+    expect(container.querySelector('[data-slate-editor]')).toBeNull();
   });
 });

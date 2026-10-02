@@ -1,4 +1,5 @@
 import { Suspense, useCallback, useMemo, useRef } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
 
 import { FieldType } from '@/application/database-yjs';
 import { Cell, CellProps, TextCell as TextCellType } from '@/application/database-yjs/cell.type';
@@ -6,7 +7,8 @@ import { useDatabaseContextOptional } from '@/application/database-yjs/context';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { YjsDatabaseKey } from '@/application/types';
 import { usePlainTextCellEditing } from '@/components/database/components/cell/text/PlainTextCellEditing';
-import { RichTextCellContent, RichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
+import { RichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
+import RichTextCellContent from '@/components/database/components/cell/text/rich-text/RichTextCellContent';
 import TextCellEditing from '@/components/database/components/cell/text/TextCellEditing';
 import UrlActions from '@/components/database/components/cell/text/UrlActions';
 import { cn } from '@/lib/utils';
@@ -65,6 +67,21 @@ export function TextCell({
     }
   }, []);
 
+  const exitEditing = useCallback(() => {
+    setEditing?.(false);
+  }, [setEditing]);
+
+  const plainTextEditor = editing ? (
+    <TextCellEditing
+      ref={focusToEnd}
+      defaultValue={value}
+      placeholder={placeholder}
+      fieldId={fieldId}
+      rowId={rowId}
+      onExit={exitEditing}
+    />
+  ) : null;
+
   return (
     <>
       <div
@@ -91,38 +108,29 @@ export function TextCell({
       >
         {!editing ? (
           richText ? (
-            <Suspense fallback={value}>
-              <RichTextCellContent rowId={rowId} delta={richText} text={value} wrap={wrap} />
-            </Suspense>
+            <RichTextCellContent rowId={rowId} delta={richText} text={value} wrap={wrap} />
           ) : (
             <>{value || placeholder || ''}</>
           )
         ) : isRichText && !editsAsPlainText ? (
-          <Suspense fallback={value}>
-            <RichTextCellEditor
-              value={value}
-              richText={richText}
-              placeholder={placeholder}
-              // The property's name, or the hint where there is none to show.
-              ariaLabel={(field?.get(YjsDatabaseKey.name) as string | undefined) || placeholder}
-              fieldId={fieldId}
-              rowId={rowId}
-              onExit={() => {
-                setEditing?.(false);
-              }}
-            />
-          </Suspense>
+          // The cell still edits, as plain text, when the rich editor cannot
+          // be loaded (see rich-text/load.ts).
+          <ErrorBoundary fallback={plainTextEditor}>
+            <Suspense fallback={value}>
+              <RichTextCellEditor
+                value={value}
+                richText={richText}
+                placeholder={placeholder}
+                // The property's name, or the hint where there is none to show.
+                ariaLabel={(field?.get(YjsDatabaseKey.name) as string | undefined) || placeholder}
+                fieldId={fieldId}
+                rowId={rowId}
+                onExit={exitEditing}
+              />
+            </Suspense>
+          </ErrorBoundary>
         ) : (
-          <TextCellEditing
-            ref={focusToEnd}
-            defaultValue={value}
-            placeholder={placeholder}
-            fieldId={fieldId}
-            rowId={rowId}
-            onExit={() => {
-              setEditing?.(false);
-            }}
-          />
+          plainTextEditor
         )}
         {showUrlActions && (
           <div className={'absolute right-1 top-1'}>

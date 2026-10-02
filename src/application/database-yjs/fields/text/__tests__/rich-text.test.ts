@@ -47,6 +47,49 @@ describe('text cell rich text', () => {
     expect(parseRichTextCellValue(stored, 'Edited on desktop')).toBeUndefined();
   });
 
+  it('reads a stored value once, and gives every read of it the same delta', () => {
+    const delta = [{ insert: 'Read ' }, { insert: 'once', attributes: { bold: true } }];
+    const stored = serializeRichTextCellValue('Read once', delta);
+    const parseSpy = jest.spyOn(JSON, 'parse');
+    const first = parseRichTextCellValue(stored, 'Read once');
+    const again = parseRichTextCellValue(stored, 'Read once');
+    // The same JSON in another string (another row holding the same text).
+    const copy = parseRichTextCellValue(`${stored} `.trimEnd(), 'Read once');
+    const parses = parseSpy.mock.calls.filter(([json]) => json === stored).length;
+
+    parseSpy.mockRestore();
+
+    expect(first).toEqual(delta);
+    // Renderers memoized on the delta skip a cell whose value did not change.
+    expect(again).toBe(first);
+    expect(copy).toBe(first);
+    expect(parses).toBe(1);
+    // The text it was saved for is still checked on every read.
+    expect(parseRichTextCellValue(stored, 'Edited on desktop')).toBeUndefined();
+    expect(parseRichTextCellValue(stored, 'Read once')).toBe(first);
+  });
+
+  it('forgets the values read longest ago once it holds enough of them', () => {
+    const value = (text: string) => serializeRichTextCellValue(text, [{ insert: text, attributes: { bold: true } }]);
+    const early = value('early');
+    const kept = value('kept');
+    const earlyDelta = parseRichTextCellValue(early, 'early');
+    const keptDelta = parseRichTextCellValue(kept, 'kept');
+
+    // Large values read since, with `kept` read again in between.
+    for (let index = 0; index < 5; index++) {
+      const text = `${index}`.repeat(450_000);
+
+      expect(parseRichTextCellValue(value(text), text)).toHaveLength(1);
+      expect(parseRichTextCellValue(kept, 'kept')).toBe(keptDelta);
+    }
+
+    const earlyAgain = parseRichTextCellValue(early, 'early');
+
+    expect(earlyAgain).toEqual(earlyDelta);
+    expect(earlyAgain).not.toBe(earlyDelta);
+  });
+
   it('ignores malformed, unformatted or non-string values', () => {
     expect(parseRichTextCellValue('{not json', 'x')).toBeUndefined();
     expect(parseRichTextCellValue(JSON.stringify({ text: 'x', delta: 'x' }), 'x')).toBeUndefined();

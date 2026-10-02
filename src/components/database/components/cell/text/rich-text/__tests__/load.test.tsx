@@ -8,8 +8,8 @@ jest.mock('../RichTextCellEditor', () => {
   mockLoaded('editor');
   return { __esModule: true, default: () => null };
 });
-jest.mock('../RichTextCellContent', () => {
-  mockLoaded('content');
+jest.mock('../RichTextCellDocument', () => {
+  mockLoaded('document');
   return { __esModule: true, default: () => null };
 });
 
@@ -33,6 +33,6 @@ describe('rich text cell editor preload', () => {
     render(<View editable />);
     await settle();
     expect(mockLoaded).toHaveBeenCalledWith('editor');
-    expect(mockLoaded).toHaveBeenCalledWith('content');
+    expect(mockLoaded).toHaveBeenCalledWith('document');
   });
 });

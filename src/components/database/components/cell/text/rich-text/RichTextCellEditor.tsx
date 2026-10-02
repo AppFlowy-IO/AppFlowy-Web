@@ -80,7 +80,7 @@ function isInsideOverlay(target: EventTarget | null, container: HTMLElement | nu
 const CELL_PANELS = [PanelType.Mention, PanelType.PageReference];
 
 function hasHighlightedPanelOption() {
-  return Boolean(document.querySelector('[data-testid="mention-panel"] [data-option-index].bg-fill-content-hover'));
+  return Boolean(document.querySelector('[data-testid="mention-panel"] [data-option-index][data-selected="true"]'));
 }
 
 function isEditableElement(element: Element | null) {
@@ -301,57 +301,63 @@ function RichTextCellEditorInner({
     [isTitle, onSaved, onUpdateCell, t, workspaceId]
   );
 
-  /** Saves a dirty draft. Returns false when the draft is too large to save. */
-  const commit = useCallback(() => {
-    if (!dirtyRef.current) return true;
+  /**
+   * Saves a dirty draft. Returns false when the draft is too large to save.
+   * A caller that has just read the draft passes it, so it is not read twice.
+   */
+  const commit = useCallback(
+    (draft?: { delta: RichTextDelta; key: string }) => {
+      if (!dirtyRef.current) return true;
 
-    const delta = slateValueToRichText(editor.children);
+      const delta = draft?.delta ?? slateValueToRichText(editor.children);
+      const key = draft?.key ?? serializeDelta(delta);
 
-    // Desktop could not save any later edit of the cell: refuse, as Desktop
-    // does for its own limits, and keep the draft for the user to trim.
-    if (isRichTextTooLarge(delta)) {
-      if (!tooLargeReportedRef.current) {
-        tooLargeReportedRef.current = true;
-        notify.error(t('grid.row.textTooLong'));
+      // Desktop could not save any later edit of the cell: refuse, as Desktop
+      // does for its own limits, and keep the draft for the user to trim.
+      if (isRichTextTooLarge(delta, key)) {
+        if (!tooLargeReportedRef.current) {
+          tooLargeReportedRef.current = true;
+          notify.error(t('grid.row.textTooLong'));
+        }
+
+        return false;
       }
 
-      return false;
-    }
+      tooLargeReportedRef.current = false;
+      dirtyRef.current = false;
+      setDirty(false);
 
-    tooLargeReportedRef.current = false;
-    dirtyRef.current = false;
-    setDirty(false);
+      const seq = ++commitSeqRef.current;
 
-    const key = serializeDelta(delta);
-    const seq = ++commitSeqRef.current;
+      baseKeyRef.current = key;
 
-    baseKeyRef.current = key;
+      const unresolved = getMentionedPageIds(delta).filter(
+        (id) =>
+          getCachedPageName(workspaceId, id) === undefined &&
+          !hasStoredPageTitle(delta, id) &&
+          !isPageNameUnavailable(workspaceId, id)
+      );
 
-    const unresolved = getMentionedPageIds(delta).filter(
-      (id) =>
-        getCachedPageName(workspaceId, id) === undefined &&
-        !hasStoredPageTitle(delta, id) &&
-        !isPageNameUnavailable(workspaceId, id)
-    );
+      // Nearly always the names are known (loaded when the editor opened, or
+      // stored with the mention): save now, so the cell never shows the old
+      // value.
+      if (unresolved.length === 0 || !loadViewMeta) {
+        write(delta, key);
+        return true;
+      }
 
-    // Nearly always the names are known (loaded when the editor opened, or
-    // stored with the mention): save now, so the cell never shows the old
-    // value.
-    if (unresolved.length === 0 || !loadViewMeta) {
-      write(delta, key);
+      void warmPageNames(delta)
+        .then(() => {
+          // A newer save went out while the names loaded; this one is stale.
+          if (seq === commitSeqRef.current) write(delta, key);
+        })
+        .catch((error: unknown) => {
+          Log.error('[RichTextCellEditor] failed to save cell', { rowId, fieldId, error });
+        });
       return true;
-    }
-
-    void warmPageNames(delta)
-      .then(() => {
-        // A newer save went out while the names loaded; this one is stale.
-        if (seq === commitSeqRef.current) write(delta, key);
-      })
-      .catch((error: unknown) => {
-        Log.error('[RichTextCellEditor] failed to save cell', { rowId, fieldId, error });
-      });
-    return true;
-  }, [editor, fieldId, loadViewMeta, rowId, t, warmPageNames, workspaceId, write]);
+    },
+    [editor, fieldId, loadViewMeta, rowId, t, warmPageNames, workspaceId, write]
+  );
 
   const exit = useCallback(() => {
     if (exitedRef.current) return;
@@ -360,11 +366,15 @@ function RichTextCellEditorInner({
     onExit?.();
   }, [commit, onExit]);
 
-  // Leaving the cell by any route (another cell becomes active, the view
-  // unmounts) still saves the draft, unless the editor failed to render it.
+  // The listeners below are attached once and read the latest of these.
   const commitRef = useRef(commit);
+  const exitRef = useRef(exit);
 
   commitRef.current = commit;
+  exitRef.current = exit;
+
+  // Leaving the cell by any route (another cell becomes active, the view
+  // unmounts) still saves the draft, unless the editor failed to render it.
   useEffect(
     () => () => {
       if (!crashedRef.current) commitRef.current();
@@ -400,12 +410,12 @@ function RichTextCellEditorInner({
       if (!(target instanceof Node)) return;
       if (containerRef.current?.contains(target)) return;
       if (isInsideOverlay(target, containerRef.current)) return;
-      exit();
+      exitRef.current();
     };
 
     document.addEventListener('mousedown', handlePointerDown, true);
     return () => document.removeEventListener('mousedown', handlePointerDown, true);
-  }, [exit, isTitle]);
+  }, [isTitle]);
 
   useEffect(() => {
     // The title loads lazily and must not pull focus from an editor the user
@@ -441,7 +451,7 @@ function RichTextCellEditorInner({
     }
 
     // The title saves as it is typed, like the page title.
-    if (isTitle && isDirty) commit();
+    if (isTitle && isDirty) commit({ delta, key });
   }, [commit, editor, isTitle, warmPageNames]);
 
   changeRef.current = handleChange;

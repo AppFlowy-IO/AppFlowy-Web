@@ -152,6 +152,25 @@ describe('RichTextCellEditor', () => {
       expect(onExit).not.toHaveBeenCalled();
     });
 
+    it('leaves through its latest onExit on a click outside, without listening for clicks again on each render', async () => {
+      const { editor, onExit, rerenderWith } = await renderEditor();
+      const addListener = jest.spyOn(document, 'addEventListener');
+      const latestOnExit = jest.fn();
+
+      await typeAtEnd(editor, '!');
+      // The cell re-renders (e.g. on hover) with a new callback.
+      rerenderWith({ onExit: latestOnExit });
+      await flush();
+      expect(addListener.mock.calls.filter(([type]) => type === 'mousedown')).toHaveLength(0);
+
+      act(() => {
+        fireEvent.mouseDown(document.body);
+      });
+      expect(savedTexts()).toEqual(['Hello!']);
+      expect(latestOnExit).toHaveBeenCalledTimes(1);
+      expect(onExit).not.toHaveBeenCalled();
+    });
+
     it('saves the draft when it unmounts', async () => {
       const { editor, unmount } = await renderEditor();
 

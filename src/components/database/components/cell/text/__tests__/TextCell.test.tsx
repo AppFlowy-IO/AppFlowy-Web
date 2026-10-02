@@ -9,19 +9,25 @@ import { PlainTextCellEditing } from '@/components/database/components/cell/text
 import { TextCell } from '@/components/database/components/cell/text/TextCell';
 
 const mockUpdateCell = jest.fn();
+const mockEditorProps = jest.fn();
 let mockField: YDatabaseField | undefined;
 let mockTemplateEditingRowId: string | undefined;
+let mockEditorUnavailable = false;
 
 jest.mock('@/application/database-yjs/dispatch', () => ({ useUpdateCellDispatch: () => mockUpdateCell }));
 jest.mock('@/application/database-yjs/selector', () => ({ useFieldSelector: () => ({ field: mockField }) }));
 jest.mock('@/application/database-yjs/context', () => ({
   useDatabaseContextOptional: () => ({ templateEditingRowId: mockTemplateEditingRowId }),
 }));
+// The editor loads on first use; rendering it throws when it could not be
+// loaded (see rich-text/__tests__/load-failure.test.tsx).
 jest.mock('@/components/database/components/cell/text/rich-text/load', () => ({
-  RichTextCellContent: ({ text }: { text: string }) => <div data-testid='rich-text-cell-content'>{text}</div>,
-  RichTextCellEditor: ({ ariaLabel }: { ariaLabel?: string }) => (
-    <div data-testid='rich-text-cell-editor' aria-label={ariaLabel} />
-  ),
+  RichTextCellDocument: () => null,
+  RichTextCellEditor: (props: { ariaLabel?: string }) => {
+    mockEditorProps(props);
+    if (mockEditorUnavailable) throw new Error('Failed to fetch dynamically imported module');
+    return <div data-testid='rich-text-cell-editor' aria-label={props.ariaLabel} />;
+  },
 }));
 
 const bold: RichTextDelta = [{ insert: 'Hello ' }, { insert: 'world', attributes: { bold: true } }];
@@ -41,8 +47,14 @@ function formattedCell(): TextCellType {
 describe('TextCell', () => {
   beforeEach(() => {
     mockUpdateCell.mockReset();
+    mockEditorProps.mockReset();
     mockField = makeField(FieldType.RichText);
     mockTemplateEditingRowId = undefined;
+    mockEditorUnavailable = false;
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it("shows an empty URL property's placeholder as a hint, not as a link", () => {
@@ -76,6 +88,50 @@ describe('TextCell', () => {
     mockField = makeField(FieldType.RichText, '');
     rerender(<TextCell rowId='row-1' fieldId='field-1' wrap={false} editing placeholder='Untitled' />);
     expect(screen.getByTestId('rich-text-cell-editor').getAttribute('aria-label')).toBe('Untitled');
+  });
+
+  it('shows formatting that needs no editor without loading one', () => {
+    render(<TextCell rowId='row-1' fieldId='field-1' wrap={false} cell={formattedCell()} />);
+
+    expect(screen.getByTestId('rich-text-cell-content').querySelector('strong')?.textContent).toBe('world');
+    expect(mockEditorProps).not.toHaveBeenCalled();
+  });
+
+  it('edits as plain text when the rich editor cannot be loaded', () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockEditorUnavailable = true;
+    const setEditing = jest.fn();
+
+    render(
+      <TextCell rowId='row-1' fieldId='field-1' wrap={false} cell={formattedCell()} editing setEditing={setEditing} />
+    );
+
+    const textarea = screen.getByRole<HTMLTextAreaElement>('textbox');
+
+    expect(textarea.tagName).toBe('TEXTAREA');
+    expect(textarea.value).toBe('Hello world');
+
+    fireEvent.change(textarea, { target: { value: 'Hello there' } });
+    fireEvent.keyDown(textarea, { key: 'Enter', keyCode: 13, which: 13 });
+    expect(mockUpdateCell).toHaveBeenCalledWith('Hello there');
+    expect(setEditing).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps the props of the (memoized) editor the same while the cell is only hovered', () => {
+    const setEditing = jest.fn();
+    const cell = formattedCell();
+    const props = { rowId: 'row-1', fieldId: 'field-1', wrap: false, cell, editing: true, setEditing };
+    const { rerender } = render(<TextCell {...props} />);
+
+    rerender(<TextCell {...props} isHovering />);
+
+    const [[first], [second]] = mockEditorProps.mock.calls as [{ onExit: () => void; richText: unknown }][];
+
+    expect(second.onExit).toBe(first.onExit);
+    expect(second.richText).toBe(first.richText);
+
+    second.onExit();
+    expect(setEditing).toHaveBeenCalledWith(false);
   });
 
   describe('hosts that edit as plain text', () => {

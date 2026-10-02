@@ -1,16 +1,12 @@
-import { CSSProperties, memo, ReactNode, useMemo, useState } from 'react';
+import { CSSProperties, memo, ReactNode, Suspense, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
-import { createEditor } from 'slate';
-import { Editable, RenderElementProps, Slate, withReact } from 'slate-react';
 
 import type { RichTextDelta, RichTextInsert } from '@/application/database-yjs/fields/text/rich-text';
-import { Leaf } from '@/components/editor/components/leaf/Leaf';
 import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
 import { openUrl } from '@/utils/url';
 
-import RichTextCellContext from './RichTextCellContext';
-import { richTextToSlateValue, withRichTextCellCopy } from './rich-text-slate';
+import { RichTextCellDocument } from './load';
 
 /** Leaves that act on their own click (open a link or page). */
 const SELF_HANDLED_CLICK_SELECTOR = ['.href-link', '[data-mention-link]', '.mention-inline[data-mention-id]'].join(',');
@@ -81,7 +77,9 @@ function StaticRun({ insert, attributes = {} }: RichTextInsert) {
 /**
  * Most formatted cells (bold, links, colors, ...) render as plain elements:
  * a grid, list or gallery can show hundreds of them, and a Slate editor per
- * cell costs listeners and work on every selection change of the page.
+ * cell costs listeners and work on every selection change of the page. They
+ * also need no code beyond this module, so they show at once instead of
+ * waiting for the chip renderers to load.
  */
 function StaticRichText({ delta, wrap }: { delta: RichTextDelta; wrap?: boolean }) {
   return (
@@ -91,29 +89,13 @@ function StaticRichText({ delta, wrap }: { delta: RichTextDelta; wrap?: boolean 
   );
 }
 
-/** Mentions and equations need the document's leaf renderers, which need a Slate editor. */
-function RichTextCellDocument({ delta, wrap }: { delta: RichTextDelta; wrap?: boolean }) {
-  const [editor] = useState(() => withRichTextCellCopy(withReact(createEditor())));
-  const initialValue = useMemo(() => richTextToSlateValue(delta), [delta]);
-
-  const renderElement = ({ attributes, children }: RenderElementProps) => (
-    <div {...attributes} data-rich-text-cell-line className={lineClassName(wrap)}>
-      {children}
-    </div>
-  );
-
-  return (
-    <Slate editor={editor} initialValue={initialValue}>
-      <Editable readOnly renderElement={renderElement} renderLeaf={Leaf} className={'outline-none'} />
-    </Slate>
-  );
-}
-
 /**
  * Read-only rendering of a formatted Text cell (grid, cards, list, gallery,
  * row detail, publish). Links open in a new tab and page mentions navigate,
- * without putting the cell into edit mode. Content that cannot be rendered
- * shows as the cell's plain `text`.
+ * without putting the cell into edit mode. Mentions and equations are drawn
+ * by the document's leaf renderers, which load on first use; until they have,
+ * and for content that cannot be rendered (or renderers that cannot be
+ * loaded), the cell shows its plain `text`.
  */
 function RichTextCellContent({
   rowId,
@@ -129,6 +111,7 @@ function RichTextCellContent({
   // Slate keeps its first value, so a new delta mounts a new document.
   const key = useMemo(() => JSON.stringify(delta), [delta]);
   const chips = useMemo(() => hasChips(delta), [delta]);
+  const plainText = <div className={lineClassName(wrap)}>{text}</div>;
 
   return (
     <div
@@ -142,11 +125,11 @@ function RichTextCellContent({
         }
       }}
     >
-      <ErrorBoundary fallback={<div className={lineClassName(wrap)}>{text}</div>} resetKeys={[key]}>
+      <ErrorBoundary fallback={plainText} resetKeys={[key]}>
         {chips ? (
-          <RichTextCellContext rowId={rowId} readOnly>
-            <RichTextCellDocument key={key} delta={delta} wrap={wrap} />
-          </RichTextCellContext>
+          <Suspense fallback={plainText}>
+            <RichTextCellDocument key={key} rowId={rowId} delta={delta} lineClassName={lineClassName(wrap)} />
+          </Suspense>
         ) : (
           <StaticRichText delta={delta} wrap={wrap} />
         )}

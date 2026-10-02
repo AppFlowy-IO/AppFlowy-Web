@@ -195,20 +195,13 @@ export function isPlainRichText(delta: RichTextDelta) {
   return !delta.some(hasAttributes);
 }
 
-/**
- * Reads a stored `rich_text` value. Returns the delta only while it still
- * describes `data`; anything else (missing, malformed, or saved for text that
- * has since changed) reads as plain text.
- */
-export function parseRichTextCellValue(raw: unknown, data: unknown): RichTextDelta | undefined {
-  if (typeof raw !== 'string' || !raw) return undefined;
-  if (typeof data !== 'string') return undefined;
-
+/** A stored value's formatting and the text it was saved for, or null when it holds none that can be used. */
+function parseStoredRichText(raw: string): StoredRichText | null {
   try {
-    const parsed = JSON.parse(raw) as Partial<StoredRichText>;
+    const parsed = JSON.parse(raw) as Partial<StoredRichText> | null;
 
-    if (!parsed || parsed.text !== data || !Array.isArray(parsed.delta)) return undefined;
-    if (!parsed.delta.every(isInsert)) return undefined;
+    if (!parsed || typeof parsed.text !== 'string' || !Array.isArray(parsed.delta)) return null;
+    if (!parsed.delta.every(isInsert)) return null;
 
     const delta = parsed.delta.map(({ insert, attributes }) => {
       const kept = sanitizeRichTextAttributes(attributes);
@@ -216,12 +209,60 @@ export function parseRichTextCellValue(raw: unknown, data: unknown): RichTextDel
       return Object.keys(kept).length > 0 ? { insert, attributes: kept } : { insert };
     });
 
-    if (isPlainRichText(delta)) return undefined;
-
-    return delta;
+    return isPlainRichText(delta) ? null : { text: parsed.text, delta };
   } catch {
-    return undefined;
+    return null;
   }
+}
+
+// What stored values read as, by their JSON, most recently read last. A cell
+// is read on every render and every change of its row or field, and a view
+// shows many cells: a value is parsed once, and reading it again returns the
+// same delta, so renderers memoized on the delta skip cells that did not
+// change. The size is bounded by the JSON kept, not by the number of cells.
+const STORED_CACHE_MAX_CHARS = 4_000_000;
+const storedCache = new Map<string, StoredRichText | null>();
+let storedCacheChars = 0;
+
+function readStoredRichText(raw: string): StoredRichText | null {
+  const cached = storedCache.get(raw);
+
+  if (cached !== undefined) {
+    storedCache.delete(raw);
+    storedCache.set(raw, cached);
+    return cached;
+  }
+
+  const stored = parseStoredRichText(raw);
+
+  if (raw.length > STORED_CACHE_MAX_CHARS) return stored;
+
+  storedCache.set(raw, stored);
+  storedCacheChars += raw.length;
+
+  for (const oldest of storedCache.keys()) {
+    if (storedCacheChars <= STORED_CACHE_MAX_CHARS) break;
+    storedCache.delete(oldest);
+    storedCacheChars -= oldest.length;
+  }
+
+  return stored;
+}
+
+/**
+ * Reads a stored `rich_text` value. Returns the delta only while it still
+ * describes `data`; anything else (missing, malformed, or saved for text that
+ * has since changed) reads as plain text.
+ *
+ * Reads of the same stored value share one delta: treat it as read-only.
+ */
+export function parseRichTextCellValue(raw: unknown, data: unknown): RichTextDelta | undefined {
+  if (typeof raw !== 'string' || !raw) return undefined;
+  if (typeof data !== 'string') return undefined;
+
+  const stored = readStoredRichText(raw);
+
+  return stored && stored.text === data ? stored.delta : undefined;
 }
 
 export function readRichTextFromCell(cell: YDatabaseCell): RichTextDelta | undefined {
@@ -247,10 +288,11 @@ function utf8Length(text: string) {
   return bytes;
 }
 
-/** Whether a delta's formatting is too large for Desktop to save edits of the cell. */
-export function isRichTextTooLarge(delta: RichTextDelta) {
-  const json = JSON.stringify(delta);
-
+/**
+ * Whether a delta's formatting is too large for Desktop to save edits of the
+ * cell. A caller that already has the delta's JSON passes it.
+ */
+export function isRichTextTooLarge(delta: RichTextDelta, json = JSON.stringify(delta)) {
   // No UTF-16 unit takes more than 3 UTF-8 bytes.
   if (json.length * 3 <= MAX_RICH_TEXT_DELTA_BYTES) return false;
 

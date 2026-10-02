@@ -1,11 +1,13 @@
 import { Suspense, useCallback, useMemo, useState } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
 
 import { RowMetaKey, useDatabaseContext, useReadOnly } from '@/application/database-yjs';
 import { useUpdateCellDispatch, useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
 import { RowCoverType, ViewIconType } from '@/application/types';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
-import { RichTextCellContent, RichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
+import { RichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
+import RichTextCellContent from '@/components/database/components/cell/text/rich-text/RichTextCellContent';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import AddIconCover from '@/components/view-meta/AddIconCover';
 import { cn } from '@/lib/utils';
@@ -95,6 +97,26 @@ export function Title({
     templateStyle && 'text-[28px] font-normal leading-[34px]'
   );
 
+  const renderPlainTextEditor = ({ ariaLabel, autoFocus }: { ariaLabel: string; autoFocus: boolean }) => (
+    <TextareaAutosize
+      autoFocus={autoFocus}
+      aria-label={ariaLabel}
+      placeholder={'Untitled'}
+      value={value}
+      data-testid='row-title-input'
+      onChange={(e) => {
+        updateCell(e.target.value);
+        onEdited?.(e.target.value);
+      }}
+      onKeyDown={(e) => {
+        if (createHotkey(HOT_KEY_NAME.ESCAPE)(e.nativeEvent)) return;
+        e.stopPropagation();
+      }}
+      variant={'ghost'}
+      className={titleClassName}
+    />
+  );
+
   const toolbarHeight = templateStyle
     ? icon
       ? hasCover
@@ -153,51 +175,38 @@ export function Title({
               // Row templates store plain values, so the template title is
               // edited as plain text (formatting there would be dropped when
               // the template is applied).
-              <TextareaAutosize
-                autoFocus
-                aria-label={'Template name'}
-                placeholder={'Untitled'}
-                value={value}
-                data-testid='row-title-input'
-                onChange={(e) => {
-                  updateCell(e.target.value);
-                  onEdited?.(e.target.value);
-                }}
-                onKeyDown={(e) => {
-                  if (createHotkey(HOT_KEY_NAME.ESCAPE)(e.nativeEvent)) return;
-                  e.stopPropagation();
-                }}
-                variant={'ghost'}
-                className={titleClassName}
-              />
+              renderPlainTextEditor({ ariaLabel: 'Template name', autoFocus: true })
             ) : readOnly ? (
               // The page's heading, named by its own text (as a document's
               // title is). A role rather than an <h1>: formatted titles render
               // block elements inside it.
               <div data-testid='row-title-input' role={'heading'} aria-level={1} className={titleClassName}>
                 {richText ? (
-                  <Suspense fallback={value}>
-                    <RichTextCellContent rowId={rowId} delta={richText} text={value} wrap />
-                  </Suspense>
+                  <RichTextCellContent rowId={rowId} delta={richText} text={value} wrap />
                 ) : (
                   value || <span className={'text-text-tertiary'}>{'Untitled'}</span>
                 )}
               </div>
             ) : (
-              <Suspense fallback={<div className={titleClassName}>{value}</div>}>
-                <RichTextCellEditor
-                  variant={'title'}
-                  testId={'row-title-input'}
-                  ariaLabel={templateStyle ? 'Template name' : 'Row title'}
-                  rowId={rowId}
-                  fieldId={fieldId}
-                  value={value}
-                  richText={richText}
-                  placeholder={'Untitled'}
-                  className={titleClassName}
-                  onSaved={onEdited}
-                />
-              </Suspense>
+              // The title still edits, as plain text, when the rich editor
+              // cannot be loaded (see rich-text/load.ts). That editor may
+              // appear late, so it does not take the focus.
+              <ErrorBoundary fallback={renderPlainTextEditor({ ariaLabel: 'Row title', autoFocus: false })}>
+                <Suspense fallback={<div className={titleClassName}>{value}</div>}>
+                  <RichTextCellEditor
+                    variant={'title'}
+                    testId={'row-title-input'}
+                    ariaLabel={templateStyle ? 'Template name' : 'Row title'}
+                    rowId={rowId}
+                    fieldId={fieldId}
+                    value={value}
+                    richText={richText}
+                    placeholder={'Untitled'}
+                    className={titleClassName}
+                    onSaved={onEdited}
+                  />
+                </Suspense>
+              </ErrorBoundary>
             )}
           </div>
         </div>

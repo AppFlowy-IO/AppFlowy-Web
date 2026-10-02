@@ -268,6 +268,7 @@ function MentionResultButton({
       color={'inherit'}
       size={'small'}
       data-option-index={index}
+      data-selected={selected || undefined}
       data-option-kind={item.kind}
       startIcon={<MentionResultIcon item={item} title={title} />}
       className={`min-h-[40px] scroll-m-2 justify-start rounded-[8px] bg-fill-content px-3 text-text-primary hover:bg-fill-content-hover ${
@@ -305,6 +306,7 @@ function MentionMoreResultsButton({
       color={'inherit'}
       size={'small'}
       data-option-index={index}
+      data-selected={selected || undefined}
       startIcon={<MoreIcon className={'h-5 w-5 min-w-5 text-icon-tertiary'} />}
       className={`min-h-[40px] scroll-m-2 justify-start rounded-[8px] bg-fill-content px-3 text-text-tertiary hover:bg-fill-content-hover ${
         selected ? 'bg-fill-content-hover' : ''
@@ -338,6 +340,7 @@ function MentionCreatePageButton({
       color={'inherit'}
       size={'small'}
       data-option-index={index}
+      data-selected={selected || undefined}
       startIcon={
         isChildPage ? (
           <AddIcon className={'h-5 w-5 min-w-5 text-icon-primary'} />
