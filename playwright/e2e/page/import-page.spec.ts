@@ -98,7 +98,7 @@ test.describe('Feature: Import', () => {
       { format: 'html', accept: '.html,.htm,text/html', multiple: true },
       {
         format: 'docx',
-        accept: '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        accept: '.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         multiple: true,
       },
       { format: 'pdf', accept: '.pdf,application/pdf', multiple: true },
