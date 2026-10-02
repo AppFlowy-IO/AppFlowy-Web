@@ -32,6 +32,13 @@ export interface DashboardUiContextValue {
    * the release callback; the doc stays registered while any widget holds it.
    */
   acquireSourceDoc: (databaseId: string, doc: YDoc) => () => void;
+  /**
+   * Select a widget (Edit mode only: its box shows the selection outline), or
+   * clear the selection with `null`. With `onlyIf`, a clear only happens while
+   * that widget is the one selected, so a closing menu never clears a newer
+   * selection. UI state: never persisted.
+   */
+  selectWidget: (id: string | null, options?: { onlyIf?: string }) => void;
 }
 
 export const DashboardUiContext = createContext<DashboardUiContextValue | null>(null);
@@ -44,6 +51,13 @@ export function useDashboardUi(): DashboardUiContextValue {
   }
 
   return context;
+}
+
+/** Id of the selected widget, always `null` outside Edit mode. Kept apart: it changes with every menu and settings host. */
+export const DashboardSelectionContext = createContext<string | null>(null);
+
+export function useDashboardSelectedWidgetId(): string | null {
+  return useContext(DashboardSelectionContext);
 }
 
 /** Id of the widget being dragged, if any. Kept apart: it changes on every drag start and drop. */

@@ -164,6 +164,46 @@ async function cachedDatabaseRecords(
   }
 }
 
+function nonEmptyOwner(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function parseCatalogExtra(extra: unknown): Record<string, unknown> | undefined {
+  if (typeof extra === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(extra);
+
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  return extra && typeof extra === 'object' ? (extra as Record<string, unknown>) : undefined;
+}
+
+/**
+ * Read a view's dashboard owner (WP05 §1.1) from the catalog item itself or
+ * from a projected folder `extra` (an object or its JSON string). The server
+ * does not send it yet; parsing it now lets owned views be told apart as soon
+ * as it does. Items without an owner are returned unchanged.
+ */
+export function parseWorkspaceDatabaseViewItem(
+  view: WorkspaceDatabaseViewItem & { extra?: unknown }
+): WorkspaceDatabaseViewItem {
+  const owner = nonEmptyOwner(view.dashboard_owner) ?? nonEmptyOwner(parseCatalogExtra(view.extra)?.dashboard_owner);
+
+  return owner === undefined || owner === view.dashboard_owner ? view : { ...view, dashboard_owner: owner };
+}
+
+function parseWorkspaceDatabases(databases: WorkspaceDatabaseWithViews[]): WorkspaceDatabaseWithViews[] {
+  return databases.map((database) => {
+    const views = database.views.map(parseWorkspaceDatabaseViewItem);
+
+    return views.every((view, index) => view === database.views[index]) ? database : { ...database, views };
+  });
+}
+
 export function getDatabaseContainerView(database: WorkspaceDatabaseWithViews): WorkspaceDatabaseViewItem | undefined {
   return database.views.find((view) => view.is_container);
 }
@@ -218,6 +258,7 @@ export function databaseCatalogViewToView(databaseId: string, view: WorkspaceDat
       embedded: view.embedded,
       is_database_container: view.is_container,
       is_space: false,
+      ...(view.dashboard_owner ? { dashboard_owner: view.dashboard_owner } : {}),
     },
     children: [],
     is_published: false,
@@ -255,7 +296,7 @@ export async function refreshWorkspaceDatabaseCatalog(workspaceId: string): Prom
     let databases: WorkspaceDatabaseWithViews[];
 
     try {
-      databases = await listWorkspaceDatabases(workspaceId);
+      databases = parseWorkspaceDatabases(await listWorkspaceDatabases(workspaceId));
     } catch (error) {
       if (!isCurrent()) return useReplacementCatalog();
       throw error;

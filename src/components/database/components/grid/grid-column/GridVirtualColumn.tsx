@@ -60,6 +60,9 @@ function GridVirtualColumn({
     <div
       data-column-id={columnData.fieldId}
       data-row-key={rowKey}
+      data-parity-id={
+        rowType === RenderRowType.Header && column.index === 0 ? 'dash-widget-grid-first-column' : undefined
+      }
       data-active-cell={isActiveCell || undefined}
       data-hover-row={isHoverRow || undefined}
       key={column.key}

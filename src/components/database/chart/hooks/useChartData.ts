@@ -1,5 +1,5 @@
 import dayjs, { Dayjs } from 'dayjs';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
@@ -12,11 +12,11 @@ import {
 } from '@/application/database-yjs';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import {
-  CHART_COLORS,
   ChartAggregationType,
   ChartDataItem,
   ChartLayoutSettings,
   ChartType,
+  EMPTY_CATEGORY_KEY,
   isDateGroupableFieldType,
   isGroupableFieldType,
 } from '@/application/database-yjs/chart.type';
@@ -27,6 +27,7 @@ import {
   parseNumberTypeOptions,
   parseSelectOptionTypeOptions,
   SelectOption,
+  SelectOptionColor,
 } from '@/application/database-yjs/fields';
 import { safeParseTimestamp } from '@/application/database-yjs/fields/date/utils';
 import {
@@ -49,7 +50,6 @@ import {
   createChartLabels,
   GroupValue,
 } from './chartGrouping';
-import { useChartColors, UseChartColorsReturn } from './useChartColors';
 
 interface GroupedData {
   label: string;
@@ -319,13 +319,18 @@ export function computeNumberChartData({
       label: yField ? String(yField.get(YjsDatabaseKey.name) || '') : '',
       value,
       rowIds,
-      color: CHART_COLORS[0],
     },
   ];
 }
 
+/** The settings grouping and aggregation read; style settings (WP10) never recompute the data. */
+type ChartGroupingSettings = Pick<
+  ChartLayoutSettings,
+  'yFieldId' | 'aggregationType' | 'showEmptyValues' | 'cumulative' | 'dateCondition'
+>;
+
 interface ComputeChartDataInput {
-  settings: ChartLayoutSettings | null;
+  settings: ChartGroupingSettings | null;
   resolvedXFieldId: string | null;
   rowOrders: ReadonlyArray<{ id: string }> | null | undefined;
   rowMetas: Record<RowId, YDoc> | null | undefined;
@@ -333,7 +338,7 @@ interface ComputeChartDataInput {
   fieldType: FieldType | null;
   fields: YDatabaseFields | undefined;
   optionIdToName: Map<string, string>;
-  colors: UseChartColorsReturn;
+  optionIdToColor: Map<string, SelectOptionColor>;
   labels: ChartLabels;
 }
 
@@ -351,7 +356,7 @@ function computeChartData({
   fieldType,
   fields,
   optionIdToName,
-  colors,
+  optionIdToColor,
   labels,
 }: ComputeChartDataInput): ChartDataItem[] {
   if (!rowOrders || !rowMetas || !xAxisField || !resolvedXFieldId || !fieldType) {
@@ -418,7 +423,7 @@ function computeChartData({
   const yField = yFieldId && fields ? fields.get(yFieldId) : undefined;
 
   const data: ChartDataItem[] = [];
-  let colorIndex = 0;
+  const isSelect = fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect;
 
   groups.forEach((group) => {
     let value: number;
@@ -437,21 +442,20 @@ function computeChartData({
       value = group.rowIds.length;
     }
 
-    const color = group.isEmptyCategory
-      ? colors.emptyColor
-      : colors.getColorForCategory(group.label, group.groupKey, colorIndex);
-
-    data.push({
+    // Colors are assigned at render time from this metadata (`chart-colors.ts`).
+    const item: ChartDataItem = {
       label: group.label,
       value,
       rowIds: group.rowIds,
-      color,
+      key: group.isEmptyCategory ? EMPTY_CATEGORY_KEY : group.groupKey,
       isEmptyCategory: group.isEmptyCategory,
-    });
+    };
+    const optionColor = isSelect && group.groupKey ? optionIdToColor.get(group.groupKey) : undefined;
 
-    if (!group.isEmptyCategory) {
-      colorIndex++;
-    }
+    if (optionColor) item.optionColor = optionColor;
+    if (group.groupKey === CHECKBOX_CHECKED_KEY) item.checkboxState = 'checked';
+    if (group.groupKey === CHECKBOX_UNCHECKED_KEY) item.checkboxState = 'unchecked';
+    data.push(item);
   });
 
   // Pre-build a label → sortKey map so the comparator below is O(1) per
@@ -519,6 +523,10 @@ export interface UseChartDataReturn {
   yNumberFormat: NumberFormat | null;
   /** Number chart only: the aggregated value, or null for other chart types / while loading */
   numberValue: number | null;
+  /** Every row the chart asked for failed to load */
+  loadError: boolean;
+  /** Load the rows that failed again */
+  retry: () => void;
 }
 
 const EMPTY_CHART_DATA: ChartDataItem[] = [];
@@ -545,13 +553,16 @@ export const ROW_LOAD_CONCURRENCY = 16;
  * `ensureRow` every id through a pool of `ROW_LOAD_CONCURRENCY` workers.
  * `onLoaded` runs only after a load resolves, so a failed row is retried by
  * the next call. Stops picking up rows once `isCancelled` returns true.
+ * Resolves with how many loads succeeded and failed.
  */
 export async function ensureRowsWithConcurrency(
   rowIds: readonly string[],
   ensureRow: (rowId: string) => unknown,
   { isCancelled, onLoaded }: { isCancelled: () => boolean; onLoaded?: (rowId: string) => void }
-) {
+): Promise<{ loaded: number; failed: number }> {
   let cursor = 0;
+  let loaded = 0;
+  let failed = 0;
   const worker = async () => {
     while (!isCancelled()) {
       const idx = cursor++;
@@ -561,8 +572,10 @@ export async function ensureRowsWithConcurrency(
 
       try {
         await ensureRow(rowId);
+        loaded += 1;
         onLoaded?.(rowId);
       } catch (e) {
+        failed += 1;
         console.error('chart: failed to load row', rowId, e);
       }
     }
@@ -571,6 +584,7 @@ export async function ensureRowsWithConcurrency(
   const workerCount = Math.min(ROW_LOAD_CONCURRENCY, rowIds.length);
 
   await Promise.all(Array.from({ length: workerCount }, worker));
+  return { loaded, failed };
 }
 
 /**
@@ -652,6 +666,13 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   // Without the grace period an empty `rowOrders` at mount would flash
   // "No data" before Yjs syncs the actual rows.
   const [rowsLoaded, setRowsLoaded] = useState<boolean>(false);
+  // Every requested row failed (the chart shows "Couldn't load this chart"); `retry` bumps the clock to load them again.
+  const [loadError, setLoadError] = useState(false);
+  const [retryClock, setRetryClock] = useState(0);
+  const retry = useCallback(() => {
+    setLoadError(false);
+    setRetryClock((clock) => clock + 1);
+  }, []);
 
   // Boolean view of whether `rowOrders` has been observed at all. Needed
   // because `rowIdsKey` is `''` for both `undefined` and `[]`, so the
@@ -712,7 +733,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     const loadAll = async () => {
       // Only mark a row as loaded *after* `ensureRow` resolves — otherwise a
       // failed load would permanently skip the row on subsequent effect fires.
-      await ensureRowsWithConcurrency(
+      const { loaded, failed } = await ensureRowsWithConcurrency(
         rowsToLoad.map((row) => row.id),
         ensureRow,
         {
@@ -723,6 +744,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
 
       if (!cancelled) {
         hydratedViewIdRef.current = activeViewId;
+        setLoadError(failed > 0 && loaded === 0);
         setRowsLoaded(true);
       }
     };
@@ -733,7 +755,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowOrdersReady, rowIdsKey, ensureRow, needsRowDocs, isHistory, activeViewId]);
+  }, [rowOrdersReady, rowIdsKey, ensureRow, needsRowDocs, isHistory, activeViewId, retryClock]);
 
   // Find all groupable fields
   const groupableFields = useMemo<GroupableField[]>(() => {
@@ -785,7 +807,6 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [xAxisField, fieldType, fieldsClock]);
 
-  const colors = useChartColors({ fieldType, selectOptions });
   const { t } = useTranslation();
   // `t` changes only with the language, which re-translates the categories.
   const labels = useMemo(() => createChartLabels(t), [t]);
@@ -803,13 +824,15 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     };
   }, [yAxisField, fieldsClock]);
 
-  const optionIdToName = useMemo(() => {
-    const map = new Map<string, string>();
+  const { optionIdToName, optionIdToColor } = useMemo(() => {
+    const names = new Map<string, string>();
+    const optionColors = new Map<string, SelectOptionColor>();
 
     selectOptions.forEach((opt) => {
-      map.set(opt.id, opt.name);
+      names.set(opt.id, opt.name);
+      if (opt.color) optionColors.set(opt.id, opt.color);
     });
-    return map;
+    return { optionIdToName: names, optionIdToColor: optionColors };
   }, [selectOptions]);
 
   // Row docs are mutated in place: editing a cell the chart reads (a value
@@ -919,6 +942,27 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     rowDataClock,
   ]);
 
+  // Only these fields regroup the rows: `settings` is a new object after any chart write, style keys included.
+  const hasSettings = settings !== null;
+  const groupYFieldId = settings?.yFieldId;
+  const groupAggregation = settings?.aggregationType ?? ChartAggregationType.Count;
+  const groupShowEmpty = settings?.showEmptyValues ?? true;
+  const groupCumulative = settings?.cumulative ?? false;
+  const groupDateCondition = settings?.dateCondition ?? DateGroupCondition.Month;
+  const groupingSettings = useMemo<ChartGroupingSettings | null>(
+    () =>
+      hasSettings
+        ? {
+            yFieldId: groupYFieldId,
+            aggregationType: groupAggregation,
+            showEmptyValues: groupShowEmpty,
+            cumulative: groupCumulative,
+            dateCondition: groupDateCondition,
+          }
+        : null,
+    [hasSettings, groupYFieldId, groupAggregation, groupShowEmpty, groupCumulative, groupDateCondition]
+  );
+
   // Pure derivation. Yjs hydrates row docs in micro-batches, so this can
   // recompute many times during a single page load — but downstream chart
   // widgets are wrapped in `React.memo(..., chartDataEqual)`, so re-renders
@@ -932,7 +976,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     if (isNumberChart || !rowsLoaded) return EMPTY_CHART_DATA;
 
     return computeChartData({
-      settings,
+      settings: groupingSettings,
       resolvedXFieldId,
       rowOrders: stableRowOrders,
       rowMetas,
@@ -940,13 +984,13 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
       fieldType,
       fields,
       optionIdToName,
-      colors,
+      optionIdToColor,
       labels,
     });
   }, [
     rowsLoaded,
     isNumberChart,
-    settings,
+    groupingSettings,
     resolvedXFieldId,
     stableRowOrders,
     rowMetas,
@@ -956,7 +1000,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     fieldsClock,
     rowDataClock,
     optionIdToName,
-    colors,
+    optionIdToColor,
     labels,
   ]);
 
@@ -975,6 +1019,8 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     yFieldName,
     yNumberFormat,
     numberValue,
+    loadError,
+    retry,
   };
 }
 

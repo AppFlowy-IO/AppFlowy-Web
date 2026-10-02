@@ -1,6 +1,7 @@
 import { KeyboardEvent, PointerEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP } from '../constants';
+import { snapDashboardRowHeight } from '../grid-layout';
 import { clampRowHeight } from '../utils';
 
 import { startPointerDrag } from './pointerDrag';
@@ -11,7 +12,7 @@ export const ROW_HEIGHT_CSS_VARIABLE = '--dashboard-row-height';
 /**
  * The height being dragged, `null` outside a drag. An external store rather
  * than state: a drag changes it on every pointer move, and only the handle's
- * badge and the widgets' nested databases need to follow it through React.
+ * value and the widgets' nested databases need to follow it through React.
  */
 export interface RowHeightPreview {
   subscribe: (listener: () => void) => () => void;
@@ -31,8 +32,9 @@ interface UseRowHeightResizeOptions {
 
 /**
  * Drag the handle under a row to change the height every widget of the row
- * shares. The preview height is local until pointer up (Escape cancels);
- * arrow keys change it by `DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP`.
+ * shares. The preview snaps to 20px (`snapDashboardRowHeight`) and stays
+ * local until pointer up (Escape cancels); arrow keys change it by
+ * `DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP`.
  *
  * A pointer move updates the CSS variable and the `preview` store, not React
  * state: the row and its cards resize through CSS, so the row never
@@ -104,11 +106,11 @@ export function useRowHeightResize({ height, enabled, onCommit, getRowElement }:
       cancelRef.current = startPointerDrag(event, {
         cursor: 'row-resize',
         onMove: (_deltaX, deltaY) => {
-          const clamped = clampRowHeight(startHeight + deltaY);
+          const snapped = snapDashboardRowHeight(startHeight + deltaY);
 
-          if (clamped === next) return;
-          next = clamped;
-          setPreview(clamped);
+          if (snapped === next) return;
+          next = snapped;
+          setPreview(snapped);
         },
         onEnd: (commit) => {
           cancelRef.current = null;

@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 
+import { filterOwnedTabViewIds } from '@/application/database-yjs/dashboard-owned-views';
 import { View } from '@/application/types';
-import { isDatabaseContainer } from '@/application/view-utils';
+import { isDashboardOwnedView, isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 
 interface UseContainerVisibleViewIdsProps {
@@ -37,7 +38,8 @@ interface UseContainerVisibleViewIdsResult {
    */
   containerView: View | undefined;
   /**
-   * For database containers: the container's children view IDs.
+   * For database containers: the container's children view IDs, without the
+   * views a dashboard owns (only the opened view when it is one of those).
    * For standalone databases: undefined (show all non-embedded views).
    */
   visibleViewIds: string[] | undefined;
@@ -111,11 +113,21 @@ export function useContainerVisibleViewIds({
     return undefined;
   }, [databaseId, embedded, outline, parentViewId, view]);
 
+  const openedViewId = view?.view_id;
   const visibleViewIds = useMemo(() => {
     if (!containerView) return undefined;
     if (containerView.children.length === 0) return undefined;
-    return containerView.children.map((child) => child.view_id);
-  }, [containerView]);
+    const ownedViewIds = new Set(
+      containerView.children.filter((child) => isDashboardOwnedView(child)).map((child) => child.view_id)
+    );
+
+    // Dashboard-owned widget views are not tabs (WP05 §1.2).
+    return filterOwnedTabViewIds(
+      containerView.children.map((child) => child.view_id),
+      openedViewId,
+      (viewId) => ownedViewIds.has(viewId) || (viewId === openedViewId && isDashboardOwnedView(view))
+    );
+  }, [containerView, openedViewId, view]);
 
   return { containerView, visibleViewIds };
 }

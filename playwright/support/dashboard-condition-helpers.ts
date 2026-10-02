@@ -16,7 +16,12 @@ import { DatabaseFilterSelectors } from './selectors';
 
 export type WidgetSortDirection = 'ascending' | 'descending';
 
-/** The UI belongs to scope; fixture identities always belong to the scenario's owner page. */
+/**
+ * Sort a widget from its Sort tool: it opens the property list while the
+ * widget has no sort, and the widget's Sorts popover (with "Add sort")
+ * otherwise. The UI belongs to scope; fixture identities always belong to the
+ * scenario's owner page.
+ */
 export async function addWidgetSort(
   scope: Page,
   ownerPage: Page,
@@ -25,20 +30,22 @@ export async function addWidgetSort(
   direction: WidgetSortDirection
 ) {
   const widget = DashboardSelectors.widget(scope, knownWidget(ownerPage, label).id);
-  const chip = widget.getByTestId('database-sort-condition');
+  const sortTool = widget.getByTestId('database-actions-sort');
+  const popover = scope.getByTestId('dashboard-widget-sorts-popover');
 
   await expect(widget).toBeVisible({ timeout: 30_000 });
   await widget.hover();
-  if ((await chip.count()) > 0) {
-    if (!(await chip.isVisible())) await widget.getByTestId('database-actions-sort').click();
-    await chip.click();
-    await scope.getByRole('button', { name: /add.*sort/i }).click();
+  if ((await sortTool.getAttribute('data-active')) === 'true') {
+    await sortTool.click();
+    await expect(popover).toBeVisible();
+    await popover.getByRole('button', { name: /add.*sort/i }).click();
   } else {
-    await widget.getByTestId('database-actions-sort').click();
+    await sortTool.click();
   }
 
   await DatabaseFilterSelectors.propertyItemByName(scope, field).filter({ visible: true }).click();
-  const sort = scope.getByTestId('sort-condition').filter({ hasText: new RegExp(escapeRegExp(field)) });
+  // The new sort is edited in the widget's Sorts popover.
+  const sort = popover.getByTestId('sort-condition').filter({ hasText: new RegExp(escapeRegExp(field)) });
   const directionButton = sort.getByRole('button', { name: /ascending|descending/i });
 
   await expect(directionButton).toBeVisible();
@@ -48,9 +55,13 @@ export async function addWidgetSort(
   }
 
   await expect(directionButton).toHaveText(new RegExp(direction, 'i'));
-  await scope.keyboard.press('Escape');
-  await expect(sort).toBeHidden();
-  await expect(chip).toBeVisible();
+  for (let attempt = 0; attempt < 3 && (await popover.isVisible()); attempt += 1) {
+    await scope.keyboard.press('Escape');
+  }
+
+  await expect(popover).toBeHidden();
+  // An active sort keeps its highlighted tool.
+  await expect(sortTool).toHaveAttribute('data-active', 'true');
 }
 
 /** Assert identity and order, not just the presence of the same titles somewhere in the widget. */

@@ -10,6 +10,8 @@ type FieldDisplayProps = {
   fieldId: FieldId;
   showPropertyName?: boolean;
   showRelationDatabaseName?: boolean;
+  /** Extra classes of the field icon (a dashboard widget's grid header draws it as chrome). */
+  iconClassName?: string;
 } & HTMLAttributes<HTMLDivElement>;
 
 function RelationDatabaseName({ fieldId }: { fieldId: FieldId }) {
@@ -24,6 +26,7 @@ export function FieldDisplay({
   fieldId,
   showPropertyName = true,
   showRelationDatabaseName = false,
+  iconClassName,
   ...props
 }: FieldDisplayProps) {
   const { field } = useFieldSelector(fieldId);
@@ -35,7 +38,7 @@ export function FieldDisplay({
 
   return (
     <div {...props} className={cn('flex items-center gap-[10px]', props.className)}>
-      <FieldCustomIcon fieldId={fieldId} />
+      <FieldCustomIcon className={iconClassName} fieldId={fieldId} />
       {showPropertyName && (
         <div className={'flex-1 truncate'}>
           {name}

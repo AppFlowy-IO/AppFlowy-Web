@@ -87,8 +87,11 @@ When('the member resets the dashboard local conditions', async ({ page }) => {
   await resetDashboardConditions(memberPage(page));
 });
 
-Then('the {string} widget has no sort chip', async ({ page }, label: string) => {
-  await expect(
-    DashboardSelectors.widget(page, knownWidget(page, label).id).getByTestId('database-sort-condition')
-  ).toHaveCount(0);
+/** The widget has no sort chip anywhere, so the effective sorts show as an inactive Sort tool. */
+Then('the {string} widget has no active sort', async ({ page }, label: string) => {
+  const widget = DashboardSelectors.widget(page, knownWidget(page, label).id);
+
+  await expect(widget.locator('[data-testid="database-actions-sort"][data-active="true"]')).toHaveCount(0);
+  // The tool reflects the widget's effective (local or shared) sorts.
+  await expect(widget.getByTestId('database-actions-sort')).toHaveAttribute('data-active', 'false');
 });

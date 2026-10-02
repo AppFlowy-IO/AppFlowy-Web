@@ -80,12 +80,15 @@ describe('R-MODE (mode-transitions.json)', () => {
 
 describe('touchesEditOnlyKeys', () => {
   it('lists the Edit-only update keys', () => {
-    expect(DASHBOARD_EDIT_ONLY_UPDATE_KEYS).toEqual(['rows', 'showWidgetTitles']);
+    expect(DASHBOARD_EDIT_ONLY_UPDATE_KEYS).toEqual(['rows', 'showWidgetTitles', 'showIconsInHeading']);
   });
 
   it('flags rows and display-setting writes', () => {
     expect(touchesEditOnlyKeys({ rows: [] })).toBe(true);
     expect(touchesEditOnlyKeys({ showWidgetTitles: false })).toBe(true);
+    // WP03: "Show icons in heading" is an Edit-only display setting too.
+    expect(touchesEditOnlyKeys({ showIconsInHeading: true })).toBe(true);
+    expect(touchesEditOnlyKeys({ showIconsInHeading: false, globalFilters: [] })).toBe(true);
     expect(touchesEditOnlyKeys({ rows: [], globalFilters: [] })).toBe(true);
   });
 

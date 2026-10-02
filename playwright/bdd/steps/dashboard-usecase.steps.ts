@@ -1,6 +1,8 @@
 import { expect, type Page } from '@playwright/test';
 import { createBdd, type DataTable } from 'playwright-bdd';
 
+import { formatChartValue } from '../../../src/application/database-yjs/chart-format';
+
 import {
   DashboardSelectors,
   dashboardWorld,
@@ -262,8 +264,16 @@ Then('the {string} chart total is {string}', async ({ page }, view: string, tota
   const widget = widgetLocator(page, view);
 
   await expect(widget.locator('.recharts-pie')).toBeVisible(WAIT);
-  // Like desktop, the donut prints a plain integer; compare the value.
-  await expect.poll(async () => chartNumber((await donutTotal(widget).textContent()) ?? ''), WAIT).toBe(chartNumber(total));
+  // The centre keeps the raw total, and prints it with R-FORMAT `center` (compact from 10,000 on:
+  // "300,000" shows "300K"). The use-case Number properties have no format, and a whole-number
+  // total prints the same as a count or as a plain sum.
+  const expected = chartNumber(total);
+
+  await expect.poll(async () => Number(await donutTotal(widget).getAttribute('data-value')), WAIT).toBe(expected);
+  await expect(donutTotal(widget)).toHaveText(
+    // Sum (1) over a Number property without a format (`NumberFormat.Num`, 0).
+    formatChartValue(expected, { aggregation: 1, yField: { type: 'number', numberFormat: 0 }, mode: 'center', locale: 'en-US' })
+  );
 });
 
 Then('the {string} chart shows these values:', async ({ page }, view: string, table: DataTable) => {

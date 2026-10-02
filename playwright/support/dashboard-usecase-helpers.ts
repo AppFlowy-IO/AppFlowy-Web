@@ -50,7 +50,7 @@ import {
   readDashboardSetting,
   readDatabaseViews,
   registerDashboardWorld,
-  rowColumnWidth,
+  rowColumnPitch,
   signBrowserInWithSession,
   signInFixtureAccount,
   splitList,
@@ -1137,7 +1137,7 @@ export async function resizeWidgetTo(page: Page, viewName: string, columns: numb
   const handleIndex = last ? index - 1 : index;
   const direction = last ? -1 : 1;
   const handle = DashboardSelectors.widthHandle(page, row.id, handleIndex);
-  const columnWidth = await rowColumnWidth(page, row.id);
+  const columnWidth = await rowColumnPitch(page, row.id, row.widgets.length);
 
   await DashboardSelectors.row(page, row.id).hover();
   await expect(handle).toBeVisible({ timeout: USE_CASE_TIMEOUT });
@@ -1258,40 +1258,33 @@ export async function timelineBarTitles(page: Page, viewName: string): Promise<s
   return ids.map((id) => titleById.get(id) ?? `?${id}`).sort();
 }
 
-/** Donut centre total. */
+/** Donut centre total; its `data-value` holds the raw total, its text the R-FORMAT `center` print. */
 export function donutTotal(widget: Locator): Locator {
-  return widget.locator('.recharts-wrapper').locator('xpath=..').locator('..').getByText('Total', { exact: true })
-    .locator('xpath=preceding-sibling::*[1]');
+  return widget.getByTestId('chart-donut-total');
 }
 
-/** Category → value of a bar chart, from its axis labels and bar value labels. */
+/**
+ * Category → raw value of a bar chart, from its hidden data table (axis
+ * labels can be thinned and data labels are compact).
+ */
 export async function barChartValues(widget: Locator): Promise<Record<string, number>> {
   return widget.evaluate((element) => {
-    const ticks = Array.from(element.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick-value')).map(
-      (tick) => (tick.textContent ?? '').trim()
-    );
-    const values = Array.from(element.querySelectorAll('.recharts-label-list .recharts-label')).map((label) =>
-      Number((label.textContent ?? '').replace(/[,\s]/g, ''))
-    );
     const result: Record<string, number> = {};
 
-    ticks.forEach((tick, index) => {
-      result[tick] = values[index];
+    element.querySelectorAll('[data-testid="chart-data-table"] tr[data-label]').forEach((row) => {
+      result[row.getAttribute('data-label') ?? ''] = Number(row.getAttribute('data-value'));
     });
     return result;
   });
 }
 
-/** The index of a chart category in the rendered data (legend and bars follow data order). */
+/** The index of a chart category in the rendered data: the order of the chart's data table rows. */
 async function chartCategoryIndex(widget: Locator, label: string): Promise<number> {
-  const labels = await widget.evaluate((element) => {
-    const legend = Array.from(element.querySelectorAll('button span.text-xs')).map((span) => (span.textContent ?? '').trim());
-
-    if (element.querySelector('.recharts-pie')) return legend;
-    return Array.from(element.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick-value')).map((tick) =>
-      (tick.textContent ?? '').trim()
-    );
-  });
+  const labels = await widget.evaluate((element) =>
+    Array.from(element.querySelectorAll('[data-testid="chart-data-table"] tr[data-label]')).map(
+      (row) => row.getAttribute('data-label') ?? ''
+    )
+  );
   const index = labels.indexOf(label);
 
   if (index === -1) throw new Error(`The chart has no "${label}" category (it has ${labels.join(', ')})`);
@@ -1307,48 +1300,32 @@ export async function clickChartSegment(page: Page, widget: Locator, label: stri
   const index = await chartCategoryIndex(widget, label);
 
   if ((await widget.locator('.recharts-pie').count()) === 0) {
-    const bar = widget.locator('.recharts-bar-rectangle path').nth(index);
+    // One `.recharts-bar-rectangle` per category, in data order; a zero bar has no path.
+    const bar = widget.locator('.recharts-bar-rectangle').nth(index).locator('path');
 
     await bar.scrollIntoViewIfNeeded();
     await bar.click();
     return;
   }
 
-  const sector = widget.locator('.recharts-pie-sector').nth(index);
+  // Every slice has an anchor at the middle of its ring arc (drawn with the slice labels, once the
+  // entry animation has finished), whatever labels are shown and however large the ring is.
+  const anchor = widget.locator(`[data-testid="chart-donut-slice-anchor"][data-label="${label}"]`);
 
-  // Recharts draws the slice labels once its entry animation has finished.
-  await expect
-    .poll(
-      () =>
-        widget.evaluate(
-          (element) =>
-            element.querySelectorAll('.recharts-pie-labels text').length ===
-            element.querySelectorAll('.recharts-pie-sector').length
-        ),
-      { timeout: USE_CASE_TIMEOUT }
-    )
-    .toBe(true);
-  await sector.evaluate((element) => element.scrollIntoView({ block: 'center' }));
-  // Slice labels sit on the slice's mid-angle, outside the ring: step back onto the ring.
-  const point = await widget.evaluate((element, sliceIndex) => {
-    const surface = element.querySelector('.recharts-pie')?.closest('svg');
-    const labelNode = element.querySelectorAll('.recharts-pie-labels text')[sliceIndex];
+  await expect(anchor).toHaveCount(1, { timeout: USE_CASE_TIMEOUT });
+  await widget.locator('.recharts-pie').evaluate((element) => element.scrollIntoView({ block: 'center' }));
+  const point = await anchor.evaluate((element) => {
+    const surface = element.closest('svg');
 
-    if (!surface || !labelNode) return null;
+    if (!surface) return null;
     const rect = surface.getBoundingClientRect();
-    const cx = rect.x + rect.width / 2;
-    const cy = rect.y + rect.height / 2;
-    const lx = rect.x + Number(labelNode.getAttribute('x'));
-    const ly = rect.y + Number(labelNode.getAttribute('y'));
-    // Inner radius 70, outer 110: aim at the middle of the ring.
-    const ratio = 90 / Math.hypot(lx - cx, ly - cy);
-    const x = cx + (lx - cx) * ratio;
-    const y = cy + (ly - cy) * ratio;
+    const x = rect.x + Number(element.getAttribute('data-x'));
+    const y = rect.y + Number(element.getAttribute('data-y'));
     const hit = document.elementFromPoint(x, y);
-    const sectors = Array.from(element.querySelectorAll('.recharts-pie-sector'));
+    const sector = hit?.closest('.recharts-pie-sector');
 
-    return { x, y, hits: Boolean(hit && sectors[sliceIndex]?.contains(hit)) };
-  }, index);
+    return { x, y, hits: Boolean(sector) };
+  });
 
   if (!point) throw new Error(`Cannot locate the "${label}" slice`);
   expect(point.hits, `the "${label}" slice is not under the pointer`).toBe(true);

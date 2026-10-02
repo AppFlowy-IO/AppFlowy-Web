@@ -1,5 +1,5 @@
 import { expect } from '@jest/globals';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
@@ -98,5 +98,64 @@ describe('useDatabaseViewsSelector', () => {
     );
 
     expect(result.current.viewIds).toEqual([gridId, boardId, calendarId]);
+  });
+
+  describe('dashboard-owned views', () => {
+    function setOwner(doc: YDoc, viewId: string, owner: string) {
+      const views = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database).get(YjsDatabaseKey.views);
+
+      doc.transact(() => views.get(viewId).set(YjsDatabaseKey.dashboard_owner, owner));
+    }
+
+    function renderViews(databaseDoc: YDoc, databasePageId: string, visibleViewIds?: string[]) {
+      const contextValue: DatabaseContextState = {
+        readOnly: true,
+        databaseDoc,
+        databasePageId,
+        activeViewId: databasePageId,
+        rowDocMap: null,
+        workspaceId: 'workspace-id',
+      };
+
+      return renderHook(() => useDatabaseViewsSelector(databasePageId, visibleViewIds), {
+        wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+      });
+    }
+
+    it('hides views a dashboard owns from a standalone database', () => {
+      const databaseDoc = createDatabaseDocWithViews(['grid-id', 'owned-board-id', 'dashboard-id']);
+
+      setOwner(databaseDoc, 'owned-board-id', 'dashboard-id');
+      const { result } = renderViews(databaseDoc, 'grid-id');
+
+      expect(result.current.viewIds).toEqual(['grid-id', 'dashboard-id']);
+    });
+
+    it('hides a view as soon as its collab mirror says it is owned', () => {
+      const databaseDoc = createDatabaseDocWithViews(['grid-id', 'board-id']);
+      const { result } = renderViews(databaseDoc, 'grid-id');
+
+      expect(result.current.viewIds).toEqual(['grid-id', 'board-id']);
+      act(() => setOwner(databaseDoc, 'board-id', 'dashboard-id'));
+      expect(result.current.viewIds).toEqual(['grid-id']);
+    });
+
+    it('shows an opened owned view as the only tab', () => {
+      const databaseDoc = createDatabaseDocWithViews(['grid-id', 'owned-board-id']);
+
+      setOwner(databaseDoc, 'owned-board-id', 'dashboard-id');
+      const { result } = renderViews(databaseDoc, 'owned-board-id');
+
+      expect(result.current.viewIds).toEqual(['owned-board-id']);
+    });
+
+    it('never filters an explicit list (a document block or a widget)', () => {
+      const databaseDoc = createDatabaseDocWithViews(['grid-id', 'owned-board-id']);
+
+      setOwner(databaseDoc, 'owned-board-id', 'dashboard-id');
+      const { result } = renderViews(databaseDoc, 'grid-id', ['owned-board-id']);
+
+      expect(result.current.viewIds).toEqual(['owned-board-id']);
+    });
   });
 });

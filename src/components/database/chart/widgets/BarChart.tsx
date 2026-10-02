@@ -1,150 +1,190 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import {
-  BarChart as RechartsBarChart,
   Bar,
+  BarChart as RechartsBarChart,
+  CartesianGrid,
+  Cell,
+  Customized,
+  LabelList,
+  ReferenceLine,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  ResponsiveContainer,
-  Cell,
-  LabelList,
 } from 'recharts';
 
-import { ChartDataItem } from '@/application/database-yjs/chart.type';
+import { CHART_GRID_DASH, ChartDataItem, ChartType } from '@/application/database-yjs/chart.type';
+import { computeValueDomain, computeYAxisWidth } from '@/application/database-yjs/chart-scale';
+import { DASHBOARD_CHART_GEOMETRY } from '@/application/database-yjs/dashboard-geometry';
+import { useChartContext } from '@/components/database/chart/useChartContext';
 
-import { ChartTooltip } from './ChartTooltip';
-import {
-  TooltipState,
-  INITIAL_TOOLTIP_STATE,
-  calculateBarWidth,
-  chartDataEqual,
-  computeValueAxis,
-  formatValue,
-} from './chartUtils';
+import { CategoryAnchors, CategoryTick, DataLabel, ValueTick } from './ChartAxisParts';
+import { ChartFrame, ChartFrameTooltip } from './ChartFrame';
+import { chartDataEqual, chartItemKey, chartValuesAreCounts } from './chartUtils';
+import { layoutVerticalCartesian } from './cartesianLayout';
+import { useChartMeasure } from './measureText';
+import { useChartA11yRows, useChartLegend } from './useChartFrameModels';
+import { useChartHover } from './useChartHover';
+import { useReducedMotion } from './useReducedMotion';
 
 interface BarChartWidgetProps {
   data: ChartDataItem[];
   onBarClick?: (item: ChartDataItem) => void;
+  /** Fill a dashboard widget card instead of the standalone 400px height. */
+  fill?: boolean;
 }
 
+/** The props Recharts passes to a `LabelList` content renderer. */
+interface LabelProps {
+  index?: number;
+  value?: unknown;
+  x?: number | string;
+  y?: number | string;
+  width?: number | string;
+  height?: number | string;
+}
+
+const { bar, hoverBandRadius } = DASHBOARD_CHART_GEOMETRY;
+
 /**
- * Vertical bar chart widget using Recharts
+ * Vertical bar chart (WP10 §2.1): measured value axis with nice ticks and no
+ * axis line, dotted grid and a solid zero line, thin bars with a 2px
+ * value-end radius, fitted category labels, data labels, a hover band and a
+ * portal tooltip.
  */
-function BarChartWidgetImpl({ data, onBarClick }: BarChartWidgetProps) {
-  const [tooltip, setTooltip] = useState<TooltipState>(INITIAL_TOOLTIP_STATE);
+function BarChartWidgetImpl({ data, onBarClick, fill = false }: BarChartWidgetProps) {
+  const { style, format, aggregationType, yAxisField } = useChartContext();
+  const { measure12 } = useChartMeasure();
+  const reducedMotion = useReducedMotion();
+  const { hover, clear, onChartMouseMove, frameHandlers } = useChartHover(data);
+  const integerOnly = chartValuesAreCounts(aggregationType, Boolean(yAxisField));
+  const domain = useMemo(() => computeValueDomain(data.map((item) => item.value), integerOnly), [data, integerOnly]);
+  const yAxisWidth = useMemo(
+    () => computeYAxisWidth(domain.ticks.map((tick) => format(tick, 'axis')), measure12),
+    [domain, format, measure12]
+  );
+  const legend = useChartLegend(ChartType.Bar, style.legendPosition, data);
+  const rows = useChartA11yRows(data, format);
+  const hovered = hover ? data[hover.index] : undefined;
+  const tooltip: ChartFrameTooltip | null =
+    hover && hovered
+      ? {
+          clientX: hover.clientX,
+          clientY: hover.clientY,
+          rows: [{ color: hovered.color, name: hovered.label, value: format(hovered.value, 'tooltip') }],
+          showDrilldownHint: Boolean(onBarClick),
+        }
+      : null;
 
-  // Y-axis: zero-anchored [min, max] domain + nice ticks. Shared across
-  // BarChart / LineChart / HorizontalBarChart via `computeValueAxis`.
-  const { domain: yAxisDomain, ticks: yAxisTicks } = useMemo(() => computeValueAxis(data), [data]);
+  const handleClick = useCallback(
+    (state: { activeTooltipIndex?: number } | null) => {
+      const index = state?.activeTooltipIndex;
 
-  // Calculate bar width based on data count
-  const barWidth = useMemo(() => calculateBarWidth(data.length), [data.length]);
-
-  const handleClick = (item: ChartDataItem) => {
-    if (onBarClick) {
-      onBarClick(item);
-    }
-  };
-
-  const handleMouseEnter = (data: ChartDataItem, index: number, e: React.MouseEvent) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const containerRect = e.currentTarget.closest('.recharts-wrapper')?.getBoundingClientRect();
-
-    if (containerRect) {
-      setTooltip({
-        active: true,
-        item: data,
-        // Center horizontally on the bar
-        x: rect.left + rect.width / 2 - containerRect.left,
-        // Position above the bar top (with offset for value label)
-        y: rect.top - containerRect.top - 20,
-      });
-    }
-  };
-
-  const handleMouseLeave = () => {
-    setTooltip(INITIAL_TOOLTIP_STATE);
-  };
+      if (typeof index === 'number' && data[index]) onBarClick?.(data[index]);
+    },
+    [data, onBarClick]
+  );
 
   return (
-    <div data-testid='bar-chart-widget' className='relative w-full' style={{ height: '400px' }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <RechartsBarChart
-          data={data}
-          margin={{ top: 24, right: 0, left: 0, bottom: 40 }}
-        >
-          <CartesianGrid
-            data-parity-id="dash-chart-grid-line"
-            vertical={false}
-            stroke="var(--border-primary)"
-            strokeOpacity={0.5}
-          />
-          <XAxis
-            dataKey="label"
-            tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
-            tickLine={false}
-            axisLine={{ stroke: 'var(--border-primary)' }}
-            interval={0}
-            tickFormatter={(label) => label.length > 15 ? `${label.substring(0, 15)}...` : label}
-          />
-          <YAxis
-            domain={yAxisDomain}
-            ticks={yAxisTicks}
-            tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
-            tickLine={false}
-            axisLine={{ stroke: 'var(--border-primary)' }}
-            width={40}
-          />
-          <Bar
-            dataKey="value"
-            radius={[4, 4, 0, 0]}
-            cursor="pointer"
-            onClick={(data) => handleClick(data as ChartDataItem)}
-            maxBarSize={barWidth}
-            activeBar={false}
-            onMouseLeave={handleMouseLeave}
-          >
-            {data.map((entry, index) => (
-              <Cell
-                data-parity-id="dash-chart-bar"
-                key={`cell-${index}`}
-                fill={entry.color}
-                onMouseEnter={(e) => handleMouseEnter(entry, index, e as unknown as React.MouseEvent)}
-              />
-            ))}
-            <LabelList
-              data-parity-id="dash-chart-data-label"
-              dataKey="value"
-              position="top"
-              formatter={formatValue}
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                fill: 'var(--text-primary)',
+    <ChartFrame
+      fill={fill}
+      frameHandlers={frameHandlers}
+      legend={legend}
+      rows={rows}
+      testId='bar-chart-widget'
+      tooltip={tooltip}
+    >
+      {(size) => {
+        const layout = layoutVerticalCartesian(data, size, yAxisWidth, style.showDataLabels, measure12);
+        const renderLabel = (props: LabelProps) => {
+          const index = props.index ?? 0;
+          const item = data[index];
+
+          if (!style.showDataLabels || !item) return null;
+          const text = format(item.value, 'label');
+
+          if (measure12(text) > layout.slot) return null;
+          return (
+            <DataLabel
+              layout='vertical'
+              target={{
+                index,
+                value: item.value,
+                label: item.label,
+                text,
+                x: Number(props.x),
+                y: Number(props.y),
+                width: Number(props.width),
+                height: Number(props.height),
               }}
             />
-          </Bar>
-        </RechartsBarChart>
-      </ResponsiveContainer>
+          );
+        };
 
-      {/* Fixed position tooltip above the bar */}
-      {tooltip.active && tooltip.item && (
-        <div
-          className="absolute pointer-events-none z-10"
-          style={{
-            left: tooltip.x,
-            top: tooltip.y,
-            transform: 'translate(-50%, -100%)',
-          }}
-        >
-          <ChartTooltip
-            label={tooltip.item.label}
-            value={tooltip.item.value}
-            color={tooltip.item.color}
-          />
-        </div>
-      )}
-    </div>
+        return (
+          <RechartsBarChart
+            barCategoryGap={0}
+            data={data}
+            height={size.height}
+            margin={{ top: layout.marginTop, right: 0, bottom: 0, left: 0 }}
+            onClick={handleClick}
+            onMouseLeave={clear}
+            onMouseMove={onChartMouseMove}
+            width={size.width}
+          >
+            <CartesianGrid
+              data-parity-id='dash-chart-grid-line'
+              stroke='var(--chart-grid)'
+              strokeDasharray={CHART_GRID_DASH}
+              vertical={false}
+            />
+            <XAxis
+              axisLine={false}
+              dataKey={chartItemKey}
+              height={layout.xAxisHeight}
+              interval={0}
+              tick={<CategoryTick fit={layout.fit} labels={layout.labels} measure={measure12} orientation='bottom' />}
+              tickLine={false}
+              tickMargin={4}
+              tickSize={0}
+            />
+            <YAxis
+              allowDataOverflow
+              axisLine={false}
+              domain={domain.domain}
+              interval={0}
+              tick={<ValueTick format={(value) => format(value, 'axis')} orientation='left' />}
+              tickLine={false}
+              tickMargin={8}
+              tickSize={0}
+              ticks={domain.ticks}
+              type='number'
+              width={yAxisWidth}
+            />
+            <ReferenceLine stroke='var(--chart-grid)' y={0} />
+            <Tooltip
+              active={hover ? undefined : false}
+              content={() => null}
+              cursor={{ fill: 'var(--chart-hover-band)', stroke: 'none', radius: hoverBandRadius }}
+              isAnimationActive={false}
+            />
+            <Bar
+              activeBar={false}
+              barSize={layout.barWidth}
+              cursor={onBarClick ? 'pointer' : undefined}
+              dataKey='value'
+              isAnimationActive={!reducedMotion}
+              radius={[bar.radius, bar.radius, 0, 0]}
+            >
+              {data.map((item) => (
+                <Cell data-parity-id='dash-chart-bar' fill={item.color} key={chartItemKey(item)} />
+              ))}
+              <LabelList content={renderLabel} dataKey='value' />
+            </Bar>
+            <Customized component={<CategoryAnchors rects={layout.anchors} />} />
+          </RechartsBarChart>
+        );
+      }}
+    </ChartFrame>
   );
 }
 
@@ -153,7 +193,7 @@ function BarChartWidgetImpl({ data, onBarClick }: BarChartWidgetProps) {
 // `onBarClick` is `useCallback`-stable in `ChartProvider`, so reference
 // equality is sufficient there.
 export const BarChartWidget = memo(BarChartWidgetImpl, (prev, next) => {
-  return prev.onBarClick === next.onBarClick && chartDataEqual(prev.data, next.data);
+  return prev.onBarClick === next.onBarClick && prev.fill === next.fill && chartDataEqual(prev.data, next.data);
 });
 
 export default BarChartWidget;

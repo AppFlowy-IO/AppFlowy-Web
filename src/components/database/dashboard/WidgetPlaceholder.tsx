@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
+import { ReactComponent as CloudOffIcon } from '@/assets/icons/cloud_off.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as LockIcon } from '@/assets/icons/lock.svg';
 import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
-export type WidgetPlaceholderReason = 'loading' | 'not-found' | 'no-access' | 'unsupported';
+export type WidgetPlaceholderReason = 'loading' | 'not-found' | 'no-access' | 'unsupported' | 'offline';
 
 interface WidgetPlaceholderProps {
   reason: WidgetPlaceholderReason;
@@ -18,7 +19,8 @@ interface WidgetPlaceholderProps {
 
 /**
  * Body of a widget that cannot render its view: still loading, deleted,
- * inaccessible, or a nested dashboard.
+ * inaccessible, out of reach while offline, or a nested dashboard. An offline
+ * source probably still exists, so it offers no remove button.
  */
 export function WidgetPlaceholder({ reason, onRemove, className }: WidgetPlaceholderProps) {
   const { t } = useTranslation();
@@ -31,6 +33,8 @@ export function WidgetPlaceholder({ reason, onRemove, className }: WidgetPlaceho
         return t('dashboard.widget.noAccess', { defaultValue: "You don't have access to this database" });
       case 'unsupported':
         return t('dashboard.widget.unsupported', { defaultValue: "A dashboard can't be shown inside a dashboard" });
+      case 'offline':
+        return t('dashboard.widget.offline', { defaultValue: "Available when you're back online" });
       default:
         return t('dashboard.widget.notFound', { defaultValue: 'This view no longer exists' });
     }
@@ -51,11 +55,17 @@ export function WidgetPlaceholder({ reason, onRemove, className }: WidgetPlaceho
         <Progress variant='inherit' />
       ) : reason === 'no-access' ? (
         <LockIcon aria-hidden='true' className='h-6 w-6 text-icon-tertiary' />
+      ) : reason === 'offline' ? (
+        <CloudOffIcon
+          aria-hidden='true'
+          className='h-6 w-6 text-icon-tertiary'
+          data-testid='dashboard-widget-offline-icon'
+        />
       ) : (
         <WarningIcon aria-hidden='true' className='h-6 w-6 text-icon-tertiary' />
       )}
       <span className='max-w-[320px]'>{message}</span>
-      {onRemove && reason !== 'loading' ? (
+      {onRemove && reason !== 'loading' && reason !== 'offline' ? (
         <Button
           className='mt-1'
           data-testid='dashboard-widget-remove-button'

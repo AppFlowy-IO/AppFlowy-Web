@@ -45,6 +45,14 @@
       "write": { "show_data_labels": false },
       "writtenKeys": ["show_data_labels"],
       "expected": { "color_theme": "green", "show_data_labels": false }
+    },
+    {
+      "name": "picking Auto again over an unknown theme or out-of-range decimal places writes nothing",
+      "stored": { "color_theme": "neon", "decimal_places": 9 },
+      "parsed": { "decimal_places": null, "color_theme": "auto" },
+      "write": { "color_theme": "auto", "decimal_places": null },
+      "writtenKeys": [],
+      "expected": { "color_theme": "neon", "decimal_places": 9 }
     }
   ]
 }

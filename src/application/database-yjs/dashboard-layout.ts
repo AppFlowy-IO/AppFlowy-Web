@@ -59,6 +59,7 @@ export const DEFAULT_DASHBOARD_LAYOUT_SETTING: DashboardLayoutSetting = {
   rows: EMPTY_ROWS,
   globalFilters: EMPTY_DASHBOARD_GLOBAL_FILTERS,
   showWidgetTitles: true,
+  showIconsInHeading: false,
 };
 
 export function generateDashboardId(prefix: 'w' | 'r' | 'gf') {
@@ -214,11 +215,14 @@ export function readDashboardLayoutSetting(database: YDatabase | undefined, view
 
   if (!setting) return DEFAULT_DASHBOARD_LAYOUT_SETTING;
   const showWidgetTitles = setting.get(YjsDatabaseKey.show_widget_titles);
+  const showIconsInHeading = setting.get(YjsDatabaseKey.show_icons_in_heading);
 
   return {
     rows: parseRows(setting.get(YjsDatabaseKey.dashboard_rows)),
     globalFilters: parseDashboardGlobalFilters(setting.get(YjsDatabaseKey.dashboard_global_filters)),
     showWidgetTitles: typeof showWidgetTitles === 'boolean' ? showWidgetTitles : true,
+    // Absent or of another type reads as the default (ARCHITECTURE §3.1.2).
+    showIconsInHeading: typeof showIconsInHeading === 'boolean' ? showIconsInHeading : false,
   };
 }
 
@@ -312,7 +316,8 @@ function getOrCreateDashboardLayoutSetting(view: YDatabaseView): YDatabaseDashbo
 /**
  * Patch the dashboard setting. Rows and global filters are whole-value writes
  * (last writer wins for concurrent layout edits, which Notion also serializes
- * behind its Edit mode); `showWidgetTitles` is a separate key.
+ * behind its Edit mode); `showWidgetTitles` and `showIconsInHeading` are
+ * separate keys.
  *
  * A key is written only when its parsed value changes, as Rust
  * `into_layout_patch` does, so an identical write creates no Yjs item and no
@@ -347,6 +352,14 @@ export function updateDashboardLayoutSetting(view: YDatabaseView, update: Dashbo
 
     if ((typeof stored === 'boolean' ? stored : true) !== update.showWidgetTitles) {
       setting.set(YjsDatabaseKey.show_widget_titles, update.showWidgetTitles);
+    }
+  }
+
+  if (update.showIconsInHeading !== undefined) {
+    const stored = setting.get(YjsDatabaseKey.show_icons_in_heading);
+
+    if ((typeof stored === 'boolean' ? stored : false) !== update.showIconsInHeading) {
+      setting.set(YjsDatabaseKey.show_icons_in_heading, update.showIconsInHeading);
     }
   }
 }
@@ -415,12 +428,14 @@ export function createDashboardLayoutStore(databaseDoc: Y.Doc, viewId: string) {
     if (
       !sameDashboardRows(next.rows, snapshot.rows) ||
       !sameDashboardGlobalFilters(next.globalFilters, snapshot.globalFilters) ||
-      next.showWidgetTitles !== snapshot.showWidgetTitles
+      next.showWidgetTitles !== snapshot.showWidgetTitles ||
+      next.showIconsInHeading !== snapshot.showIconsInHeading
     ) {
       snapshot = {
         rows: shareDashboardRows(snapshot.rows, next.rows),
         globalFilters: shareDashboardGlobalFilters(snapshot.globalFilters, next.globalFilters),
         showWidgetTitles: next.showWidgetTitles,
+        showIconsInHeading: next.showIconsInHeading,
       };
     }
 
@@ -628,14 +643,18 @@ export function moveDashboardWidget(
 
 /**
  * Give `delta` columns to the widget at `index` and take them from its right
- * neighbour (negative deltas do the reverse). Both widgets keep at least one
- * column, so the row still sums to twelve.
+ * neighbour (negative deltas do the reverse), so the row still sums to twelve.
+ * Both widgets keep `minColumns` (the resize minimum of the measured row, see
+ * `dashboardMinWidgetColumns`); a widget already narrower than that is never
+ * forced to grow and never shrinks further. Stored widths are never rewritten
+ * to meet the minimum.
  */
 export function resizeDashboardWidget(
   rows: DashboardRow[],
   rowId: string,
   index: number,
-  delta: number
+  delta: number,
+  minColumns = 1
 ): DashboardRow[] {
   if (delta === 0) return rows;
 
@@ -645,7 +664,10 @@ export function resizeDashboardWidget(
     const right = row.widgets[index + 1];
 
     if (!left || !right) return row;
-    const applied = Math.max(1 - left.width, Math.min(right.width - 1, delta));
+    const applied = Math.max(
+      Math.min(minColumns, left.width) - left.width,
+      Math.min(right.width - Math.min(minColumns, right.width), delta)
+    );
 
     if (applied === 0) return row;
     const widgets = row.widgets.map((widget, widgetIndex) =>

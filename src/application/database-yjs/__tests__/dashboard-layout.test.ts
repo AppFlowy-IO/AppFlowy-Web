@@ -46,6 +46,8 @@ import {
 } from '../dashboard.type';
 import { FieldType, FilterType } from '../database.type';
 
+import { decodeParityJson, loadParityFixture, seedParityMap } from './dashboard-parity-helpers';
+
 const VIEW_ID = 'dashboard';
 
 function createFixture() {
@@ -333,6 +335,7 @@ describe('readDashboardLayoutSetting', () => {
       rows: [],
       globalFilters: [],
       showWidgetTitles: true,
+      showIconsInHeading: false,
     });
   });
 
@@ -392,6 +395,7 @@ describe('readDashboardLayoutSetting', () => {
         },
       ],
       showWidgetTitles: false,
+      showIconsInHeading: false,
     });
 
     const second = readDashboardLayoutSetting(database, VIEW_ID);
@@ -528,6 +532,7 @@ describe('readDashboardLayoutSetting', () => {
         },
       ],
       showWidgetTitles: true,
+      showIconsInHeading: false,
     });
   });
 
@@ -852,6 +857,7 @@ describe('updateDashboardLayoutSetting / initializeDashboardLayoutSetting', () =
       rows,
       globalFilters: [textFilter],
       showWidgetTitles: false,
+      showIconsInHeading: false,
     });
 
     const remote = new Y.Doc();
@@ -863,6 +869,7 @@ describe('updateDashboardLayoutSetting / initializeDashboardLayoutSetting', () =
       rows,
       globalFilters: [textFilter],
       showWidgetTitles: false,
+      showIconsInHeading: false,
     });
   });
 
@@ -898,10 +905,16 @@ describe('updateDashboardLayoutSetting / initializeDashboardLayoutSetting', () =
       rows,
       globalFilters: [textFilter],
       showWidgetTitles: false,
+      showIconsInHeading: false,
     });
 
     doc.transact(() => updateDashboardLayoutSetting(view, { globalFilters: [] }));
-    expect(readDashboardLayoutSetting(database, VIEW_ID)).toEqual({ rows, globalFilters: [], showWidgetTitles: false });
+    expect(readDashboardLayoutSetting(database, VIEW_ID)).toEqual({
+      rows,
+      globalFilters: [],
+      showWidgetTitles: false,
+      showIconsInHeading: false,
+    });
 
     doc.transact(() => updateDashboardLayoutSetting(view, { rows: [] }));
     expect(readDashboardLayoutSetting(database, VIEW_ID).rows).toEqual([]);
@@ -944,6 +957,7 @@ describe('updateDashboardLayoutSetting / initializeDashboardLayoutSetting', () =
       rows,
       globalFilters: [textFilter],
       showWidgetTitles: true,
+      showIconsInHeading: false,
     });
   });
 });
@@ -1054,6 +1068,79 @@ describe('createDashboardLayoutStore', () => {
     expect(notify).toHaveBeenCalledTimes(1);
     expect(store.getSnapshot().showWidgetTitles).toBe(false);
     unsubscribe();
+  });
+
+  it('changes the snapshot identity only when the icons flag changes', () => {
+    const { doc, view } = createFixture();
+    const store = createDashboardLayoutStore(doc, VIEW_ID);
+    const before = store.getSnapshot();
+
+    expect(before.showIconsInHeading).toBe(false);
+    doc.transact(() => updateDashboardLayoutSetting(view, { showIconsInHeading: false }));
+    expect(store.getSnapshot()).toBe(before);
+
+    doc.transact(() => updateDashboardLayoutSetting(view, { showIconsInHeading: true }));
+    const after = store.getSnapshot();
+
+    expect(after).not.toBe(before);
+    expect(after.showIconsInHeading).toBe(true);
+    expect(after.rows).toBe(before.rows);
+    expect(store.getSnapshot()).toBe(after);
+  });
+});
+
+/** `dashboard-parity/layouts/show-icons-in-heading.json` (WP03), shared with desktop and Rust. */
+interface ShowIconsInHeadingFixture {
+  cases: { name: string; stored: Record<string, unknown>; read: boolean }[];
+  write: {
+    before: Record<string, unknown>;
+    update: { show_icons_in_heading: boolean };
+    after: Record<string, unknown>;
+  };
+}
+
+describe('show_icons_in_heading (layouts/show-icons-in-heading.json)', () => {
+  const fixture = loadParityFixture<ShowIconsInHeadingFixture>('layouts/show-icons-in-heading.json');
+
+  function seededView(stored: Record<string, unknown>) {
+    const { doc, view, database } = createFixture();
+
+    doc.transact(() => {
+      const layouts = new Y.Map();
+      const setting = new Y.Map();
+
+      view.set(YjsDatabaseKey.layout_settings, layouts as never);
+      layouts.set(DASHBOARD_LAYOUT_KEY, setting);
+      seedParityMap(setting as Y.Map<unknown>, stored);
+    });
+    return { doc, view, database };
+  }
+
+  it.each(fixture.cases.map((entry) => [entry.name, entry] as const))('reads the %s case', (_name, entry) => {
+    const { database } = seededView(entry.stored);
+
+    expect(readDashboardLayoutSetting(database, VIEW_ID).showIconsInHeading).toBe(entry.read);
+  });
+
+  it('writes only that key on a toggle and keeps every other key', () => {
+    const { doc, view, database } = seededView(fixture.write.before);
+
+    doc.transact(() =>
+      updateDashboardLayoutSetting(view, { showIconsInHeading: fixture.write.update.show_icons_in_heading })
+    );
+
+    const setting = view.get(YjsDatabaseKey.layout_settings)?.get(DASHBOARD_LAYOUT_KEY) as unknown as Y.Map<unknown>;
+
+    expect(decodeParityJson(setting.toJSON())).toEqual(fixture.write.after);
+    expect(readDashboardLayoutSetting(database, VIEW_ID).showIconsInHeading).toBe(true);
+  });
+
+  it('never writes an unchanged flag (absent reads as false)', () => {
+    const { doc, view } = createFixture();
+    doc.transact(() => updateDashboardLayoutSetting(view, { showIconsInHeading: false }));
+    expect(
+      view.get(YjsDatabaseKey.layout_settings)?.get(DASHBOARD_LAYOUT_KEY)?.get(YjsDatabaseKey.show_icons_in_heading)
+    ).toBeUndefined();
   });
 });
 
@@ -1405,6 +1492,23 @@ describe('pure row operations', () => {
       const edge = [row('r1', [widget('a', 11), widget('b', 1)])];
 
       expect(resizeDashboardWidget(edge, 'r1', 0, 3)[0]).toBe(edge[0]);
+    });
+
+    it('keeps both neighbours at the resize minimum of the measured row (WP02)', () => {
+      const three = [row('r1', [widget('a', 4), widget('b', 4), widget('c', 4)])];
+
+      expect(widths(resizeDashboardWidget(three, 'r1', 0, 2, 3)[0])).toEqual([5, 3, 4]);
+      expect(widths(resizeDashboardWidget(three, 'r1', 0, -3, 3)[0])).toEqual([3, 5, 4]);
+      // The default minimum of one column is unchanged.
+      expect(widths(resizeDashboardWidget(three, 'r1', 0, 2)[0])).toEqual([6, 2, 4]);
+    });
+
+    it('never forces a widget below the minimum to grow, nor shrinks it further', () => {
+      const narrow = [row('r1', [widget('a', 8), widget('b', 2), widget('c', 2)])];
+
+      expect(resizeDashboardWidget(narrow, 'r1', 1, 1, 3)[0]).toBe(narrow[0]);
+      expect(resizeDashboardWidget(narrow, 'r1', 1, -1, 3)[0]).toBe(narrow[0]);
+      expect(widths(resizeDashboardWidget(narrow, 'r1', 0, -1, 3)[0])).toEqual([7, 3, 2]);
     });
 
     it('ignores the last widget, invalid indexes and unknown rows', () => {

@@ -3,7 +3,7 @@ Feature: Dashboard view creation
   A Dashboard is a database view whose content is a grid of widgets, each one
   rendering another database view. It is created from the view tab "+" menu or
   by switching an existing view's layout, starts empty in Edit mode, and owns
-  none of the views its widgets show.
+  the views it creates for its widgets.
 
   Background:
     Given the dashboard fixture workspace is ready
@@ -24,7 +24,8 @@ Feature: Dashboard view creation
     Given "Projects" also has a "Board" view
     When I switch the "Projects Board" view to the Dashboard layout
     Then the dashboard view is shown
-    And the dashboard layout setting exists with 0 widgets
+    And the dashboard layout setting exists with 1 widgets
+    And widget 1 shows a copy of the "Projects Board" view
     And the dashboard view tab shows the dashboard icon
 
   Scenario: An empty dashboard in View mode tells viewers it has no widgets

@@ -315,6 +315,26 @@ describe('DashboardProvider R-MODE', () => {
     expect(updates).toHaveBeenCalledTimes(2);
   });
 
+  it('(e) a mobile context refuses the "Show icons in heading" toggle', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { context, persisted, countUpdates } = renderDashboard(makeRows(['a']));
+
+    resizeTo(390);
+    const updates = countUpdates();
+
+    act(() => context().updateSetting({ showIconsInHeading: true }));
+
+    expect(updates).not.toHaveBeenCalled();
+    expect(persisted().showIconsInHeading).toBe(false);
+    expect(warn).toHaveBeenCalledWith('[Dashboard] edit-only write refused on mobile', ['showIconsInHeading']);
+
+    // Outside a mobile context the same write persists.
+    resizeTo(1440);
+    act(() => context().updateSetting({ showIconsInHeading: true }));
+    expect(persisted().showIconsInHeading).toBe(true);
+    expect(updates).toHaveBeenCalledTimes(1);
+  });
+
   it('(f) a dashboard created in this session opens in Edit mode once, even with widgets', () => {
     markDashboardCreatedThisSession(VIEW_ID);
     const { remount, context } = renderDashboard(makeRows(['a']), { modeStore: new Map() });

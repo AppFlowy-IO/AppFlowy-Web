@@ -1,6 +1,8 @@
 import { DropIndicator } from '@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box';
 import {
   memo,
+  MouseEvent,
+  MutableRefObject,
   RefObject,
   Suspense,
   useCallback,
@@ -44,7 +46,8 @@ import {
   WIDGET_MISSING_GRACE_MS,
 } from './constants';
 import { useDashboardFilters, useDashboardSourceRegistry } from './DashboardContext';
-import { useDashboardHost, useDashboardUi } from './DashboardUiContext';
+import { useDashboardHost, useDashboardSelectedWidgetId, useDashboardUi } from './DashboardUiContext';
+import { getDashboardFlexBasis } from './grid-layout';
 import { useDraggableWidget, useWidgetDropTarget } from './hooks/useDashboardDnd';
 import { ROW_HEIGHT_CSS_VARIABLE, RowHeightPreview } from './hooks/useRowHeightResize';
 import { useWidgetExtraFilters } from './hooks/useWidgetExtraFilters';
@@ -94,6 +97,7 @@ interface WidgetChromeProps {
   isEditing: boolean;
   canEdit: boolean;
   showWidgetTitles: boolean;
+  showIconsInHeading: boolean;
   isDragging: boolean;
 }
 
@@ -105,6 +109,8 @@ interface WidgetSourceProps extends WidgetChromeProps {
   databaseId: string;
   rowHeight: number;
   cardRef: RefObject<HTMLDivElement>;
+  /** Set to "open the widget menu", for a right-click on the box. */
+  openMenuRef: MutableRefObject<(() => void) | null>;
 }
 
 /**
@@ -119,18 +125,28 @@ const WidgetSource = memo(function WidgetSource({
   databaseId,
   rowHeight,
   cardRef,
+  openMenuRef,
   isDragging,
   isEditing,
   canEdit,
   showWidgetTitles,
+  showIconsInHeading,
 }: WidgetSourceProps) {
   const { t } = useTranslation();
   const widget = useMemo(() => ({ id: widgetId, viewId, databaseId }), [databaseId, viewId, widgetId]);
   const hostContext = useDashboardHost();
   const appOperations = useContext(AppOperationsContext);
   const { effectiveGlobalFilters, getViewOverlay } = useDashboardFilters();
-  const { hostDatabaseId, openPicker, showLimitMessage, dndInstanceId, acquireSourceDoc, getRows, updateRows } =
-    useDashboardUi();
+  const {
+    hostDatabaseId,
+    openPicker,
+    showLimitMessage,
+    dndInstanceId,
+    acquireSourceDoc,
+    getRows,
+    updateRows,
+    selectWidget,
+  } = useDashboardUi();
   const { markWidgetShown, getShownDoc } = useDashboardSourceRegistry();
   const isHost = widget.databaseId === hostDatabaseId;
   const isPublish = hostContext.variant === UIVariant.Publish;
@@ -141,6 +157,7 @@ const WidgetSource = memo(function WidgetSource({
     doc: loadedDoc,
     notFound: loadFailed,
     noAccess,
+    offline,
     setNotFound,
   } = useDocumentLoader({
     // The host database is already open; only other databases are loaded.
@@ -190,6 +207,7 @@ const WidgetSource = memo(function WidgetSource({
   const status = getWidgetStatus({
     noAccess,
     loadFailed,
+    offline,
     deletionStatus: effectiveDeletionStatus,
     databaseMissing,
     viewMissing,
@@ -257,6 +275,58 @@ const WidgetSource = memo(function WidgetSource({
   const layoutLabel = getLayoutLabel(layout);
   const name = (meta.name || snapshot.name).trim() || t(layoutLabel.key, { defaultValue: layoutLabel.defaultValue });
   const [dragHandle, setDragHandle] = useState<HTMLElement | null>(null);
+  const titleRef = useRef<HTMLButtonElement>(null);
+  const optionsRef = useRef<HTMLButtonElement>(null);
+
+  // The menu and the settings host: one at a time. Opening either selects the
+  // widget (an outline in Edit mode); closing it clears the selection unless
+  // the other one took over.
+  const [menuOpen, setMenuOpenState] = useState(false);
+  const [settingsOpen, setSettingsOpenState] = useState(false);
+  const menuOpenRef = useRef(false);
+  const settingsOpenRef = useRef(false);
+  const setMenuOpen = useCallback(
+    (open: boolean) => {
+      menuOpenRef.current = open;
+      setMenuOpenState(open);
+      if (open) {
+        settingsOpenRef.current = false;
+        setSettingsOpenState(false);
+        selectWidget(widget.id);
+      } else if (!settingsOpenRef.current) {
+        selectWidget(null, { onlyIf: widget.id });
+      }
+    },
+    [selectWidget, widget.id]
+  );
+  const setSettingsOpen = useCallback(
+    (open: boolean) => {
+      settingsOpenRef.current = open;
+      setSettingsOpenState(open);
+      if (open) {
+        menuOpenRef.current = false;
+        setMenuOpenState(false);
+        selectWidget(widget.id);
+      } else if (!menuOpenRef.current) {
+        selectWidget(null, { onlyIf: widget.id });
+      }
+    },
+    [selectWidget, widget.id]
+  );
+
+  useEffect(() => {
+    openMenuRef.current = () => setMenuOpen(true);
+    return () => {
+      openMenuRef.current = null;
+    };
+  }, [openMenuRef, setMenuOpen]);
+
+  // The settings host only exists in Edit mode.
+  useEffect(() => {
+    if (!editing && settingsOpenRef.current) setSettingsOpen(false);
+  }, [editing, setSettingsOpen]);
+
+  const getBoxElement = useCallback(() => cardRef.current, [cardRef]);
 
   useDraggableWidget({
     handle: dragHandle,
@@ -307,40 +377,60 @@ const WidgetSource = memo(function WidgetSource({
 
           return placement ? moveDashboardWidget(current, widget.id, placement) : current;
         }),
+      openSettings: () => setSettingsOpen(true),
     }),
-    [getRows, openPicker, openView, showLimitMessage, updateRows, widget.id]
+    [getRows, openPicker, openView, setSettingsOpen, showLimitMessage, updateRows, widget.id]
   );
 
-  const chrome = { isEditing: editing, showWidgetTitles };
+  const chrome = { showWidgetTitles };
   const headerHeight = getWidgetHeaderHeight(chrome);
   const viewportHeight = getWidgetViewportHeight(rowHeight, chrome);
 
   const contextValue = useMemo<WidgetContextValue>(
     () => ({
       widgetId: widget.id,
+      databaseId: widget.databaseId,
+      viewId: widget.viewId,
       name,
       icon: meta.icon,
       layout,
       isEditing,
       canEdit,
-      showTitle: editing || showWidgetTitles,
+      editing,
+      showWidgetTitles,
+      showIcon: showIconsInHeading,
       headerHeight,
       isDragging,
       setDragHandle,
+      menuOpen,
+      setMenuOpen,
+      settingsOpen,
+      setSettingsOpen,
+      getBoxElement,
+      titleRef,
+      optionsRef,
       actions,
     }),
     [
       actions,
       canEdit,
       editing,
+      getBoxElement,
       headerHeight,
       isDragging,
       isEditing,
       layout,
+      menuOpen,
       meta.icon,
       name,
+      setMenuOpen,
+      setSettingsOpen,
+      settingsOpen,
+      showIconsInHeading,
       showWidgetTitles,
+      widget.databaseId,
       widget.id,
+      widget.viewId,
     ]
   );
 
@@ -550,33 +640,50 @@ const WidgetSource = memo(function WidgetSource({
 
 interface DashboardWidgetProps extends WidgetChromeProps {
   widget: DashboardWidgetData;
-  /** Grid columns the card spans (12 when the dashboard is stacked). */
+  /** Columns the box spans on its line: the stored width, or an equal share when the row wraps. */
   span: number;
+  /** Widgets on the box's line (the flex basis subtracts their gaps). */
+  lineSize: number;
   /** Persisted row height in CSS px. */
   height: number;
   /** The height being dragged, if any (see `useRowHeightResize`). */
   heightPreview: RowHeightPreview;
 }
 
+/** Editable targets keep the browser's own context menu. */
+function isEditableTarget(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    Boolean(target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'))
+  );
+}
+
 /**
- * One widget card: grid placement, Edit-mode chrome, drop target for widgets
- * dragged next to it, and the source view inside.
+ * One widget box: its place in the row track, the Edit-mode tint and
+ * selection outline (colors only, never a size change), the drop target for
+ * widgets dragged next to it, and the source view inside (header and card).
+ * A right-click anywhere on the box opens the widget menu, unless the content
+ * handles the context menu itself.
  */
 export const DashboardWidget = memo(function DashboardWidget({
   widget,
   span,
+  lineSize,
   height,
   heightPreview,
   isEditing,
   canEdit,
   showWidgetTitles,
+  showIconsInHeading,
   isDragging,
 }: DashboardWidgetProps) {
   const { t } = useTranslation();
   const cardRef = useRef<HTMLDivElement>(null);
+  const openMenuRef = useRef<(() => void) | null>(null);
   const { dndInstanceId, getRows } = useDashboardUi();
   const editing = isEditing && canEdit;
-  // The card follows a row-height drag through CSS (the row's variable); the
+  const selected = useDashboardSelectedWidgetId() === widget.id && editing;
+  // The box follows a row-height drag through CSS (the row's variable); the
   // nested database, whose viewport height derives from the number, catches
   // up when React has time instead of re-rendering on every pixel.
   const previewHeight = useSyncExternalStore(heightPreview.subscribe, heightPreview.get, heightPreview.get);
@@ -588,29 +695,37 @@ export const DashboardWidget = memo(function DashboardWidget({
     enabled: editing,
     getRows,
   });
+  const handleContextMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || isEditableTarget(event.target)) return;
+    event.preventDefault();
+    openMenuRef.current?.();
+  }, []);
 
   return (
     <div
       // `isolate` keeps the nested database's z-indexes (sticky headers, …)
       // below the dashboard's own chrome (handles, banners, drop indicators).
-      className='group/widget relative isolate flex min-w-0 flex-col'
+      // The outline is an inset shadow: drawn inside the box, never clipped.
+      className={cn(
+        'group/widget relative isolate flex min-w-0 flex-col rounded-500 px-1.5 pb-1.5',
+        'transition-[background-color,box-shadow] duration-150 ease-in-out motion-reduce:transition-none',
+        'group-data-[reflow=true]/row:transition-[flex-basis,background-color,box-shadow] group-data-[reflow=true]/row:duration-200',
+        'data-[editing=true]:bg-dash-edit-tint data-[selected=true]:shadow-[inset_0_0_0_2px_var(--dash-accent)]',
+        !showWidgetTitles && 'pt-1.5'
+      )}
       data-database-id={widget.databaseId}
       data-dragging={isDragging ? 'true' : undefined}
+      data-editing={editing ? 'true' : 'false'}
       data-parity-id='dash-widget-box'
+      data-selected={selected ? 'true' : undefined}
       data-testid='dashboard-widget'
       data-view-id={widget.viewId}
       data-widget-id={widget.id}
+      onContextMenu={handleContextMenu}
       ref={cardRef}
-      style={{ gridColumn: `span ${span} / span ${span}`, height: `var(${ROW_HEIGHT_CSS_VARIABLE})` }}
+      style={{ flex: `1 1 ${getDashboardFlexBasis(span, lineSize)}`, height: `var(${ROW_HEIGHT_CSS_VARIABLE})` }}
     >
-      <div
-        className={cn(
-          'relative flex h-full min-h-0 w-full flex-col transition-opacity',
-          editing &&
-            'overflow-hidden rounded-400 border border-border-primary bg-background-primary shadow-card transition-shadow hover:ring-1 hover:ring-border-theme-thick',
-          isDragging && 'opacity-40'
-        )}
-      >
+      <div className={cn('relative flex h-full min-h-0 w-full flex-col transition-opacity', isDragging && 'opacity-40')}>
         <WidgetSource
           canEdit={canEdit}
           cardRef={cardRef}
@@ -618,7 +733,9 @@ export const DashboardWidget = memo(function DashboardWidget({
           isDragging={isDragging}
           isEditing={isEditing}
           key={`${widget.databaseId}:${widget.viewId}`}
+          openMenuRef={openMenuRef}
           rowHeight={contentHeight}
+          showIconsInHeading={showIconsInHeading}
           showWidgetTitles={showWidgetTitles}
           viewId={widget.viewId}
           widgetId={widget.id}
@@ -633,7 +750,7 @@ export const DashboardWidget = memo(function DashboardWidget({
       ) : null}
       {indicator?.blocked ? (
         <div
-          className='pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-400 border border-border-warning-thick bg-fill-warning-light p-4 text-center text-sm font-medium text-text-primary'
+          className='pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-500 border border-border-warning-thick bg-fill-warning-light p-4 text-center text-sm font-medium text-text-primary'
           data-testid='dashboard-drop-not-allowed'
           role='status'
         >

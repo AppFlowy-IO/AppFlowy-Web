@@ -574,7 +574,12 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             </div>
           </h3>
         ) : null}
-        <div className={`database-tabs flex w-full items-center gap-1.5 overflow-hidden border-b border-border-primary`}>
+        {/* The full tab row (view tabs and toolbar) is the page content column
+            that dashboard cards align with (visual parity reference box). */}
+        <div
+          data-parity-id='dash-content-column'
+          className={`database-tabs flex w-full items-center gap-1.5 overflow-hidden border-b border-border-primary`}
+        >
           <DatabaseViewTabs
             viewIds={viewIds}
             selectedViewId={selectedViewId}

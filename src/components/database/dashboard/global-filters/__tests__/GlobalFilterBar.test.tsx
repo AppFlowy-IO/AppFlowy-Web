@@ -244,12 +244,19 @@ describe('GlobalFilterBar', () => {
 });
 
 describe('GlobalFilterButton', () => {
-  it('shows the filter count', () => {
+  it('exposes the filter count as data-count, without a count badge', () => {
     mockContext = createContext();
     render(<GlobalFilterButton />);
+    const button = screen.getByTestId('dashboard-global-filter-button');
 
-    expect(screen.getByTestId('dashboard-global-filter-button').getAttribute('data-count')).toBe('2');
-    expect(screen.getByTestId('dashboard-global-filter-button-badge').textContent).toBe('2');
+    expect(button.getAttribute('data-count')).toBe('2');
+    expect(screen.queryByTestId('dashboard-global-filter-button-badge')).toBeNull();
+    expect(button.textContent).toBe('');
+    // The empty slot of the unsaved-changes dot (WP07), out of the flow so the glyph stays centred.
+    expect(button.querySelector('[data-slot="unsaved-dot"]')?.className).toContain('absolute');
+    // Its own open state, not the tooltip's, so the open fill applies.
+    expect(button.getAttribute('data-state')).toBe('closed');
+    expect(button.className).toContain('data-[state=open]:bg-dash-hover-fill');
   });
 
   it('renders nothing outside a dashboard', () => {

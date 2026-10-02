@@ -14,6 +14,7 @@ jest.mock('react-i18next', () => ({
 const READY: WidgetStatusInput = {
   noAccess: false,
   loadFailed: false,
+  offline: false,
   deletionStatus: 'none',
   databaseMissing: false,
   viewMissing: false,
@@ -61,6 +62,16 @@ describe('getWidgetStatus', () => {
     expect(getWidgetStatus({ ...READY, noAccess: true, seeded: true })).toBe('no-access');
   });
 
+  it('reports a source that could not load offline as offline, not as deleted', () => {
+    expect(getWidgetStatus({ ...READY, loadFailed: true, offline: true, hasDoc: false })).toBe('offline');
+    // Offline alone (a load that succeeded) changes nothing.
+    expect(getWidgetStatus({ ...READY, offline: true })).toBe('ready');
+  });
+
+  it('lets an access problem win over offline', () => {
+    expect(getWidgetStatus({ ...READY, noAccess: true, loadFailed: true, offline: true })).toBe('no-access');
+  });
+
   it('refuses to nest a dashboard', () => {
     expect(getWidgetStatus({ ...READY, layout: DatabaseViewLayout.Dashboard })).toBe('unsupported');
   });
@@ -77,6 +88,7 @@ describe('WidgetPlaceholder', () => {
     ['not-found', 'This view no longer exists'],
     ['no-access', "You don't have access to this database"],
     ['unsupported', "A dashboard can't be shown inside a dashboard"],
+    ['offline', "Available when you're back online"],
   ] as const)('explains the %s state', (reason, text) => {
     render(<WidgetPlaceholder reason={reason} />);
     const placeholder = screen.getByTestId('dashboard-widget-placeholder');
@@ -102,6 +114,13 @@ describe('WidgetPlaceholder', () => {
 
     expect(onRemove).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('dashboard-widget-remove-button').textContent).toContain('Remove widget');
+  });
+
+  it('shows the cloud-off icon offline and never offers removal, even in Edit mode', () => {
+    render(<WidgetPlaceholder onRemove={jest.fn()} reason='offline' />);
+
+    expect(screen.getByTestId('dashboard-widget-offline-icon')).toBeTruthy();
+    expect(screen.queryByTestId('dashboard-widget-remove-button')).toBeNull();
   });
 
   it('never offers removal while loading', () => {

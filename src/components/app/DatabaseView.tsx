@@ -3,12 +3,18 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
+import { filterOwnedTabViewIds } from '@/application/database-yjs/dashboard-owned-views';
 import { publishDatabasePageSelection } from '@/application/database-yjs/database-page-state';
 import { PageService, ViewService } from '@/application/services/domains';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { View, ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
-import { isDatabaseContainer, isDatabaseLayout, resolveActiveDatabaseViewId } from '@/application/view-utils';
+import {
+  isDashboardOwnedView,
+  isDatabaseContainer,
+  isDatabaseLayout,
+  resolveActiveDatabaseViewId,
+} from '@/application/view-utils';
 import { findParentView, findView, setOutlineExpands } from '@/components/_shared/outline/utils';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import CalendarSkeleton from '@/components/_shared/skeleton/CalendarSkeleton';
@@ -131,10 +137,16 @@ function DatabaseView(props: DatabaseViewProps) {
   const visibleViewIds = useMemo(() => {
     if (outlineVisibleViewIds) return outlineVisibleViewIds;
     if (!breadcrumbContainerView?.children.length) return undefined;
+    const children = breadcrumbContainerView.children;
 
     // Omitting this list makes the database selector hide every embedded tab.
-    return breadcrumbContainerView.children.map((child) => child.view_id);
-  }, [breadcrumbContainerView, outlineVisibleViewIds]);
+    // Dashboard-owned widget views are not tabs (WP05 §1.2).
+    return filterOwnedTabViewIds(
+      children.map((child) => child.view_id),
+      databasePageId,
+      (viewId) => isDashboardOwnedView(children.find((child) => child.view_id === viewId))
+    );
+  }, [breadcrumbContainerView, databasePageId, outlineVisibleViewIds]);
 
   // Use container view (if present) as the "page meta" view for naming/icon operations.
   const pageView = containerView || breadcrumbContainerView || view;
@@ -191,9 +203,13 @@ function DatabaseView(props: DatabaseViewProps) {
   const databaseViews = database?.get(YjsDatabaseKey.views);
   const hasRestoreGeneration = Boolean(doc?.databaseRestoreId &&
     doc.databaseRestoreId !== '00000000-0000-0000-0000-000000000000');
+  // Web writes an owned view's collab mirror before its folder extra, so a view
+  // is hidden as soon as either copy names a dashboard.
+  const isCollabOwned = (viewId: string) => Boolean(databaseViews?.get(viewId)?.get(YjsDatabaseKey.dashboard_owner));
+  const tabViewIds = visibleViewIds && filterOwnedTabViewIds(visibleViewIds, databasePageId, isCollabOwned);
   const restoredVisibleViewIds = (() => {
-    if (!hasRestoreGeneration || !databaseViews?.size) return visibleViewIds;
-    const surviving = visibleViewIds?.filter((id) => databaseViews.has(id));
+    if (!hasRestoreGeneration || !databaseViews?.size) return tabViewIds;
+    const surviving = tabViewIds?.filter((id) => databaseViews.has(id));
 
     if (surviving?.length) return surviving;
     // Folder children can all postdate the snapshot. Prefer a restored display
@@ -202,7 +218,7 @@ function DatabaseView(props: DatabaseViewProps) {
     const displayViews = viewIds.filter((id) => {
       const view = databaseViews.get(id);
 
-      return !view.get(YjsDatabaseKey.is_inline) && !view.get(YjsDatabaseKey.embedded);
+      return !view.get(YjsDatabaseKey.is_inline) && !view.get(YjsDatabaseKey.embedded) && !isCollabOwned(id);
     });
 
     return displayViews.length ? displayViews : viewIds;

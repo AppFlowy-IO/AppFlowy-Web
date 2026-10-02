@@ -1,7 +1,8 @@
 import { TFunction } from 'i18next';
 
 import { ChartAggregationType, ChartNumberFormat } from '@/application/database-yjs/chart.type';
-import { currencyFormaterMap, NumberFormat } from '@/application/database-yjs/fields';
+import { formatChartValue } from '@/application/database-yjs/chart-format';
+import { NumberFormat } from '@/application/database-yjs/fields';
 
 /**
  * Translation keys for every aggregation, shared by the Number chart title and
@@ -21,76 +22,40 @@ export const CHART_AGGREGATION_LABELS: ReadonlyArray<{
   { type: ChartAggregationType.Median, labelKey: 'chart.tooltip.median', fallback: 'Median' },
 ];
 
-const MAX_FRACTION_DIGITS = 2;
-
-function isCountLike(aggregationType: ChartAggregationType): boolean {
-  return aggregationType === ChartAggregationType.Count || aggregationType === ChartAggregationType.CountValues;
-}
-
-function roundTo(value: number, digits: number): number {
-  const factor = 10 ** digits;
-
-  return Math.round(value * factor) / factor;
-}
-
 export interface FormatNumberChartValueOptions {
   numberFormat: ChartNumberFormat;
   aggregationType: ChartAggregationType;
   /** Number format of the Y field when it is a Number field */
   fieldNumberFormat?: NumberFormat | null;
+  /** `decimal_places`; null / absent is auto. */
+  decimalPlaces?: number | null;
+  /** The chart locale (`resolveChartLocale`); US English by default. */
+  locale?: string;
 }
 
 /**
- * Format the Number chart value.
+ * Format the Number chart value: R-FORMAT in `card` mode (WP10 §1.2).
  *
  * - `percent` treats the value as a ratio (0.25 → "25%").
- * - `compact` uses abbreviated notation ("1.2K").
- * - `auto` follows the Y field's number format (currency / percent) for value
- *   aggregations; counts and non-Number fields use a grouped decimal.
+ * - `compact` abbreviates from 1,000 on ("12.3K", "$1.5M" for a currency).
+ * - `auto` follows the Y field's number format for value aggregations;
+ *   counts are whole numbers, and values of 1,000 or more drop their decimals.
  */
-// Built once: `Intl.NumberFormat` construction is far costlier than `format`.
-const PERCENT_FORMATTER = new Intl.NumberFormat('en-US', {
-  style: 'percent',
-  maximumFractionDigits: MAX_FRACTION_DIGITS,
-});
-const COMPACT_FORMATTER = new Intl.NumberFormat('en-US', {
-  notation: 'compact',
-  maximumFractionDigits: 1,
-});
-const DECIMAL_FORMATTER = new Intl.NumberFormat('en-US', {
-  maximumFractionDigits: MAX_FRACTION_DIGITS,
-  useGrouping: true,
-});
-
 export function formatNumberChartValue(
   value: number,
-  { numberFormat, aggregationType, fieldNumberFormat }: FormatNumberChartValueOptions
+  { numberFormat, aggregationType, fieldNumberFormat, decimalPlaces, locale = 'en-US' }: FormatNumberChartValueOptions
 ): string {
-  if (!Number.isFinite(value)) return '0';
-
-  switch (numberFormat) {
-    case 'percent':
-      return PERCENT_FORMATTER.format(value);
-
-    case 'compact':
-      return COMPACT_FORMATTER.format(value);
-
-    case 'auto':
-    default: {
-      if (
-        !isCountLike(aggregationType) &&
-        fieldNumberFormat !== null &&
-        fieldNumberFormat !== undefined &&
-        fieldNumberFormat !== NumberFormat.Num &&
-        currencyFormaterMap[fieldNumberFormat]
-      ) {
-        // The field formatter rounds (after scaling, for Percent) exactly like the cells do.
-        return currencyFormaterMap[fieldNumberFormat](value);
-      }
-
-      return DECIMAL_FORMATTER.format(roundTo(value, MAX_FRACTION_DIGITS));
-    }
-  }
+  return formatChartValue(value, {
+    aggregation: aggregationType,
+    yField:
+      fieldNumberFormat === null || fieldNumberFormat === undefined
+        ? null
+        : { type: 'number', numberFormat: fieldNumberFormat },
+    mode: 'card',
+    numberFormat,
+    decimalPlaces,
+    locale,
+  });
 }
 
 export interface NumberChartTitleOptions {

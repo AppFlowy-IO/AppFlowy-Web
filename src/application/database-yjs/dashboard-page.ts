@@ -1,4 +1,10 @@
 import { initializeDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
+import {
+  copyDashboardLayoutSetting,
+  duplicateDashboardOwnedWidgets,
+} from '@/application/database-yjs/dashboard-owned-view-ops';
+import { markDashboardCreatedThisSession } from '@/application/database-yjs/dashboard-session';
+import { removeCreatedDatabaseView } from '@/application/database-yjs/list-layout';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   BindViewSync,
@@ -6,6 +12,8 @@ import {
   CreateDatabaseViewResponse,
   CreatePageResponse,
   LoadView,
+  LoadViewMeta,
+  UpdatePagePayload,
   ViewLayout,
   YDatabase,
   YDoc,
@@ -103,6 +111,8 @@ export async function createDatabaseDashboardPageViaGrid(params: {
     // filters so every reader sees a stable shape from the first render.
     databaseDoc.transact(() => initializeDashboardLayoutSetting(dashboardView), 'initializeDashboardLayout');
     void syncContext.flush?.();
+    // R-MODE: a dashboard created here opens in Edit mode on its first load.
+    markDashboardCreatedThisSession(dashboardResponse.view_id);
 
     return { ...response, view_id: dashboardResponse.view_id };
   } catch (error) {
@@ -139,6 +149,11 @@ export async function createDatabaseDashboardPageViaGrid(params: {
  * and the server seeds none, so seed the empty rows / global filters here as the
  * tab bar's "+" and `/dashboard` do. The server has already created the view, so
  * a failed seed is logged rather than thrown: readers tolerate a missing setting.
+ *
+ * With `sourceViewId` (a duplicated block) the new dashboard instead copies the
+ * source's whole layout setting and gets its own copies of the views the
+ * source's widgets own (WP05 §1.7). That copy either succeeds completely or the
+ * new view is removed and the error rethrown: no partial dashboards.
  */
 export async function createLinkedDatabaseDashboardView(params: {
   requestViewId: string;
@@ -147,6 +162,11 @@ export async function createLinkedDatabaseDashboardView(params: {
   loadView?: LoadView;
   bindViewSync?: BindViewSync;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
+  /** The dashboard view a duplicated block copies. */
+  sourceViewId?: string;
+  loadViewMeta?: LoadViewMeta;
+  updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
+  deletePage?: (viewId: string) => Promise<void>;
 }): Promise<CreateDatabaseViewResponse> {
   const response = await params.createDatabaseView(params.requestViewId, {
     ...params.payload,
@@ -156,12 +176,31 @@ export async function createLinkedDatabaseDashboardView(params: {
   try {
     await seedLinkedDashboardView(response, params);
   } catch (error) {
+    if (params.sourceViewId) {
+      if (response.view_id) {
+        try {
+          await params.deletePage?.(response.view_id);
+        } catch (cleanupError) {
+          Log.warn('[Dashboard creation] failed to remove a partially duplicated dashboard', {
+            viewId: response.view_id,
+            error: cleanupError,
+          });
+        }
+      }
+
+      throw error;
+    }
+
     Log.warn('[Dashboard creation] failed to seed the linked dashboard setting', {
       viewId: response.view_id,
       error,
     });
   }
 
+  // R-MODE: a dashboard created here opens in Edit mode on its first load. A
+  // duplicate is not marked (desktop skips `source_view_id` creations too): it
+  // opens like any existing dashboard.
+  if (response.view_id && !params.sourceViewId) markDashboardCreatedThisSession(response.view_id);
   return response;
 }
 
@@ -169,7 +208,11 @@ async function seedLinkedDashboardView(
   response: CreateDatabaseViewResponse,
   params: Parameters<typeof createLinkedDatabaseDashboardView>[0]
 ) {
-  const { bindViewSync, loadView, scheduleDeferredCleanup } = params;
+  const { bindViewSync, loadView, scheduleDeferredCleanup, sourceViewId } = params;
+
+  if (sourceViewId && (!loadView || !response.view_id)) {
+    throw new Error('The linked dashboard could not be duplicated right now');
+  }
 
   if (!loadView || !response.view_id) return;
 
@@ -193,7 +236,36 @@ async function seedLinkedDashboardView(
 
     if (!dashboardView) throw new Error('The linked Dashboard view is not in the database');
 
-    databaseDoc.transact(() => initializeDashboardLayoutSetting(dashboardView), 'initializeDashboardLayout');
+    if (sourceViewId) {
+      try {
+        if (!copyDashboardLayoutSetting(databaseDoc, sourceViewId, response.view_id)) {
+          databaseDoc.transact(() => initializeDashboardLayoutSetting(dashboardView), 'initializeDashboardLayout');
+        }
+
+        await duplicateDashboardOwnedWidgets(
+          {
+            databaseDoc,
+            databasePageId: response.view_id,
+            activeViewId: response.view_id,
+            createDatabaseView: params.createDatabaseView,
+            deletePage: params.deletePage,
+            loadViewMeta: params.loadViewMeta,
+            updatePage: params.updatePage,
+            loadView,
+            bindViewSync,
+            scheduleDeferredCleanup,
+          },
+          { sourceDashboardViewId: sourceViewId, targetDashboardViewId: response.view_id }
+        );
+      } catch (error) {
+        removeCreatedDatabaseView(databaseDoc, response.view_id);
+        void syncContext?.flush?.();
+        throw error;
+      }
+    } else {
+      databaseDoc.transact(() => initializeDashboardLayoutSetting(dashboardView), 'initializeDashboardLayout');
+    }
+
     void syncContext?.flush?.();
   } finally {
     if (syncContext && scheduleDeferredCleanup) scheduleDeferredCleanup(syncContext.doc.guid);

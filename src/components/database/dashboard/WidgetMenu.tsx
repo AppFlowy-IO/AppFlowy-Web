@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 
 import { useDashboardLayout } from './DashboardContext';
 import { canDuplicateWidget, getWidgetMoveTargets, WidgetMoveDirection, WidgetMoveTargets } from './widget-moves';
-import { useWidgetContext, WidgetActions } from './WidgetContext';
+import { useWidgetContext, useWidgetContextOptional, WidgetActions } from './WidgetContext';
 
 export type WidgetMenuEntryId =
   | 'open'
@@ -184,8 +184,10 @@ function runEntry(id: WidgetMenuEntryId, actions: WidgetActions) {
 interface WidgetMenuProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The trigger element (rendered with `asChild`). */
+  /** The anchor element (rendered with `asChild`). */
   children: ReactNode;
+  /** `start` under the title pill, `end` under the capsule's options button. */
+  align?: 'start' | 'end';
 }
 
 /**
@@ -241,19 +243,36 @@ function WidgetMenuItems() {
   );
 }
 
-/** Options of one dashboard widget (header "…" button or right-click). */
-export function WidgetMenu({ open, onOpenChange, children }: WidgetMenuProps) {
+/**
+ * Options of one dashboard widget, anchored under the title pill (or the
+ * capsule's options button). The pill or the button toggles it, so pressing
+ * them does not count as an outside click, and focus goes back to them when
+ * the menu closes.
+ */
+export function WidgetMenu({ open, onOpenChange, children, align = 'end' }: WidgetMenuProps) {
+  const widget = useWidgetContextOptional();
+  const getOpener = () => (widget?.showWidgetTitles ? widget.titleRef?.current : widget?.optionsRef?.current) ?? null;
+
   return (
     <DropdownMenu modal={false} onOpenChange={onOpenChange} open={open}>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent
-        align='end'
+        align={align}
         className='!min-w-[200px]'
         data-parity-id='dash-widget-menu'
         data-testid='dashboard-widget-menu'
         onClick={(event) => event.stopPropagation()}
-        onCloseAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          const opener = getOpener();
+
+          if (opener?.isConnected) opener.focus();
+        }}
+        onInteractOutside={(event) => {
+          if (getOpener()?.contains(event.target as Node | null)) event.preventDefault();
+        }}
         side='bottom'
+        sideOffset={4}
       >
         <WidgetMenuItems />
       </DropdownMenuContent>

@@ -183,6 +183,7 @@ export const DatabaseTabItem = memo(
         value={viewId}
         id={`view-tab-${viewId}`}
         data-testid={`view-tab-${viewId}`}
+        data-parity-id='dash-view-tab'
         className={cn('min-w-[80px] max-w-[360px]', dragState.type === 'dragging' && 'opacity-40')}
         ref={setRefs}
         onClickCapture={(e) => {
@@ -215,7 +216,7 @@ export const DatabaseTabItem = memo(
           }}
           className={'flex items-center gap-1.5 overflow-hidden'}
         >
-          <PageIcon iconSize={16} view={{ layout: computedLayout }} className={'!h-5 !w-5 text-base leading-[1.3rem]'} />
+          <PageIcon iconSize={16} view={{ layout: computedLayout }} className={'!h-4 !w-4 text-base leading-[1.3rem]'} />
 
           <Tooltip delayDuration={500}>
             <TooltipTrigger asChild>

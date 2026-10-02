@@ -20,6 +20,9 @@ export const DEFAULT_SCENE = 'two-widgets';
 export const DEFAULT_WHEN = 'rest';
 export const DEFAULT_TOLERANCE_PX = 0.5;
 
+/** This module expands the contract for the web probe: `clientWaivers.web` entries are not measured here. */
+const PROBE_CLIENT = 'web';
+
 export interface RunOptions {
   /** Report mode measures pending entries too; enforce mode measures enforced (and strict in-scope) entries only. */
   includePending: boolean;
@@ -184,7 +187,11 @@ function expandElement(
     desktopMeasure: entry.desktopMeasure,
   };
 
-  if (statesOf(entry, fixture).includes(state) && isInScope(entry.status, entry.wave, options)) {
+  if (
+    statesOf(entry, fixture).includes(state) &&
+    isInScope(entry.status, entry.wave, options) &&
+    !entry.clientWaivers?.[PROBE_CLIENT]
+  ) {
     checks.push({ ...base, key: entry.id, variant: null, metrics: entry.metrics, wave: entry.wave });
   }
 
@@ -194,6 +201,8 @@ function expandElement(
 
     if (!(variant.states ?? statesOf(entry, fixture)).includes(state)) return;
     if (!isInScope(status, wave, options)) return;
+    // This client cannot measure it (`clientWaivers`, inherited from the entry).
+    if ((variant.clientWaivers ?? entry.clientWaivers)?.[PROBE_CLIENT]) return;
     checks.push({
       ...base,
       key: `${entry.id}#${index}`,
@@ -220,7 +229,12 @@ function expectedOrder(entry: OrderCheckEntry, state: ParityStateId): string[] {
 export function expandChecks(fixture: VisualMetricsFixture, state: ParityStateId, options: RunOptions): StateChecks {
   const metrics = fixture.elements.flatMap((entry) => expandElement(entry, state, fixture, options));
   const orders: OrderCheck[] = fixture.orderChecks
-    .filter((entry) => statesOf(entry, fixture).includes(state) && isInScope(entry.status, entry.wave, options))
+    .filter(
+      (entry) =>
+        statesOf(entry, fixture).includes(state) &&
+        isInScope(entry.status, entry.wave, options) &&
+        !entry.clientWaivers?.[PROBE_CLIENT]
+    )
     .map((entry) => ({
       kind: 'order',
       key: entry.id,
@@ -238,6 +252,7 @@ export function expandChecks(fixture: VisualMetricsFixture, state: ParityStateId
     const resolved = resolveTextCheck(fixture, entry);
 
     if (!resolved.states.includes(state) || !isInScope(entry.status, entry.wave, options)) return [];
+    if (entry.clientWaivers?.[PROBE_CLIENT]) return [];
     return [
       {
         kind: 'text',

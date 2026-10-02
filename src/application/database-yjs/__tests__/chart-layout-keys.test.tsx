@@ -87,7 +87,7 @@ describe('chart layout keys', () => {
       dateCondition: DateGroupCondition.Relative,
       numberFormat: 'compact',
       titleText: 'Revenue',
-      extended: {},
+      extended: { decimalPlaces: null, colorTheme: 'auto', showDataLabels: true, legendPosition: 'auto' },
     });
   });
 
@@ -111,6 +111,27 @@ describe('chart layout keys', () => {
       yFieldId: undefined,
       dateCondition: DateGroupCondition.Year,
     });
+  });
+
+  it('reads the desktop-written style keys, whose decimal places are a bigint', () => {
+    const settings = parseChartLayoutSettings(
+      mapOf({
+        chart_type: BigInt(ChartType.Bar),
+        decimal_places: BigInt(2),
+        color_theme: 'purple',
+        show_data_labels: false,
+        legend_position: 'bottom',
+      })
+    );
+
+    expect(settings.extended).toEqual({
+      decimalPlaces: 2,
+      colorTheme: 'purple',
+      showDataLabels: false,
+      legendPosition: 'bottom',
+    });
+    // The style keys are not mirrored on legacy keys.
+    expect(Object.values(ChartLayoutKeys)).not.toContain('decimal_places');
   });
 
   it('prefers the snake_case key and falls back per key to the legacy one', () => {
@@ -142,7 +163,7 @@ describe('chart layout keys', () => {
       dateCondition: DateGroupCondition.Month,
       numberFormat: 'auto',
       titleText: '',
-      extended: {},
+      extended: { decimalPlaces: null, colorTheme: 'auto', showDataLabels: true, legendPosition: 'auto' },
     });
   });
 

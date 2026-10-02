@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { createBdd, type DataTable } from 'playwright-bdd';
 
+import { switchViewToDashboard } from '../../support/dashboard-owned-views-helpers';
 import { expectDashboardViewMode } from '../../support/dashboard-platform-helpers';
 import {
   addDashboardView,
@@ -10,6 +11,7 @@ import {
   chooseWidgetMenuAction,
   cleanupDashboardFixture,
   configureNumberChart,
+  DASHBOARD_FIXTURE_DATABASES,
   DASHBOARD_GRID_COLUMNS,
   DASHBOARD_MAX_WIDGETS,
   DASHBOARD_MAX_WIDGETS_PER_ROW,
@@ -18,7 +20,6 @@ import {
   dashboardViewId,
   dashboardWorld,
   databaseForLabel,
-  DatabaseViewLayout,
   dragLocatorBy,
   dragWidgetBeside,
   dragWidgetBetweenRows,
@@ -48,7 +49,7 @@ import {
   readDatabaseViews,
   reloadDashboard,
   renderedRows,
-  rowColumnWidth,
+  rowColumnPitch,
   seedDashboardWidgets,
   splitList,
   trashFixtureDatabase,
@@ -203,25 +204,9 @@ Given('I open the dashboard again', async ({ page }) => {
 });
 
 When('I switch the {string} view to the Dashboard layout', async ({ page }, label: string) => {
-  const { database } = parseViewLabel(label);
-  const viewId = viewIdForLabel(page, label);
-  const world = dashboardWorld(page);
-
-  await openDatabasePage(page, database, viewId);
-  await page.getByTestId('database-actions-settings').click();
-  await DatabaseViewSelectors.layoutSettingsTrigger(page).hover();
-  await expect(DatabaseViewSelectors.layoutOption(page, DatabaseViewLayout.Dashboard)).toBeVisible();
-  await DatabaseViewSelectors.layoutOption(page, DatabaseViewLayout.Dashboard).click();
-  await page.keyboard.press('Escape');
-  world.dashboardViewId = viewId;
-  world.dashboardHost = database;
-  await expect
-    .poll(
-      async () =>
-        (await readDatabaseViews(page, fixtureDatabase(page, database).databaseId)).find((view) => view.id === viewId)
-          ?.layout
-    )
-    .toBe(DatabaseViewLayout.Dashboard);
+  // Converting creates the view's owned copy first (WP05 §1.6): this waits for
+  // the layout and for that copy as the one widget, and records the copy.
+  await switchViewToDashboard(page, parseViewLabel(label).database, viewIdForLabel(page, label));
 });
 
 Then('the dashboard view is shown', async ({ page }) => {
@@ -522,7 +507,8 @@ When('I choose {string} in the {string} widget menu', async ({ page }, action: s
 });
 
 Then('the {string} view is open outside the dashboard', async ({ page }, label: string) => {
-  const { database } = parseViewLabel(label);
+  // A label ("Tasks Grid") or a view known by its name ("Grid" of the dashboard host).
+  const database = databaseForLabel(page, label);
   const target = fixtureDatabase(page, database);
   const viewId = viewIdForLabel(page, label);
 
@@ -536,7 +522,9 @@ Then('the {string} view is open outside the dashboard', async ({ page }, label: 
     }, WIDGET_TIMEOUT)
     .toBe(true);
   await waitForDatabaseContext(page, target.databaseId);
-  const grid = DatabaseGridSelectors.grid(page).filter({ hasText: 'Write launch plan' }).last();
+  const grid = DatabaseGridSelectors.grid(page)
+    .filter({ hasText: String(DASHBOARD_FIXTURE_DATABASES[database]?.rows[0]?.Name ?? 'Write launch plan') })
+    .last();
 
   await expect(grid).toBeVisible(WIDGET_TIMEOUT);
 });
@@ -742,7 +730,14 @@ async function addWidgetSelectFilter(scope: Page, widget: Locator, field: string
   await expect(property).toBeVisible({ timeout: 10_000 });
   await property.click();
   await selectFilterOption(scope, option);
-  await scope.keyboard.press('Escape');
+  // Close the rule editor, then the widget's Filters popover it opened in.
+  const popover = scope.getByTestId('dashboard-widget-filters-popover');
+
+  for (let attempt = 0; attempt < 3 && (await popover.isVisible()); attempt += 1) {
+    await scope.keyboard.press('Escape');
+  }
+
+  await expect(popover).toBeHidden();
 }
 
 When(
@@ -819,7 +814,7 @@ When(
   'I drag width handle {int} of dashboard row {int} by {int} columns',
   async ({ page }, handle: number, rowIndex: number, columns: number) => {
     const row = await persistedRow(page, rowIndex);
-    const columnWidth = await rowColumnWidth(page, row.id);
+    const columnWidth = await rowColumnPitch(page, row.id, row.widgets.length);
 
     await DashboardSelectors.row(page, row.id).hover();
     // Handle N sits between widget N and widget N + 1 (`data-index` is 0-based).
@@ -893,50 +888,6 @@ When('I press the dashboard redo shortcut', async ({ page }) => {
 
 When('the browser window is {int} px wide', async ({ page }, width: number) => {
   await page.setViewportSize({ width, height: 900 });
-});
-
-async function rowWidgetBoxes(page: Page, rowIndex: number) {
-  const row = await persistedRow(page, rowIndex);
-
-  return DashboardSelectors.row(page, row.id)
-    .getByTestId('dashboard-widget')
-    .evaluateAll((widgets) =>
-      widgets.map((widget) => {
-        const rect = widget.getBoundingClientRect();
-
-        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-      })
-    );
-}
-
-Then('the widgets of dashboard row {int} are stacked', async ({ page }, rowIndex: number) => {
-  await expect
-    .poll(async () => {
-      const boxes = await rowWidgetBoxes(page, rowIndex);
-      const viewport = page.viewportSize()?.width ?? 0;
-
-      return (
-        boxes.length > 1 &&
-        boxes.every((box, index) => index === 0 || box.y >= boxes[index - 1].y + boxes[index - 1].height - 1) &&
-        boxes.every((box) => Math.abs(box.x - boxes[0].x) < 2 && box.width > viewport * 0.6)
-      );
-    })
-    .toBe(true);
-  // No horizontal page scroll on a narrow screen.
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-});
-
-Then('the widgets of dashboard row {int} are side by side', async ({ page }, rowIndex: number) => {
-  await expect
-    .poll(async () => {
-      const boxes = await rowWidgetBoxes(page, rowIndex);
-
-      return (
-        boxes.length > 1 &&
-        boxes.every((box, index) => index === 0 || (Math.abs(box.y - boxes[0].y) < 2 && box.x > boxes[index - 1].x))
-      );
-    })
-    .toBe(true);
 });
 
 // ---------------------------------------------------------------------------

@@ -46,15 +46,21 @@ jest.mock('../DashboardWidget', () => ({
   DashboardWidget: ({
     widget,
     span,
+    lineSize,
     height,
+    showIconsInHeading,
   }: {
     widget: { id: string; viewId: string; databaseId: string };
     span: number;
+    lineSize: number;
     height: number;
+    showIconsInHeading: boolean;
   }) => (
     <div
       data-database-id={widget.databaseId}
       data-height={height}
+      data-icons={String(showIconsInHeading)}
+      data-line-size={lineSize}
       data-span={span}
       data-testid='dashboard-widget'
       data-view-id={widget.viewId}
@@ -349,6 +355,17 @@ describe('Dashboard', () => {
         '6',
         '12',
       ]);
+      // jsdom measures no width, so no row wraps.
+      expect(screen.getAllByTestId('dashboard-widget').map((item) => item.getAttribute('data-line-size'))).toEqual([
+        '2',
+        '2',
+        '1',
+      ]);
+      expect(screen.getAllByTestId('dashboard-widget').map((item) => item.getAttribute('data-icons'))).toEqual([
+        'false',
+        'false',
+        'false',
+      ]);
       expect(screen.queryByTestId('dashboard-width-handle')).toBeNull();
       expect(screen.queryByTestId('dashboard-height-handle')).toBeNull();
       expect(screen.queryByTestId('dashboard-add-widget-row-button')).toBeNull();
@@ -358,6 +375,8 @@ describe('Dashboard', () => {
     it('shows the editing controls between Edit and Done', () => {
       renderDashboard(makeRows(['a', 'b', 'c'], ['d']));
 
+      // Edit is text only (WP03).
+      expect(screen.getByTestId('dashboard-edit-button').querySelector('svg')).toBeNull();
       fireEvent.click(screen.getByTestId('dashboard-edit-button'));
 
       expect(dashboard().getAttribute('data-editing')).toBe('true');

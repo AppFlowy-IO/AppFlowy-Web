@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
+import { resolveChartLocale } from '@/application/database-yjs/chart-format';
 import {
   ChartAggregationType,
   ChartType,
@@ -9,6 +11,7 @@ import {
 } from '@/application/database-yjs/chart.type';
 import ChartEmptyState from '@/components/database/chart/ChartEmptyState';
 import ChartProvider from '@/components/database/chart/ChartProvider';
+import { ChartErrorState, ChartLoadingState } from '@/components/database/chart/ChartStates';
 import { useChartContext } from '@/components/database/chart/useChartContext';
 import BarChartWidget from '@/components/database/chart/widgets/BarChart';
 import DonutChartWidget from '@/components/database/chart/widgets/DonutChart';
@@ -16,11 +19,11 @@ import HorizontalBarChartWidget from '@/components/database/chart/widgets/Horizo
 import LineChartWidget from '@/components/database/chart/widgets/LineChart';
 import NumberChartWidget from '@/components/database/chart/widgets/NumberChart';
 import { getNumberChartTitle } from '@/components/database/chart/widgets/numberChartUtils';
-import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
 
 function NumberChartContent() {
-  const { t } = useTranslation();
-  const { chartData, settings, aggregationType, yAxisField, yFieldName, yNumberFormat, onElementClick } =
+  const { t, i18n } = useTranslation();
+  const { chartData, settings, aggregationType, yAxisField, yFieldName, yNumberFormat, style, onElementClick } =
     useChartContext();
 
   const title = getNumberChartTitle(t, {
@@ -38,21 +41,22 @@ function NumberChartContent() {
       numberFormat={settings?.numberFormat ?? DEFAULT_CHART_NUMBER_FORMAT}
       aggregationType={effectiveAggregation}
       fieldNumberFormat={yNumberFormat}
+      decimalPlaces={style.decimalPlaces}
+      locale={resolveChartLocale(i18n?.language)}
       onClick={onElementClick}
     />
   );
 }
 
-function ChartContent() {
-  const { chartType, chartData, isLoading, hasGroupableFields, onElementClick } = useChartContext();
+function ChartContent({ fill }: { fill: boolean }) {
+  const { chartType, chartData, isLoading, loadError, retry, hasGroupableFields, onElementClick } = useChartContext();
 
-  // Loading state
   if (isLoading) {
-    return (
-      <div className="flex w-full items-start justify-center p-8">
-        <Progress />
-      </div>
-    );
+    return <ChartLoadingState fill={fill} />;
+  }
+
+  if (loadError) {
+    return <ChartErrorState fill={fill} onRetry={retry} />;
   }
 
   // Number chart has no x-axis, so it needs neither groupable fields nor
@@ -63,32 +67,37 @@ function ChartContent() {
 
   // Empty state: no groupable fields (SingleSelect, MultiSelect, Checkbox) in the database
   if (!hasGroupableFields) {
-    return <ChartEmptyState type="no-field" />;
+    return <ChartEmptyState fill={fill} type="no-field" />;
   }
 
   // Empty state: no data
   if (chartData.length === 0) {
-    return <ChartEmptyState type="no-data" />;
+    return <ChartEmptyState fill={fill} type="no-data" variant={chartType === ChartType.Donut ? 'donut' : undefined} />;
   }
 
   // Render appropriate chart type
   switch (chartType) {
     case ChartType.Bar:
-      return <BarChartWidget data={chartData} onBarClick={onElementClick} />;
+      return <BarChartWidget data={chartData} fill={fill} onBarClick={onElementClick} />;
     case ChartType.HorizontalBar:
-      return <HorizontalBarChartWidget data={chartData} onBarClick={onElementClick} />;
+      return <HorizontalBarChartWidget data={chartData} fill={fill} onBarClick={onElementClick} />;
     case ChartType.Line:
-      return <LineChartWidget data={chartData} onPointClick={onElementClick} />;
+      return <LineChartWidget data={chartData} fill={fill} onPointClick={onElementClick} />;
     case ChartType.Donut:
-      return <DonutChartWidget data={chartData} onSliceClick={onElementClick} />;
+      return <DonutChartWidget data={chartData} fill={fill} onSliceClick={onElementClick} />;
     default:
-      return <BarChartWidget data={chartData} onBarClick={onElementClick} />;
+      return <BarChartWidget data={chartData} fill={fill} onBarClick={onElementClick} />;
   }
 }
 
 export function Chart() {
   const viewId = useDatabaseViewId();
-  const { onRendered, paddingStart } = useDatabaseContext();
+  const { onRendered, paddingStart, isDashboardWidget } = useDatabaseContext();
+  // A dashboard widget fills its card; the chart frame applies the card insets
+  // (`chart.insetWidget`), so the widget's content padding is not added here.
+  const fill = Boolean(isDashboardWidget);
+  // Bumped by Retry after a render error: remounts the provider, which loads the rows again.
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     onRendered?.();
@@ -97,19 +106,35 @@ export function Chart() {
   // Use same padding as DatabaseTabs for alignment
   const horizontalPadding = paddingStart === undefined ? 96 : paddingStart;
 
-  return (
-    <ChartProvider>
-      <div
-        data-testid="database-chart"
-        className={`database-chart relative chart-${viewId} flex w-full flex-1 flex-col items-start justify-start overflow-y-auto overflow-x-hidden`}
-        style={{
-          paddingLeft: horizontalPadding,
-          paddingRight: horizontalPadding,
+  const renderError = useCallback(
+    ({ resetErrorBoundary }: { resetErrorBoundary: () => void }) => (
+      <ChartErrorState
+        fill={fill}
+        onRetry={() => {
+          setRetryKey((key) => key + 1);
+          resetErrorBoundary();
         }}
-      >
-        <ChartContent />
-      </div>
-    </ChartProvider>
+      />
+    ),
+    [fill]
+  );
+
+  return (
+    <div
+      data-testid="database-chart"
+      className={cn(
+        `database-chart relative chart-${viewId} flex w-full flex-1 flex-col`,
+        fill ? 'h-full min-h-0 overflow-hidden' : 'items-start justify-start overflow-y-auto overflow-x-hidden'
+      )}
+      style={fill ? undefined : { paddingLeft: horizontalPadding, paddingRight: horizontalPadding }}
+    >
+      {/* A chart exception shows "Couldn't load this chart" instead of reaching `DatabaseViews`' fallback. */}
+      <ErrorBoundary fallbackRender={renderError} resetKeys={[viewId, retryKey]}>
+        <ChartProvider key={retryKey}>
+          <ChartContent fill={fill} />
+        </ChartProvider>
+      </ErrorBoundary>
+    </div>
   );
 }
 

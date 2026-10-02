@@ -2,33 +2,19 @@ import {
   DASHBOARD_DEFAULT_ROW_HEIGHT,
   DASHBOARD_MAX_ROW_HEIGHT,
   DASHBOARD_MIN_ROW_HEIGHT,
-  DashboardWidget,
 } from '@/application/database-yjs/dashboard.type';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 
-import {
-  DASHBOARD_EDIT_ROW_ACTION_GUTTER,
-  WIDGET_BODY_BORDER,
-  WIDGET_EDIT_HEADER_HEIGHT,
-  WIDGET_MIN_VIEWPORT_HEIGHT,
-  WIDGET_TITLE_HEIGHT,
-} from '../constants';
+import { DASHBOARD_CONTROL_GUTTER, WIDGET_HEADER_HEIGHT, WIDGET_MIN_VIEWPORT_HEIGHT } from '../constants';
 import {
   clampRowHeight,
-  clampWidthDelta,
   databaseLayoutToViewLayout,
-  getColumnBoundaryOffset,
   getDashboardInlinePadding,
   getLayoutLabel,
   getWidgetHeaderHeight,
   getWidgetViewportHeight,
-  pixelsToColumns,
   viewLayoutToDatabaseLayout,
 } from '../utils';
-
-function widgets(...widths: number[]): DashboardWidget[] {
-  return widths.map((width, index) => ({ id: `w${index}`, viewId: `v${index}`, databaseId: 'db', width }));
-}
 
 describe('dashboard layout mapping', () => {
   it.each([
@@ -69,74 +55,19 @@ describe('dashboard layout mapping', () => {
 });
 
 describe('widget chrome sizes', () => {
-  it('reserves the tinted header in Edit mode, whatever the title setting', () => {
-    expect(getWidgetHeaderHeight({ isEditing: true, showWidgetTitles: true })).toBe(WIDGET_EDIT_HEADER_HEIGHT);
-    expect(getWidgetHeaderHeight({ isEditing: true, showWidgetTitles: false })).toBe(WIDGET_EDIT_HEADER_HEIGHT);
+  it('reserves the 40px header band whenever titles are shown, in both modes', () => {
+    expect(WIDGET_HEADER_HEIGHT).toBe(40);
+    expect(getWidgetHeaderHeight({ showWidgetTitles: true })).toBe(40);
+    expect(getWidgetHeaderHeight({ showWidgetTitles: false })).toBe(0);
   });
 
-  it('reserves the quiet title in View mode only when titles are shown', () => {
-    expect(getWidgetHeaderHeight({ isEditing: false, showWidgetTitles: true })).toBe(WIDGET_TITLE_HEIGHT);
-    expect(getWidgetHeaderHeight({ isEditing: false, showWidgetTitles: false })).toBe(0);
-  });
-
-  it('hands the rest of the row height to the nested database', () => {
-    expect(getWidgetViewportHeight(360, { isEditing: false, showWidgetTitles: true })).toBe(
-      360 - WIDGET_TITLE_HEIGHT - WIDGET_BODY_BORDER
-    );
-    expect(getWidgetViewportHeight(360, { isEditing: true, showWidgetTitles: true })).toBe(
-      360 - WIDGET_EDIT_HEADER_HEIGHT - WIDGET_BODY_BORDER
-    );
-    expect(getWidgetViewportHeight(360, { isEditing: false, showWidgetTitles: false })).toBe(360 - WIDGET_BODY_BORDER);
+  it('hands the card height to the nested database: the row minus 46, or minus 12 without titles', () => {
+    expect(getWidgetViewportHeight(360, { showWidgetTitles: true })).toBe(360 - 46);
+    expect(getWidgetViewportHeight(360, { showWidgetTitles: false })).toBe(360 - 12);
   });
 
   it('never hands out less than the minimum viewport', () => {
-    expect(getWidgetViewportHeight(40, { isEditing: true, showWidgetTitles: true })).toBe(WIDGET_MIN_VIEWPORT_HEIGHT);
-  });
-});
-
-describe('column geometry', () => {
-  it('centres a boundary in the gap after the given number of columns', () => {
-    expect(getColumnBoundaryOffset(6)).toBe('calc((100% + 16px) * 6 / 12 - 8px)');
-    expect(getColumnBoundaryOffset(3, 24)).toBe('calc((100% + 24px) * 3 / 12 - 12px)');
-  });
-
-  it('converts a pointer delta into whole columns of the row pitch', () => {
-    // 1184 px row + 16 px gap → one column pitch is 100 px.
-    expect(pixelsToColumns(0, 1184)).toBe(0);
-    expect(pixelsToColumns(49, 1184)).toBe(0);
-    expect(pixelsToColumns(51, 1184)).toBe(1);
-    expect(pixelsToColumns(200, 1184)).toBe(2);
-    expect(pixelsToColumns(-260, 1184)).toBe(-3);
-  });
-
-  it('snaps a drag of whole column widths measured without the gap', () => {
-    const rowWidth = 1100;
-    const columnWidth = rowWidth / 12;
-
-    for (let columns = -6; columns <= 6; columns += 1) {
-      expect(pixelsToColumns(columns * columnWidth, rowWidth)).toBe(columns);
-    }
-  });
-
-  it('ignores invalid rows and deltas and never returns negative zero', () => {
-    expect(pixelsToColumns(120, 0)).toBe(0);
-    expect(pixelsToColumns(Number.NaN, 1184)).toBe(0);
-    expect(Object.is(pixelsToColumns(-10, 1184), -0)).toBe(false);
-  });
-
-  it('keeps both neighbours of a boundary at least one column wide', () => {
-    const row = widgets(6, 3, 3);
-
-    expect(clampWidthDelta(row, 0, 2)).toBe(2);
-    expect(clampWidthDelta(row, 0, 5)).toBe(2);
-    expect(clampWidthDelta(row, 0, -8)).toBe(-5);
-    expect(clampWidthDelta(row, 1, -3)).toBe(-2);
-    expect(Object.is(clampWidthDelta(widgets(1, 11), 0, -1), -0)).toBe(false);
-  });
-
-  it('refuses a boundary without a right neighbour', () => {
-    expect(clampWidthDelta(widgets(12), 0, 1)).toBe(0);
-    expect(clampWidthDelta(widgets(6, 6), 1, 1)).toBe(0);
+    expect(getWidgetViewportHeight(40, { showWidgetTitles: true })).toBe(WIDGET_MIN_VIEWPORT_HEIGHT);
   });
 });
 
@@ -149,22 +80,27 @@ describe('row heights', () => {
   });
 });
 
-describe('dashboard modes and padding', () => {
-  it('keeps the page padding in View mode', () => {
-    expect(getDashboardInlinePadding({ paddingStart: 96, paddingEnd: 12, editing: false })).toEqual({
+describe('dashboard page inset', () => {
+  it('floors both sides at the control gutter for users who can edit', () => {
+    expect(DASHBOARD_CONTROL_GUTTER).toBe(44);
+    expect(getDashboardInlinePadding({ paddingStart: 12, paddingEnd: 12, reserveControlGutter: true })).toEqual({
+      paddingLeft: 44,
+      paddingRight: 44,
+    });
+    expect(getDashboardInlinePadding({ paddingStart: 96, paddingEnd: 96, reserveControlGutter: true })).toEqual({
       paddingLeft: 96,
-      paddingRight: 12,
+      paddingRight: 96,
     });
   });
 
-  it('keeps room for the row add button in Edit mode', () => {
-    expect(getDashboardInlinePadding({ paddingStart: 12, paddingEnd: 12, editing: true })).toEqual({
+  it('keeps the page padding for readers', () => {
+    expect(getDashboardInlinePadding({ paddingStart: 12, paddingEnd: 12, reserveControlGutter: false })).toEqual({
       paddingLeft: 12,
-      paddingRight: DASHBOARD_EDIT_ROW_ACTION_GUTTER,
+      paddingRight: 12,
     });
-    expect(getDashboardInlinePadding({ paddingStart: 96, paddingEnd: 96, editing: true })).toEqual({
+    expect(getDashboardInlinePadding({ paddingStart: 96, paddingEnd: 12, reserveControlGutter: false })).toEqual({
       paddingLeft: 96,
-      paddingRight: 96,
+      paddingRight: 12,
     });
   });
 });

@@ -16,7 +16,8 @@ jest.mock('@/application/services/domains/view', () => ({
 }));
 
 jest.mock('react-i18next', () => {
-  const t = (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key;
+  const t = (key: string, options?: Record<string, unknown> & { defaultValue?: string }) =>
+    (options?.defaultValue ?? key).replace(/\{\{(\w+)\}\}/g, (_match, name: string) => String(options?.[name]));
 
   return { useTranslation: () => ({ t }) };
 });
@@ -24,9 +25,14 @@ jest.mock('react-i18next', () => {
 jest.mock('../WidgetPickerContent', () => ({ __esModule: true, default: () => null }));
 
 jest.mock('../DashboardWidget', () => ({
-  DashboardWidget: ({ widget, span }: { widget: { id: string }; span: number }) => (
-    <div data-span={span} data-testid='dashboard-widget' data-widget-id={widget.id} />
+  DashboardWidget: ({ widget, span, lineSize }: { widget: { id: string }; span: number; lineSize: number }) => (
+    <div data-line-size={lineSize} data-span={span} data-testid='dashboard-widget' data-widget-id={widget.id} />
   ),
+}));
+
+// The indicator package ships compiled CSS that jest cannot parse.
+jest.mock('@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box', () => ({
+  DropIndicator: () => null,
 }));
 
 // jsdom has no PointerEvent; a MouseEvent named after it carries the coordinates.
@@ -43,10 +49,29 @@ const ROW: DashboardRowData = {
   widgets: [{ id: 'w0', viewId: 'v0', databaseId: 'db', width: 12 }],
 };
 
+const TWO_UP: DashboardRowData = {
+  id: 'r1',
+  height: 360,
+  widgets: [
+    { id: 'w0', viewId: 'v0', databaseId: 'db', width: 6 },
+    { id: 'w1', viewId: 'v1', databaseId: 'db', width: 6 },
+  ],
+};
+
 let setRows: (rows: DashboardRowData[]) => void = () => undefined;
 
-function Harness({ variant = UIVariant.App }: { variant?: UIVariant }) {
-  const [rows, updateRows] = useState([ROW]);
+function Harness({
+  variant = UIVariant.App,
+  initialRow = ROW,
+  wrapColumns,
+  minColumns = 1,
+}: {
+  variant?: UIVariant;
+  initialRow?: DashboardRowData;
+  wrapColumns?: number;
+  minColumns?: number;
+}) {
+  const [rows, updateRows] = useState([initialRow]);
   const [ui] = useState(() => ({
     hostDatabaseId: 'db',
     openPicker: jest.fn(),
@@ -55,6 +80,7 @@ function Harness({ variant = UIVariant.App }: { variant?: UIVariant }) {
     getRows: () => rows,
     updateRows,
     acquireSourceDoc: () => () => undefined,
+    selectWidget: jest.fn(),
   }));
   const host = { workspaceId: 'workspace-id', variant } as DashboardHostServices;
 
@@ -67,10 +93,12 @@ function Harness({ variant = UIVariant.App }: { variant?: UIVariant }) {
           canEdit
           dashboardFull={false}
           isEditing
+          minColumns={minColumns}
           row={rows[0]}
           rowIndex={0}
+          showIconsInHeading={false}
           showWidgetTitles
-          stacked={false}
+          wrapColumns={wrapColumns ?? rows[0].widgets.length}
         />
       </DashboardUiContext.Provider>
     </DashboardHostContext.Provider>
@@ -111,6 +139,83 @@ describe('DashboardRow height', () => {
 
     expect(handle.getAttribute('aria-valuenow')).toBe('480');
     expect(rowHeightVariable()).toBe('480px');
+  });
+});
+
+describe('DashboardRow handles (WP02)', () => {
+  it('reports the snapped height to assistive technology and never shows a px badge', () => {
+    render(<Harness />);
+    const handle = screen.getByTestId('dashboard-height-handle');
+
+    expect(handle.getAttribute('aria-valuetext')).toBe('360 pixels');
+    fireEvent(handle, pointer('pointerdown', 100));
+    act(() => {
+      document.dispatchEvent(pointer('pointermove', 211));
+    });
+
+    expect(rowHeightVariable()).toBe('480px');
+    expect(handle.getAttribute('aria-valuenow')).toBe('480');
+    expect(handle.getAttribute('aria-valuetext')).toBe('480 pixels');
+    expect(screen.queryByText(/\d+\s?px$/)).toBeNull();
+    expect(screen.getByTestId('dashboard-resize-band').getAttribute('data-state')).toBe('active');
+    act(() => {
+      document.dispatchEvent(pointer('pointerup'));
+    });
+    expect(handle.getAttribute('aria-valuenow')).toBe('480');
+    expect(screen.getByTestId('dashboard-resize-band').getAttribute('data-state')).toBe('idle');
+  });
+
+  it('puts the height handle in the band below the row, outside the track', () => {
+    render(<Harness />);
+    const gap = screen.getByTestId('dashboard-row-gap');
+
+    expect(gap.getAttribute('data-gap-index')).toBe('1');
+    expect(gap.style.height).toBe('16px');
+    expect(gap.contains(screen.getByTestId('dashboard-height-handle'))).toBe(true);
+    expect(grid().getAttribute('data-testid')).toBe('dashboard-row-track');
+    expect(grid().contains(screen.getByTestId('dashboard-height-handle'))).toBe(false);
+  });
+
+  it('turns the width pill active while dragged or focused, and idle again', () => {
+    render(<Harness initialRow={TWO_UP} minColumns={3} />);
+    const handle = screen.getByTestId('dashboard-width-handle');
+    const pill = () => screen.getByTestId('dashboard-resize-pill');
+
+    expect(pill().getAttribute('data-state')).toBe('idle');
+    expect(handle.getAttribute('aria-valuemin')).toBe('3');
+    expect(handle.getAttribute('aria-valuemax')).toBe('9');
+    expect(handle.getAttribute('aria-valuetext')).toBe('6 of 12 columns');
+
+    fireEvent.pointerEnter(handle);
+    expect(pill().getAttribute('data-state')).toBe('hover');
+    fireEvent.pointerLeave(handle);
+    expect(pill().getAttribute('data-state')).toBe('idle');
+
+    jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 1244 } as DOMRect);
+    fireEvent(handle, pointer('pointerdown'));
+    expect(pill().getAttribute('data-state')).toBe('active');
+    act(() => {
+      document.dispatchEvent(pointer('pointerup'));
+    });
+    expect(pill().getAttribute('data-state')).toBe('idle');
+
+    act(() => handle.focus());
+    expect(pill().getAttribute('data-state')).toBe('active');
+    act(() => handle.blur());
+    expect(pill().getAttribute('data-state')).toBe('idle');
+    jest.restoreAllMocks();
+  });
+
+  it('has no width handles on a wrapped row but keeps its row controls', () => {
+    render(<Harness initialRow={TWO_UP} wrapColumns={1} />);
+
+    expect(screen.queryByTestId('dashboard-width-handle')).toBeNull();
+    expect(screen.getAllByTestId('dashboard-row-control-anchor').map((anchor) => anchor.dataset.side)).toEqual([
+      'start',
+      'end',
+    ]);
+    expect(screen.getByTestId('dashboard-row').getAttribute('data-lines')).toBe('1,1');
+    expect(screen.getAllByTestId('dashboard-widget').map((widget) => widget.dataset.span)).toEqual(['12', '12']);
   });
 });
 

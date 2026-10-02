@@ -18,11 +18,17 @@
       "notion": "filterSmall: three horizontal bars of decreasing length (live/icon-filterSmall.svg, live/mktkpi-08b-light-minimize-and-filter-buttons-crop.png).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-widget-tool-filter__icon", "size": "geometry.widget.toolButton.icon", "wave": 2 },
+        {
+          "parityId": "dash-widget-tool-filter__icon",
+          "size": "geometry.widget.toolButton.icon",
+          "wave": 2,
+          "status": "enforced"
+        },
         {
           "parityId": "dash-toolbar-filter__icon",
           "size": { "calc": "geometry.toolbar.button.size - 2 * geometry.toolbar.button.padding" },
-          "wave": 2
+          "wave": 2,
+          "status": "enforced"
         }
       ],
       "web": {
@@ -66,14 +72,21 @@
       "currentMatchesCanonical": { "web": true, "desktop": true },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "sort",
       "role": "Widget Sort tool.",
       "notion": "Two opposed vertical arrows (official/crop-view-mode-widget-hover-toolbar.png).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-tool-sort__icon", "size": "geometry.widget.toolButton.icon", "wave": 2 }],
+      "contexts": [
+        {
+          "parityId": "dash-widget-tool-sort__icon",
+          "size": "geometry.widget.toolButton.icon",
+          "wave": 2,
+          "status": "enforced"
+        }
+      ],
       "web": {
         "current": {
           "asset": "src/assets/icons/sort.svg",
@@ -109,7 +122,7 @@
       "currentMatchesCanonical": { "web": true, "desktop": true },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "search",
@@ -117,9 +130,14 @@
       "notion": "Magnifier with the handle to the bottom right (official/crop-view-mode-widget-hover-toolbar.png).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-widget-tool-search__icon", "size": "geometry.widget.toolButton.icon", "wave": 4 },
-        { "parityId": "dash-widget-search-field__icon", "size": 12, "wave": 4 },
-        { "parityId": "dash-drilldown-search__icon", "size": 16, "wave": 5 }
+        {
+          "parityId": "dash-widget-tool-search__icon",
+          "size": "geometry.widget.toolButton.icon",
+          "wave": 4,
+          "status": "pending"
+        },
+        { "parityId": "dash-widget-search-field__icon", "size": 12, "wave": 4, "status": "pending" },
+        { "parityId": "dash-drilldown-search__icon", "size": 16, "wave": 5, "status": "pending" }
       ],
       "web": {
         "current": {
@@ -165,13 +183,19 @@
       "notion": "Sliders: two horizontal lines with offset knobs (official/crop-edit-mode-widget-chrome-zoom.png, thirdparty/chloeforbesk/dashboard-view-create-new-database-view.png).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-widget-tool-settings__icon", "size": "geometry.widget.toolButton.icon", "wave": 2 },
+        {
+          "parityId": "dash-widget-tool-settings__icon",
+          "size": "geometry.widget.toolButton.icon",
+          "wave": 2,
+          "status": "enforced"
+        },
         {
           "parityId": "dash-toolbar-settings__icon",
           "size": { "calc": "geometry.toolbar.button.size - 2 * geometry.toolbar.button.padding" },
-          "wave": 2
+          "wave": 2,
+          "status": "enforced"
         },
-        { "parityId": "dash-widget-menu-item-edit-view__icon", "size": 16, "wave": 3 }
+        { "parityId": "dash-widget-menu-item-edit-view__icon", "size": 16, "wave": 3, "status": "pending" }
       ],
       "web": {
         "current": {
@@ -208,7 +232,7 @@
       "currentMatchesCanonical": { "web": false, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "open-as-page",
@@ -219,7 +243,8 @@
         {
           "parityId": "dash-toolbar-open-as-page__icon",
           "size": { "calc": "geometry.toolbar.button.size - 2 * geometry.toolbar.button.padding" },
-          "wave": 2
+          "wave": 2,
+          "status": "enforced"
         }
       ],
       "web": {
@@ -257,7 +282,7 @@
       "currentMatchesCanonical": { "web": true, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "more",
@@ -265,8 +290,13 @@
       "notion": "Three horizontal dots.",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-widget-options-button__icon", "size": "geometry.widget.toolButton.icon", "wave": 2 },
-        { "parityId": "dash-drilldown-more__icon", "size": 16, "wave": 5 }
+        {
+          "parityId": "dash-widget-options-button__icon",
+          "size": "geometry.widget.toolButton.icon",
+          "wave": 2,
+          "status": "enforced"
+        },
+        { "parityId": "dash-drilldown-more__icon", "size": 16, "wave": 5, "status": "pending" }
       ],
       "web": {
         "current": {
@@ -303,14 +333,14 @@
       "currentMatchesCanonical": { "web": true, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "dashboard-tab",
       "role": "Dashboard layout icon in the view tab of the dashboard page (dashboards are never widgets, so no title-pill context).",
       "notion": "viewDashboard: four rounded tiles (live/icon-viewDashboard.svg). AppFlowy keeps its own four-tile glyph; Notion artwork is reference only.",
       "scope": "app-wide",
-      "contexts": [{ "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 }],
+      "contexts": [{ "parityId": "dash-view-tab__icon", "size": 16, "wave": 2, "status": "enforced" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/dashboard.svg",
@@ -327,15 +357,15 @@
         "current": {
           "symbol": "FlowySvgs.dashboard_view_s",
           "asset": "resources/flowy_icons/16x/dashboard_view.svg",
-          "sha256": "73ada53c0245b6087d1135bc77db16b4f26dc6d6ece9c4a384fd916884886666",
+          "sha256": "f4f26adf83317df6a8d2f3a497e4b8b64bf51eee666c3ed2383c4ee232e940ff",
           "usages": [
             "appflowy_flutter/lib/plugins/database/dashboard/dashboard.dart",
             "appflowy_flutter/lib/workspace/application/view/view_ext.dart"
           ]
         },
         "target": {
-          "symbol": "FlowySvgs.dashboard_view_m",
-          "asset": "resources/flowy_icons/20x/dashboard_view.svg",
+          "symbol": "FlowySvgs.dashboard_view_s",
+          "asset": "resources/flowy_icons/16x/dashboard_view.svg",
           "exists": true,
           "sha256": "f4f26adf83317df6a8d2f3a497e4b8b64bf51eee666c3ed2383c4ee232e940ff"
         }
@@ -343,13 +373,13 @@
       "canonical": {
         "source": "web:src/assets/icons/dashboard.svg",
         "sha256": "f4f26adf83317df6a8d2f3a497e4b8b64bf51eee666c3ed2383c4ee232e940ff",
-        "reason": "Desktop already has the web glyph as 20x/dashboard_view.svg; its 16x variant is a different drawing. view_ext.dart _pickSvg must pick dashboard_view_m for the 16px tab."
+        "reason": "The Dashboard layout glyph is new with this feature, so desktop 16x/dashboard_view.svg is a byte copy of the web file (as 20x/dashboard_view.svg already was): every desktop surface that shows the Dashboard icon draws the web glyph."
       },
-      "currentlyIdentical": false,
-      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "currentlyIdentical": true,
+      "currentMatchesCanonical": { "web": true, "desktop": true },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "layout-grid",
@@ -357,9 +387,9 @@
       "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
       "scope": "app-wide",
       "contexts": [
-        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2, "status": "waived" },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2, "status": "waived" },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "waived" }
       ],
       "web": {
         "current": {
@@ -396,7 +426,8 @@
       "currentMatchesCanonical": { "web": true, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": false },
       "wave": 2,
-      "status": "pending"
+      "status": "waived",
+      "waiver": "OD-3 (open product decision): this app-wide glyph also draws tabs, sidebars, grid headers and menus outside dashboards, and desktop draws another shape of the same symbol. Replacing the desktop asset changes every desktop surface, which is outside the dashboard lanes; the size and colour of the dashboard contexts are still enforced by visual-metrics.json."
     },
     {
       "name": "layout-board",
@@ -404,9 +435,9 @@
       "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
       "scope": "app-wide",
       "contexts": [
-        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2, "status": "waived" },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2, "status": "waived" },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "waived" }
       ],
       "web": {
         "current": {
@@ -443,7 +474,8 @@
       "currentMatchesCanonical": { "web": true, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": false },
       "wave": 2,
-      "status": "pending"
+      "status": "waived",
+      "waiver": "OD-3 (open product decision): this app-wide glyph also draws tabs, sidebars, grid headers and menus outside dashboards, and desktop draws another shape of the same symbol. Replacing the desktop asset changes every desktop surface, which is outside the dashboard lanes; the size and colour of the dashboard contexts are still enforced by visual-metrics.json."
     },
     {
       "name": "layout-calendar",
@@ -451,9 +483,9 @@
       "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
       "scope": "app-wide",
       "contexts": [
-        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2, "status": "enforced" },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2, "status": "enforced" },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "pending" }
       ],
       "web": {
         "current": {
@@ -490,7 +522,7 @@
       "currentMatchesCanonical": { "web": true, "desktop": true },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "layout-chart",
@@ -498,9 +530,9 @@
       "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
       "scope": "app-wide",
       "contexts": [
-        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2, "status": "waived" },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2, "status": "waived" },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "waived" }
       ],
       "web": {
         "current": {
@@ -537,7 +569,8 @@
       "currentMatchesCanonical": { "web": true, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": false },
       "wave": 2,
-      "status": "pending"
+      "status": "waived",
+      "waiver": "OD-3 (open product decision): this app-wide glyph also draws tabs, sidebars, grid headers and menus outside dashboards, and desktop draws another shape of the same symbol. Replacing the desktop asset changes every desktop surface, which is outside the dashboard lanes; the size and colour of the dashboard contexts are still enforced by visual-metrics.json."
     },
     {
       "name": "layout-list",
@@ -545,9 +578,9 @@
       "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
       "scope": "app-wide",
       "contexts": [
-        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2, "status": "waived" },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2, "status": "waived" },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "waived" }
       ],
       "web": {
         "current": {
@@ -584,7 +617,8 @@
       "currentMatchesCanonical": { "web": true, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": false },
       "wave": 2,
-      "status": "pending"
+      "status": "waived",
+      "waiver": "OD-3 (open product decision): this app-wide glyph also draws tabs, sidebars, grid headers and menus outside dashboards, and desktop draws another shape of the same symbol. Replacing the desktop asset changes every desktop surface, which is outside the dashboard lanes; the size and colour of the dashboard contexts are still enforced by visual-metrics.json."
     },
     {
       "name": "layout-gallery",
@@ -592,9 +626,9 @@
       "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
       "scope": "app-wide",
       "contexts": [
-        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2, "status": "waived" },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2, "status": "waived" },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "waived" }
       ],
       "web": {
         "current": {
@@ -631,7 +665,8 @@
       "currentMatchesCanonical": { "web": true, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": false },
       "wave": 2,
-      "status": "pending"
+      "status": "waived",
+      "waiver": "OD-3 (open product decision): this app-wide glyph also draws tabs, sidebars, grid headers and menus outside dashboards, and desktop draws another shape of the same symbol. Replacing the desktop asset changes every desktop surface, which is outside the dashboard lanes; the size and colour of the dashboard contexts are still enforced by visual-metrics.json."
     },
     {
       "name": "layout-feed",
@@ -639,9 +674,9 @@
       "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
       "scope": "app-wide",
       "contexts": [
-        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2, "status": "enforced" },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2, "status": "enforced" },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "pending" }
       ],
       "web": {
         "current": {
@@ -678,7 +713,7 @@
       "currentMatchesCanonical": { "web": true, "desktop": true },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "layout-timeline",
@@ -686,9 +721,9 @@
       "notion": "Notion uses one layout glyph per view type in tabs, title pills and the picker.",
       "scope": "app-wide",
       "contexts": [
-        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4 }
+        { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2, "status": "waived" },
+        { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2, "status": "waived" },
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "waived" }
       ],
       "web": {
         "current": {
@@ -725,14 +760,15 @@
       "currentMatchesCanonical": { "web": true, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": false },
       "wave": 2,
-      "status": "pending"
+      "status": "waived",
+      "waiver": "OD-3 (open product decision): this app-wide glyph also draws tabs, sidebars, grid headers and menus outside dashboards, and desktop draws another shape of the same symbol. Replacing the desktop asset changes every desktop surface, which is outside the dashboard lanes; the size and colour of the dashboard contexts are still enforced by visual-metrics.json."
     },
     {
       "name": "field-type-text",
       "role": "Text property icon in the grid header inside grid widgets (the \"Name\" column of the user report).",
       "notion": "Text properties show a paragraph-lines glyph; the title property shows \"Aa\" (live/mktbudget-02-light-table-widget.png).",
       "scope": "app-wide",
-      "contexts": [{ "parityId": "dash-widget-grid-header-cell__icon", "size": 16, "wave": 2 }],
+      "contexts": [{ "parityId": "dash-widget-grid-header-cell__icon", "size": 16, "wave": 2, "status": "waived" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/database/text.svg",
@@ -768,14 +804,15 @@
       "currentMatchesCanonical": { "web": true, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": false },
       "wave": 2,
-      "status": "pending"
+      "status": "waived",
+      "waiver": "OD-3 (open product decision): this app-wide glyph also draws tabs, sidebars, grid headers and menus outside dashboards, and desktop draws another shape of the same symbol. Replacing the desktop asset changes every desktop surface, which is outside the dashboard lanes; the size and colour of the dashboard contexts are still enforced by visual-metrics.json."
     },
     {
       "name": "field-type-single-select",
       "role": "Single-select property icon in the grid header inside grid widgets.",
       "notion": "Circle with a down chevron.",
       "scope": "app-wide",
-      "contexts": [{ "parityId": "dash-widget-grid-header-cell__icon", "size": 16, "wave": 2 }],
+      "contexts": [{ "parityId": "dash-widget-grid-header-cell__icon", "size": 16, "wave": 2, "status": "enforced" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/database/single_select.svg",
@@ -790,14 +827,14 @@
       },
       "desktop": {
         "current": {
-          "symbol": "FlowySvgs.single_select_s",
-          "asset": "resources/flowy_icons/16x/single_select.svg",
-          "sha256": "7f610a581d97da1083eca3d757c7ebb4df917bfc2a184438aecd255d1f08a380",
+          "symbol": "FlowySvgs.type_selection_s",
+          "asset": "resources/flowy_icons/16x/type_selection.svg",
+          "sha256": "16403e153d62108d310778dfbf452b60f373db3f2f2ab52397f51cf2afd9da4b",
           "usages": ["appflowy_flutter/lib/util/field_type_extension.dart"]
         },
         "target": {
-          "symbol": "FlowySvgs.single_select_m",
-          "asset": "resources/flowy_icons/20x/single_select.svg",
+          "symbol": "FlowySvgs.type_selection_s",
+          "asset": "resources/flowy_icons/16x/type_selection.svg",
           "exists": true,
           "sha256": "16403e153d62108d310778dfbf452b60f373db3f2f2ab52397f51cf2afd9da4b"
         }
@@ -805,13 +842,13 @@
       "canonical": {
         "source": "web:src/assets/icons/database/single_select.svg",
         "sha256": "16403e153d62108d310778dfbf452b60f373db3f2f2ab52397f51cf2afd9da4b",
-        "reason": "Desktop already has the web glyph as 20x/single_select.svg (and 16x/type_selection.svg); field_type_extension.dart picks it at 16px."
+        "reason": "Desktop already draws the web glyph: field_type_extension.dart picks 16x/type_selection.svg, which is the same drawing as web database/single_select.svg."
       },
-      "currentlyIdentical": false,
-      "currentMatchesCanonical": { "web": true, "desktop": false },
+      "currentlyIdentical": true,
+      "currentMatchesCanonical": { "web": true, "desktop": true },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "field-type-number",
@@ -819,8 +856,8 @@
       "notion": "\"#\" (spec §8.1).",
       "scope": "app-wide",
       "contexts": [
-        { "parityId": "dash-widget-grid-header-cell__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-chart-type-button-number__icon", "size": 20, "wave": 3 }
+        { "parityId": "dash-widget-grid-header-cell__icon", "size": 16, "wave": 2, "status": "enforced" },
+        { "parityId": "dash-chart-type-button-number__icon", "size": 20, "wave": 3, "status": "pending" }
       ],
       "web": {
         "current": {
@@ -857,14 +894,14 @@
       "currentMatchesCanonical": { "web": true, "desktop": true },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "row-move-up",
       "role": "Edit-mode row control \"Move up\" (left gutter).",
       "notion": "Arrow with a stem, pointing up, in a light-blue pill (official/crop-edit-mode-row-move-up-down-control.png).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-row-control-move-up__icon", "size": 16, "wave": 3 }],
+      "contexts": [{ "parityId": "dash-row-control-move-up__icon", "size": 16, "wave": 3, "status": "pending" }],
       "web": {
         "current": null,
         "currentNote": "no row move control today (WidgetMenu has \"Move up\" with arrow_up.svg; WP04 removes it)",
@@ -905,7 +942,7 @@
       "role": "Edit-mode row control \"Move down\" (left gutter).",
       "notion": "Arrow with a stem, pointing down (official/crop-edit-mode-widget-chrome-zoom.png).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-row-control-move-down__icon", "size": 16, "wave": 3 }],
+      "contexts": [{ "parityId": "dash-row-control-move-down__icon", "size": 16, "wave": 3, "status": "pending" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/arrow_down.svg",
@@ -952,7 +989,7 @@
       "role": "Widget menu \"Move left\".",
       "notion": "Stemmed arrow left (spec §7.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-move-left__icon", "size": 16, "wave": 3 }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-move-left__icon", "size": 16, "wave": 3, "status": "pending" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/arrow_left.svg",
@@ -996,7 +1033,7 @@
       "role": "Widget menu \"Move right\".",
       "notion": "Stemmed arrow right (spec §7.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-move-right__icon", "size": 16, "wave": 3 }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-move-right__icon", "size": 16, "wave": 3, "status": "pending" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/arrow_right.svg",
@@ -1040,7 +1077,7 @@
       "role": "Widget menu \"Move to row\".",
       "notion": "Up-down arrow (spec §7.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-move-to-row__icon", "size": 16, "wave": 3 }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-move-to-row__icon", "size": 16, "wave": 3, "status": "pending" }],
       "web": {
         "current": null,
         "target": { "asset": "src/assets/icons/dashboard_move_to_row.svg", "exists": false, "sha256": null }
@@ -1070,7 +1107,7 @@
       "role": "Widget menu \"Create new row above\".",
       "notion": "Arrow up to a bar (spec §7.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-row-above__icon", "size": 16, "wave": 3 }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-row-above__icon", "size": 16, "wave": 3, "status": "pending" }],
       "web": {
         "current": null,
         "target": { "asset": "src/assets/icons/dashboard_row_above.svg", "exists": false, "sha256": null }
@@ -1096,7 +1133,7 @@
       "role": "Widget menu \"Create new row below\".",
       "notion": "Arrow down to a bar (spec §7.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-row-below__icon", "size": 16, "wave": 3 }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-row-below__icon", "size": 16, "wave": 3, "status": "pending" }],
       "web": {
         "current": null,
         "target": { "asset": "src/assets/icons/dashboard_row_below.svg", "exists": false, "sha256": null }
@@ -1122,7 +1159,7 @@
       "role": "Read-only widget menu \"View data source\".",
       "notion": "Arrow pointing up and right (live/mktkpi-07-light-widget-options-menu.png).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-view-data-source__icon", "size": 16, "wave": 3 }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-view-data-source__icon", "size": 16, "wave": 3, "status": "pending" }],
       "web": { "current": null, "target": { "asset": "src/assets/icons/arrow_up_right.svg", "exists": false, "sha256": null } },
       "desktop": {
         "current": null,
@@ -1145,7 +1182,7 @@
       "role": "Widget menu \"Duplicate\".",
       "notion": "Two overlapping rounded squares, no plus (spec §7.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-duplicate__icon", "size": 16, "wave": 3 }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-duplicate__icon", "size": 16, "wave": 3, "status": "pending" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/duplicate.svg",
@@ -1188,7 +1225,7 @@
       "role": "Widget menu \"Delete\"; placeholder \"Remove\".",
       "notion": "Trash can, neutral colour.",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-delete__icon", "size": 16, "wave": 3 }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-delete__icon", "size": 16, "wave": 3, "status": "pending" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/delete.svg",
@@ -1235,12 +1272,12 @@
       "notion": "Thin plus (official/crop-edit-mode-row-add-widget-plus.png).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-row-control-add__icon", "size": 16, "wave": 3 },
-        { "parityId": "dash-grid-add-row__icon", "size": 16, "wave": 3 },
-        { "parityId": "dash-global-filter-add__icon", "size": 16, "wave": 3 },
-        { "parityId": "dash-empty-new-view__icon", "size": 16, "wave": 4 },
-        { "parityId": "dash-widget-tool-new__icon", "size": 16, "wave": 4 },
-        { "parityId": "dash-widget-grid-new-row__icon", "size": 16, "wave": 4 }
+        { "parityId": "dash-row-control-add__icon", "size": 16, "wave": 3, "status": "pending" },
+        { "parityId": "dash-grid-add-row__icon", "size": 16, "wave": 3, "status": "pending" },
+        { "parityId": "dash-global-filter-add__icon", "size": 16, "wave": 3, "status": "pending" },
+        { "parityId": "dash-empty-new-view__icon", "size": 16, "wave": 4, "status": "pending" },
+        { "parityId": "dash-widget-tool-new__icon", "size": 16, "wave": 4, "status": "pending" },
+        { "parityId": "dash-widget-grid-new-row__icon", "size": 16, "wave": 4, "status": "pending" }
       ],
       "web": {
         "current": {
@@ -1293,8 +1330,8 @@
       "notion": "Six dots in two columns.",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-widget-filters-popover-rule__drag-icon", "size": 16, "wave": 3 },
-        { "parityId": "dash-number-color-rule__drag-icon", "size": 16, "wave": 3 }
+        { "parityId": "dash-widget-filters-popover-rule__drag-icon", "size": 16, "wave": 3, "status": "pending" },
+        { "parityId": "dash-number-color-rule__drag-icon", "size": 16, "wave": 3, "status": "pending" }
       ],
       "web": {
         "current": {
@@ -1339,10 +1376,10 @@
       "notion": "Small x in a round button (spec §7.2, §8.8).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-widget-settings-close__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-filters-popover-close__icon", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-picker-close__icon", "size": 16, "wave": 4 },
-        { "parityId": "dash-drilldown-dismiss__icon", "size": 16, "wave": 5 }
+        { "parityId": "dash-widget-settings-close__icon", "size": 16, "wave": 2, "status": "enforced" },
+        { "parityId": "dash-widget-filters-popover-close__icon", "size": 16, "wave": 2, "status": "enforced" },
+        { "parityId": "dash-widget-picker-close__icon", "size": 16, "wave": 4, "status": "pending" },
+        { "parityId": "dash-drilldown-dismiss__icon", "size": 16, "wave": 5, "status": "pending" }
       ],
       "web": {
         "current": {
@@ -1372,8 +1409,8 @@
         "target": {
           "symbol": "FlowySvgs.dashboard_close_s",
           "asset": "resources/flowy_icons/16x/dashboard_close.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "adf8e4166f4227d77a473b270e7227dce9c6b23078442cbbdc988b816ffd9fcb",
           "createFrom": "web:src/assets/icons/close.svg"
         }
       },
@@ -1384,9 +1421,9 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": true, "desktop": false },
-      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "chevron-down",
@@ -1394,8 +1431,8 @@
       "notion": "Small down chevron (spec §9).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-global-filter-pill__chevron", "size": 12, "wave": 3 },
-        { "parityId": "dash-widget-tool-new__chevron", "size": 16, "wave": 4 }
+        { "parityId": "dash-global-filter-pill__chevron", "size": 12, "wave": 3, "status": "pending" },
+        { "parityId": "dash-widget-tool-new__chevron", "size": 16, "wave": 4, "status": "pending" }
       ],
       "web": {
         "current": {
@@ -1443,9 +1480,9 @@
       "notion": "Left chevron.",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-chart-panel-back__icon", "size": 16, "wave": 3 },
-        { "parityId": "dash-global-filter-back__icon", "size": 16, "wave": 3 },
-        { "parityId": "dash-widget-picker-back__icon", "size": 16, "wave": 4 }
+        { "parityId": "dash-chart-panel-back__icon", "size": 16, "wave": 3, "status": "pending" },
+        { "parityId": "dash-global-filter-back__icon", "size": 16, "wave": 3, "status": "pending" },
+        { "parityId": "dash-widget-picker-back__icon", "size": 16, "wave": 4, "status": "pending" }
       ],
       "web": {
         "current": {
@@ -1494,9 +1531,9 @@
       "notion": "Right chevron.",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-widget-settings-row__chevron", "size": 16, "wave": 2 },
-        { "parityId": "dash-widget-menu-item-move-to-row__chevron", "size": 16, "wave": 3 },
-        { "parityId": "dash-chart-panel-row__chevron", "size": 16, "wave": 3 }
+        { "parityId": "dash-widget-settings-row__chevron", "size": 16, "wave": 2, "status": "enforced" },
+        { "parityId": "dash-widget-menu-item-move-to-row__chevron", "size": 16, "wave": 3, "status": "pending" },
+        { "parityId": "dash-chart-panel-row__chevron", "size": 16, "wave": 3, "status": "pending" }
       ],
       "web": {
         "current": {
@@ -1520,8 +1557,8 @@
         "target": {
           "symbol": "FlowySvgs.dashboard_chevron_right_s",
           "asset": "resources/flowy_icons/16x/dashboard_chevron_right.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "87d38dadbe8f1b8710673facb284dc3ac9fa59706bec058f42052a7e9ad8ba30",
           "createFrom": "web:src/assets/icons/alt_arrow_right.svg"
         }
       },
@@ -1532,16 +1569,16 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": true, "desktop": false },
-      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "chevron-up",
       "role": "Chart panel \"What to show\" row icon.",
       "notion": "Up arrow glyph on the axis rows (spec §8.2).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-chart-panel-row-what-to-show__icon", "size": 16, "wave": 3 }],
+      "contexts": [{ "parityId": "dash-chart-panel-row-what-to-show__icon", "size": 16, "wave": 3, "status": "pending" }],
       "web": {
         "current": null,
         "target": {
@@ -1576,8 +1613,8 @@
       "notion": "Five square outlined buttons: bars, horizontal bars, line, ring, # (spec §8.1).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-chart-type-button-bar__icon", "size": 20, "wave": 3 },
-        { "parityId": "dash-empty-type-icon-bar", "size": 24, "wave": 4 }
+        { "parityId": "dash-chart-type-button-bar__icon", "size": 20, "wave": 3, "status": "pending" },
+        { "parityId": "dash-empty-type-icon-bar", "size": 24, "wave": 4, "status": "pending" }
       ],
       "web": {
         "current": null,
@@ -1619,7 +1656,7 @@
       "role": "\"Horizontal bar\" button of the chart type row (chart settings panel); chart settings only.",
       "notion": "Five square outlined buttons: bars, horizontal bars, line, ring, # (spec §8.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-chart-type-button-horizontal-bar__icon", "size": 20, "wave": 3 }],
+      "contexts": [{ "parityId": "dash-chart-type-button-horizontal-bar__icon", "size": 20, "wave": 3, "status": "pending" }],
       "web": {
         "current": null,
         "currentNote": "the web chart type menu is text-only today",
@@ -1661,8 +1698,8 @@
       "notion": "Five square outlined buttons: bars, horizontal bars, line, ring, # (spec §8.1).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-chart-type-button-line__icon", "size": 20, "wave": 3 },
-        { "parityId": "dash-empty-type-icon-line", "size": 24, "wave": 4 }
+        { "parityId": "dash-chart-type-button-line__icon", "size": 20, "wave": 3, "status": "pending" },
+        { "parityId": "dash-empty-type-icon-line", "size": 24, "wave": 4, "status": "pending" }
       ],
       "web": {
         "current": null,
@@ -1705,8 +1742,8 @@
       "notion": "Five square outlined buttons: bars, horizontal bars, line, ring, # (spec §8.1).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-chart-type-button-donut__icon", "size": 20, "wave": 3 },
-        { "parityId": "dash-empty-type-icon-donut", "size": 24, "wave": 4 }
+        { "parityId": "dash-chart-type-button-donut__icon", "size": 20, "wave": 3, "status": "pending" },
+        { "parityId": "dash-empty-type-icon-donut", "size": 24, "wave": 4, "status": "pending" }
       ],
       "web": {
         "current": null,
@@ -1749,8 +1786,14 @@
       "notion": "Five faint icons: list, vertical bar, donut, table, line (spec §10.3).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-empty-type-icon-list", "size": 24, "wave": 4 },
-        { "parityId": "dash-empty-type-icon-table", "size": 24, "wave": 4, "note": "the table glyph is layout-grid" }
+        { "parityId": "dash-empty-type-icon-list", "size": 24, "wave": 4, "status": "pending" },
+        {
+          "parityId": "dash-empty-type-icon-table",
+          "size": 24,
+          "wave": 4,
+          "note": "the table glyph is layout-grid",
+          "status": "pending"
+        }
       ],
       "web": {
         "current": null,

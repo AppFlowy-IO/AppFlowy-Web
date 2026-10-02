@@ -243,6 +243,7 @@ function ControlsMenu({
     createDatabaseView,
     deletePage,
     duplicatePage,
+    updatePage,
   } = useEditorContext();
   const editor = useSlateStatic() as YjsEditor;
   const onlySingleBlockSelected = selectedBlockIds?.length === 1;
@@ -365,8 +366,10 @@ function ControlsMenu({
                 scheduleDeferredCleanup,
               });
             } else if (layout === ViewLayout.Dashboard) {
+              // The copy keeps the source's widgets, with its own copies of the views they own.
               response = await createLinkedDatabaseDashboardView({
                 requestViewId: parentId,
+                sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
                 payload: {
                   parent_view_id: parentId,
                   database_id: databaseId,
@@ -375,6 +378,9 @@ function ControlsMenu({
                 },
                 createDatabaseView,
                 loadView,
+                loadViewMeta,
+                updatePage,
+                deletePage,
                 bindViewSync,
                 scheduleDeferredCleanup,
               });
@@ -535,6 +541,7 @@ function ControlsMenu({
       loadViewMeta,
       scheduleDeferredCleanup,
       t,
+      updatePage,
       workspaceId,
     ]
   );

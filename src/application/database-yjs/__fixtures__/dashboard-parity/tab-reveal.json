@@ -1,0 +1,22 @@
+{
+  "fixture": "tab-reveal",
+  "version": 1,
+  "encoding": {
+    "tabRevealScrollOffset": "tabRevealScrollOffset({scrollOffset, viewportExtent, maxScrollExtent, itemStart, itemExtent, edgePadding}) -> the tab strip's new scroll offset. edgePadding is 16 when absent. A tab wider than the viewport minus both paddings aligns its start; a tab cut off at the start aligns its start; a tab cut off at the end aligns its end; a visible tab keeps the offset. The result is clamped to [0, maxScrollExtent].",
+    "units": "Logical pixels along the strip's scroll axis. itemStart is measured from the start of the scrollable content."
+  },
+  "cases": [
+    { "name": "a visible tab keeps the offset", "input": { "scrollOffset": 0, "viewportExtent": 400, "maxScrollExtent": 600, "itemStart": 100, "itemExtent": 80 }, "expected": 0 },
+    { "name": "a visible tab in a scrolled strip keeps the offset", "input": { "scrollOffset": 120, "viewportExtent": 400, "maxScrollExtent": 600, "itemStart": 300, "itemExtent": 80 }, "expected": 120 },
+    { "name": "a tab left of the viewport aligns its start", "input": { "scrollOffset": 300, "viewportExtent": 400, "maxScrollExtent": 600, "itemStart": 200, "itemExtent": 80 }, "expected": 184 },
+    { "name": "a tab inside the start padding aligns its start", "input": { "scrollOffset": 300, "viewportExtent": 400, "maxScrollExtent": 600, "itemStart": 310, "itemExtent": 80 }, "expected": 294 },
+    { "name": "a tab right of the viewport aligns its end", "input": { "scrollOffset": 0, "viewportExtent": 400, "maxScrollExtent": 600, "itemStart": 500, "itemExtent": 80 }, "expected": 196 },
+    { "name": "a tab cut off at the end aligns its end", "input": { "scrollOffset": 0, "viewportExtent": 400, "maxScrollExtent": 600, "itemStart": 350, "itemExtent": 80 }, "expected": 46 },
+    { "name": "a tab wider than the viewport aligns its start", "input": { "scrollOffset": 0, "viewportExtent": 100, "maxScrollExtent": 600, "itemStart": 300, "itemExtent": 90 }, "expected": 284 },
+    { "name": "a tab exactly as wide as the viewport minus the paddings aligns its start", "input": { "scrollOffset": 0, "viewportExtent": 132, "maxScrollExtent": 600, "itemStart": 300, "itemExtent": 100 }, "expected": 284 },
+    { "name": "the first tab clamps at 0", "input": { "scrollOffset": 50, "viewportExtent": 400, "maxScrollExtent": 600, "itemStart": 8, "itemExtent": 80 }, "expected": 0 },
+    { "name": "the last tab clamps at the maximum", "input": { "scrollOffset": 0, "viewportExtent": 400, "maxScrollExtent": 600, "itemStart": 950, "itemExtent": 60 }, "expected": 600 },
+    { "name": "a strip that does not scroll stays at 0", "input": { "scrollOffset": 0, "viewportExtent": 400, "maxScrollExtent": 0, "itemStart": 300, "itemExtent": 80 }, "expected": 0 },
+    { "name": "an explicit edge padding replaces the default", "input": { "scrollOffset": 0, "viewportExtent": 400, "maxScrollExtent": 600, "itemStart": 500, "itemExtent": 80, "edgePadding": 0 }, "expected": 180 }
+  ]
+}

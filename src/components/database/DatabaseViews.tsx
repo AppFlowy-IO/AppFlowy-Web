@@ -21,7 +21,6 @@ import {
 } from '@/components/database/components/conditions/context';
 import { DatabaseSearchProvider } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { DatabaseTabs } from '@/components/database/components/tabs';
-import { WIDGET_CONDITIONS_BAR_HEIGHT, WIDGET_MIN_VIEWPORT_HEIGHT } from '@/components/database/dashboard/constants';
 import { DashboardProvider } from '@/components/database/dashboard/DashboardContext';
 import { useDashboardModeStore } from '@/components/database/dashboard/hooks/useDashboardModeStore';
 import { HistoricalDashboardPlaceholder } from '@/components/database/dashboard/HistoricalDashboardPlaceholder';
@@ -213,18 +212,57 @@ function DatabaseViews({
   }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder, isDashboardWidget, persistViewOrder, viewIds]);
 
   const [conditionsExpanded, setConditionsExpanded] = useState<boolean>(false);
+  // A dashboard widget has no conditions bar: its filter and sort tools open
+  // popovers instead, one at a time. The conditions context maps the bar's
+  // "expand" and the sort / advanced menus onto them, so every entry point
+  // that used to reveal the bar (column header "Filter" and "Sort", a new
+  // rule) opens the matching popover.
+  const [conditionsPopover, setConditionsPopover] = useState<'filters' | 'sorts' | null>(null);
   const toggleExpanded = useCallback(() => {
+    if (isDashboardWidget) {
+      setConditionsPopover((current) => (current === 'filters' ? null : 'filters'));
+      return;
+    }
+
     setConditionsExpanded((prev) => !prev);
-  }, []);
-  const setExpanded = useCallback((expanded: boolean) => {
-    setConditionsExpanded(expanded);
-  }, []);
+  }, [isDashboardWidget]);
+  const setExpanded = useCallback(
+    (expanded: boolean) => {
+      if (isDashboardWidget) {
+        setConditionsPopover((current) => (expanded ? 'filters' : current === 'filters' ? null : current));
+        return;
+      }
+
+      setConditionsExpanded(expanded);
+    },
+    [isDashboardWidget]
+  );
   const [openFilterId, setOpenFilterId] = useState<string>();
 
   // Advanced filter mode state
   const [isAdvancedMode, setAdvancedMode] = useState(false);
-  const [advancedPanelOpen, setAdvancedPanelOpen] = useState(false);
-  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [advancedPanelOpen, setAdvancedPanelOpenState] = useState(false);
+  const [sortMenuOpenState, setSortMenuOpenState] = useState(false);
+  const setAdvancedPanelOpen = useCallback(
+    (open: boolean) => {
+      setAdvancedPanelOpenState(open);
+      if (isDashboardWidget && open) setConditionsPopover('filters');
+    },
+    [isDashboardWidget]
+  );
+  const setSortMenuOpen = useCallback(
+    (open: boolean) => {
+      if (isDashboardWidget) {
+        setConditionsPopover((current) => (open ? 'sorts' : current === 'sorts' ? null : current));
+        return;
+      }
+
+      setSortMenuOpenState(open);
+    },
+    [isDashboardWidget]
+  );
+  const expanded = isDashboardWidget ? conditionsPopover === 'filters' : conditionsExpanded;
+  const sortMenuOpen = isDashboardWidget ? conditionsPopover === 'sorts' : sortMenuOpenState;
 
   // The active view as this database edits it: in a View-mode dashboard
   // widget that is the viewer's overlay, whose filters may differ from the
@@ -242,11 +280,12 @@ function DatabaseViews({
       return;
     }
 
-    // Auto-expand when filters exist (from desktop sync or any source)
-    setConditionsExpanded(true);
+    // Auto-expand when filters exist (from desktop sync or any source); a
+    // widget never shows the bar, nor opens its filters by itself.
+    if (!isDashboardWidget) setConditionsExpanded(true);
 
     setAdvancedMode(hasAdvancedFilterRoot(filters));
-  }, [conditionsView]);
+  }, [conditionsView, isDashboardWidget]);
 
   // Get active view from selector state, or directly from Yjs if not yet in state
   // This handles the race condition when a new view is created but selector hasn't updated yet
@@ -406,12 +445,8 @@ function DatabaseViews({
         return null;
     }
   }, [activeViewId, effectiveLayout, isDashboardWidget, isHistory]);
-  // A dashboard widget has a fixed slot: when its filter / sort row is open
-  // the viewport gives that row its height instead of overflowing the card.
-  const viewportHeight =
-    isDashboardWidget && conditionsExpanded && fixedHeight !== undefined
-      ? Math.max(WIDGET_MIN_VIEWPORT_HEIGHT, fixedHeight - WIDGET_CONDITIONS_BAR_HEIGHT)
-      : fixedHeight;
+  // A dashboard widget's card is its fixed slot: it has no conditions bar to make room for.
+  const viewportHeight = fixedHeight;
   const shouldUseFixedViewport = shouldUseFixedDatabaseViewport({
     embeddedHeight: viewportHeight,
     isDocumentBlock,
@@ -441,7 +476,7 @@ function DatabaseViews({
   );
   const databaseConditionsValue = useMemo(
     () => ({
-      expanded: conditionsExpanded,
+      expanded,
       toggleExpanded,
       setExpanded,
       openFilterId,
@@ -454,7 +489,7 @@ function DatabaseViews({
       setSortMenuOpen,
     }),
     [
-      conditionsExpanded,
+      expanded,
       toggleExpanded,
       setExpanded,
       openFilterId,
@@ -522,7 +557,6 @@ function DatabaseViews({
                 <WidgetHeader />
               </Suspense>
               <WidgetBody>
-                <DatabaseConditionsPanel />
                 <DatabaseContext.Provider value={viewportContext}>{viewport}</DatabaseContext.Provider>
               </WidgetBody>
             </>

@@ -196,15 +196,11 @@ function appVariables(theme: Theme) {
 }
 
 /**
- * Known web/desktop divergence: the legacy `src/styles/variables/*.variables.css`
- * (loaded by `template.css`, after the semantic themes) still define
- * `--icon-secondary: #59647a` in both themes, so web tool icons are not the
- * `resolved` color desktop draws. Reported by WP01; remove the entry together
- * with that override (or with a tokens.json change), and never add one.
+ * Known web/desktop divergences in the whole app cascade, by token. Keep it
+ * empty: the tool icon used to resolve to the legacy `--icon-secondary`
+ * (#59647A) and is a literal since addendum A7. Never add an entry.
  */
-const WEB_CASCADE_DIVERGENCES: Record<string, Record<Theme, string>> = {
-  toolIcon: { light: '#59647A', dark: '#59647A' },
-};
+const WEB_CASCADE_DIVERGENCES: Record<string, Record<Theme, string>> = {};
 
 /** The value a token's variable must be declared with in `theme`. */
 function expectedExpression(token: ColorToken, theme: Theme): string {

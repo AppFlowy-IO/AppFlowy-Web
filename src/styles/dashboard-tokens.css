@@ -20,7 +20,8 @@
   --dash-card-bg: var(--background-primary);
   --dash-card-ring: rgba(31, 35, 41, 0.08);
   --dash-title: var(--text-secondary);
-  --dash-tool-icon: var(--icon-secondary);
+  /* A literal, not `--icon-secondary`: the legacy variables override that one app-wide. */
+  --dash-tool-icon: #6f748c;
   --dash-hover-fill: var(--fill-content-hover);
   --dash-unsaved-dot: var(--icon-warning-thick);
   --dash-save-bg: var(--fill-warning-light);
@@ -76,6 +77,7 @@
   --dash-edit-tint: color-mix(in srgb, var(--fill-theme-thick) 8%, transparent);
   --dash-edit-ring: color-mix(in srgb, var(--fill-theme-thick) 25%, transparent);
   --dash-card-ring: rgba(255, 255, 255, 0.08);
+  --dash-tool-icon: #b5bbd3;
   --chart-empty: rgba(255, 255, 255, 0.1);
   --chart-number-gray: #9b9b9b;
   --chart-number-brown: #ba856f;

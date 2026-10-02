@@ -42,22 +42,25 @@ function widgets(...widths: number[]): DashboardWidget[] {
   return widths.map((width, index) => ({ id: `w${index}`, viewId: `v${index}`, databaseId: 'db', width }));
 }
 
-// A 1184 px row with 16 px gaps: one column pitch is exactly 100 px.
-const ROW_WIDTH = 1184;
+// A 1824 px track with 12 px gaps: with three widgets one column pitch is
+// exactly 150 px, and the resize minimum is 2 columns (240 px is 1.6 columns).
+const ROW_WIDTH = 1824;
 
 function WidthProbe({
   items,
   enabled = true,
+  rowWidth = ROW_WIDTH,
   onCommit,
 }: {
   items: DashboardWidget[];
   enabled?: boolean;
-  onCommit: (index: number, delta: number) => void;
+  rowWidth?: number;
+  onCommit: (index: number, delta: number, minColumns: number) => void;
 }) {
   const { preview, startResize, handleKeyDown } = useWidthResize({
     widgets: items,
     enabled,
-    getRowElement: () => ({ getBoundingClientRect: () => ({ width: ROW_WIDTH }) } as HTMLElement),
+    getRowElement: () => ({ getBoundingClientRect: () => ({ width: rowWidth }) } as HTMLElement),
     onCommit,
   });
 
@@ -140,16 +143,21 @@ afterEach(() => {
 describe('applyWidthPreview', () => {
   it('returns the stored widths without a preview', () => {
     expect(applyWidthPreview(widgets(6, 3, 3), null)).toEqual([6, 3, 3]);
-    expect(applyWidthPreview(widgets(6, 3, 3), { index: 0, delta: 0 })).toEqual([6, 3, 3]);
+    expect(applyWidthPreview(widgets(6, 3, 3), { index: 0, delta: 0, minColumns: 1 })).toEqual([6, 3, 3]);
   });
 
   it('moves columns across the previewed boundary only', () => {
-    expect(applyWidthPreview(widgets(6, 3, 3), { index: 0, delta: -2 })).toEqual([4, 5, 3]);
-    expect(applyWidthPreview(widgets(6, 3, 3), { index: 1, delta: 1 })).toEqual([6, 4, 2]);
+    expect(applyWidthPreview(widgets(6, 3, 3), { index: 0, delta: -2, minColumns: 1 })).toEqual([4, 5, 3]);
+    expect(applyWidthPreview(widgets(6, 3, 3), { index: 1, delta: 1, minColumns: 1 })).toEqual([6, 4, 2]);
   });
 
   it('clamps a stale preview to the current widths', () => {
-    expect(applyWidthPreview(widgets(6, 3, 3), { index: 1, delta: 5 })).toEqual([6, 5, 1]);
+    expect(applyWidthPreview(widgets(6, 3, 3), { index: 1, delta: 5, minColumns: 1 })).toEqual([6, 5, 1]);
+  });
+
+  it('keeps both neighbours at the preview minimum', () => {
+    expect(applyWidthPreview(widgets(6, 3, 3), { index: 1, delta: 5, minColumns: 3 })).toEqual([6, 3, 3]);
+    expect(applyWidthPreview(widgets(4, 4, 4), { index: 0, delta: 2, minColumns: 3 })).toEqual([5, 3, 4]);
   });
 });
 
@@ -163,17 +171,17 @@ describe('useWidthResize', () => {
     expect(document.body.style.cursor).toBe('col-resize');
     movePointer(540);
     expect(screen.getByTestId('widths').textContent).toBe('4,4,4');
-    movePointer(700);
+    movePointer(800);
     expect(screen.getByTestId('widths').textContent).toBe('6,2,4');
-    // Beyond the neighbour's last column the preview stops.
-    movePointer(1200);
-    expect(screen.getByTestId('widths').textContent).toBe('7,1,4');
-    movePointer(700);
+    // The neighbour keeps its 2 minimum columns: +6 stops at +2.
+    movePointer(1400);
+    expect(screen.getByTestId('widths').textContent).toBe('6,2,4');
+    movePointer(800);
     expect(onCommit).not.toHaveBeenCalled();
 
     releasePointer();
     expect(onCommit).toHaveBeenCalledTimes(1);
-    expect(onCommit).toHaveBeenCalledWith(0, 2);
+    expect(onCommit).toHaveBeenCalledWith(0, 2, 2);
     expect(screen.getByTestId('widths').textContent).toBe('4,4,4');
     expect(document.body.style.cursor).toBe('');
   });
@@ -199,7 +207,8 @@ describe('useWidthResize', () => {
 
     render(<WidthProbe items={widgets(6, 6)} onCommit={onCommit} />);
     pressHandle(500);
-    movePointer(300);
+    // Two widgets: one column pitch is 151 px.
+    movePointer(198);
     expect(screen.getByTestId('widths').textContent).toBe('4,8');
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -243,20 +252,24 @@ describe('useWidthResize', () => {
     const { rerender } = render(<WidthProbe items={widgets(4, 4, 4)} onCommit={onCommit} />);
 
     pressHandle(500);
-    movePointer(700);
+    movePointer(800);
     expect(screen.getByTestId('widths').textContent).toBe('6,2,4');
 
-    // The grabbed w0|w1 pair is now the second boundary of the row.
+    // The grabbed w0|w1 pair is now the second boundary of the row; the stale
+    // +2 is clamped to the 2-column minimum of the new neighbour.
     const inserted = [{ id: 'new', viewId: 'new-view', databaseId: 'db', width: 3 }, ...widgets(3, 3, 3)];
 
     rerender(<WidthProbe items={inserted} onCommit={onCommit} />);
-    expect(screen.getByTestId('widths').textContent).toBe('3,5,1,3');
+    expect(screen.getByTestId('widths').textContent).toBe('3,4,2,3');
+    // Four widgets: the pitch is 149 px, so +20 px is no column and +100 px is one.
+    movePointer(520);
+    expect(screen.getByTestId('widths').textContent).toBe('3,3,3,3');
     movePointer(600);
     expect(screen.getByTestId('widths').textContent).toBe('3,4,2,3');
 
     releasePointer();
     expect(onCommit).toHaveBeenCalledTimes(1);
-    expect(onCommit).toHaveBeenCalledWith(1, 1);
+    expect(onCommit).toHaveBeenCalledWith(1, 1, 2);
   });
 
   it('cancels the drag when a collaborator separates the grabbed pair', () => {
@@ -286,14 +299,40 @@ describe('useWidthResize', () => {
     fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowLeft' });
     fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowUp' });
     expect(onCommit.mock.calls).toEqual([
-      [0, 1],
-      [0, -1],
+      [0, 1, 2],
+      [0, -1, 2],
     ]);
 
+    // At the minimum the key does nothing.
     onCommit.mockClear();
-    rerender(<WidthProbe items={widgets(11, 1)} onCommit={onCommit} />);
+    rerender(<WidthProbe items={widgets(10, 2)} onCommit={onCommit} />);
     fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowRight' });
     expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it('keeps both neighbours at least 240 px wide on a common row (minimum 3 columns)', () => {
+    const onCommit = jest.fn();
+
+    // 1224 px, three widgets: the pitch is 100 px and 240 px is 2.4 columns.
+    render(<WidthProbe items={widgets(4, 4, 4)} onCommit={onCommit} rowWidth={1224} />);
+    pressHandle(500);
+    movePointer(700);
+    expect(screen.getByTestId('widths').textContent).toBe('5,3,4');
+    releasePointer();
+
+    expect(onCommit).toHaveBeenCalledWith(0, 1, 3);
+  });
+
+  it('allows a 2-column minimum on a wide row', () => {
+    const onCommit = jest.fn();
+
+    render(<WidthProbe items={widgets(4, 4, 4)} onCommit={onCommit} />);
+    pressHandle(500);
+    movePointer(950);
+    expect(screen.getByTestId('widths').textContent).toBe('6,2,4');
+    releasePointer();
+
+    expect(onCommit).toHaveBeenCalledWith(0, 2, 2);
   });
 });
 
@@ -353,6 +392,35 @@ describe('useRowHeightResize', () => {
 
     rerender(<HeightProbe height={420} onCommit={onCommit} />);
     expect(rowHeightVariable()).toBe('420px');
+  });
+
+  it('snaps the preview to 20 px and commits the snapped height', () => {
+    const onCommit = jest.fn();
+
+    render(<HeightProbe height={360} onCommit={onCommit} />);
+    pressHandle(0, 100);
+    movePointer(0, 150);
+    expect(screen.getByTestId('height').textContent).toBe('420');
+    expect(rowHeightVariable()).toBe('420px');
+    movePointer(0, 211);
+    expect(screen.getByTestId('height').textContent).toBe('480');
+    releasePointer();
+
+    expect(onCommit).toHaveBeenCalledWith(480);
+  });
+
+  it('does not commit a drag that snaps back to the start height', () => {
+    const onCommit = jest.fn();
+
+    render(<HeightProbe height={360} onCommit={onCommit} />);
+    pressHandle(0, 100);
+    movePointer(0, 125);
+    expect(screen.getByTestId('height').textContent).toBe('380');
+    movePointer(0, 109);
+    expect(screen.getByTestId('height').textContent).toBe('360');
+    releasePointer();
+
+    expect(onCommit).not.toHaveBeenCalled();
   });
 
   it('clamps the preview to the supported range', () => {

@@ -222,6 +222,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         ref={parentRef}
+        data-parity-id='dash-widget-grid-scrollbar'
         className={cn(
           'appflowy-custom-scroller appflowy-hidden-horizontal-scrollbar',
           isDocumentBlock && 'min-h-0',

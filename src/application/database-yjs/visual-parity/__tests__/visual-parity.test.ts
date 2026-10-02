@@ -264,11 +264,29 @@ describe('the probe measures exactly what the comparator plans', () => {
 
   const key = (...parts: unknown[]) => parts.map((part) => (part === null || part === undefined ? '-' : String(part))).join('|');
 
+  interface PlanRow {
+    check: string;
+    scene: string;
+    when: string;
+    instance: string | null;
+    status: string;
+    clientWaivers?: { web?: string; desktop?: string; cross?: string };
+  }
+
   it.each(PARITY_STATES)('in %s', (state) => {
-    const plan = JSON.parse(readFileSync(join(dir, `plan-${state}.json`), 'utf8')) as {
-      measurements: { check: string; variant: number | null; scene: string; when: string; instance: string | null; metric: string }[];
-      orderChecks: { check: string; scene: string; when: string; instance: string | null }[];
-      textChecks: { check: string; scene: string; when: string; instance: string | null }[];
+    const written = JSON.parse(readFileSync(join(dir, `plan-${state}.json`), 'utf8')) as {
+      measurements: (PlanRow & { variant: number | null; metric: string })[];
+      orderChecks: PlanRow[];
+      textChecks: PlanRow[];
+    };
+    // The plan lists waived rows with their waiver; a probe does not measure
+    // them, nor the rows this client cannot measure (`clientWaivers.web`).
+    const checked = <Row extends PlanRow>(rows: Row[]) =>
+      rows.filter((row) => row.status !== 'waived' && !row.clientWaivers?.web);
+    const plan = {
+      measurements: checked(written.measurements),
+      orderChecks: checked(written.orderChecks),
+      textChecks: checked(written.textChecks),
     };
     const checks = expandChecks(fixture, state, runOptionsFromEnv({}));
 

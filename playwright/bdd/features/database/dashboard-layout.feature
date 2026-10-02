@@ -3,7 +3,7 @@ Feature: Dashboard layout editing
   In Edit mode widgets are dragged within a row, into another row, or between
   rows to start a new row; width handles move column shares between
   neighbours (a row always spans 12 columns) and height handles resize a row.
-  Layout edits persist, undo and redo, and stack on narrow screens.
+  Layout edits persist, undo and redo, and wrap on narrow screens.
 
   Background:
     Given the dashboard fixture workspace is ready
@@ -44,8 +44,8 @@ Feature: Dashboard layout editing
     And every dashboard row spans 12 columns
 
   Scenario: The width handle snaps to columns and keeps the row at 12 columns
-    When I drag width handle 1 of dashboard row 1 by 2 columns
-    Then the widths of dashboard row 1 are "6, 2, 4"
+    When I drag width handle 1 of dashboard row 1 by 1 columns
+    Then the widths of dashboard row 1 are "5, 3, 4"
     And every dashboard row spans 12 columns
     And the rendered widgets of dashboard row 1 follow their widths
 
@@ -55,12 +55,12 @@ Feature: Dashboard layout editing
     And dashboard row 1 is about 360 px tall
 
   Scenario: Layout changes persist after a reload
-    When I drag width handle 1 of dashboard row 1 by 2 columns
+    When I drag width handle 1 of dashboard row 1 by 1 columns
     And I drag the height handle of dashboard row 1 down by 120 px
     And I wait for the dashboard layout to reach the server
     And I reload the dashboard
     Then the dashboard is in View mode
-    And the widths of dashboard row 1 are "6, 2, 4"
+    And the widths of dashboard row 1 are "5, 3, 4"
     And dashboard row 1 is about 480 px tall
     And the rendered widgets of dashboard row 1 follow their widths
 
@@ -83,9 +83,3 @@ Feature: Dashboard layout editing
     When I choose "move-up" in the "Tasks Grid" widget menu
     Then the "Tasks Grid" widget is in dashboard row 1
     And every dashboard row spans 12 columns
-
-  Scenario: A narrow window stacks the widgets of a row
-    When the browser window is 600 px wide
-    Then the widgets of dashboard row 1 are stacked
-    When the browser window is 1440 px wide
-    Then the widgets of dashboard row 1 are side by side

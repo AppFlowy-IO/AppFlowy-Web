@@ -31,6 +31,17 @@ export function parityStateId(mode: ParityMode, theme: ParityTheme): ParityState
 /** A metric value as the contract writes it (number, token path, `ref:`, per-mode / per-theme object, `calc`, literal). */
 export type ValueSpec = unknown;
 
+/**
+ * A client that cannot measure an entry (its verdict and the web ↔ desktop
+ * comparison are waived with that reason; the other client is still checked),
+ * or a waiver of the comparison only (`cross`).
+ */
+export interface ClientWaivers {
+  web?: string;
+  desktop?: string;
+  cross?: string;
+}
+
 export interface ElementVariant {
   scene?: string;
   when?: string;
@@ -41,6 +52,7 @@ export interface ElementVariant {
   wave?: number;
   status?: ParityStatus;
   waiver?: string;
+  clientWaivers?: ClientWaivers;
   note?: string;
 }
 
@@ -64,6 +76,7 @@ export interface ElementEntry {
   wave: number;
   status: ParityStatus;
   waiver?: string;
+  clientWaivers?: ClientWaivers;
 }
 
 export interface OrderCheckEntry {
@@ -80,6 +93,7 @@ export interface OrderCheckEntry {
   wave: number;
   status: ParityStatus;
   waiver?: string;
+  clientWaivers?: ClientWaivers;
 }
 
 export type TextKind = 'text' | 'tooltip' | 'placeholder' | 'accessibleName';
@@ -97,6 +111,7 @@ export interface TextCheckEntry {
   wave: number;
   status: ParityStatus;
   waiver?: string;
+  clientWaivers?: ClientWaivers;
 }
 
 export interface IdEntry {
@@ -138,6 +153,8 @@ export interface IconContext {
   parityId: string;
   size: ValueSpec;
   wave: number;
+  /** The context's own status (it blocks once its wave has closed); the icon's status when absent. */
+  status?: ParityStatus;
 }
 
 export interface IconEntry {

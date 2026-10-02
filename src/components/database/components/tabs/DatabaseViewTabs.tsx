@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 
 import { View, YDatabaseView } from '@/application/types';
@@ -8,6 +8,7 @@ import { type ReorderResult, useReorderMonitor } from '@/components/_shared/reor
 import { AFScroller } from '@/components/_shared/scroller';
 import { AddViewButton } from '@/components/database/components/tabs/AddViewButton';
 import { DatabaseTabItem } from '@/components/database/components/tabs/DatabaseTabItem';
+import { revealTabInScroller } from '@/components/database/components/tabs/tab-reveal';
 import { useTabScroller } from '@/components/database/components/tabs/useTabScroller';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList } from '@/components/ui/tabs';
@@ -105,20 +106,52 @@ export function DatabaseViewTabs({
     handleObserverScroller,
   } = useTabScroller();
 
+  // The strip's own scroll container. Revealing a tab moves only this element
+  // (never `scrollIntoView`, which would also scroll a hosting document).
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const [scroller, setScrollerElement] = useState<HTMLDivElement | null>(null);
+  const [stripWidth, setStripWidth] = useState(0);
+  const setScroller = useCallback(
+    (el: HTMLDivElement | null) => {
+      scrollerRef.current = el;
+      setScrollerElement(el);
+      setScrollerContainer(el);
+    },
+    [setScrollerContainer]
+  );
+
+  // The strip's visible width settles after mount (its box is sized from the
+  // measured tabs, then the toolbar beside it renders), so track it.
+  useEffect(() => {
+    if (!scroller) return;
+    const measure = () => setStripWidth(scroller.clientWidth);
+
+    measure();
+    const observer = new ResizeObserver(measure);
+
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, [scroller]);
+
   const scrollToView = useCallback((viewId: string) => {
     const element = tabRefs.current.get(viewId);
 
     if (element) {
-      element.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-        inline: 'center',
-      });
+      if (scrollerRef.current) revealTabInScroller(scrollerRef.current, element);
       return true;
     }
 
     return false;
   }, []);
+
+  const activeViewId = viewIds.includes(selectedViewId || '') ? selectedViewId : viewIds[0] || databasePageId;
+  const viewIdsKey = viewIds.join(',');
+
+  // Keep the active tab visible (W16): on mount, when the selection or the
+  // tab list changes, and whenever the tabs or the strip are measured anew.
+  useLayoutEffect(() => {
+    if (activeViewId) scrollToView(activeViewId);
+  }, [activeViewId, viewIdsKey, tabsWidth, stripWidth, scrollToView]);
 
   useEffect(() => {
     if (!pendingScrollToViewId) return;
@@ -212,7 +245,7 @@ export function DatabaseViewTabs({
         }}
         className={'relative flex h-full flex-1'}
         overflowYHidden
-        ref={setScrollerContainer}
+        ref={setScroller}
         onScroll={handleObserverScroller}
       >
         <div
@@ -223,7 +256,7 @@ export function DatabaseViewTabs({
           }}
         >
           <Tabs
-            value={viewIds.includes(selectedViewId || '') ? selectedViewId : viewIds[0] || databasePageId}
+            value={activeViewId}
             onValueChange={(viewId) => {
               if (setSelectedViewId) {
                 setSelectedViewId(viewId);

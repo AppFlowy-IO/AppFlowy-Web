@@ -129,6 +129,7 @@ describe('DashboardProvider', () => {
     expect(result.current.rows).toEqual(ROWS);
     expect(result.current.globalFilters).toEqual([GLOBAL_FILTER]);
     expect(result.current.showWidgetTitles).toBe(true);
+    expect(result.current.showIconsInHeading).toBe(false);
     expect(result.current.effectiveGlobalFilters).toBe(result.current.globalFilters);
     expect(result.current.localGlobalFilters).toBeNull();
     expect(result.current.canEdit).toBe(true);
@@ -471,8 +472,14 @@ describe('DashboardProvider', () => {
       rows: ROWS,
       globalFilters: [],
       showWidgetTitles: false,
+      showIconsInHeading: false,
     });
     expect(result.current.showWidgetTitles).toBe(false);
+    expect(result.current.showIconsInHeading).toBe(false);
+
+    act(() => result.current.updateSetting({ showIconsInHeading: true }));
+    expect(readDashboardLayoutSetting(database, DASHBOARD_VIEW_ID).showIconsInHeading).toBe(true);
+    expect(result.current.showIconsInHeading).toBe(true);
   });
 
   it('prefers local global filters without persisting them', () => {

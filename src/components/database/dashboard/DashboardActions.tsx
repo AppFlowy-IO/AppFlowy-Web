@@ -1,34 +1,111 @@
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
+import { useDatabaseContextOptional } from '@/application/database-yjs/context';
+import { ReactComponent as SettingsIcon } from '@/assets/icons/controller.svg';
+import { ReactComponent as OpenAsPageIcon } from '@/assets/icons/full_screen.svg';
+import { useMobileContext } from '@/components/_shared/hooks/useMobileContext';
+import DashboardSettings from '@/components/database/components/settings/DashboardSettings';
+import { useOpenDatabaseAsPage } from '@/components/database/hooks/useOpenDatabaseAsPage';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { useDashboardContextOptional } from './DashboardContext';
 import { GlobalFilterButton } from './global-filters/GlobalFilterButton';
 
+/** A 28×28 toolbar icon button: radius 6, padding 6, a 16px glyph in the tool icon color. */
+const TOOLBAR_BUTTON_CLASS = 'h-7 w-7 !rounded-200 p-1.5 text-dash-tool-icon [&_svg]:h-4 [&_svg]:w-4';
+/** Edit and Done: 28 tall, text 10px from each side, radius 6, 14/20 medium, text only. */
+const TOOLBAR_TEXT_BUTTON_CLASS = 'h-7 !rounded-200 py-1 text-sm font-medium leading-5';
+/** Done has no border. */
+const DONE_BUTTON_CLASS = `${TOOLBAR_TEXT_BUTTON_CLASS} px-2.5`;
+/** Edit's 1px outline plus 9px keeps its text 10px in, where Done's sits. */
+const EDIT_BUTTON_CLASS = `${TOOLBAR_TEXT_BUTTON_CLASS} px-[9px]`;
+
+/** Opens the dashboard view itself as a full page (shown only when the dashboard is embedded in a document). */
+function OpenAsFullPageButton({ viewId, fallbackViewId }: { viewId: string; fallbackViewId?: string }) {
+  const { t } = useTranslation();
+  const { canOpen, isOpening, openDatabaseAsPage } = useOpenDatabaseAsPage({ viewId, fallbackViewId });
+  const label = t('dashboard.toolbar.openAsFullPage', { defaultValue: 'Open as full page' });
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          aria-label={label}
+          className={TOOLBAR_BUTTON_CLASS}
+          data-parity-id='dash-toolbar-open-as-page'
+          data-testid='dashboard-toolbar-open-as-page'
+          disabled={!canOpen}
+          loading={isOpening}
+          onClick={() => void openDatabaseAsPage()}
+          size='icon'
+          type='button'
+          variant='ghost'
+        >
+          <OpenAsPageIcon aria-hidden='true' data-parity-id='dash-toolbar-open-as-page__icon' />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** The dashboard settings (layout, widget titles, icons in heading). */
+function DashboardSettingsButton() {
+  const { t } = useTranslation();
+  const label = t('dashboard.toolbar.settings', { defaultValue: 'Settings' });
+
+  return (
+    <DashboardSettings>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            aria-label={label}
+            className={TOOLBAR_BUTTON_CLASS}
+            data-parity-id='dash-toolbar-settings'
+            data-testid='database-actions-settings'
+            size='icon'
+            type='button'
+            variant='ghost'
+          >
+            <SettingsIcon aria-hidden='true' data-parity-id='dash-toolbar-settings__icon' />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
+    </DashboardSettings>
+  );
+}
+
 /**
- * Dashboard toolbar in the database tab bar: the global filter button (for
- * everyone) and the Edit / Done toggle (for users with write access). A mobile
- * context is view-only, so it shows the global filter button alone.
+ * Dashboard toolbar in the database tab bar, always visible, left to right:
+ * the global filter button (for everyone), "Open as full page" (only when the
+ * dashboard is embedded in a document), Settings (writers) and the text-only
+ * Edit / Done toggle (writers who can enter Edit mode). A mobile context is
+ * view-only, so it shows the global filter button alone.
  *
- * Renders nothing outside a `DashboardProvider`, e.g. for the one render in
- * which the tab bar still reports the previous view's layout.
+ * The filter button and Edit / Done need the `DashboardProvider`; Open as full
+ * page and Settings only need the database context, so they also render in
+ * the one render in which the tab bar still reports the previous view's
+ * layout. Outside a database it renders nothing.
  *
  * Memoized: the conditions toolbar that renders it follows every change of
  * the host database context, while this only depends on `DashboardContext`.
  */
-export const DashboardActions = memo(function DashboardActions({ compact = false }: { compact?: boolean }) {
+export const DashboardActions = memo(function DashboardActions() {
   const { t } = useTranslation();
   const dashboard = useDashboardContextOptional();
+  const database = useDatabaseContextOptional();
+  const viewportMobile = useMobileContext();
 
-  if (!dashboard) return null;
-  const { canEnterEdit, isEditing, setEditing, mobileContext } = dashboard;
+  if (!dashboard && !database) return null;
+  const mobileContext = dashboard?.mobileContext ?? viewportMobile;
 
   if (mobileContext) {
     return (
       <div
-        className='flex items-center gap-1.5'
+        className='flex items-center gap-1'
         data-mobile='true'
         data-parity-id='dash-toolbar'
         data-testid='dashboard-actions'
@@ -38,16 +115,24 @@ export const DashboardActions = memo(function DashboardActions({ compact = false
     );
   }
 
+  const readOnly = database?.readOnly ?? true;
+  const embedded = Boolean(database?.isDocumentBlock);
+
   return (
-    <div className='flex items-center gap-1.5' data-parity-id='dash-toolbar' data-testid='dashboard-actions'>
+    <div className='flex items-center gap-1' data-parity-id='dash-toolbar' data-testid='dashboard-actions'>
       <GlobalFilterButton />
-      {canEnterEdit ? (
-        isEditing ? (
+      {embedded && database ? (
+        <OpenAsFullPageButton fallbackViewId={database.databasePageId} viewId={database.activeViewId} />
+      ) : null}
+      {database && !readOnly ? <DashboardSettingsButton /> : null}
+      {dashboard?.canEnterEdit ? (
+        dashboard.isEditing ? (
           <Button
+            className={DONE_BUTTON_CLASS}
             data-parity-id='dash-toolbar-done-button'
             data-testid='dashboard-done-button'
-            onClick={() => setEditing(false)}
-            size={compact ? 'sm' : 'default'}
+            onClick={() => dashboard.setEditing(false)}
+            size='sm'
             type='button'
             variant='default'
           >
@@ -55,14 +140,14 @@ export const DashboardActions = memo(function DashboardActions({ compact = false
           </Button>
         ) : (
           <Button
+            className={EDIT_BUTTON_CLASS}
             data-parity-id='dash-toolbar-edit-button'
             data-testid='dashboard-edit-button'
-            onClick={() => setEditing(true)}
-            size={compact ? 'sm' : 'default'}
+            onClick={() => dashboard.setEditing(true)}
+            size='sm'
             type='button'
             variant='outline'
           >
-            <EditIcon aria-hidden='true' className='h-4 w-4' data-parity-id='dash-toolbar-edit-button__icon' />
             <span data-parity-id='dash-toolbar-edit-button__label'>{t('dashboard.edit', { defaultValue: 'Edit' })}</span>
           </Button>
         )

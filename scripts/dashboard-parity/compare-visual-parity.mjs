@@ -663,6 +663,7 @@ function buildPlan(metrics) {
       wave: e.wave,
       status: e.status ?? 'pending',
       waiver: e.waiver ?? null,
+      clientWaivers: e.clientWaivers ?? null,
       attach: e.attach ?? attachFor(e.id),
       source: e.source ?? null,
       note: null,
@@ -684,6 +685,7 @@ function buildPlan(metrics) {
         wave: v.wave ?? base.wave,
         status: v.status ?? base.status,
         waiver: v.waiver ?? base.waiver,
+        clientWaivers: v.clientWaivers ?? base.clientWaivers,
         note: v.note ?? null,
         notionReferences: v.notionReferences ?? base.notionReferences,
       });
@@ -705,6 +707,7 @@ function buildPlan(metrics) {
     wave: c.wave,
     status: c.status ?? 'pending',
     waiver: c.waiver ?? null,
+    clientWaivers: c.clientWaivers ?? null,
     attach: attachFor(c.container),
     source: c.source ?? null,
   }));
@@ -743,6 +746,7 @@ function buildPlan(metrics) {
       wave: c.wave,
       status: c.status ?? 'pending',
       waiver: c.waiver ?? null,
+      clientWaivers: c.clientWaivers ?? null,
       attach: attachFor(c.element),
       source: c.source ?? null,
     };
@@ -1068,10 +1072,21 @@ function sameValue(metric, a, b, tol) {
     return JSON.stringify(a.actual) === JSON.stringify(b.actual);
   }
 
-  const x = canon(metric, a.actual);
-  const y = canon(metric, b.actual);
+  // A probe may report every gap or pitch, or one number when they agree.
+  const single = (v) =>
+    Array.isArray(v) && v.length && v.every(isNumber) && v.every((n) => Math.abs(n - v[0]) <= tol + EPSILON) ? v[0] : v;
+  const x = single(canon(metric, a.actual));
+  const y = single(canon(metric, b.actual));
 
-  if (isNumber(x) && isNumber(y)) return Math.abs(x - y) <= tol + EPSILON;
+  if (isNumber(x) && isNumber(y)) {
+    // The contract value depends on what each client measured (a `calc` over its own boxes, such as half of
+    // the row width in differently wide windows): compare how far each client is from its own value.
+    if (isNumber(a.expected) && isNumber(b.expected) && Math.abs(a.expected - b.expected) > EPSILON) {
+      return Math.abs(x - a.expected - (y - b.expected)) <= tol + EPSILON;
+    }
+
+    return Math.abs(x - y) <= tol + EPSILON;
+  }
   if (Array.isArray(x) && Array.isArray(y) && x.length === y.length) {
     return x.every((xi, i) => {
       const yi = y[i];
@@ -1319,14 +1334,22 @@ function evaluate(plan, probes, resolver, opts) {
         cross = { result: 'waived', reason: row.waiver ?? '' };
       } else {
         const evalClient = row.kind === 'metric' ? evalMetricClient : evalListClient;
+        // `clientWaivers`: one client cannot measure the entry (its verdict and the comparison are waived with
+        // that reason, the other client is still checked), or only the comparison is waived (`cross`).
+        const waivers = row.clientWaivers ?? {};
+        const waivedSide = (reason) => ({ result: 'waived', items: [], expected: { label: '' }, reason });
 
-        web = evalClient(row, 'web', ctx);
-        desktop = evalClient(row, 'desktop', ctx);
-        cross = evalCross(row, web, desktop);
+        web = waivers.web ? waivedSide(waivers.web) : evalClient(row, 'web', ctx);
+        desktop = waivers.desktop ? waivedSide(waivers.desktop) : evalClient(row, 'desktop', ctx);
+        const crossWaiver = waivers.cross ?? waivers.web ?? waivers.desktop;
+
+        cross = crossWaiver ? { result: 'waived', reason: crossWaiver } : evalCross(row, web, desktop);
       }
 
       const results = [web.result, desktop.result, cross.result];
-      const allPass = row.status === 'waived' || results.every((r) => r === 'pass');
+      const allPass =
+        row.status === 'waived' ||
+        (results.every((r) => r === 'pass' || r === 'waived') && results.some((r) => r === 'pass'));
       const gated = row.status === 'enforced' || (opts.strict && inScope && row.status === 'pending');
       const blocking = gated && !allPass;
       // The probe wrote its own expected value and it differs from this script's resolution: a resolver bug.
@@ -2360,6 +2383,7 @@ function writePlan(plan, resolver, dir) {
           desktopMeasure: r.desktopMeasure ?? undefined,
           wave: r.wave,
           status: r.status,
+          clientWaivers: r.clientWaivers ?? undefined,
         };
       });
     const list = (kind) =>
@@ -2375,6 +2399,7 @@ function writePlan(plan, resolver, dir) {
             : { element: r.element, kind: r.textKind, expected: r.expected }),
           wave: r.wave,
           status: r.status,
+          clientWaivers: r.clientWaivers ?? undefined,
         }));
     const captures = [...new Set(rows.map((r) => `${r.scene}|${r.when}`))].map((k) => {
       const [scene, when] = k.split('|');

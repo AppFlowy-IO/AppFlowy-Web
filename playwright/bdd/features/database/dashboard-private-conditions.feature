@@ -23,7 +23,7 @@ Feature: Private dashboard sorts and resetting conditions
     When I reload the dashboard
     Then the "Tasks Grid" widget shows rows in order "Write launch plan, Review, Ship"
     And no global filter shows the local changes badge
-    And the "Tasks Grid" widget has no sort chip
+    And the "Tasks Grid" widget has no active sort
 
   Scenario: Save for everybody publishes a foreign widget sort to another viewer
     Given a workspace member with "read-only" access to the dashboard space
@@ -56,7 +56,7 @@ Feature: Private dashboard sorts and resetting conditions
     When I reset the dashboard local conditions
     Then the "Projects Grid" widget shows rows in order "Website launch, API cleanup"
     And the "Tasks Grid" widget shows rows in order "Write launch plan, Ship"
-    And the "Tasks Grid" widget has no sort chip
+    And the "Tasks Grid" widget has no active sort
     And no global filter shows the local changes badge
     And the shared dashboard and widget conditions are unchanged
     When I reload the dashboard

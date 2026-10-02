@@ -169,6 +169,10 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/database/dashboard-integration.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/dashboard-edit-mode.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/dashboard-compatibility.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-owned-views.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-chart-render.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-grid.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-widget-chrome.feature.spec.js
             description: 'Dashboard creation, layout, widgets, private conditions, save history and Number charts'
             bdd: 'true'
             shard: ''

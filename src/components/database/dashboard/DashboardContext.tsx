@@ -104,6 +104,8 @@ export interface DashboardLayoutContextValue {
   hostViewIds: string[];
   /** Persisted widget-title flag. */
   showWidgetTitles: boolean;
+  /** Persisted flag: widget titles show the view icon (off by default). */
+  showIconsInHeading: boolean;
 }
 
 // The unsaved counts live in their own context: every widget reads this one,
@@ -479,7 +481,7 @@ export function DashboardProvider({
     setSourceNames((previous) => (previous[databaseId] === name ? previous : { ...previous, [databaseId]: name }));
   }, []);
 
-  const { showWidgetTitles } = storedSetting;
+  const { showWidgetTitles, showIconsInHeading } = storedSetting;
 
   const contextValue = useMemo<DashboardContextValue>(
     () => ({
@@ -511,8 +513,8 @@ export function DashboardProvider({
   );
 
   const layoutValue = useMemo<DashboardLayoutContextValue>(
-    () => ({ rows, hostViewIds, showWidgetTitles }),
-    [rows, hostViewIds, showWidgetTitles]
+    () => ({ rows, hostViewIds, showWidgetTitles, showIconsInHeading }),
+    [rows, hostViewIds, showWidgetTitles, showIconsInHeading]
   );
 
   const filtersValue = useMemo<DashboardFiltersContextValue>(

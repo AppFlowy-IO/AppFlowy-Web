@@ -282,6 +282,30 @@ describe('DatabaseTabs', () => {
     });
   });
 
+  it('marks the whole tab row, view tabs and toolbar, as the visual parity content column', async () => {
+    (useDatabaseContext as jest.Mock).mockReturnValue({
+      loadViewMeta: jest.fn(async () => null),
+      readOnly: false,
+      showActions: true,
+    } as DatabaseContextState);
+
+    const { container } = render(
+      <DatabaseTabs
+        databasePageId={databaseView.view_id}
+        selectedViewId={databaseView.view_id}
+        viewIds={[databaseView.view_id]}
+      />
+    );
+
+    const columns = container.querySelectorAll('[data-parity-id="dash-content-column"]');
+
+    expect(columns).toHaveLength(1);
+    // Same box as desktop's TabBarHeader: the strip and the toolbar beside it.
+    expect(columns[0].contains(screen.getByTestId('database-view-tabs'))).toBe(true);
+    expect(columns[0].contains(screen.getByTestId('database-actions-container'))).toBe(true);
+    await waitFor(() => expect(screen.getByTestId('database-actions-mock')).toBeTruthy());
+  });
+
   it('passes outline names for views loaded in Yjs (folder names are the source of truth, like desktop)', async () => {
     // Desktop renames only update the folder view; the database collab keeps
     // its creation-time layout default ("Grid"). The outline name must win

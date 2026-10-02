@@ -1,156 +1,14 @@
 import { ChartDataItem } from '@/application/database-yjs/chart.type';
 
 /**
- * Shared tooltip state interface for all chart types
- */
-export interface TooltipState {
-  active: boolean;
-  item: ChartDataItem | null;
-  x: number;
-  y: number;
-}
-
-/**
- * Extended tooltip state for DonutChart with percentage
- */
-export interface DonutTooltipState {
-  active: boolean;
-  item: (ChartDataItem & { percent?: number }) | null;
-  x: number;
-  y: number;
-}
-
-/**
- * Initial tooltip state
- */
-export const INITIAL_TOOLTIP_STATE: TooltipState = {
-  active: false,
-  item: null,
-  x: 0,
-  y: 0,
-};
-
-/**
- * Format value for display (integer if whole number, otherwise 1 decimal)
- */
-export function formatValue(value: number): string {
-  return value === Math.round(value) ? value.toString() : value.toFixed(1);
-}
-
-/**
- * Generate a small set of "nice" tick values for an axis covering [min, max].
- *
- * Replaces the previous `0..ceil(max)` enumeration which could produce
- * thousands of ticks (one per integer) for Sum/Count aggregations on large
- * datasets, hanging Recharts. Caps at ~`targetCount` ticks with rounded step
- * sizes (1 / 2 / 5 × 10^n).
- *
- * Supports negative `min`, so Sum/Avg/Min on Number fields with negative
- * values doesn't get clipped at zero.
- */
-export function generateNiceTicks(min: number, max: number, targetCount = 8, integerOnly = false): number[] {
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0];
-  if (min === max) {
-    if (min === 0) return [0];
-    // Single non-zero value — show 0 and the value as ticks.
-    return min < 0 ? [min, 0] : [0, min];
-  }
-
-  const range = max - min;
-  const exp = Math.floor(Math.log10(range / targetCount));
-  const fraction = (range / targetCount) / Math.pow(10, exp);
-  let niceFraction: number;
-
-  if (fraction < 1.5) niceFraction = 1;
-  else if (fraction < 3) niceFraction = 2;
-  else if (fraction < 7) niceFraction = 5;
-  else niceFraction = 10;
-
-  // Counts (and other whole-number data) never get fractional ticks.
-  const rawStep = niceFraction * Math.pow(10, exp);
-  const step = integerOnly ? Math.max(1, Math.round(rawStep)) : rawStep;
-  // Decimal places of the step: 0.1 → 1, 0.25 → 2, 5 → 0.
-  const decimals = Math.max(0, -Math.floor(Math.log10(step) + 1e-9)) + (niceFraction === 1 || integerOnly ? 0 : 1);
-  const niceMin = Math.floor(min / step) * step;
-  const niceMax = Math.ceil(max / step) * step;
-  const ticks: number[] = [];
-  const epsilon = step * 1e-9;
-
-  for (let v = niceMin; v <= niceMax + epsilon; v += step) {
-    // Round to the step's precision: repeated float multiplication yields
-    // values like 0.30000000000000004, which render as garbage axis labels.
-    ticks.push(Number((Math.round(v / step) * step).toFixed(decimals)));
-  }
-
-  return ticks;
-}
-
-/**
- * Calculate bar width based on data count (matching Flutter implementation)
- */
-export function calculateBarWidth(dataCount: number): number {
-  if (dataCount <= 5) return 40;
-  if (dataCount <= 10) return 30;
-  if (dataCount <= 20) return 20;
-  return 15;
-}
-
-/**
- * Calculate bar height based on data count for horizontal bar chart
+ * Bar slot height of a standalone horizontal bar chart, which scrolls when it
+ * has many categories (a dashboard widget fills its card instead).
  */
 export function calculateBarHeight(dataCount: number): number {
   if (dataCount <= 5) return 48;
   if (dataCount <= 10) return 40;
   if (dataCount <= 20) return 32;
   return 28;
-}
-
-/**
- * Compute the axis domain and tick values for a chart's value axis.
- * Always anchors zero in the domain so bars/columns have a meaningful
- * baseline. Supports negative values from Sum / Average / Min on Number
- * fields. Single-pass min/max scan avoids the spread-overflow risk of
- * `Math.min(...arr)` for very large arrays.
- */
-export function computeValueAxis(data: ChartDataItem[]): {
-  domain: [number, number];
-  ticks: number[];
-} {
-  let dataMin = 0;
-  let dataMax = 0;
-
-  for (const item of data) {
-    if (item.value < dataMin) dataMin = item.value;
-    if (item.value > dataMax) dataMax = item.value;
-  }
-
-  const integerOnly = data.every((item) => Number.isInteger(item.value));
-  const ticks = generateNiceTicks(dataMin, dataMax, 8, integerOnly);
-
-  // `generateNiceTicks` always returns at least one tick (`[0]` for the
-  // all-zero case), so direct indexing is safe.
-  return { domain: [ticks[0], ticks[ticks.length - 1]], ticks };
-}
-
-/**
- * Compute axis max - extend to ~2x max value for breathing room (matching Flutter)
- */
-export function computeAxisMax(maxValue: number): number {
-  if (maxValue <= 0) return 4;
-
-  const targetMax = maxValue * 2;
-
-  if (targetMax <= 4) return 4;
-  if (targetMax <= 5) return 5;
-  if (targetMax <= 10) return 10;
-
-  // For larger values, round up to nearest nice number
-  const magnitude = Math.pow(10, Math.floor(Math.log10(targetMax)));
-  const normalized = targetMax / magnitude;
-
-  if (normalized <= 2) return 2 * magnitude;
-  if (normalized <= 5) return 5 * magnitude;
-  return 10 * magnitude;
 }
 
 /**
@@ -176,6 +34,9 @@ export function chartDataEqual(a: ChartDataItem[], b: ChartDataItem[]): boolean 
       x.label !== y.label ||
       x.value !== y.value ||
       x.color !== y.color ||
+      x.key !== y.key ||
+      x.optionColor !== y.optionColor ||
+      x.checkboxState !== y.checkboxState ||
       x.isEmptyCategory !== y.isEmptyCategory ||
       x.rowIds.length !== y.rowIds.length
     ) {
@@ -189,4 +50,20 @@ export function chartDataEqual(a: ChartDataItem[], b: ChartDataItem[]): boolean 
   }
 
   return true;
+}
+
+/** The category key a chart draws an item under (the label for items built without a key). */
+export function chartItemKey(item: ChartDataItem): string {
+  return item.key ?? item.label;
+}
+
+/** Count-like aggregations (Count, Count values, and WP11's empty / not empty counts) chart whole numbers. */
+const COUNT_AGGREGATIONS = new Set([0, 6, 7, 8]);
+
+/**
+ * Whether the charted values are counts: the aggregation is count-like, or
+ * it needs a Y field the chart does not have (the chart then counts rows).
+ */
+export function chartValuesAreCounts(aggregationType: number, hasYField: boolean): boolean {
+  return !hasYField || COUNT_AGGREGATIONS.has(aggregationType);
 }

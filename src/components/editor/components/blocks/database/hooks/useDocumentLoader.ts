@@ -21,7 +21,16 @@ interface UseDocumentLoaderResult {
   doc: YDoc | null;
   notFound: boolean;
   noAccess: boolean;
+  /** The load failed because the browser is offline (a network error, not a refusal). */
+  offline: boolean;
   setNotFound: (notFound: boolean) => void;
+}
+
+function isOfflineError(error: unknown) {
+  return (
+    determineErrorType(error).type === ErrorType.NetworkError ||
+    (typeof navigator !== 'undefined' && navigator.onLine === false)
+  );
 }
 
 /**
@@ -31,6 +40,8 @@ interface UseDocumentLoaderResult {
  * - Loading the YDoc for the given viewId
  * - Retry logic on failure
  * - NotFound / NoAccess state management
+ * - Offline: a load that failed for the network is retried when the browser
+ *   reports it is back online
  */
 export function useDocumentLoader({
   viewId,
@@ -42,6 +53,9 @@ export function useDocumentLoader({
   const [doc, setDoc] = useState<YDoc | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [noAccess, setNoAccess] = useState(false);
+  const [offline, setOffline] = useState(false);
+  // Bumped by the `online` event to load again after an offline failure.
+  const [reloadToken, setReloadToken] = useState(0);
   const [syncBound, setSyncBound] = useState(false);
 
   const loadWithRetry = useCallback(
@@ -69,8 +83,9 @@ export function useDocumentLoader({
             error: error instanceof Error ? error.message : String(error),
           });
           // Permission denials are permanent — retrying just hammers the server
-          // with requests that will fail the same way.
-          if (attempt === retries || determineErrorType(error).type === ErrorType.Forbidden) {
+          // with requests that will fail the same way. A network failure was
+          // already retried by the view loader; the `online` event loads again.
+          if (attempt === retries || determineErrorType(error).type === ErrorType.Forbidden || isOfflineError(error)) {
             throw error;
           }
 
@@ -100,6 +115,7 @@ export function useDocumentLoader({
         setDoc(loadedDoc);
         setNotFound(false);
         setNoAccess(false);
+        setOffline(false);
         setSyncBound(false);
       } catch (error) {
         if (cancelled) return;
@@ -118,6 +134,7 @@ export function useDocumentLoader({
         }
 
         setNoAccess(isPermissionDenied);
+        setOffline(!isPermissionDenied && isOfflineError(error));
         setNotFound(true);
       }
     };
@@ -127,7 +144,16 @@ export function useDocumentLoader({
     return () => {
       cancelled = true;
     };
-  }, [viewId, databaseId, loadWithRetry]);
+  }, [viewId, databaseId, loadWithRetry, reloadToken]);
+
+  // Back online: try the failed load once more, so the source recovers without a reload.
+  useEffect(() => {
+    if (!viewId || !notFound || !offline) return;
+    const handleOnline = () => setReloadToken((token) => token + 1);
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [notFound, offline, viewId]);
 
   useEffect(() => {
     if (!doc || !bindViewSync || syncBound) return;
@@ -182,5 +208,5 @@ export function useDocumentLoader({
     return subscribeCollabDocReset(eventEmitter, handleCollabDocReset);
   }, [eventEmitter, viewId]);
 
-  return { doc, notFound, noAccess, setNotFound };
+  return { doc, notFound, noAccess, offline, setNotFound };
 }

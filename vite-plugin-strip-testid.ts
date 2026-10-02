@@ -1,8 +1,9 @@
 import { Plugin } from 'vite';
 
 /**
- * Vite plugin to strip data-testid attributes from production builds
+ * Vite plugin to strip data-testid and data-parity-id attributes from production builds
  * This reduces bundle size and removes test-specific attributes from production code
+ * (`data-parity-id` marks dashboard chrome for the visual parity probe)
  */
 export function stripTestIdPlugin(): Plugin {
   return {
@@ -29,30 +30,30 @@ export function stripTestIdPlugin(): Plugin {
 
       try {
         // Pattern 1: Simple string attributes: data-testid="value" or data-testid='value'
-        // This is the safest pattern to remove
-        const simpleStringPattern = /\s+data-testid\s*=\s*["'][^"']*["']/g;
+        // (and data-parity-id="value"). This is the safest pattern to remove
+        const simpleStringPattern = /\s+data-(?:testid|parity-id)\s*=\s*["'][^"']*["']/g;
         const matches = transformedCode.match(simpleStringPattern);
 
 
         if (matches && matches.length > 0) {
-          console.log(`Stripping ${matches.length} data-testid attributes from ${id}`);
+          console.log(`Stripping ${matches.length} data-testid / data-parity-id attributes from ${id}`);
           transformedCode = transformedCode.replace(simpleStringPattern, '');
           hasChanges = true;
         }
 
         // Pattern 2: Simple expressions without nested braces: data-testid={variable}
-        const simpleExpressionPattern = /\s+data-testid\s*=\s*\{[^{}]+\}/g;
+        const simpleExpressionPattern = /\s+data-(?:testid|parity-id)\s*=\s*\{[^{}]+\}/g;
         const exprMatches = transformedCode.match(simpleExpressionPattern);
 
 
         if (exprMatches && exprMatches.length > 0) {
-          console.log(`Stripping ${exprMatches.length} data-testid expressions from ${id}`);
+          console.log(`Stripping ${exprMatches.length} data-testid / data-parity-id expressions from ${id}`);
           transformedCode = transformedCode.replace(simpleExpressionPattern, '');
           hasChanges = true;
         }
 
         // Pattern 3: Template literals: data-testid={`value-${id}`}
-        const templatePattern = /\s+data-testid\s*=\s*\{`[^`]*`\}/g;
+        const templatePattern = /\s+data-(?:testid|parity-id)\s*=\s*\{`[^`]*`\}/g;
 
 
         if (templatePattern.test(transformedCode)) {

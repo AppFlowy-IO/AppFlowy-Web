@@ -1,0 +1,16 @@
+{
+  "fixture": "widget-content",
+  "version": 1,
+  "format": {
+    "geometry": "Content geometry inside a widget card (addendum A5), in px: the start inset of an editable grid widget (one 24px row handle plus its gap) and of every other widget, the end and top insets, the compact row handle, and a one-line grid row (min height plus its bottom divider)."
+  },
+  "geometry": {
+    "grid_start_inset_editable": 32,
+    "start_inset": 12,
+    "end_inset": 12,
+    "top_inset": 0,
+    "row_handle": 24,
+    "row_min_height": 36,
+    "row_divider": 1
+  }
+}

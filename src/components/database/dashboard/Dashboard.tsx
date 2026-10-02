@@ -22,6 +22,7 @@ import {
   DashboardDraggingContext,
   DashboardHostContext,
   DashboardLimitReason,
+  DashboardSelectionContext,
   DashboardUiContext,
   DashboardUiContextValue,
   WidgetPickerRequest,
@@ -50,15 +51,59 @@ export function Dashboard() {
   const [creatingRequest, setCreatingRequest] = useState<WidgetPickerRequest | null>(null);
   const [limitMessage, setLimitMessage] = useState<{ reason: DashboardLimitReason; key: number } | null>(null);
   const [dndInstanceId] = useState(() => Symbol('dashboard'));
+  // The selected widget (Edit mode only): its box shows the outline.
+  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowsRef = useRef(rows);
+  const editingRef = useRef(editing);
   const pickerRequestRef = useRef(pickerRequest);
   const pendingScrollWidgetIdRef = useRef<string | null>(null);
 
   rowsRef.current = rows;
+  editingRef.current = editing;
   pickerRequestRef.current = pickerRequest;
 
   const getRows = useCallback(() => rowsRef.current, []);
+
+  const selectWidget = useCallback((id: string | null, options?: { onlyIf?: string }) => {
+    if (id === null) {
+      setSelectedWidgetId((current) => (options?.onlyIf === undefined || current === options.onlyIf ? null : current));
+      return;
+    }
+
+    if (editingRef.current) setSelectedWidgetId(id);
+  }, []);
+
+  // The selection ends with Edit mode and with its widget.
+  const selectionVisible = editing && selectedWidgetId !== null && findDashboardWidget(rows, selectedWidgetId) !== null;
+
+  if (selectedWidgetId !== null && (!editing || findDashboardWidget(rows, selectedWidgetId) === null)) {
+    setSelectedWidgetId(null);
+  }
+
+  // Esc, or a press outside the selected widget while nothing is open, clears it.
+  useEffect(() => {
+    if (!selectionVisible || !selectedWidgetId) return;
+    const layerOpen = () => document.querySelector('[data-radix-popper-content-wrapper]') !== null;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !layerOpen()) setSelectedWidgetId(null);
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+
+      if (!target || layerOpen() || target.closest('[data-radix-popper-content-wrapper]')) return;
+      if (target.closest(`[data-widget-id="${CSS.escape(selectedWidgetId)}"]`)) return;
+      setSelectedWidgetId(null);
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('pointerdown', handlePointerDown);
+    };
+  }, [selectedWidgetId, selectionVisible]);
 
   // The picker only makes sense while editing (Edit mode itself, including
   // the automatic one of an empty dashboard, is derived by DashboardProvider).
@@ -109,9 +154,10 @@ export function Dashboard() {
     if (!widgetId || !findDashboardWidget(rows, widgetId)) return;
     pendingScrollWidgetIdRef.current = null;
     const frame = window.requestAnimationFrame(() => {
-      const element = Array.from(
-        scrollRef.current?.querySelectorAll<HTMLElement>('[data-testid="dashboard-widget"]') ?? []
-      ).find((candidate) => candidate.dataset.widgetId === widgetId);
+      // By widget id, not by `data-testid`: production builds strip test ids.
+      const element = Array.from(scrollRef.current?.querySelectorAll<HTMLElement>('[data-widget-id]') ?? []).find(
+        (candidate) => candidate.dataset.widgetId === widgetId
+      );
 
       element?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
     });
@@ -155,8 +201,10 @@ export function Dashboard() {
 
       pendingScrollWidgetIdRef.current = widget.id;
       updateRows((current) => addDashboardWidget(current, widget, resolveAddPlacement(current, placement) ?? placement));
+      // A new widget starts selected.
+      selectWidget(widget.id);
     },
-    [showLimitMessage, updateRows]
+    [selectWidget, showLimitMessage, updateRows]
   );
 
   const handlePick = useCallback(
@@ -221,8 +269,9 @@ export function Dashboard() {
       getRows,
       updateRows,
       acquireSourceDoc,
+      selectWidget,
     }),
-    [acquireSourceDoc, dndInstanceId, getRows, hostDatabaseId, openPicker, showLimitMessage, updateRows]
+    [acquireSourceDoc, dndInstanceId, getRows, hostDatabaseId, openPicker, selectWidget, showLimitMessage, updateRows]
   );
 
   const handleAddFirstWidget = useCallback(
@@ -238,39 +287,48 @@ export function Dashboard() {
     <DashboardHostContext.Provider value={hostServices}>
       <DashboardUiContext.Provider value={uiValue}>
         <DashboardDraggingContext.Provider value={draggingWidgetId}>
-          <div
-            className='relative flex h-full min-h-0 w-full flex-1 flex-col overflow-y-auto overflow-x-hidden'
-            data-dragging={draggingWidgetId ? 'true' : undefined}
-            data-editing={editing ? 'true' : 'false'}
-            data-testid='dashboard-view'
-            ref={scrollRef}
-          >
+          <DashboardSelectionContext.Provider value={selectionVisible ? selectedWidgetId : null}>
             <div
-              className='flex w-full flex-col gap-3 pb-10 pt-3 max-sm:!px-6'
-              style={getDashboardInlinePadding({
-                paddingStart: paddingStart ?? DASHBOARD_DEFAULT_INLINE_PADDING,
-                paddingEnd: paddingEnd ?? DASHBOARD_DEFAULT_INLINE_PADDING,
-                editing,
-              })}
+              className='relative flex h-full min-h-0 w-full flex-1 flex-col overflow-y-auto overflow-x-hidden'
+              data-dragging={draggingWidgetId ? 'true' : undefined}
+              data-editing={editing ? 'true' : 'false'}
+              data-testid='dashboard-view'
+              ref={scrollRef}
             >
-              <GlobalFilterBar />
-              {limitMessage ? (
-                // Sticky, so the message stays in sight wherever the add was refused.
-                <div className='pointer-events-none sticky top-2 z-30' key={limitMessage.key}>
-                  <DashboardLimitMessage className='pointer-events-auto' reason={limitMessage.reason} />
-                </div>
-              ) : null}
-              {rows.length === 0 ? <DashboardEmptyState onAddWidget={handleAddFirstWidget} /> : <DashboardGrid />}
+              {/* The same inset in View and Edit mode; the grid's first band replaces the top padding. */}
+              <div
+                className='flex w-full flex-col pb-10 max-sm:!px-6'
+                style={getDashboardInlinePadding({
+                  paddingStart: paddingStart ?? DASHBOARD_DEFAULT_INLINE_PADDING,
+                  paddingEnd: paddingEnd ?? DASHBOARD_DEFAULT_INLINE_PADDING,
+                  reserveControlGutter: canEdit,
+                })}
+              >
+                <GlobalFilterBar className='mt-3' />
+                {limitMessage ? (
+                  // Sticky, so the message stays in sight wherever the add was refused.
+                  <div className='pointer-events-none sticky top-2 z-30 mt-3' key={limitMessage.key}>
+                    <DashboardLimitMessage className='pointer-events-auto' reason={limitMessage.reason} />
+                  </div>
+                ) : null}
+                {rows.length === 0 ? (
+                  <div className='pt-3'>
+                    <DashboardEmptyState onAddWidget={handleAddFirstWidget} />
+                  </div>
+                ) : (
+                  <DashboardGrid />
+                )}
+              </div>
             </div>
-          </div>
-          <WidgetPicker
-            canCreateInOtherDatabases={canCreateInOtherDatabases}
-            createView={handleCreateView}
-            onClose={() => setPickerRequest(null)}
-            onPick={handlePick}
-            request={visiblePickerRequest}
-          />
-          {bridge}
+            <WidgetPicker
+              canCreateInOtherDatabases={canCreateInOtherDatabases}
+              createView={handleCreateView}
+              onClose={() => setPickerRequest(null)}
+              onPick={handlePick}
+              request={visiblePickerRequest}
+            />
+            {bridge}
+          </DashboardSelectionContext.Provider>
         </DashboardDraggingContext.Provider>
       </DashboardUiContext.Provider>
     </DashboardHostContext.Provider>

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 
 const mockUpdateSetting = jest.fn();
 let mockShowWidgetTitles = true;
+let mockShowIconsInHeading = false;
 let mockReadOnly = false;
 
 jest.mock('react-i18next', () => ({
@@ -16,8 +17,22 @@ jest.mock('react-i18next', () => ({
 
 jest.mock('@/application/database-yjs', () => ({
   useDashboardShowWidgetTitles: () => mockShowWidgetTitles,
+  useDatabaseContext: () => ({ databaseDoc: {} }),
+  useDatabaseViewId: () => 'dashboard-view',
   useReadOnly: () => mockReadOnly,
   useUpdateDashboardSetting: () => mockUpdateSetting,
+}));
+
+// "Show icons in heading" is read from the dashboard layout store (not a selector).
+jest.mock('@/application/database-yjs/dashboard-layout', () => ({
+  createDashboardLayoutStore: () => ({
+    getSnapshot: () => ({ showIconsInHeading: mockShowIconsInHeading }),
+    subscribe: () => () => undefined,
+  }),
+}));
+
+jest.mock('@/assets/icons/emoji.svg', () => ({
+  ReactComponent: () => null,
 }));
 
 jest.mock('@/components/database/components/settings/Layout', () => ({
@@ -54,6 +69,7 @@ describe('DashboardSettings', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockShowWidgetTitles = true;
+    mockShowIconsInHeading = false;
     mockReadOnly = false;
   });
 
@@ -105,6 +121,50 @@ describe('DashboardSettings', () => {
     expect(item.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(item);
 
+    expect(mockUpdateSetting).not.toHaveBeenCalled();
+  });
+
+  it('turns on "Show icons in heading" below "Show widget titles"', async () => {
+    renderSettings();
+    await openMenu();
+
+    const items = screen.getAllByRole('menuitem').map((item) => item.getAttribute('data-testid'));
+    const item = screen.getByTestId('dashboard-settings-show-icons-in-heading');
+
+    expect(items.indexOf('dashboard-settings-show-icons-in-heading')).toBe(
+      items.indexOf('dashboard-settings-show-widget-titles') + 1
+    );
+    expect(item.textContent).toContain('Show icons in heading');
+    expect(item.getAttribute('data-checked')).toBe('false');
+    expect(item.querySelector('[role="switch"]')?.getAttribute('data-state')).toBe('unchecked');
+
+    fireEvent.click(item);
+
+    expect(mockUpdateSetting).toHaveBeenCalledWith({ showIconsInHeading: true });
+    expect(screen.getByTestId('dashboard-settings-menu')).toBeTruthy();
+  });
+
+  it('turns off "Show icons in heading" when it is on', async () => {
+    mockShowIconsInHeading = true;
+    renderSettings();
+    await openMenu();
+
+    const item = screen.getByTestId('dashboard-settings-show-icons-in-heading');
+
+    expect(item.querySelector('[role="switch"]')?.getAttribute('data-state')).toBe('checked');
+    fireEvent.click(item);
+    expect(mockUpdateSetting).toHaveBeenCalledWith({ showIconsInHeading: false });
+  });
+
+  it('does not toggle the heading icons for read-only users', async () => {
+    mockReadOnly = true;
+    renderSettings();
+    await openMenu();
+
+    const item = screen.getByTestId('dashboard-settings-show-icons-in-heading');
+
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(item);
     expect(mockUpdateSetting).not.toHaveBeenCalled();
   });
 });

@@ -30,6 +30,7 @@ import {
   useRowMap,
 } from '@/application/database-yjs/context';
 import { createDashboardLayoutStore } from '@/application/database-yjs/dashboard-layout';
+import { filterOwnedTabViewIds } from '@/application/database-yjs/dashboard-owned-views';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import {
   collectFormulaExternalReferences,
@@ -381,6 +382,12 @@ export function useDatabaseViewsSelector(databasePageId: string, visibleViewIds?
 
           return (insertionOrder.get(left) ?? 0) - (insertionOrder.get(right) ?? 0);
         });
+
+        // Dashboard-owned widget views are not tabs either (WP05 §1.2); an
+        // opened one is the only tab. An explicit list above is never filtered.
+        allViewIds = filterOwnedTabViewIds(allViewIds, databasePageId, (viewId) =>
+          Boolean(views.get(viewId)?.get(YjsDatabaseKey.dashboard_owner))
+        );
       }
 
       setViewIds(allViewIds);
@@ -393,7 +400,7 @@ export function useDatabaseViewsSelector(databasePageId: string, visibleViewIds?
     return () => {
       views.unobserveDeep(observerEvent);
     };
-  }, [views, visibleViewIdsKey]);
+  }, [databasePageId, views, visibleViewIdsKey]);
 
   return {
     childViews,

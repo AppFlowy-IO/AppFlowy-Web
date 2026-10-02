@@ -16,6 +16,10 @@ export interface NumberChartProps {
   aggregationType: ChartAggregationType;
   /** Y field number format when the Y field is a Number field. */
   fieldNumberFormat?: NumberFormat | null;
+  /** `decimal_places`; null / absent is auto. */
+  decimalPlaces?: number | null;
+  /** The chart locale (`resolveChartLocale`). */
+  locale?: string;
   /** Drill-down; receives the item relabelled with the title. */
   onClick?: (item: ChartDataItem) => void;
 }
@@ -25,12 +29,23 @@ export interface NumberChartProps {
  * Font size follows the container width so it reads well in both a full page
  * and a small dashboard widget.
  */
-function NumberChart({ item, title, numberFormat, aggregationType, fieldNumberFormat, onClick }: NumberChartProps) {
+function NumberChart({
+  item,
+  title,
+  numberFormat,
+  aggregationType,
+  fieldNumberFormat,
+  decimalPlaces,
+  locale,
+  onClick,
+}: NumberChartProps) {
   const { t } = useTranslation();
   const isEmpty = !item || item.rowIds.length === 0;
 
-  // One call on hoisted formatters: cheaper than a memo's dependency compare.
-  const formatted = item ? formatNumberChartValue(item.value, { numberFormat, aggregationType, fieldNumberFormat }) : '';
+  // One call on cached formatters: cheaper than a memo's dependency compare.
+  const formatted = item
+    ? formatNumberChartValue(item.value, { numberFormat, aggregationType, fieldNumberFormat, decimalPlaces, locale })
+    : '';
 
   const clickable = !isEmpty && !!onClick;
 

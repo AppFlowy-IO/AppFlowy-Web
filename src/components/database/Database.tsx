@@ -1726,7 +1726,13 @@ function Database(props: Database2Props) {
               <div
                 className={cn(
                   'appflowy-database relative flex w-full select-text flex-col',
-                  shouldUseFixedViewport ? 'min-h-0 flex-1 overflow-hidden' : 'overflow-visible'
+                  // A dashboard widget's card clips its own content, and its ring and
+                  // shadow are drawn just outside the card: do not clip them here.
+                  shouldUseFixedViewport
+                    ? isDashboardWidget
+                      ? 'min-h-0 flex-1'
+                      : 'min-h-0 flex-1 overflow-hidden'
+                    : 'overflow-visible'
                 )}
               >
                 <DatabaseViews

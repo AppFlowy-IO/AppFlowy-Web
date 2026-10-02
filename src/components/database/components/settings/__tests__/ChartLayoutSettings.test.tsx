@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
+import { DEFAULT_CHART_EXTENDED_SETTINGS } from '@/application/database-yjs/chart-extended-settings';
 import {
   ChartAggregationType,
   ChartLayoutSettings as ChartLayoutSettingsData,
@@ -20,6 +21,7 @@ const mockSettings: ChartLayoutSettingsData = {
   dateCondition: DateGroupCondition.Month,
   numberFormat: 'auto',
   titleText: '',
+  extended: DEFAULT_CHART_EXTENDED_SETTINGS,
 };
 
 jest.mock('react-i18next', () => ({
@@ -142,5 +144,94 @@ describe('ChartLayoutSettings Number chart title', () => {
 
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     expect(mockUpdate).toHaveBeenCalledWith({ titleText: 'Revenue' });
+  });
+});
+
+describe('ChartLayoutSettings Style rows', () => {
+  function openChartSettings() {
+    const trigger = screen.getByRole('menuitem', { name: 'Chart settings' });
+
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+  }
+
+  async function openRow(testId: string) {
+    const row = await screen.findByTestId(testId);
+
+    act(() => row.focus());
+    fireEvent.keyDown(row, { key: 'ArrowRight' });
+  }
+
+  beforeEach(() => {
+    mockUpdate.mockReset();
+    mockReadOnly = false;
+    mockSettings.chartType = ChartType.Bar;
+    mockSettings.extended = DEFAULT_CHART_EXTENDED_SETTINGS;
+  });
+
+  afterAll(() => {
+    mockSettings.chartType = ChartType.Number;
+    mockSettings.extended = DEFAULT_CHART_EXTENDED_SETTINGS;
+  });
+
+  it('writes only the color theme that is picked', async () => {
+    render(<ChartSettingsMenu />);
+    openChartSettings();
+    await openRow('chart-style-color');
+
+    const options = await screen.findAllByTestId(/^chart-style-color-option-/);
+
+    expect(options.map((option) => option.getAttribute('data-testid')?.replace('chart-style-color-option-', ''))).toEqual([
+      'auto',
+      'colorful',
+      'colorless',
+      'blue',
+      'yellow',
+      'green',
+      'purple',
+      'teal',
+      'orange',
+      'pink',
+      'red',
+    ]);
+    fireEvent.click(screen.getByTestId('chart-style-color-option-blue'));
+    expect(mockUpdate).toHaveBeenCalledWith({}, { colorTheme: 'blue' });
+  });
+
+  it('turns the data labels off', async () => {
+    render(<ChartSettingsMenu />);
+    openChartSettings();
+    fireEvent.click(await screen.findByTestId('chart-style-data-labels'));
+    expect(mockUpdate).toHaveBeenCalledWith({}, { showDataLabels: false });
+  });
+
+  it('hides the legend', async () => {
+    render(<ChartSettingsMenu />);
+    openChartSettings();
+    await openRow('chart-style-legend');
+    fireEvent.click(await screen.findByTestId('chart-style-legend-option-off'));
+    expect(mockUpdate).toHaveBeenCalledWith({}, { legendPosition: 'off' });
+  });
+
+  it('fixes two decimal places, and Auto resets them with null', async () => {
+    mockSettings.extended = { ...DEFAULT_CHART_EXTENDED_SETTINGS, decimalPlaces: 3 };
+    render(<ChartSettingsMenu />);
+    openChartSettings();
+    await openRow('chart-style-decimal-places');
+    expect((await screen.findByTestId('chart-style-decimal-places-option-2')).textContent).toBe('1.00');
+    fireEvent.click(screen.getByTestId('chart-style-decimal-places-option-2'));
+    expect(mockUpdate).toHaveBeenLastCalledWith({}, { decimalPlaces: 2 });
+    fireEvent.click(screen.getByTestId('chart-style-decimal-places-option-auto'));
+    expect(mockUpdate).toHaveBeenLastCalledWith({}, { decimalPlaces: null });
+  });
+
+  it('offers only Decimal places on a Number chart', async () => {
+    mockSettings.chartType = ChartType.Number;
+    render(<ChartSettingsMenu />);
+    openChartSettings();
+    expect(await screen.findByTestId('chart-style-decimal-places')).toBeTruthy();
+    expect(screen.queryByTestId('chart-style-color')).toBeNull();
+    expect(screen.queryByTestId('chart-style-legend')).toBeNull();
+    expect(screen.queryByTestId('chart-style-data-labels')).toBeNull();
   });
 });

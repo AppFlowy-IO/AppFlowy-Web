@@ -16,9 +16,6 @@ export type { DashboardExtraFilter, DashboardGlobalFilter } from './dashboard-gl
 /** Layout-settings key for `DatabaseViewLayout.Dashboard` (`DatabaseLayout::Dashboard = 9`). */
 export const DASHBOARD_LAYOUT_KEY = '9';
 
-/** Below this viewport width every widget spans the full row (widgets stack). */
-export const DASHBOARD_STACK_BREAKPOINT = 768;
-
 /**
  * Storage keys inside `layout_settings['9']`. Values are plain JSON (arrays /
  * objects) so Yrs reads them as nested `Any` values, matching how the timeline
@@ -28,6 +25,7 @@ export const DashboardLayoutKeys = {
   rows: 'rows',
   globalFilters: 'global_filters',
   showWidgetTitles: 'show_widget_titles',
+  showIconsInHeading: 'show_icons_in_heading',
 } as const;
 
 /** One widget: a reference to a database view, plus its share of the row. */
@@ -52,6 +50,8 @@ export interface DashboardLayoutSetting {
   rows: DashboardRow[];
   globalFilters: DashboardGlobalFilter[];
   showWidgetTitles: boolean;
+  /** Widget titles show the view icon (`show_icons_in_heading`, default false as in Notion). */
+  showIconsInHeading: boolean;
 }
 
 export type DashboardLayoutUpdate = Partial<DashboardLayoutSetting>;

@@ -1,43 +1,90 @@
 import { useTranslation } from 'react-i18next';
 
-interface ChartTooltipProps {
-  label?: string;
-  value?: number;
+import { DASHBOARD_GEOMETRY, DASHBOARD_TYPOGRAPHY } from '@/application/database-yjs/dashboard-geometry';
+import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
+
+export interface ChartTooltipRow {
   color?: string;
-  percent?: number;
+  name: string;
+  /** Already formatted (R-FORMAT `tooltip`, plus the share for donuts). */
+  value: string;
+}
+
+export interface ChartTooltipProps {
+  /** Group title above the rows (WP12's multi-series bars). */
+  title?: string;
+  rows: ChartTooltipRow[];
+  /** The "Click to view data" footer, shown when the chart opens a drill-down. */
   showDrilldownHint?: boolean;
 }
 
-/**
- * Custom tooltip component for chart display
- */
-export function ChartTooltip({ label, value, color, percent, showDrilldownHint = true }: ChartTooltipProps) {
-  const { t } = useTranslation();
+const { tooltip } = DASHBOARD_GEOMETRY;
 
-  const displayValue = percent !== undefined
-    ? `${value?.toLocaleString()} (${(percent * 100).toFixed(1)}%)`
-    : value?.toLocaleString();
+/**
+ * Chart tooltip (spec §8.8): a swatch, the name and the value per row, and
+ * the drill-down hint. Presentational; `ChartTooltipLayer` positions it.
+ */
+export function ChartTooltip({ title, rows, showDrilldownHint = false }: ChartTooltipProps) {
+  const { t } = useTranslation();
 
   return (
     <div
-      className="rounded-lg border border-border-primary bg-fill-primary px-3 py-2 shadow-lg"
-      data-parity-id="dash-chart-tooltip"
+      data-testid='chart-tooltip'
+      data-parity-id='dash-chart-tooltip'
+      className='overflow-hidden border border-chart-tooltip-border bg-chart-tooltip-bg text-xs shadow-dash-tooltip'
+      style={{
+        borderRadius: tooltip.radius,
+        maxWidth: tooltip.maxWidth,
+        maxHeight: tooltip.maxHeight,
+        lineHeight: `${DASHBOARD_TYPOGRAPHY.tooltip.lineHeight}px`,
+      }}
     >
-      <div className="flex items-center gap-2">
-        <div
-          className="h-3 w-3 rounded-sm"
-          style={{ backgroundColor: color }}
-        />
-        <span className="text-sm font-medium text-text-primary">{label}</span>
-      </div>
-      <div className="mt-1 text-lg font-semibold text-text-primary">
-        {displayValue}
-      </div>
-      {showDrilldownHint && (
-        <div className="mt-1 text-xs text-text-secondary" data-parity-id="dash-chart-tooltip__footer">
-          {t('chart.tooltip.clickToView', 'Click to view data')}
+      {title ? (
+        <div className='truncate px-3 pt-2.5 font-medium text-text-primary' data-testid='chart-tooltip-title'>
+          {title}
         </div>
-      )}
+      ) : null}
+      {rows.map((row, index) => (
+        <div
+          className='flex items-center'
+          key={`${row.name}-${index}`}
+          style={{
+            gap: tooltip.gap,
+            padding: `${tooltip.rowPaddingBlock}px ${tooltip.rowPaddingInline}px`,
+          }}
+        >
+          <span className='flex min-w-0 items-center gap-2'>
+            <span
+              className='shrink-0'
+              style={{
+                width: tooltip.swatch,
+                height: tooltip.swatch,
+                borderRadius: tooltip.swatchRadius,
+                backgroundColor: row.color,
+              }}
+            />
+            <span className='truncate text-text-secondary' data-testid='chart-tooltip-name'>
+              {row.name}
+            </span>
+          </span>
+          <span className='ml-auto whitespace-nowrap tabular-nums text-text-tertiary' data-testid='chart-tooltip-value'>
+            {row.value}
+          </span>
+        </div>
+      ))}
+      {showDrilldownHint ? (
+        <>
+          <div className='mx-3 h-px bg-border-secondary' />
+          <div
+            className='flex items-center gap-1.5 p-3 text-text-secondary'
+            data-parity-id='dash-chart-tooltip__footer'
+            data-testid='chart-tooltip-footer'
+          >
+            <BulletedListIcon className='h-3.5 w-3.5 shrink-0' />
+            <span>{t('chart.tooltip.clickToView', { defaultValue: 'Click to view data' })}</span>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

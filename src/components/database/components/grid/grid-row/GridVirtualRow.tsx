@@ -5,7 +5,7 @@ import { VirtualItem } from '@tanstack/react-virtual';
 import { uniqBy } from 'lodash-es';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useReadOnly, useRowData, useSortsSelector } from '@/application/database-yjs';
+import { useDatabaseContextOptional, useReadOnly, useRowData, useSortsSelector } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import { HOVER_CONTROLS_WIDTH, HoverControls } from '@/components/database/components/grid/controls/HoverControls';
@@ -53,6 +53,7 @@ function GridVirtualRow({
   const rowKey = getRenderRowKey(rowData);
   const rowType = rowData.type;
   const { isGrouped, rowResizeStore } = useGridContext();
+  const isDashboardWidget = Boolean(useDatabaseContextOptional()?.isDashboardWidget);
   const { setHoverRowKey } = useGridInteractionActions();
   const hasActiveCell = useIsGridRowActive(rowKey);
   const databaseRow = useRowData(rowId);
@@ -158,7 +159,9 @@ function GridVirtualRow({
 
   const onResize = useCallback(() => {
     const row = rowRef.current;
-    const cells = row?.querySelectorAll('.grid-cell');
+    // In a widget the reported size includes the row's 1px divider, so the
+    // pitch is the 37px the row draws (addendum A5.2) and rows never overlap.
+    const cells = row?.querySelectorAll(isDashboardWidget ? '.grid-row-cell' : '.grid-cell');
 
     if (!cells || !rowId) return;
     const maxCellHeight = Array.from(cells).reduce((acc, cell) => {
@@ -168,7 +171,7 @@ function GridVirtualRow({
     }, 0);
 
     rowResizeStore.report(rowKey, maxCellHeight);
-  }, [rowId, rowKey, rowResizeStore]);
+  }, [isDashboardWidget, rowId, rowKey, rowResizeStore]);
 
   useEffect(() => {
     const el = innerRef.current;
@@ -231,6 +234,13 @@ function GridVirtualRow({
           ref={rowRef}
           data-testid={`grid-row-${rowId}`}
           data-row-key={rowKey}
+          data-parity-id={
+            rowType === RenderRowType.Header
+              ? 'dash-widget-grid-header'
+              : isRegularRow
+              ? 'dash-widget-grid-row'
+              : undefined
+          }
           className={cn(
             'grid-table-row-content relative flex min-h-[36px]',
             state.type === GridDragState.DRAGGING && 'opacity-40'

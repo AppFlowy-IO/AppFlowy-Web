@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext, RefObject, useContext } from 'react';
 
 import { ViewIcon, ViewLayout } from '@/application/types';
 
@@ -17,29 +17,49 @@ export interface WidgetActions {
   duplicate: () => void;
   remove: () => void;
   move: (direction: WidgetMoveDirection) => void;
+  /** Open the widget's settings host (Edit mode); closes the menu. */
+  openSettings: () => void;
 }
 
 /**
- * Per-widget state shared between the card (`DashboardWidget`) and the header
+ * Per-widget state shared between the box (`DashboardWidget`) and the header
  * that `DatabaseViews` renders inside the widget's nested database tree. Only
  * what a consumer reads: the widget's position is not here, so a move or a
  * resize elsewhere on the dashboard never re-renders the nested shell.
  */
 export interface WidgetContextValue {
   widgetId: string;
+  /** The source database and view the widget shows. */
+  databaseId: string;
+  viewId: string;
   /** Resolved view name (folder name, else the database view name). */
   name: string;
   icon: ViewIcon | null;
   layout: ViewLayout;
   isEditing: boolean;
   canEdit: boolean;
-  /** Whether the header renders the view title (always in Edit mode). */
-  showTitle: boolean;
-  /** Vertical space the header takes (0 when the actions float over the card). */
+  /** Effective Edit mode: `isEditing && canEdit`. */
+  editing: boolean;
+  /** The header band with the title pill shows (the same in both modes). */
+  showWidgetTitles: boolean;
+  /** The title pill shows the view icon ("Show icons in heading"). */
+  showIcon: boolean;
+  /** Vertical space the header takes (0 when the tools float over the card). */
   headerHeight: number;
   isDragging: boolean;
   /** Ref callback for the element that starts a drag (Edit mode). */
   setDragHandle: (element: HTMLElement | null) => void;
+  /** The widget menu (opened by the title pill, the options button or a right-click). */
+  menuOpen: boolean;
+  setMenuOpen: (open: boolean) => void;
+  /** The settings host (opened by the Edit-mode settings tool). */
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
+  /** The widget box, which anchors the settings host. */
+  getBoxElement: () => HTMLElement | null;
+  /** Focus returns here when the menu closes: the title pill, or the options button without titles. */
+  titleRef: RefObject<HTMLButtonElement>;
+  optionsRef: RefObject<HTMLButtonElement>;
   actions: WidgetActions;
 }
 

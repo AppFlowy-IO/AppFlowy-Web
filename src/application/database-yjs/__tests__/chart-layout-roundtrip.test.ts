@@ -143,9 +143,14 @@ describe('chart layout writes', () => {
   });
 });
 
-describe('chart extended settings scaffold', () => {
-  it('has no keys yet and reads every map as the defaults', () => {
-    expect(ChartExtendedLayoutKeys).toEqual({});
+describe('chart extended settings', () => {
+  it('registers the WP10 style keys and reads unknown values as the defaults', () => {
+    expect(ChartExtendedLayoutKeys).toEqual({
+      decimalPlaces: 'decimal_places',
+      colorTheme: 'color_theme',
+      showDataLabels: 'show_data_labels',
+      legendPosition: 'legend_position',
+    });
     expect(parseChartExtendedSettings(new Map([['zz_parity_enum', 'neon']]))).toEqual(DEFAULT_CHART_EXTENDED_SETTINGS);
     expect(parseChartLayoutSettings(new Map()).extended).toEqual(DEFAULT_CHART_EXTENDED_SETTINGS);
     expect(sameChartExtendedSettings(undefined, DEFAULT_CHART_EXTENDED_SETTINGS)).toBe(true);
@@ -153,36 +158,35 @@ describe('chart extended settings scaffold', () => {
 
   it('writes only changed values and resets with null only over a stored value', () => {
     const { chart } = createChart({ decimal_places: { $bigint: '2' } });
-    // A key a later package adds; the writer handles any registered field the same way.
-    const write = (value: unknown) => writeChartExtendedValue(chart, 'decimal_places' as never, value);
-    const registry = ChartExtendedLayoutKeys as Record<string, string>;
+    const write = (value: unknown) => writeChartExtendedValue(chart, 'decimalPlaces', value);
 
-    registry.decimal_places = 'decimal_places';
-    try {
-      expect(write(2)).toBe(false);
-      expect(write(3)).toBe(true);
-      expect(chart.get('decimal_places')).toBe(3);
-      expect(write(null)).toBe(true);
-      expect(chart.get('decimal_places')).toBeNull();
-      expect(chart.has('decimal_places')).toBe(true);
-      // Resetting again, or resetting an absent key, writes nothing.
-      expect(write(null)).toBe(false);
-      chart.delete('decimal_places');
-      expect(write(null)).toBe(false);
-      expect(chart.has('decimal_places')).toBe(false);
+    expect(write(2)).toBe(false);
+    expect(write(3)).toBe(true);
+    expect(chart.get('decimal_places')).toBe(3);
+    expect(write(null)).toBe(true);
+    expect(chart.get('decimal_places')).toBeNull();
+    expect(chart.has('decimal_places')).toBe(true);
+    // Resetting again, or resetting an absent key, writes nothing.
+    expect(write(null)).toBe(false);
+    chart.delete('decimal_places');
+    expect(write(null)).toBe(false);
+    expect(chart.has('decimal_places')).toBe(false);
 
-      expect(applyAndCollect(chart, () => applyChartLayoutUpdate(chart, {}, { decimal_places: 4 } as never))).toEqual([
-        'decimal_places',
-      ]);
-      expect(applyAndCollect(chart, () => applyChartLayoutUpdate(chart, {}, { decimal_places: 4 } as never))).toEqual(
-        []
-      );
-      expect(sameChartExtendedSettings({ decimal_places: 1 } as never, { decimal_places: BigInt(1) } as never)).toBe(
-        true
-      );
-      expect(sameChartExtendedSettings({ decimal_places: 1 } as never, { decimal_places: 2 } as never)).toBe(false);
-    } finally {
-      delete registry.decimal_places;
-    }
+    expect(applyAndCollect(chart, () => applyChartLayoutUpdate(chart, {}, { decimalPlaces: 4 }))).toEqual([
+      'decimal_places',
+    ]);
+    expect(applyAndCollect(chart, () => applyChartLayoutUpdate(chart, {}, { decimalPlaces: 4 }))).toEqual([]);
+    expect(
+      sameChartExtendedSettings(
+        { ...DEFAULT_CHART_EXTENDED_SETTINGS, decimalPlaces: 1 },
+        { ...DEFAULT_CHART_EXTENDED_SETTINGS, decimalPlaces: BigInt(1) as unknown as number }
+      )
+    ).toBe(true);
+    expect(
+      sameChartExtendedSettings(
+        { ...DEFAULT_CHART_EXTENDED_SETTINGS, decimalPlaces: 1 },
+        { ...DEFAULT_CHART_EXTENDED_SETTINGS, decimalPlaces: 2 }
+      )
+    ).toBe(false);
   });
 });

@@ -398,9 +398,14 @@ export const ChartSelectors = {
   dots: (page: Page) => page.locator('.recharts-dot'),
   slices: (page: Page) => page.locator('.recharts-pie-sector'),
   emptyStateNoField: (page: Page) => page.getByTestId('database-chart').getByText('No fields available for grouping'),
-  emptyStateNoData: (page: Page) => page.getByTestId('database-chart').getByText('No data'),
-  tooltip: (page: Page) => page.locator('.recharts-tooltip-wrapper'),
-  legend: (page: Page) => page.locator('.recharts-legend-wrapper'),
+  emptyStateNoData: (page: Page) => page.getByTestId('chart-no-data'),
+  // The tooltip renders in a portal on the body.
+  tooltip: (page: Page) => page.getByTestId('chart-tooltip'),
+  legend: (page: Page) => page.getByTestId('chart-legend'),
+  loading: (page: Page) => page.getByTestId('chart-loading'),
+  error: (page: Page) => page.getByTestId('chart-error'),
+  donutTotal: (page: Page) => page.getByTestId('chart-donut-total'),
+  dataTable: (page: Page) => page.getByTestId('chart-data-table'),
 };
 
 /**

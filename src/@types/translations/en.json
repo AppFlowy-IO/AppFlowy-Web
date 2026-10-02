@@ -4417,6 +4417,51 @@
       "title": "Title",
       "titleOf": "{{aggregation}} of {{field}}",
       "titlePlaceholder": "Default title"
+    },
+    "total": "Total",
+    "state": {
+      "preparing": "Preparing your chart",
+      "noData": "No data",
+      "error": "Couldn't load this chart",
+      "retry": "Retry"
+    },
+    "style": {
+      "title": "Style",
+      "color": "Color",
+      "dataLabels": "Data labels",
+      "legend": "Legend",
+      "decimalPlaces": "Decimal places"
+    },
+    "color": {
+      "auto": "Auto",
+      "colorful": "Colorful",
+      "colorless": "Colorless",
+      "blue": "Blue",
+      "yellow": "Yellow",
+      "green": "Green",
+      "purple": "Purple",
+      "teal": "Teal",
+      "orange": "Orange",
+      "pink": "Pink",
+      "red": "Red"
+    },
+    "legend": {
+      "auto": "Auto",
+      "off": "Off",
+      "bottom": "Bottom",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "Previous page",
+      "nextPage": "Next page"
+    },
+    "decimalPlaces": {
+      "auto": "Auto"
+    },
+    "value": {
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days"
+    },
+    "a11y": {
+      "table": "Chart data"
     }
   },
   "list": {
@@ -4540,7 +4585,16 @@
       "dragHandle": "Drag to move",
       "resizeWidth": "Drag to resize",
       "resizeHeight": "Drag to change row height",
-      "unsupported": "A dashboard can't be shown inside a dashboard"
+      "unsupported": "A dashboard can't be shown inside a dashboard",
+      "resizeWidthValue": "{{columns}} of 12 columns",
+      "resizeHeightValue": "{{height}} pixels",
+      "settings": "Settings",
+      "viewSettings": "View settings",
+      "source": "Source",
+      "filters": "Filters",
+      "sorts": "Sorts",
+      "close": "Close",
+      "offline": "Available when you're back online"
     },
     "picker": {
       "title": "Add widget",
@@ -4578,7 +4632,12 @@
     },
     "settings": {
       "name": "Dashboard settings",
-      "showWidgetTitles": "Show widget titles"
+      "showWidgetTitles": "Show widget titles",
+      "showIconsInHeading": "Show icons in heading"
+    },
+    "toolbar": {
+      "settings": "Settings",
+      "openAsFullPage": "Open as full page"
     }
   }
 }

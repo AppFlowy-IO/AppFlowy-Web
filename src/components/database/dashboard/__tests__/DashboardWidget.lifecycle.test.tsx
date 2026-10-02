@@ -103,6 +103,7 @@ jest.mock('@/components/editor/components/blocks/database/hooks/useDocumentLoade
       doc: pending || noAccess ? null : mockSourceDocs.get(databaseId) ?? null,
       notFound: noAccess,
       noAccess,
+      offline: false,
       setNotFound: jest.fn(),
     };
   },
@@ -130,7 +131,7 @@ jest.mock('../hooks/useDashboardDnd', () => ({
   useWidgetDropTarget: () => null,
   useRowGapDropTarget: () => false,
 }));
-jest.mock('../WidgetHeader', () => ({ WidgetHeaderFrame: () => null }));
+jest.mock('../WidgetHeader', () => ({ WidgetHeaderFrame: () => null, WidgetHeader: () => null }));
 
 const ROWS: DashboardRow[] = [
   { id: 'r1', height: 360, widgets: [{ id: 'w1', viewId: 'v1', databaseId: 'db', width: 12 }] },
@@ -168,6 +169,7 @@ function TestDashboard() {
         openPicker: jest.fn(),
         showLimitMessage: jest.fn(),
         acquireSourceDoc,
+        selectWidget: jest.fn(),
       }}
     >
       <DashboardGrid />

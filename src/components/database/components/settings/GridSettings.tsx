@@ -11,6 +11,20 @@ import {
 
 import type { ReactNode } from 'react';
 
+/**
+ * The Grid settings rows: properties, layout and grouping (desktop's order).
+ * Also rendered by a dashboard widget's settings host.
+ */
+export function GridSettingsItems() {
+  return (
+    <>
+      <Properties />
+      <Layout currentLayout={DatabaseViewLayout.Grid} />
+      <GridSettingGroup />
+    </>
+  );
+}
+
 function GridSettings({ children }: { children: ReactNode }) {
   return (
     <DropdownMenu>
@@ -24,9 +38,7 @@ function GridSettings({ children }: { children: ReactNode }) {
         className={'!min-w-[120px]'}
       >
         <DropdownMenuGroup>
-          <Properties />
-          <GridSettingGroup />
-          <Layout currentLayout={DatabaseViewLayout.Grid} />
+          <GridSettingsItems />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

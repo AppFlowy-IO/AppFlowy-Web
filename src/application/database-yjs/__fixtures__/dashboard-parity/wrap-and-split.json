@@ -1,0 +1,354 @@
+{
+  "fixture": "wrap-and-split",
+  "version": 1,
+  "format": {
+    "row_width": "The measured row TRACK width in px: the content column plus the 6px box bleed on each side.",
+    "rects": "[left, top, width, height] in track coordinates. Compare with a tolerance of 0.01.",
+    "boundaries": "The centre of each column gap in track coordinates; only for unwrapped rows (cols == count).",
+    "rows": "A row is [rowId, [[widgetId, width], ...], height?]. The height defaults to 360, a widget's view_id is view-<widgetId> and its database_id is db. A duplicate keeps the view_id and database_id of its source.",
+    "ids": "\"*\" in an expected row matches a generated id.",
+    "placement": "{\"type\": \"existing_row\", \"row_id\": \"r1\", \"index\": 0} or {\"type\": \"new_row\", \"row_index\": 1}; an absent index means the end.",
+    "op": "add {widget, placement}, remove {widget}, move {widget, placement}, duplicate {widget}, set_height {row, height}.",
+    "unchanged": "true: the result deep-equals the input rows (ids, heights, widths). For a move, classify gives noop, or the feedback value when one is given.",
+    "expect": "The rows after the operation, compared by row id, height, widget ids and widths."
+  },
+  "grid": {
+    "column_gap": 12,
+    "row_gap": 16,
+    "min_widget_width": 240,
+    "min_widget_columns": 2,
+    "columns": 12,
+    "height_snap": 20,
+    "min_row_height": 240,
+    "max_row_height": 1200
+  },
+  "wrap": [
+    { "row_width": 1244, "count": 4, "cols": 4, "lines": [4] },
+    { "row_width": 1004, "count": 4, "cols": 4, "lines": [4] },
+    { "row_width": 996, "count": 4, "cols": 4, "lines": [4] },
+    { "row_width": 995, "count": 4, "cols": 2, "lines": [2, 2] },
+    { "row_width": 954, "count": 4, "cols": 2, "lines": [2, 2] },
+    { "row_width": 492, "count": 4, "cols": 2, "lines": [2, 2] },
+    { "row_width": 491, "count": 4, "cols": 1, "lines": [1, 1, 1, 1] },
+    { "row_width": 744, "count": 3, "cols": 3, "lines": [3] },
+    { "row_width": 743, "count": 3, "cols": 2, "lines": [2, 1] },
+    { "row_width": 704, "count": 3, "cols": 2, "lines": [2, 1] },
+    { "row_width": 492, "count": 3, "cols": 2, "lines": [2, 1] },
+    { "row_width": 491, "count": 3, "cols": 1, "lines": [1, 1, 1] },
+    { "row_width": 1244, "count": 2, "cols": 2, "lines": [2] },
+    { "row_width": 492, "count": 2, "cols": 2, "lines": [2] },
+    { "row_width": 491, "count": 2, "cols": 1, "lines": [1, 1] },
+    { "row_width": 444, "count": 2, "cols": 1, "lines": [1, 1] },
+    { "row_width": 354, "count": 4, "cols": 1, "lines": [1, 1, 1, 1] },
+    { "row_width": 354, "count": 1, "cols": 1, "lines": [1] }
+  ],
+  "min_columns": [
+    { "row_width": 1244, "count": 2, "min": 3 },
+    { "row_width": 1244, "count": 3, "min": 3 },
+    { "row_width": 1244, "count": 4, "min": 3 },
+    { "row_width": 1004, "count": 4, "min": 3 },
+    { "row_width": 992, "count": 3, "min": 3 },
+    { "row_width": 1452, "count": 4, "min": 3 },
+    { "row_width": 1476, "count": 4, "min": 2 },
+    { "row_width": 1824, "count": 3, "min": 2 },
+    { "row_width": 1824, "count": 4, "min": 2 },
+    { "row_width": 1788, "count": 2, "min": 2 },
+    { "row_width": 492, "count": 2, "min": 6 }
+  ],
+  "pixels_to_columns": [
+    { "delta": 100, "row_width": 1224, "count": 2, "columns": 1 },
+    { "delta": 50.5, "row_width": 1224, "count": 2, "columns": 1 },
+    { "delta": -50.5, "row_width": 1224, "count": 2, "columns": -1 },
+    { "delta": -151.5, "row_width": 1224, "count": 2, "columns": -2 },
+    { "delta": 200, "row_width": 1224, "count": 3, "columns": 2 },
+    { "delta": -260, "row_width": 1224, "count": 3, "columns": -3 },
+    { "delta": 300, "row_width": 1824, "count": 3, "columns": 2 },
+    { "delta": 0, "row_width": 1224, "count": 3, "columns": 0 },
+    { "delta": 120, "row_width": 0, "count": 2, "columns": 0 }
+  ],
+  "width_clamp": [
+    { "widths": [4, 4, 4], "index": 0, "delta": 2, "min": 3, "result": 1 },
+    { "widths": [4, 4, 4], "index": 0, "delta": -3, "min": 3, "result": -1 },
+    { "widths": [5, 3, 4], "index": 0, "delta": -3, "min": 3, "result": -2 },
+    { "widths": [6, 6], "index": 0, "delta": 5, "min": 2, "result": 4 },
+    { "widths": [6, 6], "index": 0, "delta": 5, "min": 3, "result": 3 },
+    { "widths": [8, 2, 2], "index": 1, "delta": 1, "min": 3, "result": 0 },
+    { "widths": [8, 2, 2], "index": 1, "delta": -1, "min": 3, "result": 0 },
+    { "widths": [8, 2, 2], "index": 0, "delta": -1, "min": 3, "result": -1 },
+    { "widths": [8, 2, 2], "index": 0, "delta": 1, "min": 3, "result": 0 },
+    { "widths": [6, 6], "index": 1, "delta": 1, "min": 2, "result": 0 },
+    { "widths": [12], "index": 0, "delta": 1, "min": 2, "result": 0 }
+  ],
+  "height_snap": [
+    { "height": 370, "snapped": 380 },
+    { "height": 369, "snapped": 360 },
+    { "height": 380, "snapped": 380 },
+    { "height": 471, "snapped": 480 },
+    { "height": 410, "snapped": 420 },
+    { "height": 250, "snapped": 260 },
+    { "height": 241, "snapped": 240 },
+    { "height": 229, "snapped": 240 },
+    { "height": 1195, "snapped": 1200 },
+    { "height": 1250, "snapped": 1200 }
+  ],
+  "row_layout": [
+    {
+      "row_width": 1244, "widths": [8, 4], "height": 360, "cols": 2, "lines": [2],
+      "rects": [[0, 0, 821.333, 360], [833.333, 0, 410.667, 360]],
+      "block_height": 360, "boundaries": [827.333]
+    },
+    {
+      "row_width": 1244, "widths": [4, 4, 4], "height": 360, "cols": 3, "lines": [3],
+      "rects": [[0, 0, 406.667, 360], [418.667, 0, 406.667, 360], [837.333, 0, 406.667, 360]],
+      "block_height": 360, "boundaries": [412.667, 831.333]
+    },
+    {
+      "row_width": 1004, "widths": [3, 3, 3, 3], "height": 240, "cols": 4, "lines": [4],
+      "rects": [[0, 0, 242, 240], [254, 0, 242, 240], [508, 0, 242, 240], [762, 0, 242, 240]],
+      "block_height": 240, "boundaries": [248, 502, 756]
+    },
+    {
+      "row_width": 954, "widths": [3, 3, 3, 3], "height": 300, "cols": 2, "lines": [2, 2],
+      "rects": [[0, 0, 471, 300], [483, 0, 471, 300], [0, 316, 471, 300], [483, 316, 471, 300]],
+      "block_height": 616, "boundaries": []
+    },
+    {
+      "row_width": 704, "widths": [4, 4, 4], "height": 360, "cols": 2, "lines": [2, 1],
+      "rects": [[0, 0, 346, 360], [358, 0, 346, 360], [0, 376, 704, 360]],
+      "block_height": 736, "boundaries": []
+    },
+    {
+      "row_width": 444, "widths": [6, 6], "height": 360, "cols": 1, "lines": [1, 1],
+      "rects": [[0, 0, 444, 360], [0, 376, 444, 360]],
+      "block_height": 736, "boundaries": []
+    }
+  ],
+  "split": [
+    {
+      "id": "S1", "name": "add x to the end of r1 (Notion 8+4+1)",
+      "rows": [["r1", [["a", 8], ["b", 4]]]],
+      "op": { "type": "add", "widget": "x", "placement": { "type": "existing_row", "row_id": "r1" } },
+      "expect": [["r1", [["a", 4], ["b", 4], ["x", 4]]]]
+    },
+    {
+      "id": "S2", "name": "add x to a row of one",
+      "rows": [["r1", [["a", 12]]]],
+      "op": { "type": "add", "widget": "x", "placement": { "type": "existing_row", "row_id": "r1" } },
+      "expect": [["r1", [["a", 6], ["x", 6]]]]
+    },
+    {
+      "id": "S3", "name": "add x at the start of a row of three",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]]],
+      "op": { "type": "add", "widget": "x", "placement": { "type": "existing_row", "row_id": "r1", "index": 0 } },
+      "expect": [["r1", [["x", 3], ["a", 3], ["b", 3], ["c", 3]]]]
+    },
+    {
+      "id": "S4", "name": "add x between 9 and 3",
+      "rows": [["r1", [["a", 9], ["b", 3]]]],
+      "op": { "type": "add", "widget": "x", "placement": { "type": "existing_row", "row_id": "r1", "index": 1 } },
+      "expect": [["r1", [["a", 4], ["x", 4], ["b", 4]]]]
+    },
+    {
+      "id": "S5", "name": "add x to a full row",
+      "rows": [["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]]],
+      "op": { "type": "add", "widget": "x", "placement": { "type": "existing_row", "row_id": "r1" } },
+      "unchanged": true
+    },
+    {
+      "id": "S6", "name": "add x as a new row between two rows",
+      "rows": [["r1", [["a", 8], ["b", 4]]], ["r2", [["c", 12]]]],
+      "op": { "type": "add", "widget": "x", "placement": { "type": "new_row", "row_index": 1 } },
+      "expect": [["r1", [["a", 8], ["b", 4]]], ["*", [["x", 12]]], ["r2", [["c", 12]]]]
+    },
+    {
+      "id": "S7", "name": "add x to a full dashboard",
+      "rows": [
+        ["r1", [["w1", 3], ["w2", 3], ["w3", 3], ["w4", 3]]],
+        ["r2", [["w5", 3], ["w6", 3], ["w7", 3], ["w8", 3]]],
+        ["r3", [["w9", 3], ["w10", 3], ["w11", 3], ["w12", 3]]]
+      ],
+      "op": { "type": "add", "widget": "x", "placement": { "type": "new_row" } },
+      "unchanged": true
+    },
+    {
+      "id": "S8", "name": "remove the middle widget of three",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]]],
+      "op": { "type": "remove", "widget": "b" },
+      "expect": [["r1", [["a", 6], ["c", 6]]]]
+    },
+    {
+      "id": "S9", "name": "remove from 8/2/2 (was 10/2)",
+      "rows": [["r1", [["a", 8], ["b", 2], ["c", 2]]]],
+      "op": { "type": "remove", "widget": "c" },
+      "expect": [["r1", [["a", 6], ["b", 6]]]]
+    },
+    {
+      "id": "S10", "name": "remove the only widget of a row",
+      "rows": [["r1", [["a", 12]]], ["r2", [["b", 12]]]],
+      "op": { "type": "remove", "widget": "a" },
+      "expect": [["r2", [["b", 12]]]]
+    },
+    {
+      "id": "S11", "name": "remove from a full row",
+      "rows": [["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]]],
+      "op": { "type": "remove", "widget": "a" },
+      "expect": [["r1", [["b", 4], ["c", 4], ["d", 4]]]]
+    },
+    {
+      "id": "S12", "name": "move n into another row; both rows split equally",
+      "rows": [["r1", [["p", 4], ["t", 4], ["n", 4]]], ["r2", [["q", 12]]]],
+      "op": { "type": "move", "widget": "n", "placement": { "type": "existing_row", "row_id": "r2", "index": 1 } },
+      "expect": [["r1", [["p", 6], ["t", 6]]], ["r2", [["q", 6], ["n", 6]]]]
+    },
+    {
+      "id": "S13", "name": "move a into the start of a 9/3 row",
+      "rows": [["r1", [["a", 8], ["b", 4]]], ["r2", [["c", 9], ["d", 3]]]],
+      "op": { "type": "move", "widget": "a", "placement": { "type": "existing_row", "row_id": "r2", "index": 0 } },
+      "expect": [["r1", [["b", 12]]], ["r2", [["a", 4], ["c", 4], ["d", 4]]]]
+    },
+    {
+      "id": "S14", "name": "move the only widget of r2 into r1; r2 disappears",
+      "rows": [["r1", [["a", 6], ["b", 6]]], ["r2", [["c", 12]]]],
+      "op": { "type": "move", "widget": "c", "placement": { "type": "existing_row", "row_id": "r1", "index": 2 } },
+      "expect": [["r1", [["a", 4], ["b", 4], ["c", 4]]]]
+    },
+    {
+      "id": "S15", "name": "reorder inside a row keeps every width",
+      "rows": [["r1", [["a", 3], ["b", 3], ["c", 6]]]],
+      "op": { "type": "move", "widget": "c", "placement": { "type": "existing_row", "row_id": "r1", "index": 0 } },
+      "expect": [["r1", [["c", 6], ["a", 3], ["b", 3]]]]
+    },
+    {
+      "id": "S16", "name": "reorder inside a full row",
+      "rows": [["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]]],
+      "op": { "type": "move", "widget": "a", "placement": { "type": "existing_row", "row_id": "r1" } },
+      "expect": [["r1", [["b", 3], ["c", 3], ["d", 3], ["a", 3]]]]
+    },
+    {
+      "id": "S17", "name": "Move left",
+      "rows": [["r1", [["a", 8], ["b", 4]]]],
+      "op": { "type": "move", "widget": "b", "placement": { "type": "existing_row", "row_id": "r1", "index": 0 } },
+      "expect": [["r1", [["b", 4], ["a", 8]]]]
+    },
+    {
+      "id": "S18", "name": "move a widget onto its own position",
+      "rows": [["r1", [["a", 8], ["b", 4]]]],
+      "op": { "type": "move", "widget": "a", "placement": { "type": "existing_row", "row_id": "r1", "index": 0 } },
+      "unchanged": true, "feedback": "noop"
+    },
+    {
+      "id": "S19", "name": "move into a full foreign row",
+      "rows": [["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]], ["r2", [["e", 12]]]],
+      "op": { "type": "move", "widget": "e", "placement": { "type": "existing_row", "row_id": "r1", "index": 0 } },
+      "unchanged": true, "feedback": "blocked"
+    },
+    {
+      "id": "S20", "name": "Create new row below",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "op": { "type": "move", "widget": "b", "placement": { "type": "new_row", "row_index": 1 } },
+      "expect": [["r1", [["a", 6], ["c", 6]]], ["*", [["b", 12]]], ["r2", [["d", 12]]]]
+    },
+    {
+      "id": "S21", "name": "Create new row above",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "op": { "type": "move", "widget": "b", "placement": { "type": "new_row", "row_index": 0 } },
+      "expect": [["*", [["b", 12]]], ["r1", [["a", 6], ["c", 6]]], ["r2", [["d", 12]]]]
+    },
+    {
+      "id": "S22", "name": "a new row keeps the source row height",
+      "rows": [["r1", [["a", 6], ["b", 6]], 500]],
+      "op": { "type": "move", "widget": "b", "placement": { "type": "new_row", "row_index": 1 } },
+      "expect": [["r1", [["a", 12]], 500], ["*", [["b", 12]], 500]]
+    },
+    {
+      "id": "S23", "name": "a lone widget into the gap above its own row (#15)",
+      "rows": [["r1", [["a", 6], ["b", 6]]], ["r2", [["c", 12]]]],
+      "op": { "type": "move", "widget": "c", "placement": { "type": "new_row", "row_index": 1 } },
+      "unchanged": true, "feedback": "noop"
+    },
+    {
+      "id": "S24", "name": "a lone widget into the gap below its own row (#15)",
+      "rows": [["r1", [["a", 6], ["b", 6]]], ["r2", [["c", 12]]]],
+      "op": { "type": "move", "widget": "c", "placement": { "type": "new_row", "row_index": 2 } },
+      "unchanged": true, "feedback": "noop"
+    },
+    {
+      "id": "S25", "name": "a lone widget to the end of the dashboard",
+      "rows": [["r1", [["a", 12]]], ["r2", [["b", 12]]], ["r3", [["c", 12]]]],
+      "op": { "type": "move", "widget": "a", "placement": { "type": "new_row", "row_index": 3 } },
+      "expect": [["r2", [["b", 12]]], ["r3", [["c", 12]]], ["*", [["a", 12]]]]
+    },
+    {
+      "id": "S26", "name": "duplicate into its own row",
+      "rows": [["r1", [["a", 8], ["b", 4]]]],
+      "op": { "type": "duplicate", "widget": "a" },
+      "expect": [["r1", [["a", 4], ["*", 4], ["b", 4]]]]
+    },
+    {
+      "id": "S27", "name": "duplicate from a full row starts a new row below",
+      "rows": [["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]], ["r2", [["e", 12]]]],
+      "op": { "type": "duplicate", "widget": "c" },
+      "expect": [["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]], ["*", [["*", 12]]], ["r2", [["e", 12]]]]
+    },
+    {
+      "id": "S28", "name": "duplicate on a full dashboard",
+      "rows": [
+        ["r1", [["w1", 3], ["w2", 3], ["w3", 3], ["w4", 3]]],
+        ["r2", [["w5", 3], ["w6", 3], ["w7", 3], ["w8", 3]]],
+        ["r3", [["w9", 3], ["w10", 3], ["w11", 3], ["w12", 3]]]
+      ],
+      "op": { "type": "duplicate", "widget": "w1" },
+      "unchanged": true
+    },
+    {
+      "id": "S29", "name": "a height change keeps the widths",
+      "rows": [["r1", [["a", 8], ["b", 4]]]],
+      "op": { "type": "set_height", "row": "r1", "height": 480 },
+      "expect": [["r1", [["a", 8], ["b", 4]], 480]]
+    }
+  ],
+  "row_moves": [
+    {
+      "id": "M1", "name": "move the first row down",
+      "rows": [["r1", [["a", 8], ["b", 4]], 360], ["r2", [["c", 12]], 480], ["r3", [["d", 12]], 240]],
+      "row": "r1", "delta": 1,
+      "expect": [["r2", [["c", 12]], 480], ["r1", [["a", 8], ["b", 4]], 360], ["r3", [["d", 12]], 240]]
+    },
+    {
+      "id": "M2", "name": "move the last row up",
+      "rows": [["r1", [["a", 8], ["b", 4]], 360], ["r2", [["c", 12]], 480], ["r3", [["d", 12]], 240]],
+      "row": "r3", "delta": -1,
+      "expect": [["r1", [["a", 8], ["b", 4]], 360], ["r3", [["d", 12]], 240], ["r2", [["c", 12]], 480]]
+    },
+    {
+      "id": "M3", "name": "the first row cannot move up",
+      "rows": [["r1", [["a", 8], ["b", 4]], 360], ["r2", [["c", 12]], 480], ["r3", [["d", 12]], 240]],
+      "row": "r1", "delta": -1,
+      "unchanged": true
+    },
+    {
+      "id": "M4", "name": "the last row cannot move down",
+      "rows": [["r1", [["a", 8], ["b", 4]], 360], ["r2", [["c", 12]], 480], ["r3", [["d", 12]], 240]],
+      "row": "r3", "delta": 1,
+      "unchanged": true
+    },
+    {
+      "id": "M5a", "name": "a single row cannot move up",
+      "rows": [["r1", [["a", 12]]]],
+      "row": "r1", "delta": -1,
+      "unchanged": true
+    },
+    {
+      "id": "M5b", "name": "a single row cannot move down",
+      "rows": [["r1", [["a", 12]]]],
+      "row": "r1", "delta": 1,
+      "unchanged": true
+    },
+    {
+      "id": "M6", "name": "an unknown row",
+      "rows": [["r1", [["a", 8], ["b", 4]], 360], ["r2", [["c", 12]], 480], ["r3", [["d", 12]], 240]],
+      "row": "missing", "delta": 1,
+      "unchanged": true
+    }
+  ]
+}

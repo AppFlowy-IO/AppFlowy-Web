@@ -11,6 +11,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+/** The Chart settings rows; also rendered by a dashboard widget's settings host. */
+export function ChartSettingsItems() {
+  return (
+    <>
+      <Properties />
+      <Layout currentLayout={DatabaseViewLayout.Chart} />
+      <ChartLayoutSettings />
+    </>
+  );
+}
+
 function ChartSettings({ children }: { children: React.ReactNode }) {
   return (
     <DropdownMenu>
@@ -24,9 +35,7 @@ function ChartSettings({ children }: { children: React.ReactNode }) {
         className={'!min-w-[120px]'}
       >
         <DropdownMenuGroup>
-          <Properties />
-          <Layout currentLayout={DatabaseViewLayout.Chart} />
-          <ChartLayoutSettings />
+          <ChartSettingsItems />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

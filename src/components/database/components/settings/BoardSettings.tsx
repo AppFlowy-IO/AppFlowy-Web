@@ -11,6 +11,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+/** The Board settings rows; also rendered by a dashboard widget's settings host. */
+export function BoardSettingsItems() {
+  return (
+    <>
+      <Properties />
+      <Layout currentLayout={DatabaseViewLayout.Board} />
+      <BoardSettingGroup />
+    </>
+  );
+}
+
 function BoardSettings({ children }: { children: React.ReactNode }) {
   return (
     <DropdownMenu>
@@ -24,9 +35,7 @@ function BoardSettings({ children }: { children: React.ReactNode }) {
         className={'!min-w-[120px]'}
       >
         <DropdownMenuGroup>
-          <Properties />
-          <Layout currentLayout={DatabaseViewLayout.Board} />
-          <BoardSettingGroup />
+          <BoardSettingsItems />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -3,10 +3,12 @@ import * as Y from 'yjs';
 import { RowId } from '@/application/types';
 
 import {
+  ChartColorTheme,
   ChartExtendedField,
   ChartExtendedLayoutKeys,
   ChartExtendedSettings,
   ChartExtendedSettingsUpdate,
+  DEFAULT_CHART_EXTENDED_SETTINGS,
   parseChartExtendedSettings,
   writeChartExtendedValue,
 } from './chart-extended-settings';
@@ -75,8 +77,15 @@ export interface ChartLayoutSettings {
   numberFormat?: ChartNumberFormat;
   /** Number chart only: custom title. Empty/undefined uses the generated title. */
   titleText?: string;
-  /** Settings under the keys of `chart-extended-settings.ts` (`parseChartLayoutSettings` always fills it). */
-  extended?: ChartExtendedSettings;
+  /** Settings under the keys of `chart-extended-settings.ts`, defaults applied. */
+  extended: ChartExtendedSettings;
+}
+
+/** The style settings of a chart (WP10), defaults applied when there is no chart setting yet. */
+export function resolveChartStyle(
+  settings: Pick<ChartLayoutSettings, 'extended'> | null | undefined
+): ChartExtendedSettings {
+  return settings?.extended ?? DEFAULT_CHART_EXTENDED_SETTINGS;
 }
 
 /**
@@ -95,6 +104,9 @@ export interface ChartLayoutSetting {
   titleText?: string;
 }
 
+/** The group key of the "No {field}" category. */
+export const EMPTY_CATEGORY_KEY = '__empty__';
+
 /**
  * Computed chart data item for rendering
  */
@@ -105,43 +117,24 @@ export interface ChartDataItem {
   value: number;
   /** Row IDs in this category (for drill-down) */
   rowIds: RowId[];
-  /** Color from SelectOption or default palette */
+  /**
+   * Stable group key: the option id, checkbox key or date bucket, and
+   * `EMPTY_CATEGORY_KEY` for the empty category. Charts use `key ?? label`.
+   */
+  key?: string;
+  /** The select option's color, when the X property is a select field. */
+  optionColor?: SelectOptionColor;
+  /** Checkbox categories only. */
+  checkboxState?: 'checked' | 'unchecked';
+  /** Presentation only: assigned at render time by `resolveCategoryColors` (`chart-colors.ts`). */
   color?: string;
   /** True for "No {field}" category */
   isEmptyCategory?: boolean;
 }
 
-/**
- * Default color palette for charts (matching Flutter implementation)
- */
-export const CHART_COLORS = [
-  '#5B8FF9', // Blue
-  '#5AD8A6', // Green
-  '#5D7092', // Gray-blue
-  '#F6BD16', // Yellow
-  '#E86452', // Red
-  '#6DC8EC', // Cyan
-  '#945FB9', // Purple
-  '#FF9845', // Orange
-  '#1E9493', // Teal
-  '#FF99C3', // Pink
-];
-
-/**
- * Color for empty category (No {field})
- */
-export const EMPTY_VALUE_COLOR = '#BFBFBF';
-
-/**
- * Checkbox-specific colors
- */
-export const CHECKBOX_CHECKED_COLOR = '#5AD8A6'; // Green
-export const CHECKBOX_UNCHECKED_COLOR = '#BFBFBF'; // Gray
-
 // ---------------------------------------------------------------------------
 // Notion chart palette, exactly `dashboard-parity/tokens.json` `chart` (bound by
-// `dashboard-tokens.test.ts`). It sits beside the AntV constants above until
-// WP10 moves the chart components onto it and deletes those.
+// `dashboard-tokens.test.ts`). `chart-colors.ts` assigns it.
 // ---------------------------------------------------------------------------
 
 /** Series colors in `colorful` order: blue, yellow, green, purple, orange, pink, teal, red, gray. */
@@ -183,19 +176,7 @@ export const CHART_OPTION_COLORS: Record<SelectOptionColor, string> = {
   [SelectOptionColor.OptionColor20]: '#8C8B89',
 };
 
-/** The persisted `color_theme` values (ARCHITECTURE §3.2). */
-export type ChartColorTheme =
-  | 'auto'
-  | 'colorful'
-  | 'colorless'
-  | 'blue'
-  | 'yellow'
-  | 'green'
-  | 'purple'
-  | 'teal'
-  | 'orange'
-  | 'pink'
-  | 'red';
+export type { ChartColorTheme };
 
 /** Base hue of each single-hue theme; category i is drawn at `CHART_OPACITY_STEPS[i % 5]`. */
 export const CHART_SINGLE_HUE: Record<Exclude<ChartColorTheme, 'auto' | 'colorful' | 'colorless'>, string> = {

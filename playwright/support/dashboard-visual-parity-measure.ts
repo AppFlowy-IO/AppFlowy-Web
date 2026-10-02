@@ -27,6 +27,11 @@ export interface FallbackSpec {
   closest?: string;
   /** Keep only the first match inside each element matching `firstWithin`. */
   firstWithin?: string;
+  /**
+   * Tag the matches even where the id is attached for real: one surface draws
+   * some instances itself and takes the others from a shared component.
+   */
+  union?: boolean;
   /** Where the id would be attached for real (report note). */
   note: string;
 }
@@ -62,7 +67,7 @@ export const PARITY_FALLBACK_SELECTORS: Record<string, FallbackSpec> = {
     note: 'SortsButton inside a widget',
   },
   'dash-widget-tool-settings': {
-    css: '[data-dashboard-widget="true"] [data-testid="database-actions-settings"]',
+    css: '[data-dashboard-widget="true"] [data-testid="dashboard-widget-settings-button"]',
     note: 'DatabaseActions settings button inside a widget',
   },
   'dash-widget-tool-search': {
@@ -110,6 +115,28 @@ export const PARITY_FALLBACK_SELECTORS: Record<string, FallbackSpec> = {
   'dash-widget-title-pill__icon': {
     css: '[data-testid="dashboard-widget-title-button"] > :first-child:not([data-testid="dashboard-widget-title"])',
     note: 'PageIcon of the title pill',
+  },
+  // The settings host draws its Filter, Sort and Source rows itself (real ids); the view's
+  // own rows come from the shared settings components, so the two sets are measured together.
+  'dash-widget-settings-row': {
+    css: '[data-parity-id="dash-widget-settings"] [role="menuitem"]',
+    union: true,
+    note: 'settings row of a shared view settings component (Properties, Layout, Group, …)',
+  },
+  'dash-widget-settings-row__label': {
+    css: '[data-parity-id="dash-widget-settings"] [role="menuitem"] > span:first-of-type',
+    union: true,
+    note: 'label of a shared view settings row',
+  },
+  'dash-widget-settings-row__value': {
+    css: '[data-parity-id="dash-widget-settings"] [role="menuitem"] > span.ml-auto',
+    union: true,
+    note: 'trailing value of a shared view settings row',
+  },
+  'dash-widget-settings-row__chevron': {
+    css: '[data-parity-id="dash-widget-settings"] [data-slot="dropdown-menu-sub-trigger"] > svg:last-child',
+    union: true,
+    note: 'chevron of DropdownMenuSubTrigger (a shared ui component draws it)',
   },
   'dash-tooltip': { css: '[data-slot="tooltip-content"]', note: 'TooltipContent' },
   'dash-chart-tick-label': { css: '.recharts-cartesian-axis-tick-value', note: 'Recharts axis tick text' },
@@ -276,7 +303,7 @@ export function installParityProbe() {
         if (el.hasAttribute(ATTR) || el.hasAttribute(FALLBACK)) return;
         const scope = el.closest('[data-testid="dashboard-widget"]') ?? document.documentElement;
 
-        if (realScopes.includes(scope)) return;
+        if (!spec.union && realScopes.includes(scope)) return;
         el.setAttribute(FALLBACK, id);
         tagged.push(id);
       });
@@ -483,15 +510,61 @@ export function installParityProbe() {
   }
 
   const isRingShadow = (shadow: any) => shadow.x === 0 && shadow.y === 0 && shadow.blur === 0 && shadow.spread !== 0;
+  // A shadow that paints nothing is no shadow (§3.2): the dark card keeps
+  // `0 0 0 0 transparent` only so `var(--dash-card-shadow), <ring>` stays valid.
+  const paintsNothing = (shadow: any) =>
+    /^(transparent|rgba\([^)]*,\s*0\)|rgba\([^)]*\/\s*0\))$/.test(shadow.color.replace(/\s+/g, ' ').trim()) ||
+    (shadow.x === 0 && shadow.y === 0 && shadow.blur === 0 && shadow.spread === 0);
+
+  /** The corner radius of a Recharts bar: its `<path>` draws each rounded corner as an arc `A r,r`. */
+  function svgCorners(el: Element) {
+    if (el instanceof SVGRectElement) {
+      const r = px(style(el).getPropertyValue('rx')) ?? 0;
+
+      return { tl: r, tr: r, br: r, bl: r };
+    }
+
+    const d = el.getAttribute('d');
+
+    if (!(el instanceof SVGPathElement) || !d) return null;
+    const box = rect(el);
+    const origin = (el.ownerSVGElement ?? el).getBoundingClientRect();
+    const corner = { tl: 0, tr: 0, br: 0, bl: 0 };
+    const arcs = d.matchAll(/A\s*([\d.]+)[\s,]+([\d.]+)[\s,]+[\d.]+[\s,]+[01][\s,]*[01][\s,]*(-?[\d.]+)[\s,]+(-?[\d.]+)/g);
+
+    for (const arc of arcs) {
+      // An arc ends on an edge of the bar box, within its radius of the corner it rounds.
+      const x = Number(arc[3]) + origin.left;
+      const y = Number(arc[4]) + origin.top;
+      const top = Math.abs(y - box.top) <= Math.abs(y - box.bottom);
+      const left = Math.abs(x - box.left) <= Math.abs(x - box.right);
+
+      corner[`${top ? 't' : 'b'}${left ? 'l' : 'r'}` as keyof typeof corner] = Number(arc[1]);
+    }
+
+    return corner;
+  }
 
   function corners(el: Element) {
+    const svg = el instanceof SVGGeometryElement ? svgCorners(el) : null;
+
+    if (svg) return svg;
     const computed = style(el);
+    const box = rect(el);
+    // A "full" radius (`rounded-full` is 9999px) is half the shorter side; a
+    // token radius is reported as written, even when the box is shorter.
+    const used = (value: string) => {
+      const radius = px(value);
+
+      if (radius === null || radius <= Math.max(box.width, box.height)) return radius;
+      return r2(Math.min(box.width, box.height) / 2);
+    };
 
     return {
-      tl: px(computed.borderTopLeftRadius),
-      tr: px(computed.borderTopRightRadius),
-      br: px(computed.borderBottomRightRadius),
-      bl: px(computed.borderBottomLeftRadius),
+      tl: used(computed.borderTopLeftRadius),
+      tr: used(computed.borderTopRightRadius),
+      br: used(computed.borderBottomRightRadius),
+      bl: used(computed.borderBottomLeftRadius),
     };
   }
 
@@ -668,10 +741,23 @@ export function installParityProbe() {
         );
         const start = (r: DOMRect) => (axis === 'x' ? r.left : r.top);
         const end = (r: DOMRect) => (axis === 'x' ? r.right : r.bottom);
-        const after = siblings.filter((candidate) => start(rect(candidate)) > start(box) + 0.5);
+        const isAfter = (candidate: Element) => start(rect(candidate)) > start(box) + 0.5;
+        const after = siblings.filter(isAfter);
         const sameId = after.filter((candidate) => pid(candidate) === id);
-        const pool = (sameId.length > 0 ? sameId : after).sort((a, b) => start(rect(a)) - start(rect(b)));
+        let pool = sameId.length > 0 ? sameId : after;
 
+        if (pool.length === 0) {
+          // No sibling follows (a card is alone in its widget box): the next
+          // instance of the same id on the page that overlaps it across the axis.
+          const overlaps = (r: DOMRect) =>
+            axis === 'x' ? r.top < box.bottom && r.bottom > box.top : r.left < box.right && r.right > box.left;
+
+          pool = within(document.documentElement, id, null).filter(
+            (candidate) => candidate !== el && isVisible(candidate) && isAfter(candidate) && overlaps(rect(candidate))
+          );
+        }
+
+        pool.sort((a, b) => start(rect(a)) - start(rect(b)));
         if (pool.length === 0) return { value: null, note: 'no next parity sibling' };
         return { value: r2(start(rect(pool[0])) - end(box)) };
       }
@@ -801,7 +887,7 @@ export function installParityProbe() {
       case 'shadow':
         return {
           value: parseShadows(computed.boxShadow)
-            .filter((shadow) => !isRingShadow(shadow))
+            .filter((shadow) => !isRingShadow(shadow) && !paintsNothing(shadow))
             .map(({ x, y, blur, spread, color }) => ({ x, y, blur, spread, color })),
         };
       case 'opacity':

@@ -1,18 +1,11 @@
-import {
-  DASHBOARD_GRID_COLUMNS,
-  DASHBOARD_MAX_ROW_HEIGHT,
-  DASHBOARD_MIN_ROW_HEIGHT,
-  DashboardWidget,
-} from '@/application/database-yjs/dashboard.type';
+import { DASHBOARD_MAX_ROW_HEIGHT, DASHBOARD_MIN_ROW_HEIGHT } from '@/application/database-yjs/dashboard.type';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 
 import {
-  DASHBOARD_COLUMN_GAP,
-  DASHBOARD_EDIT_ROW_ACTION_GUTTER,
-  WIDGET_BODY_BORDER,
-  WIDGET_EDIT_HEADER_HEIGHT,
+  DASHBOARD_CONTROL_GUTTER,
+  WIDGET_BOX_PADDING,
+  WIDGET_HEADER_HEIGHT,
   WIDGET_MIN_VIEWPORT_HEIGHT,
-  WIDGET_TITLE_HEIGHT,
 } from './constants';
 
 const DATABASE_TO_VIEW_LAYOUT: Record<DatabaseViewLayout, ViewLayout> = {
@@ -68,55 +61,23 @@ export function getLayoutLabel(layout: ViewLayout): { key: string; defaultValue:
 }
 
 export interface WidgetChromeInput {
-  isEditing: boolean;
   showWidgetTitles: boolean;
 }
 
-/**
- * Vertical space the widget header takes inside the widget's slot. In View
- * mode without titles the actions float over the card and take none.
- */
-export function getWidgetHeaderHeight({ isEditing, showWidgetTitles }: WidgetChromeInput) {
-  if (isEditing) return WIDGET_EDIT_HEADER_HEIGHT;
-  return showWidgetTitles ? WIDGET_TITLE_HEIGHT : 0;
+/** Height of the header band above the card: 40 with titles, none without, in both modes. */
+export function getWidgetHeaderHeight({ showWidgetTitles }: WidgetChromeInput) {
+  return showWidgetTitles ? WIDGET_HEADER_HEIGHT : 0;
 }
 
-/** Height handed to the nested database as its embedded viewport. */
+/**
+ * Height handed to the nested database: the card, which fills the box under
+ * the header (or under the top padding when titles are hidden) down to the
+ * box's bottom padding. The card's ring is a shadow and takes no space.
+ */
 export function getWidgetViewportHeight(rowHeight: number, chrome: WidgetChromeInput) {
-  return Math.max(WIDGET_MIN_VIEWPORT_HEIGHT, rowHeight - getWidgetHeaderHeight(chrome) - WIDGET_BODY_BORDER);
-}
+  const chromeHeight = chrome.showWidgetTitles ? WIDGET_HEADER_HEIGHT + WIDGET_BOX_PADDING : 2 * WIDGET_BOX_PADDING;
 
-/**
- * CSS `left` of the boundary after `columns` grid columns, centred in the gap:
- * one column plus one gap is `(100% + gap) / 12`, and the boundary sits half a
- * gap before the next column starts.
- */
-export function getColumnBoundaryOffset(columns: number, gap = DASHBOARD_COLUMN_GAP) {
-  return `calc((100% + ${gap}px) * ${columns} / ${DASHBOARD_GRID_COLUMNS} - ${gap / 2}px)`;
-}
-
-/** Whole grid columns covered by a horizontal pointer delta over a row `rowWidth` px wide. */
-export function pixelsToColumns(deltaPx: number, rowWidth: number, gap = DASHBOARD_COLUMN_GAP) {
-  if (!Number.isFinite(deltaPx) || rowWidth <= 0) return 0;
-  const columnWidth = (rowWidth + gap) / DASHBOARD_GRID_COLUMNS;
-  const columns = Math.round(deltaPx / columnWidth);
-
-  // Avoid returning -0 so callers can compare with `===`.
-  return columns === 0 ? 0 : columns;
-}
-
-/**
- * Clamp a width delta for the boundary after `index` so both neighbours keep
- * at least one column (mirrors `resizeDashboardWidget`).
- */
-export function clampWidthDelta(widgets: DashboardWidget[], index: number, delta: number) {
-  const left = widgets[index];
-  const right = widgets[index + 1];
-
-  if (!left || !right) return 0;
-  const clamped = Math.max(1 - left.width, Math.min(right.width - 1, delta));
-
-  return clamped === 0 ? 0 : clamped;
+  return Math.max(WIDGET_MIN_VIEWPORT_HEIGHT, rowHeight - chromeHeight);
 }
 
 export function clampRowHeight(height: number) {
@@ -125,20 +86,21 @@ export function clampRowHeight(height: number) {
 }
 
 /**
- * Inline padding of the dashboard content. Edit mode keeps enough room on the
- * right for the per-row "add widget" button that sits outside each row.
+ * Inline padding of the dashboard content. For users who can edit it is
+ * floored on both sides so the row controls fit in the gutter, in View and
+ * Edit mode alike: entering Edit mode never moves a widget.
  */
 export function getDashboardInlinePadding({
   paddingStart,
   paddingEnd,
-  editing,
+  reserveControlGutter,
 }: {
   paddingStart: number;
   paddingEnd: number;
-  editing: boolean;
+  reserveControlGutter: boolean;
 }) {
   return {
-    paddingLeft: paddingStart,
-    paddingRight: editing ? Math.max(paddingEnd, DASHBOARD_EDIT_ROW_ACTION_GUTTER) : paddingEnd,
+    paddingLeft: reserveControlGutter ? Math.max(paddingStart, DASHBOARD_CONTROL_GUTTER) : paddingStart,
+    paddingRight: reserveControlGutter ? Math.max(paddingEnd, DASHBOARD_CONTROL_GUTTER) : paddingEnd,
   };
 }

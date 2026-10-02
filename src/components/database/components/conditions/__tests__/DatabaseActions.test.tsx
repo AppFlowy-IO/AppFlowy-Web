@@ -18,9 +18,25 @@ jest.mock('@/application/database-yjs', () => {
     useDatabaseViewLayout: jest.fn(),
     useReadOnly,
     // Outside a dashboard widget the conditions follow the real read-only flag.
-    useConditionsReadOnly: () => useReadOnly(),
+    useConditionsReadOnly: () => {
+      const readOnly = useReadOnly();
+
+      return mockConditionsReadOnly ?? readOnly;
+    },
+    useFiltersSelector: () => mockFilters,
+    useSortsSelector: () => mockSorts,
   };
 });
+
+// A dashboard widget's header reads its widget (Edit mode, menu and settings state).
+let mockWidget: Record<string, unknown> | null = null;
+let mockFilters: { id: string }[] = [];
+let mockSorts: { id: string }[] = [];
+let mockConditionsReadOnly: boolean | undefined;
+
+jest.mock('@/components/database/dashboard/WidgetContext', () => ({
+  useWidgetContextOptional: () => mockWidget,
+}));
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -41,15 +57,25 @@ jest.mock('@/components/database/components/conditions/context', () => ({
 
 jest.mock('@/components/database/components/conditions/FiltersButton', () => ({
   __esModule: true,
-  default: ({ compact }: { compact?: boolean }) => (
-    <div data-compact={String(Boolean(compact))} data-testid='filters-button' />
+  default: ({ compact, presentation, variant }: { compact?: boolean; presentation?: string; variant?: string }) => (
+    <div
+      data-compact={String(Boolean(compact))}
+      data-presentation={presentation}
+      data-testid='filters-button'
+      data-variant={variant}
+    />
   ),
 }));
 
 jest.mock('@/components/database/components/conditions/SortsButton', () => ({
   __esModule: true,
-  default: ({ compact }: { compact?: boolean }) => (
-    <div data-compact={String(Boolean(compact))} data-testid='sorts-button' />
+  default: ({ compact, presentation, variant }: { compact?: boolean; presentation?: string; variant?: string }) => (
+    <div
+      data-compact={String(Boolean(compact))}
+      data-presentation={presentation}
+      data-testid='sorts-button'
+      data-variant={variant}
+    />
   ),
 }));
 
@@ -359,7 +385,29 @@ describe('DatabaseActions in dashboards', () => {
     jest.clearAllMocks();
     mockUseDatabase.mockReturnValue(undefined);
     mockUseReadOnly.mockReturnValue(false);
+    mockWidget = null;
+    mockFilters = [];
+    mockSorts = [];
+    mockConditionsReadOnly = undefined;
   });
+
+  function widgetContext(overrides: Record<string, unknown> = {}) {
+    return {
+      widgetId: 'w1',
+      editing: false,
+      menuOpen: false,
+      settingsOpen: false,
+      setSettingsOpen: jest.fn(),
+      actions: { openSettings: jest.fn() },
+      ...overrides,
+    };
+  }
+
+  function widgetTools() {
+    return Array.from(screen.getByTestId('database-actions').querySelectorAll('[data-widget-tool]')).map(
+      (slot) => slot.getAttribute('data-widget-tool')
+    );
+  }
 
   function toolbarTestIds() {
     return Array.from(screen.getByTestId('database-actions').querySelectorAll('[data-testid]')).map((element) =>
@@ -367,7 +415,7 @@ describe('DatabaseActions in dashboards', () => {
     );
   }
 
-  it('replaces the view conditions of a dashboard with its own toolbar and keeps Settings', async () => {
+  it('replaces the view conditions of a dashboard with its own toolbar (which holds Settings)', async () => {
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Dashboard);
     mockUseDatabaseContext.mockReturnValue({
       activeViewId: 'dashboard-view',
@@ -378,13 +426,7 @@ describe('DatabaseActions in dashboards', () => {
     // The dashboard toolbar is loaded lazily.
     await screen.findByTestId('dashboard-toolbar');
 
-    expect(toolbarTestIds()).toEqual(['database-actions-settings', 'dashboard-toolbar']);
-    expect(
-      screen
-        .getByTestId('database-actions-settings')
-        .closest('[data-database-settings-layout]')
-        ?.getAttribute('data-database-settings-layout')
-    ).toBe(String(DatabaseViewLayout.Dashboard));
+    expect(toolbarTestIds()).toEqual(['dashboard-toolbar']);
     expect(screen.getByTestId('database-actions').getAttribute('data-dashboard-widget')).toBeNull();
   });
 
@@ -439,7 +481,8 @@ describe('DatabaseActions in dashboards', () => {
     expect(toolbarTestIds()).toEqual(['dashboard-toolbar']);
   });
 
-  it('shows the compact filter, sort, open-as-page and settings buttons in a grid widget', () => {
+  it('shows the Filter and Sort tools of a grid widget in View mode, as popovers, without open-as-page', () => {
+    mockWidget = widgetContext();
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Grid);
     mockUseDatabaseContext.mockReturnValue({
       activeViewId: 'grid-view',
@@ -451,24 +494,94 @@ describe('DatabaseActions in dashboards', () => {
 
     render(<DatabaseActions />);
 
-    expect(toolbarTestIds()).toEqual([
-      'filters-button',
-      'sorts-button',
-      'database-actions-open-as-page',
-      'database-actions-settings',
-    ]);
-    expect(screen.getByTestId('database-actions').getAttribute('data-dashboard-widget')).toBe('true');
-    expect(screen.getByTestId('database-actions').className).toContain('gap-0.5');
-    expect(screen.getByTestId('filters-button').getAttribute('data-compact')).toBe('true');
-    expect(screen.getByTestId('sorts-button').getAttribute('data-compact')).toBe('true');
+    expect(toolbarTestIds()).toEqual(['filters-button', 'sorts-button']);
+    expect(widgetTools()).toEqual(['filter', 'sort']);
+    const tools = screen.getByTestId('database-actions');
 
-    for (const testId of ['database-actions-open-as-page', 'database-actions-settings']) {
-      expect(screen.getByTestId(testId).className).toContain('h-6');
-      expect(screen.getByTestId(testId).className).toContain('w-6');
+    expect(tools.getAttribute('data-dashboard-widget')).toBe('true');
+    expect(tools.getAttribute('data-force-visible')).toBe('false');
+    expect(tools.getAttribute('data-has-active')).toBe('false');
+    expect(tools.className).toContain('gap-0.5');
+    // At rest in View mode the whole group is transparent (dash-widget-tools opacity 0, 150ms fade).
+    expect(tools.className).toContain('opacity-0');
+    expect(tools.className).toContain('duration-150');
+    expect(tools.className).toContain('group-hover/widget:opacity-100');
+    for (const testId of ['filters-button', 'sorts-button']) {
+      expect(screen.getByTestId(testId).getAttribute('data-presentation')).toBe('popover');
+      expect(screen.getByTestId(testId).getAttribute('data-variant')).toBe('widget');
     }
+
+    expect(screen.queryByTestId('database-actions-open-as-page')).toBeNull();
+    expect(screen.queryByTestId('database-actions-settings')).toBeNull();
+  });
+
+  it('adds the Settings tool in Edit mode and keeps every tool shown', () => {
+    const actions = { openSettings: jest.fn() };
+
+    mockWidget = widgetContext({ editing: true, actions });
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Grid);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'grid-view',
+      databasePageId: 'grid-view',
+      isDocumentBlock: true,
+      isDashboardWidget: true,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(<DatabaseActions />);
+
+    expect(toolbarTestIds()).toEqual(['filters-button', 'sorts-button', 'dashboard-widget-settings-button']);
+    expect(screen.getByTestId('database-actions').getAttribute('data-force-visible')).toBe('true');
+    const settings = screen.getByTestId('dashboard-widget-settings-button');
+
+    expect(settings.getAttribute('aria-label')).toBe('dashboard.widget.settings');
+    expect(settings.getAttribute('data-state')).toBe('closed');
+    fireEvent.click(settings);
+    expect(actions.openSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks an active filter or sort slot so it stays shown at rest', () => {
+    mockWidget = widgetContext();
+    mockFilters = [{ id: 'f1' }];
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Grid);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'grid-view',
+      databasePageId: 'grid-view',
+      isDocumentBlock: true,
+      isDashboardWidget: true,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(<DatabaseActions />);
+    const slots = Array.from(screen.getByTestId('database-actions').querySelectorAll('[data-widget-tool]'));
+
+    expect(slots.map((slot) => slot.getAttribute('data-active'))).toEqual(['true', 'false']);
+    // The group stays visible for the active tool.
+    expect(screen.getByTestId('database-actions').getAttribute('data-has-active')).toBe('true');
+    expect(screen.getByTestId('database-actions').className).toContain('data-[has-active=true]:opacity-100');
+    // Hidden tools keep their slot: only the opacity changes, never the pointer.
+    expect(slots[1].className).toContain('opacity-0');
+    expect(slots[1].className).toContain('group-hover/widget:opacity-100');
+    expect(slots[1].className).toContain('data-[active=true]:opacity-100');
+    expect(slots[1].className).not.toContain('pointer-events-none');
+  });
+
+  it('shows the tools while the widget menu or the settings host is open', () => {
+    mockWidget = widgetContext({ menuOpen: true });
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Chart);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'chart-view',
+      databasePageId: 'chart-view',
+      isDocumentBlock: true,
+      isDashboardWidget: true,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(<DatabaseActions />);
+
+    expect(widgetTools()).toEqual(['filter']);
+    expect(screen.getByTestId('database-actions').getAttribute('data-force-visible')).toBe('true');
   });
 
   it('leaves search and the template button out of a gallery widget header', () => {
+    mockWidget = widgetContext({ editing: true });
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Gallery);
     mockUseDatabaseContext.mockReturnValue({
       activeViewId: 'gallery-view',
@@ -486,10 +599,11 @@ describe('DatabaseActions in dashboards', () => {
     expect(screen.queryByTestId('database-actions-search')).toBeNull();
     expect(screen.queryByTestId('database-template-button')).toBeNull();
     expect(screen.getByTestId('filters-button')).toBeTruthy();
-    expect(screen.getByTestId('database-actions-settings')).toBeTruthy();
+    expect(screen.getByTestId('dashboard-widget-settings-button')).toBeTruthy();
   });
 
-  it('keeps only open-as-page in a read-only widget', () => {
+  it('offers no tool in a published (read-only) widget', () => {
+    mockWidget = widgetContext();
     mockUseReadOnly.mockReturnValue(true);
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Board);
     mockUseDatabaseContext.mockReturnValue({
@@ -501,7 +615,25 @@ describe('DatabaseActions in dashboards', () => {
 
     render(<DatabaseActions />);
 
-    expect(toolbarTestIds()).toEqual(['database-actions-open-as-page']);
+    expect(screen.queryByTestId('database-actions')).toBeNull();
+    expect(screen.queryByTestId('database-actions-open-as-page')).toBeNull();
+  });
+
+  it('keeps the Filter tool for a reader who edits their own conditions', () => {
+    mockWidget = widgetContext();
+    mockUseReadOnly.mockReturnValue(true);
+    mockConditionsReadOnly = false;
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Board);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'board-view',
+      databasePageId: 'board-view',
+      isDocumentBlock: true,
+      isDashboardWidget: true,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(<DatabaseActions />);
+
+    expect(widgetTools()).toEqual(['filter']);
   });
 
   it('never renders the dashboard toolbar inside a widget', () => {

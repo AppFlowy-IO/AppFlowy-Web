@@ -1,66 +1,53 @@
-import { DASHBOARD_ROW_HEIGHT_SNAP } from '@/application/database-yjs/dashboard-geometry';
+import {
+  DASHBOARD_COLUMN_GAP_PX,
+  DASHBOARD_GEOMETRY,
+  DASHBOARD_ROW_HEIGHT_SNAP,
+  DASHBOARD_WIDGET_BOX_BLEED,
+  DASHBOARD_WIDGET_HEADER_HEIGHT,
+} from '@/application/database-yjs/dashboard-geometry';
 import { DatabaseViewLayout } from '@/application/types';
 
-// Constants marked "Superseded" have a token in `dashboard-geometry.ts`
-// (`dashboard-parity/tokens.json`); the named package switches their consumers
-// to it and deletes them. New dashboard chrome uses the tokens directly.
+// Geometry comes from `dashboard-geometry.ts` (`dashboard-parity/tokens.json`);
+// these names keep the dashboard components readable.
+
+export { DASHBOARD_MIN_WIDGET_WIDTH, DASHBOARD_ROW_HEIGHT_SNAP } from '@/application/database-yjs/dashboard-geometry';
 
 /** Inline padding of a standalone dashboard page (matches the other database layouts). */
 export const DASHBOARD_DEFAULT_INLINE_PADDING = 96;
-/**
- * Smallest right padding in Edit mode: the per-row "add widget" button sits
- * just outside the row's right edge and must not be clipped.
- * Superseded by `DASHBOARD_GEOMETRY.row.controlOffset` (30, an overlay) (WP02 / WP04).
- */
-export const DASHBOARD_EDIT_ROW_ACTION_GUTTER = 36;
-/**
- * Below this grid width a row's widgets no longer fit side by side even on a
- * wide screen (a dashboard in a side panel or a narrow document column), so
- * they stack. The viewport rule is `DASHBOARD_STACK_BREAKPOINT`.
- * Superseded by the wrap rule on `DASHBOARD_MIN_WIDGET_WIDTH` (WP02).
- */
-export const DASHBOARD_STACK_CONTAINER_BREAKPOINT = 480;
-/**
- * Horizontal gap between widgets of a row (CSS px); matches `gap-4`.
- * Superseded by `DASHBOARD_COLUMN_GAP_PX` (`grid.columnGap`, 12) (WP02).
- */
-export const DASHBOARD_COLUMN_GAP = 16;
-/** Vertical gap between rows in View mode (CSS px). Superseded by `DASHBOARD_GEOMETRY.grid.rowGap` (WP02). */
-export const DASHBOARD_ROW_GAP = 16;
-/**
- * Vertical gap between rows in Edit mode: room for the height handle and the drop zone.
- * Superseded by `DASHBOARD_GEOMETRY.grid.rowGap` (16 in both modes) (WP02).
- */
-export const DASHBOARD_EDIT_ROW_GAP = 24;
-/** Drop zone above the first row (Edit mode only). Superseded by `DASHBOARD_GEOMETRY.grid.topBand` (WP02). */
-export const DASHBOARD_EDGE_DROP_ZONE_HEIGHT = 16;
+/** Horizontal gap between widget boxes of a row (CSS px); the visible card gap is 6 + 12 + 6. */
+export const DASHBOARD_COLUMN_GAP = DASHBOARD_COLUMN_GAP_PX;
+/** Vertical gap between rows and between the wrapped lines of a row, the same in View and Edit mode. */
+export const DASHBOARD_ROW_GAP = DASHBOARD_GEOMETRY.grid.rowGap;
+/** Band above the first row: the page's top spacing, and the "new first row" drop zone in Edit mode. */
+export const DASHBOARD_GRID_TOP_BAND = DASHBOARD_GEOMETRY.grid.topBand;
+/** The widget box's padding (`0 6 6`); each row track bleeds this far past the content column. */
+export const DASHBOARD_WIDGET_BOX_INSET = DASHBOARD_WIDGET_BOX_BLEED;
+/** Fewest columns a width drag leaves a widget (with the 240px floor of `dashboardMinWidgetColumns`). */
+export const DASHBOARD_MIN_WIDGET_COLUMNS = DASHBOARD_GEOMETRY.grid.minWidgetColumns;
+/** Row controls are centred this far outside the content column. */
+export const DASHBOARD_ROW_CONTROL_OFFSET = DASHBOARD_GEOMETRY.row.controlOffset;
+export const DASHBOARD_ROW_CONTROL_SIZE = DASHBOARD_GEOMETRY.row.controlSize;
+/** Smallest page inset for editors, in View and Edit mode alike, so the row controls fit. */
+export const DASHBOARD_CONTROL_GUTTER = DASHBOARD_GEOMETRY.row.controlGutterMin;
+/** Width handle: hit strip (the visible card gap) and pill sizes. */
+export const DASHBOARD_RESIZE_GEOMETRY = DASHBOARD_GEOMETRY.resize;
 
+/** The widget header band above the card (titles shown), the same in View and Edit mode. */
+export const WIDGET_HEADER_HEIGHT = DASHBOARD_WIDGET_HEADER_HEIGHT;
+/** The widget box padding around the card (`0 6 6`, or `6 6 6` with titles hidden). */
+export const WIDGET_BOX_PADDING = DASHBOARD_GEOMETRY.widget.boxPaddingInline;
 /**
- * Quiet title row rendered above the card in View mode.
- * Superseded by `DASHBOARD_WIDGET_HEADER_HEIGHT` (`widget.headerHeight`, 40) (WP03).
+ * Inline padding handed to the nested database (`dashboard-parity/widget-content.json`
+ * `geometry.start_inset` and `end_inset`): every widget but an editable grid starts and ends 12px inside the card.
  */
-export const WIDGET_TITLE_HEIGHT = 32;
-/**
- * Tinted header bar rendered inside the card in Edit mode.
- * Superseded by `DASHBOARD_WIDGET_HEADER_HEIGHT` (`widget.headerHeight`, 40) (WP03).
- */
-export const WIDGET_EDIT_HEADER_HEIGHT = 36;
-/**
- * Top + bottom border of the widget body (View mode) or card (Edit mode).
- * Superseded by `DASHBOARD_GEOMETRY.widget.cardInset` (46, header plus bottom padding; the ring takes no space) (WP03).
- */
-export const WIDGET_BODY_BORDER = 2;
-/** Inline padding handed to the nested database (tab bar, conditions, grid). */
 export const WIDGET_INLINE_PADDING = 12;
 /**
- * Start padding of an editable grid widget: its rows show their hover
- * controls in the start gutter, which `WIDGET_INLINE_PADDING` cannot hold
+ * Start padding of an editable grid widget (`widget-content.json` `geometry.grid_start_inset_editable`):
+ * its rows show their hover controls in the start gutter, which `WIDGET_INLINE_PADDING` cannot hold
  * (the card clips them). Fits the compact controls, one 24 px button plus
  * its border (`COMPACT_HOVER_CONTROLS_WIDTH`), with a small gap.
  */
 export const WIDGET_GRID_ROW_GUTTER = 32;
-/** Height of the nested filter / sort chip row when it is expanded. */
-export const WIDGET_CONDITIONS_BAR_HEIGHT = 40;
 /** Smallest viewport a widget hands to its database, so tiny rows still render. */
 export const WIDGET_MIN_VIEWPORT_HEIGHT = 80;
 

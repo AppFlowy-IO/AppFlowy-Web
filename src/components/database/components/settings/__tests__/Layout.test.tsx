@@ -123,6 +123,50 @@ describe('database Layout', () => {
     expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Dashboard);
   });
 
+  it('awaits the asynchronous Dashboard conversion and reports when creating its copy fails', async () => {
+    let rejectConversion!: (error: Error) => void;
+
+    mockCreationEnabled = true;
+    // Converting creates the view's owned copy on the server first (WP05 §1.6).
+    mockUpdateLayout.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectConversion = reject;
+        })
+    );
+    await openLayout(DatabaseViewLayout.Grid);
+    fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`));
+
+    expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Dashboard);
+    expect(toast.error).not.toHaveBeenCalled();
+    rejectConversion(new Error('Upgrade to Pro'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Upgrade to Pro'));
+    expect(mockUpdateLayout).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports nothing when the asynchronous Dashboard conversion succeeds', async () => {
+    let resolveConversion!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      mockUpdateLayout.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolveLayout) => {
+            resolveConversion = () => {
+              resolveLayout();
+              resolve();
+            };
+          })
+      );
+    });
+
+    mockCreationEnabled = true;
+    await openLayout(DatabaseViewLayout.Grid);
+    fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`));
+    resolveConversion();
+    await settled;
+    await waitFor(() => expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Dashboard));
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   it('never offers the Dashboard layout inside a dashboard widget', async () => {
     mockCreationEnabled = true;
     mockIsDashboardWidget = true;

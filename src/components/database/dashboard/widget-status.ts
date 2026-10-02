@@ -10,6 +10,8 @@ export interface WidgetStatusInput {
   noAccess: boolean;
   /** Loading the source database failed for good. */
   loadFailed: boolean;
+  /** The failed load was a network error (offline, no local copy): the source probably still exists. */
+  offline: boolean;
   /** Trash state of the source database (`null` while the probe runs). */
   deletionStatus: DatabaseDeletionStatus;
   /** The source doc arrived but still has no database after the grace period. */
@@ -26,7 +28,9 @@ export interface WidgetStatusInput {
 
 /**
  * What a widget shows. Access problems win over everything (they must never
- * reveal whether the view exists); a missing or trashed source is "not found";
+ * reveal whether the view exists); a source that could not load offline is
+ * "offline" (it recovers when the connection comes back); a missing or
+ * trashed source is "not found";
  * anything not settled yet is "loading"; a view that became a dashboard is
  * not rendered (dashboards never nest). A remounted widget does not wait for
  * the trash probe again before showing what it already showed: it swaps to
@@ -40,6 +44,7 @@ export interface WidgetStatusInput {
 export function getWidgetStatus({
   noAccess,
   loadFailed,
+  offline,
   deletionStatus,
   databaseMissing,
   viewMissing,
@@ -50,6 +55,7 @@ export function getWidgetStatus({
   seeded,
 }: WidgetStatusInput): WidgetStatus {
   if (noAccess) return 'no-access';
+  if (loadFailed && offline) return 'offline';
   if (loadFailed || deletionStatus === 'inTrash' || deletionStatus === 'deleted' || databaseMissing || viewMissing) {
     return 'not-found';
   }

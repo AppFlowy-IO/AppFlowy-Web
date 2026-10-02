@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { ReactNode, useState } from 'react';
+import { createRef, ReactNode, useState } from 'react';
 
 import { DASHBOARD_MAX_WIDGETS, DashboardRow, DashboardWidget } from '@/application/database-yjs/dashboard.type';
 import { ViewLayout } from '@/application/types';
@@ -12,22 +12,12 @@ import {
 } from '../DashboardContext';
 import { NO_WIDGET_MOVES, WidgetMoveTargets } from '../widget-moves';
 import { WidgetActions, WidgetContext, WidgetContextValue } from '../WidgetContext';
-import { WidgetHeaderFrame } from '../WidgetHeader';
 import { buildWidgetMenuEntries, WidgetMenu } from '../WidgetMenu';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
   }),
-}));
-
-jest.mock('@/components/_shared/view-icon/PageIcon', () => ({
-  __esModule: true,
-  default: ({ view }: { view: { layout: ViewLayout } }) => <span data-layout={view.layout} data-testid='page-icon' />,
-}));
-
-jest.mock('@/components/database/components/conditions', () => ({
-  DatabaseActions: () => <div data-testid='database-actions' />,
 }));
 
 const ALL_MOVES: WidgetMoveTargets = {
@@ -44,6 +34,7 @@ function createActions(overrides: Partial<WidgetActions> = {}): WidgetActions {
     duplicate: jest.fn(),
     remove: jest.fn(),
     move: jest.fn(),
+    openSettings: jest.fn(),
     ...overrides,
   };
 }
@@ -80,21 +71,32 @@ function createDashboardContext(): DashboardContextValue {
 }
 
 function createDashboardLayout(rows: DashboardRow[]): DashboardLayoutContextValue {
-  return { rows, hostViewIds: [], showWidgetTitles: true };
+  return { rows, hostViewIds: [], showWidgetTitles: true, showIconsInHeading: false };
 }
 
 function createContext(overrides: Partial<WidgetContextValue> = {}): WidgetContextValue {
   return {
     widgetId: 'w1',
+    databaseId: 'db',
+    viewId: 'view-w1',
     name: 'Tasks Grid',
     icon: null,
     layout: ViewLayout.Grid,
     isEditing: true,
     canEdit: true,
-    showTitle: true,
-    headerHeight: 36,
+    editing: true,
+    showWidgetTitles: true,
+    showIcon: false,
+    headerHeight: 40,
     isDragging: false,
     setDragHandle: jest.fn(),
+    menuOpen: false,
+    setMenuOpen: jest.fn(),
+    settingsOpen: false,
+    setSettingsOpen: jest.fn(),
+    getBoxElement: () => null,
+    titleRef: createRef<HTMLButtonElement>(),
+    optionsRef: createRef<HTMLButtonElement>(),
     actions: createActions(),
     ...overrides,
   };
@@ -296,90 +298,5 @@ describe('WidgetMenu', () => {
     render(withContext(createContext({ isEditing: true, canEdit: false }), <ControlledMenu />));
 
     expect(menuItemIds()).toEqual(['dashboard-widget-menu-open']);
-  });
-});
-
-describe('WidgetHeaderFrame', () => {
-  it('shows the drag handle, title, view actions and menu button in Edit mode', () => {
-    const context = createContext();
-
-    render(withContext(context, <WidgetHeaderFrame actions={<div data-testid='view-actions' />} />));
-    const header = screen.getByTestId('dashboard-widget-header');
-
-    expect(within(header).getByTestId('dashboard-widget-title').textContent).toBe('Tasks Grid');
-    expect(within(header).getByTestId('view-actions')).toBeTruthy();
-    expect(within(header).getByTestId('dashboard-widget-menu-button')).toBeTruthy();
-    expect(context.setDragHandle).toHaveBeenCalledWith(header);
-    expect(header.style.height).toBe('36px');
-  });
-
-  it('opens the widget menu from the menu button', async () => {
-    render(withContext(createContext(), <WidgetHeaderFrame />));
-    const button = screen.getByTestId('dashboard-widget-menu-button');
-
-    fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
-    fireEvent.keyDown(button, { key: 'Enter' });
-
-    await waitFor(() => expect(screen.getByTestId('dashboard-widget-menu')).toBeTruthy());
-  });
-
-  it('opens the widget menu from the title, in both modes', async () => {
-    const { unmount } = render(withContext(createContext(), <WidgetHeaderFrame />));
-
-    fireEvent.click(screen.getByTestId('dashboard-widget-title-button'));
-    expect(await screen.findByTestId('dashboard-widget-menu')).toBeTruthy();
-    unmount();
-
-    render(withContext(createContext({ isEditing: false }), <WidgetHeaderFrame />));
-    fireEvent.click(screen.getByTestId('dashboard-widget-title-button'));
-    expect(await screen.findByTestId('dashboard-widget-menu')).toBeTruthy();
-  });
-
-  it('opens the widget menu on right-click', async () => {
-    render(withContext(createContext(), <WidgetHeaderFrame />));
-
-    const event = fireEvent.contextMenu(screen.getByTestId('dashboard-widget-header'));
-
-    expect(event).toBe(false);
-    await waitFor(() => expect(screen.getByTestId('dashboard-widget-menu')).toBeTruthy());
-    expect(menuItemIds()).toHaveLength(8);
-  });
-
-  it('shows a quiet title without the menu button in View mode', async () => {
-    render(
-      withContext(
-        createContext({ isEditing: false }),
-        <WidgetHeaderFrame actions={<div data-testid='view-actions' />} />
-      )
-    );
-    const header = screen.getByTestId('dashboard-widget-header');
-
-    expect(within(header).getByTestId('dashboard-widget-title').textContent).toBe('Tasks Grid');
-    expect(within(header).getByTestId('view-actions')).toBeTruthy();
-    expect(within(header).queryByTestId('dashboard-widget-menu-button')).toBeNull();
-    expect(header.style.height).toBe('32px');
-
-    fireEvent.contextMenu(header);
-    await waitFor(() => expect(menuItemIds()).toEqual(['dashboard-widget-menu-open']));
-  });
-
-  it('renders only the floating actions when widget titles are hidden', () => {
-    render(
-      withContext(
-        createContext({ isEditing: false, showTitle: false, headerHeight: 0 }),
-        <WidgetHeaderFrame actions={<div data-testid='view-actions' />} />
-      )
-    );
-    const header = screen.getByTestId('dashboard-widget-header');
-
-    expect(within(header).queryByTestId('dashboard-widget-title')).toBeNull();
-    expect(within(header).getByTestId('view-actions')).toBeTruthy();
-    expect(header.className).toContain('absolute');
-  });
-
-  it('falls back to "untitled" for an unnamed view', () => {
-    render(withContext(createContext({ name: '' }), <WidgetHeaderFrame />));
-
-    expect(screen.getByTestId('dashboard-widget-title').textContent).toBe('untitled');
   });
 });

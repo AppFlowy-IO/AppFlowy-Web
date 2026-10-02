@@ -75,6 +75,7 @@ export function reduceDashboardEditPreference(
 export const DASHBOARD_EDIT_ONLY_UPDATE_KEYS = [
   'rows',
   'showWidgetTitles',
+  'showIconsInHeading',
 ] as const satisfies readonly (keyof DashboardLayoutUpdate)[];
 
 export function touchesEditOnlyKeys(update: DashboardLayoutUpdate): boolean {

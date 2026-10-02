@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { isMac } from '@/utils/hotkeys';
 
 /** An `icon-sm` button (`w-6`). */
@@ -89,9 +90,12 @@ export function HoverControls({
         style={{
           minHeight: 34,
         }}
-        className={
-          'relative left-0 flex w-full items-start justify-end border border-transparent py-1.5 focus-within:!pointer-events-auto focus-within:!opacity-100'
-        }
+        className={cn(
+          'relative left-0 flex w-full items-start justify-end border border-transparent focus-within:!pointer-events-auto focus-within:!opacity-100',
+          // A widget row is 36px plus its divider (addendum A5.2): the handle
+          // keeps its offset from the top but must not stretch the row to 38.
+          compact ? 'pt-1.5' : 'py-1.5'
+        )}
       >
         {compact ? null : (
           <Tooltip disableHoverableContent>
@@ -131,7 +135,7 @@ export function HoverControls({
             </TooltipContent>
           </Tooltip>
         )}
-        <div ref={dragHandleRef} className='flex shrink-0'>
+        <div ref={dragHandleRef} className='flex shrink-0' data-parity-id='dash-widget-grid-row-controls'>
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <Tooltip disableHoverableContent>
               <TooltipTrigger asChild>

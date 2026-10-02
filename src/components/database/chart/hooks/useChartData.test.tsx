@@ -19,13 +19,6 @@ jest.mock('@/application/database-yjs', () => {
   };
 });
 
-jest.mock('./useChartColors', () => ({
-  useChartColors: () => ({
-    emptyColor: '#empty',
-    getColorForCategory: () => '#category',
-  }),
-}));
-
 // English defaults unless a test sets a translation. `t` keeps its identity, as it does per language.
 const mockTranslations: Record<string, string> = {};
 
@@ -38,6 +31,7 @@ jest.mock('react-i18next', () => {
 
 import { useDatabaseContext, useDatabaseFields, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
 import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
+import { DEFAULT_CHART_EXTENDED_SETTINGS } from '@/application/database-yjs/chart-extended-settings';
 import { ChartAggregationType, ChartLayoutSettings, ChartType } from '@/application/database-yjs/chart.type';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import { DatabaseHistoryRowStore } from '@/application/database-yjs/history-row-store';
@@ -110,6 +104,7 @@ describe('useChartData desktop-model field conversion', () => {
       aggregationType: ChartAggregationType.Sum,
       cumulative: false,
       dateCondition: DateGroupCondition.Month,
+      extended: DEFAULT_CHART_EXTENDED_SETTINGS,
     };
 
     (useDatabaseFields as jest.Mock).mockReturnValue(fields);
@@ -191,6 +186,7 @@ describe('useChartData category labels', () => {
           aggregationType: ChartAggregationType.Count,
           cumulative: false,
           dateCondition,
+          extended: DEFAULT_CHART_EXTENDED_SETTINGS,
         },
       })
     );
@@ -255,9 +251,111 @@ describe('useChartData category labels', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.chartData).toEqual([
-      expect.objectContaining({ label: 'Coché', rowIds: ['a', 'c'] }),
-      expect.objectContaining({ label: 'Non coché', rowIds: ['b'] }),
+      expect.objectContaining({ label: 'Coché', rowIds: ['a', 'c'], key: 'checked', checkboxState: 'checked' }),
+      expect.objectContaining({ label: 'Non coché', rowIds: ['b'], key: 'unchecked', checkboxState: 'unchecked' }),
     ]);
+  });
+
+  it('keeps the group key and leaves colors to the renderer', async () => {
+    const { result } = renderChart(FieldType.Checkbox, { a: 'Yes' }, DateGroupCondition.Month);
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    result.current.chartData.forEach((item) => expect(item.color).toBeUndefined());
+  });
+});
+
+describe('useChartData select categories', () => {
+  it('carries the option id and color of each category, and the empty key', async () => {
+    const databaseId = 'select-database';
+    const fields = new Y.Doc().getMap('fields') as YDatabaseFields;
+
+    addField(fields, 'Stage', FieldType.SingleSelect, [
+      { id: 'lead', name: 'Lead', color: 'Blue' as unknown as number },
+      { id: 'won', name: 'Won', color: 'Green' as unknown as number },
+    ]);
+    const rowMetas = {
+      r1: createRowDoc('r1', databaseId, { Stage: createCell(FieldType.SingleSelect, 'won') }),
+      r2: createRowDoc('r2', databaseId, { Stage: createCell(FieldType.SingleSelect, 'lead') }),
+      r3: createRowDoc('r3', databaseId, {}),
+    };
+
+    (useDatabaseFields as jest.Mock).mockReturnValue(fields);
+    (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r1' }, { id: 'r2' }, { id: 'r3' }]);
+    (useRowMap as jest.Mock).mockReturnValue(rowMetas);
+    (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow: jest.fn().mockResolvedValue(undefined) });
+
+    const settings: ChartLayoutSettings = {
+      chartType: ChartType.Bar,
+      xFieldId: 'Stage',
+      showEmptyValues: true,
+      aggregationType: ChartAggregationType.Count,
+      cumulative: false,
+      dateCondition: DateGroupCondition.Month,
+      extended: DEFAULT_CHART_EXTENDED_SETTINGS,
+    };
+    const { result, rerender } = renderHook((props: { settings: ChartLayoutSettings }) => useChartData(props), {
+      initialProps: { settings },
+    });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.chartData).toEqual([
+      expect.objectContaining({ label: 'Lead', key: 'lead', optionColor: 'Blue', rowIds: ['r2'] }),
+      expect.objectContaining({ label: 'Won', key: 'won', optionColor: 'Green', rowIds: ['r1'] }),
+      expect.objectContaining({ label: 'No Stage', key: '__empty__', isEmptyCategory: true, rowIds: ['r3'] }),
+    ]);
+
+    // A style change keeps the data: the chart re-colors without recomputing.
+    const data = result.current.chartData;
+
+    rerender({ settings: { ...settings, extended: { ...DEFAULT_CHART_EXTENDED_SETTINGS, colorTheme: 'blue' } } });
+    expect(result.current.chartData).toBe(data);
+  });
+});
+
+describe('useChartData load errors', () => {
+  it('reports a load error when every row fails, and retries the failed rows', async () => {
+    const databaseId = 'error-database';
+    const fields = new Y.Doc().getMap('fields') as YDatabaseFields;
+
+    addField(fields, 'done', FieldType.Checkbox);
+    const docs = { r1: createRowDoc('r1', databaseId, { done: createCell(FieldType.Checkbox, 'Yes') }) };
+    let failing = true;
+    const ensureRow = jest.fn(() => (failing ? Promise.reject(new Error('offline')) : Promise.resolve()));
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    (useDatabaseFields as jest.Mock).mockReturnValue(fields);
+    (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r1' }]);
+    (useRowMap as jest.Mock).mockReturnValue({});
+    (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow, activeViewId: 'view-1' });
+
+    const settings: ChartLayoutSettings = {
+      chartType: ChartType.Bar,
+      xFieldId: 'done',
+      showEmptyValues: true,
+      aggregationType: ChartAggregationType.Count,
+      cumulative: false,
+      dateCondition: DateGroupCondition.Month,
+      extended: DEFAULT_CHART_EXTENDED_SETTINGS,
+    };
+    const { result, rerender } = renderHook(() => useChartData({ settings }));
+
+    try {
+      await waitFor(() => expect(result.current.loadError).toBe(true));
+      expect(result.current.isLoading).toBe(false);
+
+      failing = false;
+      (useRowMap as jest.Mock).mockReturnValue(docs);
+      act(() => result.current.retry());
+      rerender();
+
+      await waitFor(() => expect(result.current.loadError).toBe(false));
+      await waitFor(() =>
+        expect(result.current.chartData).toEqual([expect.objectContaining({ label: 'Checked', value: 1 })])
+      );
+      expect(ensureRow).toHaveBeenCalledTimes(2);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });
 
@@ -297,6 +395,7 @@ describe('useChartData Number chart', () => {
     aggregationType: ChartAggregationType.Count,
     cumulative: false,
     dateCondition: DateGroupCondition.Month,
+    extended: DEFAULT_CHART_EXTENDED_SETTINGS,
     numberFormat: 'auto',
     titleText: '',
   };
@@ -569,6 +668,7 @@ describe('useChartData rows added after the first load', () => {
     aggregationType: ChartAggregationType.Count,
     cumulative: false,
     dateCondition: DateGroupCondition.Month,
+    extended: DEFAULT_CHART_EXTENDED_SETTINGS,
   };
 
   function setup() {
@@ -799,6 +899,7 @@ it('aggregates all historical rows through the bounded snapshot accessor without
   const { result, unmount } = renderHook(() => useChartData({ settings: {
     chartType: ChartType.Bar, xFieldId: 'category', yFieldId: 'amount', showEmptyValues: true,
     aggregationType: ChartAggregationType.Sum, cumulative: false, dateCondition: DateGroupCondition.Month,
+    extended: DEFAULT_CHART_EXTENDED_SETTINGS,
   } }));
 
   await waitFor(() => expect(result.current.isLoading).toBe(false));

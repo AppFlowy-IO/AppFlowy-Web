@@ -1,7 +1,7 @@
 import { useMemo, useState, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldType, useFieldSelector, useReadOnly } from '@/application/database-yjs';
+import { FieldType, useDatabaseContextOptional, useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as AIIndicatorSvg } from '@/assets/icons/database/ai.svg';
 import GridFieldMenu from '@/components/database/components/grid/grid-column/GridFieldMenu';
@@ -24,6 +24,9 @@ export function GridHeaderColumn({
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
   const readOnly = useReadOnly();
+  // A dashboard widget's grid draws its header glyphs as dashboard chrome:
+  // 16px in the tool-icon colour, the same as desktop.
+  const isDashboardWidget = Boolean(useDatabaseContextOptional()?.isDashboardWidget);
   const fieldId = column.fieldId || '';
   const { t } = useTranslation();
 
@@ -56,6 +59,7 @@ export function GridHeaderColumn({
           fieldId={fieldId}
           showRelationDatabaseName
           className={'flex-1 justify-start gap-[10px] overflow-hidden text-left'}
+          iconClassName={isDashboardWidget ? '!h-4 !w-4 shrink-0 text-dash-tool-icon' : undefined}
         />
         {isAIField && <AIIndicatorSvg className={'h-5 w-5 text-text-featured'} />}
       </>
@@ -83,6 +87,7 @@ export function GridHeaderColumn({
   }, [
     fieldId,
     isAIField,
+    isDashboardWidget,
     onResizeColumnStart,
     readOnly,
     tooltipContent,

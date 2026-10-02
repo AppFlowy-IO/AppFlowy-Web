@@ -1,4 +1,4 @@
-import { MutableRefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { MutableRefObject, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
@@ -10,6 +10,7 @@ import {
   DEFAULT_CHART_NUMBER_FORMAT,
   isDateGroupableFieldType,
   isGroupableFieldType,
+  resolveChartStyle,
 } from '@/application/database-yjs/chart.type';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import { useUpdateChartSetting } from '@/application/database-yjs/dispatch';
@@ -20,8 +21,15 @@ import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
+import {
+  ChartColorSetting,
+  ChartDataLabelsSetting,
+  ChartDecimalPlacesSetting,
+  ChartLegendSetting,
+} from '@/components/database/chart/settings/style';
 import { CHART_AGGREGATION_LABELS } from '@/components/database/chart/widgets/numberChartUtils';
 import { FieldDisplay } from '@/components/database/components/field';
+import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import {
   DropdownMenuItem,
   DropdownMenuItemTick,
@@ -212,7 +220,14 @@ function ChartLayoutSettings() {
   const currentDateCondition = chartSetting?.dateCondition ?? DateGroupCondition.Month;
   const currentNumberFormat = chartSetting?.numberFormat ?? DEFAULT_CHART_NUMBER_FORMAT;
   const currentTitleText = chartSetting?.titleText ?? '';
+  const currentStyle = resolveChartStyle(chartSetting);
   const isNumberChart = currentChartType === ChartType.Number;
+  const isDark = Boolean(useContext(ThemeModeContext)?.isDark);
+  // Auto passes `null`, which resets the stored key.
+  const handleDecimalPlaces = useCallback(
+    (decimalPlaces: number | null) => updateChartSetting({}, { decimalPlaces }),
+    [updateChartSetting]
+  );
 
   const xField = useMemo(
     () => groupableFields.find((p) => p.id === currentXFieldId),
@@ -277,7 +292,10 @@ function ChartLayoutSettings() {
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent
-          className={'appflowy-scroller max-w-[260px] overflow-y-auto'}
+          // The Style rows make the menu taller than short windows: keep it on screen and scroll it.
+          className={
+            'appflowy-scroller max-h-[var(--radix-dropdown-menu-content-available-height)] max-w-[260px] overflow-y-auto'
+          }
           onEscapeKeyDown={handleEscapeKeyDown}
         >
           {isNumberChart ? (
@@ -346,6 +364,7 @@ function ChartLayoutSettings() {
                   {currentNumberFormat === value && <DropdownMenuItemTick />}
                 </DropdownMenuItem>
               ))}
+              <ChartDecimalPlacesSetting value={currentStyle.decimalPlaces} onChange={handleDecimalPlaces} />
 
               <DropdownMenuSeparator />
               <DropdownMenuLabel>{t('chart.number.title', { defaultValue: 'Title' })}</DropdownMenuLabel>
@@ -471,6 +490,25 @@ function ChartLayoutSettings() {
                 {t('chart.cumulative', 'Cumulative')}
                 <Switch className={'ml-auto'} checked={currentCumulative} />
               </DropdownMenuItem>
+
+              <DropdownMenuSeparator />
+
+              {/* Style (WP10): standalone rows WP11 re-mounts in its panel */}
+              <DropdownMenuLabel>{t('chart.style.title', { defaultValue: 'Style' })}</DropdownMenuLabel>
+              <ChartColorSetting
+                value={currentStyle.colorTheme}
+                isDark={isDark}
+                onChange={(colorTheme) => updateChartSetting({}, { colorTheme })}
+              />
+              <ChartDataLabelsSetting
+                value={currentStyle.showDataLabels}
+                onChange={(showDataLabels) => updateChartSetting({}, { showDataLabels })}
+              />
+              <ChartLegendSetting
+                value={currentStyle.legendPosition}
+                onChange={(legendPosition) => updateChartSetting({}, { legendPosition })}
+              />
+              <ChartDecimalPlacesSetting value={currentStyle.decimalPlaces} onChange={handleDecimalPlaces} />
 
               <DropdownMenuSeparator />
             </>

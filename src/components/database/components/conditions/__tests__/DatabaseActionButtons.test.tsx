@@ -60,3 +60,46 @@ describe('Gallery compact condition actions', () => {
     expect(button.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
   });
 });
+
+describe('Dashboard widget condition tools', () => {
+  it.each([
+    ['Filter', <FiltersButton key='filter' presentation='popover' variant='widget' />, 'database-actions-filter'],
+    ['Sort', <SortsButton key='sort' presentation='popover' variant='widget' />, 'database-actions-sort'],
+  ])('renders the %s tool as a quiet 24px button with a 16px glyph', (_label, action, testId) => {
+    render(action);
+
+    const button = screen.getByTestId(testId);
+
+    for (const name of ['h-6', 'w-6', '!rounded-200', 'text-dash-tool-icon', '[&_svg]:h-4', '[&_svg]:w-4']) {
+      expect(button.className).toContain(name);
+    }
+
+    expect(button.className).toContain('data-[active=true]:text-dash-edit-icon');
+    expect(button.getAttribute('data-active')).toBe('false');
+    expect(button.getAttribute('data-parity-id')).toBe(
+      testId === 'database-actions-filter' ? 'dash-widget-tool-filter' : 'dash-widget-tool-sort'
+    );
+    // The toolbar's blue inline color is for standalone views only.
+    expect(button.style.color).toBe('');
+  });
+
+  it.each([
+    [
+      'Filter',
+      <FiltersButton editing key='filter' presentation='popover' variant='widget' />,
+      'database-actions-filter',
+    ],
+    ['Sort', <SortsButton editing key='sort' presentation='popover' variant='widget' />, 'database-actions-sort'],
+  ])('turns the %s tool accent in Edit mode', (_label, action, testId) => {
+    render(action);
+
+    expect(screen.getByTestId(testId).className).toContain('text-dash-edit-icon');
+  });
+
+  it('keeps the standalone toolbar buttons free of the widget attributes', () => {
+    render(<FiltersButton compact />);
+
+    expect(screen.getByTestId('database-actions-filter').hasAttribute('data-active')).toBe(false);
+    expect(screen.getByTestId('database-actions-filter').hasAttribute('data-parity-id')).toBe(false);
+  });
+});

@@ -97,6 +97,100 @@ describe('useDocumentLoader', () => {
     expect(loadView).toHaveBeenCalledTimes(3);
   });
 
+  it('reports offline for a network failure, so the source is not called deleted', async () => {
+    const loadView = jest.fn(async () => Promise.reject({ code: -1, message: 'Network Error' }));
+
+    const { result } = renderHook(() => useDocumentLoader({ viewId: 'view-id', loadView }));
+
+    await waitFor(() => {
+      expect(result.current.notFound).toBe(true);
+    });
+
+    expect(result.current.offline).toBe(true);
+    expect(result.current.noAccess).toBe(false);
+  });
+
+  it('does not retry a network failure, so the offline placeholder shows without waiting for three loads', async () => {
+    const loadView = jest.fn(async () => Promise.reject({ code: -1, message: 'Network Error' }));
+
+    const { result } = renderHook(() => useDocumentLoader({ viewId: 'view-id', loadView }));
+
+    await waitFor(() => {
+      expect(result.current.offline).toBe(true);
+    });
+    expect(loadView).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports offline for any failure while the browser is offline', async () => {
+    const onLine = jest.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
+
+    try {
+      const loadView = jest.fn(async () => Promise.reject(new Error('fetch failed')));
+      const { result } = renderHook(() => useDocumentLoader({ viewId: 'view-id', loadView }));
+
+      await waitFor(() => {
+        expect(result.current.notFound).toBe(true);
+      });
+      expect(result.current.offline).toBe(true);
+    } finally {
+      onLine.mockRestore();
+    }
+  });
+
+  it('never reports a permission failure as offline', async () => {
+    const loadView = jest.fn(async () =>
+      Promise.reject({ code: 1012, message: 'user is not allowed to access this view' })
+    );
+
+    const { result } = renderHook(() => useDocumentLoader({ viewId: 'view-id', loadView }));
+
+    await waitFor(() => {
+      expect(result.current.noAccess).toBe(true);
+    });
+    expect(result.current.offline).toBe(false);
+  });
+
+  it('loads again when the browser is back online and clears offline', async () => {
+    const doc = createDoc('database-id');
+    let online = false;
+    const loadView = jest.fn(async () => (online ? doc : Promise.reject({ code: -1, message: 'Network Error' })));
+
+    const { result } = renderHook(() => useDocumentLoader({ viewId: 'view-id', loadView }));
+
+    await waitFor(() => {
+      expect(result.current.offline).toBe(true);
+    });
+    const failedAttempts = loadView.mock.calls.length;
+
+    online = true;
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.doc).toBe(doc);
+    });
+    expect(loadView.mock.calls.length).toBe(failedAttempts + 1);
+    expect(result.current.notFound).toBe(false);
+    expect(result.current.offline).toBe(false);
+  });
+
+  it('does not reload on the online event after a load that did not fail offline', async () => {
+    const loadView = jest.fn(async () => Promise.reject(new Error('view is gone')));
+
+    const { result } = renderHook(() => useDocumentLoader({ viewId: 'view-id', loadView }));
+
+    await waitFor(() => {
+      expect(result.current.notFound).toBe(true);
+    });
+    const attempts = loadView.mock.calls.length;
+
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(loadView.mock.calls.length).toBe(attempts);
+  });
+
   it('shares one reset event listener across loader instances for the same emitter', async () => {
     const eventEmitter = new EventEmitter();
     const loadView = jest.fn(async (viewId: string) => createDoc(viewId));

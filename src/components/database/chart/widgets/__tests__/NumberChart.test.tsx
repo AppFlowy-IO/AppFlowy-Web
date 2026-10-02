@@ -32,7 +32,8 @@ describe('NumberChartWidget', () => {
     );
 
     expect(screen.getByTestId('number-chart').getAttribute('data-empty')).toBe('false');
-    expect(screen.getByTestId('number-chart-value').textContent).toBe('1,234.57');
+    // R-FORMAT card: values of 1,000 or more drop their decimals.
+    expect(screen.getByTestId('number-chart-value').textContent).toBe('1,235');
     expect(screen.getByTestId('number-chart-title').textContent).toBe('Sum of Amount');
   });
 
@@ -78,7 +79,7 @@ describe('formatNumberChartValue', () => {
         aggregationType: ChartAggregationType.Sum,
         fieldNumberFormat: NumberFormat.USD,
       })
-    ).toBe('$1,500.46');
+    ).toBe('$1,500');
   });
 
   it('ignores the field format for counts', () => {
@@ -112,6 +113,24 @@ describe('formatNumberChartValue', () => {
     expect(
       formatNumberChartValue(1.234567, { numberFormat: 'auto', aggregationType: ChartAggregationType.Median })
     ).toBe('1.23');
+  });
+
+  it('applies decimal places and the chart locale', () => {
+    expect(
+      formatNumberChartValue(1234.5, {
+        numberFormat: 'auto',
+        aggregationType: ChartAggregationType.Sum,
+        fieldNumberFormat: NumberFormat.Num,
+        decimalPlaces: 2,
+      })
+    ).toBe('1,234.50');
+    expect(
+      formatNumberChartValue(78_500_000, {
+        numberFormat: 'compact',
+        aggregationType: ChartAggregationType.Sum,
+        locale: 'zh-CN',
+      })
+    ).toBe('7850万');
   });
 
   it('guards against non-finite values', () => {

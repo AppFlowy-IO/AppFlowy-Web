@@ -83,7 +83,8 @@ async function openWidgetChartSettings(page: Page, label: string) {
   const widget = widgetLocator(page, label);
 
   await widget.hover();
-  await widget.getByTestId('database-actions-settings').click();
+  // The Edit-mode settings tool opens the widget's settings host (WP03).
+  await widget.getByTestId('dashboard-widget-settings-button').click();
   await ChartSettingsSelectors.chartSettingsSubTrigger(page).click();
   await expect(page.getByTestId('chart-type-donut')).toBeVisible(WIDGET_TIMEOUT);
 }

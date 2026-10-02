@@ -165,7 +165,7 @@
     {
       "id": "charts",
       "given": "a dashboard of \"Projects\" with a vertical bar chart, a donut chart and a Number chart \"Count all\" in one row",
-      "setup": "Bar and donut group by Status (count, data labels on, donut value in centre); Number uses the defaults.",
+      "setup": "Bar and donut group by Status (count, data labels on, donut value in centre); Number uses the defaults. A second row holds a line chart grouped by Status and a chart whose source has no rows.",
       "notionReferences": [
         {
           "states": ["view-light"],
@@ -295,7 +295,7 @@
       "source": "WP03 §1.10",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-toolbar-filter",
@@ -316,6 +316,11 @@
         "iconColor": "color.toolIcon",
         "badgeCount": 0
       },
+      "attach": {
+        "web": "src/components/database/dashboard/global-filters/GlobalFilterButton.tsx",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/global_filters/global_filter_button.dart"
+      },
+      "source": "WP03 §1.10; spec §4.1",
       "variants": [
         {
           "when": "filter-popover-open",
@@ -323,14 +328,9 @@
           "metrics": { "background": "color.hoverFill" }
         }
       ],
-      "attach": {
-        "web": "src/components/database/dashboard/global-filters/GlobalFilterButton.tsx",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/global_filters/global_filter_button.dart"
-      },
-      "source": "WP03 §1.10; spec §4.1",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-toolbar-open-as-page",
@@ -345,6 +345,11 @@
         "iconSize": { "calc": "geometry.toolbar.button.size - 2 * geometry.toolbar.button.padding" },
         "iconColor": "color.toolIcon"
       },
+      "attach": {
+        "web": "src/components/database/components/conditions/DatabaseActions.tsx (new OpenAsFullPageButton, WP03 §2.5)",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/toolbar/dashboard_expand_button.dart (new, WP03 §3.5 step 21)"
+      },
+      "source": "WP03 §1.10",
       "variants": [
         {
           "scene": "two-widgets",
@@ -352,14 +357,9 @@
           "metrics": { "count": 0 }
         }
       ],
-      "attach": {
-        "web": "src/components/database/components/conditions/DatabaseActions.tsx (new OpenAsFullPageButton, WP03 §2.5)",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/toolbar/dashboard_expand_button.dart (new, WP03 §3.5 step 21)"
-      },
-      "source": "WP03 §1.10",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-toolbar-settings",
@@ -374,17 +374,17 @@
         "iconSize": { "calc": "geometry.toolbar.button.size - 2 * geometry.toolbar.button.padding" },
         "iconColor": "color.toolIcon"
       },
-      "variants": [
-        { "scene": "read-only-grid", "states": ["view-light", "view-dark"], "metrics": { "count": 0 } }
-      ],
       "attach": {
         "web": "src/components/database/components/conditions/DatabaseActions.tsx",
         "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/toolbar/dashboard_setting_bar.dart (call site of SettingButton)"
       },
       "source": "WP03 §1.10",
+      "variants": [
+        { "scene": "read-only-grid", "states": ["view-light", "view-dark"], "metrics": { "count": 0 } }
+      ],
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-toolbar-edit-button",
@@ -411,7 +411,7 @@
       "source": "WP03 §1.10 (14/20, padding 4×10, radius 6). Weight 500 follows Notion and WP06 \"Edit dashboard\"; see OD-4.",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-toolbar-done-button",
@@ -437,7 +437,7 @@
       "source": "WP03 §1.10; spec §4.1",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-toolbar-filter__dot",
@@ -467,13 +467,13 @@
       "reference": true,
       "metrics": {},
       "attach": {
-        "web": "src/components/database/components/tabs/DatabaseViewTabs.tsx (tab row container)",
-        "desktop": "appflowy_flutter/lib/plugins/database/tab_bar/widgets/desktop_database_header.dart (tab row container)"
+        "web": "src/components/database/components/tabs/DatabaseTabs.tsx (.database-tabs row: view tabs and toolbar)",
+        "desktop": "appflowy_flutter/lib/plugins/database/tab_bar/desktop/tab_bar_header.dart (TabBarHeader root: view tabs and toolbar)"
       },
       "source": "WP02 §1.3",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-grid",
@@ -489,7 +489,7 @@
       "source": "WP02 §1.3, WP03 §1.1 grid bleed",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-row",
@@ -498,6 +498,11 @@
       "scene": "two-widgets",
       "relativeTo": "dash-grid",
       "metrics": { "top": "geometry.grid.topBand", "height": "layout.rowHeight.default" },
+      "attach": {
+        "web": "src/components/database/dashboard/DashboardRow.tsx",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_grid.dart"
+      },
+      "source": "WP02 §1.1, §1.3 (row gap identical in View and Edit)",
       "variants": [
         {
           "scene": "three-rows",
@@ -505,14 +510,9 @@
           "metrics": { "gapToNext": "geometry.grid.rowGap", "gapAxis": "y" }
         }
       ],
-      "attach": {
-        "web": "src/components/database/dashboard/DashboardRow.tsx",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_grid.dart"
-      },
-      "source": "WP02 §1.1, §1.3 (row gap identical in View and Edit)",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-box",
@@ -536,6 +536,11 @@
         "outlineWidth": 0,
         "transitionMs": "motion.fastMs"
       },
+      "attach": {
+        "web": "src/components/database/dashboard/DashboardWidget.tsx (data-testid=\"dashboard-widget\")",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart (Key('dashboard_widget_$id'))"
+      },
+      "source": "WP03 §1.1; WP02 §1.2 (2-up box width); spec §2.3",
       "variants": [
         {
           "when": "menu-open",
@@ -552,14 +557,9 @@
           "metrics": { "paddingTop": "geometry.widget.boxPaddingInline" }
         }
       ],
-      "attach": {
-        "web": "src/components/database/dashboard/DashboardWidget.tsx (data-testid=\"dashboard-widget\")",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart (Key('dashboard_widget_$id'))"
-      },
-      "source": "WP03 §1.1; WP02 §1.2 (2-up box width); spec §2.3",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-header",
@@ -567,6 +567,7 @@
       "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
       "scene": "two-widgets",
       "relativeTo": "dash-widget-box",
+      "content": ["dash-widget-title-pill", "dash-widget-tools"],
       "metrics": {
         "top": 0,
         "left": "geometry.widget.boxPaddingInline",
@@ -577,6 +578,11 @@
         "iconCount": 0,
         "background": "#00000000"
       },
+      "attach": {
+        "web": "src/components/database/dashboard/WidgetHeader.tsx (data-testid=\"dashboard-widget-header\")",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_header.dart (new, WP03 §3.4 step 8)"
+      },
+      "source": "WP03 §1.1; iconCount 0 = no drag glyph and no title icon by default",
       "variants": [
         {
           "scene": "titles-hidden",
@@ -584,14 +590,9 @@
           "metrics": { "count": 0 }
         }
       ],
-      "attach": {
-        "web": "src/components/database/dashboard/WidgetHeader.tsx (data-testid=\"dashboard-widget-header\")",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_header.dart (new, WP03 §3.4 step 8)"
-      },
-      "source": "WP03 §1.1; iconCount 0 = no drag glyph and no title icon by default",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-card",
@@ -606,7 +607,6 @@
         "bottom": "geometry.widget.boxPaddingBottom",
         "height": { "calc": "$dash-widget-box.height - geometry.widget.cardInset" },
         "borderRadius": "geometry.widget.cardRadius",
-        "background": "color.cardBg",
         "ringWidth": 1,
         "ringColor": { "view": "color.cardRing", "edit": "color.editRing" },
         "borderWidth": 0,
@@ -614,6 +614,11 @@
         "gapToNext": { "calc": "2 * geometry.widget.boxPaddingInline + geometry.grid.columnGap" },
         "gapAxis": "x"
       },
+      "attach": {
+        "web": "src/components/database/dashboard/DashboardWidget.tsx (data-testid=\"dashboard-widget-body\")",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart (Key('dashboard_widget_card_$id'), new)"
+      },
+      "source": "WP03 §1.1; spec §0, §3.1 (ring is a shadow, never a CSS border; dark is ring-only)",
       "variants": [
         {
           "scene": "titles-hidden",
@@ -628,16 +633,23 @@
           "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
           "metrics": { "left": 0 },
           "note": "first card of a row: card edge aligns with the content column"
+        },
+        {
+          "states": ["view-light", "edit-light"],
+          "metrics": { "background": "color.cardBg" },
+          "note": "the card is the page background"
+        },
+        {
+          "states": ["view-dark", "edit-dark"],
+          "metrics": { "background": "color.cardBg" },
+          "clientWaivers": {
+            "cross": "OD-2 (open product decision): the card is the page background on both clients, and the dark page background itself differs app-wide (web #21232A, desktop #1A202C). Each client is still checked against its own page colour; aligning the desktop dark page colour is outside the dashboard lanes."
+          }
         }
       ],
-      "attach": {
-        "web": "src/components/database/dashboard/DashboardWidget.tsx (data-testid=\"dashboard-widget-body\")",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart (Key('dashboard_widget_card_$id'), new)"
-      },
-      "source": "WP03 §1.1; spec §0, §3.1 (ring is a shadow, never a CSS border; dark is ring-only)",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-title-pill",
@@ -658,6 +670,11 @@
         "iconCount": 0,
         "accessibleName": "Widget options"
       },
+      "attach": {
+        "web": "src/components/database/dashboard/WidgetHeader.tsx (data-testid=\"dashboard-widget-title-button\")",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_header.dart (Key('dashboard_widget_title_button_$id'))"
+      },
+      "source": "WP03 §1.5; spec §3.2",
       "variants": [
         { "when": "hover-title", "states": ["view-light", "view-dark"], "metrics": { "background": "color.hoverFill" } },
         {
@@ -671,14 +688,9 @@
           "metrics": { "iconCount": 1, "childGap": "geometry.widget.titlePill.gap" }
         }
       ],
-      "attach": {
-        "web": "src/components/database/dashboard/WidgetHeader.tsx (data-testid=\"dashboard-widget-title-button\")",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_header.dart (Key('dashboard_widget_title_button_$id'))"
-      },
-      "source": "WP03 §1.5; spec §3.2",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-title-pill__label",
@@ -699,7 +711,7 @@
       "source": "WP03 §1.5; spec §3.2 (12/16/500, texSec)",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-title-pill__icon",
@@ -707,6 +719,11 @@
       "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
       "scene": "icons-in-heading",
       "metrics": { "iconSize": 16, "gapToNext": "geometry.widget.titlePill.gap", "gapAxis": "x" },
+      "attach": {
+        "web": "src/components/database/dashboard/WidgetHeader.tsx (data-testid=\"dashboard-widget-title-icon\")",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_header.dart (Key('dashboard_widget_title_icon_$id'))"
+      },
+      "source": "WP03 §1.5, §1.11",
       "variants": [
         {
           "scene": "two-widgets",
@@ -714,14 +731,9 @@
           "metrics": { "count": 0 }
         }
       ],
-      "attach": {
-        "web": "src/components/database/dashboard/WidgetHeader.tsx (data-testid=\"dashboard-widget-title-icon\")",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_header.dart (Key('dashboard_widget_title_icon_$id'))"
-      },
-      "source": "WP03 §1.5, §1.11",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-tools",
@@ -736,18 +748,24 @@
         "opacity": { "view": 0, "edit": 1 },
         "transitionMs": "motion.fastMs"
       },
-      "variants": [
-        { "when": "hover-widget", "states": ["view-light", "view-dark"], "metrics": { "opacity": 1 } },
-        { "scene": "mobile-390", "states": ["view-light", "view-dark"], "metrics": { "opacity": 1 } }
-      ],
       "attach": {
         "web": "src/components/database/components/conditions/DatabaseActions.tsx (data-testid=\"database-actions\", data-dashboard-widget)",
         "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/toolbar/dashboard_widget_toolbar.dart (new, WP03 §3.4 step 11)"
       },
       "source": "WP03 §1.3–1.4; spec §3.3. childGap 2 is web compact gap-0.5 (OD-4).",
+      "variants": [
+        { "when": "hover-widget", "states": ["view-light", "view-dark"], "metrics": { "opacity": 1 } },
+        {
+          "scene": "mobile-390",
+          "states": ["view-light", "view-dark"],
+          "wave": 5,
+          "metrics": { "opacity": 1 },
+          "status": "pending"
+        }
+      ],
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-tool-filter",
@@ -762,6 +780,11 @@
         "iconSize": "geometry.widget.toolButton.icon",
         "iconColor": { "view": "color.toolIcon", "edit": "color.editIcon" }
       },
+      "attach": {
+        "web": "src/components/database/components/conditions/FiltersButton.tsx (data-testid=\"database-actions-filter\")",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/toolbar/dashboard_widget_toolbar.dart (Key('dashboard_widget_tool_filter_$id'))"
+      },
+      "source": "WP03 §1.3–1.4; spec §3.3",
       "variants": [
         {
           "scene": "filtered-grid",
@@ -771,14 +794,9 @@
           "metrics": { "opacity": 1, "iconColor": "color.editIcon" }
         }
       ],
-      "attach": {
-        "web": "src/components/database/components/conditions/FiltersButton.tsx (data-testid=\"database-actions-filter\")",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/toolbar/dashboard_widget_toolbar.dart (Key('dashboard_widget_tool_filter_$id'))"
-      },
-      "source": "WP03 §1.3–1.4; spec §3.3",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-tool-sort",
@@ -793,15 +811,15 @@
         "iconSize": "geometry.widget.toolButton.icon",
         "iconColor": { "view": "color.toolIcon", "edit": "color.editIcon" }
       },
-      "variants": [],
       "attach": {
         "web": "src/components/database/components/conditions/SortsButton.tsx (data-testid=\"database-actions-sort\")",
         "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/toolbar/dashboard_widget_toolbar.dart (Key('dashboard_widget_tool_sort_$id'))"
       },
       "source": "WP03 §1.3–1.4; spec §3.3",
+      "variants": [],
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-tool-settings",
@@ -816,17 +834,17 @@
         "iconSize": "geometry.widget.toolButton.icon",
         "iconColor": { "view": "color.toolIcon", "edit": "color.editIcon" }
       },
-      "variants": [
-        { "states": ["view-light", "view-dark"], "metrics": { "count": 0 } }
-      ],
       "attach": {
         "web": "src/components/database/components/conditions/DatabaseActions.tsx (data-testid=\"dashboard-widget-settings-button\")",
         "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/toolbar/dashboard_widget_toolbar.dart (Key('dashboard_widget_settings_button_$id'))"
       },
       "source": "WP03 §1.3–1.4; spec §3.3",
+      "variants": [
+        { "states": ["view-light", "view-dark"], "metrics": { "count": 0 } }
+      ],
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-tool-search",
@@ -841,12 +859,12 @@
         "iconSize": "geometry.widget.toolButton.icon",
         "iconColor": { "view": "color.toolIcon", "edit": "color.editIcon" }
       },
-      "variants": [],
       "attach": {
         "web": "src/components/database/components/conditions/DatabaseActions.tsx (DatabaseSearchAction)",
         "desktop": "appflowy_flutter/lib/plugins/database/grid/presentation/widgets/toolbar/search_button.dart (compact widget variant, WP09)"
       },
       "source": "WP09 §1.2 (24×24, radius 6, 16px glyph)",
+      "variants": [],
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 4,
       "status": "pending"
@@ -879,30 +897,31 @@
       "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
       "scene": "titles-hidden",
       "relativeTo": "dash-widget-card",
+      "content": ["dash-widget-tools", "dash-widget-options-button"],
       "metrics": {
         "top": "geometry.widget.hiddenTitleCapsuleInset",
         "right": "geometry.widget.hiddenTitleCapsuleInset",
         "borderRadius": 8,
-        "paddingTop": 2,
-        "paddingRight": 2,
-        "paddingBottom": 2,
-        "paddingLeft": 2,
+        "paddingTop": 3,
+        "paddingRight": 3,
+        "paddingBottom": 3,
+        "paddingLeft": 3,
         "borderWidth": 1,
         "borderColor": "ref:border-primary",
         "background": "ref:surface-primary",
         "opacity": { "view": 0, "edit": 1 }
       },
-      "variants": [
-        { "when": "hover-widget", "states": ["view-light", "view-dark"], "metrics": { "opacity": 1 } }
-      ],
       "attach": {
         "web": "src/components/database/dashboard/WidgetHeader.tsx (data-testid=\"dashboard-widget-tool-capsule\")",
         "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_header.dart (Key('dashboard_widget_floating_header_$id'))"
       },
-      "source": "WP03 §1.9",
+      "source": "WP03 §1.9. padding* is measured from the border box (§3.2): the 2px padding plus the 1px border = 3.",
+      "variants": [
+        { "when": "hover-widget", "states": ["view-light", "view-dark"], "metrics": { "opacity": 1 } }
+      ],
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-options-button",
@@ -924,7 +943,7 @@
       "source": "WP03 §1.9",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-conditions-bar",
@@ -939,7 +958,7 @@
       "source": "WP03 §1.8; addendum §1.3",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-grid-header",
@@ -955,7 +974,7 @@
       "source": "A5.1 (top inset 0); header height 36 = both clients today (desktop GridSize.headerHeight, web h-[36px])",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-grid-first-column",
@@ -964,17 +983,24 @@
       "scene": "two-widgets",
       "relativeTo": "dash-widget-card",
       "metrics": { "left": 32 },
-      "variants": [
-        { "scene": "read-only-grid", "states": ["view-light", "view-dark"], "metrics": { "left": 12 } }
-      ],
       "attach": {
         "web": "src/components/database/components/grid/grid-column/GridVirtualColumn.tsx (first column)",
         "desktop": "appflowy_flutter/lib/plugins/database/grid/presentation/widgets/header/grid_header.dart (first field cell)"
       },
       "source": "A5.1: editable 32 (grid_start_inset_editable), read-only 12 (start_inset); widget-content.json once S2 adds it",
+      "variants": [
+        {
+          "scene": "read-only-grid",
+          "states": ["view-light", "view-dark"],
+          "metrics": { "left": 12 },
+          "clientWaivers": {
+            "desktop": "The desktop probe runs in a local workspace, which has no members: it holds the dashboard read-only, but the widget views keep this user's page access, so their grids stay editable. A reader's grid (12px start, no row handle) is covered by desktop dashboard_widget_content_geometry_test."
+          }
+        }
+      ],
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-grid-header-cell__icon",
@@ -982,7 +1008,7 @@
       "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
       "scene": "two-widgets",
       "appliesTo": "dash-widget-grid-header-cell__icon",
-      "metrics": { "iconSize": 16, "iconColor": "ref:icon-secondary" },
+      "metrics": { "iconSize": 16, "iconColor": "color.toolIcon" },
       "attach": {
         "web": "src/components/database/components/grid/grid-column/GridHeaderColumn.tsx",
         "desktop": "appflowy_flutter/lib/plugins/database/grid/presentation/widgets/header/desktop_field_cell.dart"
@@ -990,7 +1016,7 @@
       "source": "icons.json field-type-* (app-wide, OD-3)",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-grid-row",
@@ -998,15 +1024,15 @@
       "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
       "scene": "two-widgets",
       "appliesTo": "dash-widget-grid-row",
-      "metrics": { "height": 36, "pitch": 37, "borderBottomWidth": 1 },
+      "metrics": { "height": 37, "pitch": 37 },
       "attach": {
         "web": "src/components/database/components/grid/grid-row/GridVirtualRow.tsx",
         "desktop": "appflowy_flutter/lib/plugins/database/grid/presentation/widgets/row/row.dart"
       },
-      "source": "A5.2 (row_min_height 36 + row_divider 1)",
+      "source": "A5.2 (row_min_height 36 + row_divider 1). Both clients draw the 1px divider inside the row box (web: the cells' top border; desktop: the cells' divider), not as a border of the row, so the row box is 37 and the pitch 37; the 36 + 1 split is asserted by the shared BDD step \"each one-line row of the widget is 36 pixels tall plus a 1 pixel divider\" on both clients.",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-grid-row-controls",
@@ -1015,17 +1041,24 @@
       "scene": "two-widgets",
       "when": "hover-row",
       "metrics": { "buttonCount": 1, "checkboxCount": 0, "width": 24, "height": 24 },
-      "variants": [
-        { "scene": "read-only-grid", "states": ["view-light", "view-dark"], "metrics": { "count": 0 } }
-      ],
       "attach": {
         "web": "src/components/database/components/grid/controls/HoverControls.tsx (compact)",
         "desktop": "appflowy_flutter/lib/plugins/database/grid/presentation/widgets/row/row.dart (_RowLeadingState compact branch, A5.1)"
       },
       "source": "A5.1",
+      "variants": [
+        {
+          "scene": "read-only-grid",
+          "states": ["view-light", "view-dark"],
+          "metrics": { "count": 0 },
+          "clientWaivers": {
+            "desktop": "The desktop probe runs in a local workspace, which has no members: it holds the dashboard read-only, but the widget views keep this user's page access, so their grids stay editable. A reader's grid (12px start, no row handle) is covered by desktop dashboard_widget_content_geometry_test."
+          }
+        }
+      ],
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-grid-new-row",
@@ -1034,21 +1067,22 @@
       "scene": "two-widgets",
       "relativeTo": "dash-widget-card",
       "metrics": { "left": 32, "height": 36 },
-      "variants": [
-        {
-          "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
-          "wave": 4,
-          "metrics": { "icon": "add", "iconSize": 16 }
-        }
-      ],
       "attach": {
         "web": "src/components/database/components/grid/grid-row/GridNewRow.tsx (data-testid=\"grid-new-row\")",
         "desktop": "appflowy_flutter/lib/plugins/database/grid/presentation/widgets/footer/grid_footer.dart"
       },
       "source": "A5.1 (shares the start with the header and rows); A6 label",
+      "variants": [
+        {
+          "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
+          "wave": 4,
+          "metrics": { "icon": "add", "iconSize": 16 },
+          "status": "pending"
+        }
+      ],
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-grid-new-row__label",
@@ -1071,21 +1105,26 @@
       "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
       "scene": "two-widgets",
       "metrics": { "scrollbarVisible": false },
-      "variants": [
-        {
-          "when": "scrolling",
-          "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
-          "metrics": { "scrollbarVisible": true, "thumbThicknessMax": 6, "thumbInset": 2, "trackVisible": false }
-        }
-      ],
+      "clientWaivers": {
+        "web": "The web widget scroller uses the native macOS overlay scrollbar, which is not observable from the DOM (headless Chromium paints none). The shared A5 BDD step \"the widget shows no scrollbar\" covers it on web."
+      },
       "attach": {
         "web": "src/components/database/components/grid/grid-table/GridVirtualizer.tsx (scroller; attach after the large-source change lands)",
         "desktop": "appflowy_flutter/lib/plugins/database/tab_bar/widgets/database_tab_bar_scrollbar.dart and appflowy_flutter/lib/plugins/database/grid/presentation/grid_page.dart (attach after the large-source change lands)"
       },
       "source": "A5.3 (macOS overlay behaviour; Windows divergence not tested)",
+      "variants": [
+        {
+          "when": "scrolling",
+          "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
+          "metrics": { "scrollbarVisible": true, "thumbThicknessMax": 6, "thumbInset": 2, "trackVisible": false },
+          "status": "waived",
+          "waiver": "The parity grids hold three rows, so neither probe can scroll one, and web draws the native macOS overlay thumb, which the DOM does not expose. The transient 6px thumb is covered by desktop dashboard_widget_content_geometry_test (a thumb is painted after a scroll, none at rest)."
+        }
+      ],
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-resize-width-handle",
@@ -1093,17 +1132,17 @@
       "states": ["edit-light", "edit-dark"],
       "scene": "two-widgets",
       "metrics": { "width": "geometry.resize.hitWidth", "cursor": "col-resize" },
-      "variants": [
-        { "scene": "two-widgets", "states": ["view-light", "view-dark"], "metrics": { "count": 0 } }
-      ],
       "attach": {
         "web": "src/components/database/dashboard/DashboardRow.tsx",
         "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_resize_handle.dart"
       },
       "source": "WP02 §1.4",
+      "variants": [
+        { "scene": "two-widgets", "states": ["view-light", "view-dark"], "metrics": { "count": 0 } }
+      ],
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-resize-width-handle__pill",
@@ -1112,6 +1151,11 @@
       "scene": "two-widgets",
       "relativeTo": "dash-resize-width-handle",
       "metrics": { "opacity": 0 },
+      "attach": {
+        "web": "src/components/database/dashboard/DashboardRow.tsx",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_resize_handle.dart"
+      },
+      "source": "WP02 §1.4; spec §6.2",
       "variants": [
         {
           "when": "hover-width-gap",
@@ -1139,14 +1183,9 @@
           }
         }
       ],
-      "attach": {
-        "web": "src/components/database/dashboard/DashboardRow.tsx",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_resize_handle.dart"
-      },
-      "source": "WP02 §1.4; spec §6.2",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-resize-height-handle",
@@ -1161,7 +1200,7 @@
       "source": "WP02 §1.4",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-resize-height-handle__band",
@@ -1170,6 +1209,11 @@
       "scene": "two-widgets",
       "relativeTo": "dash-resize-height-handle",
       "metrics": { "opacity": 0 },
+      "attach": {
+        "web": "src/components/database/dashboard/DashboardGrid.tsx",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_grid.dart"
+      },
+      "source": "WP02 §1.4; spec §6.3",
       "variants": [
         {
           "when": "hover-height-band",
@@ -1182,14 +1226,9 @@
           "metrics": { "opacity": 1, "top": 0, "height": "geometry.resize.bandActive", "background": "color.accent" }
         }
       ],
-      "attach": {
-        "web": "src/components/database/dashboard/DashboardGrid.tsx",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_grid.dart"
-      },
-      "source": "WP02 §1.4; spec §6.3",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-row-control-move",
@@ -1207,6 +1246,11 @@
         "centerY": 0,
         "background": "color.rowControlBg"
       },
+      "attach": {
+        "web": "src/components/database/dashboard/DashboardRowControls.tsx (new, WP04)",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_row_controls.dart (new, WP04)"
+      },
+      "source": "WP04 row controls table; spec §6.4 (centerY is against the row block)",
       "variants": [
         {
           "instance": "first row",
@@ -1216,11 +1260,6 @@
         },
         { "instance": "any row", "states": ["edit-light", "edit-dark"], "when": "rest", "metrics": { "opacity": 0 } }
       ],
-      "attach": {
-        "web": "src/components/database/dashboard/DashboardRowControls.tsx (new, WP04)",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_row_controls.dart (new, WP04)"
-      },
-      "source": "WP04 row controls table; spec §6.4 (centerY is against the row block)",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 3,
       "status": "pending"
@@ -1290,14 +1329,14 @@
         "iconSize": 16,
         "iconColor": "color.accent"
       },
-      "variants": [
-        { "states": ["view-light", "view-dark"], "metrics": { "count": 0 } }
-      ],
       "attach": {
         "web": "src/components/database/dashboard/DashboardGrid.tsx",
         "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_grid.dart (AddWidgetButton)"
       },
       "source": "WP04 row controls table",
+      "variants": [
+        { "states": ["view-light", "view-dark"], "metrics": { "count": 0 } }
+      ],
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 3,
       "status": "pending"
@@ -1359,7 +1398,7 @@
         "fontWeight": "typography.menu.weight",
         "color": "ref:text-primary",
         "iconSize": 16,
-        "iconColor": "ref:icon-secondary"
+        "iconColor": "color.toolIcon"
       },
       "attach": {
         "web": "src/components/database/dashboard/WidgetMenu.tsx",
@@ -1391,7 +1430,7 @@
       "source": "WP03 §1.7",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-settings__title",
@@ -1407,7 +1446,7 @@
       "source": "WP03 §1.7",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-settings-close",
@@ -1423,7 +1462,84 @@
       "source": "WP03 §1.7",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
+    },
+    {
+      "id": "dash-widget-settings-row",
+      "description": "A navigation row of the settings host: icon, label, trailing value and chevron (\"Layout ›\", \"Source ›\").",
+      "states": ["edit-light", "edit-dark"],
+      "scene": "two-widgets",
+      "when": "settings-open",
+      "appliesTo": "dash-widget-settings-row*",
+      "metrics": { "count": 6, "height": 32, "iconCount": 2 },
+      "attach": {
+        "web": "src/components/database/dashboard/WidgetSettingsHost.tsx (Filter, Sort, Source) and the shared rows of src/components/database/components/settings/ (found by the probe)",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_settings_host.dart"
+      },
+      "source": "WP03 §1.7 (a Grid widget: Properties, Layout, Group, Filter, Sort, then Source ›); 32px rows as both clients draw them today",
+      "tolerance": { "px": 0.5, "color": "exact" },
+      "wave": 2,
+      "status": "enforced"
+    },
+    {
+      "id": "dash-widget-settings-row__label",
+      "description": "Label of a settings host row.",
+      "states": ["edit-light", "edit-dark"],
+      "scene": "two-widgets",
+      "when": "settings-open",
+      "metrics": {
+        "fontSize": "typography.menu.size",
+        "lineHeight": "typography.menu.lineHeight",
+        "fontWeight": "typography.menu.weight",
+        "color": "ref:text-primary"
+      },
+      "attach": {
+        "web": "src/components/database/dashboard/WidgetSettingsHost.tsx",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_settings_host.dart (_HostRow)"
+      },
+      "source": "tokens typography.menu",
+      "tolerance": { "px": 0.5, "color": "exact" },
+      "wave": 2,
+      "status": "enforced"
+    },
+    {
+      "id": "dash-widget-settings-row__value",
+      "description": "Trailing value of a settings host row (property count, layout, source), beside the chevron.",
+      "states": ["edit-light", "edit-dark"],
+      "scene": "two-widgets",
+      "when": "settings-open",
+      "relativeTo": "dash-widget-settings",
+      "metrics": {
+        "right": { "calc": "geometry.menu.padding + 2 * geometry.menu.itemPaddingInline + 16" },
+        "fontSize": 12,
+        "fontWeight": 400,
+        "color": "ref:text-secondary"
+      },
+      "attach": {
+        "web": "src/components/database/dashboard/WidgetSettingsHost.tsx",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_settings_host.dart (_HostRow)"
+      },
+      "source": "WP03 §1.7 (trailing text); 12px secondary text 8px before the 16px chevron",
+      "tolerance": { "px": 0.5, "color": "exact" },
+      "wave": 2,
+      "status": "enforced"
+    },
+    {
+      "id": "dash-widget-settings-row__chevron",
+      "description": "Chevron of a settings host row, at the end of the row.",
+      "states": ["edit-light", "edit-dark"],
+      "scene": "two-widgets",
+      "when": "settings-open",
+      "relativeTo": "dash-widget-settings",
+      "metrics": { "right": { "calc": "geometry.menu.padding + geometry.menu.itemPaddingInline" }, "iconSize": 16 },
+      "attach": {
+        "web": "src/components/database/dashboard/WidgetSettingsHost.tsx (Source) and src/components/ui/dropdown-menu.tsx (DropdownMenuSubTrigger)",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_settings_host.dart (_HostRow)"
+      },
+      "source": "WP03 §1.7 (\"Layout ›\", \"Source ›\")",
+      "tolerance": { "px": 0.5, "color": "exact" },
+      "wave": 2,
+      "status": "enforced"
     },
     {
       "id": "dash-widget-filters-popover",
@@ -1443,7 +1559,7 @@
       "source": "WP03 §1.8",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-widget-filters-popover__title",
@@ -1459,7 +1575,7 @@
       "source": "WP03 §1.8, §1.13",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-global-filter-pill",
@@ -1478,6 +1594,11 @@
         "background": "color.pillBgActive",
         "iconSize": 16
       },
+      "attach": {
+        "web": "src/components/database/dashboard/global-filters/GlobalFilterChip.tsx",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/global_filters/global_filter_bar.dart"
+      },
+      "source": "WP08 §1.5",
       "variants": [
         {
           "instance": "second pill (no value)",
@@ -1485,11 +1606,6 @@
           "metrics": { "background": "color.pillBg" }
         }
       ],
-      "attach": {
-        "web": "src/components/database/dashboard/global-filters/GlobalFilterChip.tsx",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/global_filters/global_filter_bar.dart"
-      },
-      "source": "WP08 §1.5",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 3,
       "status": "pending"
@@ -1508,6 +1624,11 @@
         "textOverflow": "ellipsis",
         "text": "Status: In progress"
       },
+      "attach": {
+        "web": "src/components/database/dashboard/global-filters/GlobalFilterChip.tsx",
+        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/global_filters/global_filter_bar.dart"
+      },
+      "source": "WP08 §1.5",
       "variants": [
         {
           "instance": "second pill (no value)",
@@ -1515,11 +1636,6 @@
           "metrics": { "color": "color.pillFg" }
         }
       ],
-      "attach": {
-        "web": "src/components/database/dashboard/global-filters/GlobalFilterChip.tsx",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/global_filters/global_filter_bar.dart"
-      },
-      "source": "WP08 §1.5",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 3,
       "status": "pending"
@@ -1551,7 +1667,7 @@
         "paddingRight": 6,
         "icon": "add",
         "iconSize": 16,
-        "iconColor": "ref:icon-secondary"
+        "iconColor": "color.toolIcon"
       },
       "attach": {
         "web": "src/components/database/dashboard/global-filters/GlobalFilterBar.tsx (data-testid=\"dashboard-global-filter-bar-add\")",
@@ -1671,7 +1787,7 @@
       "source": "tokens typography.tick; spec §8.3",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-chart-data-label",
@@ -1693,7 +1809,7 @@
       "source": "tokens typography.dataLabel; spec §8.3",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-chart-grid-line",
@@ -1709,7 +1825,7 @@
       "source": "tokens chart.gridDash, color.chartGrid",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-chart-bar",
@@ -1726,7 +1842,39 @@
       "source": "tokens chart.bar",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
+    },
+    {
+      "id": "dash-chart-line",
+      "description": "The line of a single-series line chart.",
+      "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
+      "scene": "charts",
+      "desktopMeasure": "style",
+      "metrics": { "count": 1, "strokeWidth": "chart.line.strokeWidth" },
+      "attach": {
+        "web": "src/components/database/chart/widgets/LineChart.tsx (Line)",
+        "desktop": "appflowy_flutter/lib/plugins/database/chart/presentation/widgets/line_chart_widget.dart (LineChartBarData)"
+      },
+      "source": "tokens chart.line; WP10 §2.1",
+      "tolerance": { "px": 0.5, "color": "exact" },
+      "wave": 2,
+      "status": "enforced"
+    },
+    {
+      "id": "dash-chart-line-area",
+      "description": "The gradient area under a single-series line.",
+      "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
+      "scene": "charts",
+      "desktopMeasure": "style",
+      "metrics": { "count": 1 },
+      "attach": {
+        "web": "src/components/database/chart/widgets/LineChart.tsx (Area)",
+        "desktop": "appflowy_flutter/lib/plugins/database/chart/presentation/widgets/line_chart_widget.dart (LineChartBarData.belowBarData)"
+      },
+      "source": "tokens chart.line.gradientTopAlpha; WP10 §2.1",
+      "tolerance": { "px": 0.5, "color": "exact" },
+      "wave": 2,
+      "status": "enforced"
     },
     {
       "id": "dash-chart-legend-swatch",
@@ -1742,7 +1890,7 @@
       "source": "tokens chart.legend",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-chart-tooltip",
@@ -1767,7 +1915,7 @@
       "source": "tokens geometry.tooltip, typography.tooltip; spec §8.8",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-chart-tooltip__footer",
@@ -1783,7 +1931,7 @@
       "source": "ARCHITECTURE Appendix A (Charts)",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-donut-ring",
@@ -1799,7 +1947,7 @@
       "source": "WP10",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-donut-total",
@@ -1820,7 +1968,7 @@
       "source": "tokens typography.donutTotal; ARCHITECTURE §2.4",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-donut-caption",
@@ -1841,7 +1989,7 @@
       "source": "tokens typography.donutCaption",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-donut-outside-label",
@@ -1863,7 +2011,7 @@
       "source": "tokens typography.donutOutsideLabel; spec §8.6",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-chart-empty",
@@ -1871,7 +2019,7 @@
       "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
       "scene": "charts",
       "instance": "a chart whose source has no rows",
-      "metrics": { "text": "No data", "color": "ref:text-secondary" },
+      "metrics": { "text": "No data", "color": "ref:text-tertiary" },
       "attach": {
         "web": "src/components/database/chart/ChartEmptyState.tsx",
         "desktop": "appflowy_flutter/lib/plugins/database/chart/presentation/widgets/chart_empty_state.dart"
@@ -1879,7 +2027,7 @@
       "source": "spec §8.9; Appendix A",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "dash-chart-loading",
@@ -1895,7 +2043,8 @@
       "source": "spec §8.9; Appendix A",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
-      "status": "pending"
+      "status": "waived",
+      "waiver": "The loading state is transient: neither probe can hold a chart before its rows load. Its text and skeleton are covered by ChartStates.test.tsx (web) and chart_states_test.dart (desktop), both bound to the shared \"Preparing your chart\" copy."
     },
     {
       "id": "dash-number-caption",
@@ -1955,8 +2104,13 @@
         "borderWidth": 1,
         "borderColor": "ref:border-primary",
         "iconSize": 20,
-        "iconColor": "ref:icon-secondary"
+        "iconColor": "color.toolIcon"
       },
+      "attach": {
+        "web": "src/components/database/chart/settings/ChartSettingsPanel.tsx (new, WP11)",
+        "desktop": "appflowy_flutter/lib/plugins/database/chart/presentation/toolbar/chart_type_button.dart"
+      },
+      "source": "WP11 §1.1 chart type row",
       "variants": [
         {
           "instance": "selected type",
@@ -1965,11 +2119,6 @@
           "metrics": { "borderWidth": 2, "borderColor": "color.accent", "iconColor": "color.accent" }
         }
       ],
-      "attach": {
-        "web": "src/components/database/chart/settings/ChartSettingsPanel.tsx (new, WP11)",
-        "desktop": "appflowy_flutter/lib/plugins/database/chart/presentation/toolbar/chart_type_button.dart"
-      },
-      "source": "WP11 §1.1 chart type row",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 3,
       "status": "pending"
@@ -1991,7 +2140,7 @@
         "lineHeight": 20,
         "color": "ref:text-primary",
         "iconSize": 16,
-        "iconColor": "ref:icon-secondary"
+        "iconColor": "color.toolIcon"
       },
       "attach": {
         "web": "src/components/database/chart/settings/ChartSettingsPanel.tsx (new, WP11)",
@@ -2280,7 +2429,7 @@
       "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
       "source": "WP03 §1.10; addendum §1.4 (desktop today [filter][Edit][settings], web [settings][filter][Edit])",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "order-dash-toolbar-embedded",
@@ -2295,7 +2444,7 @@
       "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
       "source": "WP03 §1.10",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "order-dash-toolbar-reader",
@@ -2307,7 +2456,7 @@
       "states": ["view-light", "view-dark"],
       "source": "WP03 §1.10",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "order-dash-widget-header",
@@ -2318,7 +2467,7 @@
       "expected": ["dash-widget-title-pill", "dash-widget-tools"],
       "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "order-dash-widget-tools-grid",
@@ -2335,7 +2484,7 @@
       "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
       "source": "WP03 §1.3 caps wp03",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "order-dash-widget-tools-grid-content",
@@ -2363,7 +2512,7 @@
       "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
       "source": "WP03 §1.3",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "order-dash-row-controls",
@@ -2492,7 +2641,7 @@
       "locale": "en",
       "states": ["view-light", "view-dark"],
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "text-dash-toolbar-done",
@@ -2501,7 +2650,7 @@
       "locale": "en",
       "states": ["edit-light", "edit-dark"],
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "text-dash-toolbar-open-as-page",
@@ -2511,7 +2660,7 @@
       "kind": "tooltip",
       "scene": "embedded",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "text-dash-toolbar-settings",
@@ -2520,7 +2669,7 @@
       "locale": "en",
       "kind": "tooltip",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "text-dash-widget-title-name",
@@ -2529,7 +2678,7 @@
       "locale": "en",
       "kind": "accessibleName",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "text-dash-widget-settings-tooltip",
@@ -2539,7 +2688,7 @@
       "kind": "tooltip",
       "states": ["edit-light", "edit-dark"],
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "text-dash-settings-host-title",
@@ -2548,7 +2697,7 @@
       "locale": "en",
       "when": "settings-open",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "text-dash-filters-popover-title",
@@ -2558,7 +2707,7 @@
       "when": "filters-open",
       "scene": "filtered-grid",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "text-dash-chart-no-data",
@@ -2566,7 +2715,7 @@
       "expected": "No data",
       "locale": "en",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "text-dash-chart-loading",
@@ -2574,7 +2723,8 @@
       "expected": "Preparing your chart",
       "locale": "en",
       "wave": 2,
-      "status": "pending"
+      "status": "waived",
+      "waiver": "The loading state is transient: neither probe can hold a chart before its rows load. Its text and skeleton are covered by ChartStates.test.tsx (web) and chart_states_test.dart (desktop), both bound to the shared \"Preparing your chart\" copy."
     },
     {
       "id": "text-dash-donut-caption",
@@ -2582,7 +2732,7 @@
       "expected": "Total",
       "locale": "en",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "text-dash-tooltip-footer",
@@ -2590,7 +2740,7 @@
       "expected": "Click to view data",
       "locale": "en",
       "wave": 2,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "id": "text-dash-row-move-up",
@@ -2898,15 +3048,6 @@
         "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_card.dart (DashboardWidgetMenu)"
       },
       "wave": 3
-    },
-    {
-      "id": "dash-widget-settings-row",
-      "description": "A navigation row of the widget settings host (\"Layout ›\", \"Source ›\").",
-      "attach": {
-        "web": "src/components/database/dashboard/WidgetSettingsHost.tsx (new, WP03)",
-        "desktop": "appflowy_flutter/lib/plugins/database/dashboard/presentation/widgets/dashboard_widget_settings_host.dart (new, WP03)"
-      },
-      "wave": 2
     },
     {
       "id": "dash-widget-filters-popover-close",

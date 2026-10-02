@@ -26,8 +26,10 @@ import { join, relative, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 import { APIRequestContext, expect, Locator, Page } from '@playwright/test';
+import * as Y from 'yjs';
 
 import { FieldType } from '../../src/application/database-yjs/database.type';
+import { Types } from '../../src/application/types';
 import {
   appliesToPattern,
   compareValues,
@@ -58,11 +60,13 @@ import {
   VisualMetricsFixture,
 } from '../../src/application/database-yjs/visual-parity';
 
+import { renameDatabaseView } from './dashboard-owned-views-helpers';
 import { mergeRawLayout } from './dashboard-parity-helpers';
 import {
   addDashboardView,
   addFixtureDatabase,
   addViewThroughTabs,
+  apiGet,
   buildGlobalFilter,
   closeGlobalFilterMenu,
   DASHBOARD_DEFAULT_ROW_HEIGHT,
@@ -87,6 +91,7 @@ import {
   toggleGlobalFilterOption,
 } from './dashboard-test-helpers';
 import { GlyphIdentity, IconRuntimeIndex } from './dashboard-visual-parity-icons';
+import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from './page-utils';
 import {
   callParityProbe,
   GlyphInstance,
@@ -280,6 +285,44 @@ async function addSavedSelectFilter(page: Page, viewId: string, fieldId: string,
   return filterId;
 }
 
+/** Wait until the server holds the saved filter: the next step leaves the page, and an unsent update would be lost. */
+async function waitForSavedFilterOnServer(
+  page: Page,
+  request: APIRequestContext,
+  databaseId: string,
+  viewId: string,
+  filterId: string
+) {
+  const world = dashboardWorld(page);
+
+  await expect
+    .poll(
+      async () => {
+        const collab = await apiGet<{ doc_state: number[] }>(
+          request,
+          world.owner.accessToken,
+          `/api/workspace/v1/${world.workspaceId}/collab/${databaseId}?collab_type=${Types.Database}`
+        ).catch(() => null);
+
+        if (!collab) return false;
+        const doc = new Y.Doc({ guid: databaseId });
+
+        try {
+          Y.applyUpdate(doc, new Uint8Array(collab.doc_state));
+          const database = doc.getMap('data').get('database') as Y.Map<unknown> | undefined;
+          const views = database?.get('views') as Y.Map<Y.Map<unknown>> | undefined;
+          const filters = views?.get(viewId)?.get('filters');
+
+          return filters instanceof Y.Array && filters.toJSON().some((filter: { id?: string }) => filter.id === filterId);
+        } finally {
+          doc.destroy();
+        }
+      },
+      { timeout: 30_000, message: 'waiting for the saved Tasks filter to reach the server' }
+    )
+    .toBe(true);
+}
+
 /**
  * Seed the canonical parity dashboard: Projects (Grid, Board and Bar, Line,
  * Donut, Number charts grouped by Status), Tasks (Grid, with a saved filter),
@@ -310,6 +353,8 @@ export async function seedCanonicalParityDashboard(page: Page, request: APIReque
     const viewId = await addViewThroughTabs(page, 'Projects', 'Chart');
 
     await setChartLayout(page, viewId, { chartType, xFieldId: projects.fieldIds.Status });
+    // Named after its chart type, as the desktop fixture names it (the widget title is the view name).
+    await renameDatabaseView(page, request, 'Projects', viewId, name);
     remember(`Projects ${name}`, 'Projects', viewId, 'chart');
   }
 
@@ -328,6 +373,8 @@ export async function seedCanonicalParityDashboard(page: Page, request: APIReque
 
   await openDatabasePage(page, 'Tasks');
   const savedFilterId = await addSavedSelectFilter(page, tasks.views.Grid, tasks.fieldIds.Stage, statusOptionId('Doing'));
+
+  await waitForSavedFilterOnServer(page, request, tasks.databaseId, tasks.views.Grid, savedFilterId);
 
   parityWorlds.set(page, { views, savedFilterId });
   await addDashboardView(page, 'Projects');
@@ -366,6 +413,8 @@ interface SceneSpec {
   showIcons?: boolean;
   viewport?: { width: number; height: number };
   member?: boolean;
+  /** The dashboard is a linked database block of a document. */
+  embedded?: boolean;
   localChange?: boolean;
   /** The widget that un-instanced widget-level checks and interactions use first. */
   defaultWidget?: string;
@@ -420,7 +469,10 @@ export const PARITY_SCENES: Record<string, SceneSpec> = {
   },
   charts: {
     id: 'charts',
-    rows: [['Projects Bar', 'Projects Donut', 'Projects Number'], ['Backlog Chart']],
+    rows: [
+      ['Projects Bar', 'Projects Donut', 'Projects Number'],
+      ['Projects Line', 'Backlog Chart'],
+    ],
     instances: {
       'middle widget': { label: 'Projects Donut' },
       'bar chart widget': { label: 'Projects Bar' },
@@ -445,23 +497,31 @@ export const PARITY_SCENES: Record<string, SceneSpec> = {
     defaultWidget: 'Projects Grid',
     instances: GRID_INSTANCE,
   },
-  embedded: { id: 'embedded', unavailable: 'the embedded (linked block) dashboard scene is not built by the web probe yet' },
+  // A document whose first block links Projects as a dashboard. The block is a new, empty
+  // linked dashboard: the contract measures only its toolbar there.
+  embedded: { id: 'embedded', rows: [], embedded: true },
   'widget-search': { id: 'widget-search', unavailable: 'web widgets have no search tool before wave 4 (WP09)' },
   drilldown: { id: 'drilldown', unavailable: 'the drill-down dialog arrives in wave 5 (WP13a)' },
 };
 
-/** Scenes are built in this order; the member scene comes last because inviting a member is slow. */
+/**
+ * Scenes are built in this order. The member scene comes late because inviting
+ * a member is slow, and the global filter scene last: its unsaved viewer
+ * change stays on the dashboard, and would filter every later scene.
+ */
 const SCENE_ORDER = [
   'two-widgets',
   'icons-in-heading',
   'titles-hidden',
-  'global-filters',
   'filtered-grid',
   'three-rows',
   'charts',
   'empty',
   'mobile-390',
   'read-only-grid',
+  'global-filters',
+  // Leaves the dashboard page for a document, so nothing follows it.
+  'embedded',
 ];
 
 interface LayoutSpec {
@@ -516,8 +576,13 @@ async function waitForWidgetContent(owner: Page, target: Page, label: string) {
 
 async function applyLayout(page: Page, layout: LayoutSpec) {
   const rows = persistedRows(page, layout.rows);
+  const viewId = dashboardViewId(page);
 
-  await mergeRawLayout(page, dashboardViewId(page), '9', {
+  // The dashboard's database doc remounts when the page reloads (theme fallback, dev server update).
+  await expect
+    .poll(() => page.evaluate((id) => Boolean((window as any).__DASHBOARD_TEST__?.byView(id)), viewId), { timeout: 30_000 })
+    .toBe(true);
+  await mergeRawLayout(page, viewId, '9', {
     rows,
     global_filters: layout.globalFilters ?? [],
     show_widget_titles: layout.showTitles ?? true,
@@ -593,6 +658,23 @@ async function makeLocalFilterChange(page: Page) {
   await closeGlobalFilterMenu(page);
 }
 
+/** The `embedded` scene: a new document whose first block links Projects as a dashboard. */
+async function buildEmbeddedScene(page: Page, mode: 'view' | 'edit'): Promise<BuiltScene> {
+  const documentId = await createDocumentPageAndNavigate(page);
+
+  await insertLinkedDatabaseViaSlash(page, documentId, 'Projects', 'Dashboard');
+  const block = page.locator(`#editor-${documentId} [data-block-type="dashboard"]`);
+
+  await expect(block.getByTestId('dashboard-view')).toBeVisible({ timeout: 30_000 });
+  parityWorld(page).currentScene = 'embedded';
+  // A dashboard created in this session opens in Edit mode.
+  const modeProblem = await setMode(page, mode);
+
+  if (modeProblem) return { target: page, unavailable: modeProblem, labels: {} };
+  await resetPointer(page);
+  return { target: page, labels: {} };
+}
+
 async function buildScene(
   page: Page,
   request: APIRequestContext,
@@ -609,6 +691,7 @@ async function buildScene(
 
   await page.setViewportSize(scene.viewport ?? { width: 1440, height: 900 });
   await resetPointer(page);
+  if (scene.embedded) return buildEmbeddedScene(page, mode);
   await applyLayout(page, {
     rows: scene.rows ?? [],
     globalFilters,
@@ -651,6 +734,8 @@ const PAGE_LEVEL_PREFIXES = [
   'dash-widget-sorts-popover',
   'dash-chart-panel',
   'dash-chart-type',
+  // The chart tooltip renders in a portal on document.body (WP10 §1.6).
+  'dash-chart-tooltip',
   'dash-number-color-rule',
   'dash-drilldown',
   'dash-side-peek',
@@ -784,12 +869,15 @@ async function interact(
     case 'hover-row': {
       const row = await first(host.locator(GRID_DATA_ROW));
 
-      if (row) {
-        await row.hover();
+      const rowBox = row ? await row.boundingBox() : null;
+      const box = await host.boundingBox();
+
+      if (rowBox && box) {
+        // A pointer move, not `hover()`: that scrolls the row into view, and a grid wider than
+        // its card would scroll sideways and hide the gutter with the row handle.
+        await target.mouse.move(Math.max(rowBox.x, box.x) + 80, rowBox.y + rowBox.height / 2);
         return none;
       }
-
-      const box = await host.boundingBox();
 
       if (!box) return { unavailable: 'no grid row' };
       await target.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -827,7 +915,7 @@ async function interact(
     case 'chart-panel-open':
     case 'filters-open': {
       await host.hover();
-      const testId = when === 'filters-open' ? 'database-actions-filter' : 'database-actions-settings';
+      const testId = when === 'filters-open' ? 'database-actions-filter' : 'dashboard-widget-settings-button';
       const button = await first(host.getByTestId(testId));
 
       if (!button) return { unavailable: `no ${testId} tool in the widget` };
@@ -1150,6 +1238,7 @@ interface IconTask {
   owner: string;
   size: unknown;
   wave: number;
+  status: IconEntry['status'];
 }
 
 /** The checks measured in one scene × interaction × instance (one capture). */
@@ -1192,39 +1281,46 @@ function planGroups(ctx: RunContext): Map<string, Group> {
   // element is measured, in every instance of the part in that scope (§4.4: "every
   // context renders the target"). Owners that only the `ids` section lists take the
   // scene of their surface.
+  const { mode } = parseParityState(ctx.state);
+
   iconFixture.icons.forEach((icon) => {
     icon.contexts.forEach((context) => {
-      if (!isInScope(icon.status, context.wave, ctx.options)) return;
+      const status = context.status ?? icon.status;
+
+      if (!isInScope(status, context.wave, ctx.options)) return;
       const owner = context.parityId.split('__')[0];
-      const task = { icon, part: context.parityId, owner, size: context.size, wave: context.wave };
-      const ownerEntry = elementEntryFor(metrics, owner);
+      const task = { icon, part: context.parityId, owner, size: context.size, wave: context.wave, status };
+      // The part's own entry says where it shows (the title icon only with "Show icons in
+      // heading"); else its owner's entry does.
+      const entry =
+        metrics.elements.find((element) => element.id === context.parityId) ?? elementEntryFor(metrics, owner);
 
-      if (ownerEntry) {
-        const ownerCheck =
-          checks.metrics.find((check) => check.checkId === ownerEntry.id && check.variant === null) ??
-          checks.metrics.find((check) => check.checkId === ownerEntry.id);
+      if (entry) {
+        // The base entry only: a variant such as `count: 0` says where the part is absent.
+        const baseCheck = checks.metrics.find((check) => check.checkId === entry.id && check.variant === null);
 
-        // The owner is not measured in this state (e.g. Edit-only controls in a View state).
-        if (ownerCheck) groupFor(ownerCheck.scene, ownerCheck.when, ownerCheck.instance).icons.push(task);
+        // Not measured in this state (e.g. Edit-only controls in a View state).
+        if (baseCheck) groupFor(baseCheck.scene, baseCheck.when, baseCheck.instance).icons.push(task);
         return;
       }
 
       const surface = ICON_OWNER_SURFACES.find(([prefix]) => owner.startsWith(prefix))?.[1];
 
+      if (surface?.mode && surface.mode !== mode) return;
       groupFor(surface?.scene ?? defaultScene(metrics), surface?.when ?? 'rest', surface?.instance).icons.push(task);
     });
   });
   return groups;
 }
 
-/** Where an icon context whose owner has no element entry is shown (scene, interaction, instance). */
-const ICON_OWNER_SURFACES: [string, { scene: string; when: string; instance?: string }][] = [
+/** Where an icon context whose owner has no element entry is shown (scene, interaction, instance; `mode` when only one has it). */
+const ICON_OWNER_SURFACES: [string, { scene: string; when: string; instance?: string; mode?: 'view' | 'edit' }][] = [
   ['dash-widget-picker', { scene: 'empty', when: 'rest', instance: 'after clicking + New view' }],
   ['dash-empty-', { scene: 'empty', when: 'rest' }],
   ['dash-widget-menu-item-', { scene: 'charts', when: 'menu-open' }],
   ['dash-widget-filters-popover', { scene: 'filtered-grid', when: 'filters-open' }],
   ['dash-widget-sorts-popover', { scene: 'filtered-grid', when: 'filters-open' }],
-  ['dash-widget-settings', { scene: 'two-widgets', when: 'settings-open' }],
+  ['dash-widget-settings', { scene: 'two-widgets', when: 'settings-open', mode: 'edit' }],
   ['dash-chart-type-', { scene: 'charts', when: 'chart-panel-open' }],
   ['dash-chart-panel', { scene: 'charts', when: 'chart-panel-open' }],
   ['dash-number-color-rule', { scene: 'charts', when: 'chart-panel-open' }],
@@ -1296,7 +1392,7 @@ function unavailableRows(ctx: RunContext, group: Group, reason: string) {
       expected: task.icon.name,
       actual: null,
       wave: task.wave,
-      status: task.icon.status,
+      status: task.status,
     })
   );
 }
@@ -1561,7 +1657,7 @@ async function measureIcon(ctx: RunContext, built: BuiltScene, group: Group, tas
     instance: group.instance ?? null,
     target: task.part,
     wave: task.wave,
-    status: task.icon.status,
+    status: task.status,
   };
 
   if ('unavailable' in resolved) {

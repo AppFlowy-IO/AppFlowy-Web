@@ -38,6 +38,7 @@ function GridNewRow({ groupFieldId, groupId }: { groupFieldId?: string; groupId?
 
   return (
     <div
+      data-parity-id='dash-widget-grid-new-row'
       data-testid='grid-new-row'
       onClick={() => {
         void createRow();

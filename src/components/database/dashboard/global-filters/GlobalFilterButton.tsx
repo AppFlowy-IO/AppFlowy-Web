@@ -9,9 +9,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 import { LazyGlobalFilterMenu, preloadGlobalFilterMenu } from './LazyGlobalFilterMenu';
 
-function GlobalFilterButtonContent({ compact }: { compact: boolean }) {
+function GlobalFilterButtonContent() {
   const { t } = useTranslation();
-  // Only the count is shown while closed; the menu reads the rest itself.
+  // Only the count is read while closed (as `data-count`); the menu reads the rest itself.
   const { effectiveGlobalFilters } = useDashboardFilters();
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
@@ -26,26 +26,21 @@ function GlobalFilterButtonContent({ compact }: { compact: boolean }) {
             <Button
               type='button'
               variant='ghost'
-              size={compact ? 'icon-sm' : 'icon'}
+              size='icon'
               aria-label={label}
-              className='relative'
+              // The dashboard toolbar button: 28×28, radius 6, a 16px glyph. No count badge.
+              className='relative h-7 w-7 !rounded-200 p-1.5 text-dash-tool-icon data-[state=open]:bg-dash-hover-fill [&_svg]:h-4 [&_svg]:w-4'
               data-parity-id='dash-toolbar-filter'
+              // Set here: the tooltip trigger around it would otherwise put its own state on the button.
+              data-state={open ? 'open' : 'closed'}
               data-testid='dashboard-global-filter-button'
               data-count={count}
-              style={{ color: count > 0 ? 'var(--icon-info-thick)' : undefined }}
               onFocus={preloadGlobalFilterMenu}
               onPointerEnter={preloadGlobalFilterMenu}
             >
-              <FilterIcon aria-hidden='true' className='h-5 w-5' data-parity-id='dash-toolbar-filter__icon' />
-              {count > 0 && (
-                <span
-                  data-parity-id='dash-toolbar-filter__badge'
-                  data-testid='dashboard-global-filter-button-badge'
-                  className='absolute -right-1 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-fill-theme-thick px-1 text-[10px] font-medium leading-none text-text-on-fill'
-                >
-                  {count}
-                </span>
-              )}
+              <FilterIcon aria-hidden='true' data-parity-id='dash-toolbar-filter__icon' />
+              {/* The unsaved-changes dot (WP07), out of the flow so the glyph stays centred. */}
+              <span className='absolute right-1 top-1' data-slot='unsaved-dot' />
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>
@@ -71,11 +66,11 @@ function GlobalFilterButtonContent({ compact }: { compact: boolean }) {
  * too, so readers can adjust the filters for themselves. Renders nothing
  * outside a `DashboardProvider`.
  */
-export function GlobalFilterButton({ compact = false }: { compact?: boolean }) {
+export function GlobalFilterButton() {
   const context = useDashboardContextOptional();
 
   if (!context) return null;
-  return <GlobalFilterButtonContent compact={compact} />;
+  return <GlobalFilterButtonContent />;
 }
 
 export default GlobalFilterButton;

@@ -42,7 +42,9 @@ export {
   DASHBOARD_MAX_WIDGETS,
   DASHBOARD_MAX_WIDGETS_PER_ROW,
 };
-export const DASHBOARD_STACK_BREAKPOINT = 768;
+/** The gap between widget boxes, and the bleed of each row track past the content column (WP02). */
+export const DASHBOARD_COLUMN_GAP = 12;
+export const DASHBOARD_BOX_INSET = 6;
 
 const FIXTURE_TIMEOUT_MS = 45_000;
 const WIDGET_TIMEOUT_MS = 30_000;
@@ -63,8 +65,18 @@ export const DashboardSelectors = {
   emptyState: (page: Page) => page.getByTestId('dashboard-empty-state'),
   editButton: (page: Page) => page.getByTestId('dashboard-edit-button'),
   doneButton: (page: Page) => page.getByTestId('dashboard-done-button'),
+  grid: (page: Page) => page.getByTestId('dashboard-grid'),
   rows: (page: Page) => page.getByTestId('dashboard-row'),
   row: (page: Page, rowId: string) => page.locator(`[data-testid="dashboard-row"][data-row-id="${rowId}"]`),
+  /** The row's widget boxes flex in its track, which bleeds 6px past the content column on both sides. */
+  rowTrack: (page: Page, rowId: string) =>
+    page.locator(`[data-testid="dashboard-row"][data-row-id="${rowId}"] > [data-testid="dashboard-row-track"]`),
+  /** The band before row `index` (0 = above the first row), in View and Edit mode. */
+  rowGap: (page: Page, index: number) => page.locator(`[data-testid="dashboard-row-gap"][data-gap-index="${index}"]`),
+  rowControlAnchor: (page: Page, rowId: string, side: 'start' | 'end') =>
+    page.locator(
+      `[data-testid="dashboard-row"][data-row-id="${rowId}"] > [data-testid="dashboard-row-control-anchor"][data-side="${side}"]`
+    ),
   widgets: (page: Page) => page.getByTestId('dashboard-widget'),
   widget: (page: Page, widgetId: string) =>
     page.locator(`[data-testid="dashboard-widget"][data-widget-id="${widgetId}"]`),
@@ -90,6 +102,10 @@ export const DashboardSelectors = {
   widthHandle: (page: Page, rowId: string, index: number) =>
     page.locator(`[data-testid="dashboard-width-handle"][data-row-id="${rowId}"][data-index="${index}"]`),
   widthHandles: (page: Page) => page.getByTestId('dashboard-width-handle'),
+  resizePill: (page: Page, rowId: string, index: number) =>
+    page
+      .locator(`[data-testid="dashboard-width-handle"][data-row-id="${rowId}"][data-index="${index}"]`)
+      .getByTestId('dashboard-resize-pill'),
   heightHandle: (page: Page, rowId: string) =>
     page.locator(`[data-testid="dashboard-height-handle"][data-row-id="${rowId}"]`),
   limitMessage: (page: Page) => page.getByTestId('dashboard-limit-message'),
@@ -1129,6 +1145,7 @@ export interface PersistedDashboardSetting {
   rows: PersistedRow[];
   global_filters: PersistedGlobalFilter[];
   show_widget_titles?: boolean;
+  show_icons_in_heading?: boolean;
 }
 
 /** The dashboard setting as the browser's host database doc holds it. */
@@ -1172,6 +1189,7 @@ export async function readDashboardSetting(
       rows: bridge.plain(layout.get('rows')) ?? [],
       global_filters: bridge.plain(layout.get('global_filters')) ?? [],
       show_widget_titles: layout.get('show_widget_titles'),
+      show_icons_in_heading: layout.get('show_icons_in_heading'),
     };
   }, viewId);
 
@@ -1396,7 +1414,11 @@ export async function dragFromTo(page: Page, from: { x: number; y: number }, to:
   await page.mouse.up();
 }
 
-/** Widgets are dragged by their header in Edit mode. */
+/**
+ * Widgets are dragged by their header band in Edit mode. Grab the empty part
+ * of the band, between the title pill and the tools: a drag that starts on
+ * the pill (a button) is not a native drag in every browser.
+ */
 async function widgetGrip(page: Page, widget: Locator) {
   const header = widget.getByTestId('dashboard-widget-header');
 
@@ -1404,8 +1426,12 @@ async function widgetGrip(page: Page, widget: Locator) {
   const box = await header.boundingBox();
 
   if (!box) throw new Error('Widget header is not visible');
-  // Grab the left part of the header, away from the title link and the menu button.
-  return { x: box.x + Math.min(24, box.width / 4), y: box.y + box.height / 2 };
+  const pill = await header.getByTestId('dashboard-widget-title-button').boundingBox();
+  const tools = await header.getByTestId('database-actions').boundingBox();
+  const start = pill ? pill.x + pill.width : box.x + Math.min(24, box.width / 4);
+  const end = tools ? tools.x : box.x + box.width;
+
+  return { x: start + (end - start) / 2, y: box.y + box.height / 2 };
 }
 
 export async function dragWidgetBeside(page: Page, source: Locator, target: Locator, side: 'left' | 'right') {
@@ -1447,23 +1473,128 @@ export async function dragLocatorBy(page: Page, handle: Locator, dx: number, dy:
   await dragFromTo(page, { x, y }, { x: x + dx, y: y + dy });
 }
 
-export async function rowColumnWidth(page: Page, rowId: string) {
+/**
+ * One column of a row of `count` widgets in px: the track (the row plus the
+ * 6px bleed on both sides) without its gaps, over 12 (WP02).
+ */
+export async function rowColumnPitch(page: Page, rowId: string, count: number) {
   const box = await DashboardSelectors.row(page, rowId).boundingBox();
 
   if (!box) throw new Error(`Dashboard row ${rowId} is not visible`);
-  return box.width / DASHBOARD_GRID_COLUMNS;
+  return (box.width + 2 * DASHBOARD_BOX_INSET - (count - 1) * DASHBOARD_COLUMN_GAP) / DASHBOARD_GRID_COLUMNS;
+}
+
+/** The dashboard's row track width, as the grid measured it (`null` while unmeasured). */
+async function trackWidth(page: Page) {
+  const value = await DashboardSelectors.grid(page).getAttribute('data-track-width');
+
+  return value ? Number(value) : null;
+}
+
+/**
+ * Resize the viewport until the dashboard's row tracks are `width` px wide
+ * (±0.5). The loop absorbs the sidebar and the small-screen page padding.
+ */
+export async function setDashboardTrackWidth(page: Page, width: number) {
+  await expect(DashboardSelectors.grid(page)).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const current = await trackWidth(page);
+
+    if (current !== null && Math.abs(current - width) < 0.5) return;
+    const viewport = page.viewportSize() ?? { width: 1440, height: 900 };
+    const next = Math.round(viewport.width + width - (current ?? viewport.width));
+
+    await page.setViewportSize({ width: next, height: viewport.height });
+    await expect.poll(() => trackWidth(page)).not.toBe(current);
+  }
+
+  expect(await trackWidth(page)).toBeCloseTo(width, 0);
+}
+
+export interface WidgetBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** The widget boxes of a row, in order. */
+export async function widgetBoxes(page: Page, rowId: string): Promise<WidgetBox[]> {
+  return DashboardSelectors.row(page, rowId)
+    .getByTestId('dashboard-widget')
+    .evaluateAll((widgets) =>
+      widgets.map((widget) => {
+        const rect = widget.getBoundingClientRect();
+
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      })
+    );
+}
+
+/** The widgets of a row grouped into lines by their top edge (±2px): the line sizes. */
+export async function rowLines(page: Page, rowId: string): Promise<number[]> {
+  const lines: number[] = [];
+  let lineTop: number | null = null;
+
+  for (const box of await widgetBoxes(page, rowId)) {
+    if (lineTop === null || Math.abs(box.y - lineTop) > 2) {
+      lines.push(1);
+      lineTop = box.y;
+    } else {
+      lines[lines.length - 1] += 1;
+    }
+  }
+
+  return lines;
+}
+
+/** Every widget box, keyed by widget id, relative to the dashboard grid (immune to page scroll). */
+export async function widgetRectsRelativeToGrid(page: Page): Promise<Record<string, WidgetBox>> {
+  return DashboardSelectors.grid(page).evaluate((grid) => {
+    const origin = grid.getBoundingClientRect();
+    const rects: Record<string, { x: number; y: number; width: number; height: number }> = {};
+
+    grid.querySelectorAll<HTMLElement>('[data-testid="dashboard-widget"]').forEach((widget) => {
+      const rect = widget.getBoundingClientRect();
+
+      rects[widget.dataset.widgetId ?? ''] = {
+        x: rect.x - origin.x,
+        y: rect.y - origin.y,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+    return rects;
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Widget UI
 // ---------------------------------------------------------------------------
 
+/**
+ * Open a widget's menu from its title pill, or, with widget titles hidden,
+ * from the "Widget options" button of its floating capsule (shown on hover).
+ */
 export async function openWidgetMenu(page: Page, widget: Locator) {
-  await widget.hover();
-  const button = widget.getByTestId('dashboard-widget-menu-button');
+  await expect(widget).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+  // A loading widget swaps its header for the loaded view's header: a menu
+  // opened on the loading header can close in that swap.
+  await expect(widget.locator('[data-testid="dashboard-widget-placeholder"][data-reason="loading"]')).toHaveCount(0, {
+    timeout: WIDGET_TIMEOUT_MS,
+  });
+  const title = widget.getByTestId('dashboard-widget-title-button');
 
-  await expect(button).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
-  await button.click();
+  if ((await title.count()) > 0) {
+    await title.click();
+  } else {
+    await widget.hover();
+    const options = widget.getByTestId('dashboard-widget-options-button');
+
+    await expect(options).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+    await options.click();
+  }
+
   await expect(DashboardSelectors.widgetMenu(page)).toBeVisible();
 }
 
