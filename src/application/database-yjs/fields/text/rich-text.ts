@@ -483,7 +483,7 @@ function isV1Insert(value: unknown) {
 
 /** What a stored string reads as, independent of the cell's `data`. */
 type ParsedEnvelope =
-  | { valid: false }
+  | { valid: false; state: 'invalid' | 'newer' }
   | {
       valid: true;
       text: string;
@@ -498,11 +498,17 @@ function parseEnvelope(raw: string): ParsedEnvelope {
 
   try {
     envelope = parseEnvelopeJson(raw);
-  } catch {
-    return { valid: false };
+  } catch (error) {
+    // Exhausting the engine's JSON/reviver stack does not prove corruption:
+    // the unread header may require a newer client. Keep the cell protected
+    // rather than allowing an edit to discard formatting we could not inspect.
+    // Firefox reports recursion limits as InternalError; Chromium uses RangeError.
+    const resourceLimited = error instanceof RangeError || (error instanceof Error && error.name === 'InternalError');
+
+    return { valid: false, state: resourceLimited ? 'newer' : 'invalid' };
   }
 
-  if (!isRecord(envelope) || typeof envelope.text !== 'string') return { valid: false };
+  if (!isRecord(envelope) || typeof envelope.text !== 'string') return { valid: false, state: 'invalid' };
 
   const rawDelta = envelope.delta;
   const delta =
@@ -562,7 +568,7 @@ export function readRichTextValue(raw: unknown, data: unknown): { state: RichTex
 
   const envelope = readEnvelope(raw);
 
-  if (!envelope.valid) return { state: 'invalid' };
+  if (!envelope.valid) return { state: envelope.state };
   if (envelope.text !== data) return { state: 'stale' };
   if (!envelope.minVersionOk) return envelope.delta ? { state: 'newer', delta: envelope.delta } : { state: 'newer' };
   if (!envelope.delta) return { state: 'invalid' };

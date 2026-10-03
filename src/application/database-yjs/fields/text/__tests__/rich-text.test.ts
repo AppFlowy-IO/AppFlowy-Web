@@ -12,6 +12,7 @@ import {
   isRichTextTooLarge,
   MAX_RICH_TEXT_DELTA_BYTES,
   parseRichTextCellValue,
+  readRichTextCell,
   richTextToPlainText,
   serializeRichTextCellValue,
 } from '../rich-text';
@@ -94,6 +95,47 @@ describe('text cell rich text', () => {
     expect(parseRichTextCellValue(serializeRichTextCellValue('x', [{ insert: 'x' }]), 'x')).toBeUndefined();
     expect(parseRichTextCellValue(undefined, 'x')).toBeUndefined();
     expect(parseRichTextCellValue(serializeRichTextCellValue('1', boldDelta), 1)).toBeUndefined();
+  });
+
+  it('protects formatting when the JSON reviver exceeds its recursion limit', () => {
+    // Build the JSON directly: JSON.stringify has its own recursion limit.
+    const future = `${'['.repeat(10_000)}null${']'.repeat(10_000)}`;
+    const raw = `{"v":2,"min_v":2,"text":"Deep text","delta":[{"insert":"Deep text","attributes":{"bold":true}}],"future":${future}}`;
+    const cell = makeCell(FieldType.RichText, { data: 'Deep text', rich_text: raw });
+
+    expect(readRichTextCell(cell, FieldType.RichText)).toEqual({ state: 'newer', editable: false });
+    expect(readRichTextCell(cell, FieldType.URL)).toEqual({ state: 'plain', editable: false });
+    // A cache hit must retain the refusal, including for legacy plain readers.
+    expect(readRichTextCell(cell, FieldType.RichText)).toEqual({ state: 'newer', editable: false });
+    expect(parseRichTextCellValue(raw, 'Deep text')).toBeUndefined();
+  });
+
+  it.each([
+    ['RangeError', 'newer', false],
+    ['InternalError', 'newer', false],
+    ['SyntaxError', 'invalid', true],
+  ] as const)('classifies JSON parser %s separately from malformed JSON', (name, state, editable) => {
+    const raw = `{"parserFailure":"${name}"}`;
+    const cell = makeCell(FieldType.RichText, { data: 'Parser failure', rich_text: raw });
+    const error =
+      name === 'RangeError'
+        ? new RangeError('recursion limit')
+        : name === 'SyntaxError'
+        ? new SyntaxError('malformed JSON')
+        : new Error('recursion limit');
+
+    error.name = name;
+    const parse = jest.spyOn(JSON, 'parse').mockImplementationOnce(() => {
+      throw error;
+    });
+
+    try {
+      expect(readRichTextCell(cell, FieldType.RichText)).toEqual({ state, editable });
+      expect(readRichTextCell(cell, FieldType.RichText)).toEqual({ state, editable });
+      expect(parse).toHaveBeenCalledTimes(1);
+    } finally {
+      parse.mockRestore();
+    }
   });
 
   it('reads Desktop values: the empty clear marker, sorted keys and null attributes', () => {

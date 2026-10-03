@@ -87,6 +87,20 @@ beforeEach(() => {
 });
 
 describe('writeCellToRow rich text', () => {
+  it('refuses changed or cleared text when stored formatting exceeds the parser recursion limit', () => {
+    const target = setup('Deep protected text');
+    const future = `${'['.repeat(10_000)}null${']'.repeat(10_000)}`;
+    const raw = `{"v":2,"min_v":2,"text":"Deep protected text","delta":[{"insert":"Deep protected text","attributes":{"bold":true}}],"future":${future}}`;
+
+    cell(target).set(YjsDatabaseKey.rich_text, raw);
+    const before = target.row.toJSON();
+
+    expect(write(target, 'Edited')).toBe('refused-rich-text-newer');
+    expect(write(target, '')).toBe('refused-rich-text-newer');
+    expect(write(target, 'Deep protected text')).toBe('noop');
+    expect(target.row.toJSON()).toEqual(before);
+  });
+
   it('rechecks a deferred save before changing the cell or its attribution', () => {
     const target = setup('Original');
     const expected = cell(target).get(YjsDatabaseKey.data);
