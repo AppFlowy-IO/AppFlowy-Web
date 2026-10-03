@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { FieldType } from '@/application/database-yjs/database.type';
 import type { TextCell as TextCellType } from '@/application/database-yjs/cell.type';
 import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
+import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
 import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
 import { PlainTextCellEditing } from '@/components/database/components/cell/text/PlainTextCellEditing';
 import { TextCell } from '@/components/database/components/cell/text/TextCell';
@@ -15,6 +16,7 @@ let mockTemplateEditingRowId: string | undefined;
 let mockEditorUnavailable = false;
 
 jest.mock('@/application/database-yjs/dispatch', () => ({ useUpdateCellDispatch: () => mockUpdateCell }));
+jest.mock('@/application/database-yjs/fields/text/rich-text-notice', () => ({ notifyRichTextNewer: jest.fn() }));
 jest.mock('@/application/database-yjs/selector', () => ({ useFieldSelector: () => ({ field: mockField }) }));
 jest.mock('@/application/database-yjs/context', () => ({
   useDatabaseContextOptional: () => ({ templateEditingRowId: mockTemplateEditingRowId }),
@@ -48,6 +50,7 @@ describe('TextCell', () => {
   beforeEach(() => {
     mockUpdateCell.mockReset();
     mockEditorProps.mockReset();
+    (notifyRichTextNewer as jest.Mock).mockReset();
     mockField = makeField(FieldType.RichText);
     mockTemplateEditingRowId = undefined;
     mockEditorUnavailable = false;
@@ -135,6 +138,26 @@ describe('TextCell', () => {
   });
 
   describe('hosts that edit as plain text', () => {
+    it('does not save or trim an untouched formatted calendar property', () => {
+      const cell: TextCellType = {
+        ...formattedCell(),
+        data: ' Hello ',
+        richText: [{ insert: ' Hello ', attributes: { bold: true } }],
+      };
+
+      render(
+        <PlainTextCellEditing.Provider value>
+          <TextCell rowId='row-1' fieldId='field-1' wrap={false} cell={cell} editing />
+        </PlainTextCellEditing.Provider>
+      );
+      const textarea = screen.getByRole<HTMLTextAreaElement>('textbox');
+
+      fireEvent.focus(textarea);
+      fireEvent.blur(textarea);
+      expect(textarea.value).toBe(' Hello ');
+      expect(mockUpdateCell).not.toHaveBeenCalled();
+    });
+
     it('edit a formatted cell in a textarea in the calendar event popover, and keep its formatting', () => {
       const setEditing = jest.fn();
       const { rerender } = render(
@@ -190,5 +213,34 @@ describe('TextCell', () => {
       expect(screen.getByTestId('rich-text-cell-editor')).toBeTruthy();
       expect(screen.queryByRole('textbox')).toBeNull();
     });
+  });
+
+  it.each([false, true])('blocks protected titles before mounting either editor, plain=%s', (plain) => {
+    const setEditing = jest.fn();
+    const cell = { ...formattedCell(), richTextReadOnly: true };
+
+    render(
+      <PlainTextCellEditing.Provider value={plain}>
+        <TextCell rowId='row-1' fieldId='field-1' wrap={false} cell={cell} editing setEditing={setEditing} />
+      </PlainTextCellEditing.Provider>
+    );
+    expect(mockEditorProps).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByTestId('rich-text-cell-content').querySelector('strong')?.textContent).toBe('world');
+    expect(notifyRichTextNewer).toHaveBeenCalledTimes(1);
+    expect(setEditing).toHaveBeenCalledWith(false);
+    expect(mockUpdateCell).not.toHaveBeenCalled();
+  });
+
+  it('unmounts an editor when the cell becomes protected', () => {
+    const setEditing = jest.fn();
+    const props = { rowId: 'row-1', fieldId: 'field-1', wrap: false, editing: true, setEditing };
+    const { rerender } = render(<TextCell {...props} cell={formattedCell()} />);
+
+    expect(screen.getByTestId('rich-text-cell-editor')).toBeTruthy();
+    rerender(<TextCell {...props} cell={{ ...formattedCell(), richTextReadOnly: true }} />);
+    expect(screen.queryByTestId('rich-text-cell-editor')).toBeNull();
+    expect(notifyRichTextNewer).toHaveBeenCalledTimes(1);
+    expect(setEditing).toHaveBeenCalledWith(false);
   });
 });

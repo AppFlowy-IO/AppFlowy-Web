@@ -435,8 +435,8 @@ describe('saving a cell that needs a newer client', () => {
   const newer = conformance.sections.editability.cases.find((testCase) => testCase.id === 'ed-004-newer-set-text')!
     .cell as Record<string, Json>;
 
-  it('tells the user once and reports the refusal to the editor', async () => {
-    const fixture = databaseFixture(FieldType.RichText, newer);
+  it.each([FieldType.RichText, FieldType.URL, FieldType.Number])('reports newer-format refusals for field type %s', async (type) => {
+    const fixture = databaseFixture(type, newer);
     const { result } = renderHook(() => useUpdateCellDispatch(ROW, FIELD), { wrapper: fixture.wrapper });
     let status: CellWriteStatus | undefined;
 
