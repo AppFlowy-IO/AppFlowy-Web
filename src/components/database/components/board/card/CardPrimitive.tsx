@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   FieldVisibility,
@@ -34,8 +34,12 @@ export interface CardProps {
   columnId: string;
 }
 
-export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
-  ({ groupFieldId, rowId, className, columnId }, ref) => {
+/**
+ * Memoized: a card re-renders through its parent on every board drag-context
+ * or column change, and its fields only need to when its own props change.
+ */
+export const CardPrimitive = memo(
+  forwardRef<HTMLDivElement, CardProps>(({ groupFieldId, rowId, className, columnId }, ref) => {
     const fields = useFieldsSelector();
     const aiEnabled = useAIEnabled();
     const meta = useRowMetaSelector(rowId);
@@ -48,10 +52,11 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
     const cover = meta?.cover;
     const showFields = useMemo(
       () =>
-        fields.filter((field) =>
-          field.fieldId !== groupFieldId &&
-          field.visibility !== FieldVisibility.AlwaysHidden &&
-          (aiEnabled || !isAIFieldType(field.fieldType))
+        fields.filter(
+          (field) =>
+            field.fieldId !== groupFieldId &&
+            field.visibility !== FieldVisibility.AlwaysHidden &&
+            (aiEnabled || !isAIFieldType(field.fieldType))
         ),
       [aiEnabled, fields, groupFieldId]
     );
@@ -183,7 +188,7 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
         {!readOnly && <CardToolbar visible={hovered && !editing} onEdit={onEdit} rowId={rowId} />}
       </div>
     );
-  }
+  })
 );
 
 export default CardPrimitive;

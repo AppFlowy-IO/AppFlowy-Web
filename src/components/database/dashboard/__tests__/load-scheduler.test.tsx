@@ -7,6 +7,25 @@ import { DASHBOARD_LOADING } from '@/application/database-yjs/dashboard-loading'
 import { DashboardLoadSchedulerProvider, useWidgetLoadStart } from '../DashboardLoadScheduler';
 import { createDashboardLoadScheduler, WidgetLoadReport } from '../load-scheduler';
 
+/** The databases whose rows the tab holds (see `isDatabaseSourceResident`); none unless a test adds one. */
+const mockResidentSources = new Set<string>();
+const mockResidencyListeners = new Set<() => void>();
+
+jest.mock('@/application/database-blob', () => ({
+  isDatabaseSourceResident: (databaseId: string) => mockResidentSources.has(databaseId),
+  subscribeToDatabaseSourceResidency: (listener: () => void) => {
+    mockResidencyListeners.add(listener);
+    return () => mockResidencyListeners.delete(listener);
+  },
+}));
+
+/** A walk settled (`resident`) or its seeds were released: the residency listeners hear of it. */
+function setResident(sourceId: string, resident: boolean) {
+  if (resident) mockResidentSources.add(sourceId);
+  else mockResidentSources.delete(sourceId);
+  act(() => mockResidencyListeners.forEach((listener) => listener()));
+}
+
 /** Stands in for the browser's observer: the test decides which boxes intersect the scroller. */
 class FakeIntersectionObserver {
   static instances: FakeIntersectionObserver[] = [];
@@ -147,6 +166,7 @@ beforeEach(() => {
   FakeIntersectionObserver.instances = [];
   mountedDatabases.clear();
   reporters.clear();
+  mockResidentSources.clear();
   dashboardLoadStats.reset();
   window.IntersectionObserver = FakeIntersectionObserver as unknown as typeof IntersectionObserver;
 });
@@ -325,6 +345,41 @@ describe('the dashboard load queue', () => {
   });
 });
 
+describe('resident sources in the dashboard load queue', () => {
+  it('starts the widget of a resident source without a slot, so only cold loads count', () => {
+    mockResidentSources.add('S2');
+    render(<TestDashboard widgets={widgetsOverDistinctSources(4)} />);
+    observer().report(() => true);
+
+    // S2's rows are in memory: w2 takes no slot, and w3 gets the second one.
+    expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2', 'w3']);
+    const stats = dashboardLoadStats.snapshot();
+
+    expect(stats.maxConcurrentSourceLoads).toBe(2);
+    expect(stats.sourceLoads.filter((load) => load.end === null).map((load) => load.sourceId)).toEqual(['S1', 'S3']);
+  });
+
+  it('frees the slot of a source whose walk settles, and starts the next widget', () => {
+    render(<TestDashboard widgets={widgetsOverDistinctSources(3)} />);
+    observer().report(() => true);
+    expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2']);
+
+    // w1 still derives its result, but S1's rows are in memory now: its slot is free.
+    setResident('S1', true);
+
+    expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2', 'w3']);
+    expect(dashboardLoadStats.snapshot().maxConcurrentSourceLoads).toBe(2);
+  });
+
+  it('stops following residency once the dashboard is left', () => {
+    const { unmount } = render(<TestDashboard widgets={widgetsOverDistinctSources(2)} />);
+
+    expect(mockResidencyListeners.size).toBe(1);
+    unmount();
+    expect(mockResidencyListeners.size).toBe(0);
+  });
+});
+
 describe('the dashboard load counters', () => {
   /** A started widget whose grid lists no row until the test fills it. */
   function GridWidget({ id, sourceId }: TestWidgetSpec) {
@@ -486,6 +541,98 @@ describe('createDashboardLoadScheduler', () => {
     expect(scheduler.isStarted('w3')).toBe(true);
     expect(scheduler.isStarted('w4')).toBe(false);
     expect(scheduler.loadingWidgetIds()).toEqual(['w1', 'w2']);
+  });
+
+  describe('with resident sources', () => {
+    function setupWithResidency(resident: Set<string>) {
+      return createDashboardLoadScheduler({
+        hostSourceId: 'host',
+        isSourceResident: (sourceId) => resident.has(sourceId),
+        now: () => 0,
+      });
+    }
+
+    function registerVisible(scheduler: ReturnType<typeof setupWithResidency>, widgets: [string, string][]) {
+      widgets.forEach(([id, sourceId]) => scheduler.register({ id, sourceId }));
+      scheduler.setOrder(widgets.map(([id]) => id));
+      scheduler.setVisibility(widgets.map(([id]) => [id, true] as [string, boolean]));
+    }
+
+    it('starts a resident source at once, holds no slot for it and counts no source load', () => {
+      const resident = new Set(['S1']);
+      const scheduler = setupWithResidency(resident);
+
+      registerVisible(scheduler, [
+        ['w1', 'S1'],
+        ['w2', 'S2'],
+        ['w3', 'S3'],
+        ['w4', 'S4'],
+      ]);
+
+      expect(scheduler.loadingWidgetIds()).toEqual(['w1', 'w2', 'w3']);
+      expect(scheduler.isStarted('w4')).toBe(false);
+      expect(dashboardLoadStats.snapshot().sourceLoads.map((load) => load.sourceId)).toEqual(['S2', 'S3']);
+    });
+
+    it('plans again when residency changes: a settled walk frees its slot', () => {
+      const resident = new Set<string>();
+      const scheduler = setupWithResidency(resident);
+
+      registerVisible(scheduler, [
+        ['w1', 'S1'],
+        ['w2', 'S2'],
+        ['w3', 'S3'],
+      ]);
+      expect(scheduler.isStarted('w3')).toBe(false);
+
+      resident.add('S1');
+      // Nothing re-reads residency until told.
+      expect(scheduler.isStarted('w3')).toBe(false);
+      scheduler.refreshResidency();
+
+      expect(scheduler.isStarted('w3')).toBe(true);
+      const loads = dashboardLoadStats.snapshot().sourceLoads;
+
+      expect(loads.find((load) => load.sourceId === 'S1')?.end).not.toBeNull();
+      expect(loads.filter((load) => load.end === null).map((load) => load.sourceId)).toEqual(['S2', 'S3']);
+    });
+
+    it('queues the next widget of a released source for a slot again', () => {
+      const resident = new Set(['S1']);
+      const scheduler = setupWithResidency(resident);
+
+      registerVisible(scheduler, [
+        ['w1', 'S1'],
+        ['w2', 'S2'],
+        ['w3', 'S3'],
+      ]);
+      scheduler.report('w1', 'complete');
+      resident.delete('S1');
+      scheduler.refreshResidency();
+      scheduler.register({ id: 'w4', sourceId: 'S1' });
+      scheduler.setVisibility([['w4', true]]);
+
+      // S2 and S3 hold both slots; S1 is a cold load again.
+      expect(scheduler.isStarted('w4')).toBe(false);
+      scheduler.report('w2', 'complete');
+      expect(scheduler.isStarted('w4')).toBe(true);
+    });
+
+    it('starts nothing on a residency change once closed', () => {
+      const resident = new Set<string>();
+      const scheduler = setupWithResidency(resident);
+
+      registerVisible(scheduler, [
+        ['w1', 'S1'],
+        ['w2', 'S2'],
+        ['w3', 'S3'],
+      ]);
+      scheduler.close();
+      resident.add('S3');
+      scheduler.refreshResidency();
+
+      expect(scheduler.isStarted('w3')).toBe(false);
+    });
   });
 
   it('ignores the unregister of a registration that was replaced', () => {

@@ -11,6 +11,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 
+import { isDatabaseSourceResident, subscribeToDatabaseSourceResidency } from '@/application/database-blob';
 import { dashboardLoadStats, isDashboardLoadStatsRecording } from '@/application/database-yjs/dashboard-load-stats';
 
 import { createDashboardLoadScheduler, DashboardLoadScheduler, WidgetLoadReport } from './load-scheduler';
@@ -48,7 +49,9 @@ interface DashboardLoadSchedulerProviderProps {
 
 /**
  * Queues the widgets of one open dashboard (`load-scheduler.ts`): visible
- * widgets first, at most two source databases loading at a time. It watches
+ * widgets first, at most two source databases loading cold at a time (a
+ * database whose settled walk the tab still holds is resident: its widgets
+ * take no slot, see `isDatabaseSourceResident`). It watches
  * every widget box with one `IntersectionObserver` on the viewport (every
  * widget counts as visible where the browser has none). Unmounting it
  * (leaving the dashboard) closes the queue: nothing starts afterwards.
@@ -63,7 +66,10 @@ export function DashboardLoadSchedulerProvider({
   order,
   children,
 }: DashboardLoadSchedulerProviderProps) {
-  const scheduler = useMemo(() => createDashboardLoadScheduler({ hostSourceId }), [hostSourceId]);
+  const scheduler = useMemo(
+    () => createDashboardLoadScheduler({ hostSourceId, isSourceResident: isDatabaseSourceResident }),
+    [hostSourceId]
+  );
   // Every observed widget box, by element; the observer is created after the widgets' first effects.
   const targetsRef = useRef(new Map<Element, string>());
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -82,6 +88,9 @@ export function DashboardLoadSchedulerProvider({
   useEffect(() => {
     scheduler.setOrder(orderKey ? orderKey.split('\n') : []);
   }, [orderKey, scheduler]);
+
+  // A walk that settles makes its database resident, and a release ends that: both change the free slots.
+  useEffect(() => subscribeToDatabaseSourceResidency(scheduler.refreshResidency), [scheduler]);
 
   useEffect(() => {
     const targets = targetsRef.current;

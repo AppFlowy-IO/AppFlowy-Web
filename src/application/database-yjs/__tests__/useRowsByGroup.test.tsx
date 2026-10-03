@@ -2,7 +2,15 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type React from 'react';
 import * as Y from 'yjs';
 
-import { DatabaseContext, DatabaseContextState, FieldType, useRowsByGroup } from '@/application/database-yjs';
+import {
+  DatabaseContext,
+  DatabaseContextState,
+  FieldType,
+  haveSameGroupRows,
+  Row,
+  useRowsByGroup,
+} from '@/application/database-yjs';
+import * as groupModule from '@/application/database-yjs/group';
 import {
   YDatabase,
   YDatabaseField,
@@ -276,5 +284,123 @@ describe('useRowsByGroup', () => {
     fixture.existingDoingRowDoc.destroy();
     fixture.existingTodoRowDoc.destroy();
     fixture.databaseDoc.destroy();
+  });
+
+  it('keeps the same group result when a regroup moves no row, and a new one when a row moves', async () => {
+    const fixture = createBoardFixture();
+    const regroups = jest.spyOn(groupModule, 'groupByField');
+    const { result, rerender, unmount } = renderHook(() => useRowsByGroup(groupId), { wrapper: fixture.wrapper });
+
+    await waitFor(() => expect(result.current.groupRowsReady).toBe(true));
+    const groupResult = result.current.groupResult;
+
+    // A row doc that loads is a new row map with the same rows: every row is grouped again.
+    regroups.mockClear();
+    fixture.contextValue.rowMap = { ...fixture.contextValue.rowMap };
+    rerender();
+
+    expect(regroups).toHaveBeenCalled();
+    expect(result.current.groupResult).toBe(groupResult);
+
+    // A row that moves to another column is a new result.
+    const todoCells = fixture.existingTodoRowDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database_row)
+      .get(YjsDatabaseKey.cells);
+
+    act(() => {
+      todoCells.get(statusFieldId).set(YjsDatabaseKey.data, doingId);
+    });
+
+    await waitFor(() =>
+      expect(result.current.groupResult.get(doingId)?.map(({ id }) => id)).toEqual([
+        existingTodoRowId,
+        existingDoingRowId,
+      ])
+    );
+    expect(result.current.groupResult).not.toBe(groupResult);
+
+    unmount();
+    regroups.mockRestore();
+    fixture.remoteDoingRowDoc.destroy();
+    fixture.existingDoingRowDoc.destroy();
+    fixture.existingTodoRowDoc.destroy();
+    fixture.databaseDoc.destroy();
+  });
+});
+
+describe('haveSameGroupRows', () => {
+  const row = (id: string, extra: Partial<Row> = {}): Row => ({ id, height: 44, ...extra });
+
+  it('matches the same columns with equal rows, whatever the row objects', () => {
+    const previous = new Map([
+      ['todo', [row('a'), row('b')]],
+      ['done', [row('c')]],
+    ]);
+
+    expect(haveSameGroupRows(previous, previous)).toBe(true);
+    expect(
+      haveSameGroupRows(
+        previous,
+        new Map([
+          ['todo', [row('a'), row('b')]],
+          ['done', [row('c')]],
+        ])
+      )
+    ).toBe(true);
+  });
+
+  it('tells apart a row that moved, a row added, a column order and a row that changed', () => {
+    const previous = new Map([
+      ['todo', [row('a'), row('b')]],
+      ['done', [row('c')]],
+    ]);
+
+    expect(
+      haveSameGroupRows(
+        previous,
+        new Map([
+          ['todo', [row('a')]],
+          ['done', [row('b'), row('c')]],
+        ])
+      )
+    ).toBe(false);
+    expect(
+      haveSameGroupRows(
+        previous,
+        new Map([
+          ['todo', [row('a'), row('b')]],
+          ['done', [row('c'), row('d')]],
+        ])
+      )
+    ).toBe(false);
+    expect(
+      haveSameGroupRows(
+        previous,
+        new Map([
+          ['done', [row('c')]],
+          ['todo', [row('a'), row('b')]],
+        ])
+      )
+    ).toBe(false);
+    expect(haveSameGroupRows(previous, new Map([['todo', [row('a'), row('b')]]]))).toBe(false);
+    expect(
+      haveSameGroupRows(
+        previous,
+        new Map([
+          ['todo', [row('a', { height: 60 }), row('b')]],
+          ['done', [row('c')]],
+        ])
+      )
+    ).toBe(false);
+    expect(
+      haveSameGroupRows(
+        previous,
+        new Map([
+          ['todo', [row('a'), row('b', { is_deleted: true })]],
+          ['done', [row('c')]],
+        ])
+      )
+    ).toBe(false);
   });
 });

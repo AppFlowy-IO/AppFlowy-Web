@@ -4,7 +4,11 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
-import { getDatabaseRowDocFromSeed, peekDatabaseRowDocSeed, prefetchDatabaseBlobDiff } from '@/application/database-blob';
+import {
+  getDatabaseRowDocFromSeed,
+  peekDatabaseRowDocSeed,
+  prefetchDatabaseBlobDiff,
+} from '@/application/database-blob';
 import type { DatabaseContextState } from '@/application/database-yjs';
 import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
@@ -453,7 +457,7 @@ describe('Database blob prefetch lifecycle', () => {
         expect(mockedOpenRowDoc).toHaveBeenCalledWith(rowKey, undefined);
         expect(createRow).toHaveBeenCalledWith(rowKey);
         expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(liveRowDoc);
-        expect(mockDatabaseContext?.seedsReady).toBe(false);
+        expect(mockDatabaseContext?.getRowPassState?.().seedsReady).toBe(false);
         // An empty doc before the seeds are committed is not a missing row: no recovery walk.
         expect(mockedPrefetch).toHaveBeenCalledTimes(1);
 
@@ -564,26 +568,26 @@ describe('Database blob prefetch lifecycle', () => {
     const { rerender, unmount } = render(<Database {...databaseProps(doc)} readOnly />);
 
     // Read-only: no walk, rows load one by one, so the prefetch counts as complete.
-    await waitFor(() => expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true));
-    expect(mockDatabaseContext?.seedsReady).toBe(true);
+    await waitFor(() => expect(mockDatabaseContext?.getRowPassState?.().blobPrefetchComplete).toBe(true));
+    expect(mockDatabaseContext?.getRowPassState?.().seedsReady).toBe(true);
     expect(mockedPrefetch).not.toHaveBeenCalled();
 
     // The permission arrives: the walk starts, and row loaders wait for its seeds again.
     rerender(<Database {...databaseProps(doc)} />);
     await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
     expect(mockedPrefetch.mock.calls[0][2]?.forceFullSync).toBe(false);
-    await waitFor(() => expect(mockDatabaseContext?.blobPrefetchComplete).toBe(false));
-    expect(mockDatabaseContext?.seedsReady).toBe(false);
+    await waitFor(() => expect(mockDatabaseContext?.getRowPassState?.().blobPrefetchComplete).toBe(false));
+    expect(mockDatabaseContext?.getRowPassState?.().seedsReady).toBe(false);
 
     act(() => {
       mockedPrefetch.mock.calls[0][2]?.onSeedsReady?.();
     });
-    expect(mockDatabaseContext?.seedsReady).toBe(true);
+    expect(mockDatabaseContext?.getRowPassState?.().seedsReady).toBe(true);
     await act(async () => {
       walk.resolve();
       await walk.promise;
     });
-    await waitFor(() => expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true));
+    await waitFor(() => expect(mockDatabaseContext?.getRowPassState?.().blobPrefetchComplete).toBe(true));
 
     unmount();
     doc.destroy();
@@ -628,11 +632,7 @@ describe('Database blob prefetch lifecycle', () => {
     );
     const scheduleDeferredCleanup = jest.fn();
     const { unmount } = render(
-      <Database
-        {...databaseProps(doc)}
-        createRow={createRow}
-        scheduleDeferredCleanup={scheduleDeferredCleanup}
-      />
+      <Database {...databaseProps(doc)} createRow={createRow} scheduleDeferredCleanup={scheduleDeferredCleanup} />
     );
 
     try {
@@ -1032,7 +1032,7 @@ describe('Database blob prefetch lifecycle', () => {
       expect(onProgress).toHaveBeenCalledTimes(2);
       // Progress is not context state: the context consumers did not re-render.
       expect(mockDatabaseContext).toBe(contextBeforeProgress);
-      expect(mockDatabaseContext?.seedsReady).toBe(false);
+      expect(mockDatabaseContext?.getRowPassState?.().seedsReady).toBe(false);
 
       // A page staged right before the lifecycle ends is never published into the next one.
       act(() => {
@@ -1268,6 +1268,144 @@ describe('Database blob prefetch lifecycle', () => {
     firstDoc.destroy();
     secondDoc.destroy();
     rowDoc.destroy();
+  });
+
+  describe('a row whose local doc has data', () => {
+    const rowGuid = () => screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid');
+
+    beforeEach(() => {
+      // The walk commits at once and preloads nothing: rows pass the gate and open one by one.
+      mockedPrefetch.mockImplementation(async (_workspaceId, _databaseId, options) => {
+        options?.onSeedsReady?.();
+      });
+    });
+
+    it('shows its local doc before its realtime sync answers, and keeps it when sync answers with it', async () => {
+      const doc = createDatabaseDoc('database-id');
+      const localRowDoc = createHydratedRowDoc('local-row');
+      // Binding the row's realtime sync answers when the server does.
+      const sync = createDeferred<YDoc>();
+      const createRow = jest.fn((_rowKey: string) => sync.promise);
+
+      mockedOpenRowDoc.mockResolvedValue(localRowDoc);
+      const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+      let settled = false;
+      const ensure = requestEnsureRow();
+
+      void Promise.resolve(ensure).then(() => {
+        settled = true;
+      });
+
+      // The sync round trip is still out: the row shows its local data already.
+      await waitFor(() => expect(rowGuid()).toBe('local-row'));
+      expect(createRow).toHaveBeenCalledWith('database-id_rows_row-id');
+      expect(settled).toBe(false);
+
+      let ensured: YDoc | undefined;
+
+      await act(async () => {
+        sync.resolve(localRowDoc);
+        ensured = await ensure;
+      });
+      expect(ensured).toBe(localRowDoc);
+      expect(rowGuid()).toBe('local-row');
+
+      unmount();
+      doc.destroy();
+      localRowDoc.destroy();
+    });
+
+    it('replaces its local doc with a different canonical doc once sync answers', async () => {
+      const doc = createDatabaseDoc('database-id');
+      const localRowDoc = createHydratedRowDoc('local-row');
+      const canonicalRowDoc = createHydratedRowDoc('canonical-row');
+      const sync = createDeferred<YDoc>();
+      const createRow = jest.fn((_rowKey: string) => sync.promise);
+
+      mockedOpenRowDoc.mockResolvedValue(localRowDoc);
+      const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+      const ensure = requestEnsureRow();
+
+      await waitFor(() => expect(rowGuid()).toBe('local-row'));
+      await act(async () => {
+        sync.resolve(canonicalRowDoc);
+        await ensure;
+      });
+      await waitFor(() => expect(rowGuid()).toBe('canonical-row'));
+
+      unmount();
+      doc.destroy();
+      localRowDoc.destroy();
+      canonicalRowDoc.destroy();
+    });
+
+    it('waits for sync before showing a local doc without data', async () => {
+      const doc = createDatabaseDoc('database-id');
+      const emptyRowDoc = new Y.Doc({ guid: 'empty-row' }) as YDoc;
+      const canonicalRowDoc = createHydratedRowDoc('canonical-row');
+      const sync = createDeferred<YDoc>();
+      const createRow = jest.fn((_rowKey: string) => sync.promise);
+
+      mockedOpenRowDoc.mockResolvedValue(emptyRowDoc);
+      const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+      const ensure = requestEnsureRow();
+
+      await waitFor(() => expect(createRow).toHaveBeenCalledWith('database-id_rows_row-id'));
+      expect(rowGuid()).toBe('');
+      await act(async () => {
+        sync.resolve(canonicalRowDoc);
+        await ensure;
+      });
+      await waitFor(() => expect(rowGuid()).toBe('canonical-row'));
+
+      unmount();
+      doc.destroy();
+      emptyRowDoc.destroy();
+      canonicalRowDoc.destroy();
+    });
+  });
+
+  describe('row pass state', () => {
+    it('serves seedsReady and blobPrefetchComplete without changing the database context', async () => {
+      const doc = createDatabaseDoc('database-id');
+      const walk = createDeferred<void>();
+      let seedsReady: (() => void) | undefined;
+
+      mockedPrefetch.mockImplementation((_workspaceId, _databaseId, options) => {
+        seedsReady = options?.onSeedsReady;
+        return walk.promise.then(() => undefined);
+      });
+      const { unmount } = render(<Database {...databaseProps(doc)} />);
+
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+      const context = mockDatabaseContext;
+      const changes = jest.fn();
+      const unsubscribe = context?.subscribeToRowPassState?.(changes);
+
+      expect(context?.getRowPassState?.()).toEqual({ blobPrefetchComplete: false, seedsReady: false });
+
+      act(() => seedsReady?.());
+      expect(context?.getRowPassState?.()).toEqual({ blobPrefetchComplete: false, seedsReady: true });
+      await act(async () => {
+        walk.resolve();
+        await walk.promise;
+      });
+      expect(context?.getRowPassState?.()).toEqual({ blobPrefetchComplete: true, seedsReady: true });
+
+      // Subscribers heard both; the context every cell reads stayed the same object.
+      expect(changes).toHaveBeenCalledTimes(2);
+      expect(mockDatabaseContext).toBe(context);
+
+      unsubscribe?.();
+      unmount();
+      doc.destroy();
+    });
   });
 
   it('replaces a hydrated seed shell with the canonical force-synced row doc', async () => {

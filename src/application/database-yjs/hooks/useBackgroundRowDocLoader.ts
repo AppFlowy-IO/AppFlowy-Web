@@ -11,7 +11,13 @@ import {
 import * as Y from 'yjs';
 
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
-import { useDatabaseContext, useDatabaseView, useDatabaseViewId, useRowMap } from '@/application/database-yjs/context';
+import {
+  useDatabaseContext,
+  useDatabaseView,
+  useDatabaseViewId,
+  useRowMap,
+  useRowPassState,
+} from '@/application/database-yjs/context';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { openRowCollabDBWithProvider } from '@/application/db';
@@ -628,20 +634,21 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
   const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+  const databaseContext = useDatabaseContext();
   const {
     databaseDoc,
     ensureRow,
     loadRowFromSeed,
     peekRowDocFromSeed,
-    blobPrefetchComplete,
-    seedsReady,
     getSeedsRevision,
     subscribeToSeedsProgress,
     dataSource,
-  } = useDatabaseContext();
+  } = databaseContext;
   const isHistory = dataSource?.type === 'history';
   // Historical snapshots are complete and provide their own bounded synchronous accessor.
   const active = requestedActive && !isHistory;
+  // An inactive loader (an ungrouped grid's grouping loader) reads neither.
+  const { blobPrefetchComplete, seedsReady } = useRowPassState(databaseContext, active);
   // Only an active loader follows the pages of a walk in flight.
   const subscribeSeedsProgress = useCallback(
     (onStoreChange: () => void) =>

@@ -26,6 +26,7 @@ interface ScheduleStep {
   now: number;
   set?: (Pick<DashboardLoadWidget, 'id'> & Partial<Omit<DashboardLoadWidget, 'id' | 'sourceId'>>)[];
   closed?: boolean;
+  residentSources?: string[];
   expected: DashboardLoadPlan;
   busySources: string[];
 }
@@ -62,10 +63,17 @@ const REQUIRED_CASES = [
   'resumes with visible priority',
   'closed starts nothing',
   '8 widgets over 8 sources never have more than 2 busy sources at any step',
+  'a widget of a resident source skips the queue',
+  'a loading widget of a resident source holds no slot',
+  'warm and cold sources mixed',
+  '8 warm sources reopen without waiting',
+  'a deferred widget of a resident source still waits for the visible widgets',
+  'not even a widget of a resident source',
+  'a source whose rows finished loading frees its slot',
 ];
 
 function sortedBusySources(state: FixtureInput) {
-  return [...busyDashboardSources(state.widgets, state.hostSourceId)].sort();
+  return [...busyDashboardSources(state.widgets, state.hostSourceId, state.residentSources)].sort();
 }
 
 describe('planDashboardLoads (loading-schedule.json)', () => {
@@ -90,6 +98,34 @@ describe('planDashboardLoads (loading-schedule.json)', () => {
     expect(planDashboardLoads(input)).toEqual(entry.expected);
     // Pure: the input is left as it was.
     expect(JSON.stringify(input)).toBe(before);
+  });
+
+  it('plans an input without residentSources as if every source were cold', () => {
+    const cold = fixture.cases.filter((entry) => entry.input.residentSources?.length === 0);
+
+    expect(cold.length).toBeGreaterThan(0);
+    cold.forEach((entry) => {
+      const { residentSources: _none, ...input } = entry.input;
+
+      expect({ name: entry.name, plan: planDashboardLoads({ ...input, constants: fixture.constants }) }).toEqual({
+        name: entry.name,
+        plan: entry.expected,
+      });
+    });
+  });
+
+  it('keeps the host and the resident sources out of the busy sources', () => {
+    const widgets: DashboardLoadWidget[] = [
+      { id: 'w1', sourceId: 'host', visible: true, state: 'loading', firstData: false },
+      { id: 'w2', sourceId: 'A', visible: true, state: 'loading', firstData: false },
+      { id: 'w3', sourceId: 'B', visible: false, state: 'loading', firstData: true },
+      { id: 'w4', sourceId: 'C', visible: true, state: 'suspended', firstData: true },
+      { id: 'w5', sourceId: 'D', visible: true, state: 'done', firstData: true },
+    ];
+
+    expect([...busyDashboardSources(widgets, 'host')].sort()).toEqual(['A', 'B']);
+    expect([...busyDashboardSources(widgets, 'host', ['B'])]).toEqual(['A']);
+    expect([...busyDashboardSources(widgets, 'host', new Set(['A', 'B', 'C']))]).toEqual([]);
   });
 
   it.each(fixture.cases.map((entry) => [entry.name, entry] as const))(
@@ -125,6 +161,7 @@ describe('planDashboardLoads (loading-schedule.json)', () => {
         Object.assign(widget, patch);
       });
       if (step.closed !== undefined) state.closed = step.closed;
+      if (step.residentSources !== undefined) state.residentSources = step.residentSources;
 
       const plan = planDashboardLoads({ ...state, constants: fixture.constants });
 
@@ -210,6 +247,90 @@ describe('planDashboardLoads (generated dashboards)', () => {
       expect(state.widgets.filter((widget) => widget.state !== 'done')).toEqual([]);
       expect([...startOrder].sort()).toEqual(state.widgets.map((widget) => widget.id).sort());
       // Visible first: no off-screen widget starts before the last visible one.
+      const lastVisibleStart = Math.max(
+        ...state.widgets.filter((widget) => widget.visible).map((widget) => startOrder.indexOf(widget.id))
+      );
+      const firstDeferredStart = Math.min(
+        ...state.widgets.filter((widget) => !widget.visible).map((widget) => startOrder.indexOf(widget.id))
+      );
+
+      expect(firstDeferredStart).toBeGreaterThan(lastVisibleStart);
+    }
+  );
+
+  it.each([1, 2, 3, 4, 5, 6, 7, 8])(
+    'seed %i with warm sources: at most 2 busy cold sources at every step, warm visible widgets never wait, every widget ends done',
+    (seed) => {
+      const next = generator(seed);
+      const sourceCount = 1 + next(8);
+      // S1 and, by chance, other sources are warm from the start; a source turns warm once a widget of it has loaded.
+      const resident = new Set(
+        Array.from({ length: sourceCount }, (_unused, index) => `S${index + 1}`).filter(
+          (sourceId) => sourceId === 'S1' || next(2) === 0
+        )
+      );
+      const state: FixtureInput = {
+        now: 0,
+        hostSourceId: 'host',
+        closed: false,
+        visibleStartedAt: null,
+        sourceRows: {},
+        residentSources: [],
+        widgets: Array.from({ length: 12 }, (_unused, index) => ({
+          id: `w${index + 1}`,
+          sourceId: next(6) === 0 ? 'host' : `S${1 + next(sourceCount)}`,
+          visible: index < 4,
+          state: 'idle' as const,
+          firstData: false,
+        })),
+      };
+      const startOrder: string[] = [];
+      let warmStarts = 0;
+
+      for (let step = 0; step < 200 && state.widgets.some((widget) => widget.state !== 'done'); step += 1) {
+        state.residentSources = [...resident].sort();
+        const { start } = planDashboardLoads({ ...state, constants: fixture.constants });
+
+        start.forEach((id) => {
+          const widget = state.widgets.find((candidate) => candidate.id === id) as DashboardLoadWidget;
+
+          expect(widget.state).toBe('idle');
+          if (widget.visible && state.visibleStartedAt === null) state.visibleStartedAt = state.now;
+          if (resident.has(widget.sourceId)) warmStarts += 1;
+          widget.state = 'loading';
+          startOrder.push(id);
+        });
+        expect(sortedBusySources(state).length).toBeLessThanOrEqual(fixture.constants.maxConcurrentSources);
+        // Warm sources skip the queue: no visible widget of the host or of a resident source is left waiting.
+        expect(
+          state.widgets.filter(
+            (widget) =>
+              widget.visible &&
+              widget.state === 'idle' &&
+              (widget.sourceId === state.hostSourceId || resident.has(widget.sourceId))
+          )
+        ).toEqual([]);
+
+        const loading = state.widgets.filter((widget) => widget.state === 'loading');
+
+        if (loading.length === 0) throw new Error(`stuck queue at step ${step}: ${JSON.stringify(state.widgets)}`);
+
+        const reporting = loading[next(loading.length)];
+
+        state.now += 100;
+        if (!reporting.firstData && next(2) === 0) {
+          reporting.firstData = true;
+        } else {
+          if (next(5) !== 0) reporting.firstData = true;
+          reporting.state = 'done';
+          // A load that ended with data leaves its source's rows in memory; a failed one does not.
+          if (reporting.firstData && reporting.sourceId !== state.hostSourceId) resident.add(reporting.sourceId);
+        }
+      }
+
+      expect(warmStarts).toBeGreaterThan(0);
+      expect(state.widgets.filter((widget) => widget.state !== 'done')).toEqual([]);
+      expect([...startOrder].sort()).toEqual(state.widgets.map((widget) => widget.id).sort());
       const lastVisibleStart = Math.max(
         ...state.widgets.filter((widget) => widget.visible).map((widget) => startOrder.indexOf(widget.id))
       );

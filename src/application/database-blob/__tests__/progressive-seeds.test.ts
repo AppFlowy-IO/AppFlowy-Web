@@ -7,10 +7,12 @@ import {
   invalidateDatabaseRowDocSeed,
   MAX_RELEASED_ROW_DOC_SEED_CACHES,
   peekDatabaseRowDocSeed,
+  isDatabaseSourceResident,
   prefetchDatabaseBlobDiff,
   releaseDatabaseRowDocSeedCache,
   retainDatabaseRowDocSeedCache,
   ROW_DOC_SEED_CACHE_RELEASE_GRACE_MS,
+  subscribeToDatabaseSourceResidency,
 } from '@/application/database-blob';
 import { subscribeRowDocRelease } from '@/application/database-blob/row-doc-retention';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
@@ -32,6 +34,8 @@ jest.mock('@/application/db', () => ({
   deleteCollabDB: jest.fn(),
   getCachedProviderDoc: jest.fn(),
   getCachedRowProvider: jest.fn(),
+  // The rows a cached RID vouches for are stored, unless a test says otherwise.
+  hasSharedCollabData: jest.fn(async () => true),
   openCollabDBWithProvider: jest.fn(),
   openRowCollabDBWithProvider: jest.fn(),
 }));
@@ -164,6 +168,119 @@ describe('database blob seeds for filter and sort', () => {
     databaseIds.forEach(clearDatabaseRowDocSeedCache);
     databaseIds.clear();
     jest.useRealTimers();
+  });
+
+  describe('source residency', () => {
+    it('is resident once its walk settles with every seed, until the seeds are released after the idle time', async () => {
+      jest.useFakeTimers();
+      const databaseId = 'database-resident';
+      const finalPage = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+      const onResidencyChange = jest.fn();
+      const unsubscribe = subscribeToDatabaseSourceResidency(onResidencyChange);
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff
+        .mockResolvedValueOnce(
+          rowPage([{ rowId: FIRST_ROW_ID, department: 'HR' }], { hasMore: true, nextCursor: new Uint8Array([1]) })
+        )
+        .mockReturnValueOnce(finalPage.promise);
+      retain(databaseId);
+      const walk = prefetchDatabaseBlobDiff('workspace', databaseId);
+
+      await jest.advanceTimersByTimeAsync(0);
+      // A walk in flight is a cold load, even with a page staged.
+      expect(isDatabaseSourceResident(databaseId)).toBe(false);
+      expect(onResidencyChange).not.toHaveBeenCalled();
+
+      finalPage.resolve(rowPage([{ rowId: SECOND_ROW_ID, department: 'Sales' }]));
+      await walk;
+      expect(isDatabaseSourceResident(databaseId)).toBe(true);
+      expect(onResidencyChange).toHaveBeenCalledTimes(1);
+
+      // Left, the source keeps its rows for the idle time.
+      release(databaseId);
+      await jest.advanceTimersByTimeAsync(ROW_DOC_SEED_CACHE_RELEASE_GRACE_MS - 1);
+      expect(isDatabaseSourceResident(databaseId)).toBe(true);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(isDatabaseSourceResident(databaseId)).toBe(false);
+      expect(onResidencyChange).toHaveBeenCalledTimes(2);
+
+      unsubscribe();
+    });
+
+    it('stays resident while a refresh of its rows is in flight', async () => {
+      const databaseId = 'database-resident-refresh';
+      const refresh = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff
+        .mockResolvedValueOnce(rowPage([{ rowId: FIRST_ROW_ID, department: 'HR' }]))
+        .mockReturnValueOnce(refresh.promise);
+      retain(databaseId);
+      await prefetchDatabaseBlobDiff('workspace', databaseId);
+      expect(isDatabaseSourceResident(databaseId)).toBe(true);
+
+      // The dashboard is opened again: its view walks the changes since the first walk.
+      const refreshWalk = prefetchDatabaseBlobDiff('workspace', databaseId);
+
+      await flushPendingWork();
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+      expect(isDatabaseSourceResident(databaseId)).toBe(true);
+
+      refresh.resolve(rowPage([]));
+      await refreshWalk;
+      expect(isDatabaseSourceResident(databaseId)).toBe(true);
+    });
+
+    it('is not resident after a walk of only the rows changed since a RID', async () => {
+      const databaseId = 'database-resident-delta';
+
+      databaseIds.add(databaseId);
+      // After a reload: the rows are stored, and the walk brings the changes since the RID.
+      localStorage.setItem(`af_database_blob_rid:${databaseId}`, JSON.stringify({ timestamp: 50, seqNo: 1 }));
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(rowPage([{ rowId: FIRST_ROW_ID, department: 'HR' }]));
+      retain(databaseId);
+
+      await prefetchDatabaseBlobDiff('workspace', databaseId);
+
+      expect(mockedDatabaseBlobDiff.mock.calls[0][2].maxKnownRid).toMatchObject({ timestamp: 50, seqNo: 1 });
+      expect(isDatabaseSourceResident(databaseId)).toBe(false);
+    });
+
+    it('stays cold when its walk fails', async () => {
+      const databaseId = 'database-resident-failed';
+      const onResidencyChange = jest.fn();
+      const unsubscribe = subscribeToDatabaseSourceResidency(onResidencyChange);
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff.mockRejectedValueOnce(new Error('offline'));
+      retain(databaseId);
+
+      await expect(prefetchDatabaseBlobDiff('workspace', databaseId)).rejects.toThrow('offline');
+      expect(isDatabaseSourceResident(databaseId)).toBe(false);
+      expect(onResidencyChange).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    it('tells only the listeners still subscribed, and only when residency changes', async () => {
+      const databaseId = 'database-resident-listeners';
+      const kept = jest.fn();
+      const removed = jest.fn();
+      const unsubscribeKept = subscribeToDatabaseSourceResidency(kept);
+
+      subscribeToDatabaseSourceResidency(removed)();
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValue(rowPage([{ rowId: FIRST_ROW_ID, department: 'HR' }]));
+      retain(databaseId);
+
+      await prefetchDatabaseBlobDiff('workspace', databaseId);
+      // A second view joins the settled walk: nothing changes.
+      await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+
+      expect(kept).toHaveBeenCalledTimes(1);
+      expect(removed).not.toHaveBeenCalled();
+      unsubscribeKept();
+    });
   });
 
   describe('provisional pages', () => {

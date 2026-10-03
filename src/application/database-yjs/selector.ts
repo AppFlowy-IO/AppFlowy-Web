@@ -30,6 +30,7 @@ import {
   useDatabaseViewId,
   useRow,
   useRowMap,
+  useRowPassState,
 } from '@/application/database-yjs/context';
 import { createDashboardLayoutStore } from '@/application/database-yjs/dashboard-layout';
 import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
@@ -1388,6 +1389,39 @@ export function useGetBoardHiddenGroup(
   };
 }
 
+/**
+ * Whether two group results list the same columns, in the same order, with the
+ * same rows in each. Rows compare by what a card shows of them, not by object:
+ * a new copy of the row orders produces equal rows.
+ */
+export function haveSameGroupRows(previous: Map<string, Row[]>, next: Map<string, Row[]>) {
+  if (previous === next) return true;
+  if (previous.size !== next.size) return false;
+  const previousEntries = previous.entries();
+
+  for (const [columnId, rows] of next) {
+    const [previousColumnId, previousRows] = previousEntries.next().value as [string, Row[]];
+
+    if (previousColumnId !== columnId || previousRows.length !== rows.length) return false;
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      const previousRow = previousRows[index];
+
+      if (
+        row !== previousRow &&
+        (row.id !== previousRow.id ||
+          row.height !== previousRow.height ||
+          Boolean(row.is_deleted) !== Boolean(previousRow.is_deleted))
+      ) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 export function useRowsByGroup(groupId: string) {
   const { columns, fieldId } = useGroup(groupId);
   const rows = useRowMap();
@@ -1457,7 +1491,9 @@ export function useRowsByGroup(groupId: string) {
         return;
       }
 
-      setGroupResult(groupResult);
+      // A regroup that changes no column keeps the previous result, so the
+      // columns and every card under them do not re-render for nothing.
+      setGroupResult((previous) => (haveSameGroupRows(previous, groupResult) ? previous : groupResult));
       const rowsHydrated = areGroupRowsHydrated(rowOrders, groupingRows);
 
       if (rowsHydrated && groupingKey) {
@@ -1756,7 +1792,12 @@ function createDatabaseGroupingRowsStore(fieldId?: string): DatabaseGroupingRows
 function haveSameRows(left: Row[], right: Row[]) {
   return (
     left.length === right.length &&
-    left.every((row, index) => row.id === right[index].id && row.height === right[index].height)
+    left.every(
+      (row, index) =>
+        row.id === right[index].id &&
+        row.height === right[index].height &&
+        Boolean(row.is_deleted) === Boolean(right[index].is_deleted)
+    )
   );
 }
 
@@ -2056,6 +2097,10 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     cellLocalMutationRevision,
   ]);
 
+  // The ungrouped result changes only with the rows. The memo below re-runs
+  // whenever a row loads; returning this one keeps the grid, which re-renders
+  // on every new grouping object, from re-rendering for each of those rows.
+  const ungroupedGrouping = useMemo(() => ({ ...EMPTY_DATABASE_GROUPING, rowOrders }), [rowOrders]);
   const grouping = useMemo(() => {
     void groupingViewRevision;
     void cellLocalMutationRevision;
@@ -2067,7 +2112,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
 
     if (!group || !field || !isDatabaseGroupableFieldType(fieldType)) {
-      return { ...EMPTY_DATABASE_GROUPING, rowOrders };
+      return ungroupedGrouping;
     }
 
     const groupingFieldId = field.get(YjsDatabaseKey.id);
@@ -2268,6 +2313,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     cellLocalMutationRevision,
     rowOrders,
     rowsHydrated,
+    ungroupedGrouping,
     view,
   ]);
 
@@ -2622,6 +2668,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   const viewFilters = view?.get(YjsDatabaseKey.filters);
   const database = useDatabase();
   const inlineRowOrders = getInlineViewRowOrders(database);
+  const databaseContext = useDatabaseContext();
   const {
     dataSource,
     databaseDoc,
@@ -2631,9 +2678,8 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     getViewIdFromDatabaseId,
     ensureRow,
     loadRowFromSeed,
-    blobPrefetchComplete,
-    seedsReady,
-  } = useDatabaseContext();
+  } = databaseContext;
+  const { blobPrefetchComplete, seedsReady } = useRowPassState(databaseContext);
   const extraFilters = useDatabaseExtraFilters();
   // Dashboard global filters ride along with the view's own filters for
   // evaluation and signatures; observers stay on the real Yjs array. A global
@@ -2718,12 +2764,26 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
         hasMatches: Boolean(state?.conditioned && rows?.length),
       });
       setRowOrdersState((previous) => {
-        const republishesPartialResult =
-          hydrating &&
-          previous.hydrating &&
+        const sameConditions =
           previous.conditionSignature === conditionSignature &&
           previous.viewId === viewId &&
           previous.filters === filters;
+
+        // A complete result computed again (a row doc loaded, a cell the
+        // conditions do not read changed) keeps its rows when they are the
+        // same: every consumer re-renders and recomputes on a new array.
+        if (
+          !hydrating &&
+          !previous.hydrating &&
+          sameConditions &&
+          rows &&
+          previous.rows &&
+          haveSameRows(rows, previous.rows)
+        ) {
+          return previous;
+        }
+
+        const republishesPartialResult = hydrating && previous.hydrating && sameConditions;
 
         if (!republishesPartialResult) return { rows, hydrating, conditionSignature, viewId, filters };
 

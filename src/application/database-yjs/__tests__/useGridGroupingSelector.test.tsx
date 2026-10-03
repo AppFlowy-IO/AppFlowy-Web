@@ -482,6 +482,41 @@ describe('useGridGroupingSelector refresh behavior', () => {
     fixture.databaseDoc.destroy();
   });
 
+  it('keeps the grouping object of an ungrouped grid while its rows load', async () => {
+    const fixture = createGridGroupingFixture();
+
+    fixture.groups.delete(0, 1);
+    const { result, rerender, unmount } = renderHook(useGridGroupingSelector, { wrapper: fixture.wrapper });
+
+    await waitFor(() => expect(result.current.rowOrders?.map(({ id }) => id)).toEqual(['row-a', 'row-b']));
+    const grouping = result.current;
+
+    expect(grouping.isGrouped).toBe(false);
+    // Each row doc that loads is a new row map; the ungrouped result does not change.
+    fixture.contextValue.rowMap = { ...fixture.contextValue.rowMap };
+    rerender();
+    expect(result.current).toBe(grouping);
+
+    // A new row is a new result.
+    const rowC = createRowDoc('row-c', 'grid-grouping-database', {
+      [fixture.fieldId]: createCell(FieldType.RichText, 'C'),
+    });
+
+    fixture.contextValue.rowMap = { ...fixture.contextValue.rowMap, 'row-c': rowC };
+    act(() => {
+      fixture.rowOrders.push([{ id: 'row-c', height: 36 }]);
+    });
+    rerender();
+    await waitFor(() => expect(result.current.rowOrders?.map(({ id }) => id)).toEqual(['row-a', 'row-b', 'row-c']));
+    expect(result.current).not.toBe(grouping);
+
+    unmount();
+    rowC.destroy();
+    fixture.rowA.destroy();
+    fixture.rowB.destroy();
+    fixture.databaseDoc.destroy();
+  });
+
   it('does not serialize row orders for unrelated view or field updates', async () => {
     const fixture = createGridGroupingFixture();
     const rowOrdersToJSON = jest.spyOn(fixture.rowOrders, 'toJSON');

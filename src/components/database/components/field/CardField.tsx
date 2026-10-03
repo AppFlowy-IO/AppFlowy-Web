@@ -1,4 +1,4 @@
-import { CSSProperties, useMemo } from 'react';
+import { CSSProperties, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType, useCellSelector, useFieldSelector, useReadOnly } from '@/application/database-yjs';
@@ -119,4 +119,5 @@ export function CardField({
   return <Cell style={style} readOnly cell={cell || undefined} rowId={rowId} fieldId={fieldId} wrap isCardCell />;
 }
 
-export default CardField;
+/** A board card renders one per shown field; it re-renders only when its own props or data change. */
+export default memo(CardField);

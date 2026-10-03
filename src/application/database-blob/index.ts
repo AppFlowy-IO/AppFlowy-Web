@@ -13,6 +13,7 @@ import {
   deleteCollabDB,
   getCachedProviderDoc,
   getCachedRowProvider,
+  hasSharedCollabData,
   openCollabDBWithProvider,
   openRowCollabDBWithProvider,
 } from '@/application/db';
@@ -247,6 +248,56 @@ function forgetSharedPrefetchEntry(entry: SharedPrefetchEntry) {
   }
 }
 
+/**
+ * The databases whose rows the tab holds in memory, each with the storage
+ * fence of the walk that brought them: that walk settled with the complete
+ * snapshot, and its seeds were not released since.
+ */
+const residentDatabases = new Map<string, DatabaseStorageFence | undefined>();
+const sourceResidencyListeners = new Set<() => void>();
+
+/**
+ * Whether the tab holds the rows of the database in memory already, so a
+ * dashboard widget of it loads nothing cold and starts without a load slot
+ * (`loading-schedule.json` `format.residency`): a settled walk of it with its
+ * complete seed set, not invalidated by a restore, whose seeds were not
+ * released (a mounted view retains the database, or the last one left it less
+ * than `sourceIdleReleaseMs` ago). The seed set is the complete snapshot: a
+ * delta walk brings only the rows changed since its RID, and a view that
+ * needs every row would still download them all. A walk in flight is not
+ * resident; the seeds of an earlier walk stay resident while it refreshes them.
+ */
+export function isDatabaseSourceResident(databaseId: string) {
+  if (!residentDatabases.has(databaseId)) return false;
+  const fence = residentDatabases.get(databaseId);
+
+  return !fence || isDatabaseStorageFenceCurrent(fence);
+}
+
+function notifySourceResidency() {
+  sourceResidencyListeners.forEach((listener) => listener());
+}
+
+function markSourceResident(databaseId: string, fence: DatabaseStorageFence | undefined) {
+  const wasResident = residentDatabases.has(databaseId);
+
+  residentDatabases.set(databaseId, fence);
+  if (!wasResident) notifySourceResidency();
+}
+
+/** Its seeds are released or retired by a restore: its next widget loads cold. */
+function forgetSourceResidency(databaseId: string) {
+  if (residentDatabases.delete(databaseId)) notifySourceResidency();
+}
+
+/** Notified when a database becomes resident (`isDatabaseSourceResident`) or stops being resident. */
+export function subscribeToDatabaseSourceResidency(listener: () => void) {
+  sourceResidencyListeners.add(listener);
+  return () => {
+    sourceResidencyListeners.delete(listener);
+  };
+}
+
 function isSharedPrefetchEntryRegistered(entry: SharedPrefetchEntry) {
   for (const registered of sharedPrefetchEntries.values()) {
     if (registered === entry) return true;
@@ -374,6 +425,34 @@ function writeCachedRid(databaseId: string, rid: DatabaseBlobRowRid, fence: Data
       ridCacheKey(databaseId),
       JSON.stringify(fence.epoch === null ? rid : { ...rid, storageEpoch: fence.epoch })
     );
+  } catch {
+    // Ignore storage failures (private mode/quota).
+  }
+}
+
+/** Rows of the view whose local data a walk checks before it trusts the cached RID. */
+const CACHED_RID_ROW_SAMPLE_SIZE = 3;
+
+/**
+ * The first rows of the view, whose local data tells whether the rows a cached
+ * RID vouches for are stored. The RID lives in localStorage and the rows in
+ * IndexedDB, so clearing one storage keeps the other. A RID that outlived its
+ * rows asks the server only for later changes: the walk brings nothing, the
+ * view opens rows without data, and the missing-row repair walks every row a
+ * second time, outside the dashboard's load slots. When none of these rows is
+ * stored, the rows are gone. With no row to check, nothing is missing.
+ */
+function cachedRidRowSample(rowIds: Iterable<string>) {
+  return Array.from(rowIds).slice(0, CACHED_RID_ROW_SAMPLE_SIZE);
+}
+
+/** Removes the cached RID unless it changed since it was read (another tab published a newer one). */
+function dropCachedRid(databaseId: string, rid: DatabaseBlobRowRid) {
+  const current = readCachedRid(databaseId);
+
+  if (!current || compareRid(current, rid) !== 0) return;
+  try {
+    localStorage.removeItem(ridCacheKey(databaseId));
   } catch {
     // Ignore storage failures (private mode/quota).
   }
@@ -737,6 +816,9 @@ export function clearDatabaseRowDocSeedCache(databaseId: string) {
   const prefix = `${databaseId}_rows_`;
   let hasUnsettledPrefetch = false;
 
+  // Released now, or once the walk in flight settles: either way no longer resident.
+  forgetSourceResidency(databaseId);
+
   cancelPendingRowDocSeedCacheRelease(databaseId);
 
   for (const [key, entry] of sharedPrefetchEntries.entries()) {
@@ -822,6 +904,10 @@ export async function invalidateDatabaseBlobAfterRestore(
     rowDocSeedDocCache.delete(key);
     provisionalSeedDocOwners.delete(key);
     doc?.destroy();
+  }
+
+  if (residentDatabases.has(databaseId) && residentDatabases.get(databaseId)?.epoch !== databaseRestoreId) {
+    forgetSourceResidency(databaseId);
   }
 
   await Promise.allSettled(retiring);
@@ -1878,7 +1964,14 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
 
     entry.storageFence = storageFence;
     entry.invalidatedRowIds.storageFence = storageFence;
-    const capturedRid = options?.forceFullSync ? null : readCachedRid(databaseId, storageFence);
+    let capturedRid = options?.forceFullSync ? null : readCachedRid(databaseId, storageFence);
+    const ridRowSample = capturedRid ? cachedRidRowSample(entry.priorityRowIds) : [];
+
+    if (capturedRid && ridRowSample.length > 0 && !(await hasSharedCollabData(ridRowSample))) {
+      Log.warn('[Database] cached blob RID has no local rows; walking every row', { databaseId, rid: capturedRid });
+      dropCachedRid(databaseId, capturedRid);
+      capturedRid = null;
+    }
 
     entry.coversFullSnapshot = capturedRid === null;
     // Without a RID the server sends every row: one full pass over the database.
@@ -1983,6 +2076,9 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
     entry.settled = true;
     // A failed or superseded walk never commits what its pages staged.
     dropProvisionalSeeds();
+    if (entry.hasCompleteSeedSet && entry.coversFullSnapshot && isSharedPrefetchEntryCurrent(entry)) {
+      markSourceResident(databaseId, entry.storageFence);
+    }
   });
 
   entry.promise = promise;

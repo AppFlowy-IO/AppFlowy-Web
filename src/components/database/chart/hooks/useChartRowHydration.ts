@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { useBackgroundRowDocLoader, useDatabaseContext } from '@/application/database-yjs';
+import { useBackgroundRowDocLoader, useDatabaseContext, useRowPassState } from '@/application/database-yjs';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { RowId, YDoc } from '@/application/types';
@@ -152,16 +152,10 @@ export function useChartRowHydration({
   liveRows,
   needsRowDocs,
 }: UseChartRowHydrationOptions): ChartRowHydration {
-  const {
-    ensureRow,
-    dataSource,
-    activeViewId,
-    peekRowDocFromSeed,
-    seedsReady,
-    blobPrefetchComplete,
-    getSeedsRevision,
-    subscribeToSeedsProgress,
-  } = useDatabaseContext();
+  const databaseContext = useDatabaseContext();
+  const { ensureRow, dataSource, activeViewId, peekRowDocFromSeed, getSeedsRevision, subscribeToSeedsProgress } =
+    databaseContext;
+  const { seedsReady, blobPrefetchComplete } = useRowPassState(databaseContext);
   const isHistory = dataSource?.type === 'history';
   const rowOrdersReady = Boolean(rowOrders);
   const canReadSeeds = Boolean(peekRowDocFromSeed) && !isHistory;

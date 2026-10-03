@@ -3,6 +3,7 @@ import {
   clearDatabaseRowDocSeedCache,
   invalidateDatabaseRowDocSeed,
   invalidateDatabaseBlobAfterRestore,
+  isDatabaseSourceResident,
   peekDatabaseRowDocSeed,
   takeDatabaseRowDocSeed,
 } from '@/application/database-blob';
@@ -11,7 +12,7 @@ import type { DatabaseBlobDiffPageStage } from '@/application/database-blob/page
 import { isDatabaseRowDocSeedCurrent } from '@/application/database-blob/row-seed-fence';
 import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
 import { publishDatabaseCacheEpoch } from '@/application/db/database-storage-fence';
-import { deleteCollabDB, openRowCollabDBWithProvider } from '@/application/db';
+import { deleteCollabDB, hasSharedCollabData, openRowCollabDBWithProvider } from '@/application/db';
 import { deleteRow } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
 import { deleteOutboxByObjectId, getCurrentOutboxSession } from '@/application/sync-outbox';
@@ -37,6 +38,8 @@ jest.mock('@/application/db', () => ({
   deleteCollabDB: jest.fn(),
   getCachedProviderDoc: jest.fn(),
   getCachedRowProvider: jest.fn(),
+  // The rows a cached RID vouches for are stored, unless a test says otherwise.
+  hasSharedCollabData: jest.fn(async () => true),
   openCollabDBWithProvider: jest.fn(),
   openRowCollabDBWithProvider: jest.fn(),
 }));
@@ -71,6 +74,7 @@ jest.mock('@/utils/log', () => ({
 const mockedDatabaseBlobDiff = databaseBlobDiff as jest.MockedFunction<typeof databaseBlobDiff>;
 const mockedDeleteCollabDB = deleteCollabDB as jest.MockedFunction<typeof deleteCollabDB>;
 const mockedOpenRowCollabDB = openRowCollabDBWithProvider as jest.MockedFunction<typeof openRowCollabDBWithProvider>;
+const mockedHasSharedCollabData = hasSharedCollabData as jest.MockedFunction<typeof hasSharedCollabData>;
 const mockedDeleteRow = deleteRow as jest.MockedFunction<typeof deleteRow>;
 const mockedDeleteOutbox = deleteOutboxByObjectId as jest.MockedFunction<typeof deleteOutboxByObjectId>;
 const mockedGetCurrentOutboxSession = getCurrentOutboxSession as jest.MockedFunction<typeof getCurrentOutboxSession>;
@@ -276,6 +280,28 @@ describe('database blob prefetch deduplication', () => {
     expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
   });
 
+  it('retires the residency of a database a restore replaced, and keeps it for the restore it already holds', async () => {
+    const restoredDatabaseId = 'database-resident-restored';
+    const reconciledDatabaseId = 'database-resident-reconciled';
+
+    databaseIds.add(restoredDatabaseId);
+    databaseIds.add(reconciledDatabaseId);
+    publishDatabaseCacheEpoch(reconciledDatabaseId, 'R');
+    mockedDatabaseBlobDiff
+      .mockResolvedValueOnce(persistablePage({ timestamp: 100, seqNo: 1 }))
+      .mockResolvedValueOnce(persistablePage({ timestamp: 100, seqNo: 1 }));
+    await prefetchDatabaseBlobDiff('workspace', restoredDatabaseId);
+    await prefetchDatabaseBlobDiff('workspace', reconciledDatabaseId);
+    expect(isDatabaseSourceResident(restoredDatabaseId)).toBe(true);
+    expect(isDatabaseSourceResident(reconciledDatabaseId)).toBe(true);
+
+    await invalidateDatabaseBlobAfterRestore(restoredDatabaseId, 'R', null);
+    await invalidateDatabaseBlobAfterRestore(reconciledDatabaseId, 'R', null);
+
+    expect(isDatabaseSourceResident(restoredDatabaseId)).toBe(false);
+    expect(isDatabaseSourceResident(reconciledDatabaseId)).toBe(true);
+  });
+
   it('keeps current seeds and RID when another tab reconciles the same committed restore', async () => {
     const databaseId = 'database-same-restore';
     databaseIds.add(databaseId);
@@ -368,6 +394,103 @@ describe('database blob prefetch deduplication', () => {
       seqNo: 7,
     });
     expect(mockedDatabaseBlobDiff.mock.calls[1][2].maxKnownRid).toBeNull();
+  });
+
+  describe('a cached RID whose rows are gone', () => {
+    const ridKey = (databaseId: string) => `af_database_blob_rid:${databaseId}`;
+    const readRid = (databaseId: string) => JSON.parse(localStorage.getItem(ridKey(databaseId)) ?? 'null');
+    const priorityRowIds = ['row-1', 'row-2', 'row-3', 'row-4'];
+
+    it('drops the RID and walks every row when none of the first rows is stored', async () => {
+      const workspaceId = 'workspace-rid-without-rows';
+      const databaseId = 'database-rid-without-rows';
+      const rowPasses = jest.spyOn(dashboardLoadStats, 'recordRowLoadPass');
+
+      databaseIds.add(databaseId);
+      // IndexedDB was cleared; localStorage kept the RID.
+      localStorage.setItem(ridKey(databaseId), JSON.stringify({ timestamp: 300, seqNo: 1 }));
+      mockedHasSharedCollabData.mockResolvedValueOnce(false);
+      mockedDatabaseBlobDiff.mockImplementationOnce(async () => {
+        // Dropped before the request: a reload during the walk does not trust it again.
+        expect(localStorage.getItem(ridKey(databaseId))).toBeNull();
+        return persistablePage({ timestamp: 900, seqNo: 5 });
+      });
+
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId, { priorityRowIds });
+
+      expect(mockedHasSharedCollabData).toHaveBeenCalledTimes(1);
+      expect(mockedHasSharedCollabData).toHaveBeenCalledWith(['row-1', 'row-2', 'row-3']);
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(1);
+      expect(mockedDatabaseBlobDiff.mock.calls[0][2].maxKnownRid).toBeNull();
+      // One full pass, counted as such, and the RID of the rows it stored.
+      expect(rowPasses).toHaveBeenCalledWith(databaseId);
+      expect(readRid(databaseId)).toEqual({ timestamp: 900, seqNo: 5 });
+    });
+
+    it('keeps the RID and asks for the changes since it when the rows are stored', async () => {
+      const workspaceId = 'workspace-rid-with-rows';
+      const databaseId = 'database-rid-with-rows';
+      const rowPasses = jest.spyOn(dashboardLoadStats, 'recordRowLoadPass');
+
+      databaseIds.add(databaseId);
+      localStorage.setItem(ridKey(databaseId), JSON.stringify({ timestamp: 300, seqNo: 1 }));
+      mockedHasSharedCollabData.mockResolvedValueOnce(true);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(readyDiff());
+
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId, { priorityRowIds });
+
+      expect(mockedDatabaseBlobDiff.mock.calls[0][2].maxKnownRid).toMatchObject({ timestamp: 300, seqNo: 1 });
+      expect(rowPasses).not.toHaveBeenCalled();
+      expect(readRid(databaseId)).toEqual({ timestamp: 300, seqNo: 1 });
+    });
+
+    it('keeps the RID when the view lists no row to check', async () => {
+      const workspaceId = 'workspace-rid-no-rows-listed';
+      const databaseId = 'database-rid-no-rows-listed';
+
+      databaseIds.add(databaseId);
+      localStorage.setItem(ridKey(databaseId), JSON.stringify({ timestamp: 300, seqNo: 1 }));
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(readyDiff());
+
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId);
+
+      expect(mockedHasSharedCollabData).not.toHaveBeenCalled();
+      expect(mockedDatabaseBlobDiff.mock.calls[0][2].maxKnownRid).toMatchObject({ timestamp: 300, seqNo: 1 });
+    });
+
+    it('checks no row for a full walk, which uses no RID', async () => {
+      const workspaceId = 'workspace-rid-full-walk';
+      const databaseId = 'database-rid-full-walk';
+
+      databaseIds.add(databaseId);
+      localStorage.setItem(ridKey(databaseId), JSON.stringify({ timestamp: 300, seqNo: 1 }));
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(readyDiff());
+
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true, priorityRowIds });
+
+      expect(mockedHasSharedCollabData).not.toHaveBeenCalled();
+      expect(mockedDatabaseBlobDiff.mock.calls[0][2].maxKnownRid).toBeNull();
+    });
+
+    it('leaves a newer RID another tab published while the rows were checked', async () => {
+      const workspaceId = 'workspace-rid-newer';
+      const databaseId = 'database-rid-newer';
+
+      databaseIds.add(databaseId);
+      localStorage.setItem(ridKey(databaseId), JSON.stringify({ timestamp: 300, seqNo: 1 }));
+      mockedHasSharedCollabData.mockImplementationOnce(async () => {
+        // Another tab finished a full walk of the database meanwhile.
+        localStorage.setItem(ridKey(databaseId), JSON.stringify({ timestamp: 800, seqNo: 3 }));
+        return false;
+      });
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(readyDiff());
+
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId, { priorityRowIds });
+
+      // This walk read every row; the newer RID stays for the next one.
+      expect(mockedDatabaseBlobDiff.mock.calls[0][2].maxKnownRid).toBeNull();
+      expect(readRid(databaseId)).toEqual({ timestamp: 800, seqNo: 3 });
+    });
   });
 
   describe('one walk per database', () => {

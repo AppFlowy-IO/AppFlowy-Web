@@ -274,6 +274,53 @@ describe('useRowOrdersSelector', () => {
     });
   });
 
+  it('keeps the rows of a complete filtered result computed again with the same matches', async () => {
+    const fixture = createDatabaseFixture();
+    let contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: fixture.databaseDoc,
+      databasePageId: fixture.viewId,
+      activeViewId: fixture.viewId,
+      rowMap: fixture.rowMap,
+      workspaceId: 'workspace-id',
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+
+    fixture.filters.push([createTextFilter('match')]);
+    const { result, rerender } = renderHook(() => useRowOrdersSelector(), { wrapper });
+
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+    await waitFor(() => expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']));
+    const rows = result.current;
+
+    // A row doc that loads is a new row map: the filter runs again and finds the same rows.
+    contextValue = { ...contextValue, rowMap: { ...fixture.rowMap } };
+    rerender();
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+    expect(result.current).toBe(rows);
+
+    // A cell the filter reads changes: a new result.
+    act(() => {
+      fixture.rowMap['row-c']
+        .getMap(YjsEditorKey.data_section)
+        .get(YjsEditorKey.database_row)
+        .get(YjsDatabaseKey.cells)
+        .get(fieldId)
+        .set(YjsDatabaseKey.data, 'match third');
+    });
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+    await waitFor(() => expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']));
+    expect(result.current).not.toBe(rows);
+  });
+
   it('keeps current rows visible when a blank filter is created', async () => {
     const fixture = createDatabaseFixture();
     const filterBySpy = jest.spyOn(databaseFilter, 'filterBy');

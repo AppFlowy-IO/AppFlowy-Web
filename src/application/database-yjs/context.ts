@@ -1,7 +1,7 @@
 import EventEmitter from 'events';
 
 import { AxiosInstance } from 'axios';
-import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
 import { retainDatabaseHistoryRow } from '@/application/database-yjs/history-row-store';
@@ -91,9 +91,21 @@ export interface DatabaseContextState {
   markCellLocalMutation?: (rowId: string, fieldId: string) => void;
   getCellLocalMutationRevision?: (fieldId: string) => string;
   subscribeToCellLocalMutations?: (fieldId: string, onStoreChange: () => void) => () => void;
+  /**
+   * True once the row walk finished. A database that serves `getRowPassState`
+   * keeps it there and leaves this field unset: read it through
+   * `useRowPassState`, which falls back to this field for a static provider.
+   */
   blobPrefetchComplete?: boolean;
-  /** True as soon as row seeds are cached (before IndexedDB persist completes). */
+  /** True as soon as row seeds are cached (before IndexedDB persist completes). See `blobPrefetchComplete`. */
   seedsReady?: boolean;
+  /**
+   * `blobPrefetchComplete` and `seedsReady` as a subscription. Only the row
+   * loaders read them; as context state, each change would re-render every
+   * cell of the view, and every widget of a dashboard reading that database.
+   */
+  getRowPassState?: () => RowPassState;
+  subscribeToRowPassState?: (onStoreChange: () => void) => () => void;
   /**
    * Revision of the row seeds readable through `peekRowDocFromSeed` before
    * `seedsReady`: 0 until a page of a blob walk still in flight was staged,
@@ -338,6 +350,43 @@ export const useDatabase = () => {
 export const useNavigateToRow = () => {
   return useDatabaseContext().navigateToRow;
 };
+
+export interface RowPassState {
+  blobPrefetchComplete: boolean;
+  seedsReady: boolean;
+}
+
+const noRowPassSubscription = () => () => undefined;
+const NO_ROW_PASS: RowPassState = Object.freeze({ blobPrefetchComplete: false, seedsReady: false });
+
+/**
+ * `blobPrefetchComplete` and `seedsReady` of the given database context,
+ * re-rendering only the caller when they change. A provider without
+ * `getRowPassState` (a history preview, a published page) gives them as plain
+ * context fields.
+ *
+ * @param enabled - False for a caller that reads nothing now (an inactive row
+ *   loader): it gets both false and is not re-rendered when they change.
+ */
+export function useRowPassState(
+  context: Pick<
+    DatabaseContextState,
+    'blobPrefetchComplete' | 'seedsReady' | 'getRowPassState' | 'subscribeToRowPassState'
+  >,
+  enabled = true
+): RowPassState {
+  const { getRowPassState, subscribeToRowPassState } = context;
+  const blobPrefetchComplete = Boolean(context.blobPrefetchComplete);
+  const seedsReady = Boolean(context.seedsReady);
+  const fieldState = useMemo(() => ({ blobPrefetchComplete, seedsReady }), [blobPrefetchComplete, seedsReady]);
+  const getSnapshot = useCallback(
+    () => (enabled ? getRowPassState?.() ?? fieldState : NO_ROW_PASS),
+    [enabled, getRowPassState, fieldState]
+  );
+  const subscribe = enabled && subscribeToRowPassState ? subscribeToRowPassState : noRowPassSubscription;
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
 
 export const useRowMap = () => {
   return useDatabaseContext().rowMap;

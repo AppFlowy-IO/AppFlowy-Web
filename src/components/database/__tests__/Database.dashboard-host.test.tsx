@@ -118,8 +118,8 @@ describe('Database hosting a Dashboard layout', () => {
     );
 
     // The host has nothing to wait for.
-    await waitFor(() => expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true));
-    expect(mockDatabaseContext?.seedsReady).toBe(true);
+    await waitFor(() => expect(mockDatabaseContext?.getRowPassState?.().blobPrefetchComplete).toBe(true));
+    expect(mockDatabaseContext?.getRowPassState?.().seedsReady).toBe(true);
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
     });
@@ -145,7 +145,7 @@ describe('Database hosting a Dashboard layout', () => {
       <Database {...hostProps(doc, DASHBOARD_VIEW_ID)} createRow={jest.fn(async () => rowDoc)} />
     );
 
-    await waitFor(() => expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true));
+    await waitFor(() => expect(mockDatabaseContext?.getRowPassState?.().blobPrefetchComplete).toBe(true));
     await act(async () => {
       await mockDatabaseContext?.ensureRow?.('row-3');
     });
@@ -184,12 +184,12 @@ describe('Database hosting a Dashboard layout', () => {
     });
     // No second walk for the dashboard, and the first one is not reported done before it is.
     expect(mockedPrefetch).toHaveBeenCalledTimes(1);
-    expect(mockDatabaseContext?.blobPrefetchComplete).toBe(false);
+    expect(mockDatabaseContext?.getRowPassState?.().blobPrefetchComplete).toBe(false);
 
     await act(async () => {
       finishWalk();
     });
-    await waitFor(() => expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true));
+    await waitFor(() => expect(mockDatabaseContext?.getRowPassState?.().blobPrefetchComplete).toBe(true));
     expect(mockedPrefetch).toHaveBeenCalledTimes(1);
 
     unmount();
@@ -204,7 +204,7 @@ describe('Database hosting a Dashboard layout', () => {
     mockedOpenRowDoc.mockResolvedValue(rowDoc);
     const { rerender, unmount } = render(<Database {...hostProps(doc, DASHBOARD_VIEW_ID)} />);
 
-    await waitFor(() => expect(mockDatabaseContext?.blobPrefetchComplete).toBe(true));
+    await waitFor(() => expect(mockDatabaseContext?.getRowPassState?.().blobPrefetchComplete).toBe(true));
     expect(mockedPrefetch).not.toHaveBeenCalled();
 
     // The user switches from the Dashboard tab to the Grid tab of the same database.
@@ -215,8 +215,8 @@ describe('Database hosting a Dashboard layout', () => {
     expect(mockedPrefetch.mock.calls[0][1]).toBe('host-database');
     expect(mockedPrefetch.mock.calls[0][2]?.priorityRowIds).toHaveLength(ROW_COUNT);
     // The grid waits for the walk's seeds: nothing was fetched while the dashboard was shown.
-    await waitFor(() => expect(mockDatabaseContext?.blobPrefetchComplete).toBe(false));
-    expect(mockDatabaseContext?.seedsReady).toBe(false);
+    await waitFor(() => expect(mockDatabaseContext?.getRowPassState?.().blobPrefetchComplete).toBe(false));
+    expect(mockDatabaseContext?.getRowPassState?.().seedsReady).toBe(false);
 
     // A row the grid renders now waits for the walk instead of opening without its seed.
     let ensured = false;

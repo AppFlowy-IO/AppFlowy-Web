@@ -6,7 +6,8 @@
  * and tells each widget when it may start.
  *
  * - At most `maxConcurrentSources` distinct source databases load at a time;
- *   the host database never takes a slot.
+ *   the host database never takes a slot, nor does a resident source (one
+ *   whose rows the tab holds already, `isSourceResident`): only cold loads count.
  * - Visible widgets start first; the others wait for them (or the deferred
  *   timeout) and for a free slot.
  * - A widget holds its source's slot until it reports its load complete or
@@ -53,6 +54,12 @@ export interface WidgetLoadRegistration {
 export interface DashboardLoadSchedulerOptions {
   /** The database of the dashboard view: open already, its widgets start at once. */
   hostSourceId: string;
+  /**
+   * Whether the tab holds the rows of a source in memory already, so its
+   * widgets load nothing cold: they start without a slot and hold none. Read at
+   * every plan; call `refreshResidency` when it changes. Default: no source is.
+   */
+  isSourceResident?: (sourceId: string) => boolean;
   constants?: DashboardLoadingConstants;
   /** The clock, in ms. */
   now?: () => number;
@@ -71,6 +78,8 @@ export interface DashboardLoadScheduler {
   setVisibility: (changes: Iterable<[id: string, visible: boolean]>) => void;
   /** The known row count of an open source (for the row budget). */
   setSourceRows: (sourceId: string, rows: number) => void;
+  /** Which sources are resident changed (`isSourceResident`): plan again. */
+  refreshResidency: () => void;
   report: (id: string, report: WidgetLoadReport) => void;
   /** Notified whenever a widget starts. */
   subscribe: (listener: () => void) => () => void;
@@ -95,8 +104,11 @@ function toPlanWidget({ id, sourceId, visible, state, firstData }: WidgetEntry):
   return { id, sourceId, visible: visible === true, state, firstData };
 }
 
+const noSourceResident = () => false;
+
 export function createDashboardLoadScheduler({
   hostSourceId,
+  isSourceResident = noSourceResident,
   constants = DASHBOARD_LOADING,
   now = Date.now,
 }: DashboardLoadSchedulerOptions): DashboardLoadScheduler {
@@ -119,9 +131,22 @@ export function createDashboardLoadScheduler({
     wakeAt = null;
   };
 
-  /** Records slot use in the load counters: a source holds a slot while one of its widgets is loading. */
-  const syncSlots = () => {
-    const busy = busyDashboardSources(Array.from(entries.values(), toPlanWidget), hostSourceId);
+  /** The resident sources among the widgets' (the host left out: it never takes a slot), sorted. */
+  const residentSources = () => {
+    const resident = new Set<string>();
+
+    entries.forEach(({ sourceId }) => {
+      if (sourceId !== hostSourceId && !resident.has(sourceId) && isSourceResident(sourceId)) resident.add(sourceId);
+    });
+    return Array.from(resident).sort();
+  };
+
+  /**
+   * Records slot use in the load counters: a source holds a slot while one of
+   * its widgets is loading, unless it is resident.
+   */
+  const syncSlots = (resident: string[] = residentSources()) => {
+    const busy = busyDashboardSources(Array.from(entries.values(), toPlanWidget), hostSourceId, resident);
 
     slotSources.forEach((sourceId) => {
       if (!busy.has(sourceId)) dashboardLoadStats.recordSourceLoadEnd(sourceId);
@@ -184,6 +209,7 @@ export function createDashboardLoadScheduler({
     }
 
     const at = now();
+    const resident = residentSources();
     const { start, nextWakeAt } = planDashboardLoads({
       now: at,
       constants,
@@ -191,6 +217,7 @@ export function createDashboardLoadScheduler({
       closed,
       visibleStartedAt,
       sourceRows: openSourceRows(),
+      residentSources: resident,
       widgets: plannedWidgets(),
     });
 
@@ -199,7 +226,7 @@ export function createDashboardLoadScheduler({
 
       if (entry) markStarted(entry, at);
     });
-    syncSlots();
+    syncSlots(resident);
     scheduleWake(nextWakeAt);
     if (start.length > 0) notify();
   }
@@ -267,6 +294,10 @@ export function createDashboardLoadScheduler({
     setSourceRows(sourceId, rows) {
       if (sourceRows.get(sourceId) === rows) return;
       sourceRows.set(sourceId, rows);
+      plan();
+    },
+
+    refreshResidency() {
       plan();
     },
 

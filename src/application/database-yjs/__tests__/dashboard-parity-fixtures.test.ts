@@ -34,13 +34,22 @@ interface LoadingScheduleFixture {
       now: number;
       set?: Record<string, unknown>[];
       closed?: boolean;
+      residentSources?: string[];
       expected: LoadingPlan;
       busySources: string[];
     }[];
   }[];
 }
 
-const LOADING_INPUT_KEYS = ['closed', 'hostSourceId', 'now', 'sourceRows', 'visibleStartedAt', 'widgets'];
+const LOADING_INPUT_KEYS = [
+  'closed',
+  'hostSourceId',
+  'now',
+  'residentSources',
+  'sourceRows',
+  'visibleStartedAt',
+  'widgets',
+];
 const LOADING_WIDGET_KEYS = ['firstData', 'id', 'sourceId', 'state', 'visible'];
 const LOADING_STATES = ['idle', 'loading', 'suspended', 'done'];
 
@@ -101,8 +110,15 @@ describe('dashboard-parity fixtures', () => {
   it('describes every loading-schedule case and step completely', () => {
     const fixture = loadParityFixture<LoadingScheduleFixture>('loading-schedule.json');
     const tokens = loadParityFixture<{ loading: Record<string, number> }>('tokens.json');
+    // Resident sources are listed sorted, each once.
+    const expectSourceList = (sources: unknown) => {
+      expect(Array.isArray(sources)).toBe(true);
+      (sources as unknown[]).forEach((source) => expect(typeof source).toBe('string'));
+      expect(sources).toEqual([...new Set(sources as string[])].sort());
+    };
     const expectInput = (input: Record<string, unknown>) => {
       expect(Object.keys(input).sort()).toEqual(LOADING_INPUT_KEYS);
+      expectSourceList(input.residentSources);
       const widgets = input.widgets as Record<string, unknown>[];
 
       expect(widgets.length).toBeGreaterThan(0);
@@ -125,6 +141,7 @@ describe('dashboard-parity fixtures', () => {
       'cases',
       'constants',
       'planDashboardLoads',
+      'residency',
       'rules',
       'sequences',
     ]);
@@ -140,9 +157,10 @@ describe('dashboard-parity fixtures', () => {
       expectInput(sequence.input);
       expect(sequence.steps.length).toBeGreaterThan(0);
       sequence.steps.forEach((step, index) => {
-        const allowed = ['busySources', 'closed', 'expected', 'now', 'set'];
+        const allowed = ['busySources', 'closed', 'expected', 'now', 'residentSources', 'set'];
 
         expect(Object.keys(step).filter((key) => !allowed.includes(key))).toEqual([]);
+        if (step.residentSources !== undefined) expectSourceList(step.residentSources);
         expectPlan(step.expected);
         expect(step.busySources).toEqual([...step.busySources].sort());
         expect(step.busySources.length).toBeLessThanOrEqual(fixture.constants.maxConcurrentSources);

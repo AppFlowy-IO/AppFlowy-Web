@@ -11,7 +11,11 @@ import {
   retainDatabaseRowDocSeedCache,
 } from '@/application/database-blob';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
-import { DatabaseExtraFiltersContext, DatabaseViewOverlayContext } from '@/application/database-yjs/context';
+import {
+  DatabaseExtraFiltersContext,
+  DatabaseViewOverlayContext,
+  type RowPassState,
+} from '@/application/database-yjs/context';
 import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
 import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
 import { combineFilters, hasEffectiveFilters } from '@/application/database-yjs/filter';
@@ -163,6 +167,35 @@ function createSeedsProgressStore(intervalMs: number) {
       publishedAt = 0;
       if (revision === 0) return;
       revision = 0;
+      subscribers.forEach((subscriber) => subscriber());
+    },
+  };
+}
+
+/**
+ * Whether the row walk committed its seeds (`seedsReady`) and finished
+ * (`blobPrefetchComplete`). Like the seeds progress, a subscription rather than
+ * context state: only the row loaders read the two, and a context change
+ * re-renders every cell of the view. On a dashboard that is every widget on the
+ * database at the same moment, when its walk ends.
+ */
+function createRowPassStore() {
+  let state: RowPassState = { blobPrefetchComplete: false, seedsReady: false };
+  const subscribers = new Set<() => void>();
+
+  return {
+    getState: () => state,
+    subscribe: (onStoreChange: () => void) => {
+      subscribers.add(onStoreChange);
+      return () => {
+        subscribers.delete(onStoreChange);
+      };
+    },
+    set: (change: Partial<RowPassState>) => {
+      const next = { ...state, ...change };
+
+      if (next.blobPrefetchComplete === state.blobPrefetchComplete && next.seedsReady === state.seedsReady) return;
+      state = next;
       subscribers.forEach((subscriber) => subscriber());
     },
   };
@@ -420,8 +453,7 @@ function Database(props: Database2Props) {
   const blobPrefetchGenerationRef = useRef(0);
   // Gate that ensureRow awaits. Resolves after batch preload (or immediately in readOnly).
   const seedsGateRef = useRef(createDeferredGate());
-  const [blobPrefetchComplete, setBlobPrefetchComplete] = useState(false);
-  const [seedsReady, setSeedsReady] = useState(false);
+  const [rowPass] = useState(createRowPassStore);
   const [seedsProgress] = useState(() => createSeedsProgressStore(SEEDS_PROGRESS_INTERVAL_MS));
   // The walk was skipped (read-only, or a dashboard host): the prefetch counts
   // as complete, although no seed was fetched. Read-only also opens the gate.
@@ -1268,8 +1300,7 @@ function Database(props: Database2Props) {
     if (readOnly) {
       walkSkippedRef.current = true;
       gate.resolve();
-      setBlobPrefetchComplete(true);
-      setSeedsReady(true);
+      rowPass.set({ blobPrefetchComplete: true, seedsReady: true });
       markRowPassComplete();
       return null;
     }
@@ -1282,8 +1313,7 @@ function Database(props: Database2Props) {
     if (activeViewRowDataNeed === 'none') {
       if (blobPrefetchPromiseRef.current) return blobPrefetchPromiseRef.current;
       walkSkippedRef.current = true;
-      setBlobPrefetchComplete(true);
-      setSeedsReady(true);
+      rowPass.set({ blobPrefetchComplete: true, seedsReady: true });
       markRowPassComplete();
       return null;
     }
@@ -1315,8 +1345,7 @@ function Database(props: Database2Props) {
 
     walkSkippedRef.current = false;
     if (forceFullSync || restartsAfterSkip) {
-      setBlobPrefetchComplete(false);
-      setSeedsReady(false);
+      rowPass.set({ blobPrefetchComplete: false, seedsReady: false });
       rowPassCompleteRef.current = false;
     }
 
@@ -1332,7 +1361,7 @@ function Database(props: Database2Props) {
 
         // Seeds are cached — filter/sort can now build ephemeral docs from them
         // without waiting for IndexedDB persist.
-        setSeedsReady(true);
+        rowPass.set({ seedsReady: true });
         seedEarlyOpenedRows();
         // Also kick off batch preload for visible rows (heavy IndexedDB path).
         runBatchPreload(prefetchGeneration);
@@ -1342,7 +1371,7 @@ function Database(props: Database2Props) {
       .then(() => {
         if (!isCurrentPrefetch()) return;
 
-        setBlobPrefetchComplete(true);
+        rowPass.set({ blobPrefetchComplete: true });
         markRowPassComplete();
       })
       .catch(() => {
@@ -1350,8 +1379,7 @@ function Database(props: Database2Props) {
 
         prefetchPromisesRef.current.delete(prefetchKey);
         gate.resolve(); // Unblock ensureRow on failure
-        setBlobPrefetchComplete(true);
-        setSeedsReady(true);
+        rowPass.set({ blobPrefetchComplete: true, seedsReady: true });
         // Rows still load one by one, but the pass itself did not complete.
         rowPassCompleteRef.current = true;
         emitLoadState('failed');
@@ -1367,6 +1395,7 @@ function Database(props: Database2Props) {
     getPriorityRowIds,
     activeViewRowDataNeed,
     runBatchPreload,
+    rowPass,
     seedsProgress,
     seedEarlyOpenedRows,
     markRowPassComplete,
@@ -1547,6 +1576,16 @@ function Database(props: Database2Props) {
         return finishEnsure(canonicalRowDoc);
       }
 
+      // A row whose local doc (seed or IndexedDB) has data shows it at once;
+      // its realtime sync then updates that doc in place. Waiting for each
+      // row's sync round trip lands the rows one by one, and each lands as a
+      // `rowMap` change, which re-renders every cell of the view.
+      const showLocalRowDoc = (rowDoc: YDoc) => {
+        if (!hasRowConditionData(rowDoc) || !isCurrentEnsure()) return;
+        registerRowDocWithHistory(rowId, rowDoc);
+        setRowMap((prev) => (prev[rowId] ? prev : { ...prev, [rowId]: rowDoc }));
+      };
+
       const promise = (async () => {
         const databaseId = getDatabaseId();
         const rowKey = getRowKey(databaseId, rowId);
@@ -1554,6 +1593,7 @@ function Database(props: Database2Props) {
         const seed = peekDatabaseRowDocSeed(rowKey);
 
         if (hasRowConditionData(cachedRowDoc)) {
+          showLocalRowDoc(cachedRowDoc);
           const syncedRowDoc = await registerRowSync(rowKey, true);
 
           return syncedRowDoc ?? cachedRowDoc;
@@ -1563,6 +1603,7 @@ function Database(props: Database2Props) {
           const rowDoc = await openRowDoc(rowKey, seed ?? undefined);
 
           if (!isCurrentEnsure()) return undefined;
+          showLocalRowDoc(rowDoc);
 
           // Bind sync for this row - only visible rows call ensureRow
           // Non-visible rows rely on blob diff cached data
@@ -1719,8 +1760,7 @@ function Database(props: Database2Props) {
     rowMapRef.current = initialRowMap;
     registerDatabaseHistoryRowDocs(doc, initialRowMap);
     setRowMap(initialRowMap);
-    setBlobPrefetchComplete(false);
-    setSeedsReady(false);
+    rowPass.set({ blobPrefetchComplete: false, seedsReady: false });
     seedsProgress.reset();
     walkSkippedRef.current = false;
     rowPassCompleteRef.current = false;
@@ -1743,7 +1783,7 @@ function Database(props: Database2Props) {
       lifecycleRowSyncRegistrations.clear();
       lifecycleGate.resolve();
     };
-  }, [databaseLifecycleIdentity, doc, props.initialRowMap, publishCellLocalMutationChange, seedsProgress]);
+  }, [databaseLifecycleIdentity, doc, props.initialRowMap, publishCellLocalMutationChange, rowPass, seedsProgress]);
 
   // Trigger blob prefetch when database opens
   useEffect(() => {
@@ -1858,8 +1898,8 @@ function Database(props: Database2Props) {
       markCellLocalMutation,
       getCellLocalMutationRevision,
       subscribeToCellLocalMutations,
-      blobPrefetchComplete,
-      seedsReady,
+      getRowPassState: rowPass.getState,
+      subscribeToRowPassState: rowPass.subscribe,
       getSeedsRevision: seedsProgress.getRevision,
       subscribeToSeedsProgress: seedsProgress.subscribe,
       paddingStart: props.paddingStart,
@@ -1914,8 +1954,7 @@ function Database(props: Database2Props) {
       markCellLocalMutation,
       getCellLocalMutationRevision,
       subscribeToCellLocalMutations,
-      blobPrefetchComplete,
-      seedsReady,
+      rowPass,
       seedsProgress,
       props.paddingStart,
       props.paddingEnd,
