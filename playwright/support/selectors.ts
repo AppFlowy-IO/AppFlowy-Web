@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test';
+import { Locator, Page } from '@playwright/test';
 
 /**
  * Centralized selectors for Playwright E2E tests
@@ -259,6 +259,8 @@ export const ChatSelectors = {
   sendButton: (page: Page) => page.getByTestId('chat-input-send'),
 };
 
+export const TEXT_CELL_EDITOR_SELECTOR = 'textarea:visible, [data-testid="rich-text-cell-editor"]:visible';
+
 /**
  * Database Grid selectors
  */
@@ -279,6 +281,13 @@ export const DatabaseGridSelectors = {
     ),
   firstCell: (page: Page) => page.locator('[data-testid^="grid-cell-"]').first(),
   newRowButton: (page: Page) => page.getByTestId('grid-new-row'),
+  /**
+   * The active text cell editor: the rich-text contenteditable for Text
+   * cells, including the primary (Name) cell; a textarea for URL cells and
+   * for hosts that edit as plain text (row template rows, the calendar event
+   * popover).
+   */
+  textCellEditor: (scope: Page | Locator) => scope.locator(TEXT_CELL_EDITOR_SELECTOR).first(),
 };
 
 /**

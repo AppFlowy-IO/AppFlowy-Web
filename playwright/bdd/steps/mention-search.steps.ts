@@ -736,7 +736,7 @@ async function focusEditor(page: Page): Promise<void> {
       await page.waitForTimeout(500);
     }
 
-    const editor = dialog.locator('[data-slate-editor="true"]').first();
+    const editor = dialog.locator('[data-testid="editor-content"]').first();
     const placeholder = dialog.getByText('Enter a / to insert a block, or start typing').last();
 
     await expect(editor).toBeVisible({ timeout: 15000 });

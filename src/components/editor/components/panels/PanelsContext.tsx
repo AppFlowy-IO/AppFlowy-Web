@@ -55,7 +55,22 @@ function getPanelPosition(editor: ReactEditor, selection: BaseRange) {
   }
 }
 
-export const PanelProvider = ({ children, editor }: { children: React.ReactNode; editor: ReactEditor }) => {
+export const PanelProvider = ({
+  children,
+  editor,
+  triggers,
+  triggerAtWordStart = false,
+}: {
+  children: React.ReactNode;
+  editor: ReactEditor;
+  /** Panels typing may open; defaults to all. A host that renders only some panels lists those. */
+  triggers?: PanelType[];
+  /**
+   * Open `@`/`+` panels only at the start of a word, so text like an email
+   * address or "C++" stays text. `[[` always opens.
+   */
+  triggerAtWordStart?: boolean;
+}) => {
   const [activePanel, setActivePanel] = useState<PanelType | undefined>(undefined);
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | undefined>(undefined);
   const startSelection = useRef<BaseRange | null>(null);
@@ -64,6 +79,11 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
   const openRef = useRef(false);
   const activePanelRef = useRef<PanelType | undefined>(undefined);
   const pasteAsPayloadRef = useRef<PasteAsMenuPayload | undefined>(undefined);
+  const triggersKey = triggers?.join(',');
+  const isTriggerEnabled = useCallback(
+    (panel: PanelType) => !triggersKey || triggersKey.split(',').includes(panel),
+    [triggersKey]
+  );
 
   useEffect(() => {
     openRef.current = activePanel !== undefined;
@@ -138,6 +158,17 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
       const { selection } = editor;
 
       if (!selection) return;
+      if (!isTriggerEnabled(panelType)) return;
+      if (triggerAtWordStart && triggerLength === 1) {
+        // The character before the trigger, which may sit in the previous
+        // text run (e.g. right after bold text).
+        const triggerStart = Editor.before(editor, selection.anchor, { unit: 'character' });
+        const previous = triggerStart && Editor.before(editor, triggerStart, { unit: 'character' });
+        const before = previous ? editor.string({ anchor: previous, focus: triggerStart }) : '';
+
+        if (before && !/\s/.test(before)) return;
+      }
+
       if (panelType === PanelType.Slash && isSlashPanelBlocked(selection)) return;
 
       const position = getPanelPosition(editor, selection);
@@ -154,7 +185,7 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
       };
       endSelection.current = editor.selection;
     },
-    [editor, isSlashPanelBlocked, openPanel]
+    [editor, isSlashPanelBlocked, isTriggerEnabled, openPanel, triggerAtWordStart]
   );
 
   useEffect(() => {

@@ -9,6 +9,8 @@ jest.mock('@/components/main/app.hooks', () => ({
   useCurrentUserOptional: () => ({ uid: '1', uuid: 'u-1' }),
 }));
 
+jest.mock('@/application/database-yjs/fields/text/rich-text-notice', () => ({ notifyRichTextNewer: jest.fn() }));
+
 jest.mock('@/application/database-yjs/context', () => ({
   useDatabase: jest.fn(),
   useDatabaseContext: jest.fn(),
@@ -20,6 +22,7 @@ import { useDatabase, useDatabaseContext, useRowMap, useSharedRoot } from '@/app
 import { FieldType, FieldVisibility } from '@/application/database-yjs/database.type';
 import { useUpdateRelationCell, useUpdateRelationTypeOption } from '@/application/database-yjs/dispatch/relation';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
+import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
 import { createRelationField, setRelationTypeOptionValues } from '@/application/database-yjs/fields/relation/utils';
 import {
   YDatabase,
@@ -151,17 +154,15 @@ function setup({
 
   const hydrateTarget = () => {
     targetDoc.transact(() => {
-      targetDoc
-        .getMap(YjsEditorKey.data_section)
-        .set(
-          YjsEditorKey.database,
-          buildDatabase({
-            databaseId: TARGET_DATABASE_ID,
-            viewId: TARGET_VIEW_ID,
-            fields: targetFields,
-            withFieldSettings,
-          })
-        );
+      targetDoc.getMap(YjsEditorKey.data_section).set(
+        YjsEditorKey.database,
+        buildDatabase({
+          databaseId: TARGET_DATABASE_ID,
+          viewId: TARGET_VIEW_ID,
+          fields: targetFields,
+          withFieldSettings,
+        })
+      );
     });
   };
 
@@ -233,15 +234,48 @@ function readRelationCell(rowDoc: YDoc, fieldId: string): string[] {
   return data instanceof Y.Array ? data.toArray().map(String) : [];
 }
 
+function protectCell(rowDoc: YDoc, fieldId: string) {
+  const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>;
+  const cell = (row.get(YjsDatabaseKey.cells) as Y.Map<Y.Map<unknown>>).get(fieldId)!;
+
+  cell.set(YjsDatabaseKey.field_type, FieldType.RichText);
+  cell.set(YjsDatabaseKey.data, 'Future text');
+  cell.set(YjsDatabaseKey.rich_text, JSON.stringify({ min_v: 2, text: 'Future text', delta: [] }));
+}
+
 function readTargetOrders(targetDoc: YDoc) {
   const database = targetDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
   const view = database.get(YjsDatabaseKey.views).get(TARGET_VIEW_ID);
 
-  return view.get(YjsDatabaseKey.field_orders).toArray().map((entry) => entry.id);
+  return view
+    .get(YjsDatabaseKey.field_orders)
+    .toArray()
+    .map((entry) => entry.id);
 }
 
 describe('enabling a two-way relation', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it('preserves protected cells and their attribution when changing the related database', async () => {
+    setup();
+    const protectedDoc = new Y.Doc() as YDoc;
+    const ordinaryDoc = new Y.Doc() as YDoc;
+
+    seedRelationRowDoc(protectedDoc, 'protected', RELATION_FIELD_ID, []);
+    seedRelationRowDoc(ordinaryDoc, 'ordinary', RELATION_FIELD_ID, ['old-target']);
+    protectCell(protectedDoc, RELATION_FIELD_ID);
+    const original = protectedDoc.toJSON();
+
+    (useRowMap as jest.Mock).mockReturnValue({ protected: protectedDoc, ordinary: ordinaryDoc });
+    const { result } = renderHook(() => useUpdateRelationTypeOption(RELATION_FIELD_ID));
+
+    await act(async () => {
+      await result.current({ database_id: 'another-database' });
+    });
+    expect(protectedDoc.toJSON()).toEqual(original);
+    expect(readRelationCell(ordinaryDoc, RELATION_FIELD_ID)).toEqual([]);
+    expect(notifyRichTextNewer).not.toHaveBeenCalled();
+  });
 
   it('adds the reciprocal property to the related database', async () => {
     const { relationField, targetDoc } = setup();
@@ -299,6 +333,106 @@ describe('enabling a two-way relation', () => {
 
 describe('two-way relation: cell edits', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it.each(['replace', 'remove', 'missing-insertion'] as const)(
+    'handles an unavailable relation participant during %s',
+    async (operation) => {
+      jest.useFakeTimers();
+      try {
+        const { relationField, targetDoc, rowDocs } = setup();
+        const reciprocalId = 'reciprocal';
+        setRelationTypeOptionValues(ensureTypeOption(relationField), {
+          database_id: TARGET_DATABASE_ID,
+          is_two_way: true,
+          reciprocal_field_id: reciprocalId,
+          source_limit: 1,
+          target_limit: 0,
+        });
+        const targetDatabase = targetDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+        targetDatabase.get(YjsDatabaseKey.fields).set(
+          reciprocalId,
+          createRelationField(reciprocalId, {
+            name: 'Backlinks',
+            database_id: SOURCE_DATABASE_ID,
+            is_two_way: true,
+            reciprocal_field_id: RELATION_FIELD_ID,
+          })
+        );
+        const source = new Y.Doc() as YDoc;
+        const target = new Y.Doc() as YDoc;
+        seedRelationRowDoc(source, 'source', RELATION_FIELD_ID, ['old']);
+        seedRelationRowDoc(target, 'new', reciprocalId, []);
+        rowDocs.set(`${SOURCE_DATABASE_ID}_rows_source`, source);
+        rowDocs.set(`${TARGET_DATABASE_ID}_rows_new`, target);
+        const { result } = renderHook(() => useUpdateRelationCell('source', RELATION_FIELD_ID));
+        await act(async () => {
+          const pending = result.current(
+            operation === 'remove'
+              ? { removedRowIds: ['old'] }
+              : { insertedRowIds: [operation === 'replace' ? 'new' : 'missing'] }
+          );
+          await jest.advanceTimersByTimeAsync(3000);
+          await pending;
+        });
+        expect(readRelationCell(source, RELATION_FIELD_ID)).toEqual(
+          operation === 'replace' ? ['new'] : operation === 'remove' ? [] : ['old']
+        );
+        expect(readRelationCell(target, reciprocalId)).toEqual(operation === 'replace' ? ['source'] : []);
+      } finally {
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  it.each(['insert', 'remove', 'replace-one'] as const)(
+    'preflights protected participants before a two-way %s',
+    async (operation) => {
+      const { relationField, targetDoc, rowDocs } = setup();
+      const reciprocalId = 'reciprocal';
+
+      setRelationTypeOptionValues(ensureTypeOption(relationField), {
+        database_id: TARGET_DATABASE_ID,
+        is_two_way: true,
+        reciprocal_field_id: reciprocalId,
+        source_limit: 0,
+        target_limit: 0,
+      });
+      const targetDatabase = targetDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+
+      targetDatabase.get(YjsDatabaseKey.fields).set(
+        reciprocalId,
+        createRelationField(reciprocalId, {
+          name: 'Backlinks',
+          database_id: SOURCE_DATABASE_ID,
+          is_two_way: true,
+          reciprocal_field_id: RELATION_FIELD_ID,
+          source_limit: operation === 'replace-one' ? 1 : 0,
+        })
+      );
+      const source = new Y.Doc() as YDoc;
+      const target = new Y.Doc() as YDoc;
+      const displaced = new Y.Doc() as YDoc;
+
+      seedRelationRowDoc(source, 'source', RELATION_FIELD_ID, operation === 'remove' ? ['target'] : []);
+      seedRelationRowDoc(target, 'target', reciprocalId, operation === 'replace-one' ? ['displaced'] : []);
+      seedRelationRowDoc(displaced, 'displaced', RELATION_FIELD_ID, ['target']);
+      protectCell(
+        operation === 'replace-one' ? displaced : target,
+        operation === 'replace-one' ? RELATION_FIELD_ID : reciprocalId
+      );
+      rowDocs.set(`${SOURCE_DATABASE_ID}_rows_source`, source);
+      rowDocs.set(`${TARGET_DATABASE_ID}_rows_target`, target);
+      rowDocs.set(`${SOURCE_DATABASE_ID}_rows_displaced`, displaced);
+      const originals = [source, target, displaced].map((doc) => doc.toJSON());
+      const { result } = renderHook(() => useUpdateRelationCell('source', RELATION_FIELD_ID));
+
+      await act(async () => {
+        await result.current(operation === 'remove' ? { removedRowIds: ['target'] } : { insertedRowIds: ['target'] });
+      });
+      expect([source, target, displaced].map((doc) => doc.toJSON())).toEqual(originals);
+      expect(notifyRichTextNewer).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it('hydrates a shell related database through the sync binding before giving up', async () => {
     // A cache-only shell has no HTTP fetch in flight; binding sync is the only channel that can

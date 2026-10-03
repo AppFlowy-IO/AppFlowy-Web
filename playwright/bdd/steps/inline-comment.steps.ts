@@ -43,11 +43,11 @@ const EMPTY_STATE_TEXT: Record<string, string> = {
   All: 'No comments',
 };
 
-const documentEditor = (page: Page) => activePage(page).locator('[data-slate-editor="true"]').first();
+const documentEditor = (page: Page) => activePage(page).locator('[data-testid="editor-content"]').first();
 
 const pageModal = (page: Page) => activePage(page).locator('[role="dialog"]').last();
 
-const modalEditor = (page: Page) => pageModal(page).locator('[data-slate-editor="true"]').first();
+const modalEditor = (page: Page) => pageModal(page).locator('[data-testid="editor-content"]').first();
 
 /**
  * The page behind an open modal keeps its own selection toolbar mounted, so the

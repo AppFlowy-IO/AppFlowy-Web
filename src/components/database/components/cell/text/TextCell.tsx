@@ -1,7 +1,16 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
+import { useTranslation } from 'react-i18next';
 
 import { FieldType } from '@/application/database-yjs';
-import { Cell, CellProps } from '@/application/database-yjs/cell.type';
+import { Cell, CellProps, TextCell as TextCellType } from '@/application/database-yjs/cell.type';
+import { useDatabaseContextOptional } from '@/application/database-yjs/context';
+import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
+import { useFieldSelector } from '@/application/database-yjs/selector';
+import { YjsDatabaseKey } from '@/application/types';
+import { usePlainTextCellEditing } from '@/components/database/components/cell/text/PlainTextCellEditing';
+import { RichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
+import RichTextCellContent from '@/components/database/components/cell/text/rich-text/RichTextCellContent';
 import TextCellEditing from '@/components/database/components/cell/text/TextCellEditing';
 import UrlActions from '@/components/database/components/cell/text/UrlActions';
 import { cn } from '@/lib/utils';
@@ -20,7 +29,22 @@ export function TextCell({
   isHovering,
 }: CellProps<Cell>) {
   const ref = useRef<HTMLDivElement>(null);
-  const cellType = cell?.fieldType || FieldType.RichText;
+  const { field } = useFieldSelector(fieldId);
+  const templateEditingRowId = useDatabaseContextOptional()?.templateEditingRowId;
+  // The field decides, not the cell: an empty URL cell has no cell yet.
+  const fieldType = field ? (Number(field.get(YjsDatabaseKey.type)) as FieldType) : undefined;
+  const cellType = fieldType ?? cell?.fieldType ?? FieldType.RichText;
+  // Text fields, including the primary (title) field, are rich; URL cells
+  // share this component but stay plain. So does a row template's source
+  // row: templates store plain values, so formatting typed there would be
+  // dropped when the template is applied.
+  const isRichText = cellType === FieldType.RichText && templateEditingRowId !== rowId;
+  const richText = isRichText ? (cell as TextCellType | undefined)?.richText : undefined;
+  // Formatting saved by a newer version of AppFlowy is shown, never edited:
+  // a request to edit shows the update notice instead (rich text spec R53).
+  const requiresNewerClient = cellType === FieldType.RichText && Boolean((cell as TextCellType | undefined)?.richTextReadOnly);
+  const editsAsPlainText = usePlainTextCellEditing();
+  const { t } = useTranslation();
 
   const middleware = useCallback((data: unknown) => {
     if (typeof data !== 'string' && typeof data !== 'number') {
@@ -49,6 +73,29 @@ export function TextCell({
     }
   }, []);
 
+  const exitEditing = useCallback(() => {
+    setEditing?.(false);
+  }, [setEditing]);
+
+  const blocked = Boolean(editing && requiresNewerClient);
+
+  useEffect(() => {
+    if (!blocked) return;
+    notifyRichTextNewer();
+    exitEditing();
+  }, [blocked, exitEditing]);
+
+  const plainTextEditor = editing ? (
+    <TextCellEditing
+      ref={focusToEnd}
+      defaultValue={value}
+      placeholder={placeholder}
+      fieldId={fieldId}
+      rowId={rowId}
+      onExit={exitEditing}
+    />
+  ) : null;
+
   return (
     <>
       <div
@@ -56,7 +103,8 @@ export function TextCell({
         style={style}
         onClick={(e) => {
           if (readOnly) {
-            if (value && isValidUrl(value)) {
+            // Formatted text opens its own links and chips.
+            if (!richText && value && isValidUrl(value)) {
               e.stopPropagation();
               void openUrl(value, '_blank');
             }
@@ -67,23 +115,47 @@ export function TextCell({
         className={cn(
           `text-cell w-full text-sm ${readOnly ? 'select-auto' : 'cursor-pointer'}`,
           !value && placeholder ? 'text-text-tertiary' : '',
-          cellType === FieldType.URL ? '!text-text-action underline hover:text-text-action-hover' : '',
+          // A link only once there is one: the placeholder stays a hint.
+          cellType === FieldType.URL && value ? '!text-text-action underline hover:text-text-action-hover' : '',
           wrap ? ' whitespace-pre-wrap break-words' : 'whitespace-nowrap'
         )}
       >
-        {!editing ? (
-          <>{value || placeholder || ''}</>
+        {!editing || blocked ? (
+          <>
+            {richText ? (
+              <RichTextCellContent rowId={rowId} delta={richText} text={value} wrap={wrap} />
+            ) : (
+              <>{value || placeholder || ''}</>
+            )}
+            {requiresNewerClient && !readOnly && isHovering ? (
+              <span
+                data-testid={'rich-text-read-only-badge'}
+                title={t('grid.row.richTextRequiresNewerVersion')}
+                className={'absolute right-1 top-1 rounded bg-fill-content-hover px-1 text-xs text-text-tertiary'}
+              >
+                {t('grid.row.richTextReadOnlyBadge')}
+              </span>
+            ) : null}
+          </>
+        ) : isRichText && !editsAsPlainText ? (
+          // The cell still edits, as plain text, when the rich editor cannot
+          // be loaded (see rich-text/load.ts).
+          <ErrorBoundary fallback={plainTextEditor}>
+            <Suspense fallback={value}>
+              <RichTextCellEditor
+                value={value}
+                richText={richText}
+                placeholder={placeholder}
+                // The property's name, or the hint where there is none to show.
+                ariaLabel={(field?.get(YjsDatabaseKey.name) as string | undefined) || placeholder}
+                fieldId={fieldId}
+                rowId={rowId}
+                onExit={exitEditing}
+              />
+            </Suspense>
+          </ErrorBoundary>
         ) : (
-          <TextCellEditing
-            ref={focusToEnd}
-            defaultValue={value}
-            placeholder={placeholder}
-            fieldId={fieldId}
-            rowId={rowId}
-            onExit={() => {
-              setEditing?.(false);
-            }}
-          />
+          plainTextEditor
         )}
         {showUrlActions && (
           <div className={'absolute right-1 top-1'}>

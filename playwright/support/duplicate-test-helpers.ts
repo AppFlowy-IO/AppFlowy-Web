@@ -10,6 +10,7 @@ import {
   SlashCommandSelectors,
   ViewActionSelectors,
   viewIdFromPageTestId,
+  TEXT_CELL_EDITOR_SELECTOR,
 } from './selectors';
 import { createDatabaseView, waitForGridReady } from './database-ui-helpers';
 import { createDocumentPageAndNavigate, currentViewIdFromUrl, ensurePageExpandedByViewId } from './page-utils';
@@ -713,7 +714,7 @@ export async function editFirstGridCell(page: Page, gridBlock: Locator, text: st
   // GridVirtualColumn.tsx). Resolve it directly via the DOM rather than an
   // ancestor xpath. Playwright's `ancestor::` returns the outermost match
   // even with `.first()`, which is the document root, not the wrapper.
-  const editingTextarea = firstCell.locator('textarea');
+  const editingTextarea = firstCell.locator(TEXT_CELL_EDITOR_SELECTOR);
 
   let entered = false;
 
@@ -762,7 +763,7 @@ export async function editFirstGridCell(page: Page, gridBlock: Locator, text: st
 
   await editingTextarea.focus();
   await editingTextarea.fill(text);
-  await expect(editingTextarea).toHaveValue(text, { timeout: 5000 });
+  await expect(editingTextarea).toHaveText(text, { timeout: 5000 });
   await editingTextarea.press('Enter');
   // After Enter, the textarea unmounts and the cell re-renders with the new
   // value. Wait for the textarea to be gone so the next innerText() reads the

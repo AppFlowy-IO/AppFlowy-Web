@@ -7,7 +7,12 @@ import { acknowledgeDatabaseRestore } from '../../support/database-history-helpe
 import { signInAndCreateDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
 import { editFirstGridCell, firstGridCellText } from '../../support/duplicate-test-helpers';
 import { getVisibleDataRowIds } from '../../support/row-detail-helpers';
-import { DatabaseGridSelectors, HeaderSelectors, RevertedDialogSelectors } from '../../support/selectors';
+import {
+  DatabaseGridSelectors,
+  HeaderSelectors,
+  RevertedDialogSelectors,
+  TEXT_CELL_EDITOR_SELECTOR,
+} from '../../support/selectors';
 import { generateRandomEmail, TestConfig } from '../../support/test-config';
 
 import type { DatabaseRestoreJob } from '../../../src/application/database-history.type';
@@ -174,7 +179,7 @@ test.describe('Database version history restore notices', () => {
     const firstCell = grid.locator('[data-testid^="grid-cell-"]').first();
 
     await firstCell.click();
-    const editor = firstCell.locator('textarea');
+    const editor = firstCell.locator(TEXT_CELL_EDITOR_SELECTOR);
 
     await expect(editor).toBeVisible();
     await editor.fill('An edit in progress when the peer restores');

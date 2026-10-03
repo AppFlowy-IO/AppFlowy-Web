@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import type { FormulaType, FormulaValue } from '@/application/database-yjs/fields/formula/values';
+import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
 import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
 import { RollupVisualizationOption } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { DateFormat, FieldId, RowId, TimeFormat } from '@/application/types';
@@ -17,6 +18,13 @@ export interface Cell {
 export interface TextCell extends Cell {
   fieldType: FieldType.RichText;
   data: string;
+  /** Formatting for `data`, present only while it still describes `data`. */
+  richText?: RichTextDelta;
+  /**
+   * The formatting was saved by a newer version of AppFlowy that this one
+   * may not change: the cell is shown, never edited.
+   */
+  richTextReadOnly?: boolean;
 }
 
 export interface AICell extends Cell {

@@ -9,6 +9,7 @@ import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
 import { Board } from '@/components/database/board';
 import { Chart } from '@/components/database/chart';
+import { usePreloadRichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
 import {
   DatabaseConditionsActionsContext,
   DatabaseConditionsContext,
@@ -97,6 +98,10 @@ function DatabaseViews({
   const { childViews, viewIds } = useDatabaseViewsSelector(databasePageId, visibleViewIds);
   const { isDocumentBlock, variant, dataSource, readOnly } = useDatabaseContext();
   const persistViewOrder = dataSource?.type !== 'history';
+
+  // The first Text cell edit (or a new card's name) must not wait for it.
+  usePreloadRichTextCellEditor(!readOnly);
+
   const database = useDatabase();
   const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
   const views = database?.get(YjsDatabaseKey.views);

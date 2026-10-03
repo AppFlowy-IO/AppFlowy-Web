@@ -2059,7 +2059,11 @@
       "noContent": "No content",
       "reorderRowDescription": "reorder row",
       "createRowAboveDescription": "create a row above",
-      "createRowBelowDescription": "insert a row below"
+      "createRowBelowDescription": "insert a row below",
+      "textTooLong": "This text is too long to save",
+      "textSaveFailed": "Your changes couldn't be saved. Please try again.",
+      "richTextRequiresNewerVersion": "This text was formatted in a newer version of AppFlowy. Update AppFlowy (refresh this page) to edit it.",
+      "richTextReadOnlyBadge": "Read-only"
     },
     "rowTemplate": {
       "templatesFor": "Templates for {{databaseName}}",

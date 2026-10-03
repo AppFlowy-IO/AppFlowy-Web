@@ -170,7 +170,7 @@ When('the original tab renames a never-mounted row to match that search', async 
   await expect(RowDetailSelectors.titleInput(page)).toBeVisible();
   await RowDetailSelectors.titleInput(page).fill(LIVE_MATCH_TITLE);
   await RowDetailSelectors.titleInput(page).press('Tab');
-  await expect(RowDetailSelectors.titleInput(page)).toHaveValue(LIVE_MATCH_TITLE);
+  await expect(RowDetailSelectors.titleInput(page)).toHaveText(LIVE_MATCH_TITLE);
   await expect.poll(() => readPrimaryTitle(page, matchRowId), { message: 'The title edit must reach the source row collab' }).toBe(LIVE_MATCH_TITLE);
   await flushLocalEdits(page);
 });

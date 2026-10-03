@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 
 import { FieldType } from '@/application/database-yjs/database.type';
+import { shouldSkipBulkRewrite } from '@/application/database-yjs/fields/text/rich-text-guard';
 import { YDatabaseCell, YDatabaseField, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 export type CellFieldTypeContext = {
@@ -48,6 +49,36 @@ export function getCellFieldTypeContext(cell: YDatabaseCell, field?: YDatabaseFi
   return { storedType, targetType };
 }
 
+/**
+ * A stored type id (rich text spec section 0): an integer-valued number, or a
+ * string of ASCII digits with an optional leading `-` (older Web clients
+ * stored strings). Anything else (absent, null, a boolean, "", "abc", 1.5)
+ * has none.
+ */
+function storedTypeId(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isInteger(value) ? value : undefined;
+  if (typeof value === 'bigint') return Number(value);
+  if (typeof value === 'string' && /^-?[0-9]+$/.test(value)) return Number(value);
+  return undefined;
+}
+
+/**
+ * Whether a cell was written by a Text field, so that its `rich_text` can
+ * describe its text: its `field_type` has no type id or is Text, or its
+ * legacy `source_field_type` is Text. Unlike {@link getStoredCellFieldType}
+ * it never falls back to the field's current type. Every rich text reader
+ * and guard uses exactly this definition (rich text spec section 0).
+ */
+export function isTextWrittenCell(cell: Pick<YDatabaseCell, 'get'>): boolean {
+  const fieldType = storedTypeId(cell.get(YjsDatabaseKey.field_type));
+
+  return (
+    fieldType === undefined ||
+    fieldType === FieldType.RichText ||
+    storedTypeId(cell.get(YjsDatabaseKey.source_field_type)) === FieldType.RichText
+  );
+}
+
 /** Mark newly written data as native to the current field type. */
 export function setCellStoredType(cell: YDatabaseCell, fieldType: FieldType): void {
   cell.set(YjsDatabaseKey.field_type, fieldType);
@@ -63,6 +94,11 @@ export function normalizeLegacyCellFieldType(cell: YDatabaseCell): boolean {
   const sourceType = parseFieldType(cell.get(YjsDatabaseKey.source_field_type));
 
   if (sourceType !== undefined) {
+    // Moving the marker into field_type must not turn formatting from a
+    // newer client into a cell of another type, which every reader would
+    // then ignore for good (rich text spec R49b).
+    if (sourceType !== FieldType.RichText && shouldSkipBulkRewrite(cell)) return false;
+
     cell.set(YjsDatabaseKey.field_type, sourceType);
     cell.delete(YjsDatabaseKey.source_field_type);
     return true;

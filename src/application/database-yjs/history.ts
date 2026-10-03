@@ -3,6 +3,8 @@ import * as Y from 'yjs';
 
 import { useDatabaseContext, useRow } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
+import { replayChangesNewerCell } from '@/application/database-yjs/fields/text/rich-text-guard';
+import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
 import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { assertDocExists } from '@/application/slate-yjs/utils/yjs';
 import { FieldId, RowId, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
@@ -134,6 +136,8 @@ class DatabaseHistorySourceController {
   }
 
   undo() {
+    if (this.refuseReplayOfLatest('undo')) return null;
+
     const result = this.undoManager.undo();
 
     this.notify();
@@ -141,10 +145,32 @@ class DatabaseHistorySourceController {
   }
 
   redo() {
+    if (this.refuseReplayOfLatest('redo')) return null;
+
     const result = this.undoManager.redo();
 
     this.notify();
     return result;
+  }
+
+  /**
+   * Whether replaying the stack item would change a cell whose formatting
+   * needs a newer client (rich text spec R49c).
+   */
+  wouldChangeNewerCell(stackItem: StackItem) {
+    return this.kind === 'row' && replayChangesNewerCell(this.doc, stackItem);
+  }
+
+  /** Drops the next item of a stack when it may not be replayed, and tells the user. */
+  private refuseReplayOfLatest(type: 'undo' | 'redo') {
+    const stack = type === 'undo' ? this.undoManager.undoStack : this.undoManager.redoStack;
+    const stackItem = stack[stack.length - 1];
+
+    if (!stackItem || !this.wouldChangeNewerCell(stackItem)) return false;
+
+    this.discardStackItem(type, stackItem);
+    notifyRichTextNewer();
+    return true;
   }
 
   replayStackItem(type: 'undo' | 'redo', stackItem: StackItem) {
@@ -418,6 +444,15 @@ export class DatabaseHistoryManager {
       const group = sourceStack.pop();
 
       if (!group) continue;
+
+      // A group that would change a cell needing a newer client is dropped
+      // whole, so the next undo continues with older history (R49c).
+      if (group.entries.some((entry) => entry.source.wouldChangeNewerCell(entry.stackItem))) {
+        group.entries.forEach((entry) => entry.source.discardStackItem(type, entry.stackItem));
+        notifyRichTextNewer();
+        this.notify();
+        return null;
+      }
 
       this.replaying = type;
       this.replayedEntries = [];

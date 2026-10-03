@@ -4,6 +4,7 @@ import { useReadOnly } from '@/application/database-yjs';
 import { AppendBreadcrumb } from '@/application/types';
 import EditorSkeleton from '@/components/_shared/skeleton/EditorSkeleton';
 import TableSkeleton from '@/components/_shared/skeleton/TableSkeleton';
+import { usePreloadRichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
 import { DatabaseRowProperties, RowSubDocument } from '@/components/database/components/database-row';
 import { RowCommentList } from '@/components/database/components/database-row/comment';
 import DatabaseRowHeader from '@/components/database/components/header/DatabaseRowHeader';
@@ -18,6 +19,8 @@ export function DatabaseRow({ appendBreadcrumb, rowId }: { rowId: string; append
   const readOnly = useReadOnly();
 
   useDatabaseRowHistoryHotkeys(rowId, { enabled: !readOnly });
+  // The title and Text properties edit with it.
+  usePreloadRichTextCellEditor(!readOnly);
 
   return (
     <div className={'flex w-full justify-center'}>

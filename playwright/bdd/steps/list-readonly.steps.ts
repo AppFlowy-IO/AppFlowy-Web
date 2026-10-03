@@ -92,7 +92,10 @@ Then('the List row detail remains open and readonly', async ({ page }) => {
   const editor = modal.getByTestId('editor-content').first();
 
   await expect(modal).toBeVisible();
-  await expect.poll(() => title.evaluate((element) => (element as HTMLTextAreaElement).readOnly)).toBe(true);
+  // A read-only title renders as text: no editable element.
+  await expect(title).toBeVisible();
+  await expect(title).not.toHaveAttribute('contenteditable', 'true');
+  await expect(title.locator('[contenteditable="true"], textarea, input')).toHaveCount(0);
   await expect(modal.getByTestId('row-detail-open-full-page')).toBeVisible();
   await expect(modal.getByTestId('row-detail-more-actions')).toHaveCount(0);
   await expect(modal.getByTestId('add-icon-button')).toHaveCount(0);
