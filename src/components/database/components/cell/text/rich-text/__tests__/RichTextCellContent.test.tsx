@@ -24,7 +24,11 @@ jest.mock('@/components/editor/components/leaf/Leaf', () => ({
   Leaf: ({ attributes, children, leaf, text }: RenderLeafProps) => {
     if (text.text.includes('boom')) throw new Error('cannot render');
     return (
-      <span {...attributes} className={leaf.formula ? 'formula-inline' : undefined}>
+      <span
+        {...attributes}
+        className={leaf.formula ? 'formula-inline' : undefined}
+        data-mention={leaf.mention ? true : undefined}
+      >
         {children}
       </span>
     );
@@ -111,6 +115,22 @@ describe('RichTextCellContent', () => {
     expect(listeners()).toBe(1);
     expect(container.querySelector('.formula-inline')).not.toBeNull();
     expect(container.querySelector('[data-rich-text-cell-line]')?.className).toContain('whitespace-pre-wrap');
+  });
+
+  it.each(['mention', 'formula'])('normalizes stored %s runs before rendering their leaves', async (atom) => {
+    const attributes =
+      atom === 'mention'
+        ? { mention: { type: 'person', person_id: 'ada', person_name: 'Ada' } }
+        : { formula: 'x^2' };
+    const { container } = render(
+      <RichTextCellContent rowId='row-1' delta={[{ insert: '$$ literal @👋', attributes }]} text='Fallback' />
+    );
+
+    await waitFor(() => expect(container.querySelector('[data-slate-editor]')).not.toBeNull());
+    const atoms = container.querySelectorAll(atom === 'mention' ? '[data-mention]' : '.formula-inline');
+
+    expect(Array.from(atoms, (node) => node.textContent)).toEqual(['$', '$', '@']);
+    expect(container.querySelector('[data-slate-editor]')?.textContent).toBe('$$ literal @👋');
   });
 
   it("shows the cell's plain text when its content cannot be rendered", async () => {

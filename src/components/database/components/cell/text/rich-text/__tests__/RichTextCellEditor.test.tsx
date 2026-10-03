@@ -168,6 +168,79 @@ describe('RichTextCellEditor', () => {
   });
 
   describe('edit session', () => {
+    it('retries the first draft after two overlapping title saves fail', async () => {
+      let finishFirst!: (status: undefined) => void;
+      let finishSecond!: (status: undefined) => void;
+
+      mockUpdateCell
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            finishFirst = resolve;
+          })
+        )
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            finishSecond = resolve;
+          })
+        );
+      const onSaved = jest.fn();
+      const { editor } = await renderEditor({ variant: 'title', onSaved });
+
+      await typeAtEnd(editor, '!');
+      await typeAtEnd(editor, '?');
+      expect(savedTexts()).toEqual(['Hello!', 'Hello!?']);
+      await act(async () => finishFirst(undefined));
+      await act(async () => finishSecond(undefined));
+      expect(onSaved).not.toHaveBeenCalled();
+      await act(async () => editor.deleteBackward('character'));
+      expect(savedTexts()).toEqual(['Hello!', 'Hello!?', 'Hello!']);
+      expect(onSaved).toHaveBeenCalledWith('Hello!');
+    });
+
+    it.each(['mounted', 'unmounted', 'restored'])(
+      'reports a failed accepted save while %s unless a restore replaced it',
+      async (lifecycle) => {
+        let finish!: (status: undefined) => void;
+
+        mockUpdateCell.mockReturnValueOnce(
+          new Promise((resolve) => {
+            finish = resolve;
+          })
+        );
+        const onSaved = jest.fn();
+        const { editor, editable, unmount, rerenderWith } = await renderEditor({ onSaved });
+
+        await typeAtEnd(editor, '!');
+        await pressEnter(editable);
+        if (lifecycle === 'restored') {
+          rerenderWith({ value: 'Restored' });
+          await flush();
+        }
+
+        if (lifecycle !== 'mounted') unmount();
+        await act(async () => finish(undefined));
+        expect(onSaved).not.toHaveBeenCalled();
+        expect(mockNotifyError.mock.calls).toEqual(lifecycle === 'restored' ? [] : [['grid.row.textSaveFailed']]);
+      }
+    );
+
+    it('reports a thrown save failure after unmount', async () => {
+      let fail!: (error: Error) => void;
+
+      mockUpdateCell.mockReturnValueOnce(
+        new Promise((_, reject) => {
+          fail = reject;
+        })
+      );
+      const { editor, editable, unmount } = await renderEditor();
+
+      await typeAtEnd(editor, '!');
+      await pressEnter(editable);
+      unmount();
+      await act(async () => fail(new Error('offline')));
+      expect(mockNotifyError).toHaveBeenCalledWith('grid.row.textSaveFailed');
+    });
+
     it.each([
       ['cleanup', 'retyped'],
       ['cleanup', 'deleted'],
@@ -1078,6 +1151,7 @@ describe('RichTextCellEditor', () => {
       expect(onExit).not.toHaveBeenCalled();
       expect(onSaved).not.toHaveBeenCalled();
       expect(editable.textContent).toBe('Hello!');
+      expect(mockNotifyError).not.toHaveBeenCalled();
     });
 
     it('does not retry a refused save after a newer cell value replaces it', async () => {

@@ -388,6 +388,13 @@ function RichTextCellEditorInner({
     setDirty(true);
   }, []);
 
+  // The notification belongs to the accepted write, so it survives navigation.
+  // Callers exclude cancelled generations and refusals already reported by dispatch.
+  const reportSaveFailure = useCallback(() => {
+    keepDraftUnsaved();
+    notify.error(t('grid.row.textSaveFailed'));
+  }, [keepDraftUnsaved, t]);
+
   const write = useCallback(
     async (
       draft: RichTextDelta,
@@ -431,7 +438,11 @@ function RichTextCellEditorInner({
         const pendingIndex = pendingKeysRef.current.lastIndexOf(key);
 
         if (pendingIndex !== -1) pendingKeysRef.current.splice(pendingIndex, 1);
-        if (status !== 'cancelled' && isCurrent()) keepDraftUnsaved();
+        if (status !== 'cancelled' && isCurrent()) {
+          if (status === 'refused-rich-text-newer') keepDraftUnsaved();
+          else reportSaveFailure();
+        }
+
         return false;
       }
 
@@ -463,6 +474,7 @@ function RichTextCellEditorInner({
       onSaved,
       onUpdateCell,
       pageNameResolver,
+      reportSaveFailure,
       reportTooLong,
       rowId,
       savedRowTitle,
@@ -526,7 +538,7 @@ function RichTextCellEditorInner({
       const pending = (deferred ? warmPageNames(delta).then(save) : save())
         .catch((error: unknown) => {
           Log.error('[RichTextCellEditor] failed to save cell', { rowId, fieldId, error });
-          if (isCurrent()) keepDraftUnsaved();
+          if (isCurrent()) reportSaveFailure();
           return false;
         })
         .finally(() => {
@@ -543,9 +555,9 @@ function RichTextCellEditorInner({
       editor,
       fieldId,
       isTextField,
-      keepDraftUnsaved,
       loadViewMeta,
       pageNameResolver,
+      reportSaveFailure,
       reportTooLong,
       rowDoc,
       rowId,
