@@ -1,13 +1,16 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { createRef, useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
-import { DatabaseViewLayout, ViewLayout } from '@/application/types';
+import { DatabaseViewLayout } from '@/application/types';
 
 import { DashboardSourcesContext } from '../DashboardContext';
-import { WidgetActions, WidgetContext, WidgetContextValue } from '../WidgetContext';
+import { WidgetSettingsTool } from '../widget-tool-buttons/WidgetSettingsTool';
+import { WidgetContext, WidgetContextValue } from '../WidgetContext';
 import { WidgetSettingsHost } from '../WidgetSettingsHost';
 
-let mockLayout = DatabaseViewLayout.Grid;
+import { createWidgetActions, createWidgetContextValue } from './dashboardTestHarness';
+
+let mockLayout: DatabaseViewLayout | null = DatabaseViewLayout.Grid;
 let mockFilters: { id: string }[] = [];
 let mockSorts: { id: string; fieldId: string }[] = [];
 
@@ -75,48 +78,30 @@ jest.mock('../WidgetConditionsPopover', () => ({
   WidgetSortsBody: () => <div data-testid='sorts-body' />,
 }));
 
-function createActions(): WidgetActions {
-  return {
-    open: jest.fn(),
-    changeView: jest.fn(),
-    duplicate: jest.fn(),
-    remove: jest.fn(),
-    move: jest.fn(),
-    openSettings: jest.fn(),
-  };
-}
+let actions = createWidgetActions();
 
-let actions = createActions();
+/**
+ * How the settings tool sits in the box: the real tool (`WidgetSettingsTool`,
+ * which attaches the widget's `settingsToolRef`), a stand-in that attaches
+ * the ref, or a stand-in that only sits in its slot of the box.
+ */
+type SettingsTool = 'real' | 'ref' | 'slot';
 
 /** The widget box with its settings tool, and the settings state `DashboardWidget` keeps. */
-function Harness({ editing = true }: { editing?: boolean }) {
+function Harness({ editing = true, tool = 'slot' }: { editing?: boolean; tool?: SettingsTool }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  const settingsToolRef = useRef<HTMLButtonElement>(null);
   const getBoxElement = useCallback(() => boxRef.current, []);
-  const value: WidgetContextValue = {
-    widgetId: 'w1',
-    databaseId: 'db',
+  const value: WidgetContextValue = createWidgetContextValue({
     viewId: 'v1',
-    name: 'Tasks Grid',
-    icon: null,
-    layout: ViewLayout.Grid,
-    isEditing: editing,
-    canEdit: true,
     editing,
-    showWidgetTitles: true,
-    showIcon: false,
-    headerHeight: 40,
-    isDragging: false,
-    setDragHandle: jest.fn(),
-    menuOpen: false,
-    setMenuOpen: jest.fn(),
     settingsOpen,
     setSettingsOpen,
     getBoxElement,
-    titleRef: createRef(),
-    optionsRef: createRef(),
+    settingsToolRef,
     actions: { ...actions, openSettings: () => setSettingsOpen(true) },
-  };
+  });
 
   return (
     <DashboardSourcesContext.Provider
@@ -129,14 +114,20 @@ function Harness({ editing = true }: { editing?: boolean }) {
     >
       <WidgetContext.Provider value={value}>
         <div className='relative' data-testid='dashboard-widget' ref={boxRef}>
-          {/* The tool sits in its slot, as `DashboardWidgetTools` renders it: the host finds it by the slot. */}
-          <div data-widget-tool='settings'>
-            <button
-              data-testid='dashboard-widget-settings-button'
-              onClick={() => setSettingsOpen(true)}
-              type='button'
-            />
+          {/* The tool as `WidgetTools` renders it: in its slot, toggling the host. */}
+          <div data-widget-tool={tool === 'ref' ? undefined : 'settings'}>
+            {tool === 'real' ? (
+              <WidgetSettingsTool />
+            ) : (
+              <button
+                data-testid='dashboard-widget-settings-button'
+                onClick={() => setSettingsOpen(!settingsOpen)}
+                ref={tool === 'ref' ? settingsToolRef : undefined}
+                type='button'
+              />
+            )}
           </div>
+          <button data-testid='elsewhere' type='button' />
           <WidgetSettingsHost />
         </div>
       </WidgetContext.Provider>
@@ -158,7 +149,7 @@ beforeEach(() => {
   mockLayout = DatabaseViewLayout.Grid;
   mockFilters = [];
   mockSorts = [];
-  actions = createActions();
+  actions = createWidgetActions();
 });
 
 describe('WidgetSettingsHost', () => {
@@ -168,7 +159,10 @@ describe('WidgetSettingsHost', () => {
 
     expect(host.getAttribute('data-side')).toBe('right');
     expect(host.getAttribute('data-align')).toBe('start');
-    expect(host.className).toContain('w-[300px]');
+    // `tokens.json` `geometry.popover`: `widgetSettingsWidth` and `radius`.
+    expect(host.style.width).toBe('300px');
+    expect(host.style.minWidth).toBe('300px');
+    expect(host.style.borderRadius).toBe('10px');
     expect(host.className).toContain('max-h-[560px]');
     expect(host.textContent).toContain('View settings');
     expect(within(host).getByTestId('dashboard-widget-settings-close').getAttribute('aria-label')).toBe('Close');
@@ -240,13 +234,52 @@ describe('WidgetSettingsHost', () => {
     expect(actions.changeView).toHaveBeenCalledTimes(1);
   });
 
-  it('closes from its round close button and gives the focus back to the settings tool', async () => {
-    render(<Harness />);
+  it.each([
+    ['the Settings tool', 'real'],
+    ['the tool attached to the widget (settingsToolRef)', 'ref'],
+    ['the tool in its slot of the box', 'slot'],
+  ] as const)('closes from its round close button and gives the focus back to %s', async (_name, tool) => {
+    render(<Harness tool={tool} />);
     const host = await openHost();
 
     fireEvent.click(within(host).getByTestId('dashboard-widget-settings-close'));
     await waitFor(() => expect(screen.queryByTestId('dashboard-widget-settings')).toBeNull());
     expect(document.activeElement).toBe(screen.getByTestId('dashboard-widget-settings-button'));
+  });
+
+  it.each([
+    ['the Settings tool', 'real'],
+    ['the tool attached to the widget (settingsToolRef)', 'ref'],
+    ['the tool in its slot of the box', 'slot'],
+  ] as const)('leaves a press on %s to the tool, which toggles the host itself', async (_name, toolKind) => {
+    render(<Harness tool={toolKind} />);
+    await openHost();
+    // Radix starts listening for outside presses a tick after the host opened.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    const tool = screen.getByTestId('dashboard-widget-settings-button');
+
+    // Not an outside press: otherwise the press would close the host and the click reopen it.
+    fireEvent.pointerDown(tool);
+    expect(screen.getByTestId('dashboard-widget-settings')).toBeTruthy();
+    fireEvent.click(tool);
+    await waitFor(() => expect(screen.queryByTestId('dashboard-widget-settings')).toBeNull());
+  });
+
+  it('closes on a press anywhere else', async () => {
+    render(<Harness tool='ref' />);
+    await openHost();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    fireEvent.pointerDown(screen.getByTestId('elsewhere'));
+    await waitFor(() => expect(screen.queryByTestId('dashboard-widget-settings')).toBeNull());
+  });
+
+  it('shows the Source row alone while the view has no layout yet', async () => {
+    mockLayout = null;
+    render(<Harness />);
+    const host = await openHost();
+
+    expect(rowIds(host)).toEqual(['dashboard-widget-settings-source']);
   });
 
   it('does not exist outside Edit mode', () => {

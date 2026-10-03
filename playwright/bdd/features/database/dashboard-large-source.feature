@@ -31,6 +31,18 @@ Feature: A dashboard widget on a large database shows its rows while they load
   # arrive with the first page. "Loads slowly" reloads the page with every
   # blob page after the first delayed. The web's loading row also counts the
   # rows read so far: "Loading rows… N/M".
+  #
+  # The last three scenarios (user report: the loading row stayed up after
+  # every HR employee was listed) are the same text as desktop. "Has no saved
+  # result" starts the next open with empty browser storage (IndexedDB and
+  # the databases' delta cursors in localStorage are deleted while no page
+  # of the app runs), where desktop retires the HR
+  # view's saved result. "Sorted by Name" sorts the HR view; the widget then
+  # lists the HR employees by name, equal names in the view's order. "I open
+  # another page and return" navigates inside the app, so the second open
+  # reuses what the first one loaded. The widget is looked at every 100 ms
+  # from the first frame; "within 5 seconds of its last row" counts from the
+  # first look that listed every HR employee.
 
   Background:
     Given the 5000 employees database is open
@@ -42,3 +54,26 @@ Feature: A dashboard widget on a large database shows its rows while they load
     Then the HR widget shows its first HR employees within 5 seconds, above a loading row
     And the HR widget lists every HR employee of the fixture
     And the HR widget never looked empty while it loaded
+
+  Scenario: The loading row disappears once the HR widget lists every employee
+    Given the employees HR view has no saved result
+    And the employees HR view is sorted by Name
+    When I open that dashboard
+    Then the HR widget lists every HR employee of the fixture
+    And the HR widget shows no loading row within 5 seconds of its last row
+    And the HR widget still shows no loading row 5 seconds later
+
+  Scenario: The loading row disappears when the employees HR view is open in another tab
+    Given the employees HR view has no saved result
+    When I open that dashboard while the employees HR view is open in another tab
+    Then the HR widget lists every HR employee of the fixture
+    And the HR widget shows no loading row within 5 seconds of its last row
+    And the HR widget still shows no loading row 5 seconds later
+
+  Scenario: The loading row disappears again when the dashboard is opened a second time
+    Given the employees HR view has no saved result
+    When I open that dashboard
+    And I open another page and return to the dashboard
+    Then the HR widget lists every HR employee of the fixture
+    And the HR widget shows no loading row within 5 seconds of its last row
+    And the HR widget still shows no loading row 5 seconds later

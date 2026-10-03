@@ -17,6 +17,7 @@ import {
   buildWidgetPickerDatabases,
   buildWidgetPickerGroups,
   BuildWidgetPickerGroupsInput,
+  filterWidgetPickerGroups,
   getCatalogDatabaseName,
   HostViewEntry,
   isWidgetSourceLayout,
@@ -128,6 +129,32 @@ describe('widget picker options', () => {
     });
     expect(host.options[1].name).toBe(`Untitled ${ViewLayout.Board}`);
     expect(notes.options[0].name).toBe(`Untitled ${ViewLayout.Grid}`);
+  });
+
+  it('filters built groups by view or database name, keeping what a query leaves whole', () => {
+    const all = groups();
+
+    // No query: the very same groups (their memoized rows do not render again).
+    expect(filterWidgetPickerGroups(all, '   ')).toBe(all);
+
+    // A database name keeps every view of that database, and the group itself.
+    const byDatabase = filterWidgetPickerGroups(all, 'TASKS');
+
+    expect(byDatabase).toHaveLength(1);
+    expect(byDatabase[0]).toBe(all[1]);
+
+    // A view name keeps that view only, as the same option object.
+    const byView = filterWidgetPickerGroups(all, ' due ');
+
+    expect(byView.map((group) => [group.databaseId, group.options.map((option) => option.viewId)])).toEqual([
+      ['tasks-db', ['tasks-calendar']],
+    ]);
+    expect(byView[0].options[0]).toBe(all[1].options[1]);
+    expect(byView[0]).not.toBe(all[1]);
+
+    expect(filterWidgetPickerGroups(all, 'no such view')).toEqual([]);
+    // Searching while building gives the same result as filtering what was built.
+    expect(groups({ query: 'due' })).toEqual(byView);
   });
 
   it('offers embedded host views only when they are tabs of the dashboard database', () => {

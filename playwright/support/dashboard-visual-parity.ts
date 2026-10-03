@@ -29,7 +29,6 @@ import { APIRequestContext, expect, Locator, Page } from '@playwright/test';
 import * as Y from 'yjs';
 
 import { FieldType } from '../../src/application/database-yjs/database.type';
-import { Types } from '../../src/application/types';
 import {
   appliesToPattern,
   compareValues,
@@ -59,9 +58,11 @@ import {
   TokensFixture,
   VisualMetricsFixture,
 } from '../../src/application/database-yjs/visual-parity';
+import { Types } from '../../src/application/types';
 
 import { renameDatabaseView } from './dashboard-owned-views-helpers';
 import { mergeRawLayout } from './dashboard-parity-helpers';
+import { equalRowWidths, escapeRegExp } from './dashboard-shared-helpers';
 import {
   addDashboardView,
   addFixtureDatabase,
@@ -70,7 +71,6 @@ import {
   buildGlobalFilter,
   closeGlobalFilterMenu,
   DASHBOARD_DEFAULT_ROW_HEIGHT,
-  DASHBOARD_GRID_COLUMNS,
   DashboardSelectors,
   dashboardViewId,
   dashboardWorld,
@@ -91,7 +91,6 @@ import {
   toggleGlobalFilterOption,
 } from './dashboard-test-helpers';
 import { GlyphIdentity, IconRuntimeIndex } from './dashboard-visual-parity-icons';
-import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from './page-utils';
 import {
   callParityProbe,
   GlyphInstance,
@@ -101,6 +100,7 @@ import {
   ProbeResult,
   ScopeSpec,
 } from './dashboard-visual-parity-measure';
+import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from './page-utils';
 
 // ---------------------------------------------------------------------------
 // Contract
@@ -535,7 +535,7 @@ function persistedRows(page: Page, rows: string[][]): PersistedRow[] {
   const { views } = parityWorld(page);
 
   return rows.map((labels, index) => {
-    const width = Math.floor(DASHBOARD_GRID_COLUMNS / Math.max(labels.length, 1));
+    const widths = equalRowWidths(labels.length);
 
     return {
       id: `pr-${index + 1}`,
@@ -548,7 +548,7 @@ function persistedRows(page: Page, rows: string[][]): PersistedRow[] {
           id: widgetIdFor(label),
           view_id: view.viewId,
           database_id: view.databaseId,
-          width: position === labels.length - 1 ? DASHBOARD_GRID_COLUMNS - width * (labels.length - 1) : width,
+          width: widths[position],
         };
       }),
     };
@@ -1188,6 +1188,7 @@ function metricRows(
 
         return refs[`${id}.${name}`];
       };
+
       const expected = resolveExpected(check.metrics[metric], { tokens, state, client: 'web', measured });
       const note = instance.notes[metric];
       let actual = finalizeActual(metric, instance.values[metric]);
@@ -1620,8 +1621,6 @@ async function measureText(ctx: RunContext, built: BuiltScene, group: Group, che
     error,
   });
 }
-
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function isSharedContext(part: string) {
   return parityContract().icons.icons.filter((icon) => icon.contexts.some((context) => context.parityId === part)).length > 1;

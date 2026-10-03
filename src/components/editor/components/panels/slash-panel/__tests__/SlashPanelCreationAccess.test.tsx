@@ -36,6 +36,7 @@ const mockAIWriter = { askAIAnything: jest.fn(), continueWriting: jest.fn() };
 const mockPopoverContext = { openPopover: jest.fn() };
 const mockReasonCalls: { enabled?: boolean; workspaceId?: string; requiresProMessage?: string }[] = [];
 let mockRequiresPro = true;
+let mockMobileContext = false;
 
 jest.mock('@/application/constants', () => ({
   ...jest.requireActual('@/application/constants'),
@@ -54,6 +55,10 @@ jest.mock('@/components/app/hooks/useTimelineCreationDisabledReason', () => ({
     if (getSubscriptions !== mockGetSubscriptions || !mockRequiresPro) return undefined;
     return options.requiresProMessage ?? timelineRequiresPro;
   },
+}));
+jest.mock('@/components/_shared/hooks/useMobileContext', () => ({
+  ...jest.requireActual('@/components/_shared/hooks/useMobileContext'),
+  useMobileContext: () => mockMobileContext,
 }));
 jest.mock('@/components/app/app.hooks', () => ({ useAIEnabled: () => false }));
 jest.mock('@/components/chat', () => ({ useAIWriter: () => mockAIWriter }));
@@ -91,6 +96,7 @@ describe('SlashPanel Timeline and Dashboard creation access', () => {
     jest.clearAllMocks();
     mockReasonCalls.length = 0;
     mockRequiresPro = true;
+    mockMobileContext = false;
     mockPanelContext.searchText = '';
   });
 
@@ -151,5 +157,45 @@ describe('SlashPanel Timeline and Dashboard creation access', () => {
     await waitFor(() =>
       expect(mockAddPage).toHaveBeenCalledWith('document-id', expect.objectContaining({ layout: ViewLayout.Timeline }))
     );
+  });
+
+  describe('in a mobile context (dashboards are view-only there)', () => {
+    beforeEach(() => {
+      mockMobileContext = true;
+      mockRequiresPro = false;
+    });
+
+    it('offers no Dashboard command, like the tab "+" menu and the layout switcher', () => {
+      render(<SlashPanelHarness />);
+
+      expect(screen.queryByTestId('slash-menu-dashboard')).toBeNull();
+      expect(screen.queryByTestId('slash-menu-linkedDashboard')).toBeNull();
+      // Every other database command is still there.
+      expect(screen.getByTestId('slash-menu-grid')).toBeTruthy();
+      expect(screen.getByTestId('slash-menu-timeline').hasAttribute('disabled')).toBe(false);
+      expect(screen.getByTestId('slash-menu-linkedTimeline')).toBeTruthy();
+    });
+
+    it('creates no dashboard when "/dashboard" is typed and Enter is pressed', () => {
+      mockPanelContext.searchText = 'dashboard';
+      render(<SlashPanelHarness />);
+
+      fireEvent.keyDown(screen.getByTestId('editor'), { key: 'Enter' });
+
+      expect(mockAddPage).not.toHaveBeenCalled();
+      expect(mockCreateDatabaseView).not.toHaveBeenCalled();
+    });
+
+    it('does not ask for the workspace plan on behalf of Dashboard', () => {
+      render(<SlashPanelHarness />);
+
+      expect(mockReasonCalls).toContainEqual({
+        workspaceId: 'workspace-id',
+        enabled: false,
+        requiresProMessage: dashboardRequiresPro,
+      });
+      // Timeline still checks it.
+      expect(mockReasonCalls).toContainEqual({ workspaceId: 'workspace-id', enabled: true });
+    });
   });
 });

@@ -9,6 +9,7 @@ import { ReactComponent as ArrowLeftSvg } from '@/assets/icons/alt_arrow_left.sv
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { getFieldTypeName } from '@/components/database/components/field/FieldLabel';
 import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
 import { useDebouncedFilterInput } from '@/components/database/components/filters/hooks/useDebouncedFilterInput';
 import { Button } from '@/components/ui/button';
@@ -27,7 +28,6 @@ import { cn } from '@/lib/utils';
 import {
   applyConditionChange,
   conditionHidesContent,
-  getFieldTypeName,
   getGlobalFilterConditions,
   toggleDateConditionSide,
 } from './global-filter.conditions';

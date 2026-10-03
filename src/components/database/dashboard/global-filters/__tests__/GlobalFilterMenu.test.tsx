@@ -138,7 +138,6 @@ function Harness({ canEdit, isEditing, initial, onPersist, onLocal, onClose = je
     setEditing: jest.fn(),
     mobileContext: false,
     canEnterEdit: canEdit,
-    editPreference: isEditing ? 'on' : 'off',
     pinEditing: jest.fn(),
     updateSetting: (update: DashboardLayoutUpdate) => {
       onPersist(update);
@@ -161,7 +160,7 @@ function Harness({ canEdit, isEditing, initial, onPersist, onLocal, onClose = je
 
   return (
     <GlobalFilterMenu
-      filterId={filterId}
+      initialScreen={filterId ? { type: 'edit', filterId } : undefined}
       onClose={() => {
         onClose();
         setOpen(false);
@@ -295,7 +294,6 @@ describe('GlobalFilterMenu', () => {
         setEditing: jest.fn(),
         mobileContext: false,
         canEnterEdit: false,
-        editPreference: 'off',
         pinEditing: jest.fn(),
         updateSetting: jest.fn(),
         updateRows: jest.fn(),
@@ -305,7 +303,7 @@ describe('GlobalFilterMenu', () => {
         registerSourceName: jest.fn(),
       };
 
-      return <GlobalFilterMenu startWithPicker onClose={jest.fn()} />;
+      return <GlobalFilterMenu initialScreen={{ type: 'pick' }} onClose={jest.fn()} />;
     }
 
     render(<CheckboxHarness />);

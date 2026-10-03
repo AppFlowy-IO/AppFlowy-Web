@@ -74,7 +74,7 @@ export function ChartTooltip({ title, rows, showDrilldownHint = false }: ChartTo
       ))}
       {showDrilldownHint ? (
         <>
-          <div className='mx-3 h-px bg-border-secondary' />
+          <div className='mx-3 h-px bg-chart-tooltip-border' data-parity-id='dash-chart-tooltip__divider' />
           <div
             className='flex items-center gap-1.5 p-3 text-text-secondary'
             data-parity-id='dash-chart-tooltip__footer'

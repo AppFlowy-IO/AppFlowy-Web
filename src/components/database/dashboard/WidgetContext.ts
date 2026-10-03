@@ -60,8 +60,27 @@ export interface WidgetContextValue {
   /** Focus returns here when the menu closes: the title pill, or the options button without titles. */
   titleRef: RefObject<HTMLButtonElement>;
   optionsRef: RefObject<HTMLButtonElement>;
+  /**
+   * The Edit-mode settings tool: it toggles the settings host itself (so a
+   * press on it is not an outside press), and focus returns to it when the
+   * host closes.
+   */
+  settingsToolRef: RefObject<HTMLButtonElement>;
   actions: WidgetActions;
 }
+
+/**
+ * What the widget frame (`WidgetSource`) knows without the source database:
+ * the `WidgetContextValue` minus the view's name and layout, which the source
+ * doc has the last word on, and minus the drag handle, which belongs to the
+ * rendered header. `WidgetContextProvider` completes it.
+ */
+export type WidgetFrame = Omit<WidgetContextValue, 'name' | 'layout' | 'setDragHandle'> & {
+  /** Folder name of the view (`''` until the folder answers); it wins over the name stored in the database. */
+  folderName: string;
+  /** Folder layout of the view, used until the source database tells. */
+  folderLayout: ViewLayout | undefined;
+};
 
 export const WidgetContext = createContext<WidgetContextValue | null>(null);
 

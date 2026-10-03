@@ -8,7 +8,9 @@ import { APIRequestContext, expect, Page, Route } from '@playwright/test';
 import { v4 as uuidv4 } from 'uuid';
 
 import { AccessLevel } from '../../src/application/types';
+import { MOBILE_CONTEXT_BREAKPOINT } from '../../src/components/_shared/hooks/useMobileContext';
 
+import { WIDGET_TIMEOUT } from './dashboard-shared-helpers';
 import {
   addDashboardView,
   addFixtureDatabase,
@@ -31,9 +33,6 @@ import {
 } from './dashboard-test-helpers';
 import { DatabaseViewSelectors } from './selectors';
 
-const WIDGET_TIMEOUT = { timeout: 30_000 };
-/** The web mobile-context breakpoint (`MOBILE_CONTEXT_BREAKPOINT`): below it Edit mode is never offered. */
-const MOBILE_CONTEXT_BREAKPOINT = 768;
 const PERMISSION_PROBE_URL = /\/api\/workspace\/[^/]+\/collab\/[^/]+\/permission(?:\?|$)/;
 
 // ---------------------------------------------------------------------------
@@ -190,9 +189,10 @@ function nextPermissionProbe(page: Page) {
 
 /**
  * Re-probe the page's permissions the way returning to the browser tab does
- * (AppBusinessLayer's visibilitychange handler).
+ * (AppBusinessLayer's visibilitychange handler). The server's HTTP cache may
+ * answer a repeated probe with 304 Not Modified.
  */
-async function reprobePermissions(page: Page) {
+export async function reprobePermissions(page: Page) {
   const probe = nextPermissionProbe(page);
 
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
@@ -247,6 +247,7 @@ export async function openEmptyDashboardWithoutConfirmedAccess(
  * Whether the dashboard should offer Edit mode now: write access that is not
  * withheld, outside a mobile context (a web viewport of 768px or more).
  */
+/** Below the web mobile-context breakpoint Edit mode is never offered. */
 export function dashboardEditOffered(page: Page) {
   const width = page.viewportSize()?.width ?? MOBILE_CONTEXT_BREAKPOINT;
 

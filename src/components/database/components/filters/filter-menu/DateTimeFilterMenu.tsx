@@ -12,6 +12,7 @@ import {
   useFieldType,
 } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
+import { dateFilterConditions } from '@/components/database/components/filters/filter-conditions';
 import DateTimeFilterDatePicker from '@/components/database/components/filters/filter-menu/DateTimeFilterDatePicker';
 import DateTimeFilterStartEndDateSelect
   from '@/components/database/components/filters/filter-menu/DateTimeFilterStartEndDateSelect';
@@ -28,28 +29,10 @@ function DateTimeFilterMenu ({ filter }: { filter: DateFilter }) {
   const selectedStart = isStartDateCondition(filter.condition);
 
   const conditions = useMemo(() => {
-    const pick = (start: DateFilterCondition): DateFilterCondition =>
-      selectedStart ? start : toEndDateCondition(start);
+    // A row's created / last edited time is never empty.
     const isRowTime = fieldType === FieldType.CreatedTime || fieldType === FieldType.LastEditedTime;
 
-    return [
-      { value: pick(DateFilterCondition.DateStartsOn), text: t('grid.dateFilter.is') },
-      { value: pick(DateFilterCondition.DateStartsBefore), text: t('grid.dateFilter.before') },
-      { value: pick(DateFilterCondition.DateStartsAfter), text: t('grid.dateFilter.after') },
-      { value: pick(DateFilterCondition.DateStartsOnOrBefore), text: t('grid.dateFilter.onOrBefore') },
-      { value: pick(DateFilterCondition.DateStartsOnOrAfter), text: t('grid.dateFilter.onOrAfter') },
-      { value: pick(DateFilterCondition.DateStartsBetween), text: t('grid.dateFilter.between') },
-      { value: pick(DateFilterCondition.DateStartIsEmpty), text: t('grid.dateFilter.empty'), hidden: isRowTime },
-      { value: pick(DateFilterCondition.DateStartIsNotEmpty), text: t('grid.dateFilter.notEmpty'), hidden: isRowTime },
-      { value: pick(DateFilterCondition.DateStartsToday), text: t('relativeDates.today') },
-      { value: pick(DateFilterCondition.DateStartsYesterday), text: t('relativeDates.yesterday') },
-      { value: pick(DateFilterCondition.DateStartsTomorrow), text: t('relativeDates.tomorrow') },
-      { value: pick(DateFilterCondition.DateStartsThisWeek), text: t('relativeDates.thisWeek') },
-      { value: pick(DateFilterCondition.DateStartsLastWeek), text: t('relativeDates.lastWeek') },
-      { value: pick(DateFilterCondition.DateStartsNextWeek), text: t('relativeDates.nextWeek') },
-    ]
-      .filter((condition) => !condition.hidden)
-      .map(({ value, text }) => ({ value, text }));
+    return dateFilterConditions(t, { start: selectedStart, emptiness: !isRowTime });
   }, [fieldType, selectedStart, t]);
 
   const displayTextField =

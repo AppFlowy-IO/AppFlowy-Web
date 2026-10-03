@@ -1,6 +1,5 @@
 import { canAddDashboardWidget, findDashboardWidget } from '@/application/database-yjs/dashboard-layout';
 import {
-  DASHBOARD_MAX_WIDGETS,
   DASHBOARD_MAX_WIDGETS_PER_ROW,
   DashboardRow,
   DashboardWidgetPlacement,
@@ -65,8 +64,7 @@ export function getWidgetMoveTargets(rows: DashboardRow[], widgetId: string): Wi
 
 /** Duplicating needs a free widget slot anywhere on the dashboard. */
 export function canDuplicateWidget(rows: DashboardRow[], widgetId: string) {
-  if (!findDashboardWidget(rows, widgetId)) return false;
-  return rows.reduce((sum, row) => sum + row.widgets.length, 0) < DASHBOARD_MAX_WIDGETS;
+  return findDashboardWidget(rows, widgetId) !== null && canAddDashboardWidget(rows);
 }
 
 /**

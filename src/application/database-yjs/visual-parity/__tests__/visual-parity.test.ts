@@ -204,6 +204,70 @@ describe('visual-metrics.json resolves (L0)', () => {
   });
 });
 
+describe('wave-2 carry-overs', () => {
+  const element = (id: string) => fixture.elements.find((entry) => entry.id === id);
+
+  it('pins the chart tooltip divider: a 1px hairline in the tooltip border colour (border-primary)', () => {
+    expect(element('dash-chart-tooltip__divider')).toMatchObject({
+      states: PARITY_STATES,
+      scene: 'charts',
+      when: 'hover-bar',
+      metrics: { height: 1, background: 'color.tooltipBorder' },
+      wave: 2,
+      status: 'enforced',
+    });
+    expect(tokenFixture.color.tooltipBorder).toMatchObject({ kind: 'ref', ref: 'border-primary' });
+    PARITY_STATES.forEach((state) => {
+      const background = resolveExpected('color.tooltipBorder', ctx(state as 'view-light'));
+
+      expect(background.ok).toBe(true);
+      expect(background).toEqual(resolveExpected('ref:border-primary', ctx(state as 'view-light')));
+    });
+    expect(resolveExpected('color.tooltipBorder', ctx('view-light'))).toEqual({ ok: true, value: '#DDE2F1FF' });
+    expect(resolveExpected('color.tooltipBorder', ctx('view-dark'))).toEqual({ ok: true, value: '#3D404FFF' });
+  });
+
+  it('measures the divider with the tooltip it belongs to', () => {
+    const tooltip = element('dash-chart-tooltip');
+    const divider = element('dash-chart-tooltip__divider');
+
+    expect(divider).toBeDefined();
+    expect({ scene: divider?.scene, when: divider?.when, states: divider?.states }).toEqual({
+      scene: tooltip?.scene,
+      when: tooltip?.when,
+      states: tooltip?.states,
+    });
+    // The border of the tooltip and its divider are the same token.
+    expect(divider?.metrics.background).toBe(tooltip?.metrics.borderColor);
+    PARITY_STATES.forEach((state) => {
+      const planned = expandChecks(fixture, state, runOptionsFromEnv({ DASHBOARD_PARITY_MODE: 'enforce' })).metrics.find(
+        (check) => check.checkId === 'dash-chart-tooltip__divider'
+      );
+
+      expect(planned).toMatchObject({ scene: 'charts', when: 'hover-bar', status: 'enforced' });
+      expect(measuredMetricNames(planned?.metrics ?? {}).sort()).toEqual(['background', 'height']);
+    });
+  });
+
+  it('pins the chart "No data" colour to text-tertiary', () => {
+    expect(element('dash-chart-empty')).toMatchObject({
+      states: PARITY_STATES,
+      scene: 'charts',
+      metrics: { text: 'No data', color: 'ref:text-tertiary' },
+      wave: 2,
+      status: 'enforced',
+    });
+    expect(resolveExpected('ref:text-tertiary', ctx('view-light'))).toEqual({ ok: true, value: '#989EB7FF' });
+    expect(resolveExpected('ref:text-tertiary', ctx('view-dark'))).toEqual({ ok: true, value: '#6F748CFF' });
+    // Never the secondary text colour the fixture once carried.
+    PARITY_STATES.forEach((state) => {
+      expect(resolveExpected('ref:text-tertiary', ctx(state as 'view-light'))).not.toEqual(
+        resolveExpected('ref:text-secondary', ctx(state as 'view-light'))
+      );
+    });
+  });
+});
+
 describe('check expansion and gating', () => {
   it('report mode measures every pending entry of the state, enforce mode none of them', () => {
     const report = expandChecks(fixture, 'view-light', runOptionsFromEnv({}));

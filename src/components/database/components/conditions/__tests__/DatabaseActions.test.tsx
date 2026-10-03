@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createRef } from 'react';
 
 import { useDatabase, useDatabaseContext, useDatabaseViewLayout, useReadOnly } from '@/application/database-yjs';
 import { DatabaseViewLayout } from '@/application/types';
@@ -6,6 +7,7 @@ import {
   DatabaseSearchProvider,
   useDatabaseSearch,
 } from '@/components/database/components/conditions/DatabaseSearchContext';
+import { WIDGET_TOOL_SLOT_CLASS, WIDGET_TOOLS_CONTAINER_CLASS } from '@/components/database/dashboard/widget-tools';
 
 import { DatabaseActions } from '../DatabaseActions';
 
@@ -36,6 +38,19 @@ let mockConditionsReadOnly: boolean | undefined;
 
 jest.mock('@/components/database/dashboard/WidgetContext', () => ({
   useWidgetContextOptional: () => mockWidget,
+  useWidgetContext: () => {
+    if (!mockWidget) throw new Error('WidgetContext is not provided');
+    return mockWidget;
+  },
+}));
+
+// A widget's Filter and Sort tools (their popovers are tested with `WidgetConditionsPopover`).
+jest.mock('@/components/database/dashboard/widget-tool-buttons/WidgetFilterTool', () => ({
+  WidgetFilterTool: () => <div data-testid='widget-filter-tool' />,
+}));
+
+jest.mock('@/components/database/dashboard/widget-tool-buttons/WidgetSortTool', () => ({
+  WidgetSortTool: () => <div data-testid='widget-sort-tool' />,
 }));
 
 jest.mock('react-i18next', () => ({
@@ -94,11 +109,14 @@ jest.mock('@/components/database/components/template', () => ({
   ),
 }));
 
-jest.mock('@/components/database/dashboard/DashboardActions', () => ({
-  __esModule: true,
-  default: () => <div data-testid='dashboard-toolbar' />,
-  DashboardActions: () => <div data-testid='dashboard-toolbar' />,
-}));
+// The dashboard toolbar gets the host database as primitives (its memo compares them).
+jest.mock('@/components/database/dashboard/DashboardActions', () => {
+  const DashboardToolbar = (props: Record<string, unknown>) => (
+    <div data-props={JSON.stringify(props)} data-testid='dashboard-toolbar' />
+  );
+
+  return { __esModule: true, default: DashboardToolbar, DashboardActions: DashboardToolbar };
+});
 
 jest.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -217,7 +235,9 @@ describe('DatabaseActions template support', () => {
     mockUseReadOnly.mockReturnValue(true);
     mockUseDatabaseViewLayout.mockReturnValue(layout);
     mockUseDatabaseContext.mockReturnValue({
-      activeViewId: 'historical-view', isDocumentBlock: false, dataSource: { type: 'history' },
+      activeViewId: 'historical-view',
+      isDocumentBlock: false,
+      dataSource: { type: 'history' },
     } as ReturnType<typeof useDatabaseContext>);
 
     render(<DatabaseActions />);
@@ -404,8 +424,8 @@ describe('DatabaseActions in dashboards', () => {
   }
 
   function widgetTools() {
-    return Array.from(screen.getByTestId('database-actions').querySelectorAll('[data-widget-tool]')).map(
-      (slot) => slot.getAttribute('data-widget-tool')
+    return Array.from(screen.getByTestId('database-actions').querySelectorAll('[data-widget-tool]')).map((slot) =>
+      slot.getAttribute('data-widget-tool')
     );
   }
 
@@ -428,6 +448,11 @@ describe('DatabaseActions in dashboards', () => {
 
     expect(toolbarTestIds()).toEqual(['dashboard-toolbar']);
     expect(screen.getByTestId('database-actions').getAttribute('data-dashboard-widget')).toBeNull();
+    expect(JSON.parse(screen.getByTestId('dashboard-toolbar').getAttribute('data-props') ?? '{}')).toEqual({
+      activeViewId: 'dashboard-view',
+      isDocumentBlock: false,
+      readOnly: false,
+    });
   });
 
   describe('in a mobile context', () => {
@@ -494,22 +519,23 @@ describe('DatabaseActions in dashboards', () => {
 
     render(<DatabaseActions />);
 
-    expect(toolbarTestIds()).toEqual(['filters-button', 'sorts-button']);
+    expect(toolbarTestIds()).toEqual(['widget-filter-tool', 'widget-sort-tool']);
     expect(widgetTools()).toEqual(['filter', 'sort']);
     const tools = screen.getByTestId('database-actions');
 
     expect(tools.getAttribute('data-dashboard-widget')).toBe('true');
     expect(tools.getAttribute('data-force-visible')).toBe('false');
     expect(tools.getAttribute('data-has-active')).toBe('false');
-    expect(tools.className).toContain('gap-0.5');
-    // At rest in View mode the whole group is transparent (dash-widget-tools opacity 0, 150ms fade).
-    expect(tools.className).toContain('opacity-0');
-    expect(tools.className).toContain('duration-150');
-    expect(tools.className).toContain('group-hover/widget:opacity-100');
-    for (const testId of ['filters-button', 'sorts-button']) {
-      expect(screen.getByTestId(testId).getAttribute('data-presentation')).toBe('popover');
-      expect(screen.getByTestId(testId).getAttribute('data-variant')).toBe('widget');
-    }
+    expect(tools.getAttribute('data-parity-id')).toBe('dash-widget-tools');
+    // At rest in View mode the whole group is transparent: it follows the tested visibility rule.
+    expect(tools.className).toContain(WIDGET_TOOLS_CONTAINER_CLASS);
+    expect(screen.getByTestId('widget-filter-tool').parentElement?.getAttribute('data-active')).toBe('false');
+    expect(screen.getByTestId('widget-sort-tool').parentElement?.getAttribute('data-active')).toBe('false');
+    // The widget's popover tools, never the bar's buttons.
+    expect(screen.queryByTestId('filters-button')).toBeNull();
+    expect(screen.queryByTestId('sorts-button')).toBeNull();
+    expect(screen.getByTestId('widget-filter-tool').parentElement?.getAttribute('data-widget-tool')).toBe('filter');
+    expect(screen.getByTestId('widget-sort-tool').parentElement?.getAttribute('data-widget-tool')).toBe('sort');
 
     expect(screen.queryByTestId('database-actions-open-as-page')).toBeNull();
     expect(screen.queryByTestId('database-actions-settings')).toBeNull();
@@ -529,14 +555,40 @@ describe('DatabaseActions in dashboards', () => {
 
     render(<DatabaseActions />);
 
-    expect(toolbarTestIds()).toEqual(['filters-button', 'sorts-button', 'dashboard-widget-settings-button']);
+    expect(toolbarTestIds()).toEqual(['widget-filter-tool', 'widget-sort-tool', 'dashboard-widget-settings-button']);
     expect(screen.getByTestId('database-actions').getAttribute('data-force-visible')).toBe('true');
     const settings = screen.getByTestId('dashboard-widget-settings-button');
 
     expect(settings.getAttribute('aria-label')).toBe('dashboard.widget.settings');
     expect(settings.getAttribute('data-state')).toBe('closed');
+    expect(settings.getAttribute('data-parity-id')).toBe('dash-widget-tool-settings');
     fireEvent.click(settings);
     expect(actions.openSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands the Settings tool to the settings host (its ref), which it closes while open', () => {
+    const settingsToolRef = createRef<HTMLButtonElement>();
+    const setSettingsOpen = jest.fn();
+    const actions = { openSettings: jest.fn() };
+
+    mockWidget = widgetContext({ editing: true, settingsOpen: true, settingsToolRef, setSettingsOpen, actions });
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Board);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'board-view',
+      databasePageId: 'board-view',
+      isDocumentBlock: true,
+      isDashboardWidget: true,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(<DatabaseActions />);
+    const settings = screen.getByTestId('dashboard-widget-settings-button');
+
+    // A press on it is the host's own toggle, never an outside press; the focus returns to it.
+    expect(settingsToolRef.current).toBe(settings);
+    expect(settings.getAttribute('data-state')).toBe('open');
+    fireEvent.click(settings);
+    expect(setSettingsOpen).toHaveBeenCalledWith(false);
+    expect(actions.openSettings).not.toHaveBeenCalled();
   });
 
   it('marks an active filter or sort slot so it stays shown at rest', () => {
@@ -554,14 +606,15 @@ describe('DatabaseActions in dashboards', () => {
     const slots = Array.from(screen.getByTestId('database-actions').querySelectorAll('[data-widget-tool]'));
 
     expect(slots.map((slot) => slot.getAttribute('data-active'))).toEqual(['true', 'false']);
-    // The group stays visible for the active tool.
+    // The group stays visible for the active tool (the tested visibility rule reads `data-has-active`).
     expect(screen.getByTestId('database-actions').getAttribute('data-has-active')).toBe('true');
-    expect(screen.getByTestId('database-actions').className).toContain('data-[has-active=true]:opacity-100');
-    // Hidden tools keep their slot: only the opacity changes, never the pointer.
-    expect(slots[1].className).toContain('opacity-0');
-    expect(slots[1].className).toContain('group-hover/widget:opacity-100');
-    expect(slots[1].className).toContain('data-[active=true]:opacity-100');
-    expect(slots[1].className).not.toContain('pointer-events-none');
+    expect(screen.getByTestId('database-actions').className).toContain(WIDGET_TOOLS_CONTAINER_CLASS);
+    // Every slot follows the same rule; only `data-active` tells them apart.
+    expect(slots[0].className).toBe(WIDGET_TOOL_SLOT_CLASS);
+    expect(slots[1].className).toBe(WIDGET_TOOL_SLOT_CLASS);
+    // Hidden tools keep their slot: still in the accessibility tree and reachable.
+    expect(slots[1].hasAttribute('aria-hidden')).toBe(false);
+    expect(slots[1].hasAttribute('inert')).toBe(false);
   });
 
   it('shows the tools while the widget menu or the settings host is open', () => {
@@ -598,7 +651,7 @@ describe('DatabaseActions in dashboards', () => {
 
     expect(screen.queryByTestId('database-actions-search')).toBeNull();
     expect(screen.queryByTestId('database-template-button')).toBeNull();
-    expect(screen.getByTestId('filters-button')).toBeTruthy();
+    expect(screen.getByTestId('widget-filter-tool')).toBeTruthy();
     expect(screen.getByTestId('dashboard-widget-settings-button')).toBeTruthy();
   });
 
@@ -637,6 +690,7 @@ describe('DatabaseActions in dashboards', () => {
   });
 
   it('never renders the dashboard toolbar inside a widget', () => {
+    mockWidget = widgetContext({ editing: true });
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Dashboard);
     mockUseDatabaseContext.mockReturnValue({
       activeViewId: 'nested-dashboard',
@@ -648,5 +702,7 @@ describe('DatabaseActions in dashboards', () => {
     render(<DatabaseActions />);
 
     expect(screen.queryByTestId('dashboard-toolbar')).toBeNull();
+    // A nested dashboard is no widget layout: no tools either.
+    expect(screen.queryByTestId('database-actions')).toBeNull();
   });
 });

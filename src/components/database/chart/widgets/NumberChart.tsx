@@ -1,27 +1,18 @@
 import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ChartAggregationType, ChartDataItem, ChartNumberFormat } from '@/application/database-yjs/chart.type';
-import { NumberFormat } from '@/application/database-yjs/fields';
+import { ChartDataItem } from '@/application/database-yjs/chart.type';
 import { cn } from '@/lib/utils';
-
-import { formatNumberChartValue } from './numberChartUtils';
 
 export interface NumberChartProps {
   /** The single aggregated item; `rowIds` holds every counted row. */
   item: ChartDataItem | null;
   /** Resolved title (custom or generated). */
   title: string;
-  numberFormat: ChartNumberFormat;
-  aggregationType: ChartAggregationType;
-  /** Y field number format when the Y field is a Number field. */
-  fieldNumberFormat?: NumberFormat | null;
-  /** `decimal_places`; null / absent is auto. */
-  decimalPlaces?: number | null;
-  /** The chart locale (`resolveChartLocale`). */
-  locale?: string;
-  /** Drill-down; receives the item relabelled with the title. */
-  onClick?: (item: ChartDataItem) => void;
+  /** The value as the chart's formatter prints it in `card` mode. */
+  valueText: string;
+  /** Opens the drill-down; receives the item relabelled with the title. */
+  onItemClick?: (item: ChartDataItem) => void;
 }
 
 /**
@@ -29,30 +20,15 @@ export interface NumberChartProps {
  * Font size follows the container width so it reads well in both a full page
  * and a small dashboard widget.
  */
-function NumberChart({
-  item,
-  title,
-  numberFormat,
-  aggregationType,
-  fieldNumberFormat,
-  decimalPlaces,
-  locale,
-  onClick,
-}: NumberChartProps) {
+function NumberChart({ item, title, valueText, onItemClick }: NumberChartProps) {
   const { t } = useTranslation();
   const isEmpty = !item || item.rowIds.length === 0;
-
-  // One call on cached formatters: cheaper than a memo's dependency compare.
-  const formatted = item
-    ? formatNumberChartValue(item.value, { numberFormat, aggregationType, fieldNumberFormat, decimalPlaces, locale })
-    : '';
-
-  const clickable = !isEmpty && !!onClick;
+  const clickable = !isEmpty && !!onItemClick;
 
   const handleClick = useCallback(() => {
-    if (!item || !onClick) return;
-    onClick({ ...item, label: title });
-  }, [item, onClick, title]);
+    if (!item || !onItemClick) return;
+    onItemClick({ ...item, label: title });
+  }, [item, onItemClick, title]);
 
   return (
     <div
@@ -79,7 +55,7 @@ function NumberChart({
           )}
           style={{ fontSize: 'clamp(1.75rem, 14cqw, 4.5rem)' }}
         >
-          {formatted}
+          {valueText}
         </button>
       )}
       {title && (

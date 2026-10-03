@@ -140,6 +140,14 @@ Feature: Dashboard widget chrome
     When I move the pointer away from the dashboard
     Then the "Grid" widget shows no scrollbar
 
+  # The inset is dashboard-parity/widget-content.json geometry.list_title_inset
+  # (the 40px row-actions slot, the 6px row padding and the 2px title inset).
+  Scenario: A list widget's row titles start at the card's content inset
+    Given a dashboard of "Projects" shows its "List" and "Board" views side by side
+    Then the first row title of the "List" widget starts 48 pixels inside the widget card
+    When I click the dashboard Edit button
+    Then the first row title of the "List" widget starts 48 pixels inside the widget card
+
   @web-only
   Scenario: A widget whose source cannot load offline says it is available when back online
     Given the dashboard fixture workspace is ready

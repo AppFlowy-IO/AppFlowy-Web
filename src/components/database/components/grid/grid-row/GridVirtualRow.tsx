@@ -5,7 +5,7 @@ import { VirtualItem } from '@tanstack/react-virtual';
 import { uniqBy } from 'lodash-es';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useDatabaseContextOptional, useReadOnly, useRowData, useSortsSelector } from '@/application/database-yjs';
+import { useReadOnly, useRowData, useSortsSelector } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import { HOVER_CONTROLS_WIDTH, HoverControls } from '@/components/database/components/grid/controls/HoverControls';
@@ -23,15 +23,21 @@ import { ClearSortingConfirm } from '@/components/database/components/sorts/Clea
 import {
   useGridContext,
   useGridInteractionActions,
+  useGridOptions,
   useIsGridRowActive,
 } from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
 
 const idleState: ItemState = { type: GridDragState.IDLE };
 
+/**
+ * One row of the grid. It takes its index and its own render row, not the
+ * virtualizer's item or the whole stream: both are new whenever rows are
+ * added, and a row that did not change keeps its render then.
+ */
 function GridVirtualRow({
-  row,
-  data,
+  rowIndex,
+  rowData,
   columns,
   columnItems,
   totalSize,
@@ -40,20 +46,18 @@ function GridVirtualRow({
 }: {
   isSticky?: boolean;
   columnItems: VirtualItem[];
-  row: VirtualItem;
+  rowIndex: number;
+  rowData: RenderRow;
   totalSize: number;
-  data: RenderRow[];
   columns: RenderColumn[];
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
   const { registerRow, rowInstanceId: instanceId } = useGridDragContext();
-  const rowIndex = row.index;
-  const rowData = data[rowIndex];
   const rowId = rowData.rowId as string;
   const rowKey = getRenderRowKey(rowData);
   const rowType = rowData.type;
   const { isGrouped, rowResizeStore } = useGridContext();
-  const isDashboardWidget = Boolean(useDatabaseContextOptional()?.isDashboardWidget);
+  const { rowMeasure } = useGridOptions();
   const { setHoverRowKey } = useGridInteractionActions();
   const hasActiveCell = useIsGridRowActive(rowKey);
   const databaseRow = useRowData(rowId);
@@ -148,20 +152,20 @@ function GridVirtualRow({
         <GridVirtualColumn
           key={column.key}
           columns={columns}
-          data={data}
-          row={row}
+          rowIndex={rowIndex}
+          rowData={rowData}
           column={column}
           onResizeColumnStart={onResizeColumnStart}
         />
       );
     });
-  }, [columnItems, columns, data, row, onResizeColumnStart]);
+  }, [columnItems, columns, rowIndex, rowData, onResizeColumnStart]);
 
   const onResize = useCallback(() => {
     const row = rowRef.current;
-    // In a widget the reported size includes the row's 1px divider, so the
-    // pitch is the 37px the row draws (addendum A5.2) and rows never overlap.
-    const cells = row?.querySelectorAll(isDashboardWidget ? '.grid-row-cell' : '.grid-cell');
+    // `row`: the reported size includes the row's 1px divider, so the pitch is
+    // the 37px the row draws (addendum A5.2) and rows never overlap.
+    const cells = row?.querySelectorAll(rowMeasure === 'row' ? '.grid-row-cell' : '.grid-cell');
 
     if (!cells || !rowId) return;
     const maxCellHeight = Array.from(cells).reduce((acc, cell) => {
@@ -171,7 +175,7 @@ function GridVirtualRow({
     }, 0);
 
     rowResizeStore.report(rowKey, maxCellHeight);
-  }, [isDashboardWidget, rowId, rowKey, rowResizeStore]);
+  }, [rowMeasure, rowId, rowKey, rowResizeStore]);
 
   useEffect(() => {
     const el = innerRef.current;
@@ -201,13 +205,11 @@ function GridVirtualRow({
     };
   }, [isRegularRow, onResize, cells, cellsCount]);
 
+  // Every cell of the row reads it: a new object would re-render them all.
+  const rowContextValue = useMemo(() => ({ isSticky, resizeRow: onResize }), [isSticky, onResize]);
+
   return (
-    <GridRowProvider
-      value={{
-        isSticky,
-        resizeRow: onResize,
-      }}
-    >
+    <GridRowProvider value={rowContextValue}>
       <div
         onMouseMove={() => setHoverRowKey(rowKey)}
         onMouseLeave={() => setHoverRowKey(undefined)}
@@ -222,7 +224,7 @@ function GridVirtualRow({
               dragHandleRef={(el) => {
                 dragHandleRef.current = el;
               }}
-              rowId={data[row.index].rowId as string}
+              rowId={rowId}
               rowKey={rowKey}
               groupFieldId={rowData.groupFieldId}
               groupId={rowData.groupId}

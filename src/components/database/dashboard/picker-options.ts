@@ -1,5 +1,8 @@
 import { WorkspaceDatabaseViewItem, WorkspaceDatabaseWithViews } from '@/application/services/services.type';
-import { ViewIcon, ViewLayout } from '@/application/types';
+import { DatabaseViewLayout, ViewIcon, ViewLayout } from '@/application/types';
+
+import { databaseLayoutToViewLayout } from './utils';
+import { isWidgetLayout } from './widget-status';
 
 /** A database view a widget can render. */
 export interface WidgetPickerOption {
@@ -34,19 +37,15 @@ export interface HostViewEntry {
   embedded: boolean;
 }
 
-const SOURCE_LAYOUTS = new Set<ViewLayout>([
-  ViewLayout.Grid,
-  ViewLayout.Board,
-  ViewLayout.Calendar,
-  ViewLayout.Chart,
-  ViewLayout.List,
-  ViewLayout.Gallery,
-  ViewLayout.Feed,
-  ViewLayout.Form,
-  ViewLayout.Timeline,
-]);
+// The folder layouts of the database layouts a widget can show (`isWidgetLayout`).
+const SOURCE_LAYOUTS = new Set<ViewLayout>(
+  Object.values(DatabaseViewLayout)
+    .filter((layout): layout is DatabaseViewLayout => typeof layout === 'number')
+    .filter(isWidgetLayout)
+    .map(databaseLayoutToViewLayout)
+);
 
-/** Layouts a widget may render: every database layout except Dashboard (no nesting). */
+/** Folder layouts a widget may render: every database layout except Dashboard (no nesting). */
 export function isWidgetSourceLayout(layout: ViewLayout) {
   return SOURCE_LAYOUTS.has(Number(layout) as ViewLayout);
 }
@@ -67,9 +66,44 @@ export function getCatalogDatabaseName(database: WorkspaceDatabaseWithViews) {
   return (containerOf(database)?.name || primaryOf(database)?.name || '').trim();
 }
 
-function matches(query: string, ...values: string[]) {
-  if (!query) return true;
-  return values.some((value) => value.toLowerCase().includes(query));
+// The lowercased name of every built group and option: a search compares
+// against it instead of lowercasing the whole workspace on each keystroke.
+const searchKeys = new WeakMap<WidgetPickerGroup | WidgetPickerOption, string>();
+
+function searchKeyOf(entry: WidgetPickerGroup | WidgetPickerOption) {
+  let key = searchKeys.get(entry);
+
+  if (key === undefined) {
+    key = entry.name.toLowerCase();
+    searchKeys.set(entry, key);
+  }
+
+  return key;
+}
+
+/**
+ * The groups a search query keeps: the views whose own name or whose database
+ * name contains it. Groups and options the query leaves whole keep their
+ * identity, so their (memoized) rows do not render again.
+ */
+export function filterWidgetPickerGroups(groups: WidgetPickerGroup[], query: string): WidgetPickerGroup[] {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) return groups;
+  const filtered: WidgetPickerGroup[] = [];
+
+  groups.forEach((group) => {
+    if (searchKeyOf(group).includes(normalizedQuery)) {
+      filtered.push(group);
+      return;
+    }
+
+    const options = group.options.filter((option) => searchKeyOf(option).includes(normalizedQuery));
+
+    if (options.length === group.options.length) filtered.push(group);
+    else if (options.length > 0) filtered.push({ ...group, options });
+  });
+  return filtered;
 }
 
 export interface BuildWidgetPickerGroupsInput {
@@ -82,7 +116,8 @@ export interface BuildWidgetPickerGroupsInput {
   catalog: WorkspaceDatabaseWithViews[];
   /** Views that must never be offered (the dashboard itself). */
   excludeViewIds: string[];
-  query: string;
+  /** A search query (`filterWidgetPickerGroups`); callers that search as the user types filter the built groups instead. */
+  query?: string;
   /** Name for an unnamed view. */
   fallbackName: (layout: ViewLayout) => string;
 }
@@ -90,8 +125,7 @@ export interface BuildWidgetPickerGroupsInput {
 /**
  * Existing views grouped by database: the host database first (from its live
  * Yjs doc, so freshly created views are listed), then every other database of
- * the workspace catalog. Dashboards are never offered, and a search query
- * keeps views whose own name or whose database name matches.
+ * the workspace catalog. Dashboards are never offered.
  */
 export function buildWidgetPickerGroups({
   hostDatabaseId,
@@ -100,12 +134,11 @@ export function buildWidgetPickerGroups({
   hostTabViewIds,
   catalog,
   excludeViewIds,
-  query,
+  query = '',
   fallbackName,
 }: BuildWidgetPickerGroupsInput): WidgetPickerGroup[] {
   const excluded = new Set(excludeViewIds);
   const tabIds = new Set(hostTabViewIds);
-  const normalizedQuery = query.trim().toLowerCase();
   const hostCatalog = catalog.find((database) => database.database_id === hostDatabaseId);
   const catalogHostViews = new Map(hostCatalog?.views.map((view) => [view.view_id, view]) ?? []);
   const groups: WidgetPickerGroup[] = [];
@@ -126,8 +159,7 @@ export function buildWidgetPickerGroups({
         layout: view.layout,
         icon: catalogView?.icon ?? null,
       };
-    })
-    .filter((option) => matches(normalizedQuery, option.name, hostName));
+    });
 
   if (hostOptions.length > 0) {
     groups.push({ databaseId: hostDatabaseId, name: hostName, isHost: true, options: hostOptions });
@@ -135,7 +167,6 @@ export function buildWidgetPickerGroups({
 
   catalog.forEach((database) => {
     if (database.database_id === hostDatabaseId) return;
-    const name = getCatalogDatabaseName(database);
     const options = database.views
       .filter((view) => !view.is_container && !excluded.has(view.view_id) && isWidgetSourceLayout(view.layout))
       .map<WidgetPickerOption>((view) => ({
@@ -144,15 +175,14 @@ export function buildWidgetPickerGroups({
         name: view.name.trim() || fallbackName(view.layout),
         layout: Number(view.layout) as ViewLayout,
         icon: view.icon ?? null,
-      }))
-      .filter((option) => matches(normalizedQuery, option.name, name));
+      }));
 
     if (options.length > 0) {
-      groups.push({ databaseId: database.database_id, name, isHost: false, options });
+      groups.push({ databaseId: database.database_id, name: getCatalogDatabaseName(database), isHost: false, options });
     }
   });
 
-  return groups;
+  return filterWidgetPickerGroups(groups, query);
 }
 
 /** Databases a new widget view can be created in: the host first, then the catalog. */

@@ -94,8 +94,10 @@ export function resolveCategoryColor(item: ColorSource, index: number, options: 
 }
 
 /**
- * `items` with their `color` set. The same array comes back when every color
- * is already right, so memoized charts skip the render.
+ * `items` with their `color` set. An item that already has its color is
+ * reused, and the same array comes back when every item does. Chart data is
+ * computed without colors, so `ChartProvider` gets a new array from here and
+ * keeps the previous one itself when the content is unchanged.
  */
 export function resolveCategoryColors<T extends ChartDataItem>(items: readonly T[], options: ChartColorOptions): T[] {
   let index = 0;

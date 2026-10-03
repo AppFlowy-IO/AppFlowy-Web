@@ -26,7 +26,6 @@ import { Log } from '@/utils/log';
 
 import {
   canEnterDashboardEdit,
-  DashboardEditPreference,
   DashboardModeEvent,
   DashboardModeInputs,
   reduceDashboardEditPreference,
@@ -87,8 +86,6 @@ export interface DashboardContextValue {
   mobileContext: boolean;
   /** Write access outside a mobile context: whether Edit mode can be offered. */
   canEnterEdit: boolean;
-  /** The Edit preference behind `isEditing` (for tests and diagnostics). */
-  editPreference: DashboardEditPreference;
   /** The editor started building (the add flow): keep Edit mode whatever the sync brings. */
   pinEditing: () => void;
   /** Persist a partial update; a no-op for read-only viewers and edit-only keys in a mobile context. */
@@ -492,7 +489,6 @@ export function DashboardProvider({
       setEditing,
       mobileContext,
       canEnterEdit,
-      editPreference: mode.preference,
       pinEditing,
       updateSetting,
       updateRows,
@@ -505,7 +501,6 @@ export function DashboardProvider({
       setEditing,
       mobileContext,
       canEnterEdit,
-      mode.preference,
       pinEditing,
       updateSetting,
       updateRows,

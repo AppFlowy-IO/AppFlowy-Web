@@ -195,6 +195,30 @@ class DatabaseHistorySourceController {
     };
   }
 
+  /**
+   * Detaches from the doc for good. The items the undo stacks kept alive in the
+   * doc are released, and nothing reachable from the doc refers to this
+   * controller or its subscribers any more.
+   */
+  dispose() {
+    this.subscribers.clear();
+    this.stackItemAddedSubscribers.clear();
+    this.doc.off('afterTransaction', this.handleTrackedTransactionBeforeUndoManager);
+
+    try {
+      this.undoManager.clear();
+    } catch {
+      // The doc may already be destroyed; its items go with it.
+    }
+
+    // The pinned Yjs UndoManager cannot remove its own transaction listener.
+    // Without a scope or tracked origins it records nothing, so a later source
+    // on the same doc is the only one that captures the owner's writes.
+    this.undoManager.trackedOrigins.clear();
+    this.undoManager.scope = [];
+    this.undoManager.destroy();
+  }
+
   private handleStackItemAdded = (event: StackItemAddedEvent) => {
     this.stackItemAddedSubscribers.forEach((subscriber) => subscriber(event, this));
     this.notify();
@@ -233,7 +257,13 @@ type DatabaseHistoryStackGroup = {
 
 export class DatabaseHistoryManager {
   private databaseSource: DatabaseHistorySourceController | null = null;
-  private foreignDatabaseSources = new WeakMap<YDoc, DatabaseHistorySourceController>();
+  /**
+   * History sources on other databases' docs (a dashboard saving a widget's
+   * conditions to its source view). Each is released when its doc, or this
+   * manager's own doc, is destroyed; the value removes the `destroy` listener.
+   */
+  private foreignDatabaseSources = new Map<YDoc, { source: DatabaseHistorySourceController; unwatch: () => void }>();
+  private watchesOwnDocDestroy = false;
   // Yjs matches origin constructors exactly. A private subclass lets this
   // manager own foreign writes without adding them to the source's history.
   private readonly foreignDatabaseOrigin = class extends DatabaseHistoryOrigin {};
@@ -333,14 +363,47 @@ export class DatabaseHistoryManager {
           undefined,
           new Set([this.foreignDatabaseOrigin])
         );
+        const handleDestroy = () => this.releaseForeignDatabaseSource(databaseDoc);
 
-        this.foreignDatabaseSources.set(databaseDoc, source);
+        databaseDoc.on('destroy', handleDestroy);
+        this.foreignDatabaseSources.set(databaseDoc, {
+          source,
+          unwatch: () => databaseDoc.off('destroy', handleDestroy),
+        });
         this.attachSource(source);
+
+        if (!this.watchesOwnDocDestroy) {
+          this.watchesOwnDocDestroy = true;
+          this.databaseDoc.on('destroy', this.releaseForeignDatabaseSources);
+        }
       }
     }
 
     return new this.foreignDatabaseOrigin(action, action.historyGroup ?? activeDatabaseHistoryGroup);
   }
+
+  /**
+   * Stops recording this manager's writes to another database's doc and drops
+   * what they recorded, so neither doc keeps the other reachable through the
+   * source. A later write to that doc starts a new source.
+   */
+  releaseForeignDatabaseSource(databaseDoc: YDoc) {
+    const entry = this.foreignDatabaseSources.get(databaseDoc);
+
+    if (!entry) return;
+
+    this.foreignDatabaseSources.delete(databaseDoc);
+    entry.unwatch();
+    this.detachSource(entry.source);
+    entry.source.dispose();
+    this.notify();
+  }
+
+  private releaseForeignDatabaseSources = () => {
+    Array.from(this.foreignDatabaseSources.keys()).forEach((databaseDoc) => {
+      this.releaseForeignDatabaseSource(databaseDoc);
+    });
+  };
 
   subscribe(subscriber: HistorySubscriber) {
     this.subscribers.add(subscriber);
@@ -376,6 +439,23 @@ export class DatabaseHistoryManager {
     if (!this.sourceSubscribers.has(source)) {
       this.sourceSubscribers.set(source, source.subscribe(this.notify));
     }
+  }
+
+  /** Forgets a source: its subscriptions, and its entries in both stacks. */
+  private detachSource(source: DatabaseHistorySourceController) {
+    this.sources.delete(source);
+    this.sourceUnsubscribers.get(source)?.();
+    this.sourceUnsubscribers.delete(source);
+    this.sourceSubscribers.get(source)?.();
+    this.sourceSubscribers.delete(source);
+
+    const withoutSource = (stack: DatabaseHistoryStackGroup[]) =>
+      stack
+        .map((group) => ({ ...group, entries: group.entries.filter((entry) => entry.source !== source) }))
+        .filter((group) => group.entries.length > 0);
+
+    this.undoStack = withoutSource(this.undoStack);
+    this.redoStack = withoutSource(this.redoStack);
   }
 
   private handleStackItemAdded = (event: StackItemAddedEvent, source: DatabaseHistorySourceController) => {

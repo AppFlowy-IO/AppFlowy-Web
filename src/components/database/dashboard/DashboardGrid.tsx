@@ -1,38 +1,35 @@
 import { memo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { countDashboardWidgets } from '@/application/database-yjs/dashboard-layout';
-import { DASHBOARD_MAX_WIDGETS } from '@/application/database-yjs/dashboard.type';
+import { canAddDashboardWidget } from '@/application/database-yjs/dashboard-layout';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 import { DASHBOARD_WIDGET_BOX_INSET } from './constants';
 import { useDashboardContext, useDashboardLayout } from './DashboardContext';
-import { DashboardLimitMessage } from './DashboardLimitMessage';
+import { DashboardLimitMessage, LimitedAction } from './DashboardLimitMessage';
 import { DashboardRow } from './DashboardRow';
 import { DashboardRowGap } from './DashboardRowGap';
 import { useDashboardHost, useDashboardUi } from './DashboardUiContext';
-import { dashboardMinWidgetColumns, dashboardWrapColumns } from './grid-layout';
-import { useDashboardGridWidth } from './hooks/useDashboardGridWidth';
+import { useDashboardGridBreakpoints } from './hooks/useDashboardGridBreakpoints';
 import { preloadWidgetPicker } from './WidgetPicker';
 
 export function AddWidgetButton({
   onAdd,
   className,
   emptyState = false,
+  full = false,
 }: {
   onAdd: () => void;
   className?: string;
   /** Rendered by the empty dashboard (its "New view" slot) rather than after the last row. */
   emptyState?: boolean;
+  /** The dashboard holds its maximum number of widgets. */
+  full?: boolean;
 }) {
   const { t } = useTranslation();
-  const { rows } = useDashboardLayout();
-  const { showLimitMessage } = useDashboardUi();
   const { workspaceId, variant } = useDashboardHost();
-  const full = countDashboardWidgets(rows) >= DASHBOARD_MAX_WIDGETS;
   const preloadPicker = useCallback(() => preloadWidgetPicker(workspaceId, variant), [variant, workspaceId]);
   const button = (
     <Button
@@ -63,27 +60,23 @@ export function AddWidgetButton({
 
   if (!full) return button;
 
-  // A disabled button ignores the pointer: the wrapper takes the click and
-  // repeats the reason, and a quiet hint stays under the button.
+  // The wrapper repeats the reason on click, and a quiet hint stays under the button.
   return (
     <div className='flex w-full flex-col gap-1.5'>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className='flex w-full' onClick={() => showLimitMessage('dashboard')}>
-            {button}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>
-          {t('dashboard.widgetLimit', {
-            count: DASHBOARD_MAX_WIDGETS,
-            defaultValue: 'Dashboards support up to {{count}} widgets.',
-          })}
-        </TooltipContent>
-      </Tooltip>
+      <LimitedAction limit='dashboard' wrapperClassName='flex w-full'>
+        {button}
+      </LimitedAction>
       <DashboardLimitMessage reason='dashboard' variant='inline' />
     </div>
   );
 }
+
+const GRID_BLEED_STYLE = {
+  marginLeft: -DASHBOARD_WIDGET_BOX_INSET,
+  marginRight: -DASHBOARD_WIDGET_BOX_INSET,
+  paddingLeft: DASHBOARD_WIDGET_BOX_INSET,
+  paddingRight: DASHBOARD_WIDGET_BOX_INSET,
+};
 
 /**
  * The rows of a non-empty dashboard, each followed by its band (12px before
@@ -91,30 +84,28 @@ export function AddWidgetButton({
  * mode. In Edit mode the bands are drop zones that create a new row and host
  * the height handles, and an "Add widget" button follows the last row.
  *
- * The grid measures its content width once and hands every row only its wrap
- * columns and resize minimum, so a window resize re-renders a row only when
- * one of them changes.
+ * The grid follows its measured width only through the wrap columns and the
+ * resize minimum it hands every row (`useDashboardGridBreakpoints`), so a
+ * window resize re-renders the grid and a row only when one of them changes.
  */
 export const DashboardGrid = memo(function DashboardGrid() {
   const { isEditing, canEdit } = useDashboardContext();
   const { rows, showWidgetTitles, showIconsInHeading } = useDashboardLayout();
   const { openPicker } = useDashboardUi();
   const gridRef = useRef<HTMLDivElement>(null);
-  const gridWidth = useDashboardGridWidth(gridRef);
-  // Every row track bleeds the box inset past the content column on both sides.
-  const trackWidth = gridWidth === null ? null : gridWidth + 2 * DASHBOARD_WIDGET_BOX_INSET;
+  const breakpoints = useDashboardGridBreakpoints(gridRef);
   const editing = isEditing && canEdit;
-  const dashboardFull = countDashboardWidgets(rows) >= DASHBOARD_MAX_WIDGETS;
+  const dashboardFull = !canAddDashboardWidget(rows);
 
   return (
     <div
       // The grid box bleeds like the tracks (the padding keeps its content on
       // the column), so it measures as wide as its rows. Visually neutral.
-      className='-mx-1.5 flex flex-col px-1.5'
+      className='flex flex-col'
       data-parity-id='dash-grid'
       data-testid='dashboard-grid'
-      data-track-width={trackWidth ?? ''}
       ref={gridRef}
+      style={GRID_BLEED_STYLE}
     >
       <DashboardRowGap editing={editing} index={0} />
       {rows.map((row, rowIndex) => {
@@ -127,16 +118,21 @@ export const DashboardGrid = memo(function DashboardGrid() {
             isEditing={isEditing}
             key={row.id}
             // An unmeasured grid never wraps a row.
-            minColumns={trackWidth === null ? 1 : dashboardMinWidgetColumns(trackWidth, count)}
+            minColumns={breakpoints?.minColumns[count] ?? 1}
             row={row}
             rowIndex={rowIndex}
             showIconsInHeading={showIconsInHeading}
             showWidgetTitles={showWidgetTitles}
-            wrapColumns={trackWidth === null ? count : dashboardWrapColumns(trackWidth, count)}
+            wrapColumns={breakpoints?.wrapColumns[count] ?? count}
           />
         );
       })}
-      {editing ? <AddWidgetButton onAdd={() => openPicker({ mode: 'add', placement: { type: 'new_row' } })} /> : null}
+      {editing ? (
+        <AddWidgetButton
+          full={dashboardFull}
+          onAdd={() => openPicker({ mode: 'add', placement: { type: 'new_row' } })}
+        />
+      ) : null}
     </div>
   );
 });

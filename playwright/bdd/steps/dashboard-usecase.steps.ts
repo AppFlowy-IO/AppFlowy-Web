@@ -2,11 +2,11 @@ import { expect, type Page } from '@playwright/test';
 import { createBdd, type DataTable } from 'playwright-bdd';
 
 import { formatChartValue } from '../../../src/application/database-yjs/chart-format';
-
 import {
   DashboardSelectors,
   dashboardWorld,
   enterEditMode,
+  escapeRegExp,
   expectDashboardMode,
   globalFilterChip,
   leaveEditMode,
@@ -460,7 +460,7 @@ Then('the executive sees the global filter {string}', async ({ page }, label: st
 
   await expect(
     DashboardSelectors.globalFilterChips(member).getByTestId('dashboard-global-filter-chip-label').filter({
-      hasText: new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`),
+      hasText: new RegExp(`^\\s*${escapeRegExp(label)}\\s*$`),
     })
   ).toHaveCount(1, WAIT);
 });

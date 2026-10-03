@@ -16,8 +16,17 @@ jest.mock('@/application/database-yjs', () => {
     useDatabaseView: jest.fn(() => undefined),
     useRowMap: jest.fn(),
     useRowOrdersSelector: jest.fn(),
+    // These contexts have no row seeds, so the shared detached docs stay empty
+    // (`useChartData.shared-rows.test.tsx` covers the seeded path).
+    useBackgroundRowDocLoader: jest.fn(() => ({
+      cachedRowDocs: mockNoCachedRowDocs,
+      getCachedRowDocs: () => mockNoCachedRowDocs,
+      subscribeToCachedRowDocChanges: () => () => undefined,
+    })),
   };
 });
+
+const mockNoCachedRowDocs = {};
 
 // English defaults unless a test sets a translation. `t` keeps its identity, as it does per language.
 const mockTranslations: Record<string, string> = {};
@@ -35,6 +44,7 @@ import { DEFAULT_CHART_EXTENDED_SETTINGS } from '@/application/database-yjs/char
 import { ChartAggregationType, ChartLayoutSettings, ChartType } from '@/application/database-yjs/chart.type';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import { DatabaseHistoryRowStore } from '@/application/database-yjs/history-row-store';
+import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import {
   YDatabaseField,
   YDatabaseFields,
@@ -46,13 +56,14 @@ import {
   YMapFieldTypeOption,
 } from '@/application/types';
 
-import {
-  computeNumberChartData,
-  ROW_LOAD_CONCURRENCY,
-  sortByFieldOrder,
-  touchesChartedRowData,
-  useChartData,
-} from './useChartData';
+import { computeNumberChartData, sortByFieldOrder, touchesChartedRowData } from './chartCompute';
+import { ensureRowsWithConcurrency, ROW_LOAD_CONCURRENCY } from './rowLoadPool';
+import { useChartData, UseChartDataReturn } from './useChartData';
+
+/** The Number chart's value: its single item, or null while there is none. */
+function numberValue(result: { current: UseChartDataReturn }): number | null {
+  return result.current.chartData.length > 0 ? result.current.chartData[0].value : null;
+}
 
 function addField(
   fields: YDatabaseFields,
@@ -359,6 +370,329 @@ describe('useChartData load errors', () => {
   });
 });
 
+describe('useChartData row-load failures', () => {
+  const databaseId = 'failure-database';
+  const settings: ChartLayoutSettings = {
+    chartType: ChartType.Bar,
+    xFieldId: 'done',
+    showEmptyValues: true,
+    aggregationType: ChartAggregationType.Count,
+    cumulative: false,
+    dateCondition: DateGroupCondition.Month,
+    extended: DEFAULT_CHART_EXTENDED_SETTINGS,
+  };
+  const checkedRow = (rowId: string) =>
+    createRowDoc(rowId, databaseId, { done: createCell(FieldType.Checkbox, 'Yes') });
+  const flush = (ms = 0) =>
+    act(async () => {
+      await jest.advanceTimersByTimeAsync(ms);
+    });
+  let consoleError: jest.SpyInstance;
+  let consoleWarn: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    consoleWarn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fields = new Y.Doc().getMap('fields') as YDatabaseFields;
+
+    addField(fields, 'done', FieldType.Checkbox);
+    addField(fields, 'amount', FieldType.Number);
+    (useDatabaseFields as jest.Mock).mockReturnValue(fields);
+  });
+
+  afterEach(() => {
+    consoleError.mockRestore();
+    consoleWarn.mockRestore();
+    jest.useRealTimers();
+  });
+
+  function mount(rowIds: string[], rowMap: Record<string, Y.Doc>, ensureRow: jest.Mock, initial = settings) {
+    (useRowOrdersSelector as jest.Mock).mockReturnValue(rowIds.map((id) => ({ id })));
+    (useRowMap as jest.Mock).mockReturnValue(rowMap);
+    (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow, activeViewId: 'view-1' });
+
+    return renderHook((props: { settings: ChartLayoutSettings }) => useChartData(props), {
+      initialProps: { settings: initial },
+    });
+  }
+
+  it('counts a row whose load resolves without a doc as failed, and retries it by itself', async () => {
+    const doc = checkedRow('r1');
+    let available = false;
+    // `Database.ensureRow` swallows a failed open and resolves without a doc.
+    const ensureRow = jest.fn(async () => (available ? doc : undefined));
+    const { result, rerender } = mount(['r1'], {}, ensureRow);
+
+    await flush();
+    expect(ensureRow).toHaveBeenCalledTimes(1);
+    // Not counted as loaded: the chart has no row to show, so it says so.
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.loadError).toBe(true);
+
+    // The row is not marked loaded, so the backoff asks for it again.
+    available = true;
+    await flush(ROW_SYNC_RETRY_DELAYS_MS[0]);
+    expect(ensureRow).toHaveBeenCalledTimes(2);
+    expect(result.current.loadError).toBe(false);
+
+    (useRowMap as jest.Mock).mockReturnValue({ r1: doc });
+    rerender({ settings });
+    expect(result.current.chartData).toEqual([expect.objectContaining({ label: 'Checked', value: 1, rowIds: ['r1'] })]);
+  });
+
+  it('stops retrying after the backoff schedule and keeps the error with its Retry', async () => {
+    const ensureRow = jest.fn(async () => undefined);
+    const { result } = mount(['r1'], {}, ensureRow);
+
+    await flush();
+    for (const delay of ROW_SYNC_RETRY_DELAYS_MS) await flush(delay);
+    expect(ensureRow).toHaveBeenCalledTimes(1 + ROW_SYNC_RETRY_DELAYS_MS.length);
+
+    await flush(60_000);
+    expect(ensureRow).toHaveBeenCalledTimes(1 + ROW_SYNC_RETRY_DELAYS_MS.length);
+    expect(result.current.loadError).toBe(true);
+    // The rows left out are reported once, when the retries are spent.
+    expect(consoleWarn).toHaveBeenCalledTimes(1);
+
+    // Retry starts over, behind the loading state.
+    act(() => result.current.retry());
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.loadError).toBe(false);
+    await flush();
+    expect(ensureRow).toHaveBeenCalledTimes(2 + ROW_SYNC_RETRY_DELAYS_MS.length);
+    expect(result.current.loadError).toBe(true);
+  });
+
+  it('does not blank a chart that has rows when a row added later fails to load', async () => {
+    const r1 = checkedRow('r1');
+    const ensureRow = jest.fn((rowId: string) =>
+      rowId === 'r1' ? Promise.resolve(r1) : Promise.reject(new Error('offline'))
+    );
+    const { result, rerender } = mount(['r1'], { r1 }, ensureRow);
+
+    await flush();
+    expect(result.current.chartData).toEqual([expect.objectContaining({ label: 'Checked', value: 1 })]);
+
+    // A collaborator's row whose document cannot be opened.
+    (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r1' }, { id: 'r2' }]);
+    rerender({ settings });
+    await flush();
+
+    expect(ensureRow).toHaveBeenCalledWith('r2');
+    expect(result.current.loadError).toBe(false);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.chartData).toEqual([expect.objectContaining({ label: 'Checked', value: 1, rowIds: ['r1'] })]);
+
+    // The failed row is retried behind the chart, never behind the loading state.
+    await flush(ROW_SYNC_RETRY_DELAYS_MS[0]);
+    expect(ensureRow.mock.calls.filter(([rowId]) => rowId === 'r2')).toHaveLength(2);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.loadError).toBe(false);
+  });
+
+  describe('clears the error on every path that finishes without loading', () => {
+    const failing = () => jest.fn(() => Promise.reject(new Error('offline')));
+
+    async function mountFailed(ensureRow: jest.Mock = failing()) {
+      const hook = mount(['bad'], {}, ensureRow);
+
+      await flush();
+      expect(hook.result.current.loadError).toBe(true);
+      return hook;
+    }
+
+    it('a Number chart that only counts rows', async () => {
+      const { result, rerender } = await mountFailed();
+
+      rerender({ settings: { ...settings, chartType: ChartType.Number } });
+      await flush();
+      expect(result.current.loadError).toBe(false);
+      expect(numberValue(result)).toBe(1);
+    });
+
+    it('a view that has no rows any more', async () => {
+      const { result, rerender } = await mountFailed();
+
+      (useRowOrdersSelector as jest.Mock).mockReturnValue([]);
+      rerender({ settings });
+      // The empty-view grace period.
+      await flush(300);
+      expect(result.current.loadError).toBe(false);
+      expect(result.current.isLoading).toBe(false);
+      expect(result.current.chartData).toEqual([]);
+    });
+
+    it('a history snapshot', async () => {
+      const ensureRow = failing();
+      const { result, rerender } = await mountFailed(ensureRow);
+
+      (useRowMap as jest.Mock).mockReturnValue({ bad: checkedRow('bad') });
+      (useDatabaseContext as jest.Mock).mockReturnValue({
+        ensureRow,
+        activeViewId: 'view-1',
+        dataSource: { type: 'history', id: 'snapshot' },
+      });
+      rerender({ settings });
+      await flush();
+      expect(result.current.loadError).toBe(false);
+      expect(result.current.chartData).toEqual([expect.objectContaining({ label: 'Checked', value: 1 })]);
+    });
+
+    it('rows that were loaded before', async () => {
+      const r1 = checkedRow('r1');
+      const ensureRow = jest.fn((rowId: string) =>
+        rowId === 'r1' ? Promise.resolve(r1) : Promise.reject(new Error('offline'))
+      );
+      const { result, rerender } = mount(['r1'], { r1 }, ensureRow);
+
+      await flush();
+      // A filter that leaves only a row that cannot be opened…
+      (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'bad' }]);
+      rerender({ settings });
+      await flush();
+      expect(result.current.loadError).toBe(true);
+
+      // …and back: nothing is left to load, and the error goes with it.
+      (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r1' }]);
+      rerender({ settings });
+      await flush();
+      expect(result.current.loadError).toBe(false);
+      expect(result.current.chartData).toEqual([expect.objectContaining({ label: 'Checked', value: 1 })]);
+    });
+  });
+});
+
+describe('useChartData aggregation rule', () => {
+  const databaseId = 'aggregation-database';
+
+  function setup(aggregationType: number, chartType: ChartType, yFieldId: string | undefined = 'amount') {
+    const fields = new Y.Doc().getMap('fields') as YDatabaseFields;
+
+    addField(fields, 'done', FieldType.Checkbox);
+    addField(fields, 'amount', FieldType.Number);
+    const rowMetas = {
+      r1: createRowDoc('r1', databaseId, {
+        done: createCell(FieldType.Checkbox, 'Yes'),
+        amount: createCell(FieldType.Number, '40'),
+      }),
+      r2: createRowDoc('r2', databaseId, {
+        done: createCell(FieldType.Checkbox, 'Yes'),
+        amount: createCell(FieldType.Number, '60'),
+      }),
+    };
+    const ensureRow = jest.fn().mockResolvedValue(undefined);
+
+    (useDatabaseFields as jest.Mock).mockReturnValue(fields);
+    (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r1' }, { id: 'r2' }]);
+    (useRowMap as jest.Mock).mockReturnValue(rowMetas);
+    (useDatabaseContext as jest.Mock).mockReturnValue({ ensureRow });
+
+    const settings: ChartLayoutSettings = {
+      chartType,
+      xFieldId: 'done',
+      yFieldId,
+      showEmptyValues: true,
+      // Another client's value: `parseChartLayoutSettings` passes any stored int through.
+      aggregationType: aggregationType as ChartAggregationType,
+      cumulative: false,
+      dateCondition: DateGroupCondition.Month,
+      extended: DEFAULT_CHART_EXTENDED_SETTINGS,
+    };
+
+    return { ensureRow, ...renderHook(() => useChartData({ settings })) };
+  }
+
+  // 7–16 are WP11's: formatted by R-FORMAT already, but not computed here yet.
+  it.each([7, 9, 12, 13, 15, 16, 99, -1])('charts a row count for the unknown aggregation %p', async (stored) => {
+    const { result } = setup(stored, ChartType.Bar);
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    // Not the Y field's sum (100), and not formatted as a percentage, a date or days.
+    expect(result.current.chartData).toEqual([expect.objectContaining({ label: 'Checked', value: 2 })]);
+    expect(result.current.effectiveAggregation).toBe(ChartAggregationType.Count);
+    expect(result.current.yFormatField).toBeNull();
+    expect(result.current.yFieldName).toBe('');
+  });
+
+  it('counts rows for an unknown aggregation on a Number chart, without hydrating them', async () => {
+    const { result, ensureRow } = setup(9, ChartType.Number);
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(numberValue(result)).toBe(2);
+    expect(result.current.effectiveAggregation).toBe(ChartAggregationType.Count);
+    expect(ensureRow).not.toHaveBeenCalled();
+  });
+
+  it('counts rows for a value aggregation whose Y field is gone, like the Number chart does', async () => {
+    const { result } = setup(ChartAggregationType.Sum, ChartType.Bar, 'deleted-field');
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.chartData).toEqual([expect.objectContaining({ label: 'Checked', value: 2 })]);
+    expect(result.current.effectiveAggregation).toBe(ChartAggregationType.Count);
+  });
+
+  it('keeps computing the aggregations it knows', async () => {
+    const { result } = setup(ChartAggregationType.Sum, ChartType.Bar);
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.chartData).toEqual([expect.objectContaining({ label: 'Checked', value: 100 })]);
+    expect(result.current.effectiveAggregation).toBe(ChartAggregationType.Sum);
+  });
+});
+
+describe('ensureRowsWithConcurrency', () => {
+  const never = () => false;
+
+  it('reports a row that resolves without a doc as failed, and marks only loaded rows', async () => {
+    const doc = new Y.Doc();
+    const ensureRow = jest.fn(async (rowId: string) => (rowId === 'ok' ? doc : undefined));
+    const onLoaded = jest.fn();
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const result = await ensureRowsWithConcurrency(['ok', 'missing', 'thrown'], (rowId) =>
+        rowId === 'thrown' ? Promise.reject(new Error('offline')) : ensureRow(rowId)
+      , { isCancelled: never, onLoaded });
+
+      expect(result).toEqual({ loaded: 1, failedRowIds: ['missing', 'thrown'] });
+      expect(onLoaded.mock.calls).toEqual([['ok']]);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('counts a row the caller already holds as loaded', async () => {
+    const result = await ensureRowsWithConcurrency(['held', 'missing'], async () => undefined, {
+      isCancelled: never,
+      hasRowDoc: (rowId) => rowId === 'held',
+    });
+
+    expect(result).toEqual({ loaded: 1, failedRowIds: ['missing'] });
+  });
+
+  it('never runs more than ROW_LOAD_CONCURRENCY loads at once and stops when cancelled', async () => {
+    let running = 0;
+    let peak = 0;
+    let cancelled = false;
+    const started: string[] = [];
+    const rowIds = Array.from({ length: ROW_LOAD_CONCURRENCY * 3 }, (_, index) => `row-${index}`);
+    const ensureRow = async (rowId: string) => {
+      started.push(rowId);
+      running += 1;
+      peak = Math.max(peak, running);
+      await Promise.resolve();
+      running -= 1;
+      if (started.length >= ROW_LOAD_CONCURRENCY * 2) cancelled = true;
+      return new Y.Doc();
+    };
+
+    await ensureRowsWithConcurrency(rowIds, ensureRow, { isCancelled: () => cancelled });
+    expect(peak).toBe(ROW_LOAD_CONCURRENCY);
+    expect(started.length).toBeLessThan(rowIds.length);
+  });
+});
+
 describe('useChartData Number chart', () => {
   const databaseId = 'number-database';
   const amountFieldId = 'amount';
@@ -409,8 +743,9 @@ describe('useChartData Number chart', () => {
     expect(result.current.hasGroupableFields).toBe(false);
     expect(result.current.chartData).toHaveLength(1);
     expect(result.current.chartData[0]).toEqual(expect.objectContaining({ value: 3, rowIds: ['r1', 'r2', 'r3'] }));
-    expect(result.current.numberValue).toBe(3);
-    expect(result.current.yAxisField).toBeNull();
+    expect(numberValue(result)).toBe(3);
+    expect(result.current.effectiveAggregation).toBe(ChartAggregationType.Count);
+    expect(result.current.yFormatField).toBeNull();
   });
 
   it('shows the spinner, not an empty tile, while a new filter hydrates its rows', async () => {
@@ -427,7 +762,7 @@ describe('useChartData Number chart', () => {
     (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r2' }]);
     rerender();
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.numberValue).toBe(1);
+    expect(numberValue(result)).toBe(1);
   });
 
   it('aggregates the Y field over all rows and ignores empty cells', async () => {
@@ -442,9 +777,10 @@ describe('useChartData Number chart', () => {
     const { result } = renderHook(() => useChartData({ settings }));
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.numberValue).toBe(12.5);
+    expect(numberValue(result)).toBe(12.5);
     expect(result.current.yFieldName).toBe(amountFieldId);
-    expect(result.current.yNumberFormat).toBe(0);
+    expect(result.current.effectiveAggregation).toBe(ChartAggregationType.Sum);
+    expect(result.current.yFormatField).toEqual({ type: 'number', numberFormat: 0 });
     expect(result.current.chartData[0].rowIds).toEqual(['r1', 'r2', 'r3']);
   });
 
@@ -461,12 +797,13 @@ describe('useChartData Number chart', () => {
       initialProps: { settings: average },
     });
 
-    await waitFor(() => expect(result.current.numberValue).toBe(6));
+    await waitFor(() => expect(numberValue(result)).toBe(6));
 
     rerender({ settings: { ...average, yFieldId: 'deleted-field' } });
 
-    await waitFor(() => expect(result.current.numberValue).toBe(2));
-    expect(result.current.yAxisField).toBeNull();
+    await waitFor(() => expect(numberValue(result)).toBe(2));
+    expect(result.current.effectiveAggregation).toBe(ChartAggregationType.Count);
+    expect(result.current.yFormatField).toBeNull();
   });
 
   it('counts rows without hydrating them', async () => {
@@ -477,7 +814,7 @@ describe('useChartData Number chart', () => {
     const { result } = renderHook(() => useChartData({ settings: baseSettings }));
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.numberValue).toBe(3);
+    expect(numberValue(result)).toBe(3);
     expect(result.current.chartData[0].rowIds).toEqual(['r1', 'r2', 'r3']);
     expect(ensureRow).not.toHaveBeenCalled();
   });
@@ -488,12 +825,12 @@ describe('useChartData Number chart', () => {
       initialProps: { settings: baseSettings },
     });
 
-    await waitFor(() => expect(result.current.numberValue).toBe(2));
+    await waitFor(() => expect(numberValue(result)).toBe(2));
     expect(ensureRow).not.toHaveBeenCalled();
 
     rerender({ settings: { ...baseSettings, aggregationType: ChartAggregationType.Sum, yFieldId: amountFieldId } });
 
-    await waitFor(() => expect(result.current.numberValue).toBe(10));
+    await waitFor(() => expect(numberValue(result)).toBe(10));
     expect(ensureRow.mock.calls.map(([rowId]) => rowId).sort()).toEqual(['r1', 'r2']);
   });
 
@@ -509,7 +846,7 @@ describe('useChartData Number chart', () => {
       initialProps: { settings },
     });
 
-    await waitFor(() => expect(result.current.numberValue).toBe(10));
+    await waitFor(() => expect(numberValue(result)).toBe(10));
     const data = result.current.chartData;
 
     rerender({ settings: { ...settings, titleText: 'Revenue', numberFormat: 'compact' } });
@@ -525,7 +862,7 @@ describe('useChartData Number chart', () => {
 
     (useRowOrdersSelector as jest.Mock).mockReturnValue([{ id: 'r1' }]);
     rerender({ settings });
-    await waitFor(() => expect(result.current.numberValue).toBe(4));
+    await waitFor(() => expect(numberValue(result)).toBe(4));
     expect(result.current.chartData).not.toBe(data);
   });
 
@@ -539,7 +876,7 @@ describe('useChartData Number chart', () => {
 
     const { result } = renderHook(() => useChartData({ settings }));
 
-    await waitFor(() => expect(result.current.numberValue).toBe(15));
+    await waitFor(() => expect(numberValue(result)).toBe(15));
 
     act(() => {
       const row = rowMetas.r1.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
@@ -547,7 +884,7 @@ describe('useChartData Number chart', () => {
       row.get(YjsDatabaseKey.cells).get(amountFieldId).set(YjsDatabaseKey.data, '40');
     });
 
-    await waitFor(() => expect(result.current.numberValue).toBe(45));
+    await waitFor(() => expect(numberValue(result)).toBe(45));
   });
 
   it('recomputes when the summed cell is first filled in', async () => {
@@ -560,7 +897,7 @@ describe('useChartData Number chart', () => {
 
     const { result } = renderHook(() => useChartData({ settings }));
 
-    await waitFor(() => expect(result.current.numberValue).toBe(10));
+    await waitFor(() => expect(numberValue(result)).toBe(10));
 
     act(() => {
       const row = rowMetas.r2.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
@@ -571,7 +908,7 @@ describe('useChartData Number chart', () => {
       row.get(YjsDatabaseKey.cells).set(amountFieldId, cell);
     });
 
-    await waitFor(() => expect(result.current.numberValue).toBe(17));
+    await waitFor(() => expect(numberValue(result)).toBe(17));
   });
 
   it('does not recompute for edits the chart does not read', async () => {
@@ -589,7 +926,7 @@ describe('useChartData Number chart', () => {
       return useChartData({ settings });
     });
 
-    await waitFor(() => expect(result.current.numberValue).toBe(10));
+    await waitFor(() => expect(numberValue(result)).toBe(10));
     await nextFrame();
     const settled = renders;
     const row = rowMetas.r1.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
@@ -607,7 +944,7 @@ describe('useChartData Number chart', () => {
     act(() => {
       row.get(YjsDatabaseKey.cells).get(amountFieldId).set(YjsDatabaseKey.data, '12');
     });
-    await waitFor(() => expect(result.current.numberValue).toBe(12));
+    await waitFor(() => expect(numberValue(result)).toBe(12));
   });
 
   it('keeps the row observers while the row map is replaced with the same docs', async () => {
@@ -623,7 +960,7 @@ describe('useChartData Number chart', () => {
 
     const { result, rerender } = renderHook(() => useChartData({ settings }));
 
-    await waitFor(() => expect(result.current.numberValue).toBe(15));
+    await waitFor(() => expect(numberValue(result)).toBe(15));
     await waitFor(() => expect(observeDeep).toHaveBeenCalledTimes(1));
 
     // Another row doc of the database arriving gives `Database` a new map
@@ -644,7 +981,7 @@ describe('useChartData Number chart', () => {
 
     expect(unobserveDeep).toHaveBeenCalledTimes(1);
     expect(observeCanonical).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(result.current.numberValue).toBe(25));
+    await waitFor(() => expect(numberValue(result)).toBe(25));
   });
 
   it('returns a single zero item when no rows match', async () => {
@@ -654,7 +991,7 @@ describe('useChartData Number chart', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.chartData).toEqual([expect.objectContaining({ value: 0, rowIds: [] })]);
-    expect(result.current.numberValue).toBe(0);
+    expect(numberValue(result)).toBe(0);
   });
 });
 
@@ -799,9 +1136,9 @@ describe('computeNumberChartData', () => {
     // A missing checkbox cell reads as 0, which would halve the average.
     expect(
       computeNumberChartData({
-        settings: { aggregationType: ChartAggregationType.Average },
+        aggregation: ChartAggregationType.Average,
         rowOrders: [{ id: 'r1' }, { id: 'r2' }],
-        rowMetas,
+        rowDocs: rowMetas,
         yField: doneField,
       })
     ).toEqual([expect.objectContaining({ value: 1, rowIds: ['r1'] })]);
@@ -809,9 +1146,9 @@ describe('computeNumberChartData', () => {
     // A row count needs no doc.
     expect(
       computeNumberChartData({
-        settings: { aggregationType: ChartAggregationType.Count },
+        aggregation: ChartAggregationType.Count,
         rowOrders: [{ id: 'r1' }, { id: 'r2' }],
-        rowMetas,
+        rowDocs: rowMetas,
         yField: doneField,
       })
     ).toEqual([expect.objectContaining({ value: 2, rowIds: ['r1', 'r2'] })]);

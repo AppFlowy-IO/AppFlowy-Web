@@ -7,8 +7,6 @@ import { YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application
 
 import { useDashboardViewOverlays } from '../hooks/useDashboardViewOverlays';
 
-jest.mock('@/utils/runtime-config', () => ({ getConfigValue: (_key: string, fallback: string) => fallback }));
-
 const W1 = { id: 'w1', databaseId: 'db', viewId: 'v1' };
 const W2 = { id: 'w2', databaseId: 'db', viewId: 'v2' };
 const ROWS: DashboardRow[] = [

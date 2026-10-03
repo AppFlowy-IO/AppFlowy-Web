@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { useChartLayoutSetting } from '@/application/database-yjs';
 import { ChartXFieldKind, resolveCategoryColors } from '@/application/database-yjs/chart-colors';
 import {
-  ChartAggregationType,
   ChartDataItem,
   ChartType,
   isDateGroupableFieldType,
@@ -14,7 +13,7 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import { useChartData, useChartFormatter } from '@/components/database/chart/hooks';
 import { ChartContext, ChartContextValue } from '@/components/database/chart/useChartContext';
 import { chartDataEqual } from '@/components/database/chart/widgets/chartUtils';
-import { getNumberChartTitle } from '@/components/database/chart/widgets/numberChartUtils';
+import { getChartSeriesTitle } from '@/components/database/chart/widgets/numberChartUtils';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 
 import ChartRowListPopup from './ChartRowListPopup';
@@ -42,23 +41,21 @@ export function ChartProvider({ children }: ChartProviderProps) {
     chartData,
     isLoading,
     xAxisField,
-    selectOptions,
     fieldType,
     hasGroupableFields,
-    yAxisField,
+    effectiveAggregation,
     yFieldName,
-    yNumberFormat,
-    numberValue,
+    yFormatField,
     loadError,
     retry,
   } = useChartData({ settings });
   const isDark = Boolean(useContext(ThemeModeContext)?.isDark);
   const style = resolveChartStyle(settings);
-  const aggregationType = settings?.aggregationType ?? ChartAggregationType.Count;
 
   // Colors come from the item metadata at render time, so a theme change never recomputes the data.
-  // The same content keeps the same array: rows hydrating in batches then neither re-render the
-  // chart nor restart its entry animation.
+  // This is the one place chart data is compared by content: the same content keeps the same array,
+  // so rows hydrating in batches neither re-render the chart, restart its entry animation nor drop
+  // its tooltip. The widgets and the hover below rely on that and compare the array by reference.
   const coloredDataRef = useRef<ChartDataItem[]>(chartData);
   const coloredData = useMemo(() => {
     const next = resolveCategoryColors(chartData, {
@@ -72,21 +69,20 @@ export function ChartProvider({ children }: ChartProviderProps) {
     return next;
   }, [chartData, style.colorTheme, fieldType, isDark]);
   const format = useChartFormatter({
-    aggregationType,
-    yAxisField,
-    yNumberFormat,
+    aggregation: effectiveAggregation,
+    yField: yFormatField,
     decimalPlaces: style.decimalPlaces,
     numberFormat: settings?.numberFormat,
   });
   const seriesLabel = useMemo(
-    () => getNumberChartTitle(t, { aggregationType, yFieldName, hasYField: Boolean(yAxisField) }),
-    [t, aggregationType, yFieldName, yAxisField]
+    () => getChartSeriesTitle(t, { aggregation: effectiveAggregation, yFieldName }),
+    [t, effectiveAggregation, yFieldName]
   );
 
   // Drill-down state
   const [drillDownItem, setDrillDownItem] = useState<ChartDataItem | null>(null);
 
-  const handleElementClick = useCallback((item: ChartDataItem) => {
+  const handleItemClick = useCallback((item: ChartDataItem) => {
     setDrillDownItem(item);
   }, []);
 
@@ -101,42 +97,30 @@ export function ChartProvider({ children }: ChartProviderProps) {
       chartData: coloredData,
       isLoading,
       xAxisField,
-      fieldType,
-      aggregationType,
-      selectOptions,
+      effectiveAggregation,
       hasGroupableFields,
-      yAxisField,
-      yFieldName,
-      yNumberFormat,
-      numberValue,
       style,
       format,
       seriesLabel,
       loadError,
       retry,
       isDark,
-      onElementClick: handleElementClick,
+      onItemClick: handleItemClick,
     }),
     [
       settings,
       coloredData,
       isLoading,
       xAxisField,
-      fieldType,
-      aggregationType,
-      selectOptions,
+      effectiveAggregation,
       hasGroupableFields,
-      yAxisField,
-      yFieldName,
-      yNumberFormat,
-      numberValue,
       style,
       format,
       seriesLabel,
       loadError,
       retry,
       isDark,
-      handleElementClick,
+      handleItemClick,
     ]
   );
 

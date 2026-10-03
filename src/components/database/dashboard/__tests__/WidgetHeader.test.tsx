@@ -6,14 +6,16 @@ import { ViewLayout } from '@/application/types';
 
 import {
   DashboardContext,
-  DashboardContextValue,
   DashboardLayoutContext,
   DashboardSourcesContext,
   DashboardSourcesContextValue,
 } from '../DashboardContext';
 import { LONG_PRESS_MS } from '../hooks/useLongPress';
-import { WidgetActions, WidgetContext, WidgetContextValue } from '../WidgetContext';
+import { WIDGET_TOOL_SLOT_CLASS } from '../widget-tools';
+import { WidgetContext, WidgetContextValue } from '../WidgetContext';
 import { WidgetHeaderFrame } from '../WidgetHeader';
+
+import { createDashboardContextValue, createWidgetContextValue } from './dashboardTestHarness';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -37,19 +39,7 @@ jest.mock('../WidgetSettingsHost', () => ({
 const widget = (id: string): DashboardWidget => ({ id, viewId: `view-${id}`, databaseId: 'db', width: 6 });
 const ROWS: DashboardRow[] = [{ id: 'r1', height: 360, widgets: [widget('w1'), widget('w2')] }];
 
-const DASHBOARD: DashboardContextValue = {
-  dashboardViewId: 'dashboard',
-  hostDatabaseId: 'db',
-  canEdit: true,
-  isEditing: true,
-  setEditing: jest.fn(),
-  mobileContext: false,
-  canEnterEdit: true,
-  editPreference: 'on',
-  pinEditing: jest.fn(),
-  updateSetting: jest.fn(),
-  updateRows: jest.fn(),
-};
+const DASHBOARD = createDashboardContextValue({ dashboardViewId: 'dashboard', isEditing: true });
 
 const SOURCES: DashboardSourcesContextValue = {
   sourceDocs: {},
@@ -57,17 +47,6 @@ const SOURCES: DashboardSourcesContextValue = {
   sourceNames: { db: 'Projects' },
   registerSourceName: jest.fn(),
 };
-
-function createActions(): WidgetActions {
-  return {
-    open: jest.fn(),
-    changeView: jest.fn(),
-    duplicate: jest.fn(),
-    remove: jest.fn(),
-    move: jest.fn(),
-    openSettings: jest.fn(),
-  };
-}
 
 type HarnessProps = Partial<
   Pick<WidgetContextValue, 'editing' | 'showWidgetTitles' | 'showIcon' | 'name' | 'setDragHandle' | 'isDragging'>
@@ -78,31 +57,19 @@ function Harness({ editing = false, showWidgetTitles = true, actions, ...overrid
   const [menuOpen, setMenuOpen] = useState(false);
   const titleRef = useRef<HTMLButtonElement>(null);
   const optionsRef = useRef<HTMLButtonElement>(null);
-  const value: WidgetContextValue = {
-    widgetId: 'w1',
-    databaseId: 'db',
-    viewId: 'view-w1',
-    name: 'Tasks Grid',
-    icon: null,
+  const settingsToolRef = useRef<HTMLButtonElement>(null);
+  const value: WidgetContextValue = createWidgetContextValue({
     layout: ViewLayout.Grid,
-    isEditing: editing,
-    canEdit: true,
     editing,
     showWidgetTitles,
-    showIcon: false,
     headerHeight: showWidgetTitles ? 40 : 0,
-    isDragging: false,
-    setDragHandle: jest.fn(),
     menuOpen,
     setMenuOpen,
-    settingsOpen: false,
-    setSettingsOpen: jest.fn(),
-    getBoxElement: () => null,
     titleRef,
     optionsRef,
-    actions: createActions(),
+    settingsToolRef,
     ...overrides,
-  };
+  });
 
   return (
     <DashboardContext.Provider value={{ ...DASHBOARD, isEditing: editing }}>
@@ -123,19 +90,30 @@ const pill = () => screen.getByTestId('dashboard-widget-title-button');
 
 describe('WidgetHeaderFrame with titles', () => {
   it('renders a 40px band with a quiet 12px title pill named "Widget options"', () => {
-    render(<Harness actions={<div data-testid='view-actions' />} />);
+    const setDragHandle = jest.fn();
+
+    render(<Harness actions={<div data-testid='view-actions' />} setDragHandle={setDragHandle} />);
     const header = screen.getByTestId('dashboard-widget-header');
 
-    expect(header.className).toContain('h-10');
-    expect(header.className).toContain('px-2.5');
-    expect(header.className).not.toContain('cursor-grab');
+    // The band's size comes from the tokens (`geometry.widget.headerHeight` and its paddings).
+    expect(header.style.height).toBe('40px');
+    expect(header.style.padding).toBe('2px 10px');
+    // View mode: the band is no drag handle.
+    expect(setDragHandle).not.toHaveBeenCalledWith(header);
     expect(pill().tagName).toBe('BUTTON');
     expect(pill().getAttribute('aria-label')).toBe('Widget options');
     expect(pill().getAttribute('aria-haspopup')).toBe('menu');
     expect(pill().getAttribute('aria-expanded')).toBe('false');
-    for (const name of ['text-xs', 'font-medium', 'rounded-600', 'px-2.5', 'py-1', 'text-dash-title']) {
-      expect(pill().className).toContain(name);
-    }
+    // The band, the pill and its label the parity probe measures (the 12px label, its radius and padding).
+    expect(header.getAttribute('data-parity-id')).toBe('dash-widget-header');
+    expect(pill().getAttribute('data-parity-id')).toBe('dash-widget-title-pill');
+    expect(screen.getByTestId('dashboard-widget-title').getAttribute('data-parity-id')).toBe(
+      'dash-widget-title-pill__label'
+    );
+    expect(pill().getAttribute('type')).toBe('button');
+    expect(pill().getAttribute('data-state')).toBe('closed');
+    // A quiet label: the text alone, no glyph.
+    expect(pill().querySelectorAll('svg')).toHaveLength(0);
 
     expect(pill().getAttribute('aria-describedby')).toBe(screen.getByTestId('dashboard-widget-title').id);
     expect(screen.getByTestId('dashboard-widget-title').textContent).toBe('Tasks Grid');
@@ -153,11 +131,15 @@ describe('WidgetHeaderFrame with titles', () => {
     const glyph = screen.getByTestId('dashboard-widget-title-icon');
 
     expect(glyph.tagName.toLowerCase()).toBe('svg');
-    expect(glyph.getAttribute('class')).toContain('h-4 w-4');
+    // In the pill, before its label.
+    expect(glyph.nextElementSibling).toBe(screen.getByTestId('dashboard-widget-title'));
+    // The shared layout glyph (`ViewIcon`) carries the probe's id and stays out of the accessible name.
+    expect(glyph.getAttribute('data-parity-id')).toBe('dash-widget-title-pill__icon');
+    expect(glyph.getAttribute('aria-hidden')).toBe('true');
     expect(screen.queryByTestId('page-icon')).toBeNull();
   });
 
-  it('shows the view\'s own icon in the heading when it has one', () => {
+  it("shows the view's own icon in the heading when it has one", () => {
     render(<Harness showIcon icon={{ ty: 0, value: '🚀' } as never} />);
     expect(within(screen.getByTestId('dashboard-widget-title-icon')).getByTestId('page-icon')).toBeTruthy();
   });
@@ -192,35 +174,75 @@ describe('WidgetHeaderFrame with titles', () => {
     await waitFor(() => expect(screen.queryByTestId('dashboard-widget-menu')).toBeNull());
   });
 
-  it('opens the widget menu on a long touch', async () => {
+  // jsdom has no PointerEvent: a MouseEvent named after it carries the pointer type.
+  function touch(type: 'pointerdown' | 'pointerup') {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 10, clientY: 10 });
+
+    Object.defineProperty(event, 'pointerType', { value: 'touch' });
+    return event;
+  }
+
+  function longPress() {
     jest.useFakeTimers();
     try {
-      render(<Harness />);
-      // jsdom has no PointerEvent: a MouseEvent named after it carries the pointer type.
-      const press = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 });
-
-      Object.defineProperty(press, 'pointerType', { value: 'touch' });
-      fireEvent(pill(), press);
+      fireEvent(pill(), touch('pointerdown'));
       act(() => {
         jest.advanceTimersByTime(LONG_PRESS_MS);
       });
     } finally {
       jest.useRealTimers();
     }
+  }
+
+  it('opens the widget menu on a long touch', async () => {
+    render(<Harness />);
+    longPress();
 
     expect(await screen.findByTestId('dashboard-widget-menu')).toBeTruthy();
   });
 
+  it('keeps the menu open when the released long touch also sends a click', async () => {
+    render(<Harness />);
+    longPress();
+    expect(await screen.findByTestId('dashboard-widget-menu')).toBeTruthy();
+
+    // Safari on iOS sends the click of the press; it must not toggle the menu shut.
+    fireEvent(pill(), touch('pointerup'));
+    expect(fireEvent.click(pill())).toBe(false);
+    expect(screen.getByTestId('dashboard-widget-menu')).toBeTruthy();
+    expect(pill().getAttribute('aria-expanded')).toBe('true');
+
+    // Only that one click is swallowed: the next one toggles as usual.
+    fireEvent.click(pill());
+    await waitFor(() => expect(screen.queryByTestId('dashboard-widget-menu')).toBeNull());
+  });
+
+  it('does not swallow the click of a long touch that was released without one', async () => {
+    render(<Harness />);
+    longPress();
+    expect(await screen.findByTestId('dashboard-widget-menu')).toBeTruthy();
+    fireEvent(pill(), touch('pointerup'));
+
+    // Android sends no click after a long press. The next press, a mouse click, closes the menu.
+    fireEvent.pointerDown(pill());
+    fireEvent.click(pill());
+    await waitFor(() => expect(screen.queryByTestId('dashboard-widget-menu')).toBeNull());
+  });
+
   it('turns blue in Edit mode, where the band is the drag handle, with no drag glyph and no more button', () => {
     const setDragHandle = jest.fn();
+    const { rerender } = render(<Harness setDragHandle={setDragHandle} />);
+    const viewModeLook = pill().className;
 
-    render(<Harness editing setDragHandle={setDragHandle} />);
+    expect(setDragHandle).not.toHaveBeenCalledWith(screen.getByTestId('dashboard-widget-header'));
+    rerender(<Harness editing setDragHandle={setDragHandle} />);
     const header = screen.getByTestId('dashboard-widget-header');
 
-    expect(pill().className).toContain('text-dash-edit-title');
-    expect(header.className).toContain('cursor-grab');
+    // Edit mode alone restyles the pill (the accent title).
+    expect(pill().className).not.toBe(viewModeLook);
     expect(setDragHandle).toHaveBeenCalledWith(header);
-    expect(header.style.height).toBe('');
+    // The same 40px band as in View mode: Edit mode never changes a size.
+    expect(header.style.height).toBe('40px');
     expect(screen.queryByTestId('dashboard-widget-menu-button')).toBeNull();
     expect(screen.queryByTestId('dashboard-widget-options-button')).toBeNull();
     expect(header.querySelectorAll('svg')).toHaveLength(0);
@@ -229,17 +251,22 @@ describe('WidgetHeaderFrame with titles', () => {
 
 describe('WidgetHeaderFrame without titles', () => {
   it('floats a capsule with the tools and a "Widget options" button that opens the menu', async () => {
-    render(<Harness actions={<div data-testid='view-actions' />} showWidgetTitles={false} />);
+    const setDragHandle = jest.fn();
+
+    render(
+      <Harness actions={<div data-testid='view-actions' />} setDragHandle={setDragHandle} showWidgetTitles={false} />
+    );
     const capsule = screen.getByTestId('dashboard-widget-tool-capsule');
     const options = screen.getByTestId('dashboard-widget-options-button');
 
     expect(screen.queryByTestId('dashboard-widget-header')).toBeNull();
     expect(screen.queryByTestId('dashboard-widget-title')).toBeNull();
-    expect(capsule.className).toContain('absolute');
-    expect(capsule.className).toContain('right-2');
-    expect(capsule.className).toContain('top-2');
-    // Hidden until hovered in View mode, like the tools.
-    expect(capsule.className).toContain('opacity-0');
+    // The capsule the parity probe measures in the card's top-right corner, holding the options button.
+    expect(capsule.getAttribute('data-parity-id')).toBe('dash-widget-capsule');
+    expect(options.closest('[data-testid="dashboard-widget-tool-capsule"]')).toBe(capsule);
+    expect(setDragHandle).not.toHaveBeenCalledWith(capsule);
+    // Hidden until hovered in View mode: the tools' tested visibility rule.
+    expect(capsule.className).toContain(WIDGET_TOOL_SLOT_CLASS);
     expect(within(capsule).getByTestId('view-actions')).toBeTruthy();
     expect(options.getAttribute('aria-label')).toBe('Widget options');
 
@@ -256,8 +283,9 @@ describe('WidgetHeaderFrame without titles', () => {
     render(<Harness editing setDragHandle={setDragHandle} showWidgetTitles={false} />);
     const capsule = screen.getByTestId('dashboard-widget-tool-capsule');
 
-    expect(capsule.className).toContain('opacity-100');
-    expect(capsule.className).toContain('cursor-grab');
+    // Always shown: the hover rule no longer applies.
+    expect(capsule.className).not.toContain(WIDGET_TOOL_SLOT_CLASS);
+    expect(capsule.getAttribute('data-parity-id')).toBe('dash-widget-capsule');
     expect(setDragHandle).toHaveBeenCalledWith(capsule);
   });
 

@@ -14,6 +14,7 @@ import {
   readRawLayout,
   seedDashboardProbes,
 } from '../../support/dashboard-parity-helpers';
+import { WIDGET_TIMEOUT } from '../../support/dashboard-shared-helpers';
 import {
   addDashboardView,
   addViewThroughTabs,
@@ -44,7 +45,6 @@ import { ChartSettingsSelectors } from '../../support/selectors';
 
 const { Given, When, Then } = createBdd();
 
-const WIDGET_TIMEOUT = { timeout: 30_000 };
 /** `CheckboxFilterCondition` (`fields/checkbox/checkbox.type.ts`). */
 const CHECKBOX_IS_CHECKED = 0;
 const CHECKBOX_IS_UNCHECKED = 1;

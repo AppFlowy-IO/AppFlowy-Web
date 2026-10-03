@@ -5,6 +5,11 @@ import { useRenderFields } from '@/components/database/components/grid/grid-colu
 import GridVirtualizer from '@/components/database/components/grid/grid-table/GridVirtualizer';
 import { useGridGrouping } from '@/components/database/grid/GridGroupingContext';
 import { GridProvider } from '@/components/database/grid/GridProvider';
+import {
+  DASHBOARD_WIDGET_GRID_OPTIONS,
+  DEFAULT_GRID_OPTIONS,
+  GridOptionsContext,
+} from '@/components/database/grid/useGridContext';
 
 export function Grid() {
   const { fields } = useRenderFields();
@@ -12,7 +17,7 @@ export function Grid() {
   const grouping = useGridGrouping();
   const { rowOrders, hydrating } = grouping;
 
-  const { onRendered } = useDatabaseContext();
+  const { onRendered, isDashboardWidget } = useDatabaseContext();
 
   useEffect(() => {
     if (fields && rowOrders !== undefined) {
@@ -21,20 +26,23 @@ export function Grid() {
   }, [fields, rowOrders, onRendered]);
 
   return (
-    <GridProvider grouping={grouping}>
-      <div
-        data-testid='database-grid'
-        // Rows the grid lists after filters and sorts, once every row was read;
-        // large-database tests read it. While rows are read the grid shows the
-        // matches found so far (data-loaded-row-count).
-        data-row-count={hydrating ? undefined : rowOrders?.length}
-        data-loaded-row-count={hydrating ? rowOrders?.length ?? 0 : undefined}
-        data-hydrating={hydrating ? 'true' : undefined}
-        className={`database-grid relative grid-table-${viewId} flex min-h-0 w-full flex-1 flex-col`}
-      >
-        <GridVirtualizer columns={fields} />
-      </div>
-    </GridProvider>
+    <GridOptionsContext.Provider value={isDashboardWidget ? DASHBOARD_WIDGET_GRID_OPTIONS : DEFAULT_GRID_OPTIONS}>
+      <GridProvider grouping={grouping}>
+        <div
+          data-testid='database-grid'
+          // Rows the grid lists after filters and sorts, once every row was read;
+          // large-database tests read it. While rows are read the grid shows the
+          // matches found so far (data-loaded-row-count).
+          data-row-count={hydrating ? undefined : rowOrders?.length}
+          data-loaded-row-count={hydrating ? rowOrders?.length ?? 0 : undefined}
+          data-hydrating={hydrating ? 'true' : undefined}
+          className={`database-grid relative grid-table-${viewId} flex min-h-0 w-full flex-1 flex-col`}
+        >
+          {/* Memoized: a progress-only tick re-renders this component, not the rows. */}
+          <GridVirtualizer columns={fields} />
+        </div>
+      </GridProvider>
+    </GridOptionsContext.Provider>
   );
 }
 

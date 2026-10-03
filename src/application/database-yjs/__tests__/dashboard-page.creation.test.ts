@@ -4,6 +4,7 @@ import { readDashboardLayoutSetting } from '@/application/database-yjs/dashboard
 import {
   createDatabaseDashboardPageViaGrid,
   createLinkedDatabaseDashboardView,
+  duplicateLinkedDatabaseDashboardView,
   NEW_DASHBOARD_VIEW_NAME,
 } from '@/application/database-yjs/dashboard-page';
 import {
@@ -11,6 +12,7 @@ import {
   wasDashboardCreatedThisSession,
 } from '@/application/database-yjs/dashboard-session';
 import { toPlainValue } from '@/application/database-yjs/layout-codec';
+import { createLinkedDatabaseViewForLayout } from '@/application/database-yjs/linked-view-creation';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
@@ -299,7 +301,7 @@ describe('createLinkedDatabaseDashboardView', () => {
     expect(wasDashboardCreatedThisSession(DASHBOARD_VIEW_ID)).toBe(true);
   });
 
-  describe('duplicating a linked dashboard block (sourceViewId)', () => {
+  describe('duplicating a linked dashboard block (duplicateLinkedDatabaseDashboardView)', () => {
     const SOURCE_DASHBOARD_ID = 'source-dashboard-id';
     const OWNED_VIEW_ID = 'owned-board-id';
     const OWNED_COPY_ID = 'owned-board-copy-id';
@@ -411,7 +413,7 @@ describe('createLinkedDatabaseDashboardView', () => {
       const databaseDoc = createSourceDoc();
       const params = createDuplicateParams(databaseDoc);
 
-      const response = await createLinkedDatabaseDashboardView(params);
+      const response = await duplicateLinkedDatabaseDashboardView(params);
       const views = getDatabase(databaseDoc).get(YjsDatabaseKey.views);
       const stored = toPlainValue(views.get(DASHBOARD_VIEW_ID)?.get(YjsDatabaseKey.layout_settings)?.get(DASHBOARD_LAYOUT_KEY));
 
@@ -455,7 +457,7 @@ describe('createLinkedDatabaseDashboardView', () => {
 
       params.createDatabaseView.mockImplementationOnce(create).mockRejectedValueOnce(new Error('quota'));
 
-      await expect(createLinkedDatabaseDashboardView(params)).rejects.toThrow('quota');
+      await expect(duplicateLinkedDatabaseDashboardView(params)).rejects.toThrow('quota');
       expect(getDatabase(databaseDoc).get(YjsDatabaseKey.views).has(DASHBOARD_VIEW_ID)).toBe(false);
       expect(params.deletePage).toHaveBeenCalledWith(DASHBOARD_VIEW_ID);
       expect(Log.warn).not.toHaveBeenCalledWith(
@@ -465,14 +467,50 @@ describe('createLinkedDatabaseDashboardView', () => {
       expect(wasDashboardCreatedThisSession(DASHBOARD_VIEW_ID)).toBe(false);
     });
 
-    it('refuses to duplicate without a way to load the database', async () => {
+    it('removes the new dashboard and rethrows when the database cannot be loaded', async () => {
       const databaseDoc = createSourceDoc();
-      const params = { ...createDuplicateParams(databaseDoc), loadView: undefined };
+      const params = createDuplicateParams(databaseDoc);
 
-      await expect(createLinkedDatabaseDashboardView(params)).rejects.toThrow(
-        'The linked dashboard could not be duplicated right now'
-      );
+      params.loadView.mockRejectedValue(new Error('offline'));
+
+      await expect(duplicateLinkedDatabaseDashboardView(params)).rejects.toThrow('offline');
       expect(params.deletePage).toHaveBeenCalledWith(DASHBOARD_VIEW_ID);
+      expect(params.bindViewSync).not.toHaveBeenCalled();
+    });
+
+    it.each(['loadView', 'loadViewMeta', 'updatePage', 'deletePage'] as const)(
+      'refuses to duplicate without %s, before the server creates anything',
+      async (missing) => {
+        const databaseDoc = createSourceDoc();
+        const params = createDuplicateParams(databaseDoc);
+
+        await expect(
+          createLinkedDatabaseViewForLayout(ViewLayout.Dashboard, { ...params, duplicate: true, [missing]: undefined })
+        ).rejects.toThrow('The linked dashboard could not be duplicated right now');
+        // All or nothing: no view exists, so there is nothing to remove.
+        expect(params.createDatabaseView).not.toHaveBeenCalled();
+        expect(getDatabase(databaseDoc).get(YjsDatabaseKey.views).has(DASHBOARD_VIEW_ID)).toBe(false);
+      }
+    );
+
+    it('goes through the layout table: a duplicated block copies, a new linked block starts empty', async () => {
+      const copiedDoc = createSourceDoc();
+      const copied = await createLinkedDatabaseViewForLayout(ViewLayout.Dashboard, {
+        ...createDuplicateParams(copiedDoc),
+        duplicate: true,
+      });
+      const emptyDoc = createSourceDoc();
+      const empty = await createLinkedDatabaseViewForLayout(ViewLayout.Dashboard, {
+        ...createDuplicateParams(emptyDoc),
+        duplicate: false,
+      });
+
+      // Both creators apply the server's update themselves.
+      expect(copied.databaseUpdatePending).toBe(false);
+      expect(empty.databaseUpdatePending).toBe(false);
+      expect(readDashboardLayoutSetting(getDatabase(copiedDoc), DASHBOARD_VIEW_ID).rows).toHaveLength(1);
+      expect(readDashboardLayoutSetting(getDatabase(emptyDoc), DASHBOARD_VIEW_ID).rows).toEqual([]);
+      expect(getDatabase(emptyDoc).get(YjsDatabaseKey.views).has(OWNED_COPY_ID)).toBe(false);
     });
   });
 });

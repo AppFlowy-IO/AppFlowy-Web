@@ -1,4 +1,3 @@
-import { expect } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import {
@@ -14,16 +13,12 @@ import {
 } from '../../support/dashboard-platform-helpers';
 import {
   addDashboardView,
-  allWidgets,
-  DashboardSelectors,
+  expectWidgetCount,
   openDatabasePage,
-  readDashboardSetting,
   reloadDashboard,
 } from '../../support/dashboard-test-helpers';
 
 const { Given, When, Then } = createBdd();
-
-const WIDGET_TIMEOUT = { timeout: 30_000 };
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -105,6 +100,5 @@ Then('the dashboard offers no Edit button', async ({ page }) => {
 });
 
 Then('the dashboard has {int} widget(s)', async ({ page }, count: number) => {
-  await expect(DashboardSelectors.widgets(page)).toHaveCount(count, WIDGET_TIMEOUT);
-  await expect.poll(async () => allWidgets(await readDashboardSetting(page)).length).toBe(count);
+  await expectWidgetCount(page, count);
 });

@@ -38,7 +38,7 @@ import {
   replaceGlobalFilter,
   setGlobalFilterTarget,
 } from '../global-filter.utils';
-import { readGlobalFilterSourceFields } from '../useGlobalFilterSources';
+import { readGlobalFilterSourceFields } from '../global-filter.source-fields';
 
 import { addField, createSourceDoc, option, source } from './source-doc.fixture';
 

@@ -156,6 +156,7 @@ jobs:
             description: 'Form and Timeline creation and interactions'
             bdd: 'true'
             shard: ''
+          # One scenario list in two shards: Playwright splits its tests between them.
           - name: 'dashboard-bdd'
             spec: >-
               playwright/.features-gen/playwright/bdd/features/database/dashboard-creation.feature.spec.js
@@ -173,9 +174,33 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/database/dashboard-chart-render.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/dashboard-grid.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/dashboard-widget-chrome.feature.spec.js
-            description: 'Dashboard creation, layout, widgets, private conditions, save history and Number charts'
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-interaction-sweep.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-loading.feature.spec.js
+            description: 'Dashboard creation, layout, widgets, loading and the control sweep (shard 1 of 2)'
             bdd: 'true'
-            shard: ''
+            shard: '1/2'
+          - name: 'dashboard-bdd-2'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-creation.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-widgets.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-layout.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-modes.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-private-conditions.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-save-history.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-global-filters.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-number-chart.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-integration.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-edit-mode.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-compatibility.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-owned-views.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-chart-render.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-grid.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-widget-chrome.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-interaction-sweep.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-loading.feature.spec.js
+            description: 'Dashboard creation, layout, widgets, loading and the control sweep (shard 2 of 2)'
+            bdd: 'true'
+            shard: '2/2'
           - name: 'dashboard-usecase-bdd'
             spec: 'playwright/.features-gen/playwright/bdd/features/database/dashboard-usecases/'
             description: 'Real-world dashboard scenarios modelled on Notion templates'

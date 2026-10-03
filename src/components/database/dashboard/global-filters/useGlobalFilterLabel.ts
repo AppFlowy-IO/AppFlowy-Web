@@ -4,16 +4,27 @@ import { useTranslation } from 'react-i18next';
 import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
 import { DateFormat } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
+import { getFieldTypeName } from '@/components/database/components/field/FieldLabel';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { getDateFormat } from '@/utils/time';
 
 import {
-  getFieldTypeName,
   getGlobalFilterChipText,
   getGlobalFilterDescription,
   isGlobalFilterActive,
+  Translate,
 } from './global-filter.conditions';
 import { countGlobalFilterSources, getPrimaryTargetField, GlobalFilterSource } from './global-filter.utils';
+
+/** "1 source" / "3 sources": how many databases a filter (or a property type) reaches. */
+export function globalFilterSourcesText(t: Translate, count: number): string {
+  return t('dashboard.globalFilters.sources', {
+    count,
+    defaultValue: '{{count}} sources',
+    defaultValue_one: '{{count}} source',
+    defaultValue_other: '{{count}} sources',
+  });
+}
 
 export function useGlobalFilterDateFormat() {
   const currentUser = useCurrentUserOptional();
@@ -40,12 +51,7 @@ export function useGlobalFilterLabel(filter: DashboardGlobalFilter, sources: Glo
       active,
       typeName,
       sourceCount,
-      sourceLabel: t('dashboard.globalFilters.sources', {
-        count: sourceCount,
-        defaultValue: '{{count}} sources',
-        defaultValue_one: '{{count}} source',
-        defaultValue_other: '{{count}} sources',
-      }),
+      sourceLabel: globalFilterSourcesText(t, sourceCount),
     };
   }, [filter, sources, dateFormat, t]);
 }

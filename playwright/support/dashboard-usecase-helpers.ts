@@ -13,18 +13,22 @@ import { APIRequestContext, expect, Locator, Page } from '@playwright/test';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
+import { DASHBOARD_DEFAULT_ROW_HEIGHT } from '../../src/application/database-yjs/dashboard-geometry';
 import { DateFilterCondition } from '../../src/application/database-yjs/fields/date/date.type';
 import { SelectOptionFilterCondition } from '../../src/application/database-yjs/fields/select-option/select_option.type';
 import { TextFilterCondition } from '../../src/application/database-yjs/fields/text/text.type';
-import { Types } from '../../src/application/types';
+import { ViewLayout } from '../../src/application/types';
 
 import { mockProSubscription } from './chart-test-helpers';
-import { grantWorkspaceProSubscription } from './subscription-test-helpers';
+import { canonicalJson, equalRowWidths, readServerDatabaseDoc } from './dashboard-shared-helpers';
 import {
   addFixtureDatabase,
   apiGet,
   apiPost,
+  chooseGlobalFilterCondition,
   closeGlobalFilterMenu,
+  createDatabaseViewThroughApi,
+  createSpace,
   DashboardSelectors,
   DashboardWorld,
   dashboardWorld,
@@ -49,23 +53,23 @@ import {
   pickExistingView,
   readDashboardSetting,
   readDatabaseViews,
+  readViewConditions,
   registerDashboardWorld,
   rowColumnPitch,
   signBrowserInWithSession,
   signInFixtureAccount,
   splitList,
+  toggleGlobalFilterOptionById,
   widgetLocator,
   writeDashboardSetting,
 } from './dashboard-test-helpers';
 import { closeRowDetailWithEscape } from './row-detail-helpers';
 import { DatabaseViewSelectors, ModalSelectors } from './selectors';
+import { grantWorkspaceProSubscription } from './subscription-test-helpers';
 import { setupPageErrorHandling } from './test-config';
 
 export const USE_CASE_TIMEOUT = 30_000;
 const FIXTURE_TIMEOUT = 45_000;
-const SPACE_PERMISSION_PRIVATE = 1;
-const DASHBOARD_GRID_COLUMNS = 12;
-const DASHBOARD_ROW_HEIGHT = 360;
 
 // ---------------------------------------------------------------------------
 // Scenario state
@@ -162,16 +166,7 @@ async function retryTransient<T>(label: string, action: () => Promise<T>, codes 
 }
 
 async function createPrivateSpace(request: APIRequestContext, token: string, workspaceId: string, name: string) {
-  const space = await retryTransient(`Creating space "${name}"`, () =>
-    apiPost<{ view_id: string }>(request, token, `/api/workspace/${workspaceId}/space`, {
-      name,
-      space_icon: 'lock',
-      space_icon_color: '#555555',
-      space_permission: SPACE_PERMISSION_PRIVATE,
-    })
-  );
-
-  return space.view_id;
+  return retryTransient(`Creating space "${name}"`, () => createSpace(request, token, workspaceId, name, true));
 }
 
 /** Sign in a fresh owner with a private space named after the use case. */
@@ -303,7 +298,7 @@ function fieldIdOf(database: FixtureDatabase, property: string): string {
 }
 
 /** Row ids behind the grid view the browser shows for `database`. */
-async function browserRowIds(page: Page, databaseId: string, viewId: string): Promise<string[]> {
+export async function browserRowIds(page: Page, databaseId: string, viewId: string): Promise<string[]> {
   return page.evaluate(
     ({ databaseId, viewId }) => {
       const bridge = (window as any).__DASHBOARD_TEST__;
@@ -317,31 +312,30 @@ async function browserRowIds(page: Page, databaseId: string, viewId: string): Pr
   );
 }
 
-export async function addUseCaseRows(
+/** A row as the Cloud API takes it: its title, and its cells by property name. */
+export interface ApiRow {
+  title: string;
+  cells: Record<string, string | number | boolean>;
+}
+
+/**
+ * Create rows through the Cloud API, one after the other (so they keep the
+ * table order), remember their ids by title, and wait until the browser's
+ * database doc lists them.
+ */
+export async function addRowsThroughApi(
   page: Page,
   request: APIRequestContext,
   databaseName: string,
-  rows: Record<string, string>[]
+  rows: ApiRow[],
+  timeout = FIXTURE_TIMEOUT
 ) {
   const world = dashboardWorld(page);
   const database = fixtureDatabase(page, databaseName);
   const base = `/api/workspace/${world.workspaceId}/database/${database.databaseId}`;
 
-  for (const row of rows) {
-    const cells: Record<string, string | number | boolean> = {};
-
-    Object.entries(row).forEach(([property, raw]) => {
-      const value = raw.trim();
-
-      if (!value) return;
-      const type = fieldTypeOf(page, database, property);
-
-      if (type === FieldType.Number) cells[property] = Number(value);
-      else if (type === FieldType.DateTime) cells[property] = localNoonIso(relativeDayOffset(value));
-      else if (type === FieldType.Checkbox) cells[property] = /^(yes|true|checked)$/i.test(value);
-      else cells[property] = value;
-    });
-    database.rowIds[row.Name.trim()] = await apiPost<string>(request, world.owner.accessToken, `${base}/row`, {
+  for (const { title, cells } of rows) {
+    database.rowIds[title] = await apiPost<string>(request, world.owner.accessToken, `${base}/row`, {
       cells,
       document: null,
       parse_link_as_link_preview: false,
@@ -359,9 +353,42 @@ export async function addUseCaseRows(
 
         return expected.every((id) => ids.includes(id));
       },
-      { timeout: FIXTURE_TIMEOUT, message: `waiting for the "${databaseName}" rows to reach the browser` }
+      { timeout, message: `waiting for the "${databaseName}" rows to reach the browser` }
     )
     .toBe(true);
+}
+
+/** Use-case table rows (`| Name | Status | ... |`): each value typed by its property. */
+export async function addUseCaseRows(
+  page: Page,
+  request: APIRequestContext,
+  databaseName: string,
+  rows: Record<string, string>[]
+) {
+  const database = fixtureDatabase(page, databaseName);
+  const toCells = (row: Record<string, string>) => {
+    const cells: ApiRow['cells'] = {};
+
+    Object.entries(row).forEach(([property, raw]) => {
+      const value = raw.trim();
+
+      if (!value) return;
+      const type = fieldTypeOf(page, database, property);
+
+      if (type === FieldType.Number) cells[property] = Number(value);
+      else if (type === FieldType.DateTime) cells[property] = localNoonIso(relativeDayOffset(value));
+      else if (type === FieldType.Checkbox) cells[property] = /^(yes|true|checked)$/i.test(value);
+      else cells[property] = value;
+    });
+    return cells;
+  };
+
+  await addRowsThroughApi(
+    page,
+    request,
+    databaseName,
+    rows.map((row) => ({ title: row.Name.trim(), cells: toCells(row) }))
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -375,17 +402,17 @@ interface ViewLayoutInfo {
 }
 
 const LAYOUTS: Record<string, ViewLayoutInfo> = {
-  Grid: { folderLayout: 1, databaseLayout: DatabaseViewLayout.Grid },
-  Board: { folderLayout: 2, databaseLayout: DatabaseViewLayout.Board },
-  Calendar: { folderLayout: 3, databaseLayout: DatabaseViewLayout.Calendar },
-  'Bar chart': { folderLayout: 5, databaseLayout: DatabaseViewLayout.Chart, chartType: 0 },
-  'Line chart': { folderLayout: 5, databaseLayout: DatabaseViewLayout.Chart, chartType: 1 },
-  'Donut chart': { folderLayout: 5, databaseLayout: DatabaseViewLayout.Chart, chartType: 3 },
-  'Number chart': { folderLayout: 5, databaseLayout: DatabaseViewLayout.Chart, chartType: 4 },
-  List: { folderLayout: 6, databaseLayout: DatabaseViewLayout.List },
-  Gallery: { folderLayout: 7, databaseLayout: DatabaseViewLayout.Gallery },
-  Timeline: { folderLayout: 10, databaseLayout: DatabaseViewLayout.Timeline },
-  Dashboard: { folderLayout: 11, databaseLayout: DatabaseViewLayout.Dashboard },
+  Grid: { folderLayout: ViewLayout.Grid, databaseLayout: DatabaseViewLayout.Grid },
+  Board: { folderLayout: ViewLayout.Board, databaseLayout: DatabaseViewLayout.Board },
+  Calendar: { folderLayout: ViewLayout.Calendar, databaseLayout: DatabaseViewLayout.Calendar },
+  'Bar chart': { folderLayout: ViewLayout.Chart, databaseLayout: DatabaseViewLayout.Chart, chartType: 0 },
+  'Line chart': { folderLayout: ViewLayout.Chart, databaseLayout: DatabaseViewLayout.Chart, chartType: 1 },
+  'Donut chart': { folderLayout: ViewLayout.Chart, databaseLayout: DatabaseViewLayout.Chart, chartType: 3 },
+  'Number chart': { folderLayout: ViewLayout.Chart, databaseLayout: DatabaseViewLayout.Chart, chartType: 4 },
+  List: { folderLayout: ViewLayout.List, databaseLayout: DatabaseViewLayout.List },
+  Gallery: { folderLayout: ViewLayout.Gallery, databaseLayout: DatabaseViewLayout.Gallery },
+  Timeline: { folderLayout: ViewLayout.Timeline, databaseLayout: DatabaseViewLayout.Timeline },
+  Dashboard: { folderLayout: ViewLayout.Dashboard, databaseLayout: DatabaseViewLayout.Dashboard },
 };
 
 const AGGREGATION = { count: 0, sum: 1 } as const;
@@ -535,13 +562,7 @@ export function rememberSelectOptions(page: Page, database: string, fields: Fiel
   databaseSpecOptions.set(world, byDatabase);
 }
 
-interface CreatedView {
-  view_id: string;
-  database_id?: string;
-  database_update?: number[];
-}
-
-/** Create a folder view the way the web's tab bar does (a child of the database container). */
+/** Create a folder view the way the web's tab bar does (a child of the database container), after the last one. */
 async function createFolderView(
   page: Page,
   request: APIRequestContext,
@@ -549,52 +570,22 @@ async function createFolderView(
   name: string,
   folderLayout: number
 ): Promise<string> {
-  const world = dashboardWorld(page);
   const state = scenarioState(page);
-  const database = fixtureDatabase(page, databaseName);
-  const created = await retryTransient(`Creating the "${name}" view`, () =>
-    apiPost<CreatedView>(
-      request,
-      world.owner.accessToken,
-      `/api/workspace/${world.workspaceId}/page-view/${database.pageId}/database-view`,
-      {
-        parent_view_id: database.pageId,
-        prev_view_id: state.lastViewIds[databaseName],
-        database_id: database.databaseId,
-        layout: folderLayout,
-        name,
-        embedded: false,
-      }
-    )
+  const viewId = await retryTransient(`Creating the "${name}" view`, () =>
+    createDatabaseViewThroughApi(page, request, {
+      database: databaseName,
+      name,
+      folderLayout,
+      prevViewId: state.lastViewIds[databaseName],
+    })
   );
 
-  state.lastViewIds[databaseName] = created.view_id;
-  // Like the web, apply the returned database update right away.
-  if (created.database_update?.length) {
-    await page.evaluate(
-      ({ databaseId, update }) => {
-        const win = window as any;
-        const ctx = win.__DASHBOARD_TEST__.byDatabase(databaseId);
-
-        // Same origin as the web's applyYDoc: a server update is never sent back.
-        win.Y.transact(ctx.databaseDoc, () => win.Y.applyUpdate(ctx.databaseDoc, new Uint8Array(update), 'remote'), 'remote');
-      },
-      { databaseId: database.databaseId, update: created.database_update }
-    );
-  }
-
-  await expect
-    .poll(
-      async () =>
-        (await readDatabaseViews(page, database.databaseId)).some((view) => view.id === created.view_id),
-      { timeout: FIXTURE_TIMEOUT, message: `waiting for the "${name}" view to reach the browser` }
-    )
-    .toBe(true);
-  return created.view_id;
+  state.lastViewIds[databaseName] = viewId;
+  return viewId;
 }
 
 /** Write a view's filters, sorts, grouping and layout settings in one transaction. */
-async function configureView(page: Page, databaseId: string, viewId: string, config: ViewConfig) {
+export async function configureView(page: Page, databaseId: string, viewId: string, config: ViewConfig) {
   await page.evaluate(
     ({ databaseId, viewId, config }) => {
       const win = window as any;
@@ -770,45 +761,31 @@ async function configureView(page: Page, databaseId: string, viewId: string, con
 
 const VIEW_SYNC_KEYS = ['layout', 'filters', 'sorts', 'groups', 'layout_settings'];
 
-/** JSON with sorted object keys (Yrs does not keep the key order of plain objects) and BigInts as numbers. */
-function stableJson(value: unknown) {
-  return JSON.stringify(value, (_key, item: unknown) => {
-    if (typeof item === 'bigint') return Number(item);
-    if (item && typeof item === 'object' && !Array.isArray(item)) {
-      return Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)));
-    }
-
-    return item;
-  });
-}
-
 /** The synced parts of some views, as the server stores them. */
 async function serverViewSnapshot(request: APIRequestContext, page: Page, databaseId: string, viewIds: string[]) {
   const world = dashboardWorld(page);
-  const collab = await apiGet<{ doc_state: number[] }>(
+
+  return readServerDatabaseDoc(
     request,
-    world.owner.accessToken,
-    `/api/workspace/v1/${world.workspaceId}/collab/${databaseId}?collab_type=${Types.Database}`
-  );
-  const doc = new Y.Doc({ guid: databaseId });
+    { token: world.owner.accessToken, workspaceId: world.workspaceId },
+    databaseId,
+    (database) => {
+      const views = database?.get('views') as Y.Map<Y.Map<unknown>> | undefined;
 
-  Y.applyUpdate(doc, new Uint8Array(collab.doc_state));
-  const views = (doc.getMap('data').get('database') as Y.Map<unknown> | undefined)?.get('views') as
-    | Y.Map<Y.Map<unknown>>
-    | undefined;
+      return canonicalJson(
+        viewIds.map((viewId) => {
+          const view = views?.get(viewId);
 
-  return stableJson(
-    viewIds.map((viewId) => {
-      const view = views?.get(viewId);
+          return Object.fromEntries(
+            VIEW_SYNC_KEYS.map((key) => {
+              const value = view?.get(key);
 
-      return Object.fromEntries(
-        VIEW_SYNC_KEYS.map((key) => {
-          const value = view?.get(key);
-
-          return [key, value instanceof Y.AbstractType ? value.toJSON() : value ?? null];
+              return [key, value instanceof Y.AbstractType ? value.toJSON() : value ?? null];
+            })
+          );
         })
       );
-    })
+    }
   );
 }
 
@@ -827,7 +804,7 @@ async function browserViewSnapshot(page: Page, databaseId: string, viewIds: stri
     { databaseId, viewIds, keys: VIEW_SYNC_KEYS }
   );
 
-  return stableJson(snapshot);
+  return canonicalJson(snapshot);
 }
 
 /**
@@ -942,18 +919,18 @@ export async function seedUseCaseDashboard(
   const viewId = await createFolderView(page, request, host, name, LAYOUTS.Dashboard.folderLayout);
   const dashboard: UseCaseDashboard = { name, viewId, host, widgets: {} };
   const rows = layout.map((names) => {
-    const width = Math.floor(DASHBOARD_GRID_COLUMNS / names.length);
+    const widths = equalRowWidths(names.length);
 
     return {
       id: `r-${uuidv4().slice(0, 12)}`,
-      height: DASHBOARD_ROW_HEIGHT,
+      height: DASHBOARD_DEFAULT_ROW_HEIGHT,
       widgets: names.map((viewName, index) => {
         const view = namedView(page, viewName);
         const widget = {
           id: `w-${uuidv4().slice(0, 12)}`,
           view_id: view.viewId,
           database_id: fixtureDatabase(page, view.database).databaseId,
-          width: index === names.length - 1 ? DASHBOARD_GRID_COLUMNS - width * (names.length - 1) : width,
+          width: widths[index],
         };
 
         dashboard.widgets[viewName] = { id: widget.id, viewId: widget.view_id, databaseId: widget.database_id };
@@ -996,7 +973,6 @@ async function waitForDashboardWidgets(scope: Page, owner?: Page) {
 
 /** Add a dashboard from the tab bar "+" menu and rename its tab. */
 export async function createDashboardThroughUi(page: Page, name: string, host: string) {
-  const world = dashboardWorld(page);
   const state = scenarioState(page);
   const database = fixtureDatabase(page, host);
 
@@ -1038,7 +1014,6 @@ export async function createDashboardThroughUi(page: Page, name: string, host: s
   state.dashboards[name] = { name, viewId, host, widgets: {} };
   state.lastViewIds[host] = viewId;
   activateDashboard(page, name);
-  world.widgets = state.dashboards[name].widgets;
 }
 
 function widgetsOfView(page: Page, viewName: string): Locator {
@@ -1263,32 +1238,45 @@ export function donutTotal(widget: Locator): Locator {
   return widget.getByTestId('chart-donut-total');
 }
 
+export interface ChartTableRow {
+  key: string;
+  label: string;
+  value: number;
+  color: string;
+}
+
+/** The hidden data table: every category in display order with its raw value and color. */
+export async function chartTable(scope: Locator): Promise<ChartTableRow[]> {
+  return scope.evaluate((element) =>
+    Array.from(element.querySelectorAll('[data-testid="chart-data-table"] tr[data-label]')).map((row) => ({
+      key: row.getAttribute('data-key') ?? '',
+      label: row.getAttribute('data-label') ?? '',
+      value: Number(row.getAttribute('data-value')),
+      color: (row.getAttribute('data-color') ?? '').toUpperCase(),
+    }))
+  );
+}
+
 /**
  * Category → raw value of a bar chart, from its hidden data table (axis
  * labels can be thinned and data labels are compact).
  */
 export async function barChartValues(widget: Locator): Promise<Record<string, number>> {
-  return widget.evaluate((element) => {
-    const result: Record<string, number> = {};
-
-    element.querySelectorAll('[data-testid="chart-data-table"] tr[data-label]').forEach((row) => {
-      result[row.getAttribute('data-label') ?? ''] = Number(row.getAttribute('data-value'));
-    });
-    return result;
-  });
+  return Object.fromEntries((await chartTable(widget)).map((row) => [row.label, row.value]));
 }
 
 /** The index of a chart category in the rendered data: the order of the chart's data table rows. */
 async function chartCategoryIndex(widget: Locator, label: string): Promise<number> {
-  const labels = await widget.evaluate((element) =>
-    Array.from(element.querySelectorAll('[data-testid="chart-data-table"] tr[data-label]')).map(
-      (row) => row.getAttribute('data-label') ?? ''
-    )
-  );
+  const labels = (await chartTable(widget)).map((row) => row.label);
   const index = labels.indexOf(label);
 
   if (index === -1) throw new Error(`The chart has no "${label}" category (it has ${labels.join(', ')})`);
   return index;
+}
+
+/** The bar of a category: one `.recharts-bar-rectangle` per category, in data order (a zero bar has no path). */
+export async function chartBarPath(chart: Locator, label: string): Promise<Locator> {
+  return chart.locator('.recharts-bar-rectangle').nth(await chartCategoryIndex(chart, label)).locator('path');
 }
 
 /** Click a bar, or the middle of a donut slice, the way a user points at it. */
@@ -1297,11 +1285,8 @@ export async function clickChartSegment(page: Page, widget: Locator, label: stri
   await expect
     .poll(() => chartCategoryIndex(widget, label).catch(() => -1), { timeout: USE_CASE_TIMEOUT })
     .toBeGreaterThan(-1);
-  const index = await chartCategoryIndex(widget, label);
-
   if ((await widget.locator('.recharts-pie').count()) === 0) {
-    // One `.recharts-bar-rectangle` per category, in data order; a zero bar has no path.
-    const bar = widget.locator('.recharts-bar-rectangle').nth(index).locator('path');
+    const bar = await chartBarPath(widget, label);
 
     await bar.scrollIntoViewIfNeeded();
     await bar.click();
@@ -1323,8 +1308,13 @@ export async function clickChartSegment(page: Page, widget: Locator, label: stri
     const y = rect.y + Number(element.getAttribute('data-y'));
     const hit = document.elementFromPoint(x, y);
     const sector = hit?.closest('.recharts-pie-sector');
+    // The anchors and the sectors both follow the slices in display order: the
+    // slice under the pointer must be this anchor's own, not a neighbour.
+    const anchors = Array.from(surface.querySelectorAll('[data-testid="chart-donut-slice-anchor"]'));
+    const sectors = Array.from(surface.querySelectorAll('.recharts-pie-sector'));
+    const sliceIndex = anchors.indexOf(element);
 
-    return { x, y, hits: Boolean(sector) };
+    return { x, y, hits: Boolean(sector) && sliceIndex !== -1 && sectors[sliceIndex] === sector };
   });
 
   if (!point) throw new Error(`Cannot locate the "${label}" slice`);
@@ -1365,7 +1355,8 @@ export async function rowIdByTitle(page: Page, viewName: string, title: string):
       const rowEntries: [string, any][] = Object.entries(rowMap);
 
       for (const [id, rowDoc] of rowEntries) {
-        const cell = rowDoc?.getMap('data')?.get('database_row')?.get('cells')?.get(primaryId);
+        // The row's data section ('data') holds the database row under 'data' (`YjsEditorKey.database_row`).
+        const cell = rowDoc?.getMap('data')?.get('data')?.get('cells')?.get(primaryId);
         const data = cell?.get('data');
         const text = typeof data === 'string' ? data : data?.toString?.() ?? '';
 
@@ -1382,7 +1373,8 @@ export async function rowIdByTitle(page: Page, viewName: string, title: string):
   return rowId;
 }
 
-async function chooseSelectOption(page: Page, value: string) {
+/** Pick `value` in the open select option menu of `cell`, close the menu and check the cell shows it. */
+async function chooseSelectOption(page: Page, value: string, cell: Locator) {
   const menu = page.getByTestId('select-option-menu');
 
   await expect(menu).toBeVisible({ timeout: USE_CASE_TIMEOUT });
@@ -1394,6 +1386,8 @@ async function chooseSelectOption(page: Page, value: string) {
   // Picking an option keeps the menu open; Escape closes the menu only.
   if (await menu.isVisible()) await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
+  // The pick took: the cell shows the option.
+  await expect(cell).toContainText(value, { timeout: USE_CASE_TIMEOUT });
 }
 
 /** Edit a grid cell of a widget: pick a select option or type a number / text. */
@@ -1409,7 +1403,7 @@ export async function editWidgetCell(page: Page, viewName: string, title: string
   await cell.scrollIntoViewIfNeeded();
   await cell.click();
   if (type === FieldType.SingleSelect) {
-    await chooseSelectOption(page, value);
+    await chooseSelectOption(page, value, cell);
     return;
   }
 
@@ -1462,12 +1456,18 @@ async function primaryFieldId(page: Page, databaseId: string): Promise<string> {
   }, databaseId);
 }
 
-/** Add a row through a grid widget's "New row" button and type its name into the new row. */
+/**
+ * Add a row through a grid widget's "New row" button and type its name into
+ * the new row. A filtered view opens the new row's page instead (its title
+ * focused) so the row can be filled in: which of the two happens is known
+ * before the click.
+ */
 export async function addRowInWidget(page: Page, viewName: string, title: string) {
   const widget = widgetLocator(page, viewName);
   const database = fixtureDatabase(page, databaseForLabel(page, viewName));
   const viewId = namedView(page, viewName).viewId;
   const before = await browserRowIds(page, database.databaseId, viewId);
+  const filtered = (await readViewConditions(page, viewId)).filters.length > 0;
   const button = widget.getByTestId('grid-new-row');
 
   await button.scrollIntoViewIfNeeded();
@@ -1484,11 +1484,11 @@ export async function addRowInWidget(page: Page, viewName: string, title: string
     )
     .not.toBe('');
   const cell = widget.getByTestId(`grid-cell-${rowId}-${await primaryFieldId(page, database.databaseId)}`);
-  // A filtered table opens the new row's page (its title focused) so the row can be filled in.
-  const titleInput = page.getByTestId('row-title-input');
 
-  await page.waitForTimeout(500);
-  if (await titleInput.isVisible()) {
+  if (filtered) {
+    const titleInput = rowPage(page).getByTestId('row-title-input');
+
+    await expect(titleInput).toBeVisible({ timeout: USE_CASE_TIMEOUT });
     await titleInput.click();
     await page.keyboard.type(title);
     await expect(titleInput).toContainText(title);
@@ -1553,7 +1553,7 @@ export async function setRowPageProperty(page: Page, property: string, value: st
 
   await expect(menu.or(input).first()).toBeVisible({ timeout: USE_CASE_TIMEOUT });
   if (await menu.isVisible()) {
-    await chooseSelectOption(page, value);
+    await chooseSelectOption(page, value, cell);
     return;
   }
 
@@ -1585,11 +1585,11 @@ export async function pickCalendarDay(page: Page, dayOffset: number, scope?: Loc
 
   await expect(picker).toBeVisible({ timeout: USE_CASE_TIMEOUT });
   const caption = `${MONTHS[target.getMonth()]} ${target.getFullYear()}`;
+  let shown = '';
 
-  for (let step = 0; step < 24; step += 1) {
-    const shown = ((await picker.locator('.rdp-caption_label, [role="presentation"]').first().textContent()) ?? '').trim();
-
-    if (shown.includes(caption)) break;
+  for (let step = 0; step <= 24; step += 1) {
+    shown = ((await picker.locator('.rdp-caption_label, [role="presentation"]').first().textContent()) ?? '').trim();
+    if (shown.includes(caption) || step === 24) break;
     const [shownMonth, shownYear] = shown.split(/\s+/);
     const shownIndex = Number(shownYear) * 12 + MONTHS.indexOf(shownMonth);
     const targetIndex = target.getFullYear() * 12 + target.getMonth();
@@ -1597,6 +1597,7 @@ export async function pickCalendarDay(page: Page, dayOffset: number, scope?: Loc
     await picker.locator(targetIndex < shownIndex ? 'button[name="previous-month"]' : 'button[name="next-month"]').click();
   }
 
+  if (!shown.includes(caption)) throw new Error(`The date picker never showed ${caption} (it shows "${shown}")`);
   const day = picker
     .locator('button[name="day"]:not(.day-outside), td[role="gridcell"]:not(.day-outside) button')
     .filter({ hasText: new RegExp(`^${target.getDate()}$`) })
@@ -1647,7 +1648,6 @@ export async function startGlobalFilter(
   property: string,
   overrides: Record<string, string> = {}
 ) {
-  const world = dashboardWorld(owner);
   const sources = await dashboardSourceDatabases(owner);
   const wanted = sources
     .map((name) => ({ database: fixtureDatabase(owner, name), property: overrides[name] ?? property }))
@@ -1700,31 +1700,16 @@ export async function startGlobalFilter(
   await expect
     .poll(async () => (await mappedTargets(scope)).map((target) => target.databaseId).sort())
     .toEqual([...wantedIds].sort());
-  void world;
   return type;
 }
 
+/** Toggle a use-case select option (named options share ids across databases) in the open global filter editor. */
 export async function toggleFilterOption(scope: Page, optionName: string) {
-  const option = DashboardSelectors.globalFilterContent(scope).locator(
-    `[data-testid="dashboard-global-filter-option"][data-option-id="${namedOptionId(optionName)}"]`
-  );
-  const checked = (await option.getAttribute('data-checked')) === 'true';
-
-  await option.click();
-  await expect(option).toHaveAttribute('data-checked', checked ? 'false' : 'true');
+  await toggleGlobalFilterOptionById(scope, namedOptionId(optionName));
 }
 
 export async function chooseFilterCondition(scope: Page, label: string) {
-  const trigger = DashboardSelectors.globalFilterCondition(scope);
-
-  if (((await trigger.textContent()) ?? '').trim() === label) return;
-  await trigger.click();
-  await scope
-    .getByTestId('dashboard-global-filter-condition-option')
-    .filter({ hasText: new RegExp(`^\\s*${label}\\s*$`), visible: true })
-    .first()
-    .click();
-  await expect(trigger).toHaveText(label);
+  await chooseGlobalFilterCondition(scope, label, { ignoreCase: false });
 }
 
 export async function finishGlobalFilter(scope: Page) {

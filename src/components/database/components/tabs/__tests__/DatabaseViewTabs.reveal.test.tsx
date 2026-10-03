@@ -12,7 +12,13 @@ jest.mock('@/components/_shared/reorder/useReorderableItem', () => ({
   }),
 }));
 
-jest.mock('@/components/_shared/view-icon/PageIcon', () => () => null);
+// Each tab item renders one icon: its calls count the tab renders.
+const mockTabIconRender = jest.fn();
+
+jest.mock('@/components/_shared/view-icon/PageIcon', () => () => {
+  mockTabIconRender();
+  return null;
+});
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -72,7 +78,11 @@ function createViews() {
   return views;
 }
 
-function renderTabs(props: { selectedViewId: string; pendingScrollToViewId?: string | null; setPendingScrollToViewId?: jest.Mock }) {
+function renderTabs(props: {
+  selectedViewId: string;
+  pendingScrollToViewId?: string | null;
+  setPendingScrollToViewId?: jest.Mock;
+}) {
   const views = createViews();
   const element = (selectedViewId: string, pending = props.pendingScrollToViewId) => (
     <DatabaseViewTabs
@@ -129,6 +139,7 @@ describe('DatabaseViewTabs active tab reveal', () => {
 
   beforeEach(() => {
     scrollIntoView.mockClear();
+    mockTabIconRender.mockClear();
     stripWidth = STRIP_WIDTH;
   });
 
@@ -167,6 +178,19 @@ describe('DatabaseViewTabs active tab reveal', () => {
     act(() => resizeCallbacks.forEach((callback) => callback()));
     expect(scroller()?.scrollLeft).toBe(8 * TAB_WIDTH + TAB_WIDTH + 16 - 200);
     expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('reveals from the resize observer of the strip, without re-rendering any tab', () => {
+    renderTabs({ selectedViewId: 'view-8' });
+    const tabRenders = mockTabIconRender.mock.calls.length;
+
+    expect(tabRenders).toBeGreaterThanOrEqual(TAB_COUNT);
+    stripWidth = 200;
+    act(() => resizeCallbacks.forEach((callback) => callback()));
+    expect(scroller()?.scrollLeft).toBe(8 * TAB_WIDTH + TAB_WIDTH + 16 - 200);
+    expect(mockTabIconRender).toHaveBeenCalledTimes(tabRenders);
+    // One observer for the strip (reveal and scroll buttons) and one for the tab row.
+    expect(resizeCallbacks.size).toBe(2);
   });
 
   it('leaves the strip where it is when the active tab is already visible', () => {

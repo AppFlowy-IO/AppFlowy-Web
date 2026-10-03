@@ -17,10 +17,9 @@ import { assertViewCreationOnline } from '@/application/view-online-policy';
 import { Log } from '@/utils/log';
 
 import { seedConvertedDashboardLayout, hasDashboardWidgets } from './dashboard-convert';
-import { readDashboardLayoutSetting } from './dashboard-layout';
+import { DASHBOARD_LAYOUT_ORIGIN, readStoredDashboardWidgets } from './dashboard-layout';
 import {
   collectDatabaseViewNames,
-  DASHBOARD_OWNER_KEY,
   DashboardIdMap,
   nextViewName,
   readDashboardOwner,
@@ -30,11 +29,17 @@ import { DASHBOARD_LAYOUT_KEY, DashboardRow, DashboardWidget } from './dashboard
 import {
   cloneDatabaseViewConfigurationValue,
   createDatabaseViewInDoc,
+  DashboardOwnerWriteOptions,
   DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT,
   DatabaseViewDocDeps,
   deleteDatabaseViewInDoc,
   duplicateDatabaseViewInDoc,
-} from './dispatch';
+  DuplicateDatabaseViewOptions,
+  getDatabaseFromDoc,
+  markDashboardOwnedView,
+  writeCollabDashboardOwner,
+  writeFolderDashboardOwner,
+} from './database-view-doc-ops';
 import { executeDatabaseOperations as executeOperations } from './history';
 import { toPlainValue } from './layout-codec';
 
@@ -44,114 +49,23 @@ import { toPlainValue } from './layout-codec';
  * dashboard that already unmounted can all run them. Each one that opens
  * another database's doc keeps a retained sync owner while it writes and
  * releases it at the end.
+ *
+ * The single-view operations they build on (create, duplicate, delete, the
+ * owner marker) live in `database-view-doc-ops.ts`.
  */
-
-export { deleteDatabaseViewInDoc } from './dispatch';
-
-/** The folder PATCH retries after these waits (ms) before leaving the marker to the repair pass. */
-export const DASHBOARD_OWNER_RETRY_DELAYS_MS: readonly number[] = [250, 1000, 4000];
-
-export type DashboardOwnerMarkerDeps = Pick<DatabaseViewDocDeps, 'databaseDoc' | 'loadViewMeta' | 'updatePage'>;
-
-export interface DashboardOwnerWriteOptions {
-  retryDelaysMs?: readonly number[];
-  /** Test seam for the waits between attempts. */
-  sleep?: (ms: number) => Promise<void>;
-}
-
-function getDatabase(doc: YDoc | undefined) {
-  return doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase | undefined;
-}
 
 function getSharedRoot(doc: YDoc) {
   return doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
 }
 
-function defaultSleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
-function nonEmptyOwner(value: unknown) {
-  return typeof value === 'string' && value.length > 0 ? value : null;
-}
-
+/** The folder view, or `null` when it cannot be loaded (callers fall back to the collab). */
 async function safeLoadViewMeta(deps: Pick<DatabaseViewDocDeps, 'loadViewMeta'>, viewId: string) {
   try {
     return (await deps.loadViewMeta?.(viewId)) ?? null;
-  } catch {
+  } catch (error) {
+    Log.warn('[Dashboard] could not load the folder view', { viewId, error });
     return null;
   }
-}
-
-/** Write `owner` on the collab mirror of `viewId` (not an undo step). */
-function writeCollabDashboardOwner(doc: YDoc, viewId: string, owner: string): boolean {
-  const view = getDatabase(doc)?.get(YjsDatabaseKey.views)?.get(viewId);
-
-  if (!view) return false;
-  if (view.get(DASHBOARD_OWNER_KEY) === owner) return true;
-  executeOperations(getSharedRoot(doc), [() => view.set(DASHBOARD_OWNER_KEY, owner)], 'markDashboardOwnedView', {
-    type: 'view.dashboard-owner',
-    policy: 'skip',
-  });
-  return true;
-}
-
-/**
- * Write `owner` into the folder view's `extra`. The server replaces `extra`
- * and refuses a payload that drops its own keys, so every attempt re-reads
- * the fresh meta and merges into it: unknown keys survive.
- */
-async function writeFolderDashboardOwner(
-  deps: Pick<DashboardOwnerMarkerDeps, 'loadViewMeta' | 'updatePage'>,
-  viewId: string,
-  owner: string,
-  options: DashboardOwnerWriteOptions = {}
-): Promise<boolean> {
-  const { loadViewMeta, updatePage } = deps;
-
-  if (!loadViewMeta || !updatePage) return false;
-  const delays = options.retryDelaysMs ?? DASHBOARD_OWNER_RETRY_DELAYS_MS;
-  const sleep = options.sleep ?? defaultSleep;
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
-    if (attempt > 0) await sleep(delays[attempt - 1]);
-
-    try {
-      const meta = await loadViewMeta(viewId, undefined, { authoritative: true });
-
-      if (!meta) throw new Error('View not found');
-      if (meta.extra?.dashboard_owner === owner) return true;
-      await updatePage(viewId, {
-        name: meta.name,
-        icon: meta.icon ?? undefined,
-        extra: { ...(meta.extra ?? {}), dashboard_owner: owner },
-      });
-      return true;
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  // The collab mirror already hides the view; the repair pass rewrites the folder copy.
-  Log.warn('[Dashboard] failed to write the owner marker to the folder', { viewId, owner, error: lastError });
-  return false;
-}
-
-/**
- * Mark `viewId` as owned by the dashboard view `owner` (WP05 §1.1): the collab
- * mirror first, synchronously, so local tab bars hide the view at once; then
- * the authoritative folder extra, with retries. Never throws; resolves to
- * whether the folder copy was written.
- */
-export async function markDashboardOwnedView(
-  deps: DashboardOwnerMarkerDeps,
-  viewId: string,
-  owner: string,
-  options?: DashboardOwnerWriteOptions
-): Promise<boolean> {
-  writeCollabDashboardOwner(deps.databaseDoc, viewId, owner);
-  return writeFolderDashboardOwner(deps, viewId, owner, options);
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +81,7 @@ interface OpenedDatabaseDoc {
 }
 
 function createDatabaseDocCache(deps: DashboardOwnedViewDeps) {
-  const hostDatabase = getDatabase(deps.databaseDoc);
+  const hostDatabase = getDatabaseFromDoc(deps.databaseDoc);
   const hostDatabaseId = hostDatabase?.get(YjsDatabaseKey.id);
   const opened = new Map<string, Promise<OpenedDatabaseDoc>>();
   const owners: { doc: YDoc; flush?: () => Promise<boolean> }[] = [];
@@ -188,7 +102,7 @@ function createDatabaseDocCache(deps: DashboardOwnedViewDeps) {
         const syncContext = deps.scheduleDeferredCleanup ? deps.bindViewSync?.(doc, { retain: true }) ?? null : null;
 
         if (syncContext) owners.push({ doc: syncContext.doc, flush: syncContext.flush });
-        return { doc, database: getDatabase(doc), isHost: false };
+        return { doc, database: getDatabaseFromDoc(doc), isHost: false };
       })();
       opened.set(databaseId, pending);
     }
@@ -247,14 +161,9 @@ async function folderNamesAround(deps: DashboardOwnedViewDeps, anchorViewId: str
   return names;
 }
 
-async function removeCreatedView(
-  deps: DashboardOwnedViewDeps,
-  opened: OpenedDatabaseDoc,
-  viewId: string,
-  context: string
-) {
+async function removeCreatedView(deps: DashboardOwnedViewDeps, doc: YDoc, viewId: string, context: string) {
   try {
-    await deleteDatabaseViewInDoc({ databaseDoc: opened.doc, deletePage: deps.deletePage }, viewId);
+    await deleteDatabaseViewInDoc({ databaseDoc: doc, deletePage: deps.deletePage }, viewId);
   } catch (error) {
     Log.warn(`[Dashboard] failed to remove a view created for ${context}`, { viewId, error });
   }
@@ -276,7 +185,11 @@ export interface CreateOwnedDatabaseViewParams {
   owner: string;
 }
 
-/** Create a new view owned by `owner`, named with `nextViewName` among its database's views. */
+/**
+ * Create a new view owned by `owner`, named with `nextViewName` among its database's views.
+ *
+ * WP05b: staged. Nothing creates a widget view this way yet.
+ */
 export async function createOwnedDatabaseView(
   deps: DashboardOwnedViewDeps,
   params: CreateOwnedDatabaseViewParams
@@ -331,7 +244,7 @@ export async function duplicateOwnedDatabaseView(
       params.anchorViewId || !opened.isHost
         ? anchoredDeps(deps, opened, params.anchorViewId ?? params.sourceViewId)
         : deps;
-    const viewId = await duplicateDatabaseViewInDoc(viewDeps, params.sourceViewId, params.name, {
+    const viewId = await duplicateDatabaseViewWithOwnedWidgets(viewDeps, params.sourceViewId, params.name, {
       dashboardOwner: params.owner,
       placeBeforeSource: false,
     });
@@ -343,7 +256,11 @@ export async function duplicateOwnedDatabaseView(
   }
 }
 
-/** Rename a view in its folder and its database collab (not an undo step), as a tab rename does. */
+/**
+ * Rename a view in its folder and its database collab (not an undo step), as a tab rename does.
+ *
+ * WP05b: staged. Nothing renames a widget view this way yet.
+ */
 export async function renameDatabaseViewInDoc(params: {
   doc: YDoc;
   viewId: string;
@@ -351,7 +268,7 @@ export async function renameDatabaseViewInDoc(params: {
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
 }): Promise<boolean> {
   const name = params.name.trim();
-  const view = getDatabase(params.doc)?.get(YjsDatabaseKey.views)?.get(params.viewId);
+  const view = getDatabaseFromDoc(params.doc)?.get(YjsDatabaseKey.views)?.get(params.viewId);
 
   if (!name || view?.get(YjsDatabaseKey.name) === name) return false;
   await params.updatePage?.(params.viewId, { name });
@@ -365,10 +282,11 @@ export async function renameDatabaseViewInDoc(params: {
   return true;
 }
 
-function uniqueWidgets(rows: DashboardRow[]): DashboardWidget[] {
+/** One widget per view, in order. */
+function uniqueWidgets(widgets: DashboardWidget[]): DashboardWidget[] {
   const seen = new Set<string>();
 
-  return rows.flatMap((row) => row.widgets).filter((widget) => !seen.has(widget.viewId) && seen.add(widget.viewId));
+  return widgets.filter((widget) => !seen.has(widget.viewId) && seen.add(widget.viewId));
 }
 
 /**
@@ -376,12 +294,11 @@ function uniqueWidgets(rows: DashboardRow[]): DashboardWidget[] {
  * mirror in the widget's own database (opened only when the folder is silent).
  */
 async function resolveWidgetOwner(
-  deps: DashboardOwnedViewDeps,
   docs: ReturnType<typeof createDatabaseDocCache>,
   widget: DashboardWidget,
   meta: View | null
 ): Promise<string | null> {
-  const folderOwner = nonEmptyOwner(meta?.extra?.dashboard_owner);
+  const folderOwner = readDashboardOwner(meta);
 
   if (folderOwner) return folderOwner;
 
@@ -409,13 +326,18 @@ export interface DuplicateDashboardOwnedWidgetsParams {
  * step. On any failure the copies made so far are deleted and the error is
  * rethrown, so the caller can remove the target too. Resolves to the map of
  * source view id to copy id.
+ *
+ * The copies are made one after another (each placement reads the folder the
+ * previous copy changed). Their folder owner markers are written together at
+ * the end, one attempt each; a failed one retries detached and the collab
+ * mirror, written with the copy, hides the view meanwhile.
  */
 export async function duplicateDashboardOwnedWidgets(
   deps: DashboardOwnedViewDeps,
   params: DuplicateDashboardOwnedWidgetsParams
 ): Promise<Record<string, string>> {
   const { sourceDashboardViewId, targetDashboardViewId } = params;
-  const hostDatabase = getDatabase(deps.databaseDoc);
+  const hostDatabase = getDatabaseFromDoc(deps.databaseDoc);
   const setting = hostDatabase
     ?.get(YjsDatabaseKey.views)
     ?.get(targetDashboardViewId)
@@ -423,44 +345,78 @@ export async function duplicateDashboardOwnedWidgets(
     ?.get(DASHBOARD_LAYOUT_KEY);
 
   if (!setting) return {};
-  const widgets = uniqueWidgets(readDashboardLayoutSetting(hostDatabase, targetDashboardViewId).rows);
+  // Every stored widget: the ones hidden by the widget limit are remapped too.
+  const widgets = uniqueWidgets(readStoredDashboardWidgets(hostDatabase, targetDashboardViewId));
   const docs = createDatabaseDocCache(deps);
   const viewIdMap: Record<string, string> = {};
-  const created: { viewId: string; databaseId: string }[] = [];
+  const created: { viewId: string; doc: YDoc }[] = [];
 
   try {
-    for (const widget of widgets) {
-      const meta = await safeLoadViewMeta(deps, widget.viewId);
+    const candidates = await Promise.all(
+      widgets.map(async (widget) => {
+        const meta = await safeLoadViewMeta(deps, widget.viewId);
 
-      if ((await resolveWidgetOwner(deps, docs, widget, meta)) !== sourceDashboardViewId) continue;
+        return { widget, meta, owner: await resolveWidgetOwner(docs, widget, meta) };
+      })
+    );
+
+    for (const { widget, meta, owner } of candidates) {
+      if (owner !== sourceDashboardViewId) continue;
 
       const opened = await docs.open(widget.databaseId, widget.viewId);
       const sourceName = meta?.name || opened.database?.get(YjsDatabaseKey.views)?.get(widget.viewId)?.get(YjsDatabaseKey.name);
-      const copyId = await duplicateDatabaseViewInDoc(
+      const copyId = await duplicateDatabaseViewWithOwnedWidgets(
         anchoredDeps(deps, opened, widget.viewId),
         widget.viewId,
         sourceName || undefined,
-        { dashboardOwner: targetDashboardViewId, placeBeforeSource: false }
+        { dashboardOwner: targetDashboardViewId, placeBeforeSource: false, writeDashboardOwnerToFolder: false }
       );
 
-      created.push({ viewId: copyId, databaseId: widget.databaseId });
+      created.push({ viewId: copyId, doc: opened.doc });
       viewIdMap[widget.viewId] = copyId;
     }
 
     if (created.length > 0) writeRemappedDashboardLayout(deps.databaseDoc, setting, viewIdMap, {});
-    await docs.flush();
+    await Promise.all([
+      docs.flush(),
+      ...created.map((copy) =>
+        markDashboardOwnedView(
+          { databaseDoc: copy.doc, loadViewMeta: deps.loadViewMeta, updatePage: deps.updatePage },
+          copy.viewId,
+          targetDashboardViewId
+        )
+      ),
+    ]);
     return viewIdMap;
   } catch (error) {
     for (const copy of created.reverse()) {
-      const opened = await docs.open(copy.databaseId, copy.viewId).catch(() => null);
-
-      if (opened) await removeCreatedView(deps, opened, copy.viewId, 'a duplicated dashboard');
+      await removeCreatedView(deps, copy.doc, copy.viewId, 'a duplicated dashboard');
     }
 
     throw error;
   } finally {
     docs.release();
   }
+}
+
+/**
+ * Duplicate a database tab (the body of `useDuplicateDatabaseView`): the view
+ * itself and, for a dashboard, its own copies of the views its widgets own
+ * (WP05 §1.7). Any failure removes everything this call created.
+ */
+export function duplicateDatabaseViewWithOwnedWidgets(
+  deps: DashboardOwnedViewDeps,
+  sourceViewId: string,
+  duplicatedName?: string,
+  options?: Omit<DuplicateDatabaseViewOptions, 'afterCopy'>
+): Promise<string> {
+  return duplicateDatabaseViewInDoc(deps, sourceViewId, duplicatedName, {
+    ...options,
+    afterCopy: async ({ viewId, layout }) => {
+      if (layout !== DatabaseViewLayout.Dashboard) return;
+      await duplicateDashboardOwnedWidgets(deps, { sourceDashboardViewId: sourceViewId, targetDashboardViewId: viewId });
+    },
+  });
 }
 
 /** Rewrite `rows` / `global_filters` of a stored dashboard setting through `remapDashboardLayout` (not an undo step). */
@@ -495,7 +451,7 @@ function writeRemappedDashboardLayout(
  * source has no setting.
  */
 export function copyDashboardLayoutSetting(doc: YDoc, sourceViewId: string, targetViewId: string): boolean {
-  const views = getDatabase(doc)?.get(YjsDatabaseKey.views);
+  const views = getDatabaseFromDoc(doc)?.get(YjsDatabaseKey.views);
   const source = views?.get(sourceViewId)?.get(YjsDatabaseKey.layout_settings)?.get(DASHBOARD_LAYOUT_KEY);
   const target = views?.get(targetViewId);
 
@@ -508,8 +464,8 @@ export function copyDashboardLayoutSetting(doc: YDoc, sourceViewId: string, targ
       target.set(YjsDatabaseKey.layout_settings, layouts);
     }
 
-    layouts.set(DASHBOARD_LAYOUT_KEY, cloneDatabaseViewConfigurationValue(source) as never);
-  }, 'initializeDashboardLayout');
+    layouts.set(DASHBOARD_LAYOUT_KEY, cloneDatabaseViewConfigurationValue(source));
+  }, DASHBOARD_LAYOUT_ORIGIN.copy);
   return true;
 }
 
@@ -533,6 +489,9 @@ export interface ConvertViewToDashboardParams {
  * already has widgets (converted before) only switches. If anything fails
  * after V′ exists, V′ is deleted and the seed undone. Resolves to whether the
  * layout changed (false when superseded).
+ *
+ * The layout switches once V′ exists and the first attempt at its folder owner
+ * marker has returned; a failed attempt retries detached.
  */
 export async function convertViewToDashboard(
   deps: DashboardOwnedViewDeps,
@@ -540,7 +499,7 @@ export async function convertViewToDashboard(
 ): Promise<boolean> {
   const { viewId, applyLayout, isCurrent = () => true } = params;
   const { databaseDoc } = deps;
-  const database = getDatabase(databaseDoc);
+  const database = getDatabaseFromDoc(databaseDoc);
   const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
   const databaseId = database?.get(YjsDatabaseKey.id);
 
@@ -564,10 +523,10 @@ export async function convertViewToDashboard(
     if (seeded) {
       databaseDoc.transact(() => {
         view.get(YjsDatabaseKey.layout_settings)?.get(DASHBOARD_LAYOUT_KEY)?.set(YjsDatabaseKey.dashboard_rows, []);
-      }, 'initializeDashboardLayout');
+      }, DASHBOARD_LAYOUT_ORIGIN.rollback);
     }
 
-    await removeCreatedView(deps, { doc: databaseDoc, database, isHost: true }, copyId, 'a converted view');
+    await removeCreatedView(deps, databaseDoc, copyId, 'a converted view');
   };
 
   if (!isCurrent()) {
@@ -580,7 +539,7 @@ export async function convertViewToDashboard(
   try {
     databaseDoc.transact(() => {
       seeded = seedConvertedDashboardLayout(database, viewId, copyId, databaseId);
-    }, 'initializeDashboardLayout');
+    }, DASHBOARD_LAYOUT_ORIGIN.seed);
     applyLayout();
   } catch (error) {
     await rollback(seeded);
@@ -599,6 +558,13 @@ export async function convertViewToDashboard(
  * in step (WP05 §2.2 step 3.3): a view whose mirror names this dashboard but
  * whose folder extra does not gets the folder marker, and the reverse gets the
  * mirror. Resolves to the number of markers written.
+ *
+ * WP05b: staged. Nothing calls this yet, so a folder marker that failed every
+ * attempt of `markDashboardOwnedView` stays missing: the view is hidden from
+ * its database's tab bars (they read the mirror) but still listed by the
+ * readers that only see the folder (the sidebar, the database catalog). It is
+ * wired together with the desktop read of the collab mirror, so both clients
+ * keep reading the same marker.
  */
 export async function repairDashboardOwnerMarkers(
   deps: DashboardOwnedViewDeps,
@@ -610,12 +576,12 @@ export async function repairDashboardOwnerMarkers(
   let written = 0;
 
   try {
-    for (const widget of uniqueWidgets(rows)) {
+    for (const widget of uniqueWidgets(rows.flatMap((row) => row.widgets))) {
       const meta = await safeLoadViewMeta(deps, widget.viewId);
       const opened = await docs.open(widget.databaseId, widget.viewId).catch(() => null);
       const collabView: YDatabaseView | undefined = opened?.database?.get(YjsDatabaseKey.views)?.get(widget.viewId);
-      const folderOwner = nonEmptyOwner(meta?.extra?.dashboard_owner);
-      const collabOwner = nonEmptyOwner(collabView?.get(DASHBOARD_OWNER_KEY));
+      const folderOwner = readDashboardOwner(meta);
+      const collabOwner = readDashboardOwner(null, collabView);
 
       if (collabOwner === dashboardViewId && !folderOwner) {
         if (await writeFolderDashboardOwner(deps, widget.viewId, dashboardViewId, options)) written += 1;

@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ChecklistFilter, ChecklistFilterCondition, useConditionsReadOnly } from '@/application/database-yjs';
+import { ChecklistFilter, useConditionsReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
+import { checklistFilterConditions } from '@/components/database/components/filters/filter-conditions';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import { DropdownMenuItemTick, dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -17,19 +18,7 @@ function ChecklistFilterMenu({ filter }: { filter: ChecklistFilter }) {
   const updateFilter = useUpdateFilter();
   const setOpenFilterId = useConditionsContext()?.setOpenFilterId;
 
-  const conditions = useMemo(
-    () => [
-      {
-        value: ChecklistFilterCondition.IsComplete,
-        text: t('grid.checklistFilter.isComplete'),
-      },
-      {
-        value: ChecklistFilterCondition.IsIncomplete,
-        text: t('grid.checklistFilter.isIncomplted'),
-      },
-    ],
-    [t]
-  );
+  const conditions = useMemo(() => checklistFilterConditions(t), [t]);
 
   return (
     <div className={'flex flex-col gap-1'} data-testid='checklist-filter'>

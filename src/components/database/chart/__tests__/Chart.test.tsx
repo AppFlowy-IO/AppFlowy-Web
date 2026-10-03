@@ -49,7 +49,7 @@ function context(overrides: Partial<ChartContextValue>): ChartContextValue {
   return {
     ...DEFAULT_CHART_CONTEXT,
     chartType: ChartType.Bar,
-    aggregationType: ChartAggregationType.Count,
+    effectiveAggregation: ChartAggregationType.Count,
     hasGroupableFields: true,
     isLoading: false,
     chartData: [{ key: 'a', label: 'A', value: 1, rowIds: ['r1'] }],
@@ -128,5 +128,70 @@ describe('Chart', () => {
     render(<Chart />);
 
     expect(screen.getByTestId('chart-no-data')).toBeTruthy();
+  });
+
+  it('says so when the database has no field to group by', () => {
+    mockContext = context({ hasGroupableFields: false });
+    render(<Chart />);
+
+    expect(screen.getByTestId('chart-no-field').textContent).toBe('No fields available for grouping');
+    expect(screen.queryByTestId('mock-bar-chart')).toBeNull();
+  });
+
+  it('clears a load error once the context reports none', () => {
+    mockContext = context({ loadError: true });
+    const { rerender } = render(<Chart />);
+
+    expect(screen.getByTestId('chart-error')).toBeTruthy();
+    mockContext = context({ loadError: false });
+    rerender(<Chart />);
+    expect(screen.queryByTestId('chart-error')).toBeNull();
+    expect(screen.getByTestId('mock-bar-chart')).toBeTruthy();
+  });
+
+  describe('Number chart', () => {
+    const item = { label: 'Amount', value: 1234.567, rowIds: ['r1', 'r2'] };
+
+    it('prints the value through the chart formatter in card mode, under the generated title', () => {
+      const format = jest.fn((value: number, mode: string) => `${mode}:${value}`);
+
+      mockContext = context({
+        chartType: ChartType.Number,
+        chartData: [item],
+        format,
+        seriesLabel: 'Sum of Amount',
+        hasGroupableFields: false,
+      });
+      render(<Chart />);
+
+      expect(screen.getByTestId('number-chart-value').textContent).toBe('card:1234.567');
+      expect(format).toHaveBeenCalledWith(1234.567, 'card');
+      expect(screen.getByTestId('number-chart-title').textContent).toBe('Sum of Amount');
+    });
+
+    it('prefers the custom title and drills down with it', () => {
+      const onItemClick = jest.fn();
+
+      mockContext = context({
+        chartType: ChartType.Number,
+        chartData: [item],
+        seriesLabel: 'Sum of Amount',
+        settings: { titleText: '  Revenue  ' } as ChartContextValue['settings'],
+        onItemClick,
+      });
+      render(<Chart />);
+
+      expect(screen.getByTestId('number-chart-title').textContent).toBe('Revenue');
+      fireEvent.click(screen.getByTestId('number-chart-value'));
+      expect(onItemClick).toHaveBeenCalledWith({ ...item, label: 'Revenue' });
+    });
+
+    it('shows its empty state, not a formatted zero, while there is no item', () => {
+      mockContext = context({ chartType: ChartType.Number, chartData: [], seriesLabel: 'Count all' });
+      render(<Chart />);
+
+      expect(screen.getByTestId('number-chart').getAttribute('data-empty')).toBe('true');
+      expect(screen.queryByTestId('number-chart-value')).toBeNull();
+    });
   });
 });

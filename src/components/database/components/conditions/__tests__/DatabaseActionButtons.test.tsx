@@ -1,7 +1,12 @@
 import { render, screen } from '@testing-library/react';
+import { ReactElement } from 'react';
 
 import FiltersButton from '@/components/database/components/conditions/FiltersButton';
 import SortsButton from '@/components/database/components/conditions/SortsButton';
+import { createWidgetContextValue } from '@/components/database/dashboard/__tests__/dashboardTestHarness';
+import { WidgetFilterTool } from '@/components/database/dashboard/widget-tool-buttons/WidgetFilterTool';
+import { WidgetSortTool } from '@/components/database/dashboard/widget-tool-buttons/WidgetSortTool';
+import { WidgetContext } from '@/components/database/dashboard/WidgetContext';
 
 jest.mock('@/application/database-yjs', () => ({
   FieldType: { Person: 7, Rollup: 10 },
@@ -22,6 +27,10 @@ jest.mock('@/components/database/components/conditions/context', () => ({
 jest.mock('@/components/database/components/conditions/PropertiesMenu', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+jest.mock('@/components/database/dashboard/WidgetConditionsPopover', () => ({
+  WidgetConditionsPopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 jest.mock('@/components/database/components/sorts/utils', () => ({
@@ -61,39 +70,46 @@ describe('Gallery compact condition actions', () => {
   });
 });
 
+/** A widget tool inside its widget (View mode unless `editing`). */
+function inWidget(tool: ReactElement, editing = false) {
+  return <WidgetContext.Provider value={createWidgetContextValue({ editing })}>{tool}</WidgetContext.Provider>;
+}
+
 describe('Dashboard widget condition tools', () => {
   it.each([
-    ['Filter', <FiltersButton key='filter' presentation='popover' variant='widget' />, 'database-actions-filter'],
-    ['Sort', <SortsButton key='sort' presentation='popover' variant='widget' />, 'database-actions-sort'],
-  ])('renders the %s tool as a quiet 24px button with a 16px glyph', (_label, action, testId) => {
-    render(action);
+    ['Filter', () => <WidgetFilterTool />, 'database-actions-filter', 'dash-widget-tool-filter'],
+    ['Sort', () => <WidgetSortTool />, 'database-actions-sort', 'dash-widget-tool-sort'],
+  ])('renders the %s tool as a quiet 24px button with a 16px glyph', (label, tool, testId, parityId) => {
+    render(inWidget(tool()));
 
     const button = screen.getByTestId(testId);
+    const glyphs = button.querySelectorAll('svg');
 
-    for (const name of ['h-6', 'w-6', '!rounded-200', 'text-dash-tool-icon', '[&_svg]:h-4', '[&_svg]:w-4']) {
-      expect(button.className).toContain(name);
-    }
-
-    expect(button.className).toContain('data-[active=true]:text-dash-edit-icon');
+    expect(button.getAttribute('aria-label')).toBe(label);
+    expect(button.getAttribute('type')).toBe('button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    // Icon only: one hidden glyph, which the parity probe measures with the button.
+    expect(button.textContent).toBe('');
+    expect(glyphs).toHaveLength(1);
+    expect(glyphs[0].getAttribute('aria-hidden')).toBe('true');
+    expect(glyphs[0].getAttribute('data-parity-id')).toBe(`${parityId}__icon`);
     expect(button.getAttribute('data-active')).toBe('false');
-    expect(button.getAttribute('data-parity-id')).toBe(
-      testId === 'database-actions-filter' ? 'dash-widget-tool-filter' : 'dash-widget-tool-sort'
-    );
+    expect(button.getAttribute('data-parity-id')).toBe(parityId);
     // The toolbar's blue inline color is for standalone views only.
     expect(button.style.color).toBe('');
   });
 
   it.each([
-    [
-      'Filter',
-      <FiltersButton editing key='filter' presentation='popover' variant='widget' />,
-      'database-actions-filter',
-    ],
-    ['Sort', <SortsButton editing key='sort' presentation='popover' variant='widget' />, 'database-actions-sort'],
-  ])('turns the %s tool accent in Edit mode', (_label, action, testId) => {
-    render(action);
+    ['Filter', () => <WidgetFilterTool />, 'database-actions-filter'],
+    ['Sort', () => <WidgetSortTool />, 'database-actions-sort'],
+  ])('turns the %s tool accent in Edit mode', (_label, tool, testId) => {
+    const { rerender } = render(inWidget(tool()));
+    const viewModeLook = screen.getByTestId(testId).className;
 
-    expect(screen.getByTestId(testId).className).toContain('text-dash-edit-icon');
+    rerender(inWidget(tool(), true));
+    // Edit mode alone restyles the tool: no rule made it active.
+    expect(screen.getByTestId(testId).className).not.toBe(viewModeLook);
+    expect(screen.getByTestId(testId).getAttribute('data-active')).toBe('false');
   });
 
   it('keeps the standalone toolbar buttons free of the widget attributes', () => {

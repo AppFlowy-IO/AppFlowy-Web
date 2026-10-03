@@ -1,40 +1,45 @@
-import { CSSProperties, Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { CSSProperties, Fragment, memo, useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { resizeDashboardWidget, setDashboardRowHeight } from '@/application/database-yjs/dashboard-layout';
-import {
-  DASHBOARD_MAX_WIDGETS,
-  DASHBOARD_MAX_WIDGETS_PER_ROW,
-  DashboardRow as DashboardRowData,
-} from '@/application/database-yjs/dashboard.type';
+import { DASHBOARD_MAX_WIDGETS_PER_ROW, DashboardRow as DashboardRowData } from '@/application/database-yjs/dashboard.type';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/arrow_down.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 import {
   DASHBOARD_COLUMN_GAP,
+  DASHBOARD_MOTION_FAST_CLASS,
   DASHBOARD_ROW_CONTROL_OFFSET,
   DASHBOARD_ROW_CONTROL_SIZE,
   DASHBOARD_ROW_GAP,
+  DASHBOARD_WIDGET_BOX_INSET,
 } from './constants';
+import { LimitedAction } from './DashboardLimitMessage';
 import { DashboardRowGap } from './DashboardRowGap';
-import { useDashboardDraggingWidgetId, useDashboardHost, useDashboardUi } from './DashboardUiContext';
+import {
+  DashboardLimitReason,
+  useDashboardDraggingWidgetId,
+  useDashboardHost,
+  useDashboardUi,
+} from './DashboardUiContext';
 import { DashboardWidget } from './DashboardWidget';
 import { dashboardLineSizes, dashboardWidgetSlots, getWidthHandleCenter } from './grid-layout';
 import { ROW_HEIGHT_CSS_VARIABLE, useRowHeightResize } from './hooks/useRowHeightResize';
-import { applyWidthPreview, useWidthResize } from './hooks/useWidthResize';
+import { applyWidthPreview, getWidthHandleBounds, useWidthResize } from './hooks/useWidthResize';
 import { RowHeightHandle, WidthResizeHandle } from './RowResizeHandles';
+import { getWidgetCardCenter } from './utils';
 import { preloadWidgetPicker } from './WidgetPicker';
-
-/** How long the boxes animate their width after a discrete change (200ms plus slack). */
-const REFLOW_MS = 250;
 
 // Notion's row controls: round, tinted buttons centred in the page gutter on
 // both sides of a row, shown while the row is hovered (or one of them has
 // focus). The anchors take no width; their centre sits 30px outside the column.
-const CONTROL_ANCHOR_CLASS =
-  'absolute inset-y-0 flex items-center justify-center opacity-0 transition-opacity duration-150 ease-in-out focus-within:opacity-100 group-hover/row:opacity-100 motion-reduce:transition-none';
+const CONTROL_ANCHOR_CLASS = cn(
+  'absolute inset-y-0 flex items-center justify-center opacity-0 transition-opacity',
+  DASHBOARD_MOTION_FAST_CLASS,
+  'focus-within:opacity-100 group-hover/row:opacity-100 motion-reduce:transition-none'
+);
 const CONTROL_ANCHOR_OFFSET = -(DASHBOARD_ROW_CONTROL_OFFSET + DASHBOARD_ROW_CONTROL_SIZE / 2);
 const EDGE_BUTTON_CLASS = 'rounded-full bg-dash-row-control-bg text-dash-accent';
 
@@ -76,7 +81,7 @@ export const DashboardRow = memo(function DashboardRow({
   dashboardFull,
 }: DashboardRowProps) {
   const { t } = useTranslation();
-  const { openPicker, showLimitMessage, updateRows } = useDashboardUi();
+  const { openPicker, updateRows } = useDashboardUi();
   const { workspaceId, variant } = useDashboardHost();
   const draggingWidgetId = useDashboardDraggingWidgetId();
   const editing = isEditing && canEdit;
@@ -112,8 +117,6 @@ export const DashboardRow = memo(function DashboardRow({
   const widths = applyWidthPreview(row.widgets, widthResize.preview);
   const slots = dashboardWidgetSlots(widths, wrapColumns);
   const lines = dashboardLineSizes(count, wrapColumns);
-  const rowFull = count >= DASHBOARD_MAX_WIDGETS_PER_ROW;
-  const isDraggingWidget = draggingWidgetId !== null;
   const isResizing = widthResize.preview !== null || heightResize.dragging;
   // Seeds the row height variable for the first paint only: `useRowHeightResize`
   // writes it from then on, so a render during a drag (a collaborator's edit)
@@ -121,54 +124,28 @@ export const DashboardRow = memo(function DashboardRow({
   const [initialRowHeight] = useState(row.height);
   const preloadPicker = useCallback(() => preloadWidgetPicker(workspaceId, variant), [variant, workspaceId]);
 
-  // Widths animate after a discrete change only (a committed width, a new wrap,
-  // a widget added, moved or removed), never during a drag or a window resize.
-  const [reflow, setReflow] = useState(false);
-  const layoutKey = `${wrapColumns}|${row.widgets.map((widget) => `${widget.id}:${widget.width}`).join(',')}`;
-  const previousLayoutKeyRef = useRef(layoutKey);
-
-  useLayoutEffect(() => {
-    if (previousLayoutKeyRef.current === layoutKey) return;
-    previousLayoutKeyRef.current = layoutKey;
-    if (widthResize.preview === null) setReflow(true);
-  }, [layoutKey, widthResize.preview]);
-
-  useEffect(() => {
-    if (!reflow) return;
-    const timeout = window.setTimeout(() => setReflow(false), REFLOW_MS);
-
-    return () => window.clearTimeout(timeout);
-  }, [reflow]);
-
   const boundaries = wrapped
     ? []
     : row.widgets.slice(0, -1).map((widget, index) => ({
         key: widget.id,
         index,
         columnsBefore: widths.slice(0, index + 1).reduce((sum, width) => sum + width, 0),
+        bounds: getWidthHandleBounds(widths, index, minColumns),
       }));
 
-  const addDisabledReason = dashboardFull
-    ? t('dashboard.widgetLimit', {
-        count: DASHBOARD_MAX_WIDGETS,
-        defaultValue: 'Dashboards support up to {{count}} widgets.',
-      })
-    : rowFull
-    ? t('dashboard.rowLimit', {
-        count: DASHBOARD_MAX_WIDGETS_PER_ROW,
-        defaultValue: 'A row holds up to {{count}} widgets.',
-      })
-    : null;
-
+  // A new row needs one free widget slot on the dashboard; a widget in this row also one in the row.
+  const insertLimit: DashboardLimitReason | null = dashboardFull ? 'dashboard' : null;
+  const addLimit: DashboardLimitReason | null =
+    insertLimit ?? (count >= DASHBOARD_MAX_WIDGETS_PER_ROW ? 'row' : null);
   const insertLabel = t('dashboard.insertRowBelow', { defaultValue: 'Insert a row below' });
-  // A new row needs one free widget slot; the row itself may be full.
+  const addLabel = t('dashboard.addWidget', { defaultValue: 'Add widget' });
   const insertButton = (
     <Button
       aria-label={insertLabel}
       className={EDGE_BUTTON_CLASS}
       data-row-id={row.id}
       data-testid='dashboard-insert-row-button'
-      disabled={dashboardFull}
+      disabled={insertLimit !== null}
       onClick={() => openPicker({ mode: 'add', placement: { type: 'new_row', rowIndex: rowIndex + 1 } })}
       onFocus={preloadPicker}
       onPointerEnter={preloadPicker}
@@ -182,12 +159,12 @@ export const DashboardRow = memo(function DashboardRow({
 
   const addButton = (
     <Button
-      aria-label={t('dashboard.addWidget', { defaultValue: 'Add widget' })}
+      aria-label={addLabel}
       className={EDGE_BUTTON_CLASS}
       data-parity-id='dash-row-control-add'
       data-row-id={row.id}
       data-testid='dashboard-add-widget-row-button'
-      disabled={Boolean(addDisabledReason)}
+      disabled={addLimit !== null}
       onClick={() => openPicker({ mode: 'add', placement: { type: 'existing_row', rowId: row.id, index: count } })}
       onFocus={preloadPicker}
       onPointerEnter={preloadPicker}
@@ -199,12 +176,37 @@ export const DashboardRow = memo(function DashboardRow({
     </Button>
   );
 
+  // The same element while nothing of the handle changes, so the band below
+  // the row (memoized) does not render with the row.
+  const heightHandle = useMemo(
+    () =>
+      editing ? (
+        <RowHeightHandle
+          dragging={heightResize.dragging}
+          height={row.height}
+          onKeyDown={heightResize.handleKeyDown}
+          onPointerDown={heightResize.startResize}
+          preview={heightResize.preview}
+          rowId={rowId}
+        />
+      ) : null,
+    [
+      editing,
+      heightResize.dragging,
+      heightResize.handleKeyDown,
+      heightResize.preview,
+      heightResize.startResize,
+      row.height,
+      rowId,
+    ]
+  );
+  const pillTop = getWidgetCardCenter({ showWidgetTitles });
+
   return (
     <Fragment>
       <div
         className='group/row relative w-full'
         data-lines={lines.join(',')}
-        data-reflow={reflow ? 'true' : undefined}
         data-resizing={isResizing ? 'true' : undefined}
         data-row-id={row.id}
         data-row-index={rowIndex}
@@ -212,12 +214,15 @@ export const DashboardRow = memo(function DashboardRow({
         data-wrap-columns={wrapColumns}
       >
         <div
-          className='-mx-1.5 flex flex-wrap'
+          className='flex flex-wrap'
           data-parity-id='dash-row'
           data-testid='dashboard-row-track'
           ref={trackRef}
           style={
             {
+              // The track bleeds the box inset past the content column on both sides.
+              marginLeft: -DASHBOARD_WIDGET_BOX_INSET,
+              marginRight: -DASHBOARD_WIDGET_BOX_INSET,
               columnGap: DASHBOARD_COLUMN_GAP,
               rowGap: DASHBOARD_ROW_GAP,
               // The boxes read the row height from this variable, so a height
@@ -248,14 +253,15 @@ export const DashboardRow = memo(function DashboardRow({
               <WidthResizeHandle
                 active={widthResize.preview?.index === boundary.index}
                 center={getWidthHandleCenter(boundary.columnsBefore, boundary.index, count)}
+                columns={widths[boundary.index]}
                 index={boundary.index}
-                inert={isDraggingWidget}
                 key={boundary.key}
-                minColumns={minColumns}
+                maxColumns={boundary.bounds.max}
+                minColumns={boundary.bounds.min}
                 onKeyDown={widthResize.handleKeyDown}
                 onPointerDown={widthResize.startResize}
+                pillTop={pillTop}
                 rowId={row.id}
-                widths={widths}
               />
             ))
           : null}
@@ -267,26 +273,9 @@ export const DashboardRow = memo(function DashboardRow({
             data-testid='dashboard-row-control-anchor'
             style={{ left: CONTROL_ANCHOR_OFFSET, width: DASHBOARD_ROW_CONTROL_SIZE }}
           >
-            {dashboardFull ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className='inline-flex' onClick={() => showLimitMessage('dashboard')}>
-                    {insertButton}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side='right'>
-                  {t('dashboard.widgetLimit', {
-                    count: DASHBOARD_MAX_WIDGETS,
-                    defaultValue: 'Dashboards support up to {{count}} widgets.',
-                  })}
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>{insertButton}</TooltipTrigger>
-                <TooltipContent side='right'>{insertLabel}</TooltipContent>
-              </Tooltip>
-            )}
+            <LimitedAction limit={insertLimit} side='right' tooltip={insertLabel}>
+              {insertButton}
+            </LimitedAction>
           </div>
         ) : null}
 
@@ -297,37 +286,15 @@ export const DashboardRow = memo(function DashboardRow({
             data-testid='dashboard-row-control-anchor'
             style={{ right: CONTROL_ANCHOR_OFFSET, width: DASHBOARD_ROW_CONTROL_SIZE }}
           >
-            {addDisabledReason ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className='inline-flex' onClick={() => showLimitMessage(dashboardFull ? 'dashboard' : 'row')}>
-                    {addButton}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side='left'>{addDisabledReason}</TooltipContent>
-              </Tooltip>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>{addButton}</TooltipTrigger>
-                <TooltipContent side='left'>{t('dashboard.addWidget', { defaultValue: 'Add widget' })}</TooltipContent>
-              </Tooltip>
-            )}
+            <LimitedAction limit={addLimit} side='left' tooltip={addLabel}>
+              {addButton}
+            </LimitedAction>
           </div>
         ) : null}
       </div>
 
       <DashboardRowGap editing={editing} index={rowIndex + 1}>
-        {editing ? (
-          <RowHeightHandle
-            dragging={heightResize.dragging}
-            height={row.height}
-            inert={isDraggingWidget}
-            onKeyDown={heightResize.handleKeyDown}
-            onPointerDown={heightResize.startResize}
-            preview={heightResize.preview}
-            rowId={row.id}
-          />
-        ) : null}
+        {heightHandle}
       </DashboardRowGap>
     </Fragment>
   );

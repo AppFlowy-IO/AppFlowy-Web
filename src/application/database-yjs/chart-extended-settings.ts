@@ -1,4 +1,5 @@
-import { readBoolean, readStringEnum, sameLayoutValue, setLayoutKeyIfChanged } from './layout-codec';
+import { CHART_MAX_DECIMAL_PLACES } from './chart-enums';
+import { readBoolean, readStringEnum, sameLayoutValue } from './layout-codec';
 
 /**
  * Chart settings stored under snake_case keys that collab's
@@ -58,7 +59,7 @@ export type ChartLegendPosition = 'auto' | 'off' | 'bottom';
 
 export const CHART_LEGEND_POSITIONS: readonly ChartLegendPosition[] = ['auto', 'off', 'bottom'];
 
-export const CHART_MAX_DECIMAL_PLACES = 5;
+export { CHART_MAX_DECIMAL_PLACES };
 
 /** The typed extended chart settings, one field per `ChartExtendedLayoutKeys` entry, defaults applied. */
 export interface ChartExtendedSettings {
@@ -136,10 +137,9 @@ export function writeChartExtendedValue(
   field: ChartExtendedField,
   value: unknown
 ): boolean {
-  const key = ChartExtendedLayoutKeys[field] as string;
-  const read = CHART_EXTENDED_READERS[field] as ((value: unknown) => unknown) | undefined;
+  const key = ChartExtendedLayoutKeys[field];
+  const read: (value: unknown) => unknown = CHART_EXTENDED_READERS[field];
 
-  if (!read) return setLayoutKeyIfChanged(map, key, value);
   if (sameLayoutValue(read(map.get(key)), read(value))) return false;
   map.set(key, value);
   return true;

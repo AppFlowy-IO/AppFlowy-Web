@@ -8,8 +8,6 @@ import { YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '
 import { getDatabase, getReferenceView, readGlobalFilterSourceFields } from './global-filter.source-fields';
 import { GlobalFilterSource, GlobalFilterSourceField } from './global-filter.utils';
 
-export { readGlobalFilterSourceFields };
-
 /** View keys that decide which view is the reference and which array holds its column order. */
 const REFERENCE_VIEW_KEYS: readonly string[] = [
   YjsDatabaseKey.field_orders,

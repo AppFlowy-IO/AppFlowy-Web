@@ -108,6 +108,25 @@ export function ChartNoDataState({ fill, variant }: { fill?: boolean; variant?: 
   );
 }
 
+/**
+ * "No fields available for grouping": the database has no field a chart can
+ * group by. It keeps its own box (the card's `p-8`, not the chart insets).
+ */
+export function ChartNoFieldState({ fill }: { fill?: boolean }) {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      className={cn('flex w-full flex-1 flex-col items-center justify-center p-8 text-center', fill && 'h-full min-h-0')}
+      data-testid='chart-no-field'
+    >
+      <p className='max-w-md text-sm text-text-tertiary'>
+        {t('chart.emptyState.noField', 'No fields available for grouping')}
+      </p>
+    </div>
+  );
+}
+
 /** "Couldn't load this chart" with a Retry button (state-07). */
 export function ChartErrorState({ fill, onRetry }: { fill?: boolean; onRetry: () => void }) {
   const { t } = useTranslation();

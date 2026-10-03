@@ -1,5 +1,5 @@
 import { Dialog, DialogContent, DialogTitle } from '@mui/material';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabaseContext, useFieldSelector, usePrimaryFieldId, useRowMap } from '@/application/database-yjs';
@@ -8,7 +8,7 @@ import { getCell } from '@/application/database-yjs/const';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
-import { ensureRowsWithConcurrency } from '@/components/database/chart/hooks/useChartData';
+import { ensureRowsWithConcurrency } from '@/components/database/chart/hooks/rowLoadPool';
 import { useChartContext } from '@/components/database/chart/useChartContext';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import { Button } from '@/components/ui/button';
@@ -64,7 +64,12 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
   const rowMetasRef = useRef(rowMetas);
   const refreshTimerRef = useRef<number>();
 
-  rowMetasRef.current = rowMetas;
+  // After commit, not during render, so a discarded render never leaks its row
+  // map. Declared before the effects below, so they read this commit's map; the
+  // `rows` memo reads the last committed one and is refreshed by `loadedRevision`.
+  useLayoutEffect(() => {
+    rowMetasRef.current = rowMetas;
+  }, [rowMetas]);
 
   const rebuild = useCallback(() => {
     window.clearTimeout(refreshTimerRef.current);

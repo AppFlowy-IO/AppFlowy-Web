@@ -1,15 +1,9 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { toast } from 'sonner';
 
-import {
-  DatabaseContext,
-  useDatabase,
-  useDatabaseContext,
-  useDatabaseView,
-  useDatabaseViewsSelector,
-} from '@/application/database-yjs';
+import { useDatabase, useDatabaseContext, useDatabaseView, useDatabaseViewsSelector } from '@/application/database-yjs';
 import { hasAdvancedFilterRoot } from '@/application/database-yjs/filter';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
@@ -22,10 +16,13 @@ import {
 import { DatabaseSearchProvider } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { DatabaseTabs } from '@/components/database/components/tabs';
 import { DashboardProvider } from '@/components/database/dashboard/DashboardContext';
-import { useDashboardModeStore } from '@/components/database/dashboard/hooks/useDashboardModeStore';
 import { HistoricalDashboardPlaceholder } from '@/components/database/dashboard/HistoricalDashboardPlaceholder';
+import { useDashboardModeStore } from '@/components/database/dashboard/hooks/useDashboardModeStore';
 import { WidgetBody } from '@/components/database/dashboard/WidgetBody';
-import { useWidgetContextOptional } from '@/components/database/dashboard/WidgetContext';
+// Not lazy: a lazy header suspends once on the first widget that mounts it, and
+// that widget lists its rows under a blank band until the chunk resolves. The
+// dashboard has already loaded this module (its placeholders render the frame).
+import DashboardWidgetHeader from '@/components/database/dashboard/WidgetHeader';
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
@@ -57,24 +54,301 @@ const Gallery = lazy(() => import('@/components/database/gallery'));
 const Feed = lazy(() => import('@/components/database/feed'));
 const Timeline = lazy(() => import('@/components/database/timeline'));
 const Dashboard = lazy(() => import('@/components/database/dashboard'));
-const WidgetHeader = lazy(() => import('@/components/database/dashboard/WidgetHeader'));
 const FormBuilderView = lazy(() =>
   import('@/components/database/form/FormBuilderView').then(({ FormBuilderView: Component }) => ({
     default: Component,
   }))
 );
 
-function DatabaseViews({
-  onChangeView,
-  onViewAdded,
-  activeViewId,
-  databasePageId,
-  viewName,
-  visibleViewIds,
-  fixedHeight,
-  onViewIdsChanged,
-  onReorderViews,
-}: {
+/*
+ * Two compositions share the pieces below: a database page, a document
+ * block or a row page (`PageDatabaseViews`: tabs, conditions bar, every view
+ * of the database) and a dashboard widget (`WidgetDatabaseViews`: the widget
+ * header, one view in the widget card, conditions in popovers).
+ */
+
+/** Where the views render: `history` is an immutable history preview, `widget` a dashboard widget. */
+type DatabaseViewsHost = 'page' | 'history' | 'widget';
+
+/** The component of a layout. Layouts that keep per-view state remount on a view switch. */
+function renderDatabaseView(layout: DatabaseViewLayout | undefined, activeViewId: string, host: DatabaseViewsHost) {
+  switch (layout) {
+    case DatabaseViewLayout.Grid:
+      return <Grid />;
+    case DatabaseViewLayout.Board:
+      return <Board />;
+    case DatabaseViewLayout.Calendar:
+      return <Calendar key={activeViewId} />;
+    case DatabaseViewLayout.Chart:
+      return <Chart />;
+    case DatabaseViewLayout.Form:
+      return <FormBuilderView key={activeViewId} />;
+    case DatabaseViewLayout.List:
+      return <List />;
+    case DatabaseViewLayout.Gallery:
+      return <Gallery key={activeViewId} />;
+    case DatabaseViewLayout.Feed:
+      return <Feed key={activeViewId} />;
+    case DatabaseViewLayout.Timeline:
+      return <Timeline key={activeViewId} />;
+    case DatabaseViewLayout.Dashboard:
+      // Dashboards never nest: a widget whose view became a dashboard shows
+      // a placeholder rendered by the widget itself.
+      if (host === 'widget') return null;
+      // Widgets mount their own live databases, which would load current
+      // rows and bind realtime sync inside an immutable history preview.
+      if (host === 'history') return <HistoricalDashboardPlaceholder />;
+      return <Dashboard key={activeViewId} />;
+    default:
+      return null;
+  }
+}
+
+/**
+ * How the layout's box is sized: fixed to the embedded height (a dashboard
+ * widget's card), capped at it and shrunk to the content, or as tall as the
+ * content (a published page).
+ */
+function useDatabaseViewportGeometry(fixedHeight: number | undefined, layout: DatabaseViewLayout | undefined) {
+  const { isDocumentBlock, variant } = useDatabaseContext();
+
+  return {
+    fixed: shouldUseFixedDatabaseViewport({ embeddedHeight: fixedHeight, isDocumentBlock, variant }),
+    autoShrink: shouldAutoShrinkDatabaseViewport({ embeddedHeight: fixedHeight, isDocumentBlock, layout }),
+    scrollEmbedded: shouldScrollEmbeddedDatabaseViewport({ embeddedHeight: fixedHeight, isDocumentBlock, layout }),
+    style: getDatabaseViewportStyle({ embeddedHeight: fixedHeight, isDocumentBlock, layout }),
+  };
+}
+
+type DatabaseViewportGeometry = ReturnType<typeof useDatabaseViewportGeometry>;
+
+/** The class of the scope around a composition: it fills a fixed viewport's parent. */
+function historyScopeClass(geometry: DatabaseViewportGeometry) {
+  return cn('flex w-full flex-col', geometry.fixed ? 'min-h-0 flex-1' : 'overflow-visible');
+}
+
+/** The box the layout renders in; a layout that throws shows the element fallback. */
+function DatabaseViewport({ geometry, children }: { geometry: DatabaseViewportGeometry; children: ReactNode }) {
+  const { fixed, autoShrink, scrollEmbedded, style } = geometry;
+
+  return (
+    <div
+      className={cn(
+        'relative flex w-full flex-col',
+        fixed
+          ? autoShrink
+            ? scrollEmbedded
+              ? 'min-h-0 overflow-y-auto overflow-x-hidden'
+              : 'min-h-0 overflow-hidden'
+            : 'h-full min-h-0 flex-1 overflow-hidden'
+          : 'overflow-visible'
+      )}
+      style={style}
+    >
+      <div
+        className={cn('w-full', fixed && (autoShrink ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col'))}
+        style={style}
+      >
+        <Suspense fallback={null}>
+          <ErrorBoundary fallbackRender={ElementFallbackRender}>{children}</ErrorBoundary>
+        </Suspense>
+      </div>
+    </div>
+  );
+}
+
+/** Grid, List and Timeline share their grouping between the toolbar and the layout. */
+function ViewGroupingProvider({ layout, children }: { layout: DatabaseViewLayout | undefined; children: ReactNode }) {
+  switch (layout) {
+    case DatabaseViewLayout.Grid:
+      return <GridGroupingProvider>{children}</GridGroupingProvider>;
+    case DatabaseViewLayout.List:
+      return <ListGroupingProvider>{children}</ListGroupingProvider>;
+    case DatabaseViewLayout.Timeline:
+      return <TimelineGroupingProvider>{children}</TimelineGroupingProvider>;
+    default:
+      return <>{children}</>;
+  }
+}
+
+/**
+ * The conditions state both compositions keep: the filter whose editor is
+ * open, and the advanced mode with its rules panel. The mode follows the
+ * active view's filters (in a View-mode dashboard widget, the viewer's
+ * overlay, whose filters may differ from the shared view's).
+ * `onFiltersFound` (stable) runs whenever the view has filters.
+ */
+function useSharedConditionsState(onFiltersFound?: () => void) {
+  const [openFilterId, setOpenFilterId] = useState<string>();
+  const [isAdvancedMode, setAdvancedMode] = useState(false);
+  const [advancedPanelOpen, setAdvancedPanelOpen] = useState(false);
+  const conditionsView = useDatabaseView();
+
+  // Auto-detect advanced mode on mount/view change.
+  useEffect(() => {
+    if (!conditionsView) return;
+
+    const filters = conditionsView.get(YjsDatabaseKey.filters);
+
+    if (!filters || filters.length === 0) {
+      setAdvancedMode(false);
+      return;
+    }
+
+    onFiltersFound?.();
+    setAdvancedMode(hasAdvancedFilterRoot(filters));
+  }, [conditionsView, onFiltersFound]);
+
+  return { openFilterId, setOpenFilterId, isAdvancedMode, setAdvancedMode, advancedPanelOpen, setAdvancedPanelOpen };
+}
+
+type SharedConditionsState = ReturnType<typeof useSharedConditionsState>;
+
+interface ConditionsProvidersProps extends Omit<SharedConditionsState, 'setAdvancedPanelOpen'> {
+  /** The bar is revealed, or a widget's Filters popover is open. */
+  expanded: boolean;
+  toggleExpanded: () => void;
+  setExpanded: (expanded: boolean) => void;
+  setAdvancedPanelOpen: (open: boolean) => void;
+  /** The sort editor (bar), or a widget's Sorts popover, is open. */
+  sortMenuOpen: boolean;
+  setSortMenuOpen: (open: boolean) => void;
+  children: ReactNode;
+}
+
+/**
+ * Hands a conditions state to the toolbar, the column headers and the
+ * conditions UI. The actions keep their identity (each one is a state setter
+ * or a callback without changing dependencies), so action-only consumers
+ * (every grid column header menu) never re-render on conditions state churn.
+ */
+function ConditionsProviders({
+  expanded,
+  toggleExpanded,
+  setExpanded,
+  openFilterId,
+  setOpenFilterId,
+  isAdvancedMode,
+  setAdvancedMode,
+  advancedPanelOpen,
+  setAdvancedPanelOpen,
+  sortMenuOpen,
+  setSortMenuOpen,
+  children,
+}: ConditionsProvidersProps) {
+  const value = useMemo(
+    () => ({
+      expanded,
+      toggleExpanded,
+      setExpanded,
+      openFilterId,
+      setOpenFilterId,
+      isAdvancedMode,
+      setAdvancedMode,
+      advancedPanelOpen,
+      setAdvancedPanelOpen,
+      sortMenuOpen,
+      setSortMenuOpen,
+    }),
+    [
+      expanded,
+      toggleExpanded,
+      setExpanded,
+      openFilterId,
+      setOpenFilterId,
+      isAdvancedMode,
+      setAdvancedMode,
+      advancedPanelOpen,
+      setAdvancedPanelOpen,
+      sortMenuOpen,
+      setSortMenuOpen,
+    ]
+  );
+  const actions = useMemo(
+    () => ({ setExpanded, setOpenFilterId, setAdvancedMode, setAdvancedPanelOpen, setSortMenuOpen }),
+    [setExpanded, setOpenFilterId, setAdvancedMode, setAdvancedPanelOpen, setSortMenuOpen]
+  );
+
+  return (
+    <DatabaseConditionsContext.Provider value={value}>
+      <DatabaseConditionsActionsContext.Provider value={actions}>{children}</DatabaseConditionsActionsContext.Provider>
+    </DatabaseConditionsContext.Provider>
+  );
+}
+
+/**
+ * The conditions of a page: the conditions bar under the tabs, revealed by
+ * the toolbar (and whenever the view has filters), and the sort editor.
+ */
+function BarConditionsProvider({ children }: { children: ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const toggleExpanded = useCallback(() => setExpanded((prev) => !prev), []);
+  // Filters from any source (desktop sync, a collaborator) reveal the bar.
+  const revealBar = useCallback(() => setExpanded(true), []);
+  const shared = useSharedConditionsState(revealBar);
+
+  return (
+    <ConditionsProviders
+      {...shared}
+      expanded={expanded}
+      setExpanded={setExpanded}
+      setSortMenuOpen={setSortMenuOpen}
+      sortMenuOpen={sortMenuOpen}
+      toggleExpanded={toggleExpanded}
+    >
+      {children}
+    </ConditionsProviders>
+  );
+}
+
+type WidgetConditionsPopover = 'filters' | 'sorts' | null;
+
+/**
+ * The conditions of a dashboard widget. A widget has no conditions bar: its
+ * Filter and Sort tools open popovers, one at a time. The bar's "expand"
+ * and the sort and advanced menus map onto them, so every entry point that
+ * reveals the bar elsewhere (the column header's "Filter" and "Sort", a new
+ * rule) opens the matching popover. Nothing opens by itself.
+ */
+function WidgetConditionsProvider({ children }: { children: ReactNode }) {
+  const [popover, setPopover] = useState<WidgetConditionsPopover>(null);
+  const shared = useSharedConditionsState();
+  const { setAdvancedPanelOpen: setAdvancedPanelOpenState } = shared;
+  const toggleExpanded = useCallback(() => setPopover((current) => (current === 'filters' ? null : 'filters')), []);
+  const setExpanded = useCallback(
+    (expanded: boolean) => setPopover((current) => (expanded ? 'filters' : current === 'filters' ? null : current)),
+    []
+  );
+  const setSortMenuOpen = useCallback(
+    (open: boolean) => setPopover((current) => (open ? 'sorts' : current === 'sorts' ? null : current)),
+    []
+  );
+  // The advanced rules live in the Filters popover.
+  const setAdvancedPanelOpen = useCallback(
+    (open: boolean) => {
+      setAdvancedPanelOpenState(open);
+      if (open) setPopover('filters');
+    },
+    [setAdvancedPanelOpenState]
+  );
+
+  return (
+    <ConditionsProviders
+      {...shared}
+      expanded={popover === 'filters'}
+      setAdvancedPanelOpen={setAdvancedPanelOpen}
+      setExpanded={setExpanded}
+      setSortMenuOpen={setSortMenuOpen}
+      sortMenuOpen={popover === 'sorts'}
+      toggleExpanded={toggleExpanded}
+    >
+      {children}
+    </ConditionsProviders>
+  );
+}
+
+export interface DatabaseViewsProps {
   onChangeView: (viewId: string) => void;
   /**
    * Called when a new view is added via the + button.
@@ -106,11 +380,25 @@ function DatabaseViews({
    * fall back to the local (localStorage) tab order.
    */
   onReorderViews?: (movedViewId: string, prevViewId: string | null) => void | Promise<void>;
-}) {
+}
+
+/**
+ * A database page, document block or row page: the tabs of its views with
+ * the toolbar, the conditions bar and the active view.
+ */
+function PageDatabaseViews({
+  onChangeView,
+  onViewAdded,
+  activeViewId,
+  databasePageId,
+  viewName,
+  visibleViewIds,
+  fixedHeight,
+  onViewIdsChanged,
+  onReorderViews,
+}: DatabaseViewsProps) {
   const { childViews, viewIds } = useDatabaseViewsSelector(databasePageId, visibleViewIds);
-  const databaseContext = useDatabaseContext();
-  const { isDocumentBlock, variant, isDashboardWidget, dataSource, readOnly } = databaseContext;
-  const widgetContext = useWidgetContextOptional();
+  const { dataSource, readOnly } = useDatabaseContext();
   const isHistory = dataSource?.type === 'history';
   const persistViewOrder = !isHistory;
   const database = useDatabase();
@@ -154,10 +442,6 @@ function DatabaseViews({
   }, [hasAuthoritativeVisibleOrder, viewIds, views]);
 
   useEffect(() => {
-    // A dashboard widget shows exactly one view; it must not rewrite the
-    // stored tab order of its (possibly also mounted) source database.
-    if (isDashboardWidget) return;
-
     const isNewDatabase = orderedDatabaseIdRef.current !== databaseId;
     const storedViewIds = persistViewOrder ? readStoredViewOrder(databaseId) : undefined;
     const previousViewIds = orderedViewIdsRef.current;
@@ -209,83 +493,7 @@ function DatabaseViews({
     orderedViewIdsRef.current = nextViewIds;
     if (persistViewOrder) writeStoredViewOrder(databaseId, nextViewIds);
     setOrderedViewIds(nextViewIds);
-  }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder, isDashboardWidget, persistViewOrder, viewIds]);
-
-  const [conditionsExpanded, setConditionsExpanded] = useState<boolean>(false);
-  // A dashboard widget has no conditions bar: its filter and sort tools open
-  // popovers instead, one at a time. The conditions context maps the bar's
-  // "expand" and the sort / advanced menus onto them, so every entry point
-  // that used to reveal the bar (column header "Filter" and "Sort", a new
-  // rule) opens the matching popover.
-  const [conditionsPopover, setConditionsPopover] = useState<'filters' | 'sorts' | null>(null);
-  const toggleExpanded = useCallback(() => {
-    if (isDashboardWidget) {
-      setConditionsPopover((current) => (current === 'filters' ? null : 'filters'));
-      return;
-    }
-
-    setConditionsExpanded((prev) => !prev);
-  }, [isDashboardWidget]);
-  const setExpanded = useCallback(
-    (expanded: boolean) => {
-      if (isDashboardWidget) {
-        setConditionsPopover((current) => (expanded ? 'filters' : current === 'filters' ? null : current));
-        return;
-      }
-
-      setConditionsExpanded(expanded);
-    },
-    [isDashboardWidget]
-  );
-  const [openFilterId, setOpenFilterId] = useState<string>();
-
-  // Advanced filter mode state
-  const [isAdvancedMode, setAdvancedMode] = useState(false);
-  const [advancedPanelOpen, setAdvancedPanelOpenState] = useState(false);
-  const [sortMenuOpenState, setSortMenuOpenState] = useState(false);
-  const setAdvancedPanelOpen = useCallback(
-    (open: boolean) => {
-      setAdvancedPanelOpenState(open);
-      if (isDashboardWidget && open) setConditionsPopover('filters');
-    },
-    [isDashboardWidget]
-  );
-  const setSortMenuOpen = useCallback(
-    (open: boolean) => {
-      if (isDashboardWidget) {
-        setConditionsPopover((current) => (open ? 'sorts' : current === 'sorts' ? null : current));
-        return;
-      }
-
-      setSortMenuOpenState(open);
-    },
-    [isDashboardWidget]
-  );
-  const expanded = isDashboardWidget ? conditionsPopover === 'filters' : conditionsExpanded;
-  const sortMenuOpen = isDashboardWidget ? conditionsPopover === 'sorts' : sortMenuOpenState;
-
-  // The active view as this database edits it: in a View-mode dashboard
-  // widget that is the viewer's overlay, whose filters may differ from the
-  // shared view's (a widget remounts when it moves to another row).
-  const conditionsView = useDatabaseView();
-
-  // Auto-detect advanced mode on mount/view change and auto-expand when filters exist
-  useEffect(() => {
-    if (!conditionsView) return;
-
-    const filters = conditionsView.get(YjsDatabaseKey.filters);
-
-    if (!filters || filters.length === 0) {
-      setAdvancedMode(false);
-      return;
-    }
-
-    // Auto-expand when filters exist (from desktop sync or any source); a
-    // widget never shows the bar, nor opens its filters by itself.
-    if (!isDashboardWidget) setConditionsExpanded(true);
-
-    setAdvancedMode(hasAdvancedFilterRoot(filters));
-  }, [conditionsView, isDashboardWidget]);
+  }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder, persistViewOrder, viewIds]);
 
   // Get active view from selector state, or directly from Yjs if not yet in state
   // This handles the race condition when a new view is created but selector hasn't updated yet
@@ -412,213 +620,97 @@ function DatabaseViews({
   // the current view during render so a tab switch cannot commit the previous
   // view's component tree or providers against the next view's context.
   const effectiveLayout = activeView ? (Number(activeView.get(YjsDatabaseKey.layout)) as DatabaseViewLayout) : undefined;
-
-  const view = useMemo(() => {
-    switch (effectiveLayout) {
-      case DatabaseViewLayout.Grid:
-        return <Grid />;
-      case DatabaseViewLayout.Board:
-        return <Board />;
-      case DatabaseViewLayout.Calendar:
-        return <Calendar key={activeViewId} />;
-      case DatabaseViewLayout.Chart:
-        return <Chart />;
-      case DatabaseViewLayout.Form:
-        return <FormBuilderView key={activeViewId} />;
-      case DatabaseViewLayout.List:
-        return <List />;
-      case DatabaseViewLayout.Gallery:
-        return <Gallery key={activeViewId} />;
-      case DatabaseViewLayout.Feed:
-        return <Feed key={activeViewId} />;
-      case DatabaseViewLayout.Timeline:
-        return <Timeline key={activeViewId} />;
-      case DatabaseViewLayout.Dashboard:
-        // Dashboards never nest: a widget whose view became a dashboard shows
-        // a placeholder rendered by the widget itself.
-        if (isDashboardWidget) return null;
-        // Widgets mount their own live databases, which would load current
-        // rows and bind realtime sync inside an immutable history preview.
-        if (isHistory) return <HistoricalDashboardPlaceholder />;
-        return <Dashboard key={activeViewId} />;
-      default:
-        return null;
-    }
-  }, [activeViewId, effectiveLayout, isDashboardWidget, isHistory]);
-  // A dashboard widget's card is its fixed slot: it has no conditions bar to make room for.
-  const viewportHeight = fixedHeight;
-  const shouldUseFixedViewport = shouldUseFixedDatabaseViewport({
-    embeddedHeight: viewportHeight,
-    isDocumentBlock,
-    variant,
-  });
-  const shouldAutoShrinkViewport = shouldAutoShrinkDatabaseViewport({
-    embeddedHeight: viewportHeight,
-    isDocumentBlock,
-    layout: effectiveLayout,
-  });
-  const viewportStyle = getDatabaseViewportStyle({
-    embeddedHeight: viewportHeight,
-    isDocumentBlock,
-    layout: effectiveLayout,
-  });
-  const shouldScrollEmbeddedViewport = shouldScrollEmbeddedDatabaseViewport({
-    embeddedHeight: viewportHeight,
-    isDocumentBlock,
-    layout: effectiveLayout,
-  });
-  const viewportContext = useMemo(
-    () =>
-      viewportHeight === databaseContext.embeddedHeight
-        ? databaseContext
-        : { ...databaseContext, embeddedHeight: viewportHeight },
-    [databaseContext, viewportHeight]
+  const view = useMemo(
+    () => renderDatabaseView(effectiveLayout, activeViewId, isHistory ? 'history' : 'page'),
+    [activeViewId, effectiveLayout, isHistory]
   );
-  const databaseConditionsValue = useMemo(
-    () => ({
-      expanded,
-      toggleExpanded,
-      setExpanded,
-      openFilterId,
-      setOpenFilterId,
-      isAdvancedMode,
-      setAdvancedMode,
-      advancedPanelOpen,
-      setAdvancedPanelOpen,
-      sortMenuOpen,
-      setSortMenuOpen,
-    }),
-    [
-      expanded,
-      toggleExpanded,
-      setExpanded,
-      openFilterId,
-      setOpenFilterId,
-      isAdvancedMode,
-      setAdvancedMode,
-      advancedPanelOpen,
-      setAdvancedPanelOpen,
-      sortMenuOpen,
-      setSortMenuOpen,
-    ]
-  );
-
-  // Stable identity: every entry is a useState setter or an empty-deps
-  // useCallback, so action-only consumers (e.g. grid column header menus)
-  // never re-render on conditions state churn.
-  const databaseConditionsActions = useMemo(
-    () => ({
-      setExpanded,
-      setOpenFilterId,
-      setAdvancedMode,
-      setAdvancedPanelOpen,
-      setSortMenuOpen,
-    }),
-    [setExpanded, setOpenFilterId, setAdvancedMode, setAdvancedPanelOpen, setSortMenuOpen]
-  );
-
-  const isDashboardLayout = effectiveLayout === DatabaseViewLayout.Dashboard && !isDashboardWidget;
-  const isDashboardHost = isDashboardLayout && !isHistory;
-  const viewport = (
-    <div
-      className={cn(
-        'relative flex w-full flex-col',
-        shouldUseFixedViewport
-          ? shouldAutoShrinkViewport
-            ? shouldScrollEmbeddedViewport
-              ? 'min-h-0 overflow-y-auto overflow-x-hidden'
-              : 'min-h-0 overflow-hidden'
-            : 'h-full min-h-0 flex-1 overflow-hidden'
-          : 'overflow-visible'
-      )}
-      style={viewportStyle}
-    >
-      <div
-        className={cn(
-          'w-full',
-          shouldUseFixedViewport && (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
-        )}
-        style={viewportStyle}
-      >
-        <Suspense fallback={null}>
-          <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
-        </Suspense>
-      </div>
-    </div>
-  );
+  const geometry = useDatabaseViewportGeometry(fixedHeight, effectiveLayout);
+  const isDashboardLayout = effectiveLayout === DatabaseViewLayout.Dashboard;
 
   const content = (
     <DatabaseSearchProvider activeViewId={activeViewId}>
-      <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
-        <DatabaseConditionsActionsContext.Provider value={databaseConditionsActions}>
-          {isDashboardWidget ? (
-            <>
-              <Suspense fallback={<div aria-hidden='true' style={{ height: widgetContext?.headerHeight ?? 0 }} />}>
-                <WidgetHeader />
-              </Suspense>
-              <WidgetBody>
-                <DatabaseContext.Provider value={viewportContext}>{viewport}</DatabaseContext.Provider>
-              </WidgetBody>
-            </>
-          ) : (
-            <>
-              <DatabaseTabs
-                viewName={viewName}
-                databasePageId={databasePageId}
-                selectedViewId={activeViewId}
-                setSelectedViewId={handleViewChange}
-                viewIds={displayedViewIds}
-                onViewAddedToDatabase={handleViewAddedToDatabase}
-                onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
-                onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
-                onViewIdsChanged={onViewIdsChanged}
-                onReorderTabs={handleReorderTabs}
-              />
+      <DatabaseTabs
+        viewName={viewName}
+        databasePageId={databasePageId}
+        selectedViewId={activeViewId}
+        setSelectedViewId={handleViewChange}
+        viewIds={displayedViewIds}
+        onViewAddedToDatabase={handleViewAddedToDatabase}
+        onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
+        onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
+        onViewIdsChanged={onViewIdsChanged}
+        onReorderTabs={handleReorderTabs}
+      />
 
-              {/* A dashboard shows its global filters inside the grid instead. */}
-              {isDashboardLayout ? null : <DatabaseConditionsPanel />}
+      {/* A dashboard shows its global filters inside the grid instead. */}
+      {isDashboardLayout ? null : <DatabaseConditionsPanel />}
 
-              {viewport}
-            </>
-          )}
-        </DatabaseConditionsActionsContext.Provider>
-      </DatabaseConditionsContext.Provider>
+      <DatabaseViewport geometry={geometry}>{view}</DatabaseViewport>
     </DatabaseSearchProvider>
   );
 
-  let groupedContent = content;
-
-  switch (effectiveLayout) {
-    case DatabaseViewLayout.Grid:
-      groupedContent = <GridGroupingProvider>{content}</GridGroupingProvider>;
-      break;
-    case DatabaseViewLayout.List:
-      groupedContent = <ListGroupingProvider>{content}</ListGroupingProvider>;
-      break;
-    case DatabaseViewLayout.Timeline:
-      groupedContent = <TimelineGroupingProvider>{content}</TimelineGroupingProvider>;
-      break;
-    case DatabaseViewLayout.Dashboard:
-      // The tab bar's toolbar (Edit / Done, global filters) and the grid
-      // share one dashboard state.
-      if (isDashboardHost) {
-        groupedContent = (
+  return (
+    <DatabaseHistoryScope className={historyScopeClass(geometry)}>
+      {/* Above the layout's providers: the bar keeps its state across a tab switch. */}
+      <BarConditionsProvider>
+        {isDashboardLayout && !isHistory ? (
+          // The tab bar's toolbar (Edit / Done, global filters) and the grid
+          // share one dashboard state.
           <DashboardProvider modeStore={dashboardModeStore} viewIds={displayedViewIds}>
             {content}
           </DashboardProvider>
-        );
-      }
-
-      break;
-  }
-
-  return (
-    <DatabaseHistoryScope
-      className={cn('flex w-full flex-col', shouldUseFixedViewport ? 'min-h-0 flex-1' : 'overflow-visible')}
-    >
-      {groupedContent}
+        ) : (
+          <ViewGroupingProvider layout={effectiveLayout}>{content}</ViewGroupingProvider>
+        )}
+      </BarConditionsProvider>
     </DatabaseHistoryScope>
   );
+}
+
+/**
+ * A dashboard widget: its header (title, tools, menu) in place of the tabs,
+ * and its one view in the widget card, which is the whole fixed slot (a
+ * widget has no conditions bar to make room for). It reuses the page's
+ * pieces: the search, the conditions contexts, the grouping and the viewport.
+ * A widget shows exactly one view, so it neither orders nor persists tabs.
+ */
+export function WidgetDatabaseViews({ activeViewId, fixedHeight }: { activeViewId: string; fixedHeight?: number }) {
+  // The database store re-renders on every change of the database, so the
+  // layout read here follows a conversion and a view that syncs in late.
+  const view = useDatabase()?.get(YjsDatabaseKey.views)?.get(activeViewId);
+  const layout = view ? (Number(view.get(YjsDatabaseKey.layout)) as DatabaseViewLayout) : undefined;
+  const content = useMemo(() => renderDatabaseView(layout, activeViewId, 'widget'), [activeViewId, layout]);
+  const geometry = useDatabaseViewportGeometry(fixedHeight, layout);
+
+  return (
+    <DatabaseHistoryScope className={historyScopeClass(geometry)}>
+      <WidgetConditionsProvider>
+        <ViewGroupingProvider layout={layout}>
+          <DatabaseSearchProvider activeViewId={activeViewId}>
+            <DashboardWidgetHeader />
+            <WidgetBody>
+              <DatabaseViewport geometry={geometry}>{content}</DatabaseViewport>
+            </WidgetBody>
+          </DatabaseSearchProvider>
+        </ViewGroupingProvider>
+      </WidgetConditionsProvider>
+    </DatabaseHistoryScope>
+  );
+}
+
+/**
+ * The views of a database: a dashboard widget's own composition inside a
+ * widget (`DatabaseContext.isDashboardWidget`), the page composition
+ * everywhere else.
+ */
+function DatabaseViews(props: DatabaseViewsProps) {
+  const { isDashboardWidget } = useDatabaseContext();
+
+  if (isDashboardWidget) {
+    return <WidgetDatabaseViews activeViewId={props.activeViewId} fixedHeight={props.fixedHeight} />;
+  }
+
+  return <PageDatabaseViews {...props} />;
 }
 
 export default DatabaseViews;

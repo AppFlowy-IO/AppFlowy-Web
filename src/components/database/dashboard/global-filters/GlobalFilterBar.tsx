@@ -1,16 +1,20 @@
-import { memo, useCallback, useState } from 'react';
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useDashboardContextOptional } from '@/components/database/dashboard/DashboardContext';
 import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
 import { GlobalFilterChip } from './GlobalFilterChip';
-import { LazyGlobalFilterMenu, preloadGlobalFilterMenu } from './LazyGlobalFilterMenu';
+import { GlobalFilterPopover, globalFilterTriggerProps } from './GlobalFilterPopover';
 import { useDashboardFilterSources, useGlobalFilterActions } from './useGlobalFilterActions';
+
+import type { GlobalFilterMenuScreen } from './GlobalFilterMenu';
+
+const ADD_FILTER_SCREEN: GlobalFilterMenuScreen = { type: 'pick' };
 
 /** The chips; only mounted while there are filters, so an empty bar observes no source database. */
 function GlobalFilterChipList({ filters }: { filters: DashboardGlobalFilter[] }) {
@@ -29,8 +33,6 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
   const { t } = useTranslation();
   const { filters, hasLocalChanges, canSave, canEdit, isEditing, resetLocal, saveForEverybody } =
     useGlobalFilterActions();
-  const [adding, setAdding] = useState(false);
-  const closeAdd = useCallback(() => setAdding(false), []);
 
   if (filters.length === 0 && !isEditing && !hasLocalChanges) return null;
 
@@ -43,7 +45,7 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
       {filters.length > 0 && <GlobalFilterChipList filters={filters} />}
 
       {isEditing && canEdit && (
-        <Popover modal open={adding} onOpenChange={setAdding}>
+        <GlobalFilterPopover align='start' initialScreen={ADD_FILTER_SCREEN}>
           <PopoverTrigger asChild>
             <Button
               variant='ghost'
@@ -51,8 +53,7 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
               data-parity-id='dash-global-filter-add'
               data-testid='dashboard-global-filter-bar-add'
               className='h-7 rounded-full px-2 font-medium text-text-secondary'
-              onFocus={preloadGlobalFilterMenu}
-              onPointerEnter={preloadGlobalFilterMenu}
+              {...globalFilterTriggerProps}
             >
               <PlusIcon className='h-4 w-4 text-icon-secondary' data-parity-id='dash-global-filter-add__icon' />
               <span data-parity-id='dash-global-filter-add__label'>
@@ -60,16 +61,7 @@ function GlobalFilterBarContent({ className }: { className?: string }) {
               </span>
             </Button>
           </PopoverTrigger>
-          <PopoverContent
-            align='start'
-            className='w-[360px]'
-            data-parity-id='dash-global-filter-popover'
-            onCloseAutoFocus={(event) => event.preventDefault()}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <LazyGlobalFilterMenu startWithPicker onClose={closeAdd} />
-          </PopoverContent>
-        </Popover>
+        </GlobalFilterPopover>
       )}
 
       {hasLocalChanges && (

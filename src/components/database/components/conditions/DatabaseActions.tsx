@@ -5,49 +5,27 @@ import {
   useDatabaseContext,
   useDatabaseViewLayout,
   useConditionsReadOnly,
-  useFiltersSelector,
   useReadOnly,
-  useSortsSelector,
 } from '@/application/database-yjs';
 import { DatabaseViewLayout } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
-import { ReactComponent as WidgetSettingsIcon } from '@/assets/icons/controller.svg';
 import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/full_screen.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
-import { useConditionsContext } from '@/components/database/components/conditions/context';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
-import FiltersButton, {
-  preventWidgetToolFocusTooltip,
-} from '@/components/database/components/conditions/FiltersButton';
+import FiltersButton from '@/components/database/components/conditions/FiltersButton';
 import SortsButton from '@/components/database/components/conditions/SortsButton';
 import Settings from '@/components/database/components/settings/Settings';
 import { DatabaseTemplateButton } from '@/components/database/components/template';
-import {
-  getDashboardWidgetTools,
-  WIDGET_TOOL_CAPS,
-  WidgetTool,
-  widgetToolsContainerClass,
-  widgetToolSlotClass,
-} from '@/components/database/dashboard/widget-tools';
-import { useWidgetContextOptional, WidgetContextValue } from '@/components/database/dashboard/WidgetContext';
+import { WidgetTools } from '@/components/database/dashboard/widget-tool-buttons/WidgetTools';
+import { SORTABLE_LAYOUTS } from '@/components/database/dashboard/widget-tools';
 import { useOpenDatabaseAsPage } from '@/components/database/hooks';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
 
 // Only dashboards render it, so its global filter editor stays out of every
 // other view's bundle.
 const DashboardActions = lazy(() => import('@/components/database/dashboard/DashboardActions'));
-
-/** Layouts whose toolbar offers sorting. */
-const SORTABLE_LAYOUTS = new Set<DatabaseViewLayout>([
-  DatabaseViewLayout.Grid,
-  DatabaseViewLayout.List,
-  DatabaseViewLayout.Gallery,
-  DatabaseViewLayout.Feed,
-  DatabaseViewLayout.Timeline,
-]);
 
 /** Layouts whose toolbar offers the template button. */
 const TEMPLATE_LAYOUTS = new Set<DatabaseViewLayout>([
@@ -149,120 +127,47 @@ function DatabaseSearchAction() {
 }
 
 /**
- * The tools of a dashboard widget's header (`getDashboardWidgetTools`): Filter
- * and Sort open popovers, and Edit mode adds Settings, which opens the
- * widget's settings host. Hidden tools keep their slot and stay focusable;
- * they show on hover, on focus, while a popover or the menu is open, in Edit
- * mode, and an active filter or sort always shows (in accent).
+ * The toolbar of a database view: Filter and Sort (they reveal the conditions
+ * bar), "Open as page" for a database embedded in a document, Search for the
+ * layouts that consume it, Settings and the template button. A dashboard
+ * swaps in its own toolbar (`DashboardActions`).
  */
-function DashboardWidgetTools({ widget, layout }: { widget: WidgetContextValue; layout: DatabaseViewLayout }) {
-  const { t } = useTranslation();
-  const readOnly = useReadOnly();
-  const conditionsReadOnly = useConditionsReadOnly();
-  const conditionsContext = useConditionsContext();
-  const filters = useFiltersSelector();
-  const sorts = useSortsSelector();
-  const tools = getDashboardWidgetTools({
-    layout,
-    editing: widget.editing,
-    canWrite: !readOnly,
-    canEditConditions: !conditionsReadOnly,
-    caps: WIDGET_TOOL_CAPS,
-  });
-  const settingsLabel = t('dashboard.widget.settings', { defaultValue: 'Settings' });
-  const isActive = (tool: WidgetTool) =>
-    (tool === 'filter' && filters.length > 0) || (tool === 'sort' && sorts.length > 0);
-
-  if (tools.length === 0) return null;
-
-  return (
-    <div
-      className={cn('group/tools flex items-center gap-0.5', widgetToolsContainerClass())}
-      data-dashboard-widget='true'
-      data-force-visible={widget.editing || widget.menuOpen || widget.settingsOpen ? 'true' : 'false'}
-      data-has-active={tools.some(isActive) ? 'true' : 'false'}
-      data-parity-id='dash-widget-tools'
-      data-testid='database-actions'
-    >
-      {tools.map((tool) => (
-        <div
-          className={widgetToolSlotClass()}
-          data-active={isActive(tool) ? 'true' : 'false'}
-          data-widget-tool={tool}
-          key={tool}
-        >
-          {tool === 'filter' ? (
-            <FiltersButton {...conditionsContext} editing={widget.editing} presentation='popover' variant='widget' />
-          ) : tool === 'sort' ? (
-            <SortsButton {...conditionsContext} editing={widget.editing} presentation='popover' variant='widget' />
-          ) : tool === 'settings' ? (
-            <Tooltip disableHoverableContent>
-              <TooltipTrigger asChild onFocus={preventWidgetToolFocusTooltip}>
-                <Button
-                  aria-label={settingsLabel}
-                  className='!rounded-200 text-dash-edit-icon data-[state=open]:bg-dash-hover-fill [&_svg]:h-4 [&_svg]:w-4'
-                  data-parity-id='dash-widget-tool-settings'
-                  data-state={widget.settingsOpen ? 'open' : 'closed'}
-                  data-testid='dashboard-widget-settings-button'
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (widget.settingsOpen) widget.setSettingsOpen(false);
-                    else widget.actions.openSettings();
-                  }}
-                  size='icon-sm'
-                  type='button'
-                  variant='ghost'
-                >
-                  <WidgetSettingsIcon aria-hidden='true' data-parity-id='dash-widget-tool-settings__icon' />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{settingsLabel}</TooltipContent>
-            </Tooltip>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function DatabaseActions() {
+function DatabaseToolbar() {
   const { t } = useTranslation();
 
-  const layout = useDatabaseViewLayout() as DatabaseViewLayout;
+  // Null until the view's layout is read: the plain toolbar, without Sort, Search or templates.
+  const layout = useDatabaseViewLayout();
   const readOnly = useReadOnly();
-  // Filters and sorts stay usable in a View-mode dashboard widget (local to the viewer).
   const conditionsReadOnly = useConditionsReadOnly();
-  const conditionsContext = useConditionsContext();
-  const { activeViewId, isDocumentBlock, databasePageId, isDashboardWidget } = useDatabaseContext();
+  const { activeViewId, isDocumentBlock, databasePageId } = useDatabaseContext();
   const { canOpen, isOpening, openDatabaseAsPage } = useOpenDatabaseAsPage({ fallbackViewId: databasePageId });
-  const widget = useWidgetContextOptional();
 
   // The dashboard's own toolbar (`DashboardActions`): global filters, Open as
   // full page, Settings and Edit / Done replace the view conditions. A
   // mobile context is view-only, so that toolbar offers no Settings there
-  // (layout conversion and the display settings only edit).
-  const isDashboard = layout === DatabaseViewLayout.Dashboard && !isDashboardWidget;
-
-  if (isDashboard) {
+  // (layout conversion and the display settings only edit). It gets the
+  // database as primitives, so the host's row changes do not re-render it.
+  if (layout === DatabaseViewLayout.Dashboard) {
     return (
       <div className='flex min-w-fit items-center justify-end gap-1' data-testid='database-actions'>
         <Suspense fallback={null}>
-          <DashboardActions />
+          <DashboardActions
+            activeViewId={activeViewId}
+            databasePageId={databasePageId}
+            isDocumentBlock={Boolean(isDocumentBlock)}
+            readOnly={readOnly}
+          />
         </Suspense>
       </div>
     );
   }
 
-  // A dashboard widget's header shows the widget tools instead of the toolbar.
-  if (isDashboardWidget && widget) return <DashboardWidgetTools layout={layout} widget={widget} />;
-
-  const showSettings = !readOnly;
-  const showSorts = SORTABLE_LAYOUTS.has(layout);
-  const supportsSearch = layout === DatabaseViewLayout.Gallery || layout === DatabaseViewLayout.Feed;
-  // A widget header has no room for the search field or the template button.
-  const showSearch = supportsSearch && !isDashboardWidget;
-  const showTemplates = !isDashboardWidget && TEMPLATE_LAYOUTS.has(layout);
-  const compact = showSearch || Boolean(isDashboardWidget);
+  // `Settings` renders nothing for a layout it does not know yet.
+  const showSettings = !readOnly && layout !== null;
+  const showSorts = layout !== null && SORTABLE_LAYOUTS.has(layout);
+  const showSearch = layout === DatabaseViewLayout.Gallery || layout === DatabaseViewLayout.Feed;
+  const showTemplates = layout !== null && TEMPLATE_LAYOUTS.has(layout);
+  const compact = showSearch;
   const settingsButton = (
     <Button
       aria-label={t('settings.title')}
@@ -280,13 +185,11 @@ export function DatabaseActions() {
   return (
     <div
       className={`flex min-w-fit items-center justify-end ${compact ? 'gap-0.5' : 'gap-1.5'}`}
-      data-dashboard-widget={isDashboardWidget ? 'true' : undefined}
       data-testid='database-actions'
     >
-      {!conditionsReadOnly ? <FiltersButton {...conditionsContext} compact={compact} /> : null}
-      {!conditionsReadOnly && showSorts ? <SortsButton {...conditionsContext} compact={compact} /> : null}
-      {/* A widget never offers its own page: its menu does ("View data source"). */}
-      {isDocumentBlock && !isDashboardWidget && (
+      {!conditionsReadOnly ? <FiltersButton compact={compact} /> : null}
+      {!conditionsReadOnly && showSorts ? <SortsButton compact={compact} /> : null}
+      {isDocumentBlock && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -326,6 +229,17 @@ export function DatabaseActions() {
       ) : null}
     </div>
   );
+}
+
+/**
+ * The actions beside a database's tabs. Inside a dashboard widget, whose
+ * header (`WidgetHeader`) renders them in place of the tab bar, they are the
+ * widget's tools (`WidgetTools`) instead of the toolbar.
+ */
+export function DatabaseActions() {
+  const { isDashboardWidget } = useDatabaseContext();
+
+  return isDashboardWidget ? <WidgetTools /> : <DatabaseToolbar />;
 }
 
 export default DatabaseActions;

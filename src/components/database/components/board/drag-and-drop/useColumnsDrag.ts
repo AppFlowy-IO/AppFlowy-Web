@@ -1,7 +1,6 @@
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
-import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -14,6 +13,7 @@ import {
 } from '@/application/database-yjs/dispatch';
 import { BoardDragContextValue } from '@/components/database/components/board/drag-and-drop/board-context';
 import { createRegistry } from '@/components/database/components/board/drag-and-drop/registry';
+import { autoScrollForSharedElement } from '@/components/database/components/drag-and-drop/autoScrollForSharedElement';
 
 import type { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/types';
 
@@ -302,10 +302,7 @@ export function useColumnsDrag(
           }
         },
       }),
-      autoScrollForElements({
-        element: scrollableRef.current,
-        canScroll: canRespond,
-      })
+      autoScrollForSharedElement(scrollableRef.current, canRespond)
     );
   }, [columns, getCards, instanceId, moveCard, readOnly, reorderCard, reorderColumn]);
 

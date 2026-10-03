@@ -1957,7 +1957,9 @@
       "personFieldName": "Person",
       "person": {
         "notifyAssignee": "Notify assignee",
-        "noMatches": "No matches found"
+        "noMatches": "No matches found",
+        "searchForMore_one": "Search to find {{count}} more person",
+        "searchForMore_other": "Search to find {{count}} more people"
       },
       "translateTo": "Translate to",
       "numberFormat": "Number format",
@@ -4594,7 +4596,8 @@
       "filters": "Filters",
       "sorts": "Sorts",
       "close": "Close",
-      "offline": "Available when you're back online"
+      "offline": "Available when you're back online",
+      "openFailed": "Could not open the view"
     },
     "picker": {
       "title": "Add widget",

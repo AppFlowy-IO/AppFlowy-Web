@@ -11,6 +11,8 @@ import { useDatabaseDeletionStatus } from '../useDatabaseDeletionStatus';
 jest.mock('@/application/services/domains', () => ({
   ViewService: {
     get: jest.fn(),
+    getCached: jest.fn(),
+    getMultiple: jest.fn(),
     getTrashCached: jest.fn(),
     refresh: jest.fn(),
   },
@@ -200,7 +202,12 @@ describe('useDatabaseDeletionStatus', () => {
       })
     );
 
+    // The view lookup goes out at the end of the tick, with those of any other probe mounted in it.
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(ViewService.get).toHaveBeenCalledTimes(1);
+    expect(ViewService.getMultiple).not.toHaveBeenCalled();
     expect(ViewService.getTrashCached).toHaveBeenCalledTimes(1);
 
     act(() => {
@@ -283,5 +290,123 @@ describe('useDatabaseDeletionStatus', () => {
 
     second.unmount();
     expect(eventEmitter.listenerCount(APP_EVENTS.TRASH_UPDATED)).toBe(0);
+  });
+
+  describe('mount probes of a dashboard', () => {
+    const workspaceId = 'workspace-id';
+    const viewIds = Array.from({ length: 12 }, (_, index) => `widget-view-${index}`);
+
+    function mountProbe(viewId: string, eventEmitter: EventEmitter) {
+      const setNotFound = jest.fn();
+
+      return renderHook(() =>
+        useDatabaseDeletionStatus({
+          workspaceId,
+          viewId,
+          databaseId: `database-of-${viewId}`,
+          hasDatabase: true,
+          eventEmitter,
+          notFound: false,
+          setNotFound,
+        })
+      );
+    }
+
+    beforeEach(() => {
+      (ViewService.getCached as jest.Mock).mockReturnValue(undefined);
+      (ViewService.getTrashCached as jest.Mock).mockResolvedValue([]);
+    });
+
+    it('looks up the views of twelve widgets with one batch request', async () => {
+      const eventEmitter = new EventEmitter();
+
+      (ViewService.getMultiple as jest.Mock).mockImplementation(async (_workspaceId: string, ids: string[]) =>
+        ids.map((id) => createView(id, { parent_view_id: `container-of-${id}` }))
+      );
+
+      const probes = viewIds.map((viewId) => mountProbe(viewId, eventEmitter));
+
+      await waitFor(() => probes.forEach(({ result }) => expect(result.current).toBe('none')));
+
+      expect((ViewService.getMultiple as jest.Mock).mock.calls).toEqual([[workspaceId, viewIds, 1]]);
+      expect(ViewService.get).not.toHaveBeenCalled();
+      expect(ViewService.refresh).not.toHaveBeenCalled();
+    });
+
+    it('asks once for a view two widgets show', async () => {
+      const eventEmitter = new EventEmitter();
+
+      (ViewService.getMultiple as jest.Mock).mockImplementation(async (_workspaceId: string, ids: string[]) =>
+        ids.map((id) => createView(id))
+      );
+
+      const probes = ['shared-view', 'shared-view', 'other-view'].map((viewId) => mountProbe(viewId, eventEmitter));
+
+      await waitFor(() => probes.forEach(({ result }) => expect(result.current).toBe('none')));
+
+      expect((ViewService.getMultiple as jest.Mock).mock.calls).toEqual([
+        [workspaceId, ['shared-view', 'other-view'], 1],
+      ]);
+    });
+
+    it('looks up a view the batch leaves out on its own, to tell a deleted view from a failed lookup', async () => {
+      const eventEmitter = new EventEmitter();
+      const [deleted, failing, ...present] = viewIds;
+
+      (ViewService.getMultiple as jest.Mock).mockResolvedValue(present.map((id) => createView(id)));
+      (ViewService.get as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
+        Promise.reject(
+          viewId === deleted
+            ? { code: -2, httpStatus: 404, message: 'Record not found' }
+            : { code: 500, httpStatus: 500, message: 'Internal server error' }
+        )
+      );
+
+      const probes = viewIds.map((viewId) => ({ viewId, ...mountProbe(viewId, eventEmitter) }));
+
+      await waitFor(() => probes.forEach(({ result }) => expect(result.current).not.toBeNull()));
+
+      expect(ViewService.getMultiple).toHaveBeenCalledTimes(1);
+      expect((ViewService.get as jest.Mock).mock.calls).toEqual([
+        [workspaceId, deleted],
+        [workspaceId, failing],
+      ]);
+      probes.forEach(({ viewId, result }) => {
+        // A transient failure is no proof of deletion.
+        expect(result.current).toBe(viewId === deleted ? 'deleted' : 'none');
+      });
+    });
+
+    it('falls back to one lookup per view when the batch request fails', async () => {
+      const eventEmitter = new EventEmitter();
+      const twoViews = viewIds.slice(0, 2);
+
+      // A guest may not call the batch endpoint at all.
+      (ViewService.getMultiple as jest.Mock).mockRejectedValue({ code: 1012, httpStatus: 403, message: 'forbidden' });
+      (ViewService.get as jest.Mock).mockImplementation(async (_workspaceId: string, viewId: string) =>
+        createView(viewId)
+      );
+
+      const probes = twoViews.map((viewId) => mountProbe(viewId, eventEmitter));
+
+      await waitFor(() => probes.forEach(({ result }) => expect(result.current).toBe('none')));
+
+      expect((ViewService.get as jest.Mock).mock.calls).toEqual(twoViews.map((viewId) => [workspaceId, viewId]));
+    });
+
+    it('sends no request for views that are cached', async () => {
+      const eventEmitter = new EventEmitter();
+
+      (ViewService.getCached as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
+        createView(viewId)
+      );
+
+      const probes = viewIds.map((viewId) => mountProbe(viewId, eventEmitter));
+
+      await waitFor(() => probes.forEach(({ result }) => expect(result.current).toBe('none')));
+
+      expect(ViewService.getMultiple).not.toHaveBeenCalled();
+      expect(ViewService.get).not.toHaveBeenCalled();
+    });
   });
 });

@@ -1,10 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { TFunction } from 'i18next';
 
-import { ChartAggregationType } from '@/application/database-yjs/chart.type';
-import { NumberFormat } from '@/application/database-yjs/fields';
+import { ChartAggregationType, resolveEffectiveAggregation } from '@/application/database-yjs/chart.type';
 import NumberChartWidget from '@/components/database/chart/widgets/NumberChart';
-import { formatNumberChartValue, getNumberChartTitle } from '@/components/database/chart/widgets/numberChartUtils';
+import { getChartSeriesTitle, getNumberChartTitle } from '@/components/database/chart/widgets/numberChartUtils';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -22,30 +21,16 @@ const interpolatingT = ((key: string, options?: Record<string, string>) => {
 describe('NumberChartWidget', () => {
   it('renders the formatted value and title', () => {
     render(
-      <NumberChartWidget
-        item={{ label: '', value: 1234.567, rowIds: ['r1', 'r2'] }}
-        title='Sum of Amount'
-        numberFormat='auto'
-        aggregationType={ChartAggregationType.Sum}
-        fieldNumberFormat={NumberFormat.Num}
-      />
+      <NumberChartWidget item={{ label: '', value: 1234.567, rowIds: ['r1', 'r2'] }} title='Sum of Amount' valueText='1,235' />
     );
 
     expect(screen.getByTestId('number-chart').getAttribute('data-empty')).toBe('false');
-    // R-FORMAT card: values of 1,000 or more drop their decimals.
     expect(screen.getByTestId('number-chart-value').textContent).toBe('1,235');
     expect(screen.getByTestId('number-chart-title').textContent).toBe('Sum of Amount');
   });
 
   it('shows the empty state when no rows match', () => {
-    render(
-      <NumberChartWidget
-        item={{ label: '', value: 0, rowIds: [] }}
-        title='Count all'
-        numberFormat='auto'
-        aggregationType={ChartAggregationType.Count}
-      />
-    );
+    render(<NumberChartWidget item={{ label: '', value: 0, rowIds: [] }} title='Count all' valueText='0' />);
 
     expect(screen.getByTestId('number-chart').getAttribute('data-empty')).toBe('true');
     expect(screen.queryByTestId('number-chart-value')).toBeNull();
@@ -54,89 +39,25 @@ describe('NumberChartWidget', () => {
   });
 
   it('drills down with the title as label when clicked', () => {
-    const onClick = jest.fn();
+    const onItemClick = jest.fn();
 
     render(
       <NumberChartWidget
         item={{ label: '', value: 2, rowIds: ['r1', 'r2'], color: '#000' }}
+        onItemClick={onItemClick}
         title='Count all'
-        numberFormat='auto'
-        aggregationType={ChartAggregationType.Count}
-        onClick={onClick}
+        valueText='2'
       />
     );
 
     fireEvent.click(screen.getByTestId('number-chart-value'));
-    expect(onClick).toHaveBeenCalledWith({ label: 'Count all', value: 2, rowIds: ['r1', 'r2'], color: '#000' });
-  });
-});
-
-describe('formatNumberChartValue', () => {
-  it('uses the field currency format for value aggregations in auto mode', () => {
-    expect(
-      formatNumberChartValue(1500.456, {
-        numberFormat: 'auto',
-        aggregationType: ChartAggregationType.Sum,
-        fieldNumberFormat: NumberFormat.USD,
-      })
-    ).toBe('$1,500');
+    expect(onItemClick).toHaveBeenCalledWith({ label: 'Count all', value: 2, rowIds: ['r1', 'r2'], color: '#000' });
   });
 
-  it('ignores the field format for counts', () => {
-    expect(
-      formatNumberChartValue(1500, {
-        numberFormat: 'auto',
-        aggregationType: ChartAggregationType.Count,
-        fieldNumberFormat: NumberFormat.USD,
-      })
-    ).toBe('1,500');
-  });
+  it('is not a button to press without a drill-down', () => {
+    render(<NumberChartWidget item={{ label: '', value: 2, rowIds: ['r1'] }} title='Count all' valueText='2' />);
 
-  it('supports compact and percent formats', () => {
-    expect(formatNumberChartValue(12_345, { numberFormat: 'compact', aggregationType: ChartAggregationType.Sum })).toBe(
-      '12.3K'
-    );
-    expect(
-      formatNumberChartValue(0.256, { numberFormat: 'percent', aggregationType: ChartAggregationType.Average })
-    ).toBe('25.6%');
-  });
-
-  it('keeps the decimals of a Percent field like its cells', () => {
-    // Average of 0.125 and 0.13: rounding before scaling would show 13%.
-    expect(
-      formatNumberChartValue(0.1275, {
-        numberFormat: 'auto',
-        aggregationType: ChartAggregationType.Average,
-        fieldNumberFormat: NumberFormat.Percent,
-      })
-    ).toBe('12.75%');
-    expect(
-      formatNumberChartValue(1.234567, { numberFormat: 'auto', aggregationType: ChartAggregationType.Median })
-    ).toBe('1.23');
-  });
-
-  it('applies decimal places and the chart locale', () => {
-    expect(
-      formatNumberChartValue(1234.5, {
-        numberFormat: 'auto',
-        aggregationType: ChartAggregationType.Sum,
-        fieldNumberFormat: NumberFormat.Num,
-        decimalPlaces: 2,
-      })
-    ).toBe('1,234.50');
-    expect(
-      formatNumberChartValue(78_500_000, {
-        numberFormat: 'compact',
-        aggregationType: ChartAggregationType.Sum,
-        locale: 'zh-CN',
-      })
-    ).toBe('7850万');
-  });
-
-  it('guards against non-finite values', () => {
-    expect(formatNumberChartValue(Number.NaN, { numberFormat: 'auto', aggregationType: ChartAggregationType.Sum })).toBe(
-      '0'
-    );
+    expect(screen.getByTestId<HTMLButtonElement>('number-chart-value').disabled).toBe(true);
   });
 });
 
@@ -145,34 +66,34 @@ describe('getNumberChartTitle', () => {
     expect(
       getNumberChartTitle(interpolatingT, {
         titleText: '  Revenue  ',
-        aggregationType: ChartAggregationType.Sum,
+        aggregation: ChartAggregationType.Sum,
         yFieldName: 'Amount',
-        hasYField: true,
       })
     ).toBe('Revenue');
   });
 
   it('generates Count all and <aggregation> of <field>', () => {
+    expect(getNumberChartTitle(interpolatingT, { aggregation: ChartAggregationType.Count, yFieldName: '' })).toBe(
+      'Count all'
+    );
+    expect(getNumberChartTitle(interpolatingT, { aggregation: ChartAggregationType.Average, yFieldName: 'Amount' })).toBe(
+      'Average of Amount'
+    );
+    // A value aggregation without its Y field counts rows (`resolveEffectiveAggregation`).
     expect(
       getNumberChartTitle(interpolatingT, {
-        aggregationType: ChartAggregationType.Count,
-        yFieldName: '',
-        hasYField: false,
+        aggregation: resolveEffectiveAggregation(ChartAggregationType.Max, false),
+        yFieldName: 'Amount',
       })
     ).toBe('Count all');
+  });
+
+  it('names an untitled field and ignores a blank custom title', () => {
     expect(
-      getNumberChartTitle(interpolatingT, {
-        aggregationType: ChartAggregationType.Average,
-        yFieldName: 'Amount',
-        hasYField: true,
-      })
-    ).toBe('Average of Amount');
-    expect(
-      getNumberChartTitle(interpolatingT, {
-        aggregationType: ChartAggregationType.Max,
-        yFieldName: 'Amount',
-        hasYField: false,
-      })
-    ).toBe('Count all');
+      getNumberChartTitle(interpolatingT, { titleText: '   ', aggregation: ChartAggregationType.Sum, yFieldName: '' })
+    ).toBe('Sum of Untitled');
+    expect(getChartSeriesTitle(interpolatingT, { aggregation: ChartAggregationType.Median, yFieldName: 'Amount' })).toBe(
+      'Median of Amount'
+    );
   });
 });

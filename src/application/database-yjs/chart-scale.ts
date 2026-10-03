@@ -1,5 +1,8 @@
-import { DASHBOARD_CHART_GEOMETRY } from './dashboard-geometry';
+import { ChartType } from './chart-enums';
 import { formatShare } from './chart-format';
+import { DASHBOARD_CHART_GEOMETRY, DASHBOARD_TYPOGRAPHY } from './dashboard-geometry';
+
+import type { ChartLegendPosition } from './chart-extended-settings';
 
 /**
  * Scales, axes, label fitting, donut geometry and legend layout (WP10 §1.3,
@@ -12,11 +15,27 @@ import { formatShare } from './chart-format';
 export type TextMeasurer = (text: string) => number;
 
 const { axis, bar, donut, legend } = DASHBOARD_CHART_GEOMETRY;
+const { donutTotal, donutOutsideLabel } = DASHBOARD_TYPOGRAPHY;
 
-/** The shared `ChartTypePB` ints. */
-const CHART_TYPE_LINE = 1;
-const CHART_TYPE_DONUT = 3;
-const CHART_TYPE_NUMBER = 4;
+// Layout values the chart components draw with and these functions reserve
+// room for. They are exported so both sides read one value; `tokens.json` has
+// no entry for them yet (they move there with the next chart token change).
+/** Height of a category or value axis with horizontal labels. */
+export const CHART_AXIS_HEIGHT = 24;
+/** Room above the tallest mark: a data label's line when labels are on, else this. */
+export const CHART_PLOT_TOP = 4;
+/** A data label sits this far past the value end of its mark. */
+export const CHART_DATA_LABEL_OFFSET = 4;
+/** Padding between the plot and the legend. */
+export const CHART_LEGEND_PADDING_TOP = 8;
+/** Gap between a legend item's glyph and its label. */
+export const CHART_LEGEND_GLYPH_GAP = 6;
+/** Gap between the legend items and the pager row. */
+export const CHART_LEGEND_PAGER_GAP = 4;
+/** Height of the pager row (`▲ n/N ▼`). */
+export const CHART_LEGEND_PAGER_HEIGHT = 16;
+/** The donut's centre text may be this wide, in inner radii. */
+export const CHART_DONUT_CENTER_WIDTH_FACTOR = 1.6;
 
 const EPSILON = 1e-9;
 
@@ -143,7 +162,7 @@ export function fitCategoryLabels(widths: readonly number[], slot: number): Cate
 
 /** Height of the category axis: 24 for horizontal labels, the rotated label's vertical extent plus 8 otherwise. */
 export function computeXAxisHeight(mode: CategoryLabelFit['mode'], widestLabel: number): number {
-  if (mode === 'horizontal') return 24;
+  if (mode === 'horizontal') return CHART_AXIS_HEIGHT;
   return Math.ceil(0.7071 * Math.min(widestLabel, axis.rotatedMaxLabel) + 0.7071 * 16) + 8;
 }
 
@@ -191,7 +210,7 @@ export function computeDonutGeometry(
     inner,
     thickness,
     labelsOn,
-    totalFont: clamp(0.45 * outer, 24, 56),
+    totalFont: clamp(donutTotal.radiusFactor * outer, donutTotal.minSize, donutTotal.maxSize),
     showCaption: inner >= 28,
     showTotal: inner >= 16,
   };
@@ -278,7 +297,7 @@ export function layoutDonutLabels(
       .filter((layout) => layout.side === side && layout.visible)
       .sort((a, b) => a.textY - b.textY)
       .forEach((layout) => {
-        if (previousY !== null && layout.textY - previousY < 14) {
+        if (previousY !== null && layout.textY - previousY < donutOutsideLabel.lineHeight) {
           layout.visible = false;
           layout.text = '';
           return;
@@ -293,7 +312,11 @@ export function layoutDonutLabels(
 
 /** Width of one legend item: the 8px swatch (12px line glyph), a 6px gap and the label (at most 160px). */
 export function legendItemWidth(labelWidth: number, glyph: 'square' | 'line'): number {
-  return (glyph === 'line' ? legend.lineGlyph[0] : legend.swatch) + 6 + Math.min(labelWidth, legend.maxLabelWidth);
+  return (
+    (glyph === 'line' ? legend.lineGlyph[0] : legend.swatch) +
+    CHART_LEGEND_GLYPH_GAP +
+    Math.min(labelWidth, legend.maxLabelWidth)
+  );
 }
 
 export interface LegendPagination {
@@ -308,7 +331,12 @@ export interface LegendPagination {
 /** Height of a legend with `lines` lines per page, plus the pager row when there is more than one page. */
 export function computeLegendHeight(lines: number, pages: number): number {
   if (lines <= 0) return 0;
-  return lines * legend.lineHeight + (lines - 1) * legend.gapY + 8 + (pages > 1 ? 4 + 16 : 0);
+  return (
+    lines * legend.lineHeight +
+    (lines - 1) * legend.gapY +
+    CHART_LEGEND_PADDING_TOP +
+    (pages > 1 ? CHART_LEGEND_PAGER_GAP + CHART_LEGEND_PAGER_HEIGHT : 0)
+  );
 }
 
 /**
@@ -353,8 +381,6 @@ export function paginateLegend(
   return { pages, lines: maxLines, height: computeLegendHeight(maxLines, pages.length) };
 }
 
-export type ChartLegendPositionSetting = 'auto' | 'off' | 'bottom';
-
 export interface ResolvedLegend {
   /** What the items are: the categories (donut, single-series bars) or the series (lines, several series). */
   content: 'categories' | 'series';
@@ -363,13 +389,13 @@ export interface ResolvedLegend {
 
 /** Whether a chart shows a legend, and what it lists (`legend_position`, WP10 §1.5). */
 export function resolveLegend(
-  chartType: number,
+  chartType: ChartType,
   seriesCount: number,
-  position: ChartLegendPositionSetting
+  position: ChartLegendPosition
 ): ResolvedLegend | null {
-  if (chartType === CHART_TYPE_NUMBER || position === 'off') return null;
-  const isLine = chartType === CHART_TYPE_LINE;
-  const shown = position === 'bottom' || chartType === CHART_TYPE_DONUT || isLine || seriesCount > 1;
+  if (chartType === ChartType.Number || position === 'off') return null;
+  const isLine = chartType === ChartType.Line;
+  const shown = position === 'bottom' || chartType === ChartType.Donut || isLine || seriesCount > 1;
 
   if (!shown) return null;
   return {

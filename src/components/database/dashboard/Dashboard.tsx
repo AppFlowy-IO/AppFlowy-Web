@@ -12,12 +12,18 @@ import {
 } from '@/application/database-yjs/dashboard-layout';
 import { DashboardWidgetPlacement } from '@/application/database-yjs/dashboard.type';
 import { UIVariant } from '@/application/types';
+import { cn } from '@/lib/utils';
 
-import { DASHBOARD_DEFAULT_INLINE_PADDING, DASHBOARD_LIMIT_MESSAGE_DURATION } from './constants';
+import {
+  DASHBOARD_COMPACT_INSET_CLASS,
+  DASHBOARD_DEFAULT_INLINE_PADDING,
+  DASHBOARD_LIMIT_MESSAGE_DURATION,
+} from './constants';
 import { useDashboardContext, useDashboardLayout, useDashboardSourceRegistry } from './DashboardContext';
 import { DashboardEmptyState } from './DashboardEmptyState';
 import { DashboardGrid } from './DashboardGrid';
 import { DashboardLimitMessage } from './DashboardLimitMessage';
+import { DashboardLoadSchedulerProvider } from './DashboardLoadScheduler';
 import {
   DashboardDraggingContext,
   DashboardHostContext,
@@ -37,6 +43,19 @@ import { getCatalogDatabaseName } from './picker-options';
 import { getDashboardInlinePadding } from './utils';
 import { resolveAddPlacement } from './widget-moves';
 import { WidgetPicker } from './WidgetPicker';
+
+const POPPER_SELECTOR = '[data-radix-popper-content-wrapper]';
+
+/**
+ * A menu, a popover or a submenu is open somewhere on the page. Tooltips use
+ * the same popper wrapper and do not count: one that is open at a press (the
+ * tooltip of a control that just took the focus back) must not shield it.
+ */
+function isLayerOpen() {
+  return Array.from(document.querySelectorAll(POPPER_SELECTOR)).some(
+    (wrapper) => wrapper.querySelector('[role="tooltip"]') === null
+  );
+}
 
 /** The Dashboard layout: global filters, then the widget grid (or its empty state). */
 export function Dashboard() {
@@ -77,23 +96,20 @@ export function Dashboard() {
   // The selection ends with Edit mode and with its widget.
   const selectionVisible = editing && selectedWidgetId !== null && findDashboardWidget(rows, selectedWidgetId) !== null;
 
-  if (selectedWidgetId !== null && (!editing || findDashboardWidget(rows, selectedWidgetId) === null)) {
-    setSelectedWidgetId(null);
-  }
+  if (selectedWidgetId !== null && !selectionVisible) setSelectedWidgetId(null);
 
   // Esc, or a press outside the selected widget while nothing is open, clears it.
   useEffect(() => {
     if (!selectionVisible || !selectedWidgetId) return;
-    const layerOpen = () => document.querySelector('[data-radix-popper-content-wrapper]') !== null;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !layerOpen()) setSelectedWidgetId(null);
+      if (event.key === 'Escape' && !isLayerOpen()) setSelectedWidgetId(null);
     };
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Element | null;
 
-      if (!target || layerOpen() || target.closest('[data-radix-popper-content-wrapper]')) return;
-      if (target.closest(`[data-widget-id="${CSS.escape(selectedWidgetId)}"]`)) return;
+      if (!target || isLayerOpen() || target.closest(POPPER_SELECTOR)) return;
+      if (target.closest<HTMLElement>('[data-widget-id]')?.dataset.widgetId === selectedWidgetId) return;
       setSelectedWidgetId(null);
     };
 
@@ -154,7 +170,6 @@ export function Dashboard() {
     if (!widgetId || !findDashboardWidget(rows, widgetId)) return;
     pendingScrollWidgetIdRef.current = null;
     const frame = window.requestAnimationFrame(() => {
-      // By widget id, not by `data-testid`: production builds strip test ids.
       const element = Array.from(scrollRef.current?.querySelectorAll<HTMLElement>('[data-widget-id]') ?? []).find(
         (candidate) => candidate.dataset.widgetId === widgetId
       );
@@ -282,44 +297,49 @@ export function Dashboard() {
   // Kept mounted mid-creation even without Edit mode: a remount would unlock
   // the picker and let a second view be created for the same request.
   const visiblePickerRequest = editing || pickerRequest === creatingRequest ? pickerRequest : null;
+  // The load queue starts widgets in layout order: top to bottom, left to right.
+  const widgetOrder = useMemo(() => rows.flatMap((row) => row.widgets.map((widget) => widget.id)), [rows]);
 
   return (
     <DashboardHostContext.Provider value={hostServices}>
       <DashboardUiContext.Provider value={uiValue}>
         <DashboardDraggingContext.Provider value={draggingWidgetId}>
           <DashboardSelectionContext.Provider value={selectionVisible ? selectedWidgetId : null}>
-            <div
-              className='relative flex h-full min-h-0 w-full flex-1 flex-col overflow-y-auto overflow-x-hidden'
-              data-dragging={draggingWidgetId ? 'true' : undefined}
-              data-editing={editing ? 'true' : 'false'}
-              data-testid='dashboard-view'
-              ref={scrollRef}
-            >
-              {/* The same inset in View and Edit mode; the grid's first band replaces the top padding. */}
+            <DashboardLoadSchedulerProvider hostSourceId={hostDatabaseId} order={widgetOrder} scrollRef={scrollRef}>
               <div
-                className='flex w-full flex-col pb-10 max-sm:!px-6'
-                style={getDashboardInlinePadding({
-                  paddingStart: paddingStart ?? DASHBOARD_DEFAULT_INLINE_PADDING,
-                  paddingEnd: paddingEnd ?? DASHBOARD_DEFAULT_INLINE_PADDING,
-                  reserveControlGutter: canEdit,
-                })}
+                // `group/dashboard`: the handles and drop zones read `data-dragging` in CSS.
+                className='group/dashboard relative flex h-full min-h-0 w-full flex-1 flex-col overflow-y-auto overflow-x-hidden'
+                data-dragging={draggingWidgetId ? 'true' : undefined}
+                data-editing={editing ? 'true' : 'false'}
+                data-testid='dashboard-view'
+                ref={scrollRef}
               >
-                <GlobalFilterBar className='mt-3' />
-                {limitMessage ? (
-                  // Sticky, so the message stays in sight wherever the add was refused.
-                  <div className='pointer-events-none sticky top-2 z-30 mt-3' key={limitMessage.key}>
-                    <DashboardLimitMessage className='pointer-events-auto' reason={limitMessage.reason} />
-                  </div>
-                ) : null}
-                {rows.length === 0 ? (
-                  <div className='pt-3'>
-                    <DashboardEmptyState onAddWidget={handleAddFirstWidget} />
-                  </div>
-                ) : (
-                  <DashboardGrid />
-                )}
+                {/* The same inset in View and Edit mode; the grid's first band replaces the top padding. */}
+                <div
+                  className={cn('flex w-full flex-col pb-10', DASHBOARD_COMPACT_INSET_CLASS)}
+                  style={getDashboardInlinePadding({
+                    paddingStart: paddingStart ?? DASHBOARD_DEFAULT_INLINE_PADDING,
+                    paddingEnd: paddingEnd ?? DASHBOARD_DEFAULT_INLINE_PADDING,
+                    reserveControlGutter: canEdit,
+                  })}
+                >
+                  <GlobalFilterBar className='mt-3' />
+                  {limitMessage ? (
+                    // Sticky, so the message stays in sight wherever the add was refused.
+                    <div className='pointer-events-none sticky top-2 z-30 mt-3' key={limitMessage.key}>
+                      <DashboardLimitMessage className='pointer-events-auto' reason={limitMessage.reason} />
+                    </div>
+                  ) : null}
+                  {rows.length === 0 ? (
+                    <div className='pt-3'>
+                      <DashboardEmptyState onAddWidget={handleAddFirstWidget} />
+                    </div>
+                  ) : (
+                    <DashboardGrid />
+                  )}
+                </div>
               </div>
-            </div>
+            </DashboardLoadSchedulerProvider>
             <WidgetPicker
               canCreateInOtherDatabases={canCreateInOtherDatabases}
               createView={handleCreateView}

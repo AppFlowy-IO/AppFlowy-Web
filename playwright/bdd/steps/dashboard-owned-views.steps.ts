@@ -16,6 +16,7 @@ import {
   widgetAt,
   widgetViewId,
 } from '../../support/dashboard-owned-views-helpers';
+import { WIDGET_TIMEOUT } from '../../support/dashboard-shared-helpers';
 import {
   addDashboardView,
   addViewThroughTabs,
@@ -25,6 +26,8 @@ import {
   dashboardWorld,
   databaseForLabel,
   expectDashboardMode,
+  expectRowHeight,
+  expectRowWidths,
   fixtureDatabase,
   LAYOUT_BY_NAME,
   openDatabasePage,
@@ -42,8 +45,6 @@ import { DatabaseViewSelectors } from '../../support/selectors';
  * (`integration_test/desktop/bdd/database/dashboard/dashboard_owned_views*.feature`).
  */
 const { Given, When, Then } = createBdd();
-
-const WIDGET_TIMEOUT = { timeout: 30_000 };
 
 /** The persisted widget at a 1-based reading-order position. */
 async function persistedWidget(page: Parameters<typeof widgetViewId>[0], index: number) {
@@ -134,22 +135,12 @@ Then('the active tab is fully visible in the tab bar', async ({ page }) => {
 });
 
 Then('dashboard row {int} has widths {string}', async ({ page }, rowIndex: number, widths: string) => {
-  const expected = splitList(widths).map(Number);
-
-  await expect
-    .poll(async () => (await readDashboardSetting(page)).rows[rowIndex - 1]?.widgets.map((widget) => widget.width))
-    .toEqual(expected);
+  await expectRowWidths(page, rowIndex, splitList(widths).map(Number));
 });
 
+// "Is N pixels tall" is exact (within a rendered pixel); "is about N px tall" allows a snap step.
 Then('dashboard row {int} is {int} pixels tall', async ({ page }, rowIndex: number, height: number) => {
-  await expect.poll(async () => (await readDashboardSetting(page)).rows[rowIndex - 1]?.height).toBe(height);
-  const row = (await readDashboardSetting(page)).rows[rowIndex - 1];
-  const widget = DashboardSelectors.row(page, row.id).getByTestId('dashboard-widget').first();
-
-  await expect(widget).toBeVisible(WIDGET_TIMEOUT);
-  await expect
-    .poll(async () => Math.abs(((await widget.boundingBox())?.height ?? 0) - height))
-    .toBeLessThanOrEqual(32);
+  await expectRowHeight(page, rowIndex, height);
 });
 
 Then('widget {int} is titled {string}', async ({ page }, index: number, title: string) => {

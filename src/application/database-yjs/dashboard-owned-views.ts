@@ -1,6 +1,6 @@
 import { YDatabase, YjsDatabaseKey } from '@/application/types';
 
-import { isPlainRecord } from './layout-codec';
+import { isPlainRecord, nonEmptyString } from './layout-codec';
 
 /**
  * Dashboard-owned widget views (WP05 §1, the cross-client contract). A view a
@@ -23,8 +23,12 @@ export interface DashboardOwnerCollabSource {
   get(key: string): unknown;
 }
 
-function ownerValue(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
+/**
+ * A stored owner marker: a non-empty string, anything else is `null` (not
+ * owned). The one rule every reader of the marker goes through.
+ */
+export function parseDashboardOwner(value: unknown): string | null {
+  return nonEmptyString(value) ?? null;
 }
 
 /**
@@ -36,7 +40,9 @@ export function readDashboardOwner(
   folderView?: DashboardOwnerFolderSource | null,
   collabView?: DashboardOwnerCollabSource | null
 ): string | null {
-  return ownerValue(folderView?.extra?.dashboard_owner) ?? ownerValue(collabView?.get(DASHBOARD_OWNER_KEY));
+  return (
+    parseDashboardOwner(folderView?.extra?.dashboard_owner) ?? parseDashboardOwner(collabView?.get(DASHBOARD_OWNER_KEY))
+  );
 }
 
 export function isOwnedByDashboard(

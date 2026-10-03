@@ -1,20 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { useCallback, useState } from 'react';
-import * as Y from 'yjs';
+import { useState } from 'react';
 
-import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
-import { updateDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
-import { DashboardWidget as DashboardWidgetData } from '@/application/database-yjs/dashboard.type';
-import { DatabaseViewLayout, YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
-
-import { DashboardProvider } from '../DashboardContext';
-import { DashboardHostContext, DashboardSelectionContext, DashboardUiContext } from '../DashboardUiContext';
 import { DashboardWidget } from '../DashboardWidget';
-import { RowHeightPreview } from '../hooks/useRowHeightResize';
+
+import { createWidgetHost, DashboardWidgetProviders, widgetBoxProps } from './dashboardTestHarness';
 
 const mockEmbeddedHeights: number[] = [];
 
-jest.mock('@/utils/runtime-config', () => ({ getConfigValue: (_key: string, fallback: string) => fallback }));
 jest.mock('react-i18next', () => {
   const t = (key: string) => key;
 
@@ -24,8 +16,8 @@ jest.mock('@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box', () => ({
 jest.mock('@/application/publish-snapshot/database-yjs-render-bridge', () => ({
   getPublishedDatabaseRenderRowMap: () => undefined,
 }));
-// The nested database: a probe of the widget's menu and settings state, an
-// input, and an element that handles its own context menu.
+// The nested database: a probe of the widget's mode, menu and settings state,
+// an input, and an element that handles its own context menu.
 jest.mock('@/components/database', () => ({
   Database: ({ embeddedHeight }: { embeddedHeight?: number }) => {
     const { useWidgetContext } = jest.requireActual<typeof import('../WidgetContext')>('../WidgetContext');
@@ -34,6 +26,7 @@ jest.mock('@/components/database', () => ({
     mockEmbeddedHeights.push(embeddedHeight ?? -1);
     return (
       <div data-testid='widget-surface'>
+        <output data-testid='widget-editing'>{String(widget.editing)}</output>
         <output data-testid='menu-open'>{String(widget.menuOpen)}</output>
         <output data-testid='settings-open'>{String(widget.settingsOpen)}</output>
         <button data-testid='open-menu' onClick={() => widget.setMenuOpen(true)} type='button' />
@@ -56,90 +49,25 @@ jest.mock('../hooks/useDashboardDnd', () => ({
 }));
 jest.mock('../WidgetHeader', () => ({ WidgetHeaderFrame: () => null }));
 
-const WIDGET: DashboardWidgetData = { id: 'w1', viewId: 'v1', databaseId: 'db', width: 12 };
-const NO_PREVIEW: RowHeightPreview = { subscribe: () => () => undefined, get: () => null };
-
-function createHost() {
-  const doc = new Y.Doc({ guid: 'db' }) as YDoc;
-  const database = new Y.Map() as YDatabase;
-  const views = new Y.Map<YDatabaseView>();
-  const dashboard = new Y.Map() as YDatabaseView;
-  const view = new Y.Map() as YDatabaseView;
-
-  doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
-  database.set(YjsDatabaseKey.id, 'db');
-  database.set(YjsDatabaseKey.views, views);
-  views.set('dashboard', dashboard);
-  views.set('v1', view);
-  view.set(YjsDatabaseKey.name, 'Tasks');
-  view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
-  updateDashboardLayoutSetting(dashboard, { rows: [{ id: 'r1', height: 360, widgets: [WIDGET] }] });
-
-  const host: DatabaseContextState = {
-    databaseDoc: doc,
-    readOnly: false,
-    canWrite: true,
-    rowMap: {},
-    databasePageId: 'dashboard',
-    activeViewId: 'dashboard',
-  };
-
-  return host;
-}
-
-/** The parts of `Dashboard` a widget relies on: the UI context and the selection. */
+/** The widget box on a dashboard, with the dashboard's real selection. */
 function Harness({ editing, showWidgetTitles = true }: { editing: boolean; showWidgetTitles?: boolean }) {
-  const [host] = useState(createHost);
-  const [selected, setSelected] = useState<string | null>(null);
-  const selectWidget = useCallback(
-    (id: string | null, options?: { onlyIf?: string }) => {
-      if (id === null) {
-        setSelected((current) => (options?.onlyIf === undefined || current === options.onlyIf ? null : current));
-      } else if (editing) {
-        setSelected(id);
-      }
-    },
-    [editing]
-  );
+  const [host] = useState(() => createWidgetHost());
 
   return (
-    <DatabaseContext.Provider value={host}>
-      <DashboardHostContext.Provider value={host}>
-        <DashboardProvider>
-          <DashboardUiContext.Provider
-            value={{
-              hostDatabaseId: 'db',
-              dndInstanceId: Symbol.for('dashboard-chrome-test'),
-              getRows: () => [],
-              updateRows: jest.fn(),
-              openPicker: jest.fn(),
-              showLimitMessage: jest.fn(),
-              acquireSourceDoc: () => () => undefined,
-              selectWidget,
-            }}
-          >
-            <DashboardSelectionContext.Provider value={editing ? selected : null}>
-              <DashboardWidget
-                canEdit
-                height={360}
-                heightPreview={NO_PREVIEW}
-                isDragging={false}
-                isEditing={editing}
-                lineSize={1}
-                showIconsInHeading={false}
-                showWidgetTitles={showWidgetTitles}
-                span={12}
-                widget={WIDGET}
-              />
-            </DashboardSelectionContext.Provider>
-          </DashboardUiContext.Provider>
-        </DashboardProvider>
-      </DashboardHostContext.Provider>
-    </DatabaseContext.Provider>
+    <DashboardWidgetProviders editing={editing} host={host}>
+      <DashboardWidget {...widgetBoxProps({ isEditing: editing, showWidgetTitles })} />
+    </DashboardWidgetProviders>
   );
 }
 
 const box = () => screen.getByTestId('dashboard-widget');
+/** Top, right, bottom and left padding of the box. */
+const paddingOf = (element: HTMLElement) => [
+  element.style.paddingTop,
+  element.style.paddingRight,
+  element.style.paddingBottom,
+  element.style.paddingLeft,
+];
 const menuOpen = () => screen.getByTestId('menu-open').textContent;
 
 beforeEach(() => {
@@ -151,20 +79,41 @@ describe('DashboardWidget chrome', () => {
     const { rerender } = render(<Harness editing={false} />);
 
     expect(box().getAttribute('data-editing')).toBe('false');
-    for (const name of ['rounded-500', 'px-1.5', 'pb-1.5', 'data-[editing=true]:bg-dash-edit-tint', 'duration-150']) {
-      expect(box().className).toContain(name);
-    }
+    // The box the visual-parity probe measures (radius, tint), and the mode its content follows.
+    expect(box().getAttribute('data-parity-id')).toBe('dash-widget-box');
+    expect(screen.getByTestId('widget-editing').textContent).toBe('false');
 
-    expect(box().className).not.toContain('pt-1.5');
+    // `0 6 6` around the card: the header band stands in for the top padding.
+    expect(paddingOf(box())).toEqual(['0px', '6px', '6px', '6px']);
 
     rerender(<Harness editing />);
     expect(box().getAttribute('data-editing')).toBe('true');
+    expect(screen.getByTestId('widget-editing').textContent).toBe('true');
+    expect(paddingOf(box())).toEqual(['0px', '6px', '6px', '6px']);
   });
 
   it('pads the top of the box when titles are hidden', () => {
     render(<Harness editing={false} showWidgetTitles={false} />);
 
-    expect(box().className).toContain('pt-1.5');
+    expect(paddingOf(box())).toEqual(['6px', '6px', '6px', '6px']);
+  });
+
+  it('animates its tint and outline only, never its width, and nothing under reduced motion', () => {
+    render(<Harness editing />);
+    const classes = box().className.split(' ');
+
+    expect(classes).toContain('transition-[background-color,box-shadow]');
+    expect(classes).toContain('duration-[var(--dash-motion-fast)]');
+    expect(classes).toContain('ease-[var(--dash-motion-ease)]');
+    expect(classes).toContain('motion-reduce:transition-none');
+    // A layout change resizes the box at once: animating `flex-basis` would re-lay out the row and
+    // resize every nested database on each frame. No other transition class may out-rank the
+    // reduced-motion one either.
+    expect(box().className).not.toContain('flex-basis');
+    expect(classes.filter((name) => name.includes('transition-'))).toEqual([
+      'transition-[background-color,box-shadow]',
+      'motion-reduce:transition-none',
+    ]);
   });
 
   it('is outlined in Edit mode while its menu or its settings are open', () => {
@@ -173,7 +122,8 @@ describe('DashboardWidget chrome', () => {
     expect(box().hasAttribute('data-selected')).toBe(false);
     fireEvent.click(screen.getByTestId('open-menu'));
     expect(box().getAttribute('data-selected')).toBe('true');
-    expect(box().className).toContain('data-[selected=true]:shadow-[inset_0_0_0_2px_var(--dash-accent)]');
+    // The outline is the open menu's: it goes when the menu closes.
+    expect(menuOpen()).toBe('true');
     fireEvent.click(screen.getByTestId('close-menu'));
     expect(box().hasAttribute('data-selected')).toBe(false);
 

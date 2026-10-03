@@ -206,7 +206,7 @@ describe('view-loader database cache identity', () => {
     expect(mockOpenCollabDB).not.toHaveBeenCalledWith(viewId);
   });
 
-  it('fetches by viewId into the canonical databaseId cache when local cache is empty', async () => {
+  it('fetches the database collab into the canonical databaseId cache when local cache is empty', async () => {
     const viewId = '00000000-0000-4000-8000-000000000003';
     const databaseId = '00000000-0000-4000-8000-000000000004';
     const canonicalDoc = createEmptyDoc(databaseId);
@@ -229,9 +229,8 @@ describe('view-loader database cache identity', () => {
       if (!doc) throw new Error(`Unexpected open ${name}`);
       return doc;
     });
-    mockFetchPageCollab.mockResolvedValue({
+    mockFetchDatabaseCollab.mockResolvedValue({
       data: Y.encodeStateAsUpdate(serverDoc),
-      rows: {},
     });
 
     const result = await openView('workspace-id', viewId, ViewLayout.Grid, { databaseId });
@@ -239,7 +238,9 @@ describe('view-loader database cache identity', () => {
     expect(result.doc).toBe(canonicalDoc);
     expect(result.fromCache).toBe(false);
     expect(getDatabaseIdFromDoc(canonicalDoc)).toBe(databaseId);
-    expect(mockFetchPageCollab).toHaveBeenCalledWith('workspace-id', viewId);
+    // The database is known: its collab is fetched on its own, never the page with every row.
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledWith('workspace-id', databaseId);
+    expect(mockFetchPageCollab).not.toHaveBeenCalled();
   });
 
   it('fetches only the canonical database collab for metadata-only relation loads', async () => {
@@ -376,7 +377,7 @@ describe('view-loader shared database fetches', () => {
     const addView = (viewId: string) => views.set(viewId, new Y.Map());
 
     viewIds.slice(1).forEach(addView);
-    return { addView, snapshot: () => ({ data: Y.encodeStateAsUpdate(doc), rows: {} }) };
+    return { addView, snapshot: () => ({ data: Y.encodeStateAsUpdate(doc) }) };
   }
 
   function hasView(doc: YDoc, viewId: string) {
@@ -390,6 +391,8 @@ describe('view-loader shared database fetches', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockFetchDatabaseCollab.mockReset();
+    mockFetchPageCollab.mockReset();
     mockDeleteCollabDB.mockResolvedValue(undefined);
   });
 
@@ -399,9 +402,9 @@ describe('view-loader shared database fetches', () => {
     const viewB = '00000000-0000-4000-8000-000000000033';
     const canonicalDoc = serveDocs(databaseId, [viewA, viewB]);
     const server = createServer(databaseId, [viewA, viewB]);
-    const response = deferred<Awaited<ReturnType<typeof fetchPageCollab>>>();
+    const response = deferred<Awaited<ReturnType<typeof fetchDatabaseCollab>>>();
 
-    mockFetchPageCollab.mockReturnValue(response.promise);
+    mockFetchDatabaseCollab.mockReturnValue(response.promise);
 
     const first = openView(workspaceId, viewA, ViewLayout.Grid, { databaseId });
     const second = openView(workspaceId, viewB, ViewLayout.Chart, { databaseId });
@@ -410,8 +413,9 @@ describe('view-loader shared database fetches', () => {
     response.resolve(server.snapshot());
     const [resultA, resultB] = await Promise.all([first, second]);
 
-    expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
-    expect(mockFetchPageCollab).toHaveBeenCalledWith(workspaceId, viewA);
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledTimes(1);
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledWith(workspaceId, databaseId);
+    expect(mockFetchPageCollab).not.toHaveBeenCalled();
     expect(resultA.doc).toBe(canonicalDoc);
     expect(resultB.doc).toBe(canonicalDoc);
     expect(resultB.fromCache).toBe(false);
@@ -426,25 +430,24 @@ describe('view-loader shared database fetches', () => {
     const server = createServer(databaseId, [viewA]);
     // The shared download predates view B.
     const staleSnapshot = server.snapshot();
-    const response = deferred<Awaited<ReturnType<typeof fetchPageCollab>>>();
+    const response = deferred<Awaited<ReturnType<typeof fetchDatabaseCollab>>>();
 
     server.addView(viewB);
-    mockFetchPageCollab.mockImplementation(async (_workspaceId: string, viewId: string) =>
-      viewId === viewA ? response.promise : server.snapshot()
-    );
+    mockFetchDatabaseCollab.mockReturnValueOnce(response.promise).mockImplementation(async () => server.snapshot());
 
     const first = openView(workspaceId, viewA, ViewLayout.Grid, { databaseId });
     const second = openView(workspaceId, viewB, ViewLayout.Grid, { databaseId });
 
     await settle();
-    expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledTimes(1);
     response.resolve(staleSnapshot);
     await Promise.all([first, second]);
 
-    expect(mockFetchPageCollab.mock.calls).toEqual([
-      [workspaceId, viewA],
-      [workspaceId, viewB],
+    expect(mockFetchDatabaseCollab.mock.calls).toEqual([
+      [workspaceId, databaseId],
+      [workspaceId, databaseId],
     ]);
+    expect(mockFetchPageCollab).not.toHaveBeenCalled();
     expect(hasView(canonicalDoc, viewB)).toBe(true);
   });
 
@@ -454,11 +457,9 @@ describe('view-loader shared database fetches', () => {
     const viewB = '00000000-0000-4000-8000-000000000039';
     const canonicalDoc = serveDocs(databaseId, [viewA, viewB]);
     const server = createServer(databaseId, [viewB]);
-    const response = deferred<Awaited<ReturnType<typeof fetchPageCollab>>>();
+    const response = deferred<Awaited<ReturnType<typeof fetchDatabaseCollab>>>();
 
-    mockFetchPageCollab.mockImplementation(async (_workspaceId: string, viewId: string) =>
-      viewId === viewA ? response.promise : server.snapshot()
-    );
+    mockFetchDatabaseCollab.mockReturnValueOnce(response.promise).mockImplementation(async () => server.snapshot());
 
     const first = openView(workspaceId, viewA, ViewLayout.Grid, { databaseId });
     const second = openView(workspaceId, viewB, ViewLayout.Grid, { databaseId });
@@ -479,15 +480,15 @@ describe('view-loader shared database fetches', () => {
 
     // A later load of the refused view asks the server again.
     server.addView(viewA);
-    mockFetchPageCollab.mockResolvedValue(server.snapshot());
     await expect(openView(workspaceId, viewA, ViewLayout.Grid, { databaseId })).resolves.toMatchObject({
       doc: freshDoc,
     });
-    expect(mockFetchPageCollab.mock.calls).toEqual([
-      [workspaceId, viewA],
-      [workspaceId, viewB],
-      [workspaceId, viewA],
+    expect(mockFetchDatabaseCollab.mock.calls).toEqual([
+      [workspaceId, databaseId],
+      [workspaceId, databaseId],
+      [workspaceId, databaseId],
     ]);
+    expect(mockFetchPageCollab).not.toHaveBeenCalled();
   });
 
   it("never holds a waiting view through the first view's retries", async () => {
@@ -499,25 +500,27 @@ describe('view-loader shared database fetches', () => {
       const viewB = '00000000-0000-4000-8000-000000000045';
       const canonicalDoc = serveDocs(databaseId, [viewA, viewB]);
       const server = createServer(databaseId, [viewA, viewB]);
-      const response = deferred<Awaited<ReturnType<typeof fetchPageCollab>>>();
+      const response = deferred<Awaited<ReturnType<typeof fetchDatabaseCollab>>>();
 
-      mockFetchPageCollab.mockReturnValueOnce(response.promise).mockResolvedValue(server.snapshot());
+      mockFetchDatabaseCollab.mockReturnValueOnce(response.promise).mockResolvedValue(server.snapshot());
 
       const first = openView(workspaceId, viewA, ViewLayout.Grid, { databaseId });
       const second = openView(workspaceId, viewB, ViewLayout.Grid, { databaseId });
 
       await jest.advanceTimersByTimeAsync(0);
-      // A view since deleted from the database: its own load retries after a backoff.
+      // A database the server has not written yet (a duplication still running):
+      // the load that asked retries after a backoff.
       response.reject({ code: -2, message: 'Record not found' });
       await jest.advanceTimersByTimeAsync(0);
 
-      expect(mockFetchPageCollab.mock.calls).toEqual([
-        [workspaceId, viewA],
-        [workspaceId, viewB],
+      expect(mockFetchDatabaseCollab.mock.calls).toEqual([
+        [workspaceId, databaseId],
+        [workspaceId, databaseId],
       ]);
       await expect(second).resolves.toMatchObject({ doc: canonicalDoc });
       await jest.runAllTimersAsync();
       await expect(first).resolves.toMatchObject({ doc: canonicalDoc });
+      expect(mockFetchPageCollab).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
     }
@@ -529,12 +532,11 @@ describe('view-loader shared database fetches', () => {
     const viewB = '00000000-0000-4000-8000-000000000048';
     const canonicalDoc = serveDocs(databaseId, [viewA, viewB]);
     const server = createServer(databaseId, [viewA, viewB]);
-    const response = deferred<Awaited<ReturnType<typeof fetchPageCollab>>>();
+    const response = deferred<Awaited<ReturnType<typeof fetchDatabaseCollab>>>();
 
     // Access is per database on this client, as for a cached database: the
     // download of view A holds view B, so B is never asked for separately.
-    mockFetchPageCollab.mockImplementation(async (_workspaceId: string, viewId: string) => {
-      if (viewId === viewA) return response.promise;
+    mockFetchDatabaseCollab.mockReturnValueOnce(response.promise).mockImplementation(async () => {
       throw { code: 1012, message: 'user is not allowed to access this view' };
     });
 
@@ -548,7 +550,8 @@ describe('view-loader shared database fetches', () => {
       doc: canonicalDoc,
       fromCache: true,
     });
-    expect(mockFetchPageCollab.mock.calls).toEqual([[workspaceId, viewA]]);
+    expect(mockFetchDatabaseCollab.mock.calls).toEqual([[workspaceId, databaseId]]);
+    expect(mockFetchPageCollab).not.toHaveBeenCalled();
     expect(mockDeleteCollabDB).not.toHaveBeenCalled();
   });
 
@@ -558,20 +561,23 @@ describe('view-loader shared database fetches', () => {
     const viewB = '00000000-0000-4000-8000-000000000042';
 
     serveDocs(databaseId, [viewA, viewB]);
-    mockFetchPageCollab.mockResolvedValue(createServer(databaseId, [viewA, viewB]).snapshot());
+    mockFetchDatabaseCollab.mockResolvedValue(createServer(databaseId, [viewA, viewB]).snapshot());
 
     await Promise.all([
       openView(workspaceId, viewA, ViewLayout.Grid, { databaseId, forceFetch: true }),
       openView(workspaceId, viewB, ViewLayout.Grid, { databaseId, forceFetch: true }),
     ]);
 
-    expect(mockFetchPageCollab).toHaveBeenCalledTimes(2);
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledTimes(2);
+    expect(mockFetchPageCollab).not.toHaveBeenCalled();
   });
 });
 
 describe('view-loader permission error cache eviction', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockFetchDatabaseCollab.mockReset();
+    mockFetchPageCollab.mockReset();
     mockDeleteCollabDB.mockResolvedValue(undefined);
   });
 
@@ -597,13 +603,14 @@ describe('view-loader permission error cache eviction', () => {
       if (!doc) throw new Error(`Unexpected open ${name}`);
       return doc;
     });
-    mockFetchPageCollab.mockRejectedValue({ code: 1012, message: 'user is not allowed to access this view' });
+    mockFetchDatabaseCollab.mockRejectedValue({ code: 1012, message: 'user is not allowed to access this view' });
 
     await expect(openView('workspace-id', viewId, ViewLayout.Grid, { databaseId })).rejects.toMatchObject({
       code: 1012,
     });
 
-    expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledTimes(1);
+    expect(mockFetchPageCollab).not.toHaveBeenCalled();
     expect(mockDeleteCollabDB).toHaveBeenCalledWith(databaseId, { destroyDoc: true });
     expect(mockInvalidateViewCache).toHaveBeenCalledWith('workspace-id', viewId);
   });

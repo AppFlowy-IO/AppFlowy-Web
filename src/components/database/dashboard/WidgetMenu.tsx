@@ -1,7 +1,6 @@
 import { ComponentType, Fragment, ReactNode, SVGProps, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { DASHBOARD_MAX_WIDGETS } from '@/application/database-yjs/dashboard.type';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/arrow_down.svg';
 import { ReactComponent as ArrowLeftIcon } from '@/assets/icons/arrow_left.svg';
 import { ReactComponent as ArrowRightIcon } from '@/assets/icons/arrow_right.svg';
@@ -20,6 +19,7 @@ import {
 import { cn } from '@/lib/utils';
 
 import { useDashboardLayout } from './DashboardContext';
+import { useDashboardLimitText } from './DashboardLimitMessage';
 import { canDuplicateWidget, getWidgetMoveTargets, WidgetMoveDirection, WidgetMoveTargets } from './widget-moves';
 import { useWidgetContext, useWidgetContextOptional, WidgetActions } from './WidgetContext';
 
@@ -208,10 +208,7 @@ function WidgetMenuItems() {
       }),
     [editing, rows, widgetId]
   );
-  const limitText = t('dashboard.widgetLimit', {
-    count: DASHBOARD_MAX_WIDGETS,
-    defaultValue: 'Dashboards support up to {{count}} widgets.',
-  });
+  const limitText = useDashboardLimitText('dashboard');
 
   return (
     <>

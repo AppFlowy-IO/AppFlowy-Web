@@ -24,6 +24,7 @@ import { useWorkspaceDatabases } from './hooks/useWorkspaceDatabases';
 import {
   buildWidgetPickerDatabases,
   buildWidgetPickerGroups,
+  filterWidgetPickerGroups,
   WidgetPickerDatabase,
   WidgetPickerGroup,
 } from './picker-options';
@@ -252,8 +253,9 @@ export function WidgetPickerContent({ request, onPick, createView, canCreateInOt
   // follow the query when React has time.
   const deferredQuery = useDeferredValue(query);
 
-  const buildGroups = useCallback(
-    (searchQuery: string) =>
+  // Every view of the workspace, built once per catalog; a keystroke only filters it.
+  const allGroups = useMemo(
+    () =>
       buildWidgetPickerGroups({
         hostDatabaseId,
         hostDatabaseName,
@@ -261,12 +263,11 @@ export function WidgetPickerContent({ request, onPick, createView, canCreateInOt
         hostTabViewIds: hostViewIds,
         catalog,
         excludeViewIds: [dashboardViewId],
-        query: searchQuery,
         fallbackName,
       }),
     [catalog, dashboardViewId, fallbackName, hostDatabaseId, hostDatabaseName, hostViewIds, hostViews]
   );
-  const groups = useMemo(() => buildGroups(deferredQuery), [buildGroups, deferredQuery]);
+  const groups = useMemo(() => filterWidgetPickerGroups(allGroups, deferredQuery), [allGroups, deferredQuery]);
 
   const databases = useMemo(() => {
     const all = buildWidgetPickerDatabases({
@@ -282,13 +283,14 @@ export function WidgetPickerContent({ request, onPick, createView, canCreateInOt
       : all;
   }, [canCreateInOtherDatabases, catalog, deferredQuery, hostContext.activeViewId, hostDatabaseId, hostDatabaseName]);
 
+  // The host database is always listed (a search never filters it out), so there is always a selection.
   const selectedDatabase: WidgetPickerDatabase =
     databases.find((entry) => entry.databaseId === selectedDatabaseId) ?? databases[0];
 
   const creating = creatingLayout !== null;
 
   const handleCreate = async (layout: DatabaseViewLayout) => {
-    if (creating || !selectedDatabase) return;
+    if (creating) return;
     if (layout === DatabaseViewLayout.Timeline && !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED) return;
     setCreatingLayout(layout);
 
@@ -327,7 +329,7 @@ export function WidgetPickerContent({ request, onPick, createView, canCreateInOt
 
     if (event.key === 'Enter' && tab === 'existing') {
       // Enter may beat the deferred list: pick from what the input says.
-      const first = (query === deferredQuery ? groups : buildGroups(query))[0]?.options[0];
+      const first = (query === deferredQuery ? groups : filterWidgetPickerGroups(allGroups, query))[0]?.options[0];
 
       if (first) {
         event.preventDefault();
@@ -425,15 +427,15 @@ export function WidgetPickerContent({ request, onPick, createView, canCreateInOt
                 databases={databases}
                 loading={loading && canCreateInOtherDatabases}
                 onSelect={setSelectedDatabaseId}
-                selectedDatabaseId={selectedDatabase?.databaseId}
+                selectedDatabaseId={selectedDatabase.databaseId}
               />
             </div>
             <div className='flex flex-col gap-2'>
               <div className='px-2 text-xs font-medium text-text-tertiary'>
                 {t('dashboard.picker.createIn', {
-                  name: selectedDatabase?.isHost
+                  name: selectedDatabase.isHost
                     ? t('dashboard.picker.thisDatabase', { defaultValue: 'This database' })
-                    : selectedDatabase?.name || t('untitled'),
+                    : selectedDatabase.name || t('untitled'),
                   defaultValue: 'Create a new view in {{name}}',
                 })}
               </div>
@@ -456,7 +458,7 @@ export function WidgetPickerContent({ request, onPick, createView, canCreateInOt
                       data-parity-id={PICKER_LAYOUT_PARITY_IDS[layout]}
                       data-picker-focusable='true'
                       data-testid='dashboard-widget-picker-layout-option'
-                      disabled={creating || !selectedDatabase}
+                      disabled={creating}
                       key={layout}
                       onClick={() => void handleCreate(layout)}
                       type='button'

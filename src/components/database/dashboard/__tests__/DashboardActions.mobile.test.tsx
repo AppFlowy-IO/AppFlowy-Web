@@ -1,12 +1,9 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 
 import { DashboardActions } from '../DashboardActions';
-import {
-  DashboardContext,
-  DashboardContextValue,
-  DashboardFiltersContext,
-  DashboardFiltersContextValue,
-} from '../DashboardContext';
+import { DashboardContext, DashboardContextValue, DashboardFiltersContext } from '../DashboardContext';
+
+import { createDashboardContextValue as createContext, createDashboardFiltersValue } from './dashboardTestHarness';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -14,33 +11,7 @@ jest.mock('react-i18next', () => ({
   }),
 }));
 
-function createContext(overrides: Partial<DashboardContextValue> = {}): DashboardContextValue {
-  return {
-    dashboardViewId: 'dashboard-view',
-    hostDatabaseId: 'db',
-    canEdit: true,
-    isEditing: false,
-    setEditing: jest.fn(),
-    mobileContext: false,
-    canEnterEdit: true,
-    editPreference: 'off',
-    pinEditing: jest.fn(),
-    updateSetting: jest.fn(),
-    updateRows: jest.fn(),
-    ...overrides,
-  };
-}
-
-const FILTERS: DashboardFiltersContextValue = {
-  globalFilters: [],
-  effectiveGlobalFilters: [],
-  localGlobalFilters: null,
-  setLocalGlobalFilters: jest.fn(),
-  getViewOverlay: jest.fn(),
-  setViewOverlayWritable: jest.fn(),
-  resetViewOverlays: jest.fn(),
-  commitViewOverlays: jest.fn(),
-};
+const FILTERS = createDashboardFiltersValue();
 
 function renderActions(context: DashboardContextValue) {
   return render(
@@ -60,9 +31,9 @@ function toolbarTestIds() {
 
 describe('DashboardActions in a mobile context', () => {
   it.each([
-    ['a writer in View mode', { editPreference: 'off' as const }],
-    ['a writer whose Edit preference is on', { editPreference: 'on' as const }],
-    ['a reader', { canEdit: false, editPreference: 'off' as const }],
+    ['a writer in View mode', {}],
+    ['a writer whose Edit preference is on', { isEditing: true }],
+    ['a reader', { canEdit: false }],
   ])('shows only the global filter button for %s', (_name, overrides) => {
     renderActions(createContext({ mobileContext: true, canEnterEdit: false, isEditing: false, ...overrides }));
     const toolbar = screen.getByTestId('dashboard-actions');
@@ -84,7 +55,7 @@ describe('DashboardActions outside a mobile context', () => {
     expect(setEditing).toHaveBeenLastCalledWith(true);
 
     rerender(
-      <DashboardContext.Provider value={createContext({ setEditing, isEditing: true, editPreference: 'on' })}>
+      <DashboardContext.Provider value={createContext({ setEditing, isEditing: true })}>
         <DashboardFiltersContext.Provider value={FILTERS}>
           <DashboardActions />
         </DashboardFiltersContext.Provider>

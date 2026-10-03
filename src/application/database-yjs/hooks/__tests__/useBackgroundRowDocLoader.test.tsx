@@ -68,40 +68,43 @@ function BackgroundLoader({ scope, suspend = false }: { scope: string; suspend?:
 }
 
 describe('useBackgroundRowDocLoader', () => {
-  it.each(['cached', 'live'] as const)('does not load current rows for missing historical rows in %s mode', async (mode) => {
-    const { databaseDoc, viewId } = createDatabaseFixture();
-    const loadRowFromSeed = jest.fn(async () => undefined);
-    const ensureRow = jest.fn(async () => undefined);
-    const openLiveRow = jest.mocked(openRowCollabDBWithProvider);
+  it.each(['cached', 'live'] as const)(
+    'does not load current rows for missing historical rows in %s mode',
+    async (mode) => {
+      const { databaseDoc, viewId } = createDatabaseFixture();
+      const loadRowFromSeed = jest.fn(async () => undefined);
+      const ensureRow = jest.fn(async () => undefined);
+      const openLiveRow = jest.mocked(openRowCollabDBWithProvider);
 
-    openLiveRow.mockClear();
-    const contextValue: DatabaseContextState = {
-      activeViewId: viewId,
-      databaseDoc,
-      databasePageId: viewId,
-      dataSource: { type: 'history', id: 'history-with-missing-row' },
-      loadRowFromSeed,
-      ensureRow,
-      blobPrefetchComplete: true,
-      seedsReady: true,
-      rowMap: {},
-      readOnly: true,
-      workspaceId: 'workspace-id',
-    };
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
-    );
-    const { unmount } = renderHook(() => useBackgroundRowDocLoader(true, 'missing-history-row', mode), { wrapper });
+      openLiveRow.mockClear();
+      const contextValue: DatabaseContextState = {
+        activeViewId: viewId,
+        databaseDoc,
+        databasePageId: viewId,
+        dataSource: { type: 'history', id: 'history-with-missing-row' },
+        loadRowFromSeed,
+        ensureRow,
+        blobPrefetchComplete: true,
+        seedsReady: true,
+        rowMap: {},
+        readOnly: true,
+        workspaceId: 'workspace-id',
+      };
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+      );
+      const { unmount } = renderHook(() => useBackgroundRowDocLoader(true, 'missing-history-row', mode), { wrapper });
 
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(loadRowFromSeed).not.toHaveBeenCalled();
-    expect(ensureRow).not.toHaveBeenCalled();
-    expect(openLiveRow).not.toHaveBeenCalled();
-    unmount();
-    databaseDoc.destroy();
-  });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(loadRowFromSeed).not.toHaveBeenCalled();
+      expect(ensureRow).not.toHaveBeenCalled();
+      expect(openLiveRow).not.toHaveBeenCalled();
+      unmount();
+      databaseDoc.destroy();
+    }
+  );
 
   it('retries realtime hydration even when a detached seed is already readable', async () => {
     jest.useFakeTimers();
@@ -615,6 +618,315 @@ describe('useBackgroundRowDocLoader', () => {
       databaseDoc.destroy();
       jest.useRealTimers();
     }
+  });
+
+  it('publishes the first docs of a walk at once, even after frames that found no delivered row', async () => {
+    jest.useFakeTimers();
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    // More rows than one frame scans: the first frame checks 4096 rows the page did not deliver.
+    const rowIds = Array.from({ length: 4200 }, (_, index) => `late-row-${index}`);
+    const seedDocs: Record<string, YDoc> = {};
+    const seedsProgress = { revision: 0, subscribers: new Set<() => void>() };
+    const publishSeedsProgress = () => {
+      seedsProgress.revision += 1;
+      seedsProgress.subscribers.forEach((subscriber) => subscriber());
+    };
+
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      blobPrefetchComplete: false,
+      databaseDoc,
+      databasePageId: viewId,
+      peekRowDocFromSeed: (rowId) => seedDocs[rowId] ?? null,
+      readOnly: false,
+      rowMap: {},
+      seedsReady: false,
+      getSeedsRevision: () => seedsProgress.revision,
+      subscribeToSeedsProgress: (onStoreChange) => {
+        seedsProgress.subscribers.add(onStoreChange);
+        return () => seedsProgress.subscribers.delete(onStoreChange);
+      },
+      workspaceId: 'workspace-id',
+    };
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { result, unmount } = renderHook(
+      () => useBackgroundRowDocLoader(true, 'provisional-empty-frames').cachedRowDocs,
+      { wrapper }
+    );
+    const nextFrame = async () => {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(16);
+      });
+    };
+
+    try {
+      // The page delivered only the last rows of the view.
+      rowIds.slice(4150).forEach((id) => {
+        seedDocs[id] = createRowDoc(id, databaseId, {});
+      });
+      act(() => publishSeedsProgress());
+      // The first frame scans 4096 rows without finding a seed.
+      await nextFrame();
+      expect(result.current).toEqual({});
+      // The second frame finds the delivered rows: they show at once, not an interval later.
+      await nextFrame();
+      await nextFrame();
+      expect(Object.keys(result.current)).toHaveLength(50);
+    } finally {
+      unmount();
+      Object.values(seedDocs).forEach((doc) => doc.destroy());
+      databaseDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('rebuilds the seed queue once per page for all consumers of a view', async () => {
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const rowIds = ['queue-row-1', 'queue-row-2', 'queue-row-3'];
+    const seedDocs: Record<string, YDoc> = {};
+    const seedsProgress = { revision: 0, subscribers: new Set<() => void>() };
+    const publishSeedsProgress = () => {
+      seedsProgress.revision += 1;
+      seedsProgress.subscribers.forEach((subscriber) => subscriber());
+    };
+
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      blobPrefetchComplete: false,
+      databaseDoc,
+      databasePageId: viewId,
+      peekRowDocFromSeed: (rowId) => seedDocs[rowId] ?? null,
+      readOnly: false,
+      rowMap: {},
+      seedsReady: false,
+      getSeedsRevision: () => seedsProgress.revision,
+      subscribeToSeedsProgress: (onStoreChange) => {
+        seedsProgress.subscribers.add(onStoreChange);
+        return () => seedsProgress.subscribers.delete(onStoreChange);
+      },
+      workspaceId: 'workspace-id',
+    };
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    const readRowOrders = jest.spyOn(rowOrders, 'toArray');
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    // Three consumers of one view share one store, as a grid, its calculations and a chart do.
+    const { result, unmount } = renderHook(
+      () => {
+        const first = useBackgroundRowDocLoader(true, 'shared-queue').cachedRowDocs;
+
+        useBackgroundRowDocLoader(true, 'shared-queue');
+        useBackgroundRowDocLoader(true, 'shared-queue');
+        return first;
+      },
+      { wrapper }
+    );
+
+    readRowOrders.mockClear();
+    seedDocs['queue-row-1'] = createRowDoc('queue-row-1', databaseId, {});
+    act(() => publishSeedsProgress());
+    await waitFor(() => expect(Object.keys(result.current)).toEqual(['queue-row-1']));
+    expect(readRowOrders).toHaveBeenCalledTimes(1);
+
+    seedDocs['queue-row-2'] = createRowDoc('queue-row-2', databaseId, {});
+    act(() => publishSeedsProgress());
+    await waitFor(() => expect(Object.keys(result.current).sort()).toEqual(['queue-row-1', 'queue-row-2']));
+    expect(readRowOrders).toHaveBeenCalledTimes(2);
+
+    unmount();
+    readRowOrders.mockRestore();
+    Object.values(seedDocs).forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
+  });
+
+  it('keeps the docs one widget reads from the cache while another widget on the same view holds the rows itself', async () => {
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const rowIds = ['shared-row-1', 'shared-row-2', 'shared-row-3'];
+    const seedDocs = Object.fromEntries(rowIds.map((id) => [id, createRowDoc(id, databaseId, {})]));
+    const liveDocs = Object.fromEntries(rowIds.map((id) => [id, createRowDoc(id, databaseId, {})]));
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    // Two widgets on one view: each mounts its own Database, so each has its own row map.
+    const baseContext = {
+      activeViewId: viewId,
+      databaseDoc,
+      databasePageId: viewId,
+      readOnly: false,
+      workspaceId: 'workspace-id',
+      seedsReady: true,
+      blobPrefetchComplete: false,
+      peekRowDocFromSeed: (id: string) => seedDocs[id] ?? null,
+    };
+    let firstContext = { ...baseContext, rowMap: {} } as DatabaseContextState;
+    const secondContext = { ...baseContext, rowMap: {} } as DatabaseContextState;
+    let firstRows: Record<string, YDoc> = {};
+    let secondRows: Record<string, YDoc> = {};
+    const First = () => {
+      firstRows = useBackgroundRowDocLoader(true, 'two-widgets').cachedRowDocs;
+      return null;
+    };
+
+    const Second = () => {
+      secondRows = useBackgroundRowDocLoader(true, 'two-widgets').cachedRowDocs;
+      return null;
+    };
+
+    const tree = (showFirst = true) => (
+      <>
+        {showFirst && (
+          <DatabaseContext.Provider value={firstContext}>
+            <First />
+          </DatabaseContext.Provider>
+        )}
+        <DatabaseContext.Provider value={secondContext}>
+          <Second />
+        </DatabaseContext.Provider>
+      </>
+    );
+    const { rerender, unmount } = render(tree());
+
+    await waitFor(() => expect(Object.keys(secondRows).sort()).toEqual(rowIds));
+    expect(Object.keys(firstRows).sort()).toEqual(rowIds);
+
+    // The first widget renders two of the rows: they are now in its own row map.
+    firstContext = {
+      ...firstContext,
+      rowMap: { 'shared-row-1': liveDocs['shared-row-1'], 'shared-row-2': liveDocs['shared-row-2'] },
+    };
+    rerender(tree());
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // The second widget has none of them in its row map and still reads all three from the cache.
+    expect(Object.keys(secondRows).sort()).toEqual(rowIds);
+    expect(secondRows['shared-row-1']).toBe(seedDocs['shared-row-1']);
+    expect(Object.values(seedDocs).every((doc) => !doc.isDestroyed)).toBe(true);
+
+    // Once the first widget is gone the second one still has them.
+    rerender(tree(false));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(Object.keys(secondRows).sort()).toEqual(rowIds);
+
+    unmount();
+    [...Object.values(seedDocs), ...Object.values(liveDocs)].forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
+  });
+
+  it('hydrates the rows a second widget on the view needs although the first widget already holds them', async () => {
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const rowIds = ['held-row-1', 'held-row-2'];
+    const seedDocs = Object.fromEntries(rowIds.map((id) => [id, createRowDoc(id, databaseId, {})]));
+    const liveDocs = Object.fromEntries(rowIds.map((id) => [id, createRowDoc(id, databaseId, {})]));
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    const baseContext = {
+      activeViewId: viewId,
+      databaseDoc,
+      databasePageId: viewId,
+      readOnly: false,
+      workspaceId: 'workspace-id',
+      seedsReady: true,
+      blobPrefetchComplete: false,
+      peekRowDocFromSeed: (id: string) => seedDocs[id] ?? null,
+    };
+    // The first widget holds every row in its own row map; the second holds none.
+    const firstContext = { ...baseContext, rowMap: liveDocs } as DatabaseContextState;
+    const secondContext = { ...baseContext, rowMap: {} } as DatabaseContextState;
+    let secondRows: Record<string, YDoc> = {};
+    const First = () => {
+      useBackgroundRowDocLoader(true, 'second-widget-needs-rows');
+      return null;
+    };
+
+    const Second = () => {
+      secondRows = useBackgroundRowDocLoader(true, 'second-widget-needs-rows').cachedRowDocs;
+      return null;
+    };
+
+    // The widget that holds the rows commits last, so its row map is the latest one the store saw.
+    const { unmount } = render(
+      <>
+        <DatabaseContext.Provider value={secondContext}>
+          <Second />
+        </DatabaseContext.Provider>
+        <DatabaseContext.Provider value={firstContext}>
+          <First />
+        </DatabaseContext.Provider>
+      </>
+    );
+
+    await waitFor(() => expect(Object.keys(secondRows).sort()).toEqual(rowIds));
+    expect(secondRows['held-row-1']).toBe(seedDocs['held-row-1']);
+
+    unmount();
+    [...Object.values(seedDocs), ...Object.values(liveDocs)].forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
+  });
+
+  it('stops loading rows one by one when the blob prefetch starts over', async () => {
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const rowIds = Array.from({ length: 60 }, (_, index) => `fallback-row-${index}`);
+    const rowDocs = Object.fromEntries(rowIds.map((id) => [id, createRowDoc(id, databaseId, {})]));
+    const loadRowFromSeed = jest.fn(async () => undefined);
+    const pendingEnsures: Array<() => void> = [];
+    // Each row load stays pending until the test releases it.
+    const ensureRow = jest.fn(
+      (id: string) =>
+        new Promise<YDoc | undefined>((resolve) => {
+          pendingEnsures.push(() => resolve(rowDocs[id]));
+        })
+    );
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    // A widget that opened read-only: no blob walk, the prefetch counts as complete.
+    let contextValue = {
+      activeViewId: viewId,
+      databaseDoc,
+      databasePageId: viewId,
+      readOnly: true,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      seedsReady: true,
+      blobPrefetchComplete: true,
+      loadRowFromSeed,
+      ensureRow,
+    } as DatabaseContextState;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { rerender, unmount } = renderHook(() => useBackgroundRowDocLoader(true, 'readonly-fallback'), { wrapper });
+
+    // The first rows are requested one by one.
+    await waitFor(() => expect(ensureRow).toHaveBeenCalledTimes(12));
+
+    // The widget turns writable: its Database starts the blob walk, so the prefetch is no longer complete.
+    contextValue = { ...contextValue, readOnly: false, seedsReady: false, blobPrefetchComplete: false };
+    rerender();
+    await act(async () => {
+      pendingEnsures.splice(0).forEach((release) => release());
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+
+    // No further row was requested: the walk delivers the other 48.
+    expect(ensureRow).toHaveBeenCalledTimes(12);
+
+    unmount();
+    Object.values(rowDocs).forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
   });
 
   it('does not follow the pages of a walk in flight while it has no conditions to evaluate', async () => {

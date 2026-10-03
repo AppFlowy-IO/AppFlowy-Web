@@ -4,6 +4,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from 'react';
@@ -174,6 +175,31 @@ function releaseOwnedRowDoc(doc: YDoc) {
   doc.destroy();
 }
 
+/** What the seed pass of a store was last asked to hydrate; see `SeedHydrator.sync`. */
+type SeedHydrationRequest = {
+  rowOrders: YDatabaseRowOrders;
+  /** The walk has not reached its terminal page: its seeds are provisional. */
+  walkInFlight: boolean;
+  seedsRevision: number;
+  rowOrderRevision: number;
+  peekRowDocFromSeed: PeekRowDocFromSeed;
+  /** The consumers' row maps the request was made for (`LoaderStore.rowMaps`). */
+  rowMaps: RowDocMap[];
+};
+
+/**
+ * The bounded pass that builds shared, detached docs from the seeds of a blob
+ * walk and publishes them to the store's cache. It belongs to the store, not to
+ * a consumer, so it keeps running while any consumer is active.
+ */
+type SeedHydrator = {
+  /** Queues the rows that still need a doc and starts a pass; once per request, whichever consumer asks. */
+  sync: (request: SeedHydrationRequest) => void;
+  cancel: () => void;
+  /** Settles when the pass in flight has drained its queue; null while idle. */
+  promise: () => Promise<void> | null;
+};
+
 type LoaderStore = {
   key: string;
   refCount: number;
@@ -193,24 +219,15 @@ type LoaderStore = {
   backgroundRun: number;
   pendingDocs: RowDocMap;
   flushHandle: number | null;
-  seedHydrateFrame: number | null;
-  seedHydrateRun: number;
-  seedHydrateActive: boolean;
-  seedHydrateQueue: Set<string>;
-  /** Time a seed-pass frame may take; bounded until the walk's seeds are committed. */
-  seedHydrateFrameBudgetMs: number;
-  /** Docs a seed pass built from a walk in flight and has not published yet. */
-  seedHydratePending: RowDocMap;
-  /** Unsubscribes from the `destroy` event of each unpublished doc. */
-  seedHydratePendingUnwatch: Map<string, () => void>;
-  seedHydratePublishedAt: number;
-  /** Publishes of docs from the walk in flight; 0 once its seeds are committed. */
-  seedHydratePublishCount: number;
-  /** Publishes the unpublished docs of a drained pass once the interval ends. */
-  seedHydratePublishTimer: ReturnType<typeof setTimeout> | null;
-  seedHydratePromise: Promise<void> | null;
-  resolveSeedHydration: (() => void) | null;
-  rows: RowDocMap | null | undefined;
+  seedHydrator: SeedHydrator;
+  /**
+   * The row map of every mounted consumer. Consumers under one `Database` share
+   * one; two widgets on the same view each have their own, and a row one of
+   * them holds is still missing for the other.
+   */
+  consumerRows: Map<symbol, RowDocMap>;
+  /** The distinct row maps in `consumerRows`. */
+  rowMaps: RowDocMap[];
   rowOrders: YDatabaseRowOrders | undefined;
   ensureRow: EnsureRow | undefined;
   loadRowFromSeed: LoadRowFromSeed | undefined;
@@ -218,9 +235,10 @@ type LoaderStore = {
 };
 
 const loaderStores = new Map<string, LoaderStore>();
+const NO_ROWS: RowDocMap = Object.freeze({});
 
 function createLoaderStore(key: string): LoaderStore {
-  return {
+  const store: LoaderStore = {
     key,
     refCount: 0,
     activeRefCount: 0,
@@ -238,24 +256,17 @@ function createLoaderStore(key: string): LoaderStore {
     backgroundRun: 0,
     pendingDocs: {},
     flushHandle: null,
-    seedHydrateFrame: null,
-    seedHydrateRun: 0,
-    seedHydrateActive: false,
-    seedHydrateQueue: new Set(),
-    seedHydrateFrameBudgetMs: Number.POSITIVE_INFINITY,
-    seedHydratePending: {},
-    seedHydratePendingUnwatch: new Map(),
-    seedHydratePublishedAt: Number.NEGATIVE_INFINITY,
-    seedHydratePublishCount: 0,
-    seedHydratePublishTimer: null,
-    seedHydratePromise: null,
-    resolveSeedHydration: null,
-    rows: undefined,
+    seedHydrator: { sync: () => undefined, cancel: () => undefined, promise: () => null },
+    consumerRows: new Map(),
+    rowMaps: [],
     rowOrders: undefined,
     ensureRow: undefined,
     loadRowFromSeed: undefined,
     peekRowDocFromSeed: undefined,
   };
+
+  store.seedHydrator = createSeedHydrator(store);
+  return store;
 }
 
 function getLoaderStore(key: string) {
@@ -273,9 +284,34 @@ function notifyStore(store: LoaderStore) {
   store.subscribers.forEach((callback) => callback());
 }
 
+function setConsumerRows(store: LoaderStore, consumer: symbol, rows: RowDocMap | null | undefined) {
+  store.consumerRows.set(consumer, rows ?? NO_ROWS);
+  store.rowMaps = Array.from(new Set(store.consumerRows.values()));
+}
+
+function removeConsumerRows(store: LoaderStore, consumer: symbol) {
+  store.consumerRows.delete(consumer);
+  store.rowMaps = Array.from(new Set(store.consumerRows.values()));
+}
+
+/**
+ * Whether every mounted consumer already holds the row in its own row map, so
+ * none of them needs it from the cache. With one consumer missing it, the row
+ * is not loaded for that one, however many others hold it.
+ */
+function everyConsumerHasRow(store: LoaderStore, rowId: string) {
+  return store.rowMaps.length > 0 && store.rowMaps.every((rows) => hasRowConditionData(rows[rowId]));
+}
+
 function disposeStoreDoc(store: LoaderStore, rowId: string, doc: YDoc) {
   if (store.sharedCachedRowDocIds.has(rowId) && store.cachedRowDocs[rowId] === doc) return;
   releaseOwnedRowDoc(doc);
+}
+
+/** Calls `onDestroy` when the doc is destroyed; the result stops watching. */
+function watchDocDestroy(doc: YDoc, onDestroy: () => void) {
+  doc.on('destroy', onDestroy);
+  return () => doc.off('destroy', onDestroy);
 }
 
 function unwatchSharedDoc(store: LoaderStore, rowId: string) {
@@ -307,16 +343,16 @@ function evictDestroyedSharedDocs(store: LoaderStore) {
 function watchSharedDoc(store: LoaderStore, rowId: string, doc: YDoc) {
   // Re-watching removes the previous listener, so only the current one fires.
   unwatchSharedDoc(store, rowId);
-  const handleDestroy = () => {
-    store.sharedDocDestroyListeners.delete(rowId);
-    if (store.cachedRowDocs[rowId] !== doc) return;
-    // Many docs are destroyed in one pass; evict them together.
-    if (store.pendingDestroyedDocs.size === 0) queueMicrotask(() => evictDestroyedSharedDocs(store));
-    store.pendingDestroyedDocs.set(rowId, doc);
-  };
-
-  doc.on('destroy', handleDestroy);
-  store.sharedDocDestroyListeners.set(rowId, () => doc.off('destroy', handleDestroy));
+  store.sharedDocDestroyListeners.set(
+    rowId,
+    watchDocDestroy(doc, () => {
+      store.sharedDocDestroyListeners.delete(rowId);
+      if (store.cachedRowDocs[rowId] !== doc) return;
+      // Many docs are destroyed in one pass; evict them together.
+      if (store.pendingDestroyedDocs.size === 0) queueMicrotask(() => evictDestroyedSharedDocs(store));
+      store.pendingDestroyedDocs.set(rowId, doc);
+    })
+  );
 }
 
 function setStoreCachedRowDocs(
@@ -362,59 +398,6 @@ function cancelBackgroundRun(store: LoaderStore, runId?: number) {
   clearPendingFlush(store);
 }
 
-function finishSeedHydration(store: LoaderStore) {
-  store.seedHydrateFrame = null;
-  store.seedHydrateActive = false;
-  store.resolveSeedHydration?.();
-  store.resolveSeedHydration = null;
-  store.seedHydratePromise = null;
-}
-
-/**
- * Holds a doc built from a walk in flight until the next publish. A restart
- * can destroy it before then; it is dropped instead of published.
- */
-function holdPendingSeedDoc(store: LoaderStore, rowId: string, doc: YDoc) {
-  store.seedHydratePendingUnwatch.get(rowId)?.();
-  const handleDestroy = () => {
-    store.seedHydratePendingUnwatch.delete(rowId);
-    if (store.seedHydratePending[rowId] === doc) delete store.seedHydratePending[rowId];
-  };
-
-  store.seedHydratePending[rowId] = doc;
-  doc.on('destroy', handleDestroy);
-  store.seedHydratePendingUnwatch.set(rowId, () => doc.off('destroy', handleDestroy));
-}
-
-/** Takes the unpublished docs; the cache watches the ones it adds. */
-function takePendingSeedDocs(store: LoaderStore) {
-  const docs = store.seedHydratePending;
-
-  if (store.seedHydratePublishTimer !== null) clearTimeout(store.seedHydratePublishTimer);
-  store.seedHydratePublishTimer = null;
-  store.seedHydratePending = {};
-  store.seedHydratePendingUnwatch.forEach((unwatch) => unwatch());
-  store.seedHydratePendingUnwatch.clear();
-  return docs;
-}
-
-function publishPendingSeedDocs(store: LoaderStore) {
-  const additions = takePendingSeedDocs(store);
-
-  store.seedHydratePublishedAt = performance.now();
-  if (Number.isFinite(store.seedHydrateFrameBudgetMs)) store.seedHydratePublishCount += 1;
-  startTransition(() => cacheSharedSeedDocs(store, additions));
-}
-
-function cancelSeedHydration(store: LoaderStore) {
-  store.seedHydrateRun += 1;
-  if (store.seedHydrateFrame !== null) cancelAnimationFrame(store.seedHydrateFrame);
-  store.seedHydrateQueue.clear();
-  // Shared seed docs belong to the seed cache: unpublished ones are only dropped.
-  takePendingSeedDocs(store);
-  finishSeedHydration(store);
-}
-
 /** Shared seed docs belong to the database seed cache, never to this loader. */
 function cacheSharedSeedDocs(store: LoaderStore, docs: RowDocMap) {
   if (Object.keys(docs).length === 0) return;
@@ -425,7 +408,7 @@ function cacheSharedSeedDocs(store: LoaderStore, docs: RowDocMap) {
       if (
         !hasRowConditionData(doc) ||
         hasRowConditionData(prev[rowId]) ||
-        hasRowConditionData(store.rows?.[rowId]) ||
+        everyConsumerHasRow(store, rowId) ||
         hasRowConditionData(store.pendingDocs[rowId])
       )
         return;
@@ -437,9 +420,181 @@ function cacheSharedSeedDocs(store: LoaderStore, docs: RowDocMap) {
   });
 }
 
+function createSeedHydrator(store: LoaderStore): SeedHydrator {
+  /** Rows that still need a doc, in row order. */
+  const queue = new Set<string>();
+  /** Docs built from a walk in flight and not published yet, and what stops watching each. */
+  let pending: RowDocMap = {};
+  const pendingUnwatch = new Map<string, () => void>();
+  let request: SeedHydrationRequest | null = null;
+  let walkInFlight = false;
+  let frame: number | null = null;
+  let run = 0;
+  let passActive = false;
+  let publishedAt = Number.NEGATIVE_INFINITY;
+  /** Publishes of docs from the walk in flight; 0 once its seeds are committed. */
+  let publishCount = 0;
+  /** Publishes the unpublished docs of a drained pass once the interval ends. */
+  let publishTimer: ReturnType<typeof setTimeout> | null = null;
+  let passPromise: Promise<void> | null = null;
+  let resolvePass: (() => void) | null = null;
+
+  const hasPending = () => {
+    for (const _rowId in pending) return true;
+    return false;
+  };
+
+  /**
+   * Holds a doc built from a walk in flight until the next publish. A restart
+   * can destroy it before then; it is dropped instead of published.
+   */
+  const hold = (rowId: string, doc: YDoc) => {
+    pendingUnwatch.get(rowId)?.();
+    pending[rowId] = doc;
+    pendingUnwatch.set(
+      rowId,
+      watchDocDestroy(doc, () => {
+        pendingUnwatch.delete(rowId);
+        if (pending[rowId] === doc) delete pending[rowId];
+      })
+    );
+  };
+
+  /** Takes the unpublished docs; the cache watches the ones it adds. */
+  const takePending = () => {
+    const docs = pending;
+
+    if (publishTimer !== null) clearTimeout(publishTimer);
+    publishTimer = null;
+    pending = {};
+    pendingUnwatch.forEach((unwatch) => unwatch());
+    pendingUnwatch.clear();
+    return docs;
+  };
+
+  const publish = () => {
+    // A frame that built no doc must not use up a slot of the publish schedule:
+    // the first docs of a walk are published at once.
+    if (!hasPending()) return;
+    const additions = takePending();
+
+    publishedAt = performance.now();
+    if (walkInFlight) publishCount += 1;
+    startTransition(() => cacheSharedSeedDocs(store, additions));
+  };
+
+  const finishPass = () => {
+    frame = null;
+    passActive = false;
+    resolvePass?.();
+    resolvePass = null;
+    passPromise = null;
+  };
+
+  const needsDoc = (rowId: string) =>
+    !everyConsumerHasRow(store, rowId) && !hasRowConditionData(store.cachedRowDocs[rowId]);
+
+  const processBatch = (runId: number) => {
+    if (run !== runId) return;
+    const frameStartedAt = performance.now();
+    // While a walk is still in flight, each frame builds docs for a bounded
+    // time, so the next page's response is not starved of the main thread.
+    const frameBudgetMs = walkInFlight ? PROVISIONAL_SEED_HYDRATE_FRAME_BUDGET_MS : Number.POSITIVE_INFINITY;
+    let hydrated = 0;
+    let scanned = 0;
+
+    for (const rowId of queue) {
+      if (hydrated >= SEED_HYDRATE_BATCH_SIZE || scanned >= SEED_HYDRATE_SCAN_LIMIT) break;
+      if (hydrated > 0 && performance.now() - frameStartedAt > frameBudgetMs) break;
+      queue.delete(rowId);
+      scanned += 1;
+      if (!needsDoc(rowId) || hasRowConditionData(store.pendingDocs[rowId])) continue;
+
+      const doc = store.peekRowDocFromSeed?.(rowId);
+
+      if (doc) {
+        hold(rowId, doc);
+        hydrated += 1;
+      }
+    }
+
+    const publishDueAt = walkInFlight ? publishedAt + provisionalSeedPublishInterval(publishCount) : frameStartedAt;
+
+    if (frameStartedAt >= publishDueAt) {
+      publish();
+    } else if (queue.size === 0 && publishTimer === null && hasPending()) {
+      // The pass ends here; the next page starts another one.
+      publishTimer = setTimeout(() => {
+        publishTimer = null;
+        publish();
+      }, publishDueAt - frameStartedAt);
+    }
+
+    if (run !== runId) return;
+    if (queue.size > 0) {
+      frame = requestAnimationFrame(() => processBatch(runId));
+    } else {
+      finishPass();
+    }
+  };
+
+  return {
+    sync: (next) => {
+      const previous = request;
+
+      // Every consumer of the store asks for the same pass on each page of a
+      // walk; the queue is rebuilt once for it, not once per consumer.
+      if (
+        previous &&
+        previous.rowOrders === next.rowOrders &&
+        previous.walkInFlight === next.walkInFlight &&
+        previous.seedsRevision === next.seedsRevision &&
+        previous.rowOrderRevision === next.rowOrderRevision &&
+        previous.peekRowDocFromSeed === next.peekRowDocFromSeed &&
+        previous.rowMaps === next.rowMaps
+      )
+        return;
+
+      request = next;
+      walkInFlight = next.walkInFlight;
+      if (!walkInFlight) {
+        // Committed seeds publish every frame again, starting with what the walk left.
+        publishCount = 0;
+        publish();
+      }
+
+      // Rebuilt in row order: a pass drops the rows a walk in flight has not
+      // delivered yet, and re-adding them at the end would hydrate later rows first.
+      queue.clear();
+      (next.rowOrders.toArray() as { id: string; is_deleted?: boolean }[]).forEach(({ id, is_deleted }) => {
+        if (!is_deleted && needsDoc(id) && !hasRowConditionData(pending[id])) queue.add(id);
+      });
+      if (passActive || queue.size === 0) return;
+
+      const runId = ++run;
+
+      passActive = true;
+      passPromise = new Promise((resolve) => {
+        resolvePass = resolve;
+      });
+      frame = requestAnimationFrame(() => processBatch(runId));
+    },
+    cancel: () => {
+      run += 1;
+      if (frame !== null) cancelAnimationFrame(frame);
+      queue.clear();
+      request = null;
+      // Shared seed docs belong to the seed cache: unpublished ones are only dropped.
+      takePending();
+      finishPass();
+    },
+    promise: () => passPromise,
+  };
+}
+
 function destroyStore(store: LoaderStore) {
   cancelBackgroundRun(store);
-  cancelSeedHydration(store);
+  store.seedHydrator.cancel();
 
   Object.entries(store.cachedRowDocs).forEach(([rowId, doc]) => {
     disposeStoreDoc(store, rowId, doc);
@@ -498,18 +653,22 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
   const storeKey = `${dataSource?.id ?? databaseDoc.guid}:${viewId ?? 'unknown'}:${scope}:${mode}`;
   const store = useMemo(() => getLoaderStore(storeKey), [storeKey]);
   const [rowOrderRevision, setRowOrderRevision] = useState(0);
+  // Identifies this consumer's row map in the store for as long as the hook is mounted.
+  const [consumer] = useState(() => Symbol('row-doc-consumer'));
 
   // A background run is shared by consumers and can outlive the render that
   // started it. Publish transport-sensitive operations only after commit so an
   // interrupted render cannot replace an active run's callbacks with values
   // from a database lifecycle that never became active.
   useLayoutEffect(() => {
-    store.rows = rows;
+    setConsumerRows(store, consumer, rows);
     store.rowOrders = rowOrders;
     store.ensureRow = ensureRow;
     store.loadRowFromSeed = loadRowFromSeed;
     store.peekRowDocFromSeed = peekRowDocFromSeed;
-  }, [ensureRow, loadRowFromSeed, peekRowDocFromSeed, rowOrders, rows, store]);
+  }, [consumer, ensureRow, loadRowFromSeed, peekRowDocFromSeed, rowOrders, rows, store]);
+
+  useLayoutEffect(() => () => removeConsumerRows(store, consumer), [consumer, store]);
 
   const subscribeToCachedRowDocs = useCallback(
     (onStoreChange: () => void) => {
@@ -562,14 +721,9 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
           let changed = false;
           const next = { ...prev };
           const added: RowDocMap = {};
-          const currentRows = store.rows;
 
           Object.entries(pending).forEach(([rowId, doc]) => {
-            if (
-              !hasRowConditionData(doc) ||
-              hasRowConditionData(next[rowId]) ||
-              hasRowConditionData(currentRows?.[rowId])
-            ) {
+            if (!hasRowConditionData(doc) || hasRowConditionData(next[rowId]) || everyConsumerHasRow(store, rowId)) {
               releaseOwnedRowDoc(doc);
               return;
             }
@@ -602,12 +756,27 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
       store.activeRefCount -= 1;
       if (store.activeRefCount === 0) {
         cancelBackgroundRun(store);
-        cancelSeedHydration(store);
+        store.seedHydrator.cancel();
       }
     };
   }, [active, store]);
 
-  // Clean up cached docs that are now in the main rowMap.
+  // The fallback below loads rows one at a time once the blob prefetch is
+  // complete. A prefetch that starts over (a read-only widget that turned
+  // writable, a view that now needs every row) brings those rows as seeds:
+  // stop the run it made obsolete. The next completion starts one for the rows
+  // still missing.
+  const prefetchWasCompleteRef = useRef(false);
+
+  useEffect(() => {
+    const wasComplete = prefetchWasCompleteRef.current;
+
+    prefetchWasCompleteRef.current = active && Boolean(blobPrefetchComplete);
+    if (active && wasComplete && !blobPrefetchComplete) cancelBackgroundRun(store);
+  }, [active, blobPrefetchComplete, store]);
+
+  // Clean up cached docs that every consumer now has in its main rowMap. A doc
+  // another consumer (a second widget on this view) still reads from the cache stays.
   useEffect(() => {
     const cached = store.cachedRowDocs;
     let changed = false;
@@ -615,7 +784,7 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
     const removed: RowDocMap = {};
 
     Object.entries(cached).forEach(([rowId, doc]) => {
-      if (hasRowConditionData(rows?.[rowId])) {
+      if (everyConsumerHasRow(store, rowId)) {
         removed[rowId] = doc;
         disposeStoreDoc(store, rowId, doc);
         store.sharedCachedRowDocIds.delete(rowId);
@@ -636,94 +805,16 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
   // It also runs for each page a walk in flight delivers (`seedsRevision`),
   // so conditions can start on those rows before the terminal page.
   useEffect(() => {
-    if (!active || !(seedsReady || seedsRevision > 0) || !peekRowDocFromSeed) return;
+    if (!active || !(seedsReady || seedsRevision > 0) || !peekRowDocFromSeed || !rowOrders) return;
 
-    const orderedRows = rowOrders?.toArray() as { id: string; is_deleted?: boolean }[] | undefined;
-
-    if (!orderedRows) return;
-    store.seedHydrateFrameBudgetMs = seedsReady ? Number.POSITIVE_INFINITY : PROVISIONAL_SEED_HYDRATE_FRAME_BUDGET_MS;
-    if (seedsReady) {
-      // Committed seeds publish every frame again, starting with what the walk left.
-      store.seedHydratePublishCount = 0;
-      if (Object.keys(store.seedHydratePending).length > 0) publishPendingSeedDocs(store);
-    }
-
-    // Rebuilt in row order: a pass drops the rows a walk in flight has not
-    // delivered yet, and re-adding them at the end would hydrate later rows
-    // first. Filter results can only show from the first row on.
-    store.seedHydrateQueue.clear();
-    orderedRows.forEach(({ id, is_deleted }) => {
-      if (
-        !is_deleted &&
-        !hasRowConditionData(store.rows?.[id]) &&
-        !hasRowConditionData(store.cachedRowDocs[id]) &&
-        !hasRowConditionData(store.seedHydratePending[id])
-      ) {
-        store.seedHydrateQueue.add(id);
-      }
+    store.seedHydrator.sync({
+      rowOrders,
+      walkInFlight: !seedsReady,
+      seedsRevision,
+      rowOrderRevision,
+      peekRowDocFromSeed,
+      rowMaps: store.rowMaps,
     });
-    if (store.seedHydrateActive || store.seedHydrateQueue.size === 0) return;
-
-    const runId = ++store.seedHydrateRun;
-
-    store.seedHydrateActive = true;
-    store.seedHydratePromise = new Promise((resolve) => {
-      store.resolveSeedHydration = resolve;
-    });
-    const processBatch = () => {
-      if (store.seedHydrateRun !== runId) return;
-      const frameStartedAt = performance.now();
-      const walkInFlight = Number.isFinite(store.seedHydrateFrameBudgetMs);
-      let hydrated = 0;
-      let scanned = 0;
-
-      for (const rowId of store.seedHydrateQueue) {
-        if (hydrated >= SEED_HYDRATE_BATCH_SIZE || scanned >= SEED_HYDRATE_SCAN_LIMIT) break;
-        if (hydrated > 0 && performance.now() - frameStartedAt > store.seedHydrateFrameBudgetMs) break;
-        store.seedHydrateQueue.delete(rowId);
-        scanned += 1;
-        if (
-          hasRowConditionData(store.rows?.[rowId]) ||
-          hasRowConditionData(store.cachedRowDocs[rowId]) ||
-          hasRowConditionData(store.pendingDocs[rowId])
-        )
-          continue;
-
-        const doc = store.peekRowDocFromSeed?.(rowId);
-
-        if (doc) {
-          holdPendingSeedDoc(store, rowId, doc);
-          hydrated += 1;
-        }
-      }
-
-      const publishDueAt = walkInFlight
-        ? store.seedHydratePublishedAt + provisionalSeedPublishInterval(store.seedHydratePublishCount)
-        : frameStartedAt;
-
-      if (frameStartedAt >= publishDueAt) {
-        publishPendingSeedDocs(store);
-      } else if (
-        store.seedHydrateQueue.size === 0 &&
-        store.seedHydratePublishTimer === null &&
-        Object.keys(store.seedHydratePending).length > 0
-      ) {
-        // The pass ends here; the next page starts another one.
-        store.seedHydratePublishTimer = setTimeout(() => {
-          store.seedHydratePublishTimer = null;
-          publishPendingSeedDocs(store);
-        }, publishDueAt - frameStartedAt);
-      }
-
-      if (store.seedHydrateRun !== runId) return;
-      if (store.seedHydrateQueue.size > 0) {
-        store.seedHydrateFrame = requestAnimationFrame(processBatch);
-      } else {
-        finishSeedHydration(store);
-      }
-    };
-
-    store.seedHydrateFrame = requestAnimationFrame(processBatch);
   }, [active, seedsReady, seedsRevision, peekRowDocFromSeed, store, rowOrders, rowOrderRevision]);
 
   // After detached hydration, recover rows absent from the blob through the
@@ -741,10 +832,10 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
       if (mode === 'live' && store.ensureRow) {
         const synced = store.syncedRowDocs[rowId];
 
-        return hasRowConditionData(synced) && (!store.rows?.[rowId] || store.rows[rowId] === synced);
+        return hasRowConditionData(synced) && store.rowMaps.every((rows) => !rows[rowId] || rows[rowId] === synced);
       }
 
-      return hasRowConditionData(store.cachedRowDocs[rowId]) || hasRowConditionData(store.rows?.[rowId]);
+      return hasRowConditionData(store.cachedRowDocs[rowId]) || everyConsumerHasRow(store, rowId);
     };
 
     rowOrdersData.forEach(({ id }) => {
@@ -939,7 +1030,7 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
       while (isRunActive()) {
         // On a warm mount both readiness flags are already true. Give the
         // bounded detached pass priority instead of racing it with live opens.
-        while (store.seedHydratePromise && isRunActive()) await store.seedHydratePromise;
+        while (store.seedHydrator.promise() && isRunActive()) await store.seedHydrator.promise();
         if (!isRunActive()) break;
         if (store.backgroundQueue.size === 0) {
           await new Promise((resolve) => setTimeout(resolve, 0));

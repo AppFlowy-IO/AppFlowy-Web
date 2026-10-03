@@ -49,9 +49,7 @@ jest.mock('../../grid-column/useColumnResize', () => ({
 }));
 jest.mock('@/components/database/components/grid/grid-row/GridVirtualRow', () => ({
   __esModule: true,
-  default: ({ row, data }: { row: { index: number }; data: RenderRow[] }) => {
-    const rowData = data[row.index];
-
+  default: ({ rowData }: { rowData: RenderRow }) => {
     return rowData.type === RenderRowType.Row ? (
       <div data-testid={`grid-row-${rowData.rowId}`} />
     ) : (

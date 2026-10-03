@@ -161,8 +161,9 @@ jest.mock('@/components/database/components/grid/grid-column/useColumnResize', (
 }));
 jest.mock('@/components/database/components/grid/grid-row/GridVirtualRow', () => ({
   __esModule: true,
-  default: ({ row, data }: { row: { index: number }; data: RenderRow[] }) => {
-    const rowData = data[row.index];
+  // The row's own render row (`rowData`), or the stream and the virtual item of the earlier props.
+  default: (props: { rowData?: RenderRow; row?: { index: number }; data?: RenderRow[] }) => {
+    const rowData = (props.rowData ?? props.data?.[props.row?.index ?? -1]) as RenderRow;
 
     return <div data-testid={rowData.rowId ? 'widget-grid-row' : `grid-${rowData.type}`} data-row={rowData.rowId} />;
   },

@@ -3,6 +3,7 @@ import { createBdd, type DataTable } from 'playwright-bdd';
 
 import { switchViewToDashboard } from '../../support/dashboard-owned-views-helpers';
 import { expectDashboardViewMode } from '../../support/dashboard-platform-helpers';
+import { pressEscapeUntilHidden, WIDGET_TIMEOUT } from '../../support/dashboard-shared-helpers';
 import {
   addDashboardView,
   addFixtureDatabase,
@@ -23,9 +24,13 @@ import {
   dragLocatorBy,
   dragWidgetBeside,
   dragWidgetBetweenRows,
+  dragWidthHandle,
   enterEditMode,
   expectDashboardMode,
   expectGridWidgetRows,
+  expectRowHeight,
+  expectRowWidths,
+  expectWidgetCount,
   fixtureDatabase,
   gridDataRows,
   hostDatabase,
@@ -49,7 +54,6 @@ import {
   readDatabaseViews,
   reloadDashboard,
   renderedRows,
-  rowColumnPitch,
   seedDashboardWidgets,
   splitList,
   trashFixtureDatabase,
@@ -58,6 +62,7 @@ import {
   waitForDatabaseContext,
   widgetLocator,
 } from '../../support/dashboard-test-helpers';
+import { boardColumn, expectMemberViewMode, expectRowPage } from '../../support/dashboard-usecase-helpers';
 import { selectFilterOption } from '../../support/filter-test-helpers';
 import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from '../../support/page-utils';
 import { closeRowDetailWithEscape } from '../../support/row-detail-helpers';
@@ -70,8 +75,6 @@ import {
 } from '../../support/selectors';
 
 const { Given, When, Then, Before, After } = createBdd();
-
-const WIDGET_TIMEOUT = { timeout: 30_000 };
 
 Before({ tags: '@dashboard' }, async ({ page, $testInfo }) => {
   // API fixtures, several database pages and cross-database widgets need room.
@@ -395,8 +398,7 @@ When(
 );
 
 Then('the dashboard shows {int} widget(s)', async ({ page }, count: number) => {
-  await expect(DashboardSelectors.widgets(page)).toHaveCount(count, WIDGET_TIMEOUT);
-  await expect.poll(async () => allWidgets(await readDashboardSetting(page)).length).toBe(count);
+  await expectWidgetCount(page, count);
 });
 
 Then('the {string} widget shows the rows {string}', async ({ page }, label: string, titles: string) => {
@@ -458,25 +460,30 @@ Then('the widget shows a new {string} view of {string}', async ({ page }, layout
 });
 
 Then('the new board widget shows the {string} column', async ({ page }, column: string) => {
-  const widget = widgetLocator(page, 'Projects Board');
-
-  await expect(
-    widget
-      .getByTestId('board-column')
-      .filter({ has: page.getByTestId('board-column-name').getByText(column, { exact: true }) })
-  ).toBeVisible(WIDGET_TIMEOUT);
+  await expect(boardColumn(widgetLocator(page, 'Projects Board'), column)).toBeVisible(WIDGET_TIMEOUT);
 });
 
 Then('the {string} widget header shows its view name', async ({ page }, label: string) => {
   const widget = widgetLocator(page, label);
   const { database } = parseViewLabel(label);
-  const views = await readDatabaseViews(page, fixtureDatabase(page, database).databaseId).catch(() => []);
-  const name = views.find((view) => view.id === viewIdForLabel(page, label))?.name;
+  const databaseId = fixtureDatabase(page, database).databaseId;
+  const viewId = viewIdForLabel(page, label);
   const title = widget.getByTestId('dashboard-widget-header').getByTestId('dashboard-widget-title');
+  let name = '';
 
+  // The view must be there to compare with: a view that never mounts fails here.
+  await expect
+    .poll(
+      async () => {
+        name = (await readDatabaseViews(page, databaseId)).find((view) => view.id === viewId)?.name ?? '';
+        return name;
+      },
+      { ...WIDGET_TIMEOUT, message: `the "${label}" view is not mounted or has no name` }
+    )
+    .not.toBe('');
   await expect(title).toBeVisible(WIDGET_TIMEOUT);
   await expect(title).not.toHaveText('');
-  if (name) await expect(title).toContainText(name);
+  await expect(title).toContainText(name);
 });
 
 When(
@@ -611,11 +618,7 @@ Then('the {string} widget is in dashboard row {int}', async ({ page }, label: st
 });
 
 Then('the widths of dashboard row {int} are {string}', async ({ page }, rowIndex: number, widths: string) => {
-  const expected = splitList(widths).map(Number);
-
-  await expect
-    .poll(async () => (await readDashboardSetting(page)).rows[rowIndex - 1]?.widgets.map((widget) => widget.width))
-    .toEqual(expected);
+  await expectRowWidths(page, rowIndex, splitList(widths).map(Number));
 });
 
 Then('the dashboard has {int} rows', async ({ page }, count: number) => {
@@ -731,13 +734,7 @@ async function addWidgetSelectFilter(scope: Page, widget: Locator, field: string
   await property.click();
   await selectFilterOption(scope, option);
   // Close the rule editor, then the widget's Filters popover it opened in.
-  const popover = scope.getByTestId('dashboard-widget-filters-popover');
-
-  for (let attempt = 0; attempt < 3 && (await popover.isVisible()); attempt += 1) {
-    await scope.keyboard.press('Escape');
-  }
-
-  await expect(popover).toBeHidden();
+  await pressEscapeUntilHidden(scope, scope.getByTestId('dashboard-widget-filters-popover'));
 }
 
 When(
@@ -779,14 +776,7 @@ Then('the member sees the {string} widget with {int} rows', async ({ page }, lab
 });
 
 Then('the member sees the dashboard in View mode without the Edit button', async ({ page }) => {
-  const member = memberPage(page);
-
-  await expect(DashboardSelectors.view(member)).toBeVisible();
-  await expect(DashboardSelectors.widgets(member).first()).toBeVisible(WIDGET_TIMEOUT);
-  await expect(DashboardSelectors.editButton(member)).toHaveCount(0);
-  await expect(DashboardSelectors.doneButton(member)).toHaveCount(0);
-  await expect(DashboardSelectors.widthHandles(member)).toHaveCount(0);
-  await expect(DashboardSelectors.addWidgetButton(member).filter({ visible: true })).toHaveCount(0);
+  await expectMemberViewMode(page);
 });
 
 // ---------------------------------------------------------------------------
@@ -813,12 +803,7 @@ When(
 When(
   'I drag width handle {int} of dashboard row {int} by {int} columns',
   async ({ page }, handle: number, rowIndex: number, columns: number) => {
-    const row = await persistedRow(page, rowIndex);
-    const columnWidth = await rowColumnPitch(page, row.id, row.widgets.length);
-
-    await DashboardSelectors.row(page, row.id).hover();
-    // Handle N sits between widget N and widget N + 1 (`data-index` is 0-based).
-    await dragLocatorBy(page, DashboardSelectors.widthHandle(page, row.id, handle - 1), columns * columnWidth, 0);
+    await dragWidthHandle(page, rowIndex, handle, columns);
   }
 );
 
@@ -850,16 +835,9 @@ When(
   }
 );
 
+// "About": a drag snaps the stored height, so it may land within one snap step of the target.
 Then('dashboard row {int} is about {int} px tall', async ({ page }, rowIndex: number, height: number) => {
-  await expect
-    .poll(async () => Math.abs(((await readDashboardSetting(page)).rows[rowIndex - 1]?.height ?? 0) - height))
-    .toBeLessThanOrEqual(24);
-  const row = await persistedRow(page, rowIndex);
-  const widget = DashboardSelectors.row(page, row.id).getByTestId('dashboard-widget').first();
-
-  await expect
-    .poll(async () => Math.abs(((await widget.boundingBox())?.height ?? 0) - row.height))
-    .toBeLessThanOrEqual(32);
+  await expectRowHeight(page, rowIndex, height, { storedTolerance: 24, renderedTolerance: 32 });
 });
 
 When('I wait for the dashboard layout to reach the server', async ({ page, request }) => {
@@ -1019,12 +997,7 @@ When('I open the {string} row from the {string} widget', async ({ page }, title:
 
 Then('the row page for {string} is open', async ({ page }, title: string) => {
   // A row page carries the row title editor (a chart drill-down lists the title too).
-  const titleInputs = page.locator('.MuiDialog-paper').getByTestId('row-title-input');
-
-  await expect(titleInputs.last()).toBeVisible(WIDGET_TIMEOUT);
-  await expect
-    .poll(() => titleInputs.evaluateAll((inputs) => inputs.map((input) => (input as HTMLTextAreaElement).value)))
-    .toContain(title);
+  await expectRowPage(page, title);
 });
 
 When('I close the row page', async ({ page }) => {
@@ -1045,11 +1018,9 @@ Then('the {string} widget shows {int} card(s)', async ({ page }, label: string, 
 Then(
   'the {string} column of the {string} widget shows {int} card(s)',
   async ({ page }, column: string, label: string, count: number) => {
-    const widget = widgetLocator(page, label);
-    const columnLocator = widget
-      .getByTestId('board-column')
-      .filter({ has: page.getByTestId('board-column-name').getByText(column, { exact: true }) });
-
-    await expect(columnLocator.locator('.board-card')).toHaveCount(count, WIDGET_TIMEOUT);
+    await expect(boardColumn(widgetLocator(page, label), column).locator('.board-card')).toHaveCount(
+      count,
+      WIDGET_TIMEOUT
+    );
   }
 );

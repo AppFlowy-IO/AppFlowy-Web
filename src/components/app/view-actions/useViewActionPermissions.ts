@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { AccessService, ViewService } from '@/application/services/domains';
+import { EventType, on } from '@/application/session/event';
 import { type CollabObjectPermission, View } from '@/application/types';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useViewObjectPermission } from '@/components/app/hooks/useViewObjectPermission';
@@ -15,6 +16,59 @@ import {
   canUsePageHistoryAction,
   canUseViewMutationActions,
 } from '@/components/app/view-actions/viewActionPermission';
+
+/** How long an answer serves later lookups; the app-level permission probe keeps its own for as long. */
+const OBJECT_PERMISSION_TTL_MS = 10_000;
+/** Beyond this many answers the expired ones are dropped. */
+const OBJECT_PERMISSION_CACHE_PRUNE_SIZE = 64;
+
+const objectPermissionRequests = new Map<
+  string,
+  { requestedAt: number; promise: Promise<CollabObjectPermission> }
+>();
+
+function isObjectPermissionRequestFresh(requestedAt: number) {
+  return Date.now() - requestedAt < OBJECT_PERMISSION_TTL_MS;
+}
+
+/** Forget every answer, so the next lookup asks the server. */
+export function clearObjectPermissionCache() {
+  objectPermissionRequests.clear();
+}
+
+// An answer belongs to the account that asked.
+on(EventType.SESSION_INVALID, clearObjectPermissionCache);
+
+/**
+ * One permission request per (workspace, object), however many hooks ask: the
+ * widgets of a dashboard all ask about their source database when they mount.
+ * Lookups share a request in flight and reuse its answer for
+ * `OBJECT_PERMISSION_TTL_MS`. A failure, a refusal and an answer for another
+ * object are not kept: the next lookup asks again.
+ */
+function loadObjectPermission(workspaceId: string, target: PermissionProbeTarget): Promise<CollabObjectPermission> {
+  const key = `${workspaceId}:${target.collabObjectId}:${target.collabType}`;
+  const cached = objectPermissionRequests.get(key);
+
+  if (cached && isObjectPermissionRequestFresh(cached.requestedAt)) return cached.promise;
+
+  const promise = AccessService.getObjectPermission(workspaceId, target.collabObjectId, target.collabType);
+  const forget = () => {
+    if (objectPermissionRequests.get(key)?.promise === promise) objectPermissionRequests.delete(key);
+  };
+
+  if (objectPermissionRequests.size >= OBJECT_PERMISSION_CACHE_PRUNE_SIZE) {
+    objectPermissionRequests.forEach((entry, entryKey) => {
+      if (!isObjectPermissionRequestFresh(entry.requestedAt)) objectPermissionRequests.delete(entryKey);
+    });
+  }
+
+  objectPermissionRequests.set(key, { requestedAt: Date.now(), promise });
+  promise.then((permission) => {
+    if (!isCollabObjectPermissionForTarget(permission, target) || !permission.can_read) forget();
+  }, forget);
+  return promise;
+}
 
 export function useViewActionPermissions(
   view: View | null | undefined,
@@ -85,7 +139,7 @@ export function useViewActionPermissions(
       }
 
       return {
-        permission: await AccessService.getObjectPermission(workspaceId, target.collabObjectId, target.collabType),
+        permission: await loadObjectPermission(workspaceId, target),
         target,
       };
     })()

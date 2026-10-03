@@ -16,19 +16,13 @@ jest.mock('react-i18next', () => ({
 }));
 
 jest.mock('@/application/database-yjs', () => ({
-  useDashboardShowWidgetTitles: () => mockShowWidgetTitles,
-  useDatabaseContext: () => ({ databaseDoc: {} }),
-  useDatabaseViewId: () => 'dashboard-view',
+  // Both display flags come from one selector.
+  useDashboardDisplaySettings: () => ({
+    showWidgetTitles: mockShowWidgetTitles,
+    showIconsInHeading: mockShowIconsInHeading,
+  }),
   useReadOnly: () => mockReadOnly,
   useUpdateDashboardSetting: () => mockUpdateSetting,
-}));
-
-// "Show icons in heading" is read from the dashboard layout store (not a selector).
-jest.mock('@/application/database-yjs/dashboard-layout', () => ({
-  createDashboardLayoutStore: () => ({
-    getSnapshot: () => ({ showIconsInHeading: mockShowIconsInHeading }),
-    subscribe: () => () => undefined,
-  }),
 }));
 
 jest.mock('@/assets/icons/emoji.svg', () => ({

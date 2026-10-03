@@ -1,3 +1,4 @@
+import { parseDashboardOwner } from '@/application/database-yjs/dashboard-owned-views';
 import { db } from '@/application/db';
 import { WorkspaceDatabaseCatalogRecord } from '@/application/db/tables/workspace_database_catalog';
 import { WorkspaceDatabaseViewItem, WorkspaceDatabaseWithViews } from '@/application/services/services.type';
@@ -164,10 +165,6 @@ async function cachedDatabaseRecords(
   }
 }
 
-function nonEmptyOwner(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
 function parseCatalogExtra(extra: unknown): Record<string, unknown> | undefined {
   if (typeof extra === 'string') {
     try {
@@ -191,9 +188,10 @@ function parseCatalogExtra(extra: unknown): Record<string, unknown> | undefined 
 export function parseWorkspaceDatabaseViewItem(
   view: WorkspaceDatabaseViewItem & { extra?: unknown }
 ): WorkspaceDatabaseViewItem {
-  const owner = nonEmptyOwner(view.dashboard_owner) ?? nonEmptyOwner(parseCatalogExtra(view.extra)?.dashboard_owner);
+  const owner =
+    parseDashboardOwner(view.dashboard_owner) ?? parseDashboardOwner(parseCatalogExtra(view.extra)?.dashboard_owner);
 
-  return owner === undefined || owner === view.dashboard_owner ? view : { ...view, dashboard_owner: owner };
+  return owner === null || owner === view.dashboard_owner ? view : { ...view, dashboard_owner: owner };
 }
 
 function parseWorkspaceDatabases(databases: WorkspaceDatabaseWithViews[]): WorkspaceDatabaseWithViews[] {

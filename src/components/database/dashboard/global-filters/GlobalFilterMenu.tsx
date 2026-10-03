@@ -5,13 +5,13 @@ import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type
 import { FieldType } from '@/application/database-yjs/database.type';
 import { ReactComponent as ArrowLeftSvg } from '@/assets/icons/alt_arrow_left.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { getFieldTypeName } from '@/components/database/components/field/FieldLabel';
 import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
+import { filterValueItemClassName as itemClassName } from '@/components/database/components/filters/value-controls/filter-value-item';
 import { useDashboardSources } from '@/components/database/dashboard/DashboardContext';
 import { Button } from '@/components/ui/button';
-import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
-import { getFieldTypeName, Translate } from './global-filter.conditions';
 import {
   countSourcesByFieldType,
   createGlobalFilter,
@@ -20,24 +20,16 @@ import {
 } from './global-filter.utils';
 import { GlobalFilterEditor } from './GlobalFilterEditor';
 import { useDashboardFilterSources, useGlobalFilterActions } from './useGlobalFilterActions';
-import { useGlobalFilterLabel } from './useGlobalFilterLabel';
+import { globalFilterSourcesText, useGlobalFilterLabel } from './useGlobalFilterLabel';
 
-type MenuScreen = { type: 'list' } | { type: 'pick' } | { type: 'edit'; filterId: string };
+/** A screen of the menu: the filter list, the property-type picker for a new filter, or one filter's editor. */
+export type GlobalFilterMenuScreen = { type: 'list' } | { type: 'pick' } | { type: 'edit'; filterId: string };
 
-const itemClassName = cn(dropdownMenuItemVariants({ variant: 'default' }), 'w-full text-left');
+const LIST_SCREEN: GlobalFilterMenuScreen = { type: 'list' };
 const addItemClassName = cn(
   itemClassName,
   'text-text-secondary disabled:cursor-not-allowed disabled:text-text-tertiary'
 );
-
-function sourcesText(t: Translate, count: number) {
-  return t('dashboard.globalFilters.sources', {
-    count,
-    defaultValue: '{{count}} sources',
-    defaultValue_one: '{{count}} source',
-    defaultValue_other: '{{count}} sources',
-  });
-}
 
 function FilterListItem({
   filter,
@@ -114,7 +106,7 @@ function PropertyTypePicker({
               <FieldTypeIcon type={type} className='text-icon-secondary' />
               <span className='min-w-0 flex-1 truncate'>{getFieldTypeName(type, t)}</span>
               <span className='shrink-0 text-xs text-text-tertiary'>
-                {sourcesText(t, sourceCountByType.get(type) ?? 0)}
+                {globalFilterSourcesText(t, sourceCountByType.get(type) ?? 0)}
               </span>
             </button>
           ))}
@@ -125,10 +117,12 @@ function PropertyTypePicker({
 }
 
 export interface GlobalFilterMenuProps {
-  /** Open straight into this filter's editor (chip click); leaving closes the menu. */
-  filterId?: string;
-  /** Open straight into the property-type picker; leaving closes the menu. */
-  startWithPicker?: boolean;
+  /**
+   * The screen the menu opens on (default: the filter list). A menu opened
+   * straight on a filter's editor (a chip click) or on the property-type
+   * picker closes when that screen is left, instead of showing the list.
+   */
+  initialScreen?: GlobalFilterMenuScreen;
   onClose: () => void;
 }
 
@@ -138,16 +132,14 @@ export interface GlobalFilterMenuProps {
  * finishes editing and closes the menu; its back arrow (shown when the editor
  * was reached from the list) returns to the list.
  */
-export function GlobalFilterMenu({ filterId, startWithPicker = false, onClose }: GlobalFilterMenuProps) {
+export function GlobalFilterMenu({ initialScreen = LIST_SCREEN, onClose }: GlobalFilterMenuProps) {
   const { t } = useTranslation();
   const { sourceNames } = useDashboardSources();
   const sources = useDashboardFilterSources();
   const { filters, persist, addFilter, updateFilter, deleteFilter } = useGlobalFilterActions();
-  const [screen, setScreen] = useState<MenuScreen>(() => {
-    if (filterId) return { type: 'edit', filterId };
-    return startWithPicker ? { type: 'pick' } : { type: 'list' };
-  });
-  const closeOnLeave = Boolean(filterId) || startWithPicker;
+  const [screen, setScreen] = useState(initialScreen);
+  // Fixed for the life of the menu, like the screen it opened on.
+  const [closeOnLeave] = useState(initialScreen.type !== 'list');
   const editing = screen.type === 'edit' ? filters.find((filter) => filter.id === screen.filterId) : undefined;
   const missing = screen.type === 'edit' && !editing;
   const sourceCountByType = useMemo(() => countSourcesByFieldType(sources), [sources]);
@@ -162,12 +154,12 @@ export function GlobalFilterMenu({ filterId, startWithPicker = false, onClose }:
       return;
     }
 
-    setScreen({ type: 'list' });
+    setScreen(LIST_SCREEN);
   }, [closeOnLeave, onClose]);
 
   // The filter was deleted (here or by a collaborator). Returning to the list
   // is decided while rendering, so no empty editor frame is painted.
-  if (missing && !closeOnLeave) setScreen({ type: 'list' });
+  if (missing && !closeOnLeave) setScreen(LIST_SCREEN);
 
   // A menu opened on that filter closes instead (a side effect on the parent).
   useEffect(() => {

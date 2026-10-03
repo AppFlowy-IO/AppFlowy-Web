@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
 import { FieldType, useReadOnly } from '@/application/database-yjs';
 import type { GridGrouping, Row, RowOrdersHydration, SelectOption } from '@/application/database-yjs';
@@ -39,11 +39,13 @@ export const EMBEDDED_GRID_LOAD_MORE_INCREMENT = 25;
 
 /**
  * The grid's virtualized row stream. `rows` undefined is the loading state
- * (header, loading row). With `hydrating`, `rows` are the first rows of a
- * result still being read: they render above a loading row, and never as a
- * finished (possibly empty) result. The stream only depends on whether rows
- * are still read; the loading row reads the progress itself
- * (`GridHydrationContext`), so the rows shown do not re-render as it grows.
+ * (header, loading row). With `hydrating`, `rows` are the rows of a result
+ * still being read: they render above a loading row, and never as a finished
+ * (possibly empty) result. The stream only depends on whether rows are still
+ * read, not on how many were: a tick that only moves the progress returns the
+ * same stream, and the loading row reads the progress itself
+ * (`GridHydrationContext`). A row that stays in the stream keeps its render
+ * row object, so appending rows leaves the memoized rows above untouched.
  */
 export function useRenderRows(
   rows?: Row[],
@@ -54,8 +56,12 @@ export function useRenderRows(
   // An ungrouped stream only reads `rows`; a new grouping object must not rebuild it.
   const grouping = options?.grouping?.isGrouped ? options.grouping : undefined;
   const hydrating = Boolean(options?.hydrating);
+  // The render row of each data row of the ungrouped stream, by row id. Only
+  // an identity cache: a row found here is equal to a freshly built one, so a
+  // render that is thrown away cannot leave anything wrong behind.
+  const dataRowsRef = useRef(new Map<string, RenderRow>());
 
-  const renderRows = useMemo(() => {
+  return useMemo(() => {
     const placeholderRows = [
       {
         type: RenderRowType.Header,
@@ -70,7 +76,7 @@ export function useRenderRows(
 
     // If rows are still loading, show placeholder rows
     if (rows === undefined) {
-      return placeholderRows;
+      return { rows: placeholderRows, remainingRowCount: 0, lastVisibleRowId: undefined };
     }
 
     if (grouping?.isGrouped) {
@@ -136,48 +142,58 @@ export function useRenderRows(
       }
 
       groupedRows.push({ key: 'group:calculate', type: RenderRowType.CalculateRow });
-      return groupedRows;
+
+      let lastVisibleRowId: string | undefined;
+
+      for (let index = groupedRows.length - 1; index >= 0; index -= 1) {
+        if (groupedRows[index].type === RenderRowType.Row) {
+          lastVisibleRowId = groupedRows[index].rowId;
+          break;
+        }
+      }
+
+      return { rows: groupedRows, remainingRowCount: hiddenRowCount, lastVisibleRowId };
     }
 
-    const rowItems =
-      rows?.map((row) => ({
-        type: RenderRowType.Row,
-        rowId: row.id,
-      })) ?? [];
-    const visibleRowItems = visibleRowLimit === undefined ? rowItems : rowItems.slice(0, visibleRowLimit);
-    const remainingRowCount = visibleRowLimit === undefined ? 0 : Math.max(rowItems.length - visibleRowItems.length, 0);
+    const visibleRows = visibleRowLimit === undefined ? rows : rows.slice(0, visibleRowLimit);
+    const remainingRowCount = rows.length - visibleRows.length;
+    const previousDataRows = dataRowsRef.current;
+    const dataRows = new Map<string, RenderRow>();
+    const visibleRowItems = visibleRows.map((row) => {
+      const item = previousDataRows.get(row.id) ?? { type: RenderRowType.Row, rowId: row.id };
 
-    return [
-      {
-        type: RenderRowType.Header,
-      },
-      ...visibleRowItems,
+      dataRows.set(row.id, item);
+      return item;
+    });
 
-      remainingRowCount > 0 && {
-        type: RenderRowType.LoadMoreRow,
-        remainingRowCount,
-      },
+    dataRowsRef.current = dataRows;
 
-      hydrating && {
-        type: RenderRowType.PlaceholderRow,
-      },
+    return {
+      rows: [
+        {
+          type: RenderRowType.Header,
+        },
+        ...visibleRowItems,
 
-      !readOnly && {
-        type: RenderRowType.NewRow,
-      },
-      // Calculations summarize the complete result only.
-      !hydrating && {
-        type: RenderRowType.CalculateRow,
-      },
-    ].filter(Boolean) as RenderRow[];
+        remainingRowCount > 0 && {
+          type: RenderRowType.LoadMoreRow,
+          remainingRowCount,
+        },
+
+        hydrating && {
+          type: RenderRowType.PlaceholderRow,
+        },
+
+        !readOnly && {
+          type: RenderRowType.NewRow,
+        },
+        // Calculations summarize the complete result only.
+        !hydrating && {
+          type: RenderRowType.CalculateRow,
+        },
+      ].filter(Boolean) as RenderRow[],
+      remainingRowCount,
+      lastVisibleRowId: visibleRows[visibleRows.length - 1]?.id,
+    };
   }, [grouping, hydrating, readOnly, rows, visibleRowLimit]);
-
-  const visibleDataRows = useMemo(() => renderRows.filter((row) => row.type === RenderRowType.Row), [renderRows]);
-  const loadMoreRow = useMemo(() => renderRows.find((row) => row.type === RenderRowType.LoadMoreRow), [renderRows]);
-
-  return {
-    rows: renderRows,
-    remainingRowCount: loadMoreRow?.remainingRowCount ?? 0,
-    lastVisibleRowId: visibleDataRows[visibleDataRows.length - 1]?.rowId,
-  };
 }

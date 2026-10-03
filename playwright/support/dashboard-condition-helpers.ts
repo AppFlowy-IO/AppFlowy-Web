@@ -1,5 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 
+import { pressEscapeUntilHidden } from './dashboard-shared-helpers';
 import {
   databaseForLabel,
   DashboardSelectors,
@@ -55,11 +56,7 @@ export async function addWidgetSort(
   }
 
   await expect(directionButton).toHaveText(new RegExp(direction, 'i'));
-  for (let attempt = 0; attempt < 3 && (await popover.isVisible()); attempt += 1) {
-    await scope.keyboard.press('Escape');
-  }
-
-  await expect(popover).toBeHidden();
+  await pressEscapeUntilHidden(scope, popover);
   // An active sort keeps its highlighted tool.
   await expect(sortTool).toHaveAttribute('data-active', 'true');
 }

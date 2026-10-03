@@ -9,6 +9,7 @@ import { ChartLegend, ChartLegendGlyph, ChartLegendItem, layoutChartLegend } fro
 import { ChartTooltip, ChartTooltipRow } from './ChartTooltip';
 import { ChartTooltipLayer } from './ChartTooltipLayer';
 import { useChartMeasure } from './measureText';
+import { ChartPointer } from './useChartHover';
 
 /** Charts render nothing in a frame smaller than this (px). */
 const MIN_PLOT_SIZE = 40;
@@ -16,9 +17,8 @@ const MIN_PLOT_SIZE = 40;
 /** Today's height of a standalone (page or document block) chart. */
 export const STANDALONE_CHART_HEIGHT = 400;
 
+/** What the tooltip says. Where it is comes from the chart's pointer, not from here. */
 export interface ChartFrameTooltip {
-  clientX: number;
-  clientY: number;
   title?: string;
   rows: ChartTooltipRow[];
   showDrilldownHint: boolean;
@@ -34,7 +34,10 @@ export interface ChartFrameProps {
   legend?: { items: ChartLegendItem[]; glyph: ChartLegendGlyph } | null;
   /** The accessibility table rows. */
   rows: ChartA11yRow[];
+  /** Keep its identity while the hovered category is the same: a new object re-renders and re-measures the tooltip. */
   tooltip?: ChartFrameTooltip | null;
+  /** `useChartHover`'s pointer: the tooltip follows it without rendering the chart. */
+  pointer?: ChartPointer;
   /** `useChartHover`'s frame handlers, with the ref it reads the frame through. */
   frameHandlers?: HTMLAttributes<HTMLDivElement> & { ref?: Ref<HTMLDivElement> };
   /** `height` is the plot's; `legendHeight` is reserved below it. */
@@ -57,6 +60,7 @@ export function ChartFrame({
   legend,
   rows,
   tooltip,
+  pointer,
   frameHandlers,
   children,
 }: ChartFrameProps) {
@@ -70,6 +74,13 @@ export function ChartFrame({
   const plotHeight = Math.max(0, size.height - legendHeight);
   const ready = size.width >= MIN_PLOT_SIZE && plotHeight >= MIN_PLOT_SIZE;
   const inset = DASHBOARD_CHART_GEOMETRY.insetWidget;
+  const tooltipContent = useMemo(
+    () =>
+      tooltip ? (
+        <ChartTooltip rows={tooltip.rows} showDrilldownHint={tooltip.showDrilldownHint} title={tooltip.title} />
+      ) : null,
+    [tooltip]
+  );
 
   return (
     <div
@@ -99,11 +110,7 @@ export function ChartFrame({
         ) : null}
       </div>
       <ChartA11yTable rows={rows} />
-      <ChartTooltipLayer position={tooltip ? { clientX: tooltip.clientX, clientY: tooltip.clientY } : null}>
-        {tooltip ? (
-          <ChartTooltip rows={tooltip.rows} showDrilldownHint={tooltip.showDrilldownHint} title={tooltip.title} />
-        ) : null}
-      </ChartTooltipLayer>
+      <ChartTooltipLayer pointer={tooltip && pointer ? pointer : null}>{tooltipContent}</ChartTooltipLayer>
     </div>
   );
 }

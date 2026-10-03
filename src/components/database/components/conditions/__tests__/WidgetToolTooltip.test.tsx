@@ -1,7 +1,11 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import FiltersButton from '@/components/database/components/conditions/FiltersButton';
-import SortsButton from '@/components/database/components/conditions/SortsButton';
+import { createWidgetContextValue } from '@/components/database/dashboard/__tests__/dashboardTestHarness';
+import { WidgetFilterTool } from '@/components/database/dashboard/widget-tool-buttons/WidgetFilterTool';
+import { WidgetSettingsTool } from '@/components/database/dashboard/widget-tool-buttons/WidgetSettingsTool';
+import { WidgetSortTool } from '@/components/database/dashboard/widget-tool-buttons/WidgetSortTool';
+import { WidgetContext } from '@/components/database/dashboard/WidgetContext';
 
 // The real Radix tooltip: only its open-on-focus behavior is under test.
 jest.mock('@/application/database-yjs', () => ({
@@ -61,10 +65,12 @@ beforeAll(() => {
 
 describe('Widget tool tooltips', () => {
   it.each([
-    ['Filter', <FiltersButton key='filter' presentation='popover' variant='widget' />, 'database-actions-filter'],
-    ['Sort', <SortsButton key='sort' presentation='popover' variant='widget' />, 'database-actions-sort'],
+    ['Filter', <WidgetFilterTool key='filter' />, 'database-actions-filter'],
+    ['Sort', <WidgetSortTool key='sort' />, 'database-actions-sort'],
+    // The Settings tool is the same button: the focus its settings host hands back opens no tooltip either.
+    ['Settings', <WidgetSettingsTool key='settings' />, 'dashboard-widget-settings-button'],
   ])('keeps the %s tool tooltip closed when the focus comes back from its popover', (_label, tool, testId) => {
-    render(tool);
+    render(<WidgetContext.Provider value={createWidgetContextValue({ editing: true })}>{tool}</WidgetContext.Provider>);
 
     act(() => {
       screen.getByTestId(testId).focus();

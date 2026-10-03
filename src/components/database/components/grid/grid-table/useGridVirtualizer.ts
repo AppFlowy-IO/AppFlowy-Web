@@ -143,6 +143,9 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     updateParentOffset();
   }, [updateParentOffset, data.length]); // Watch data.length for view changes
 
+  // The virtualizer rebuilds every item when `getItemKey` is a new function, and
+  // a new item re-renders its row: keep both key getters stable between renders.
+  const getRowKey = useCallback((index: number) => getRenderRowKey(data[index]), [data]);
   const virtualizer = useVirtualizer({
     count: data.length,
     estimateSize: (index) => {
@@ -153,7 +156,7 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     overscan: 10,
     scrollMargin: parentOffset,
     getScrollElement,
-    getItemKey: (index) => getRenderRowKey(data[index]),
+    getItemKey: getRowKey,
     paddingStart: 0,
     paddingEnd: isDocumentBlock ? 0 : PADDING_END,
   });
@@ -253,6 +256,7 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     [getColumn, shouldFill, fillWidth, lastIndex]
   );
 
+  const getColumnKey = useCallback((index: number) => columns[index].fieldId || columns[index].type, [columns]);
   const columnVirtualizer = useVirtualizer({
     horizontal: true,
     count: columns.length,
@@ -261,7 +265,7 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     overscan: 5,
     paddingStart: effectivePaddingStart,
     paddingEnd: effectivePaddingEnd,
-    getItemKey: (index) => columns[index].fieldId || columns[index].type,
+    getItemKey: getColumnKey,
   });
 
   return {

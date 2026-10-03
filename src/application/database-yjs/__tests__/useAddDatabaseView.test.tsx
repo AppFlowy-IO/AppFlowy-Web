@@ -310,6 +310,41 @@ describe('online Chart layout conversion', () => {
     expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(fixture.before);
     expect(fixture.onUpdate).not.toHaveBeenCalled();
   });
+
+  it('does not let a pending Chart conversion replace a later choice made from another menu', async () => {
+    let acceptRead!: (view: View) => void;
+
+    jest.mocked(getView).mockImplementation(() => new Promise<View>((resolve) => { acceptRead = resolve; }));
+    const fixture = setup();
+    // A second menu for the same view: its own hook instance, the same database.
+    const otherMenu = renderHook(() => useUpdateDatabaseLayout('base-view-id'), {
+      wrapper: ({ children }) => (
+        <DatabaseContext.Provider
+          value={{
+            readOnly: false,
+            canWrite: true,
+            databaseDoc: fixture.databaseDoc,
+            databasePageId: 'base-view-id',
+            rowMap: {},
+            workspaceId: 'workspace-id',
+          }}
+        >
+          {children}
+        </DatabaseContext.Provider>
+      ),
+    });
+    const pending = fixture.result.current(DatabaseViewLayout.Chart);
+
+    await act(async () => { await Promise.resolve(); });
+    act(() => { void otherMenu.result.current(DatabaseViewLayout.Grid); });
+    await act(async () => {
+      acceptRead(createView({ view_id: 'base-view-id', layout: ViewLayout.Grid }));
+      await pending;
+    });
+
+    expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(fixture.before);
+    expect(fixture.onUpdate).not.toHaveBeenCalled();
+  });
 });
 
 describe('useAddDatabaseView', () => {

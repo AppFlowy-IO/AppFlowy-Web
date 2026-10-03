@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { ComponentType, SVGProps } from 'react';
 
 import { ViewLayout } from '@/application/types';
 import { ReactComponent as ChatSvg } from '@/assets/icons/ai_chat.svg';
@@ -17,64 +17,40 @@ import { ReactComponent as ListSvg } from '@/assets/icons/list.svg';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
 import { ReactComponent as TimelineSvg } from '@/assets/icons/timeline.svg';
 
-export function ViewIcon ({ layout, size, className }: {
+/** The glyph of each layout: the one place that decides it. */
+const LAYOUT_GLYPHS: Partial<Record<ViewLayout, ComponentType<SVGProps<SVGSVGElement>>>> = {
+  [ViewLayout.AIChat]: ChatSvg,
+  [ViewLayout.Grid]: GridSvg,
+  [ViewLayout.Board]: BoardSvg,
+  [ViewLayout.Calendar]: CalendarSvg,
+  [ViewLayout.Document]: DocumentSvg,
+  [ViewLayout.Chart]: ChartSvg,
+  [ViewLayout.List]: ListSvg,
+  [ViewLayout.Gallery]: GallerySvg,
+  [ViewLayout.Feed]: FeedSvg,
+  [ViewLayout.Form]: FormSvg,
+  [ViewLayout.Timeline]: TimelineSvg,
+  [ViewLayout.Dashboard]: DashboardSvg,
+};
+
+const SIZE_CLASSES = { small: 'h-5 w-5', medium: 'h-6 w-6', large: 'h-8 w-8', unset: '' };
+
+interface ViewIconProps extends Omit<SVGProps<SVGSVGElement>, 'ref'> {
   layout: ViewLayout;
-  size: number | 'small' | 'medium' | 'large' | 'unset',
-  className?: string;
-}) {
-  const iconSize = useMemo(() => {
-    if (size === 'small') {
-      return 'h-5 w-5';
-    }
+  size: number | 'small' | 'medium' | 'large' | 'unset';
+}
 
-    if (size === 'medium') {
-      return 'h-6 w-6';
-    }
+/**
+ * The glyph of a view layout, or nothing for a layout without one. Any other
+ * prop (`aria-*`, `data-*`, …) goes to the `<svg>`.
+ */
+export function ViewIcon({ layout, size, className, ...svgProps }: ViewIconProps) {
+  const Glyph = LAYOUT_GLYPHS[layout];
 
-    if (size === 'large') {
-      return 'h-8 w-8';
-    }
+  if (!Glyph) return null;
+  const sizeClass = typeof size === 'number' ? `h-[${size}px] w-[${size}px]` : SIZE_CLASSES[size];
 
-    if (size === 'unset') {
-      return '';
-    }
-
-    return `h-[${size}px] w-[${size}px]`;
-  }, [size]);
-
-  const iconClassName = useMemo(() => {
-    return className ? `${iconSize} ${className}` : iconSize;
-  }, [iconSize, className]);
-
-  switch (layout) {
-    case ViewLayout.AIChat:
-      return <ChatSvg className={iconClassName} />;
-    case ViewLayout.Grid:
-      return <GridSvg className={iconClassName} />;
-    case ViewLayout.Board:
-      return <BoardSvg className={iconClassName} />;
-    case ViewLayout.Calendar:
-      return <CalendarSvg className={iconClassName} />;
-    case ViewLayout.Document:
-      return <DocumentSvg className={iconClassName} />;
-    case ViewLayout.Chart:
-      return <ChartSvg className={iconClassName} />;
-    case ViewLayout.List:
-      return <ListSvg className={iconClassName} />;
-    case ViewLayout.Gallery:
-      return <GallerySvg className={iconClassName} />;
-    case ViewLayout.Feed:
-      return <FeedSvg className={iconClassName} />;
-    case ViewLayout.Form:
-      return <FormSvg className={iconClassName} />;
-    case ViewLayout.Timeline:
-      return <TimelineSvg className={iconClassName} />;
-    case ViewLayout.Dashboard:
-      return <DashboardSvg className={iconClassName} />;
-    default:
-      return null;
-  }
-
+  return <Glyph {...svgProps} className={[sizeClass, className].filter(Boolean).join(' ')} />;
 }
 
 export default ViewIcon;

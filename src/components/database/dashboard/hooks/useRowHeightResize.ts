@@ -2,7 +2,6 @@ import { KeyboardEvent, PointerEvent, useCallback, useEffect, useLayoutEffect, u
 
 import { DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP } from '../constants';
 import { snapDashboardRowHeight } from '../grid-layout';
-import { clampRowHeight } from '../utils';
 
 import { startPointerDrag } from './pointerDrag';
 
@@ -34,7 +33,7 @@ interface UseRowHeightResizeOptions {
  * Drag the handle under a row to change the height every widget of the row
  * shares. The preview snaps to 20px (`snapDashboardRowHeight`) and stays
  * local until pointer up (Escape cancels); arrow keys change it by
- * `DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP`.
+ * `DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP` and snap the same way.
  *
  * A pointer move updates the CSS variable and the `preview` store, not React
  * state: the row and its cards resize through CSS, so the row never
@@ -136,7 +135,8 @@ export function useRowHeightResize({ height, enabled, onCommit, getRowElement }:
       if (step === 0) return;
       event.preventDefault();
       event.stopPropagation();
-      const next = clampRowHeight(heightRef.current + step);
+      // The same snap as a drag: a stored height off the 20px grid lands on it with the first key.
+      const next = snapDashboardRowHeight(heightRef.current + step);
 
       if (next !== heightRef.current) onCommitRef.current(next);
     },

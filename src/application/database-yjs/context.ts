@@ -4,8 +4,8 @@ import { AxiosInstance } from 'axios';
 import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 
 import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
-import { getOverlayTarget } from '@/application/database-yjs/view-conditions-overlay';
 import { retainDatabaseHistoryRow } from '@/application/database-yjs/history-row-store';
+import { getOverlayTarget } from '@/application/database-yjs/view-conditions-overlay';
 import {
   BindViewSync,
   CreateDatabaseViewPayload,
@@ -107,8 +107,12 @@ export interface DatabaseContextState {
   isDocumentBlock?: boolean;
   embeddedHeight?: number;
   /**
-   * Set when this database renders inside a dashboard widget: the tab bar is
-   * replaced by the widget header and the viewport is the row height.
+   * Set when this database renders inside a dashboard widget. `DatabaseViews`
+   * then renders the widget's own composition (`WidgetDatabaseViews`: the
+   * widget header instead of the tabs, conditions in popovers, the card as
+   * the viewport) and `DatabaseActions` the widget's tools (`WidgetTools`).
+   * The few components that differ inside a widget (the grid, the chart, the
+   * layout settings) read it too.
    */
   isDashboardWidget?: boolean;
   // use different view id to navigate to row

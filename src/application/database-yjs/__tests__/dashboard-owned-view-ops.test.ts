@@ -4,16 +4,21 @@ import * as Y from 'yjs';
 import {
   convertViewToDashboard,
   createOwnedDatabaseView,
-  DASHBOARD_OWNER_RETRY_DELAYS_MS,
   duplicateDashboardOwnedWidgets,
+  duplicateDatabaseViewWithOwnedWidgets,
   duplicateOwnedDatabaseView,
-  markDashboardOwnedView,
   renameDatabaseViewInDoc,
   repairDashboardOwnerMarkers,
 } from '@/application/database-yjs/dashboard-owned-view-ops';
 import { readDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
 import { DASHBOARD_LAYOUT_KEY } from '@/application/database-yjs/dashboard.type';
-import { DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT, DatabaseViewDocDeps } from '@/application/database-yjs/dispatch';
+import {
+  DASHBOARD_OWNER_RETRY_DELAYS_MS,
+  DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT,
+  DatabaseViewDocDeps,
+  deleteDatabaseViewInDoc,
+  markDashboardOwnedView,
+} from '@/application/database-yjs/database-view-doc-ops';
 import { executeDatabaseOperations, getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import { toPlainValue } from '@/application/database-yjs/layout-codec';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
@@ -254,9 +259,10 @@ describe('markDashboardOwnedView', () => {
       icon: { ty: 0, value: '📋' },
       extra: { database_id: HOST_DB, embedded: false, future_key: { a: 1 } },
     } as View);
-    const written = await markDashboardOwnedView(workspace.deps(hostDoc), 'v:board', 'v:dash');
+    const mark = await markDashboardOwnedView(workspace.deps(hostDoc), 'v:board', 'v:dash');
 
-    expect(written).toBe(true);
+    expect(mark.folderWritten).toBe(true);
+    await expect(mark.settled).resolves.toBe(true);
     expect(getView(hostDoc, 'v:board').get(YjsDatabaseKey.dashboard_owner)).toBe('v:dash');
     expect(workspace.loadViewMeta).toHaveBeenCalledWith('v:board', undefined, { authoritative: true });
     expect(workspace.updatePage).toHaveBeenCalledWith('v:board', {
@@ -269,12 +275,17 @@ describe('markDashboardOwnedView', () => {
     expect(manager.canRedo()).toBe(true);
   });
 
-  it('retries the folder write and resolves once a later attempt succeeds', async () => {
+  it('returns after the first folder attempt and retries detached until a later attempt succeeds', async () => {
     const { workspace, hostDoc } = setup();
     const sleep = jest.fn(noSleep);
 
     workspace.updatePage.mockRejectedValueOnce(new Error('502')).mockRejectedValueOnce(new Error('502'));
-    await expect(markDashboardOwnedView(workspace.deps(hostDoc), 'v:board', 'v:dash', { sleep })).resolves.toBe(true);
+    const mark = await markDashboardOwnedView(workspace.deps(hostDoc), 'v:board', 'v:dash', { sleep });
+
+    // The caller is released after one attempt; the mirror already hides the view.
+    expect(mark.folderWritten).toBe(false);
+    expect(getView(hostDoc, 'v:board').get(YjsDatabaseKey.dashboard_owner)).toBe('v:dash');
+    await expect(mark.settled).resolves.toBe(true);
     expect(workspace.updatePage).toHaveBeenCalledTimes(3);
     expect(sleep.mock.calls.map(([ms]) => ms)).toEqual(DASHBOARD_OWNER_RETRY_DELAYS_MS.slice(0, 2));
     expect(workspace.folder.get('v:board')?.extra?.dashboard_owner).toBe('v:dash');
@@ -285,7 +296,10 @@ describe('markDashboardOwnedView', () => {
     const sleep = jest.fn(noSleep);
 
     workspace.updatePage.mockRejectedValue(new Error('offline'));
-    await expect(markDashboardOwnedView(workspace.deps(hostDoc), 'v:board', 'v:dash', { sleep })).resolves.toBe(false);
+    const mark = await markDashboardOwnedView(workspace.deps(hostDoc), 'v:board', 'v:dash', { sleep });
+
+    expect(mark.folderWritten).toBe(false);
+    await expect(mark.settled).resolves.toBe(false);
     expect(workspace.updatePage).toHaveBeenCalledTimes(DASHBOARD_OWNER_RETRY_DELAYS_MS.length + 1);
     expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([250, 1000, 4000]);
     expect(getView(hostDoc, 'v:board').get(YjsDatabaseKey.dashboard_owner)).toBe('v:dash');
@@ -299,8 +313,42 @@ describe('markDashboardOwnedView', () => {
     const { workspace, hostDoc } = setup();
 
     workspace.folder.set('v:board', { ...workspace.meta('v:board'), extra: { dashboard_owner: 'v:dash' } } as View);
-    await expect(markDashboardOwnedView(workspace.deps(hostDoc), 'v:board', 'v:dash')).resolves.toBe(true);
+    const mark = await markDashboardOwnedView(workspace.deps(hostDoc), 'v:board', 'v:dash');
+
+    expect(mark.folderWritten).toBe(true);
+    await expect(mark.settled).resolves.toBe(true);
     expect(workspace.updatePage).not.toHaveBeenCalled();
+  });
+
+  it('stops retrying, without a warning, once the view is gone from the collab', async () => {
+    const { workspace, hostDoc } = setup();
+    const sleep = jest.fn(async () => {
+      // The copy is rolled back while the first retry waits.
+      if (sleep.mock.calls.length === 1) {
+        await deleteDatabaseViewInDoc({ databaseDoc: hostDoc, deletePage: workspace.deletePage }, 'v:board');
+      }
+    });
+
+    workspace.updatePage.mockRejectedValue(new Error('offline'));
+    const mark = await markDashboardOwnedView(workspace.deps(hostDoc), 'v:board', 'v:dash', { sleep });
+
+    await expect(mark.settled).resolves.toBe(false);
+    expect(workspace.updatePage).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(Log.warn).not.toHaveBeenCalledWith(
+      '[Dashboard] failed to write the owner marker to the folder',
+      expect.anything()
+    );
+  });
+
+  it('writes only the mirror when the folder is not reachable from this context', async () => {
+    const { workspace, hostDoc } = setup();
+    const mark = await markDashboardOwnedView({ databaseDoc: hostDoc }, 'v:board', 'v:dash');
+
+    expect(mark.folderWritten).toBe(false);
+    await expect(mark.settled).resolves.toBe(false);
+    expect(getView(hostDoc, 'v:board').get(YjsDatabaseKey.dashboard_owner)).toBe('v:dash');
+    expect(workspace.loadViewMeta).not.toHaveBeenCalled();
   });
 });
 
@@ -676,6 +724,77 @@ describe('duplicateDashboardOwnedWidgets', () => {
     expect(workspace.scheduleDeferredCleanup).toHaveBeenCalledWith(foreignDoc.guid);
   });
 
+  it('issues the folder markers of every copy together, not one copy after another', async () => {
+    const { workspace, hostDoc, foreignDoc } = setup();
+
+    seedOwnedDashboard(workspace, hostDoc, foreignDoc);
+    const loadMeta = workspace.loadViewMeta.getMockImplementation()!;
+    const markerReads: { viewId: string; release: () => void }[] = [];
+
+    // A marker write starts with an authoritative read; hold each one open.
+    workspace.loadViewMeta.mockImplementation(async (viewId: string, _onChange?: unknown, options?: { authoritative?: boolean }) => {
+      if (options?.authoritative) await new Promise<void>((release) => markerReads.push({ viewId, release }));
+      return loadMeta(viewId);
+    });
+
+    const duplicate = duplicateDashboardOwnedWidgets(workspace.deps(hostDoc), {
+      sourceDashboardViewId: 'v:dash',
+      targetDashboardViewId: 'v:dash-copy',
+    });
+
+    // Both copies exist and both marker reads are in flight before either returns.
+    for (let tick = 0; tick < 50 && markerReads.length < 2; tick += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(markerReads).toHaveLength(2);
+    expect(workspace.createDatabaseView).toHaveBeenCalledTimes(2);
+    expect(workspace.updatePage).not.toHaveBeenCalled();
+    // The collab mirror was written with each copy, so both are already hidden from the tab bars.
+    markerReads.forEach(({ viewId }) => {
+      const doc = getDatabase(hostDoc).get(YjsDatabaseKey.views).has(viewId) ? hostDoc : foreignDoc;
+
+      expect(getView(doc, viewId).get(YjsDatabaseKey.dashboard_owner)).toBe('v:dash-copy');
+    });
+
+    markerReads.forEach(({ release }) => release());
+    const viewIdMap = await duplicate;
+
+    expect(markerReads.map(({ viewId }) => viewId).sort()).toEqual(Object.values(viewIdMap).sort());
+    Object.values(viewIdMap).forEach((copyId) => {
+      expect(workspace.folder.get(copyId)?.extra?.dashboard_owner).toBe('v:dash-copy');
+    });
+  });
+
+  it('copies the owned views of widgets hidden by the widget limit too', async () => {
+    const { workspace, hostDoc, foreignDoc } = setup();
+
+    seedOwnedDashboard(workspace, hostDoc, foreignDoc);
+    // 12 shared widgets fill the limit; the owned board and tasks views come after them.
+    const shared = Array.from({ length: 12 }, (_, index) => widget(`w:s${index}`, 'v:grid', HOST_DB, 3));
+    const rows = [
+      { id: 'r:a', height: 360, widgets: shared.slice(0, 4) },
+      { id: 'r:b', height: 360, widgets: shared.slice(4, 8) },
+      { id: 'r:c', height: 360, widgets: shared.slice(8, 12) },
+      { id: 'r:d', height: 360, widgets: [widget('w:13', 'v:board', HOST_DB), widget('w:14', 'v:tasks', FOREIGN_DB)] },
+    ];
+
+    setDashboardRows(hostDoc, 'v:dash-copy', rows);
+    expect(readDashboardLayoutSetting(getDatabase(hostDoc), 'v:dash-copy').rows).toHaveLength(3);
+
+    const viewIdMap = await duplicateDashboardOwnedWidgets(workspace.deps(hostDoc), {
+      sourceDashboardViewId: 'v:dash',
+      targetDashboardViewId: 'v:dash-copy',
+    });
+    const stored = toPlainValue(
+      getView(hostDoc, 'v:dash-copy').get(YjsDatabaseKey.layout_settings).get(DASHBOARD_LAYOUT_KEY)
+    ) as { rows: { id: string; widgets: { view_id: string }[] }[] };
+
+    expect(Object.keys(viewIdMap).sort()).toEqual(['v:board', 'v:tasks']);
+    expect(stored.rows).toHaveLength(4);
+    expect(stored.rows[3].widgets.map((item) => item.view_id)).toEqual([viewIdMap['v:board'], viewIdMap['v:tasks']]);
+  });
+
   it('copies nothing for a dashboard without owned views', async () => {
     const { workspace, hostDoc } = setup();
 
@@ -684,5 +803,151 @@ describe('duplicateDashboardOwnedWidgets', () => {
       duplicateDashboardOwnedWidgets(workspace.deps(hostDoc), { sourceDashboardViewId: 'v:other', targetDashboardViewId: 'v:dash' })
     ).resolves.toEqual({});
     expect(workspace.createDatabaseView).not.toHaveBeenCalled();
+  });
+});
+
+describe('duplicateDatabaseViewWithOwnedWidgets (a tab duplicate)', () => {
+  function seedOwnedBoard(workspace: FakeWorkspace, hostDoc: YDoc) {
+    hostDoc.transact(() => getView(hostDoc, 'v:board').set(YjsDatabaseKey.dashboard_owner, 'v:dash'));
+    workspace.folder.set('v:board', { ...workspace.meta('v:board'), extra: { database_id: HOST_DB, dashboard_owner: 'v:dash' } } as View);
+    setDashboardRows(hostDoc, 'v:dash', [
+      { id: 'r:1', height: 360, widgets: [widget('w:1', 'v:grid', HOST_DB), widget('w:2', 'v:board', HOST_DB)] },
+    ]);
+  }
+
+  it('copies a dashboard tab with its own copies of the views its widgets own', async () => {
+    const { workspace, hostDoc } = setup();
+
+    seedOwnedBoard(workspace, hostDoc);
+    const copyId = await duplicateDatabaseViewWithOwnedWidgets(workspace.deps(hostDoc), 'v:dash', 'Dashboard (Copy)');
+    const rows = readDashboardLayoutSetting(getDatabase(hostDoc), copyId).rows;
+    const boardCopy = rows[0].widgets[1].viewId;
+
+    expect(getView(hostDoc, copyId).get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Dashboard);
+    expect(rows[0].widgets[0].viewId).toBe('v:grid');
+    expect(boardCopy).not.toBe('v:board');
+    expect(getView(hostDoc, boardCopy).get(YjsDatabaseKey.dashboard_owner)).toBe(copyId);
+    expect(workspace.folder.get(boardCopy)?.extra?.dashboard_owner).toBe(copyId);
+    // The source keeps its own view.
+    expect(readDashboardLayoutSetting(getDatabase(hostDoc), 'v:dash').rows[0].widgets[1].viewId).toBe('v:board');
+  });
+
+  it('removes the new tab too when copying an owned view fails', async () => {
+    const { workspace, hostDoc } = setup();
+
+    seedOwnedBoard(workspace, hostDoc);
+    const create = workspace.createDatabaseView.getMockImplementation()!;
+
+    workspace.createDatabaseView.mockImplementationOnce(create).mockRejectedValueOnce(new Error('quota'));
+    await expect(
+      duplicateDatabaseViewWithOwnedWidgets(workspace.deps(hostDoc), 'v:dash', 'Dashboard (Copy)')
+    ).rejects.toThrow('quota');
+    const tabCopy = (await workspace.createDatabaseView.mock.results[0].value).view_id;
+
+    expect(getDatabase(hostDoc).get(YjsDatabaseKey.views).has(tabCopy)).toBe(false);
+    expect(workspace.deletePage).toHaveBeenCalledWith(tabCopy);
+  });
+
+  it('copies a plain view without looking for widgets', async () => {
+    const { workspace, hostDoc } = setup();
+    const copyId = await duplicateDatabaseViewWithOwnedWidgets(workspace.deps(hostDoc), 'v:board');
+
+    expect(getView(hostDoc, copyId).get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Board);
+    expect(workspace.createDatabaseView).toHaveBeenCalledTimes(1);
+    // Placed right before its source, as the tab menu does.
+    expect(workspace.createDatabaseView).toHaveBeenCalledWith(
+      'v:dash',
+      expect.objectContaining({ name: 'Board (Copy)', prev_view_id: 'v:grid' })
+    );
+  });
+});
+
+describe('folder owner markers never hold up the user action', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('converts after one failed folder attempt and retries in the background', async () => {
+    const { workspace, hostDoc } = setup();
+    const applyLayout = jest.fn();
+    const updatePage = workspace.updatePage.getMockImplementation()!;
+
+    workspace.updatePage.mockRejectedValue(new Error('offline'));
+    // No timer runs here: a conversion that waited for the 250 ms retry would never resolve.
+    await expect(convertViewToDashboard(workspace.deps(hostDoc), { viewId: 'v:board', applyLayout })).resolves.toBe(true);
+    const copyId = (await workspace.createDatabaseView.mock.results[0].value).view_id;
+
+    expect(applyLayout).toHaveBeenCalledTimes(1);
+    expect(workspace.updatePage).toHaveBeenCalledTimes(1);
+    // The mirror hides the copy from the tab bar although the folder has no marker yet.
+    expect(getView(hostDoc, copyId).get(YjsDatabaseKey.dashboard_owner)).toBe('v:board');
+    expect(workspace.folder.get(copyId)?.extra?.dashboard_owner).toBeUndefined();
+
+    await jest.advanceTimersByTimeAsync(DASHBOARD_OWNER_RETRY_DELAYS_MS[0]);
+    expect(workspace.updatePage).toHaveBeenCalledTimes(2);
+
+    workspace.updatePage.mockImplementation(updatePage);
+    await jest.advanceTimersByTimeAsync(DASHBOARD_OWNER_RETRY_DELAYS_MS[1]);
+    expect(workspace.updatePage).toHaveBeenCalledTimes(3);
+    expect(workspace.folder.get(copyId)?.extra?.dashboard_owner).toBe('v:board');
+
+    // Written: the last retry never runs.
+    await jest.advanceTimersByTimeAsync(DASHBOARD_OWNER_RETRY_DELAYS_MS[2]);
+    expect(workspace.updatePage).toHaveBeenCalledTimes(3);
+  });
+
+  it('stops the background retries of a conversion that was rolled back', async () => {
+    const { workspace, hostDoc } = setup();
+    const applyLayout = jest.fn(() => {
+      throw new Error('layout failed');
+    });
+
+    workspace.updatePage.mockRejectedValue(new Error('offline'));
+    await expect(convertViewToDashboard(workspace.deps(hostDoc), { viewId: 'v:board', applyLayout })).rejects.toThrow(
+      'layout failed'
+    );
+    const copyId = (await workspace.createDatabaseView.mock.results[0].value).view_id;
+
+    expect(getDatabase(hostDoc).get(YjsDatabaseKey.views).has(copyId)).toBe(false);
+    expect(workspace.updatePage).toHaveBeenCalledTimes(1);
+
+    await jest.advanceTimersByTimeAsync(DASHBOARD_OWNER_RETRY_DELAYS_MS.reduce((sum, ms) => sum + ms, 0));
+    // The copy is gone: no further folder request, and no warning about it.
+    expect(workspace.updatePage).toHaveBeenCalledTimes(1);
+    expect(Log.warn).not.toHaveBeenCalledWith(
+      '[Dashboard] failed to write the owner marker to the folder',
+      expect.anything()
+    );
+  });
+
+  it('duplicates a dashboard after one failed folder attempt per copy', async () => {
+    const { workspace, hostDoc, foreignDoc } = setup();
+
+    hostDoc.transact(() => getView(hostDoc, 'v:board').set(YjsDatabaseKey.dashboard_owner, 'v:dash'));
+    workspace.folder.set('v:tasks', {
+      ...workspace.meta('v:tasks'),
+      extra: { database_id: FOREIGN_DB, dashboard_owner: 'v:dash' },
+    } as View);
+    setDashboardRows(hostDoc, 'v:dash', [
+      { id: 'r:1', height: 360, widgets: [widget('w:1', 'v:board', HOST_DB), widget('w:2', 'v:tasks', FOREIGN_DB)] },
+    ]);
+
+    workspace.updatePage.mockRejectedValue(new Error('offline'));
+    // No timer runs here either: twelve owned widgets used to wait 5.25 s each.
+    const copyId = await duplicateDatabaseViewWithOwnedWidgets(workspace.deps(hostDoc), 'v:dash', 'Dashboard (Copy)');
+    const widgets = readDashboardLayoutSetting(getDatabase(hostDoc), copyId).rows[0].widgets;
+
+    expect(widgets.map((item) => item.viewId)).not.toContain('v:board');
+    expect(getView(hostDoc, widgets[0].viewId).get(YjsDatabaseKey.dashboard_owner)).toBe(copyId);
+    expect(getView(foreignDoc, widgets[1].viewId).get(YjsDatabaseKey.dashboard_owner)).toBe(copyId);
+    // One attempt per owned copy so far.
+    expect(workspace.updatePage).toHaveBeenCalledTimes(2);
+
+    await jest.advanceTimersByTimeAsync(DASHBOARD_OWNER_RETRY_DELAYS_MS[0]);
+    expect(workspace.updatePage).toHaveBeenCalledTimes(4);
   });
 });

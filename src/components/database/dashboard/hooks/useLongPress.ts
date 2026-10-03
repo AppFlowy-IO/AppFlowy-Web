@@ -1,4 +1,4 @@
-import { PointerEvent, useCallback, useEffect, useMemo, useRef } from 'react';
+import { MouseEvent, PointerEvent, useCallback, useEffect, useMemo, useRef } from 'react';
 
 /** How long a touch must rest before it counts as a long press. */
 export const LONG_PRESS_MS = 500;
@@ -6,14 +6,21 @@ export const LONG_PRESS_MS = 500;
 const LONG_PRESS_SLOP = 8;
 
 /**
- * Pointer handlers that call `onLongPress` after a 500ms touch that stays
- * within 8px. Mouse and pen presses are ignored (they click), as are presses
- * that move, end or are cancelled before the delay.
+ * Handlers that call `onLongPress` after a 500ms touch that stays within
+ * 8px. Mouse and pen presses are ignored (they click), as are presses that
+ * move, end or are cancelled before the delay.
+ *
+ * Some browsers (Safari on iOS and iPadOS) still send a `click` when a long
+ * touch is released. That click belongs to the long press, so it is swallowed
+ * once: an element whose click toggles what the long press opened would
+ * otherwise close it again.
  */
 export function useLongPress(onLongPress: () => void) {
   const callbackRef = useRef(onLongPress);
   const timerRef = useRef<number | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
+  // The current press fired `onLongPress`: its click, if any, is not a click.
+  const firedRef = useRef(false);
 
   callbackRef.current = onLongPress;
 
@@ -28,12 +35,15 @@ export function useLongPress(onLongPress: () => void) {
   return useMemo(
     () => ({
       onPointerDown: (event: PointerEvent<HTMLElement>) => {
+        // A new press of any kind: a long press that sent no click is over.
+        firedRef.current = false;
         if (event.pointerType !== 'touch') return;
         cancel();
         startRef.current = { x: event.clientX, y: event.clientY };
         timerRef.current = window.setTimeout(() => {
           timerRef.current = null;
           startRef.current = null;
+          firedRef.current = true;
           callbackRef.current();
         }, LONG_PRESS_MS);
       },
@@ -45,6 +55,12 @@ export function useLongPress(onLongPress: () => void) {
       },
       onPointerUp: cancel,
       onPointerCancel: cancel,
+      onClickCapture: (event: MouseEvent<HTMLElement>) => {
+        if (!firedRef.current) return;
+        firedRef.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+      },
     }),
     [cancel]
   );

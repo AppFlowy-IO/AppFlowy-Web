@@ -7,18 +7,18 @@ import { getRenderRowKey, RenderRow, RenderRowType } from '@/components/database
 
 function GridCell({
   rowIndex,
+  rowData: row,
   columnIndex,
-  data,
   columns,
   onResizeColumnStart,
 }: {
   rowIndex: number;
+  /** The render row at `rowIndex`. */
+  rowData: RenderRow;
   columnIndex: number;
-  data: RenderRow[];
   columns: RenderColumn[];
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
-  const row = data[rowIndex];
   const column = columns[columnIndex];
   const fieldId = column.fieldId as string;
   const rowId = row.rowId as string;

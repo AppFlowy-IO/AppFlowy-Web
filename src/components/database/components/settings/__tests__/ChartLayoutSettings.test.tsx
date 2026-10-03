@@ -6,12 +6,13 @@ import {
   ChartLayoutSettings as ChartLayoutSettingsData,
   ChartType,
 } from '@/application/database-yjs/chart.type';
-import { DateGroupCondition } from '@/application/database-yjs/database.type';
+import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import ChartLayoutSettings from '@/components/database/components/settings/ChartLayoutSettings';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 const mockUpdate = jest.fn();
 let mockReadOnly = false;
+let mockProperties: Array<{ id: string; type: FieldType }> = [];
 const mockSettings: ChartLayoutSettingsData = {
   chartType: ChartType.Number,
   xFieldId: '',
@@ -37,7 +38,7 @@ jest.mock('react-router-dom', () => ({
 
 jest.mock('@/application/database-yjs', () => ({
   useChartLayoutSetting: () => mockSettings,
-  usePropertiesSelector: () => ({ properties: [] }),
+  usePropertiesSelector: () => ({ properties: mockProperties }),
   useReadOnly: () => mockReadOnly,
 }));
 
@@ -233,5 +234,158 @@ describe('ChartLayoutSettings Style rows', () => {
     expect(screen.queryByTestId('chart-style-color')).toBeNull();
     expect(screen.queryByTestId('chart-style-legend')).toBeNull();
     expect(screen.queryByTestId('chart-style-data-labels')).toBeNull();
+  });
+});
+
+describe('ChartLayoutSettings aggregation and Y field', () => {
+  const NUMBER_FIELDS = [
+    { id: 'amount', type: FieldType.Number },
+    { id: 'done', type: FieldType.Checkbox },
+    { id: 'due', type: FieldType.DateTime },
+  ];
+  // Not a Y field: a chart cannot aggregate text.
+  const TEXT_FIELD = { id: 'name', type: FieldType.RichText };
+  const AGGREGATIONS = [
+    ChartAggregationType.Count,
+    ChartAggregationType.CountValues,
+    ChartAggregationType.Sum,
+    ChartAggregationType.Average,
+    ChartAggregationType.Min,
+    ChartAggregationType.Max,
+    ChartAggregationType.Median,
+  ];
+
+  function open() {
+    render(<ChartSettingsMenu />);
+    const trigger = screen.getByRole('menuitem', { name: 'Chart settings' });
+
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+  }
+
+  /** The menu items between the label `from` and the next label or separator. */
+  function sectionItems(from: string) {
+    const label = screen.getByText(from);
+    const items: HTMLElement[] = [];
+
+    for (let node = label.nextElementSibling; node; node = node.nextElementSibling) {
+      if (node.getAttribute('role') !== 'menuitem') break;
+      items.push(node as HTMLElement);
+    }
+
+    return items;
+  }
+
+  beforeEach(() => {
+    mockUpdate.mockReset();
+    mockReadOnly = false;
+    mockProperties = [...NUMBER_FIELDS, TEXT_FIELD];
+    mockSettings.chartType = ChartType.Number;
+    mockSettings.aggregationType = ChartAggregationType.Count;
+    mockSettings.yFieldId = undefined;
+  });
+
+  afterAll(() => {
+    mockProperties = [];
+    mockSettings.chartType = ChartType.Number;
+    mockSettings.aggregationType = ChartAggregationType.Count;
+    mockSettings.yFieldId = undefined;
+  });
+
+  it('lists every aggregation for the Number chart, with Count as "Count all"', async () => {
+    open();
+    await screen.findByText('Calculate');
+
+    const items = sectionItems('Calculate');
+
+    expect(items.map((item) => item.getAttribute('data-testid'))).toEqual(
+      AGGREGATIONS.map((type) => `chart-number-aggregation-${type}`)
+    );
+    expect(items.map((item) => item.textContent)).toEqual([
+      'Count all',
+      'Count values',
+      'Sum',
+      'Average',
+      'Min',
+      'Max',
+      'Median',
+    ]);
+    // A count needs no property.
+    expect(screen.queryByText('Property')).toBeNull();
+  });
+
+  it('lists the same aggregations for an axis chart, with Count as "Count" and no Number test ids', async () => {
+    mockSettings.chartType = ChartType.Bar;
+    open();
+    await screen.findByText('Aggregation');
+
+    const items = sectionItems('Aggregation');
+
+    expect(items.map((item) => item.textContent)).toEqual([
+      'Count',
+      'Count values',
+      'Sum',
+      'Average',
+      'Min',
+      'Max',
+      'Median',
+    ]);
+    expect(items.every((item) => item.getAttribute('data-testid') === null)).toBe(true);
+    expect(screen.queryByText('Y-Axis')).toBeNull();
+  });
+
+  it.each([ChartType.Number, ChartType.Bar])(
+    'picks the first Y field with a value aggregation and clears it with Count (chart type %p)',
+    async (chartType) => {
+      mockSettings.chartType = chartType;
+      open();
+      fireEvent.click(await screen.findByText('Sum'));
+      expect(mockUpdate).toHaveBeenLastCalledWith({ aggregationType: ChartAggregationType.Sum, yFieldId: 'amount' });
+
+      fireEvent.click(screen.getByText(chartType === ChartType.Number ? 'Count all' : 'Count'));
+      expect(mockUpdate).toHaveBeenLastCalledWith({ aggregationType: ChartAggregationType.Count, yFieldId: '' });
+    }
+  );
+
+  it('keeps the chosen Y field when the aggregation changes', async () => {
+    mockSettings.aggregationType = ChartAggregationType.Sum;
+    mockSettings.yFieldId = 'done';
+    open();
+    fireEvent.click(await screen.findByText('Average'));
+    expect(mockUpdate).toHaveBeenLastCalledWith({ aggregationType: ChartAggregationType.Average });
+  });
+
+  it.each([
+    [ChartType.Number, 'Property', 'chart-number-property-'],
+    [ChartType.Bar, 'Y-Axis', null],
+  ])('offers the number, checkbox and date fields as the Y field (chart type %p)', async (chartType, label, prefix) => {
+    mockSettings.chartType = chartType;
+    mockSettings.aggregationType = ChartAggregationType.Sum;
+    mockSettings.yFieldId = 'amount';
+    open();
+    await screen.findByText(label);
+
+    const items = sectionItems(label);
+
+    expect(items).toHaveLength(NUMBER_FIELDS.length);
+    expect(items.map((item) => item.getAttribute('data-testid'))).toEqual(
+      NUMBER_FIELDS.map((field) => (prefix ? `${prefix}${field.id}` : null))
+    );
+    fireEvent.click(items[1]);
+    expect(mockUpdate).toHaveBeenLastCalledWith({ yFieldId: 'done' });
+  });
+
+  it.each([
+    [ChartType.Number, 'Property'],
+    [ChartType.Bar, 'Y-Axis'],
+  ])('says so when the database has no field to aggregate (chart type %p)', async (chartType, label) => {
+    mockProperties = [TEXT_FIELD];
+    mockSettings.chartType = chartType;
+    mockSettings.aggregationType = ChartAggregationType.Sum;
+    open();
+    await screen.findByText(label);
+
+    expect(sectionItems(label)).toHaveLength(0);
+    expect(screen.getByText('No number fields available')).toBeTruthy();
   });
 });

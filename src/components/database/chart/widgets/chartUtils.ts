@@ -13,9 +13,10 @@ export function calculateBarHeight(dataCount: number): number {
 
 /**
  * Compare two `ChartDataItem` arrays for the fields that affect the rendered
- * chart AND the drilldown popup. Used by the chart widget `React.memo`
- * comparators so Yjs hydration micro-batches that produce the same final
- * chart don't rebuild the recharts SVG tree.
+ * chart AND the drilldown popup. `useChartData` and `ChartProvider` use it to
+ * keep the previous array when a recomputation produced the same content (Yjs
+ * hydrates rows in batches), so the widgets below them are plain `memo`
+ * components and never see a new array for an unchanged chart.
  *
  * The `rowIds` arrays must be compared by content (not just length) — when
  * filtering swaps which rows belong to a category but the count stays the
@@ -57,13 +58,5 @@ export function chartItemKey(item: ChartDataItem): string {
   return item.key ?? item.label;
 }
 
-/** Count-like aggregations (Count, Count values, and WP11's empty / not empty counts) chart whole numbers. */
-const COUNT_AGGREGATIONS = new Set([0, 6, 7, 8]);
-
-/**
- * Whether the charted values are counts: the aggregation is count-like, or
- * it needs a Y field the chart does not have (the chart then counts rows).
- */
-export function chartValuesAreCounts(aggregationType: number, hasYField: boolean): boolean {
-  return !hasYField || COUNT_AGGREGATIONS.has(aggregationType);
-}
+/** Entry animation of lines and donut slices (WP10 §2.5: the Recharts bar timing). */
+export const CHART_ENTRY_ANIMATION_MS = 400;

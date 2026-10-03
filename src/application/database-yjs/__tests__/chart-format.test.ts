@@ -1,5 +1,4 @@
 import {
-  cachedChartFormatterCount,
   formatChartValue,
   formatFieldCurrency,
   formatShare,
@@ -72,10 +71,40 @@ describe('formatChartValue', () => {
 
   it('reuses its Intl formatters', () => {
     formatChartValue(1234.5, { ...sum, mode: 'tooltip' });
-    const cached = cachedChartFormatterCount();
+    formatChartValue(1234.5, { ...sum, mode: 'axis' });
+    formatChartValue(1234.5, { ...sum, yField: { type: 'number', numberFormat: NumberFormat.USD }, mode: 'tooltip' });
+    const construct = jest.spyOn(Intl, 'NumberFormat');
 
-    for (let index = 0; index < 50; index += 1) formatChartValue(1234.5 + index, { ...sum, mode: 'tooltip' });
-    expect(cachedChartFormatterCount()).toBe(cached);
+    try {
+      for (let index = 0; index < 50; index += 1) {
+        formatChartValue(1234.5 + index, { ...sum, mode: 'tooltip' });
+        formatChartValue(1234.5 + index, { ...sum, mode: 'axis' });
+        formatChartValue(1234.5 + index, {
+          ...sum,
+          yField: { type: 'number', numberFormat: NumberFormat.USD },
+          mode: 'tooltip',
+        });
+      }
+
+      expect(construct).not.toHaveBeenCalled();
+    } finally {
+      construct.mockRestore();
+    }
+  });
+
+  it('builds one formatter per distinct locale and digits', () => {
+    const construct = jest.spyOn(Intl, 'NumberFormat');
+
+    try {
+      // Digits no other test uses, so these formatters are not cached yet.
+      formatChartValue(1.23456, { ...sum, mode: 'tooltip', decimalPlaces: 5, locale: 'fr-FR' });
+      formatChartValue(2.34567, { ...sum, mode: 'tooltip', decimalPlaces: 5, locale: 'fr-FR' });
+      expect(construct).toHaveBeenCalledTimes(1);
+      formatChartValue(1.23456, { ...sum, mode: 'tooltip', decimalPlaces: 4, locale: 'fr-FR' });
+      expect(construct).toHaveBeenCalledTimes(2);
+    } finally {
+      construct.mockRestore();
+    }
   });
 
   it('formats the days of a date range with the given labels', () => {

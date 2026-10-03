@@ -1,11 +1,11 @@
-import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import GridGroupHeader from '@/components/database/components/grid/grid-group/GridGroupHeader';
-import { getRenderRowKey, RenderRowType } from '@/components/database/components/grid/grid-row';
+import { getRenderRowKey, type RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row';
 import GridLoadMoreRow from '@/components/database/components/grid/grid-row/GridLoadMoreRow';
 import GridNewRow from '@/components/database/components/grid/grid-row/GridNewRow';
 import GridVirtualRow from '@/components/database/components/grid/grid-row/GridVirtualRow';
@@ -20,6 +20,9 @@ import { getEmbeddedGridViewportStyle } from '@/components/database/layout';
 import { cn } from '@/lib/utils';
 
 import { useColumnResize } from '../grid-column/useColumnResize';
+
+/** The header row the sticky header draws; one object, so its memoized row keeps its render. */
+const STICKY_HEADER_ROW: RenderRow = Object.freeze({ key: 'sticky-header', type: RenderRowType.Header });
 
 const GRID_LOADING_DOT_COLORS = ['#00b5ff', '#e3006d', '#f7931e'] as const;
 
@@ -294,9 +297,9 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                   </div>
                 ) : (
                   <GridVirtualRow
-                    row={row}
+                    rowIndex={row.index}
+                    rowData={rowData}
                     columns={columns}
-                    data={data}
                     totalSize={totalSize}
                     columnItems={columnItems}
                     onResizeColumnStart={handleResizeStart}
@@ -309,14 +312,9 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
         {!isDocumentBlock && (
           <DatabaseStickyTopOverlay>
             <GridStickyHeader
-              // eslint-disable-next-line
-              // @ts-ignore
-              row={{
-                index: 0,
-              }}
               ref={stickyHeaderRef}
               columns={columns}
-              data={[{ key: 'sticky-header', type: RenderRowType.Header }]}
+              rowData={STICKY_HEADER_ROW}
               totalSize={totalSize}
               columnItems={columnItems}
               onScrollLeft={handleScrollLeft}
@@ -338,4 +336,9 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   );
 }
 
-export default GridVirtualizer;
+/**
+ * Memoized: its only prop is memoized and the contexts it reads keep their
+ * values on a tick that only moves the loading progress, so such a tick stops
+ * at the grid provider instead of re-rendering every row and cell.
+ */
+export default memo(GridVirtualizer);

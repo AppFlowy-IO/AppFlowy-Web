@@ -93,8 +93,8 @@ describe('BarChartWidget', () => {
   });
 
   it('highlights the hovered category and shows the tooltip until the pointer leaves', () => {
-    const onBarClick = jest.fn();
-    const { container } = renderChart(<BarChartWidget data={OWNERS} onBarClick={onBarClick} />);
+    const onItemClick = jest.fn();
+    const { container } = renderChart(<BarChartWidget data={OWNERS} onItemClick={onItemClick} />);
 
     act(() => hoverCategory(container, 1));
 
@@ -128,8 +128,8 @@ describe('BarChartWidget', () => {
   });
 
   it('opens the drill-down of the clicked category', () => {
-    const onBarClick = jest.fn();
-    const { container } = renderChart(<BarChartWidget data={OWNERS} onBarClick={onBarClick} />);
+    const onItemClick = jest.fn();
+    const { container } = renderChart(<BarChartWidget data={OWNERS} onItemClick={onItemClick} />);
 
     act(() => hoverCategory(container, 2));
     const anchor = container.querySelectorAll('[data-testid="chart-category-anchor"]')[2] as SVGRectElement;
@@ -142,7 +142,7 @@ describe('BarChartWidget', () => {
         200
       );
     });
-    expect(onBarClick).toHaveBeenCalledWith(OWNERS[2]);
+    expect(onItemClick).toHaveBeenCalledWith(OWNERS[2]);
     // The click hides the tooltip before the drill-down opens.
     expect(screen.queryByTestId('chart-tooltip')).toBeNull();
   });

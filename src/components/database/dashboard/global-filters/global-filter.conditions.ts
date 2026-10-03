@@ -1,5 +1,3 @@
-import dayjs from 'dayjs';
-
 import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { CheckboxFilterCondition } from '@/application/database-yjs/fields/checkbox/checkbox.type';
@@ -15,21 +13,39 @@ import { NumberFilterCondition } from '@/application/database-yjs/fields/number/
 import { PersonFilterCondition } from '@/application/database-yjs/fields/person/person.type';
 import { SelectOptionFilterCondition } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { TextFilterCondition } from '@/application/database-yjs/fields/text/text.type';
-import { numberConditionShortName } from '@/components/database/components/filters/overview/useFilterChipLabel';
+import {
+  checklistFilterConditions,
+  dateFilterConditions,
+  FilterConditionOption,
+  multiSelectFilterConditions,
+  numberFilterConditions,
+  personFilterConditions,
+  singleSelectFilterConditions,
+  textFilterConditions,
+  Translate,
+} from '@/components/database/components/filters/filter-conditions';
+import {
+  dateChipDescription,
+  numberConditionShortName,
+  personConditionName,
+  selectOptionConditionName,
+  textChipPrefix,
+} from '@/components/database/components/filters/overview/useFilterChipLabel';
+import {
+  DateFilterValue,
+  serializeDateFilterContent,
+} from '@/components/database/components/filters/value-controls/filter-value';
 
 import { countGlobalFilterSources, GlobalFilterSource, GlobalFilterSourceField } from './global-filter.utils';
 
-export type Translate = (key: string, options?: Record<string, unknown>) => string;
-
-export interface GlobalFilterConditionOption {
-  value: number;
-  text: string;
-}
+export type { Translate };
+export type GlobalFilterConditionOption = FilterConditionOption;
 
 /**
- * Condition lists per property type. They match the single-view filter editors
- * (same values, same order, same labels), so a dashboard filter's
- * `{condition, content}` is interchangeable with a view filter of that type.
+ * Condition lists per property type: the lists of the single-view filter
+ * editors (`filter-conditions.ts`, same values, same order, same labels), so
+ * a dashboard filter's `{condition, content}` is interchangeable with a view
+ * filter of that type.
  */
 export function getGlobalFilterConditions(
   fieldType: FieldType,
@@ -39,41 +55,13 @@ export function getGlobalFilterConditions(
   switch (fieldType) {
     case FieldType.RichText:
     case FieldType.URL:
-      return [
-        { value: TextFilterCondition.TextIs, text: t('grid.textFilter.is') },
-        { value: TextFilterCondition.TextIsNot, text: t('grid.textFilter.isNot') },
-        { value: TextFilterCondition.TextContains, text: t('grid.textFilter.contains') },
-        { value: TextFilterCondition.TextDoesNotContain, text: t('grid.textFilter.doesNotContain') },
-        { value: TextFilterCondition.TextStartsWith, text: t('grid.textFilter.startWith') },
-        { value: TextFilterCondition.TextEndsWith, text: t('grid.textFilter.endsWith') },
-        { value: TextFilterCondition.TextIsEmpty, text: t('grid.textFilter.isEmpty') },
-        { value: TextFilterCondition.TextIsNotEmpty, text: t('grid.textFilter.isNotEmpty') },
-      ];
+      return textFilterConditions(t);
     case FieldType.Number:
-      return [
-        { value: NumberFilterCondition.Equal, text: t('grid.numberFilter.equal') },
-        { value: NumberFilterCondition.NotEqual, text: t('grid.numberFilter.notEqual') },
-        { value: NumberFilterCondition.LessThan, text: t('grid.numberFilter.lessThan') },
-        { value: NumberFilterCondition.LessThanOrEqualTo, text: t('grid.numberFilter.lessThanOrEqualTo') },
-        { value: NumberFilterCondition.GreaterThan, text: t('grid.numberFilter.greaterThan') },
-        { value: NumberFilterCondition.GreaterThanOrEqualTo, text: t('grid.numberFilter.greaterThanOrEqualTo') },
-        { value: NumberFilterCondition.NumberIsEmpty, text: t('grid.numberFilter.isEmpty') },
-        { value: NumberFilterCondition.NumberIsNotEmpty, text: t('grid.numberFilter.isNotEmpty') },
-      ];
+      return numberFilterConditions(t);
     case FieldType.SingleSelect:
-      return [
-        { value: SelectOptionFilterCondition.OptionIs, text: t('grid.selectOptionFilter.is') },
-        { value: SelectOptionFilterCondition.OptionIsNot, text: t('grid.selectOptionFilter.isNot') },
-        { value: SelectOptionFilterCondition.OptionIsEmpty, text: t('grid.selectOptionFilter.isEmpty') },
-        { value: SelectOptionFilterCondition.OptionIsNotEmpty, text: t('grid.selectOptionFilter.isNotEmpty') },
-      ];
+      return singleSelectFilterConditions(t);
     case FieldType.MultiSelect:
-      return [
-        { value: SelectOptionFilterCondition.OptionContains, text: t('grid.selectOptionFilter.contains') },
-        { value: SelectOptionFilterCondition.OptionDoesNotContain, text: t('grid.selectOptionFilter.doesNotContain') },
-        { value: SelectOptionFilterCondition.OptionIsEmpty, text: t('grid.selectOptionFilter.isEmpty') },
-        { value: SelectOptionFilterCondition.OptionIsNotEmpty, text: t('grid.selectOptionFilter.isNotEmpty') },
-      ];
+      return multiSelectFilterConditions(t);
     case FieldType.Checkbox:
       // A dropdown entry needs the verb ("Is checked"); the chip keeps the view wording ("Checked").
       return [
@@ -87,77 +75,22 @@ export function getGlobalFilterConditions(
         },
       ];
     case FieldType.Checklist:
-      return [
-        { value: ChecklistFilterCondition.IsComplete, text: t('grid.checklistFilter.isComplete') },
-        { value: ChecklistFilterCondition.IsIncomplete, text: t('grid.checklistFilter.isIncomplted') },
-      ];
+      return checklistFilterConditions(t);
     case FieldType.DateTime:
     case FieldType.CreatedTime:
-    case FieldType.LastEditedTime: {
-      const start = fieldType !== FieldType.DateTime || isStartDateCondition(condition);
-      const pick = (value: DateFilterCondition) => (start ? value : toEndDateCondition(value));
-      const isRowTime = fieldType !== FieldType.DateTime;
-
-      return [
-        { value: pick(DateFilterCondition.DateStartsOn), text: t('grid.dateFilter.is') },
-        { value: pick(DateFilterCondition.DateStartsBefore), text: t('grid.dateFilter.before') },
-        { value: pick(DateFilterCondition.DateStartsAfter), text: t('grid.dateFilter.after') },
-        { value: pick(DateFilterCondition.DateStartsOnOrBefore), text: t('grid.dateFilter.onOrBefore') },
-        { value: pick(DateFilterCondition.DateStartsOnOrAfter), text: t('grid.dateFilter.onOrAfter') },
-        { value: pick(DateFilterCondition.DateStartsBetween), text: t('grid.dateFilter.between') },
-        ...(isRowTime
-          ? []
-          : [
-              { value: pick(DateFilterCondition.DateStartIsEmpty), text: t('grid.dateFilter.empty') },
-              { value: pick(DateFilterCondition.DateStartIsNotEmpty), text: t('grid.dateFilter.notEmpty') },
-            ]),
-        { value: pick(DateFilterCondition.DateStartsToday), text: t('relativeDates.today') },
-        { value: pick(DateFilterCondition.DateStartsYesterday), text: t('relativeDates.yesterday') },
-        { value: pick(DateFilterCondition.DateStartsTomorrow), text: t('relativeDates.tomorrow') },
-        { value: pick(DateFilterCondition.DateStartsThisWeek), text: t('relativeDates.thisWeek') },
-        { value: pick(DateFilterCondition.DateStartsLastWeek), text: t('relativeDates.lastWeek') },
-        { value: pick(DateFilterCondition.DateStartsNextWeek), text: t('relativeDates.nextWeek') },
-      ];
-    }
-
+    case FieldType.LastEditedTime:
+      // Only a Date property has an end date; a row time is never empty.
+      return dateFilterConditions(t, {
+        start: fieldType !== FieldType.DateTime || isStartDateCondition(condition),
+        emptiness: fieldType === FieldType.DateTime,
+      });
     case FieldType.Person:
     case FieldType.CreatedBy:
     case FieldType.LastEditedBy:
-      return [
-        { value: PersonFilterCondition.PersonContains, text: t('grid.personFilter.contains') },
-        { value: PersonFilterCondition.PersonDoesNotContain, text: t('grid.personFilter.doesNotContain') },
-        { value: PersonFilterCondition.PersonIsEmpty, text: t('grid.personFilter.isEmpty') },
-        { value: PersonFilterCondition.PersonIsNotEmpty, text: t('grid.personFilter.isNotEmpty') },
-      ];
+      return personFilterConditions(t);
     default:
       return [];
   }
-}
-
-// Condition labels per translator, keyed by condition list (a DateTime list
-// depends on the start / end side), so a chip label is a map lookup instead of
-// a rebuilt list.
-const conditionLabelCache = new WeakMap<Translate, Map<string, Map<number, string>>>();
-
-/** The label `getGlobalFilterConditions` gives `condition` (empty when it is not listed). */
-export function getGlobalFilterConditionText(fieldType: FieldType, condition: number, t: Translate): string {
-  let lists = conditionLabelCache.get(t);
-
-  if (!lists) {
-    lists = new Map();
-    conditionLabelCache.set(t, lists);
-  }
-
-  const key =
-    fieldType === FieldType.DateTime ? `${fieldType}:${isStartDateCondition(condition) ? 'start' : 'end'}` : `${fieldType}`;
-  let labels = lists.get(key);
-
-  if (!labels) {
-    labels = new Map(getGlobalFilterConditions(fieldType, condition, t).map((option) => [option.value, option.text]));
-    lists.set(key, labels);
-  }
-
-  return labels.get(condition) ?? '';
 }
 
 export function isDateFieldType(fieldType: FieldType) {
@@ -208,11 +141,7 @@ export function conditionHidesContent(fieldType: FieldType, condition: number): 
   }
 }
 
-export interface GlobalFilterDateValue {
-  timestamp?: number;
-  start?: number;
-  end?: number;
-}
+export type GlobalFilterDateValue = DateFilterValue;
 
 /** Date content in the view-filter encoding: `{"timestamp"}` or `{"start","end"}` (unix seconds). */
 export function parseDateContent(content: string): GlobalFilterDateValue {
@@ -237,8 +166,7 @@ export function parseDateContent(content: string): GlobalFilterDateValue {
  */
 export function serializeDateContent(range: boolean, value: GlobalFilterDateValue): string {
   if (range ? value.start === undefined && value.end === undefined : value.timestamp === undefined) return '';
-  // Desktop deserializes Option<i64>: write null (never '') for a missing range bound.
-  return JSON.stringify(range ? { start: value.start ?? null, end: value.end } : { timestamp: value.timestamp });
+  return serializeDateFilterContent(range, value);
 }
 
 /** Whether date content holds the date(s) its condition needs (a range needs both bounds). */
@@ -274,7 +202,8 @@ export function toggleDateConditionSide(condition: number, start: boolean): numb
   return start ? toStartDateCondition(condition) : toEndDateCondition(condition);
 }
 
-function parseIdList(content: string): string[] {
+/** The ids of person content: a JSON array (what the editors write), else a comma-separated list. */
+export function parsePersonContent(content: string): string[] {
   const trimmed = content.trim();
 
   if (!trimmed) return [];
@@ -294,10 +223,6 @@ function parseIdList(content: string): string[] {
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean);
-}
-
-export function parsePersonContent(content: string): string[] {
-  return parseIdList(content);
 }
 
 export function parseOptionContent(content: string): string[] {
@@ -328,7 +253,7 @@ export function isGlobalFilterActive(filter: DashboardGlobalFilter, sources?: Gl
     case FieldType.Person:
     case FieldType.CreatedBy:
     case FieldType.LastEditedBy:
-      return conditionHidesContent(fieldType, condition) || parseIdList(content).length > 0;
+      return conditionHidesContent(fieldType, condition) || parsePersonContent(content).length > 0;
     case FieldType.DateTime:
     case FieldType.CreatedTime:
     case FieldType.LastEditedTime:
@@ -336,77 +261,6 @@ export function isGlobalFilterActive(filter: DashboardGlobalFilter, sources?: Gl
     default:
       return false;
   }
-}
-
-function textChipPrefix(condition: number, t: Translate): string {
-  switch (condition) {
-    case TextFilterCondition.TextDoesNotContain:
-    case TextFilterCondition.TextIsNot:
-      return t('grid.textFilter.choicechipPrefix.isNot');
-    case TextFilterCondition.TextEndsWith:
-      return t('grid.textFilter.choicechipPrefix.endWith');
-    case TextFilterCondition.TextStartsWith:
-      return t('grid.textFilter.choicechipPrefix.startWith');
-    case TextFilterCondition.TextIsEmpty:
-      return t('grid.textFilter.choicechipPrefix.isEmpty');
-    case TextFilterCondition.TextIsNotEmpty:
-      return t('grid.textFilter.choicechipPrefix.isNotEmpty');
-    case TextFilterCondition.TextContains:
-      return t('grid.textFilter.contains');
-    default:
-      return '';
-  }
-}
-
-function dateChipDescription(filter: DashboardGlobalFilter, dateFormat: string, t: Translate): string {
-  const base = toStartDateCondition(filter.condition);
-  const value = parseDateContent(filter.content);
-  const format = (unix: number) => dayjs(unix * 1000).format(dateFormat);
-
-  switch (base) {
-    case DateFilterCondition.DateStartsToday:
-      return t('relativeDates.today');
-    case DateFilterCondition.DateStartsYesterday:
-      return t('relativeDates.yesterday');
-    case DateFilterCondition.DateStartsTomorrow:
-      return t('relativeDates.tomorrow');
-    case DateFilterCondition.DateStartsThisWeek:
-      return t('relativeDates.thisWeek');
-    case DateFilterCondition.DateStartsLastWeek:
-      return t('relativeDates.lastWeek');
-    case DateFilterCondition.DateStartsNextWeek:
-      return t('relativeDates.nextWeek');
-    case DateFilterCondition.DateStartIsEmpty:
-      return t('grid.dateFilter.choicechipPrefix.isEmpty');
-    case DateFilterCondition.DateStartIsNotEmpty:
-      return t('grid.dateFilter.choicechipPrefix.isNotEmpty');
-    case DateFilterCondition.DateStartsBetween: {
-      const prefix = t('grid.dateFilter.choicechipPrefix.between');
-
-      return value.start !== undefined && value.end !== undefined
-        ? `${prefix} ${format(value.start)} - ${format(value.end)}`
-        : prefix;
-    }
-
-    case DateFilterCondition.DateStartsOn:
-      return value.timestamp !== undefined ? format(value.timestamp) : '';
-    default: {
-      const prefix =
-        base === DateFilterCondition.DateStartsBefore
-          ? t('grid.dateFilter.choicechipPrefix.before')
-          : base === DateFilterCondition.DateStartsAfter
-          ? t('grid.dateFilter.choicechipPrefix.after')
-          : base === DateFilterCondition.DateStartsOnOrBefore
-          ? t('grid.dateFilter.choicechipPrefix.onOrBefore')
-          : t('grid.dateFilter.choicechipPrefix.onOrAfter');
-
-      return value.timestamp !== undefined ? `${prefix} ${format(value.timestamp)}` : prefix;
-    }
-  }
-}
-
-function conditionText(filter: DashboardGlobalFilter, t: Translate) {
-  return getGlobalFilterConditionText(filter.fieldType, filter.condition, t);
 }
 
 /**
@@ -449,10 +303,12 @@ export function getGlobalFilterDescription(
         ? t('grid.checkboxFilter.isChecked')
         : t('grid.checkboxFilter.isUnchecked');
     case FieldType.Checklist:
-      return conditionText(filter, t);
+      return condition === ChecklistFilterCondition.IsComplete
+        ? t('grid.checklistFilter.isComplete')
+        : t('grid.checklistFilter.isIncomplted');
     case FieldType.SingleSelect:
     case FieldType.MultiSelect: {
-      const name = conditionText(filter, t);
+      const name = selectOptionConditionName(condition, t);
       const selected = new Set(parseOptionContent(content));
 
       if (conditionHidesContent(fieldType, condition) || selected.size === 0) return name;
@@ -467,11 +323,11 @@ export function getGlobalFilterDescription(
     case FieldType.DateTime:
     case FieldType.CreatedTime:
     case FieldType.LastEditedTime:
-      return dateChipDescription(filter, dateFormat, t);
+      return dateChipDescription(condition, parseDateContent(content), dateFormat, t);
     case FieldType.Person:
     case FieldType.CreatedBy:
     case FieldType.LastEditedBy: {
-      const name = conditionText(filter, t);
+      const name = personConditionName(condition, t);
       const userIds = parsePersonContent(content);
 
       if (conditionHidesContent(fieldType, condition) || userIds.length === 0) return name;
@@ -496,46 +352,4 @@ export function getGlobalFilterChipText(
   const name = filter.name.trim() || fallbackName;
 
   return active && description ? `${name}: ${description}` : name;
-}
-
-/** Localized property-type name (same strings as the property type picker). */
-export function getFieldTypeName(type: FieldType, t: Translate): string {
-  switch (type) {
-    case FieldType.RichText:
-      return t('grid.field.textFieldName');
-    case FieldType.Number:
-      return t('grid.field.numberFieldName');
-    case FieldType.DateTime:
-      return t('grid.field.dateFieldName');
-    case FieldType.SingleSelect:
-      return t('grid.field.singleSelectFieldName');
-    case FieldType.MultiSelect:
-      return t('grid.field.multiSelectFieldName');
-    case FieldType.Checkbox:
-      return t('grid.field.checkboxFieldName');
-    case FieldType.URL:
-      return t('grid.field.urlFieldName');
-    case FieldType.Checklist:
-      return t('grid.field.checklistFieldName');
-    case FieldType.LastEditedTime:
-      return t('grid.field.updatedAtFieldName');
-    case FieldType.CreatedTime:
-      return t('grid.field.createdAtFieldName');
-    case FieldType.CreatedBy:
-      return t('grid.field.createdByFieldName');
-    case FieldType.LastEditedBy:
-      return t('grid.field.lastEditedByFieldName');
-    case FieldType.Relation:
-      return t('grid.field.relationFieldName');
-    case FieldType.Person:
-      return t('grid.field.personFieldName');
-    case FieldType.Time:
-      return t('grid.field.timeFieldName');
-    case FieldType.Media:
-      return t('grid.field.mediaFieldName');
-    case FieldType.Rollup:
-      return t('grid.field.rollupFieldName', { defaultValue: 'Rollup' });
-    default:
-      return '';
-  }
 }

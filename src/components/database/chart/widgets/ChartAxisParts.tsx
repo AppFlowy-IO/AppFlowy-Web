@@ -1,8 +1,10 @@
+import { memo } from 'react';
+
+import { CHART_DATA_LABEL_OFFSET } from '@/application/database-yjs/chart-scale';
 import { DASHBOARD_CHART_GEOMETRY } from '@/application/database-yjs/dashboard-geometry';
-import { CategoryLabelFit, TextMeasurer, truncateToWidth } from '@/application/database-yjs/chart-scale';
 import { cn } from '@/lib/utils';
 
-const { axis, hoverBandRadius } = DASHBOARD_CHART_GEOMETRY;
+const { hoverBandRadius } = DASHBOARD_CHART_GEOMETRY;
 
 /** Ticks, data labels and outside labels share the 12/16/400 chart text style; the color comes from `currentColor`. */
 const TEXT_CLASS = 'fill-current text-xs font-normal';
@@ -15,30 +17,36 @@ interface RechartsTickProps {
   payload?: { value?: unknown; index?: number };
 }
 
+/** A category label as the layout fitted it. */
+export interface CategoryTickLabel {
+  /** The full label, kept in `<title>` and `data-label`. */
+  label: string;
+  /** What is drawn: the label, or its truncated form ending in "…". */
+  text: string;
+}
+
 export interface CategoryTickProps extends RechartsTickProps {
-  /** Category key → full label. */
-  labels: ReadonlyMap<string, string>;
-  fit: CategoryLabelFit;
-  measure: TextMeasurer;
+  /** One entry per category, from the chart layout; `null` for a label that was thinned out. */
+  ticks: ReadonlyArray<CategoryTickLabel | null>;
+  /** Bottom axis only: the labels are drawn at −45°. */
+  rotated?: boolean;
   /** `bottom` for vertical bars and lines, `left` for horizontal bars (right-aligned in the label column). */
   orientation: 'bottom' | 'left';
-  /** Horizontal bars: the label column width labels are truncated to. */
-  maxWidth?: number;
 }
 
 /**
  * A category label (WP10 §2.1): horizontal, or −45° and truncated to 80px
- * with "…", or nothing when thinned. `<title>` keeps the full label.
+ * with "…", or nothing when thinned. `<title>` keeps the full label. Which
+ * labels show and how they are truncated is decided once, in the layout; the
+ * tick only draws.
  */
-export function CategoryTick({ x = 0, y = 0, payload, className, labels, fit, measure, orientation, maxWidth }: CategoryTickProps) {
-  const index = payload?.index ?? 0;
-  const key = String(payload?.value ?? '');
-  const label = labels.get(key) ?? key;
+export function CategoryTick({ x = 0, y = 0, payload, className, ticks, rotated = false, orientation }: CategoryTickProps) {
+  const tick = ticks[payload?.index ?? -1];
 
-  if (!fit.shown.includes(index)) return null;
+  if (!tick) return null;
   const common = {
     className: cn(className, TEXT_CLASS, 'text-chart-tick'),
-    'data-label': label,
+    'data-label': tick.label,
     'data-parity-id': 'dash-chart-tick-label',
     'data-testid': 'chart-category-label',
   };
@@ -46,13 +54,13 @@ export function CategoryTick({ x = 0, y = 0, payload, className, labels, fit, me
   if (orientation === 'left') {
     return (
       <text {...common} data-rotated='false' dominantBaseline='central' textAnchor='end' x={x} y={y}>
-        <title>{label}</title>
-        {truncateToWidth(label, maxWidth ?? Number.POSITIVE_INFINITY, measure)}
+        <title>{tick.label}</title>
+        {tick.text}
       </text>
     );
   }
 
-  if (fit.mode === 'rotated') {
+  if (rotated) {
     return (
       <text
         {...common}
@@ -63,16 +71,16 @@ export function CategoryTick({ x = 0, y = 0, payload, className, labels, fit, me
         x={0}
         y={0}
       >
-        <title>{label}</title>
-        {truncateToWidth(label, axis.rotatedMaxLabel, measure)}
+        <title>{tick.label}</title>
+        {tick.text}
       </text>
     );
   }
 
   return (
     <text {...common} data-rotated='false' dominantBaseline='hanging' textAnchor='middle' x={x} y={y}>
-      <title>{label}</title>
-      {label}
+      <title>{tick.label}</title>
+      {tick.text}
     </text>
   );
 }
@@ -137,7 +145,7 @@ export function DataLabel({ target, layout }: { target: DataLabelTarget; layout:
         {...common}
         dominantBaseline='central'
         textAnchor={target.value >= 0 ? 'start' : 'end'}
-        x={target.value >= 0 ? end + 4 : end - 4}
+        x={target.value >= 0 ? end + CHART_DATA_LABEL_OFFSET : end - CHART_DATA_LABEL_OFFSET}
         y={target.y + target.height / 2}
       >
         {target.text}
@@ -153,7 +161,7 @@ export function DataLabel({ target, layout }: { target: DataLabelTarget; layout:
       dominantBaseline={target.value >= 0 ? 'auto' : 'hanging'}
       textAnchor='middle'
       x={target.x + target.width / 2}
-      y={target.value >= 0 ? end - 4 : end + 4}
+      y={target.value >= 0 ? end - CHART_DATA_LABEL_OFFSET : end + CHART_DATA_LABEL_OFFSET}
     >
       {target.text}
     </text>
@@ -168,12 +176,7 @@ export interface CategoryAnchorRect {
   height: number;
 }
 
-/**
- * Transparent bands over each category slot (pointer events off), so tests
- * can hover a category even when its label is thinned. Rendered through a
- * Recharts `<Customized>`, which passes chart props this component ignores.
- */
-export function CategoryAnchors({ rects }: { rects: CategoryAnchorRect[] }) {
+function CategoryAnchorsImpl({ rects }: { rects: readonly CategoryAnchorRect[] }) {
   return (
     <g className='chart-category-anchors' pointerEvents='none'>
       {rects.map((rect, index) => (
@@ -191,6 +194,16 @@ export function CategoryAnchors({ rects }: { rects: CategoryAnchorRect[] }) {
     </g>
   );
 }
+
+/**
+ * Transparent bands over each category slot (pointer events off). The BDD
+ * steps locate a category through them, also when its label is thinned out.
+ *
+ * Rendered through a Recharts `<Customized>`, which passes the whole chart
+ * state as props on every pointer move. Only `rects` (the memoized layout's
+ * array) is compared, so the bands are not rebuilt per move.
+ */
+export const CategoryAnchors = memo(CategoryAnchorsImpl, (previous, next) => previous.rects === next.rects);
 
 /**
  * The hover band of a line chart: the full category slot over the plot

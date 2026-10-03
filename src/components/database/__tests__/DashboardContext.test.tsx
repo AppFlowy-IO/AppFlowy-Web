@@ -22,6 +22,7 @@ import {
   useDashboardSourceRegistry,
   useDashboardSources,
 } from '@/components/database/dashboard/DashboardContext';
+import { DashboardModeStore } from '@/components/database/dashboard/hooks/useDashboardModeStore';
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -71,7 +72,7 @@ function createDatabaseDoc() {
   return { doc, database, view };
 }
 
-type Options = { readOnly?: boolean; activeViewId?: string };
+type Options = { readOnly?: boolean; activeViewId?: string; modeStore?: DashboardModeStore };
 
 function renderDashboard(doc: YDoc, initial: Options = {}) {
   const current: Options = { readOnly: false, activeViewId: DASHBOARD_VIEW_ID, ...initial };
@@ -87,7 +88,7 @@ function renderDashboard(doc: YDoc, initial: Options = {}) {
 
     return (
       <DatabaseContext.Provider value={value}>
-        <DashboardProvider>{children}</DashboardProvider>
+        <DashboardProvider modeStore={current.modeStore}>{children}</DashboardProvider>
       </DatabaseContext.Provider>
     );
   };
@@ -122,7 +123,9 @@ function countUpdates(doc: YDoc) {
 describe('DashboardProvider', () => {
   it('exposes the persisted setting, host database and edit capability', () => {
     const { doc } = createDatabaseDoc();
-    const { result } = renderDashboard(doc);
+    // The provider keeps the Edit preference to itself and records it here.
+    const modeStore: DashboardModeStore = new Map();
+    const { result } = renderDashboard(doc, { modeStore });
 
     expect(result.current.dashboardViewId).toBe(DASHBOARD_VIEW_ID);
     expect(result.current.hostDatabaseId).toBe(DATABASE_ID);
@@ -136,7 +139,7 @@ describe('DashboardProvider', () => {
     expect(result.current.isEditing).toBe(false);
     expect(result.current.mobileContext).toBe(false);
     expect(result.current.canEnterEdit).toBe(true);
-    expect(result.current.editPreference).toBe('off');
+    expect(modeStore.get(DASHBOARD_VIEW_ID)).toEqual({ preference: 'off', rowsEmpty: false });
     expect(result.current.sourceDocs).toEqual({ [DATABASE_ID]: doc });
     expect(result.current.sourceNames).toEqual({});
   });

@@ -154,6 +154,94 @@ function NumberChartTitleInput({
   );
 }
 
+/**
+ * The aggregation list, shared by the Number chart's "Calculate" section and
+ * the axis charts' "Aggregation" section.
+ */
+function AggregationItems({
+  current,
+  onSelect,
+  countLabel,
+  testIdPrefix,
+}: {
+  current: ChartAggregationType;
+  onSelect: (type: ChartAggregationType) => void;
+  /** What Count is called here; the Number chart says "Count all". */
+  countLabel?: string;
+  /** Items get `${testIdPrefix}-${type}` as their test id. */
+  testIdPrefix?: string;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <>
+      {AGGREGATION_TYPES.map(({ type, labelKey, fallback }) => (
+        <DropdownMenuItem
+          key={type}
+          className={'w-full'}
+          data-testid={testIdPrefix ? `${testIdPrefix}-${type}` : undefined}
+          onSelect={(e) => {
+            e.preventDefault();
+            onSelect(type);
+          }}
+        >
+          <span>{type === ChartAggregationType.Count && countLabel ? countLabel : t(labelKey, fallback)}</span>
+          {current === type && <DropdownMenuItemTick />}
+        </DropdownMenuItem>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The Y field section of both menus (the Number chart's "Property", the axis
+ * charts' "Y-Axis"): its separator and label, then the candidate fields, or a
+ * note when the database has none.
+ */
+function YFieldItems({
+  label,
+  candidates,
+  currentFieldId,
+  onSelect,
+  testIdPrefix,
+}: {
+  label: string;
+  candidates: ReadonlyArray<{ id: string }>;
+  currentFieldId: string;
+  onSelect: (fieldId: string) => void;
+  /** Items get `${testIdPrefix}-${fieldId}` as their test id. */
+  testIdPrefix?: string;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel>{label}</DropdownMenuLabel>
+      {candidates.length === 0 ? (
+        <div className='px-2 py-2 text-xs text-text-secondary'>
+          {t('chart.noNumberFields', 'No number fields available')}
+        </div>
+      ) : (
+        candidates.map((property) => (
+          <DropdownMenuItem
+            key={property.id}
+            className={'w-full'}
+            data-testid={testIdPrefix ? `${testIdPrefix}-${property.id}` : undefined}
+            onSelect={(e) => {
+              e.preventDefault();
+              onSelect(property.id);
+            }}
+          >
+            <FieldDisplay fieldId={property.id} />
+            {currentFieldId === property.id && <DropdownMenuItemTick />}
+          </DropdownMenuItem>
+        ))
+      )}
+    </>
+  );
+}
+
 const DATE_CONDITIONS = [
   { value: DateGroupCondition.Day, labelKey: 'chart.dateGrouping.day', fallback: 'Day' },
   { value: DateGroupCondition.Week, labelKey: 'chart.dateGrouping.week', fallback: 'Week' },
@@ -260,6 +348,13 @@ function ChartLayoutSettings() {
     [currentYFieldId, yFieldCandidates, updateChartSetting]
   );
 
+  const handleYFieldSelect = useCallback(
+    (yFieldId: string) => {
+      updateChartSetting({ yFieldId });
+    },
+    [updateChartSetting]
+  );
+
   const handleTitleCommit = useCallback(
     (titleText: string) => {
       updateChartSetting({ titleText });
@@ -302,50 +397,21 @@ function ChartLayoutSettings() {
             <>
               {/* Number chart: one value over all rows — no x-axis / grouping */}
               <DropdownMenuLabel>{t('chart.number.calculate', { defaultValue: 'Calculate' })}</DropdownMenuLabel>
-              {AGGREGATION_TYPES.map(({ type, labelKey, fallback }) => (
-                <DropdownMenuItem
-                  key={type}
-                  className={'w-full'}
-                  data-testid={`chart-number-aggregation-${type}`}
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    handleAggregationSelect(type);
-                  }}
-                >
-                  <span>
-                    {type === ChartAggregationType.Count
-                      ? t('chart.number.countAll', { defaultValue: 'Count all' })
-                      : t(labelKey, fallback)}
-                  </span>
-                  {currentAggregation === type && <DropdownMenuItemTick />}
-                </DropdownMenuItem>
-              ))}
+              <AggregationItems
+                countLabel={t('chart.number.countAll', { defaultValue: 'Count all' })}
+                current={currentAggregation}
+                onSelect={handleAggregationSelect}
+                testIdPrefix='chart-number-aggregation'
+              />
 
               {aggregationNeedsY && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel>{t('chart.number.property', { defaultValue: 'Property' })}</DropdownMenuLabel>
-                  {yFieldCandidates.length === 0 ? (
-                    <div className='px-2 py-2 text-xs text-text-secondary'>
-                      {t('chart.noNumberFields', 'No number fields available')}
-                    </div>
-                  ) : (
-                    yFieldCandidates.map((property) => (
-                      <DropdownMenuItem
-                        key={property.id}
-                        className={'w-full'}
-                        data-testid={`chart-number-property-${property.id}`}
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          updateChartSetting({ yFieldId: property.id });
-                        }}
-                      >
-                        <FieldDisplay fieldId={property.id} />
-                        {currentYFieldId === property.id && <DropdownMenuItemTick />}
-                      </DropdownMenuItem>
-                    ))
-                  )}
-                </>
+                <YFieldItems
+                  candidates={yFieldCandidates}
+                  currentFieldId={currentYFieldId}
+                  label={t('chart.number.property', { defaultValue: 'Property' })}
+                  onSelect={handleYFieldSelect}
+                  testIdPrefix='chart-number-property'
+                />
               )}
 
               <DropdownMenuSeparator />
@@ -425,45 +491,16 @@ function ChartLayoutSettings() {
 
               {/* Aggregation (matches desktop's second section) */}
               <DropdownMenuLabel>{t('chart.aggregation', 'Aggregation')}</DropdownMenuLabel>
-              {AGGREGATION_TYPES.map(({ type, labelKey, fallback }) => (
-                <DropdownMenuItem
-                  key={type}
-                  className={'w-full'}
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    handleAggregationSelect(type);
-                  }}
-                >
-                  <span>{t(labelKey, fallback)}</span>
-                  {currentAggregation === type && <DropdownMenuItemTick />}
-                </DropdownMenuItem>
-              ))}
+              <AggregationItems current={currentAggregation} onSelect={handleAggregationSelect} />
 
               {/* Y-Axis (only when aggregation needs a numeric field) */}
               {aggregationNeedsY && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel>{t('chart.yAxis', 'Y-Axis')}</DropdownMenuLabel>
-                  {yFieldCandidates.length === 0 ? (
-                    <div className='px-2 py-2 text-xs text-text-secondary'>
-                      {t('chart.noNumberFields', 'No number fields available')}
-                    </div>
-                  ) : (
-                    yFieldCandidates.map((property) => (
-                      <DropdownMenuItem
-                        key={property.id}
-                        className={'w-full'}
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          updateChartSetting({ yFieldId: property.id });
-                        }}
-                      >
-                        <FieldDisplay fieldId={property.id} />
-                        {currentYFieldId === property.id && <DropdownMenuItemTick />}
-                      </DropdownMenuItem>
-                    ))
-                  )}
-                </>
+                <YFieldItems
+                  candidates={yFieldCandidates}
+                  currentFieldId={currentYFieldId}
+                  label={t('chart.yAxis', 'Y-Axis')}
+                  onSelect={handleYFieldSelect}
+                />
               )}
 
               <DropdownMenuSeparator />

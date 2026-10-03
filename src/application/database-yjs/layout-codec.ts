@@ -55,7 +55,11 @@ export function readStringEnum<T extends string>(value: unknown, allowed: readon
   return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
 }
 
-/** The strings of a stored list (plain or Y.Array); other entries are dropped. */
+/**
+ * The strings of a stored list (plain or Y.Array); other entries are dropped.
+ *
+ * WP11: read by the chart data configuration keys (`x_manual_order`, `hidden_groups`).
+ */
 export function readStringList(value: unknown): string[] {
   const plain = toPlainValue(value);
 

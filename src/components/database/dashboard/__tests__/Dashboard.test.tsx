@@ -55,18 +55,24 @@ jest.mock('../DashboardWidget', () => ({
     lineSize: number;
     height: number;
     showIconsInHeading: boolean;
-  }) => (
-    <div
-      data-database-id={widget.databaseId}
-      data-height={height}
-      data-icons={String(showIconsInHeading)}
-      data-line-size={lineSize}
-      data-span={span}
-      data-testid='dashboard-widget'
-      data-view-id={widget.viewId}
-      data-widget-id={widget.id}
-    />
-  ),
+  }) => {
+    const { useDashboardSelectedWidgetId } =
+      jest.requireActual<typeof import('../DashboardUiContext')>('../DashboardUiContext');
+
+    return (
+      <div
+        data-database-id={widget.databaseId}
+        data-height={height}
+        data-icons={String(showIconsInHeading)}
+        data-line-size={lineSize}
+        data-selected={String(useDashboardSelectedWidgetId() === widget.id)}
+        data-span={span}
+        data-testid='dashboard-widget'
+        data-view-id={widget.viewId}
+        data-widget-id={widget.id}
+      />
+    );
+  },
 }));
 
 jest.mock('../WidgetPicker', () => ({
@@ -678,6 +684,80 @@ describe('Dashboard', () => {
       expect(screen.queryByTestId('dashboard-edit-button')).toBeNull();
       expect(dashboard().getAttribute('data-editing')).toBe('false');
       expect(screen.queryByTestId('dashboard-width-handle')).toBeNull();
+    });
+  });
+
+  describe('the selected widget', () => {
+    const added = () =>
+      screen.getAllByTestId('dashboard-widget').find((element) => element.dataset.viewId === 'tasks-view') as HTMLElement;
+    const isSelected = () => added().getAttribute('data-selected');
+
+    /** A new widget starts selected. */
+    function addWidget() {
+      renderDashboard(makeRows(['a']));
+      fireEvent.click(screen.getByTestId('dashboard-edit-button'));
+      fireEvent.click(visibleAddWidgetButton());
+      fireEvent.click(screen.getByTestId('pick-tasks'));
+      expect(isSelected()).toBe('true');
+    }
+
+    /** What Radix portals for a menu or a popover, or (with `role='tooltip'` inside) for a tooltip. */
+    function openPopper(role?: 'tooltip') {
+      const wrapper = document.createElement('div');
+
+      wrapper.setAttribute('data-radix-popper-content-wrapper', '');
+      wrapper.innerHTML = role ? `<div><span role="${role}">Add widget</span></div>` : '<div role="menu"></div>';
+      document.body.appendChild(wrapper);
+      return wrapper;
+    }
+
+    afterEach(() => {
+      document.querySelectorAll('[data-radix-popper-content-wrapper]').forEach((wrapper) => wrapper.remove());
+    });
+
+    it('is kept by a press on it and cleared by a press outside it', () => {
+      addWidget();
+
+      fireEvent.pointerDown(added());
+      expect(isSelected()).toBe('true');
+      fireEvent.pointerDown(screen.getByTestId('global-filter-bar-stub'));
+      expect(isSelected()).toBe('false');
+    });
+
+    it('is cleared by Escape', () => {
+      addWidget();
+
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(isSelected()).toBe('false');
+    });
+
+    it('is kept while a menu or a popover is open: the press or the Escape belongs to that layer', () => {
+      addWidget();
+      const menu = openPopper();
+
+      fireEvent.pointerDown(screen.getByTestId('global-filter-bar-stub'));
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(isSelected()).toBe('true');
+
+      menu.remove();
+      fireEvent.pointerDown(screen.getByTestId('global-filter-bar-stub'));
+      expect(isSelected()).toBe('false');
+    });
+
+    it('is not shielded by an open tooltip', () => {
+      addWidget();
+      // The tooltip of a control that just took the focus back (the picker closed).
+      openPopper('tooltip');
+
+      fireEvent.pointerDown(screen.getByTestId('global-filter-bar-stub'));
+      expect(isSelected()).toBe('false');
+    });
+
+    it('ends with Edit mode', () => {
+      addWidget();
+
+      fireEvent.click(screen.getByTestId('dashboard-done-button'));
+      expect(isSelected()).toBe('false');
     });
   });
 });

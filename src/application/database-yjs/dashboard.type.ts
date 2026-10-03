@@ -10,23 +10,16 @@ export {
   DASHBOARD_MIN_ROW_HEIGHT,
 } from './dashboard-geometry';
 // The global-filter model and its per-widget resolution live in `dashboard-global-filters.ts`.
-export { resolveExtraFiltersForDatabase, toExtraFilter } from './dashboard-global-filters';
+export { resolveExtraFiltersForDatabase } from './dashboard-global-filters';
 export type { DashboardExtraFilter, DashboardGlobalFilter } from './dashboard-global-filters';
 
 /** Layout-settings key for `DatabaseViewLayout.Dashboard` (`DatabaseLayout::Dashboard = 9`). */
 export const DASHBOARD_LAYOUT_KEY = '9';
 
-/**
- * Storage keys inside `layout_settings['9']`. Values are plain JSON (arrays /
- * objects) so Yrs reads them as nested `Any` values, matching how the timeline
- * stores its dependency links.
- */
-export const DashboardLayoutKeys = {
-  rows: 'rows',
-  globalFilters: 'global_filters',
-  showWidgetTitles: 'show_widget_titles',
-  showIconsInHeading: 'show_icons_in_heading',
-} as const;
+// The storage keys inside `layout_settings['9']` are the `dashboard_*` / `show_*`
+// members of `YjsDatabaseKey`. `rows` and `global_filters` hold plain JSON (arrays
+// / objects) so Yrs reads them as nested `Any` values, matching how the timeline
+// stores its dependency links.
 
 /** One widget: a reference to a database view, plus its share of the row. */
 export interface DashboardWidget {

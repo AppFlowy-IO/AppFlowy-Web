@@ -8,7 +8,12 @@
  * to compute the text a chart must show.
  */
 
+import { CHART_MAX_DECIMAL_PLACES, ChartAggregationType } from './chart-enums';
+
 export type ChartValueMode = 'axis' | 'label' | 'tooltip' | 'center' | 'card';
+
+/** `format(value, mode)` for one chart: R-FORMAT with that chart's aggregation, Y field, decimals and locale. */
+export type ChartValueFormatter = (value: number, mode: ChartValueMode) => string;
 
 /** The Y field as the formatter needs it; ids are the shared `NumberFormat` / `DateFormat` ints. */
 export interface ChartFormatYField {
@@ -38,8 +43,17 @@ export interface ChartFormatContext {
 const NUMBER_FORMAT_NUM = 0;
 const NUMBER_FORMAT_PERCENT = 36;
 
+// The branches for 7–15 are WP11's: the shared vectors drive them on both
+// clients already, but no web chart reaches them, because
+// `resolveEffectiveAggregation` maps a stored value this client does not
+// compute to Count.
 /** Count, Count values, and WP11's Count empty / Count not empty. */
-const COUNT_AGGREGATIONS = new Set([0, 6, 7, 8]);
+const COUNT_AGGREGATIONS: ReadonlySet<number> = new Set([
+  ChartAggregationType.Count,
+  ChartAggregationType.CountValues,
+  7,
+  8,
+]);
 /** WP11's percent aggregations; the value is in percentage points (0–100). */
 const PERCENT_AGGREGATIONS = new Set([9, 10, 11, 12]);
 /** WP11's earliest and latest date; the value is days since the Unix epoch. */
@@ -48,6 +62,11 @@ const DATE_AGGREGATIONS = new Set([13, 14]);
 const DATE_RANGE_AGGREGATION = 15;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Whether `aggregation` charts whole numbers (a count of rows or of values). */
+export function isCountAggregation(aggregation: number): boolean {
+  return COUNT_AGGREGATIONS.has(aggregation);
+}
 
 /**
  * Currency affixes for the compact path, by `NumberFormat` id (the cells'
@@ -139,37 +158,80 @@ function replaceNoBreakSpaces(text: string) {
   return text.replaceAll('\u00a0', ' ');
 }
 
-// Constructing an Intl formatter is the expensive part, so each (locale, options) pair is built once.
+// Constructing an Intl formatter is the expensive part, so each one is built
+// once. The keys are joined primitives: a formatter is looked up for every
+// tick and label, and serializing an options object each time costs more than
+// the lookup it guards.
 const numberFormatters = new Map<string, Intl.NumberFormat>();
 const dateFormatters = new Map<string, Intl.DateTimeFormat>();
 
-function numberFormatter(locale: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
-  const key = `${locale}|${JSON.stringify(options)}`;
+function cachedNumberFormatter(key: string, locale: string, options: () => Intl.NumberFormatOptions) {
   let formatter = numberFormatters.get(key);
 
   if (!formatter) {
-    formatter = new Intl.NumberFormat(locale, options);
+    formatter = new Intl.NumberFormat(locale, options());
     numberFormatters.set(key, formatter);
   }
 
   return formatter;
 }
 
-function dateFormatter(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-  const key = `${locale}|${JSON.stringify(options)}`;
+/** Grouped decimal with `minDigits`–`maxDigits` fraction digits. */
+function plainFormatter(locale: string, minDigits: number, maxDigits: number) {
+  return cachedNumberFormatter(`plain|${locale}|${minDigits}|${maxDigits}`, locale, () => ({
+    useGrouping: true,
+    minimumFractionDigits: minDigits,
+    maximumFractionDigits: maxDigits,
+  }));
+}
+
+/** Compact notation ("12.3K") with at most `maxDigits` fraction digits. */
+function compactFormatter(locale: string, maxDigits: number) {
+  return cachedNumberFormatter(`compact|${locale}|${maxDigits}`, locale, () => ({
+    notation: 'compact',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: maxDigits,
+  }));
+}
+
+function currencyFormatter(locale: string, currency: string, code: boolean, minDigits: number, maxDigits: number) {
+  return cachedNumberFormatter(
+    `currency|${locale}|${currency}|${code ? 'code' : 'symbol'}|${minDigits}|${maxDigits}`,
+    locale,
+    () => ({
+      minimumFractionDigits: minDigits,
+      maximumFractionDigits: maxDigits,
+      style: 'currency',
+      currencyDisplay: code ? 'code' : 'symbol',
+      useGrouping: true,
+      currency,
+    })
+  );
+}
+
+/** The numeric year, month and day parts of a date, read in `timeZone` (local when absent). */
+function datePartsFormatter(timeZone: string | undefined) {
+  const key = `parts|${timeZone ?? ''}`;
   let formatter = dateFormatters.get(key);
 
   if (!formatter) {
-    formatter = new Intl.DateTimeFormat(locale, options);
+    formatter = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
     dateFormatters.set(key, formatter);
   }
 
   return formatter;
 }
 
-/** Test hook: how many Intl number formatters are cached. */
-export function cachedChartFormatterCount() {
-  return numberFormatters.size;
+function monthNameFormatter(locale: string, timeZone: string | undefined, month: 'short' | 'long') {
+  const key = `month|${locale}|${timeZone ?? ''}|${month}`;
+  let formatter = dateFormatters.get(key);
+
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, { timeZone, month });
+    dateFormatters.set(key, formatter);
+  }
+
+  return formatter;
 }
 
 /**
@@ -262,20 +324,17 @@ export function formatFieldCurrency(value: number, format: number, minDigits: nu
   const rounded = roundHalfAwayFromZero(value, maxDigits);
 
   if (!spec) return formatPlain(rounded, minDigits, maxDigits, 'en-US');
-  const text = numberFormatter(spec.locale, {
-    minimumFractionDigits: minDigits,
-    maximumFractionDigits: maxDigits,
-    style: 'currency',
-    currencyDisplay: spec.code ? 'code' : 'symbol',
-    useGrouping: true,
-    currency: spec.currency,
-  }).format(rounded === 0 ? 0 : rounded);
+  const text = currencyFormatter(spec.locale, spec.currency, Boolean(spec.code), minDigits, maxDigits).format(
+    rounded === 0 ? 0 : rounded
+  );
 
   return spec.post ? spec.post(text) : text;
 }
 
 function normalizeDecimalPlaces(value: number | null | undefined): number | null {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 5 ? value : null;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= CHART_MAX_DECIMAL_PLACES
+    ? value
+    : null;
 }
 
 function isCompactEligible(x: number, ctx: ChartFormatContext): boolean {
@@ -295,11 +354,7 @@ function isCompactEligible(x: number, ctx: ChartFormatContext): boolean {
 }
 
 function formatCompact(x: number, locale: string, decimalPlaces: number | null): string {
-  return numberFormatter(locale, {
-    notation: 'compact',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: decimalPlaces === 0 ? 0 : 1,
-  }).format(x);
+  return compactFormatter(locale, decimalPlaces === 0 ? 0 : 1).format(x);
 }
 
 /** Fraction digits of the non-compact path (§1.2 step 8). */
@@ -313,11 +368,7 @@ function fractionDigits(x: number, mode: ChartValueMode, decimalPlaces: number |
 function formatPlain(x: number, minDigits: number, maxDigits: number, locale: string): string {
   const rounded = roundHalfAwayFromZero(x, maxDigits);
 
-  return numberFormatter(locale, {
-    useGrouping: true,
-    minimumFractionDigits: minDigits,
-    maximumFractionDigits: maxDigits,
-  }).format(rounded === 0 ? 0 : rounded);
+  return plainFormatter(locale, minDigits, maxDigits).format(rounded === 0 ? 0 : rounded);
 }
 
 function formatPlainValue(x: number, ctx: ChartFormatContext, decimalPlaces: number | null): string {
@@ -340,12 +391,12 @@ function formatEpochDays(days: number, ctx: ChartFormatContext): string {
   const date = new Date(days * DAY_MS);
   const timeZone = ctx.timeZone;
   const parts = Object.fromEntries(
-    dateFormatter('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
+    datePartsFormatter(timeZone)
       .formatToParts(date)
       .map((part) => [part.type, part.value])
   );
   const pattern = DATE_PATTERNS[ctx.yField?.dateFormat ?? 0] ?? DATE_PATTERNS[2];
-  const monthName = (month: 'short' | 'long') => dateFormatter(ctx.locale, { timeZone, month }).format(date);
+  const monthName = (month: 'short' | 'long') => monthNameFormatter(ctx.locale, timeZone, month).format(date);
 
   return pattern.replace(/MMMM|MMM|MM|DD|YYYY/g, (token) => {
     switch (token) {
@@ -379,7 +430,7 @@ export function formatChartValue(value: number, ctx: ChartFormatContext): string
   }
 
   // 3. Counts are whole numbers; decimal places do not apply.
-  if (COUNT_AGGREGATIONS.has(aggregation)) {
+  if (isCountAggregation(aggregation)) {
     const count = roundHalfAwayFromZero(value, 0);
 
     if (isCompactEligible(count, ctx)) return formatCompact(count, locale, null);

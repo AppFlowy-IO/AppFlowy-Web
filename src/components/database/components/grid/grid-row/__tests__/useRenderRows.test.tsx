@@ -263,6 +263,47 @@ describe('useRenderRows', () => {
     expect(result.current.rows).toBe(firstStream);
   });
 
+  it('keeps the render row of every row that stays in the stream when rows are appended', () => {
+    const { result, rerender } = renderHook(
+      ({ rows }: { rows: { id: string; height: number }[] }) =>
+        useRenderRows(rows, { hydrating: { ready: rows.length, total: 500 } }),
+      {
+        wrapper: createWrapper(),
+        initialProps: {
+          rows: [
+            { id: 'row-1', height: 36 },
+            { id: 'row-2', height: 36 },
+          ],
+        },
+      }
+    );
+    const dataRows = (stream: typeof result.current.rows) => stream.filter((row) => row.type === RenderRowType.Row);
+    const [first, second] = dataRows(result.current.rows);
+
+    rerender({
+      rows: [
+        { id: 'row-1', height: 36 },
+        { id: 'row-2', height: 36 },
+        { id: 'row-3', height: 36 },
+      ],
+    });
+
+    const appended = dataRows(result.current.rows);
+
+    // A memoized grid row compares its render row by identity: the rows above do not re-render.
+    expect(appended).toHaveLength(3);
+    expect(appended[0]).toBe(first);
+    expect(appended[1]).toBe(second);
+    expect(appended[2]).toEqual({ type: RenderRowType.Row, rowId: 'row-3' });
+    expect(result.current.lastVisibleRowId).toBe('row-3');
+
+    // Rows that leave the stream drop out; the one that stays keeps its render row.
+    rerender({ rows: [{ id: 'row-2', height: 36 }] });
+    expect(dataRows(result.current.rows)).toHaveLength(1);
+    expect(dataRows(result.current.rows)[0]).toBe(second);
+    expect(result.current.lastVisibleRowId).toBe('row-2');
+  });
+
   it('renders a partial result without matches as loading, never as an empty result', () => {
     const { result } = renderHook(() => useRenderRows([], { hydrating: { ready: 100, total: 500 } }), {
       wrapper: createWrapper(),

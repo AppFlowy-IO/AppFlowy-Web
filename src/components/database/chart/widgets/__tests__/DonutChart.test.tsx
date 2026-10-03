@@ -84,7 +84,7 @@ describe('DonutChartWidget', () => {
   });
 
   it('shows the share in the tooltip', () => {
-    const { container } = renderChart(<DonutChartWidget data={STAGES} onSliceClick={jest.fn()} fill />, COUNT);
+    const { container } = renderChart(<DonutChartWidget data={STAGES} onItemClick={jest.fn()} fill />, COUNT);
     const won = container.querySelectorAll('.recharts-pie-sector')[3];
 
     act(() => {

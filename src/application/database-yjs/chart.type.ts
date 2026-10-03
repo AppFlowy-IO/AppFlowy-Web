@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 
 import { RowId } from '@/application/types';
 
+import { ChartAggregationType, ChartType } from './chart-enums';
 import {
   ChartColorTheme,
   ChartExtendedField,
@@ -16,17 +17,7 @@ import { DateGroupCondition, FieldType } from './database.type';
 import { SelectOptionColor } from './fields/select-option/select_option.type';
 import { setLayoutKeyIfChanged } from './layout-codec';
 
-/**
- * Chart type enum matching Flutter's ChartTypePB
- */
-export enum ChartType {
-  Bar = 0,
-  Line = 1,
-  HorizontalBar = 2,
-  Donut = 3,
-  /** Single KPI tile: one aggregated value over all filtered rows. */
-  Number = 4,
-}
+export { ChartAggregationType, ChartType, resolveEffectiveAggregation } from './chart-enums';
 
 /**
  * Display format for the Number chart value.
@@ -46,19 +37,6 @@ export function parseChartNumberFormat(value: unknown): ChartNumberFormat {
   return (CHART_NUMBER_FORMATS as readonly unknown[]).includes(value)
     ? (value as ChartNumberFormat)
     : DEFAULT_CHART_NUMBER_FORMAT;
-}
-
-/**
- * Chart aggregation type enum matching Flutter's ChartAggregationTypePB
- */
-export enum ChartAggregationType {
-  Count = 0,
-  Sum = 1,
-  Average = 2,
-  Min = 3,
-  Max = 4,
-  Median = 5,
-  CountValues = 6,
 }
 
 /**
@@ -91,6 +69,10 @@ export function resolveChartStyle(
 /**
  * A typed chart write (`useUpdateChartSetting`, `applyChartLayoutUpdate`):
  * only the fields present are written.
+ *
+ * Not `ChartLayoutSettings` (the parsed read model, one letter longer). The
+ * rename to `ChartLayoutUpdate`, typed with the enums, waits for a pass that
+ * owns `dispatch.ts`, which re-exports this name.
  */
 export interface ChartLayoutSetting {
   chartType?: number;
@@ -222,9 +204,6 @@ export const CHART_NUMBER_COLOR_VARS: Record<ChartNumberColor, string> = {
   red: 'var(--chart-number-red)',
 };
 
-/** "No {field}" group fill and the empty donut ring. */
-export const CHART_EMPTY_FILL = 'var(--chart-empty)';
-
 /** `stroke-dasharray` of the dotted value-axis grid lines (desktop draws `[2, 3]` too). */
 export const CHART_GRID_DASH = '2 3';
 
@@ -253,6 +232,17 @@ export type ChartLayoutField = keyof typeof ChartLayoutKeys;
  * camelCase keys earlier web builds wrote instead of the collab names.
  * Readers fall back to them for charts saved by those builds, and writers
  * keep them in sync so those builds still see charts saved now.
+ *
+ * Removal criterion: the shim can go when no supported web build (hosted or
+ * self-hosted) still reads only the camelCase spelling, that is, when every
+ * supported release contains `readChartLayoutValue`. There is no tracking
+ * issue yet; whoever sets that minimum version removes it in this order:
+ * 1. stop the dual write (the second `setLayoutKeyIfChanged` in
+ *    `writeChartLayoutValue`), which halves the Yjs writes of a chart edit;
+ * 2. keep the read fallback while charts last saved by an old build may
+ *    exist (their first edit already adds the collab key);
+ * 3. delete this table, the fallback and the legacy cases of
+ *    `chart-layout-keys.test.tsx` together.
  */
 export const LEGACY_CHART_LAYOUT_KEYS: Partial<Record<ChartLayoutField, string>> = {
   chartType: 'chartType',

@@ -1,22 +1,23 @@
 import { DropIndicator } from '@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box';
 import { memo, ReactNode, useRef } from 'react';
 
-import { cn } from '@/lib/utils';
-
-import { DASHBOARD_GRID_TOP_BAND, DASHBOARD_ROW_GAP } from './constants';
-import { useDashboardDraggingWidgetId, useDashboardUi } from './DashboardUiContext';
+import { DASHBOARD_GRID_TOP_BAND, DASHBOARD_ROW_GAP, DASHBOARD_WIDGET_BOX_INSET } from './constants';
+import { useDashboardUi } from './DashboardUiContext';
 import { useRowGapDropTarget } from './hooks/useDashboardDnd';
+
+// Spans the row track: the content column plus the box bleed on both sides.
+const DROP_ZONE_STYLE = { left: -DASHBOARD_WIDGET_BOX_INSET, right: -DASHBOARD_WIDGET_BOX_INSET };
 
 /**
  * The band in front of row `rowIndex` as a drop target: dropping a widget
- * here puts it in a new row at that index. Spans the row track (the content
- * column plus the box bleed) and only catches the pointer while a widget is
- * dragged, so the height handle inside it works the rest of the time.
+ * here puts it in a new row at that index. Spans the row track and only
+ * catches the pointer while a widget is dragged (`data-dragging` on the
+ * dashboard, read in CSS so a drag start renders no band), so the height
+ * handle inside it works the rest of the time.
  */
 function RowGapDropZone({ rowIndex, children }: { rowIndex: number; children?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const { dndInstanceId, getRows } = useDashboardUi();
-  const draggingWidgetId = useDashboardDraggingWidgetId();
   const active = useRowGapDropTarget({
     elementRef: ref,
     rowIndex,
@@ -27,12 +28,12 @@ function RowGapDropZone({ rowIndex, children }: { rowIndex: number; children?: R
 
   return (
     <div
-      className={cn('absolute -inset-x-1.5 inset-y-0', !draggingWidgetId && 'pointer-events-none')}
+      className='pointer-events-none absolute inset-y-0 group-data-[dragging=true]/dashboard:pointer-events-auto'
       data-active={active ? 'true' : undefined}
-      data-dragging={draggingWidgetId ? 'true' : undefined}
       data-row-index={rowIndex}
       data-testid='dashboard-row-drop-zone'
       ref={ref}
+      style={DROP_ZONE_STYLE}
     >
       {children}
       {active ? (
@@ -48,7 +49,8 @@ function RowGapDropZone({ rowIndex, children }: { rowIndex: number; children?: R
  * The band above row `index` (0 = above the first row): 12px before the first
  * row, 16px between rows and after the last one, in View and Edit mode alike,
  * so entering Edit mode moves nothing. In Edit mode it is a drop zone and
- * hosts the height handle of the row above it (`children`).
+ * hosts the height handle of the row above it (`children`, which the row
+ * keeps stable so that this band only renders when the handle changes).
  */
 export const DashboardRowGap = memo(function DashboardRowGap({
   index,

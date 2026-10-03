@@ -10,10 +10,6 @@ import { Dashboard } from '../Dashboard';
 import { DashboardActions } from '../DashboardActions';
 import { DashboardProvider } from '../DashboardContext';
 
-jest.mock('@/utils/runtime-config', () => ({
-  getConfigValue: (_key: string, fallback: string) => fallback,
-}));
-
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,

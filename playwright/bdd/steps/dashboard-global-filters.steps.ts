@@ -1,6 +1,7 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
+import { WIDGET_TIMEOUT } from '../../support/dashboard-shared-helpers';
 import {
   addGlobalFilter,
   buildGlobalFilter,
@@ -29,7 +30,6 @@ import {
 
 const { Given, When, Then } = createBdd();
 
-const WIDGET_TIMEOUT = { timeout: 30_000 };
 /** `DateFilterCondition.DateStartsOnOrAfter`. */
 const DATE_STARTS_ON_OR_AFTER = 4;
 /** `CheckboxFilterCondition.IsChecked`. */

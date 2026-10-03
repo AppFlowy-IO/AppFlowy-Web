@@ -5,13 +5,17 @@ import {
   clearDatabaseRowDocSeedCache,
   getDatabaseRowDocFromSeed,
   invalidateDatabaseRowDocSeed,
+  MAX_RELEASED_ROW_DOC_SEED_CACHES,
   peekDatabaseRowDocSeed,
   prefetchDatabaseBlobDiff,
   releaseDatabaseRowDocSeedCache,
   retainDatabaseRowDocSeedCache,
   ROW_DOC_SEED_CACHE_RELEASE_GRACE_MS,
 } from '@/application/database-blob';
+import { subscribeRowDocRelease } from '@/application/database-blob/row-doc-retention';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
+import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
+import { DASHBOARD_LOADING } from '@/application/database-yjs/dashboard-loading';
 import { openRowCollabDBWithProvider } from '@/application/db';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
 import { emit, EventType } from '@/application/session/event';
@@ -142,6 +146,8 @@ describe('database blob seeds for filter and sort', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
+    dashboardLoadStats.reset();
+    mockedDatabaseBlobDiff.mockReset();
     mockedOpenRowCollabDB.mockImplementation(async () => {
       return {
         doc: new Y.Doc(),
@@ -381,7 +387,11 @@ describe('database blob seeds for filter and sort', () => {
 
     it('keeps only the most recently released databases during the grace period', async () => {
       jest.useFakeTimers();
-      const released = ['database-lru-1', 'database-lru-2', 'database-lru-3'];
+      // One more than the databases a dashboard can read: its widgets' sources and its host.
+      const released = Array.from(
+        { length: MAX_RELEASED_ROW_DOC_SEED_CACHES + 1 },
+        (_, index) => `database-lru-${index + 1}`
+      );
 
       for (const databaseId of released) {
         databaseIds.add(databaseId);
@@ -394,7 +404,39 @@ describe('database blob seeds for filter and sort', () => {
 
       expect(
         released.map((databaseId) => peekDatabaseRowDocSeed(`${databaseId}_rows_${FIRST_ROW_ID}`) !== null)
-      ).toEqual([false, true, true]);
+      ).toEqual([false, ...released.slice(1).map(() => true)]);
+      expect(dashboardLoadStats.snapshot().sourcesReleased).toEqual([{ sourceId: released[0], reason: 'limit' }]);
+    });
+
+    it('releases an idle source after the shared idle time and reports it', async () => {
+      jest.useFakeTimers();
+      const databaseId = 'database-idle';
+
+      const onDatabaseReleased = jest.fn();
+      const unsubscribe = subscribeRowDocRelease({ onDatabaseReleased, onRowUnbound: jest.fn() });
+
+      expect(ROW_DOC_SEED_CACHE_RELEASE_GRACE_MS).toBe(DASHBOARD_LOADING.sourceIdleReleaseMs);
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(rowPage([{ rowId: FIRST_ROW_ID, department: 'HR' }]));
+
+      // Two widgets on the database: the source is released after the second one detaches.
+      retain(databaseId);
+      retain(databaseId);
+      await prefetchDatabaseBlobDiff('workspace', databaseId);
+      release(databaseId);
+      await jest.advanceTimersByTimeAsync(DASHBOARD_LOADING.sourceIdleReleaseMs);
+      expect(dashboardLoadStats.snapshot().sourcesReleased).toEqual([]);
+
+      release(databaseId);
+      await jest.advanceTimersByTimeAsync(DASHBOARD_LOADING.sourceIdleReleaseMs - 1);
+      expect(dashboardLoadStats.snapshot().sourcesReleased).toEqual([]);
+
+      await jest.advanceTimersByTimeAsync(1);
+      expect(dashboardLoadStats.snapshot().sourcesReleased).toEqual([{ sourceId: databaseId, reason: 'idle' }]);
+      expect(peekDatabaseRowDocSeed(`${databaseId}_rows_${FIRST_ROW_ID}`)).toBeNull();
+      // The row doc cache evicts the database's live row docs on this signal.
+      expect(onDatabaseReleased.mock.calls).toEqual([[databaseId]]);
+      unsubscribe();
     });
 
     it('clears released seeds on sign-out and skips the grace period until the next sign-in', async () => {
@@ -422,6 +464,174 @@ describe('database blob seeds for filter and sort', () => {
       emit(EventType.SESSION_VALID);
       release(nextAccount);
       expect(hasSeeds(nextAccount)).toBe(true);
+    });
+  });
+
+  describe('leaving mid-walk', () => {
+    const firstPage = () =>
+      rowPage([{ rowId: FIRST_ROW_ID, department: 'HR' }], { hasMore: true, nextCursor: new Uint8Array([1]) });
+    const secondPage = () =>
+      rowPage([{ rowId: SECOND_ROW_ID, department: 'Sales' }], { hasMore: true, nextCursor: new Uint8Array([2]) });
+    const lastPage = () => rowPage([], { rid: 500 });
+
+    it('stops the walk between pages when the last retainer leaves', async () => {
+      const databaseId = 'database-leave';
+      const firstRowKey = `${databaseId}_rows_${FIRST_ROW_ID}`;
+      const second = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+      const onSeedsProgress = jest.fn();
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff
+        .mockResolvedValueOnce(firstPage())
+        .mockReturnValueOnce(second.promise)
+        .mockResolvedValueOnce(lastPage());
+
+      retain(databaseId);
+      const prefetch = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true, onSeedsProgress });
+
+      await flushPendingWork();
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+      expect(readDepartment(firstRowKey)).toBe('HR');
+
+      // The dashboard is left while the second page is on its way.
+      release(databaseId);
+      second.resolve(secondPage());
+      await prefetch;
+
+      // The third page is never requested and nothing the walk read is kept or stored.
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+      expect(getDatabaseRowDocFromSeed(firstRowKey)).toBeNull();
+      expect(peekDatabaseRowDocSeed(firstRowKey)).toBeNull();
+      expect(mockedOpenRowCollabDB).not.toHaveBeenCalled();
+      expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    });
+
+    it('starts a new walk for a view mounted after the walk stopped', async () => {
+      const databaseId = 'database-leave-return';
+      const firstRowKey = `${databaseId}_rows_${FIRST_ROW_ID}`;
+      const second = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+      const returned = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+      const onSeedsReady = jest.fn();
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff
+        .mockResolvedValueOnce(firstPage())
+        .mockReturnValueOnce(second.promise)
+        .mockReturnValueOnce(returned.promise);
+
+      retain(databaseId);
+      const stopped = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+
+      await flushPendingWork();
+      release(databaseId);
+      second.resolve(secondPage());
+      await flushPendingWork();
+
+      // A view mounted afterwards starts over from the first page.
+      retain(databaseId);
+      const restarted = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true, onSeedsReady });
+
+      await flushPendingWork();
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(3);
+      expect(mockedDatabaseBlobDiff.mock.calls[2][2].page?.cursor).toEqual(new Uint8Array());
+
+      returned.resolve(rowPage([{ rowId: FIRST_ROW_ID, department: 'Finance' }], { rid: 600 }));
+      await Promise.all([stopped, restarted]);
+
+      expect(onSeedsReady).toHaveBeenCalledTimes(1);
+      expect(readDepartment(firstRowKey)).toBe('Finance');
+    });
+
+    it('keeps walking while another view still retains the database', async () => {
+      const databaseId = 'database-leave-shared';
+      const second = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff
+        .mockResolvedValueOnce(firstPage())
+        .mockReturnValueOnce(second.promise)
+        .mockResolvedValueOnce(lastPage());
+
+      retain(databaseId);
+      retain(databaseId);
+      const prefetch = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+
+      await flushPendingWork();
+      release(databaseId);
+      second.resolve(secondPage());
+      await prefetch;
+
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(3);
+      expect(peekDatabaseRowDocSeed(`${databaseId}_rows_${SECOND_ROW_ID}`)).not.toBeNull();
+    });
+
+    it('keeps walking for a view that returns before the next page', async () => {
+      const databaseId = 'database-leave-quick-return';
+      const second = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff
+        .mockResolvedValueOnce(firstPage())
+        .mockReturnValueOnce(second.promise)
+        .mockResolvedValueOnce(lastPage());
+
+      retain(databaseId);
+      const prefetch = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+
+      await flushPendingWork();
+      // A tab switch: the old view releases, the new one retains in the same commit.
+      release(databaseId);
+      retain(databaseId);
+      second.resolve(secondPage());
+      await prefetch;
+
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(3);
+    });
+
+    it('finishes a walk that a caller outside a mounted view waits for', async () => {
+      const databaseId = 'database-leave-outside-caller';
+      const second = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff
+        .mockResolvedValueOnce(firstPage())
+        .mockReturnValueOnce(second.promise)
+        .mockResolvedValueOnce(lastPage());
+
+      // Block duplication pre-syncs a database that no view may show.
+      const prefetch = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+
+      await flushPendingWork();
+      second.resolve(secondPage());
+      await prefetch;
+
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(3);
+    });
+
+    it('finishes a walk that a restore joined, even after the last view left', async () => {
+      const databaseId = 'database-leave-restore';
+      const second = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff
+        .mockResolvedValueOnce(firstPage())
+        .mockReturnValueOnce(second.promise)
+        .mockResolvedValueOnce(lastPage());
+
+      retain(databaseId);
+      const viewPrefetch = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+      const restorePrefetch = prefetchDatabaseBlobDiff('workspace', databaseId, {
+        forceFullSync: true,
+        requirePersistence: true,
+      });
+
+      await flushPendingWork();
+      release(databaseId);
+      second.resolve(secondPage());
+      await Promise.all([viewPrefetch, restorePrefetch]);
+
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(3);
+      expect(mockedOpenRowCollabDB).toHaveBeenCalledTimes(2);
     });
   });
 });

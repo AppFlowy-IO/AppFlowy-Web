@@ -4,6 +4,7 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import { SelectOption } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
 import { FILTER_EXCLUDED_FIELD_TYPES } from '@/components/database/components/filters/filter-field-types';
+import { orderSelectOptionContent } from '@/components/database/components/filters/value-controls/filter-value';
 
 /** One property of a source database, as the global filter editor sees it. */
 export interface GlobalFilterSourceField {
@@ -50,10 +51,6 @@ const GLOBAL_FILTER_FIELD_TYPE_ORDER: FieldType[] = [
 export const GLOBAL_FILTER_FIELD_TYPES: FieldType[] = GLOBAL_FILTER_FIELD_TYPE_ORDER.filter(
   (type) => !FILTER_EXCLUDED_FIELD_TYPES.includes(type)
 );
-
-export function isGlobalFilterFieldType(type: FieldType): boolean {
-  return GLOBAL_FILTER_FIELD_TYPES.includes(type);
-}
 
 /**
  * A global filter stores its content once, but for some property types the
@@ -279,12 +276,7 @@ export function createGlobalFilter(
 /** Keep only the selected option ids that exist on `field`, in field option order. */
 export function pruneOptionContent(content: string, field: GlobalFilterSourceField | undefined): string {
   if (!field || !content) return content;
-  const selected = new Set(content.split(',').filter(Boolean));
-
-  return field.options
-    .filter((option) => selected.has(option.id))
-    .map((option) => option.id)
-    .join(',');
+  return orderSelectOptionContent(new Set(content.split(',').filter(Boolean)), field.options);
 }
 
 /** Drop non-primary mappings whose property no longer matches the primary one. */

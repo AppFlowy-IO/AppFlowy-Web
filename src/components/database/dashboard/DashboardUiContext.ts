@@ -71,6 +71,11 @@ export function useDashboardDraggingWidgetId(): string | null {
  * The host database's app-level services that widgets forward to their nested
  * databases. The host `DatabaseContext` value also changes with its row map
  * and loading state; this subset only changes when a service does.
+ *
+ * `createRow` and `getSubscriptions` are the app's own where the app provides
+ * them (`useDashboardHostServices`): the host database wraps `createRow` for
+ * its own rows, and a widget's layout switcher asks the workspace plan
+ * through `getSubscriptions` before it offers Timeline.
  */
 export type DashboardHostServices = Pick<
   DatabaseContextState,
@@ -90,6 +95,7 @@ export type DashboardHostServices = Pick<
   | 'eventEmitter'
   | 'generateAISummaryForRow'
   | 'generateAITranslateForRow'
+  | 'getSubscriptions'
   | 'getViewIdFromDatabaseId'
   | 'loadDatabaseRelations'
   | 'loadRowDocument'

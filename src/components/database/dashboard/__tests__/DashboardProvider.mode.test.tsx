@@ -1,6 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MutableRefObject } from 'react';
-import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
 import { readDashboardLayoutSetting, updateDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
@@ -11,7 +10,6 @@ import {
 } from '@/application/database-yjs/dashboard-session';
 import { DashboardGlobalFilter, DashboardRow } from '@/application/database-yjs/dashboard.type';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 import { Dashboard } from '../Dashboard';
 import { DashboardActions } from '../DashboardActions';
@@ -23,12 +21,9 @@ import {
   useDashboardFilters,
 } from '../DashboardContext';
 import { WidgetPickerRequest } from '../DashboardUiContext';
-import { useDashboardMode } from '../hooks/useDashboardMode';
-import { DashboardModeStore } from '../hooks/useDashboardModeStore';
+import { DashboardModeSnapshot, DashboardModeStore } from '../hooks/useDashboardModeStore';
 
-jest.mock('@/utils/runtime-config', () => ({
-  getConfigValue: (_key: string, fallback: string) => fallback,
-}));
+import { createDatabaseDoc as createDatabaseFixture, makeRowsFor, resizeTo } from './dashboardTestHarness';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -91,37 +86,37 @@ const GLOBAL_FILTER: DashboardGlobalFilter = {
   targets: { [DATABASE_ID]: 'status' },
 };
 
-function makeRows(...layout: string[][]): DashboardRow[] {
-  return layout.map((ids, index) => ({
-    id: `r${index + 1}`,
-    height: 360,
-    widgets: ids.map((id) => ({ id, viewId: `view-${id}`, databaseId: DATABASE_ID, width: 12 / ids.length })),
-  }));
-}
+const makeRows = makeRowsFor(DATABASE_ID);
 
+/** The host database with its dashboard view holding `rows`. */
 function createDatabaseDoc(rows: DashboardRow[]) {
-  const doc = new Y.Doc() as unknown as YDoc;
-  const database = new Y.Map() as YDatabase;
-  const views = new Y.Map<YDatabaseView>();
-  const view = new Y.Map() as YDatabaseView;
+  const fixture = createDatabaseFixture({ id: DATABASE_ID, views: [{ id: VIEW_ID, rows }] });
 
-  doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
-  database.set(YjsDatabaseKey.id, DATABASE_ID);
-  database.set(YjsDatabaseKey.views, views as never);
-  views.set(VIEW_ID, view);
-  doc.transact(() => updateDashboardLayoutSetting(view, { rows }));
-  return { doc, database, view };
+  return { doc: fixture.doc, database: fixture.database, view: fixture.view(VIEW_ID) };
 }
 
 type Probe = MutableRefObject<{
   context: DashboardContextValue;
   filters: DashboardFiltersContextValue;
-  mode: ReturnType<typeof useDashboardMode>;
 } | null>;
 
 function ContextProbe({ probe }: { probe: Probe }) {
-  probe.current = { context: useDashboardContext(), filters: useDashboardFilters(), mode: useDashboardMode() };
+  probe.current = { context: useDashboardContext(), filters: useDashboardFilters() };
   return null;
+}
+
+/**
+ * Records the Edit preference the provider would remember, without ever
+ * handing it back: to the provider it is the same as having no store.
+ */
+class PreferenceRecorder extends Map<string, DashboardModeSnapshot> {
+  get(_viewId: string): DashboardModeSnapshot | undefined {
+    return undefined;
+  }
+
+  recorded(viewId: string) {
+    return super.get(viewId);
+  }
 }
 
 /** The Dashboard.test harness, plus a probe and an optional mode store. */
@@ -131,6 +126,7 @@ function renderDashboard(
 ) {
   const db = createDatabaseDoc(rows);
   const probe: Probe = { current: null };
+  let currentStore: DashboardModeStore = modeStore ?? new PreferenceRecorder();
   const tree = (nextReadOnly: boolean, store: DashboardModeStore | undefined) => {
     const value: DatabaseContextState = {
       readOnly: nextReadOnly,
@@ -145,7 +141,8 @@ function renderDashboard(
       <DatabaseContext.Provider value={value}>
         <DashboardProvider modeStore={store}>
           <ContextProbe probe={probe} />
-          <DashboardActions />
+          {/* As the database toolbar renders it: the host database as primitives. */}
+          <DashboardActions activeViewId={VIEW_ID} databasePageId={VIEW_ID} readOnly={nextReadOnly} />
           <Dashboard />
         </DashboardProvider>
       </DatabaseContext.Provider>
@@ -153,22 +150,26 @@ function renderDashboard(
   };
 
   let currentReadOnly = readOnly;
-  let result = render(tree(readOnly, modeStore));
+  let result = render(tree(readOnly, currentStore));
 
   return {
     // The app drops write access while it re-probes permissions (back on the tab, a reconnect).
     setReadOnly: (nextReadOnly: boolean) => {
       currentReadOnly = nextReadOnly;
-      result.rerender(tree(nextReadOnly, modeStore));
+      result.rerender(tree(nextReadOnly, currentStore));
     },
     // Unmount and mount the provider again on the same doc (a tab switch and back).
     remount: (store: DashboardModeStore | undefined = modeStore) => {
       result.unmount();
-      result = render(tree(currentReadOnly, store));
+      currentStore = store ?? new PreferenceRecorder();
+      result = render(tree(currentReadOnly, currentStore));
     },
     unmount: () => result.unmount(),
     context: () => probe.current?.context as DashboardContextValue,
-    mode: () => probe.current?.mode as ReturnType<typeof useDashboardMode>,
+    /** The Edit preference behind `isEditing`: what the provider hands its mode store. */
+    preference: () =>
+      (currentStore instanceof PreferenceRecorder ? currentStore.recorded(VIEW_ID) : currentStore.get(VIEW_ID))
+        ?.preference,
     filters: () => probe.current?.filters as DashboardFiltersContextValue,
     persisted: () => readDashboardLayoutSetting(db.database, VIEW_ID),
     // A write that bypasses the provider: the server sync or a collaborator.
@@ -189,13 +190,6 @@ function editing() {
   return screen.getByTestId('dashboard-view').getAttribute('data-editing');
 }
 
-function resizeTo(width: number) {
-  act(() => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
-    window.dispatchEvent(new Event('resize'));
-  });
-}
-
 describe('DashboardProvider R-MODE', () => {
   beforeEach(() => {
     resizeTo(1440);
@@ -208,12 +202,12 @@ describe('DashboardProvider R-MODE', () => {
   });
 
   it('(a) #39: an empty dashboard enters Edit mode when write access arrives after it opened', () => {
-    const { setReadOnly, context } = renderDashboard([], { readOnly: true });
+    const { setReadOnly, context, preference } = renderDashboard([], { readOnly: true });
 
     expect(editing()).toBe('false');
     expect(screen.queryByTestId('dashboard-edit-button')).toBeNull();
     expect(screen.queryByTestId('dashboard-empty-edit-button')).toBeNull();
-    expect(context().editPreference).toBe('auto_on');
+    expect(preference()).toBe('auto_on');
 
     setReadOnly(false);
 
@@ -223,7 +217,7 @@ describe('DashboardProvider R-MODE', () => {
   });
 
   it('(b) Edit mode comes back after a brief loss of write access', () => {
-    const { setReadOnly, context } = renderDashboard(makeRows(['a', 'b']));
+    const { setReadOnly, preference } = renderDashboard(makeRows(['a', 'b']));
 
     fireEvent.click(screen.getByTestId('dashboard-edit-button'));
     expect(editing()).toBe('true');
@@ -232,7 +226,7 @@ describe('DashboardProvider R-MODE', () => {
     expect(editing()).toBe('false');
     expect(screen.queryByTestId('dashboard-edit-button')).toBeNull();
     expect(screen.queryByTestId('dashboard-done-button')).toBeNull();
-    expect(context().editPreference).toBe('on');
+    expect(preference()).toBe('on');
 
     setReadOnly(false);
     expect(editing()).toBe('true');
@@ -241,7 +235,7 @@ describe('DashboardProvider R-MODE', () => {
   });
 
   it('(c) Done stays done after a brief loss of write access', () => {
-    const { setReadOnly, context } = renderDashboard(makeRows(['a', 'b']));
+    const { setReadOnly, preference } = renderDashboard(makeRows(['a', 'b']));
 
     fireEvent.click(screen.getByTestId('dashboard-edit-button'));
     fireEvent.click(screen.getByTestId('dashboard-done-button'));
@@ -249,12 +243,12 @@ describe('DashboardProvider R-MODE', () => {
     setReadOnly(false);
 
     expect(editing()).toBe('false');
-    expect(context().editPreference).toBe('off');
+    expect(preference()).toBe('off');
     expect(screen.getByTestId('dashboard-edit-button')).toBeTruthy();
   });
 
   it('(d) a narrow window hides Edit mode and keeps the preference for a wide one', () => {
-    const { context } = renderDashboard(makeRows(['a', 'b']));
+    const { context, preference } = renderDashboard(makeRows(['a', 'b']));
 
     fireEvent.click(screen.getByTestId('dashboard-edit-button'));
     resizeTo(390);
@@ -267,7 +261,7 @@ describe('DashboardProvider R-MODE', () => {
     expect(context().mobileContext).toBe(true);
     expect(context().canEnterEdit).toBe(false);
     expect(context().canEdit).toBe(true);
-    expect(context().editPreference).toBe('on');
+    expect(preference()).toBe('on');
 
     // Edit cannot be entered from a mobile context.
     act(() => context().setEditing(true));
@@ -337,17 +331,17 @@ describe('DashboardProvider R-MODE', () => {
 
   it('(f) a dashboard created in this session opens in Edit mode once, even with widgets', () => {
     markDashboardCreatedThisSession(VIEW_ID);
-    const { remount, context } = renderDashboard(makeRows(['a']), { modeStore: new Map() });
+    const { remount, preference } = renderDashboard(makeRows(['a']), { modeStore: new Map() });
 
     expect(editing()).toBe('true');
-    expect(context().editPreference).toBe('auto_on');
+    expect(preference()).toBe('auto_on');
     // Consumed by the first open.
     expect(wasDashboardCreatedThisSession(VIEW_ID)).toBe(false);
 
     // Reopened later (a new page, so a new store): its rows decide.
     remount(new Map());
     expect(editing()).toBe('false');
-    expect(context().editPreference).toBe('off');
+    expect(preference()).toBe('off');
   });
 
   it('(g) remote widgets end the automatic Edit mode unless the editor started building', () => {
@@ -356,13 +350,13 @@ describe('DashboardProvider R-MODE', () => {
     expect(editing()).toBe('true');
     first.writeRows(makeRows(['a']));
     expect(editing()).toBe('false');
-    expect(first.context().editPreference).toBe('off');
+    expect(first.preference()).toBe('off');
     first.unmount();
 
     const second = renderDashboard([]);
 
     fireEvent.click(screen.getByTestId('dashboard-add-widget-button'));
-    expect(second.context().editPreference).toBe('on');
+    expect(second.preference()).toBe('on');
     fireEvent.click(screen.getByTestId('close-picker'));
     second.writeRows(makeRows(['a']));
     expect(editing()).toBe('true');
@@ -377,14 +371,14 @@ describe('DashboardProvider R-MODE', () => {
 
   it('(h) the mode store keeps Edit mode across a provider remount (a tab switch and back)', () => {
     const store: DashboardModeStore = new Map();
-    const { remount, context } = renderDashboard(makeRows(['a', 'b']), { modeStore: store });
+    const { remount, preference } = renderDashboard(makeRows(['a', 'b']), { modeStore: store });
 
     fireEvent.click(screen.getByTestId('dashboard-edit-button'));
     expect(store.get(VIEW_ID)?.preference).toBe('on');
 
     remount();
     expect(editing()).toBe('true');
-    expect(context().editPreference).toBe('on');
+    expect(preference()).toBe('on');
 
     fireEvent.click(screen.getByTestId('dashboard-done-button'));
     remount();
@@ -404,22 +398,28 @@ describe('DashboardProvider R-MODE', () => {
     expect(store.get(VIEW_ID)).toEqual({ preference: 'off', rowsEmpty: false });
   });
 
-  it('exposes the mode API to later packages through useDashboardMode', () => {
-    const { context, mode } = renderDashboard([]);
+  it("pins the automatic Edit mode as the editor's own, which a mobile context only hides", () => {
+    const { context, preference } = renderDashboard([]);
 
-    expect(mode()).toEqual({
-      isEditing: true,
-      canEnterEdit: true,
-      mobileContext: false,
-      editPreference: 'auto_on',
-      setEditing: context().setEditing,
-      pinEditing: context().pinEditing,
-    });
+    expect(context()).toMatchObject({ isEditing: true, canEnterEdit: true, mobileContext: false });
+    expect(preference()).toBe('auto_on');
 
-    act(() => mode().pinEditing());
-    expect(mode().editPreference).toBe('on');
+    act(() => context().pinEditing());
+    expect(preference()).toBe('on');
     resizeTo(390);
-    expect(mode()).toMatchObject({ isEditing: false, canEnterEdit: false, mobileContext: true, editPreference: 'on' });
+    expect(context()).toMatchObject({ isEditing: false, canEnterEdit: false, mobileContext: true });
+    expect(preference()).toBe('on');
+  });
+
+  it('keeps the context identity when the preference changes without changing the mode', () => {
+    const { context, preference } = renderDashboard([]);
+    const before = context();
+
+    // `auto_on` to `on`: Edit mode before and after, so no consumer has anything to render.
+    act(() => context().pinEditing());
+    expect(preference()).toBe('on');
+    expect(context()).toBe(before);
+    expect('editPreference' in context()).toBe(false);
   });
 
   it('keeps the mode actions stable and never persists the mode', () => {

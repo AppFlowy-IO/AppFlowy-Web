@@ -172,15 +172,18 @@ export const DASHBOARD_BOARD_COLUMN_TINT_BLOCK_INDEX = [
   14, 16, 18, 2, 4, 6, 8, 10, 12, 20, 14, 16, 18, 2, 4, 6, 8, 10, 12, 20,
 ] as const;
 
-// Flat aliases for the values later packages import by name.
-/** WP02 switches `constants.ts` `DASHBOARD_COLUMN_GAP` to this. */
+// Flat aliases for the values other modules import by name; the dashboard
+// components read them through `dashboard/constants.ts`.
+/** Horizontal gap between the widget boxes of a row. */
 export const DASHBOARD_COLUMN_GAP_PX = DASHBOARD_GEOMETRY.grid.columnGap;
-/** WP03: replaces `WIDGET_TITLE_HEIGHT` and `WIDGET_EDIT_HEADER_HEIGHT`. */
+/** The header band above a widget's card (titles shown). */
 export const DASHBOARD_WIDGET_HEADER_HEIGHT = DASHBOARD_GEOMETRY.widget.headerHeight;
-/** WP02, WP03: the widget box bleeds this far past the content column. */
+/** The widget box bleeds this far past the content column. */
 export const DASHBOARD_WIDGET_BOX_BLEED = DASHBOARD_GEOMETRY.widget.boxBleed;
-/** WP04: row controls are centred this far outside the content column. */
+/** Row controls are centred this far outside the content column. */
 export const DASHBOARD_ROW_CONTROL_OFFSET = DASHBOARD_GEOMETRY.row.controlOffset;
 export const DASHBOARD_ROW_CONTROL_SIZE = DASHBOARD_GEOMETRY.row.controlSize;
+// WP04: the "new row" button after the last row.
 export const DASHBOARD_ADD_ROW_BUTTON_SIZE = DASHBOARD_GEOMETRY.row.addNewRowSize;
+// WP04: the drop indicator of a widget drag.
 export const DASHBOARD_DROP_INDICATOR_WIDTH = DASHBOARD_GEOMETRY.dnd.indicatorWidth;

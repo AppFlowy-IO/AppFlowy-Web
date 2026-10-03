@@ -170,26 +170,42 @@ function wrapPlainObjectAsFilter(obj: Record<string, unknown>): YDatabaseFilter 
 type FilterObserver = Parameters<YDatabaseFilters['observeDeep']>[0];
 
 /**
- * A read-only stand-in for a `Y.Array` of filters built from plain filter
- * nodes (for example dashboard global filters). It exposes the subset of the
- * array surface the evaluators use (`length`, `get`, `toArray`, `toJSON`,
- * `forEach`, `map`, `slice`) and never changes, so observing it is a no-op.
+ * The read-only part of a filter list the evaluators and selectors use. A
+ * view's `Y.Array` of filters satisfies it, and so do the lists built from
+ * plain nodes (`createVirtualFilters`, `combineFilters`), which have nothing
+ * else of a `Y.Array`: code that reads a filter list is typed against this, so
+ * it cannot reach for a member the built lists do not have.
  */
-export function createVirtualFilters(nodes: readonly object[]): YDatabaseFilters {
+export interface FilterList {
+  readonly length: number;
+  get(index: number): YDatabaseFilter | undefined;
+  toArray(): YDatabaseFilter[];
+  toJSON(): unknown[];
+  forEach(callback: (value: YDatabaseFilter, index: number) => void): void;
+  map<T>(callback: (value: YDatabaseFilter, index: number) => T): T[];
+  slice(start?: number, end?: number): YDatabaseFilter[];
+  observeDeep(callback: FilterObserver): void;
+  unobserveDeep(callback: FilterObserver): void;
+}
+
+/**
+ * A read-only filter list built from plain filter nodes (for example dashboard
+ * global filters). It never changes, so observing it is a no-op.
+ */
+export function createVirtualFilters(nodes: readonly object[]): FilterList {
   const wrapped = nodes.map((node) => wrapPlainObjectAsFilter(node as Record<string, unknown>));
-  const virtual = {
+
+  return {
     length: wrapped.length,
-    get: (index: number) => wrapped[index],
+    get: (index) => wrapped[index],
     toArray: () => wrapped,
     toJSON: () => nodes.map((node) => ({ ...node })),
-    forEach: (callback: (value: YDatabaseFilter, index: number) => void) => wrapped.forEach(callback),
-    map: <T>(callback: (value: YDatabaseFilter, index: number) => T) => wrapped.map(callback),
-    slice: (start?: number, end?: number) => wrapped.slice(start, end),
-    observeDeep: (_callback: FilterObserver) => undefined,
-    unobserveDeep: (_callback: FilterObserver) => undefined,
+    forEach: (callback) => wrapped.forEach(callback),
+    map: (callback) => wrapped.map(callback),
+    slice: (start, end) => wrapped.slice(start, end),
+    observeDeep: () => undefined,
+    unobserveDeep: () => undefined,
   };
-
-  return virtual as unknown as YDatabaseFilters;
 }
 
 /**
@@ -223,7 +239,7 @@ export function combineFilters(
   viewFilters: YDatabaseFilters | undefined,
   extraNodes: readonly object[] | undefined,
   fields?: YDatabaseFields
-): YDatabaseFilters | undefined {
+): FilterList | undefined {
   if (!extraNodes || extraNodes.length === 0) return viewFilters;
   const wrapped = extraNodes.map((node) => ({
     node,
@@ -233,25 +249,24 @@ export function combineFilters(
   const extra = () => applicable().map(({ filter }) => filter);
   const viewLength = () => viewFilters?.length ?? 0;
   const all = (): YDatabaseFilter[] => [...(viewFilters?.toArray() ?? []), ...extra()];
-  const virtual = {
+
+  return {
     get length() {
       return viewLength() + applicable().length;
     },
-    get: (index: number) => {
+    get: (index) => {
       const baseLength = viewLength();
 
       return index < baseLength ? viewFilters?.get(index) : extra()[index - baseLength];
     },
     toArray: all,
     toJSON: () => [...(viewFilters?.toJSON() ?? []), ...applicable().map(({ node }) => ({ ...node }))],
-    forEach: (callback: (value: YDatabaseFilter, index: number) => void) => all().forEach(callback),
-    map: <T>(callback: (value: YDatabaseFilter, index: number) => T) => all().map(callback),
-    slice: (start?: number, end?: number) => all().slice(start, end),
-    observeDeep: (callback: FilterObserver) => viewFilters?.observeDeep(callback),
-    unobserveDeep: (callback: FilterObserver) => viewFilters?.unobserveDeep(callback),
+    forEach: (callback) => all().forEach(callback),
+    map: (callback) => all().map(callback),
+    slice: (start, end) => all().slice(start, end),
+    observeDeep: (callback) => viewFilters?.observeDeep(callback),
+    unobserveDeep: (callback) => viewFilters?.unobserveDeep(callback),
   };
-
-  return virtual as unknown as YDatabaseFilters;
 }
 
 export function normalizeFilterNode(node: unknown): YDatabaseFilter | null {
@@ -452,7 +467,7 @@ function getEffectiveFilterSnapshot(
   };
 }
 
-export function getEffectiveFiltersSnapshot(filters?: YDatabaseFilters, fields?: YDatabaseFields) {
+export function getEffectiveFiltersSnapshot(filters?: FilterList, fields?: YDatabaseFields) {
   if (!filters || !fields) return [];
 
   return filters
@@ -461,7 +476,7 @@ export function getEffectiveFiltersSnapshot(filters?: YDatabaseFilters, fields?:
     .filter((snapshot): snapshot is EffectiveFilterSnapshot => snapshot !== null);
 }
 
-export function hasEffectiveFilters(filters?: YDatabaseFilters, fields?: YDatabaseFields) {
+export function hasEffectiveFilters(filters?: FilterList, fields?: YDatabaseFields) {
   return getEffectiveFiltersSnapshot(filters, fields).length > 0;
 }
 
@@ -470,7 +485,7 @@ export function hasEffectiveFilters(filters?: YDatabaseFilters, fields?: YDataba
  * (root node is an And/Or group) rather than a flat list of Data filters.
  * Handles both Yjs maps and plain objects arriving from desktop sync.
  */
-export function hasAdvancedFilterRoot(filters?: YDatabaseFilters): boolean {
+export function hasAdvancedFilterRoot(filters?: FilterList): boolean {
   if (!filters || filters.length === 0) return false;
 
   const root = normalizeFilterNode(filters.get(0));
@@ -910,7 +925,7 @@ function personFilterCheckWithIds(data: string, filterIds: string[] | null, cond
 
 export function filterBy(
   rows: Row[],
-  filters: YDatabaseFilters,
+  filters: FilterList,
   fields: YDatabaseFields,
   rowMetas: Record<RowId, YDoc>,
   options?: FilterOptions

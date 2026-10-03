@@ -6,6 +6,7 @@ import {
   YDatabaseDashboardLayoutSetting,
   YDatabaseLayoutSettings,
   YDatabaseView,
+  YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
@@ -31,7 +32,7 @@ import {
   DashboardWidget,
   DashboardWidgetPlacement,
 } from './dashboard.type';
-import { clampInteger, isPlainRecord, nonEmptyString, pickUnknownKeys, toPlainValue } from './layout-codec';
+import { clampInteger, isPlainRecord, nonEmptyString, pickUnknownKeys, readBoolean, toPlainValue } from './layout-codec';
 
 // The global-filter codec lives in `dashboard-global-filters.ts`.
 export {
@@ -61,6 +62,36 @@ export const DEFAULT_DASHBOARD_LAYOUT_SETTING: DashboardLayoutSetting = {
   showWidgetTitles: true,
   showIconsInHeading: false,
 };
+
+type DashboardFlag = 'showWidgetTitles' | 'showIconsInHeading';
+
+const DASHBOARD_FLAG_KEYS = {
+  showWidgetTitles: YjsDatabaseKey.show_widget_titles,
+  showIconsInHeading: YjsDatabaseKey.show_icons_in_heading,
+} as const;
+
+/** A boolean setting: absent or of another type reads as its default (ARCHITECTURE §3.1.2). */
+function readFlag(setting: YDatabaseDashboardLayoutSetting, flag: DashboardFlag): boolean {
+  return readBoolean(setting.get(DASHBOARD_FLAG_KEYS[flag]), DEFAULT_DASHBOARD_LAYOUT_SETTING[flag]);
+}
+
+/** Write a boolean setting unless it already reads as `value`. */
+function writeFlag(setting: YDatabaseDashboardLayoutSetting, flag: DashboardFlag, value: boolean) {
+  if (readFlag(setting, flag) !== value) setting.set(DASHBOARD_FLAG_KEYS[flag], value);
+}
+
+/**
+ * Transaction origins of the dashboard setting writes that are not undo steps
+ * (the history tracks no string origin). They only label the write.
+ */
+export const DASHBOARD_LAYOUT_ORIGIN = {
+  /** The empty setting of a new dashboard, or the first widget of a converted view. */
+  seed: 'initializeDashboardLayout',
+  /** A duplicate taking over its source's whole setting. */
+  copy: 'copyDashboardLayout',
+  /** A failed conversion taking its seed back. */
+  rollback: 'rollbackDashboardLayout',
+} as const;
 
 export function generateDashboardId(prefix: 'w' | 'r' | 'gf') {
   return `${prefix}:${nanoid(8)}`;
@@ -116,7 +147,8 @@ export function balanceRowWidths(widgets: DashboardWidget[]): DashboardWidget[] 
 /**
  * Enforce the dashboard invariants on a row list: no empty rows, at most four
  * widgets per row, widths summing to twelve, valid heights, and at most twelve
- * widgets overall (extra widgets are dropped from the end).
+ * widgets overall (extra widgets are left out from the end). A stored layout
+ * over the limit keeps its extra widgets in storage: see `overflowStoredRows`.
  */
 export function normalizeDashboardRows(rows: DashboardRow[]): DashboardRow[] {
   const result: DashboardRow[] = [];
@@ -154,41 +186,48 @@ export function normalizeDashboardRows(rows: DashboardRow[]): DashboardRow[] {
   return result;
 }
 
-function parseRows(value: unknown): DashboardRow[] {
-  const raw = toPlainValue(value);
+/** The effective id of the stored row at `rowIndex` (positional when it stores none). */
+function storedRowId(row: { id?: unknown }, rowIndex: number) {
+  return nonEmptyString(row.id) ?? `r:${rowIndex}`;
+}
 
-  if (!Array.isArray(raw)) return EMPTY_ROWS;
-  const cached = parsedRows.get(raw);
+/** The effective id of the stored widget at `index` of the row at `rowIndex`. */
+function storedWidgetId(widget: { id?: unknown }, rowIndex: number, index: number) {
+  return nonEmptyString(widget.id) ?? `w:${rowIndex}:${index}`;
+}
 
-  if (cached) return cached;
+/** A stored widget every client reads: an object with a view and a database. */
+function isStoredWidget(value: unknown): value is Record<string, unknown> {
+  return isPlainRecord(value) && Boolean(nonEmptyString(value.view_id)) && Boolean(nonEmptyString(value.database_id));
+}
+
+/**
+ * Every valid stored row and widget, before the limits apply. Entries without
+ * an id get a positional fallback id, never a random one: a Y.Array value is
+ * re-read (and re-parsed) on every snapshot read, and random ids would make
+ * every read look like a layout change.
+ */
+function parseStoredRows(raw: unknown[]): DashboardRow[] {
   const rows: DashboardRow[] = [];
 
-  // Entries without an id get a positional fallback id, never a random one: a
-  // Y.Array value is re-read (and re-parsed) on every snapshot read, and random
-  // ids would make every read look like a layout change.
   raw.forEach((item, rowIndex) => {
     if (!item || typeof item !== 'object') return;
     const record = item as { id?: unknown; height?: unknown; widgets?: unknown };
     const widgetsRaw = Array.isArray(record.widgets) ? record.widgets : [];
     const widgets: DashboardWidget[] = [];
 
-    widgetsRaw.forEach((widgetRaw, index) => {
-      if (!widgetRaw || typeof widgetRaw !== 'object') return;
-      const widget = widgetRaw as { id?: unknown; view_id?: unknown; database_id?: unknown; width?: unknown };
-      const viewId = nonEmptyString(widget.view_id);
-      const databaseId = nonEmptyString(widget.database_id);
-
-      if (!viewId || !databaseId) return;
+    widgetsRaw.forEach((widget, index) => {
+      if (!isStoredWidget(widget)) return;
       widgets.push({
-        id: nonEmptyString(widget.id) ?? `w:${rowIndex}:${index}`,
-        viewId,
-        databaseId,
+        id: storedWidgetId(widget, rowIndex, index),
+        viewId: widget.view_id as string,
+        databaseId: widget.database_id as string,
         width: clampInteger(widget.width, 1, DASHBOARD_GRID_COLUMNS, 0),
       });
     });
 
     rows.push({
-      id: nonEmptyString(record.id) ?? `r:${rowIndex}`,
+      id: storedRowId(record, rowIndex),
       height: clampInteger(
         record.height,
         DASHBOARD_MIN_ROW_HEIGHT,
@@ -198,12 +237,83 @@ function parseRows(value: unknown): DashboardRow[] {
       widgets,
     });
   });
+  return rows;
+}
 
-  const normalized = normalizeDashboardRows(rows);
+function parseRows(value: unknown): DashboardRow[] {
+  const raw = toPlainValue(value);
+
+  if (!Array.isArray(raw)) return EMPTY_ROWS;
+  const cached = parsedRows.get(raw);
+
+  if (cached) return cached;
+  const normalized = normalizeDashboardRows(parseStoredRows(raw));
   const stable = normalized.length === 0 ? EMPTY_ROWS : normalized;
 
   parsedRows.set(raw, stable);
   return stable;
+}
+
+/**
+ * The stored rows that hold the widgets beyond `DASHBOARD_MAX_WIDGETS`, for a
+ * layout another client wrote over the limit. `parseRows` shows the first
+ * twelve widgets; a rewrite of `rows` appends these after the shown rows, so
+ * the extra widgets stay in storage and show up again once there is room.
+ *
+ * Each entry is the stored object (unknown keys included) with only its hidden
+ * widgets. Ids are written out, because a positional fallback id would change
+ * with the row's new position. The hidden rest of a row that is partly shown
+ * gets its own id, unique among `shownRowIds`.
+ */
+function overflowStoredRows(stored: unknown, shownRowIds: Iterable<string>): Record<string, unknown>[] {
+  const raw = toPlainValue(stored);
+
+  if (!Array.isArray(raw)) return [];
+  const usedRowIds = new Set(shownRowIds);
+  const overflow: Record<string, unknown>[] = [];
+  let remaining = DASHBOARD_MAX_WIDGETS;
+
+  raw.forEach((row, rowIndex) => {
+    if (!isPlainRecord(row) || !Array.isArray(row.widgets)) return;
+    const hidden: Record<string, unknown>[] = [];
+
+    row.widgets.forEach((widget, index) => {
+      if (!isStoredWidget(widget)) return;
+
+      if (remaining > 0) {
+        remaining -= 1;
+        return;
+      }
+
+      hidden.push({ ...widget, id: storedWidgetId(widget, rowIndex, index) });
+    });
+
+    if (hidden.length === 0) return;
+    let id = storedRowId(row, rowIndex);
+
+    while (usedRowIds.has(id)) id = `${id}:rest`;
+    usedRowIds.add(id);
+    overflow.push({ ...row, id, widgets: hidden });
+  });
+  return overflow;
+}
+
+/**
+ * Every widget the dashboard stores, shown or not (see `overflowStoredRows`),
+ * in stored order. For operations that must reach the views of hidden widgets
+ * too, such as copying the views a dashboard owns.
+ */
+export function readStoredDashboardWidgets(database: YDatabase | undefined, viewId: string): DashboardWidget[] {
+  const raw = toPlainValue(
+    database
+      ?.get(YjsDatabaseKey.views)
+      ?.get(viewId)
+      ?.get(YjsDatabaseKey.layout_settings)
+      ?.get(DASHBOARD_LAYOUT_KEY)
+      ?.get(YjsDatabaseKey.dashboard_rows)
+  );
+
+  return Array.isArray(raw) ? parseStoredRows(raw).flatMap((row) => row.widgets) : [];
 }
 
 export function readDashboardLayoutSetting(database: YDatabase | undefined, viewId: string): DashboardLayoutSetting {
@@ -214,15 +324,12 @@ export function readDashboardLayoutSetting(database: YDatabase | undefined, view
     ?.get(DASHBOARD_LAYOUT_KEY);
 
   if (!setting) return DEFAULT_DASHBOARD_LAYOUT_SETTING;
-  const showWidgetTitles = setting.get(YjsDatabaseKey.show_widget_titles);
-  const showIconsInHeading = setting.get(YjsDatabaseKey.show_icons_in_heading);
 
   return {
     rows: parseRows(setting.get(YjsDatabaseKey.dashboard_rows)),
     globalFilters: parseDashboardGlobalFilters(setting.get(YjsDatabaseKey.dashboard_global_filters)),
-    showWidgetTitles: typeof showWidgetTitles === 'boolean' ? showWidgetTitles : true,
-    // Absent or of another type reads as the default (ARCHITECTURE §3.1.2).
-    showIconsInHeading: typeof showIconsInHeading === 'boolean' ? showIconsInHeading : false,
+    showWidgetTitles: readFlag(setting, 'showWidgetTitles'),
+    showIconsInHeading: readFlag(setting, 'showIconsInHeading'),
   };
 }
 
@@ -248,7 +355,7 @@ export function indexDashboardRowExtras(stored: unknown): DashboardRowExtras {
 
   raw.forEach((row, rowIndex) => {
     if (!isPlainRecord(row)) return;
-    const rowId = nonEmptyString(row.id) ?? `r:${rowIndex}`;
+    const rowId = storedRowId(row, rowIndex);
 
     if (!seenRows.has(rowId)) {
       seenRows.add(rowId);
@@ -260,7 +367,7 @@ export function indexDashboardRowExtras(stored: unknown): DashboardRowExtras {
     if (!Array.isArray(row.widgets)) return;
     row.widgets.forEach((widget, index) => {
       if (!isPlainRecord(widget)) return;
-      const widgetId = nonEmptyString(widget.id) ?? `w:${rowIndex}:${index}`;
+      const widgetId = storedWidgetId(widget, rowIndex, index);
 
       if (seenWidgets.has(widgetId)) return;
       seenWidgets.add(widgetId);
@@ -332,7 +439,14 @@ export function updateDashboardLayoutSetting(view: YDatabaseView, update: Dashbo
     const rows = normalizeDashboardRows(update.rows);
 
     if (!sameDashboardRows(parseRows(stored), rows)) {
-      setting.set(YjsDatabaseKey.dashboard_rows, serializeDashboardRows(rows, stored));
+      setting.set(YjsDatabaseKey.dashboard_rows, [
+        ...serializeDashboardRows(rows, stored),
+        // Widgets beyond the limit are not in `rows`; they stay in storage.
+        ...overflowStoredRows(
+          stored,
+          rows.map((row) => row.id)
+        ),
+      ]);
     }
   }
 
@@ -347,21 +461,8 @@ export function updateDashboardLayoutSetting(view: YDatabaseView, update: Dashbo
     }
   }
 
-  if (update.showWidgetTitles !== undefined) {
-    const stored = setting.get(YjsDatabaseKey.show_widget_titles);
-
-    if ((typeof stored === 'boolean' ? stored : true) !== update.showWidgetTitles) {
-      setting.set(YjsDatabaseKey.show_widget_titles, update.showWidgetTitles);
-    }
-  }
-
-  if (update.showIconsInHeading !== undefined) {
-    const stored = setting.get(YjsDatabaseKey.show_icons_in_heading);
-
-    if ((typeof stored === 'boolean' ? stored : false) !== update.showIconsInHeading) {
-      setting.set(YjsDatabaseKey.show_icons_in_heading, update.showIconsInHeading);
-    }
-  }
+  if (update.showWidgetTitles !== undefined) writeFlag(setting, 'showWidgetTitles', update.showWidgetTitles);
+  if (update.showIconsInHeading !== undefined) writeFlag(setting, 'showIconsInHeading', update.showIconsInHeading);
 }
 
 /** Ensure the view carries an (empty) dashboard setting so readers see a stable shape. */
@@ -371,6 +472,15 @@ export function initializeDashboardLayoutSetting(view: YDatabaseView) {
   if (setting.get(YjsDatabaseKey.dashboard_rows) === undefined) setting.set(YjsDatabaseKey.dashboard_rows, []);
   if (setting.get(YjsDatabaseKey.dashboard_global_filters) === undefined)
     setting.set(YjsDatabaseKey.dashboard_global_filters, []);
+}
+
+/**
+ * `initializeDashboardLayoutSetting` in its own transaction (not an undo
+ * step): the server writes no dashboard settings, so a new dashboard view is
+ * seeded with the empty rows / global filters.
+ */
+export function seedDashboardLayoutSetting(doc: YDoc, view: YDatabaseView) {
+  doc.transact(() => initializeDashboardLayoutSetting(view), DASHBOARD_LAYOUT_ORIGIN.seed);
 }
 
 function sameWidget(a: DashboardWidget, b: DashboardWidget) {

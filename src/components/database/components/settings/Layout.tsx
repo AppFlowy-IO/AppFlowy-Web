@@ -7,7 +7,7 @@ import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yj
 import { useUpdateDatabaseLayout } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout } from '@/application/types';
 import { ReactComponent as LayoutIcon } from '@/assets/icons/layout.svg';
-import { useMobileContext } from '@/components/_shared/hooks/useMobileContext';
+import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
 import { useTimelineCreationDisabledReason } from '@/components/app/hooks/useTimelineCreationDisabledReason';
 import {
   DropdownMenuItem,
@@ -32,28 +32,22 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
   const viewId = useDatabaseViewId();
   const { isDashboardWidget, getSubscriptions, workspaceId } = useDatabaseContext();
   const updateLayout = useUpdateDatabaseLayout(viewId);
-  const mobileContext = useMobileContext();
   const [open, setOpen] = useState(false);
   // Converting to Timeline or Dashboard creates that view type, so it follows
-  // the same workspace Pro policy as the tab "+" menu.
+  // the same rules as the tab "+" menu.
   const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
     workspaceId,
     enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && open,
   });
-  const dashboardDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
-    workspaceId,
-    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && open,
-    requiresProMessage: t('dashboard.creationRequiresPro', {
-      defaultValue: 'Creating a Dashboard view requires a Pro workspace.',
-    }),
-  });
+  const { available: canCreateDashboard, disabledReason: dashboardDisabledReason } = useDashboardCreationGate(
+    getSubscriptions,
+    { workspaceId, enabled: open }
+  );
   // Dashboards never nest, so a widget's view cannot become one. Like
-  // Timeline, an existing dashboard keeps its option while creation is off.
-  // Dashboards are view-only in a mobile context, so nothing converts to one
-  // there, but a dashboard still reads as one.
+  // Timeline, an existing dashboard keeps its option while creation is off
+  // (the feature flag, or a mobile context): it still reads as one.
   const isDashboard = currentLayout === DatabaseViewLayout.Dashboard;
-  const showDashboard =
-    (EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED || isDashboard) && !isDashboardWidget && (!mobileContext || isDashboard);
+  const showDashboard = (canCreateDashboard || isDashboard) && !isDashboardWidget;
   const options = useMemo<LayoutOption[]>(
     () => [
       {

@@ -4,15 +4,13 @@ import {
   ChartExtendedSettings,
   DEFAULT_CHART_EXTENDED_SETTINGS,
 } from '@/application/database-yjs/chart-extended-settings';
-import { ChartValueMode, formatChartValue } from '@/application/database-yjs/chart-format';
+import { ChartValueFormatter, ChartValueMode, formatChartValue } from '@/application/database-yjs/chart-format';
 import {
   ChartAggregationType,
   ChartDataItem,
   ChartLayoutSettings,
   ChartType,
 } from '@/application/database-yjs/chart.type';
-import { FieldType } from '@/application/database-yjs/database.type';
-import { NumberFormat, SelectOption } from '@/application/database-yjs/fields';
 import { YDatabaseField } from '@/application/types';
 
 export interface ChartContextValue {
@@ -26,35 +24,27 @@ export interface ChartContextValue {
   isLoading: boolean;
   /** X-axis field */
   xAxisField: YDatabaseField | null;
-  /** X-axis field type */
-  fieldType: FieldType | null;
-  /** Aggregation type */
-  aggregationType: ChartAggregationType;
-  /** Select options for x-axis field (if applicable) */
-  selectOptions: SelectOption[];
+  /**
+   * What the chart computes, formats and titles: Count unless a value
+   * aggregation has its Y field (`resolveEffectiveAggregation`). Resolved once,
+   * in `useChartData`; nothing below the provider re-derives it.
+   */
+  effectiveAggregation: ChartAggregationType;
   /** Whether there are any groupable fields in the database */
   hasGroupableFields: boolean;
-  /** Y field (only when the aggregation uses one) */
-  yAxisField: YDatabaseField | null;
-  /** Current Y field name */
-  yFieldName: string;
-  /** Y field number format when the Y field is a Number field */
-  yNumberFormat: NumberFormat | null;
-  /** Number chart only: aggregated value over all filtered rows */
-  numberValue: number | null;
   /** The style settings (WP10), defaults applied */
   style: ChartExtendedSettings;
   /** R-FORMAT for this chart's aggregation, Y field, decimal places and language */
-  format: (value: number, mode: ChartValueMode) => string;
-  /** The single series' name ("Count all", "Sum of Amount"), for line legends */
+  format: ChartValueFormatter;
+  /** The generated name of what the chart shows ("Count all", "Sum of Amount"): the line legend, the Number title */
   seriesLabel: string;
-  /** Every row failed to load */
+  /** The rows failed to load and the chart has none to show */
   loadError: boolean;
   /** Retry the rows that failed to load */
   retry: () => void;
   isDark: boolean;
-  /** Callback when a chart element is clicked (for drill-down) */
-  onElementClick?: (item: ChartDataItem) => void;
+  /** Opens the drill-down of a chart item */
+  onItemClick?: (item: ChartDataItem) => void;
 }
 
 /** Outside a provider (tests, previews): a plain Sum in US English. */
@@ -69,14 +59,8 @@ export const DEFAULT_CHART_CONTEXT: ChartContextValue = {
   chartData: [],
   isLoading: true,
   xAxisField: null,
-  fieldType: null,
-  aggregationType: ChartAggregationType.Count,
-  selectOptions: [],
+  effectiveAggregation: ChartAggregationType.Count,
   hasGroupableFields: false,
-  yAxisField: null,
-  yFieldName: '',
-  yNumberFormat: null,
-  numberValue: null,
   style: DEFAULT_CHART_EXTENDED_SETTINGS,
   format: defaultFormat,
   seriesLabel: '',
@@ -87,14 +71,9 @@ export const DEFAULT_CHART_CONTEXT: ChartContextValue = {
 
 export const ChartContext = createContext<ChartContextValue>(DEFAULT_CHART_CONTEXT);
 
+/** The chart context; `DEFAULT_CHART_CONTEXT` outside a `ChartProvider`. */
 export function useChartContext() {
-  const context = useContext(ChartContext);
-
-  if (!context) {
-    throw new Error('useChartContext must be used within a ChartProvider');
-  }
-
-  return context;
+  return useContext(ChartContext);
 }
 
 export default useChartContext;

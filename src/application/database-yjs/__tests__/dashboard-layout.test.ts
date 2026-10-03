@@ -23,6 +23,7 @@ import {
   moveDashboardWidget,
   normalizeDashboardRows,
   readDashboardLayoutSetting,
+  readStoredDashboardWidgets,
   removeDashboardWidget,
   replaceDashboardWidgetView,
   resizeDashboardWidget,
@@ -959,6 +960,187 @@ describe('updateDashboardLayoutSetting / initializeDashboardLayoutSetting', () =
       showWidgetTitles: true,
       showIconsInHeading: false,
     });
+  });
+});
+
+describe('a stored layout over the widget limit', () => {
+  /** What another client stored: `count` widgets in rows of `perRow`, each with an unknown key. */
+  function storedWidget(index: number, extra: Record<string, unknown> = { zz_probe: index }) {
+    return { id: `w${index}`, view_id: `view-${index}`, database_id: 'db-host', width: 3, ...extra };
+  }
+
+  function storeRows(view: YDatabaseView, rows: unknown[]) {
+    const layouts = new Y.Map();
+    const setting = new Y.Map();
+
+    setting.set(YjsDatabaseKey.dashboard_rows, rows);
+    layouts.set(DASHBOARD_LAYOUT_KEY, setting);
+    view.set(YjsDatabaseKey.layout_settings, layouts as never);
+  }
+
+  function storedRows(view: YDatabaseView) {
+    return view.get(YjsDatabaseKey.layout_settings).get(DASHBOARD_LAYOUT_KEY).get(YjsDatabaseKey.dashboard_rows) as {
+      id: string;
+      widgets: { id: string }[];
+    }[];
+  }
+
+  function storedWidgetIds(view: YDatabaseView) {
+    return storedRows(view).flatMap((item) => item.widgets.map((entry) => entry.id));
+  }
+
+  /** 14 widgets: three full rows and a fourth row with two. */
+  function fourteenWidgets() {
+    return [0, 1, 2, 3].map((rowIndex) => ({
+      id: `r${rowIndex}`,
+      height: 360,
+      zz_row: rowIndex,
+      widgets: [0, 1, 2, 3]
+        .map((index) => rowIndex * 4 + index)
+        .filter((index) => index < 14)
+        .map((index) => storedWidget(index)),
+    }));
+  }
+
+  it('renders the first twelve of fourteen widgets and leaves storage alone', () => {
+    const { doc, view, database } = createFixture();
+
+    doc.transact(() => storeRows(view, fourteenWidgets()));
+    const { rows } = readDashboardLayoutSetting(database, VIEW_ID);
+
+    expect(countDashboardWidgets(rows)).toBe(DASHBOARD_MAX_WIDGETS);
+    expect(layoutShape(rows)).toEqual([
+      ['w0', 'w1', 'w2', 'w3'],
+      ['w4', 'w5', 'w6', 'w7'],
+      ['w8', 'w9', 'w10', 'w11'],
+    ]);
+    // Reading never writes.
+    expect(storedWidgetIds(view)).toHaveLength(14);
+    expect(readStoredDashboardWidgets(database, VIEW_ID).map((item) => item.id)).toEqual(
+      Array.from({ length: 14 }, (_, index) => `w${index}`)
+    );
+  });
+
+  it('keeps all fourteen in storage when the shown rows are rewritten', () => {
+    const { doc, view, database } = createFixture();
+
+    doc.transact(() => storeRows(view, fourteenWidgets()));
+    const shown = readDashboardLayoutSetting(database, VIEW_ID).rows;
+
+    // The user swaps the first two rows; the editor only knows the twelve it shows.
+    doc.transact(() => updateDashboardLayoutSetting(view, { rows: moveDashboardRow(shown, 'r0', 1) }));
+
+    expect(storedRows(view).map((item) => item.id)).toEqual(['r1', 'r0', 'r2', 'r3']);
+    expect(storedWidgetIds(view)).toEqual([
+      ...['w4', 'w5', 'w6', 'w7'],
+      ...['w0', 'w1', 'w2', 'w3'],
+      ...['w8', 'w9', 'w10', 'w11'],
+      ...['w12', 'w13'],
+    ]);
+    // The hidden row is the stored object: its unknown keys and its widgets' survive.
+    expect(storedRows(view)[3]).toEqual({
+      id: 'r3',
+      height: 360,
+      zz_row: 3,
+      widgets: [storedWidget(12), storedWidget(13)],
+    });
+    // Still twelve on screen, and a second rewrite still keeps fourteen.
+    expect(countDashboardWidgets(readDashboardLayoutSetting(database, VIEW_ID).rows)).toBe(DASHBOARD_MAX_WIDGETS);
+    doc.transact(() =>
+      updateDashboardLayoutSetting(view, {
+        rows: setDashboardRowHeight(readDashboardLayoutSetting(database, VIEW_ID).rows, 'r1', 480),
+      })
+    );
+    expect(storedWidgetIds(view)).toHaveLength(14);
+  });
+
+  it('shows a hidden widget again once a shown one is removed', () => {
+    const { doc, view, database } = createFixture();
+
+    doc.transact(() => storeRows(view, fourteenWidgets()));
+    doc.transact(() =>
+      updateDashboardLayoutSetting(view, {
+        rows: removeDashboardWidget(readDashboardLayoutSetting(database, VIEW_ID).rows, 'w0'),
+      })
+    );
+
+    expect(storedWidgetIds(view)).toHaveLength(13);
+    const { rows } = readDashboardLayoutSetting(database, VIEW_ID);
+
+    expect(countDashboardWidgets(rows)).toBe(DASHBOARD_MAX_WIDGETS);
+    expect(layoutShape(rows)).toEqual([
+      ['w1', 'w2', 'w3'],
+      ['w4', 'w5', 'w6', 'w7'],
+      ['w8', 'w9', 'w10', 'w11'],
+      ['w12'],
+    ]);
+  });
+
+  it('gives the hidden rest of a partly shown row its own row id', () => {
+    const { doc, view, database } = createFixture();
+    // Rows of 4, 4, 3 and 3: the twelfth widget sits in the middle of the last row.
+    const stored = [
+      { id: 'r0', height: 360, widgets: [0, 1, 2, 3].map((index) => storedWidget(index)) },
+      { id: 'r1', height: 360, widgets: [4, 5, 6, 7].map((index) => storedWidget(index)) },
+      { id: 'r2', height: 360, widgets: [8, 9, 10].map((index) => storedWidget(index)) },
+      { id: 'r3', height: 400, zz_row: 'keep', widgets: [11, 12, 13].map((index) => storedWidget(index)) },
+    ];
+
+    doc.transact(() => storeRows(view, stored));
+    const shown = readDashboardLayoutSetting(database, VIEW_ID).rows;
+
+    expect(layoutShape(shown)[3]).toEqual(['w11']);
+    doc.transact(() => updateDashboardLayoutSetting(view, { rows: setDashboardRowHeight(shown, 'r0', 480) }));
+
+    const rows = storedRows(view);
+
+    expect(rows.map((item) => item.id)).toEqual(['r0', 'r1', 'r2', 'r3', 'r3:rest']);
+    expect(new Set(rows.map((item) => item.id)).size).toBe(rows.length);
+    expect(rows[4]).toEqual({
+      id: 'r3:rest',
+      height: 400,
+      zz_row: 'keep',
+      widgets: [storedWidget(12), storedWidget(13)],
+    });
+    expect(storedWidgetIds(view)).toHaveLength(14);
+    // Unchanged on screen.
+    expect(layoutShape(readDashboardLayoutSetting(database, VIEW_ID).rows)).toEqual(layoutShape(shown));
+  });
+
+  it('writes out the positional ids of hidden entries that stored none', () => {
+    const { doc, view, database } = createFixture();
+    const stored = [
+      ...fourteenWidgets().slice(0, 3),
+      { height: 360, widgets: [{ view_id: 'view-12', database_id: 'db-host', width: 6 }, 'not a widget'] },
+    ];
+
+    doc.transact(() => storeRows(view, stored));
+    doc.transact(() =>
+      updateDashboardLayoutSetting(view, {
+        rows: moveDashboardRow(readDashboardLayoutSetting(database, VIEW_ID).rows, 'r0', 2),
+      })
+    );
+
+    // The ids the entries had where they were read, so they cannot change with the new position.
+    expect(storedRows(view)[3]).toEqual({
+      id: 'r:3',
+      height: 360,
+      widgets: [{ id: 'w:3:0', view_id: 'view-12', database_id: 'db-host', width: 6 }],
+    });
+  });
+
+  it('adds nothing to a layout within the limit', () => {
+    const { doc, view, database } = createFixture();
+
+    doc.transact(() => updateDashboardLayoutSetting(view, { rows: fullDashboard() }));
+    doc.transact(() =>
+      updateDashboardLayoutSetting(view, {
+        rows: moveDashboardRow(readDashboardLayoutSetting(database, VIEW_ID).rows, 'r0', 2),
+      })
+    );
+
+    expect(storedRows(view).map((item) => item.id)).toEqual(['r1', 'r2', 'r0']);
+    expect(storedWidgetIds(view)).toHaveLength(DASHBOARD_MAX_WIDGETS);
   });
 });
 

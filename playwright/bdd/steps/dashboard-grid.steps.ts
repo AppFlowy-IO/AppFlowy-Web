@@ -7,16 +7,20 @@
 import { expect, type Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
+import { resolveBackgroundColor, WIDGET_TIMEOUT } from '../../support/dashboard-shared-helpers';
 import {
   addDashboardView,
   DashboardSelectors,
   dragLocatorBy,
+  dragWidthHandle,
   enterEditMode,
+  expectRowHeight,
+  expectRowWidths,
   leaveEditMode,
   persistedRow,
   prepareDashboardFixture,
   readDashboardSetting,
-  rowColumnPitch,
+  rowLineBoxes as rowLineBoxesOf,
   rowLines,
   seedDashboardWidgets,
   setDashboardTrackWidth,
@@ -28,7 +32,6 @@ import {
 
 const { Given, When, Then } = createBdd();
 
-const WIDGET_TIMEOUT = { timeout: 30_000 };
 /** Layout checks compare rendered boxes, which round to device pixels. */
 const TOLERANCE = 1;
 const FIXTURE_DATABASES = ['Projects', 'Tasks', 'Notes'];
@@ -48,16 +51,7 @@ async function trackEdges(page: Page, rowIndex: number) {
 
 /** The boxes of a row grouped into lines by their top edge. */
 async function rowLineBoxes(page: Page, rowIndex: number) {
-  const lines: WidgetBox[][] = [];
-
-  for (const box of await widgetBoxes(page, await rowId(page, rowIndex))) {
-    const line = lines[lines.length - 1];
-
-    if (line && Math.abs(line[0].y - box.y) <= 2) line.push(box);
-    else lines.push([box]);
-  }
-
-  return lines;
+  return rowLineBoxesOf(page, await rowId(page, rowIndex));
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +59,10 @@ async function rowLineBoxes(page: Page, rowIndex: number) {
 // ---------------------------------------------------------------------------
 
 Given('a dashboard with rows of {string} widgets is open', async ({ page, request }, sizes: string) => {
-  await prepareDashboardFixture(page, request);
+  const total = splitList(sizes).reduce((sum, size) => sum + Number(size), 0);
+
+  // Seed only the databases the widgets show (they cycle through the fixture databases).
+  await prepareDashboardFixture(page, request, FIXTURE_DATABASES.slice(0, Math.max(1, Math.min(total, FIXTURE_DATABASES.length))));
   await addDashboardView(page, 'Projects');
   let index = 0;
   const layout = splitList(sizes).flatMap((size, rowIndex) =>
@@ -158,8 +155,25 @@ Then('the dashboard row {int} is laid out in lines of {string}', async ({ page }
 Then(
   'every line of the dashboard row {int} is {int} pixels tall with {int} pixels between lines',
   async ({ page }, rowIndex: number, height: number, gap: number) => {
+    // The largest gap from the contract over every box height and line gap, once the row has boxes.
+    const deviation = async () => {
+      const lines = await rowLineBoxes(page, rowIndex);
+
+      if (lines.length === 0) return Number.POSITIVE_INFINITY;
+      const heights = lines.flatMap((line) => line.map((box) => Math.abs(box.height - height)));
+      const gaps = lines.slice(1).map((line, index) => {
+        const above = lines[index][0];
+
+        return Math.abs(line[0].y - (above.y + above.height) - gap);
+      });
+
+      return Math.max(...heights, ...gaps);
+    };
+
+    await expect.poll(deviation, WIDGET_TIMEOUT).toBeLessThanOrEqual(TOLERANCE);
     const lines = await rowLineBoxes(page, rowIndex);
 
+    expect(lines.length).toBeGreaterThan(0);
     for (const line of lines) {
       for (const box of line) expect(Math.abs(box.height - height)).toBeLessThanOrEqual(TOLERANCE);
     }
@@ -293,21 +307,16 @@ Then(
   'width handle {int} of the dashboard row {int} shows a faint pill',
   async ({ page }, handle: number, rowIndex: number) => {
     const pill = DashboardSelectors.resizePill(page, await rowId(page, rowIndex), handle - 1);
+    const borderPrimary = await resolveBackgroundColor(page, '--border-primary');
 
     await expect(pill).toHaveAttribute('data-state', 'hover');
     await expect
       .poll(() =>
-        pill.evaluate((element) => {
+        pill.evaluate((element, color) => {
           const style = getComputedStyle(element);
-          const probe = document.createElement('div');
 
-          probe.style.backgroundColor = 'var(--border-primary)';
-          document.body.appendChild(probe);
-          const borderPrimary = getComputedStyle(probe).backgroundColor;
-
-          probe.remove();
-          return style.opacity === '1' && style.width === '2px' && style.backgroundColor === borderPrimary;
-        })
+          return style.opacity === '1' && style.width === '2px' && style.backgroundColor === color;
+        }, borderPrimary)
       )
       .toBe(true);
   }
@@ -346,11 +355,9 @@ When('the user leaves dashboard edit mode', async ({ page }) => {
 When(
   'the user drags dashboard width handle {int} of row {int} by {int} columns',
   async ({ page }, handle: number, rowIndex: number, columns: number) => {
-    const row = await persistedRow(page, rowIndex);
-    const pitch = await rowColumnPitch(page, row.id, row.widgets.length);
     const before = (await readDashboardSetting(page)).rows[rowIndex - 1]?.widgets.map((widget) => widget.width);
 
-    await dragLocatorBy(page, DashboardSelectors.widthHandle(page, row.id, handle - 1), columns * pitch, 0);
+    await dragWidthHandle(page, rowIndex, handle, columns);
     // One write on release.
     await expect
       .poll(async () => (await readDashboardSetting(page)).rows[rowIndex - 1]?.widgets.map((widget) => widget.width))
@@ -359,9 +366,7 @@ When(
 );
 
 Then('the dashboard row {int} has widths {string}', async ({ page }, rowIndex: number, widths: string) => {
-  await expect
-    .poll(async () => (await readDashboardSetting(page)).rows[rowIndex - 1]?.widgets.map((widget) => widget.width))
-    .toEqual(splitList(widths).map(Number));
+  await expectRowWidths(page, rowIndex, splitList(widths).map(Number));
 });
 
 When(
@@ -383,12 +388,5 @@ When(
 );
 
 Then('the dashboard row {int} is {int} pixels tall', async ({ page }, rowIndex: number, height: number) => {
-  await expect.poll(async () => (await readDashboardSetting(page)).rows[rowIndex - 1]?.height).toBe(height);
-  const widget = DashboardSelectors.row(page, await rowId(page, rowIndex))
-    .getByTestId('dashboard-widget')
-    .first();
-
-  await expect
-    .poll(async () => Math.abs(((await widget.boundingBox())?.height ?? 0) - height))
-    .toBeLessThanOrEqual(TOLERANCE);
+  await expectRowHeight(page, rowIndex, height, { renderedTolerance: TOLERANCE });
 });

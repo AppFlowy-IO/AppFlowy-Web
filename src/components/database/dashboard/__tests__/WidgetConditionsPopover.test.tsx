@@ -6,8 +6,12 @@ import {
   DatabaseConditionsContext,
   useConditionsContext,
 } from '@/components/database/components/conditions/context';
-import FiltersButton from '@/components/database/components/conditions/FiltersButton';
-import SortsButton from '@/components/database/components/conditions/SortsButton';
+
+import { WidgetFilterTool } from '../widget-tool-buttons/WidgetFilterTool';
+import { WidgetSortTool } from '../widget-tool-buttons/WidgetSortTool';
+import { WidgetContext } from '../WidgetContext';
+
+import { createWidgetContextValue } from './dashboardTestHarness';
 
 let mockFilters: { id: string }[] = [];
 let mockSorts: { id: string; fieldId: string }[] = [];
@@ -88,9 +92,12 @@ jest.mock('@/components/database/components/sorts/utils', () => ({
   useRollupSortableIds: () => new Set<string>(),
 }));
 
+const WIDGET = createWidgetContextValue();
+
 /**
- * The conditions context of a dashboard widget, as `DatabaseViews` maps it:
- * the bar's "expand" and the sort menu are the widget's popovers.
+ * The conditions context of a dashboard widget, as `DatabaseViews`
+ * (`WidgetConditionsProvider`) maps it: the bar's "expand" and the sort menu
+ * are the widget's popovers.
  */
 function WidgetConditions({ children }: { children: ReactNode }) {
   const [popover, setPopover] = useState<'filters' | 'sorts' | null>(null);
@@ -121,34 +128,24 @@ function WidgetConditions({ children }: { children: ReactNode }) {
   );
 
   return (
-    <DatabaseConditionsContext.Provider value={value}>
-      <DatabaseConditionsActionsContext.Provider
-        value={{
-          setExpanded,
-          setOpenFilterId,
-          setAdvancedMode: jest.fn(),
-          setAdvancedPanelOpen: jest.fn(),
-          setSortMenuOpen,
-        }}
-      >
-        <output data-testid='popover-state'>{popover ?? 'none'}</output>
-        {children}
-        <button data-testid='column-header-filter' onClick={() => setExpanded(true)} type='button' />
-      </DatabaseConditionsActionsContext.Provider>
-    </DatabaseConditionsContext.Provider>
+    <WidgetContext.Provider value={WIDGET}>
+      <DatabaseConditionsContext.Provider value={value}>
+        <DatabaseConditionsActionsContext.Provider
+          value={{
+            setExpanded,
+            setOpenFilterId,
+            setAdvancedMode: jest.fn(),
+            setAdvancedPanelOpen: jest.fn(),
+            setSortMenuOpen,
+          }}
+        >
+          <output data-testid='popover-state'>{popover ?? 'none'}</output>
+          {children}
+          <button data-testid='column-header-filter' onClick={() => setExpanded(true)} type='button' />
+        </DatabaseConditionsActionsContext.Provider>
+      </DatabaseConditionsContext.Provider>
+    </WidgetContext.Provider>
   );
-}
-
-function ConnectedFilters() {
-  const context = useConditionsContext();
-
-  return <FiltersButton {...context} presentation='popover' variant='widget' />;
-}
-
-function ConnectedSorts() {
-  const context = useConditionsContext();
-
-  return <SortsButton {...context} presentation='popover' variant='widget' />;
 }
 
 const filterTool = () => screen.getByTestId('database-actions-filter');
@@ -164,7 +161,7 @@ describe('the widget filter tool', () => {
   it('picks a property first, then opens the Filters popover with the new rule editing', async () => {
     const { rerender } = render(
       <WidgetConditions>
-        <ConnectedFilters />
+        <WidgetFilterTool />
       </WidgetConditions>
     );
 
@@ -176,7 +173,7 @@ describe('the widget filter tool', () => {
     fireEvent.click(screen.getByTestId('pick-property'));
     rerender(
       <WidgetConditions>
-        <ConnectedFilters />
+        <WidgetFilterTool />
       </WidgetConditions>
     );
 
@@ -184,7 +181,8 @@ describe('the widget filter tool', () => {
     const popover = await screen.findByTestId('dashboard-widget-filters-popover');
 
     expect(popover.textContent).toContain('Filters');
-    expect(popover.className).toContain('w-[300px]');
+    // The 300px popover the parity probe measures.
+    expect(popover.getAttribute('data-parity-id')).toBe('dash-widget-filters-popover');
     expect(screen.getByTestId('filter-chip').getAttribute('data-editor-open')).toBe('true');
     expect(screen.getByTestId('database-add-filter-button')).toBeTruthy();
   });
@@ -193,12 +191,11 @@ describe('the widget filter tool', () => {
     mockFilters = [{ id: 'f1' }];
     render(
       <WidgetConditions>
-        <ConnectedFilters />
+        <WidgetFilterTool />
       </WidgetConditions>
     );
 
     expect(filterTool().getAttribute('data-active')).toBe('true');
-    expect(filterTool().className).toContain('data-[active=true]:text-dash-edit-icon');
     fireEvent.click(filterTool());
     expect(await screen.findByTestId('dashboard-widget-filters-popover')).toBeTruthy();
     expect(screen.getAllByTestId('filter-chip')).toHaveLength(1);
@@ -206,13 +203,15 @@ describe('the widget filter tool', () => {
     fireEvent.click(screen.getByTestId('dashboard-widget-filters-popover-close'));
     await waitFor(() => expect(screen.queryByTestId('dashboard-widget-filters-popover')).toBeNull());
     expect(screen.getByTestId('popover-state').textContent).toBe('none');
+    // Closed, the tool still shows its rules in the accent.
+    expect(filterTool().getAttribute('data-active')).toBe('true');
   });
 
   it('closes with Escape and gives the focus back to the tool', async () => {
     mockFilters = [{ id: 'f1' }];
     render(
       <WidgetConditions>
-        <ConnectedFilters />
+        <WidgetFilterTool />
       </WidgetConditions>
     );
 
@@ -227,14 +226,14 @@ describe('the widget filter tool', () => {
   it('never opens by itself when a first rule arrives from elsewhere', () => {
     const { rerender } = render(
       <WidgetConditions>
-        <ConnectedFilters />
+        <WidgetFilterTool />
       </WidgetConditions>
     );
 
     mockFilters = [{ id: 'remote' }];
     rerender(
       <WidgetConditions>
-        <ConnectedFilters />
+        <WidgetFilterTool />
       </WidgetConditions>
     );
 
@@ -246,7 +245,7 @@ describe('the widget filter tool', () => {
     mockFilters = [{ id: 'f1' }];
     render(
       <WidgetConditions>
-        <ConnectedFilters />
+        <WidgetFilterTool />
       </WidgetConditions>
     );
 
@@ -259,7 +258,7 @@ describe('the widget sort tool', () => {
   it('picks a property first, then opens the Sorts popover', async () => {
     render(
       <WidgetConditions>
-        <ConnectedSorts />
+        <WidgetSortTool />
       </WidgetConditions>
     );
 
@@ -278,7 +277,7 @@ describe('the widget sort tool', () => {
     mockSorts = [{ id: 's1', fieldId: 'title' }];
     render(
       <WidgetConditions>
-        <ConnectedSorts />
+        <WidgetSortTool />
       </WidgetConditions>
     );
 
@@ -296,8 +295,8 @@ describe('the widget sort tool', () => {
     mockSorts = [{ id: 's1', fieldId: 'title' }];
     render(
       <WidgetConditions>
-        <ConnectedFilters />
-        <ConnectedSorts />
+        <WidgetFilterTool />
+        <WidgetSortTool />
       </WidgetConditions>
     );
 

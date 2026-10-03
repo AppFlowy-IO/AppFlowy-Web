@@ -15,11 +15,10 @@ import { fileURLToPath } from 'url';
 import { APIRequestContext, expect, Locator, Page } from '@playwright/test';
 import * as Y from 'yjs';
 
-import { Types } from '../../src/application/types';
+import { DatabaseViewLayout } from '../../src/application/types';
 
+import { pressEscapeUntilHidden, readServerDatabaseDoc } from './dashboard-shared-helpers';
 import {
-  apiGet,
-  apiPost,
   dashboardWorld,
   FieldSpec,
   FieldType,
@@ -31,8 +30,10 @@ import {
   writeDashboardSetting,
 } from './dashboard-test-helpers';
 import {
+  addRowsThroughApi,
   addUseCaseDatabase,
   addUseCaseViews,
+  ApiRow,
   namedView,
   rememberFieldTypes,
   rememberSelectOptions,
@@ -40,7 +41,11 @@ import {
   waitForViewSync,
 } from './dashboard-usecase-helpers';
 
+export { chartTable, type ChartTableRow } from './dashboard-usecase-helpers';
+
 export const CHART_TIMEOUT = { timeout: USE_CASE_TIMEOUT };
+/** The `layout_settings` key of a chart view's settings. */
+const CHART_LAYOUT_KEY = String(DatabaseViewLayout.Chart);
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -172,56 +177,30 @@ async function waitForTypeOptionSync(
   updates: TypeOptionUpdate[]
 ) {
   const world = dashboardWorld(page);
+  const access = { token: world.owner.accessToken, workspaceId: world.workspaceId };
 
   await expect
     .poll(
-      async () => {
-        const collab = await apiGet<{ doc_state: number[] }>(
-          request,
-          world.owner.accessToken,
-          `/api/workspace/v1/${world.workspaceId}/collab/${databaseId}?collab_type=${Types.Database}`
-        ).catch(() => null);
+      () =>
+        readServerDatabaseDoc(request, access, databaseId, (database) => {
+          const fields = database?.get('fields') as Y.Map<Y.Map<any>> | undefined;
 
-        if (!collab) return false;
-        const doc = new Y.Doc({ guid: databaseId });
+          return updates.every(({ fieldId, type, entries }) => {
+            const option = fields?.get(fieldId)?.get('type_option')?.get(String(type));
 
-        Y.applyUpdate(doc, new Uint8Array(collab.doc_state));
-        const fields = (doc.getMap('data').get('database') as Y.Map<any> | undefined)?.get('fields') as
-          | Y.Map<Y.Map<any>>
-          | undefined;
-
-        return updates.every(({ fieldId, type, entries }) => {
-          const option = fields?.get(fieldId)?.get('type_option')?.get(String(type));
-
-          return Object.entries(entries).every(([key, value]) => option?.get(key) === value);
-        });
-      },
+            return Object.entries(entries).every(([key, value]) => option?.get(key) === value);
+          });
+        }).catch(() => false),
       { timeout: USE_CASE_TIMEOUT, message: 'waiting for the chart fixture type options to reach the server' }
     )
     .toBe(true);
 }
 
-async function browserRowIds(page: Page, databaseId: string, viewId: string): Promise<string[]> {
-  return page.evaluate(
-    ({ databaseId, viewId }) => {
-      const ctx = (window as any).__DASHBOARD_TEST__?.byDatabase(databaseId);
-      const orders = ctx?.databaseDoc.getMap('data').get('database')?.get('views')?.get(viewId)?.get('row_orders');
-
-      return orders ? orders.toArray().map((order: { id: string }) => order.id) : [];
-    },
-    { databaseId, viewId }
-  );
-}
-
 async function addFixtureRows(page: Page, request: APIRequestContext, spec: FixtureDatabaseSpec) {
-  const world = dashboardWorld(page);
-  const database = fixtureDatabase(page, spec.name);
   const columns = spec.rowColumns ?? ['Name', ...spec.properties.map((property) => property.name)];
   const types = new Map(spec.properties.map((property) => [property.name, property.type]));
-  const base = `/api/workspace/${world.workspaceId}/database/${database.databaseId}`;
-
-  for (const row of spec.rows) {
-    const cells: Record<string, string | number> = {};
+  const rows = spec.rows.map((row): ApiRow => {
+    const cells: ApiRow['cells'] = {};
 
     row.forEach((value, index) => {
       const column = columns[index];
@@ -229,39 +208,23 @@ async function addFixtureRows(page: Page, request: APIRequestContext, spec: Fixt
       if (value === null || value === undefined || value === '') return;
       cells[column] = types.get(column) === 'DateTime' ? localNoonIso(String(value)) : value;
     });
-    database.rowIds[String(row[0])] = await apiPost<string>(request, world.owner.accessToken, `${base}/row`, {
-      cells,
-      document: null,
-      parse_link_as_link_preview: false,
-    });
-  }
+    return { title: String(row[0]), cells };
+  });
 
-  if (spec.rows.length === 0) return;
-  await openDatabasePage(page, spec.name, database.views.Grid);
-  const expected = Object.values(database.rowIds);
-
-  await expect
-    .poll(
-      async () => {
-        const ids = await browserRowIds(page, database.databaseId, database.views.Grid);
-
-        return expected.every((id) => ids.includes(id));
-      },
-      { timeout: USE_CASE_TIMEOUT, message: `waiting for the "${spec.name}" rows to reach the browser` }
-    )
-    .toBe(true);
+  if (rows.length === 0) return;
+  await addRowsThroughApi(page, request, spec.name, rows, USE_CASE_TIMEOUT);
 }
 
 /** Switch a chart view's `chart_type` (horizontal bars have no use-case layout name). */
 async function setChartType(page: Page, databaseId: string, viewId: string, chartType: number) {
   await page.evaluate(
-    ({ databaseId, viewId, chartType }) => {
+    ({ databaseId, viewId, chartType, layoutKey }) => {
       const ctx = (window as any).__DASHBOARD_TEST__.byDatabase(databaseId);
       const view = ctx.databaseDoc.getMap('data').get('database').get('views').get(viewId);
 
-      ctx.databaseDoc.transact(() => view.get('layout_settings').get('3').set('chart_type', chartType));
+      ctx.databaseDoc.transact(() => view.get('layout_settings').get(layoutKey).set('chart_type', chartType));
     },
-    { databaseId, viewId, chartType }
+    { databaseId, viewId, chartType, layoutKey: CHART_LAYOUT_KEY }
   );
 }
 
@@ -366,25 +329,6 @@ export async function valueTicks(scope: Locator): Promise<string[]> {
 
     return (onOneRow ? ticks.sort((a, b) => a.x - b.x) : ticks.sort((a, b) => b.y - a.y)).map((tick) => tick.text);
   });
-}
-
-export interface ChartTableRow {
-  key: string;
-  label: string;
-  value: number;
-  color: string;
-}
-
-/** The hidden data table: every category in display order with its raw value and color. */
-export async function chartTable(scope: Locator): Promise<ChartTableRow[]> {
-  return scope.evaluate((element) =>
-    Array.from(element.querySelectorAll('[data-testid="chart-data-table"] tr[data-label]')).map((row) => ({
-      key: row.getAttribute('data-key') ?? '',
-      label: row.getAttribute('data-label') ?? '',
-      value: Number(row.getAttribute('data-value')),
-      color: (row.getAttribute('data-color') ?? '').toUpperCase(),
-    }))
-  );
 }
 
 /** The centre of the category's hover target, in viewport coordinates. */
@@ -535,10 +479,7 @@ export async function toggleChartStyleRow(page: Page, rowTestId: string) {
 }
 
 export async function closeMenus(page: Page) {
-  for (let attempt = 0; attempt < 4 && (await page.locator('[role="menu"]').count()) > 0; attempt += 1) {
-    await page.keyboard.press('Escape');
-  }
-
+  await pressEscapeUntilHidden(page, page.locator('[role="menu"]').first());
   await expect(page.locator('[role="menu"]')).toHaveCount(0);
 }
 
@@ -548,16 +489,16 @@ export async function storedChartValue(page: Page, viewName: string, key: string
   const database = fixtureDatabase(page, view.database);
 
   return page.evaluate(
-    ({ databaseId, viewId, key }) => {
+    ({ databaseId, viewId, key, layoutKey }) => {
       const ctx = (window as any).__DASHBOARD_TEST__.byDatabase(databaseId);
-      const chart = ctx?.databaseDoc.getMap('data').get('database')?.get('views')?.get(viewId)?.get('layout_settings')?.get('3');
+      const chart = ctx?.databaseDoc.getMap('data').get('database')?.get('views')?.get(viewId)?.get('layout_settings')?.get(layoutKey);
 
       if (!chart || !chart.has(key)) return { absent: true };
       const value = chart.get(key);
 
       return { value: typeof value === 'bigint' ? Number(value) : value };
     },
-    { databaseId: database.databaseId, viewId: view.viewId, key }
+    { databaseId: database.databaseId, viewId: view.viewId, key, layoutKey: CHART_LAYOUT_KEY }
   ).then((result: { absent?: boolean; value?: unknown }) => (result.absent ? undefined : result.value));
 }
 

@@ -1,4 +1,4 @@
-import { DASHBOARD_MAX_ROW_HEIGHT, DASHBOARD_MIN_ROW_HEIGHT } from '@/application/database-yjs/dashboard.type';
+import { DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT } from '@/application/database-yjs/database-view-doc-ops';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 
 import {
@@ -8,30 +8,10 @@ import {
   WIDGET_MIN_VIEWPORT_HEIGHT,
 } from './constants';
 
-const DATABASE_TO_VIEW_LAYOUT: Record<DatabaseViewLayout, ViewLayout> = {
-  [DatabaseViewLayout.Grid]: ViewLayout.Grid,
-  [DatabaseViewLayout.Board]: ViewLayout.Board,
-  [DatabaseViewLayout.Calendar]: ViewLayout.Calendar,
-  [DatabaseViewLayout.Chart]: ViewLayout.Chart,
-  [DatabaseViewLayout.List]: ViewLayout.List,
-  [DatabaseViewLayout.Gallery]: ViewLayout.Gallery,
-  [DatabaseViewLayout.Feed]: ViewLayout.Feed,
-  [DatabaseViewLayout.Form]: ViewLayout.Form,
-  [DatabaseViewLayout.Timeline]: ViewLayout.Timeline,
-  [DatabaseViewLayout.Dashboard]: ViewLayout.Dashboard,
-};
-
 /** Folder layout (icons, catalog) of a database-side layout value. */
 export function databaseLayoutToViewLayout(layout: DatabaseViewLayout | null | undefined): ViewLayout {
   if (layout === null || layout === undefined) return ViewLayout.Grid;
-  return DATABASE_TO_VIEW_LAYOUT[layout] ?? ViewLayout.Grid;
-}
-
-/** Database-side layout of a folder layout value; `null` for non-database layouts. */
-export function viewLayoutToDatabaseLayout(layout: ViewLayout | null | undefined): DatabaseViewLayout | null {
-  const entry = Object.entries(DATABASE_TO_VIEW_LAYOUT).find(([, value]) => value === layout);
-
-  return entry ? (Number(entry[0]) as DatabaseViewLayout) : null;
+  return DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT[layout] ?? ViewLayout.Grid;
 }
 
 /** Translation key + English fallback of a layout's menu name. */
@@ -80,9 +60,15 @@ export function getWidgetViewportHeight(rowHeight: number, chrome: WidgetChromeI
   return Math.max(WIDGET_MIN_VIEWPORT_HEIGHT, rowHeight - chromeHeight);
 }
 
-export function clampRowHeight(height: number) {
-  if (!Number.isFinite(height)) return DASHBOARD_MIN_ROW_HEIGHT;
-  return Math.min(DASHBOARD_MAX_ROW_HEIGHT, Math.max(DASHBOARD_MIN_ROW_HEIGHT, Math.round(height)));
+/**
+ * CSS `top` of the centre of the card inside a widget box: the card starts
+ * under the header band (or under the top padding when titles are hidden)
+ * and ends at the box's bottom padding.
+ */
+export function getWidgetCardCenter({ showWidgetTitles }: WidgetChromeInput) {
+  const top = showWidgetTitles ? WIDGET_HEADER_HEIGHT : WIDGET_BOX_PADDING;
+
+  return top === WIDGET_BOX_PADDING ? '50%' : `calc(${top}px + (100% - ${top + WIDGET_BOX_PADDING}px) / 2)`;
 }
 
 /**

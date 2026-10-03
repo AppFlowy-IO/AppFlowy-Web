@@ -1,5 +1,11 @@
 import * as Y from 'yjs';
 import {
+  releaseDatabaseRowDocs,
+  releaseRowDocSyncBinding,
+  retainDatabaseRowDocs,
+  retainRowDocSyncBinding,
+} from '@/application/database-blob/row-doc-retention';
+import {
   createDatabaseRowDocSeed,
   invalidateDatabaseRowDocSeedGeneration,
 } from '@/application/database-blob/row-seed-fence';
@@ -25,6 +31,7 @@ import {
   collabIndexedDBExists,
   db,
   deleteCollabDB,
+  evictProviderCache,
 } from '@/application/db';
 import { StrategyType } from '@/application/services/js-services/cache/types';
 
@@ -433,6 +440,129 @@ describe('database row document cache', () => {
     expect(cell?.has(YjsDatabaseKey.source_field_type)).toBe(false);
 
     canonicalDoc.destroy();
+  });
+});
+
+describe('database row document eviction', () => {
+  const mockedEvictProviderCache = evictProviderCache as jest.MockedFunction<typeof evictProviderCache>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedCollabIndexedDBExists.mockResolvedValue(false);
+    (db.collab_custom.get as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  /** Opens a row doc the way a database view does, and reports when it is destroyed. */
+  async function openRow(databaseId: string, rowId: string) {
+    const doc = createRowDoc(rowId, databaseId, {});
+    const destroyed = jest.fn();
+
+    doc.on('destroy', destroyed);
+    mockedOpenRowCollabDBWithProvider.mockResolvedValueOnce({
+      doc,
+      provider: { synced: true, destroy: jest.fn().mockResolvedValue(undefined) },
+    } as never);
+    await createRow(`${databaseId}_rows_${rowId}`);
+    return { doc, destroyed, rowKey: `${databaseId}_rows_${rowId}` };
+  }
+
+  it('evicts the row docs of a released database that no sync context references', async () => {
+    const databaseId = 'database-evict';
+    const seedOnly = await openRow(databaseId, 'row-evict-seed-only');
+    const synced = await openRow(databaseId, 'row-evict-synced');
+    const otherDatabase = await openRow('database-evict-other', 'row-evict-other');
+
+    // A rendered row has a sync context; the others were only read for filter and sort.
+    retainRowDocSyncBinding('row-evict-synced');
+    retainDatabaseRowDocs(databaseId);
+
+    // While a view retains the database, a row map may hold any of its docs.
+    expect(seedOnly.destroyed).not.toHaveBeenCalled();
+
+    releaseDatabaseRowDocs(databaseId);
+
+    expect(seedOnly.destroyed).toHaveBeenCalledTimes(1);
+    expect(getCachedRowDoc(seedOnly.rowKey)).toBeUndefined();
+    expect(mockedEvictProviderCache).toHaveBeenCalledWith('row-evict-seed-only');
+    expect(synced.destroyed).not.toHaveBeenCalled();
+    expect(getCachedRowDoc(synced.rowKey)).toBe(synced.doc);
+    expect(otherDatabase.destroyed).not.toHaveBeenCalled();
+
+    // The sync context is unregistered a few seconds after the view unmounted.
+    releaseRowDocSyncBinding('row-evict-synced', synced.doc);
+
+    expect(synced.destroyed).toHaveBeenCalledTimes(1);
+    expect(getCachedRowDoc(synced.rowKey)).toBeUndefined();
+
+    // The next view opens the row again from storage.
+    const reopened = await openRow(databaseId, 'row-evict-seed-only');
+
+    expect(getCachedRowDoc(reopened.rowKey)).toBe(reopened.doc);
+    otherDatabase.doc.destroy();
+    reopened.doc.destroy();
+  });
+
+  it('keeps the row docs of a database that a view retains again', async () => {
+    const databaseId = 'database-evict-retained';
+    const row = await openRow(databaseId, 'row-evict-retained');
+
+    retainRowDocSyncBinding('row-evict-retained');
+    releaseDatabaseRowDocs(databaseId);
+    // The dashboard is reopened before the row's sync context is unregistered.
+    retainDatabaseRowDocs(databaseId);
+    releaseRowDocSyncBinding('row-evict-retained', row.doc);
+
+    expect(row.destroyed).not.toHaveBeenCalled();
+    expect(getCachedRowDoc(row.rowKey)).toBe(row.doc);
+    row.doc.destroy();
+  });
+
+  it('keeps a row doc while another sync provider still binds it', async () => {
+    const databaseId = 'database-evict-two-bindings';
+    const row = await openRow(databaseId, 'row-evict-two-bindings');
+
+    retainRowDocSyncBinding('row-evict-two-bindings');
+    retainRowDocSyncBinding('row-evict-two-bindings');
+    releaseDatabaseRowDocs(databaseId);
+    releaseRowDocSyncBinding('row-evict-two-bindings', row.doc);
+    expect(row.destroyed).not.toHaveBeenCalled();
+
+    releaseRowDocSyncBinding('row-evict-two-bindings', row.doc);
+    expect(row.destroyed).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not destroy again a doc whose destruction unregistered its sync context', async () => {
+    const databaseId = 'database-evict-destroying';
+    const row = await openRow(databaseId, 'row-evict-destroying');
+    const destroy = jest.spyOn(row.doc, 'destroy');
+
+    retainRowDocSyncBinding('row-evict-destroying');
+    releaseDatabaseRowDocs(databaseId);
+    releaseRowDocSyncBinding('row-evict-destroying', row.doc, { docDestroyed: true });
+
+    expect(destroy).not.toHaveBeenCalled();
+    expect(getCachedRowDoc(row.rowKey)).toBeUndefined();
+    destroy.mockRestore();
+    row.doc.destroy();
+  });
+
+  it('leaves the replacement doc of a row alone when the old one is unbound', async () => {
+    const databaseId = 'database-evict-replaced';
+    const row = await openRow(databaseId, 'row-evict-replaced');
+    const replacement = createRowDoc('row-evict-replaced', databaseId, {});
+    const replacementDestroyed = jest.fn();
+
+    replacement.on('destroy', replacementDestroyed);
+    retainRowDocSyncBinding('row-evict-replaced');
+    releaseDatabaseRowDocs(databaseId);
+    // A version reset swapped the cached doc; the old doc's context is unregistered afterwards.
+    cacheCanonicalRowDoc('row-evict-replaced', replacement);
+    releaseRowDocSyncBinding('row-evict-replaced', row.doc);
+
+    expect(replacementDestroyed).not.toHaveBeenCalled();
+    expect(getCachedRowDoc(row.rowKey)).toBe(replacement);
+    row.doc.destroy();
+    replacement.destroy();
   });
 });
 

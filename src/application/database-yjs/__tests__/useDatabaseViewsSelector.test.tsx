@@ -158,4 +158,85 @@ describe('useDatabaseViewsSelector', () => {
       expect(result.current.viewIds).toEqual(['owned-board-id']);
     });
   });
+
+  describe('events inside a view', () => {
+    function renderViews(databaseDoc: YDoc, databasePageId: string) {
+      const contextValue: DatabaseContextState = {
+        readOnly: true,
+        databaseDoc,
+        databasePageId,
+        activeViewId: databasePageId,
+        rowDocMap: null,
+        workspaceId: 'workspace-id',
+      };
+
+      return renderHook(() => useDatabaseViewsSelector(databasePageId), {
+        wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+      });
+    }
+
+    function getViews(doc: YDoc) {
+      return doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database).get(YjsDatabaseKey.views);
+    }
+
+    it('never serializes the views to list their ids', () => {
+      const databaseDoc = createDatabaseDocWithViews(['grid-id', 'board-id']);
+      const views = getViews(databaseDoc);
+      const toJSON = jest.spyOn(views, 'toJSON');
+      const { result } = renderViews(databaseDoc, 'grid-id');
+
+      act(() => {
+        databaseDoc.transact(() => {
+          const rowOrders = new Y.Array();
+
+          rowOrders.push([{ id: 'row-1', height: 36 }]);
+          views.get('grid-id').set(YjsDatabaseKey.row_orders, rowOrders);
+        });
+      });
+      act(() => {
+        databaseDoc.transact(() => {
+          views.get('grid-id').get(YjsDatabaseKey.row_orders).push([{ id: 'row-2', height: 36 }]);
+        });
+      });
+
+      expect(result.current.viewIds).toEqual(['grid-id', 'board-id']);
+      expect(toJSON).not.toHaveBeenCalled();
+    });
+
+    it('keeps both arrays when an event changes neither the ids nor the views', () => {
+      const databaseDoc = createDatabaseDocWithViews(['grid-id', 'board-id']);
+      const views = getViews(databaseDoc);
+      const { result } = renderViews(databaseDoc, 'grid-id');
+      const { viewIds, childViews } = result.current;
+
+      // A row is added and a view is renamed: the tabs stay the same views.
+      act(() => {
+        databaseDoc.transact(() => {
+          const rowOrders = new Y.Array();
+
+          rowOrders.push([{ id: 'row-1', height: 36 }]);
+          views.get('board-id').set(YjsDatabaseKey.row_orders, rowOrders);
+          views.get('board-id').set(YjsDatabaseKey.name, 'Renamed');
+        });
+      });
+
+      expect(result.current.viewIds).toBe(viewIds);
+      expect(result.current.childViews).toBe(childViews);
+
+      // A new view changes both.
+      act(() => {
+        databaseDoc.transact(() => {
+          const view = new Y.Map();
+
+          view.set(YjsDatabaseKey.created_at, new Date(Date.UTC(2024, 5, 1)).toISOString());
+          views.set('calendar-id', view);
+        });
+      });
+
+      expect(result.current.viewIds).toEqual(['grid-id', 'board-id', 'calendar-id']);
+      expect(result.current.viewIds).not.toBe(viewIds);
+      expect(result.current.childViews).toHaveLength(3);
+      expect(result.current.childViews.slice(0, 2)).toEqual(childViews);
+    });
+  });
 });

@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 
-import { copyDatabaseViewConfiguration } from '@/application/database-yjs/dispatch';
+import { copyDatabaseViewConfiguration } from '@/application/database-yjs/database-view-doc-ops';
 import {
   DatabaseViewLayout,
   YDatabaseFilter,

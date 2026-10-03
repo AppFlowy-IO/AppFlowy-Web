@@ -8,6 +8,7 @@
  */
 import { expect, Page } from '@playwright/test';
 
+import { canonicalJson } from './dashboard-shared-helpers';
 import { dashboardViewId, DASHBOARD_LAYOUT_KEY } from './dashboard-test-helpers';
 
 /** A setting only a newer app version understands. */
@@ -102,15 +103,6 @@ export async function seedDashboardProbes(page: Page) {
   expect(rows.length, 'the dashboard has no rows to probe').toBeGreaterThan(0);
   await mergeRawLayout(page, viewId, DASHBOARD_LAYOUT_KEY, { rows, [PARITY_PROBE_KEY]: PARITY_PROBE });
   await expectDashboardProbes(page);
-}
-
-/** JSON with object keys sorted, so equal values compare equal whatever order a client stored the keys in. */
-function canonicalJson(value: unknown): string {
-  return JSON.stringify(value, (_key, item: unknown) =>
-    item && typeof item === 'object' && !Array.isArray(item)
-      ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
-      : item
-  );
 }
 
 /** Every probe `seedDashboardProbes` stored is still there, on the row or widget with the same id. */

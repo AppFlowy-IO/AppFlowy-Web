@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { legendItemWidth, paginateLegend, LegendPagination, TextMeasurer } from '@/application/database-yjs/chart-scale';
+import {
+  CHART_LEGEND_GLYPH_GAP,
+  CHART_LEGEND_PADDING_TOP,
+  CHART_LEGEND_PAGER_GAP,
+  CHART_LEGEND_PAGER_HEIGHT,
+  legendItemWidth,
+  LegendPagination,
+  paginateLegend,
+  TextMeasurer,
+} from '@/application/database-yjs/chart-scale';
 import { DASHBOARD_CHART_GEOMETRY } from '@/application/database-yjs/dashboard-geometry';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down_small.svg';
 import { ReactComponent as ArrowUpIcon } from '@/assets/icons/alt_arrow_up_small.svg';
@@ -61,10 +70,11 @@ export function ChartLegend({ items, glyph, layout }: ChartLegendProps) {
 
   return (
     <div
-      className='flex w-full shrink-0 flex-col items-center overflow-hidden pt-2'
+      className='flex w-full shrink-0 flex-col items-center overflow-hidden'
       data-glyph={glyph}
       data-testid='chart-legend'
-      style={{ height: layout.height, gap: 4 }}
+      // The same values `computeLegendHeight` reserved room with.
+      style={{ height: layout.height, paddingTop: CHART_LEGEND_PADDING_TOP, gap: CHART_LEGEND_PAGER_GAP }}
     >
       <div
         className='flex max-w-full flex-wrap content-start justify-center'
@@ -80,7 +90,7 @@ export function ChartLegend({ items, glyph, layout }: ChartLegendProps) {
               data-label={item.label}
               data-testid='chart-legend-item'
               key={item.key}
-              style={{ gap: 6, height: legend.lineHeight }}
+              style={{ gap: CHART_LEGEND_GLYPH_GAP, height: legend.lineHeight }}
             >
               <span
                 className='shrink-0'
@@ -96,7 +106,11 @@ export function ChartLegend({ items, glyph, layout }: ChartLegendProps) {
         })}
       </div>
       {pageCount > 1 ? (
-        <div className='flex h-4 items-center gap-1 text-xs text-text-secondary' data-testid='chart-legend-pager'>
+        <div
+          className='flex items-center gap-1 text-xs text-text-secondary'
+          data-testid='chart-legend-pager'
+          style={{ height: CHART_LEGEND_PAGER_HEIGHT }}
+        >
           <button
             aria-label={t('chart.legend.previousPage', { defaultValue: 'Previous page' })}
             className={cn('flex h-4 w-4 items-center justify-center', current === 0 ? 'text-text-tertiary' : 'text-text-secondary')}

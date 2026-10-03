@@ -1,4 +1,3 @@
-import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -18,6 +17,7 @@ import { useColumnsDrag } from '@/components/database/components/board/drag-and-
 import Columns from '@/components/database/components/board/group/Columns';
 import GroupStickyHeader from '@/components/database/components/board/group/GroupStickyHeader';
 import { DeleteRowConfirm } from '@/components/database/components/database-row/DeleteRowConfirm';
+import { autoScrollForSharedElement } from '@/components/database/components/drag-and-drop/autoScrollForSharedElement';
 import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
 import DatabaseStickyHorizontalScrollbar from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
@@ -188,12 +188,11 @@ const HydratedGroup = ({ groupId, columns, groupResult, fieldId, groupRowsReady 
   useEffect(() => {
     if (!verticalScrollContainer || readOnly) return;
 
-    const cleanup = autoScrollForElements({
-      element: verticalScrollContainer,
-      canScroll: ({ source }) => source.data.instanceId === contextValue.instanceId && source.data.type === 'card',
-    });
-
-    return cleanup;
+    // In a dashboard widget this is the columns' own scroller, which `useColumnsDrag` scrolls too.
+    return autoScrollForSharedElement(
+      verticalScrollContainer,
+      ({ source }) => source.data.instanceId === contextValue.instanceId && source.data.type === 'card'
+    );
   }, [verticalScrollContainer, readOnly, contextValue.instanceId]);
 
   // Compute initial sticky-header visibility before first paint to prevent

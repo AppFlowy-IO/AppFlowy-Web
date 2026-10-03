@@ -474,4 +474,26 @@ describe('useRowHeightResize', () => {
     fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowDown' });
     expect(onCommit).not.toHaveBeenCalled();
   });
+
+  it('snaps a keyboard step to 20 px, like a drag: a height off the grid lands on it with the first key', () => {
+    const onCommit = jest.fn();
+
+    // 250 was stored before heights snapped, or by another client.
+    render(<PersistingHeightProbe initialHeight={250} onCommit={onCommit} />);
+    fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowDown' });
+    fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowDown' });
+    fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowUp' });
+
+    // 250 + 20 snaps to 280; from there the keys move by whole steps.
+    expect(onCommit.mock.calls).toEqual([[280], [300], [280]]);
+    onCommit.mock.calls.forEach(([height]) => expect(height % DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP).toBe(0));
+  });
+
+  it('keeps a keyboard step inside the supported range', () => {
+    const onCommit = jest.fn();
+
+    render(<HeightProbe height={DASHBOARD_MAX_ROW_HEIGHT} onCommit={onCommit} />);
+    fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowDown' });
+    expect(onCommit).not.toHaveBeenCalled();
+  });
 });

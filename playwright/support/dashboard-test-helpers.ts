@@ -14,27 +14,42 @@ import { APIRequestContext, BrowserContext, expect, Locator, Page } from '@playw
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
-import { FieldType } from '../../src/application/database-yjs/database.type';
-import { DatabaseViewLayout, Types } from '../../src/application/types';
-
-import { AuthTestUtils } from './auth-utils';
-import { mockProSubscription } from './chart-test-helpers';
-import { grantWorkspaceProSubscription } from './subscription-test-helpers';
-import { ensurePageExpandedByViewId, expandSpaceByName } from './page-utils';
-import { ChartSettingsSelectors, DatabaseViewSelectors, SidebarSelectors, TimelineSelectors } from './selectors';
-import { setupPageErrorHandling, TestConfig } from './test-config';
-
-export { DatabaseViewLayout, FieldType };
-
-// The `layout_settings` key and the limits come from the app (bound to `dashboard-parity/tokens.json`).
 import {
+  DASHBOARD_COLUMN_GAP_PX,
   DASHBOARD_DEFAULT_ROW_HEIGHT,
   DASHBOARD_GRID_COLUMNS,
   DASHBOARD_MAX_WIDGETS,
   DASHBOARD_MAX_WIDGETS_PER_ROW,
+  DASHBOARD_WIDGET_BOX_BLEED,
 } from '../../src/application/database-yjs/dashboard-geometry';
 import { DASHBOARD_LAYOUT_KEY } from '../../src/application/database-yjs/dashboard.type';
+import { FieldType } from '../../src/application/database-yjs/database.type';
+import { DatabaseViewLayout, ViewLayout } from '../../src/application/types';
 
+import { AuthTestUtils } from './auth-utils';
+import { mockProSubscription } from './chart-test-helpers';
+import {
+  apiGet,
+  apiHeaders,
+  apiPatch,
+  apiPost,
+  canonicalJson,
+  equalRowWidths,
+  escapeRegExp,
+  parseJson,
+  plainYjs,
+  readServerDatabaseDoc,
+  WIDGET_TIMEOUT_MS,
+} from './dashboard-shared-helpers';
+import { ensurePageExpandedByViewId, expandSpaceByName } from './page-utils';
+import { ChartSettingsSelectors, DatabaseViewSelectors, SidebarSelectors, TimelineSelectors } from './selectors';
+import { grantWorkspaceProSubscription } from './subscription-test-helpers';
+import { setupPageErrorHandling, TestConfig } from './test-config';
+
+export { DatabaseViewLayout, FieldType };
+export { apiGet, apiPatch, apiPost, escapeRegExp };
+
+// The `layout_settings` key, the limits and the geometry come from the app (bound to `dashboard-parity/tokens.json`).
 export {
   DASHBOARD_DEFAULT_ROW_HEIGHT,
   DASHBOARD_GRID_COLUMNS,
@@ -43,18 +58,17 @@ export {
   DASHBOARD_MAX_WIDGETS_PER_ROW,
 };
 /** The gap between widget boxes, and the bleed of each row track past the content column (WP02). */
-export const DASHBOARD_COLUMN_GAP = 12;
-export const DASHBOARD_BOX_INSET = 6;
+export const DASHBOARD_COLUMN_GAP = DASHBOARD_COLUMN_GAP_PX;
+export const DASHBOARD_BOX_INSET = DASHBOARD_WIDGET_BOX_BLEED;
 
 const FIXTURE_TIMEOUT_MS = 45_000;
-const WIDGET_TIMEOUT_MS = 30_000;
 const ACCESS_LEVEL_READ_ONLY = 10;
 const ACCESS_LEVEL_READ_AND_WRITE = 30;
 const ACCESS_LEVEL_FULL = 50;
 const SPACE_PERMISSION_PUBLIC = 0;
 const SPACE_PERMISSION_PRIVATE = 1;
-/** Folder `ViewLayout.Grid`; database pages are created as grids and get extra views through the tab bar. */
-const FOLDER_LAYOUT_GRID = 1;
+/** The `layout_settings` key of a chart view's settings. */
+const CHART_LAYOUT_KEY = String(DatabaseViewLayout.Chart);
 
 // ---------------------------------------------------------------------------
 // Selectors
@@ -139,10 +153,6 @@ export type WidgetMenuAction =
   | 'move-right'
   | 'move-up'
   | 'move-down';
-
-export function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 /** Grid rows rendered inside a scope (a widget, usually). */
 export function gridDataRows(scope: Locator): Locator {
@@ -344,8 +354,6 @@ export interface DashboardWorld {
   /** Views known by their own name (use-case scenarios): name → view id and fixture database name. */
   viewsByName?: Record<string, { viewId: string; database: string }>;
   member?: MemberActor;
-  /** Snapshot taken by a step to compare against later (rows JSON, widths, ...). */
-  snapshot?: unknown;
   viewCountBefore?: number;
 }
 
@@ -365,10 +373,6 @@ export function registerDashboardWorld(page: Page, world: DashboardWorld) {
 
 export function peekDashboardWorld(page: Page): DashboardWorld | undefined {
   return worlds.get(page);
-}
-
-export function forgetDashboardWorld(page: Page) {
-  worlds.delete(page);
 }
 
 export function fixtureDatabase(page: Page, name: string): FixtureDatabase {
@@ -431,65 +435,6 @@ export function widgetLocator(page: Page, label: string): Locator {
 // ---------------------------------------------------------------------------
 
 type ApiEnvelope<T> = { code?: number; message?: string; data?: T };
-
-function apiHeaders(token: string): Record<string, string> {
-  return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-}
-
-function parseJson<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
-}
-
-export async function apiGet<T>(request: APIRequestContext, token: string, path: string): Promise<T> {
-  const response = await request.get(`${TestConfig.apiUrl}${path}`, {
-    headers: apiHeaders(token),
-    failOnStatusCode: false,
-  });
-  const text = await response.text();
-  const body = parseJson<ApiEnvelope<T>>(text);
-
-  if (!response.ok() || body?.code !== 0 || body.data === undefined) {
-    throw new Error(`API GET ${path} failed: HTTP ${response.status()} ${text}`);
-  }
-
-  return body.data;
-}
-
-export async function apiPost<T>(request: APIRequestContext, token: string, path: string, data: unknown): Promise<T> {
-  const response = await request.post(`${TestConfig.apiUrl}${path}`, {
-    headers: apiHeaders(token),
-    data: typeof data === 'string' ? data : JSON.stringify(data),
-    failOnStatusCode: false,
-  });
-  const text = await response.text();
-  const body = parseJson<ApiEnvelope<T>>(text);
-
-  if (!response.ok() || body?.code !== 0) {
-    throw new Error(`API POST ${path} failed: HTTP ${response.status()} ${text}`);
-  }
-
-  return body.data as T;
-}
-
-export async function apiPatch<T>(request: APIRequestContext, token: string, path: string, data: unknown): Promise<T> {
-  const response = await request.patch(`${TestConfig.apiUrl}${path}`, {
-    headers: apiHeaders(token),
-    data: typeof data === 'string' ? data : JSON.stringify(data),
-    failOnStatusCode: false,
-  });
-  const text = await response.text();
-  const body = parseJson<ApiEnvelope<T>>(text);
-
-  if (!response.ok() || body?.code !== 0) {
-    throw new Error(`API PATCH ${path} failed: HTTP ${response.status()} ${text}`);
-  }
-
-  return body.data as T;
-}
 
 export async function signInFixtureAccount(request: APIRequestContext, email: string): Promise<AuthSession> {
   const callbackLink = await new AuthTestUtils().generateSignInUrl(request, email);
@@ -672,7 +617,7 @@ export async function signBrowserInWithSession(page: Page, session: AuthSession)
   await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: FIXTURE_TIMEOUT_MS });
 }
 
-async function createSpace(
+export async function createSpace(
   request: APIRequestContext,
   token: string,
   workspaceId: string,
@@ -689,19 +634,42 @@ async function createSpace(
   return space.view_id;
 }
 
+/** Run `task` over `items` with at most `concurrency` calls in flight; results keep the input order. */
+export async function mapConcurrent<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  task: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next;
+
+      next += 1;
+      results[index] = await task(items[index], index);
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, worker));
+  return results;
+}
+
 async function createFixtureDatabase(
   request: APIRequestContext,
   world: DashboardWorld,
   name: string,
   spaceId: string,
-  spec: DatabaseSpec
+  spec: DatabaseSpec,
+  rowConcurrency = 1
 ): Promise<FixtureDatabase & { defaultRowIds: string[] }> {
   const token = world.owner.accessToken;
   const created = await apiPost<{ view_id: string; database_id?: string }>(
     request,
     token,
     `/api/workspace/${world.workspaceId}/page-view`,
-    { parent_view_id: spaceId, layout: FOLDER_LAYOUT_GRID, name }
+    // Database pages are created as grids and get extra views through the tab bar.
+    { parent_view_id: spaceId, layout: ViewLayout.Grid, name }
   );
 
   if (!created.database_id) throw new Error(`Creating "${name}" returned no database id`);
@@ -725,7 +693,8 @@ async function createFixtureDatabase(
 
   const rowIds: Record<string, string> = {};
 
-  for (const row of spec.rows) {
+  // One row at a time keeps the table order; a scenario that does not care about it may ask for more.
+  await mapConcurrent(spec.rows, rowConcurrency, async (row) => {
     const cells: Record<string, string | number | boolean> = {};
 
     Object.entries(row).forEach(([key, value]) => {
@@ -736,7 +705,7 @@ async function createFixtureDatabase(
       document: null,
       parse_link_as_link_preview: false,
     });
-  }
+  });
 
   return {
     name,
@@ -777,20 +746,44 @@ export interface DatabaseViewSummary {
   id: string;
   layout: number;
   name: string;
+  /** Whether the view is the hidden inline view of a container-backed database. */
+  inline: boolean;
+  /** The view's row order; read only when asked for (`{ rowIds: true }`). */
+  rowIds?: string[];
 }
 
-export async function readDatabaseViews(page: Page, databaseId: string): Promise<DatabaseViewSummary[]> {
-  return page.evaluate((id) => {
-    const bridge = (window as any).__DASHBOARD_TEST__;
-    const ctx = bridge?.byDatabase(id);
-    const views = ctx?.databaseDoc.getMap('data').get('database')?.get('views');
-    const result: { id: string; layout: number; name: string }[] = [];
+/**
+ * The views of a database the browser has open. Before the dashboard test
+ * bridge is installed, the database the app exposed last is read instead.
+ */
+export async function readDatabaseViews(
+  page: Page,
+  databaseId: string,
+  { rowIds = false }: { rowIds?: boolean } = {}
+): Promise<DatabaseViewSummary[]> {
+  return page.evaluate(
+    ({ id, withRowIds }) => {
+      const win = window as any;
+      const exposed = win.__TEST_DATABASE_CONTEXT__;
+      const ctx =
+        win.__DASHBOARD_TEST__?.byDatabase(id) ??
+        (exposed?.databaseDoc?.getMap('data')?.get('database')?.get('id') === id ? exposed : undefined);
+      const views = ctx?.databaseDoc.getMap('data').get('database')?.get('views');
+      const result: { id: string; layout: number; name: string; inline: boolean; rowIds?: string[] }[] = [];
 
-    views?.forEach((view: any, viewId: string) => {
-      result.push({ id: viewId, layout: Number(view.get('layout') ?? 0), name: String(view.get('name') ?? '') });
-    });
-    return result;
-  }, databaseId);
+      views?.forEach((view: any, viewId: string) => {
+        result.push({
+          id: viewId,
+          layout: Number(view.get('layout') ?? 0),
+          name: String(view.get('name') ?? ''),
+          inline: Boolean(view.get('is_inline')),
+          rowIds: withRowIds ? (view.get('row_orders')?.toJSON() ?? []).map((row: { id: string }) => row.id) : undefined,
+        });
+      });
+      return result;
+    },
+    { id: databaseId, withRowIds: rowIds }
+  );
 }
 
 /**
@@ -849,8 +842,10 @@ async function pruneTemplateData(
   await expect
     .poll(
       async () => {
-        const rows = await apiGet<{ id: string }[]>(request, world.owner.accessToken, `${base}/row`);
-        const fields = await apiGet<{ id: string }[]>(request, world.owner.accessToken, `${base}/fields`);
+        const [rows, fields] = await Promise.all([
+          apiGet<{ id: string }[]>(request, world.owner.accessToken, `${base}/row`),
+          apiGet<{ id: string }[]>(request, world.owner.accessToken, `${base}/fields`),
+        ]);
 
         return (
           rows.every((row) => !defaultRowIds.includes(row.id)) &&
@@ -880,16 +875,16 @@ export async function openDatabasePage(page: Page, name: string, viewId?: string
 }
 
 /** Folder `ViewLayout` values reported by the workspace database list. */
-const FOLDER_LAYOUT_NAMES: Record<number, string> = {
-  1: 'Grid',
-  2: 'Board',
-  3: 'Calendar',
-  5: 'Chart',
-  6: 'List',
-  7: 'Gallery',
-  8: 'Feed',
-  10: 'Timeline',
-  11: 'Dashboard',
+const FOLDER_LAYOUT_NAMES: Partial<Record<ViewLayout, string>> = {
+  [ViewLayout.Grid]: 'Grid',
+  [ViewLayout.Board]: 'Board',
+  [ViewLayout.Calendar]: 'Calendar',
+  [ViewLayout.Chart]: 'Chart',
+  [ViewLayout.List]: 'List',
+  [ViewLayout.Gallery]: 'Gallery',
+  [ViewLayout.Feed]: 'Feed',
+  [ViewLayout.Timeline]: 'Timeline',
+  [ViewLayout.Dashboard]: 'Dashboard',
 };
 
 interface WorkspaceDatabaseEntry {
@@ -922,14 +917,14 @@ async function refreshKnownViews(request: APIRequestContext, world: DashboardWor
     .poll(
       async () => {
         views = await listFolderViews(request, world.owner.accessToken, world.workspaceId, database.databaseId);
-        return views.some((view) => view.layout === 1);
+        return views.some((view) => view.layout === ViewLayout.Grid);
       },
       { timeout: FIXTURE_TIMEOUT_MS, message: `waiting for "${database.name}" to appear in the workspace database list` }
     )
     .toBe(true);
 
   for (const view of views) {
-    const layoutName = FOLDER_LAYOUT_NAMES[view.layout];
+    const layoutName = FOLDER_LAYOUT_NAMES[view.layout as ViewLayout];
 
     if (layoutName && layoutName !== 'Dashboard' && !database.views[layoutName]) {
       database.views[layoutName] = view.view_id;
@@ -972,8 +967,9 @@ export async function prepareDashboardFixture(
   // The fixture space is private so member scenarios can grant exact access levels.
   world.spaceId = await createSpace(request, owner.accessToken, workspaceId, spaceName, true);
   worlds.set(page, world);
-  for (const name of names) await addFixtureDatabase(page, request, name);
-  await openDatabasePage(page, names[0]);
+  // Only the databases this scenario names; a scenario that builds its own adds them later.
+  await addFixtureDatabases(page, request, names);
+  if (names.length > 0) await openDatabasePage(page, names[0]);
   return world;
 }
 
@@ -987,13 +983,37 @@ export async function addFixtureDatabase(
   name: string,
   customSpec?: DatabaseSpec
 ) {
+  await addFixtureDatabases(page, request, [name], customSpec ? { [name]: customSpec } : {});
+}
+
+export interface FixtureDatabaseOptions {
+  /** Drop the server's template rows and fields through the browser (default). */
+  prune?: boolean;
+  /** Row requests in flight at once per database; above 1 the rows are not created in table order. */
+  rowConcurrency?: number;
+}
+
+/**
+ * Create fixture databases (`specs[name]`, else `DASHBOARD_FIXTURE_DATABASES`).
+ * Their API calls run in parallel; only the template prune, which goes
+ * through the browser, visits one database after the other.
+ */
+export async function addFixtureDatabases(
+  page: Page,
+  request: APIRequestContext,
+  names: string[],
+  specs: Record<string, DatabaseSpec> = {},
+  options: FixtureDatabaseOptions = {}
+) {
   const world = dashboardWorld(page);
-  const spec = customSpec ?? DASHBOARD_FIXTURE_DATABASES[name];
+  const resolved = names.map((name) => {
+    const spec = specs[name] ?? DASHBOARD_FIXTURE_DATABASES[name];
 
-  if (!spec) throw new Error(`Unknown fixture database "${name}"`);
-  let spaceId = world.spaceId;
+    if (!spec) throw new Error(`Unknown fixture database "${name}"`);
+    return { name, spec };
+  });
 
-  if (spec.privateSpace) {
+  if (resolved.some(({ spec }) => spec.privateSpace)) {
     world.privateSpaceId ??= await createSpace(
       request,
       world.owner.accessToken,
@@ -1001,17 +1021,33 @@ export async function addFixtureDatabase(
       `Owner only ${world.runId}`,
       true
     );
-    spaceId = world.privateSpaceId;
   }
 
-  const { defaultRowIds, ...database } = await createFixtureDatabase(request, world, name, spaceId, spec);
+  const created = await Promise.all(
+    resolved.map(({ name, spec }) =>
+      createFixtureDatabase(
+        request,
+        world,
+        name,
+        spec.privateSpace ? (world.privateSpaceId as string) : world.spaceId,
+        spec,
+        options.rowConcurrency
+      )
+    )
+  );
 
-  world.databases[name] = database;
-  await page.goto(`/app/${world.workspaceId}/${database.pageId}`, { waitUntil: 'domcontentloaded' });
-  await waitForDatabaseContext(page, database.databaseId);
-  await pruneTemplateData(page, request, world, database, defaultRowIds);
-  await refreshKnownViews(request, world, database);
-  if (!database.views.Grid) throw new Error(`"${name}" did not expose a Grid view`);
+  for (const { defaultRowIds, ...database } of created) {
+    world.databases[database.name] = database;
+    if (options.prune === false) continue;
+    await page.goto(`/app/${world.workspaceId}/${database.pageId}`, { waitUntil: 'domcontentloaded' });
+    await waitForDatabaseContext(page, database.databaseId);
+    await pruneTemplateData(page, request, world, world.databases[database.name], defaultRowIds);
+  }
+
+  await Promise.all(created.map(({ name }) => refreshKnownViews(request, world, world.databases[name])));
+  for (const { name } of created) {
+    if (!world.databases[name].views.Grid) throw new Error(`"${name}" did not expose a Grid view`);
+  }
 }
 
 export async function cleanupDashboardFixture(page: Page, request: APIRequestContext) {
@@ -1095,6 +1131,75 @@ export async function addDashboardView(page: Page, name: string) {
   return viewId;
 }
 
+interface CreatedDatabaseView {
+  view_id: string;
+  database_update?: number[];
+}
+
+export interface DatabaseViewRequest {
+  /** The fixture database the view belongs to. */
+  database: string;
+  name: string;
+  /** Folder `ViewLayout` (1 Grid, 2 Board, 3 Calendar, 5 Chart, 6 List, 11 Dashboard, ...). */
+  folderLayout: number;
+  /** The folder view the new view goes under; the database page by default. */
+  parentViewId?: string;
+  /** The sibling the new view goes after. */
+  prevViewId?: string;
+}
+
+/**
+ * Create a folder view of a fixture database the way the web's tab bar does,
+ * apply the database update the server returns (as the web does), and wait
+ * until the browser's database doc lists the view. Returns its id.
+ */
+export async function createDatabaseViewThroughApi(page: Page, request: APIRequestContext, view: DatabaseViewRequest) {
+  const world = dashboardWorld(page);
+  const database = fixtureDatabase(page, view.database);
+  const parentViewId = view.parentViewId ?? database.pageId;
+  const created = await apiPost<CreatedDatabaseView>(
+    request,
+    world.owner.accessToken,
+    `/api/workspace/${world.workspaceId}/page-view/${parentViewId}/database-view`,
+    {
+      parent_view_id: parentViewId,
+      prev_view_id: view.prevViewId,
+      database_id: database.databaseId,
+      layout: view.folderLayout,
+      name: view.name,
+      embedded: false,
+    }
+  );
+
+  if (created.database_update?.length) {
+    await page.evaluate(
+      ({ databaseId, update }) => {
+        const win = window as any;
+        const ctx = win.__DASHBOARD_TEST__.byDatabase(databaseId);
+
+        // Same origin as the web's applyYDoc: a server update is never sent back.
+        win.Y.transact(
+          ctx.databaseDoc,
+          () => win.Y.applyUpdate(ctx.databaseDoc, new Uint8Array(update), 'remote'),
+          'remote'
+        );
+      },
+      { databaseId: database.databaseId, update: created.database_update }
+    );
+  }
+
+  await expect
+    .poll(
+      async () => (await readDatabaseViews(page, database.databaseId)).some((known) => known.id === created.view_id),
+      {
+        timeout: FIXTURE_TIMEOUT_MS,
+        message: `waiting for the "${view.name}" view to reach the browser`,
+      }
+    )
+    .toBe(true);
+  return created.view_id;
+}
+
 export async function openDashboard(page: Page) {
   await openDatabasePage(page, hostDatabase(page).name, dashboardViewId(page));
   await expect(DashboardSelectors.view(page)).toBeVisible({ timeout: FIXTURE_TIMEOUT_MS });
@@ -1148,7 +1253,6 @@ export interface PersistedDashboardSetting {
   show_icons_in_heading?: boolean;
 }
 
-/** The dashboard setting as the browser's host database doc holds it. */
 /** The saved (server-visible) filters and sorts of a database view, as plain objects. */
 export async function readViewConditions(
   page: Page,
@@ -1171,27 +1275,31 @@ export async function readViewConditions(
   return conditions;
 }
 
+/** The dashboard setting as the browser's host database doc holds it. */
 export async function readDashboardSetting(
   page: Page,
   viewId = dashboardViewId(page)
 ): Promise<PersistedDashboardSetting> {
-  const setting = await page.evaluate((id) => {
-    const bridge = (window as any).__DASHBOARD_TEST__;
-    const ctx = bridge?.byView(id);
+  const setting = await page.evaluate(
+    ({ id, layoutKey }) => {
+      const bridge = (window as any).__DASHBOARD_TEST__;
+      const ctx = bridge?.byView(id);
 
-    if (!ctx) return null;
-    const view = ctx.databaseDoc.getMap('data').get('database').get('views').get(id);
-    const layout = view.get('layout_settings')?.get('9');
+      if (!ctx) return null;
+      const view = ctx.databaseDoc.getMap('data').get('database').get('views').get(id);
+      const layout = view.get('layout_settings')?.get(layoutKey);
 
-    if (!layout) return { exists: false, rows: [], global_filters: [] };
-    return {
-      exists: true,
-      rows: bridge.plain(layout.get('rows')) ?? [],
-      global_filters: bridge.plain(layout.get('global_filters')) ?? [],
-      show_widget_titles: layout.get('show_widget_titles'),
-      show_icons_in_heading: layout.get('show_icons_in_heading'),
-    };
-  }, viewId);
+      if (!layout) return { exists: false, rows: [], global_filters: [] };
+      return {
+        exists: true,
+        rows: bridge.plain(layout.get('rows')) ?? [],
+        global_filters: bridge.plain(layout.get('global_filters')) ?? [],
+        show_widget_titles: layout.get('show_widget_titles'),
+        show_icons_in_heading: layout.get('show_icons_in_heading'),
+      };
+    },
+    { id: viewId, layoutKey: DASHBOARD_LAYOUT_KEY }
+  );
 
   if (!setting) throw new Error(`No mounted database doc holds dashboard view ${viewId}`);
   return setting as PersistedDashboardSetting;
@@ -1204,38 +1312,24 @@ export async function readServerDashboardSetting(
 ): Promise<PersistedDashboardSetting> {
   const world = dashboardWorld(page);
   const host = hostDatabase(page);
-  const collab = await apiGet<{ doc_state: number[] }>(
+  const viewId = dashboardViewId(page);
+
+  return readServerDatabaseDoc(
     request,
-    world.owner.accessToken,
-    `/api/workspace/v1/${world.workspaceId}/collab/${host.databaseId}?collab_type=${Types.Database}`
-  );
-  const doc = new Y.Doc({ guid: host.databaseId });
+    { token: world.owner.accessToken, workspaceId: world.workspaceId },
+    host.databaseId,
+    (database): PersistedDashboardSetting => {
+      const view = (database?.get('views') as Y.Map<Y.Map<unknown>> | undefined)?.get(viewId);
+      const layout = (view?.get('layout_settings') as Y.Map<Y.Map<unknown>> | undefined)?.get(DASHBOARD_LAYOUT_KEY);
 
-  Y.applyUpdate(doc, new Uint8Array(collab.doc_state));
-  const database = doc.getMap('data').get('database') as Y.Map<unknown> | undefined;
-  const view = (database?.get('views') as Y.Map<Y.Map<unknown>> | undefined)?.get(dashboardViewId(page));
-  const layout = (view?.get('layout_settings') as Y.Map<Y.Map<unknown>> | undefined)?.get(DASHBOARD_LAYOUT_KEY);
-  const plain = (value: unknown) =>
-    value instanceof Y.Map || value instanceof Y.Array ? (value.toJSON() as unknown) : value;
-
-  if (!layout) return { exists: false, rows: [], global_filters: [] };
-  return {
-    exists: true,
-    rows: (plain(layout.get('rows')) as PersistedRow[] | undefined) ?? [],
-    global_filters: (plain(layout.get('global_filters')) as PersistedGlobalFilter[] | undefined) ?? [],
-    show_widget_titles: layout.get('show_widget_titles') as boolean | undefined,
-  };
-}
-
-/**
- * JSON with object keys sorted. The server stores these values as Yrs `Any`
- * maps, which re-encode object keys in arbitrary order; arrays keep theirs.
- */
-function canonicalJson(value: unknown): string {
-  return JSON.stringify(value, (_key, item: unknown) =>
-    item && typeof item === 'object' && !Array.isArray(item)
-      ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
-      : item
+      if (!layout) return { exists: false, rows: [], global_filters: [] };
+      return {
+        exists: true,
+        rows: (plainYjs(layout.get('rows')) as PersistedRow[] | undefined) ?? [],
+        global_filters: (plainYjs(layout.get('global_filters')) as PersistedGlobalFilter[] | undefined) ?? [],
+        show_widget_titles: layout.get('show_widget_titles') as boolean | undefined,
+      };
+    }
   );
 }
 
@@ -1264,7 +1358,7 @@ export async function writeDashboardSetting(
   patch: { rows?: PersistedRow[]; global_filters?: PersistedGlobalFilter[] }
 ) {
   await page.evaluate(
-    ({ viewId, patch }) => {
+    ({ viewId, patch, layoutKey }) => {
       const win = window as any;
       const ctx = win.__DASHBOARD_TEST__.byView(viewId);
 
@@ -1281,18 +1375,18 @@ export async function writeDashboardSetting(
           view.set('layout_settings', layouts);
         }
 
-        let setting = layouts.get('9');
+        let setting = layouts.get(layoutKey);
 
         if (!setting) {
           setting = new Yjs.Map();
-          layouts.set('9', setting);
+          layouts.set(layoutKey, setting);
         }
 
         if (patch.rows) setting.set('rows', patch.rows);
         if (patch.global_filters) setting.set('global_filters', patch.global_filters);
       });
     },
-    { viewId: dashboardViewId(page), patch }
+    { viewId: dashboardViewId(page), patch, layoutKey: DASHBOARD_LAYOUT_KEY }
   );
 }
 
@@ -1302,11 +1396,10 @@ export async function seedDashboardWidgets(page: Page, layout: { row: number; la
   const rowsByIndex = new Map<number, PersistedWidget[]>();
 
   for (const { row, label } of layout) {
-    const { database } = parseViewLabel(label);
     const widget: PersistedWidget = {
       id: `w-${uuidv4().slice(0, 12)}`,
       view_id: viewIdForLabel(page, label),
-      database_id: fixtureDatabase(page, database).databaseId,
+      database_id: fixtureDatabase(page, databaseForLabel(page, label)).databaseId,
       width: 0,
     };
 
@@ -1318,15 +1411,12 @@ export async function seedDashboardWidgets(page: Page, layout: { row: number; la
     .sort((a, b) => a - b)
     .map((index) => {
       const widgets = rowsByIndex.get(index) ?? [];
-      const width = Math.floor(DASHBOARD_GRID_COLUMNS / widgets.length);
+      const widths = equalRowWidths(widgets.length);
 
       return {
         id: `r-${uuidv4().slice(0, 12)}`,
         height: DASHBOARD_DEFAULT_ROW_HEIGHT,
-        widgets: widgets.map((widget, position) => ({
-          ...widget,
-          width: position === widgets.length - 1 ? DASHBOARD_GRID_COLUMNS - width * (widgets.length - 1) : width,
-        })),
+        widgets: widgets.map((widget, position) => ({ ...widget, width: widths[position] })),
       };
     });
 
@@ -1386,6 +1476,41 @@ export async function persistedRow(page: Page, oneBasedIndex: number): Promise<P
 
 export function allWidgets(setting: PersistedDashboardSetting): PersistedWidget[] {
   return setting.rows.flatMap((row) => row.widgets);
+}
+
+/** The dashboard shows `count` widgets and saves as many. */
+export async function expectWidgetCount(page: Page, count: number) {
+  await expect(DashboardSelectors.widgets(page)).toHaveCount(count, { timeout: WIDGET_TIMEOUT_MS });
+  await expect.poll(async () => allWidgets(await readDashboardSetting(page)).length).toBe(count);
+}
+
+/** Row `oneBasedIndex` saves these widths. */
+export async function expectRowWidths(page: Page, oneBasedIndex: number, widths: number[]) {
+  await expect
+    .poll(async () => (await readDashboardSetting(page)).rows[oneBasedIndex - 1]?.widgets.map((widget) => widget.width))
+    .toEqual(widths);
+}
+
+/**
+ * Row `oneBasedIndex` saves a height within `storedTolerance` of `height`,
+ * and its first widget box renders within `renderedTolerance` of the saved height.
+ */
+export async function expectRowHeight(
+  page: Page,
+  oneBasedIndex: number,
+  height: number,
+  { storedTolerance = 0, renderedTolerance = 1 }: { storedTolerance?: number; renderedTolerance?: number } = {}
+) {
+  await expect
+    .poll(async () => Math.abs(((await readDashboardSetting(page)).rows[oneBasedIndex - 1]?.height ?? 0) - height))
+    .toBeLessThanOrEqual(storedTolerance);
+  const row = await persistedRow(page, oneBasedIndex);
+  const widget = DashboardSelectors.row(page, row.id).getByTestId('dashboard-widget').first();
+
+  await expect(widget).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+  await expect
+    .poll(async () => Math.abs(((await widget.boundingBox())?.height ?? 0) - row.height))
+    .toBeLessThanOrEqual(renderedTolerance);
 }
 
 // ---------------------------------------------------------------------------
@@ -1484,6 +1609,19 @@ export async function rowColumnPitch(page: Page, rowId: string, count: number) {
   return (box.width + 2 * DASHBOARD_BOX_INSET - (count - 1) * DASHBOARD_COLUMN_GAP) / DASHBOARD_GRID_COLUMNS;
 }
 
+/**
+ * Drag width handle `handle` (1-based: between widget N and widget N + 1) of
+ * row `oneBasedIndex` by `columns` grid columns.
+ */
+export async function dragWidthHandle(page: Page, oneBasedIndex: number, handle: number, columns: number) {
+  const row = await persistedRow(page, oneBasedIndex);
+  const pitch = await rowColumnPitch(page, row.id, row.widgets.length);
+
+  await DashboardSelectors.row(page, row.id).hover();
+  // `data-index` is 0-based.
+  await dragLocatorBy(page, DashboardSelectors.widthHandle(page, row.id, handle - 1), columns * pitch, 0);
+}
+
 /** The dashboard's row track width, as the grid measured it (`null` while unmeasured). */
 async function trackWidth(page: Page) {
   const value = await DashboardSelectors.grid(page).getAttribute('data-track-width');
@@ -1492,13 +1630,42 @@ async function trackWidth(page: Page) {
 }
 
 /**
+ * The track width once it has held still for `quietMs`. A resize across the
+ * sidebar's breakpoint (a viewport of 768 px plus the sidebar) opens or
+ * closes the sidebar after the resize, which animates for 200 ms and moves
+ * the track again after its first measure.
+ */
+async function settledTrackWidth(page: Page, quietMs = 600) {
+  let last = await trackWidth(page);
+  let since = Date.now();
+
+  await expect
+    .poll(
+      async () => {
+        const value = await trackWidth(page);
+
+        if (value !== last) {
+          last = value;
+          since = Date.now();
+        }
+
+        return Date.now() - since >= quietMs;
+      },
+      { intervals: [50], timeout: WIDGET_TIMEOUT_MS }
+    )
+    .toBe(true);
+  return last;
+}
+
+/**
  * Resize the viewport until the dashboard's row tracks are `width` px wide
- * (±0.5). The loop absorbs the sidebar and the small-screen page padding.
+ * (±0.5) and stay so. The loop absorbs the sidebar and the small-screen page
+ * padding.
  */
 export async function setDashboardTrackWidth(page: Page, width: number) {
   await expect(DashboardSelectors.grid(page)).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    const current = await trackWidth(page);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const current = await settledTrackWidth(page);
 
     if (current !== null && Math.abs(current - width) < 0.5) return;
     const viewport = page.viewportSize() ?? { width: 1440, height: 900 };
@@ -1508,7 +1675,7 @@ export async function setDashboardTrackWidth(page: Page, width: number) {
     await expect.poll(() => trackWidth(page)).not.toBe(current);
   }
 
-  expect(await trackWidth(page)).toBeCloseTo(width, 0);
+  expect(await settledTrackWidth(page)).toBeCloseTo(width, 0);
 }
 
 export interface WidgetBox {
@@ -1531,21 +1698,23 @@ export async function widgetBoxes(page: Page, rowId: string): Promise<WidgetBox[
     );
 }
 
-/** The widgets of a row grouped into lines by their top edge (±2px): the line sizes. */
-export async function rowLines(page: Page, rowId: string): Promise<number[]> {
-  const lines: number[] = [];
-  let lineTop: number | null = null;
+/** The widget boxes of a row grouped into lines by their top edge (±2px). */
+export async function rowLineBoxes(page: Page, rowId: string): Promise<WidgetBox[][]> {
+  const lines: WidgetBox[][] = [];
 
   for (const box of await widgetBoxes(page, rowId)) {
-    if (lineTop === null || Math.abs(box.y - lineTop) > 2) {
-      lines.push(1);
-      lineTop = box.y;
-    } else {
-      lines[lines.length - 1] += 1;
-    }
+    const line = lines[lines.length - 1];
+
+    if (line && Math.abs(line[0].y - box.y) <= 2) line.push(box);
+    else lines.push([box]);
   }
 
   return lines;
+}
+
+/** The widgets of a row grouped into lines by their top edge (±2px): the line sizes. */
+export async function rowLines(page: Page, rowId: string): Promise<number[]> {
+  return (await rowLineBoxes(page, rowId)).map((line) => line.length);
 }
 
 /** Every widget box, keyed by widget id, relative to the dashboard grid (immune to page scroll). */
@@ -1718,7 +1887,8 @@ export async function expectGridWidgetRows(widget: Locator, titles: string[]) {
 // Charts
 // ---------------------------------------------------------------------------
 
-async function openChartSettingsMenu(page: Page) {
+/** The Number chart part of the open chart page's settings menu (gear → Chart settings). */
+async function openNumberChartSettingsMenu(page: Page) {
   await page.keyboard.press('Escape');
   await ChartSettingsSelectors.settingsButton(page).click();
   await ChartSettingsSelectors.chartSettingsSubTrigger(page).click();
@@ -1733,18 +1903,21 @@ export interface ChartLayoutSnapshot {
 
 /** Reads collab's snake_case chart keys, the ones desktop and the server decode. */
 export async function readChartSetting(page: Page, viewId: string): Promise<ChartLayoutSnapshot | null> {
-  return page.evaluate((id) => {
-    const bridge = (window as any).__DASHBOARD_TEST__;
-    const view = bridge?.byView(id)?.databaseDoc.getMap('data').get('database').get('views').get(id);
-    const setting = view?.get('layout_settings')?.get('3');
+  return page.evaluate(
+    ({ id, layoutKey }) => {
+      const bridge = (window as any).__DASHBOARD_TEST__;
+      const view = bridge?.byView(id)?.databaseDoc.getMap('data').get('database').get('views').get(id);
+      const setting = view?.get('layout_settings')?.get(layoutKey);
 
-    if (!setting) return null;
-    return {
-      chartType: Number(setting.get('chart_type') ?? 0),
-      aggregationType: Number(setting.get('aggregation_type') ?? 0),
-      yFieldId: setting.get('y_field_id') ? String(setting.get('y_field_id')) : undefined,
-    };
-  }, viewId);
+      if (!setting) return null;
+      return {
+        chartType: Number(setting.get('chart_type') ?? 0),
+        aggregationType: Number(setting.get('aggregation_type') ?? 0),
+        yFieldId: setting.get('y_field_id') ? String(setting.get('y_field_id')) : undefined,
+      };
+    },
+    { id: viewId, layoutKey: CHART_LAYOUT_KEY }
+  );
 }
 
 export const AGGREGATION_BY_NAME: Record<string, number> = { Count: 0, Sum: 1, Average: 2 };
@@ -1760,7 +1933,7 @@ export async function configureNumberChart(page: Page, databaseName: string, agg
 
   if (!viewId) throw new Error(`"${databaseName}" has no Chart view`);
   await openDatabasePage(page, databaseName, viewId);
-  await openChartSettingsMenu(page);
+  await openNumberChartSettingsMenu(page);
   await page.getByTestId('chart-type-number').click();
   await expect.poll(async () => (await readChartSetting(page, viewId))?.chartType).toBe(4);
 
@@ -1770,7 +1943,7 @@ export async function configureNumberChart(page: Page, databaseName: string, agg
   if (aggregationType !== AGGREGATION_BY_NAME.Count) {
     const item = page.getByTestId(`chart-number-aggregation-${aggregationType}`);
 
-    if (!(await item.isVisible())) await openChartSettingsMenu(page);
+    if (!(await item.isVisible())) await openNumberChartSettingsMenu(page);
     await item.click();
     await expect.poll(async () => (await readChartSetting(page, viewId))?.aggregationType).toBe(aggregationType);
   }
@@ -1781,7 +1954,7 @@ export async function configureNumberChart(page: Page, databaseName: string, agg
     if (!fieldId) throw new Error(`"${databaseName}" has no "${property}" property`);
     const item = page.getByTestId(`chart-number-property-${fieldId}`);
 
-    if (!(await item.isVisible())) await openChartSettingsMenu(page);
+    if (!(await item.isVisible())) await openNumberChartSettingsMenu(page);
     await item.click();
     await expect.poll(async () => (await readChartSetting(page, viewId))?.yFieldId).toBe(fieldId);
   }
@@ -2059,13 +2232,23 @@ export async function mapGlobalFilterTargets(page: Page, mapping: Record<string,
   await expect.poll(async () => (await mappedTargetIds(page)).sort()).toEqual([...wanted.keys()].sort());
 }
 
-export async function chooseGlobalFilterCondition(scope: Page, label: string) {
-  await DashboardSelectors.globalFilterCondition(scope).click();
+/**
+ * Pick a condition in the open global filter editor (a no-op when it is
+ * already chosen), then check the editor shows it. `ignoreCase: false` holds
+ * the label to its exact case as well.
+ */
+export async function chooseGlobalFilterCondition(scope: Page, label: string, { ignoreCase = true } = {}) {
+  const trigger = DashboardSelectors.globalFilterCondition(scope);
+  const exactly = new RegExp(`^\\s*${escapeRegExp(label)}\\s*$`, ignoreCase ? 'i' : '');
+
+  if (exactly.test((await trigger.textContent()) ?? '')) return;
+  await trigger.click();
   await scope
     .getByTestId('dashboard-global-filter-condition-option')
-    .filter({ hasText: new RegExp(`^\\s*${escapeRegExp(label)}\\s*$`, 'i'), visible: true })
+    .filter({ hasText: exactly, visible: true })
     .first()
     .click();
+  await expect(trigger).toHaveText(exactly);
 }
 
 export async function fillGlobalFilterText(scope: Page, text: string) {
@@ -2077,15 +2260,20 @@ export async function fillGlobalFilterText(scope: Page, text: string) {
   await expect(input).toHaveValue(text);
 }
 
-/** Toggle a select option in the open filter editor (fixture options share ids across databases). */
-export async function toggleGlobalFilterOption(scope: Page, optionName: string) {
+/** Toggle the select option `optionId` in the open global filter editor and wait for its new state. */
+export async function toggleGlobalFilterOptionById(scope: Page, optionId: string) {
   const option = DashboardSelectors.globalFilterContent(scope).locator(
-    `[data-testid="dashboard-global-filter-option"][data-option-id="${statusOptionId(optionName)}"]`
+    `[data-testid="dashboard-global-filter-option"][data-option-id="${optionId}"]`
   );
-  const checked = await option.getAttribute('data-checked');
+  const checked = (await option.getAttribute('data-checked')) === 'true';
 
   await option.click();
-  await expect(option).not.toHaveAttribute('data-checked', checked ?? 'false');
+  await expect(option).toHaveAttribute('data-checked', checked ? 'false' : 'true');
+}
+
+/** Toggle a status option in the open filter editor (fixture options share ids across databases). */
+export async function toggleGlobalFilterOption(scope: Page, optionName: string) {
+  await toggleGlobalFilterOptionById(scope, statusOptionId(optionName));
 }
 
 /** Seed persisted global filters directly (for scenarios about their effect, not their editor). */

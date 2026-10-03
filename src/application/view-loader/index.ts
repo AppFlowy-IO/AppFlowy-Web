@@ -12,6 +12,8 @@
 
 import * as Y from 'yjs';
 
+import { ERROR_CODE } from '@/application/constants';
+import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
 import {
   captureDatabaseStorageFence,
   deleteCollabDB,
@@ -63,6 +65,38 @@ const DEFAULT_ROW_DOCUMENT_MAX_ATTEMPTS = 6;
  * request instead of fetching the same collab again.
  */
 const inflightDatabaseFetches = new Map<string, Promise<void>>();
+
+/** Database documents already counted as opened, for the dashboard load counters. */
+const countedDatabaseDocs = new WeakSet<YDoc>();
+
+/**
+ * What one load has already asked the server about the database of its view,
+ * so its retries do not download the database again.
+ */
+interface DatabaseFetchState {
+  databaseId: string;
+  /** The database collab was applied and does not hold the view: only the view's own page can still answer. */
+  viewMissing: boolean;
+}
+
+/**
+ * The database was downloaded, does not hold the view, and the view's own page
+ * was not found either: the view was deleted, or never belonged to this
+ * database. Carries the code of that page answer, so callers treat it like any
+ * missing view; loading again would only download the database again.
+ */
+export class DatabaseViewNotFoundError extends Error {
+  readonly code = ERROR_CODE.RECORD_NOT_FOUND;
+
+  constructor(viewId: string, databaseId: string) {
+    super(`View ${viewId} was not found in database ${databaseId}`);
+    this.name = 'DatabaseViewNotFoundError';
+  }
+}
+
+export function isDatabaseViewNotFoundError(error: unknown): error is DatabaseViewNotFoundError {
+  return error instanceof DatabaseViewNotFoundError;
+}
 
 // ============================================================================
 // Layout to CollabType Mapping
@@ -230,6 +264,12 @@ async function openCollabDocForView(viewId: string, layout?: ViewLayout, options
 
   const { doc } = await openCollabDBWithProvider(databaseId, { awaitSync: true });
 
+  // Every view of a database shares this doc: the first open counts, later ones reuse it.
+  if (!countedDatabaseDocs.has(doc)) {
+    countedDatabaseDocs.add(doc);
+    dashboardLoadStats.recordSourceOpen(databaseId);
+  }
+
   try {
     await mergeLegacyDatabaseViewCache(viewId, databaseId, doc);
   } catch (error) {
@@ -265,37 +305,55 @@ export async function hasCache(viewId: string): Promise<boolean> {
 // ============================================================================
 
 /**
- * Fetch and apply document data from server
+ * Fetch and apply document data from server.
+ *
+ * `database` is the database whose doc the view loads into, when it is known.
+ * Its collab is then fetched on its own: the page response of a database view
+ * also carries every row as JSON, which nothing reads (rows come from the blob
+ * walk).
+ *
+ * The view's own page is asked only when the database is not known, or when
+ * the downloaded database does not hold the view. In that case only the page
+ * can tell why: a view deleted since, one this user may not open, or one the
+ * server is still writing.
  */
 async function fetchAndApply(
   workspaceId: string,
   viewId: string,
   doc: YDoc,
-  options: OpenViewOptions = {}
+  options: OpenViewOptions = {},
+  database?: DatabaseFetchState
 ): Promise<void> {
-  Log.debug('[ViewLoader] fetching from server', { viewId });
+  Log.debug('[ViewLoader] fetching from server', { viewId, databaseId: database?.databaseId });
 
   const fetchStartedAt = Date.now();
-  let data: Uint8Array;
-  let rowCount = 0;
+  const logFetched = (source: 'database' | 'page', data: Uint8Array) => {
+    Log.debug('[ViewLoader] fetch complete', {
+      viewId,
+      source,
+      dataBytes: data.length,
+      databaseMetadataOnly: options.databaseMetadataOnly ?? false,
+      fetchDurationMs: Date.now() - fetchStartedAt,
+    });
+  };
 
-  if (options.databaseMetadataOnly && options.databaseId) {
-    ({ data } = await fetchDatabaseCollab(workspaceId, options.databaseId));
-  } else {
-    const pageCollab = await fetchPageCollab(workspaceId, viewId);
+  if (database && !database.viewMissing) {
+    const { data } = await fetchDatabaseCollab(workspaceId, database.databaseId);
 
-    data = pageCollab.data;
-    rowCount = pageCollab.rows ? Object.keys(pageCollab.rows).length : 0;
+    logFetched('database', data);
+    applyYDoc(doc, data);
+
+    // Metadata-only readers take the fields and views they get.
+    database.viewMissing =
+      !options.databaseMetadataOnly &&
+      viewId !== database.databaseId &&
+      databaseDocContainsView(doc, viewId) === false;
+    if (!database.viewMissing) return;
   }
 
-  Log.debug('[ViewLoader] fetch complete', {
-    viewId,
-    dataBytes: data.length,
-    rowCount,
-    databaseMetadataOnly: options.databaseMetadataOnly ?? false,
-    fetchDurationMs: Date.now() - fetchStartedAt,
-  });
+  const { data } = await fetchPageCollab(workspaceId, viewId);
 
+  logFetched('page', data);
   applyYDoc(doc, data);
 }
 
@@ -386,10 +444,11 @@ async function fetchAndApplyOrEvict(
   workspaceId: string,
   viewId: string,
   doc: YDoc,
-  options: OpenViewOptions
+  options: OpenViewOptions,
+  database?: DatabaseFetchState
 ): Promise<void> {
   try {
-    await fetchAndApply(workspaceId, viewId, doc, options);
+    await fetchAndApply(workspaceId, viewId, doc, options, database);
   } catch (e) {
     if (determineErrorType(e).type === ErrorType.Forbidden) {
       const docKey = options.databaseId ?? viewId;
@@ -416,18 +475,29 @@ async function fetchAndApplyWithRetry(
   viewId: string,
   doc: YDoc,
   options: OpenViewOptions,
+  database?: DatabaseFetchState,
   firstAttempt?: Promise<void>
 ): Promise<void> {
   const MAX_RETRIES = 3;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      await (attempt === 1 && firstAttempt ? firstAttempt : fetchAndApplyOrEvict(workspaceId, viewId, doc, options));
+      await (attempt === 1 && firstAttempt
+        ? firstAttempt
+        : fetchAndApplyOrEvict(workspaceId, viewId, doc, options, database));
       return;
     } catch (e) {
       // Retrying cannot repair a permission denial. (404s must keep retrying:
       // they cover the post-duplication race.)
-      if (determineErrorType(e).type === ErrorType.Forbidden || attempt === MAX_RETRIES) throw e;
+      if (determineErrorType(e).type === ErrorType.Forbidden || attempt === MAX_RETRIES) {
+        // The database is here and the view's page stayed missing: a deleted view.
+        if (database?.viewMissing && determineErrorType(e).type === ErrorType.PageNotFound) {
+          throw new DatabaseViewNotFoundError(viewId, database.databaseId);
+        }
+
+        throw e;
+      }
+
       Log.debug('[ViewLoader] openView fetch retry', {
         viewId,
         attempt,
@@ -445,12 +515,12 @@ async function fetchAndApplyWithRetry(
  * flight, and fetches its own only if that snapshot still lacks it (a newer
  * view, or a failed request).
  *
- * Access is per database on this client, not per view: the server hands the
- * whole database collab, every view included, to whoever may open one of its
- * views, and a cached database serves its other views without asking again.
- * So a view that a sibling's download holds opens even when its own request
- * would have been refused; only a view that fetches for itself can come back
- * as no access.
+ * Access is per database on this client, not per view: whoever may read the
+ * database collab gets every view in it, and a cached database serves its
+ * views without asking again. An access error still surfaces per view: a
+ * refusal reaches only the view whose own request was refused, a view waiting
+ * on that request then asks for itself, and a view the database does not hold
+ * gets the answer of its own page.
  */
 async function fetchViewFromServer(
   workspaceId: string,
@@ -460,12 +530,15 @@ async function fetchViewFromServer(
   options: OpenViewOptions
 ): Promise<YDoc> {
   const databaseId = getCanonicalDatabaseId(layout, options);
+  // A metadata-only reader names its database even when the layout is not a database one.
+  const fetchDatabaseId = databaseId ?? (options.databaseMetadataOnly ? options.databaseId ?? undefined : undefined);
+  const database: DatabaseFetchState | undefined = fetchDatabaseId
+    ? { databaseId: fetchDatabaseId, viewMissing: false }
+    : undefined;
   // A forced load must reflect the server as of its own call: it neither waits
-  // for an earlier download nor stands in for later ones.
-  const key =
-    databaseId && !options.forceFetch
-      ? `${workspaceId}:${databaseId}:${options.databaseMetadataOnly ? 'metadata' : 'page'}`
-      : null;
+  // for an earlier download nor stands in for later ones. Every other load of
+  // the database asks for the same collab, whichever view it is for.
+  const key = databaseId && !options.forceFetch ? `${workspaceId}:${databaseId}` : null;
   const inflight = key ? inflightDatabaseFetches.get(key) : undefined;
   let target = doc;
 
@@ -482,13 +555,13 @@ async function fetchViewFromServer(
   }
 
   if (!key) {
-    await fetchAndApplyWithRetry(workspaceId, viewId, target, options);
+    await fetchAndApplyWithRetry(workspaceId, viewId, target, options, database);
     return target;
   }
 
   // Only the request is shared: a view waiting on it never sits out this
   // view's retries (a deleted view's 404, a 5xx), it fetches for itself.
-  const firstAttempt = fetchAndApplyOrEvict(workspaceId, viewId, target, options);
+  const firstAttempt = fetchAndApplyOrEvict(workspaceId, viewId, target, options, database);
 
   inflightDatabaseFetches.set(key, firstAttempt);
   void firstAttempt
@@ -496,7 +569,7 @@ async function fetchViewFromServer(
     .finally(() => {
       if (inflightDatabaseFetches.get(key) === firstAttempt) inflightDatabaseFetches.delete(key);
     });
-  await fetchAndApplyWithRetry(workspaceId, viewId, target, options, firstAttempt);
+  await fetchAndApplyWithRetry(workspaceId, viewId, target, options, database, firstAttempt);
   return target;
 }
 

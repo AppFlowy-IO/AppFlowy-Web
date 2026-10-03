@@ -12,7 +12,8 @@ import type {
   DashboardSourcesContextValue,
 } from '@/components/database/dashboard/DashboardContext';
 
-import { GlobalFilterBar, GlobalFilterButton } from '../index';
+import { GlobalFilterBar } from '../GlobalFilterBar';
+import { GlobalFilterButton } from '../GlobalFilterButton';
 
 import { createSourceDoc, option, setFieldOptions } from './source-doc.fixture';
 
@@ -129,7 +130,6 @@ function createContext(overrides: Partial<MockDashboard> = {}): MockDashboard {
     setEditing: jest.fn(),
     mobileContext: false,
     canEnterEdit: overrides.canEdit ?? true,
-    editPreference: overrides.isEditing ? 'on' : 'off',
     pinEditing: jest.fn(),
     updateSetting: jest.fn(),
     updateRows: jest.fn(),
@@ -244,13 +244,18 @@ describe('GlobalFilterBar', () => {
 });
 
 describe('GlobalFilterButton', () => {
-  it('exposes the filter count as data-count, without a count badge', () => {
+  it('shows no count on the button; the menu it opens lists every filter', async () => {
     mockContext = createContext();
     render(<GlobalFilterButton />);
     const button = screen.getByTestId('dashboard-global-filter-button');
 
-    expect(button.getAttribute('data-count')).toBe('2');
+    // No test-only attribute and no context read for it: the count is what the menu lists.
+    expect(button.hasAttribute('data-count')).toBe(false);
     expect(screen.queryByTestId('dashboard-global-filter-button-badge')).toBeNull();
+    fireEvent.click(button);
+    expect(await screen.findAllByTestId('dashboard-global-filter-item')).toHaveLength(2);
+    expect(button.getAttribute('data-state')).toBe('open');
+    fireEvent.keyDown(screen.getByTestId('dashboard-global-filter-menu'), { key: 'Escape' });
     expect(button.textContent).toBe('');
     // The empty slot of the unsaved-changes dot (WP07), out of the flow so the glyph stays centred.
     expect(button.querySelector('[data-slot="unsaved-dot"]')?.className).toContain('absolute');
@@ -263,5 +268,56 @@ describe('GlobalFilterButton', () => {
     const { container } = render(<GlobalFilterButton />);
 
     expect(container.innerHTML).toBe('');
+  });
+});
+
+describe('GlobalFilterPopover (one popover for every entry point)', () => {
+  const popover = () => document.querySelector('[data-parity-id="dash-global-filter-popover"]');
+
+  async function openFrom(trigger: HTMLElement) {
+    fireEvent.click(trigger);
+    const menu = await screen.findByTestId('dashboard-global-filter-menu');
+
+    return { menu, content: popover()! };
+  }
+
+  function close(menu: HTMLElement) {
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(popover()).toBeNull();
+  }
+
+  it("opens the same popover from a chip, the bar's add button and the toolbar button", async () => {
+    mockContext = createContext({ isEditing: true });
+    render(
+      <>
+        <GlobalFilterBar />
+        <GlobalFilterButton />
+      </>
+    );
+
+    // A chip opens straight on its filter's editor.
+    const chip = await openFrom(screen.getAllByTestId('dashboard-global-filter-chip')[0]);
+
+    expect(chip.menu.getAttribute('data-screen')).toBe('edit');
+    expect(screen.getByTestId('dashboard-global-filter-editor').getAttribute('data-filter-id')).toBe('gf:status');
+    const className = chip.content.className;
+
+    // The width both clients ship today; it changes in this one place with WP08.
+    expect(className).toContain('w-[360px]');
+    close(chip.menu);
+
+    // "Add global filter" opens on the property-type picker.
+    const add = await openFrom(screen.getByTestId('dashboard-global-filter-bar-add'));
+
+    expect(add.menu.getAttribute('data-screen')).toBe('pick');
+    expect(add.content.className).toBe(className);
+    close(add.menu);
+
+    // The toolbar button opens on the filter list.
+    const button = await openFrom(screen.getByTestId('dashboard-global-filter-button'));
+
+    expect(button.menu.getAttribute('data-screen')).toBe('list');
+    expect(button.content.className).toBe(className);
+    close(button.menu);
   });
 });

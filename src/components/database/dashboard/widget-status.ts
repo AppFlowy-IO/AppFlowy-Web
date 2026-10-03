@@ -5,6 +5,15 @@ import type { WidgetPlaceholderReason } from './WidgetPlaceholder';
 
 export type WidgetStatus = 'ready' | WidgetPlaceholderReason;
 
+/**
+ * A widget can show a view of every database layout but Dashboard: dashboards
+ * never nest. The one statement of that rule: the picker's offer
+ * (`isWidgetSourceLayout`), the widget's status and its tools derive from it.
+ */
+export function isWidgetLayout(layout: DatabaseViewLayout) {
+  return layout !== DatabaseViewLayout.Dashboard;
+}
+
 export interface WidgetStatusInput {
   /** The source database refused the viewer. */
   noAccess: boolean;
@@ -61,6 +70,6 @@ export function getWidgetStatus({
   }
 
   if (!hasDoc || !hasDatabase || !viewExists || (deletionStatus === null && !seeded)) return 'loading';
-  if (layout === DatabaseViewLayout.Dashboard) return 'unsupported';
+  if (layout !== null && !isWidgetLayout(layout)) return 'unsupported';
   return 'ready';
 }

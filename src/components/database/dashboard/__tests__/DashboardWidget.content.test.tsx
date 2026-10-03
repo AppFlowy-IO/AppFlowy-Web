@@ -1,12 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import * as Y from 'yjs';
 
-import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
+import { DatabaseContext } from '@/application/database-yjs';
 import { loadParityFixture } from '@/application/database-yjs/__tests__/dashboard-parity-helpers';
-import { updateDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
-import { DashboardWidget as DashboardWidgetData } from '@/application/database-yjs/dashboard.type';
-import { DatabaseViewLayout, YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { DatabaseViewLayout } from '@/application/types';
 import {
   COMPACT_HOVER_CONTROLS_WIDTH,
   HOVER_CONTROLS_WIDTH,
@@ -15,14 +12,12 @@ import {
 import { GridDragState } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 
 import { WIDGET_GRID_ROW_GUTTER, WIDGET_INLINE_PADDING } from '../constants';
-import { DashboardProvider } from '../DashboardContext';
-import { DashboardHostContext, DashboardUiContext } from '../DashboardUiContext';
 import { DashboardWidget } from '../DashboardWidget';
-import { RowHeightPreview } from '../hooks/useRowHeightResize';
+
+import { createWidgetHost, DashboardWidgetProviders, widgetBoxProps } from './dashboardTestHarness';
 
 const mockPaddings: { start?: number; end?: number }[] = [];
 
-jest.mock('@/utils/runtime-config', () => ({ getConfigValue: (_key: string, fallback: string) => fallback }));
 jest.mock('react-i18next', () => {
   const t = (key: string) => key;
 
@@ -78,72 +73,14 @@ interface WidgetContentFixture {
 }
 
 const { geometry } = loadParityFixture<WidgetContentFixture>('widget-content.json');
-const WIDGET: DashboardWidgetData = { id: 'w1', viewId: 'v1', databaseId: 'db', width: 12 };
-const NO_PREVIEW: RowHeightPreview = { subscribe: () => () => undefined, get: () => null };
-
-function createHost(layout: DatabaseViewLayout, readOnly: boolean) {
-  const doc = new Y.Doc({ guid: 'db' }) as YDoc;
-  const database = new Y.Map() as YDatabase;
-  const views = new Y.Map<YDatabaseView>();
-  const dashboard = new Y.Map() as YDatabaseView;
-  const view = new Y.Map() as YDatabaseView;
-
-  doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
-  database.set(YjsDatabaseKey.id, 'db');
-  database.set(YjsDatabaseKey.views, views);
-  views.set('dashboard', dashboard);
-  views.set('v1', view);
-  view.set(YjsDatabaseKey.name, 'Projects');
-  view.set(YjsDatabaseKey.layout, layout);
-  updateDashboardLayoutSetting(dashboard, { rows: [{ id: 'r1', height: 360, widgets: [WIDGET] }] });
-
-  const host: DatabaseContextState = {
-    databaseDoc: doc,
-    readOnly,
-    canWrite: !readOnly,
-    rowMap: {},
-    databasePageId: 'dashboard',
-    activeViewId: 'dashboard',
-  };
-
-  return host;
-}
 
 function WidgetOf({ layout, readOnly }: { layout: DatabaseViewLayout; readOnly: boolean }) {
-  const [host] = useState(() => createHost(layout, readOnly));
+  const [host] = useState(() => createWidgetHost({ layout, name: 'Projects', readOnly }));
 
   return (
-    <DatabaseContext.Provider value={host}>
-      <DashboardHostContext.Provider value={host}>
-        <DashboardProvider>
-          <DashboardUiContext.Provider
-            value={{
-              hostDatabaseId: 'db',
-              dndInstanceId: Symbol.for('dashboard-content-test'),
-              getRows: () => [],
-              updateRows: jest.fn(),
-              openPicker: jest.fn(),
-              showLimitMessage: jest.fn(),
-              acquireSourceDoc: () => () => undefined,
-              selectWidget: jest.fn(),
-            }}
-          >
-            <DashboardWidget
-              canEdit={!readOnly}
-              height={360}
-              heightPreview={NO_PREVIEW}
-              isDragging={false}
-              isEditing={false}
-              lineSize={1}
-              showIconsInHeading={false}
-              showWidgetTitles
-              span={12}
-              widget={WIDGET}
-            />
-          </DashboardUiContext.Provider>
-        </DashboardProvider>
-      </DashboardHostContext.Provider>
-    </DatabaseContext.Provider>
+    <DashboardWidgetProviders host={host}>
+      <DashboardWidget {...widgetBoxProps({ canEdit: !readOnly })} />
+    </DashboardWidgetProviders>
   );
 }
 
@@ -198,7 +135,7 @@ describe('widget content geometry (addendum A5)', () => {
 
   it('renders one row handle and no selection checkbox in the compact controls', () => {
     render(
-      <DatabaseContext.Provider value={{ ...createHost(DatabaseViewLayout.Grid, false), activeViewId: 'v1' }}>
+      <DatabaseContext.Provider value={{ ...createWidgetHost(), activeViewId: 'v1' }}>
         <HoverControls compact rowId='row-a' rowKey='row:row-a' state={{ type: GridDragState.IDLE }} />
       </DatabaseContext.Provider>
     );
@@ -213,7 +150,7 @@ describe('widget content geometry (addendum A5)', () => {
 
   it('keeps the compact controls inside a one-line row (36px plus the divider)', () => {
     const { container, rerender } = render(
-      <DatabaseContext.Provider value={{ ...createHost(DatabaseViewLayout.Grid, false), activeViewId: 'v1' }}>
+      <DatabaseContext.Provider value={{ ...createWidgetHost(), activeViewId: 'v1' }}>
         <HoverControls compact rowId='row-a' rowKey='row:row-a' state={{ type: GridDragState.IDLE }} />
       </DatabaseContext.Provider>
     );
@@ -227,7 +164,7 @@ describe('widget content geometry (addendum A5)', () => {
 
     // Standalone grids keep their controls unchanged.
     rerender(
-      <DatabaseContext.Provider value={{ ...createHost(DatabaseViewLayout.Grid, false), activeViewId: 'v1' }}>
+      <DatabaseContext.Provider value={{ ...createWidgetHost(), activeViewId: 'v1' }}>
         <HoverControls rowId='row-a' rowKey='row:row-a' state={{ type: GridDragState.IDLE }} />
       </DatabaseContext.Provider>
     );

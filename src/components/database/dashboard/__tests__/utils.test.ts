@@ -1,19 +1,13 @@
-import {
-  DASHBOARD_DEFAULT_ROW_HEIGHT,
-  DASHBOARD_MAX_ROW_HEIGHT,
-  DASHBOARD_MIN_ROW_HEIGHT,
-} from '@/application/database-yjs/dashboard.type';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 
 import { DASHBOARD_CONTROL_GUTTER, WIDGET_HEADER_HEIGHT, WIDGET_MIN_VIEWPORT_HEIGHT } from '../constants';
 import {
-  clampRowHeight,
   databaseLayoutToViewLayout,
   getDashboardInlinePadding,
   getLayoutLabel,
+  getWidgetCardCenter,
   getWidgetHeaderHeight,
   getWidgetViewportHeight,
-  viewLayoutToDatabaseLayout,
 } from '../utils';
 
 describe('dashboard layout mapping', () => {
@@ -28,21 +22,14 @@ describe('dashboard layout mapping', () => {
     [DatabaseViewLayout.Form, ViewLayout.Form],
     [DatabaseViewLayout.Timeline, ViewLayout.Timeline],
     [DatabaseViewLayout.Dashboard, ViewLayout.Dashboard],
-  ])('maps database layout %s to folder layout %s and back', (databaseLayout, viewLayout) => {
+  ])('maps database layout %s to folder layout %s', (databaseLayout, viewLayout) => {
     expect(databaseLayoutToViewLayout(databaseLayout)).toBe(viewLayout);
-    expect(viewLayoutToDatabaseLayout(viewLayout)).toBe(databaseLayout);
   });
 
   it('falls back to Grid for unknown database layouts', () => {
     expect(databaseLayoutToViewLayout(null)).toBe(ViewLayout.Grid);
     expect(databaseLayoutToViewLayout(undefined)).toBe(ViewLayout.Grid);
     expect(databaseLayoutToViewLayout(42 as DatabaseViewLayout)).toBe(ViewLayout.Grid);
-  });
-
-  it('has no database layout for document-like folder layouts', () => {
-    expect(viewLayoutToDatabaseLayout(ViewLayout.Document)).toBeNull();
-    expect(viewLayoutToDatabaseLayout(null)).toBeNull();
-    expect(viewLayoutToDatabaseLayout(undefined)).toBeNull();
   });
 
   it('names every layout with a translation key and an English fallback', () => {
@@ -69,14 +56,11 @@ describe('widget chrome sizes', () => {
   it('never hands out less than the minimum viewport', () => {
     expect(getWidgetViewportHeight(40, { showWidgetTitles: true })).toBe(WIDGET_MIN_VIEWPORT_HEIGHT);
   });
-});
 
-describe('row heights', () => {
-  it('clamps and rounds heights to the supported range', () => {
-    expect(clampRowHeight(DASHBOARD_DEFAULT_ROW_HEIGHT + 0.4)).toBe(DASHBOARD_DEFAULT_ROW_HEIGHT);
-    expect(clampRowHeight(10)).toBe(DASHBOARD_MIN_ROW_HEIGHT);
-    expect(clampRowHeight(10_000)).toBe(DASHBOARD_MAX_ROW_HEIGHT);
-    expect(clampRowHeight(Number.NaN)).toBe(DASHBOARD_MIN_ROW_HEIGHT);
+  it('centres on the card: below the 40px header, or on the box when titles are hidden', () => {
+    // The card spans 40px to H - 6px with titles, 6px to H - 6px without.
+    expect(getWidgetCardCenter({ showWidgetTitles: true })).toBe('calc(40px + (100% - 46px) / 2)');
+    expect(getWidgetCardCenter({ showWidgetTitles: false })).toBe('50%');
   });
 });
 

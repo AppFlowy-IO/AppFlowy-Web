@@ -28,6 +28,7 @@ import {
 import { useFieldSelector, useFormulaResultType } from '@/application/database-yjs/selector';
 import { DateFormat, YDatabaseField, YjsDatabaseKey } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
+import { Translate } from '@/components/database/components/filters/filter-conditions';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getDateFormat } from '@/utils/time';
 
@@ -41,10 +42,11 @@ export interface FilterChipLabel {
   hasContent: boolean;
 }
 
-type Translate = (key: string, options?: Record<string, unknown>) => string;
+// The label helpers below are exported for the dashboard's global filter chips,
+// which describe a `{condition, content}` pair exactly like a view filter chip.
 
 // Desktop: TextFilterConditionPBExtension.choicechipPrefix (Morn branch — Contains has a prefix).
-function textChipPrefix(condition: TextFilterCondition, t: Translate): string {
+export function textChipPrefix(condition: TextFilterCondition, t: Translate): string {
   switch (condition) {
     case TextFilterCondition.TextDoesNotContain:
     case TextFilterCondition.TextIsNot:
@@ -115,7 +117,7 @@ function numberChipLabel(condition: NumberFilterCondition, content: string, t: T
   };
 }
 
-function selectOptionConditionName(condition: SelectOptionFilterCondition, t: Translate): string {
+export function selectOptionConditionName(condition: SelectOptionFilterCondition, t: Translate): string {
   switch (condition) {
     case SelectOptionFilterCondition.OptionIs:
       return t('grid.selectOptionFilter.is');
@@ -165,50 +167,45 @@ function selectChipLabel(filter: SelectOptionFilter, field: YDatabaseField, t: T
   };
 }
 
-function dateChipLabel(filter: DateFilter, dateFormat: string, t: Translate): FilterChipLabel {
-  const base = toStartDateCondition(filter.condition);
+/**
+ * The description of a date filter chip. `value` holds unix seconds; a bound
+ * that is not a number reads as unset.
+ */
+export function dateChipDescription(
+  condition: DateFilterCondition,
+  value: { timestamp?: unknown; start?: unknown; end?: unknown },
+  dateFormat: string,
+  t: Translate
+): string {
+  const base = toStartDateCondition(condition);
   const format = (unix: number) => dayjs.unix(unix).format(dateFormat);
-
-  let description: string;
+  const { timestamp, start, end } = value;
 
   switch (base) {
     case DateFilterCondition.DateStartsToday:
-      description = t('relativeDates.today');
-      break;
+      return t('relativeDates.today');
     case DateFilterCondition.DateStartsYesterday:
-      description = t('relativeDates.yesterday');
-      break;
+      return t('relativeDates.yesterday');
     case DateFilterCondition.DateStartsTomorrow:
-      description = t('relativeDates.tomorrow');
-      break;
+      return t('relativeDates.tomorrow');
     case DateFilterCondition.DateStartsThisWeek:
-      description = t('relativeDates.thisWeek');
-      break;
+      return t('relativeDates.thisWeek');
     case DateFilterCondition.DateStartsLastWeek:
-      description = t('relativeDates.lastWeek');
-      break;
+      return t('relativeDates.lastWeek');
     case DateFilterCondition.DateStartsNextWeek:
-      description = t('relativeDates.nextWeek');
-      break;
+      return t('relativeDates.nextWeek');
     case DateFilterCondition.DateStartIsEmpty:
-      description = t('grid.dateFilter.choicechipPrefix.isEmpty');
-      break;
+      return t('grid.dateFilter.choicechipPrefix.isEmpty');
     case DateFilterCondition.DateStartIsNotEmpty:
-      description = t('grid.dateFilter.choicechipPrefix.isNotEmpty');
-      break;
+      return t('grid.dateFilter.choicechipPrefix.isNotEmpty');
     case DateFilterCondition.DateStartsBetween: {
       const prefix = t('grid.dateFilter.choicechipPrefix.between');
 
-      description =
-        typeof filter.start === 'number' && typeof filter.end === 'number'
-          ? `${prefix} ${format(filter.start)} - ${format(filter.end)}`
-          : prefix;
-      break;
+      return typeof start === 'number' && typeof end === 'number' ? `${prefix} ${format(start)} - ${format(end)}` : prefix;
     }
 
     case DateFilterCondition.DateStartsOn:
-      description = typeof filter.timestamp === 'number' ? format(filter.timestamp) : '';
-      break;
+      return typeof timestamp === 'number' ? format(timestamp) : '';
     default: {
       // before / after / onOrBefore / onOrAfter
       const prefix =
@@ -220,10 +217,13 @@ function dateChipLabel(filter: DateFilter, dateFormat: string, t: Translate): Fi
           ? t('grid.dateFilter.choicechipPrefix.onOrBefore')
           : t('grid.dateFilter.choicechipPrefix.onOrAfter');
 
-      description = typeof filter.timestamp === 'number' ? `${prefix} ${format(filter.timestamp)}` : prefix;
-      break;
+      return typeof timestamp === 'number' ? `${prefix} ${format(timestamp)}` : prefix;
     }
   }
+}
+
+function dateChipLabel(filter: DateFilter, dateFormat: string, t: Translate): FilterChipLabel {
+  const description = dateChipDescription(filter.condition, filter, dateFormat, t);
 
   // Desktop DateTimeFilter inherits getContent = getContentDescription, so any
   // non-empty description highlights the chip.
@@ -247,7 +247,7 @@ function personChipLabel(filter: PersonFilter, t: Translate): FilterChipLabel {
   };
 }
 
-function personConditionName(condition: PersonFilterCondition, t: Translate): string {
+export function personConditionName(condition: PersonFilterCondition, t: Translate): string {
   switch (condition) {
     case PersonFilterCondition.PersonContains:
       return t('grid.personFilter.contains');

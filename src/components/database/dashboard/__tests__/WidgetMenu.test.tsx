@@ -1,18 +1,14 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { createRef, ReactNode, useState } from 'react';
+import { ReactNode, useState } from 'react';
 
 import { DASHBOARD_MAX_WIDGETS, DashboardRow, DashboardWidget } from '@/application/database-yjs/dashboard.type';
-import { ViewLayout } from '@/application/types';
 
-import {
-  DashboardContext,
-  DashboardContextValue,
-  DashboardLayoutContext,
-  DashboardLayoutContextValue,
-} from '../DashboardContext';
+import { DashboardContext, DashboardLayoutContext, DashboardLayoutContextValue } from '../DashboardContext';
 import { NO_WIDGET_MOVES, WidgetMoveTargets } from '../widget-moves';
 import { WidgetActions, WidgetContext, WidgetContextValue } from '../WidgetContext';
 import { buildWidgetMenuEntries, WidgetMenu } from '../WidgetMenu';
+
+import { createDashboardContextValue, createWidgetActions, createWidgetContextValue } from './dashboardTestHarness';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -28,15 +24,7 @@ const ALL_MOVES: WidgetMoveTargets = {
 };
 
 function createActions(overrides: Partial<WidgetActions> = {}): WidgetActions {
-  return {
-    open: jest.fn(),
-    changeView: jest.fn(),
-    duplicate: jest.fn(),
-    remove: jest.fn(),
-    move: jest.fn(),
-    openSettings: jest.fn(),
-    ...overrides,
-  };
+  return { ...createWidgetActions(), ...overrides };
 }
 
 const widget = (id: string): DashboardWidget => ({ id, viewId: `view-${id}`, databaseId: 'db', width: 4 });
@@ -54,52 +42,17 @@ const FULL_ROWS = Array.from({ length: DASHBOARD_MAX_WIDGETS / 4 }, (_, rowIndex
   )
 );
 
-function createDashboardContext(): DashboardContextValue {
-  return {
-    dashboardViewId: 'dashboard',
-    hostDatabaseId: 'db',
-    canEdit: true,
-    isEditing: true,
-    setEditing: jest.fn(),
-    mobileContext: false,
-    canEnterEdit: true,
-    editPreference: 'on',
-    pinEditing: jest.fn(),
-    updateSetting: jest.fn(),
-    updateRows: jest.fn(),
-  };
+function createDashboardContext() {
+  return createDashboardContextValue({ dashboardViewId: 'dashboard', isEditing: true });
 }
 
 function createDashboardLayout(rows: DashboardRow[]): DashboardLayoutContextValue {
   return { rows, hostViewIds: [], showWidgetTitles: true, showIconsInHeading: false };
 }
 
+/** `w1` in Edit mode. */
 function createContext(overrides: Partial<WidgetContextValue> = {}): WidgetContextValue {
-  return {
-    widgetId: 'w1',
-    databaseId: 'db',
-    viewId: 'view-w1',
-    name: 'Tasks Grid',
-    icon: null,
-    layout: ViewLayout.Grid,
-    isEditing: true,
-    canEdit: true,
-    editing: true,
-    showWidgetTitles: true,
-    showIcon: false,
-    headerHeight: 40,
-    isDragging: false,
-    setDragHandle: jest.fn(),
-    menuOpen: false,
-    setMenuOpen: jest.fn(),
-    settingsOpen: false,
-    setSettingsOpen: jest.fn(),
-    getBoxElement: () => null,
-    titleRef: createRef<HTMLButtonElement>(),
-    optionsRef: createRef<HTMLButtonElement>(),
-    actions: createActions(),
-    ...overrides,
-  };
+  return createWidgetContextValue({ editing: true, actions: createActions(), ...overrides });
 }
 
 function withContext(value: WidgetContextValue, children: ReactNode, rows: DashboardRow[] = MOVABLE_ROWS) {

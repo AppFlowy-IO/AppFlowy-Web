@@ -27,6 +27,7 @@ import {
 } from '../../support/chart-render-helpers';
 import { openDatabasePage, splitList, widgetLocator } from '../../support/dashboard-test-helpers';
 import {
+  chartBarPath,
   namedView,
   openUseCaseDashboard,
   prepareUseCaseWorkspace,
@@ -59,14 +60,8 @@ async function expectStored(page: Page, viewName: string, key: string, expected:
   await expect.poll(async () => spellStoredValue(await storedChartValue(page, viewName, key)), CHART_TIMEOUT).toBe(expected);
 }
 
-/** The bar (or slice) path of a category, by its place in the data table. */
-async function barPath(chart: Locator, label: string): Promise<Locator> {
-  const labels = (await chartTable(chart)).map((row) => row.label);
-  const index = labels.indexOf(label);
-
-  if (index === -1) throw new Error(`The chart has no "${label}" category (it has ${labels.join(', ')})`);
-  return chart.locator('.recharts-bar-rectangle').nth(index).locator('path');
-}
+/** The bar path of a category, by its place in the data table. */
+const barPath = chartBarPath;
 
 /** Where the zero line is: its y for vertical charts, its x for horizontal bars. */
 async function zeroLine(chart: Locator) {

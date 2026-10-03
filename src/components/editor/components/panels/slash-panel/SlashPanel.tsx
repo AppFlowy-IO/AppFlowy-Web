@@ -7,16 +7,11 @@ import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { isDatabaseBlockType } from '@/application/database-block';
-import {
-  createDatabaseDashboardPageViaGrid,
-  createLinkedDatabaseDashboardView,
-} from '@/application/database-yjs/dashboard-page';
-import { createDatabaseFeedPageViaGrid, createLinkedDatabaseFeedView } from '@/application/database-yjs/feed-layout';
-import {
-  createDatabaseGalleryPageViaGrid,
-  createLinkedDatabaseGalleryView,
-} from '@/application/database-yjs/gallery-layout';
-import { createDatabaseListPageViaGrid, createLinkedDatabaseListView } from '@/application/database-yjs/list-layout';
+import { createDatabaseDashboardPageViaGrid } from '@/application/database-yjs/dashboard-page';
+import { createDatabaseFeedPageViaGrid } from '@/application/database-yjs/feed-layout';
+import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gallery-layout';
+import { createLinkedDatabaseViewForLayout } from '@/application/database-yjs/linked-view-creation';
+import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
 import {
   databaseCatalogViewToView,
   getDatabaseContainerEntries,
@@ -99,6 +94,7 @@ import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAIEnabled } from '@/components/app/app.hooks';
+import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
 import { useTimelineCreationDisabledReason } from '@/components/app/hooks/useTimelineCreationDisabledReason';
 import { useAIWriter } from '@/components/chat';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
@@ -304,18 +300,16 @@ export function SlashPanel({
   }, [isPanelOpen]);
 
   // Inline and linked Timeline/Dashboard blocks create those views, so they
-  // follow the same workspace Pro policy as the database tab "+" menu.
+  // follow the same rules as the database tab "+" menu: the workspace Pro
+  // policy, and no new dashboard in a mobile context.
   const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
     workspaceId,
     enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && open,
   });
-  const dashboardDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
-    workspaceId,
-    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && open,
-    requiresProMessage: t('dashboard.creationRequiresPro', {
-      defaultValue: 'Creating a Dashboard view requires a Pro workspace.',
-    }),
-  });
+  const { available: canCreateDashboard, disabledReason: dashboardDisabledReason } = useDashboardCreationGate(
+    getSubscriptions,
+    { workspaceId, enabled: open }
+  );
 
   const getIsInsideAIMeeting = useCallback(() => {
     const { selection } = editor;
@@ -785,76 +779,23 @@ export function SlashPanel({
         const referencedName = prefix ? `${prefix} ${baseName}` : baseName;
         const sourceViewId = option.sourceViewId;
 
-        const response =
-          linkedPicker.layout === ViewLayout.List
-            ? await createLinkedDatabaseListView({
-                requestViewId: documentId,
-                sourceViewId,
-                payload: {
-                  parent_view_id: documentId,
-                  database_id: databaseId,
-                  name: referencedName,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                deletePage,
-                scheduleDeferredCleanup,
-              })
-            : linkedPicker.layout === ViewLayout.Gallery
-            ? await createLinkedDatabaseGalleryView({
-                requestViewId: documentId,
-                sourceViewId,
-                payload: {
-                  parent_view_id: documentId,
-                  database_id: databaseId,
-                  name: referencedName,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                deletePage,
-                scheduleDeferredCleanup,
-              })
-            : linkedPicker.layout === ViewLayout.Feed
-            ? await createLinkedDatabaseFeedView({
-                requestViewId: documentId,
-                sourceViewId,
-                payload: {
-                  parent_view_id: documentId,
-                  database_id: databaseId,
-                  name: referencedName,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                deletePage,
-                scheduleDeferredCleanup,
-              })
-            : linkedPicker.layout === ViewLayout.Dashboard
-            ? await createLinkedDatabaseDashboardView({
-                requestViewId: documentId,
-                payload: {
-                  parent_view_id: documentId,
-                  database_id: databaseId,
-                  name: referencedName,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                scheduleDeferredCleanup,
-              })
-            : await createDatabaseView(documentId, {
-                parent_view_id: documentId,
-                database_id: databaseId,
-                layout: linkedPicker.layout,
-                name: referencedName,
-                embedded: true,
-              });
+        // A new linked dashboard starts empty; List, Gallery and Feed start from the picked view.
+        const { response, databaseUpdatePending } = await createLinkedDatabaseViewForLayout(linkedPicker.layout, {
+          requestViewId: documentId,
+          sourceViewId,
+          duplicate: false,
+          payload: {
+            parent_view_id: documentId,
+            database_id: databaseId,
+            name: referencedName,
+            embedded: true,
+          },
+          createDatabaseView,
+          loadView,
+          bindViewSync,
+          deletePage,
+          scheduleDeferredCleanup,
+        });
 
         Log.debug('[SlashPanel] {} created linked database', {
           documentId,
@@ -863,14 +804,7 @@ export function SlashPanel({
           referencedName,
         });
 
-        if (
-          linkedPicker.layout !== ViewLayout.List &&
-          linkedPicker.layout !== ViewLayout.Gallery &&
-          linkedPicker.layout !== ViewLayout.Feed &&
-          linkedPicker.layout !== ViewLayout.Dashboard &&
-          response.database_update?.length &&
-          loadView
-        ) {
+        if (databaseUpdatePending && response.database_update?.length && loadView) {
           try {
             const databaseDoc = await loadView(response.view_id, false, false, {
               databaseId: response.database_id || databaseId,
@@ -1494,7 +1428,7 @@ export function SlashPanel({
       {
         label: t('document.slashMenu.name.dashboard', { defaultValue: 'Dashboard' }),
         key: 'dashboard',
-        disabled: !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
+        disabled: !canCreateDashboard,
         disabledReason: dashboardDisabledReason,
         icon: <DashboardIcon />,
         group: SlashMenuGroupKey.Database,
@@ -1507,7 +1441,7 @@ export function SlashPanel({
       {
         label: t('document.slashMenu.name.linkedDashboard', { defaultValue: 'Linked Dashboard' }),
         key: 'linkedDashboard',
-        disabled: !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
+        disabled: !canCreateDashboard,
         disabledReason: dashboardDisabledReason,
         icon: <DashboardIcon />,
         group: SlashMenuGroupKey.Database,
@@ -1910,6 +1844,7 @@ export function SlashPanel({
     getIsInsideAIMeeting,
     getIsInsideSimpleTableCell,
     timelineDisabledReason,
+    canCreateDashboard,
     dashboardDisabledReason,
   ]);
 

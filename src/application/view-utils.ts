@@ -12,6 +12,7 @@
  * - Scenario 4: Tab bar add view → NO container, adds to existing container
  */
 
+import { readDashboardOwner } from './database-yjs/dashboard-owned-views';
 import { View, ViewLayout } from './types';
 
 /**
@@ -59,9 +60,7 @@ export function isEmbeddedView(view: View | null | undefined): boolean {
  * `extra.dashboard_owner`, WP05 §1.1), or `null`.
  */
 export function getDashboardOwner(view: View | null | undefined): string | null {
-  const owner = view?.extra?.dashboard_owner;
-
-  return typeof owner === 'string' && owner.length > 0 ? owner : null;
+  return readDashboardOwner(view);
 }
 
 /**

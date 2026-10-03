@@ -7,9 +7,15 @@ import protobuf from 'protobufjs';
 import { stringify as uuidStringify } from 'uuid';
 import * as Y from 'yjs';
 
-import { Types } from '../../../src/application/types';
-
-import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
+import { ViewLayout } from '../../../src/application/types';
+import { readOpenDatabase } from '../../support/dashboard-loading-helpers';
+import {
+  apiGet,
+  apiPost,
+  browserAccessToken,
+  clearCachedDatabaseStorage,
+  readServerDatabaseDoc,
+} from '../../support/dashboard-shared-helpers';
 import {
   DASHBOARD_DEFAULT_ROW_HEIGHT,
   DASHBOARD_GRID_COLUMNS,
@@ -18,11 +24,12 @@ import {
   DatabaseViewLayout,
   gridDataRows,
   installDashboardTestBridge,
+  readDatabaseViews,
 } from '../../support/dashboard-test-helpers';
-import { EMPLOYEE_FIELDS, loadEmployeesFixture } from '../../support/employees-database';
+import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
+import { EMPLOYEE_FIELDS, employeeRecords, loadEmployeesFixture, seededEmployeesDatabase } from '../../support/employees-database';
 import { DatabaseViewSelectors } from '../../support/selectors';
 import { grantWorkspaceProSubscription, mockProSubscription } from '../../support/subscription-test-helpers';
-import { TestConfig } from '../../support/test-config';
 
 const { Given, When, Then } = createBdd();
 
@@ -32,8 +39,6 @@ const SLOW_PAGE_DELAY_MS = 1500;
 const FIRST_ROWS_WITHIN_MS = 5000;
 const LOAD_TIMEOUT_MS = 180000;
 const SAMPLES_KEY = '__LARGE_SOURCE_WIDGET_SAMPLES__';
-/** Folder `ViewLayout.Dashboard`. */
-const FOLDER_LAYOUT_DASHBOARD = 11;
 
 interface OpenDatabase {
   workspaceId: string;
@@ -49,6 +54,12 @@ interface LargeSourceScenario {
     hrRowIds: string[];
   };
   team?: OpenDatabase & { dashboardViewId: string };
+  /** "Has no saved result": the next open starts with empty browser storage. */
+  noSavedResult?: boolean;
+  /** Page clock from which the widget samples belong to the visit under test. */
+  samplesFrom?: number;
+  /** Page clock by which the HR widget had to stop showing its loading row. */
+  noLoadingRowFrom?: number;
 }
 
 /** One look at the HR widget, taken every 100 ms by the page. */
@@ -61,15 +72,17 @@ interface WidgetSample {
   rowCount: string | null;
 }
 
-let scenario: LargeSourceScenario | undefined;
+const scenarios = new WeakMap<Page, LargeSourceScenario>();
 
-function currentScenario(): LargeSourceScenario {
+function currentScenario(page: Page): LargeSourceScenario {
+  const scenario = scenarios.get(page);
+
   if (!scenario) throw new Error('The employees HR view has not been prepared in this scenario');
   return scenario;
 }
 
-function currentTeam() {
-  const { team } = currentScenario();
+function currentTeam(page: Page) {
+  const { team } = currentScenario(page);
 
   if (!team) throw new Error('The Team dashboard has not been prepared in this scenario');
   return team;
@@ -86,50 +99,9 @@ function departmentOptionId(name: string): string {
   return option.id;
 }
 
-/** The database the app exposes last (the page's own database, unless a widget mounted later). */
-async function readOpenDatabase(page: Page): Promise<OpenDatabase> {
-  const pageId = new URL(page.url()).pathname.split('/').filter(Boolean)[2] ?? '';
-  const ids = await page.evaluate(() => {
-    const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
-    const database = ctx?.databaseDoc?.getMap('data')?.get('database');
-
-    if (!database) return null;
-    return {
-      workspaceId: String(ctx.workspaceId),
-      databaseId: String(database.get('id') || ctx.databaseDoc.guid),
-      activeViewId: String(ctx.activeViewId),
-    };
-  });
-
-  if (!ids) throw new Error('No database is open');
-  return { ...ids, pageId };
-}
-
 /** Views of a database the app has open: id, layout and row order. */
 async function readViews(page: Page, databaseId: string) {
-  return page.evaluate((id) => {
-    const win = window as any;
-    const ctx =
-      win.__DASHBOARD_TEST__?.byDatabase(id) ??
-      (win.__TEST_DATABASE_CONTEXT__?.databaseDoc?.getMap('data')?.get('database')?.get('id') === id
-        ? win.__TEST_DATABASE_CONTEXT__
-        : undefined);
-    const views: { id: string; layout: number; inline: boolean; rowIds: string[] }[] = [];
-
-    ctx?.databaseDoc
-      .getMap('data')
-      .get('database')
-      ?.get('views')
-      ?.forEach((view: any, viewId: string) => {
-        views.push({
-          id: viewId,
-          layout: Number(view.get('layout') ?? 0),
-          inline: Boolean(view.get('is_inline')),
-          rowIds: (view.get('row_orders')?.toJSON() ?? []).map((row: { id: string }) => row.id),
-        });
-      });
-    return views;
-  }, databaseId);
+  return readDatabaseViews(page, databaseId, { rowIds: true });
 }
 
 /** Adds a grid view through the tab bar "+" menu of the open database and returns its id. */
@@ -160,28 +132,9 @@ async function addGridViewThroughTabs(page: Page, databaseId: string) {
 
 /** A Cloud API call made with the signed-in browser's token. */
 async function cloudApi<T>(page: Page, path: string, data?: unknown): Promise<T> {
-  const token = await page.evaluate(() => {
-    try {
-      return (
-        JSON.parse(localStorage.getItem('token') ?? '{}').access_token || localStorage.getItem('af_auth_token') || ''
-      );
-    } catch {
-      return localStorage.getItem('af_auth_token') || '';
-    }
-  });
+  const token = await browserAccessToken(page);
 
-  if (!token) throw new Error('No auth token in the page');
-  const url = new URL(path, TestConfig.apiUrl).toString();
-  const headers = { Authorization: `Bearer ${token}` };
-  const response =
-    data === undefined ? await page.request.get(url, { headers }) : await page.request.post(url, { headers, data });
-  const body = (await response.json().catch(() => ({}))) as { code?: number; message?: string; data?: T };
-
-  if (!response.ok() || (body.code !== undefined && body.code !== 0)) {
-    throw new Error(`${path} failed: HTTP ${response.status()} ${body.message ?? ''}`);
-  }
-
-  return body.data as T;
+  return data === undefined ? apiGet<T>(page.request, token, path) : apiPost<T>(page.request, token, path, data);
 }
 
 /**
@@ -196,6 +149,7 @@ async function createDashboardView(page: Page, database: OpenDatabase) {
 
     return Boolean((extra as { is_database_container?: boolean } | undefined)?.is_database_container);
   };
+
   const base = `/api/workspace/${database.workspaceId}`;
   const view = await cloudApi<FolderView>(page, `${base}/view/${database.activeViewId}?depth=0`);
   const parentId = view.parent_view_id;
@@ -213,7 +167,7 @@ async function createDashboardView(page: Page, database: OpenDatabase) {
     {
       parent_view_id: containerId,
       database_id: database.databaseId,
-      layout: FOLDER_LAYOUT_DASHBOARD,
+      layout: ViewLayout.Dashboard,
       name: 'Dashboard',
       embedded: false,
     }
@@ -261,23 +215,22 @@ function rowIdsInDeliveryOrder(pages: Buffer[]): string[] {
   return Array.from(rowIds);
 }
 
+/** The server's copy of a view of a database (`read` gets the view map). */
+async function readServerView<T>(page: Page, database: OpenDatabase, viewId: string, read: (view?: Y.Map<unknown>) => T) {
+  const access = { token: await browserAccessToken(page), workspaceId: database.workspaceId };
+
+  return readServerDatabaseDoc(page.request, access, database.databaseId, (yDatabase) =>
+    read((yDatabase?.get('views') as Y.Map<Y.Map<unknown>> | undefined)?.get(viewId))
+  );
+}
+
 /** Row ids of a view in the server's copy of a database. */
 async function readServerRowOrder(page: Page, database: OpenDatabase, viewId: string): Promise<string[]> {
-  const collab = await cloudApi<{ doc_state: number[] }>(
-    page,
-    `/api/workspace/v1/${database.workspaceId}/collab/${database.databaseId}?collab_type=${Types.Database}`
+  return readServerView(page, database, viewId, (view) =>
+    ((view?.get('row_orders') as Y.Array<{ id: string }> | undefined)?.toJSON() ?? []).map(
+      (row: { id: string }) => row.id
+    )
   );
-  const doc = new Y.Doc({ guid: database.databaseId });
-
-  Y.applyUpdate(doc, new Uint8Array(collab.doc_state));
-  const yDatabase = doc.getMap('data').get('database') as Y.Map<unknown> | undefined;
-  const view = (yDatabase?.get('views') as Y.Map<Y.Map<unknown>> | undefined)?.get(viewId);
-  const rowIds = ((view?.get('row_orders') as Y.Array<{ id: string }> | undefined)?.toJSON() ?? []).map(
-    (row: { id: string }) => row.id
-  );
-
-  doc.destroy();
-  return rowIds;
 }
 
 /**
@@ -330,7 +283,7 @@ async function openDashboard(page: Page, team: { workspaceId: string; dashboardV
 }
 
 function hrWidget(page: Page): Locator {
-  return DashboardSelectors.widgetsForView(page, currentScenario().employees.hrViewId);
+  return DashboardSelectors.widgetsForView(page, currentScenario(page).employees.hrViewId);
 }
 
 async function readSamples(page: Page): Promise<WidgetSample[]> {
@@ -406,12 +359,12 @@ Given(
     await expect(DatabaseViewSelectors.gridView(page)).toHaveAttribute('data-row-count', String(hrRowIds.length), {
       timeout: LOAD_TIMEOUT_MS,
     });
-    scenario = { employees: { ...employees, hrViewId, hrRowIds } };
+    scenarios.set(page, { employees: { ...employees, hrViewId, hrRowIds } });
   }
 );
 
 Given('a new database has a dashboard showing its own grid and the employees HR view', async ({ page }) => {
-  const current = currentScenario();
+  const current = currentScenario(page);
 
   // Widgets mount their own databases; the bridge keeps every database context reachable.
   await installDashboardTestBridge(page.context());
@@ -525,24 +478,8 @@ Given('a new database has a dashboard showing its own grid and the employees HR 
   current.team = { ...host, dashboardViewId };
 });
 
-When('I open that dashboard while the employees database loads slowly', async ({ page }) => {
-  const { employees } = currentScenario();
-  const team = currentTeam();
-  let pages = 0;
-
-  await page.route(`**/api/workspace/*/database/${employees.databaseId}/blob/diff`, async (route) => {
-    const response = await route.fetch().catch(() => null);
-
-    if (!response) {
-      await route.abort().catch(() => undefined);
-      return;
-    }
-
-    pages += 1;
-    if (pages > 1) await new Promise((resolve) => setTimeout(resolve, SLOW_PAGE_DELAY_MS));
-    await route.fulfill({ response }).catch(() => undefined);
-  });
-  // Record the HR widget from the first frame of the new page load.
+/** Record the HR widget every 100 ms from the first frame of the next page load. */
+async function recordHrWidget(page: Page) {
   await page.addInitScript(
     ({ viewId, key }) => {
       const samples: unknown[] = [];
@@ -564,14 +501,154 @@ When('I open that dashboard while the employees database loads slowly', async ({
         });
       }, 100);
     },
-    { viewId: employees.hrViewId, key: SAMPLES_KEY }
+    { viewId: currentScenario(page).employees.hrViewId, key: SAMPLES_KEY }
   );
+}
+
+/**
+ * Open the Team dashboard in a new document, recording the HR widget; after
+ * "has no saved result" the browser storage is empty first (the web's
+ * counterpart of a fresh desktop session without the view's saved result).
+ */
+async function openTeamDashboard(page: Page, beforeOpen?: () => Promise<void>) {
+  const scenario = currentScenario(page);
+
+  if (scenario.noSavedResult) await clearCachedDatabaseStorage(page);
+  await beforeOpen?.();
+  await recordHrWidget(page);
+  scenario.samplesFrom = 0;
   // A full page load: nothing of the earlier visit stays in memory.
-  await openDashboard(page, team);
+  await openDashboard(page, currentTeam(page));
+}
+
+When(
+  'I open that dashboard while the employees database loads slowly',
+  { tags: 'not @dashboard-loading' },
+  async ({ page }) => {
+    const { employees } = currentScenario(page);
+    let pages = 0;
+
+    await page.route(`**/api/workspace/*/database/${employees.databaseId}/blob/diff`, async (route) => {
+      const response = await route.fetch().catch(() => null);
+
+      if (!response) {
+        await route.abort().catch(() => undefined);
+        return;
+      }
+
+      pages += 1;
+      if (pages > 1) await new Promise((resolve) => setTimeout(resolve, SLOW_PAGE_DELAY_MS));
+      await route.fulfill({ response }).catch(() => undefined);
+    });
+    await openTeamDashboard(page);
+  }
+);
+
+Given('the employees HR view has no saved result', async ({ page }) => {
+  const scenario = currentScenario(page);
+
+  // Empty now, and again right before the dashboard opens (a step in between may read the view).
+  scenario.noSavedResult = true;
+  await clearCachedDatabaseStorage(page);
+  await openDashboard(page, currentTeam(page));
+});
+
+Given('the employees HR view is sorted by Name', async ({ page }) => {
+  const { employees } = currentScenario(page);
+  const sortId = `large-source-sort-${employees.hrViewId}`;
+
+  await expect(hrWidget(page).getByTestId('database-grid')).toBeVisible({ timeout: LOAD_TIMEOUT_MS });
+  await page.evaluate(
+    ({ databaseId, viewId, fieldId, sortId }) => {
+      const win = window as any;
+      const doc = win.__DASHBOARD_TEST__.byDatabase(databaseId).databaseDoc;
+      const view = doc.getMap('data').get('database').get('views').get(viewId);
+
+      doc.transact(() => {
+        let sorts = view.get('sorts');
+
+        if (!sorts) {
+          sorts = new win.Y.Array();
+          view.set('sorts', sorts);
+        }
+
+        const sort = new win.Y.Map();
+
+        sort.set('id', sortId);
+        sort.set('field_id', fieldId);
+        // `SortCondition.Ascending`.
+        sort.set('condition', 0);
+        sorts.delete(0, sorts.length);
+        sorts.push([sort]);
+      });
+    },
+    { databaseId: employees.databaseId, viewId: employees.hrViewId, fieldId: EMPLOYEE_FIELDS.Name, sortId }
+  );
+  await expect
+    .poll(
+      () =>
+        readServerView(page, employees, employees.hrViewId, (view) =>
+          ((view?.get('sorts') as Y.Array<Y.Map<unknown>> | undefined)?.toArray() ?? []).map((sort) => sort.get('id'))
+        ),
+      { timeout: 60000, message: 'waiting for the HR view sort to reach the server' }
+    )
+    .toEqual([sortId]);
+
+  // The app sorts text with this collator and keeps the view's order for equal names.
+  const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true, usage: 'sort' });
+  const records = employeeRecords();
+  const nameByRowId = new Map(
+    seededEmployeesDatabase().rowIds.map((rowId, index) => [rowId, records[index]?.Name.data ?? ''])
+  );
+
+  employees.hrRowIds = [...employees.hrRowIds].sort((left, right) =>
+    collator.compare(nameByRowId.get(left) ?? '', nameByRowId.get(right) ?? '')
+  );
+});
+
+When('I open that dashboard', async ({ page }) => {
+  await openTeamDashboard(page);
+});
+
+When('I open that dashboard while the employees HR view is open in another tab', async ({ page }) => {
+  const { employees } = currentScenario(page);
+
+  await openTeamDashboard(page, async () => {
+    const other = await page.context().newPage();
+
+    await other.goto(new URL(`/app/${employees.workspaceId}/${employees.pageId}?v=${employees.hrViewId}`, page.url()).toString(), {
+      waitUntil: 'domcontentloaded',
+    });
+    await expect(DatabaseViewSelectors.gridView(other)).toHaveAttribute('data-row-count', String(employees.hrRowIds.length), {
+      timeout: LOAD_TIMEOUT_MS,
+    });
+  });
+});
+
+/** Navigate inside the app (no new document), as a click on another page would. */
+async function navigateInApp(page: Page, path: string) {
+  await page.evaluate((target) => {
+    window.history.pushState({}, '', target);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, path);
+}
+
+When('I open another page and return to the dashboard', async ({ page }) => {
+  const scenario = currentScenario(page);
+  const team = currentTeam(page);
+  const { employees } = scenario;
+
+  await expect(hrWidget(page).getByTestId('database-grid')).toBeVisible({ timeout: LOAD_TIMEOUT_MS });
+  await navigateInApp(page, `/app/${employees.workspaceId}/${employees.pageId}`);
+  await expect(DashboardSelectors.view(page)).toHaveCount(0, { timeout: 60000 });
+  await expect(DatabaseViewSelectors.gridView(page).first()).toBeVisible({ timeout: LOAD_TIMEOUT_MS });
+  scenario.samplesFrom = await page.evaluate(() => performance.now());
+  await navigateInApp(page, `/app/${team.workspaceId}/${team.dashboardViewId}`);
+  await expect(DashboardSelectors.view(page)).toBeVisible({ timeout: 60000 });
 });
 
 Then('the HR widget shows its first HR employees within 5 seconds, above a loading row', async ({ page }) => {
-  const { employees } = currentScenario();
+  const { employees } = currentScenario(page);
   const widget = hrWidget(page);
 
   await expect(widget.getByTestId('database-grid')).toBeVisible({ timeout: LOAD_TIMEOUT_MS });
@@ -591,7 +668,7 @@ Then('the HR widget shows its first HR employees within 5 seconds, above a loadi
 });
 
 Then('the HR widget lists every HR employee of the fixture', async ({ page }) => {
-  const { employees } = currentScenario();
+  const { employees } = currentScenario(page);
   const widget = hrWidget(page);
   const grid = widget.getByTestId('database-grid');
 
@@ -607,7 +684,7 @@ Then('the HR widget lists every HR employee of the fixture', async ({ page }) =>
 });
 
 Then('the HR widget never looked empty while it loaded', async ({ page }) => {
-  const { employees } = currentScenario();
+  const { employees } = currentScenario(page);
   const samples = await readSamples(page);
 
   expect(samples.length).toBeGreaterThan(0);
@@ -618,4 +695,69 @@ Then('the HR widget never looked empty while it loaded', async ({ page }) => {
     // Rows only ever append below the ones already shown.
     expect(sample.rowIds).toEqual(employees.hrRowIds.slice(0, sample.rowIds.length));
   });
+});
+
+/** Wait until the page clock passes `at` (ms since the page started loading). */
+async function waitForPageClock(page: Page, at: number) {
+  await expect
+    .poll(() => page.evaluate(() => performance.now()), {
+      timeout: Math.max(0, at - (await page.evaluate(() => performance.now()))) + 10000,
+      message: `waiting for the page clock to reach ${Math.round(at)} ms`,
+    })
+    .toBeGreaterThan(at);
+}
+
+/** The widget samples of the visit under test. */
+async function visitSamples(page: Page) {
+  const from = currentScenario(page).samplesFrom ?? 0;
+
+  return (await readSamples(page)).filter((sample) => sample.t >= from);
+}
+
+Then(
+  'the HR widget shows no loading row within {int} seconds of its last row',
+  async ({ page }, seconds: number) => {
+    const scenario = currentScenario(page);
+    const count = String(scenario.employees.hrRowIds.length);
+    const listed = (await visitSamples(page)).find((sample) => sample.rowCount === count);
+
+    expect(listed, 'the HR widget never listed every HR employee').toBeDefined();
+    const deadline = (listed as WidgetSample).t + seconds * 1000;
+
+    // The loading row is gone by the deadline, and every look from then on agrees.
+    await waitForPageClock(page, deadline + 200);
+    const after = (await visitSamples(page)).filter((sample) => sample.t >= deadline);
+
+    expect(after.length, 'no look at the HR widget after the deadline').toBeGreaterThan(0);
+    expect(
+      after.filter((sample) => sample.loading).map((sample) => sample.t),
+      `the HR widget still showed its loading row ${seconds} s after its last row (ms since load)`
+    ).toEqual([]);
+    await expect(hrWidget(page).getByTestId('grid-loading-indicator')).toHaveCount(0);
+    scenario.noLoadingRowFrom = deadline;
+  }
+);
+
+Then('the HR widget still shows no loading row {int} seconds later', async ({ page }, seconds: number) => {
+  const scenario = currentScenario(page);
+  const from = scenario.noLoadingRowFrom;
+
+  expect(from, 'check the loading row is gone first').toBeDefined();
+  const until = (from as number) + seconds * 1000;
+
+  await waitForPageClock(page, until + 200);
+  const looks = (await visitSamples(page)).filter((sample) => sample.t >= (from as number) && sample.t <= until);
+  const count = String(scenario.employees.hrRowIds.length);
+
+  expect(looks.length, 'no look at the HR widget in the window').toBeGreaterThan(0);
+  expect(
+    looks.filter((sample) => sample.loading).map((sample) => sample.t),
+    'the HR widget showed its loading row again (ms since load)'
+  ).toEqual([]);
+  expect(
+    looks.filter((sample) => sample.rowCount !== count).map((sample) => sample.t),
+    'the HR widget stopped listing every HR employee (ms since load)'
+  ).toEqual([]);
+  await expect(hrWidget(page).getByTestId('grid-loading-indicator')).toHaveCount(0);
+  await expect(hrWidget(page).getByTestId('database-grid')).toHaveAttribute('data-row-count', count);
 });

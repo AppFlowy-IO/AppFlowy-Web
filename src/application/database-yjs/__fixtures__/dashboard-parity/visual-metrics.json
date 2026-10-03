@@ -51,7 +51,7 @@
     "scroll": ["scrollbarVisible", "thumbThicknessMax", "thumbInset", "trackVisible"]
   },
   "measurement": "Definitions per metric and client: VISUAL-PARITY.md §3.3. Insets (left/right/top/bottom/center*) are against relativeTo; padding* is the inset from the element box to the union of its own __parts (or of `content`); gapToNext is the gap to the next parity sibling along gapAxis (default x); childGap is every gap between consecutive parity children along the main axis; pitch is the distance between the tops of consecutive instances.",
-  "idConvention": "web data-parity-id=\"<id>\", desktop ParityId(<id>) = KeyedSubtree with ValueKey<String>(<id>). Parts: <id>__icon, <id>__label, <id>__chevron, <id>__pill, <id>__band, <id>__dot, <id>__title, <id>__footer, <id>__drag-icon. appliesTo globs: * matches [a-z0-9-]* and never \"__\".",
+  "idConvention": "web data-parity-id=\"<id>\", desktop ParityId(<id>) = KeyedSubtree with ValueKey<String>(<id>). Parts: <id>__icon, <id>__label, <id>__chevron, <id>__pill, <id>__band, <id>__dot, <id>__title, <id>__divider, <id>__footer, <id>__drag-icon. appliesTo globs: * matches [a-z0-9-]* and never \"__\".",
   "interactions": {
     "rest": "pointer outside the dashboard, nothing open, transitions settled",
     "hover-widget": "pointer over the widget box (not over a tool)",
@@ -1913,6 +1913,22 @@
         "desktop": "appflowy_flutter/lib/plugins/database/chart/presentation/widgets/chart_tooltip.dart"
       },
       "source": "tokens geometry.tooltip, typography.tooltip; spec §8.8",
+      "tolerance": { "px": 0.5, "color": "exact" },
+      "wave": 2,
+      "status": "enforced"
+    },
+    {
+      "id": "dash-chart-tooltip__divider",
+      "description": "Hairline between the tooltip rows and the footer.",
+      "states": ["view-light", "view-dark", "edit-light", "edit-dark"],
+      "scene": "charts",
+      "when": "hover-bar",
+      "metrics": { "height": 1, "background": "color.tooltipBorder" },
+      "attach": {
+        "web": "src/components/database/chart/widgets/ChartTooltip.tsx",
+        "desktop": "appflowy_flutter/lib/plugins/database/chart/presentation/widgets/chart_tooltip.dart"
+      },
+      "source": "tokens color.tooltipBorder (border-primary); FIX-PASS CO1",
       "tolerance": { "px": 0.5, "color": "exact" },
       "wave": 2,
       "status": "enforced"

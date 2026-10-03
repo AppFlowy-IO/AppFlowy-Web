@@ -1,55 +1,40 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
-import { useTranslation } from 'react-i18next';
 
 import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
-import { resolveChartLocale } from '@/application/database-yjs/chart-format';
-import {
-  ChartAggregationType,
-  ChartType,
-  DEFAULT_CHART_NUMBER_FORMAT,
-} from '@/application/database-yjs/chart.type';
-import ChartEmptyState from '@/components/database/chart/ChartEmptyState';
+import { ChartType } from '@/application/database-yjs/chart.type';
 import ChartProvider from '@/components/database/chart/ChartProvider';
-import { ChartErrorState, ChartLoadingState } from '@/components/database/chart/ChartStates';
+import {
+  ChartErrorState,
+  ChartLoadingState,
+  ChartNoDataState,
+  ChartNoFieldState,
+} from '@/components/database/chart/ChartStates';
 import { useChartContext } from '@/components/database/chart/useChartContext';
 import BarChartWidget from '@/components/database/chart/widgets/BarChart';
 import DonutChartWidget from '@/components/database/chart/widgets/DonutChart';
 import HorizontalBarChartWidget from '@/components/database/chart/widgets/HorizontalBarChart';
 import LineChartWidget from '@/components/database/chart/widgets/LineChart';
 import NumberChartWidget from '@/components/database/chart/widgets/NumberChart';
-import { getNumberChartTitle } from '@/components/database/chart/widgets/numberChartUtils';
 import { cn } from '@/lib/utils';
 
 function NumberChartContent() {
-  const { t, i18n } = useTranslation();
-  const { chartData, settings, aggregationType, yAxisField, yFieldName, yNumberFormat, style, onElementClick } =
-    useChartContext();
-
-  const title = getNumberChartTitle(t, {
-    titleText: settings?.titleText,
-    aggregationType,
-    yFieldName,
-    hasYField: !!yAxisField,
-  });
-  const effectiveAggregation = yAxisField ? aggregationType : ChartAggregationType.Count;
+  const { chartData, settings, seriesLabel, format, onItemClick } = useChartContext();
+  const item = chartData[0] ?? null;
 
   return (
     <NumberChartWidget
-      item={chartData[0] ?? null}
-      title={title}
-      numberFormat={settings?.numberFormat ?? DEFAULT_CHART_NUMBER_FORMAT}
-      aggregationType={effectiveAggregation}
-      fieldNumberFormat={yNumberFormat}
-      decimalPlaces={style.decimalPlaces}
-      locale={resolveChartLocale(i18n?.language)}
-      onClick={onElementClick}
+      item={item}
+      onItemClick={onItemClick}
+      // The custom title when one is set, otherwise the generated one.
+      title={settings?.titleText?.trim() || seriesLabel}
+      valueText={item ? format(item.value, 'card') : ''}
     />
   );
 }
 
 function ChartContent({ fill }: { fill: boolean }) {
-  const { chartType, chartData, isLoading, loadError, retry, hasGroupableFields, onElementClick } = useChartContext();
+  const { chartType, chartData, isLoading, loadError, retry, hasGroupableFields, onItemClick } = useChartContext();
 
   if (isLoading) {
     return <ChartLoadingState fill={fill} />;
@@ -65,28 +50,25 @@ function ChartContent({ fill }: { fill: boolean }) {
     return <NumberChartContent />;
   }
 
-  // Empty state: no groupable fields (SingleSelect, MultiSelect, Checkbox) in the database
+  // The database has no field a chart can group by (`GROUPABLE_FIELD_TYPES`).
   if (!hasGroupableFields) {
-    return <ChartEmptyState fill={fill} type="no-field" />;
+    return <ChartNoFieldState fill={fill} />;
   }
 
-  // Empty state: no data
   if (chartData.length === 0) {
-    return <ChartEmptyState fill={fill} type="no-data" variant={chartType === ChartType.Donut ? 'donut' : undefined} />;
+    return <ChartNoDataState fill={fill} variant={chartType === ChartType.Donut ? 'donut' : undefined} />;
   }
 
-  // Render appropriate chart type
   switch (chartType) {
-    case ChartType.Bar:
-      return <BarChartWidget data={chartData} fill={fill} onBarClick={onElementClick} />;
     case ChartType.HorizontalBar:
-      return <HorizontalBarChartWidget data={chartData} fill={fill} onBarClick={onElementClick} />;
+      return <HorizontalBarChartWidget data={chartData} fill={fill} onItemClick={onItemClick} />;
     case ChartType.Line:
-      return <LineChartWidget data={chartData} fill={fill} onPointClick={onElementClick} />;
+      return <LineChartWidget data={chartData} fill={fill} onItemClick={onItemClick} />;
     case ChartType.Donut:
-      return <DonutChartWidget data={chartData} fill={fill} onSliceClick={onElementClick} />;
+      return <DonutChartWidget data={chartData} fill={fill} onItemClick={onItemClick} />;
+    case ChartType.Bar:
     default:
-      return <BarChartWidget data={chartData} fill={fill} onBarClick={onElementClick} />;
+      return <BarChartWidget data={chartData} fill={fill} onItemClick={onItemClick} />;
   }
 }
 

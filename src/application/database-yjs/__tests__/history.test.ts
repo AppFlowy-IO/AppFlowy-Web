@@ -755,6 +755,98 @@ describe('database row history', () => {
     expect(sourceHistory.canUndo()).toBe(false);
   });
 
+  it('releases its history source on another database when that database document is destroyed', () => {
+    const host = createDatabaseDoc();
+    const source = createDatabaseDoc();
+    const hostHistory = getOrCreateDatabaseHistoryManager(host.databaseDoc);
+    const listenersOf = (doc: YDoc, event: string) =>
+      (doc as unknown as { _observers: Map<string, Set<unknown>> })._observers.get(event)?.size ?? 0;
+    const transactionListenersBefore = listenersOf(source.databaseDoc, 'afterTransaction');
+    const destroyListenersBefore = listenersOf(source.databaseDoc, 'destroy');
+
+    runDatabaseAction(host.databaseDoc, { type: 'dashboard.layout' }, () => {
+      host.rowOrders.push([{ id: 'layout', height: 36 }]);
+    });
+    runDatabaseHistoryGroupForDatabase(host.databaseDoc, () => {
+      runDatabaseAction(source.databaseDoc, { type: 'view.conditions' }, () => {
+        source.rowOrders.push([{ id: 'saved-condition', height: 36 }]);
+      });
+    });
+
+    // The owner listens on the source document for its own writes there.
+    expect(listenersOf(source.databaseDoc, 'afterTransaction')).toBeGreaterThan(transactionListenersBefore);
+    expect(listenersOf(source.databaseDoc, 'destroy')).toBe(destroyListenersBefore + 1);
+
+    hostHistory.releaseForeignDatabaseSource(source.databaseDoc);
+
+    // The owner's listeners are gone from the source document. The one left is the
+    // released Yjs UndoManager's own, which this Yjs version cannot remove; it records nothing.
+    expect(listenersOf(source.databaseDoc, 'afterTransaction')).toBe(transactionListenersBefore + 1);
+    expect(listenersOf(source.databaseDoc, 'destroy')).toBe(destroyListenersBefore);
+    // The action on the source is gone from the owner's history; its own older action stays.
+    expect(hostHistory.canUndo()).toBe(true);
+    hostHistory.undo();
+    expect(host.rowOrders.toJSON()).toEqual([]);
+    expect(source.rowOrders.toJSON()).toEqual([{ id: 'saved-condition', height: 36 }]);
+    expect(hostHistory.canUndo()).toBe(false);
+
+    // A later save records into a new source, which the document's destroy event releases.
+    runDatabaseHistoryGroupForDatabase(host.databaseDoc, () => {
+      runDatabaseAction(source.databaseDoc, { type: 'view.conditions' }, () => {
+        source.rowOrders.push([{ id: 'second-condition', height: 36 }]);
+      });
+    });
+    expect(hostHistory.canUndo()).toBe(true);
+    // Only the new source recorded it: one undo reverts it, and nothing is left to undo.
+    hostHistory.undo();
+    expect(source.rowOrders.toJSON()).toEqual([{ id: 'saved-condition', height: 36 }]);
+    expect(hostHistory.canUndo()).toBe(false);
+    hostHistory.redo();
+    expect(source.rowOrders.toJSON()).toEqual([
+      { id: 'saved-condition', height: 36 },
+      { id: 'second-condition', height: 36 },
+    ]);
+    expect(hostHistory.canUndo()).toBe(true);
+
+    source.databaseDoc.destroy();
+
+    expect(hostHistory.canUndo()).toBe(false);
+    expect(hostHistory.canRedo()).toBe(false);
+  });
+
+  it('releases its history sources on other databases when its own document is destroyed', () => {
+    const host = createDatabaseDoc();
+    const first = createDatabaseDoc();
+    const second = createDatabaseDoc();
+    const listenersOf = (doc: YDoc, event: string) =>
+      (doc as unknown as { _observers: Map<string, Set<unknown>> })._observers.get(event)?.size ?? 0;
+    const before = [first, second].map((source) => listenersOf(source.databaseDoc, 'afterTransaction'));
+
+    getOrCreateDatabaseHistoryManager(host.databaseDoc);
+    runDatabaseHistoryGroupForDatabase(host.databaseDoc, () => {
+      for (const source of [first, second]) {
+        runDatabaseAction(source.databaseDoc, { type: 'view.conditions' }, () => {
+          source.rowOrders.push([{ id: 'saved-condition', height: 36 }]);
+        });
+      }
+    });
+    expect(listenersOf(first.databaseDoc, 'afterTransaction')).toBeGreaterThan(before[0]);
+    expect(listenersOf(second.databaseDoc, 'afterTransaction')).toBeGreaterThan(before[1]);
+
+    const withSources = [first, second].map((source) => listenersOf(source.databaseDoc, 'afterTransaction'));
+
+    host.databaseDoc.destroy();
+
+    // Each source document lost the owner's listener and its destroy watcher.
+    expect(listenersOf(first.databaseDoc, 'afterTransaction')).toBe(withSources[0] - 1);
+    expect(listenersOf(second.databaseDoc, 'afterTransaction')).toBe(withSources[1] - 1);
+    expect(listenersOf(first.databaseDoc, 'destroy')).toBe(0);
+    expect(listenersOf(second.databaseDoc, 'destroy')).toBe(0);
+    // The sources keep what was saved to them.
+    expect(first.rowOrders.toJSON()).toEqual([{ id: 'saved-condition', height: 36 }]);
+    expect(second.rowOrders.toJSON()).toEqual([{ id: 'saved-condition', height: 36 }]);
+  });
+
   it('keeps nested groups, row actions, and skip policies while restoring ownership after a throw', () => {
     const host = createDatabaseDoc();
     const source = createDatabaseDoc();

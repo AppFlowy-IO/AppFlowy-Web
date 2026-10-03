@@ -6,9 +6,8 @@ import {
   DEFAULT_CHART_EXTENDED_SETTINGS,
 } from '@/application/database-yjs/chart-extended-settings';
 import { ChartFormatYField, formatChartValue } from '@/application/database-yjs/chart-format';
-import { ChartAggregationType } from '@/application/database-yjs/chart.type';
+import { ChartAggregationType, resolveEffectiveAggregation } from '@/application/database-yjs/chart.type';
 import { NumberFormat } from '@/application/database-yjs/fields';
-import { YDatabaseField } from '@/application/types';
 import { ChartContext, ChartContextValue, DEFAULT_CHART_CONTEXT } from '@/components/database/chart/useChartContext';
 
 import { ChartMeasureContext } from '../measureText';
@@ -98,14 +97,16 @@ export function chartContextStub({
   seriesLabel = '',
   isDark = false,
 }: ChartStub = {}): ChartContextValue {
+  // What `useChartData` resolves: an aggregation without its Y field counts rows.
+  const effectiveAggregation = resolveEffectiveAggregation(aggregation, Boolean(yField));
+
   return {
     ...DEFAULT_CHART_CONTEXT,
     isLoading: false,
-    aggregationType: aggregation,
-    // Only its presence matters to the widgets.
-    yAxisField: yField ? ({} as YDatabaseField) : null,
+    effectiveAggregation,
     style: { ...DEFAULT_CHART_EXTENDED_SETTINGS, ...style },
-    format: (value, mode) => formatChartValue(value, { aggregation, yField, mode, locale: 'en-US' }),
+    format: (value, mode) =>
+      formatChartValue(value, { aggregation: effectiveAggregation, yField, mode, locale: 'en-US' }),
     seriesLabel,
     isDark,
   };

@@ -2,13 +2,42 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChartDataItem } from '@/application/database-yjs/chart.type';
 
-import { chartDataEqual } from './chartUtils';
-
-/** The hovered category and where the pointer is, in viewport coordinates. */
-export interface ChartHoverState {
-  index: number;
+/** A pointer position in viewport coordinates. */
+export interface ChartPointerPosition {
   clientX: number;
   clientY: number;
+}
+
+/**
+ * Where the pointer is over a chart. It is not React state: a pointer move
+ * updates it and calls its listeners (the tooltip layer, which re-places
+ * itself), and nothing renders.
+ */
+export interface ChartPointer {
+  get(): ChartPointerPosition;
+  set(position: ChartPointerPosition): void;
+  /** `listener` runs after every `set`. Returns the unsubscribe. */
+  subscribe(listener: () => void): () => void;
+}
+
+export function createChartPointer(initial: ChartPointerPosition = { clientX: 0, clientY: 0 }): ChartPointer {
+  let position = initial;
+  const listeners = new Set<() => void>();
+
+  return {
+    get: () => position,
+    set: (next) => {
+      if (next.clientX === position.clientX && next.clientY === position.clientY) return;
+      position = next;
+      listeners.forEach((listener) => listener());
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
 }
 
 interface PointerLike {
@@ -22,35 +51,54 @@ interface RechartsMouseState {
   activeTooltipIndex?: number;
 }
 
+/** The hovered category, and the data it is an index into. */
+interface HoverState {
+  index: number;
+  data: ChartDataItem[];
+}
+
 /**
- * Hover state shared by the chart, its band and its tooltip (WP10 §1.6).
- * It resets on pointer leave or cancel, on a click (before the drill-down
- * opens), on window blur, on any scroll, and when the charted data changes
- * by content, so a tooltip never outlives the pointer or the data it shows.
+ * Hover shared by the chart, its band and its tooltip (WP10 §1.6).
+ *
+ * Only the hovered category is state, so the chart renders when the pointer
+ * enters another category, not on every move inside one. The position lives
+ * in `pointer`, which the tooltip layer follows by itself.
+ *
+ * The hover ends on pointer leave or cancel, on a click (before the
+ * drill-down opens), on window blur, on any scroll, and when the chart gets
+ * new data, so a tooltip never outlives the pointer or the data it shows.
+ * `ChartProvider` hands over a new array only when the content changed, so a
+ * reference check is the content check.
  */
 export function useChartHover(data: ChartDataItem[]) {
-  const [hover, setHover] = useState<ChartHoverState | null>(null);
-  const pointer = useRef({ x: 0, y: 0 });
+  const [hover, setHover] = useState<HoverState | null>(null);
+  const [pointer] = useState(createChartPointer);
+  // A hover of earlier data is over: derived, so no effect has to reset it.
+  const hoveredIndex = hover !== null && hover.data === data ? hover.index : null;
 
   const clear = useCallback(() => setHover(null), []);
 
+  const track = useCallback(
+    (event?: PointerLike | null) => {
+      if (event?.clientX === undefined || event.clientY === undefined) return;
+      pointer.set({ clientX: event.clientX, clientY: event.clientY });
+    },
+    [pointer]
+  );
+
   /** Show category `index` at the pointer (Recharts gives the index, the event the position). */
-  const show = useCallback((index: number | undefined | null, event?: PointerLike | null) => {
-    if (typeof index !== 'number' || index < 0) {
-      setHover(null);
-      return;
-    }
+  const show = useCallback(
+    (index: number | undefined | null, event?: PointerLike | null) => {
+      if (typeof index !== 'number' || index < 0) {
+        setHover(null);
+        return;
+      }
 
-    const clientX = event?.clientX ?? pointer.current.x;
-    const clientY = event?.clientY ?? pointer.current.y;
-
-    pointer.current = { x: clientX, y: clientY };
-    setHover((previous) =>
-      previous && previous.index === index && previous.clientX === clientX && previous.clientY === clientY
-        ? previous
-        : { index, clientX, clientY }
-    );
-  }, []);
+      track(event);
+      setHover((previous) => (previous && previous.index === index && previous.data === data ? previous : { index, data }));
+    },
+    [data, track]
+  );
 
   /** Recharts `onMouseMove(state, event)`: the active category, or none outside the plot. */
   const onChartMouseMove = useCallback(
@@ -60,25 +108,7 @@ export function useChartHover(data: ChartDataItem[]) {
     [show]
   );
 
-  const onPointerMove = useCallback((event: PointerLike) => {
-    if (event.clientX === undefined || event.clientY === undefined) return;
-    const x = event.clientX;
-    const y = event.clientY;
-
-    pointer.current = { x, y };
-    setHover((previous) => (previous && (previous.clientX !== x || previous.clientY !== y) ? { ...previous, clientX: x, clientY: y } : previous));
-  }, []);
-
-  // The data compares by content: the memoized charts get a new array only when what they draw changed.
-  const dataRef = useRef(data);
-
-  useEffect(() => {
-    if (chartDataEqual(dataRef.current, data)) return;
-    dataRef.current = data;
-    setHover(null);
-  }, [data]);
-
-  const active = hover !== null;
+  const active = hoveredIndex !== null;
   const frameRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -106,17 +136,17 @@ export function useChartHover(data: ChartDataItem[]) {
   const frameHandlers = useMemo(
     () => ({
       ref: frameRef,
-      onPointerMove,
-      onMouseMove: onPointerMove,
+      onPointerMove: track,
+      onMouseMove: track,
       onPointerLeave: clear,
       onMouseLeave: clear,
       onPointerCancel: clear,
       onClickCapture: clear,
     }),
-    [onPointerMove, clear]
+    [track, clear]
   );
 
-  return { hover, show, clear, onChartMouseMove, frameHandlers };
+  return { hoveredIndex, pointer, show, clear, onChartMouseMove, frameHandlers };
 }
 
 export default useChartHover;

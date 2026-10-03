@@ -33,6 +33,7 @@ import {
   DASHBOARD_WIDGET_BOX_BLEED,
   DASHBOARD_WIDGET_HEADER_HEIGHT,
 } from '@/application/database-yjs/dashboard-geometry';
+import { DASHBOARD_LOADING } from '@/application/database-yjs/dashboard-loading';
 import * as dashboardType from '@/application/database-yjs/dashboard.type';
 import { SelectOptionColor } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP } from '@/components/database/dashboard/constants';
@@ -81,6 +82,7 @@ interface Tokens {
   geometry: Record<string, unknown>;
   typography: Record<string, unknown>;
   motion: { fastMs: number; reflowMs: number; easing: string };
+  loading: Record<string, number>;
   boardColumnTintBlockIndex: number[];
 }
 
@@ -359,6 +361,7 @@ describe('dashboard tokens (tokens.json ↔ dashboard-geometry.ts)', () => {
         'geometry',
         'typography',
         'motion',
+        'loading',
         'boardColumnTintBlockIndex',
       ].sort()
     );
@@ -433,6 +436,24 @@ describe('dashboard tokens (tokens.json ↔ dashboard-geometry.ts)', () => {
     expect(widget.boxBleed).toBe(widget.boxPaddingInline);
     expect(widget.cardInset).toBe(widget.headerHeight + widget.boxPaddingBottom);
     expect(row.controlGutterMin).toBe(row.controlOffset + grid.columnGap + 2);
+  });
+});
+
+describe('dashboard tokens (tokens.json ↔ dashboard-loading.ts)', () => {
+  it('matches the loading constants exactly', () => {
+    expect(DASHBOARD_LOADING).toEqual(tokens.loading);
+  });
+
+  it('caps the distinct sources that load at the same time at 2 (addendum A9)', () => {
+    expect(tokens.loading.maxConcurrentSources).toBe(2);
+    expect(DASHBOARD_LOADING.maxConcurrentSources).toBe(2);
+  });
+
+  it('has no other loading constant (the source cap is hard: no slow-source escape)', () => {
+    expect(Object.keys(tokens.loading).sort()).toEqual(
+      ['maxConcurrentSources', 'deferredStartTimeoutMs', 'rowBudget', 'sourceIdleReleaseMs'].sort()
+    );
+    expect(tokens.loading).not.toHaveProperty('slowSourceSlotMs');
   });
 });
 

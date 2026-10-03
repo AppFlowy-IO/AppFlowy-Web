@@ -1,7 +1,6 @@
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useDatabaseContextOptional } from '@/application/database-yjs/context';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/controller.svg';
 import { ReactComponent as OpenAsPageIcon } from '@/assets/icons/full_screen.svg';
 import { useMobileContext } from '@/components/_shared/hooks/useMobileContext';
@@ -78,6 +77,20 @@ function DashboardSettingsButton() {
   );
 }
 
+export interface DashboardActionsProps {
+  /**
+   * The host database's active view (the dashboard). Omitted outside a
+   * database: Open as full page and Settings need one.
+   */
+  activeViewId?: string;
+  /** The host database's page, the fallback Open as full page opens. */
+  databasePageId?: string;
+  /** The host database is read-only (the default): no Settings. */
+  readOnly?: boolean;
+  /** The dashboard is embedded in a document: Open as full page shows. */
+  isDocumentBlock?: boolean;
+}
+
 /**
  * Dashboard toolbar in the database tab bar, always visible, left to right:
  * the global filter button (for everyone), "Open as full page" (only when the
@@ -86,20 +99,26 @@ function DashboardSettingsButton() {
  * view-only, so it shows the global filter button alone.
  *
  * The filter button and Edit / Done need the `DashboardProvider`; Open as full
- * page and Settings only need the database context, so they also render in
- * the one render in which the tab bar still reports the previous view's
- * layout. Outside a database it renders nothing.
+ * page and Settings only need the host database, so they also render in the
+ * one render in which the tab bar still reports the previous view's layout.
+ * Without a dashboard and a database it renders nothing.
  *
- * Memoized: the conditions toolbar that renders it follows every change of
- * the host database context, while this only depends on `DashboardContext`.
+ * Memoized: the toolbar that renders it (`DatabaseActions`) follows every
+ * change of the host database context, so it hands the database over as
+ * primitives and this only re-renders with them and `DashboardContext`.
  */
-export const DashboardActions = memo(function DashboardActions() {
+export const DashboardActions = memo(function DashboardActions({
+  activeViewId,
+  databasePageId,
+  readOnly = true,
+  isDocumentBlock = false,
+}: DashboardActionsProps) {
   const { t } = useTranslation();
   const dashboard = useDashboardContextOptional();
-  const database = useDatabaseContextOptional();
   const viewportMobile = useMobileContext();
+  const inDatabase = activeViewId !== undefined;
 
-  if (!dashboard && !database) return null;
+  if (!dashboard && !inDatabase) return null;
   const mobileContext = dashboard?.mobileContext ?? viewportMobile;
 
   if (mobileContext) {
@@ -115,16 +134,13 @@ export const DashboardActions = memo(function DashboardActions() {
     );
   }
 
-  const readOnly = database?.readOnly ?? true;
-  const embedded = Boolean(database?.isDocumentBlock);
-
   return (
     <div className='flex items-center gap-1' data-parity-id='dash-toolbar' data-testid='dashboard-actions'>
       <GlobalFilterButton />
-      {embedded && database ? (
-        <OpenAsFullPageButton fallbackViewId={database.databasePageId} viewId={database.activeViewId} />
+      {isDocumentBlock && inDatabase ? (
+        <OpenAsFullPageButton fallbackViewId={databasePageId} viewId={activeViewId} />
       ) : null}
-      {database && !readOnly ? <DashboardSettingsButton /> : null}
+      {inDatabase && !readOnly ? <DashboardSettingsButton /> : null}
       {dashboard?.canEnterEdit ? (
         dashboard.isEditing ? (
           <Button

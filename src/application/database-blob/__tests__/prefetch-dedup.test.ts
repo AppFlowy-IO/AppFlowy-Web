@@ -9,6 +9,7 @@ import {
 import * as pageStageModule from '@/application/database-blob/page-stage';
 import type { DatabaseBlobDiffPageStage } from '@/application/database-blob/page-stage';
 import { isDatabaseRowDocSeedCurrent } from '@/application/database-blob/row-seed-fence';
+import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
 import { publishDatabaseCacheEpoch } from '@/application/db/database-storage-fence';
 import { deleteCollabDB, openRowCollabDBWithProvider } from '@/application/db';
 import { deleteRow } from '@/application/services/js-services/cache';
@@ -367,6 +368,163 @@ describe('database blob prefetch deduplication', () => {
       seqNo: 7,
     });
     expect(mockedDatabaseBlobDiff.mock.calls[1][2].maxKnownRid).toBeNull();
+  });
+
+  describe('one walk per database', () => {
+    const ridKey = (databaseId: string) => `af_database_blob_rid:${databaseId}`;
+    const readRid = (databaseId: string) => JSON.parse(localStorage.getItem(ridKey(databaseId)) ?? 'null');
+    /** Every write of the database's RID since the spy was installed. */
+    const spyOnRidWrites = (databaseId: string) => {
+      const setItem = jest.spyOn(Storage.prototype, 'setItem');
+
+      return () => setItem.mock.calls.filter(([key]) => key === ridKey(databaseId));
+    };
+
+    it('lets a cold delta request join a full walk in flight and writes the RID once', async () => {
+      const workspaceId = 'workspace-full-then-delta';
+      const databaseId = 'database-full-then-delta';
+      const deferred = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+      const fullSeedsReady = jest.fn();
+      const deltaSeedsReady = jest.fn();
+      const ridWrites = spyOnRidWrites(databaseId);
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff.mockReturnValueOnce(deferred.promise);
+
+      // The first widget of the database is filtered, a later one is not.
+      const fullPrefetch = prefetchDatabaseBlobDiff(workspaceId, databaseId, {
+        forceFullSync: true,
+        onSeedsReady: fullSeedsReady,
+      });
+      const deltaPrefetch = prefetchDatabaseBlobDiff(workspaceId, databaseId, { onSeedsReady: deltaSeedsReady });
+
+      deferred.resolve(persistablePage({ timestamp: 700, seqNo: 2 }));
+      await Promise.all([fullPrefetch, deltaPrefetch]);
+
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(1);
+      expect(mockedDatabaseBlobDiff.mock.calls[0][2].maxKnownRid).toBeNull();
+      expect(fullSeedsReady).toHaveBeenCalledTimes(1);
+      expect(deltaSeedsReady).toHaveBeenCalledTimes(1);
+      // One IndexedDB write for the row, not one per request.
+      expect(mockedOpenRowCollabDB).toHaveBeenCalledTimes(1);
+      expect(readRid(databaseId)).toEqual({ timestamp: 700, seqNo: 2 });
+      expect(ridWrites()).toHaveLength(1);
+    });
+
+    it('shares a cold delta walk with a full request and writes the RID once', async () => {
+      const workspaceId = 'workspace-delta-then-full';
+      const databaseId = 'database-delta-then-full';
+      const deferred = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+      const ridWrites = spyOnRidWrites(databaseId);
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff.mockReturnValueOnce(deferred.promise);
+
+      const deltaPrefetch = prefetchDatabaseBlobDiff(workspaceId, databaseId);
+      const fullPrefetch = prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true });
+
+      deferred.resolve(persistablePage({ timestamp: 701, seqNo: 1 }));
+      await Promise.all([deltaPrefetch, fullPrefetch]);
+
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(1);
+      expect(mockedOpenRowCollabDB).toHaveBeenCalledTimes(1);
+      expect(readRid(databaseId)).toEqual({ timestamp: 701, seqNo: 1 });
+      expect(ridWrites()).toHaveLength(1);
+    });
+
+    it('serves a cold delta request from a settled full walk and writes its RID once', async () => {
+      const workspaceId = 'workspace-settled-full';
+      const databaseId = 'database-settled-full';
+      const deltaSeedsReady = jest.fn();
+      const ridWrites = spyOnRidWrites(databaseId);
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 800, seqNo: 1 }));
+
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true });
+      // A full walk alone publishes no RID.
+      expect(readRid(databaseId)).toBeNull();
+
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId, { onSeedsReady: deltaSeedsReady });
+
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(1);
+      expect(deltaSeedsReady).toHaveBeenCalledTimes(1);
+      expect(readRid(databaseId)).toEqual({ timestamp: 800, seqNo: 1 });
+
+      // With the RID a later delta request is incremental, and a later full
+      // request still reuses the settled walk.
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(readyDiff());
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId);
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true });
+
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+      expect(mockedDatabaseBlobDiff.mock.calls[1][2].maxKnownRid).toMatchObject({ timestamp: 800, seqNo: 1 });
+      expect(ridWrites()).toHaveLength(1);
+    });
+
+    it('keeps a settled covering delta walk for later full requests', async () => {
+      const workspaceId = 'workspace-covering';
+      const databaseId = 'database-covering';
+      const fullSeedsReady = jest.fn();
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff
+        .mockResolvedValueOnce(persistablePage({ timestamp: 900, seqNo: 1 }))
+        .mockResolvedValueOnce(readyDiff());
+
+      // A plain grid walks the cold delta, which is the complete snapshot.
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId);
+      // The grid remounts: its delta request now starts from the RID.
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId);
+      // A filter is added afterwards: every seed is still in memory.
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true, onSeedsReady: fullSeedsReady });
+
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+      expect(mockedDatabaseBlobDiff.mock.calls[1][2].maxKnownRid).toMatchObject({ timestamp: 900, seqNo: 1 });
+      expect(fullSeedsReady).toHaveBeenCalledTimes(1);
+      expect(peekDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).not.toBeNull();
+    });
+
+    it('walks again for a cold delta request when the settled full walk failed to persist', async () => {
+      const workspaceId = 'workspace-unpersisted-full';
+      const databaseId = 'database-unpersisted-full';
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff
+        .mockResolvedValueOnce(persistablePage({ timestamp: 950, seqNo: 1 }))
+        .mockResolvedValueOnce(persistablePage({ timestamp: 950, seqNo: 1 }));
+      mockedOpenRowCollabDB.mockRejectedValueOnce(new Error('indexeddb unavailable'));
+
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true });
+      // The delta request owns the RID, so it must get the rows into storage itself.
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId);
+
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+      expect(readRid(databaseId)).toEqual({ timestamp: 950, seqNo: 1 });
+    });
+
+    it('counts one full row pass for the walk every request shared', async () => {
+      const workspaceId = 'workspace-pass-count';
+      const databaseId = 'database-pass-count';
+      const deferred = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+      databaseIds.add(databaseId);
+      dashboardLoadStats.reset();
+      mockedDatabaseBlobDiff.mockReturnValueOnce(deferred.promise).mockResolvedValueOnce(readyDiff());
+
+      const prefetches = [
+        prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true }),
+        prefetchDatabaseBlobDiff(workspaceId, databaseId),
+        prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true }),
+      ];
+
+      deferred.resolve(persistablePage({ timestamp: 960, seqNo: 1 }));
+      await Promise.all(prefetches);
+      // An incremental request reads only what changed: not a pass over the rows.
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId);
+
+      expect(dashboardLoadStats.snapshot().rowLoadPasses).toEqual({ [databaseId]: 1 });
+    });
   });
 
   it('shares one multi-page walk among three concurrent consumers', async () => {

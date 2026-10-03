@@ -7,8 +7,8 @@ import { useDatabaseContext } from '@/application/database-yjs/context';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
-import { useMobileContext } from '@/components/_shared/hooks/useMobileContext';
 import { ViewIcon } from '@/components/_shared/view-icon';
+import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
 import { useTimelineCreationDisabledReason } from '@/components/app/hooks/useTimelineCreationDisabledReason';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -29,21 +29,14 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
   const [addLoading, setAddLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { getSubscriptions, workspaceId } = useDatabaseContext();
-  // Dashboards are view-only in a mobile context, so none is created there.
-  const mobileContext = useMobileContext();
-  const canCreateDashboard = EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && !mobileContext;
   const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
     workspaceId,
     enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && menuOpen,
   });
-  // The server applies the same Pro policy to Dashboard views.
-  const dashboardDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
-    workspaceId,
-    enabled: canCreateDashboard && menuOpen,
-    requiresProMessage: t('dashboard.creationRequiresPro', {
-      defaultValue: 'Creating a Dashboard view requires a Pro workspace.',
-    }),
-  });
+  const { available: canCreateDashboard, disabledReason: dashboardDisabledReason } = useDashboardCreationGate(
+    getSubscriptions,
+    { workspaceId, enabled: menuOpen }
+  );
   const mountedRef = useRef(true);
   const actionScopeRevisionRef = useRef(0);
   const completionCallbacksRef = useRef({ onAfterAddView, onViewAdded });

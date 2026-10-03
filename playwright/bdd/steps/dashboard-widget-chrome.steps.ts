@@ -7,9 +7,13 @@
  * A widget is named by its view name: "Grid" is the dashboard host's Grid
  * widget, labelled "<host> Grid" by the composite Given.
  */
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+
 import { expect, type Locator, type Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
+import { pressEscapeUntilHidden, resolveColor, WIDGET_TIMEOUT } from '../../support/dashboard-shared-helpers';
 import {
   addFixtureDatabase,
   DashboardSelectors,
@@ -29,7 +33,6 @@ import { DatabaseFilterSelectors } from '../../support/selectors';
 
 const { Given, When, Then } = createBdd();
 
-const WIDGET_TIMEOUT = { timeout: 30_000 };
 const OFFLINE_TIMEOUT = { timeout: 60_000 };
 const TOLERANCE = 1;
 const TOOL_LABELS: Record<string, string> = {
@@ -52,6 +55,17 @@ const SETTING_TOGGLES: Record<string, string> = {
 };
 /** The first Checkbox property of each fixture database. */
 const CHECKBOX_PROPERTY: Record<string, string> = { Projects: 'Urgent', Tasks: 'Blocked' };
+/** The list widget's title inset, shared with desktop (`dashboard-parity/widget-content.json`). */
+const LIST_TITLE_INSET = (
+  JSON.parse(
+    readFileSync(
+      fileURLToPath(
+        new URL('../../../src/application/database-yjs/__fixtures__/dashboard-parity/widget-content.json', import.meta.url)
+      ),
+      'utf8'
+    )
+  ) as { geometry: { list_title_inset: number } }
+).geometry.list_title_inset;
 const rememberedCards = new WeakMap<Page, { width: number; height: number }>();
 const linkedDashboards = new WeakMap<Page, { viewId: string; name: string }>();
 const blockedSources = new WeakMap<Page, (url: URL) => boolean>();
@@ -74,20 +88,6 @@ function widgetOf(page: Page, name: string) {
   return widgetLocator(page, labelOf(page, name));
 }
 
-/** A computed colour of a CSS variable, for comparing with computed styles. */
-async function resolveColor(page: Page, variable: string) {
-  return page.evaluate((name) => {
-    const probe = document.createElement('div');
-
-    probe.style.color = `var(${name})`;
-    document.body.appendChild(probe);
-    const color = getComputedStyle(probe).color;
-
-    probe.remove();
-    return color;
-  }, variable);
-}
-
 async function box(locator: Locator) {
   const rect = await locator.boundingBox();
 
@@ -108,14 +108,6 @@ async function settledToolOpacities(widget: Locator) {
   return widget
     .locator('[data-widget-tool]')
     .evaluateAll((slots) => slots.map((slot) => getComputedStyle(slot).opacity));
-}
-
-async function pressEscapeUntilHidden(page: Page, locator: Locator) {
-  for (let attempt = 0; attempt < 3 && (await locator.isVisible()); attempt += 1) {
-    await page.keyboard.press('Escape');
-  }
-
-  await expect(locator).toBeHidden();
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +584,26 @@ Then(
     const card = await box(widget.getByTestId('dashboard-widget-body'));
 
     expect(Math.abs((await box(column)).x - card.x - inset)).toBeLessThanOrEqual(0.5);
+  }
+);
+
+Then(
+  'the first row title of the {string} widget starts {int} pixels inside the widget card',
+  async ({ page }, name: string, inset: number) => {
+    expect(inset, 'widget-content.json geometry.list_title_inset').toBe(LIST_TITLE_INSET);
+    const widget = widgetOf(page, name);
+    // The title cell: the row icon when the row shows one, else the title text.
+    const title = widget.locator('[data-testid^="list-primary-cell-"]').first();
+
+    await expect(title).toBeVisible(WIDGET_TIMEOUT);
+    // Polled: the card settles its padding when the mode changes.
+    await expect
+      .poll(async () => {
+        const card = await box(widget.getByTestId('dashboard-widget-body'));
+
+        return Math.abs((await box(title)).x - card.x - inset);
+      })
+      .toBeLessThanOrEqual(0.5);
   }
 );
 

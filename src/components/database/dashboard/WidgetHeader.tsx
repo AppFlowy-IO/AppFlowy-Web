@@ -2,27 +2,19 @@ import { memo, ReactNode, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ViewIcon, ViewLayout } from '@/application/types';
-import { ReactComponent as BoardSvg } from '@/assets/icons/board.svg';
-import { ReactComponent as CalendarSvg } from '@/assets/icons/calendar.svg';
-import { ReactComponent as ChartSvg } from '@/assets/icons/chart.svg';
-import { ReactComponent as DashboardSvg } from '@/assets/icons/dashboard.svg';
 import { ReactComponent as DatabaseIcon } from '@/assets/icons/database.svg';
-import { ReactComponent as FormSvg } from '@/assets/icons/edit.svg';
-import { ReactComponent as FeedSvg } from '@/assets/icons/feed.svg';
-import { ReactComponent as GallerySvg } from '@/assets/icons/gallery.svg';
-import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
-import { ReactComponent as ListSvg } from '@/assets/icons/list.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
-import { ReactComponent as TimelineSvg } from '@/assets/icons/timeline.svg';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import { ViewIcon as LayoutGlyph } from '@/components/_shared/view-icon/ViewIcon';
 import { DatabaseActions } from '@/components/database/components/conditions';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
+import { DASHBOARD_MOTION_FAST_CLASS, WIDGET_HEADER_HEIGHT, WIDGET_HEADER_PADDING } from './constants';
 import { useLongPress } from './hooks/useLongPress';
 import { useWidgetSourceName } from './hooks/useWidgetSourceName';
-import { widgetToolSlotClass } from './widget-tools';
+import { WIDGET_TOOL_SLOT_CLASS } from './widget-tools';
 import { useWidgetContext } from './WidgetContext';
 import { WidgetMenu } from './WidgetMenu';
 import { WidgetSettingsHost } from './WidgetSettingsHost';
@@ -58,36 +50,20 @@ function WidgetSourceTooltipContent() {
 }
 
 /**
- * The title pill (accessible name "Widget options"): a quiet 12px label,
- * blue in Edit mode, with the view icon only when "Show icons in heading" is
- * on. A click, Enter or Space, or a long touch toggles the widget menu; the
- * tooltip names the source database and the view.
+ * The title icon ("Show icons in heading"): the view's own icon, else the
+ * glyph of its layout, drawn as the 16px icon itself (the parity probe
+ * measures its svg).
  */
-/** The layout glyphs `PageIcon` falls back to, drawn here so the 16px glyph itself is the title icon. */
-const LAYOUT_GLYPHS: Partial<Record<ViewLayout, typeof GridSvg>> = {
-  [ViewLayout.Grid]: GridSvg,
-  [ViewLayout.Board]: BoardSvg,
-  [ViewLayout.Calendar]: CalendarSvg,
-  [ViewLayout.Chart]: ChartSvg,
-  [ViewLayout.List]: ListSvg,
-  [ViewLayout.Gallery]: GallerySvg,
-  [ViewLayout.Feed]: FeedSvg,
-  [ViewLayout.Form]: FormSvg,
-  [ViewLayout.Timeline]: TimelineSvg,
-  [ViewLayout.Dashboard]: DashboardSvg,
-};
-
-/** The title icon ("Show icons in heading"): the view's own icon, else its layout glyph. */
 function WidgetTitleIcon({ icon, layout }: { icon?: ViewIcon | null; layout: ViewLayout }) {
-  const Glyph = icon?.value ? undefined : LAYOUT_GLYPHS[layout];
-
-  if (Glyph) {
+  if (!icon?.value) {
     return (
-      <Glyph
+      <LayoutGlyph
         aria-hidden='true'
         className='h-4 w-4 shrink-0'
         data-parity-id='dash-widget-title-pill__icon'
         data-testid='dashboard-widget-title-icon'
+        layout={layout}
+        size='unset'
       />
     );
   }
@@ -103,6 +79,12 @@ function WidgetTitleIcon({ icon, layout }: { icon?: ViewIcon | null; layout: Vie
   );
 }
 
+/**
+ * The title pill (accessible name "Widget options"): a quiet 12px label,
+ * blue in Edit mode, with the view icon only when "Show icons in heading" is
+ * on. A click, Enter or Space, or a long touch toggles the widget menu; the
+ * tooltip names the source database and the view.
+ */
 function WidgetTitle() {
   const { t } = useTranslation();
   const { name, icon, layout, editing, showIcon, menuOpen, setMenuOpen, titleRef } = useWidgetContext();
@@ -121,7 +103,8 @@ function WidgetTitle() {
           aria-label={t('dashboard.widget.menu', { defaultValue: 'Widget options' })}
           className={cn(
             'inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-600 px-2.5 py-1 text-left text-xs font-medium leading-4 text-dash-title outline-none',
-            'transition-colors duration-150 ease-in-out hover:bg-dash-hover-fill focus-visible:ring-2 focus-visible:ring-border-theme-thick data-[state=open]:bg-dash-hover-fill motion-reduce:transition-none',
+            'transition-colors hover:bg-dash-hover-fill focus-visible:ring-2 focus-visible:ring-border-theme-thick data-[state=open]:bg-dash-hover-fill motion-reduce:transition-none',
+            DASHBOARD_MOTION_FAST_CLASS,
             editing && 'text-dash-edit-title'
           )}
           data-parity-id='dash-widget-title-pill'
@@ -161,6 +144,8 @@ function WidgetTitle() {
   );
 }
 
+const HEADER_BAND_STYLE = { height: WIDGET_HEADER_HEIGHT, padding: WIDGET_HEADER_PADDING };
+
 /**
  * Header of a dashboard widget. Also rendered for placeholders (no nested
  * database), so it only depends on `WidgetContext`; the view's tools come in
@@ -182,7 +167,7 @@ export function WidgetHeaderFrame({ actions, settingsHost }: WidgetHeaderFramePr
       <div
         className={cn(
           'absolute right-2 top-2 z-10 flex items-center rounded-300 border border-border-primary bg-surface-primary p-0.5 shadow-card',
-          editing ? 'cursor-grab opacity-100' : widgetToolSlotClass(),
+          editing ? 'cursor-grab opacity-100' : WIDGET_TOOL_SLOT_CLASS,
           menuOpen && 'opacity-100',
           isDragging && 'cursor-grabbing'
         )}
@@ -223,13 +208,14 @@ export function WidgetHeaderFrame({ actions, settingsHost }: WidgetHeaderFramePr
   return (
     <div
       className={cn(
-        'flex h-10 min-w-0 shrink-0 items-center gap-1 px-2.5 py-0.5',
+        'flex min-w-0 shrink-0 items-center gap-1',
         editing && 'cursor-grab',
         isDragging && 'cursor-grabbing'
       )}
       data-parity-id='dash-widget-header'
       data-testid='dashboard-widget-header'
       ref={editing ? setDragHandle : undefined}
+      style={HEADER_BAND_STYLE}
     >
       <div className='relative flex min-w-0'>
         <WidgetTitle />

@@ -5,7 +5,9 @@ import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
-import { YDoc } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
+import { BindViewSync, YDoc, YDocWithMeta } from '@/application/types';
+import { DatabaseViewNotFoundError } from '@/application/view-loader';
 
 import { useDocumentLoader } from '../useDocumentLoader';
 
@@ -268,5 +270,248 @@ describe('useDocumentLoader', () => {
     });
 
     expect(result.current.doc).toBe(newDoc);
+  });
+
+  it('does not retry a view its database no longer holds', async () => {
+    mockDeleteCollabDB.mockClear();
+    const loadView = jest.fn(async () => Promise.reject(new DatabaseViewNotFoundError('view-id', 'database-id')));
+
+    const { result } = renderHook(() => useDocumentLoader({ viewId: 'view-id', databaseId: 'database-id', loadView }));
+
+    await waitFor(() => {
+      expect(result.current.notFound).toBe(true);
+    });
+
+    // Each retry would download the database again for the same answer.
+    expect(loadView).toHaveBeenCalledTimes(1);
+    expect(result.current.noAccess).toBe(false);
+    expect(result.current.offline).toBe(false);
+    // A missing view is no reason to drop the database other views still show.
+    expect(mockDeleteCollabDB).not.toHaveBeenCalled();
+  });
+
+  it('stops retrying a failed load once the loader unmounted', async () => {
+    jest.useFakeTimers();
+
+    try {
+      const loadView = jest.fn(async () => Promise.reject(new Error('server error')));
+      const { unmount } = renderHook(() => useDocumentLoader({ viewId: 'view-id', loadView }));
+
+      // The first attempt failed and the loader waits before the second.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(0);
+      });
+      expect(loadView).toHaveBeenCalledTimes(1);
+
+      // The dashboard is left: the remaining attempts are for nobody.
+      unmount();
+      await jest.runAllTimersAsync();
+
+      expect(loadView).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  describe('sync binding', () => {
+    const databaseId = '00000000-0000-4000-8000-0000000000d1';
+
+    function createDatabaseDoc(viewId: string): YDoc {
+      const doc = createDoc(databaseId) as YDocWithMeta;
+
+      // As `loadView` leaves it: the doc of a database names the view that loaded it last.
+      doc.object_id = databaseId;
+      doc.view_id = viewId;
+      doc._syncBound = false;
+      return doc;
+    }
+
+    /** A binder like `useViewOperations.bindViewSync`: `retain` acquires another owner, otherwise once per doc. */
+    function createBinder() {
+      const owners = new Map<string, number>();
+      const bindViewSync: jest.MockedFunction<BindViewSync> = jest.fn((doc, options) => {
+        const docWithMeta = doc as YDocWithMeta;
+
+        if (docWithMeta._syncBound && !options?.retain) return null;
+        owners.set(doc.guid, (owners.get(doc.guid) ?? 0) + 1);
+        if (!options?.retain) docWithMeta._syncBound = true;
+        return { doc } as SyncContext;
+      });
+      const scheduleDeferredCleanup = jest.fn((objectId: string) => {
+        owners.set(objectId, (owners.get(objectId) ?? 0) - 1);
+      });
+
+      return { owners, bindViewSync, scheduleDeferredCleanup };
+    }
+
+    it('owns one binding of the loaded doc and releases it on unmount', async () => {
+      const doc = createDatabaseDoc('view-id');
+      const { owners, bindViewSync, scheduleDeferredCleanup } = createBinder();
+      const loadView = jest.fn(async () => doc);
+
+      const { result, unmount } = renderHook(() =>
+        useDocumentLoader({ viewId: 'view-id', databaseId, loadView, bindViewSync, scheduleDeferredCleanup })
+      );
+
+      await waitFor(() => {
+        expect(result.current.doc).toBe(doc);
+      });
+
+      expect(bindViewSync).toHaveBeenCalledTimes(1);
+      expect(bindViewSync).toHaveBeenCalledWith(doc, { retain: true });
+      expect(owners.get(databaseId)).toBe(1);
+      expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+
+      unmount();
+
+      expect(scheduleDeferredCleanup.mock.calls).toEqual([[databaseId]]);
+      expect(owners.get(databaseId)).toBe(0);
+    });
+
+    it('gives every view of a shared database doc its own binding', async () => {
+      const doc = createDatabaseDoc('view-a');
+      const { owners, bindViewSync, scheduleDeferredCleanup } = createBinder();
+      // Two widgets on two views of one database: both loads return the same doc,
+      // and the second load renames it after its own view.
+      const loadView = jest.fn(async (viewId: string) => {
+        (doc as YDocWithMeta).view_id = viewId;
+        return doc;
+      });
+      const mount = (viewId: string) =>
+        renderHook(() => useDocumentLoader({ viewId, databaseId, loadView, bindViewSync, scheduleDeferredCleanup }));
+
+      const first = mount('view-a');
+      const second = mount('view-b');
+
+      await waitFor(() => {
+        expect(owners.get(databaseId)).toBe(2);
+      });
+
+      // Removing one widget must not end the sync of the database the other still shows.
+      second.unmount();
+      expect(owners.get(databaseId)).toBe(1);
+
+      first.unmount();
+      expect(owners.get(databaseId)).toBe(0);
+      expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(2);
+    });
+
+    it('acquires its own binding of a doc the page already bound, and releases only that one', async () => {
+      const doc = createDatabaseDoc('view-id');
+      const { owners, bindViewSync, scheduleDeferredCleanup } = createBinder();
+
+      // The page that shows this database bound it first.
+      bindViewSync(doc);
+      expect(owners.get(databaseId)).toBe(1);
+
+      const { result, unmount } = renderHook(() =>
+        useDocumentLoader({
+          viewId: 'view-id',
+          databaseId,
+          loadView: jest.fn(async () => doc),
+          bindViewSync,
+          scheduleDeferredCleanup,
+        })
+      );
+
+      await waitFor(() => {
+        expect(result.current.doc).toBe(doc);
+      });
+      await waitFor(() => {
+        expect(owners.get(databaseId)).toBe(2);
+      });
+
+      unmount();
+      expect(owners.get(databaseId)).toBe(1);
+    });
+
+    it('moves its binding to the replacement doc after a reset', async () => {
+      const eventEmitter = new EventEmitter();
+      const doc = createDatabaseDoc('view-id');
+      const nextDoc = createDatabaseDoc('view-id');
+      const { bindViewSync, scheduleDeferredCleanup } = createBinder();
+
+      const { result, unmount } = renderHook(() =>
+        useDocumentLoader({
+          viewId: 'view-id',
+          databaseId,
+          loadView: jest.fn(async () => doc),
+          bindViewSync,
+          scheduleDeferredCleanup,
+          eventEmitter,
+        })
+      );
+
+      await waitFor(() => {
+        expect(bindViewSync).toHaveBeenCalledTimes(1);
+      });
+
+      act(() => {
+        eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, { objectId: databaseId, viewId: 'view-id', doc: nextDoc });
+      });
+
+      await waitFor(() => {
+        expect(result.current.doc).toBe(nextDoc);
+      });
+      expect(bindViewSync).toHaveBeenLastCalledWith(nextDoc, { retain: true });
+      // One release for the old doc; the new one is still held.
+      expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+
+      unmount();
+      expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(2);
+    });
+
+    it('never releases the binding of a binder that ignores retain', async () => {
+      const doc = createDatabaseDoc('view-id');
+      const scheduleDeferredCleanup = jest.fn();
+      // Binds once per doc, whatever the options: the binding is the doc's.
+      const bindViewSync = jest.fn((target: YDoc) => {
+        const docWithMeta = target as YDocWithMeta;
+
+        if (docWithMeta._syncBound) return null;
+        docWithMeta._syncBound = true;
+        return { doc: target } as SyncContext;
+      });
+
+      const { result, unmount } = renderHook(() =>
+        useDocumentLoader({
+          viewId: 'view-id',
+          databaseId,
+          loadView: jest.fn(async () => doc),
+          bindViewSync,
+          scheduleDeferredCleanup,
+        })
+      );
+
+      await waitFor(() => {
+        expect(result.current.doc).toBe(doc);
+      });
+      await waitFor(() => {
+        expect(bindViewSync).toHaveBeenCalled();
+      });
+
+      unmount();
+      expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+    });
+
+    it('binds once and keeps the binding when it has no way to release it', async () => {
+      const doc = createDatabaseDoc('view-id');
+      const { owners, bindViewSync } = createBinder();
+
+      const { result, unmount } = renderHook(() =>
+        useDocumentLoader({ viewId: 'view-id', databaseId, loadView: jest.fn(async () => doc), bindViewSync })
+      );
+
+      await waitFor(() => {
+        expect(result.current.doc).toBe(doc);
+      });
+      await waitFor(() => {
+        expect(bindViewSync).toHaveBeenCalledTimes(1);
+      });
+
+      expect(bindViewSync).toHaveBeenCalledWith(doc);
+      unmount();
+      expect(owners.get(databaseId)).toBe(1);
+    });
   });
 });

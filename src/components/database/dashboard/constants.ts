@@ -10,7 +10,11 @@ import { DatabaseViewLayout } from '@/application/types';
 // Geometry comes from `dashboard-geometry.ts` (`dashboard-parity/tokens.json`);
 // these names keep the dashboard components readable.
 
-export { DASHBOARD_MIN_WIDGET_WIDTH, DASHBOARD_ROW_HEIGHT_SNAP } from '@/application/database-yjs/dashboard-geometry';
+/** Row controls are centred `DASHBOARD_ROW_CONTROL_OFFSET` outside the content column. */
+export {
+  DASHBOARD_ROW_CONTROL_OFFSET,
+  DASHBOARD_ROW_CONTROL_SIZE,
+} from '@/application/database-yjs/dashboard-geometry';
 
 /** Inline padding of a standalone dashboard page (matches the other database layouts). */
 export const DASHBOARD_DEFAULT_INLINE_PADDING = 96;
@@ -22,20 +26,31 @@ export const DASHBOARD_ROW_GAP = DASHBOARD_GEOMETRY.grid.rowGap;
 export const DASHBOARD_GRID_TOP_BAND = DASHBOARD_GEOMETRY.grid.topBand;
 /** The widget box's padding (`0 6 6`); each row track bleeds this far past the content column. */
 export const DASHBOARD_WIDGET_BOX_INSET = DASHBOARD_WIDGET_BOX_BLEED;
-/** Fewest columns a width drag leaves a widget (with the 240px floor of `dashboardMinWidgetColumns`). */
-export const DASHBOARD_MIN_WIDGET_COLUMNS = DASHBOARD_GEOMETRY.grid.minWidgetColumns;
-/** Row controls are centred this far outside the content column. */
-export const DASHBOARD_ROW_CONTROL_OFFSET = DASHBOARD_GEOMETRY.row.controlOffset;
-export const DASHBOARD_ROW_CONTROL_SIZE = DASHBOARD_GEOMETRY.row.controlSize;
 /** Smallest page inset for editors, in View and Edit mode alike, so the row controls fit. */
 export const DASHBOARD_CONTROL_GUTTER = DASHBOARD_GEOMETRY.row.controlGutterMin;
 /** Width handle: hit strip (the visible card gap) and pill sizes. */
 export const DASHBOARD_RESIZE_GEOMETRY = DASHBOARD_GEOMETRY.resize;
+/**
+ * The dashboard's fast transition (`tokens.json` `motion.fastMs` and `motion.easing`), as Tailwind classes
+ * over the CSS variables of `dashboard-tokens.css`. Pair it with a `transition-*` property class.
+ */
+export const DASHBOARD_MOTION_FAST_CLASS = 'duration-[var(--dash-motion-fast)] ease-[var(--dash-motion-ease)]';
+/**
+ * The page inset below the `sm` breakpoint (`page.compactInset` under `page.compactBreakpoint`). Tailwind
+ * needs the literal class; `dashboard-geometry-classes.test.ts` fails when the tokens move away from it.
+ */
+export const DASHBOARD_COMPACT_INSET_CLASS = 'max-sm:!px-6';
 
 /** The widget header band above the card (titles shown), the same in View and Edit mode. */
 export const WIDGET_HEADER_HEIGHT = DASHBOARD_WIDGET_HEADER_HEIGHT;
+/** Padding of the header band: `2px 10px`. */
+export const WIDGET_HEADER_PADDING = `${DASHBOARD_GEOMETRY.widget.headerPaddingBlock}px ${DASHBOARD_GEOMETRY.widget.headerPaddingInline}px`;
 /** The widget box padding around the card (`0 6 6`, or `6 6 6` with titles hidden). */
 export const WIDGET_BOX_PADDING = DASHBOARD_GEOMETRY.widget.boxPaddingInline;
+/** Width of the widget settings host and of its filter and sort submenus. */
+export const WIDGET_SETTINGS_WIDTH = DASHBOARD_GEOMETRY.popover.widgetSettingsWidth;
+/** Corner radius of the dashboard's popovers. */
+export const DASHBOARD_POPOVER_RADIUS = DASHBOARD_GEOMETRY.popover.radius;
 /**
  * Inline padding handed to the nested database (`dashboard-parity/widget-content.json`
  * `geometry.start_inset` and `end_inset`): every widget but an editable grid starts and ends 12px inside the card.
@@ -67,7 +82,11 @@ export const DASHBOARD_WIDGET_DRAG_TYPE = 'dashboard-widget';
 export const DASHBOARD_WIDGET_DROP_TYPE = 'dashboard-widget-target';
 export const DASHBOARD_ROW_GAP_DROP_TYPE = 'dashboard-row-gap';
 
-/** Layouts offered by the "New view" tab of the widget picker (no Dashboard, no Form). */
+/**
+ * Layouts offered by the "New view" tab of the widget picker, in display
+ * order: every layout a widget can show (`isWidgetLayout`) but Form, which
+ * the picker only offers as an existing view.
+ */
 export const WIDGET_PICKER_LAYOUTS: DatabaseViewLayout[] = [
   DatabaseViewLayout.Grid,
   DatabaseViewLayout.Board,

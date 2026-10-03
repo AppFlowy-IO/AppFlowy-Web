@@ -2,6 +2,10 @@ import { type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge
 import { memo, useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import {
+  DATABASE_VIEW_LAYOUT_DEFAULT_NAMES,
+  DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT,
+} from '@/application/database-yjs/database-view-doc-ops';
 import { DatabaseViewLayout, View, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
 import { useReorderableItem } from '@/components/_shared/reorder/useReorderableItem';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
@@ -104,61 +108,15 @@ export const DatabaseTabItem = memo(
 
     const databaseLayout = (rawLayoutValue === null ? NaN : Number(rawLayoutValue)) as DatabaseViewLayout;
 
-    // Get the default name based on layout if no name is available
-    const getDefaultNameByLayout = () => {
-      switch (databaseLayout) {
-        case DatabaseViewLayout.Grid:
-          return 'Grid';
-        case DatabaseViewLayout.Board:
-          return 'Board';
-        case DatabaseViewLayout.Calendar:
-          return 'Calendar';
-        case DatabaseViewLayout.Chart:
-          return 'Chart';
-        case DatabaseViewLayout.List:
-          return 'List';
-        case DatabaseViewLayout.Gallery:
-          return 'Gallery';
-        case DatabaseViewLayout.Feed:
-          return 'Feed';
-        case DatabaseViewLayout.Form:
-          return 'Form builder';
-        case DatabaseViewLayout.Timeline:
-          return 'Timeline';
-        case DatabaseViewLayout.Dashboard:
-          return 'Dashboard';
-        default:
-          return t('untitled');
-      }
-    };
-
-    const defaultName = getDefaultNameByLayout();
+    // The layout's default name when the view has none; an unknown layout is untitled.
+    const defaultName = DATABASE_VIEW_LAYOUT_DEFAULT_NAMES[databaseLayout] ?? t('untitled');
     const yjsName = rawName?.trim();
     const override = nameOverride?.trim();
     // Prefer folder/outline name when available (fixes published page tab names)
     const name = override || yjsName || defaultName;
 
-    // Compute the layout for PageIcon (icon is based on layout type)
-    const computedLayout =
-      databaseLayout === DatabaseViewLayout.Board
-        ? ViewLayout.Board
-        : databaseLayout === DatabaseViewLayout.Calendar
-        ? ViewLayout.Calendar
-        : databaseLayout === DatabaseViewLayout.Chart
-        ? ViewLayout.Chart
-        : databaseLayout === DatabaseViewLayout.List
-        ? ViewLayout.List
-        : databaseLayout === DatabaseViewLayout.Gallery
-        ? ViewLayout.Gallery
-        : databaseLayout === DatabaseViewLayout.Feed
-        ? ViewLayout.Feed
-        : databaseLayout === DatabaseViewLayout.Form
-        ? ViewLayout.Form
-        : databaseLayout === DatabaseViewLayout.Timeline
-        ? ViewLayout.Timeline
-        : databaseLayout === DatabaseViewLayout.Dashboard
-        ? ViewLayout.Dashboard
-        : ViewLayout.Grid;
+    // The layout for PageIcon (the icon follows the layout type); an unknown layout shows as a Grid.
+    const computedLayout = DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT[databaseLayout] ?? ViewLayout.Grid;
 
     // Build minimal View object from YDatabaseView for actions menu
     // This avoids dependency on meta/folderView for display

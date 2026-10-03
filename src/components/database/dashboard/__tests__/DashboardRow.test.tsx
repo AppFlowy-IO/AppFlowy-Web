@@ -1,12 +1,14 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 
+import { DASHBOARD_GEOMETRY } from '@/application/database-yjs/dashboard-geometry';
 import { DashboardRow as DashboardRowData } from '@/application/database-yjs/dashboard.type';
 import { UIVariant } from '@/application/types';
 
 import { DashboardRow } from '../DashboardRow';
 import { DashboardHostContext, DashboardHostServices, DashboardUiContext } from '../DashboardUiContext';
 import { ROW_HEIGHT_CSS_VARIABLE } from '../hooks/useRowHeightResize';
+import { getHeightBandStyle, getWidthPillStyle } from '../RowResizeHandles';
 import { preloadWidgetPicker } from '../WidgetPicker';
 
 const mockGetWorkspaceDatabaseCatalog = jest.fn((_workspaceId: string) => Promise.resolve([]));
@@ -58,6 +60,13 @@ const TWO_UP: DashboardRowData = {
   ],
 };
 
+const FULL_ROW: DashboardRowData = {
+  id: 'r1',
+  height: 360,
+  widgets: [0, 1, 2, 3].map((index) => ({ id: `w${index}`, viewId: `v${index}`, databaseId: 'db', width: 3 })),
+};
+
+const mockShowLimitMessage = jest.fn();
 let setRows: (rows: DashboardRowData[]) => void = () => undefined;
 
 function Harness({
@@ -65,17 +74,21 @@ function Harness({
   initialRow = ROW,
   wrapColumns,
   minColumns = 1,
+  showWidgetTitles = true,
+  dashboardFull = false,
 }: {
   variant?: UIVariant;
   initialRow?: DashboardRowData;
   wrapColumns?: number;
   minColumns?: number;
+  showWidgetTitles?: boolean;
+  dashboardFull?: boolean;
 }) {
   const [rows, updateRows] = useState([initialRow]);
   const [ui] = useState(() => ({
     hostDatabaseId: 'db',
     openPicker: jest.fn(),
-    showLimitMessage: jest.fn(),
+    showLimitMessage: mockShowLimitMessage,
     dndInstanceId: Symbol('dashboard-row-test'),
     getRows: () => rows,
     updateRows,
@@ -91,13 +104,13 @@ function Harness({
       <DashboardUiContext.Provider value={ui}>
         <DashboardRow
           canEdit
-          dashboardFull={false}
+          dashboardFull={dashboardFull}
           isEditing
           minColumns={minColumns}
           row={rows[0]}
           rowIndex={0}
           showIconsInHeading={false}
-          showWidgetTitles
+          showWidgetTitles={showWidgetTitles}
           wrapColumns={wrapColumns ?? rows[0].widgets.length}
         />
       </DashboardUiContext.Provider>
@@ -110,6 +123,7 @@ const rowHeightVariable = () => grid().style.getPropertyValue(ROW_HEIGHT_CSS_VAR
 
 beforeEach(() => {
   mockGetWorkspaceDatabaseCatalog.mockClear();
+  mockShowLimitMessage.mockClear();
 });
 
 afterEach(() => {
@@ -206,6 +220,66 @@ describe('DashboardRow handles (WP02)', () => {
     jest.restoreAllMocks();
   });
 
+  it('sizes the width pill and the height band from the resize tokens', () => {
+    render(<Harness initialRow={TWO_UP} />);
+    const handle = screen.getByTestId('dashboard-width-handle');
+    const pill = screen.getByTestId('dashboard-resize-pill');
+    const band = screen.getByTestId('dashboard-resize-band');
+    const { hitWidth, pillMin, pillFraction, pillMax, pillWidthHover, pillWidthActive, bandHover, bandActive } =
+      DASHBOARD_GEOMETRY.resize;
+
+    // jsdom drops `clamp()` and mixed-unit `calc()` values, so the whole style is checked where it is built.
+    expect(getWidthPillStyle('hover', '50%')).toEqual({
+      top: '50%',
+      height: `clamp(${pillMin}px, ${pillFraction * 100}%, ${pillMax}px)`,
+      width: pillWidthHover,
+    });
+    expect(getWidthPillStyle('active', '50%').width).toBe(pillWidthActive);
+    expect(getHeightBandStyle('idle')).toEqual({ height: bandHover });
+    expect(getHeightBandStyle('active')).toEqual({ height: bandActive });
+
+    expect(handle.style.width).toBe(`${hitWidth}px`);
+    expect(pill.style.width).toBe(`${pillWidthHover}px`);
+    expect(band.style.height).toBe(`${bandHover}px`);
+
+    act(() => handle.focus());
+    expect(pill.style.width).toBe(`${pillWidthActive}px`);
+    act(() => screen.getByTestId('dashboard-height-handle').focus());
+    expect(band.style.height).toBe(`${bandActive}px`);
+
+    // The dashboard's motion tokens, never a literal duration, and no motion when the user asked for less.
+    for (const element of [pill, band]) {
+      expect(element.className).toContain('duration-[var(--dash-motion-fast)]');
+      expect(element.className).toContain('ease-[var(--dash-motion-ease)]');
+      expect(element.className).toContain('motion-reduce:transition-none');
+      expect(element.className).not.toMatch(/duration-\d/);
+    }
+  });
+
+  it('centres the width pill on the cards, also with titles hidden', () => {
+    // Titles hidden: the card spans 6px to H - 6px, so the pill sits on the middle of the box.
+    const hidden = render(<Harness initialRow={TWO_UP} showWidgetTitles={false} />);
+    const pill = () => screen.getByTestId('dashboard-resize-pill');
+
+    expect(pill().style.top).toBe('50%');
+    expect(pill().className).toContain('-translate-y-1/2');
+    hidden.unmount();
+
+    // Titles shown: the centre of the card under the 40px header (`calc(40px + (100% - 46px) / 2)`,
+    // a value jsdom cannot hold; `getWidgetCardCenter` is checked in utils.test.ts).
+    render(<Harness initialRow={TWO_UP} />);
+    expect(pill().style.top).not.toBe('50%');
+  });
+
+  it('never animates a layout change: the row carries no reflow state', () => {
+    render(<Harness initialRow={TWO_UP} />);
+    const row = screen.getByTestId('dashboard-row');
+
+    act(() => setRows([{ ...TWO_UP, widgets: [{ ...TWO_UP.widgets[0], width: 4 }, { ...TWO_UP.widgets[1], width: 8 }] }]));
+    expect(row.hasAttribute('data-reflow')).toBe(false);
+    expect(screen.getAllByTestId('dashboard-widget').map((widget) => widget.dataset.span)).toEqual(['4', '8']);
+  });
+
   it('has no width handles on a wrapped row but keeps its row controls', () => {
     render(<Harness initialRow={TWO_UP} wrapColumns={1} />);
 
@@ -216,6 +290,40 @@ describe('DashboardRow handles (WP02)', () => {
     ]);
     expect(screen.getByTestId('dashboard-row').getAttribute('data-lines')).toBe('1,1');
     expect(screen.getAllByTestId('dashboard-widget').map((widget) => widget.dataset.span)).toEqual(['12', '12']);
+  });
+});
+
+describe('DashboardRow limits', () => {
+  const insertButton = () => screen.getByTestId('dashboard-insert-row-button');
+  const addButton = () => screen.getByTestId('dashboard-add-widget-row-button');
+
+  it('offers both row controls while there is room', () => {
+    render(<Harness />);
+
+    expect(insertButton().hasAttribute('disabled')).toBe(false);
+    expect(addButton().hasAttribute('disabled')).toBe(false);
+    // No wrapper takes the click of a usable control.
+    expect(insertButton().parentElement?.getAttribute('data-testid')).toBe('dashboard-row-control-anchor');
+    expect(addButton().parentElement?.getAttribute('data-testid')).toBe('dashboard-row-control-anchor');
+  });
+
+  it('explains the row limit from the disabled add control of a full row, and still inserts rows', () => {
+    render(<Harness initialRow={FULL_ROW} />);
+
+    expect(insertButton().hasAttribute('disabled')).toBe(false);
+    expect(addButton().hasAttribute('disabled')).toBe(true);
+    fireEvent.click(addButton().parentElement as HTMLElement);
+    expect(mockShowLimitMessage.mock.calls).toEqual([['row']]);
+  });
+
+  it('explains the widget limit from both disabled controls of a full dashboard', () => {
+    render(<Harness dashboardFull initialRow={FULL_ROW} />);
+
+    expect(insertButton().hasAttribute('disabled')).toBe(true);
+    expect(addButton().hasAttribute('disabled')).toBe(true);
+    fireEvent.click(insertButton().parentElement as HTMLElement);
+    fireEvent.click(addButton().parentElement as HTMLElement);
+    expect(mockShowLimitMessage.mock.calls).toEqual([['dashboard'], ['dashboard']]);
   });
 });
 

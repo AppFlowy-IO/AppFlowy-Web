@@ -97,41 +97,13 @@ export function DatabaseViewTabs({
     onReorder: handleReorder,
   });
 
-  const {
-    setScrollerContainer,
-    showScrollLeftButton,
-    showScrollRightButton,
-    scrollLeft,
-    scrollRight,
-    handleObserverScroller,
-  } = useTabScroller();
+  const activeViewId = viewIds.includes(selectedViewId || '') ? selectedViewId : viewIds[0] || databasePageId;
+  const viewIdsKey = viewIds.join(',');
+  const activeViewIdRef = useRef(activeViewId);
 
   // The strip's own scroll container. Revealing a tab moves only this element
   // (never `scrollIntoView`, which would also scroll a hosting document).
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const [scroller, setScrollerElement] = useState<HTMLDivElement | null>(null);
-  const [stripWidth, setStripWidth] = useState(0);
-  const setScroller = useCallback(
-    (el: HTMLDivElement | null) => {
-      scrollerRef.current = el;
-      setScrollerElement(el);
-      setScrollerContainer(el);
-    },
-    [setScrollerContainer]
-  );
-
-  // The strip's visible width settles after mount (its box is sized from the
-  // measured tabs, then the toolbar beside it renders), so track it.
-  useEffect(() => {
-    if (!scroller) return;
-    const measure = () => setStripWidth(scroller.clientWidth);
-
-    measure();
-    const observer = new ResizeObserver(measure);
-
-    observer.observe(scroller);
-    return () => observer.disconnect();
-  }, [scroller]);
 
   const scrollToView = useCallback((viewId: string) => {
     const element = tabRefs.current.get(viewId);
@@ -144,15 +116,39 @@ export function DatabaseViewTabs({
     return false;
   }, []);
 
-  const activeViewId = viewIds.includes(selectedViewId || '') ? selectedViewId : viewIds[0] || databasePageId;
-  const viewIdsKey = viewIds.join(',');
+  // The strip's visible width settles after mount (its box is sized from the
+  // measured tabs, then the toolbar beside it renders): reveal the active tab
+  // again from the strip's resize observer.
+  const revealActiveTab = useCallback(() => {
+    if (activeViewIdRef.current) scrollToView(activeViewIdRef.current);
+  }, [scrollToView]);
+
+  const {
+    setScrollerContainer,
+    showScrollLeftButton,
+    showScrollRightButton,
+    scrollLeft,
+    scrollRight,
+    handleObserverScroller,
+  } = useTabScroller({ onResize: revealActiveTab });
+
+  const setScroller = useCallback(
+    (el: HTMLDivElement | null) => {
+      scrollerRef.current = el;
+      setScrollerContainer(el);
+    },
+    [setScrollerContainer]
+  );
 
   // Keep the active tab visible (W16): on mount, when the selection or the
-  // tab list changes, and whenever the tabs or the strip are measured anew.
+  // tab list changes, and whenever the tabs are measured anew.
   useLayoutEffect(() => {
+    activeViewIdRef.current = activeViewId;
     if (activeViewId) scrollToView(activeViewId);
-  }, [activeViewId, viewIdsKey, tabsWidth, stripWidth, scrollToView]);
+  }, [activeViewId, viewIdsKey, tabsWidth, scrollToView]);
 
+  // A just-added tab is revealed even when it does not become the active one:
+  // `setSelectedViewId` is optional, and the owner may keep the selection.
   useEffect(() => {
     if (!pendingScrollToViewId) return;
 
@@ -198,13 +194,14 @@ export function DatabaseViewTabs({
     };
   }, [tabsContainer]);
 
-  const setTabRef = (viewId: string, el: HTMLElement | null) => {
+  // Stable, so the memoized tab items do not re-render with the strip.
+  const setTabRef = useCallback((viewId: string, el: HTMLElement | null) => {
     if (el) {
       tabRefs.current.set(viewId, el);
     } else {
       tabRefs.current.delete(viewId);
     }
-  };
+  }, []);
 
   return (
     <div className='relative flex h-[34px] flex-1 items-center justify-start overflow-hidden'>

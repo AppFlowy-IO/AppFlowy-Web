@@ -1,14 +1,16 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useMemo } from 'react';
 
 import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
 import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
 import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
 import { GlobalFilterSource } from './global-filter.utils';
-import { LazyGlobalFilterMenu, preloadGlobalFilterMenu } from './LazyGlobalFilterMenu';
+import { GlobalFilterPopover, globalFilterTriggerProps } from './GlobalFilterPopover';
 import { useGlobalFilterLabel } from './useGlobalFilterLabel';
+
+import type { GlobalFilterMenuScreen } from './GlobalFilterMenu';
 
 /** One dashboard filter in the bar; opens its editor. Styled like a view filter chip. */
 export const GlobalFilterChip = memo(function GlobalFilterChip({
@@ -18,12 +20,11 @@ export const GlobalFilterChip = memo(function GlobalFilterChip({
   filter: DashboardGlobalFilter;
   sources: GlobalFilterSource[];
 }) {
-  const [open, setOpen] = useState(false);
   const { text, active, sourceCount, sourceLabel } = useGlobalFilterLabel(filter, sources);
-  const close = useCallback(() => setOpen(false), []);
+  const initialScreen = useMemo<GlobalFilterMenuScreen>(() => ({ type: 'edit', filterId: filter.id }), [filter.id]);
 
   return (
-    <Popover modal open={open} onOpenChange={setOpen}>
+    <GlobalFilterPopover align='start' initialScreen={initialScreen}>
       <PopoverTrigger asChild>
         <button
           type='button'
@@ -32,8 +33,7 @@ export const GlobalFilterChip = memo(function GlobalFilterChip({
           data-filter-id={filter.id}
           data-active={active}
           title={text}
-          onFocus={preloadGlobalFilterMenu}
-          onPointerEnter={preloadGlobalFilterMenu}
+          {...globalFilterTriggerProps}
           className={cn(
             'flex h-7 max-w-[320px] items-center rounded-full border px-2 py-1 outline-none',
             active
@@ -74,16 +74,7 @@ export const GlobalFilterChip = memo(function GlobalFilterChip({
           />
         </button>
       </PopoverTrigger>
-      <PopoverContent
-        align='start'
-        className='w-[360px]'
-        data-parity-id='dash-global-filter-popover'
-        onCloseAutoFocus={(event) => event.preventDefault()}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <LazyGlobalFilterMenu filterId={filter.id} onClose={close} />
-      </PopoverContent>
-    </Popover>
+    </GlobalFilterPopover>
   );
 });
 
