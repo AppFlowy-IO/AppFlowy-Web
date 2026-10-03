@@ -243,7 +243,8 @@ describe('Outline navigation context hydration', () => {
     expect(screen.getByText('Target sibling')).toBeTruthy();
     expect(screen.getByText('Root sibling')).toBeTruthy();
     expect(screen.getByTestId(`page-${targetId}`).getAttribute('data-selected')).toBe('true');
-    expect(JSON.parse(localStorage.getItem('outline_expanded') || '{}')).toEqual({
+    // Hydration persists under the workspace-scoped expand key (AppFlowy-Web#526).
+    expect(JSON.parse(localStorage.getItem('outline_expanded_workspace-id') || '{}')).toEqual({
       [spaceId]: true,
       [rootId]: true,
       [parentId]: true,
@@ -291,7 +292,9 @@ describe('Outline navigation context hydration', () => {
 
     expect(global.__outlineNavigationTestEnsureViewVisible).not.toHaveBeenCalled();
     expect(screen.getByTestId(`page-${containerId}`)).toBeTruthy();
-    expect(screen.queryByTestId(`page-${databaseViewId}`)).toBeNull();
+    // The selected page is already present in the outline, so its ancestors are expanded
+    // automatically (AppFlowy-Web#526) without waiting for an expand-path event.
+    expect(screen.getByTestId(`page-${databaseViewId}`)).toBeTruthy();
 
     await act(async () => {
       global.__outlineNavigationTestEventEmitter?.emit(APP_EVENTS.OUTLINE_EXPAND_PATH, {
@@ -299,7 +302,8 @@ describe('Outline navigation context hydration', () => {
         ancestorIds: [spaceId, containerId],
       });
     });
-    expect(screen.queryByTestId(`page-${databaseViewId}`)).toBeNull();
+    // An expand-path event for another workspace is ignored and changes nothing.
+    expect(screen.getByTestId(`page-${databaseViewId}`)).toBeTruthy();
 
     // DatabaseView persists the hydrated path and asks the mounted sidebar to reveal it.
     await act(async () => {
@@ -319,6 +323,48 @@ describe('Outline navigation context hydration', () => {
       render(<Outline width={280} />);
     });
     expect(screen.getByTestId(`page-${databaseViewId}`).getAttribute('data-selected')).toBe('true');
+  });
+
+  it('does not auto-expand collapsed containers that do not contain the selected page', async () => {
+    const databaseViewId = 'hidden-database-view-id';
+    const containerId = 'hidden-container-id';
+    const otherPageId = 'other-page-id';
+
+    global.__outlineNavigationTestOutline = [
+      createView(spaceId, {
+        extra: { is_space: true },
+        children: [
+          createView(containerId, {
+            layout: ViewLayout.Grid,
+            extra: { is_database_container: true },
+            parent_view_id: spaceId,
+            children: [createView(databaseViewId, { layout: ViewLayout.Grid, parent_view_id: containerId })],
+          }),
+          createView(otherPageId, { layout: ViewLayout.Document, parent_view_id: spaceId }),
+        ],
+      }),
+    ];
+    global.__outlineNavigationTestSelectedViewId = otherPageId;
+    global.__outlineNavigationTestEnsureViewVisible = jest.fn().mockResolvedValue([]);
+    global.__outlineNavigationTestToView = jest.fn().mockResolvedValue(undefined);
+    setOutlineExpands(spaceId, true);
+
+    render(<Outline width={280} />);
+
+    // The selected page is visible, but the unrelated collapsed container stays collapsed.
+    expect(screen.getByTestId(`page-${otherPageId}`)).toBeTruthy();
+    expect(screen.queryByTestId(`page-${databaseViewId}`)).toBeNull();
+    expect(global.__outlineNavigationTestEnsureViewVisible).not.toHaveBeenCalled();
+
+    // The event-driven reveal path is unaffected.
+    await act(async () => {
+      global.__outlineNavigationTestEventEmitter?.emit(APP_EVENTS.OUTLINE_EXPAND_PATH, {
+        workspaceId: 'workspace-id',
+        ancestorIds: [spaceId, containerId],
+      });
+    });
+
+    expect(screen.getByTestId(`page-${databaseViewId}`)).toBeTruthy();
   });
 
   it('renders only visible spaces from mixed workspace-root views', () => {
