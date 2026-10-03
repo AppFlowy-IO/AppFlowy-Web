@@ -1,7 +1,7 @@
 import { Button, Divider } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import dayjs from 'dayjs';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Editor as SlateEditor, Element as SlateElement, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
@@ -22,13 +22,13 @@ import {
   ViewLayout,
 } from '@/application/types';
 import { isDatabaseLayout, isEmbeddedView } from '@/application/view-utils';
-import { ReactComponent as ArrowIcon } from '@/assets/icons/forward_arrow.svg';
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as DateIcon } from '@/assets/icons/date.svg';
+import { ReactComponent as ArrowIcon } from '@/assets/icons/forward_arrow.svg';
+import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
 import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
-import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as ReminderIcon } from '@/assets/icons/reminder_clock.svg';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
@@ -36,7 +36,9 @@ import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Switch } from '@/components/ui/switch';
 
+import { useSendMentionNotification } from './mention-notification-preference';
 import {
   getCachedMentionSections,
   isMentionSearchRetryLater,
@@ -55,7 +57,6 @@ import {
   normalizeMentionSearchSectionsForPicker,
   shouldCacheMentionSearchSections,
 } from './mentionUtils';
-
 import { useNotifyPersonMention } from './useNotifyPersonMention';
 
 enum MentionTag {
@@ -363,10 +364,11 @@ function MentionCreatePageButton({
   );
 }
 
-function MentionSectionTitle({ section }: { section: MentionSearchSection }) {
+function MentionSectionTitle({ section, trailing }: { section: MentionSearchSection; trailing?: ReactNode }) {
   return (
     <div className={'flex min-h-7 items-center px-0 text-sm font-semibold text-text-tertiary'}>
       <span className={'truncate'}>{section.title}</span>
+      {trailing}
     </div>
   );
 }
@@ -387,10 +389,12 @@ function MentionPanelLoadingState() {
   );
 }
 
-export function MentionPanel({ notifyOnInsert = true }: { notifyOnInsert?: boolean } = {}) {
+export function MentionPanel({
+  notifyOnInsert = true,
+  onPersonPicked,
+}: { notifyOnInsert?: boolean; onPersonPicked?: (personId: string, requireNotification: boolean) => void } = {}) {
   const { isPanelOpen, panelPosition, closePanel, searchText, removeContent, activePanel } = usePanelContext();
-  const { workspaceId, viewId, searchMentions, mentionContext, loadViews, addPage, openPageModal } =
-    useEditorContext();
+  const { workspaceId, viewId, searchMentions, mentionContext, loadViews, addPage, openPageModal } = useEditorContext();
   const currentUser = useCurrentUserOptional();
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
@@ -524,23 +528,25 @@ export function MentionPanel({ notifyOnInsert = true }: { notifyOnInsert?: boole
             setMentionSections(result.sections);
             setMentionSearchFailed(false);
           }
-        }).then(() => {
-          if (applied || !isCurrentRequest()) return;
+        })
+          .then(() => {
+            if (applied || !isCurrentRequest()) return;
 
-          const refreshedSections = getCachedMentionSections(mentionSearchCacheKey);
+            const refreshedSections = getCachedMentionSections(mentionSearchCacheKey);
 
-          if (refreshedSections) {
-            setMentionSections(refreshedSections);
-            setMentionSearchFailed(false);
-          }
-        }).catch((error) => {
-          if (isMentionSearchRetryLater(error)) {
-            markMentionSearchRetryLater(mentionSearchCacheKey, error);
-            return;
-          }
+            if (refreshedSections) {
+              setMentionSections(refreshedSections);
+              setMentionSearchFailed(false);
+            }
+          })
+          .catch((error) => {
+            if (isMentionSearchRetryLater(error)) {
+              markMentionSearchRetryLater(mentionSearchCacheKey, error);
+              return;
+            }
 
-          console.error(error);
-        });
+            console.error(error);
+          });
       }
 
       return () => {
@@ -557,13 +563,7 @@ export function MentionPanel({ notifyOnInsert = true }: { notifyOnInsert?: boole
     }
 
     function cacheMentionSections(result: MentionSectionsFetchResult) {
-      if (
-        shouldCacheMentionSearchSections(
-          mentionSearchRequests,
-          result.databaseRowResponse,
-          hasMentionSearchQuery
-        )
-      ) {
+      if (shouldCacheMentionSearchSections(mentionSearchRequests, result.databaseRowResponse, hasMentionSearchQuery)) {
         setCachedMentionSections(mentionSearchCacheKey, result.sections);
       }
     }
@@ -609,9 +609,8 @@ export function MentionPanel({ notifyOnInsert = true }: { notifyOnInsert?: boole
         throw blockingError;
       }
 
-      const initialSections = mergeMentionSearchResponses(
-        fulfilledResponses.map(({ response }) => response)
-      ).sections ?? [];
+      const initialSections =
+        mergeMentionSearchResponses(fulfilledResponses.map(({ response }) => response)).sections ?? [];
       let sections = initialSections;
       const shouldCacheInitialSections = shouldCacheMentionSearchSections(
         mentionSearchRequests,
@@ -712,7 +711,14 @@ export function MentionPanel({ notifyOnInsert = true }: { notifyOnInsert?: boole
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [hasMentionSearchQuery, mentionSearchCacheKey, mentionSearchRequests, open, searchMentions, useLocalMentionFallback]);
+  }, [
+    hasMentionSearchQuery,
+    mentionSearchCacheKey,
+    mentionSearchRequests,
+    open,
+    searchMentions,
+    useLocalMentionFallback,
+  ]);
 
   useEffect(() => {
     if (!useLocalMentionFallback || !loadViews) return;
@@ -915,6 +921,7 @@ export function MentionPanel({ notifyOnInsert = true }: { notifyOnInsert?: boole
   );
 
   const notifyPersonMention = useNotifyPersonMention();
+  const [sendNotification, setSendNotification] = useSendMentionNotification(open);
 
   const handleSelectedSearchResult = useCallback(
     (result: MentionPanelSearchResult) => {
@@ -929,11 +936,22 @@ export function MentionPanel({ notifyOnInsert = true }: { notifyOnInsert?: boole
             }
           : result.mention;
 
-      if (handleAddMention(mention) && mention.type === MentionType.Person && notifyOnInsert) {
-        void notifyPersonMention(mention);
+      if (handleAddMention(mention) && mention.type === MentionType.Person && mention.person_id) {
+        if (onPersonPicked) onPersonPicked(mention.person_id, sendNotification);
+        else if (notifyOnInsert) void notifyPersonMention(mention, sendNotification);
       }
     },
-    [editor, handleAddMention, mentionContext?.row_id, mentionContext?.view_id, notifyOnInsert, notifyPersonMention, viewId]
+    [
+      editor,
+      handleAddMention,
+      mentionContext?.row_id,
+      mentionContext?.view_id,
+      notifyOnInsert,
+      notifyPersonMention,
+      onPersonPicked,
+      sendNotification,
+      viewId,
+    ]
   );
 
   const handlePanelKeyDown = useCallback(
@@ -982,9 +1000,7 @@ export function MentionPanel({ notifyOnInsert = true }: { notifyOnInsert?: boole
           }
 
           const nextIndex =
-            key === 'ArrowDown'
-              ? (current.index + 1) % optionCount
-              : (current.index - 1 + optionCount) % optionCount;
+            key === 'ArrowDown' ? (current.index + 1) % optionCount : (current.index - 1 + optionCount) % optionCount;
 
           setSelectedOption({ index: nextIndex });
 
@@ -1073,7 +1089,25 @@ export function MentionPanel({ notifyOnInsert = true }: { notifyOnInsert?: boole
                   className={'flex flex-col px-2 py-1'}
                 >
                   {sectionResultIndex > 0 && <Divider className={'-mx-2 mb-1 border-border-primary'} />}
-                  <MentionSectionTitle section={section} />
+                  <MentionSectionTitle
+                    section={section}
+                    trailing={
+                      options.some(
+                        (option) => option.kind === 'result' && option.result.mention.type === MentionType.Person
+                      ) ? (
+                        <label className='ml-auto flex items-center gap-2 text-xs font-normal'>
+                          {t('document.mentionMenu.sendNotification', 'Send notification')}
+                          <Switch
+                            checked={sendNotification}
+                            onCheckedChange={setSendNotification}
+                            aria-label={t('document.mentionMenu.sendNotification', 'Send notification')}
+                            tabIndex={-1}
+                            onMouseDown={(event) => event.preventDefault()}
+                          />
+                        </label>
+                      ) : undefined
+                    }
+                  />
                   {options.map((option) => {
                     const index = mentionOptionIndexByKey.get(option.key) ?? 0;
 

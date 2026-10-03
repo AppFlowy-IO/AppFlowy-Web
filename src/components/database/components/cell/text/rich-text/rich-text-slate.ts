@@ -7,6 +7,7 @@ import {
   partitionRichTextAttributes,
   type RichTextDelta,
   type RichTextInsert,
+  richTextToPlainText,
   sanitizePreservedAttributes,
   sanitizeRichTextAttributes,
 } from '@/application/database-yjs/fields/text/rich-text';
@@ -202,7 +203,12 @@ export function flattenFragmentToTexts(fragment: Node[], lineBreak = '\n'): Text
 
     const ownTexts = node.children.filter((child) => Text.isText(child)) as Text[];
 
-    if (ownTexts.length > 0) {
+    // Some structural wrappers carry a Slate placeholder beside their blocks.
+    // Empty text blocks themselves are real lines and must survive the paste.
+    if (
+      ownTexts.length > 0 &&
+      (!node.children.some(Element.isElement) || ownTexts.some((text) => text.text.length > 0))
+    ) {
       lines.push(ownTexts);
     }
 
@@ -220,29 +226,27 @@ export function flattenFragmentToTexts(fragment: Node[], lineBreak = '\n'): Text
 
   const result: Text[] = [];
 
-  lines
-    .filter((line) => line.some((text) => text.text.length > 0))
-    .forEach((line, index) => {
-      if (index > 0) result.push({ text: lineBreak });
-      line.forEach((text) => {
-        const { text: value, ...rest } = text;
-        const marks = pickMarks(rest as Record<string, unknown>);
-        const mention = marks.mention as { type?: unknown; label?: unknown } | undefined;
-        let content = value;
+  lines.forEach((line, index) => {
+    if (index > 0) result.push({ text: lineBreak });
+    line.forEach((text) => {
+      const { text: value, ...rest } = text;
+      const marks = pickMarks(rest as Record<string, unknown>);
+      const mention = marks.mention as { type?: unknown; label?: unknown } | undefined;
+      let content = value;
 
-        // A mention of a type this version does not know is carried as the
-        // text it reads as, with the run's other marks (R31).
-        if (mention && !isKnownMentionType(mention.type)) {
-          content = typeof mention.label === 'string' ? mention.label : '';
-          delete marks.mention;
-        }
+      // A mention of a type this version does not know is carried as the
+      // text it reads as, with the run's other marks (R31).
+      if (mention && !isKnownMentionType(mention.type)) {
+        content = typeof mention.label === 'string' ? mention.label : '';
+        delete marks.mention;
+      }
 
-        result.push({
-          ...marks,
-          text: lineBreak === '\n' ? content : content.replace(/\r\n?|\n/g, lineBreak),
-        } as Text);
-      });
+      result.push({
+        ...marks,
+        text: lineBreak === '\n' ? content : content.replace(/\r\n?|\n/g, lineBreak),
+      } as Text);
     });
+  });
 
   return result;
 }
@@ -254,7 +258,24 @@ export function flattenFragmentToTexts(fragment: Node[], lineBreak = '\n'): Text
  * Slate's own shape (runs right under the paragraph) pastes into a document
  * as an empty paragraph. A cell reads either shape back.
  */
-export function withRichTextCellCopy<T extends Editor>(editor: T): T {
+export function withRichTextCellCopy<T extends ReactEditor>(
+  editor: T,
+  plainTextOf: (delta: RichTextDelta) => string = richTextToPlainText
+): T {
+  const { setFragmentData } = editor;
+
+  editor.setFragmentData = (data, originEvent) => {
+    const { selection } = editor;
+
+    if (!selection || Range.isCollapsed(selection)) return;
+    const delta = slateValueToRichText(Node.fragment(editor, selection));
+
+    // Keep Slate's rich fragment/HTML, but serialize readable text from the
+    // selection: atom DOM contains both a hidden placeholder and its label.
+    setFragmentData(data, originEvent);
+    data.setData('text/plain', plainTextOf(delta));
+  };
+
   editor.getFragment = () => {
     const { selection } = editor;
 
@@ -408,7 +429,12 @@ export function toggleEquation(editor: Editor) {
   );
   const [only] = atomic;
 
-  if (atomic.length === 1 && Text.isText(only[0]) && only[0].formula && Editor.string(editor, selection) === only[0].text) {
+  if (
+    atomic.length === 1 &&
+    Text.isText(only[0]) &&
+    only[0].formula &&
+    Editor.string(editor, selection) === only[0].text
+  ) {
     const latex = only[0].formula;
 
     Transforms.select(editor, only[1]);
@@ -493,6 +519,8 @@ function normalizeAtomText(editor: Editor, node: Text, path: Path) {
 export interface RichTextCellOptions {
   /** A title: no line breaks; pasted lines are joined with spaces. */
   singleLine?: boolean;
+  /** Serialize selected content using the same page labels as the cell. */
+  plainTextOf?: (delta: RichTextDelta) => string;
 }
 
 /**
@@ -501,11 +529,14 @@ export interface RichTextCellOptions {
  * shortcuts, keeps mentions and equations one character each, and pastes
  * rich AppFlowy fragments as inline text.
  */
-export function withRichTextCell<T extends ReactEditor>(editor: T, { singleLine = false }: RichTextCellOptions = {}): T {
+export function withRichTextCell<T extends ReactEditor>(
+  editor: T,
+  { singleLine = false, plainTextOf }: RichTextCellOptions = {}
+): T {
   const { insertText, normalizeNode } = editor;
   const lineBreak = singleLine ? ' ' : '\n';
 
-  withRichTextCellCopy(editor);
+  withRichTextCellCopy(editor, plainTextOf);
 
   editor.insertBreak = () => {
     if (!singleLine) editor.insertText('\n');

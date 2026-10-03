@@ -44,6 +44,7 @@ jest.mock('@/components/_shared/popover', () => ({
 describe('MentionPanel composition', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    localStorage.clear();
     mockPanelContext.activePanel = PanelType.PageReference;
     mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.PageReference;
     mockPanelContext.searchText = 'Target';
@@ -53,7 +54,13 @@ describe('MentionPanel composition', () => {
 
   afterEach(cleanup);
 
-  it.each([true, false])('only notifies immediately when notifyOnInsert is %s', async (notifyOnInsert) => {
+  it.each([
+    [true, false],
+    [false, false],
+    [true, true],
+  ])('routes the notification choice: immediate=%s deferred=%s', async (notifyOnInsert, deferred) => {
+    const onPersonPicked = jest.fn();
+
     mockPanelContext.activePanel = PanelType.Mention;
     mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.Mention;
     mockPanelContext.searchText = 'Ada';
@@ -80,7 +87,7 @@ describe('MentionPanel composition', () => {
     render(
       <Slate editor={editor} initialValue={[{ type: 'paragraph', children: [{ text: '@Ada' }] }]}>
         <Editable />
-        <MentionPanel notifyOnInsert={notifyOnInsert} />
+        <MentionPanel notifyOnInsert={notifyOnInsert} onPersonPicked={deferred ? onPersonPicked : undefined} />
       </Slate>
     );
     await act(async () => {
@@ -88,12 +95,20 @@ describe('MentionPanel composition', () => {
     });
     const person = await screen.findByRole('button', { name: /Ada/ });
 
+    const toggle = screen.getByRole('switch');
+
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    if (deferred) fireEvent.click(toggle);
+
     await act(async () => {
       fireEvent.mouseDown(person);
       fireEvent.click(person);
     });
     expect(mockAddMark).toHaveBeenCalledTimes(1);
-    expect(mockNotifyPerson).toHaveBeenCalledTimes(notifyOnInsert ? 1 : 0);
+    expect(mockNotifyPerson).toHaveBeenCalledTimes(notifyOnInsert && !deferred ? 1 : 0);
+    if (deferred) expect(onPersonPicked).toHaveBeenCalledWith('ada', true);
+    else if (notifyOnInsert)
+      expect(mockNotifyPerson).toHaveBeenCalledWith(expect.objectContaining({ person_id: 'ada' }), false);
   });
 
   it.each([false, true])('leaves composing Enter to the IME (highlighted result: %s)', async (highlighted) => {

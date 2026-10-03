@@ -6,10 +6,11 @@ import { Title } from '../Title';
 const mockUpdateCell = jest.fn();
 let mockReadOnly = true;
 let mockEditorUnavailable = false;
+let mockWorkspaceId = 'workspace-1';
 
 jest.mock('@/application/database-yjs', () => ({
   RowMetaKey: { IconId: 'icon_id', CoverId: 'cover_id' },
-  useDatabaseContext: () => ({}),
+  useDatabaseContext: () => ({ workspaceId: mockWorkspaceId }),
   useReadOnly: () => mockReadOnly,
 }));
 jest.mock('@/application/database-yjs/dispatch', () => ({
@@ -24,9 +25,11 @@ jest.mock('@/components/view-meta/AddIconCover', () => ({ __esModule: true, defa
 // loaded (see rich-text/__tests__/load-failure.test.tsx).
 jest.mock('@/components/database/components/cell/text/rich-text/load', () => ({
   RichTextCellDocument: () => null,
-  RichTextCellEditor: () => {
+  RichTextCellEditor: ({ value }: { value: string }) => {
     if (mockEditorUnavailable) throw new Error('Failed to fetch dynamically imported module');
-    return <div data-testid='rich-title-editor' />;
+    // Like Slate's initialValue, an uncontrolled input owns its draft for
+    // its mount lifetime and does not reset it on a prop update.
+    return <input data-testid='rich-title-editor' defaultValue={value} />;
   },
 }));
 
@@ -34,6 +37,7 @@ beforeEach(() => {
   mockUpdateCell.mockReset();
   mockReadOnly = true;
   mockEditorUnavailable = false;
+  mockWorkspaceId = 'workspace-1';
 });
 
 afterEach(() => {
@@ -49,7 +53,30 @@ describe('editable row title', () => {
     render(<Title rowId='row-1' fieldId='field-1' name='My row' hasCover={false} />);
 
     expect(screen.getByTestId('rich-title-editor')).toBeTruthy();
-    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Row title' })).toBeNull();
+  });
+
+  it.each(['row', 'field', 'workspace'])('starts a fresh title session when the %s changes', (identity) => {
+    const props = { rowId: 'row-1', fieldId: 'field-1', name: 'First row', hasCover: false };
+    const { rerender } = render(<Title {...props} />);
+    const first = screen.getByTestId<HTMLInputElement>('rich-title-editor');
+
+    fireEvent.change(first, { target: { value: 'Local draft' } });
+    rerender(<Title {...props} name='Updated remotely' />);
+    expect(screen.getByTestId<HTMLInputElement>('rich-title-editor').value).toBe('Local draft');
+
+    if (identity === 'workspace') mockWorkspaceId = 'workspace-2';
+    rerender(
+      <Title
+        {...props}
+        rowId={identity === 'row' ? 'row-2' : props.rowId}
+        fieldId={identity === 'field' ? 'field-2' : props.fieldId}
+        name='Second row'
+      />
+    );
+
+    expect(screen.getByTestId<HTMLInputElement>('rich-title-editor').value).toBe('Second row');
+    expect(first.isConnected).toBe(false);
   });
 
   it('edits as plain text, without taking the focus, when the rich editor cannot be loaded', () => {

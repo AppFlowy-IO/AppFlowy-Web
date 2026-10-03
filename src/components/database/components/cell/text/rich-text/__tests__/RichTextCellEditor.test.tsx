@@ -3,14 +3,16 @@ import EventEmitter from 'events';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Editor, Transforms } from 'slate';
 import { ReactEditor, RenderLeafProps } from 'slate-react';
+import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
+import { FieldType } from '@/application/database-yjs/database.type';
 import {
   isRichTextTooLarge,
   packRichTextDelta,
   type RichTextDelta,
 } from '@/application/database-yjs/fields/text/rich-text';
-import { MentionType, View } from '@/application/types';
+import { MentionType, View, YDatabaseCell, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import * as selectionToolbarUtils from '@/components/editor/components/toolbar/selection-toolbar/utils';
 
 import { clearPageNameCache } from '../page-name-cache';
@@ -21,7 +23,9 @@ const mockUpdateCell = jest.fn();
 const mockNotifyError = jest.fn();
 const mockNotifyPerson = jest.fn();
 const mockEditors: ReactEditor[] = [];
+let mockPersonPicked: (id: string, requireNotification: boolean) => void;
 let mockContext: Record<string, unknown> = {};
+let fields: Y.Map<Y.Map<unknown>>;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => (key === 'menuAppHeader.defaultNewPageName' ? 'Untitled' : key) }),
@@ -32,7 +36,8 @@ jest.mock('@/components/_shared/notify', () => ({
   notify: { error: (...args: unknown[]) => mockNotifyError(...args) },
 }));
 jest.mock('@/components/editor/components/panels/mention-panel/MentionPanel', () => ({
-  MentionPanel: () => {
+  MentionPanel: ({ onPersonPicked }: { onPersonPicked: typeof mockPersonPicked }) => {
+    mockPersonPicked = onPersonPicked;
     const { usePanelContext } = jest.requireActual('@/components/editor/components/panels/Panels.hooks');
     const { activePanel } = usePanelContext();
 
@@ -137,10 +142,24 @@ describe('RichTextCellEditor', () => {
     mockUpdateCell.mockReset();
     mockUpdateCell.mockResolvedValue('written');
     mockNotifyPerson.mockReset();
+    mockNotifyPerson.mockResolvedValue(true);
     mockNotifyError.mockReset();
     mockEditors.length = 0;
     clearPageNameCache();
-    mockContext = { workspaceId: 'ws', eventEmitter: new EventEmitter() };
+    const databaseDoc = new Y.Doc();
+    const database = new Y.Map();
+
+    fields = new Y.Map();
+    databaseDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+    database.set(YjsDatabaseKey.fields, fields);
+    for (const fieldId of ['field-1', 'field-2']) {
+      const field = new Y.Map();
+
+      fields.set(fieldId, field);
+      field.set(YjsDatabaseKey.type, FieldType.RichText);
+    }
+
+    mockContext = { workspaceId: 'ws', eventEmitter: new EventEmitter(), databaseDoc };
   });
 
   afterEach(() => {
@@ -149,6 +168,69 @@ describe('RichTextCellEditor', () => {
   });
 
   describe('edit session', () => {
+    it.each([
+      ['cleanup', 'retyped'],
+      ['cleanup', 'deleted'],
+      ['page lookup', 'retyped'],
+      ['page lookup', 'deleted'],
+      ['row hydration', 'retyped'],
+      ['row hydration', 'deleted'],
+    ])('does not save during %s after the field is %s', async (stage, change) => {
+      const rowDoc = new Y.Doc();
+      const row = new Y.Map();
+      const cells = new Y.Map();
+      const cell = new Y.Map() as YDatabaseCell;
+      const name = deferredView();
+      let finishHydration!: () => void;
+      const hydration = new Promise<void>((resolve) => {
+        finishHydration = resolve;
+      });
+
+      rowDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database_row, row);
+      row.set(YjsDatabaseKey.cells, cells);
+      cells.set('field-1', cell);
+      cell.set(YjsDatabaseKey.data, 'Original');
+      cell.set(
+        YjsDatabaseKey.rich_text,
+        '{"v":1,"text":"Original","delta":[{"insert":"Original","attributes":{"bold":true}}]}'
+      );
+      cell.set(YjsDatabaseKey.field_type, FieldType.RichText);
+      const original = rowDoc.toJSON();
+
+      mockContext.rowMap = { 'row-1': rowDoc };
+      if (stage === 'page lookup') mockContext.loadViewMeta = jest.fn(() => name.promise);
+      mockUpdateCell.mockImplementation(async (text, _date, options) => {
+        if (stage === 'row hydration') await hydration;
+        if (!options.shouldWrite(cell)) return 'cancelled';
+        cell.set(YjsDatabaseKey.data, text);
+        cell.set(YjsDatabaseKey.rich_text, options.richText);
+        return 'written';
+      });
+      const onSaved = jest.fn();
+      const { editor, editable, unmount, onExit } = await renderEditor({
+        value: 'Original',
+        richText:
+          stage === 'page lookup' ? [pageMention('pending')] : [{ insert: 'Original', attributes: { bold: true } }],
+        onSaved,
+      });
+
+      await typeAtEnd(editor, '!');
+      if (stage !== 'cleanup') await pressEnter(editable);
+      if (change === 'deleted') fields.delete('field-1');
+      else fields.get('field-1')!.set(YjsDatabaseKey.type, FieldType.Number);
+      unmount();
+      await act(async () => {
+        name.resolve(view('pending', 'Original'));
+        finishHydration();
+      });
+      await flush();
+
+      expect(rowDoc.toJSON()).toEqual(original);
+      expect(onSaved).not.toHaveBeenCalled();
+      expect(onExit).not.toHaveBeenCalled();
+      rowDoc.destroy();
+    });
+
     it('keeps a dirty draft when the cell changes elsewhere, and saves it on Enter', async () => {
       const { editor, editable, onExit, rerenderWith } = await renderEditor();
 
@@ -366,6 +448,19 @@ describe('RichTextCellEditor', () => {
   });
 
   describe('page names', () => {
+    it('copies a resolved page name even when the mention has no stored title', async () => {
+      mockContext.loadViewMeta = jest.fn(async (id: string) => view(id, 'Roadmap'));
+      const { editor, editable } = await renderEditor({
+        value: 'See Roadmap',
+        richText: [{ insert: 'See ' }, pageMention('copy-page')],
+      });
+      const setData = jest.fn();
+
+      await act(async () => Transforms.select(editor, Editor.range(editor, [])));
+      await act(async () => fireEvent.copy(editable, { clipboardData: { setData } }));
+      expect(setData).toHaveBeenLastCalledWith('text/plain', 'See Roadmap');
+    });
+
     it.each(['Changed remotely', 'Undone', ''])(
       'discards a deferred title save after replacement with %j',
       async (replacement) => {
@@ -574,6 +669,25 @@ describe('RichTextCellEditor', () => {
       expect(savedTexts()).toEqual(['See Plan!']);
     });
 
+    it('finishes an old save without exiting the newly active cell', async () => {
+      const name = deferredView();
+
+      mockContext.loadViewMeta = jest.fn(() => name.promise);
+      const first = await renderEditor({ value: 'Plan', richText: [pageMention('pending-exit')] });
+
+      await typeAtEnd(first.editor, '!');
+      await pressEnter(first.editable);
+      first.unmount();
+      const second = await renderEditor({ rowId: 'row-2' });
+
+      await act(async () => name.resolve(view('pending-exit', 'Plan')));
+      await flush();
+      expect(savedTexts()).toEqual(['Plan!']);
+      expect(first.onExit).not.toHaveBeenCalled();
+      expect(second.onExit).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(second.editable);
+    });
+
     it.each(['older', 'newer'] as const)(
       'keeps the newest delayed save across sessions when the %s lookup finishes first',
       async (firstResolved) => {
@@ -670,6 +784,75 @@ describe('RichTextCellEditor', () => {
     });
   });
 
+  describe('title notification bursts', () => {
+    const person = {
+      insert: '@',
+      attributes: { mention: { type: MentionType.Person, person_id: 'ada', person_name: 'Ada' } },
+    };
+
+    it.each(['idle', 'Enter', 'Escape', 'blur'])('flushes a picked recipient only on %s', async (end) => {
+      const { editor, editable } = await renderEditor({ variant: 'title', value: '' });
+
+      jest.useFakeTimers();
+      try {
+        mockPersonPicked('ada', true);
+        await act(async () => Transforms.insertFragment(editor, richTextToSlateValue([person])));
+        expect(mockUpdateCell).toHaveBeenCalled();
+        expect(mockNotifyPerson).not.toHaveBeenCalled();
+        if (end === 'idle') {
+          await act(async () => {
+            await jest.advanceTimersByTimeAsync(999);
+          });
+          expect(mockNotifyPerson).not.toHaveBeenCalled();
+          await act(async () => {
+            await jest.advanceTimersByTimeAsync(1);
+          });
+        } else if (end === 'blur') {
+          await act(async () => {
+            fireEvent.blur(editable, { relatedTarget: document.body });
+          });
+        } else {
+          await act(async () => {
+            fireEvent.keyDown(editable, {
+              key: end,
+              keyCode: end === 'Enter' ? 13 : 27,
+              which: end === 'Enter' ? 13 : 27,
+            });
+          });
+        }
+
+        expect(mockNotifyPerson).toHaveBeenCalledTimes(1);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it.each(['delete', 'outside undo'])('cancels the notification after %s during the burst', async (remove) => {
+      const { editor, rerenderWith } = await renderEditor({ variant: 'title', value: '' });
+
+      jest.useFakeTimers();
+      try {
+        mockPersonPicked('ada', true);
+        await act(async () => Transforms.insertFragment(editor, richTextToSlateValue([person])));
+        if (remove === 'delete') {
+          await act(async () => {
+            Transforms.select(editor, Editor.range(editor, []));
+            Transforms.delete(editor);
+          });
+        } else {
+          rerenderWith({ value: 'Restored' });
+        }
+
+        await act(async () => {
+          await jest.advanceTimersByTimeAsync(1000);
+        });
+        expect(mockNotifyPerson).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe('format version 1', () => {
     it.each(['written', 'refused-rich-text-newer', undefined])(
       'notifies newly added people only after a %s save',
@@ -696,6 +879,7 @@ describe('RichTextCellEditor', () => {
             ])
           );
         });
+        mockPersonPicked('ada', true);
         expect(mockNotifyPerson).not.toHaveBeenCalled();
         await pressEnter(editable);
         expect(mockNotifyPerson).not.toHaveBeenCalled();
@@ -704,6 +888,123 @@ describe('RichTextCellEditor', () => {
         expect(onExit).toHaveBeenCalledTimes(status === 'written' ? 1 : 0);
       }
     );
+
+    const ada = {
+      insert: '@',
+      attributes: { mention: { type: MentionType.Person, person_id: 'ada', person_name: 'Ada' } },
+    };
+
+    it.each(['cell', 'title'] as const)(
+      'does not notify for person mentions pasted as HTML into a %s',
+      async (variant) => {
+        const { editor, editable } = await renderEditor({ variant });
+        const fragment = window.btoa(encodeURIComponent(JSON.stringify(richTextToSlateValue([ada]))));
+
+        await act(async () =>
+          editor.insertData({
+            getData: (type: string) =>
+              type === 'text/html' ? `<span data-slate-fragment="${fragment}">@Ada</span>` : '',
+          } as DataTransfer)
+        );
+        await pressEnter(editable);
+        expect(mockUpdateCell).toHaveBeenCalled();
+        expect(mockNotifyPerson).not.toHaveBeenCalled();
+      }
+    );
+
+    it('does not notify when picking another occurrence of a stored person', async () => {
+      const { editor, editable } = await renderEditor({ value: '@Ada', richText: [ada] });
+
+      await act(async () => Transforms.insertFragment(editor, richTextToSlateValue([ada])));
+      mockPersonPicked('ada', true);
+      await pressEnter(editable);
+      expect(mockUpdateCell).toHaveBeenCalled();
+      expect(mockNotifyPerson).not.toHaveBeenCalled();
+    });
+
+    it.each(['written', 'refused-rich-text-newer'])(
+      'a %s save acknowledges picked mentions after unmount, using the saved primary title',
+      async (status) => {
+        const databaseDoc = new Y.Doc();
+        const rowDoc = new Y.Doc();
+        const database = new Y.Map();
+        const field = new Y.Map();
+        const fields = new Y.Map();
+        const row = new Y.Map();
+        const cells = new Y.Map();
+        const titleCell = new Y.Map();
+
+        databaseDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+        database.set(YjsDatabaseKey.fields, fields);
+        fields.set('title', field);
+        field.set(YjsDatabaseKey.is_primary, true);
+        field.set(YjsDatabaseKey.type, FieldType.RichText);
+        fields.set('field-1', new Y.Map([[YjsDatabaseKey.type, FieldType.RichText]]));
+        rowDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database_row, row);
+        row.set(YjsDatabaseKey.cells, cells);
+        cells.set('title', titleCell);
+        titleCell.set(YjsDatabaseKey.data, 'Old title');
+        mockContext = { ...mockContext, databaseDoc, rowMap: { 'row-1': rowDoc }, activeViewId: 'database-view' };
+        let resolveSave!: (value: string) => void;
+
+        mockUpdateCell.mockReturnValueOnce(
+          new Promise<string>((resolve) => {
+            resolveSave = resolve;
+          })
+        );
+        const { editor, editable, unmount } = await renderEditor();
+
+        await act(async () => Transforms.insertFragment(editor, richTextToSlateValue([ada])));
+        mockPersonPicked('ada', false);
+        await pressEnter(editable);
+        unmount();
+        expect(mockNotifyPerson).not.toHaveBeenCalled();
+        titleCell.set(YjsDatabaseKey.data, 'Saved row');
+        await act(async () => resolveSave(status));
+        if (status === 'written') {
+          expect(mockNotifyPerson).toHaveBeenCalledTimes(1);
+          expect(mockNotifyPerson).toHaveBeenCalledWith(expect.objectContaining({ person_id: 'ada' }), false, {
+            viewId: 'database-view',
+            rowId: 'row-1',
+            rowTitle: 'Saved row',
+          });
+        } else {
+          expect(mockNotifyPerson).not.toHaveBeenCalled();
+        }
+
+        databaseDoc.destroy();
+        rowDoc.destroy();
+      }
+    );
+
+    it('keeps delivery state across repeated picks and permits a record-only upgrade', async () => {
+      const { editor } = await renderEditor();
+      const save = async () => {
+        await act(async () => {
+          window.dispatchEvent(new Event('blur'));
+        });
+        await flush();
+      };
+
+      await act(async () => Transforms.insertFragment(editor, richTextToSlateValue([ada])));
+      mockPersonPicked('ada', false);
+      await save();
+      await flush();
+      await act(async () => Transforms.insertFragment(editor, richTextToSlateValue([ada])));
+      mockPersonPicked('ada', true);
+      await save();
+      await flush();
+      await act(async () => {
+        Transforms.select(editor, Editor.range(editor, []));
+        editor.insertText('Removed');
+      });
+      await save();
+      await act(async () => Transforms.insertFragment(editor, richTextToSlateValue([ada])));
+      mockPersonPicked('ada', true);
+      await save();
+      await flush();
+      expect(mockNotifyPerson.mock.calls.map(([, required]) => required)).toEqual([false, true]);
+    });
 
     it('does not notify a person removed from the unsaved draft', async () => {
       const { editor, editable } = await renderEditor();
@@ -721,6 +1022,7 @@ describe('RichTextCellEditor', () => {
           ])
         );
       });
+      mockPersonPicked('ada', true);
       await act(async () => {
         Transforms.select(editor, Editor.range(editor, []));
         editor.insertText('No mention');

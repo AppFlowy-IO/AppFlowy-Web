@@ -334,6 +334,56 @@ describe('enabling a two-way relation', () => {
 describe('two-way relation: cell edits', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  it.each(['replace', 'remove', 'missing-insertion'] as const)(
+    'handles an unavailable relation participant during %s',
+    async (operation) => {
+      jest.useFakeTimers();
+      try {
+        const { relationField, targetDoc, rowDocs } = setup();
+        const reciprocalId = 'reciprocal';
+        setRelationTypeOptionValues(ensureTypeOption(relationField), {
+          database_id: TARGET_DATABASE_ID,
+          is_two_way: true,
+          reciprocal_field_id: reciprocalId,
+          source_limit: 1,
+          target_limit: 0,
+        });
+        const targetDatabase = targetDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+        targetDatabase.get(YjsDatabaseKey.fields).set(
+          reciprocalId,
+          createRelationField(reciprocalId, {
+            name: 'Backlinks',
+            database_id: SOURCE_DATABASE_ID,
+            is_two_way: true,
+            reciprocal_field_id: RELATION_FIELD_ID,
+          })
+        );
+        const source = new Y.Doc() as YDoc;
+        const target = new Y.Doc() as YDoc;
+        seedRelationRowDoc(source, 'source', RELATION_FIELD_ID, ['old']);
+        seedRelationRowDoc(target, 'new', reciprocalId, []);
+        rowDocs.set(`${SOURCE_DATABASE_ID}_rows_source`, source);
+        rowDocs.set(`${TARGET_DATABASE_ID}_rows_new`, target);
+        const { result } = renderHook(() => useUpdateRelationCell('source', RELATION_FIELD_ID));
+        await act(async () => {
+          const pending = result.current(
+            operation === 'remove'
+              ? { removedRowIds: ['old'] }
+              : { insertedRowIds: [operation === 'replace' ? 'new' : 'missing'] }
+          );
+          await jest.advanceTimersByTimeAsync(3000);
+          await pending;
+        });
+        expect(readRelationCell(source, RELATION_FIELD_ID)).toEqual(
+          operation === 'replace' ? ['new'] : operation === 'remove' ? [] : ['old']
+        );
+        expect(readRelationCell(target, reciprocalId)).toEqual(operation === 'replace' ? ['source'] : []);
+      } finally {
+        jest.useRealTimers();
+      }
+    }
+  );
+
   it.each(['insert', 'remove', 'replace-one'] as const)(
     'preflights protected participants before a two-way %s',
     async (operation) => {

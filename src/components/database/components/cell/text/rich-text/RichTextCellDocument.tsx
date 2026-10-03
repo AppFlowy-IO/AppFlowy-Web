@@ -1,11 +1,19 @@
 import { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createEditor } from 'slate';
 import { Editable, RenderElementProps, Slate, withReact } from 'slate-react';
 
-import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
+import { useDatabaseContextOptional } from '@/application/database-yjs/context';
+import {
+  hasStoredPageTitle,
+  type RichTextDelta,
+  richTextToPlainText,
+  sanitizeMention,
+} from '@/application/database-yjs/fields/text/rich-text';
 import { Leaf } from '@/components/editor/components/leaf/Leaf';
 
 import { richTextToSlateValue, withRichTextCellCopy } from './rich-text-slate';
+import { getCachedPageName } from './page-name-cache';
 import { RichTextCellContext } from './RichTextCellContext';
 
 export interface RichTextCellDocumentProps {
@@ -21,7 +29,24 @@ export interface RichTextCellDocumentProps {
  * them render as plain elements instead (see RichTextCellContent).
  */
 function RichTextCellDocument({ rowId, delta, lineClassName }: RichTextCellDocumentProps) {
-  const [editor] = useState(() => withRichTextCellCopy(withReact(createEditor())));
+  const { t } = useTranslation();
+  const workspaceId = useDatabaseContextOptional()?.workspaceId ?? '';
+  const [editor] = useState(() =>
+    withRichTextCellCopy(withReact(createEditor()), (selected) =>
+      richTextToPlainText(selected, (id) => {
+        const name = getCachedPageName(workspaceId, id);
+
+        if (name || hasStoredPageTitle(selected, id)) return name;
+        // Slate omits computed mention labels. A read-only cell still has
+        // the saved label to copy when no page name has been loaded yet.
+        const mention = delta
+          .map(({ attributes }) => sanitizeMention(attributes?.mention))
+          .find((mention) => mention?.page_id === id && !mention.row_id && !mention.database_row_id);
+
+        return mention?.label || t('menuAppHeader.defaultNewPageName');
+      })
+    )
+  );
   const initialValue = useMemo(() => richTextToSlateValue(delta), [delta]);
 
   const renderElement = useCallback(

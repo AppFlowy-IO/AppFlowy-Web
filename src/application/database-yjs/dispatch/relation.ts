@@ -686,13 +686,13 @@ export function useUpdateRelationCellDispatch() {
         const loading = new Map<string, Promise<void>>();
         const plan = new Map<YDoc, Map<FieldId, RowId[]>>();
         let unavailable = false;
-        const getRow = (databaseDoc: YDoc, id: RowId) => {
+        const getRow = (databaseDoc: YDoc, id: RowId, required: boolean) => {
           const key = getRowKey(databaseDoc.guid, id);
 
           if (loaded.has(key)) {
             const doc = loaded.get(key);
 
-            if (!doc) unavailable = true;
+            if (!doc && required) unavailable = true;
             return doc;
           }
 
@@ -704,9 +704,14 @@ export function useUpdateRelationCellDispatch() {
                 rowId: id,
                 createRow,
                 rowMap: databaseDoc === context.databaseDoc ? rowMap : undefined,
-              }).then((doc) => {
-                loaded.set(key, doc);
               })
+                .then((doc) => {
+                  loaded.set(key, doc);
+                })
+                .catch((error: unknown) => {
+                  Log.warn('[relation] failed to load a relation participant', { rowId: id, error });
+                  loaded.set(key, null);
+                })
             );
           }
 
@@ -728,7 +733,9 @@ export function useUpdateRelationCellDispatch() {
         const inserted = new Set(effective.insertedRowIds);
 
         for (const targetId of uniq([...effective.removedRowIds, ...effective.insertedRowIds])) {
-          const target = getRow(relatedDoc, targetId);
+          // Missing old targets must not trap the source on a stale link.
+          // New links still require a writable reciprocal participant.
+          const target = getRow(relatedDoc, targetId, inserted.has(targetId));
 
           if (!target) continue;
           const reciprocal = stage(
@@ -742,7 +749,7 @@ export function useUpdateRelationCellDispatch() {
 
           for (const displacedId of reciprocal.removedRowIds) {
             if (displacedId === rowId) continue;
-            const displaced = getRow(context.databaseDoc, displacedId);
+            const displaced = getRow(context.databaseDoc, displacedId, false);
 
             if (displaced) stage(displaced, fieldId, { removedRowIds: [targetId] }, typeOption.source_limit);
           }

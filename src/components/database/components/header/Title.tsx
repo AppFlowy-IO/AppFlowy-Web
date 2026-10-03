@@ -44,7 +44,7 @@ export function Title({
   const value = name || '';
   const updateCell = useUpdateCellDispatch(rowId, fieldId);
 
-  const { uploadFile } = useDatabaseContext();
+  const { uploadFile, workspaceId } = useDatabaseContext();
 
   const updateRowMeta = useUpdateRowMetaDispatch(rowId);
   const [isHover, setIsHover] = useState(false);
@@ -111,7 +111,7 @@ export function Title({
       value={value}
       data-testid='row-title-input'
       onChange={(e) => {
-        updateCell(e.target.value);
+        void updateCell(e.target.value);
         onEdited?.(e.target.value);
       }}
       onKeyDown={(e) => {
@@ -215,6 +215,7 @@ export function Title({
               <ErrorBoundary fallback={renderPlainTextEditor({ ariaLabel: 'Row title', autoFocus: false })}>
                 <Suspense fallback={<div className={titleClassName}>{value}</div>}>
                   <RichTextCellEditor
+                    key={JSON.stringify([workspaceId, rowId, fieldId])}
                     variant={'title'}
                     testId={'row-title-input'}
                     ariaLabel={templateStyle ? 'Template name' : 'Row title'}

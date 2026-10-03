@@ -7,8 +7,8 @@ import { Editable, ReactEditor, RenderElementProps, Slate, withReact } from 'sla
 
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabaseContextOptional } from '@/application/database-yjs/context';
+import { FieldType } from '@/application/database-yjs/database.type';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
-import { createDatabaseHistoryGroup } from '@/application/database-yjs/history';
 import {
   encodeRichTextCellValue,
   getMentionedPageIds,
@@ -25,12 +25,14 @@ import {
   toWellFormedText,
   withMentionLabels,
 } from '@/application/database-yjs/fields/text/rich-text';
+import { createDatabaseHistoryGroup } from '@/application/database-yjs/history';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import {
   FieldId,
   MentionType,
   View,
+  YDatabase,
   YDatabaseCell,
   YDatabaseRow,
   YjsDatabaseKey,
@@ -52,9 +54,10 @@ import { Log } from '@/utils/log';
 import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 
 import { getCachedPageName, isPageNameUnavailable, loadPageNames, setCachedPageName } from './page-name-cache';
+import { attachCellMentionLedger, CellMentionLedger } from './cell-mention-ledger';
+import { richTextToSlateValue, slateValueToRichText, toggleEquation, withRichTextCell } from './rich-text-slate';
 import RichTextCellContext from './RichTextCellContext';
 import { RICH_TEXT_CELL_OVERLAY_ATTR, RichTextCellToolbar } from './RichTextCellToolbar';
-import { richTextToSlateValue, slateValueToRichText, toggleEquation, withRichTextCell } from './rich-text-slate';
 
 const isEnterHotkey = createHotkey(HOT_KEY_NAME.ENTER);
 const isRedoHotkey = createHotkey(HOT_KEY_NAME.REDO);
@@ -150,8 +153,11 @@ const pendingCellSaves = new Map<string, symbol>();
 
 type EditorWithFlush = ReactEditor & HistoryEditor & { flushLocalChanges?: () => void };
 
-function createCellEditor(singleLine: boolean) {
-  const editor = withRichTextCell(withReact(withHistory(createEditor())), { singleLine }) as EditorWithFlush;
+function createCellEditor(singleLine: boolean, plainTextOf: (delta: RichTextDelta) => string) {
+  const editor = withRichTextCell(withReact(withHistory(createEditor())), {
+    singleLine,
+    plainTextOf,
+  }) as EditorWithFlush;
 
   // The mention panel flushes pending Yjs changes before inserting; a cell
   // draft has none, it is saved as a whole on commit.
@@ -192,6 +198,7 @@ export interface RichTextCellEditorProps {
 interface RichTextCellEditorInnerProps extends RichTextCellEditorProps {
   editor: EditorWithFlush;
   changeRef: { current?: () => void };
+  plainTextRef: { current: (delta: RichTextDelta) => string };
   /** Set when the editor's content failed to render: its draft is not saved. */
   crashedRef: { current: boolean };
 }
@@ -210,6 +217,7 @@ function RichTextCellEditorInner({
   className,
   onSaved,
   changeRef,
+  plainTextRef,
   crashedRef,
 }: RichTextCellEditorInnerProps) {
   const isTitle = variant === 'title';
@@ -227,13 +235,28 @@ function RichTextCellEditorInner({
 
   const incoming = useMemo(() => richText ?? plainTextToRichText(value), [richText, value]);
   const incomingKey = useMemo(() => canonicalKey(incoming), [incoming]);
-  const savedPeopleRef = useRef(new Set(personMentions(incoming).keys()));
+  const mentionLedgerRef = useRef<CellMentionLedger>();
+  const onPersonPicked = useCallback((id: string, requireNotification: boolean) => {
+    mentionLedgerRef.current?.pick(id, requireNotification);
+  }, []);
+  const savedRowTitle = useCallback(() => {
+    const database = databaseContext?.databaseDoc?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as
+      | YDatabase
+      | undefined;
+    const fields = database?.get(YjsDatabaseKey.fields);
+    const primaryId = [...(fields?.entries() ?? [])].find(([, field]) => field.get(YjsDatabaseKey.is_primary))?.[0];
+    const row = rowDoc?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
+    const title = primaryId ? row?.get(YjsDatabaseKey.cells)?.get(primaryId)?.get(YjsDatabaseKey.data) : undefined;
+
+    return typeof title === 'string' ? title : '';
+  }, [databaseContext?.databaseDoc, rowDoc]);
   // The content the draft started from: what "clean" compares against.
   const baseKeyRef = useRef(incomingKey);
   const [dirty, setDirty] = useState(false);
   const [empty, setEmpty] = useState(() => Editor.string(editor, []) === '');
   const dirtyRef = useRef(false);
   const exitedRef = useRef(false);
+  const sessionRef = useRef<symbol>();
   const { linkOpen, closeLinkPopover } = useLeafContext();
   const titleUndoGroupRef = useRef<{ group: object; timer?: number } | null>(null);
   // Values this editor saved that may not have come back yet: their echo is
@@ -247,6 +270,16 @@ function RichTextCellEditorInner({
   const tooLargeReportedRef = useRef(false);
   const pendingCommitRef = useRef<Promise<boolean>>();
   const observedIncomingRef = useRef(JSON.stringify([value, incomingKey]));
+  const isTextField = useCallback(() => {
+    // A field switch can leave the cell's raw value untouched. Read the live
+    // schema, including deletion/replacement, rather than the render's field.
+    const database = databaseContext?.databaseDoc?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as
+      | YDatabase
+      | undefined;
+    const field = database?.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+    return Number(field?.get(YjsDatabaseKey.type)) === FieldType.RichText;
+  }, [databaseContext?.databaseDoc, fieldId]);
 
   // External changes (undo/redo, remote sync) replace a clean draft; a dirty
   // draft keeps owning the editor until it is committed.
@@ -267,7 +300,7 @@ function RichTextCellEditorInner({
     if (changed) {
       pendingCellSaves.delete(cellKey);
       pendingCommitRef.current = undefined;
-      savedPeopleRef.current = new Set(personMentions(incoming).keys());
+      mentionLedgerRef.current?.outsideValue(new Set(personMentions(incoming).keys()));
     }
 
     if (incomingKey === baseKeyRef.current) return;
@@ -339,6 +372,8 @@ function RichTextCellEditorInner({
     [t, workspaceId]
   );
 
+  plainTextRef.current = (delta) => richTextToPlainText(delta, pageNameResolver(delta));
+
   /** Reports a draft that cannot be saved once, until it changes. */
   const reportTooLong = useCallback(() => {
     if (tooLargeReportedRef.current) return;
@@ -358,7 +393,8 @@ function RichTextCellEditorInner({
       draft: RichTextDelta,
       key: string,
       shouldWrite: (cell: YDatabaseCell | undefined) => boolean,
-      isCurrent: () => boolean
+      isCurrent: () => boolean,
+      mentionLedger?: CellMentionLedger
     ) => {
       const resolvePageName = pageNameResolver(draft);
       // Every known mention is labelled with the text written for it (R37),
@@ -401,18 +437,36 @@ function RichTextCellEditorInner({
 
       if (status === 'written') {
         const people = personMentions(delta);
-        const added = [...people].filter(([id]) => !savedPeopleRef.current.has(id));
+        const target = {
+          viewId: databaseContext?.activeViewId ?? databaseContext?.databasePageId ?? '',
+          rowId,
+          rowTitle: isTitle ? text : savedRowTitle(),
+        };
 
-        savedPeopleRef.current = new Set(people.keys());
-        added.forEach(([, mention]) => {
-          void notifyPersonMention(mention);
-        });
+        mentionLedger?.saved(
+          new Set(people.keys()),
+          (id, required) => notifyPersonMention({ type: MentionType.Person, person_id: id }, required, target),
+          isTitle ? TITLE_UNDO_PAUSE_MS : undefined
+        );
+
         onSaved?.(text);
       }
 
       return true;
     },
-    [isTitle, keepDraftUnsaved, notifyPersonMention, onSaved, onUpdateCell, pageNameResolver, reportTooLong]
+    [
+      databaseContext?.activeViewId,
+      databaseContext?.databasePageId,
+      isTitle,
+      keepDraftUnsaved,
+      notifyPersonMention,
+      onSaved,
+      onUpdateCell,
+      pageNameResolver,
+      reportTooLong,
+      rowId,
+      savedRowTitle,
+    ]
   );
 
   /**
@@ -421,6 +475,7 @@ function RichTextCellEditorInner({
    */
   const commit = useCallback(
     (draft?: { delta: RichTextDelta; key: string }) => {
+      if (!isTextField()) return Promise.resolve(false);
       if (!dirtyRef.current) return pendingCommitRef.current ?? Promise.resolve(true);
 
       const delta = draft?.delta ?? slateValueToRichText(editor.children);
@@ -455,6 +510,7 @@ function RichTextCellEditorInner({
       const isCurrent = () => pendingCellSaves.get(cellKey) === token;
       const shouldWrite = (cell: YDatabaseCell | undefined) =>
         isCurrent() &&
+        isTextField() &&
         (!deferred ||
           !rowDoc ||
           (cell === originalCell &&
@@ -462,7 +518,11 @@ function RichTextCellEditorInner({
             cell?.get(YjsDatabaseKey.rich_text) === originalRichText));
 
       pendingCellSaves.set(cellKey, token);
-      const save = () => (isCurrent() ? write(delta, key, shouldWrite, isCurrent) : Promise.resolve(false));
+      const mentionLedger = mentionLedgerRef.current;
+
+      mentionLedger?.beginSave();
+      const save = () =>
+        isCurrent() && isTextField() ? write(delta, key, shouldWrite, isCurrent, mentionLedger) : Promise.resolve(false);
       const pending = (deferred ? warmPageNames(delta).then(save) : save())
         .catch((error: unknown) => {
           Log.error('[RichTextCellEditor] failed to save cell', { rowId, fieldId, error });
@@ -472,6 +532,7 @@ function RichTextCellEditorInner({
         .finally(() => {
           if (isCurrent()) pendingCellSaves.delete(cellKey);
           if (pendingCommitRef.current === pending) pendingCommitRef.current = undefined;
+          mentionLedger?.finishSave();
         });
 
       pendingCommitRef.current = pending;
@@ -481,6 +542,7 @@ function RichTextCellEditorInner({
       cellKey,
       editor,
       fieldId,
+      isTextField,
       keepDraftUnsaved,
       loadViewMeta,
       pageNameResolver,
@@ -494,9 +556,12 @@ function RichTextCellEditorInner({
   );
 
   const exit = useCallback(() => {
-    if (exitedRef.current) return;
+    const session = sessionRef.current;
+
+    if (!session || exitedRef.current) return;
     void commit().then((saved) => {
-      if (!saved || dirtyRef.current || exitedRef.current) return;
+      if (!saved || dirtyRef.current || exitedRef.current || sessionRef.current !== session) return;
+      void mentionLedgerRef.current?.flush();
       exitedRef.current = true;
       onExit?.();
     });
@@ -511,18 +576,34 @@ function RichTextCellEditorInner({
 
   // Leaving the cell by any route (another cell becomes active, the view
   // unmounts) still saves the draft, unless the editor failed to render it.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const ledger = attachCellMentionLedger(cellKey, new Set(personMentions(incoming).keys()));
+
+    sessionRef.current = Symbol();
+    mentionLedgerRef.current = ledger;
+    return () => {
+      // Pending writes may finish after unmount; their UI callbacks may not.
+      sessionRef.current = undefined;
+      // Read the latest crash flag so a failed renderer never saves its draft.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       if (!crashedRef.current) void commitRef.current();
-    },
-    [crashedRef]
-  );
+      ledger.detach();
+    };
+    // The editor and its ledger share one mount lifetime, just like Slate's initialValue.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crashedRef]);
+
+  const finishEditing = useCallback(() => {
+    void commitRef.current().then((saved) => {
+      if (saved) void mentionLedgerRef.current?.flush();
+    });
+  }, []);
 
   // Switching tabs or closing the window keeps the draft: save it without
   // leaving the cell.
   useEffect(() => {
     const save = () => {
-      void commitRef.current();
+      finishEditing();
     };
 
     const onVisibility = () => {
@@ -537,7 +618,7 @@ function RichTextCellEditorInner({
       window.removeEventListener('pagehide', save);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, []);
+  }, [finishEditing]);
 
   useEffect(() => {
     // A title stays mounted; it has no edit session to leave.
@@ -616,9 +697,10 @@ function RichTextCellEditorInner({
     // (the paper itself, role="dialog", cannot take focus).
     const host = containerRef.current?.parentElement?.closest<HTMLElement>('[tabindex]');
 
+    finishEditing();
     ReactEditor.blur(editor);
     host?.focus({ preventScroll: true });
-  }, [editor]);
+  }, [editor, finishEditing]);
 
   // Returns whether the key was handled here. slate-react treats a handler
   // that stops propagation as having handled the key, so the keys it should
@@ -643,6 +725,7 @@ function RichTextCellEditorInner({
 
       // Escape leaves the title and still reaches the dialog, which closes.
       if (isTitle && activePanel === undefined && isEscapeHotkey(event)) {
+        finishEditing();
         ReactEditor.blur(editor);
         return true;
       }
@@ -730,7 +813,7 @@ function RichTextCellEditorInner({
           return false;
       }
     },
-    [activePanel, closePanel, editor, exit, isTitle, leaveTitle]
+    [activePanel, closePanel, editor, exit, finishEditing, isTitle, leaveTitle]
   );
 
   return (
@@ -761,18 +844,18 @@ function RichTextCellEditorInner({
         renderLeaf={Leaf}
         onKeyDown={handleKeyDown}
         onBlur={(e) => {
-          if (isTitle) return;
           const next = e.relatedTarget;
 
           // Focus moving to a popover the editor opened stays in the session;
           // focus leaving the window keeps the draft for when it comes back.
           if (!next || isInsideOverlay(next, containerRef.current) || containerRef.current?.contains(next as Node))
             return;
-          exit();
+          if (isTitle) finishEditing();
+          else exit();
         }}
       />
       <RichTextCellToolbar />
-      <MentionPanel notifyOnInsert={false} />
+      <MentionPanel notifyOnInsert={false} onPersonPicked={onPersonPicked} />
       {/* The link hover card's "Edit" opens this, as in the document editor. */}
       <HrefPopover open={!!linkOpen} onClose={() => closeLinkPopover?.()} />
     </div>
@@ -780,7 +863,8 @@ function RichTextCellEditorInner({
 }
 
 function RichTextCellEditor(props: RichTextCellEditorProps) {
-  const [editor] = useState(() => createCellEditor(props.variant === 'title'));
+  const plainTextRef = useRef<(delta: RichTextDelta) => string>(richTextToPlainText);
+  const [editor] = useState(() => createCellEditor(props.variant === 'title', (delta) => plainTextRef.current(delta)));
   const changeRef = useRef<() => void>();
   const crashedRef = useRef(false);
   const [initialValue] = useState<Descendant[]>(() =>
@@ -800,7 +884,13 @@ function RichTextCellEditor(props: RichTextCellEditorProps) {
       <RichTextCellContext rowId={props.rowId} readOnly={false}>
         <Slate editor={editor} initialValue={initialValue} onValueChange={() => changeRef.current?.()}>
           <PanelProvider editor={editor} triggers={CELL_PANELS} triggerAtWordStart>
-            <RichTextCellEditorInner {...props} editor={editor} changeRef={changeRef} crashedRef={crashedRef} />
+            <RichTextCellEditorInner
+              {...props}
+              editor={editor}
+              changeRef={changeRef}
+              plainTextRef={plainTextRef}
+              crashedRef={crashedRef}
+            />
           </PanelProvider>
         </Slate>
       </RichTextCellContext>

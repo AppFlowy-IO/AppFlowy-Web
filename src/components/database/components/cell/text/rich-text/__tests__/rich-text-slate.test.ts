@@ -104,10 +104,7 @@ describe('rich text cell slate model', () => {
     const editor = makeEditor();
 
     typeText(editor, '$$E=mc^2$$ and $x$');
-    expect(delta(editor)).toEqual([
-      { insert: '$', attributes: { formula: 'E=mc^2' } },
-      { insert: ' and $x$' },
-    ]);
+    expect(delta(editor)).toEqual([{ insert: '$', attributes: { formula: 'E=mc^2' } }, { insert: ' and $x$' }]);
   });
 
   it.each([
@@ -492,6 +489,25 @@ describe('rich text cell slate model', () => {
     const texts = flattenFragmentToTexts([{ text: 'a', bold: true }, { text: 'b' }] as Text[]);
 
     expect(texts).toEqual([{ text: 'a', bold: true }, { text: 'b' }]);
+  });
+
+  it.each([false, true])('preserves blank pasted paragraphs (single line: %s)', (singleLine) => {
+    const editor = makeEditor('', singleLine);
+    const fragment = [
+      {
+        type: 'wrapper',
+        children: [
+          { text: '' },
+          ...['', 'one', '', 'two', ''].map((text) => ({
+            type: 'paragraph',
+            children: [{ type: 'text', children: [{ text }] }],
+          })),
+        ],
+      },
+    ];
+
+    editor.insertData(transfer({ 'application/x-slate-fragment': encodeFragment(fragment) }));
+    expect(delta(editor)).toEqual([{ insert: singleLine ? ' one  two ' : '\none\n\ntwo\n' }]);
   });
 
   describe('single line (row title)', () => {
