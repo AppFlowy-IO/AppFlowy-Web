@@ -84,7 +84,7 @@ function FileMediaList ({
   }) => {
     const newItems = parseToFilesMediaCellData(newData);
 
-    updateCell(newItems);
+    void updateCell(newItems);
   }, [updateCell]);
   const contextValue = useDragContextValue({
     enabled: !readOnly,
@@ -100,7 +100,7 @@ function FileMediaList ({
       newName: name,
     });
 
-    updateCell(newData);
+    void updateCell(newData);
   }, [data, updateCell]);
 
   const onDelete = useCallback((fileId: string) => {
@@ -109,7 +109,7 @@ function FileMediaList ({
       fileId,
     });
 
-    updateCell(newData);
+    void updateCell(newData);
   }, [data, updateCell]);
 
   const images = useMemo(() => {

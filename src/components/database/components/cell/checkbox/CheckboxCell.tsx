@@ -28,9 +28,9 @@ export function CheckboxCell({
     if (readOnly) return;
     if (editing) {
       if (checkedRef.current) {
-        onUpdateCell('No');
+        void onUpdateCell('No');
       } else {
-        onUpdateCell('Yes');
+        void onUpdateCell('Yes');
       }
 
       setEditing?.(false);

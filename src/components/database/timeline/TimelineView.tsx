@@ -375,7 +375,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
             ? serializeTimelineProgressPercent(preview.progress, progressField)
             : undefined;
 
-        if (data !== undefined) updateAnyCell(preview.rowId, setting.progressFieldId, data);
+        if (data !== undefined) void updateAnyCell(preview.rowId, setting.progressFieldId, data);
 
         return;
       }

@@ -37,7 +37,7 @@ export const EventTitle = memo(
             if (e.key === 'Enter') {
               e.stopPropagation();
               e.preventDefault();
-              if (!requiresNewerClient) updateCell((e.target as HTMLInputElement).value);
+              if (!requiresNewerClient) void updateCell((e.target as HTMLInputElement).value);
               (onSubmit ?? onCloseEvent)?.();
               return;
             }
@@ -49,7 +49,7 @@ export const EventTitle = memo(
           }}
           value={value ?? ''}
           onChange={(e) => {
-            updateCell(e.target.value);
+            void updateCell(e.target.value);
           }}
           placeholder='Untitled'
           variant={'ghost'}

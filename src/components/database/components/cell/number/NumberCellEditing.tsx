@@ -24,7 +24,7 @@ function NumberCellEditing ({
   const handleUpdateCell = useCallback((value: string) => {
     const decimalValue = EnhancedBigStats.parse(value);
 
-    onUpdateCell(decimalValue || '');
+    void onUpdateCell(decimalValue || '');
   }, [onUpdateCell]);
 
   return (

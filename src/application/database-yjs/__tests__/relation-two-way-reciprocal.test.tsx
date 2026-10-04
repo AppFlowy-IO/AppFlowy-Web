@@ -341,6 +341,7 @@ describe('two-way relation: cell edits', () => {
       try {
         const { relationField, targetDoc, rowDocs } = setup();
         const reciprocalId = 'reciprocal';
+
         setRelationTypeOptionValues(ensureTypeOption(relationField), {
           database_id: TARGET_DATABASE_ID,
           is_two_way: true,
@@ -349,6 +350,7 @@ describe('two-way relation: cell edits', () => {
           target_limit: 0,
         });
         const targetDatabase = targetDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+
         targetDatabase.get(YjsDatabaseKey.fields).set(
           reciprocalId,
           createRelationField(reciprocalId, {
@@ -360,17 +362,20 @@ describe('two-way relation: cell edits', () => {
         );
         const source = new Y.Doc() as YDoc;
         const target = new Y.Doc() as YDoc;
+
         seedRelationRowDoc(source, 'source', RELATION_FIELD_ID, ['old']);
         seedRelationRowDoc(target, 'new', reciprocalId, []);
         rowDocs.set(`${SOURCE_DATABASE_ID}_rows_source`, source);
         rowDocs.set(`${TARGET_DATABASE_ID}_rows_new`, target);
         const { result } = renderHook(() => useUpdateRelationCell('source', RELATION_FIELD_ID));
+
         await act(async () => {
           const pending = result.current(
             operation === 'remove'
               ? { removedRowIds: ['old'] }
               : { insertedRowIds: [operation === 'replace' ? 'new' : 'missing'] }
           );
+
           await jest.advanceTimersByTimeAsync(3000);
           await pending;
         });

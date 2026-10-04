@@ -142,7 +142,7 @@ function DateTimeCellPicker({
       const data = newDateRange?.from ? dayjs(newDateRange.from).unix().toString() : '';
       const endTimestamp = newDateRange?.to ? dayjs(newDateRange.to).unix().toString() : undefined;
 
-      updateCell(data, {
+      void updateCell(data, {
         includeTime: dateOptsRef.current?.includeTime,
         isRange: dateOptsRef.current?.isRange,
         endTimestamp,

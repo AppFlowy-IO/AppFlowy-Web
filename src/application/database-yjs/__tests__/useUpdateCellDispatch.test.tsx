@@ -100,7 +100,9 @@ describe('useUpdateCellDispatch', () => {
       wrapper: createWrapper(contextValue),
     });
 
-    result.current('Recovered value');
+    await act(async () => {
+      await result.current('Recovered value');
+    });
 
     await waitFor(() => {
       expect(getCellData(rowDoc)).toBe('Recovered value');
@@ -145,7 +147,9 @@ describe('useUpdateCellDispatch', () => {
       wrapper: createWrapper(contextValue),
     });
 
-    result.current('Generated value', undefined, { policy: 'skip' });
+    await act(async () => {
+      await result.current('Generated value', undefined, { policy: 'skip' });
+    });
 
     await waitFor(() => {
       expect(getCellData(rowDoc)).toBe('Generated value');
@@ -176,7 +180,9 @@ describe('useUpdateCellDispatch', () => {
       wrapper: createWrapper(contextValue),
     });
 
-    result.current('Edited value');
+    await act(async () => {
+      await result.current('Edited value');
+    });
 
     await waitFor(() => {
       const cell = getCell(rowDoc);

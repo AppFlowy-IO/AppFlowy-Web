@@ -103,7 +103,7 @@ function SelectOptionCellMenu({
       const selectedIds = newTags.map((tag) => tag.id);
       const newData = selectedIds.join(',');
 
-      onUpdateCell(newData);
+      void onUpdateCell(newData);
     },
     [onUpdateCell]
   );
@@ -115,11 +115,11 @@ function SelectOptionCellMenu({
       if (isSelected) {
         const newSelectOptionIds = selectOptionIds.filter((id) => id !== optionId);
 
-        onUpdateCell(newSelectOptionIds.join(','), undefined, { historyGroup });
+        void onUpdateCell(newSelectOptionIds.join(','), undefined, { historyGroup });
       } else {
         const newSelectOptionIds = isMultiple ? [...selectOptionIds, optionId] : [optionId];
 
-        onUpdateCell(newSelectOptionIds.join(','), undefined, { historyGroup });
+        void onUpdateCell(newSelectOptionIds.join(','), undefined, { historyGroup });
       }
 
       setSearchValue('');
