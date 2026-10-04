@@ -23,6 +23,7 @@ export function StrikeThrough() {
 
   return (
     <ActionButton
+      aria-label={t('editor.strikethrough')}
       onClick={onClick}
       active={isActivated}
       data-testid="toolbar-strikethrough-button"
@@ -33,7 +34,7 @@ export function StrikeThrough() {
         </>
       }
     >
-      <StrikeThroughSvg className='h-4 w-4' />
+      <StrikeThroughSvg aria-hidden='true' className='h-4 w-4' />
     </ActionButton>
   );
 }

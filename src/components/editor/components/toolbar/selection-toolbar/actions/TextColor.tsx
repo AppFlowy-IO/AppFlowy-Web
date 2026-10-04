@@ -302,7 +302,8 @@ function TextColor({
                 <ColorTile
                   isText
                   key={index}
-                  value={renderColor(color)}
+                  aria-label={color}
+              value={renderColor(color)}
                   active={singleColor === color}
                   onClick={() => handlePickColor(color)}
                 />
@@ -319,6 +320,7 @@ function TextColor({
               <TooltipTrigger asChild>
                 <ColorTile
                   isText
+                  aria-label={color.label}
                   value={renderColor(color.color)}
                   active={singleColor === color.color}
                   onClick={() => handlePickColor(color.color)}
@@ -334,6 +336,7 @@ function TextColor({
             <ColorTile
               isText
               key={index}
+              aria-label={color}
               value={renderColor(color)}
               active={singleColor === color}
               onClick={() => handlePickColor(color)}
@@ -419,14 +422,18 @@ function TextColor({
 export default TextColor;
 
 export function CreateCustomColorTile({ onClick }: { onClick?: () => void }) {
+  const { t } = useTranslation();
+
   return (
-    <div
+    <button
+      type='button'
+      aria-label={t('editor.customColor')}
       onClick={onClick}
       className={
-        'flex h-7 w-7 cursor-pointer items-center justify-center rounded-[6px] border border-border-primary hover:border-border-primary-hover'
+        'flex h-7 w-7 cursor-pointer items-center justify-center rounded-[6px] border border-border-primary hover:border-border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-action'
       }
     >
-      <AddIcon className='h-5 w-5 text-icon-tertiary' />
-    </div>
+      <AddIcon aria-hidden='true' className='h-5 w-5 text-icon-tertiary' />
+    </button>
   );
 }

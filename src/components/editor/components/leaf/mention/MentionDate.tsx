@@ -2,14 +2,15 @@ import { useCallback, useMemo, useState } from 'react';
 import { Editor, Text, Transforms } from 'slate';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
-import { DateFormat, Mention, MentionType } from '@/application/types';
-import { MetadataKey } from '@/application/user-metadata';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
+import { DateFormat, Mention, MentionType, TimeFormat } from '@/application/types';
+import { MetadataKey } from '@/application/user-metadata';
 import { ReactComponent as DateSvg } from '@/assets/icons/date.svg';
 import { ReactComponent as ReminderSvg } from '@/assets/icons/reminder_clock.svg';
 import MentionDatePicker from '@/components/editor/components/leaf/mention/MentionDatePicker';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { useEditorContext } from '@/components/editor/EditorContext';
 import { useCurrentUser } from '@/components/main/app.hooks';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
 interface MentionDateProps {
@@ -23,6 +24,7 @@ function MentionDate({ date, reminder, includeTime = false, text }: MentionDateP
   const editor = useSlateStatic();
   const readonly = useReadOnly();
   const currentUser = useCurrentUser();
+  const { enableReminderMentions } = useEditorContext();
   const [open, setOpen] = useState(false);
 
   const dateFormat = useMemo(() => {
@@ -34,14 +36,14 @@ function MentionDate({ date, reminder, includeTime = false, text }: MentionDateP
     const dateStr = renderDate(date, fmt);
 
     if (includeTime) {
-      const timeFmt = getTimeFormat();
+      const timeFmt = getTimeFormat(currentUser?.metadata?.[MetadataKey.TimeFormat] as TimeFormat | undefined);
       const timeStr = renderDate(date, timeFmt);
 
       return `${dateStr} ${timeStr}`;
     }
 
     return dateStr;
-  }, [date, dateFormat, includeTime]);
+  }, [date, dateFormat, includeTime, currentUser?.metadata]);
 
   const dateObj = useMemo(() => {
     return new Date(date);
@@ -52,6 +54,7 @@ function MentionDate({ date, reminder, includeTime = false, text }: MentionDateP
       try {
         const path = ReactEditor.findPath(editor, text);
         const mentionData: Mention = {
+          ...text.mention,
           type: MentionType.Date,
           date: updates.date ?? date,
           include_time: updates.include_time ?? includeTime,
@@ -107,7 +110,7 @@ function MentionDate({ date, reminder, includeTime = false, text }: MentionDateP
         <span>@</span>
         {formattedDate}
       </span>
-      {reminder ? <ReminderSvg /> : <DateSvg />}
+      {reminder ? <ReminderSvg aria-hidden='true' /> : <DateSvg aria-hidden='true' />}
     </span>
   );
 
@@ -133,7 +136,7 @@ function MentionDate({ date, reminder, includeTime = false, text }: MentionDateP
           reminderOption={reminder?.option ?? 'none'}
           onDateChange={handleDateChange}
           onIncludeTimeChange={handleIncludeTimeChange}
-          onReminderOptionChange={handleReminderOptionChange}
+          onReminderOptionChange={enableReminderMentions === false ? undefined : handleReminderOptionChange}
         />
       </PopoverContent>
     </Popover>

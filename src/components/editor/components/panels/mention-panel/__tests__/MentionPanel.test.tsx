@@ -49,10 +49,36 @@ describe('MentionPanel composition', () => {
     mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.PageReference;
     mockPanelContext.searchText = 'Target';
     mockEditorContext.searchMentions = undefined;
+    mockEditorContext.enableReminderMentions = undefined;
     mockLoadViews.mockResolvedValue([{ view_id: 'target-page', name: 'Target', layout: ViewLayout.Document } as View]);
   });
 
   afterEach(cleanup);
+
+  it('excludes reminders from cell searches and ignores unsupported results', async () => {
+    mockPanelContext.activePanel = PanelType.Mention;
+    mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.Mention;
+    mockPanelContext.searchText = 'tomorrow';
+    mockEditorContext.enableReminderMentions = false;
+    const search = jest.fn(async (request: MentionSearchRequest) => ({ sections: request.include?.includes(MentionTargetKind.Date) ? [{
+      kind: 'dates', title: 'Dates', items: [
+        { kind: 'date', object_id: 'date', title: 'Tomorrow', mention: { type: 'date', date: '2026-10-05' } },
+        { kind: 'reminder', object_id: 'reminder', title: 'Reminder tomorrow', mention: { type: 'date', date: '2026-10-05', reminder_id: 'r1' } },
+      ],
+    }] : [] }));
+
+    mockEditorContext.searchMentions = search;
+    const editor = withReact(createEditor());
+
+    render(<Slate editor={editor} initialValue={[{ type: 'paragraph', children: [{ text: '@tomorrow' }] }]}>
+      <Editable /><MentionPanel notifyOnInsert={false} />
+    </Slate>);
+    expect(await screen.findByRole('button', { name: /Tomorrow/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Reminder tomorrow/ })).toBeNull();
+    for (const [request] of search.mock.calls) {
+      expect(request.include).not.toContain(MentionTargetKind.Reminder);
+    }
+  });
 
   it.each([
     [true, false],

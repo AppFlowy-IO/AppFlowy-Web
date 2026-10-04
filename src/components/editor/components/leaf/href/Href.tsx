@@ -45,6 +45,15 @@ export const Href = memo(({ text, children, leaf, textColor }: { leaf: Text; chi
     <>
       <span
         ref={ref}
+        role={leaf.href ? 'link' : undefined}
+        tabIndex={leaf.href ? 0 : undefined}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && leaf.href) {
+            event.preventDefault();
+            event.stopPropagation();
+            void openUrl(leaf.href, '_blank');
+          }
+        }}
         onMouseEnter={(e) => {
           if (e.buttons > 0) return;
           if (!readOnly) {
@@ -65,7 +74,7 @@ export const Href = memo(({ text, children, leaf, textColor }: { leaf: Text; chi
           backgroundColor: selected ? 'var(--content-blue-100)' : undefined,
           color: textColor || 'var(--text-action)',
         }}
-        className={'href-link cursor-pointer select-auto py-0.5 underline'}
+        className={'href-link cursor-pointer select-auto py-0.5 underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-text-action'}
       >
         {children}
         {hovered && (
@@ -97,6 +106,7 @@ export const Href = memo(({ text, children, leaf, textColor }: { leaf: Text; chi
             <div className={'flex items-center gap-2 p-2'}>
               <div className={'max-w-[400px] flex-1 truncate text-xs text-text-secondary'}>{leaf.href}</div>
               <IconButton
+                aria-label={t('document.inlineLink.copyLink')}
                 onClick={() => {
                   if (!leaf.href) return;
                   void copyTextToClipboard(leaf.href);
@@ -107,6 +117,7 @@ export const Href = memo(({ text, children, leaf, textColor }: { leaf: Text; chi
                 <CopyIcon />
               </IconButton>
               <IconButton
+                aria-label={t('button.edit')}
                 onClick={(e) => {
                   if (!ref.current) return;
                   e.preventDefault();

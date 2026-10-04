@@ -55,6 +55,7 @@ export function RichTextCellContext({
       addPage={context?.addPage}
       searchMentions={context?.searchMentions}
       mentionContext={mentionContext}
+      enableReminderMentions={false}
       getMentionUser={getMentionUser}
       getSubscriptions={context?.getSubscriptions}
       eventEmitter={context?.eventEmitter}

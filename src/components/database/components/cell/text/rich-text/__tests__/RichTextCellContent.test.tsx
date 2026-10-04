@@ -1,9 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { RenderLeafProps } from 'slate-react';
+import { createEditor, Editor, Transforms } from 'slate';
+import { RenderLeafProps, withReact } from 'slate-react';
 
 import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
 
 import RichTextCellContent from '../RichTextCellContent';
+import { richTextToSlateValue, slateValueToRichText, withRichTextCell } from '../rich-text-slate';
 
 const mockOpenUrl = jest.fn();
 const mockDocumentLoaded = jest.fn();
@@ -42,10 +44,29 @@ const formatted: RichTextDelta = [
   { insert: ' link', attributes: { href: 'https://appflowy.io', underline: true } },
 ];
 
+function clipboardData(values: Record<string, string> = {}): DataTransfer {
+  return {
+    getData: (type: string) => values[type] ?? '',
+    setData: (type: string, value: string) => {
+      values[type] = value;
+    },
+  } as DataTransfer;
+}
+
+function pasteIntoCell(clipboard: DataTransfer) {
+  const editor = withRichTextCell(withReact(createEditor()));
+
+  editor.children = richTextToSlateValue([]);
+  Transforms.select(editor, Editor.end(editor, []));
+  editor.insertData(clipboard);
+  return slateValueToRichText(editor.children);
+}
+
 describe('RichTextCellContent', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     mockOpenUrl.mockReset();
+    document.getSelection()?.removeAllRanges();
   });
 
   // React adds its own document listeners with the first root.
@@ -93,6 +114,83 @@ describe('RichTextCellContent', () => {
     fireEvent.click(screen.getByText('link'));
     expect(mockOpenUrl).toHaveBeenCalledWith('https://appflowy.io', '_blank');
     expect(onCellClick).not.toHaveBeenCalled();
+  });
+
+  it.each(['forward', 'backward'])('copies a %s selection with marks and links into another cell', (direction) => {
+    const { container } = render(<RichTextCellContent rowId='row-1' delta={formatted} text='Bold red code link' />);
+    const line = container.querySelector('[data-rich-text-cell-line]')!;
+    const start = line.querySelector('strong em')!.firstChild!;
+    const end = line.querySelector('.href-link u')!.firstChild!;
+    const selection = document.getSelection()!;
+
+    if (direction === 'backward') {
+      selection.setBaseAndExtent(end, 4, start, 1);
+    } else {
+      selection.setBaseAndExtent(start, 1, end, 4);
+    }
+
+    const clipboard = clipboardData();
+
+    expect(fireEvent.copy(start.parentElement!, { clipboardData: clipboard })).toBe(false);
+    expect(clipboard.getData('text/plain')).toBe('old red code lin');
+    const expected = [{ ...formatted[0], insert: 'old' }, formatted[1], formatted[2], { ...formatted[3], insert: ' lin' }];
+
+    expect(pasteIntoCell(clipboard)).toEqual(expected);
+    // Browsers may strip custom MIME formats while retaining the HTML carrier.
+    expect(pasteIntoCell(clipboardData({ 'text/html': clipboard.getData('text/html') }))).toEqual(expected);
+    expect(line.querySelector('[data-slate-editor]')).toBeNull();
+  });
+
+  it('copies full static content with Unicode and empty lines, excluding private attributes', () => {
+    const delta: RichTextDelta = [
+      {
+        insert: '👋 one\n\ntwo',
+        attributes: { bold: true, 'comment-ids': ['private-comment'] },
+        preserved: { font_family: 'private-font' },
+      },
+      { insert: ' <link>', attributes: { href: 'https://appflowy.io?a=1&b=2', strikethrough: true } },
+    ];
+    const { container } = render(<RichTextCellContent rowId='row-1' delta={delta} text='👋 one\n\ntwo <link>' wrap />);
+    const line = container.querySelector('[data-rich-text-cell-line]')!;
+    const range = document.createRange();
+
+    range.selectNodeContents(line);
+    document.getSelection()!.addRange(range);
+    const clipboard = clipboardData();
+
+    fireEvent.copy(line, { clipboardData: clipboard });
+    expect(clipboard.getData('text/plain')).toBe('👋 one\n\ntwo <link>');
+    expect(pasteIntoCell(clipboard)).toEqual([
+      { insert: '👋 one\n\ntwo', attributes: { bold: true } },
+      delta[1],
+    ]);
+    expect(clipboard.getData('text/html')).toContain('&lt;link&gt;');
+    expect(decodeURIComponent(window.atob(clipboard.getData('application/x-slate-fragment')))).not.toContain('private');
+  });
+
+  it.each(['collapsed', 'cross-cell', 'other-cell'])("leaves a %s selection's native clipboard alone", (kind) => {
+    const { container } = render(
+      <>
+        <RichTextCellContent rowId='row-1' delta={formatted} text='Bold red code link' />
+        <div data-testid='outside'>Outside</div>
+      </>
+    );
+    const line = container.querySelector('[data-rich-text-cell-line]')!;
+    const inside = line.querySelector('strong em')!.firstChild!;
+    const outside = screen.getByTestId('outside').firstChild!;
+    const selection = document.getSelection()!;
+
+    selection.setBaseAndExtent(
+      kind === 'other-cell' ? outside : inside,
+      0,
+      kind === 'collapsed' ? inside : outside,
+      kind === 'collapsed' ? 0 : 4
+    );
+    const clipboard = clipboardData({ 'text/plain': 'Native selection' });
+
+    expect(fireEvent.copy(line, { clipboardData: clipboard })).toBe(true);
+    expect(clipboard.getData('text/plain')).toBe('Native selection');
+    expect(clipboard.getData('application/x-slate-fragment')).toBe('');
   });
 
   it('keeps the document renderers (in a read-only editor) for mentions and equations', async () => {

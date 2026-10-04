@@ -43,7 +43,9 @@ export function RichTextCellToolbar() {
 
     const height = el.offsetHeight || 32;
     const width = el.offsetWidth || 0;
-    const top = rect.top - height - TOOLBAR_GAP < 0 ? rect.bottom + TOOLBAR_GAP : rect.top - height - TOOLBAR_GAP;
+    const preferredTop =
+      rect.top - height - TOOLBAR_GAP < TOOLBAR_GAP ? rect.bottom + TOOLBAR_GAP : rect.top - height - TOOLBAR_GAP;
+    const top = Math.max(TOOLBAR_GAP, Math.min(preferredTop, window.innerHeight - height - TOOLBAR_GAP));
     const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
 
     setPosition((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }));
@@ -60,7 +62,11 @@ export function RichTextCellToolbar() {
     const onScroll = () => rePosition();
 
     window.addEventListener('scroll', onScroll, true);
-    return () => window.removeEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+    };
   }, [visible, rePosition]);
 
   const forceShow = useCallback((show: boolean) => {
@@ -130,7 +136,7 @@ export function RichTextCellToolbar() {
           pointerEvents: visible && position ? 'auto' : 'none',
         }}
         className={
-          'fixed z-[1400] flex min-h-[32px] w-fit items-center gap-1 rounded-lg bg-[var(--fill-toolbar)] px-2 shadow-lg transition-opacity duration-150'
+          'fixed z-[1400] flex min-h-[32px] w-fit max-w-[calc(100vw-16px)] flex-wrap items-center gap-1 rounded-lg bg-[var(--fill-toolbar)] px-2 shadow-lg transition-opacity duration-150 motion-reduce:transition-none'
         }
       >
         {visible && (

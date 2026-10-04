@@ -21,10 +21,12 @@ const ActionButton = forwardRef<
           color: active ? 'var(--text-action)' : disabled ? 'var(--line-on-toolbar)' : undefined,
         }}
         disabled={disabled}
+        aria-label={typeof tooltip === 'string' ? tooltip : undefined}
+        aria-pressed={active}
         {...props}
         className={`${
           className ?? ''
-        } bg-transparent px-1 py-1 text-icon-on-toolbar hover:bg-transparent hover:text-text-action`}
+        } bg-transparent px-1 py-1 text-icon-on-toolbar hover:bg-transparent hover:text-text-action focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-action`}
       >
         {children}
       </IconButton>

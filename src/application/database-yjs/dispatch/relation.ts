@@ -70,6 +70,30 @@ function uniq(ids: RowId[]) {
 // instance keeps our binding to a single owner per doc.
 const boundRelatedDocs = new WeakSet<YDoc>();
 
+// Different cell hosts can edit the same source cell. Share their queue by
+// database doc and cell identity so hydration cannot reorder those edits.
+const pendingRelationWrites = new WeakMap<YDoc, Map<string, Promise<void>>>();
+
+function queueRelationCellWrite(databaseDoc: YDoc, rowId: RowId, fieldId: FieldId, write: () => Promise<void>) {
+  let pending = pendingRelationWrites.get(databaseDoc);
+
+  if (!pending) {
+    pending = new Map();
+    pendingRelationWrites.set(databaseDoc, pending);
+  }
+
+  const queue = pending;
+  const key = JSON.stringify([rowId, fieldId]);
+  const previous = queue.get(key);
+  // A failed request must release the next edit as well as a successful one.
+  const next = (previous ? previous.then(write, write) : write()).finally(() => {
+    if (queue.get(key) === next) queue.delete(key);
+  });
+
+  queue.set(key, next);
+  return next;
+}
+
 export { getRelationRowIdsFromCell };
 
 function getDatabaseFromDoc(doc: YDoc): YDatabase | null {
@@ -630,7 +654,7 @@ export function useUpdateRelationCellDispatch() {
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
 
-  return useCallback(
+  const update = useCallback(
     async (rowId: RowId, fieldId: FieldId, changes: RelationCellChanges) => {
       const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
@@ -785,6 +809,12 @@ export function useUpdateRelationCellDispatch() {
       }
     },
     [actorUid, bindViewSync, context, createRow, database, getViewIdFromDatabaseId, loadView, rowMap]
+  );
+
+  return useCallback(
+    (rowId: RowId, fieldId: FieldId, changes: RelationCellChanges) =>
+      queueRelationCellWrite(context.databaseDoc, rowId, fieldId, () => update(rowId, fieldId, changes)),
+    [context.databaseDoc, update]
   );
 }
 

@@ -111,6 +111,8 @@ const DEFAULT_MENTION_INCLUDE = [
   MentionTargetKind.ExternalLink,
 ];
 
+const MENTION_INCLUDE_WITHOUT_REMINDERS = DEFAULT_MENTION_INCLUDE.filter((kind) => kind !== MentionTargetKind.Reminder);
+
 const PAGE_REFERENCE_INCLUDE = [MentionTargetKind.Page, MentionTargetKind.Database, MentionTargetKind.DatabaseRow];
 
 function getMentionablePageViews(views: View[] = []) {
@@ -394,7 +396,7 @@ export function MentionPanel({
   onPersonPicked,
 }: { notifyOnInsert?: boolean; onPersonPicked?: (personId: string, requireNotification: boolean) => void } = {}) {
   const { isPanelOpen, panelPosition, closePanel, searchText, removeContent, activePanel } = usePanelContext();
-  const { workspaceId, viewId, searchMentions, mentionContext, loadViews, addPage, openPageModal } = useEditorContext();
+  const { workspaceId, viewId, searchMentions, mentionContext, loadViews, addPage, openPageModal, enableReminderMentions } = useEditorContext();
   const currentUser = useCurrentUserOptional();
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
@@ -412,7 +414,9 @@ export function MentionPanel({
   const [localFallbackViews, setLocalFallbackViews] = useState<View[]>([]);
   const mentionSearchRequestIdRef = useRef(0);
   const hasMentionSearchQuery = Boolean(searchText?.trim());
-  const mentionInclude = activePanel === PanelType.PageReference ? PAGE_REFERENCE_INCLUDE : DEFAULT_MENTION_INCLUDE;
+  const mentionInclude = activePanel === PanelType.PageReference
+    ? PAGE_REFERENCE_INCLUDE
+    : enableReminderMentions === false ? MENTION_INCLUDE_WITHOUT_REMINDERS : DEFAULT_MENTION_INCLUDE;
   const mentionSearchRequest = useMemo(
     () => ({
       query: searchText ?? '',
@@ -467,8 +471,15 @@ export function MentionPanel({
   }, [activePanel, mentionableFallbackViews, searchText, t, useLocalMentionFallback]);
   const sourceMentionSections = useLocalMentionFallback ? localFallbackMentionSections : mentionSections;
   const pickerMentionSections = useMemo(
-    () => normalizeMentionSearchSectionsForPicker(sourceMentionSections),
-    [sourceMentionSections]
+    () => normalizeMentionSearchSectionsForPicker(
+      enableReminderMentions === false
+        ? sourceMentionSections.map((section) => ({
+            ...section,
+            items: section.items.filter((item) => item.kind !== MentionTargetKind.Reminder),
+          }))
+        : sourceMentionSections
+    ),
+    [sourceMentionSections, enableReminderMentions]
   );
 
   useEffect(() => {

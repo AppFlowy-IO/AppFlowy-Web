@@ -334,6 +334,82 @@ describe('enabling a two-way relation', () => {
 describe('two-way relation: cell edits', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  it.each(['replace', 'append', 'remove', 'other-cell'] as const)(
+    'preserves invocation order during overlapping %s edits while a target is loading',
+    async (operation) => {
+      jest.useFakeTimers();
+      try {
+        const { relationField, targetDoc, rowDocs } = setup();
+        const reciprocalId = 'reciprocal';
+
+        setRelationTypeOptionValues(ensureTypeOption(relationField), {
+          database_id: TARGET_DATABASE_ID,
+          is_two_way: true,
+          reciprocal_field_id: reciprocalId,
+          source_limit: operation === 'replace' ? 1 : 0,
+          target_limit: 0,
+        });
+        const targetDatabase = targetDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+
+        targetDatabase.get(YjsDatabaseKey.fields).set(
+          reciprocalId,
+          createRelationField(reciprocalId, {
+            name: 'Backlinks',
+            database_id: SOURCE_DATABASE_ID,
+            is_two_way: true,
+            reciprocal_field_id: RELATION_FIELD_ID,
+          })
+        );
+        const source = new Y.Doc() as YDoc;
+        const other = new Y.Doc() as YDoc;
+        const a = new Y.Doc() as YDoc;
+        const b = new Y.Doc() as YDoc;
+
+        seedRelationRowDoc(source, 'source', RELATION_FIELD_ID, []);
+        seedRelationRowDoc(other, 'other', RELATION_FIELD_ID, []);
+        seedRelationRowDoc(b, 'b', reciprocalId, []);
+        rowDocs.set(`${SOURCE_DATABASE_ID}_rows_source`, source);
+        rowDocs.set(`${SOURCE_DATABASE_ID}_rows_other`, other);
+        rowDocs.set(`${TARGET_DATABASE_ID}_rows_a`, a);
+        rowDocs.set(`${TARGET_DATABASE_ID}_rows_b`, b);
+        const first = renderHook(() => useUpdateRelationCell('source', RELATION_FIELD_ID));
+        // Separate consumers of the same cell must share its write ordering.
+        const second = renderHook(() =>
+          useUpdateRelationCell(operation === 'other-cell' ? 'other' : 'source', RELATION_FIELD_ID)
+        );
+
+        await act(async () => {
+          const firstSave = first.result.current({ insertedRowIds: ['a'] });
+
+          await jest.advanceTimersByTimeAsync(0);
+          const secondSave = second.result.current(
+            operation === 'remove' ? { removedRowIds: ['a'] } : { insertedRowIds: ['b'] }
+          );
+
+          await jest.advanceTimersByTimeAsync(0);
+          if (operation === 'other-cell') {
+            // An unrelated cell can finish while A is still hydrating.
+            expect(readRelationCell(other, RELATION_FIELD_ID)).toEqual(['b']);
+          }
+
+          seedRelationRowDoc(a, 'a', reciprocalId, []);
+          await Promise.all([firstSave, secondSave]);
+        });
+        expect(readRelationCell(source, RELATION_FIELD_ID)).toEqual(
+          operation === 'replace' ? ['b'] : operation === 'append' ? ['a', 'b'] : operation === 'remove' ? [] : ['a']
+        );
+        expect(readRelationCell(a, reciprocalId)).toEqual(
+          operation === 'append' || operation === 'other-cell' ? ['source'] : []
+        );
+        expect(readRelationCell(b, reciprocalId)).toEqual(
+          operation === 'remove' ? [] : [operation === 'other-cell' ? 'other' : 'source']
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    }
+  );
+
   it.each(['replace', 'remove', 'missing-insertion'] as const)(
     'handles an unavailable relation participant during %s',
     async (operation) => {

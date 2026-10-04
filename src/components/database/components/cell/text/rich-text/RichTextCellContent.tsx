@@ -1,7 +1,11 @@
-import { memo, ReactNode, Suspense, useMemo } from 'react';
+import { ClipboardEvent, memo, ReactNode, Suspense, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
-import type { RichTextDelta, RichTextInsert } from '@/application/database-yjs/fields/text/rich-text';
+import {
+  type RichTextDelta,
+  type RichTextInsert,
+  sanitizeRichTextAttributes,
+} from '@/application/database-yjs/fields/text/rich-text';
 import { applyRegisteredMarks } from '@/components/editor/components/leaf/mark-style';
 import { openUrl } from '@/utils/url';
 
@@ -48,6 +52,52 @@ function StaticRun({ insert, attributes = {} }: RichTextInsert) {
   );
 }
 
+function copyStaticRichText(event: ClipboardEvent<HTMLDivElement>, delta: RichTextDelta) {
+  const root = event.currentTarget;
+  const document = root.ownerDocument;
+  const selection = document.getSelection();
+
+  if (event.defaultPrevented || !selection || selection.isCollapsed || selection.rangeCount !== 1) return;
+  const range = selection.getRangeAt(0);
+
+  // Let the browser copy selections spanning other cells or surrounding text.
+  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return;
+  const prefix = document.createRange();
+
+  prefix.selectNodeContents(root);
+  prefix.setEnd(range.startContainer, range.startOffset);
+  const start = prefix.toString().length;
+  const end = start + range.toString().length;
+  let offset = 0;
+  const texts = delta.flatMap(({ insert, attributes }) => {
+    const runStart = offset;
+
+    offset += insert.length;
+    if (offset <= start || runStart >= end) return [];
+    return [
+      {
+        ...sanitizeRichTextAttributes(attributes),
+        text: insert.slice(Math.max(0, start - runStart), end - runStart),
+      },
+    ];
+  });
+
+  if (texts.length === 0) return;
+  // Match the document-compatible shape used by cell editors, without loading
+  // Slate or adding selection listeners to every static cell in a grid.
+  const fragment = [{ type: 'paragraph', data: {}, children: [{ type: 'text', children: texts }] }];
+  const encoded = window.btoa(encodeURIComponent(JSON.stringify(fragment)));
+  const html = document.createElement('span');
+
+  html.setAttribute('data-slate-fragment', encoded);
+  html.append(range.cloneContents());
+  event.clipboardData.setData('application/x-slate-fragment', encoded);
+  event.clipboardData.setData('text/html', html.outerHTML);
+  event.clipboardData.setData('text/plain', texts.map(({ text }) => text).join(''));
+  event.preventDefault();
+  event.stopPropagation();
+}
+
 /**
  * Most formatted cells (bold, links, colors, ...) render as plain elements:
  * a grid, list or gallery can show hundreds of them, and a Slate editor per
@@ -57,7 +107,7 @@ function StaticRun({ insert, attributes = {} }: RichTextInsert) {
  */
 function StaticRichText({ delta, wrap }: { delta: RichTextDelta; wrap?: boolean }) {
   return (
-    <div data-rich-text-cell-line className={lineClassName(wrap)}>
+    <div data-rich-text-cell-line className={lineClassName(wrap)} onCopy={(event) => copyStaticRichText(event, delta)}>
       {delta.map((insert, index) => (insert.insert ? <StaticRun key={index} {...insert} /> : null))}
     </div>
   );

@@ -156,9 +156,10 @@ function HrefPopover({ open, onClose, updatedSelection }: HrefPopoverProps) {
           }}
           size={'small'}
           fullWidth={true}
+          inputProps={{ 'aria-label': t('toolbar.addLink') }}
           placeholder={t('toolbar.addLink')}
         />
-        {urlValid ? null : <div className={'text-xs text-function-error'}>{t('editor.incorrectLink')}</div>}
+        {urlValid ? null : <div role='alert' className={'text-xs text-function-error'}>{t('editor.incorrectLink')}</div>}
       </div>
     );
   }, [formatLink, open, popoverType, t, urlValid]);
@@ -192,6 +193,7 @@ function HrefPopover({ open, onClose, updatedSelection }: HrefPopoverProps) {
             inputRef={(input: HTMLInputElement) => {
               urlRef.current = input;
             }}
+            inputProps={{ 'aria-label': 'URL' }}
             defaultValue={hrefNode.href}
             onBlur={(e) => {
               saveLink(e.currentTarget.value);
@@ -225,7 +227,7 @@ function HrefPopover({ open, onClose, updatedSelection }: HrefPopoverProps) {
             fullWidth={true}
             placeholder={t('toolbar.addLink')}
           />
-          {urlValid ? null : <div className={'text-xs text-function-error'}>{t('editor.incorrectLink')}</div>}
+          {urlValid ? null : <div role='alert' className={'text-xs text-function-error'}>{t('editor.incorrectLink')}</div>}
         </div>
         <div className={'flex flex-col gap-1'}>
           <div className={'text-xs text-text-secondary'}>{t('editor.text')}</div>
@@ -240,6 +242,7 @@ function HrefPopover({ open, onClose, updatedSelection }: HrefPopoverProps) {
                 urlRef.current?.focus();
               }
             }}
+            inputProps={{ 'aria-label': t('editor.text') }}
             defaultValue={text}
             onInput={(e) => {
               const target = e.target as HTMLInputElement;

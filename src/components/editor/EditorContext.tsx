@@ -123,6 +123,8 @@ export interface EditorContextState {
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
   searchMentions?: SearchMentions;
   mentionContext?: MentionSearchContext;
+  /** Hosts without a reminder scheduler must not offer reminder creation. */
+  enableReminderMentions?: boolean;
   awareness?: Awareness;
   getDeviceId?: () => string;
   databaseRelations?: DatabaseRelations;
@@ -182,6 +184,7 @@ export const EditorContextProvider = ({
   getMentionUser,
   searchMentions,
   mentionContext,
+  enableReminderMentions = true,
   awareness,
   getDeviceId,
   databaseRelations,
@@ -279,6 +282,7 @@ export const EditorContextProvider = ({
       getMentionUser,
       searchMentions,
       mentionContext,
+      enableReminderMentions,
       awareness,
       getDeviceId,
       databaseRelations,
@@ -333,6 +337,7 @@ export const EditorContextProvider = ({
       getMentionUser,
       searchMentions,
       mentionContext,
+      enableReminderMentions,
       awareness,
       getDeviceId,
       databaseRelations,
