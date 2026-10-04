@@ -1,7 +1,7 @@
 import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import type * as Y from 'yjs';
 
-import { DatabaseViewLayout, ViewLayout } from '../../src/application/types';
+import { DatabaseViewLayout, SubscriptionInterval, ViewLayout, type PricingCatalog } from '../../src/application/types';
 import { signInAndWaitForApp } from './auth-flow-helpers';
 import { createDatabaseView, waitForGridReady } from './database-ui-helpers';
 import { createDocumentPageAndNavigate } from './page-utils';
@@ -21,6 +21,27 @@ type TestWindow = Window & {
   __TEST_EDITORS__?: Record<string, { children: unknown[] }>;
 };
 
+const pricingCatalog: PricingCatalog = {
+  version: 1,
+  currency: 'USD',
+  annual_discount_percent: 20,
+  plans: [
+    { id: 'free', kind: 'workspace_plan', name: 'Free', description: '', prices: [], features: [] },
+    {
+      id: 'pro',
+      kind: 'workspace_plan',
+      name: 'Pro',
+      description: 'For professional work and teams',
+      prices: [
+        { interval: SubscriptionInterval.Month, price_cents: 2000 },
+        { interval: SubscriptionInterval.Year, price_cents: 19200 },
+      ],
+      features: [],
+    },
+  ],
+  comparison: [],
+};
+
 /** Real auth, folder inventory, quota reads and creation; only billing is simulated. */
 export class DatabaseViewCreationFixture {
   private workspaceId = '';
@@ -28,8 +49,14 @@ export class DatabaseViewCreationFixture {
   private documentId = '';
   private createdIds = new Map<string, string>();
   private checkouts: Array<{ url: URL; authorized: boolean; destination: string }> = [];
-  private pendingPopup?: Promise<Page>;
-  private beforeUpgrade?: { tabs: DatabaseSnapshot | null; inventory: string[]; document: string | null };
+  private beforeUpgrade?: {
+    tabs: DatabaseSnapshot | null;
+    inventory: string[];
+    document: string | null;
+    sourceUrl: string;
+    checkouts: number;
+    pages: number;
+  };
   private creationRequests = 0;
   private requestsBeforeUpgrade = 0;
 
@@ -39,17 +66,23 @@ export class DatabaseViewCreationFixture {
     const info = await this.read<{ self_hosted: boolean }>('/api/server-info');
 
     expect(info.self_hosted, 'This scenario needs a real hosted server; self-hosted bypasses quotas').toBe(false);
+
     const context = this.page.context();
 
     for (const route of ['**/billing/api/v1/active-subscription/**', '**/billing/api/v1/subscriptions']) {
       await context.route(route, (route) => route.fulfill({ json: { code: 0, message: '', data: [] } }));
     }
+
+    await context.route('**/billing/api/v1/pricing', (route) =>
+      route.fulfill({ json: { code: 0, message: '', data: pricingCatalog } })
+    );
     await context.route('**/billing/api/v1/subscription-link?**', async (route) => {
       const request = route.request();
-      const destination = `https://checkout.example.invalid/pro/year/${this.checkouts.length + 1}`;
+      const url = new URL(request.url());
+      const destination = `https://checkout.example.invalid/pro/${url.searchParams.get('recurring_interval')}/${this.checkouts.length + 1}`;
 
       this.checkouts.push({
-        url: new URL(request.url()),
+        url,
         authorized: /^Bearer \S+$/.test(request.headers().authorization ?? ''),
         destination,
       });
@@ -114,6 +147,7 @@ export class DatabaseViewCreationFixture {
     } else {
       await expect(ChartSelectors.chart(this.page)).toBeVisible();
     }
+
     await expect.poll(async () => (await this.databaseSnapshot()).views.length).toBe(before.views.length + 1);
     const after = await this.databaseSnapshot();
     const created = after.views.filter((view) => !before.views.some((previous) => previous.id === view.id));
@@ -122,6 +156,7 @@ export class DatabaseViewCreationFixture {
       { id: after.activeId, layout: layout === 'Form' ? DatabaseViewLayout.Form : DatabaseViewLayout.Chart },
     ]);
     this.createdIds.set(layout, after.activeId);
+
     expect(this.checkouts).toHaveLength(0);
   }
 
@@ -161,9 +196,28 @@ export class DatabaseViewCreationFixture {
     await expect(this.page.getByRole('menu')).toBeHidden();
   }
 
-  async expectCheckout(count: number): Promise<void> {
-    if (!this.pendingPopup || !this.beforeUpgrade) throw new Error('Select an upgrade before asserting checkout');
-    const popup = await this.pendingPopup;
+  async expectPlanComparison(): Promise<void> {
+    if (!this.beforeUpgrade) throw new Error('Select an upgrade before asserting plan comparison');
+    await expect(this.page.getByTestId('pricing-upgrade-pro')).toBeVisible();
+    expect(this.checkouts).toHaveLength(this.beforeUpgrade.checkouts);
+    expect(this.page.context().pages()).toHaveLength(this.beforeUpgrade.pages);
+    await this.expectUnchangedContent();
+  }
+
+  async chooseBillingPeriod(period: string): Promise<void> {
+    const interval = this.intervalFor(period);
+
+    await this.page.getByTestId('pricing-upgrade-pro').click();
+    await expect(this.page.getByTestId('period-option-month')).toContainText('$20');
+    await expect(this.page.getByTestId('period-option-year')).toContainText('$192');
+    await this.page.getByTestId(`period-option-${interval}`).click();
+    await expect(this.page.getByTestId('change-period-confirm')).toBeEnabled();
+    await this.page.getByTestId('change-period-confirm').click();
+  }
+
+  async expectCheckout(period: string, count: number): Promise<void> {
+    if (!this.beforeUpgrade) throw new Error('Select an upgrade before asserting checkout');
+    const interval = this.intervalFor(period);
 
     await expect.poll(() => this.checkouts.length).toBe(count);
     const checkout = this.checkouts[count - 1];
@@ -171,23 +225,40 @@ export class DatabaseViewCreationFixture {
     expect(checkout.authorized, 'Checkout uses authenticated billing').toBe(true);
     expect(checkout.url.searchParams.get('workspace_id')).toBe(this.workspaceId);
     expect(checkout.url.searchParams.get('workspace_subscription_plan')).toBe('pro');
-    expect(checkout.url.searchParams.get('recurring_interval')).toBe('year');
-    await expect(popup).toHaveURL(checkout.destination);
-    expect(await popup.evaluate(() => window.opener === null)).toBe(true);
-    await popup.close();
-    await this.page.bringToFront();
-    if (this.beforeUpgrade.tabs) expect(await this.databaseSnapshot()).toEqual(this.beforeUpgrade.tabs);
-    if (this.beforeUpgrade.document !== null) expect(await this.documentSnapshot()).toBe(this.beforeUpgrade.document);
-    expect((await this.inventory()).map((view) => view.view_id).sort()).toEqual(this.beforeUpgrade.inventory);
+    expect(checkout.url.searchParams.get('recurring_interval')).toBe(interval);
+    // Checkout may replace the app tab or open another browsing context. Observe
+    // the actual destination rather than waiting for a popup before confirmation.
+    await expect.poll(() => this.page.context().pages().some((page) => page.url() === checkout.destination)).toBe(true);
+    const checkoutPage = this.page.context().pages().find((page) => page.url() === checkout.destination);
+
+    if (!checkoutPage) throw new Error('The confirmed checkout page is not available');
+    await expect(checkoutPage).toHaveURL(checkout.destination);
+    if (checkoutPage === this.page) {
+      await this.page.goto(this.beforeUpgrade.sourceUrl);
+      await this.page.waitForFunction(
+        (documentId) => documentId
+          ? !!(window as TestWindow).__TEST_EDITORS__?.[documentId]
+          : !!(window as TestWindow).__TEST_DATABASE_CONTEXT__,
+        this.documentId
+      );
+    } else {
+      await checkoutPage.close();
+      await this.page.bringToFront();
+      await this.page.keyboard.press('Escape');
+      await expect(this.page.getByTestId('pricing-upgrade-pro')).toBeHidden();
+    }
+
+    await this.expectUnchangedContent();
     await this.expectCounts(1, 1);
     expect(this.creationRequests).toBe(this.requestsBeforeUpgrade);
     expect(this.checkouts).toHaveLength(count);
-    this.pendingPopup = undefined;
+    this.beforeUpgrade = undefined;
   }
 
   async reload(): Promise<void> {
     await this.page.goto(this.databaseUrl);
     await waitForGridReady(this.page);
+
     await expect(DatabaseViewSelectors.viewTab(this.page)).toHaveCount(3);
   }
 
@@ -222,6 +293,7 @@ export class DatabaseViewCreationFixture {
         layout === 'Form' ? 'add-form-button' : layout === 'Chart' ? 'add-chart-button' : 'add-timeline-page-button'
       );
     }
+
     if (layout === 'Form') return FormSelectors.addFormViewOption(this.page);
     if (layout === 'Timeline') return this.page.getByTestId('add-timeline-view-button');
     return this.page.getByRole('menuitem', { name: /^Chart/ });
@@ -241,9 +313,27 @@ export class DatabaseViewCreationFixture {
       tabs: this.documentId ? null : await this.databaseSnapshot(),
       inventory: (await this.inventory()).map((view) => view.view_id).sort(),
       document: this.documentId ? await this.documentSnapshot() : null,
+      sourceUrl: this.page.url(),
+      checkouts: this.checkouts.length,
+      pages: this.page.context().pages().length,
     };
     this.requestsBeforeUpgrade = this.creationRequests;
-    this.pendingPopup = this.page.context().waitForEvent('page');
+  }
+
+  private intervalFor(period: string): SubscriptionInterval {
+    expect(['monthly', 'annual']).toContain(period);
+
+    return period === 'monthly' ? SubscriptionInterval.Month : SubscriptionInterval.Year;
+  }
+
+  private async expectUnchangedContent(): Promise<void> {
+    if (!this.beforeUpgrade) throw new Error('Capture the source content before checking an upgrade');
+    const before = this.beforeUpgrade;
+
+    if (before.tabs) await expect.poll(() => this.databaseSnapshot()).toEqual(before.tabs);
+    if (before.document !== null) await expect.poll(() => this.documentSnapshot()).toBe(before.document);
+    expect((await this.inventory()).map((view) => view.view_id).sort()).toEqual(before.inventory);
+    expect(this.creationRequests).toBe(this.requestsBeforeUpgrade);
   }
 
   private async databaseSnapshot(): Promise<DatabaseSnapshot> {

@@ -40,8 +40,16 @@ When(
   }
 );
 
-Then(/^annual Pro checkout has opened (\d+) times? without another database view$/, async ({ page }, count: string) => {
-  await fixture(page).expectCheckout(Number(count));
+Then('Pro plan comparison opens without starting checkout', async ({ page }) => {
+  await fixture(page).expectPlanComparison();
+});
+
+When('the owner chooses {string} billing for Pro checkout', async ({ page }, period: string) => {
+  await fixture(page).chooseBillingPeriod(period);
+});
+
+Then(/^"(monthly|annual)" Pro checkout has opened (\d+) times? without another database view$/, async ({ page }, period: string, count: string) => {
+  await fixture(page).expectCheckout(period, Number(count));
 });
 
 When('the owner reloads the database', async ({ page }) => {
