@@ -1,7 +1,7 @@
 import EventEmitter from 'events';
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import { APP_EVENTS } from '@/application/constants';
 import { Role, SubscriptionInterval, SubscriptionPlan, View, ViewLayout, Workspace } from '@/application/types';
@@ -68,9 +68,26 @@ const parent: View = {
   is_private: false,
 };
 
-function CreationMenu({ surface }: { surface: 'page' | 'view' }) {
+const initialLocation = '/app/workspace/page?existing=value';
+
+function LocationProbe() {
+  const { pathname, search } = useLocation();
+
+  return <output data-testid='current-location'>{pathname}{search}</output>;
+}
+
+function expectPlanComparison() {
+  const location = new URL(screen.getByTestId('current-location').textContent!, 'https://appflowy.cloud');
+
+  expect(location.pathname).toBe('/app/workspace/page');
+  expect(location.searchParams.get('existing')).toBe('value');
+  expect(location.searchParams.get('action')).toBe('change_plan');
+}
+
+function CreationMenu({ surface, showMenu = true }: { surface: 'page' | 'view'; showMenu?: boolean }) {
   return (
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter initialEntries={[initialLocation]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <LocationProbe />
       <AuthInternalContext.Provider
         value={{
           isAuthenticated: true,
@@ -84,7 +101,7 @@ function CreationMenu({ surface }: { surface: 'page' | 'view' }) {
         }}
       >
         <AppEventEmitterContext.Provider value={emitter}>
-          {surface === 'view' ? (
+          {showMenu && (surface === 'view' ? (
             <AddViewButton databasePageId='database' onViewAdded={() => undefined} />
           ) : (
             <DropdownMenu defaultOpen>
@@ -93,7 +110,7 @@ function CreationMenu({ surface }: { surface: 'page' | 'view' }) {
                 <AddPageActions view={parent} />
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
+          ))}
         </AppEventEmitterContext.Provider>
       </AuthInternalContext.Provider>
     </MemoryRouter>
@@ -160,20 +177,14 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     await waitFor(() => expect(surface === 'page' ? mockAddPage : mockAddView).toHaveBeenCalledTimes(1));
   });
   it.each(['timeline', 'chart', 'form'] as const)(
-    'offers the owner a %s crown and checkout with Desktop feedback, without creating a view',
+    'offers the owner a %s crown and opens plan comparison before checkout, without creating a view',
     async (layout) => {
       mockWorkspaceId = `${surface}-${layout}-owner`;
       mockRole = Role.Owner;
       mockGetSubscriptions.mockResolvedValue([]);
       mockQuota.mockResolvedValue({ can_create_form: false, can_create_chart: false });
-      let resolveLink!: (link: string) => void;
+      const openCheckout = jest.spyOn(window, 'open').mockReturnValue(null);
 
-      mockCheckout.mockReturnValue(
-        new Promise<string>((done) => {
-          resolveLink = done;
-        })
-      );
-      jest.spyOn(window, 'open').mockReturnValue(null);
       openMenu();
       const clicked = await waitFor(() => {
         const element = item(layout);
@@ -184,34 +195,13 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
 
       expect(clicked.hasAttribute('data-disabled')).toBe(false);
       fireEvent.click(clicked);
-      // A second click before the progress frame must not start another checkout.
+      // A repeated upgrade click must still wait for a billing-period choice.
       fireEvent.click(clicked);
-      expect(mockCheckout).toHaveBeenCalledTimes(1);
-      expect(mockCheckout).toHaveBeenCalledWith(mockWorkspaceId, SubscriptionPlan.Pro, SubscriptionInterval.Year);
-
-      if (surface === 'page') {
-        // Desktop's sidebar menu closes before checkout opens.
-        await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
-      } else {
-        // Desktop's tab-bar menu stays open with progress on the clicked item.
-        const progress = within(clicked).getByRole('progressbar', { name: 'databaseViewCreation.openingCheckout' });
-
-        expect(progress).toBeTruthy();
-        expect(screen.getAllByRole('progressbar')).toHaveLength(1);
-        expect(within(clicked).queryByLabelText('Pro')).toBeNull();
-        expect(clicked.getAttribute('aria-busy')).toBe('true');
-        const other = item(layout === 'form' ? 'chart' : 'form');
-
-        expect(within(other).getByLabelText('Pro')).toBeTruthy();
-        expect(other.getAttribute('aria-disabled')).toBe('true');
-        fireEvent.click(other);
-        fireEvent.click(screen.getByText('grid.menuName'));
-        expect(mockCheckout).toHaveBeenCalledTimes(1);
-      }
-
-      await act(async () => resolveLink('https://checkout.example/pro'));
+      await waitFor(expectPlanComparison);
       await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
       expect(screen.queryByRole('progressbar')).toBeNull();
+      expect(mockCheckout).not.toHaveBeenCalled();
+      expect(openCheckout).not.toHaveBeenCalled();
       expect(mockAddPage).not.toHaveBeenCalled();
       expect(mockAddView).not.toHaveBeenCalled();
       if (surface === 'view') {
@@ -224,53 +214,24 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
   );
 
   if (surface === 'view') {
-    it('ends checkout progress after a failure and closes the menu', async () => {
-      mockWorkspaceId = 'view-checkout-failure';
-      mockRole = Role.Owner;
-      mockQuota.mockResolvedValue({ can_create_form: false, can_create_chart: true });
-      let rejectLink!: (error: Error) => void;
-
-      mockCheckout.mockReturnValue(
-        new Promise<string>((_, fail) => {
-          rejectLink = fail;
-        })
-      );
-      jest.spyOn(window, 'open').mockReturnValue(null);
-      openMenu();
-      await waitFor(() => expect(within(item('form')).getByLabelText('Pro')).toBeTruthy());
-      fireEvent.click(item('form'));
-      expect(within(item('form')).getByRole('progressbar')).toBeTruthy();
-      await act(async () => rejectLink(new Error('Billing unavailable')));
-      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
-      expect(screen.queryByRole('progressbar')).toBeNull();
-      expect(mockAddView).not.toHaveBeenCalled();
-    });
-
-    it('completes checkout safely after the add button unmounts', async () => {
-      mockWorkspaceId = 'view-checkout-unmount';
+    it('keeps plan comparison open when the add button unmounts before the handoff settles', async () => {
+      mockWorkspaceId = 'view-plan-comparison-unmount';
       mockRole = Role.Owner;
       mockQuota.mockResolvedValue({ can_create_form: false, can_create_chart: false });
-      let resolveLink!: (link: string) => void;
-
-      mockCheckout.mockReturnValue(
-        new Promise<string>((done) => {
-          resolveLink = done;
-        })
-      );
-      const popup = { location: { replace: jest.fn() }, closed: false, opener: window, close: jest.fn() };
-
-      jest.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+      const openCheckout = jest.spyOn(window, 'open').mockReturnValue(null);
       const errors = jest.spyOn(console, 'error');
       const menu = render(<CreationMenu surface={surface} />);
 
       fireEvent.keyDown(screen.getByTestId('add-view-button'), { key: 'ArrowDown' });
       await waitFor(() => expect(within(item('timeline')).getByLabelText('Pro')).toBeTruthy());
       fireEvent.click(item('timeline'));
-      expect(screen.getByRole('progressbar')).toBeTruthy();
-      menu.unmount();
-      await act(async () => resolveLink('https://checkout.example/pro'));
-      expect(popup.location.replace).toHaveBeenCalledWith('https://checkout.example/pro');
-      expect(mockCheckout).toHaveBeenCalledTimes(1);
+      menu.rerender(<CreationMenu surface={surface} showMenu={false} />);
+      await waitFor(expectPlanComparison);
+      expect(screen.queryByTestId('add-view-button')).toBeNull();
+      expect(screen.queryByRole('progressbar')).toBeNull();
+      expect(mockCheckout).not.toHaveBeenCalled();
+      expect(openCheckout).not.toHaveBeenCalled();
+      expect(mockAddView).not.toHaveBeenCalled();
       expect(errors).not.toHaveBeenCalled();
     });
   }
@@ -291,6 +252,7 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     fireEvent.click(layout === 'form' ? form : chart);
     await waitFor(() => expect(surface === 'page' ? mockAddPage : mockAddView).toHaveBeenCalledTimes(1));
     expect(mockCheckout).not.toHaveBeenCalled();
+    expect(screen.getByTestId('current-location').textContent).toBe(initialLocation);
   });
 
   function item(layout: 'form' | 'chart' | 'timeline') {
@@ -320,6 +282,7 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     }
 
     expect(mockCheckout).not.toHaveBeenCalled();
+    expect(screen.getByTestId('current-location').textContent).toBe(initialLocation);
     expect(mockAddPage).not.toHaveBeenCalled();
     expect(mockAddView).not.toHaveBeenCalled();
   });
