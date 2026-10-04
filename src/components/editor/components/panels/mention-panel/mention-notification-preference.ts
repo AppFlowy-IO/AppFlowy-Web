@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 
 const key = 'atMenuSendNotification';
 const changed = 'appflowy:mention-notification-preference';
 
+// The choice of this page while browser storage cannot be written (private
+// mode, blocked site data), so that flipping the switch still takes effect.
+let unsaved: boolean | undefined;
+
 export function getSendMentionNotification(): boolean {
+  if (unsaved !== undefined) return unsaved;
+
   try {
     return localStorage.getItem(key) === 'true';
   } catch {
@@ -14,32 +20,33 @@ export function getSendMentionNotification(): boolean {
 export function setSendMentionNotification(value: boolean) {
   try {
     localStorage.setItem(key, String(value));
+    unsaved = undefined;
   } catch {
-    /* Storage may be unavailable. */
+    unsaved = value;
   }
 
   window.dispatchEvent(new Event(changed));
 }
 
-/** Documents and cells share the same browser preference, off by default. */
-export function useSendMentionNotification(open: boolean): [boolean, (value: boolean) => void] {
-  const [value, setValue] = useState(getSendMentionNotification);
+function subscribe(onChange: () => void) {
+  // `storage` reports flips made in other tabs, `changed` those of this one.
+  window.addEventListener('storage', onChange);
+  window.addEventListener(changed, onChange);
+  return () => {
+    window.removeEventListener('storage', onChange);
+    window.removeEventListener(changed, onChange);
+  };
+}
 
-  useEffect(() => {
-    const refresh = () => setValue(getSendMentionNotification());
+function getServerSnapshot() {
+  return false;
+}
 
-    refresh();
-    window.addEventListener('storage', refresh);
-    window.addEventListener(changed, refresh);
-    return () => {
-      window.removeEventListener('storage', refresh);
-      window.removeEventListener(changed, refresh);
-    };
-  }, [open]);
-  const update = useCallback((next: boolean) => {
-    setSendMentionNotification(next);
-    setValue(next);
-  }, []);
-
-  return [value, update];
+/**
+ * Documents and cells share the same browser preference, off by default. It
+ * lives in the browser, not in React: every open menu reads it from there, so
+ * a flip in one menu or tab shows in all of them.
+ */
+export function useSendMentionNotification(): [boolean, (value: boolean) => void] {
+  return [useSyncExternalStore(subscribe, getSendMentionNotification, getServerSnapshot), setSendMentionNotification];
 }

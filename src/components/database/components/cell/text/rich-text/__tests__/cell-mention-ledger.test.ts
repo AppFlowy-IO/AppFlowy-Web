@@ -86,6 +86,69 @@ describe('confirmed cell mention notifications', () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it('sends to the recipients of one flush together, sorted, and caps them', async () => {
+    let resolveAll!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      resolveAll = resolve;
+    });
+    const slow = jest.fn(async (_id: string, _required: boolean) => {
+      await gate;
+      return true;
+    });
+    const people = Array.from({ length: 22 }, (_, index) => `person-${String(index).padStart(2, '0')}`);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    [...people].reverse().forEach((id) => ledger.pick(id, true));
+    ledger.beginSave();
+    ledger.saved(new Set(people), slow);
+    ledger.finishSave();
+    const flushed = ledger.flush();
+
+    await Promise.resolve();
+    await Promise.resolve();
+    // Every request of the flush is issued before any of them resolves.
+    expect(slow.mock.calls.map(([id]) => id)).toEqual(people.slice(0, 20));
+    expect(warn).toHaveBeenCalledTimes(1);
+    resolveAll();
+    await flushed;
+    expect(slow).toHaveBeenCalledTimes(20);
+    warn.mockRestore();
+  });
+
+  it('keeps a failed recipient unsent without holding back the others', async () => {
+    const flaky = jest.fn(async (id: string, _required: boolean) => {
+      if (id === 'Bob') throw new Error('offline');
+      return id !== 'Cy';
+    });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    ['Ada', 'Bob', 'Cy'].forEach((id) => ledger.pick(id, true));
+    ledger.beginSave();
+    ledger.saved(new Set(['Ada', 'Bob', 'Cy']), flaky);
+    ledger.finishSave();
+    await ledger.flush();
+    expect(flaky.mock.calls).toEqual([
+      ['Ada', true],
+      ['Bob', true],
+      ['Cy', true],
+    ]);
+    expect(error).toHaveBeenCalledTimes(1);
+
+    // Only the recipients whose send did not succeed are tried again.
+    flaky.mockClear();
+    save([]);
+    ['Ada', 'Bob', 'Cy'].forEach((id) => ledger.pick(id, true));
+    ledger.beginSave();
+    ledger.saved(new Set(['Ada', 'Bob', 'Cy']), flaky);
+    ledger.finishSave();
+    await ledger.flush();
+    expect(flaky.mock.calls).toEqual([
+      ['Bob', true],
+      ['Cy', true],
+    ]);
+    error.mockRestore();
+  });
+
   it('records the last picker preference and sends at most once at each strength', async () => {
     ledger.pick('Ada', false);
     save(['Ada']);

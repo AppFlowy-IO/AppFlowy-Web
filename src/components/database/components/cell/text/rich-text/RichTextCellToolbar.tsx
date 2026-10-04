@@ -16,7 +16,9 @@ import Underline from '@/components/editor/components/toolbar/selection-toolbar/
 import { SelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 
-export const RICH_TEXT_CELL_OVERLAY_ATTR = 'data-rich-text-cell-overlay';
+import { RICH_TEXT_CELL_OVERLAY_ATTR } from './editor-ui';
+
+export { RICH_TEXT_CELL_OVERLAY_ATTR } from './editor-ui';
 
 const TOOLBAR_GAP = 8;
 

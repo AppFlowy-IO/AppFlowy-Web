@@ -932,7 +932,7 @@ export function MentionPanel({
   );
 
   const notifyPersonMention = useNotifyPersonMention();
-  const [sendNotification, setSendNotification] = useSendMentionNotification(open);
+  const [sendNotification, setSendNotification] = useSendMentionNotification();
 
   const handleSelectedSearchResult = useCallback(
     (result: MentionPanelSearchResult) => {

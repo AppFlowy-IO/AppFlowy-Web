@@ -737,7 +737,9 @@ When(
     const button = page.getByTestId('rich-text-cell-toolbar').getByTestId(testId);
 
     await button.click();
-    const tiles = page.locator('[data-radix-popper-content-wrapper]').last().locator('div.h-7.w-7');
+    // Color tiles are buttons (they were plain elements before); match them by
+    // their size classes alone so the step does not depend on the tag.
+    const tiles = page.locator('[data-radix-popper-content-wrapper]').last().locator('.h-7.w-7');
 
     await expect(tiles.nth(index - 1)).toBeVisible({ timeout: 10000 });
     await tiles.nth(index - 1).click();

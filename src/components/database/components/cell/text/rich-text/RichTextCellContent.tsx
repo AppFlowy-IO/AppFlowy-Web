@@ -1,4 +1,4 @@
-import { ClipboardEvent, memo, ReactNode, Suspense, useMemo } from 'react';
+import { ClipboardEvent, memo, ReactNode, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import {
@@ -9,7 +9,7 @@ import {
 import { applyRegisteredMarks } from '@/components/editor/components/leaf/mark-style';
 import { openUrl } from '@/utils/url';
 
-import { RichTextCellDocument } from './load';
+import RichTextCellDocument from './RichTextCellDocument';
 
 /** Leaves that act on their own click (open a link or page). */
 const SELF_HANDLED_CLICK_SELECTOR = ['.href-link', '[data-mention-link]', '.mention-inline[data-mention-id]'].join(',');
@@ -83,8 +83,8 @@ function copyStaticRichText(event: ClipboardEvent<HTMLDivElement>, delta: RichTe
   });
 
   if (texts.length === 0) return;
-  // Match the document-compatible shape used by cell editors, without loading
-  // Slate or adding selection listeners to every static cell in a grid.
+  // Match the document-compatible shape used by cell editors, without a
+  // Slate editor (and its selection listeners) for every static cell in a grid.
   const fragment = [{ type: 'paragraph', data: {}, children: [{ type: 'text', children: texts }] }];
   const encoded = window.btoa(encodeURIComponent(JSON.stringify(fragment)));
   const html = document.createElement('span');
@@ -101,9 +101,7 @@ function copyStaticRichText(event: ClipboardEvent<HTMLDivElement>, delta: RichTe
 /**
  * Most formatted cells (bold, links, colors, ...) render as plain elements:
  * a grid, list or gallery can show hundreds of them, and a Slate editor per
- * cell costs listeners and work on every selection change of the page. They
- * also need no code beyond this module, so they show at once instead of
- * waiting for the chip renderers to load.
+ * cell costs listeners and work on every selection change of the page.
  */
 function StaticRichText({ delta, wrap }: { delta: RichTextDelta; wrap?: boolean }) {
   return (
@@ -117,9 +115,10 @@ function StaticRichText({ delta, wrap }: { delta: RichTextDelta; wrap?: boolean 
  * Read-only rendering of a formatted Text cell (grid, cards, list, gallery,
  * row detail, publish). Links open in a new tab and page mentions navigate,
  * without putting the cell into edit mode. Mentions and equations are drawn
- * by the document's leaf renderers, which load on first use; until they have,
- * and for content that cannot be rendered (or renderers that cannot be
- * loaded), the cell shows its plain `text`.
+ * by the document's leaf renderers in a read-only Slate document
+ * (RichTextCellDocument). It ships with the cell editor, whose code every
+ * database view already loads, so chips paint on the first render. Content
+ * that cannot be rendered shows the cell's plain `text` instead.
  */
 function RichTextCellContent({
   rowId,
@@ -151,9 +150,7 @@ function RichTextCellContent({
     >
       <ErrorBoundary fallback={plainText} resetKeys={[key]}>
         {chips ? (
-          <Suspense fallback={plainText}>
-            <RichTextCellDocument key={key} rowId={rowId} delta={delta} lineClassName={lineClassName(wrap)} />
-          </Suspense>
+          <RichTextCellDocument key={key} rowId={rowId} delta={delta} lineClassName={lineClassName(wrap)} />
         ) : (
           <StaticRichText delta={delta} wrap={wrap} />
         )}

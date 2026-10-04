@@ -1,8 +1,12 @@
+import EventEmitter from 'events';
+
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { createEditor, Descendant, Editor, Element, Node, Range, Transforms } from 'slate';
 import { withHistory } from 'slate-history';
 import { Editable, ReactEditor, RenderElementProps, Slate, withReact } from 'slate-react';
 
+import { APP_EVENTS } from '@/application/constants';
+import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
 import { withYjs, YjsEditor } from '@/application/slate-yjs';
 import { withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYjsEditor';
 import { slateContentInsertToYData, yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
@@ -13,6 +17,7 @@ import { clipboardFormatKey, withCopy } from '@/components/editor/plugins/withCo
 import { withInsertData } from '@/components/editor/plugins/withInsertData';
 import { withPasted } from '@/components/editor/plugins/withPasted';
 
+import { clearPageNameCache } from '../page-name-cache';
 import { richTextToSlateValue, slateValueToRichText, withRichTextCell, withRichTextCellCopy } from '../rich-text-slate';
 import * as richTextSlate from '../rich-text-slate';
 import RichTextCellDocument from '../RichTextCellDocument';
@@ -126,7 +131,59 @@ async function pasteIntoDocument(clipboard: DataTransfer) {
 }
 
 describe('copying from a Text cell into a document', () => {
+  it('copies the displayed page title and later renames from a read-only cell', async () => {
+    let editor!: ReactEditor;
+    const copy = richTextSlate.withRichTextCellCopy;
+
+    jest.spyOn(richTextSlate, 'withRichTextCellCopy').mockImplementation((value, plainTextOf) => {
+      editor = value;
+      return copy(value, plainTextOf);
+    });
+    const eventEmitter = new EventEmitter();
+    const context = {
+      eventEmitter,
+      workspaceId: 'workspace',
+      activeViewId: 'database',
+      loadViewMeta: jest.fn(async () => ({ view_id: 'saved-page', name: 'Live roadmap', layout: 0 })),
+    } as unknown as DatabaseContextState;
+    const { container } = render(
+      <DatabaseContext.Provider value={context}>
+        <RichTextCellDocument
+          rowId='row'
+          lineClassName=''
+          delta={[
+            { insert: 'See ' },
+            {
+              insert: '@',
+              attributes: { mention: { type: MentionType.PageRef, page_id: 'saved-page', label: 'Saved roadmap' } },
+            },
+          ]}
+        />
+      </DatabaseContext.Provider>
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(container.querySelector('.mention-content')?.textContent).toBe('Live roadmap');
+    const editable = container.querySelector('[data-slate-editor]')!;
+
+    Object.defineProperty(editable, 'isContentEditable', { value: true });
+    await act(async () => Transforms.select(editor, Editor.range(editor, [])));
+    const clipboard = clipboardData();
+
+    await act(async () => fireEvent.copy(editable, { clipboardData: clipboard }));
+    expect(clipboard.getData('text/plain')).toBe('See Live roadmap');
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'saved-page', name: 'Renamed roadmap', layout: 0 });
+    });
+    expect(container.querySelector('.mention-content')?.textContent).toBe('Renamed roadmap');
+    await act(async () => fireEvent.copy(editable, { clipboardData: clipboard }));
+    expect(clipboard.getData('text/plain')).toBe('See Renamed roadmap');
+    expect(context.loadViewMeta).toHaveBeenCalledTimes(1);
+  });
   beforeEach(() => {
+    clearPageNameCache();
     jest.spyOn(console, 'debug').mockImplementation(() => undefined);
     jest.spyOn(console, 'time').mockImplementation(() => undefined);
     jest.spyOn(console, 'timeEnd').mockImplementation(() => undefined);

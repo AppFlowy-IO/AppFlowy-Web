@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { useTranslation } from 'react-i18next';
 
@@ -6,8 +6,6 @@ import { FieldType } from '@/application/database-yjs';
 import { Cell, CellProps, TextCell as TextCellType } from '@/application/database-yjs/cell.type';
 import { useDatabaseContextOptional } from '@/application/database-yjs/context';
 import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
-import { useFieldSelector } from '@/application/database-yjs/selector';
-import { YjsDatabaseKey } from '@/application/types';
 import { usePlainTextCellEditing } from '@/components/database/components/cell/text/PlainTextCellEditing';
 import { RichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
 import RichTextCellContent from '@/components/database/components/cell/text/rich-text/RichTextCellContent';
@@ -27,12 +25,15 @@ export function TextCell({
   setEditing,
   wrap,
   isHovering,
+  fieldType,
+  fieldName,
 }: CellProps<Cell>) {
   const ref = useRef<HTMLDivElement>(null);
-  const { field } = useFieldSelector(fieldId);
-  const templateEditingRowId = useDatabaseContextOptional()?.templateEditingRowId;
-  // The field decides, not the cell: an empty URL cell has no cell yet.
-  const fieldType = field ? (Number(field.get(YjsDatabaseKey.type)) as FieldType) : undefined;
+  const databaseContext = useDatabaseContextOptional();
+  const templateEditingRowId = databaseContext?.templateEditingRowId;
+  // The field decides, not the cell: an empty URL cell has no cell yet. Its
+  // live type comes from the renderer that picked this component, which
+  // already observes the field (see CellProps).
   const cellType = fieldType ?? cell?.fieldType ?? FieldType.RichText;
   // Text fields, including the primary (title) field, are rich; URL cells
   // share this component but stay plain. So does a row template's source
@@ -138,21 +139,20 @@ export function TextCell({
             ) : null}
           </>
         ) : isRichText && !editsAsPlainText ? (
-          // The cell still edits, as plain text, when the rich editor cannot
-          // be loaded (see rich-text/load.ts).
-          <ErrorBoundary fallback={plainTextEditor}>
-            <Suspense fallback={value}>
-              <RichTextCellEditor
-                value={value}
-                richText={richText}
-                placeholder={placeholder}
-                // The property's name, or the hint where there is none to show.
-                ariaLabel={(field?.get(YjsDatabaseKey.name) as string | undefined) || placeholder}
-                fieldId={fieldId}
-                rowId={rowId}
-                onExit={exitEditing}
-              />
-            </Suspense>
+          <ErrorBoundary
+            key={JSON.stringify([databaseContext?.workspaceId, rowId, fieldId])}
+            fallback={plainTextEditor}
+          >
+            <RichTextCellEditor
+              value={value}
+              richText={richText}
+              placeholder={placeholder}
+              // The property's name, or the hint where there is none to show.
+              ariaLabel={fieldName || placeholder}
+              fieldId={fieldId}
+              rowId={rowId}
+              onExit={exitEditing}
+            />
           </ErrorBoundary>
         ) : (
           plainTextEditor

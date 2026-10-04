@@ -19,7 +19,8 @@ export function DatabaseRow({ appendBreadcrumb, rowId }: { rowId: string; append
   const readOnly = useReadOnly();
 
   useDatabaseRowHistoryHotkeys(rowId, { enabled: !readOnly });
-  // The title and Text properties edit with it.
+  // The title and Text properties are editable at once; this warms their
+  // menus (toolbar, mentions, links).
   usePreloadRichTextCellEditor(!readOnly);
 
   return (

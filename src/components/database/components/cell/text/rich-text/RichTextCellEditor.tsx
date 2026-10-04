@@ -41,10 +41,7 @@ import {
 import { notify } from '@/components/_shared/notify';
 import { findView } from '@/components/_shared/outline/utils';
 import { isDatabaseHistoryHotkey } from '@/components/database/hooks/useDatabaseRowHistoryHotkeys';
-import HrefPopover from '@/components/editor/components/leaf/href/HrefPopover';
 import { Leaf } from '@/components/editor/components/leaf/Leaf';
-import { useLeafContext } from '@/components/editor/components/leaf/leaf.hooks';
-import { MentionPanel } from '@/components/editor/components/panels/mention-panel/MentionPanel';
 import { useNotifyPersonMention } from '@/components/editor/components/panels/mention-panel/useNotifyPersonMention';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelProvider, PanelType } from '@/components/editor/components/panels/PanelsContext';
@@ -53,11 +50,11 @@ import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { Log } from '@/utils/log';
 import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 
-import { getCachedPageName, isPageNameUnavailable, loadPageNames, setCachedPageName } from './page-name-cache';
 import { attachCellMentionLedger, CellMentionLedger } from './cell-mention-ledger';
+import { RICH_TEXT_CELL_OVERLAY_ATTR, RichTextCellEditorControls } from './editor-ui';
+import { getCachedPageName, isPageNameLoading, isPageNameUnavailable, loadPageNames, setCachedPageName } from './page-name-cache';
 import { richTextToSlateValue, slateValueToRichText, toggleEquation, withRichTextCell } from './rich-text-slate';
 import RichTextCellContext from './RichTextCellContext';
-import { RICH_TEXT_CELL_OVERLAY_ATTR, RichTextCellToolbar } from './RichTextCellToolbar';
 
 const isEnterHotkey = createHotkey(HOT_KEY_NAME.ENTER);
 const isRedoHotkey = createHotkey(HOT_KEY_NAME.REDO);
@@ -257,7 +254,6 @@ function RichTextCellEditorInner({
   const dirtyRef = useRef(false);
   const exitedRef = useRef(false);
   const sessionRef = useRef<symbol>();
-  const { linkOpen, closeLinkPopover } = useLeafContext();
   const titleUndoGroupRef = useRef<{ group: object; timer?: number } | null>(null);
   // Values this editor saved that may not have come back yet: their echo is
   // not an external change, even when a newer save already went out.
@@ -508,9 +504,10 @@ function RichTextCellEditorInner({
 
       const unresolved = getMentionedPageIds(delta).filter(
         (id) =>
-          getCachedPageName(workspaceId, id) === undefined &&
-          !hasStoredPageTitle(delta, id) &&
-          !isPageNameUnavailable(workspaceId, id)
+          isPageNameLoading(workspaceId, id) ||
+          (getCachedPageName(workspaceId, id) === undefined &&
+            !hasStoredPageTitle(delta, id) &&
+            !isPageNameUnavailable(workspaceId, id))
       );
 
       const token = Symbol();
@@ -650,8 +647,9 @@ function RichTextCellEditorInner({
   }, [isTitle]);
 
   useEffect(() => {
-    // The title loads lazily and must not pull focus from an editor the user
-    // already moved to (e.g. the row document below it).
+    // A title can mount after the rest of its row page, and must not pull
+    // focus from an editor the user already moved to (e.g. the row document
+    // below it).
     if (isTitle && isEditableElement(document.activeElement)) return;
     ReactEditor.focus(editor);
     Transforms.select(editor, Editor.end(editor, []));
@@ -866,15 +864,12 @@ function RichTextCellEditorInner({
           else exit();
         }}
       />
-      <RichTextCellToolbar />
-      <MentionPanel notifyOnInsert={false} onPersonPicked={onPersonPicked} />
-      {/* The link hover card's "Edit" opens this, as in the document editor. */}
-      <HrefPopover open={!!linkOpen} onClose={() => closeLinkPopover?.()} />
+      <RichTextCellEditorControls onPersonPicked={onPersonPicked} />
     </div>
   );
 }
 
-function RichTextCellEditor(props: RichTextCellEditorProps) {
+function RichTextCellEditorSession(props: RichTextCellEditorProps) {
   const plainTextRef = useRef<(delta: RichTextDelta) => string>(richTextToPlainText);
   const [editor] = useState(() => createCellEditor(props.variant === 'title', (delta) => plainTextRef.current(delta)));
   const changeRef = useRef<() => void>();
@@ -908,6 +903,12 @@ function RichTextCellEditor(props: RichTextCellEditorProps) {
       </RichTextCellContext>
     </ErrorBoundary>
   );
+}
+
+function RichTextCellEditor(props: RichTextCellEditorProps) {
+  const workspaceId = useDatabaseContextOptional()?.workspaceId ?? '';
+
+  return <RichTextCellEditorSession key={JSON.stringify([workspaceId, props.rowId, props.fieldId])} {...props} />;
 }
 
 export default memo(RichTextCellEditor);

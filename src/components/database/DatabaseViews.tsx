@@ -99,7 +99,8 @@ function DatabaseViews({
   const { isDocumentBlock, variant, dataSource, readOnly } = useDatabaseContext();
   const persistViewOrder = dataSource?.type !== 'history';
 
-  // The first Text cell edit (or a new card's name) must not wait for it.
+  // Text cells are editable at once; this warms their menus (toolbar,
+  // mentions, links) so the first edit does not wait for them either.
   usePreloadRichTextCellEditor(!readOnly);
 
   const database = useDatabase();

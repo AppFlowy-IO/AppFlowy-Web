@@ -21,10 +21,13 @@ jest.mock('@/components/_shared/cutsom-icon', () => ({
   CustomIconPopover: ({ children }: { children: ReactNode }) => children,
 }));
 jest.mock('@/components/view-meta/AddIconCover', () => ({ __esModule: true, default: () => null }));
-// The editor loads on first use; rendering it throws when it could not be
-// loaded (see rich-text/__tests__/load-failure.test.tsx).
+jest.mock('@/components/database/components/cell/text/rich-text/RichTextCellDocument', () => ({
+  __esModule: true,
+  default: () => null,
+}));
+// A stand-in for the editor that can also fail to render: the title then
+// falls back to its plain-text editor.
 jest.mock('@/components/database/components/cell/text/rich-text/load', () => ({
-  RichTextCellDocument: () => null,
   RichTextCellEditor: ({ value }: { value: string }) => {
     if (mockEditorUnavailable) throw new Error('Failed to fetch dynamically imported module');
     // Like Slate's initialValue, an uncontrolled input owns its draft for

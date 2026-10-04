@@ -173,4 +173,12 @@ export interface CellProps<T extends Cell> {
   onCellUpdated?: (cell: Cell) => void;
   onTextChange?: (text: string) => void;
   isCardCell?: boolean;
+  /**
+   * The field's live type and name, from the renderer that picked the cell
+   * component (`Cell`, `Property`): it already reads the field, so a cell
+   * that needs only these takes them from here rather than observing the
+   * field once more.
+   */
+  fieldType?: FieldType;
+  fieldName?: string;
 }

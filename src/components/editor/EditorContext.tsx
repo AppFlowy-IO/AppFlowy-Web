@@ -88,6 +88,8 @@ export interface EditorContextState {
   addCodeGrammars?: (blockId: string, grammar: string) => void;
   navigateToView?: (viewId: string, blockOrRowId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
+  /** Reports accepted page-mention metadata to hosts that serialize its label. */
+  onPageMentionNameResolved?: (pageId: string, name: string | undefined) => void;
   loadView?: LoadView;
   loadRowDocument?: LoadRowDocument;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
@@ -150,6 +152,7 @@ export const EditorContextProvider = ({
   addCodeGrammars,
   navigateToView,
   loadViewMeta,
+  onPageMentionNameResolved,
   loadView,
   loadRowDocument,
   checkIfRowDocumentExists,
@@ -248,6 +251,7 @@ export const EditorContextProvider = ({
       addCodeGrammars,
       navigateToView,
       loadViewMeta,
+      onPageMentionNameResolved,
       loadView,
       loadRowDocument,
       checkIfRowDocumentExists,
@@ -303,6 +307,7 @@ export const EditorContextProvider = ({
       addCodeGrammars,
       navigateToView,
       loadViewMeta,
+      onPageMentionNameResolved,
       loadView,
       loadRowDocument,
       checkIfRowDocumentExists,

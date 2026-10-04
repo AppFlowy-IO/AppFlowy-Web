@@ -97,16 +97,37 @@ it.each([false, true])('reports a failed send only when notifications were enabl
 });
 
 it('keeps open menus in step with browser preference changes', () => {
-  const { result } = renderHook(() => useSendMentionNotification(true));
+  const { result } = renderHook(() => useSendMentionNotification());
+  const other = renderHook(() => useSendMentionNotification());
 
   expect(result.current[0]).toBe(false);
   act(() => result.current[1](true));
   expect(getSendMentionNotification()).toBe(true);
+  // Every open menu of this tab follows a flip made in one of them.
+  expect(result.current[0]).toBe(true);
+  expect(other.result.current[0]).toBe(true);
   act(() => {
     localStorage.setItem('atMenuSendNotification', 'false');
     window.dispatchEvent(new StorageEvent('storage', { key: 'atMenuSendNotification' }));
   });
   expect(result.current[0]).toBe(false);
+  expect(other.result.current[0]).toBe(false);
+});
+
+it('still applies a flip to this page while browser storage cannot be written', () => {
+  const { result } = renderHook(() => useSendMentionNotification());
+  const blocked = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new Error('blocked');
+  });
+
+  act(() => result.current[1](true));
+  expect(result.current[0]).toBe(true);
+  expect(getSendMentionNotification()).toBe(true);
+  blocked.mockRestore();
+  // A later flip that can be saved makes storage the source again.
+  act(() => result.current[1](false));
+  expect(result.current[0]).toBe(false);
+  expect(localStorage.getItem('atMenuSendNotification')).toBe('false');
 });
 
 it('defaults to no notification when browser storage is unavailable', () => {

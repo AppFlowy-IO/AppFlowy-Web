@@ -12,7 +12,11 @@ jest.mock('@/components/editor/components/leaf/reference/InlineReference', () =>
 jest.mock('@/components/inline-comment/InlineCommentContext', () => ({
   useInlineCommentLeafContextOptional: () => null,
 }));
-jest.mock('@/components/database/components/cell/text/rich-text/load', () => ({ RichTextCellDocument: () => null }));
+// Only static runs are drawn here; the chip renderer brings an editor with it.
+jest.mock('@/components/database/components/cell/text/rich-text/RichTextCellDocument', () => ({
+  __esModule: true,
+  default: () => null,
+}));
 
 const FLAGS = ['bold', 'italic', 'underline', 'strikethrough', 'code'] as const;
 const COLORS: Record<string, string>[] = [

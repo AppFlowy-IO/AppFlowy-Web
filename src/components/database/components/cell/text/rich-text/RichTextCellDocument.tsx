@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createEditor } from 'slate';
 import { Editable, RenderElementProps, Slate, withReact } from 'slate-react';
@@ -31,9 +31,16 @@ export interface RichTextCellDocumentProps {
 function RichTextCellDocument({ rowId, delta, lineClassName }: RichTextCellDocumentProps) {
   const { t } = useTranslation();
   const workspaceId = useDatabaseContextOptional()?.workspaceId ?? '';
+  const copyContextRef = useRef({ workspaceId, delta, t });
+
+  copyContextRef.current = { workspaceId, delta, t };
   const [editor] = useState(() =>
-    withRichTextCellCopy(withReact(createEditor()), (selected) =>
-      richTextToPlainText(selected, (id) => {
+    withRichTextCellCopy(withReact(createEditor()), (selected) => {
+      const { workspaceId, delta, t } = copyContextRef.current;
+
+      return richTextToPlainText(selected, (id) => {
+        // RichTextCellContext records the same accepted metadata the page
+        // chips render, including renames while this read-only cell is open.
         const name = getCachedPageName(workspaceId, id);
 
         if (name || hasStoredPageTitle(selected, id)) return name;
@@ -44,8 +51,8 @@ function RichTextCellDocument({ rowId, delta, lineClassName }: RichTextCellDocum
           .find((mention) => mention?.page_id === id && !mention.row_id && !mention.database_row_id);
 
         return mention?.label || t('menuAppHeader.defaultNewPageName');
-      })
-    )
+      });
+    })
   );
   const initialValue = useMemo(() => richTextToSlateValue(delta), [delta]);
 

@@ -104,23 +104,27 @@ export class CellMentionLedger {
     const sending = this.sending
       .then(async () => {
         if (!send) return;
-        let count = 0;
-
-        for (const [id, required] of recipients) {
+        const due = recipients.filter(([id, required]) => {
           const sent = this.sent.get(id);
 
-          if (sent === true || sent === required) continue;
-          if (count++ === MAX_NOTIFICATIONS_PER_FLUSH) {
-            Log.warn('[CellMentionLedger] too many notifications; remaining recipients dropped');
-            break;
-          }
+          return sent !== true && sent !== required;
+        });
 
-          try {
-            if (await send(id, required)) this.sent.set(id, required);
-          } catch (error) {
-            Log.error('[CellMentionLedger] failed to notify a saved mention', error);
-          }
+        if (due.length > MAX_NOTIFICATIONS_PER_FLUSH) {
+          Log.warn('[CellMentionLedger] too many notifications; remaining recipients dropped');
         }
+
+        // The recipients are independent of each other: their requests go out
+        // together, in sorted order, rather than one round trip after another.
+        await Promise.all(
+          due.slice(0, MAX_NOTIFICATIONS_PER_FLUSH).map(async ([id, required]) => {
+            try {
+              if (await send(id, required)) this.sent.set(id, required);
+            } catch (error) {
+              Log.error('[CellMentionLedger] failed to notify a saved mention', error);
+            }
+          })
+        );
       })
       .finally(() => {
         if (this.sending === sending && this.owners === 0 && this.inFlight === 0) this.onUnused();

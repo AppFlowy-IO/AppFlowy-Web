@@ -26,6 +26,11 @@ export function getCachedPageName(workspaceId: string, pageId: string) {
   return names.get(cacheKey(workspaceId, pageId));
 }
 
+/** A save must join refreshes even when an older cached or stored title exists. */
+export function isPageNameLoading(workspaceId: string, pageId: string) {
+  return pending.has(cacheKey(workspaceId, pageId));
+}
+
 /** Whether the page could not be named recently; saves then use the stored title. */
 export function isPageNameUnavailable(workspaceId: string, pageId: string) {
   const at = retryAt.get(cacheKey(workspaceId, pageId));
@@ -36,6 +41,11 @@ export function isPageNameUnavailable(workspaceId: string, pageId: string) {
 /** Records a page's current name; an empty or missing one counts as unavailable. */
 export function setCachedPageName(workspaceId: string, pageId: string, name: string | null | undefined) {
   const key = cacheKey(workspaceId, pageId);
+
+  // Accepted metadata (including rename events) supersedes any older lookup.
+  // The request's identity check also prevents its cleanup from removing a
+  // replacement lookup started after this update.
+  pending.delete(key);
 
   if (name) {
     names.set(key, name);
@@ -63,19 +73,24 @@ export function loadPageNames(
     pageIds.map((pageId) => {
       const key = cacheKey(workspaceId, pageId);
 
-      if (isPageNameUnavailable(workspaceId, pageId)) return undefined;
-      if (!refresh && names.has(key)) return undefined;
-
       const running = pending.get(key);
 
       if (running) return running;
+      if (isPageNameUnavailable(workspaceId, pageId)) return undefined;
+      if (!refresh && names.has(key)) return undefined;
+
+      const remember = (name: string | null | undefined) => {
+        if (pending.get(key) === request) setCachedPageName(workspaceId, pageId, name);
+      };
 
       const request = loadViewMeta(pageId)
         .then(
-          (view) => setCachedPageName(workspaceId, pageId, view?.name),
-          () => setCachedPageName(workspaceId, pageId, undefined)
+          (view) => remember(view?.name),
+          () => remember(undefined)
         )
-        .finally(() => pending.delete(key));
+        .finally(() => {
+          if (pending.get(key) === request) pending.delete(key);
+        });
 
       pending.set(key, request);
       return request;

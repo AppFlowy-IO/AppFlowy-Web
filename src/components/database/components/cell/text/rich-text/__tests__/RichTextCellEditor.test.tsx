@@ -15,11 +15,13 @@ import {
 import { MentionType, View, YDatabaseCell, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import * as selectionToolbarUtils from '@/components/editor/components/toolbar/selection-toolbar/utils';
 
-import { clearPageNameCache } from '../page-name-cache';
+import { clearPageNameCache, setCachedPageName } from '../page-name-cache';
 import { richTextToSlateValue, slateValueToRichText } from '../rich-text-slate';
 import RichTextCellEditor, { RichTextCellEditorProps } from '../RichTextCellEditor';
 
 const mockUpdateCell = jest.fn();
+const mockWriteTargets = jest.fn();
+const mockDispatchers = new Map<string, (...args: unknown[]) => unknown>();
 const mockNotifyError = jest.fn();
 const mockNotifyPerson = jest.fn();
 const mockEditors: ReactEditor[] = [];
@@ -30,7 +32,21 @@ let fields: Y.Map<Y.Map<unknown>>;
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => (key === 'menuAppHeader.defaultNewPageName' ? 'Untitled' : key) }),
 }));
-jest.mock('@/application/database-yjs/dispatch', () => ({ useUpdateCellDispatch: () => mockUpdateCell }));
+jest.mock('@/application/database-yjs/dispatch', () => ({
+  useUpdateCellDispatch: (rowId: string, fieldId: string) => {
+    const workspaceId = mockContext.workspaceId;
+    const key = JSON.stringify([workspaceId, rowId, fieldId]);
+
+    if (!mockDispatchers.has(key)) {
+      mockDispatchers.set(key, (...args: unknown[]) => {
+        mockWriteTargets({ workspaceId, rowId, fieldId, text: args[0] });
+        return mockUpdateCell(...args);
+      });
+    }
+
+    return mockDispatchers.get(key);
+  },
+}));
 jest.mock('@/application/database-yjs/context', () => ({ useDatabaseContextOptional: () => mockContext }));
 jest.mock('@/components/_shared/notify', () => ({
   notify: { error: (...args: unknown[]) => mockNotifyError(...args) },
@@ -141,6 +157,8 @@ describe('RichTextCellEditor', () => {
   beforeEach(() => {
     mockUpdateCell.mockReset();
     mockUpdateCell.mockResolvedValue('written');
+    mockWriteTargets.mockReset();
+    mockDispatchers.clear();
     mockNotifyPerson.mockReset();
     mockNotifyPerson.mockResolvedValue(true);
     mockNotifyError.mockReset();
@@ -160,6 +178,33 @@ describe('RichTextCellEditor', () => {
     }
 
     mockContext = { workspaceId: 'ws', eventEmitter: new EventEmitter(), databaseDoc };
+  });
+
+  it.each(['row', 'field', 'workspace'])('keeps a dirty draft with its original cell when the %s changes', async (identity) => {
+    const first = await renderEditor();
+
+    await typeAtEnd(first.editor, ' draft');
+    if (identity === 'workspace') mockContext = { ...mockContext, workspaceId: 'ws-2' };
+    const rowId = identity === 'row' ? 'row-2' : 'row-1';
+    const fieldId = identity === 'field' ? 'field-2' : 'field-1';
+
+    first.rerenderWith({ rowId, fieldId, value: 'Second cell' });
+    await flush();
+    expect(mockWriteTargets.mock.calls).toEqual([[{
+      workspaceId: 'ws', rowId: 'row-1', fieldId: 'field-1', text: 'Hello draft',
+    }]]);
+    const editor = mockEditors[mockEditors.length - 1];
+    const editable = screen.getByTestId('rich-text-cell-editor');
+
+    Object.defineProperty(editable, 'isContentEditable', { value: true });
+    expect(editor).not.toBe(first.editor);
+    expect(Editor.string(editor, [])).toBe('Second cell');
+    expect(first.editable.isConnected).toBe(false);
+    await typeAtEnd(editor, '!');
+    await pressEnter(editable);
+    expect(mockWriteTargets).toHaveBeenLastCalledWith({
+      workspaceId: identity === 'workspace' ? 'ws-2' : 'ws', rowId, fieldId, text: 'Second cell!',
+    });
   });
 
   afterEach(() => {
@@ -521,6 +566,45 @@ describe('RichTextCellEditor', () => {
   });
 
   describe('page names', () => {
+    it('keeps a rename newer than an in-flight page-name response', async () => {
+      const name = deferredView();
+
+      mockContext.loadViewMeta = jest.fn(() => name.promise);
+      const { editor, editable } = await renderEditor({
+        value: 'See Old',
+        richText: [{ insert: 'See ' }, pageMention('race-page')],
+      });
+
+      act(() => {
+        (mockContext.eventEmitter as EventEmitter).emit(APP_EVENTS.VIEW_META_CHANGED, view('race-page', 'Renamed'));
+      });
+      await act(async () => name.resolve(view('race-page', 'Old')));
+      await typeAtEnd(editor, '!');
+      await pressEnter(editable);
+      expect(savedTexts()).toEqual(['See Renamed!']);
+    });
+    it.each([undefined, 'Old'])(
+      'waits for a cached name refresh with stored title %j',
+      async (storedTitle) => {
+        setCachedPageName('ws', 'stale-page', 'Old');
+        const name = deferredView();
+
+        mockContext.loadViewMeta = jest.fn(() => name.promise);
+        const { editor, editable, onExit } = await renderEditor({
+          value: 'See Old',
+          richText: [{ insert: 'See ' }, pageMention('stale-page', storedTitle)],
+        });
+
+        await typeAtEnd(editor, '!');
+        await pressEnter(editable);
+        expect(mockUpdateCell).not.toHaveBeenCalled();
+        expect(onExit).not.toHaveBeenCalled();
+        await act(async () => name.resolve(view('stale-page', 'Renamed')));
+        expect(savedTexts()).toEqual(['See Renamed!']);
+        expect(onExit).toHaveBeenCalledTimes(1);
+      }
+    );
+
     it('copies a resolved page name even when the mention has no stored title', async () => {
       mockContext.loadViewMeta = jest.fn(async (id: string) => view(id, 'Roadmap'));
       const { editor, editable } = await renderEditor({

@@ -8,17 +8,25 @@ import RichTextCellContent from '../RichTextCellContent';
 import { richTextToSlateValue, slateValueToRichText, withRichTextCell } from '../rich-text-slate';
 
 const mockOpenUrl = jest.fn();
-const mockDocumentLoaded = jest.fn();
+const mockDocumentMounted = jest.fn();
 
 jest.mock('@/utils/url', () => ({
   ...jest.requireActual('@/utils/url'),
   openUrl: (...args: unknown[]) => mockOpenUrl(...args),
 }));
 jest.mock('@/application/database-yjs/context', () => ({ useDatabaseContextOptional: () => ({}) }));
-// The renderer of mentions and equations (a Slate editor) loads on first use.
+// Mentions and equations render in a read-only Slate document; cells without
+// them never mount one.
 jest.mock('../RichTextCellDocument', () => {
-  mockDocumentLoaded();
-  return jest.requireActual('../RichTextCellDocument');
+  const Document = jest.requireActual('../RichTextCellDocument').default;
+
+  return {
+    __esModule: true,
+    default: (props: Record<string, unknown>) => {
+      mockDocumentMounted();
+      return <Document {...props} />;
+    },
+  };
 });
 // Chips render through the document's leaves; "boom" stands in for content
 // a renderer chokes on.
@@ -66,6 +74,7 @@ describe('RichTextCellContent', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     mockOpenUrl.mockReset();
+    mockDocumentMounted.mockReset();
     document.getSelection()?.removeAllRanges();
   });
 
@@ -80,15 +89,14 @@ describe('RichTextCellContent', () => {
     return () => addListener.mock.calls.filter(([type]) => type === 'selectionchange').length;
   }
 
-  it('draws formatting the way document leaves do, without an editor per cell or its code', () => {
+  it('draws formatting the way document leaves do, without an editor per cell', () => {
     const listeners = selectionListeners();
     const { container } = render(<RichTextCellContent rowId='row-1' delta={formatted} text='Bold red code link' />);
 
     // Each editor would track every selection change of the page.
     expect(listeners()).toBe(0);
     expect(container.querySelector('[data-slate-editor]')).toBeNull();
-    // Nothing was loaded for it: such a cell shows at once.
-    expect(mockDocumentLoaded).not.toHaveBeenCalled();
+    expect(mockDocumentMounted).not.toHaveBeenCalled();
 
     expect(container.querySelector('strong em')?.textContent).toBe('Bold');
 
@@ -193,7 +201,7 @@ describe('RichTextCellContent', () => {
     expect(clipboard.getData('application/x-slate-fragment')).toBe('');
   });
 
-  it('keeps the document renderers (in a read-only editor) for mentions and equations', async () => {
+  it('keeps the document renderers (in a read-only editor) for mentions and equations', () => {
     const listeners = selectionListeners();
     const { container } = render(
       <RichTextCellContent
@@ -204,12 +212,10 @@ describe('RichTextCellContent', () => {
       />
     );
 
-    // The cell reads as its plain text until the renderers have loaded.
-    expect(screen.getByTestId('rich-text-cell-content').textContent).toBe('Area a^2');
-    expect(container.querySelector('[data-slate-editor]')).toBeNull();
-
-    await waitFor(() => expect(container.querySelector('[data-slate-editor]')).not.toBeNull());
-    expect(mockDocumentLoaded).toHaveBeenCalledTimes(1);
+    // The chips paint with the first render: the renderers ship with the
+    // cell, so no plain-text frame comes before them.
+    expect(container.querySelector('[data-slate-editor]')).not.toBeNull();
+    expect(mockDocumentMounted).toHaveBeenCalled();
     expect(listeners()).toBe(1);
     expect(container.querySelector('.formula-inline')).not.toBeNull();
     expect(container.querySelector('[data-rich-text-cell-line]')?.className).toContain('whitespace-pre-wrap');

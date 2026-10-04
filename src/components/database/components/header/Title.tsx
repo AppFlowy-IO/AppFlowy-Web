@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { useTranslation } from 'react-i18next';
 
@@ -209,25 +209,22 @@ export function Title({
                 ) : null}
               </>
             ) : (
-              // The title still edits, as plain text, when the rich editor
-              // cannot be loaded (see rich-text/load.ts). That editor may
-              // appear late, so it does not take the focus.
-              <ErrorBoundary fallback={renderPlainTextEditor({ ariaLabel: 'Row title', autoFocus: false })}>
-                <Suspense fallback={<div className={titleClassName}>{value}</div>}>
-                  <RichTextCellEditor
-                    key={JSON.stringify([workspaceId, rowId, fieldId])}
-                    variant={'title'}
-                    testId={'row-title-input'}
-                    ariaLabel={templateStyle ? 'Template name' : 'Row title'}
-                    rowId={rowId}
-                    fieldId={fieldId}
-                    value={value}
-                    richText={richText}
-                    placeholder={'Untitled'}
-                    className={titleClassName}
-                    onSaved={onEdited}
-                  />
-                </Suspense>
+              <ErrorBoundary
+                key={JSON.stringify([workspaceId, rowId, fieldId])}
+                fallback={renderPlainTextEditor({ ariaLabel: 'Row title', autoFocus: false })}
+              >
+                <RichTextCellEditor
+                  variant={'title'}
+                  testId={'row-title-input'}
+                  ariaLabel={templateStyle ? 'Template name' : 'Row title'}
+                  rowId={rowId}
+                  fieldId={fieldId}
+                  value={value}
+                  richText={richText}
+                  placeholder={'Untitled'}
+                  className={titleClassName}
+                  onSaved={onEdited}
+                />
               </ErrorBoundary>
             )}
           </div>

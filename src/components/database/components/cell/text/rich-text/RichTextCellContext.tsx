@@ -6,6 +6,8 @@ import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
 import { LeafContext } from '@/components/editor/components/leaf/leaf.hooks';
 import { EditorContextProvider } from '@/components/editor/EditorContext';
 
+import { setCachedPageName } from './page-name-cache';
+
 /**
  * Gives a Text cell's Slate editor the editor context the document's leaf
  * renderers, mention panel and toolbar buttons read, built from the database
@@ -23,6 +25,11 @@ export function RichTextCellContext({
   const context = useDatabaseContextOptional();
   const getMentionUser = useContext(AppOutlineContext)?.getMentionUser;
   const viewId = context?.activeViewId ?? context?.databasePageId ?? '';
+  const workspaceId = context?.workspaceId ?? '';
+  const onPageMentionNameResolved = useCallback(
+    (pageId: string, name: string | undefined) => setCachedPageName(workspaceId, pageId, name),
+    [workspaceId]
+  );
 
   const mentionContext = useMemo(
     () => ({
@@ -44,11 +51,12 @@ export function RichTextCellContext({
 
   return (
     <EditorContextProvider
-      workspaceId={context?.workspaceId ?? ''}
+      workspaceId={workspaceId}
       viewId={viewId}
       readOnly={readOnly}
       navigateToView={context?.navigateToView}
       loadViewMeta={context?.loadViewMeta}
+      onPageMentionNameResolved={onPageMentionNameResolved}
       loadView={context?.loadView}
       openPageModal={context?.openPageModal}
       loadViews={context?.loadViews}

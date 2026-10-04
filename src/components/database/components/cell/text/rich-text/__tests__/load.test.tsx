@@ -1,16 +1,14 @@
 import { act, render } from '@testing-library/react';
 
-import { usePreloadRichTextCellEditor } from '../load';
+import { RichTextCellEditor, usePreloadRichTextCellEditor } from '../load';
+import CoreEditor from '../RichTextCellEditor';
 
 const mockLoaded = jest.fn();
 
-jest.mock('../RichTextCellEditor', () => {
-  mockLoaded('editor');
-  return { __esModule: true, default: () => null };
-});
-jest.mock('../RichTextCellDocument', () => {
-  mockLoaded('document');
-  return { __esModule: true, default: () => null };
+jest.mock('../RichTextCellEditor', () => ({ __esModule: true, default: jest.fn(() => null) }));
+jest.mock('../RichTextCellEditorUI', () => {
+  mockLoaded('ui');
+  return { RichTextCellEditorControls: () => null };
 });
 
 function View({ editable }: { editable: boolean }) {
@@ -24,15 +22,19 @@ async function settle() {
   });
 }
 
-describe('rich text cell editor preload', () => {
-  it('loads the editor when a view that can edit Text cells mounts, before any cell is edited', async () => {
-    render(<View editable={false} />);
+describe('rich text cell code loading', () => {
+  it('exports the input eagerly and preloads its optional menus once, only for editable views', async () => {
+    expect(RichTextCellEditor).toBe(CoreEditor);
+    const view = render(<View editable={false} />);
+
     await settle();
     expect(mockLoaded).not.toHaveBeenCalled();
-
-    render(<View editable />);
+    view.rerender(<View editable />);
     await settle();
-    expect(mockLoaded).toHaveBeenCalledWith('editor');
-    expect(mockLoaded).toHaveBeenCalledWith('document');
+    expect(mockLoaded.mock.calls).toEqual([['ui']]);
+    view.rerender(<View editable={false} />);
+    view.rerender(<View editable />);
+    await settle();
+    expect(mockLoaded).toHaveBeenCalledTimes(1);
   });
 });
