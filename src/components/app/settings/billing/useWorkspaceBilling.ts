@@ -25,8 +25,8 @@ export interface UseWorkspaceBillingResult extends WorkspaceBillingState {
   /** A mutation (cancel, interval change) is in flight. */
   busy: boolean;
   reload: () => Promise<void>;
-  /** Opens Stripe checkout for a workspace plan or add-on, billed yearly like the desktop client. */
-  subscribeWorkspace: (plan: SubscriptionPlan) => Promise<void>;
+  /** Opens Stripe checkout for the selected workspace plan and billing interval. */
+  subscribeWorkspace: (plan: SubscriptionPlan, interval: SubscriptionInterval) => Promise<void>;
   cancelWorkspace: (plan: SubscriptionPlan, reason?: string) => Promise<void>;
   updateInterval: (plan: SubscriptionPlan, interval: SubscriptionInterval) => Promise<void>;
   openBillingPortal: () => Promise<void>;
@@ -126,9 +126,9 @@ export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspa
   }, []);
 
   const subscribeWorkspace = useCallback(
-    async (plan: SubscriptionPlan) => {
+    async (plan: SubscriptionPlan, interval: SubscriptionInterval) => {
       if (!workspaceId) return;
-      await openLink(() => BillingService.getSubscriptionLink(workspaceId, plan, SubscriptionInterval.Year));
+      await openLink(() => BillingService.getSubscriptionLink(workspaceId, plan, interval));
     },
     [openLink, workspaceId]
   );

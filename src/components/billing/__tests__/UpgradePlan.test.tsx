@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { ReactNode } from 'react';
+import { ButtonHTMLAttributes, ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
 import en from '@/@types/translations/en.json';
@@ -57,11 +57,20 @@ jest.mock('@/components/billing/CancelSubscribe', () => ({
 }));
 
 jest.mock('@/components/_shared/modal', () => ({
-  NormalModal: ({ open, title, children }: { open: boolean; title?: ReactNode; children?: ReactNode }) =>
+  NormalModal: ({ open, title, children, onOk, onCancel, okButtonProps }: {
+    open: boolean;
+    title?: ReactNode;
+    children?: ReactNode;
+    onOk?: () => void;
+    onCancel?: () => void;
+    okButtonProps?: ButtonHTMLAttributes<HTMLButtonElement>;
+  }) =>
     open ? (
       <div>
         <div>{title}</div>
         {children}
+        {onOk && <button {...okButtonProps} onClick={onOk}>Confirm</button>}
+        {onCancel && <button onClick={onCancel}>Cancel</button>}
       </div>
     ) : null,
 }));
@@ -191,6 +200,7 @@ function renderModal(
 
 describe('UpgradePlan', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     mockTranslations = { ...defaultTranslations };
     resetPricingCatalogCache();
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -241,7 +251,7 @@ describe('UpgradePlan', () => {
     expect(within(freeColumn).getAllByTestId('feature-excluded')).toHaveLength(1);
     expect(within(proColumn).getAllByTestId('feature-included')).toHaveLength(1);
 
-    // Only the upgrade target has a button, and it checks out yearly.
+    // Checkout starts only after confirming a billing period; yearly remains the default.
     expect(within(freeColumn).queryByTestId('pricing-downgrade-free')).toBeNull();
     const { BillingService } = jest.requireMock('@/application/services/domains');
 
@@ -249,12 +259,44 @@ describe('UpgradePlan', () => {
     const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
 
     fireEvent.click(within(proColumn).getByTestId('pricing-upgrade-pro'));
+    expect(BillingService.getSubscriptionLink).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('change-period-confirm'));
     await waitFor(() => expect(openSpy).toHaveBeenCalledWith('https://checkout.example', '_current'));
     expect(BillingService.getSubscriptionLink).toHaveBeenCalledWith(
       'workspace-id',
       SubscriptionPlan.Pro,
       SubscriptionInterval.Year
     );
+  });
+
+  it('offers monthly billing before creating a Pro checkout', async () => {
+    const { BillingService } = jest.requireMock('@/application/services/domains');
+
+    BillingService.getSubscriptionLink.mockResolvedValue('https://checkout/monthly');
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+
+    renderModal(async () => catalog);
+    fireEvent.click(await screen.findByTestId('pricing-upgrade-pro'));
+    fireEvent.click(await screen.findByTestId('period-option-month'));
+    expect(screen.getByTestId('period-option-month').textContent).toContain('$12.5');
+    expect(screen.getByTestId('period-option-year').textContent).toContain('$120');
+    fireEvent.click(screen.getByTestId('change-period-confirm'));
+
+    await waitFor(() => expect(BillingService.getSubscriptionLink).toHaveBeenCalledWith(
+      'workspace-id', SubscriptionPlan.Pro, SubscriptionInterval.Month
+    ));
+    expect(openSpy).toHaveBeenCalledWith('https://checkout/monthly', '_current');
+  });
+
+  it('does not create a checkout when the billing-period picker is canceled', async () => {
+    const { BillingService } = jest.requireMock('@/application/services/domains');
+
+    renderModal(async () => catalog);
+    fireEvent.click(await screen.findByTestId('pricing-upgrade-pro'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByTestId('period-option-month')).toBeNull();
+    expect(BillingService.getSubscriptionLink).not.toHaveBeenCalled();
   });
 
   it('marks Pro as current and offers a downgrade on Free for a Pro workspace', async () => {

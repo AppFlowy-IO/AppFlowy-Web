@@ -2,6 +2,7 @@ import EventEmitter from 'events';
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { ReactNode } from 'react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -21,6 +22,13 @@ let userId: string;
 let role: Role;
 let emitter: AppEventEmitter;
 let workspaceSequence = 0;
+let currentSearch = '';
+
+function LocationRecorder() {
+  currentSearch = useLocation().search;
+  return null;
+}
+
 const subscriptions = jest.fn<Promise<Subscription[]>, []>();
 const quota = jest.mocked(getDatabaseViewCreationStatus);
 const checkout = jest.mocked(getSubscriptionLink);
@@ -35,6 +43,8 @@ function Wrapper({ children }: { children: ReactNode }) {
   const workspace = { id: workspaceId, role } as Workspace;
 
   return (
+    <MemoryRouter>
+      <LocationRecorder />
     <AFConfigContext.Provider
       value={{
         isAuthenticated: true,
@@ -54,6 +64,7 @@ function Wrapper({ children }: { children: ReactNode }) {
         <AppEventEmitterContext.Provider value={emitter}>{children}</AppEventEmitterContext.Provider>
       </AuthInternalContext.Provider>
     </AFConfigContext.Provider>
+    </MemoryRouter>
   );
 }
 
@@ -146,102 +157,39 @@ describe('workspace database view creation', () => {
     expect(checkout).not.toHaveBeenCalled();
   });
 
-  it('closes the menu before opening annual Pro checkout once, without admitting creation', async () => {
-    const pending = deferred<string>();
+  it('closes the menu and opens plan selection before creating a checkout', async () => {
     const close = jest.fn();
-    const popup = { location: { replace: jest.fn() }, closed: false, opener: window, close: jest.fn() };
-
-    jest.mocked(window.open).mockReturnValue(popup as unknown as Window);
-
-    checkout.mockReturnValue(pending.promise);
     const { result } = mount();
 
     await waitFor(() => expect(result.current.getAction(ViewLayout.Timeline).type).toBe('upgrade'));
-    expect(result.current.checkCreation(ViewLayout.Timeline, close)).toBe(false);
-    expect(result.current.checkCreation(ViewLayout.Timeline, close)).toBe(false);
-    expect(close).toHaveBeenCalledTimes(1);
-    expect(checkout).toHaveBeenCalledTimes(1);
-    expect(checkout).toHaveBeenCalledWith(workspaceId, SubscriptionPlan.Pro, SubscriptionInterval.Year);
-    expect(close.mock.invocationCallOrder[0]).toBeLessThan(checkout.mock.invocationCallOrder[0]);
-    await act(async () => {
-      pending.resolve('https://checkout.example/pro');
+    act(() => {
+      expect(result.current.checkCreation(ViewLayout.Timeline, close)).toBe(false);
+      expect(result.current.checkCreation(ViewLayout.Timeline, close)).toBe(false);
     });
-    expect(window.open).toHaveBeenCalledWith('about:blank', '_blank');
-    expect(popup.opener).toBeNull();
-    expect(popup.location.replace).toHaveBeenCalledWith('https://checkout.example/pro');
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(currentSearch).toBe('?action=change_plan');
+    expect(checkout).not.toHaveBeenCalled();
+    expect(window.open).not.toHaveBeenCalled();
   });
 
-  it('starts one checkout only for an upgrade action and settles once checkout opens', async () => {
-    const pending = deferred<string>();
-    const close = jest.fn();
-    const popup = { location: { replace: jest.fn() }, closed: false, opener: window, close: jest.fn() };
-
-    jest.mocked(window.open).mockReturnValue(popup as unknown as Window);
-    checkout.mockReturnValue(pending.promise);
+  it('opens plan selection only for an upgrade action', async () => {
     quota.mockResolvedValue({ can_create_form: true, can_create_chart: false });
     const { result } = mount();
 
     await waitFor(() => expect(result.current.getAction(ViewLayout.Chart).type).toBe('upgrade'));
     expect(result.current.startCheckout(ViewLayout.Form)).toBeUndefined();
     expect(result.current.startCheckout(ViewLayout.Grid)).toBeUndefined();
+    expect(currentSearch).toBe('');
+    let opening: Promise<void> | undefined;
+
+    act(() => {
+      opening = result.current.startCheckout(ViewLayout.Chart);
+      expect(result.current.startCheckout(ViewLayout.Timeline)).toBe(opening);
+    });
+    await act(async () => { await opening; });
+    expect(currentSearch).toBe('?action=change_plan');
+    expect(checkout).not.toHaveBeenCalled();
     expect(window.open).not.toHaveBeenCalled();
-    const started = result.current.startCheckout(ViewLayout.Chart);
-    let settled = false;
-
-    expect(started).toBeInstanceOf(Promise);
-    void started?.then(() => {
-      settled = true;
-    });
-    // Tab-bar progress and other menus share the pending checkout.
-    expect(result.current.startCheckout(ViewLayout.Timeline)).toBe(started);
-    expect(result.current.checkCreation(ViewLayout.Chart, close)).toBe(false);
-    expect(close).not.toHaveBeenCalled();
-    expect(window.open).toHaveBeenCalledTimes(1);
-    expect(checkout).toHaveBeenCalledTimes(1);
-    await act(async () => undefined);
-    expect(settled).toBe(false);
-    await act(async () => pending.resolve('https://checkout.example/pro'));
-    expect(settled).toBe(true);
-    expect(popup.location.replace).toHaveBeenCalledWith('https://checkout.example/pro');
-  });
-
-  it('settles a failed checkout after reporting it, then allows another attempt', async () => {
-    checkout.mockRejectedValueOnce(new Error('Billing unavailable'));
-    const { result } = mount();
-
-    await waitFor(() => expect(result.current.getAction(ViewLayout.Timeline).type).toBe('upgrade'));
-    await act(async () => {
-      await result.current.startCheckout(ViewLayout.Timeline);
-    });
-    expect(toast.error).toHaveBeenCalledWith('Billing unavailable');
-    const retry = result.current.startCheckout(ViewLayout.Timeline);
-
-    expect(retry).toBeInstanceOf(Promise);
-    await act(async () => {
-      await retry;
-    });
-    expect(checkout).toHaveBeenCalledTimes(2);
-  });
-
-  it('offers a clickable checkout link if the browser blocks the new tab', async () => {
-    const { result } = mount();
-
-    await waitFor(() => expect(result.current.getAction(ViewLayout.Timeline).type).toBe('upgrade'));
-    expect(result.current.checkCreation(ViewLayout.Timeline)).toBe(false);
-    await waitFor(() =>
-      expect(toast).toHaveBeenCalledWith('databaseViewCreation.checkoutReady', {
-        action: { label: 'databaseViewCreation.openCheckout', onClick: expect.any(Function) },
-      })
-    );
-  });
-
-  it('reports checkout failure without admitting creation', async () => {
-    checkout.mockRejectedValue(new Error('Billing unavailable'));
-    const { result } = mount();
-
-    await waitFor(() => expect(result.current.getAction(ViewLayout.Timeline).type).toBe('upgrade'));
-    expect(result.current.checkCreation(ViewLayout.Timeline)).toBe(false);
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Billing unavailable'));
   });
 
   it('keeps quota and billing failures unavailable instead of showing a crown, and retries a blocked attempt', async () => {

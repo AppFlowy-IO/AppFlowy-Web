@@ -9,7 +9,11 @@ import { BillingTestProviders, catalog, translate } from './billing-test-utils';
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }));
 jest.mock('@/application/services/domains', () => ({ BillingService: { getPricingCatalog: jest.fn() } }));
 
-function renderDialog(getPricingCatalog: () => Promise<PricingCatalog>, plan = SubscriptionPlan.Pro) {
+function renderDialog(
+  getPricingCatalog: () => Promise<PricingCatalog>,
+  plan = SubscriptionPlan.Pro,
+  currentInterval: SubscriptionInterval | null = SubscriptionInterval.Month
+) {
   const onConfirm = jest.fn();
   const onClose = jest.fn();
 
@@ -18,7 +22,7 @@ function renderDialog(getPricingCatalog: () => Promise<PricingCatalog>, plan = S
       <ChangePeriodDialog
         open
         plan={plan}
-        currentInterval={SubscriptionInterval.Month}
+        currentInterval={currentInterval ?? undefined}
         onConfirm={onConfirm}
         onClose={onClose}
       />
@@ -45,6 +49,19 @@ describe('ChangePeriodDialog price availability', () => {
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  it('allows either checkout interval without marking an interval as current', async () => {
+    const { onConfirm } = renderDialog(async () => catalog, SubscriptionPlan.Pro, null);
+
+    expect(await screen.findByText('$120')).toBeTruthy();
+    expect(screen.queryByText('Current period')).toBeNull();
+    expect(screen.getByTestId<HTMLButtonElement>('period-option-month').disabled).toBe(false);
+    expect(screen.getByTestId<HTMLButtonElement>('period-option-year').disabled).toBe(false);
+    expect(screen.getByTestId('period-option-year').getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByTestId('change-period-confirm'));
+
+    expect(onConfirm).toHaveBeenCalledWith(SubscriptionInterval.Year);
+  });
 
   it('requires a displayed price before confirming by click or Enter', async () => {
     let resolveCatalog!: (value: PricingCatalog) => void;

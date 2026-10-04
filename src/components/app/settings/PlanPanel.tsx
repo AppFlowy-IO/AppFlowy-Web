@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { findPlan } from '@/utils/pricing';
 import { findWorkspaceAddOn, formatStorageGb, isSubscriptionCanceled } from '@/utils/subscription';
 
+import { ChangePeriodDialog } from './billing/ChangePeriodDialog';
 import { fillPlaceholders, formatPeriodEnd, userDateFormat } from './billing/labels';
 import { SettingsPanelError, SettingsPanelLoading, SettingsPanelShell } from './billing/SettingsPanelShell';
 import { useWorkspaceBilling } from './billing/useWorkspaceBilling';
@@ -128,6 +129,7 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
   const billing = useWorkspaceBilling(workspaceId);
   const { info, usage, status, error, reload } = billing;
   const { catalog } = usePricingCatalog();
+  const [checkoutPlan, setCheckoutPlan] = useState<SubscriptionPlan>();
 
   const openChangePlan = useCallback(() => {
     setSearch((prev) => {
@@ -209,7 +211,7 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
             <UpgradeToggle
               label={t('settings.planPage.planUsage.memberProToggle')}
               badge={t('settings.planPage.planUsage.proBadge')}
-              onToggle={() => void billing.subscribeWorkspace(SubscriptionPlan.Pro)}
+              onToggle={() => setCheckoutPlan(SubscriptionPlan.Pro)}
               testId='plan-toggle-pro'
             />
           )}
@@ -218,7 +220,7 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
             <UpgradeToggle
               label={t('settings.planPage.planUsage.aiMaxToggle')}
               badge={t('settings.planPage.planUsage.proBadge')}
-              onToggle={() => void billing.subscribeWorkspace(SubscriptionPlan.Pro)}
+              onToggle={() => setCheckoutPlan(SubscriptionPlan.Pro)}
               testId='plan-toggle-unlimited-ai'
             />
           )}
@@ -260,6 +262,14 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
   return (
     <SettingsPanelShell title={t('settings.planPage.title')} testId='plan-panel'>
       {renderContent()}
+      {checkoutPlan && (
+        <ChangePeriodDialog
+          open
+          plan={checkoutPlan}
+          onClose={() => setCheckoutPlan(undefined)}
+          onConfirm={(interval) => void billing.subscribeWorkspace(checkoutPlan, interval)}
+        />
+      )}
     </SettingsPanelShell>
   );
 }

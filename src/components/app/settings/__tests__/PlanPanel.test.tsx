@@ -69,8 +69,24 @@ describe('PlanPanel', () => {
     expect(screen.getByTestId('location-search').textContent).toBe('?action=change_plan');
 
     fireEvent.click(screen.getByLabelText('Unlimited AI and advanced models'));
+    expect(api.getSubscriptionLink).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('change-period-confirm'));
     await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://checkout/pro', '_current'));
     expect(api.getSubscriptionLink).toHaveBeenCalledWith('workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Year);
+  });
+
+  it.each(['plan-toggle-pro', 'plan-toggle-unlimited-ai'])('uses the selected monthly interval for %s', async (toggle) => {
+    api.getSubscriptionLink.mockResolvedValue('https://checkout/pro-monthly');
+    renderPanel();
+
+    fireEvent.click((await screen.findByTestId(toggle)).querySelector('button')!);
+    fireEvent.click(await screen.findByTestId('period-option-month'));
+    fireEvent.click(screen.getByTestId('change-period-confirm'));
+
+    await waitFor(() => expect(api.getSubscriptionLink).toHaveBeenCalledWith(
+      'workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Month
+    ));
+    expect(window.open).toHaveBeenCalledWith('https://checkout/pro-monthly', '_current');
   });
 
   it('shows unlimited badges, no toggles and a cancellation notice for a paid workspace', async () => {

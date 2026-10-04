@@ -1,19 +1,18 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { getSubscriptionLink } from '@/application/services/domains/billing';
 import {
   DatabaseViewCreationStatus,
   getDatabaseViewCreationStatus,
 } from '@/application/services/js-services/http/workspace-api';
-import { Subscription, SubscriptionInterval, SubscriptionPlan, ViewLayout } from '@/application/types';
+import { Subscription, SubscriptionPlan, ViewLayout } from '@/application/types';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import { useServerHostingMode } from '@/components/app/hooks/useServerInfo';
 import { useAuthenticatedUserIdOptional, useCurrentUserOptional } from '@/components/main/app.hooks';
-import { getErrorMessage } from '@/utils/errors';
 import { getConfigValue } from '@/utils/runtime-config';
 import {
   canManageWorkspaceBilling,
@@ -263,47 +262,25 @@ export function useDatabaseViewCreation({
     [hostingMode, workspaceId, authenticated, connected, readConnection, status, scope, enabled, isOwner, t]
   );
   const pendingCheckout = useRef<Promise<void> | null>(null);
-  /**
-   * Opens annual Pro checkout for an upgrade action; returns undefined otherwise.
-   * Call it synchronously from the user's gesture: the tab is reserved before the
-   * billing request, since browsers block tabs opened after a network await. The
-   * promise settles once checkout is shown or its failure is reported. A call
-   * while checkout is opening reuses it instead of opening another tab.
-   */
+  const [, setSearch] = useSearchParams();
+  /** Opens the plan comparison, where the owner chooses a billing period before checkout. */
   const startCheckout = useCallback(
     (layout?: ViewLayout): Promise<void> | undefined => {
       if (pendingCheckout.current) return pendingCheckout.current;
       if (!workspaceId || getAction(layout).type !== 'upgrade') return;
-      const checkoutWindow = window.open('about:blank', '_blank');
+      setSearch((previous) => {
+        previous.set('action', 'change_plan');
+        return previous;
+      });
+      const opening = Promise.resolve();
 
-      if (checkoutWindow) checkoutWindow.opener = null;
-      const checkout = getSubscriptionLink(workspaceId, SubscriptionPlan.Pro, SubscriptionInterval.Year)
-        .then((link) => {
-          if (checkoutWindow && !checkoutWindow.closed) {
-            checkoutWindow.location.replace(link);
-          } else {
-            toast(t('databaseViewCreation.checkoutReady'), {
-              action: {
-                label: t('databaseViewCreation.openCheckout'),
-                onClick: () => {
-                  window.open(link, '_blank', 'noopener,noreferrer');
-                },
-              },
-            });
-          }
-        })
-        .catch((error: unknown) => {
-          checkoutWindow?.close();
-          toast.error(getErrorMessage(error, t('databaseViewCreation.checkoutFailed')));
-        })
-        .finally(() => {
-          pendingCheckout.current = null;
-        });
-
-      pendingCheckout.current = checkout;
-      return checkout;
+      pendingCheckout.current = opening;
+      void opening.then(() => {
+        pendingCheckout.current = null;
+      });
+      return opening;
     },
-    [getAction, workspaceId, t]
+    [getAction, workspaceId, setSearch]
   );
   const checkCreation = useCallback(
     (layout?: ViewLayout, closeMenu?: () => void): boolean => {

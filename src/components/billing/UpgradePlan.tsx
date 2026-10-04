@@ -17,6 +17,7 @@ import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useCurrentWorkspaceId, useGetSubscriptions, useIsOfficialHosted } from '@/components/app/app.hooks';
 import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
+import { ChangePeriodDialog } from '@/components/app/settings/billing/ChangePeriodDialog';
 import CancelSubscribe from '@/components/billing/CancelSubscribe';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -188,6 +189,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
   const currentWorkspaceId = useCurrentWorkspaceId();
   const isHosted = useIsOfficialHosted();
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [checkoutPlan, setCheckoutPlan] = useState<SubscriptionPlan>();
   const getSubscriptions = useGetSubscriptions();
   const { catalog, isLoading, hasError, reload } = usePricingCatalog({ enabled: open });
 
@@ -239,6 +241,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
     subscriptionState.workspaceId === currentWorkspaceId && subscriptionState.status === 'error';
 
   const handleClose = useCallback(() => {
+    setCheckoutPlan(undefined);
     onClose();
     setSearch((prev) => {
       prev.delete('action');
@@ -246,9 +249,8 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
     });
   }, [onClose, setSearch]);
 
-  // Checkout is yearly like the desktop client; the billing period can be changed afterwards in Settings.
   const handleUpgrade = useCallback(
-    async (planId: string) => {
+    (planId: string) => {
       if (!currentWorkspaceId || !currentPlan) return;
 
       // Self-hosted deployments have Pro features enabled by default.
@@ -258,8 +260,16 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
 
       if (!plan) return;
 
+      setCheckoutPlan(plan);
+    },
+    [currentWorkspaceId, currentPlan, isHosted]
+  );
+
+  const handleCheckout = useCallback(
+    async (plan: SubscriptionPlan, interval: SubscriptionInterval) => {
+      if (!currentWorkspaceId || !currentPlan || !isHosted) return;
       try {
-        const link = await BillingService.getSubscriptionLink(currentWorkspaceId, plan, SubscriptionInterval.Year);
+        const link = await BillingService.getSubscriptionLink(currentWorkspaceId, plan, interval);
 
         window.open(link, '_current');
         // eslint-disable-next-line
@@ -293,7 +303,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
       const yearly = getPlanDisplayPrice(plan, SubscriptionInterval.Year);
       const monthly = getPlanDisplayPrice(plan, SubscriptionInterval.Month);
       // The published plan table shows only the annual figure ("billed annually");
-      // the monthly price stays under Billing > Edit period. An empty info hides the line.
+      // checkout offers both intervals before payment. An empty info hides the line.
       const priceInfo = free
         ? t('settings.comparePlanDialog.freePlan.priceInfo')
         : yearly
@@ -453,6 +463,14 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
           setCancelOpen(false);
         }}
       />
+      {checkoutPlan && (
+        <ChangePeriodDialog
+          open={open}
+          plan={checkoutPlan}
+          onClose={() => setCheckoutPlan(undefined)}
+          onConfirm={(interval) => void handleCheckout(checkoutPlan, interval)}
+        />
+      )}
     </NormalModal>
   );
 }
