@@ -1,13 +1,13 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ReactNode } from 'react';
 
 import { BillingService } from '@/application/services/domains';
-import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
+import { SubscriptionInterval, SubscriptionPlan, WorkspaceUsageAndLimit } from '@/application/types';
 import { resetPricingCatalogCache } from '@/components/app/hooks/usePricingCatalog';
 import { BillingPanel } from '@/components/app/settings/BillingPanel';
 import { renderDate } from '@/utils/time';
 
-import { BillingTestProviders, PERIOD_END, freeUsage, proUsage, translate, workspaceStatus } from './billing-test-utils';
+import { BillingTestProviders, PERIOD_END, deferred, freeUsage, proUsage, translate, workspaceStatus } from './billing-test-utils';
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => ({ uid: '7', metadata: {} }) }));
@@ -167,6 +167,33 @@ describe('BillingPanel', () => {
     expect((await screen.findByTestId('billing-error')).textContent).toContain('billing down');
     fireEvent.click(screen.getByText('Retry'));
     expect(await screen.findByText('Personal')).toBeTruthy();
+  });
+
+  it('keeps the actual plan and billing actions available while usage is pending or unavailable', async () => {
+    const usage = deferred<WorkspaceUsageAndLimit>();
+
+    api.getWorkspaceSubscriptionStatus.mockResolvedValue([workspaceStatus(SubscriptionPlan.Pro)]);
+    api.getWorkspaceUsage.mockReturnValue(usage.promise);
+    api.getBillingPortalLink.mockResolvedValue('https://portal');
+    api.setSubscriptionRecurringInterval.mockResolvedValue(undefined);
+    renderPanel();
+
+    expect(await screen.findByText('Pro')).toBeTruthy();
+    expect(screen.getByText('Annually')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('billing-edit-payment-method'));
+    await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://portal', '_current'));
+
+    fireEvent.click(screen.getByTestId('billing-edit-period'));
+    await screen.findByText('$12.5');
+    fireEvent.click(screen.getByTestId(`period-option-${SubscriptionInterval.Month}`));
+    fireEvent.click(screen.getByTestId('change-period-confirm'));
+    await waitFor(() => expect(api.getWorkspaceSubscriptionStatus).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId<HTMLButtonElement>('billing-edit-period').disabled).toBe(false));
+
+    await act(async () => usage.reject(new Error('Storage accounting is recovering')));
+    expect(screen.getByText('Pro')).toBeTruthy();
+    expect(screen.queryByTestId('billing-error')).toBeNull();
+    expect(screen.getByTestId('billing-edit-payment-method')).toBeTruthy();
   });
 
   it('shows the full annual charge before confirming a switch from monthly billing', async () => {

@@ -18,7 +18,13 @@ export interface WorkspaceBillingState {
   status: WorkspaceBillingStatus;
   info: WorkspaceSubscriptionInfo | null;
   usage: WorkspaceUsageAndLimit | null;
+  usageStatus: WorkspaceBillingStatus;
+  usageError: unknown;
   error: unknown;
+}
+
+interface WorkspaceBillingSnapshot extends WorkspaceBillingState {
+  workspaceId?: string;
 }
 
 export interface UseWorkspaceBillingResult extends WorkspaceBillingState {
@@ -32,7 +38,9 @@ export interface UseWorkspaceBillingResult extends WorkspaceBillingState {
   openBillingPortal: () => Promise<void>;
 }
 
-const INITIAL_STATE: WorkspaceBillingState = { status: 'idle', info: null, usage: null, error: null };
+const INITIAL_STATE: WorkspaceBillingSnapshot = {
+  status: 'idle', info: null, usage: null, usageStatus: 'idle', usageError: null, error: null,
+};
 
 /** Checkout and portal pages replace the app, and the success URL brings the user back. */
 function openBillingLink(link: string) {
@@ -45,20 +53,23 @@ function openBillingLink(link: string) {
  * replaced while a request was in flight are dropped.
  */
 export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspaceBillingResult {
-  const [state, setState] = useState<WorkspaceBillingState>(INITIAL_STATE);
+  const [state, setState] = useState<WorkspaceBillingSnapshot>(INITIAL_STATE);
   const [busy, setBusy] = useState(false);
   const [checkoutPending, setCheckoutPending] = useState(false);
   const checkoutRequest = useRef<object>();
   const generationRef = useRef(0);
   const mountedRef = useRef(true);
+  const currentWorkspace = useRef(workspaceId);
   const [search] = useSearchParams();
   const comparisonOpen = search.get('action') === 'change_plan';
   const wasComparisonOpen = useRef(comparisonOpen);
 
   useEffect(() => {
+    currentWorkspace.current = workspaceId;
     checkoutRequest.current = undefined;
     setCheckoutPending(false);
     return () => {
+      currentWorkspace.current = undefined;
       checkoutRequest.current = undefined;
     };
   }, [workspaceId]);
@@ -71,29 +82,57 @@ export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspa
   }, []);
 
   const reload = useCallback(async () => {
+    if (!mountedRef.current || currentWorkspace.current !== workspaceId) return;
+    const generation = ++generationRef.current;
+
     if (!workspaceId) {
       setState(INITIAL_STATE);
       return;
     }
 
-    const generation = ++generationRef.current;
-    const isCurrent = () => mountedRef.current && generationRef.current === generation;
+    const isCurrent = () =>
+      mountedRef.current && currentWorkspace.current === workspaceId && generationRef.current === generation;
 
-    setState((prev) => ({ ...prev, status: 'loading', error: null }));
+    setState((prev) => ({
+      ...(prev.workspaceId === workspaceId ? prev : INITIAL_STATE),
+      workspaceId,
+      status: 'loading',
+      error: null,
+      usage: null,
+      usageStatus: 'loading',
+      usageError: null,
+    }));
+
+    // Usage comes from Cloud and can be recovering while Billing is available.
+    // Settle independently so it cannot hide a plan or block a billing mutation.
+    const loadUsage = async () => {
+      try {
+        const usage = await BillingService.getWorkspaceUsage(workspaceId);
+
+        if (!usage) throw new Error('Workspace usage unavailable');
+        if (!isCurrent()) return;
+        setState((prev) => ({ ...prev, usage, usageStatus: 'ready', usageError: null }));
+      } catch (usageError) {
+        if (!isCurrent()) return;
+        setState((prev) => ({ ...prev, usage: null, usageStatus: 'error', usageError }));
+      }
+    };
+
+    void loadUsage();
 
     try {
-      const [statuses, usage] = await Promise.all([
-        BillingService.getWorkspaceSubscriptionStatus(workspaceId),
-        BillingService.getWorkspaceUsage(workspaceId),
-      ]);
+      const statuses = await BillingService.getWorkspaceSubscriptionStatus(workspaceId);
 
+      if (!statuses) throw new Error('Workspace subscription status unavailable');
       if (!isCurrent()) return;
-      setState({
+      const info = buildWorkspaceSubscriptionInfo(statuses);
+
+      setState((prev) => ({
+        ...prev,
         status: 'ready',
-        info: buildWorkspaceSubscriptionInfo(statuses),
-        usage: usage ?? null,
+        info,
         error: null,
-      });
+      }));
     } catch (error) {
       if (!isCurrent()) return;
       setState((prev) => ({ ...prev, status: 'error', error }));
@@ -102,6 +141,9 @@ export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspa
 
   useEffect(() => {
     void reload();
+    return () => {
+      generationRef.current += 1;
+    };
   }, [reload]);
 
   useEffect(() => {
@@ -179,7 +221,8 @@ export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspa
   }, [openLink]);
 
   return {
-    ...state,
+    // Do not render another workspace's plan/usage before the loading effect runs.
+    ...(state.workspaceId === workspaceId ? state : INITIAL_STATE),
     busy: busy || checkoutPending,
     reload,
     subscribeWorkspace,

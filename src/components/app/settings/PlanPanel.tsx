@@ -128,7 +128,7 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
   const currentUser = useCurrentUserOptional();
   const dateFormat = userDateFormat(currentUser?.metadata);
   const billing = useWorkspaceBilling(workspaceId);
-  const { info, usage, status, error, reload } = billing;
+  const { info, usage, usageStatus, status, error, reload } = billing;
   const { catalog } = usePricingCatalog();
 
   const openChangePlan = useCallback(() => {
@@ -192,7 +192,7 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
 
   const renderContent = () => {
     if (status === 'error') return <SettingsPanelError error={error} onRetry={() => void reload()} />;
-    if (!info || !usage) return <SettingsPanelLoading label={t('settings.planPage.title')} />;
+    if (!info) return <SettingsPanelLoading label={t('settings.planPage.title')} />;
 
     // A workspace that still has the retired AI Max add-on already has unlimited AI.
     const hasAiMax = findWorkspaceAddOn(info, SubscriptionPlan.AIMax) !== null;
@@ -205,7 +205,18 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
     return (
       <div className='flex flex-col gap-4'>
         <div className='text-base font-semibold text-text-secondary'>{t('settings.planPage.planUsage.title')}</div>
-        {renderUsage(usage)}
+        {usage ? renderUsage(usage) : usageStatus === 'error' ? (
+          <div data-testid='plan-usage-error'>
+            <SettingsPanelError
+              error={{ message: t('settings.planPage.planUsage.usageUnavailable', {
+                defaultValue: 'Usage is temporarily unavailable.',
+              }) }}
+              onRetry={() => void reload()}
+            />
+          </div>
+        ) : (
+          <SettingsPanelLoading label={t('settings.planPage.planUsage.title')} />
+        )}
         <div className='flex flex-col gap-1'>
           {info.plan === SubscriptionPlan.Free && (
             <UpgradeToggle
@@ -217,7 +228,7 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
             />
           )}
           {/* Unlimited AI comes with Pro; AI Max is no longer sold. */}
-          {!hasAiMax && !usage.ai_responses_unlimited && (
+          {usage && !hasAiMax && !usage.ai_responses_unlimited && (
             <UpgradeToggle
               label={t('settings.planPage.planUsage.aiMaxToggle')}
               badge={t('settings.planPage.planUsage.proBadge')}

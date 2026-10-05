@@ -14,6 +14,17 @@ import { AppOperationsContext, AppOperationsContextType } from '@/components/app
 
 export const PERIOD_END = 1_800_014_400;
 
+export function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+
+  return { promise, resolve, reject };
+}
+
 export const translations: Record<string, string> = {
   'settings.billingPage.title': 'Billing',
   'settings.billingPage.plan.title': 'Plan',
