@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react';
 
 import { BillingService } from '@/application/services/domains';
-import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
+import { SubscriptionInterval, SubscriptionPlan, WorkspaceSubscriptionStatus, WorkspaceUsageAndLimit } from '@/application/types';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import { resetPricingCatalogCache } from '@/components/app/hooks/usePricingCatalog';
 import { PlanPanel } from '@/components/app/settings/PlanPanel';
@@ -11,7 +11,7 @@ import { getConfigValue } from '@/utils/runtime-config';
 import { updateServerInfo } from '@/utils/server-info';
 import { renderDate } from '@/utils/time';
 
-import { BillingTestProviders, PERIOD_END, freeUsage, proUsage, translate, workspaceStatus } from './billing-test-utils';
+import { BillingTestProviders, PERIOD_END, deferred, freeUsage, proUsage, translate, workspaceStatus } from './billing-test-utils';
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => ({ uid: '7', metadata: {} }) }));
@@ -72,6 +72,111 @@ describe('PlanPanel', () => {
     expect(screen.queryByTestId('change-period-confirm')).toBeNull();
     await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://checkout/pro', '_current'));
     expect(api.getSubscriptionLink).toHaveBeenCalledWith('workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Month);
+  });
+
+  it('shows the plan while usage is pending, then offers a retry without inventing usage', async () => {
+    const usage = deferred<WorkspaceUsageAndLimit>();
+
+    api.getWorkspaceUsage.mockReturnValueOnce(usage.promise).mockResolvedValue(freeUsage);
+    renderPanel();
+
+    expect((await screen.findByTestId('current-plan-box')).textContent).toContain('Personal');
+    expect(screen.getByRole('status', { name: 'Plan usage summary' })).toBeTruthy();
+    expect(screen.queryByTestId('plan-usage-storage')).toBeNull();
+    expect(screen.queryByTestId('plan-usage-ai')).toBeNull();
+    expect(screen.queryByTestId('plan-toggle-unlimited-ai')).toBeNull();
+    expect(screen.getByTestId('plan-change-plan')).toBeTruthy();
+
+    await act(async () => usage.reject(new Error('Storage accounting is recovering')));
+    expect(screen.getByTestId('plan-usage-error').textContent).toContain('Usage is temporarily unavailable.');
+    expect(screen.queryByText('Storage accounting is recovering')).toBeNull();
+    expect(screen.getByTestId('current-plan-box').textContent).toContain('Personal');
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByTestId('plan-toggle-unlimited-ai')).toBeNull();
+
+    fireEvent.click(screen.getByText('Retry'));
+    expect(await screen.findByText('1 of 5 GB')).toBeTruthy();
+    expect(screen.getByText('3 of 10')).toBeTruthy();
+    expect(screen.queryByTestId('plan-usage-error')).toBeNull();
+    expect(api.getWorkspaceUsage).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a subscription failure blocking even when usage succeeds', async () => {
+    api.getWorkspaceSubscriptionStatus.mockRejectedValueOnce(new Error('billing unavailable'));
+    renderPanel();
+
+    expect((await screen.findByTestId('billing-error')).textContent).toContain('billing unavailable');
+    expect(screen.queryByTestId('current-plan-box')).toBeNull();
+    expect(screen.queryByTestId('plan-usage-storage')).toBeNull();
+    expect(screen.queryByTestId('plan-toggle-pro')).toBeNull();
+  });
+
+  it('clears another workspace\'s data and ignores late subscription and usage responses', async () => {
+    const lateStatus = deferred<WorkspaceSubscriptionStatus[]>();
+    const lateUsage = deferred<WorkspaceUsageAndLimit>();
+    const nextStatus = deferred<WorkspaceSubscriptionStatus[]>();
+    const nextUsage = deferred<WorkspaceUsageAndLimit>();
+
+    api.getWorkspaceSubscriptionStatus
+      .mockResolvedValueOnce([workspaceStatus(SubscriptionPlan.Pro)])
+      .mockReturnValueOnce(lateStatus.promise)
+      .mockReturnValueOnce(nextStatus.promise);
+    api.getWorkspaceUsage
+      .mockRejectedValueOnce(new Error('temporary usage failure'))
+      .mockReturnValueOnce(lateUsage.promise)
+      .mockReturnValueOnce(nextUsage.promise);
+    const content = (workspaceId: string) => (
+      <BillingTestProviders><PlanPanel workspaceId={workspaceId} /></BillingTestProviders>
+    );
+    const view = render(content('workspace-1'));
+
+    expect((await screen.findByTestId('current-plan-box')).textContent).toContain('Pro');
+    fireEvent.click(await screen.findByText('Retry'));
+    view.rerender(content('workspace-2'));
+    expect(screen.queryByTestId('current-plan-box')).toBeNull();
+    expect(screen.queryByTestId('plan-usage-storage')).toBeNull();
+
+    await act(async () => nextStatus.resolve([]));
+    expect(screen.getByTestId('current-plan-box').textContent).toContain('Personal');
+    expect(screen.queryByTestId('plan-usage-storage')).toBeNull();
+    await act(async () => {
+      lateStatus.resolve([workspaceStatus(SubscriptionPlan.Pro)]);
+      lateUsage.resolve(proUsage);
+    });
+    expect(screen.getByTestId('current-plan-box').textContent).toContain('Personal');
+    expect(screen.queryByText('Unlimited storage')).toBeNull();
+    expect(screen.queryByTestId('plan-usage-storage')).toBeNull();
+
+    await act(async () => nextUsage.resolve(freeUsage));
+    expect(screen.getByText('1 of 5 GB')).toBeTruthy();
+    expect(screen.getByTestId('current-plan-box').textContent).toContain('Personal');
+  });
+
+  it('does not display previously loaded usage while the next workspace is loading', async () => {
+    const status = deferred<WorkspaceSubscriptionStatus[]>();
+    const usage = deferred<WorkspaceUsageAndLimit>();
+
+    api.getWorkspaceSubscriptionStatus
+      .mockResolvedValueOnce([workspaceStatus(SubscriptionPlan.Pro)])
+      .mockReturnValueOnce(status.promise);
+    api.getWorkspaceUsage.mockResolvedValueOnce(proUsage).mockReturnValueOnce(usage.promise);
+    const content = (workspaceId: string) => (
+      <BillingTestProviders><PlanPanel workspaceId={workspaceId} /></BillingTestProviders>
+    );
+    const view = render(content('workspace-1'));
+
+    expect(await screen.findByText('Unlimited storage')).toBeTruthy();
+    view.rerender(content('workspace-2'));
+    expect(screen.queryByTestId('current-plan-box')).toBeNull();
+    expect(screen.queryByText('Unlimited storage')).toBeNull();
+
+    await act(async () => status.resolve([]));
+    expect(screen.getByTestId('current-plan-box').textContent).toContain('Personal');
+    expect(screen.queryByTestId('plan-usage-storage')).toBeNull();
+    expect(screen.queryByTestId('plan-toggle-unlimited-ai')).toBeNull();
+    await act(async () => usage.reject(new Error('next workspace usage unavailable')));
+    expect(screen.getByTestId('plan-usage-error')).toBeTruthy();
+    expect(screen.queryByText('Unlimited storage')).toBeNull();
   });
 
   it.each(['plan-toggle-pro', 'plan-toggle-unlimited-ai'])('opens monthly checkout directly from %s and blocks repeat clicks', async (toggle) => {
