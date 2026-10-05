@@ -2,7 +2,8 @@
 
 Web mirrors Desktop's `form_chart_quota.feature`: an isolated hosted Free owner
 creates the first Form and Chart, observes independent crowns after each creation,
-and selects exhausted allowances to choose monthly or annual Pro checkout.
+and selects exhausted allowances to open Pro plan comparison. Clicking Pro starts
+monthly checkout directly without an interval-selection dialog.
 Verified self-hosted instances bypass these plan and quota restrictions, including
 when disconnected. Workspace permissions still apply normally.
 
@@ -16,7 +17,7 @@ when disconnected. Workspace permissions still apply normally.
 | Loading/error state has no crown; quotas update while the menu remains open | Same menu and hook tests |
 | Known crowns survive slow/failed refreshes; stale allowances stay disabled until confirmed; disconnect clears the snapshot | `useDatabaseViewCreation.test.tsx`; `DatabaseViewCreationAccess.test.tsx` |
 | Blocked attempts toast the reason and refetch status; per-layout owner upgrade messages | `useDatabaseViewCreation.test.tsx` |
-| Upgrade menus hand off to plan comparison without checkout; the billing-period dialog offers monthly and annual prices before confirmation | `DatabaseViewCreationAccess.test.tsx`; `bdd/features/database/form-chart-quota.feature` |
+| Upgrade menus hand off to plan comparison without checkout; clicking Pro starts monthly checkout directly without a billing-period dialog | `DatabaseViewCreationAccess.test.tsx`; `bdd/features/database/form-chart-quota.feature` |
 | A reopened menu never trusts a remembered allowance; e2e helpers wait for an enabled, crown-free item | `useDatabaseViewCreation.test.tsx`; `support/view-creation-availability.ts` |
 | Self-hosted creation online/offline, beyond hosted allowances, with no billing/quota reads | `DatabaseViewCreationAccess.test.tsx` |
 | Self-hosted local Form/Chart conversion; hosted conversion cannot bypass server admission | `Layout.test.tsx`; `useAddDatabaseView.test.tsx` |
@@ -35,11 +36,12 @@ content unchanged.
 Only billing is simulated: subscription responses model Free, the catalog offers
 monthly and annual prices, checkout requests are recorded, and the returned
 checkout URL opens in an intercepted browser page. The test checks that no
-checkout starts before confirmation, then checks workspace, plan, selected
-interval, Bearer authentication and the actual checkout URL. It returns to the
-source page and verifies unchanged content and inventory. It never purchases a
-subscription or changes an existing account's
-plan, server hosting mode, `.env`, or installed application settings.
+checkout starts before clicking Pro, then checks the absence of an interval
+dialog, workspace, plan, monthly interval, Bearer authentication and the actual
+checkout URL. Annual upsells are configured in Stripe and are not simulated or
+verified by this scenario. It returns to the source page and verifies unchanged
+content and inventory. It never purchases a subscription or changes an existing
+account's plan, server hosting mode, `.env`, or installed application settings.
 
 The fixture fails if the real server is self-hosted or lacks
 `GET /api/workspace/{workspace_id}/database-view-creation-status`. It never

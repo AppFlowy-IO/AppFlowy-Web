@@ -1,8 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
-import { SubscriptionPlan, WorkspaceUsageAndLimit } from '@/application/types';
+import { SubscriptionInterval, SubscriptionPlan, WorkspaceUsageAndLimit } from '@/application/types';
 import { ReactComponent as CheckCircleIcon } from '@/assets/icons/check_circle.svg';
 import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils';
 import { findPlan } from '@/utils/pricing';
 import { findWorkspaceAddOn, formatStorageGb, isSubscriptionCanceled } from '@/utils/subscription';
 
-import { ChangePeriodDialog } from './billing/ChangePeriodDialog';
 import { fillPlaceholders, formatPeriodEnd, userDateFormat } from './billing/labels';
 import { SettingsPanelError, SettingsPanelLoading, SettingsPanelShell } from './billing/SettingsPanelShell';
 import { useWorkspaceBilling } from './billing/useWorkspaceBilling';
@@ -78,15 +77,17 @@ function UpgradeToggle({
   badge,
   onToggle,
   testId,
+  disabled,
 }: {
   label: string;
   badge: string;
   onToggle: () => void;
   testId: string;
+  disabled: boolean;
 }) {
   return (
     <div className='flex items-center' data-testid={testId}>
-      <Switch checked={false} onCheckedChange={onToggle} aria-label={label} />
+      <Switch checked={false} onCheckedChange={onToggle} aria-label={label} disabled={disabled} />
       <span className='ml-2.5 text-sm text-text-primary'>{label}</span>
       <span
         className={cn(
@@ -129,7 +130,6 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
   const billing = useWorkspaceBilling(workspaceId);
   const { info, usage, status, error, reload } = billing;
   const { catalog } = usePricingCatalog();
-  const [checkoutPlan, setCheckoutPlan] = useState<SubscriptionPlan>();
 
   const openChangePlan = useCallback(() => {
     setSearch((prev) => {
@@ -211,8 +211,9 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
             <UpgradeToggle
               label={t('settings.planPage.planUsage.memberProToggle')}
               badge={t('settings.planPage.planUsage.proBadge')}
-              onToggle={() => setCheckoutPlan(SubscriptionPlan.Pro)}
+              onToggle={() => void billing.subscribeWorkspace(SubscriptionPlan.Pro, SubscriptionInterval.Month)}
               testId='plan-toggle-pro'
+              disabled={billing.busy}
             />
           )}
           {/* Unlimited AI comes with Pro; AI Max is no longer sold. */}
@@ -220,8 +221,9 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
             <UpgradeToggle
               label={t('settings.planPage.planUsage.aiMaxToggle')}
               badge={t('settings.planPage.planUsage.proBadge')}
-              onToggle={() => setCheckoutPlan(SubscriptionPlan.Pro)}
+              onToggle={() => void billing.subscribeWorkspace(SubscriptionPlan.Pro, SubscriptionInterval.Month)}
               testId='plan-toggle-unlimited-ai'
+              disabled={billing.busy}
             />
           )}
         </div>
@@ -262,14 +264,6 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
   return (
     <SettingsPanelShell title={t('settings.planPage.title')} testId='plan-panel'>
       {renderContent()}
-      {checkoutPlan && (
-        <ChangePeriodDialog
-          open
-          plan={checkoutPlan}
-          onClose={() => setCheckoutPlan(undefined)}
-          onConfirm={(interval) => void billing.subscribeWorkspace(checkoutPlan, interval)}
-        />
-      )}
     </SettingsPanelShell>
   );
 }

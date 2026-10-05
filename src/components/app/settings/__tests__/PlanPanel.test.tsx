@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 
 import { BillingService } from '@/application/services/domains';
@@ -69,24 +69,75 @@ describe('PlanPanel', () => {
     expect(screen.getByTestId('location-search').textContent).toBe('?action=change_plan');
 
     fireEvent.click(screen.getByLabelText('Unlimited AI and advanced models'));
-    expect(api.getSubscriptionLink).not.toHaveBeenCalled();
-    fireEvent.click(await screen.findByTestId('change-period-confirm'));
+    expect(screen.queryByTestId('change-period-confirm')).toBeNull();
     await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://checkout/pro', '_current'));
-    expect(api.getSubscriptionLink).toHaveBeenCalledWith('workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Year);
+    expect(api.getSubscriptionLink).toHaveBeenCalledWith('workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Month);
   });
 
-  it.each(['plan-toggle-pro', 'plan-toggle-unlimited-ai'])('uses the selected monthly interval for %s', async (toggle) => {
-    api.getSubscriptionLink.mockResolvedValue('https://checkout/pro-monthly');
+  it.each(['plan-toggle-pro', 'plan-toggle-unlimited-ai'])('opens monthly checkout directly from %s and blocks repeat clicks', async (toggle) => {
+    let resolveCheckout!: (link: string) => void;
+
+    api.getSubscriptionLink.mockReturnValueOnce(new Promise<string>((resolve) => {
+      resolveCheckout = resolve;
+    }));
     renderPanel();
+    const button = (await screen.findByTestId(toggle)).querySelector('button')!;
 
-    fireEvent.click((await screen.findByTestId(toggle)).querySelector('button')!);
-    fireEvent.click(await screen.findByTestId('period-option-month'));
-    fireEvent.click(screen.getByTestId('change-period-confirm'));
-
-    await waitFor(() => expect(api.getSubscriptionLink).toHaveBeenCalledWith(
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(api.getSubscriptionLink).toHaveBeenCalledTimes(1);
+    expect(api.getSubscriptionLink).toHaveBeenCalledWith(
       'workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Month
-    ));
+    );
+    expect(screen.queryByTestId('period-option-month')).toBeNull();
+    expect(screen.queryByTestId('change-period-confirm')).toBeNull();
+    for (const id of ['plan-toggle-pro', 'plan-toggle-unlimited-ai']) {
+      expect(screen.getByTestId(id).querySelector('button')!.disabled).toBe(true);
+    }
+
+    await act(async () => resolveCheckout('https://checkout/pro-monthly'));
     expect(window.open).toHaveBeenCalledWith('https://checkout/pro-monthly', '_current');
+  });
+
+  it('allows retrying monthly checkout after a failed request', async () => {
+    const { notify } = jest.requireMock('@/components/_shared/notify');
+
+    api.getSubscriptionLink.mockRejectedValueOnce(new Error('Checkout unavailable'))
+      .mockResolvedValueOnce('https://checkout/retry');
+    renderPanel();
+    const button = (await screen.findByTestId('plan-toggle-pro')).querySelector('button')!;
+
+    fireEvent.click(button);
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Checkout unavailable'));
+    expect(button.disabled).toBe(false);
+    expect(window.open).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://checkout/retry', '_current'));
+    expect(api.getSubscriptionLink).toHaveBeenLastCalledWith(
+      'workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Month
+    );
+  });
+
+  it('ignores a checkout response after switching workspaces', async () => {
+    let resolveCheckout!: (link: string) => void;
+
+    api.getSubscriptionLink.mockReturnValueOnce(new Promise<string>((resolve) => {
+      resolveCheckout = resolve;
+    })).mockResolvedValueOnce('https://checkout/workspace-b');
+    const content = (workspaceId: string) => (
+      <BillingTestProviders><PlanPanel workspaceId={workspaceId} /></BillingTestProviders>
+    );
+    const view = render(content('workspace-1'));
+
+    fireEvent.click((await screen.findByTestId('plan-toggle-pro')).querySelector('button')!);
+    view.rerender(content('workspace-b'));
+    fireEvent.click((await screen.findByTestId('plan-toggle-pro')).querySelector('button')!);
+    await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://checkout/workspace-b', '_current'));
+    expect(api.getSubscriptionLink).toHaveBeenLastCalledWith(
+      'workspace-b', SubscriptionPlan.Pro, SubscriptionInterval.Month
+    );
+    await act(async () => resolveCheckout('https://checkout/workspace-a'));
+    expect(window.open).toHaveBeenCalledTimes(1);
   });
 
   it('shows unlimited badges, no toggles and a cancellation notice for a paid workspace', async () => {

@@ -22,7 +22,7 @@ export interface WorkspaceBillingState {
 }
 
 export interface UseWorkspaceBillingResult extends WorkspaceBillingState {
-  /** A mutation (cancel, interval change) is in flight. */
+  /** A mutation or checkout request is in flight. */
   busy: boolean;
   reload: () => Promise<void>;
   /** Opens Stripe checkout for the selected workspace plan and billing interval. */
@@ -47,11 +47,21 @@ function openBillingLink(link: string) {
 export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspaceBillingResult {
   const [state, setState] = useState<WorkspaceBillingState>(INITIAL_STATE);
   const [busy, setBusy] = useState(false);
+  const [checkoutPending, setCheckoutPending] = useState(false);
+  const checkoutRequest = useRef<object>();
   const generationRef = useRef(0);
   const mountedRef = useRef(true);
   const [search] = useSearchParams();
   const comparisonOpen = search.get('action') === 'change_plan';
   const wasComparisonOpen = useRef(comparisonOpen);
+
+  useEffect(() => {
+    checkoutRequest.current = undefined;
+    setCheckoutPending(false);
+    return () => {
+      checkoutRequest.current = undefined;
+    };
+  }, [workspaceId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -127,10 +137,25 @@ export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspa
 
   const subscribeWorkspace = useCallback(
     async (plan: SubscriptionPlan, interval: SubscriptionInterval) => {
-      if (!workspaceId) return;
-      await openLink(() => BillingService.getSubscriptionLink(workspaceId, plan, interval));
+      if (!workspaceId || checkoutRequest.current) return;
+      const request = {};
+
+      checkoutRequest.current = request;
+      setCheckoutPending(true);
+      try {
+        const link = await BillingService.getSubscriptionLink(workspaceId, plan, interval);
+
+        if (checkoutRequest.current === request && link) openBillingLink(link);
+      } catch (error) {
+        if (checkoutRequest.current === request) notify.error(getErrorMessage(error));
+      } finally {
+        if (checkoutRequest.current === request) {
+          checkoutRequest.current = undefined;
+          setCheckoutPending(false);
+        }
+      }
     },
-    [openLink, workspaceId]
+    [workspaceId]
   );
 
   const cancelWorkspace = useCallback(
@@ -155,7 +180,7 @@ export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspa
 
   return {
     ...state,
-    busy,
+    busy: busy || checkoutPending,
     reload,
     subscribeWorkspace,
     cancelWorkspace,

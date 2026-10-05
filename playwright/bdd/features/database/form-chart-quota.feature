@@ -1,8 +1,8 @@
 @cloud @database-view-creation
 Feature: Database view creation crowns
   Hosted Free owners get one Form and one Chart. Exhausted allowances offer
-  a choice of monthly or annual Pro checkout without creating a view or changing
-  document content. No checkout starts until the owner confirms a billing period.
+  Pro plan comparison without creating a view or changing document content.
+  Clicking Pro starts monthly checkout directly, without a billing-period dialog.
 
   Scenario: Independent allowances and upgrade actions across creation menus
     Given a Free hosted owner has a new grid for database creation
@@ -16,12 +16,12 @@ Feature: Database view creation crowns
 
     When the owner selects exhausted "Form" from the "tab" creation menu
     Then Pro plan comparison opens without starting checkout
-    When the owner chooses "monthly" billing for Pro checkout
-    Then "monthly" Pro checkout has opened 1 time without another database view
+    When the owner clicks Pro to start checkout
+    Then monthly Pro checkout has opened 1 time without another database view
     When the owner selects exhausted "Chart" from the "tab" creation menu
     Then Pro plan comparison opens without starting checkout
-    When the owner chooses "annual" billing for Pro checkout
-    Then "annual" Pro checkout has opened 2 times without another database view
+    When the owner clicks Pro to start checkout
+    Then monthly Pro checkout has opened 2 times without another database view
 
     # Existing server inventory must be reflected on the first open after reload.
     When the owner reloads the database
@@ -29,24 +29,24 @@ Feature: Database view creation crowns
     And the "sidebar" creation menu shows crowns for "Form|Chart|Timeline"
     When the owner selects exhausted "Chart" from the "sidebar" creation menu
     Then Pro plan comparison opens without starting checkout
-    When the owner chooses "monthly" billing for Pro checkout
-    Then "monthly" Pro checkout has opened 3 times without another database view
+    When the owner clicks Pro to start checkout
+    Then monthly Pro checkout has opened 3 times without another database view
 
     # Both keyboard and pointer admission checks run before removing slash text.
     When the owner opens a new document for database creation
     And the owner selects the "chart" slash upgrade using "Enter"
     Then Pro plan comparison opens without starting checkout
-    When the owner chooses "annual" billing for Pro checkout
-    Then "annual" Pro checkout has opened 4 times without another database view
+    When the owner clicks Pro to start checkout
+    Then monthly Pro checkout has opened 4 times without another database view
     When the owner selects the "linkedChart" slash upgrade using "click"
     Then Pro plan comparison opens without starting checkout
-    When the owner chooses "monthly" billing for Pro checkout
-    Then "monthly" Pro checkout has opened 5 times without another database view
+    When the owner clicks Pro to start checkout
+    Then monthly Pro checkout has opened 5 times without another database view
     When the owner selects the "timeline" slash upgrade using "click"
     Then Pro plan comparison opens without starting checkout
-    When the owner chooses "annual" billing for Pro checkout
-    Then "annual" Pro checkout has opened 6 times without another database view
+    When the owner clicks Pro to start checkout
+    Then monthly Pro checkout has opened 6 times without another database view
     When the owner selects the "linkedTimeline" slash upgrade using "Enter"
     Then Pro plan comparison opens without starting checkout
-    When the owner chooses "monthly" billing for Pro checkout
-    Then "monthly" Pro checkout has opened 7 times without another database view
+    When the owner clicks Pro to start checkout
+    Then monthly Pro checkout has opened 7 times without another database view

@@ -14,24 +14,24 @@ import { intervalLabel } from './labels';
 interface ChangePeriodDialogProps {
   open: boolean;
   plan: SubscriptionPlan;
-  currentInterval?: SubscriptionInterval;
+  currentInterval: SubscriptionInterval;
   onClose: () => void;
   onConfirm: (interval: SubscriptionInterval) => void;
 }
 
 const INTERVALS = [SubscriptionInterval.Month, SubscriptionInterval.Year];
 
-/** Selects a checkout interval, or changes an existing subscription's billing period. */
+/** Switches a subscription between monthly and yearly billing; prices come from the pricing catalog. */
 export function ChangePeriodDialog({ open, plan, currentInterval, onClose, onConfirm }: ChangePeriodDialogProps) {
   const { t } = useTranslation();
-  const [selected, setSelected] = useState(currentInterval ?? SubscriptionInterval.Year);
+  const [selected, setSelected] = useState(currentInterval);
   const { catalog, isLoading, hasError, reload } = usePricingCatalog({ enabled: open });
   const catalogPlan = catalog ? findPlan(catalog, plan) : undefined;
   const selectedPrice = catalogPlan ? getPlanPrice(catalogPlan, selected) : undefined;
   const hasMissingPrice = !catalogPlan || INTERVALS.some((interval) => !getPlanPrice(catalogPlan, interval));
 
   useEffect(() => {
-    if (open) setSelected(currentInterval ?? SubscriptionInterval.Year);
+    if (open) setSelected(currentInterval);
   }, [currentInterval, open]);
 
   const unchanged = selected === currentInterval;
@@ -40,7 +40,7 @@ export function ChangePeriodDialog({ open, plan, currentInterval, onClose, onCon
   return (
     <NormalModal
       open={open}
-      title={t(currentInterval ? 'settings.billingPage.changePeriod' : 'settings.billingPage.plan.billingPeriod')}
+      title={t('settings.billingPage.changePeriod')}
       okText={t('button.confirm')}
       cancelText={t('button.cancel')}
       onClose={onClose}

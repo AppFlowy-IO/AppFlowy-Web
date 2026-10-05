@@ -57,6 +57,7 @@ export class DatabaseViewCreationFixture {
     checkouts: number;
     pages: number;
   };
+  private releaseCheckout?: () => void;
   private creationRequests = 0;
   private requestsBeforeUpgrade = 0;
 
@@ -85,6 +86,10 @@ export class DatabaseViewCreationFixture {
         url,
         authorized: /^Bearer \S+$/.test(request.headers().authorization ?? ''),
         destination,
+      });
+      // Keep the app visible until the test verifies the direct checkout handoff.
+      await new Promise<void>((resolve) => {
+        this.releaseCheckout = resolve;
       });
       await route.fulfill({ json: { code: 0, message: '', data: destination } });
     });
@@ -204,20 +209,24 @@ export class DatabaseViewCreationFixture {
     await this.expectUnchangedContent();
   }
 
-  async chooseBillingPeriod(period: string): Promise<void> {
-    const interval = this.intervalFor(period);
+  async startCheckout(): Promise<void> {
+    if (!this.beforeUpgrade) throw new Error('Select an upgrade before starting checkout');
+    const expectedCount = this.beforeUpgrade.checkouts + 1;
 
     await this.page.getByTestId('pricing-upgrade-pro').click();
-    await expect(this.page.getByTestId('period-option-month')).toContainText('$20');
-    await expect(this.page.getByTestId('period-option-year')).toContainText('$192');
-    await this.page.getByTestId(`period-option-${interval}`).click();
-    await expect(this.page.getByTestId('change-period-confirm')).toBeEnabled();
-    await this.page.getByTestId('change-period-confirm').click();
+    try {
+      await expect.poll(() => this.checkouts.length).toBe(expectedCount);
+      await expect(this.page.getByTestId('period-option-month')).toHaveCount(0);
+      await expect(this.page.getByTestId('period-option-year')).toHaveCount(0);
+      await expect(this.page.getByTestId('change-period-confirm')).toHaveCount(0);
+    } finally {
+      this.releaseCheckout?.();
+      this.releaseCheckout = undefined;
+    }
   }
 
-  async expectCheckout(period: string, count: number): Promise<void> {
+  async expectCheckout(count: number): Promise<void> {
     if (!this.beforeUpgrade) throw new Error('Select an upgrade before asserting checkout');
-    const interval = this.intervalFor(period);
 
     await expect.poll(() => this.checkouts.length).toBe(count);
     const checkout = this.checkouts[count - 1];
@@ -225,13 +234,13 @@ export class DatabaseViewCreationFixture {
     expect(checkout.authorized, 'Checkout uses authenticated billing').toBe(true);
     expect(checkout.url.searchParams.get('workspace_id')).toBe(this.workspaceId);
     expect(checkout.url.searchParams.get('workspace_subscription_plan')).toBe('pro');
-    expect(checkout.url.searchParams.get('recurring_interval')).toBe(interval);
+    expect(checkout.url.searchParams.get('recurring_interval')).toBe(SubscriptionInterval.Month);
     // Checkout may replace the app tab or open another browsing context. Observe
-    // the actual destination rather than waiting for a popup before confirmation.
+    // the actual destination after the direct Pro checkout request.
     await expect.poll(() => this.page.context().pages().some((page) => page.url() === checkout.destination)).toBe(true);
     const checkoutPage = this.page.context().pages().find((page) => page.url() === checkout.destination);
 
-    if (!checkoutPage) throw new Error('The confirmed checkout page is not available');
+    if (!checkoutPage) throw new Error('The monthly checkout page is not available');
     await expect(checkoutPage).toHaveURL(checkout.destination);
     if (checkoutPage === this.page) {
       await this.page.goto(this.beforeUpgrade.sourceUrl);
@@ -318,12 +327,6 @@ export class DatabaseViewCreationFixture {
       pages: this.page.context().pages().length,
     };
     this.requestsBeforeUpgrade = this.creationRequests;
-  }
-
-  private intervalFor(period: string): SubscriptionInterval {
-    expect(['monthly', 'annual']).toContain(period);
-
-    return period === 'monthly' ? SubscriptionInterval.Month : SubscriptionInterval.Year;
   }
 
   private async expectUnchangedContent(): Promise<void> {
