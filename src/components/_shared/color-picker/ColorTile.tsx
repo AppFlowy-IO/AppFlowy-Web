@@ -1,27 +1,28 @@
-import { forwardRef, MouseEventHandler, useMemo } from 'react';
+import { ButtonHTMLAttributes, forwardRef, MouseEventHandler, useMemo } from 'react';
 
 import { cn } from '@/lib/utils';
 
 export const ColorTile = forwardRef<
-  HTMLDivElement,
+  HTMLButtonElement,
   {
     value: string;
     isText?: boolean;
-    onClick: MouseEventHandler<HTMLDivElement> | undefined;
+    onClick: MouseEventHandler<HTMLButtonElement> | undefined;
     active?: boolean;
-  }
+  } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'value' | 'onClick'>
 >(({ value, onClick, isText = false, active = false, ...props }, forwardedRef) => {
   const child = useMemo(() => {
     if (isText) {
       return (
-        <span className='' style={{ color: value }}>
+        <span aria-hidden='true' style={{ color: value }}>
           A
         </span>
       );
     }
 
     return (
-      <div
+      <span
+        aria-hidden='true'
         className={cn(active ? 'h-5 w-5 rounded-[3px]' : 'min-h-6 min-w-6 rounded-[4px]')}
         style={{ background: value }}
       />
@@ -29,19 +30,22 @@ export const ColorTile = forwardRef<
   }, [active, isText, value]);
 
   return (
-    <div
+    <button
       ref={forwardedRef}
+      type='button'
+      aria-label={value}
+      aria-pressed={active}
       {...props}
       onClick={onClick}
       className={cn(
-        'flex h-7 w-7 cursor-pointer items-center justify-center rounded-[6px]',
+        'flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-action',
         active
           ? 'border-[2px] border-fill-theme-thick'
           : 'border border-border-primary hover:border-border-primary-hover'
       )}
     >
       {child}
-    </div>
+    </button>
   );
 });
 

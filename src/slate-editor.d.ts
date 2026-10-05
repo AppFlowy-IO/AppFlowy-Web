@@ -43,9 +43,16 @@ interface EditorInlineAttributes {
     database_row_id?: string;
     row_document_id?: string;
     data?: Record<string, unknown>;
+    // database Text cells: the plain text the mention was saved as
+    label?: string;
   };
   af_text_color?: string;
   af_background_color?: string;
+  /**
+   * Database Text cells: attributes from a newer client, carried through
+   * edits and written back unchanged. Never rendered.
+   */
+  _preserved?: Record<string, unknown>;
 }
 
 type CustomElement = {

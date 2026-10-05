@@ -200,11 +200,11 @@ When('I open the grid row named {string} as a full row page', async ({ page }, n
   await page.locator('.MuiDialogTitle-root').locator('button').first().click({ force: true });
 
   await expect(page).toHaveURL(/[?&]r=/, { timeout: 15000 });
-  await expect(page.locator('[data-slate-editor="true"]').first()).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('[data-testid="editor-content"]').first()).toBeVisible({ timeout: 15000 });
 });
 
 When('I type {string} into the row document', async ({ page }, text: string) => {
-  const editor = page.locator('[data-slate-editor="true"]').first();
+  const editor = page.locator('[data-testid="editor-content"]').first();
 
   await editor.click({ force: true });
   await page.keyboard.type(text, { delay: 30 });
@@ -251,7 +251,7 @@ When('I open the Favorites entry named {string}', async ({ page }, name: string)
 
 Then('the current page is a full row page', async ({ page }) => {
   await expect(page).toHaveURL(/[?&]r=/, { timeout: 15000 });
-  await expect(page.locator('[data-slate-editor="true"]').first()).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('[data-testid="editor-content"]').first()).toBeVisible({ timeout: 15000 });
 });
 
 When('I return to the grid page', async ({ page }) => {

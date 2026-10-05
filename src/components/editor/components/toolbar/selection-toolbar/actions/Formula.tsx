@@ -99,6 +99,7 @@ function Formula() {
       onClick={onClick}
       active={isActivated}
       disabled={!isActivated && (hasFormulaActivated || hasMentionActivated)}
+      data-testid="toolbar-formula-button"
       tooltip={t('document.plugins.createInlineMathEquation')}
     >
       <MathSvg className='h-4 w-4' />

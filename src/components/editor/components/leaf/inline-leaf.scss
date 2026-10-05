@@ -1,0 +1,32 @@
+// Layout of the inline objects the leaf renderers draw (mention chips and
+// inline equations). Loaded with the leaves rather than with the document
+// editor, because database Text cells render them without an editor.
+
+.formula-inline, .mention {
+  &.selected {
+    @apply rounded-[2px] bg-content-blue-100;
+    .mention-inline {
+      @apply bg-content-blue-100 select-all;
+    }
+  }
+}
+
+.formula-inline {
+  @apply whitespace-pre;
+}
+
+.mention-inline {
+  height: inherit;
+  overflow: hidden;
+  @apply inline-flex gap-1 relative truncate max-w-full;
+  text-underline-position: under;
+
+  .mention-icon {
+    @apply absolute top-1/2 transform -translate-y-1/2;
+    font-size: 1em;
+  }
+
+  .mention-content {
+    @apply ml-[1.5em]  truncate max-w-full flex-1;
+  }
+}

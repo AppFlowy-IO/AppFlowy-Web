@@ -747,7 +747,7 @@ test.describe('Publish Page Test', () => {
     );
 
     const editor = dialog
-      .locator('[data-testid="editor-content"], [role="textbox"][contenteditable="true"]')
+      .locator('[data-testid="editor-content"]')
       .first();
     await editor.click({ force: true });
     await page.waitForTimeout(500);

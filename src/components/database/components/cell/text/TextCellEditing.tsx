@@ -66,7 +66,7 @@ function TextCellEditing(
 
         if (isEnterHotkey(e.nativeEvent) || isEscapeHotkey(e.nativeEvent)) {
           if (inputValue !== defaultValue) {
-            onUpdateCell(inputValue);
+            void onUpdateCell(inputValue);
           }
 
           onExit?.();
@@ -74,7 +74,7 @@ function TextCellEditing(
       }}
       onBlur={() => {
         if (inputValue !== defaultValue) {
-          onUpdateCell(inputValue);
+          void onUpdateCell(inputValue);
         }
 
         onExit?.();

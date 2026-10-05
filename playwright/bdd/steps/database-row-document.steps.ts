@@ -498,7 +498,7 @@ async function focusRowDocumentEditor(page: Page) {
     await page.waitForTimeout(500);
   }
 
-  const editor = dialog.locator('[data-testid="editor-content"], [role="textbox"][contenteditable="true"]').first();
+  const editor = dialog.locator('[data-testid="editor-content"]').first();
 
   await expect(editor).toBeVisible({ timeout: 15000 });
   await editor.click({ force: true });

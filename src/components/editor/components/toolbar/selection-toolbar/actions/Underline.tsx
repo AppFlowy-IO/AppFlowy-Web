@@ -23,6 +23,7 @@ export function Underline() {
 
   return (
     <ActionButton
+      aria-label={t('editor.underline')}
       onClick={onClick}
       active={isActivated}
       data-testid="toolbar-underline-button"
@@ -33,7 +34,7 @@ export function Underline() {
         </>
       }
     >
-      <UnderlineSvg className='h-4 w-4' />
+      <UnderlineSvg aria-hidden='true' className='h-4 w-4' />
     </ActionButton>
   );
 }

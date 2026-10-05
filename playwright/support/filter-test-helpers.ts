@@ -95,7 +95,7 @@ export async function typeTextIntoCell(page: Page, fieldId: string, cellIndex: n
   await cell.click(); // Double click to enter edit mode
 
   // Wait for textarea and type
-  const textarea = page.locator('textarea:visible').first();
+  const textarea = DatabaseGridSelectors.textCellEditor(page);
   await expect(textarea).toBeVisible({ timeout: 8000 });
   await textarea.clear();
 

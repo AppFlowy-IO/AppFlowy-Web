@@ -159,7 +159,7 @@ test.describe('Board Operations', () => {
       // Then: the modal should show the original title
       const dialog = page.locator('.MuiDialog-paper').filter({ has: page.getByTestId('row-title-input') }).first();
       await expect(dialog).toBeVisible({ timeout: 10000 });
-      await expect(dialog.getByTestId('row-title-input')).toHaveValue(originalName, { timeout: 10000 });
+      await expect(dialog.getByTestId('row-title-input')).toHaveText(originalName, { timeout: 10000 });
 
       // When: modifying the title and closing the modal
       const titleInput = RowDetailSelectors.titleInput(page);

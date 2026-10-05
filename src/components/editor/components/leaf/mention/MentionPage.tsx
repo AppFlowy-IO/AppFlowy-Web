@@ -34,7 +34,7 @@ function MentionPage({
   const currentViewId = context.viewId;
   const eventEmitter = context.eventEmitter;
 
-  const { navigateToView, loadViewMeta, loadView } = context;
+  const { navigateToView, loadViewMeta, loadView, onPageMentionNameResolved } = context;
   const [metadata, setMetadata] = useState<{ pageId: string; view: View | null; noAccess: boolean } | null>(null);
   // Keep the current page visible while revalidating, without showing the
   // previous page's metadata when this component receives a new reference.
@@ -46,10 +46,15 @@ function MentionPage({
     let current = true;
     let receivedUpdate = false;
 
+    const acceptView = (view: View | null) => {
+      setMetadata({ pageId, view, noAccess: false });
+      onPageMentionNameResolved?.(pageId, view?.name);
+    };
+
     const handleView = (view: View) => {
       if (view.view_id !== pageId) return;
       receivedUpdate = true;
-      setMetadata({ pageId, view, noAccess: false });
+      acceptView(view);
     };
 
     const handleOutlineLoaded = (outline: View[]) => {
@@ -61,7 +66,7 @@ function MentionPage({
     eventEmitter?.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
     eventEmitter?.on(APP_EVENTS.VIEW_META_CHANGED, handleView);
     void loadViewMeta?.(pageId).then((view) => {
-      if (current && !receivedUpdate) setMetadata({ pageId, view, noAccess: false });
+      if (current && !receivedUpdate) acceptView(view);
     }).catch(() => {
       if (current && !receivedUpdate) {
         setMetadata((previous) => ({
@@ -76,7 +81,7 @@ function MentionPage({
       eventEmitter?.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
       eventEmitter?.off(APP_EVENTS.VIEW_META_CHANGED, handleView);
     };
-  }, [eventEmitter, loadViewMeta, pageId]);
+  }, [eventEmitter, loadViewMeta, onPageMentionNameResolved, pageId]);
 
   const icon = useMemo(() => {
     return meta?.icon;

@@ -22,7 +22,7 @@ export function useTaskActions ({ cell, rowId, fieldId }: {
     const data = cell?.data || '';
     const newData = toggleSelectedTask(data, taskId);
 
-    updateCell(newData);
+    void updateCell(newData);
   }, [cell?.data, updateCell]);
   const onCreateTask = useCallback(() => {
     const data = cell?.data || '';
@@ -35,14 +35,14 @@ export function useTaskActions ({ cell, rowId, fieldId }: {
 
     setCreateTaskValue('');
 
-    updateCell(newData);
+    void updateCell(newData);
   }, [cell?.data, createTaskValue, updateCell]);
 
   const onChangeTask = useCallback((task: SelectOption) => {
     const data = cell?.data || '';
     const newData = updateTask(data, task.id, task.name);
 
-    updateCell(newData);
+    void updateCell(newData);
   }, [cell?.data, updateCell]);
 
   const onReorderTasks = useCallback(({
@@ -65,14 +65,14 @@ export function useTaskActions ({ cell, rowId, fieldId }: {
 
     const beforeId = newData[finishIndex - 1]?.id;
 
-    updateCell(reorderTasks(data, { beforeId, taskId }));
+    void updateCell(reorderTasks(data, { beforeId, taskId }));
   }, [cell?.data, updateCell]);
 
   const onRemoveTask = useCallback((taskId: string) => {
     const data = cell?.data || '';
     const newData = removeTask(data, taskId);
 
-    updateCell(newData);
+    void updateCell(newData);
   }, [cell?.data, updateCell]);
 
   return {

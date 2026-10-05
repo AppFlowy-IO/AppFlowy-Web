@@ -91,7 +91,7 @@ test.describe('Row Document Test', () => {
     // Wait for editor to be ready and click into it
     const editor = page
       .locator('[role="dialog"]')
-      .locator('[data-testid="editor-content"], [role="textbox"][contenteditable="true"]')
+      .locator('[data-testid="editor-content"]')
       .first();
     await expect(editor).toBeVisible({ timeout: 15000 });
     await editor.click({ force: true });

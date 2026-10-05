@@ -82,7 +82,7 @@ export function CardField({
           if (readOnly) return;
           e.stopPropagation();
 
-          onUpdateCell(getChecked(cell?.data as string) ? 'No' : 'Yes');
+          void onUpdateCell(getChecked(cell?.data as string) ? 'No' : 'Yes');
         }}
         className={'flex items-center gap-2'}
       >
