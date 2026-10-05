@@ -97,10 +97,14 @@ function before(page: Page, title: string): BarBox {
 }
 
 async function visibleCanvas(page: Page) {
-  const view = await TimelineSelectors.view(page).boundingBox();
+  const [viewport, table] = await Promise.all([
+    TimelineSelectors.view(page).locator('.appflowy-scroller').first().boundingBox(),
+    page.getByTestId('timeline-table-viewport').first().boundingBox(),
+  ]);
 
-  if (!view) throw new Error('Timeline view is not visible');
-  return { left: view.x + TIMELINE_SIDEBAR_WIDTH, right: view.x + view.width };
+  if (!viewport || !table) throw new Error('Timeline canvas is not visible');
+  // Saved field widths can make the docked table narrower than its fallback.
+  return { left: viewport.x + table.width, right: viewport.x + viewport.width };
 }
 
 Given(
