@@ -807,6 +807,49 @@ test.each([Types.Database, Types.DatabaseRow])(
   unmount();
 });
 
+test('busy guards retain local edits and honor Retry-After across opens, sends, and focus events', async () => {
+  jest.useFakeTimers();
+  const f = fixture();
+
+  f.row.getMap('unsent').set('value', 'local edit');
+  jest.mocked(getDatabaseRestoreState)
+    .mockRejectedValueOnce({ code: ERROR_CODE.TOO_MANY_REQUESTS, httpStatus: 429, retryAfterSecs: 7 })
+    .mockResolvedValue({ database_restore_id: null, version: null });
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }));
+  const check = () => result.current.ensureDatabaseRestoreCurrent('database', Types.Database);
+
+  await act(async () => { expect(await check()).toBe(false); });
+  await act(async () => { jest.advanceTimersByTime(3000); });
+  await act(async () => {
+    const attempts = await Promise.all(Array.from({ length: 32 }, (_, index) => index % 2 === 0
+      ? check() : result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow)));
+
+    expect(attempts.every((admitted) => !admitted)).toBe(true);
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('online'));
+  });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(1);
+  expect(f.contexts.get('row')?.doc).toBe(f.row);
+  expect(f.row.getMap('unsent').get('value')).toBe('local edit');
+  expect(deleteOutboxByObjectId).not.toHaveBeenCalled();
+  expect(db.sync_outbox.where).not.toHaveBeenCalled();
+  expect(deleteCollabDB).not.toHaveBeenCalled();
+  expect(invalidateDatabaseBlobAfterRestore).not.toHaveBeenCalled();
+  expect(f.unregister).not.toHaveBeenCalled();
+  expect(startDrainAll).not.toHaveBeenCalled();
+  await act(async () => { jest.advanceTimersByTime(3999); });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(1);
+  await act(async () => { jest.advanceTimersByTime(1); });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(2);
+  expect(startDrainAll).toHaveBeenCalledTimes(1);
+  expect(f.row.getMap('unsent').get('value')).toBe('local edit');
+  unmount();
+});
+
 
 test('a stale notification hint verifies authority without resetting the current database', async () => {
   const f = fixture();
@@ -1056,6 +1099,8 @@ test.each([false, true])('a passive tab retries a transient first notification r
   expect(invalidateDatabaseBlobAfterRestore).not.toHaveBeenCalled();
   expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
   await act(async () => { jest.advanceTimersByTime(5000); });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(1);
+  await act(async () => { jest.advanceTimersByTime(25000); });
   expect(f.contexts.get('database')?.doc).toBe(f.nextRoot);
   expect(f.contexts.get('row')?.doc).toBe(f.nextRow);
   expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);

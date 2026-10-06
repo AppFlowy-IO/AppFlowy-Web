@@ -1,8 +1,85 @@
+import { ERROR_CODE } from '@/application/constants';
 import { DatabaseStorageGenerationChangedError } from '@/application/db/database-storage-fence';
 
-import { DatabaseRestoreTracker } from '../databaseRestoreState';
+import { DatabaseRestoreTracker, DatabaseRestoreVerificationDeferredError } from '../databaseRestoreState';
 
 beforeEach(() => localStorage.clear());
+afterEach(() => jest.useRealTimers());
+
+test.each([429, 500])('permanent permission codes remain terminal even with HTTP %s and Retry-After', async (httpStatus) => {
+  const denied = { code: ERROR_CODE.NOT_HAS_PERMISSION, httpStatus, retryAfterSecs: 60 };
+  const read = jest.fn().mockRejectedValue(denied);
+  const tracker = new DatabaseRestoreTracker('marker:', read, jest.fn(), localStorage);
+
+  await expect(tracker.check('db')).rejects.toBe(denied);
+  await expect(tracker.check('db')).rejects.toBe(denied);
+  expect(read).toHaveBeenCalledTimes(2);
+});
+
+test('an enormous finite Retry-After cannot overflow the shared deadline', async () => {
+  const read = jest.fn().mockRejectedValue({ code: 429, retryAfterSecs: 1e308 });
+  const tracker = new DatabaseRestoreTracker('marker:', read, jest.fn(), localStorage);
+  const result = await tracker.check('db').catch((error) => error);
+
+  expect(result).toBeInstanceOf(DatabaseRestoreVerificationDeferredError);
+  expect(Number.isSafeInteger(result.retryAtMs)).toBe(true);
+  expect(Number.isFinite(result.retryAfterSecs)).toBe(true);
+  await expect(tracker.check('db')).rejects.toBe(result);
+  expect(read).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  { code: ERROR_CODE.TOO_MANY_REQUESTS, httpStatus: 429 },
+  { code: ERROR_CODE.RETRY_LATER },
+  { code: ERROR_CODE.SERVICE_TEMPORARY_UNAVAILABLE, httpStatus: 503 },
+])('all callers respect the original retry deadline after authority failure %o', async (detail) => {
+  jest.useFakeTimers();
+  const read = jest.fn().mockRejectedValueOnce({ ...detail, retryAfterSecs: 7 })
+    .mockResolvedValue({ database_restore_id: null, version: null });
+  const reset = jest.fn();
+  const tracker = new DatabaseRestoreTracker('marker:', read, reset, localStorage);
+  const initial = await Promise.allSettled(Array.from({ length: 32 }, () => tracker.check('db')));
+
+  expect(initial.every((result) => result.status === 'rejected')).toBe(true);
+  expect(read).toHaveBeenCalledTimes(1);
+  jest.advanceTimersByTime(3000);
+  const staggered = await Promise.allSettled(Array.from({ length: 32 }, () => tracker.check('db')));
+
+  expect(staggered.every((result) => result.status === 'rejected')).toBe(true);
+  expect(staggered[0]).toMatchObject({ status: 'rejected', reason: { ...detail, retryAfterSecs: 4 } });
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(reset).not.toHaveBeenCalled();
+  expect(localStorage.getItem('marker:db')).toBeNull();
+  jest.advanceTimersByTime(4000);
+  expect(await tracker.check('db')).toBe(true);
+  expect(read).toHaveBeenCalledTimes(2);
+});
+
+test('a hint during a busy authority read stays fenced until a fresh post-deadline verification', async () => {
+  jest.useFakeTimers();
+  localStorage.setItem('marker:db', 'restore-old');
+  let rejectRead!: (reason: unknown) => void;
+  const read = jest.fn().mockImplementationOnce(() => new Promise((_, reject) => { rejectRead = reject; }))
+    .mockResolvedValue({ database_restore_id: 'restore-new', version: 'version' });
+  const reset = jest.fn().mockResolvedValue(undefined);
+  const tracker = new DatabaseRestoreTracker('marker:', read, reset, localStorage);
+  const initial = tracker.check('db');
+
+  tracker.observeRestoreHint('db', 'restore-new');
+  rejectRead({ code: ERROR_CODE.TOO_MANY_REQUESTS, httpStatus: 429, retryAfterSecs: 7 });
+  await expect(initial).rejects.toMatchObject({ code: ERROR_CODE.TOO_MANY_REQUESTS });
+  await expect(tracker.check('db')).rejects.toMatchObject({ retryAfterSecs: 7 });
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(reset).not.toHaveBeenCalled();
+  expect(tracker.marker('db')).toBe('restore-old');
+  expect(tracker.verificationIsCurrent('db')).toBe(false);
+  jest.advanceTimersByTime(7000);
+  expect(await tracker.check('db')).toBe(false);
+  expect(read).toHaveBeenCalledTimes(3);
+  expect(reset).toHaveBeenCalledTimes(1);
+  expect(tracker.marker('db')).toBe('restore-new');
+  expect(tracker.verificationIsCurrent('db')).toBe(true);
+});
 
 test('a new restore identity resets even when the history version is unchanged', async () => {
   localStorage.setItem('marker:db', 'restore-1');

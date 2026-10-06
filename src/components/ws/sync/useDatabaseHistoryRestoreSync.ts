@@ -3,7 +3,7 @@ import EventEmitter from 'events';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as Y from 'yjs';
 
-import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { APP_EVENTS } from '@/application/constants';
 import { invalidateDatabaseBlobAfterRestore, prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
 import { invalidateDatabaseDependenciesAfterRestore } from '@/application/database-yjs/restore-dependencies';
@@ -21,7 +21,8 @@ import { Types, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/applicat
 import { notification } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
-import { DatabaseRestoreState, DatabaseRestoreTracker } from './databaseRestoreState';
+import { DatabaseRestoreState, DatabaseRestoreTracker, DatabaseRestoreVerificationDeferredError,
+  isPermanentDatabaseRestoreError } from './databaseRestoreState';
 import { rebuildCollabDoc } from './rebuildCollabDoc';
 import { SyncRefs } from './syncRefs';
 import { RegisterSyncContext, SyncDocMeta } from './types';
@@ -423,13 +424,8 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       const retryKey = `${current.userId}:${current.workspaceId}:${databaseId}`;
 
       const detail = error as { code?: number; httpStatus?: number; retryAfterSecs?: number } | null;
-      const permanentCodes: number[] = [401, 403, 404, ERROR_CODE.NOT_LOGGED_IN, ERROR_CODE.NOT_HAS_PERMISSION,
-        ERROR_CODE.USER_UNAUTHORIZED, ERROR_CODE.RECORD_NOT_FOUND, ERROR_CODE.RECORD_DELETED,
-        ERROR_CODE.WORKSPACE_NOT_FOUND, ERROR_CODE.FEATURE_NOT_AVAILABLE];
-      const permanentlyDenied = permanentCodes.includes(detail?.code ?? 0) ||
-        [401, 403, 404].includes(detail?.httpStatus ?? 0);
 
-      if (permanentlyDenied) {
+      if (isPermanentDatabaseRestoreError(error)) {
         const timer = retryTimers.current.get(retryKey);
 
         if (timer !== undefined) clearTimeout(timer);
@@ -456,7 +452,9 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       if (needsRetry && sessionActive.current && !current.refs.isDisposedRef.current &&
           latest.current.workspaceId === current.workspaceId && latest.current.userId === current.userId &&
           !retryTimers.current.has(retryKey)) {
-        const delayMs = Math.max(5000, (detail?.retryAfterSecs || 0) * 1000);
+        const delayMs = error instanceof DatabaseRestoreVerificationDeferredError
+          ? Math.max(0, error.retryAtMs - Date.now())
+          : Math.max(5000, (detail?.retryAfterSecs || 0) * 1000);
         const retryDatabaseId = databaseId;
 
         retryTimers.current.set(retryKey, setTimeout(() => {
@@ -464,7 +462,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
           if (sessionActive.current && latest.current.workspaceId === current.workspaceId && latest.current.userId === current.userId) {
             void retryReset.current?.(retryDatabaseId);
           }
-        }, delayMs));
+        }, Math.min(delayMs, 2_147_483_647)));
       }
 
       return false;
