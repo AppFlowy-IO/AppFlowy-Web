@@ -2125,6 +2125,8 @@ export interface WorkspaceUsageAndLimit {
   storage_bytes: number;
   storage_bytes_limit: number;
   storage_bytes_unlimited: boolean;
+  /** Whether storage is being metered. Older gateways omit this display-only signal. */
+  storage_usage_available?: boolean;
   single_upload_limit: number;
   single_upload_unlimited: boolean;
   ai_responses_count: number;

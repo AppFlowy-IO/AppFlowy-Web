@@ -30,6 +30,7 @@ function UsageBox({
   title,
   unlimited,
   unlimitedLabel,
+  unavailableLabel,
   label,
   ratio,
   testId,
@@ -37,6 +38,7 @@ function UsageBox({
   title: string;
   unlimited: boolean;
   unlimitedLabel: string;
+  unavailableLabel?: string;
   label: string;
   ratio: number;
   testId: string;
@@ -46,7 +48,9 @@ function UsageBox({
   return (
     <div className='flex flex-1 flex-col gap-1' data-testid={testId}>
       <div className='text-[11px] font-medium text-text-secondary'>{title}</div>
-      {unlimited ? (
+      {unavailableLabel ? (
+        <div className='text-[11px] font-medium text-text-secondary'>{unavailableLabel}</div>
+      ) : unlimited ? (
         <div className='flex items-center gap-1 text-[11px] font-medium text-text-primary'>
           <CheckCircleIcon className='h-4 w-4 text-[#9C00FB]' />
           <span>{unlimitedLabel}</span>
@@ -167,6 +171,9 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
         title={t('settings.planPage.planUsage.storageLabel')}
         unlimited={current.storage_bytes_unlimited}
         unlimitedLabel={t('settings.planPage.planUsage.unlimitedStorageLabel')}
+        unavailableLabel={current.storage_usage_available === false
+          ? t('settings.planPage.planUsage.storageUnavailable', { defaultValue: 'Unavailable for the moment' })
+          : undefined}
         label={fillPlaceholders(
           t('settings.planPage.planUsage.storageUsage'),
           formatStorageGb(current.storage_bytes),

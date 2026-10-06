@@ -1297,6 +1297,7 @@
         "storageLabel": "Storage",
         "storageUsage": "{} of {} GB",
         "unlimitedStorageLabel": "Unlimited storage",
+        "storageUnavailable": "Unavailable for the moment",
         "collaboratorsLabel": "Members",
         "collaboratorsUsage": "{} of {}",
         "aiResponseLabel": "AI Responses",

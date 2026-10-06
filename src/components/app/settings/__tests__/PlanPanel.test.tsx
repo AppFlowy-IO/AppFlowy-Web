@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 
 import { BillingService } from '@/application/services/domains';
@@ -72,6 +72,41 @@ describe('PlanPanel', () => {
     expect(screen.queryByTestId('change-period-confirm')).toBeNull();
     await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://checkout/pro', '_current'));
     expect(api.getSubscriptionLink).toHaveBeenCalledWith('workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Month);
+  });
+
+  it.each([
+    [SubscriptionPlan.Free, 'Personal'],
+    [SubscriptionPlan.Pro, 'Pro'],
+  ])('shows unavailable storage while preserving the %s plan and AI usage when metering is disabled', async (plan, label) => {
+    api.getWorkspaceSubscriptionStatus.mockResolvedValue(plan === SubscriptionPlan.Free ? [] : [workspaceStatus(plan)]);
+    api.getWorkspaceUsage.mockResolvedValue({
+      ...freeUsage,
+      storage_bytes: 0,
+      storage_bytes_limit: 0,
+      storage_bytes_unlimited: true,
+      storage_usage_available: false,
+    });
+    renderPanel();
+
+    expect(await screen.findByText('Unavailable for the moment')).toBeTruthy();
+    const storage = screen.getByTestId('plan-usage-storage');
+
+    expect(within(storage).getByText('Storage')).toBeTruthy();
+    expect(within(storage).queryByRole('progressbar')).toBeNull();
+    expect(storage.querySelector('svg')).toBeNull();
+    expect(screen.queryByText('Unlimited storage')).toBeNull();
+    expect(screen.queryByText('0 of 0 GB')).toBeNull();
+    expect(screen.getByTestId('plan-usage-ai').textContent).toContain('3 of 10');
+    expect(screen.getByTestId('current-plan-box').textContent).toContain(label);
+    expect(screen.queryByTestId('plan-usage-error')).toBeNull();
+  });
+
+  it.each([true, undefined])('keeps genuine unlimited storage for available or legacy responses (%s)', async (available) => {
+    api.getWorkspaceUsage.mockResolvedValue({ ...proUsage, storage_usage_available: available });
+    renderPanel();
+
+    expect(await screen.findByText('Unlimited storage')).toBeTruthy();
+    expect(screen.queryByText('Unavailable for the moment')).toBeNull();
   });
 
   it('shows the plan while usage is pending, then offers a retry without inventing usage', async () => {
