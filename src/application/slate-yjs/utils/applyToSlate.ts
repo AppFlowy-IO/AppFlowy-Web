@@ -33,35 +33,38 @@ export function translateYEvents(editor: YjsEditor, events: Array<YEvent>) {
     timestamp: new Date().toISOString(),
   });
 
-  events.forEach((event, index) => {
-    const path = event.path;
+  // Normalize only after every structural change in the transaction is applied.
+  Editor.withoutNormalizing(editor, () => {
+    events.forEach((event, index) => {
+      const path = event.path;
 
-    Log.debug(`Processing event ${index + 1}/${events.length}:`, {
-      path: event.path,
-      type: event.constructor.name,
+      Log.debug(`Processing event ${index + 1}/${events.length}:`, {
+        path: event.path,
+        type: event.constructor.name,
+      });
+
+      // Handle block-level changes (document.blocks)
+      if (path.length === 2 && path[0] === 'document' && path[1] === 'blocks') {
+        Log.debug('→ Applying block map changes');
+        applyBlocksYEvent(editor, event as BlockMapEvent);
+      }
+
+      // Handle individual block updates (document.blocks[blockId])
+      if (path.length === 3 && path[0] === 'document' && path[1] === 'blocks') {
+        const blockId = path[2] as string;
+
+        Log.debug(`→ Applying block update for blockId: ${blockId}`);
+        applyUpdateBlockYEvent(editor, blockId, event as YMapEvent<unknown>);
+      }
+
+      // Handle text content changes (document.meta.text_map[textId])
+      if (path.length === 4 && path[0] === 'document' && path[1] === 'meta' && path[2] === 'text_map') {
+        const textId = path[3] as string;
+
+        Log.debug(`→ Applying text content changes for textId: ${textId}`);
+        applyTextYEvent(editor, textId, event as YTextEvent);
+      }
     });
-
-    // Handle block-level changes (document.blocks)
-    if (path.length === 2 && path[0] === 'document' && path[1] === 'blocks') {
-      Log.debug('→ Applying block map changes');
-      applyBlocksYEvent(editor, event as BlockMapEvent);
-    }
-
-    // Handle individual block updates (document.blocks[blockId])
-    if (path.length === 3 && path[0] === 'document' && path[1] === 'blocks') {
-      const blockId = path[2] as string;
-
-      Log.debug(`→ Applying block update for blockId: ${blockId}`);
-      applyUpdateBlockYEvent(editor, blockId, event as YMapEvent<unknown>);
-    }
-
-    // Handle text content changes (document.meta.text_map[textId])
-    if (path.length === 4 && path[0] === 'document' && path[1] === 'meta' && path[2] === 'text_map') {
-      const textId = path[3] as string;
-
-      Log.debug(`→ Applying text content changes for textId: ${textId}`);
-      applyTextYEvent(editor, textId, event as YTextEvent);
-    }
   });
 
   Log.debug('=== Yjs events translation completed ===');
@@ -163,10 +166,36 @@ function applyBlocksYEvent(editor: YjsEditor, event: BlockMapEvent) {
     updates.push({ key, action: value.action, value: value as YBlockChange });
   });
 
-  // Sort updates: delete first, then add/update
+  // Map iteration follows encoded changes rather than the child arrays. Walk
+  // the final document so ancestors and earlier siblings have Slate paths first.
+  const documentOrder = new Map<string, number>();
+  const visit = (id: string) => {
+    if (documentOrder.has(id)) return;
+    documentOrder.set(id, documentOrder.size);
+    const block = getBlock(id, editor.sharedRoot);
+
+    if (!block) return;
+    const children = getChildrenArray(block.get(YjsEditorKey.block_children), editor.sharedRoot);
+
+    children?.toArray().forEach(visit);
+  };
+
+  if (updates.filter((update) => update.action === 'add').length > 1) {
+    visit(getPageId(editor.sharedRoot));
+  }
+
+  // Delete first, then insert in the final document's order.
   updates.sort((a, b) => {
     if (a.action === 'delete' && b.action !== 'delete') return -1;
     if (a.action !== 'delete' && b.action === 'delete') return 1;
+    if (a.action === 'add' && b.action === 'update') return -1;
+    if (a.action === 'update' && b.action === 'add') return 1;
+    if (a.action === 'add' && b.action === 'add') {
+      return (
+        (documentOrder.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (documentOrder.get(b.key) ?? Number.MAX_SAFE_INTEGER)
+      );
+    }
+
     return 0;
   });
 
