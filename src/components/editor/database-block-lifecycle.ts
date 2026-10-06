@@ -107,3 +107,63 @@ export async function resolveDatabaseBlockDeletionTarget(
     return viewId;
   }
 }
+
+type DatabaseDeletionContext = {
+  readOnly: boolean;
+  loadViewMeta?: LoadViewMeta;
+  deletePage?: (viewId: string) => Promise<void>;
+  restorePage?: (viewId: string) => Promise<void>;
+};
+
+/**
+ * Remember only views trashed by this editor, so history can restore them.
+ * Serialize each view's requests when undo/redo races an in-flight deletion.
+ */
+export function createDatabaseBlockDeletionTracker(
+  getContext: () => DatabaseDeletionContext,
+  isReferenced: (viewId: string) => boolean,
+  onError: (viewId: string, error: unknown) => void
+) {
+  const deletedTargets = new Map<string, string>();
+  const pending = new Map<string, Promise<void>>();
+
+  const reconcile = (viewId: string): Promise<void> => {
+    const operation = (pending.get(viewId) ?? Promise.resolve()).then(async () => {
+      const context = getContext();
+
+      if (context.readOnly) return;
+      if (isReferenced(viewId)) {
+        const targetId = deletedTargets.get(viewId);
+
+        if (!targetId || !context.restorePage) return;
+        await context.restorePage(targetId);
+        deletedTargets.delete(viewId);
+        return;
+      }
+
+      if (deletedTargets.has(viewId) || !context.loadViewMeta || !context.deletePage) return;
+      const targetId = await resolveDatabaseBlockDeletionTarget(viewId, context.loadViewMeta);
+
+      // A restored block must not be deleted while metadata is loading.
+      if (!targetId || isReferenced(viewId) || getContext().readOnly) return;
+      await context.deletePage(targetId);
+      deletedTargets.set(viewId, targetId);
+    }).catch((error) => onError(viewId, error));
+
+    pending.set(viewId, operation);
+    void operation.then(() => {
+      if (pending.get(viewId) === operation) pending.delete(viewId);
+    });
+    return operation;
+  };
+
+  return {
+    reconcile,
+    restoreReferencedViews(viewIds: Set<string>) {
+      for (const viewId of viewIds) {
+        // Existing references never authorize restoring somebody else's trash.
+        if (deletedTargets.has(viewId) || pending.has(viewId)) void reconcile(viewId);
+      }
+    },
+  };
+}

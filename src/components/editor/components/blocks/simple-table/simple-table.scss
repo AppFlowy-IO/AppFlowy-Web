@@ -1,13 +1,24 @@
 .simple-table {
+  --simple-table-header-background: var(--fill-content-hover);
+  --simple-table-selection-color: #00bcf0;
+  --simple-table-selected-background: #e0f8ff;
+
+  :root[data-dark-mode=true] & {
+    --simple-table-header-background: rgba(255, 255, 255, 0.03);
+    --simple-table-selected-background: var(--fill-theme-select);
+  }
+
   &.enable-header-column {
     tr [data-block-type="simple_table_cell"]:first-child {
-      @apply font-semibold bg-fill-content-hover;
+      @apply font-semibold;
+      background-color: var(--simple-table-header-background);
     }
   }
 
   &.enable-header-row {
     tr:first-child > [data-block-type="simple_table_cell"] {
-      @apply font-semibold bg-fill-content-hover;
+      @apply font-semibold;
+      background-color: var(--simple-table-header-background);
     }
   }
 
@@ -117,7 +128,9 @@
 
   &.selected {
     table {
-      @apply bg-fill-theme-select border border-fill-default;
+      background-color: var(--simple-table-selected-background);
+      outline: 2px solid var(--simple-table-selection-color);
+      outline-offset: -2px;
     }
 
   }
@@ -141,6 +154,50 @@
     @apply w-full;
     overflow-x: auto;
     overflow-y: hidden;
+  }
+
+  .simple-table-block-selection {
+    position: absolute;
+    display: none;
+    border: 2px solid var(--simple-table-selection-color);
+    pointer-events: none;
+    z-index: 11;
+
+    &::before,
+    &::after {
+      content: '';
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      border: 2px solid var(--simple-table-selection-color);
+      border-radius: 50%;
+      background-color: var(--background-primary);
+    }
+
+    &::before {
+      top: -4px;
+      left: -4px;
+    }
+
+    &::after {
+      bottom: -4px;
+      right: -4px;
+    }
+  }
+
+  [data-block-type="simple_table"].selected > & {
+    td[data-block-type="simple_table_cell"] {
+      background-color: var(--simple-table-selected-background) !important;
+      box-shadow: none;
+
+      &::after {
+        border-width: 0;
+      }
+    }
+
+    .simple-table-block-selection {
+      display: block;
+    }
   }
 
   .simple-table-inner-wrapper {
@@ -225,6 +282,10 @@
       background-color: var(--fill-list-hover);
       color: var(--fill-default);
     }
+
+    &.active {
+      border: 2px solid var(--simple-table-selection-color);
+    }
   }
 
   // ========================================================================
@@ -241,10 +302,28 @@
     overflow: visible;
   }
 
+  .simple-table-selection-viewport {
+    position: absolute;
+    // Leave vertical room for the whole-table corner handles while clipping
+    // every selection to the scroll container's horizontal viewport.
+    inset: -4px 0;
+    overflow: visible;
+    pointer-events: none;
+
+    &.clipped {
+      overflow: hidden;
+    }
+  }
+
+  .simple-table-selection-layer {
+    position: absolute;
+    inset: 4px 0;
+  }
+
   .simple-table-row-trigger-container {
     @apply absolute pointer-events-auto;
-    // left is set inline from JS based on table's left edge
-    transform: translateX(-50%); // center button ON the left table border
+    // Keep the button on the visible table edge during horizontal scrolling.
+    transform: translateX(-50%);
     width: 24px;
     display: flex;
     align-items: center;
@@ -253,7 +332,7 @@
 
   .simple-table-col-trigger-container {
     @apply absolute pointer-events-auto;
-    // top is set inline from JS based on table's top edge
+    // The width follows the visible portion of the hovered column.
     transform: translateY(-50%); // center button ON the top table border
     height: 24px;
     display: flex;
@@ -265,16 +344,17 @@
   // Row / Column selection highlight (cyan border when menu is open)
   // ========================================================================
 
-  tr.simple-table-highlight {
-    > td {
-      outline: 2px solid var(--fill-default);
-      outline-offset: -1px;
-    }
+  .simple-table-menu-selection {
+    position: absolute;
+    display: none;
+    box-sizing: border-box;
+    border: 2px solid var(--simple-table-selection-color);
+    pointer-events: none;
   }
 
-  td.simple-table-highlight {
-    outline: 2px solid var(--fill-default);
-    outline-offset: -1px;
+  .simple-table-action-overlay:has(.simple-table-row-trigger-container > .simple-table-action-btn.active) .simple-table-menu-selection.row,
+  .simple-table-action-overlay:has(.simple-table-col-trigger-container > .simple-table-action-btn.active) .simple-table-menu-selection.column {
+    display: block;
   }
 
   // Cell selection highlight — merged rectangle border matching desktop
@@ -378,6 +458,128 @@
   height: 16px;
   flex-shrink: 0;
   color: var(--text-caption);
+}
+
+.simple-table-menu-delete:not(:disabled):hover {
+  color: var(--text-error);
+
+  .simple-table-menu-item-icon {
+    color: inherit;
+  }
+
+  .simple-table-menu-icon {
+    background-color: currentColor;
+  }
+}
+
+.simple-table-menu-toggle {
+  min-height: 30px;
+  padding: 4px 12px 4px 14px;
+  line-height: 18px;
+}
+
+.simple-table-menu-switch {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.simple-table-menu-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  background-color: var(--icon-primary);
+  mask-position: center;
+  mask-repeat: no-repeat;
+
+  &.header {
+    width: 13px;
+    height: 13px;
+  }
+
+  &.column,
+  &.insert-row-below,
+  &.set-page-width {
+    transform: rotate(-90deg);
+  }
+
+  &.insert-row-above {
+    transform: rotate(90deg) scaleY(-1);
+  }
+
+  &.insert-column-right {
+    transform: rotate(180deg) scaleY(-1);
+  }
+
+  &.submenu-arrow {
+    width: 12px;
+    height: 12px;
+    margin-left: auto;
+    background-color: var(--icon-secondary);
+  }
+}
+
+.simple-table-menu-color-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid #cfd3d9;
+  background-color: var(--background-primary);
+
+  :root[data-dark-mode=true] & {
+    border-color: var(--border-primary);
+  }
+}
+
+.simple-table-block-drag-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+}
+
+.simple-table-image-icon {
+  background: none;
+  color: var(--icon-primary);
+}
+
+.simple-table-block-drag-icon.simple-table-image-icon {
+  color: #8f959e;
+
+  :root[data-dark-mode=true] & {
+    color: var(--icon-secondary);
+  }
+}
+
+.MuiIconButton-root.simple-table-block-drag-button {
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+}
+
+.simple-table-block-menu {
+  gap: 4px;
+
+  .simple-table-menu-item {
+    padding: 4px 6px;
+    min-height: 30px;
+    border-radius: 6px;
+  }
+
+  > .MuiButton-root {
+    padding: 4px 6px;
+    min-height: 30px;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+    gap: 10px;
+
+    .MuiButton-startIcon {
+      margin: 0;
+    }
+  }
 }
 
 // Color picker sub-menu

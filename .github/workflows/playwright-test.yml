@@ -130,6 +130,15 @@ jobs:
             description: 'Document editing and formatting'
             bdd: 'false'
             shard: ''
+          - name: 'simple-table-bdd'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/editor/simple-table-headers.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/simple-table-block-actions.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/simple-table-selection-scroll.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/simple-table-add-row-scroll.feature.spec.js
+            description: 'Simple table headers, block actions, conversion undo/redo, selection, and scrolling'
+            bdd: 'true'
+            shard: ''
           - name: 'database'
             spec: 'playwright/e2e/database/'
             description: 'Database and grid operations (shard 1 of 3)'
