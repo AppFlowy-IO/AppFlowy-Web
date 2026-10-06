@@ -45,7 +45,8 @@ export function BillingPanel({ workspaceId }: { workspaceId: string }) {
   const [, setSearch] = useSearchParams();
   const currentUser = useCurrentUserOptional();
   const dateFormat = userDateFormat(currentUser?.metadata);
-  const billing = useWorkspaceBilling(workspaceId);
+  // Billing uses subscription status only, including on servers without storage accounting.
+  const billing = useWorkspaceBilling(workspaceId, { loadUsage: false });
   const { catalog } = usePricingCatalog();
   const [periodEdit, setPeriodEdit] = useState<PeriodEdit | null>(null);
   const [removeConfirm, setRemoveConfirm] = useState<RemoveConfirm | null>(null);

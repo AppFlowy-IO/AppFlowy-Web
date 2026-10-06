@@ -52,7 +52,10 @@ function openBillingLink(link: string) {
  * and exposes the billing mutations. Responses for a workspace that was
  * replaced while a request was in flight are dropped.
  */
-export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspaceBillingResult {
+export function useWorkspaceBilling(
+  workspaceId: string | undefined,
+  { loadUsage = true }: { loadUsage?: boolean } = {}
+): UseWorkspaceBillingResult {
   const [state, setState] = useState<WorkspaceBillingSnapshot>(INITIAL_STATE);
   const [busy, setBusy] = useState(false);
   const [checkoutPending, setCheckoutPending] = useState(false);
@@ -99,13 +102,13 @@ export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspa
       status: 'loading',
       error: null,
       usage: null,
-      usageStatus: 'loading',
+      usageStatus: loadUsage ? 'loading' : 'idle',
       usageError: null,
     }));
 
     // Usage comes from Cloud and can be recovering while Billing is available.
     // Settle independently so it cannot hide a plan or block a billing mutation.
-    const loadUsage = async () => {
+    const requestUsage = async () => {
       try {
         const usage = await BillingService.getWorkspaceUsage(workspaceId);
 
@@ -118,7 +121,7 @@ export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspa
       }
     };
 
-    void loadUsage();
+    if (loadUsage) void requestUsage();
 
     try {
       const statuses = await BillingService.getWorkspaceSubscriptionStatus(workspaceId);
@@ -137,7 +140,7 @@ export function useWorkspaceBilling(workspaceId: string | undefined): UseWorkspa
       if (!isCurrent()) return;
       setState((prev) => ({ ...prev, status: 'error', error }));
     }
-  }, [workspaceId]);
+  }, [workspaceId, loadUsage]);
 
   useEffect(() => {
     void reload();

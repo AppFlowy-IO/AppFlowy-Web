@@ -111,6 +111,43 @@ describe('PlanPanel', () => {
     expect(screen.queryByTestId('plan-toggle-pro')).toBeNull();
   });
 
+  it.each([
+    [SubscriptionPlan.Free, 'Free'],
+    [SubscriptionPlan.Pro, 'Pro'],
+    [SubscriptionPlan.Team, 'Team'],
+  ])('keeps the %s plan on older servers without a pricing catalog or available storage usage', async (plan, label) => {
+    api.getWorkspaceSubscriptionStatus.mockResolvedValue(plan === SubscriptionPlan.Free ? [] : [workspaceStatus(plan)]);
+    api.getWorkspaceUsage.mockRejectedValue({
+      code: 1005,
+      message: 'error returned from database: Workspace storage accounting is being recovered. Please retry shortly.',
+    });
+    const getPricingCatalog = jest.fn().mockRejectedValue({ response: { status: 404 } });
+
+    render(
+      <BillingTestProviders getPricingCatalog={getPricingCatalog}>
+        <PlanPanel workspaceId='workspace-1' />
+      </BillingTestProviders>
+    );
+
+    expect((await screen.findByTestId('current-plan-box')).textContent).toContain(label);
+    expect(await screen.findByTestId('plan-usage-error')).toBeTruthy();
+    expect(screen.queryByText(/error returned from database/)).toBeNull();
+    expect(screen.queryByTestId('plan-usage-storage')).toBeNull();
+    expect(api.getWorkspaceSubscriptionStatus).toHaveBeenCalledWith('workspace-1');
+    expect(getPricingCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses subscription status for an older Pro plan even when legacy usage has finite limits', async () => {
+    api.getWorkspaceSubscriptionStatus.mockResolvedValue([workspaceStatus(SubscriptionPlan.Pro)]);
+    // Older usage responses have no newer AI counters or storage-enabled capability field.
+    api.getWorkspaceUsage.mockResolvedValue(freeUsage);
+    renderPanel();
+
+    expect(await screen.findByText('1 of 5 GB')).toBeTruthy();
+    expect(screen.getByTestId('current-plan-box').textContent).toContain('Pro');
+    expect(screen.queryByTestId('plan-toggle-pro')).toBeNull();
+  });
+
   it('clears another workspace\'s data and ignores late subscription and usage responses', async () => {
     const lateStatus = deferred<WorkspaceSubscriptionStatus[]>();
     const lateUsage = deferred<WorkspaceUsageAndLimit>();

@@ -1,13 +1,13 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ReactNode } from 'react';
 
 import { BillingService } from '@/application/services/domains';
-import { SubscriptionInterval, SubscriptionPlan, WorkspaceUsageAndLimit } from '@/application/types';
+import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { resetPricingCatalogCache } from '@/components/app/hooks/usePricingCatalog';
 import { BillingPanel } from '@/components/app/settings/BillingPanel';
 import { renderDate } from '@/utils/time';
 
-import { BillingTestProviders, PERIOD_END, deferred, freeUsage, proUsage, translate, workspaceStatus } from './billing-test-utils';
+import { BillingTestProviders, PERIOD_END, freeUsage, proUsage, translate, workspaceStatus } from './billing-test-utils';
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => ({ uid: '7', metadata: {} }) }));
@@ -169,11 +169,9 @@ describe('BillingPanel', () => {
     expect(await screen.findByText('Personal')).toBeTruthy();
   });
 
-  it('keeps the actual plan and billing actions available while usage is pending or unavailable', async () => {
-    const usage = deferred<WorkspaceUsageAndLimit>();
-
+  it('loads and refreshes the actual plan without requesting unused storage usage', async () => {
     api.getWorkspaceSubscriptionStatus.mockResolvedValue([workspaceStatus(SubscriptionPlan.Pro)]);
-    api.getWorkspaceUsage.mockReturnValue(usage.promise);
+    api.getWorkspaceUsage.mockRejectedValue(new Error('Storage accounting is recovering'));
     api.getBillingPortalLink.mockResolvedValue('https://portal');
     api.setSubscriptionRecurringInterval.mockResolvedValue(undefined);
     renderPanel();
@@ -190,7 +188,7 @@ describe('BillingPanel', () => {
     await waitFor(() => expect(api.getWorkspaceSubscriptionStatus).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByTestId<HTMLButtonElement>('billing-edit-period').disabled).toBe(false));
 
-    await act(async () => usage.reject(new Error('Storage accounting is recovering')));
+    expect(api.getWorkspaceUsage).not.toHaveBeenCalled();
     expect(screen.getByText('Pro')).toBeTruthy();
     expect(screen.queryByTestId('billing-error')).toBeNull();
     expect(screen.getByTestId('billing-edit-payment-method')).toBeTruthy();
