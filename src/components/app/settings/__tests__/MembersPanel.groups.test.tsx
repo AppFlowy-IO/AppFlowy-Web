@@ -459,10 +459,11 @@ describe('MembersPanel workspace group parity', () => {
     expect(toast.success).not.toHaveBeenCalled();
 
     const modal = screen.getByTestId('create-group-modal');
+    const selectedMembers = within(modal).getByTestId('create-group-member-picker');
 
     expect(within(modal).getByTestId<HTMLInputElement>('people-create-group-name-input').value).toBe('Platform');
     for (const member of members) {
-      expect(within(modal).getByText(member.name)).toBeTruthy();
+      expect(within(selectedMembers).getByText(member.name)).toBeTruthy();
     }
 
     expect(screen.getByTestId<HTMLButtonElement>('people-create-group-submit').disabled).toBe(false);
