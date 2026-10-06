@@ -8,6 +8,7 @@ import type { SimpleTableNode } from '@/components/editor/editor.type';
 
 import { replaceSimpleTable } from '../SimpleTable.convert';
 import { SimpleTableBlockControls } from '../SimpleTableBlockControls';
+
 import type { MenuAction } from '../SimpleTableContextMenu';
 
 let mockTable: SimpleTableNode | null;
@@ -19,7 +20,10 @@ const mockContext = {
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('slate-react', () => ({ useSlateStatic: () => mockEditor, ReactEditor: { focus: jest.fn() } }));
-jest.mock('@/application/slate-yjs/command', () => ({ CustomEditor: { updateTableData: jest.fn() } }));
+jest.mock('@/application/slate-yjs/command', () => ({ CustomEditor: {
+  ...jest.requireActual('@/application/slate-yjs/command').CustomEditor,
+  updateTableData: jest.fn(),
+} }));
 jest.mock('@/application/slate-yjs/utils/editor', () => ({
   findSlateEntryByBlockId: (_: unknown, id: string) => id === 'table' && mockTable ? [mockTable, [0]] : null,
 }));
@@ -61,7 +65,7 @@ describe('Simple table block controls', () => {
     jest.clearAllMocks();
     mockEditor.readOnly = false;
     mockTable = makeTable('Original');
-    mockImport.mockResolvedValue({ viewId: 'database-view', databaseId: 'database' });
+    mockImport.mockResolvedValue({ viewId: 'database-view' });
     mockContext.loadViewMeta.mockResolvedValue(view);
     mockContext.deletePage.mockResolvedValue(undefined);
   });

@@ -111,6 +111,14 @@ function ControlActions({ setOpenMenu, blockId, parentId, onDraggingChange }: Co
 
     const [node, path] = entry;
 
+    if (node.type === BlockType.SimpleTableBlock) {
+      // Tables have no rendered leading text and always need a sibling block.
+      if (e.altKey) CustomEditor.addAboveBlock(editor, blockId, BlockType.Paragraph, {});
+      else CustomEditor.addBelowBlock(editor, blockId, BlockType.Paragraph, {});
+      onAdded();
+      return;
+    }
+
     const start = editor.start(path);
 
     ReactEditor.focus(editor);

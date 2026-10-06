@@ -1,5 +1,5 @@
 import isEqual from 'lodash-es/isEqual';
-import { Editor, Element } from 'slate';
+import { Editor, Element, Path } from 'slate';
 import { YEvent, YMapEvent, YTextEvent } from 'yjs';
 
 import { YjsEditor } from '@/application/slate-yjs';
@@ -151,6 +151,31 @@ function applyBlocksYEvent(editor: YjsEditor, event: BlockMapEvent) {
 
   const keyPath: Record<string, number[]> = {};
   const updates: { key: string; action: string; value: YBlockChange }[] = [];
+  const documentPaths = new Map<string, number[]>([[getPageId(editor.sharedRoot), []]]);
+  const childIndexes = new Map<string, Map<string, number>>();
+  const documentPath = (key: string): number[] => {
+    const cached = documentPaths.get(key);
+
+    if (cached) return cached;
+    const block = getBlock(key, editor.sharedRoot);
+    const parentId = block?.get(YjsEditorKey.block_parent);
+    const parent = parentId && getBlock(parentId, editor.sharedRoot);
+
+    if (!parent) return [];
+    let indexes = childIndexes.get(parentId);
+
+    if (!indexes) {
+      const children = getChildrenArray(parent.get(YjsEditorKey.block_children), editor.sharedRoot);
+
+      indexes = new Map(children.toArray().map((id, index) => [id, index]));
+      childIndexes.set(parentId, indexes);
+    }
+
+    const path = [...documentPath(parentId), indexes.get(key) ?? -1];
+
+    documentPaths.set(key, path);
+    return path;
+  };
 
   keysChanged?.forEach((key: string) => {
     const value = keys.get(key);
@@ -163,10 +188,21 @@ function applyBlocksYEvent(editor: YjsEditor, event: BlockMapEvent) {
     updates.push({ key, action: value.action, value: value as YBlockChange });
   });
 
-  // Sort updates: delete first, then add/update
+  // Undo and remote transactions can add blocks in creation order rather than
+  // document order. Insert parents and earlier siblings before their children
+  // and later siblings so every destination path already exists in Slate.
   updates.sort((a, b) => {
     if (a.action === 'delete' && b.action !== 'delete') return -1;
     if (a.action !== 'delete' && b.action === 'delete') return 1;
+    if (a.action === 'add' && b.action !== 'add') return -1;
+    if (a.action !== 'add' && b.action === 'add') return 1;
+    if (a.action === 'add' && b.action === 'add') {
+      const aPath = documentPath(a.key);
+      const bPath = documentPath(b.key);
+
+      return Path.compare(aPath, bPath) || aPath.length - bPath.length;
+    }
+
     return 0;
   });
 

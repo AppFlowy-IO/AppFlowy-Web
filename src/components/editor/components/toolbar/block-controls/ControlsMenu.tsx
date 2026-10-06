@@ -26,7 +26,7 @@ import {
   createDatabaseDuplicatePlaceholderData,
   createDatabaseNodeData,
 } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
-import { deleteSimpleTable } from '@/components/editor/components/blocks/simple-table/SimpleTable.convert';
+import { deleteBlocksWithSimpleTable } from '@/components/editor/components/blocks/simple-table/SimpleTable.convert';
 import { scrollSimpleTableFromMenu } from '@/components/editor/components/blocks/simple-table/SimpleTable.scroll';
 import { SimpleTableBlockControls } from '@/components/editor/components/blocks/simple-table/SimpleTableBlockControls';
 import { SimpleTableMenuIcons } from '@/components/editor/components/blocks/simple-table/SimpleTableMenuIcons';
@@ -587,13 +587,13 @@ function ControlsMenu({
         content: t('button.delete'),
         icon: isSimpleTable ? SimpleTableMenuIcons.deleteRow : <DeleteIcon />,
         onClick: () => {
-          selectedBlockIds?.forEach((blockId) => {
-            if (findSlateEntryByBlockId(editor, blockId)?.[0].type === BlockType.SimpleTableBlock) {
-              deleteSimpleTable(editor, blockId);
-            } else {
-              CustomEditor.deleteBlock(editor, blockId);
-            }
-          });
+          const blockIds = selectedBlockIds ?? [];
+
+          if (blockIds.some((blockId) => findSlateEntryByBlockId(editor, blockId)?.[0].type === BlockType.SimpleTableBlock)) {
+            deleteBlocksWithSimpleTable(editor, blockIds);
+          } else {
+            blockIds.forEach((blockId) => CustomEditor.deleteBlock(editor, blockId));
+          }
         },
       },
       {

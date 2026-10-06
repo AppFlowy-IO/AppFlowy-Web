@@ -1,5 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { createEditor } from 'slate';
+import { createEditor, Element } from 'slate';
 
 jest.unmock('lodash-es/isEqual');
 
@@ -10,12 +10,36 @@ import {
   withTestingYDoc,
   withTestingYjsEditor,
 } from '@/application/slate-yjs/__tests__/withTestingYjsEditor';
+import { slateContentInsertToYData, yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
 import { createBlock } from '@/application/slate-yjs/utils/yjs';
 import { BlockType, YjsEditorKey } from '@/application/types';
 
 const REMOTE_ORIGIN = 'remote';
 
 describe('translateYEvents', () => {
+  it('inserts remote blocks in document order even when their creation order differs', () => {
+    const doc = withTestingYDoc('page-id');
+    const editor = withTestingYjsEditor(createEditor(), doc);
+    const block = (text: string, children: Element[] = [], type = BlockType.Paragraph): Element => ({
+      type, data: {}, children: [{ type: YjsEditorKey.text, children: [{ text }] }, ...children],
+    } as Element);
+
+    YjsEditor.connect(editor);
+    try {
+      doc.transact(() => {
+        slateContentInsertToYData('page-id', 0, [block('Last sibling')], doc);
+        slateContentInsertToYData('page-id', 0, [block('First sibling', [block('Nested child')], BlockType.CalloutBlock)], doc);
+      }, REMOTE_ORIGIN);
+
+      expect(editor.children).toEqual(yDocToSlateContent(doc)?.children);
+      expect(editor.children).toHaveLength(2);
+      expect(editor.string([0])).toBe('First siblingNested child');
+      expect(editor.string([1])).toBe('Last sibling');
+    } finally {
+      YjsEditor.disconnect(editor);
+    }
+  });
+
   it('should apply remote block type updates to the matching block id', () => {
     const doc = withTestingYDoc('page-id');
     const insertedId = 'inserted-id';
