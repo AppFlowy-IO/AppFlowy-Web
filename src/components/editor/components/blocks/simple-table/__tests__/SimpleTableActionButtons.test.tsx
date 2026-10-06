@@ -61,11 +61,14 @@ describe('Simple table add-button lifecycle', () => {
       resizeObservers.push(observer);
       return observer;
     }) });
-    jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
-      const width = this.tagName === 'TABLE' ? 320 : 760;
+    jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      /** @this {HTMLElement} */
+      function (this: HTMLElement) {
+        const width = this.tagName === 'TABLE' ? 320 : 760;
 
-      return { x: 0, y: 0, top: 0, left: 0, right: width, bottom: 66, width, height: 66, toJSON: () => ({}) };
-    });
+        return { x: 0, y: 0, top: 0, left: 0, right: width, bottom: 66, width, height: 66, toJSON: () => ({}) };
+      }
+    );
   });
 
   afterEach(() => {
