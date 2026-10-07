@@ -7,7 +7,7 @@ import { resetPricingCatalogCache } from '@/components/app/hooks/usePricingCatal
 import { BillingPanel } from '@/components/app/settings/BillingPanel';
 import { renderDate } from '@/utils/time';
 
-import { BillingTestProviders, PERIOD_END, freeUsage, proUsage, translate, workspaceStatus } from './billing-test-utils';
+import { BillingTestProviders, PERIOD_END, freeUsage, proUsage, setBillingHostingMode, translate, workspaceStatus } from './billing-test-utils';
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => ({ uid: '7', metadata: {} }) }));
@@ -67,6 +67,7 @@ function renderPanel() {
 describe('BillingPanel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    setBillingHostingMode();
     resetPricingCatalogCache();
     window.open = jest.fn();
     api.getWorkspaceSubscriptionStatus.mockResolvedValue([]);

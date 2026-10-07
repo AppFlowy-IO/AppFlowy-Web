@@ -3,6 +3,7 @@ import { useCallback, useContext, useEffect, useSyncExternalStore } from 'react'
 import { BillingService } from '@/application/services/domains';
 import { PricingCatalog } from '@/application/types';
 import { AppOperationsContext } from '@/components/app/contexts/AppOperationsContext';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { Log } from '@/utils/log';
 
 /** Mirrors the endpoint's `Cache-Control: public, max-age=300`. */
@@ -113,17 +114,25 @@ export interface UsePricingCatalogResult {
  */
 export function usePricingCatalog({ enabled = true }: UsePricingCatalogOptions = {}): UsePricingCatalogResult {
   const operations = useContext(AppOperationsContext);
+  const isHosted = useIsOfficialHosted();
   // Stories and tests inject the fetcher through the operations context; the
   // service fallback keeps the hook usable outside AppBusinessLayer.
   const fetcher: PricingCatalogFetcher = operations?.getPricingCatalog ?? BillingService.getPricingCatalog;
   const current = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  const reload = useCallback(() => requestPricingCatalog(fetcher, { force: true }), [fetcher]);
+  const reload = useCallback(
+    () => isHosted ? requestPricingCatalog(fetcher, { force: true }) : Promise.resolve(null),
+    [fetcher, isHosted]
+  );
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !isHosted) return;
     void requestPricingCatalog(fetcher);
-  }, [enabled, fetcher]);
+  }, [enabled, fetcher, isHosted]);
+
+  if (!isHosted) {
+    return { catalog: null, isLoading: false, hasError: false, error: null, reload };
+  }
 
   return {
     catalog: current.catalog,

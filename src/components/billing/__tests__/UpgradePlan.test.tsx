@@ -427,11 +427,17 @@ describe('UpgradePlan', () => {
     expect(getPricingCatalog).toHaveBeenCalledTimes(2);
   });
 
-  it('hides paid plans when server-info did not confirm the official cloud', async () => {
-    renderModal(async () => catalog, { isOfficialHosted: false });
+  it('hides the dialog without fetching prices or subscriptions on self-hosted servers', () => {
+    const getPricingCatalog = jest.fn().mockResolvedValue(catalog);
+    const getSubscriptions = jest.fn().mockResolvedValue([]);
 
-    await screen.findByTestId('pricing-plan-free');
+    renderModal(getPricingCatalog, { isOfficialHosted: false, getSubscriptions });
+
+    expect(screen.queryByTestId('pricing-plan-free')).toBeNull();
     expect(screen.queryByTestId('pricing-plan-pro')).toBeNull();
+    expect(screen.queryByTestId('plan-comparison')).toBeNull();
+    expect(getPricingCatalog).not.toHaveBeenCalled();
+    expect(getSubscriptions).not.toHaveBeenCalled();
   });
 
   it('shows subscription loading and keeps actions unavailable until the current plan is known', async () => {

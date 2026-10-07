@@ -203,9 +203,10 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
     return () => {
       checkoutRequest.current = undefined;
     };
-  }, [open, currentWorkspaceId]);
+  }, [open, currentWorkspaceId, isHosted]);
 
   useEffect(() => {
+    if (!isHosted) return;
     if (!open && action === 'change_plan') {
       onOpen();
     }
@@ -217,9 +218,10 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [action, open, setSearch]);
+  }, [action, open, setSearch, isHosted]);
 
   const loadSubscription = useCallback(async () => {
+    if (!isHosted) return;
     const request = ++subscriptionRequest.current;
 
     setSubscriptionState({ workspaceId: currentWorkspaceId, status: 'loading' });
@@ -240,7 +242,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
       setSubscriptionState({ workspaceId: currentWorkspaceId, status: 'error' });
       console.error(e);
     }
-  }, [currentWorkspaceId, getSubscriptions]);
+  }, [currentWorkspaceId, getSubscriptions, isHosted]);
 
   const currentPlan =
     subscriptionState.workspaceId === currentWorkspaceId && subscriptionState.status === 'ready'
@@ -344,6 +346,8 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
 
   // Billing owns the feature order; keep labels and plan values in its array order.
   const rows: PricingComparisonRow[] = catalog?.comparison ?? [];
+
+  if (!isHosted) return null;
 
   return (
     <NormalModal

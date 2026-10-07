@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { SubscriptionInterval, SubscriptionPlan, WorkspaceUsageAndLimit } from '@/application/types';
 import { ReactComponent as CheckCircleIcon } from '@/assets/icons/check_circle.svg';
 import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
@@ -14,6 +15,7 @@ import { findWorkspaceAddOn, formatStorageGb, isSubscriptionCanceled } from '@/u
 import { fillPlaceholders, formatPeriodEnd, userDateFormat } from './billing/labels';
 import { SettingsPanelError, SettingsPanelLoading, SettingsPanelShell } from './billing/SettingsPanelShell';
 import { useWorkspaceBilling } from './billing/useWorkspaceBilling';
+import { VaultWorkspaceAddOn } from './billing/VaultWorkspaceAddOn';
 
 // Styles mirror the desktop plan page (settings_plan_view/widgets): 8px usage
 // bars with the figure beside them, purple "Pro" badges, a "Current plan" tab
@@ -22,7 +24,7 @@ import { useWorkspaceBilling } from './billing/useWorkspaceBilling';
 const PRO_BADGE_CLASS =
   'bg-[#E8E2EE] text-[#653E8C] [[data-dark-mode=true]_&]:bg-[#653E8C] [[data-dark-mode=true]_&]:text-[#E8E2EE]';
 const PROGRESS_TRACK_CLASS =
-  'border border-[#DDF1F7] bg-fill-secondary [[data-dark-mode=true]_&]:border-[rgba(221,241,247,0.1)]';
+  'border border-[#DDF1F7] bg-[#E1FBFF] [[data-dark-mode=true]_&]:border-[rgba(221,241,247,0.1)] [[data-dark-mode=true]_&]:bg-[#363D49]';
 const GRADIENT_BUTTON_CLASS =
   'bg-[linear-gradient(135deg,#44326B,#7547C0)] hover:bg-[linear-gradient(135deg,#39285C,#6035A4)]';
 
@@ -127,6 +129,7 @@ function usageRatio(used: number, limit: number): number {
 
 /** Settings > Plan: usage summary, Pro upgrade toggles and the current plan, mirroring the desktop page. */
 export function PlanPanel({ workspaceId }: { workspaceId: string }) {
+  const isHosted = useIsOfficialHosted();
   const { t } = useTranslation();
   const [, setSearch] = useSearchParams();
   const currentUser = useCurrentUserOptional();
@@ -279,9 +282,14 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
     );
   };
 
+  if (!isHosted) return null;
+
   return (
     <SettingsPanelShell title={t('settings.planPage.title')} testId='plan-panel'>
-      {renderContent()}
+      <div className='flex flex-col gap-4'>
+        {renderContent()}
+        {currentUser && <VaultWorkspaceAddOn key={currentUser.uid} />}
+      </div>
     </SettingsPanelShell>
   );
 }

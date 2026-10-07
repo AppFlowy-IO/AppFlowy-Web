@@ -4,6 +4,7 @@ import { ReactNode } from 'react';
 import { BillingService } from '@/application/services/domains';
 import { PricingCatalog } from '@/application/types';
 import { AppOperationsContext, AppOperationsContextType } from '@/components/app/contexts/AppOperationsContext';
+import { setBillingHostingMode } from '@/components/app/settings/__tests__/billing-test-utils';
 
 import { PRICING_CATALOG_CACHE_TTL_MS, resetPricingCatalogCache, usePricingCatalog } from '../usePricingCatalog';
 
@@ -44,6 +45,7 @@ function withOperations(getPricingCatalog: () => Promise<PricingCatalog>) {
 
 describe('usePricingCatalog', () => {
   beforeEach(() => {
+    setBillingHostingMode();
     resetPricingCatalogCache();
     jest.mocked(BillingService.getPricingCatalog).mockReset();
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -51,6 +53,37 @@ describe('usePricingCatalog', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it.each(['self-hosted', 'unknown'] as const)('does not fetch or retry pricing when hosting is %s', async (mode) => {
+    setBillingHostingMode(mode);
+    const getPricingCatalog = jest.fn().mockResolvedValue(catalog);
+    const fromContext = renderHook(() => usePricingCatalog(), { wrapper: withOperations(getPricingCatalog) });
+    const fromService = renderHook(() => usePricingCatalog());
+
+    await act(async () => {
+      expect(await fromContext.result.current.reload()).toBeNull();
+      expect(await fromService.result.current.reload()).toBeNull();
+    });
+
+    expect(fromContext.result.current).toMatchObject({ catalog: null, isLoading: false, hasError: false });
+    expect(getPricingCatalog).not.toHaveBeenCalled();
+    expect(BillingService.getPricingCatalog).not.toHaveBeenCalled();
+  });
+
+  it('waits for confirmed cloud hosting, and hides cached prices after switching to self-hosted', async () => {
+    setBillingHostingMode('unknown');
+    const getPricingCatalog = jest.fn().mockResolvedValue(catalog);
+    const { result } = renderHook(() => usePricingCatalog(), { wrapper: withOperations(getPricingCatalog) });
+
+    expect(getPricingCatalog).not.toHaveBeenCalled();
+    act(() => setBillingHostingMode('cloud'));
+    await waitFor(() => expect(result.current.catalog).toEqual(catalog));
+
+    act(() => setBillingHostingMode('self-hosted'));
+    expect(result.current.catalog).toBeNull();
+    await act(async () => { await result.current.reload(); });
+    expect(getPricingCatalog).toHaveBeenCalledTimes(1);
   });
 
   it('shares one in-flight request between consumers and publishes the catalog to both', async () => {

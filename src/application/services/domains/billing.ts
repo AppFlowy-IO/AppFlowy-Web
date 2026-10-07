@@ -6,6 +6,8 @@ export {
   cancelSubscription,
   getPricingCatalog,
   getWorkspaceSubscriptionStatus,
+  getPersonalSubscriptionStatus,
+  getPersonalSubscriptionLink,
   getWorkspaceUsage,
   getBillingPortalLink,
   setSubscriptionRecurringInterval,

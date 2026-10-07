@@ -9,6 +9,7 @@ import {
   WorkspaceUsageAndLimit,
 } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { getErrorMessage } from '@/utils/errors';
 import { buildWorkspaceSubscriptionInfo } from '@/utils/subscription';
 
@@ -56,6 +57,7 @@ export function useWorkspaceBilling(
   workspaceId: string | undefined,
   { loadUsage = true }: { loadUsage?: boolean } = {}
 ): UseWorkspaceBillingResult {
+  const isHosted = useIsOfficialHosted();
   const [state, setState] = useState<WorkspaceBillingSnapshot>(INITIAL_STATE);
   const [busy, setBusy] = useState(false);
   const [checkoutPending, setCheckoutPending] = useState(false);
@@ -75,7 +77,7 @@ export function useWorkspaceBilling(
       currentWorkspace.current = undefined;
       checkoutRequest.current = undefined;
     };
-  }, [workspaceId]);
+  }, [workspaceId, isHosted]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -85,7 +87,7 @@ export function useWorkspaceBilling(
   }, []);
 
   const reload = useCallback(async () => {
-    if (!mountedRef.current || currentWorkspace.current !== workspaceId) return;
+    if (!isHosted || !mountedRef.current || currentWorkspace.current !== workspaceId) return;
     const generation = ++generationRef.current;
 
     if (!workspaceId) {
@@ -140,7 +142,7 @@ export function useWorkspaceBilling(
       if (!isCurrent()) return;
       setState((prev) => ({ ...prev, status: 'error', error }));
     }
-  }, [workspaceId, loadUsage]);
+  }, [workspaceId, loadUsage, isHosted]);
 
   useEffect(() => {
     void reload();
@@ -157,6 +159,7 @@ export function useWorkspaceBilling(
 
   const runMutation = useCallback(
     async (mutation: () => Promise<void>) => {
+      if (!isHosted) return;
       setBusy(true);
       try {
         await mutation();
@@ -167,10 +170,11 @@ export function useWorkspaceBilling(
         if (mountedRef.current) setBusy(false);
       }
     },
-    [reload]
+    [reload, isHosted]
   );
 
   const openLink = useCallback(async (request: () => Promise<string | undefined>) => {
+    if (!isHosted) return;
     try {
       const link = await request();
 
@@ -178,11 +182,11 @@ export function useWorkspaceBilling(
     } catch (error) {
       notify.error(getErrorMessage(error));
     }
-  }, []);
+  }, [isHosted]);
 
   const subscribeWorkspace = useCallback(
     async (plan: SubscriptionPlan, interval: SubscriptionInterval) => {
-      if (!workspaceId || checkoutRequest.current) return;
+      if (!isHosted || !workspaceId || checkoutRequest.current) return;
       const request = {};
 
       checkoutRequest.current = request;
@@ -200,7 +204,7 @@ export function useWorkspaceBilling(
         }
       }
     },
-    [workspaceId]
+    [workspaceId, isHosted]
   );
 
   const cancelWorkspace = useCallback(
@@ -225,8 +229,8 @@ export function useWorkspaceBilling(
 
   return {
     // Do not render another workspace's plan/usage before the loading effect runs.
-    ...(state.workspaceId === workspaceId ? state : INITIAL_STATE),
-    busy: busy || checkoutPending,
+    ...(isHosted && state.workspaceId === workspaceId ? state : INITIAL_STATE),
+    busy: isHosted && (busy || checkoutPending),
     reload,
     subscribeWorkspace,
     cancelWorkspace,

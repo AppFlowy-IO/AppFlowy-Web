@@ -1,4 +1,6 @@
 import {
+  PersonalPlan,
+  PersonalSubscriptionStatus,
   PricingCatalog,
   SubscriptionInterval,
   SubscriptionPlan,
@@ -6,14 +8,24 @@ import {
   WorkspaceSubscriptionStatus,
   WorkspaceUsageAndLimit,
 } from '@/application/types';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
+
+/** UI visibility must not be the only barrier to sending hosted billing traffic. */
+function getBillingAxios() {
+  if (!getWorkspacePlanPolicy().usesHostedBilling) {
+    throw new Error('Hosted billing is not available on this server');
+  }
+
+  return getAxios();
+}
 
 export async function getSubscriptionLink(workspaceId: string, plan: SubscriptionPlan, interval: SubscriptionInterval) {
   const url = `/billing/api/v1/subscription-link`;
 
   return executeAPIRequest<string>(() =>
-    getAxios()?.get<APIResponse<string>>(url, {
+    getBillingAxios()?.get<APIResponse<string>>(url, {
       params: {
         workspace_subscription_plan: plan,
         recurring_interval: interval,
@@ -28,7 +40,7 @@ export async function getSubscriptions() {
   const url = `/billing/api/v1/subscriptions`;
 
   return executeAPIRequest<Subscriptions>(() =>
-    getAxios()?.get<APIResponse<Subscriptions>>(url)
+    getBillingAxios()?.get<APIResponse<Subscriptions>>(url)
   );
 }
 
@@ -36,7 +48,7 @@ export async function getActiveSubscription(workspaceId: string) {
   const url = `/billing/api/v1/active-subscription/${workspaceId}`;
 
   return executeAPIRequest<SubscriptionPlan[]>(() =>
-    getAxios()?.get<APIResponse<SubscriptionPlan[]>>(url)
+    getBillingAxios()?.get<APIResponse<SubscriptionPlan[]>>(url)
   );
 }
 
@@ -57,7 +69,7 @@ export async function cancelSubscription(workspaceId: string, plan: Subscription
   const url = `/billing/api/v1/cancel-subscription`;
 
   return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url, {
+    getBillingAxios()?.post<APIResponse>(url, {
       workspace_id: workspaceId,
       plan,
       sync: true,
@@ -71,7 +83,7 @@ export async function getPricingCatalog() {
   const url = `/billing/api/v1/pricing`;
 
   return executeAPIRequest<PricingCatalog>(() =>
-    getAxios()?.get<APIResponse<PricingCatalog>>(url)
+    getBillingAxios()?.get<APIResponse<PricingCatalog>>(url)
   );
 }
 
@@ -80,7 +92,30 @@ export async function getWorkspaceSubscriptionStatus(workspaceId: string) {
   const url = `/billing/api/v1/subscription-status/${workspaceId}`;
 
   return executeAPIRequest<WorkspaceSubscriptionStatus[]>(() =>
-    getAxios()?.get<APIResponse<WorkspaceSubscriptionStatus[]>>(url)
+    getBillingAxios()?.get<APIResponse<WorkspaceSubscriptionStatus[]>>(url)
+  );
+}
+
+/** Account subscriptions are shared by every workspace belonging to the current user. */
+export async function getPersonalSubscriptionStatus() {
+  const url = `/billing/api/v1/personal-subscription-status`;
+
+  return executeAPIRequest<PersonalSubscriptionStatus[]>(() =>
+    getBillingAxios()?.get<APIResponse<PersonalSubscriptionStatus[]>>(url)
+  );
+}
+
+export async function getPersonalSubscriptionLink(plan: PersonalPlan, interval: SubscriptionInterval) {
+  const url = `/billing/api/v1/personal-subscription-link`;
+
+  return executeAPIRequest<string>(() =>
+    getBillingAxios()?.get<APIResponse<string>>(url, {
+      params: {
+        subscription_plan: plan,
+        recurring_interval: interval,
+        success_url: window.location.href,
+      },
+    })
   );
 }
 
@@ -89,7 +124,7 @@ export async function getWorkspaceUsage(workspaceId: string) {
   const url = `/api/workspace/${workspaceId}/usage-and-limit`;
 
   return executeAPIRequest<WorkspaceUsageAndLimit>(() =>
-    getAxios()?.get<APIResponse<WorkspaceUsageAndLimit>>(url)
+    getBillingAxios()?.get<APIResponse<WorkspaceUsageAndLimit>>(url)
   );
 }
 
@@ -97,7 +132,7 @@ export async function getWorkspaceUsage(workspaceId: string) {
 export async function getBillingPortalLink() {
   const url = `/billing/api/v1/portal-session-link`;
 
-  return executeAPIRequest<string>(() => getAxios()?.get<APIResponse<string>>(url));
+  return executeAPIRequest<string>(() => getBillingAxios()?.get<APIResponse<string>>(url));
 }
 
 /** Switches a workspace subscription between monthly and yearly billing. */
@@ -109,7 +144,7 @@ export async function setSubscriptionRecurringInterval(
   const url = `/billing/api/v1/subscription-recurring-interval`;
 
   return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url, {
+    getBillingAxios()?.post<APIResponse>(url, {
       workspace_id: workspaceId,
       plan,
       recurring_interval: interval,

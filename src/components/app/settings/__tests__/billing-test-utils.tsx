@@ -11,8 +11,19 @@ import {
   WorkspaceUsageAndLimit,
 } from '@/application/types';
 import { AppOperationsContext, AppOperationsContextType } from '@/components/app/contexts/AppOperationsContext';
+import { getConfigValue } from '@/utils/runtime-config';
+import { ServerHostingMode, updateServerInfo } from '@/utils/server-info';
 
 export const PERIOD_END = 1_800_014_400;
+
+export function setBillingHostingMode(mode: ServerHostingMode = 'cloud') {
+  updateServerInfo(
+    getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'),
+    mode === 'unknown'
+      ? { status: 'loading' }
+      : { status: 'available', info: { enable_page_history: true, self_hosted: mode === 'self-hosted' } }
+  );
+}
 
 export function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -65,6 +76,12 @@ export const translations: Record<string, string> = {
   'settings.planPage.planUsage.aiMaxBadge': 'AI Max',
   'settings.planPage.planUsage.memberProToggle': 'More members & unlimited AI',
   'settings.planPage.planUsage.aiMaxToggle': 'Unlimited AI and advanced models',
+  'settings.planPage.planUsage.accountAddons.title': 'Account Add-ons',
+  'settings.planPage.planUsage.accountAddons.addLabel': 'Add',
+  'settings.planPage.planUsage.accountAddons.activeLabel': 'Added',
+  'settings.planPage.planUsage.accountAddons.annualPriceInfo': 'Per user per month billed annually',
+  'settings.planPage.planUsage.accountAddons.learnMore': 'Learn more about Vault Workspace',
+  'settings.planPage.planUsage.accountAddons.unavailable': 'Account add-ons are temporarily unavailable.',
   'settings.planPage.planUsage.currentPlan.bannerLabel': 'Current plan',
   'settings.planPage.planUsage.currentPlan.teamTitle': 'Team',
   'settings.planPage.planUsage.currentPlan.upgrade': 'Change plan',
@@ -150,6 +167,17 @@ export const catalog: PricingCatalog = {
       prices: [
         { interval: SubscriptionInterval.Month, price_cents: 1000 },
         { interval: SubscriptionInterval.Year, price_cents: 9600 },
+      ],
+      features: [],
+    },
+    {
+      id: 'vault_workspace',
+      kind: 'account_add_on',
+      name: 'Vault Workspace',
+      description: 'Private and offline— AI runs locally, no data transfer',
+      prices: [
+        { interval: SubscriptionInterval.Month, price_cents: 750 },
+        { interval: SubscriptionInterval.Year, price_cents: 7200 },
       ],
       features: [],
     },

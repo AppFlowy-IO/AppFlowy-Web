@@ -1306,6 +1306,15 @@
         "proBadge": "Pro",
         "memberProToggle": "More members & unlimited AI & guest access",
         "aiMaxToggle": "Unlimited AI and access to advanced models",
+        "accountAddons": {
+          "title": "Account Add-ons",
+          "tooltip": "Account add-ons are linked to your AppFlowy account. No matter which workspace you purchase it from, you can create unlimited Vaults under the same cloud account.",
+          "addLabel": "Add",
+          "activeLabel": "Added",
+          "annualPriceInfo": "Per user per month billed annually",
+          "learnMore": "Learn more about Vault Workspace",
+          "unavailable": "Account add-ons are temporarily unavailable."
+        },
         "currentPlan": {
           "bannerLabel": "Current plan",
           "teamTitle": "Team",

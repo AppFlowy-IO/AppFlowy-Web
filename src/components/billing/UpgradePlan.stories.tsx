@@ -145,7 +145,7 @@ export const SelfHosted: Story = {
     docs: {
       description: {
         story:
-          'The app never mounts this modal for self-hosted servers. If it were mounted, paid plans are hidden because Pro features are enabled by default.',
+          'Self-hosted servers have Pro features by default. This component stays hidden and sends no billing requests even when mounted directly.',
       },
     },
   },

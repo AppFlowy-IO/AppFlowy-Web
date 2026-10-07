@@ -1,12 +1,21 @@
 import {
+  PersonalPlan,
   Subscription,
   SubscriptionInterval,
   SubscriptionPlan,
 } from '@/application/types';
+import { getConfigValue } from '@/utils/runtime-config';
+import { ServerInfoState, updateServerInfo } from '@/utils/server-info';
 
 import {
+  cancelSubscription,
+  getActiveSubscription,
   getBillingPortalLink,
+  getPersonalSubscriptionLink,
+  getPersonalSubscriptionStatus,
   getPricingCatalog,
+  getSubscriptionLink,
+  getSubscriptions,
   getWorkspaceSubscriptionStatus,
   getWorkspaceSubscriptions,
   getWorkspaceUsage,
@@ -38,6 +47,48 @@ function deferred<T>() {
 
   return { promise, resolve };
 }
+
+beforeEach(() => {
+  mockGet.mockReset();
+  mockPost.mockReset();
+  updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+    status: 'available',
+    info: { enable_page_history: true, self_hosted: false },
+  });
+});
+
+describe('hosted billing isolation', () => {
+  it.each<ServerInfoState>([
+    { status: 'available', info: { enable_page_history: true, self_hosted: true } },
+    { status: 'loading' },
+    { status: 'unavailable' },
+    { status: 'unsupported' },
+  ])('blocks every billing endpoint before HTTP with server info $status ($info)', async (state) => {
+    // The explicit self-hosted flag must override even the known cloud hostname.
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), state);
+    const requests = [
+      () => getSubscriptions(),
+      () => getActiveSubscription('workspace-1'),
+      () => getWorkspaceSubscriptions('workspace-1'),
+      () => getSubscriptionLink('workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Month),
+      () => cancelSubscription('workspace-1', SubscriptionPlan.Pro),
+      () => getPricingCatalog(),
+      () => getWorkspaceSubscriptionStatus('workspace-1'),
+      () => getWorkspaceUsage('workspace-1'),
+      () => getPersonalSubscriptionStatus(),
+      () => getPersonalSubscriptionLink(PersonalPlan.VaultWorkspace, SubscriptionInterval.Year),
+      () => getBillingPortalLink(),
+      () => setSubscriptionRecurringInterval('workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Year),
+    ];
+
+    for (const request of requests) {
+      await expect(request()).rejects.toThrow('Hosted billing is not available on this server');
+    }
+
+    expect(mockGet).not.toHaveBeenCalled();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+});
 
 describe('getWorkspaceSubscriptions', () => {
   it('loads active plans and subscription definitions in parallel', async () => {
@@ -108,6 +159,31 @@ describe('workspace billing endpoints', () => {
       workspace_id: 'workspace-1',
       plan: 'ai_max',
       recurring_interval: 'month',
+    });
+  });
+});
+
+describe('account billing endpoints', () => {
+  beforeEach(() => mockGet.mockReset());
+
+  it('reads account subscriptions without a workspace scope', async () => {
+    const subscriptions = [{ plan: 'vault_workspace', subscription_status: 'active' }];
+
+    mockGet.mockResolvedValueOnce({ data: { data: subscriptions } });
+    await expect(getPersonalSubscriptionStatus()).resolves.toEqual(subscriptions);
+    expect(mockGet).toHaveBeenCalledWith('/billing/api/v1/personal-subscription-status');
+  });
+
+  it('creates annual Vault checkout using the personal subscription contract', async () => {
+    mockGet.mockResolvedValueOnce({ data: { data: 'https://checkout/vault' } });
+    await expect(getPersonalSubscriptionLink(PersonalPlan.VaultWorkspace, SubscriptionInterval.Year))
+      .resolves.toBe('https://checkout/vault');
+    expect(mockGet).toHaveBeenCalledWith('/billing/api/v1/personal-subscription-link', {
+      params: {
+        subscription_plan: 'vault_workspace',
+        recurring_interval: 'year',
+        success_url: window.location.href,
+      },
     });
   });
 });

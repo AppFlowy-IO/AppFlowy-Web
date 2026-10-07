@@ -162,8 +162,9 @@ async function isLocalGatewayRunning(): Promise<boolean> {
  * reaches them through these proxies instead; in production nginx serves all
  * of them on one domain and the client never uses the dev server.
  *
- * The API target is detected once when the dev server starts (restart it after
- * starting or stopping the gateway). APPFLOWY_DEV_API_PROXY_TARGET,
+ * General API traffic is detected once when the dev server starts. Workspace
+ * usage always goes to the gateway: Cloud does not implement that endpoint,
+ * and the gateway may start after Vite. APPFLOWY_DEV_API_PROXY_TARGET,
  * APPFLOWY_DEV_WS_PROXY_TARGET and APPFLOWY_DEV_BILLING_PROXY_TARGET override
  * the detection. WebSocket traffic always goes to the cloud unless overridden,
  * because the gateway does not proxy it. The client sends requests here only
@@ -180,6 +181,10 @@ async function localDevProxyConfig() {
   console.warn(`[local-dev] proxying /api -> ${apiTarget}, /ws -> ${wsTarget}, /billing -> ${billingTarget}`);
 
   return {
+    '^/api/workspace/[^/]+/usage-and-limit(?:\\?.*)?$': {
+      target: explicitApiTarget || LOCAL_GATEWAY_TARGET,
+      changeOrigin: true,
+    },
     '/api': { target: apiTarget, changeOrigin: true },
     '/ws': { target: wsTarget, changeOrigin: true, ws: true },
     '/billing': { target: billingTarget, changeOrigin: true },

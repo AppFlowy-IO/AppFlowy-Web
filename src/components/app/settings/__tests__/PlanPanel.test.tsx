@@ -19,6 +19,7 @@ jest.mock('@/components/_shared/notify', () => ({ notify: { error: jest.fn(), su
 jest.mock('@/application/services/domains', () => ({
   BillingService: {
     getWorkspaceSubscriptionStatus: jest.fn(),
+    getPersonalSubscriptionStatus: jest.fn(),
     getWorkspaceUsage: jest.fn(),
     getSubscriptionLink: jest.fn(),
     getPricingCatalog: jest.fn(),
@@ -46,6 +47,7 @@ describe('PlanPanel', () => {
     resetPricingCatalogCache();
     window.open = jest.fn();
     api.getWorkspaceSubscriptionStatus.mockResolvedValue([]);
+    api.getPersonalSubscriptionStatus.mockResolvedValue([]);
     api.getWorkspaceUsage.mockResolvedValue(freeUsage);
   });
 
@@ -64,6 +66,7 @@ describe('PlanPanel', () => {
     // Server plan copy takes precedence over the client's older Free translations.
     expect(screen.getByTestId('current-plan-box').textContent).toContain('Personal');
     expect(screen.getByTestId('current-plan-box').textContent).toContain('For personal productivity');
+    expect((await screen.findByTestId('plan-addon-vault')).textContent).toContain('$6');
 
     fireEvent.click(screen.getByTestId('plan-change-plan'));
     expect(screen.getByTestId('location-search').textContent).toBe('?action=change_plan');
@@ -128,6 +131,7 @@ describe('PlanPanel', () => {
     expect(screen.getByTestId('current-plan-box').textContent).toContain('Personal');
     expect(screen.queryByRole('progressbar')).toBeNull();
     expect(screen.queryByTestId('plan-toggle-unlimited-ai')).toBeNull();
+    expect(screen.getByTestId('plan-addon-vault-action')).toBeTruthy();
 
     fireEvent.click(screen.getByText('Retry'));
     expect(await screen.findByText('1 of 5 GB')).toBeTruthy();
