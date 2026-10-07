@@ -10,6 +10,9 @@ import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { withYjs, YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
 import { ensureValidSelection } from '@/application/slate-yjs/utils/transformSelection';
 import { CollabOrigin, YDoc } from '@/application/types';
+import { notify } from '@/components/_shared/notify';
+import { DockableOutline } from '@/components/editor/components/blocks/outline/DockableOutline';
+import { OutlineNavigationProvider } from '@/components/editor/components/blocks/outline/OutlineNavigation';
 import { FindReplaceProvider } from '@/components/editor/components/find-replace/FindReplaceContext';
 import { createDatabaseBlockDeletionTracker } from '@/components/editor/database-block-lifecycle';
 import EditorEditable from '@/components/editor/Editable';
@@ -17,12 +20,11 @@ import { useEditorContext } from '@/components/editor/EditorContext';
 import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
 import { withPlugins } from '@/components/editor/plugins';
 import { clipboardFormatKey } from '@/components/editor/plugins/withCopy';
+import { observeSubpageLifecycle } from '@/components/editor/subpage/subpage-lifecycle';
 import { useInlineCommentEditorRegistration } from '@/components/inline-comment/editor/useInlineCommentEditorRegistration';
 import { useInlineCommentEditorBridgeOptional } from '@/components/inline-comment/InlineCommentContext';
-import { Log } from '@/utils/log';
-import { observeSubpageLifecycle } from '@/components/editor/subpage/subpage-lifecycle';
-import { notify } from '@/components/_shared/notify';
 import { getErrorMessage } from '@/utils/errors';
+import { Log } from '@/utils/log';
 import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 import { getTextCount } from '@/utils/word';
 
@@ -79,10 +81,12 @@ function isDatabaseBlockLifecycleOperation(editor: YjsEditor, op: Operation): bo
 
 function CollaborativeEditor({
   doc,
+  dockableOutline = false,
   onEditorConnected,
   onSelectionChange,
 }: {
   doc: YDoc;
+  dockableOutline?: boolean;
   onEditorConnected?: (editor: YjsEditor) => void;
   onSelectionChange?: (editor: YjsEditor) => void;
 }) {
@@ -382,9 +386,12 @@ function CollaborativeEditor({
 
   return (
     <Slate key={key} editor={editor} initialValue={defaultInitialValue} onChange={handleSlateChange}>
-      <FindReplaceProvider>
-        <EditorEditable />
-      </FindReplaceProvider>
+      <OutlineNavigationProvider dockable={dockableOutline} contentVersion={contentClock}>
+        <FindReplaceProvider>
+          <EditorEditable />
+          {dockableOutline && <DockableOutline />}
+        </FindReplaceProvider>
+      </OutlineNavigationProvider>
     </Slate>
   );
 }

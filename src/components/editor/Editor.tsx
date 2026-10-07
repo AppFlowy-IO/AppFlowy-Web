@@ -11,6 +11,8 @@ export interface EditorProps extends EditorContextState {
   doc: YDoc;
   /** Isolate preview DOM identities and prevent nested Feed document previews. */
   preview?: boolean;
+  /** Enable floating navigation only for full document hosts. */
+  dockableOutline?: boolean;
   onEditorConnected?: (editor: YjsEditor) => void;
   onSelectionChange?: (editor: YjsEditor) => void;
 }
@@ -19,6 +21,7 @@ export const Editor = memo(
   ({
     doc,
     preview = false,
+    dockableOutline = false,
     onEditorConnected,
     onSelectionChange,
     layoutStyle = defaultLayoutStyle,
@@ -38,7 +41,12 @@ export const Editor = memo(
           addCodeGrammars={handleAddCodeGrammars}
           layoutStyle={layoutStyle}
         >
-          <CollaborativeEditor doc={doc} onEditorConnected={onEditorConnected} onSelectionChange={onSelectionChange} />
+          <CollaborativeEditor
+            doc={doc}
+            dockableOutline={dockableOutline && !preview}
+            onEditorConnected={onEditorConnected}
+            onSelectionChange={onSelectionChange}
+          />
         </EditorContextProvider>
       </EditorPreviewContextProvider>
     );

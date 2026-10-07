@@ -1,71 +1,42 @@
-import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { forwardRef, memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element } from 'slate';
-import { useReadOnly, useSlate } from 'slate-react';
+import { useReadOnly, useSlateStatic } from 'slate-react';
 
-import { extractHeadings, nestHeadings } from '@/components/editor/components/blocks/outline/utils';
-import { EditorElementProps, HeadingNode, OutlineNode } from '@/components/editor/editor.type';
+import { useOutlineNavigation } from '@/components/editor/components/blocks/outline/OutlineNavigation';
+import { nestHeadings, OutlineHeading } from '@/components/editor/components/blocks/outline/utils';
+import { EditorElementProps, OutlineNode } from '@/components/editor/editor.type';
 import { useEditorLocalState } from '@/components/editor/EditorContext';
 import { cn } from '@/lib/utils';
 import { ColorEnum, renderColor, toBlockColor } from '@/utils/color';
 
 export const Outline = memo(
   forwardRef<HTMLDivElement, EditorElementProps<OutlineNode>>(({ node, children, className, ...attributes }, ref) => {
-    const editor = useSlate();
-    const [hasHeadings, setHasHeadings] = useState(false);
-    const [root, setRoot] = useState<HeadingNode[]>([]);
-    const noVisibleHeadings = hasHeadings && root.length === 0;
+    const editor = useSlateStatic();
+    const { headings, hasHeadings, activeId, jumpToHeading } = useOutlineNavigation();
+    const root = useMemo(
+      () => nestHeadings(headings.filter((heading) => heading.data.level <= (node.data.depth || 6))),
+      [headings, node.data.depth]
+    );
+    const noVisibleHeadings = root.length === 0;
     const { t } = useTranslation();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
     const { collapsedMap } = useEditorLocalState();
-
-    const [isReady, setIsReady] = useState(false);
 
     const blockColor = useMemo(() => {
       return toBlockColor((node?.data?.bgColor || '') as ColorEnum);
     }, [node?.data?.bgColor]);
 
-    useEffect(() => {
-      if (!isReady) return;
-      const { hasHeadings, headings } = extractHeadings(editor, node.data.depth || 6);
-      const root = nestHeadings(headings);
-
-      setHasHeadings(hasHeadings);
-      setRoot(root);
-    }, [editor, node.data.depth, editor.children, isReady]);
-
-    const jumpToHeading = useCallback((heading: HeadingNode) => {
-      const id = `heading-${heading.blockId}`;
-
-      const element = document.getElementById(id);
-
-      if (element) {
-        void (async () => {
-          const search = new URLSearchParams(window.location.search);
-
-          search.set('blockId', heading.blockId);
-
-          window.history.replaceState(null, '', `${window.location.pathname}?${search.toString()}`);
-
-          element.scrollIntoView({
-            block: 'start',
-          });
-        })();
-      }
-    }, []);
-
     const isCollapsed = collapsedMap ? collapsedMap[node.blockId] : false;
 
     const renderHeading = useCallback(
-      (heading: HeadingNode, index: number, indent: number = 0) => {
-        const children = (heading.children as HeadingNode[]).map((heading, index) =>
-          renderHeading(heading, index, indent + 1)
-        );
-        const { text, level } = heading.data as { text: string; level: number };
+      (heading: OutlineHeading, indent: number = 0) => {
+        const children = heading.children.map((heading) => renderHeading(heading, indent + 1));
+        const { text } = heading.data as { text: string; level: number };
 
         return (
           <div
-            key={`${level}-${index}`}
+            key={heading.blockId}
             onClick={(e) => {
               e.stopPropagation();
               jumpToHeading(heading);
@@ -74,7 +45,10 @@ export const Outline = memo(
           >
             <div className='group flex items-stretch'>
               <div
-                className='z-10 !min-h-full w-[3px] shrink-0 rounded-[100px] group-hover:bg-[var(--outline-accent-strip)]'
+                className={cn(
+                  'z-10 !min-h-full w-[3px] shrink-0 rounded-[100px] group-hover:bg-[var(--outline-accent-strip)]',
+                  heading.blockId === activeId && 'bg-[var(--outline-accent-strip)]'
+                )}
                 style={{ '--outline-accent-strip': renderColor(blockColor.icon) } as React.CSSProperties}
               />
               <div className='shrink-0' style={{ width: `${(indent + 1) * 12}px` }} />
@@ -89,14 +63,8 @@ export const Outline = memo(
           </div>
         );
       },
-      [blockColor, jumpToHeading, isCollapsed]
+      [blockColor, jumpToHeading, isCollapsed, activeId]
     );
-
-    useLayoutEffect(() => {
-      setTimeout(() => {
-        setIsReady(true);
-      }, 1000);
-    }, []);
 
     return (
       <div
@@ -117,7 +85,7 @@ export const Outline = memo(
           <div className={cn('text-md pl-5 pr-3 pt-4 font-bold', isCollapsed && 'pb-4')}>
             {t('document.plugins.outline.outlineBlock')}
           </div>
-          {isReady && !isCollapsed ? (
+          {!isCollapsed ? (
             <div className='py-4 pl-5 pr-3'>
               {noVisibleHeadings ? (
                 <div className={'text-text-secondary'}>
@@ -127,9 +95,7 @@ export const Outline = memo(
                 </div>
               ) : (
                 <div className='relative'>
-                  <div className='flex w-full flex-col'>
-                    {root.map((heading, index) => renderHeading(heading, index, 0))}
-                  </div>
+                  <div className='flex w-full flex-col'>{root.map((heading) => renderHeading(heading))}</div>
                   <div className='absolute bottom-0 left-0 top-0 w-px bg-border-primary' />
                 </div>
               )}

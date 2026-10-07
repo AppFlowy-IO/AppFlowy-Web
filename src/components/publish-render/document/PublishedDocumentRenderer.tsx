@@ -1,11 +1,11 @@
 import { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+import { usePublishContext } from '@/application/publish';
 import type { PublishedDocumentSnapshot } from '@/application/publish-snapshot/types';
 import { FontLayout, LineHeightLayout, UIVariant } from '@/application/types';
 import StaticEditor from '@/components/editor/StaticEditor';
 import PublishedPageMeta from '@/components/publish-render/shared/PublishedPageMeta';
-import { usePublishContext } from '@/application/publish';
 import { getFontFamily } from '@/utils/font';
 
 const FONT_SIZE_MAP: Record<FontLayout, string | undefined> = {
@@ -93,6 +93,7 @@ export function PublishedDocumentRenderer({ snapshot }: { snapshot: PublishedDoc
           workspaceId="publish"
           viewId={snapshot.view.viewId}
           value={editorValue}
+          dockableOutline={!isTemplateThumb}
           navigateToView={publishContext?.toView}
           loadViewMeta={publishContext?.loadViewMeta}
           loadView={publishContext?.loadView}
