@@ -144,6 +144,17 @@ function widgetNamed(page: Page, label: string): Locator {
   return widgetLocatorOf(page, widget);
 }
 
+/** Read between measurements to distinguish scrolling work from condition recomputation. */
+async function derivedComputeCount(page: Page) {
+  return page.evaluate(() => {
+    const bridge = (window as unknown as {
+      __DASHBOARD_LOAD_STATS__?: { snapshot: () => { derivedComputes: Record<string, number> } };
+    }).__DASHBOARD_LOAD_STATS__;
+
+    return bridge ? Object.values(bridge.snapshot().derivedComputes).reduce((total, count) => total + count, 0) : null;
+  });
+}
+
 /** The page scrolled to the top, the pointer off the dashboard, and two quiet frames. */
 async function restAt(page: Page, top = 0) {
   const view = await DashboardSelectors.view(page).boundingBox();
@@ -367,9 +378,9 @@ function median(values: number[]): number {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
-/** Optional failure diagnostic, after all measurements so profiling cannot affect their budgets. */
-async function attachHeapSnapshotAfterMeasurements(page: Page, testInfo: TestInfo) {
-  const path = testInfo.outputPath('dashboard-after-leave.heapsnapshot');
+/** Opt-in profiling: after measured interactions, or at the open sample in diagnostic-only runs. */
+async function attachHeapSnapshot(page: Page, testInfo: TestInfo, phase: 'open' | 'after-leave') {
+  const path = testInfo.outputPath(`dashboard-${phase}.heapsnapshot`);
   const cdp = await page.context().newCDPSession(page);
   const output = createWriteStream(path);
   const onChunk = ({ chunk }: { chunk: string }) => { output.write(chunk); };
@@ -379,12 +390,14 @@ async function attachHeapSnapshotAfterMeasurements(page: Page, testInfo: TestInf
     await Promise.all([
       (async () => {
         await cdp.send('HeapProfiler.enable');
-        await cdp.send('HeapProfiler.collectGarbage');
+        // The open snapshot follows the gate's existing heapAfterGc sample.
+        // An opt-in diagnostic must not introduce another GC into that sample.
+        if (phase === 'after-leave') await cdp.send('HeapProfiler.collectGarbage');
         await cdp.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false });
       })().finally(() => output.end()),
       finished(output),
     ]);
-    await testInfo.attach('dashboard-heap-after-leave', { path, contentType: 'application/json' });
+    await testInfo.attach(`dashboard-heap-${phase}`, { path, contentType: 'application/json' });
   } finally {
     cdp.off('HeapProfiler.addHeapSnapshotChunk', onChunk);
     output.destroy();
@@ -454,6 +467,14 @@ test.describe('Dashboard grid and board performance (12 widgets over the employe
     if (perf) {
       results.heapMb = await heapAfterGc(page);
       results.testBridgeRetention = await testBridgeRetention(page);
+      if (process.env.DASHBOARD_PERF_HEAP_SNAPSHOT_OPEN === '1') {
+        if (process.env.DASHBOARD_PERF_DIAGNOSTIC !== '1') {
+          throw new Error('An open-dashboard heap snapshot requires a diagnostic-only run');
+        }
+
+        await attachHeapSnapshot(page, testInfo, 'open');
+      }
+
       const grid = widgetNamed(page, PLAIN_GRID);
       const cdp = await page.context().newCDPSession(page);
 
@@ -472,9 +493,18 @@ test.describe('Dashboard grid and board performance (12 widgets over the employe
 
         await movePointer(cdp, point.x, point.y);
         await page.waitForTimeout(400);
+        const beforeScroll = await derivedComputeCount(page);
+
         results.gridScrollSlow = await scroll(SLOW_WHEEL_STEP_PX);
+        const afterSlow = await derivedComputeCount(page);
+
         await page.waitForTimeout(600);
         results.gridScrollFast = await scroll(FAST_WHEEL_STEP_PX);
+        results.derivedComputationsDuringScroll = {
+          beforeScroll,
+          afterSlow,
+          afterFast: await derivedComputeCount(page),
+        };
       } finally {
         await cdp.detach().catch(() => undefined);
       }
@@ -495,8 +525,13 @@ test.describe('Dashboard grid and board performance (12 widgets over the employe
     // One line per run, for the before and after tables of the report.
     console.log(`[dashboard-perf-grid-board] ${JSON.stringify(results)}`);
 
-    if (perf && process.env.DASHBOARD_PERF_HEAP_SNAPSHOT === '1' && Number(results.heapMb) > MAX_HEAP_MB) {
-      await attachHeapSnapshotAfterMeasurements(page, testInfo);
+    if (
+      perf &&
+      process.env.DASHBOARD_PERF_HEAP_SNAPSHOT === '1' &&
+      process.env.DASHBOARD_PERF_HEAP_SNAPSHOT_OPEN !== '1' &&
+      Number(results.heapMb) > MAX_HEAP_MB
+    ) {
+      await attachHeapSnapshot(page, testInfo, 'after-leave');
     }
 
     expect(mounted.grids.length, 'grid widgets on the dashboard').toBeGreaterThan(0);

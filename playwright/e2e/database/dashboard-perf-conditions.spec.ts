@@ -56,6 +56,7 @@ import { isDashboardPerfMode, nextFrames, paintLatency } from '../../support/das
 import { ChangeMeasure, measureChange, settledTimeline } from '../../support/dashboard-performance-timeline';
 import {
   DashboardSelectors,
+  dashboardViewId,
   fixtureDatabase,
   globalFilterChip,
   readDashboardSetting,
@@ -358,8 +359,31 @@ test.describe('Dashboard conditions performance (12 widgets over the employees d
 
     // --- W6: the Grid tab, then the Dashboard tab again --------------------------------------
     const tabReturns: { visibleMs: number; allMs: number; derivedComputes: number }[] = [];
+    const inputDiagnostics = process.env.DASHBOARD_PERF_INPUT_DIAGNOSTICS === '1';
+    const tabReturnInputs: unknown[] = [];
 
     for (let round = 0; round < rounds; round += 1) {
+      if (inputDiagnostics) {
+        // Observe the real input without changing the existing pre-click timing anchor.
+        await page.evaluate((viewId) => {
+          const events: { type: string; at: number; eventAt: number }[] = [];
+
+          (window as any).__DASHBOARD_TAB_RETURN_INPUTS__ = events;
+          const record = (event: Event) => {
+            if (!event.isTrusted || !(event.target instanceof Element)) return;
+            if (!event.target.closest(`[data-testid="view-tab-${viewId}"]`)) return;
+            events.push({ type: event.type, at: Date.now(), eventAt: performance.timeOrigin + event.timeStamp });
+            if (event.type === 'click') {
+              document.removeEventListener('pointerdown', record, true);
+              document.removeEventListener('click', record, true);
+            }
+          };
+
+          document.addEventListener('pointerdown', record, { capture: true, passive: true });
+          document.addEventListener('click', record, { capture: true, passive: true });
+        }, dashboardViewId(page));
+      }
+
       // The derived results the return computes (W6 b): 0 while the kept ones are current.
       await page.evaluate(() => (window as any).__DASHBOARD_LOAD_STATS__?.reset());
       await leaveAndReturnInApp(page, 1_000);
@@ -367,7 +391,7 @@ test.describe('Dashboard conditions performance (12 widgets over the employees d
       const widgets = loadingWidgets(page);
 
       await waitForWidgetData(page, widgets);
-      const { data } = await readPageRecord(page);
+      const { data, frames, ready } = await readPageRecord(page);
       const visible = loadingScenario(page).visibleAtOpen ?? new Set<string>();
       const after = (ids: string[]) => Math.max(...ids.map((id) => data[id] - openedAt));
 
@@ -378,10 +402,35 @@ test.describe('Dashboard conditions performance (12 widgets over the employees d
         allMs: after(widgets.map((widget) => widget.id)),
         derivedComputes: Object.values(derivedComputes).reduce((sum, count) => sum + count, 0),
       });
+      if (inputDiagnostics) {
+        const inputs = await page.evaluate(() => (window as any).__DASHBOARD_TAB_RETURN_INPUTS__ as
+          { type: string; at: number; eventAt: number }[]);
+        const pointer = inputs.find((event) => event.type === 'pointerdown');
+        const click = inputs.find((event) => event.type === 'click');
+        const lastVisible = Math.max(...widgets.filter((widget) => visible.has(widget.id)).map((widget) => data[widget.id]));
+
+        tabReturnInputs.push({
+          preClickVisibleMs: lastVisible - openedAt,
+          pointerDownDelayMs: pointer ? pointer.at - openedAt : null,
+          clickDelayMs: click ? click.at - openedAt : null,
+          pointerToVisibleMs: pointer ? lastVisible - pointer.at : null,
+          clickToVisibleMs: click ? lastVisible - click.at : null,
+          eventClockDifferenceMs: pointer ? pointer.at - pointer.eventAt : null,
+          widgets: widgets.map((widget) => ({
+            label: widget.label,
+            visible: visible.has(widget.id),
+            frameMs: frames[widget.id] - openedAt,
+            readyMs: ready[widget.id] - openedAt,
+            dataMs: data[widget.id] - openedAt,
+          })),
+        });
+      }
+
       await page.waitForTimeout(2_000);
     }
 
     report('tabReturns', tabReturns);
+    if (inputDiagnostics) report('tabReturnInputs', tabReturnInputs);
     await testInfo.attach('dashboard-perf-conditions', {
       contentType: 'application/json',
       body: JSON.stringify(results, null, 2),

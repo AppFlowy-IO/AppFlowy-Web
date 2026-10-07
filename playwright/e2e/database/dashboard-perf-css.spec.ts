@@ -115,7 +115,17 @@ async function restAt(page: Page, top = 0) {
   await page.mouse.move(Math.max(1, (view?.x ?? 300) - 30), 450);
   await page.evaluate((scrollTop) => document.querySelector('.appflowy-scroll-container')?.scrollTo({ top: scrollTop }), top);
   await page.waitForTimeout(600);
+  // Escape restores title focus. Pure pointer measurements must start without
+  // that keyboard focus keeping the title tooltip open after the pointer leaves.
+  await page.evaluate(() => {
+    const focused = document.activeElement;
+
+    if (focused instanceof HTMLElement && focused.matches('[data-testid="dashboard-widget-title-button"]')) {
+      focused.blur();
+    }
+  });
   await nextFrames(page);
+  await expect(page.getByTestId('dashboard-widget-source-tooltip')).toHaveCount(0);
 }
 
 /** Moves the pointer onto the widget title, then presses it: the widget menu opens. */
@@ -275,7 +285,7 @@ test.describe('Dashboard CSS performance (12 widgets over the employees database
     await page.mouse.move(title.x, title.y);
     await expect(tooltip).toBeVisible();
     await page.waitForTimeout(1_000);
-    await page.mouse.move(title.x - 200, title.y - 60);
+    await page.mouse.move(title.x - 200, title.y - 60, { steps: 8 });
     await expect(tooltip).toHaveCount(0);
     await page.waitForTimeout(600);
     const tooltipLongTasks = await readLongTasks(page);
