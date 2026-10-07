@@ -1,4 +1,4 @@
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useVirtualizer, VirtualItem, Virtualizer } from '@tanstack/react-virtual';
 import { createContext, memo, useCallback, useContext, useMemo, useRef } from 'react';
 
 import { PADDING_END } from '@/application/database-yjs';
@@ -63,7 +63,31 @@ const CARD_LIST_STYLE = {
   overflowY: 'auto',
 } as const;
 
+// A column outside the board's horizontal overscan has no mounted cards. Keep
+// its virtual height and scroll offset without promoting its empty spacer to a
+// scrolling layer. `hidden` still permits the virtualizer's programmatic scroll;
+// the existing viewport/drag-source tracking restores `auto` before interaction.
+const OFFSCREEN_CARD_LIST_STYLE = {
+  ...CARD_LIST_STYLE,
+  overflowY: 'hidden',
+} as const;
+
 const NO_ITEMS: ReturnType<ReturnType<typeof useVirtualizer>['getVirtualItems']> = [];
+
+/** Keep the partly visible card anchored while measured cards above it resize. */
+export function shouldAdjustCardScroll(
+  item: VirtualItem,
+  _delta: number,
+  instance: Virtualizer<HTMLDivElement, Element>
+): boolean {
+  // A preceding resize may have changed both the measured positions and the
+  // actual scroll offset before a scroll event or React render runs. Resolve
+  // both together instead of comparing a stale item end with the new offset.
+  const offset = instance.scrollElement?.scrollTop ?? instance.scrollOffset ?? 0;
+  const firstVisible = instance.getVirtualItemForOffset(offset);
+
+  return firstVisible !== undefined && item.index < firstVisible.index;
+}
 
 function CardList({
   data,
@@ -115,6 +139,11 @@ function CardList({
     getItemKey: (index) => data[index].id || String(index),
   });
 
+  // A remounted card can briefly shrink while its fields hydrate. Compensating
+  // for the partly visible card as well as those above it shifts the viewport
+  // when those heights return, even though the final layout is unchanged.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = shouldAdjustCardScroll;
+
   // TanStack Virtual already applies viewport bounds and overscan using the
   // measured card heights. A second fixed-height cap could discard valid
   // virtual items and remount a card during a pointer gesture.
@@ -125,7 +154,7 @@ function CardList({
     <div
       ref={parentRef}
       className='appflowy-custom-scroller w-full min-h-0 flex-1'
-      style={CARD_LIST_STYLE}
+      style={onScreen ? CARD_LIST_STYLE : OFFSCREEN_CARD_LIST_STYLE}
     >
       <div
         style={{

@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { Virtualizer } from '@tanstack/react-virtual';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import CardList, {
   CardListSizing,
@@ -9,7 +9,10 @@ import CardList, {
   DEFAULT_CARD_LIST_SIZING,
   estimateCardHeight,
   RenderCard,
+  shouldAdjustCardScroll,
 } from '../CardList';
+
+import type { ReactNode } from 'react';
 
 jest.mock('@/application/database-yjs', () => ({
   PADDING_END: 0,
@@ -89,5 +92,184 @@ describe('CardList sizing (W5)', () => {
     const content = container.querySelector('.appflowy-custom-scroller > div') as HTMLElement;
 
     expect(content.style.height).toBe(`${cards.length * estimateCardHeight(FIELDS_PER_CARD)}px`);
+  });
+
+  it('keeps the same scroller and virtual position while its column leaves and re-enters the viewport', () => {
+    const column = (onScreen: boolean) => (
+      <ColumnOnScreenContext.Provider value={onScreen}>
+        <CardListSizingContext.Provider value={WIDGET_SIZING}>
+          <CardList columnId='engineering' data={cards} fieldId='department-field' />
+        </CardListSizingContext.Provider>
+      </ColumnOnScreenContext.Provider>
+    );
+    const { container, rerender } = render(column(true));
+    const scroller = container.querySelector('.appflowy-custom-scroller') as HTMLElement;
+    const content = scroller.firstElementChild as HTMLElement;
+    const visibleRows = () => screen.getAllByTestId('virtual-card').map((card) => card.textContent);
+
+    expect(scroller.style.overflowY).toBe('auto');
+    fireEvent.scroll(scroller, { target: { scrollTop: 4 * WIDGET_SIZING.estimatedCardHeight } });
+    const scrolledRows = visibleRows();
+    const scrollOffset = scroller.scrollTop;
+    const virtualHeight = content.style.height;
+
+    expect(scrolledRows).not.toContain('row-0');
+    rerender(column(false));
+
+    expect(container.querySelector('.appflowy-custom-scroller')).toBe(scroller);
+    expect(scroller.firstElementChild).toBe(content);
+    expect(scroller.style.overflowY).toBe('hidden');
+    expect(scroller.scrollTop).toBe(scrollOffset);
+    expect(content.style.height).toBe(virtualHeight);
+    expect(screen.queryAllByTestId('virtual-card')).toHaveLength(0);
+
+    rerender(column(true));
+
+    expect(scroller.style.overflowY).toBe('auto');
+    expect(scroller.scrollTop).toBe(scrollOffset);
+    expect(content.style.height).toBe(virtualHeight);
+    expect(visibleRows()).toEqual(scrolledRows);
+
+    // The live virtualizer also follows a programmatic scroll while clipped.
+    rerender(column(false));
+    fireEvent.scroll(scroller, { target: { scrollTop: 8 * WIDGET_SIZING.estimatedCardHeight } });
+    rerender(column(true));
+
+    expect(scroller.scrollTop).toBe(8 * WIDGET_SIZING.estimatedCardHeight);
+    expect(visibleRows()).not.toEqual(scrolledRows);
+    expect(visibleRows()).not.toContain('row-0');
+  });
+});
+
+describe('CardList measured scroll anchor', () => {
+  const cleanups: (() => void)[] = [];
+
+  afterEach(() => {
+    cleanups.splice(0).forEach((cleanup) => cleanup());
+  });
+
+  function measuredColumn(sizes: number[], initialOffset: number) {
+    const scroller = document.createElement('div');
+    let reportOffset: (offset: number, isScrolling: boolean) => void = () => undefined;
+    let start = 0;
+    const measurements = sizes.map((size, index) => {
+      const item = { index, key: index, start, size, end: start + size, lane: 0 };
+
+      start = item.end;
+      return item;
+    });
+    const virtualizer = new Virtualizer<HTMLDivElement, Element>({
+      count: sizes.length,
+      getScrollElement: () => scroller,
+      estimateSize: (index) => sizes[index],
+      initialOffset,
+      initialMeasurementsCache: measurements,
+      observeElementRect: (_, reportRect) => {
+        reportRect({ width: 256, height: 280 });
+        return () => undefined;
+      },
+      observeElementOffset: (_, onOffset) => {
+        reportOffset = onOffset;
+        reportOffset(scroller.scrollTop, false);
+        return () => undefined;
+      },
+      // Like native scrollTo, the offset changes immediately; its scroll event
+      // is delivered later, independently of a batch of resize observations.
+      scrollToFn: (offset, { adjustments = 0 }) => {
+        scroller.scrollTop = offset + adjustments;
+      },
+    });
+
+    virtualizer.shouldAdjustScrollPositionOnItemSizeChange = shouldAdjustCardScroll;
+    cleanups.push(virtualizer._didMount());
+    virtualizer._willUpdate();
+
+    return {
+      scroller,
+      virtualizer,
+      scrollEvent: () => reportOffset(scroller.scrollTop, false),
+      relativeTop: (index: number) => {
+        virtualizer.getVirtualItems();
+        return virtualizer.measurementsCache[index].start - scroller.scrollTop;
+      },
+    };
+  }
+
+  it('preserves the visible card when remounted cards shrink and regain their measured heights', () => {
+    // The employees Board: first row includes 7px more top padding, and two
+    // field lines (56px) briefly disappear while remounted cells hydrate.
+    const sizes = [575, 568, 568, 568, 568];
+    const { scroller, virtualizer, scrollEvent, relativeTop } = measuredColumn(sizes, 600);
+    const visibleCardTop = relativeTop(1);
+
+    [519, 512, 512].forEach((size, index) => virtualizer.resizeItem(index, size));
+    expect(scroller.scrollTop).toBe(544);
+    expect(relativeTop(1)).toBe(visibleCardTop);
+    scrollEvent();
+
+    sizes.slice(0, 3).forEach((size, index) => virtualizer.resizeItem(index, size));
+    scrollEvent();
+
+    // The default start-before-offset policy incorrectly finishes at 656px.
+    expect(scroller.scrollTop).toBe(600);
+    expect(relativeTop(1)).toBe(visibleCardTop);
+  });
+
+  it.each([false, true])(
+    'compensates all fully preceding cards with intermediate renders: %s',
+    (renderBetweenMeasurements) => {
+      const { scroller, virtualizer, scrollEvent, relativeTop } = measuredColumn(Array(12).fill(100), 325);
+      const visibleCardTop = relativeTop(3);
+
+      for (const size of [60, 100]) {
+        for (let index = 0; index < 5; index++) {
+          virtualizer.resizeItem(index, size);
+          if (renderBetweenMeasurements) virtualizer.getVirtualItems();
+        }
+
+        expect(scroller.scrollTop).toBe(size === 60 ? 205 : 325);
+        expect(relativeTop(3)).toBe(visibleCardTop);
+        scrollEvent();
+      }
+    }
+  );
+
+  it('does not compensate a partly visible card or a card below it', () => {
+    const { scroller, virtualizer, relativeTop } = measuredColumn(Array(12).fill(100), 325);
+
+    virtualizer.resizeItem(3, 150);
+    virtualizer.resizeItem(4, 60);
+
+    expect(scroller.scrollTop).toBe(325);
+    expect(relativeTop(3)).toBe(-25);
+    virtualizer.resizeItem(3, 100);
+    virtualizer.resizeItem(4, 100);
+
+    expect(scroller.scrollTop).toBe(325);
+    expect(relativeTop(3)).toBe(-25);
+  });
+
+  it('keeps the card at the viewport boundary anchored when the preceding card grows', () => {
+    const { scroller, virtualizer, relativeTop } = measuredColumn(Array(12).fill(100), 300);
+
+    virtualizer.resizeItem(2, 125);
+
+    expect(scroller.scrollTop).toBe(325);
+    expect(relativeTop(3)).toBe(0);
+  });
+
+  it('uses the new visible card after an ordinary vertical scroll', () => {
+    const { scroller, virtualizer, scrollEvent, relativeTop } = measuredColumn(Array(12).fill(100), 325);
+
+    scroller.scrollTop = 725;
+    scrollEvent();
+    virtualizer.resizeItem(6, 150);
+
+    expect(scroller.scrollTop).toBe(775);
+    expect(relativeTop(7)).toBe(-25);
+    virtualizer.resizeItem(7, 150);
+
+    expect(scroller.scrollTop).toBe(775);
+    expect(relativeTop(7)).toBe(-25);
   });
 });
