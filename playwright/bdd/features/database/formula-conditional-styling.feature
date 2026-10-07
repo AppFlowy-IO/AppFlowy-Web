@@ -49,3 +49,47 @@ Feature: Conditional styling of formula text
       | Rounding below threshold | 90    | default |
       | Rounding above threshold | 91    | red     |
       | Zero denominator         | 0     | default |
+
+  Scenario: Every supported style paints exactly its requested properties and can be cleared
+    Given a Grid for formula testing with these properties
+      | property | type | row 1 |
+      | Name     | Text | One   |
+    And a formula property "Styles" with the expression ""Styled Plain""
+    Then each formula style option has these rendered properties and clears completely
+      | option            | formats | foreground             | background           |
+      | b                 | b       | default                | default              |
+      | i                 | i       | default                | default              |
+      | u                 | u       | default                | default              |
+      | s                 | s       | default                | default              |
+      | c                 | c       | default                | --fill-secondary     |
+      | gray              | none    | --palette-text-color-19 | default              |
+      | brown             | none    | --palette-text-color-2  | default              |
+      | orange            | none    | --palette-text-color-3  | default              |
+      | yellow            | none    | --palette-text-color-5  | default              |
+      | green             | none    | --palette-text-color-9  | default              |
+      | blue              | none    | --palette-text-color-12 | default              |
+      | purple            | none    | --palette-text-color-15 | default              |
+      | pink              | none    | --palette-text-color-18 | default              |
+      | red               | none    | --palette-text-color-1  | default              |
+      | gray_background   | none    | default                | --palette-bg-color-19 |
+      | brown_background  | none    | default                | --palette-bg-color-2  |
+      | orange_background | none    | default                | --palette-bg-color-3  |
+      | yellow_background | none    | default                | --palette-bg-color-5  |
+      | green_background  | none    | default                | --palette-bg-color-9  |
+      | blue_background   | none    | default                | --palette-bg-color-12 |
+      | purple_background | none    | default                | --palette-bg-color-15 |
+      | pink_background   | none    | default                | --palette-bg-color-18 |
+      | red_background    | none    | default                | --palette-bg-color-1  |
+
+  Scenario: Mixed runs combine styles, override colors and remove only requested formatting
+    Given a Grid for formula testing with these properties
+      | property | type | row 1 |
+      | Name     | Text | One   |
+    And a formula property "Styles" with the expression ""Styled Plain""
+    Then these formula expressions paint exactly the requested styled and plain runs
+      | expression                                                                                                                 | formats   | foreground            | background           |
+      | style("Styled", "b", "i", "u", "s", "c", "red", "blue_background") + " Plain"                                                | b i u s c | --palette-text-color-1 | --palette-bg-color-12 |
+      | unstyle(style("Styled", "b", "i", "u", "s", "c", "red", "blue_background"), "b", "u", "red", "blue_background") + " Plain" | i s c     | default               | --fill-secondary     |
+      | unstyle(style("Styled", "b", "i", "u", "s", "c", "red", "blue_background")) + " Plain"                                      | none      | default               | default              |
+      | style("Styled", "red").style("green", "yellow_background") + " Plain"                                                      | none      | --palette-text-color-9 | --palette-bg-color-5  |
+      | style("Styled", "b", "red") + unstyle(style(" Plain", "i", "blue_background"))                                             | b         | --palette-text-color-1 | default              |

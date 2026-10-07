@@ -13,6 +13,42 @@ function run(source: string, properties: Record<string, FormulaValue> = {}): For
 }
 
 describe('formula text styling', () => {
+  it.each([
+    'b',
+    'i',
+    'u',
+    's',
+    'c',
+    'gray',
+    'brown',
+    'orange',
+    'yellow',
+    'green',
+    'blue',
+    'purple',
+    'pink',
+    'red',
+    'gray_background',
+    'brown_background',
+    'orange_background',
+    'yellow_background',
+    'green_background',
+    'blue_background',
+    'purple_background',
+    'pink_background',
+    'red_background',
+  ])('applies only %s and removes it with selective or complete unstyle', (style) => {
+    const styled = `style("91", "${style}", "${style}")`;
+
+    expect(run(styled)).toEqual({
+      type: 'text',
+      value: '91',
+      runs: [{ text: '91', styles: [style] }],
+    });
+    expect(run(`${styled}.unstyle("${style}")`)).toEqual(text('91'));
+    expect(run(`${styled}.unstyle()`)).toEqual(text('91'));
+  });
+
   // Values and names from the reporter's notion_formula_conversion_test_data.csv.
   it.each([
     ['No completed work', 0, 10, '0', false],
@@ -113,6 +149,16 @@ describe('formula text styling', () => {
       type: 'text',
       value: 'A',
       runs: [{ text: 'A', styles: ['b', 'i', 'u', 's', 'c'] }],
+    });
+  });
+
+  it('selectively clears decorations and background without losing the remaining styles', () => {
+    expect(
+      run('"91".style("c", "s", "u", "i", "b", "red", "blue_background").unstyle("i", "u", "blue_background")')
+    ).toEqual({
+      type: 'text',
+      value: '91',
+      runs: [{ text: '91', styles: ['b', 's', 'c', 'red'] }],
     });
   });
 

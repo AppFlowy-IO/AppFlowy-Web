@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 
-import { expect, type Locator, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import { createBdd, DataTable } from 'playwright-bdd';
 
 import { loginAndCreateGrid } from '../../support/field-type-helpers';
@@ -9,11 +9,14 @@ import {
   ensureRowCount,
   fieldIdByName,
   formulaInput,
+  openFormulaEditorFromCell,
   readGridFieldsDirect,
   renameFieldDirect,
   revealColumn,
+  saveFormula,
   seedColumn,
   trimRowsDirect,
+  typeFormula,
 } from '../../support/formula-test-helpers';
 import { DatabaseGridSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
@@ -143,3 +146,207 @@ Then("the conversion formula matches the reporter's expected text and colors", a
 Then('the conversion formula preview text is {string}', async ({ page }, color: string) => {
   await expectTextColor(page.getByTestId('formula-preview-value'), color, '91');
 });
+
+interface RenderedStyle {
+  color: string;
+  backgroundColor: string;
+  fontWeight: string;
+  fontStyle: string;
+  textDecorationLine: string;
+  fontFamily: string;
+  borderRadius: string;
+}
+
+interface StyleExpectation {
+  formats: string;
+  foreground: string;
+  background: string;
+}
+
+const MIXED_TEXT = 'Styled Plain';
+const PLAIN_STYLE: StyleExpectation = { formats: 'none', foreground: 'default', background: 'default' };
+
+/** Text offsets allow plain/coalesced results and nested spans to share the same assertions. */
+async function renderedStyles(locator: Locator, start: number, end: number) {
+  return locator.evaluate(
+    (element, range) => {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      const styles: RenderedStyle[] = [];
+      let offset = 0;
+
+      while (walker.nextNode()) {
+        const length = walker.currentNode.textContent?.length ?? 0;
+
+        if (offset < range.end && offset + length > range.start) {
+          const leaf = walker.currentNode.parentElement!;
+          const computed = getComputedStyle(leaf);
+          const decorations = new Set<string>();
+          let backgroundColor = 'rgba(0, 0, 0, 0)';
+
+          // Decorations and painted backgrounds can come from a containing span,
+          // even though these CSS properties are not inherited by the text leaf.
+          for (let ancestor: Element | null = leaf; ancestor; ancestor = ancestor.parentElement) {
+            const parentStyle = getComputedStyle(ancestor);
+
+            for (const decoration of parentStyle.textDecorationLine.split(' ')) {
+              if (decoration !== 'none') decorations.add(decoration);
+            }
+
+            if (backgroundColor === 'rgba(0, 0, 0, 0)' && parentStyle.backgroundColor !== 'rgba(0, 0, 0, 0)') {
+              backgroundColor = parentStyle.backgroundColor;
+            }
+
+            if (ancestor === element) break;
+          }
+
+          styles.push({
+            color: computed.color,
+            backgroundColor,
+            fontWeight: computed.fontWeight,
+            fontStyle: computed.fontStyle,
+            textDecorationLine: [...decorations].sort().join(' ') || 'none',
+            fontFamily: computed.fontFamily,
+            borderRadius: computed.borderRadius,
+          });
+        }
+
+        offset += length;
+      }
+
+      return {
+        text: element.textContent,
+        styles: [...new Map(styles.map((style) => [JSON.stringify(style), style])).values()],
+      };
+    },
+    { start, end }
+  );
+}
+
+async function themeColor(locator: Locator, token: string): Promise<string> {
+  const result = await locator.evaluate((element, variable) => {
+    const value = getComputedStyle(element).getPropertyValue(variable).trim();
+    const probe = document.createElement('span');
+
+    probe.style.color = `var(${variable})`;
+    element.append(probe);
+    const color = getComputedStyle(probe).color;
+
+    probe.remove();
+    return { value, color };
+  }, token);
+
+  expect(result.value, `Theme token ${token} must exist`).not.toBe('');
+  return result.color;
+}
+
+async function expectedStyle(
+  locator: Locator,
+  baseline: RenderedStyle,
+  expected: StyleExpectation,
+  monoFont: string
+): Promise<RenderedStyle> {
+  const formats = expected.formats === 'none' ? [] : expected.formats.split(' ');
+
+  expect(formats.every((format) => ['b', 'i', 'u', 's', 'c'].includes(format))).toBe(true);
+  return {
+    ...baseline,
+    color: expected.foreground === 'default' ? baseline.color : await themeColor(locator, expected.foreground),
+    backgroundColor:
+      expected.background === 'default' ? baseline.backgroundColor : await themeColor(locator, expected.background),
+    fontWeight: formats.includes('b') ? '700' : baseline.fontWeight,
+    fontStyle: formats.includes('i') ? 'italic' : baseline.fontStyle,
+    textDecorationLine:
+      [...(formats.includes('s') ? ['line-through'] : []), ...(formats.includes('u') ? ['underline'] : [])].join(' ') ||
+      baseline.textDecorationLine,
+    fontFamily: formats.includes('c') ? monoFont : baseline.fontFamily,
+    borderRadius: formats.includes('c') ? '4px' : baseline.borderRadius,
+  };
+}
+
+async function expectStyledAndPlainRuns(locator: Locator, baseline: RenderedStyle, expected: RenderedStyle) {
+  await expect(locator).toHaveText(MIXED_TEXT);
+  await expect
+    .poll(() => renderedStyles(locator, 0, 6), { message: 'Styled run has exactly the requested CSS' })
+    .toEqual({ text: MIXED_TEXT, styles: [expected] });
+  await expect
+    .poll(() => renderedStyles(locator, 6, MIXED_TEXT.length), { message: 'Plain neighbor has no extra styles' })
+    .toEqual({ text: MIXED_TEXT, styles: [baseline] });
+}
+
+/** Reuse one real field so every edit also checks removal of its previous styling. */
+async function formulaStyleHarness(page: Page) {
+  const fieldId = await fieldIdByName(page, 'Styles');
+  const cell = DatabaseGridSelectors.dataRowCellsForField(page, fieldId).first().locator('.formula-cell');
+
+  await expect(cell).toHaveText(MIXED_TEXT);
+  const cellBaseline = (await renderedStyles(cell, 0, MIXED_TEXT.length)).styles;
+
+  expect(cellBaseline).toHaveLength(1);
+  await openFormulaEditorFromCell(page, fieldId, 0);
+  const preview = page.getByTestId('formula-preview-value');
+
+  await expect(preview).toHaveText(MIXED_TEXT);
+  const previewBaseline = (await renderedStyles(preview, 0, MIXED_TEXT.length)).styles;
+  const monoFont = await page.evaluate(() => {
+    const probe = document.createElement('span');
+
+    probe.className = 'font-mono';
+    document.body.append(probe);
+    const family = getComputedStyle(probe).fontFamily;
+
+    probe.remove();
+    return family;
+  });
+
+  expect(previewBaseline).toHaveLength(1);
+  expect(monoFont).toContain('monospace');
+  expect(cellBaseline[0].fontFamily, 'Code must change the cell font').not.toBe(monoFont);
+
+  return async (expression: string, expected: StyleExpectation) => {
+    if (!(await formulaInput(page).isVisible())) await openFormulaEditorFromCell(page, fieldId, 0);
+    await typeFormula(page, expression);
+    await expect(page.getByTestId('formula-editor-error')).toHaveCount(0);
+    await expectStyledAndPlainRuns(
+      preview,
+      previewBaseline[0],
+      await expectedStyle(preview, previewBaseline[0], expected, monoFont)
+    );
+    await saveFormula(page);
+    await expectStyledAndPlainRuns(
+      cell,
+      cellBaseline[0],
+      await expectedStyle(cell, cellBaseline[0], expected, monoFont)
+    );
+  };
+}
+
+Then(
+  'each formula style option has these rendered properties and clears completely',
+  async ({ page }, table: DataTable) => {
+    test.setTimeout(600_000);
+    const rows = table.hashes();
+
+    expect(rows).toHaveLength(23);
+    expect(new Set(rows.map(({ option }) => option)).size).toBe(23);
+    const verify = await formulaStyleHarness(page);
+
+    for (const { option, formats, foreground, background } of rows) {
+      await test.step(`Render and clear ${option} in preview and cell`, async () => {
+        await verify(`style("Styled", "${option}") + " Plain"`, { formats, foreground, background });
+        await verify(`unstyle(style("Styled", "${option}"), "${option}") + " Plain"`, PLAIN_STYLE);
+      });
+    }
+  }
+);
+
+Then(
+  'these formula expressions paint exactly the requested styled and plain runs',
+  async ({ page }, table: DataTable) => {
+    test.setTimeout(240_000);
+    const verify = await formulaStyleHarness(page);
+
+    for (const { expression, formats, foreground, background } of table.hashes()) {
+      await test.step(expression, () => verify(expression, { formats, foreground, background }));
+    }
+  }
+);
