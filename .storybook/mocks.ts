@@ -192,17 +192,6 @@ export const mockPricingCatalog: PricingCatalog = {
         { key: 'file_uploads', label: 'Unlimited file upload size', value: { kind: 'unlimited', display: 'Unlimited' } },
       ],
     },
-    {
-      id: 'vault_workspace',
-      kind: 'account_add_on',
-      name: 'Vault Workspace',
-      description: 'Private and offline— AI runs locally, no data transfer',
-      prices: [
-        { interval: SubscriptionInterval.Month, price_cents: 750 },
-        { interval: SubscriptionInterval.Year, price_cents: 7200 },
-      ],
-      features: [{ key: 'vault', label: 'Privacy Vault for your workspace', value: { kind: 'included', display: 'yes' } }],
-    },
   ],
   comparison: [
     {

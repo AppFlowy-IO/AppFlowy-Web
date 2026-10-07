@@ -1,6 +1,4 @@
 import {
-  PersonalPlan,
-  PersonalSubscriptionStatus,
   PricingCatalog,
   SubscriptionInterval,
   SubscriptionPlan,
@@ -93,29 +91,6 @@ export async function getWorkspaceSubscriptionStatus(workspaceId: string) {
 
   return executeAPIRequest<WorkspaceSubscriptionStatus[]>(() =>
     getBillingAxios()?.get<APIResponse<WorkspaceSubscriptionStatus[]>>(url)
-  );
-}
-
-/** Account subscriptions are shared by every workspace belonging to the current user. */
-export async function getPersonalSubscriptionStatus() {
-  const url = `/billing/api/v1/personal-subscription-status`;
-
-  return executeAPIRequest<PersonalSubscriptionStatus[]>(() =>
-    getBillingAxios()?.get<APIResponse<PersonalSubscriptionStatus[]>>(url)
-  );
-}
-
-export async function getPersonalSubscriptionLink(plan: PersonalPlan, interval: SubscriptionInterval) {
-  const url = `/billing/api/v1/personal-subscription-link`;
-
-  return executeAPIRequest<string>(() =>
-    getBillingAxios()?.get<APIResponse<string>>(url, {
-      params: {
-        subscription_plan: plan,
-        recurring_interval: interval,
-        success_url: window.location.href,
-      },
-    })
   );
 }
 

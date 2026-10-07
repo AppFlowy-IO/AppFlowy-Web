@@ -15,7 +15,6 @@ import { findWorkspaceAddOn, formatStorageGb, isSubscriptionCanceled } from '@/u
 import { fillPlaceholders, formatPeriodEnd, userDateFormat } from './billing/labels';
 import { SettingsPanelError, SettingsPanelLoading, SettingsPanelShell } from './billing/SettingsPanelShell';
 import { useWorkspaceBilling } from './billing/useWorkspaceBilling';
-import { VaultWorkspaceAddOn } from './billing/VaultWorkspaceAddOn';
 
 // Styles mirror the desktop plan page (settings_plan_view/widgets): 8px usage
 // bars with the figure beside them, purple "Pro" badges, a "Current plan" tab
@@ -286,10 +285,7 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
 
   return (
     <SettingsPanelShell title={t('settings.planPage.title')} testId='plan-panel'>
-      <div className='flex flex-col gap-4'>
-        {renderContent()}
-        {currentUser && <VaultWorkspaceAddOn key={currentUser.uid} />}
-      </div>
+      {renderContent()}
     </SettingsPanelShell>
   );
 }

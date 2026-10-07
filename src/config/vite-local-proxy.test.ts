@@ -47,7 +47,7 @@ describe('local development service routing', () => {
     expect(targetFor(routes, '/api/user/profile')).toBe('http://localhost:8000');
     expect(targetFor(routes, '/api/workspace/workspace-1/view/view-1')).toBe('http://localhost:8000');
     expect(targetFor(routes, '/ws/v2')).toBe('http://localhost:8000');
-    expect(targetFor(routes, '/billing/api/v1/personal-subscription-status')).toBe('http://localhost:4242');
+    expect(targetFor(routes, '/billing/api/v1/pricing')).toBe('http://localhost:4242');
   });
 
   it('honors an explicitly configured API target for workspace usage', async () => {

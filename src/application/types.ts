@@ -2084,10 +2084,6 @@ export enum SubscriptionInterval {
   Year = 'year',
 }
 
-export enum PersonalPlan {
-  VaultWorkspace = 'vault_workspace',
-}
-
 export interface Subscription {
   currency: string;
   plan: SubscriptionPlan;
@@ -2119,16 +2115,6 @@ export interface WorkspaceSubscriptionStatus {
   /** Unix seconds when a canceled subscription ends; `null` while it still renews. */
   cancel_at: number | null;
   /** Unix seconds when the current billing period ends. */
-  current_period_end: number;
-}
-
-/** Account add-ons from `GET /billing/api/v1/personal-subscription-status`. */
-export interface PersonalSubscriptionStatus {
-  plan: PersonalPlan;
-  recurring_interval: SubscriptionInterval;
-  subscription_status: SubscriptionStatus;
-  subscription_quantity: number;
-  cancel_at: number | null;
   current_period_end: number;
 }
 
@@ -2170,7 +2156,7 @@ type LooseString = string & Record<never, never>;
 export type PricingPlanKind = 'workspace_plan' | 'workspace_add_on' | 'account_add_on';
 
 /** `plans[].id` values the billing pricing catalog publishes today. */
-export type PricingPlanId = SubscriptionPlan | 'ai_local' | 'vault_workspace';
+export type PricingPlanId = SubscriptionPlan | 'ai_local';
 
 /** Units a `quantity` feature value can carry. Unknown units fall back to `display`. */
 export type FeatureValueUnit =

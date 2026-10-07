@@ -31,7 +31,6 @@ jest.mock('@/components/main/app.hooks', () => ({
 jest.mock('@/application/services/domains', () => ({
   BillingService: {
     getWorkspaceSubscriptionStatus: jest.fn(),
-    getPersonalSubscriptionStatus: jest.fn(),
     getWorkspaceUsage: jest.fn(),
     getPricingCatalog: jest.fn(),
   },
@@ -67,7 +66,6 @@ describe('Settings billing menu', () => {
     mockOwnerUid = 42;
     mockGetSubscriptions.mockResolvedValue([]);
     jest.mocked(BillingService.getWorkspaceSubscriptionStatus).mockResolvedValue([]);
-    jest.mocked(BillingService.getPersonalSubscriptionStatus).mockResolvedValue([]);
     jest.mocked(BillingService.getWorkspaceUsage).mockResolvedValue(freeUsage);
     jest.mocked(BillingService.getPricingCatalog).mockResolvedValue(catalog);
   });

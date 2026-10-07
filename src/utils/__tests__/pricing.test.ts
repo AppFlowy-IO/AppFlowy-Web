@@ -73,11 +73,11 @@ const aiMax: PricingPlan = {
   features: [],
 };
 
-const vault: PricingPlan = {
-  id: 'vault_workspace',
+const accountAddOn: PricingPlan = {
+  id: 'unsupported_account_add_on',
   kind: 'account_add_on',
-  name: 'Vault Workspace',
-  description: 'Server vault description',
+  name: 'Unsupported account add-on',
+  description: 'Server account add-on description',
   prices: [{ interval: SubscriptionInterval.Month, price_cents: 750 }],
   features: [],
 };
@@ -86,7 +86,7 @@ const catalog: PricingCatalog = {
   version: 1,
   currency: 'USD',
   annual_discount_percent: 20,
-  plans: [free, pro, aiMax, vault],
+  plans: [free, pro, aiMax, accountAddOn],
   comparison: [],
 };
 
@@ -137,7 +137,7 @@ describe('plan lookup helpers', () => {
   it('maps catalog ids onto the checkout enum only when checkout knows them', () => {
     expect(toSubscriptionPlan('pro')).toBe(SubscriptionPlan.Pro);
     expect(toSubscriptionPlan('ai_max')).toBe(SubscriptionPlan.AIMax);
-    expect(toSubscriptionPlan('vault_workspace')).toBeUndefined();
+    expect(toSubscriptionPlan(accountAddOn.id)).toBeUndefined();
     expect(toSubscriptionPlan('')).toBeUndefined();
   });
 });
