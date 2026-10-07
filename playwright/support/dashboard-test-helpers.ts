@@ -2187,6 +2187,11 @@ export async function openWidgetRow(scope: Page, widget: Locator, rowId: string)
     const row = widget.getByTestId(`grid-row-${rowId}`);
 
     await expect(row).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+    // Editing a later property can leave the Name column virtualized away.
+    // Scroll this grid back to that column before looking for its row action.
+    await widget.locator('[data-parity-id="dash-widget-grid-scrollbar"]').evaluate((element) => {
+      element.scrollLeft = 0;
+    });
     // Wide virtual rows extend beyond the clipped widget. Hover the primary
     // cell, whose row-specific action opens this exact record.
     await row.locator('.grid-row-cell[data-is-primary="true"]').hover();

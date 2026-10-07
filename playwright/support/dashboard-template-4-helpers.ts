@@ -922,7 +922,10 @@ export async function expectDashboardRefusedWith(page: Page, message: string) {
   await expect(option).toHaveAttribute('data-disabled', '');
   // The tooltip trigger wraps the disabled item; its text follows the plan check.
   await expect(async () => {
-    await option.locator('xpath=..').hover({ force: true });
+    // The refused click closes the tooltip. Leave its trigger before re-entering
+    // so Radix can open it again, as it does for a user's next hover.
+    await page.mouse.move(0, 0);
+    await option.locator('xpath=..').hover();
     await expect(tooltip).toBeVisible({ timeout: 2_000 });
   }).toPass(WAIT);
 }

@@ -778,23 +778,30 @@ export async function openDocumentWithDashboard(page: Page, name: string) {
 }
 
 /** Hover a block until the editor shows its controls (the drag handle opens the block menu, `+` adds below). */
-async function hoverBlockControls(page: Page, block: Locator, control: Locator) {
+async function hoverBlockControls(block: Locator, control: Locator) {
   await expect(block).toBeVisible(TEMPLATE_WAIT);
   await expect
     .poll(async () => {
-      const box = await block.boundingBox();
+      // A copied dashboard can start below the viewport while the preceding
+      // block's handle remains visible. Hover the requested block through
+      // Playwright so it scrolls the target point into view first.
+      await block.hover({ position: { x: 24, y: 16 } });
+      // Scrolling closes the floating toolbar. isVisible() still accepts its
+      // transparent, pointer-disabled handle, so require a real pointer target.
+      return control.evaluate((element) => {
+        const box = element.getBoundingClientRect();
 
-      if (box) await page.mouse.move(box.x + 24, box.y + 16);
-      return control.isVisible();
+        return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+      });
     }, TEMPLATE_WAIT)
     .toBe(true);
 }
 
 async function chooseBlockMenuAction(page: Page, block: Locator, action: 'duplicate' | 'delete') {
-  await hoverBlockControls(page, block, BlockSelectors.dragHandle(page));
-  await BlockSelectors.dragHandle(page).click({ force: true });
+  await hoverBlockControls(block, BlockSelectors.dragHandle(page));
+  await BlockSelectors.dragHandle(page).click();
   await expect(BlockSelectors.controlsMenu(page)).toBeVisible(TEMPLATE_WAIT);
-  await BlockSelectors.controlsMenuAction(page, action).click({ force: true });
+  await BlockSelectors.controlsMenuAction(page, action).click();
 }
 
 /** Duplicate the edited document's first dashboard block from its block menu; remember the copy's view. */
@@ -887,7 +894,7 @@ export async function typeSlashInSimpleTableCell(page: Page) {
   const editor = documentEditor(page, documentId(page, name));
   const panel = SlashCommandSelectors.slashPanel(page);
 
-  await hoverBlockControls(page, dashboardBlocks(page, name).last(), BlockSelectors.addButton(page));
+  await hoverBlockControls(dashboardBlocks(page, name).last(), BlockSelectors.addButton(page));
   await BlockSelectors.addButton(page).click({ force: true });
   await expect(panel).toBeVisible(TEMPLATE_WAIT);
   await page.keyboard.type('table', { delay: 30 });
