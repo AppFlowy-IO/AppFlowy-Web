@@ -5,11 +5,12 @@ import { Editable, Slate, withReact } from 'slate-react';
 
 import { ViewLayout } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
+import type { DatabaseViewCreationAction } from '@/components/app/hooks/useDatabaseViewCreation';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 
 import { SlashPanel } from '../SlashPanel';
 
-const timelineRequiresPro = 'Creating a Timeline view requires a Pro workspace.';
+const timelineRequiresPro = 'Ask the workspace owner to upgrade to Pro to create this view.';
 const dashboardRequiresPro = 'Creating a Dashboard view requires a Pro workspace.';
 const mockGetSubscriptions = jest.fn();
 const mockAddPage = jest.fn();
@@ -35,6 +36,7 @@ const mockEditorContext = {
 const mockAIWriter = { askAIAnything: jest.fn(), continueWriting: jest.fn() };
 const mockPopoverContext = { openPopover: jest.fn() };
 const mockReasonCalls: { enabled?: boolean; workspaceId?: string; requiresProMessage?: string }[] = [];
+const mockCreationOptions = jest.fn();
 let mockRequiresPro = true;
 let mockMobileContext = false;
 
@@ -54,6 +56,19 @@ jest.mock('@/components/app/hooks/useTimelineCreationDisabledReason', () => ({
     mockReasonCalls.push(options);
     if (getSubscriptions !== mockGetSubscriptions || !mockRequiresPro) return undefined;
     return options.requiresProMessage ?? timelineRequiresPro;
+  },
+}));
+jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({
+  useDatabaseViewCreation: (options: unknown) => {
+    mockCreationOptions(options);
+    // Exercise the menu's handling of a Free member's denied Timeline action.
+    // The common hook owns quota/billing policy; Dashboard retains its separate gate.
+    const getAction = (layout?: ViewLayout): DatabaseViewCreationAction =>
+      mockRequiresPro && layout === ViewLayout.Timeline
+        ? { type: 'disabled', reason: timelineRequiresPro }
+        : { type: 'create' };
+
+    return { getAction, checkCreation: (layout?: ViewLayout) => getAction(layout).type === 'create' };
   },
 }));
 jest.mock('@/components/_shared/hooks/useMobileContext', () => ({
@@ -103,7 +118,11 @@ describe('SlashPanel Timeline and Dashboard creation access', () => {
   it('checks the workspace plan while the menu is open, with the Dashboard message for Dashboard', () => {
     render(<SlashPanelHarness />);
 
-    expect(mockReasonCalls).toContainEqual({ workspaceId: 'workspace-id', enabled: true });
+    expect(mockCreationOptions).toHaveBeenCalledWith({
+      workspaceId: 'workspace-id',
+      enabled: true,
+      getSubscriptions: mockGetSubscriptions,
+    });
     expect(mockReasonCalls).toContainEqual({
       workspaceId: 'workspace-id',
       enabled: true,
@@ -115,9 +134,11 @@ describe('SlashPanel Timeline and Dashboard creation access', () => {
     render(<SlashPanelHarness />);
     const option = screen.getByTestId(`slash-menu-${key}`);
 
-    expect(option.hasAttribute('disabled')).toBe(true);
-    // The disabled button ignores pointer events; its wrapper must receive hover.
-    fireEvent.mouseOver(option.parentElement!);
+    expect(option.getAttribute('aria-disabled')).toBe('true');
+    // Dashboard is natively disabled; the shared admission path for Timeline
+    // keeps clicks actionable so it can explain the denial and refresh status.
+    expect(option.hasAttribute('disabled')).toBe(key.toLowerCase().includes('dashboard'));
+    fireEvent.pointerMove(option.parentElement!, { pointerType: 'mouse' });
     expect((await screen.findByRole('tooltip')).textContent).toBe(message);
     fireEvent.click(option);
     expect(mockClosePanel).not.toHaveBeenCalled();
@@ -195,7 +216,11 @@ describe('SlashPanel Timeline and Dashboard creation access', () => {
         requiresProMessage: dashboardRequiresPro,
       });
       // Timeline still checks it.
-      expect(mockReasonCalls).toContainEqual({ workspaceId: 'workspace-id', enabled: true });
+      expect(mockCreationOptions).toHaveBeenCalledWith({
+        workspaceId: 'workspace-id',
+        enabled: true,
+        getSubscriptions: mockGetSubscriptions,
+      });
     });
   });
 });

@@ -4,7 +4,7 @@
 import { readdirSync, readFileSync } from 'fs';
 import { join, relative, resolve } from 'path';
 
-import ts from 'typescript';
+import * as ts from 'typescript';
 
 /**
  * Every web write to an existing cell must go through the rich text guard
@@ -48,6 +48,8 @@ const ALLOWED: Record<string, string> = {
   'application/database-yjs/fields/select-option/utils.ts:createSelectOptionCell': 'new cell',
   // Not Text-written cells.
   'application/database-yjs/migrations/rollup_fieldtype.ts:migrateRowCells': 'touches Rollup cells only',
+  'components/database/chart/hooks/chartSeries.ts:buildChartSeriesWithGroups':
+    'local native Map of aggregation row indexes; no stored cell mutation',
 };
 
 function sourceFiles(dir: string): string[] {
