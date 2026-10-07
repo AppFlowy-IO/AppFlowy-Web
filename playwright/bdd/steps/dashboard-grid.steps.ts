@@ -11,7 +11,6 @@ import { resolveBackgroundColor, WIDGET_TIMEOUT } from '../../support/dashboard-
 import {
   addDashboardView,
   DashboardSelectors,
-  dragLocatorBy,
   dragWidthHandle,
   enterEditMode,
   expectRowHeight,
@@ -39,6 +38,23 @@ const rememberedPositions = new WeakMap<Page, Record<string, WidgetBox>>();
 
 async function rowId(page: Page, rowIndex: number) {
   return (await persistedRow(page, rowIndex)).id;
+}
+
+async function startHeightDrag(page: Page, rowIndex: number) {
+  const handle = DashboardSelectors.heightHandle(page, await rowId(page, rowIndex));
+
+  // The previous resize can leave the pointer over Add to new row. Dismiss
+  // its tooltip before locating the next drag's real pointer target.
+  await page.keyboard.press('Escape');
+  await handle.hover();
+  const box = await handle.boundingBox();
+
+  if (!box) throw new Error('The height handle is not visible');
+  const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+
+  await page.mouse.down();
+  await expect(handle).toHaveAttribute('data-active', 'true');
+  return from;
 }
 
 /** The left and right edges of a row's track (the row plus the 6px box bleed on both sides). */
@@ -90,16 +106,8 @@ When('the user remembers the positions of the dashboard widgets', async ({ page 
 When(
   'the user starts dragging the height handle of dashboard row {int} by {int} pixels',
   async ({ page }, rowIndex: number, pixels: number) => {
-    const handle = DashboardSelectors.heightHandle(page, await rowId(page, rowIndex));
+    const from = await startHeightDrag(page, rowIndex);
 
-    await handle.scrollIntoViewIfNeeded();
-    const box = await handle.boundingBox();
-
-    if (!box) throw new Error('The height handle is not visible');
-    const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-
-    await page.mouse.move(from.x, from.y);
-    await page.mouse.down();
     for (let step = 1; step <= 10; step += 1) await page.mouse.move(from.x, from.y + (pixels * step) / 10);
   }
 );
@@ -327,8 +335,13 @@ Then(
   async ({ page }, rowIndex: number, offset: number) => {
     const id = await rowId(page, rowIndex);
     const row = await DashboardSelectors.row(page, id).boundingBox();
-    const start = await DashboardSelectors.rowControlAnchor(page, id, 'start').boundingBox();
-    const end = await DashboardSelectors.rowControlAnchor(page, id, 'end').boundingBox();
+    const moveControl = DashboardSelectors.row(page, id).getByTestId('dashboard-row-move-control');
+    const addControl = DashboardSelectors.addWidgetRowButton(page, id);
+
+    await expect(moveControl).toBeVisible();
+    await expect(addControl).toBeVisible();
+    const start = await moveControl.boundingBox();
+    const end = await addControl.boundingBox();
 
     if (!row || !start || !end) throw new Error('The row or its controls are not rendered');
     const centerY = row.y + row.height / 2;
@@ -372,18 +385,17 @@ Then('the dashboard row {int} has widths {string}', async ({ page }, rowIndex: n
 When(
   'the user drags the height handle of dashboard row {int} by {int} pixels',
   async ({ page }, rowIndex: number, pixels: number) => {
-    const row = await persistedRow(page, rowIndex);
-    const handle = DashboardSelectors.heightHandle(page, row.id);
+    const from = await startHeightDrag(page, rowIndex);
 
-    await handle.scrollIntoViewIfNeeded();
-    const box = await handle.boundingBox();
-
-    if (!box) throw new Error('The height handle is not visible');
     // The pointer stays in the page: a long upward drag stops at its top, far
     // past the 240 px minimum either way.
-    const travel = Math.max(pixels, 2 - (box.y + box.height / 2));
+    const travel = Math.max(pixels, 2 - from.y);
 
-    await dragLocatorBy(page, handle, 0, travel);
+    try {
+      for (let step = 1; step <= 12; step += 1) await page.mouse.move(from.x, from.y + (travel * step) / 12);
+    } finally {
+      await page.mouse.up();
+    }
   }
 );
 

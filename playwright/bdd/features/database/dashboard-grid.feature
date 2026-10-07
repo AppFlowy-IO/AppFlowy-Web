@@ -84,7 +84,7 @@ Feature: Dashboard grid geometry
     Then width handle 1 of the dashboard row 1 shows a faint pill
 
   Scenario: Row controls sit in the page gutter, centred on a wrapped row
-    Given a dashboard with rows of "3" widgets is open
+    Given a dashboard with rows of "3, 1" widgets is open
     And the user enters dashboard edit mode
     When the dashboard rows are 704 pixels wide
     And the user hovers the dashboard row 1
