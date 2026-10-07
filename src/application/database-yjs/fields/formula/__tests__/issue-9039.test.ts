@@ -103,7 +103,7 @@ describe('issue #9039 status formula (nested if, formatDate, style, progress bar
       `⏰ In progress${PROGRESS}`,
     ],
     [
-      'deadline passed with no snooze (style() is dropped)',
+      'deadline passed with no snooze',
       { 'Deadline Date': day(-1), 'Snooze Deadline': null },
       ` 🔴 Late Deadline Monday${PROGRESS}`,
     ],
@@ -123,7 +123,7 @@ describe('issue #9039 status formula (nested if, formatDate, style, progress bar
       { ' Start  Date': day(28), 'Deadline Date': day(35), 'Snooze Deadline': day(40) },
       `↗ The future${PROGRESS}`,
     ],
-    ['goal reached (style() is dropped)', { Completed: 10 }, '🟢 In progress Sunday ➜ 100% Completed 💪'],
+    ['goal reached', { Completed: 10 }, '🟢 In progress Sunday ➜ 100% Completed 💪'],
     // Like Notion, empty(0) is true, so the formula appends "0%" to the rounded 0.
     ['nothing completed yet', { Completed: 0 }, '🟢 In progress Sunday ➜ ░░░░░░░░░░ 00%'],
   ])('%s', (_title, changes, expected) => {
@@ -164,6 +164,7 @@ describe('style() and unstyle()', () => {
 
   it('keeps the text type', () => {
     expect(evaluate('style("x", "b")', {}).resultType).toBe('text');
+    expect(evaluate('style("x", "b")', {}).runs).toEqual([{ text: 'x', styles: ['b'] }]);
   });
 
   it('only styles text', () => {

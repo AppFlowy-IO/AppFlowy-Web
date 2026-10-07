@@ -98,6 +98,63 @@ describe('saved formula result cache', () => {
     expect(evaluateAst).toHaveBeenCalledTimes(1);
   });
 
+  it('isolates styled runs in cached results and nested values from caller mutation', () => {
+    const f = fixture('[[style("A", "red")]]');
+    const first = f.evaluate();
+
+    expect(first.runs).toEqual([{ text: 'A', styles: ['red'] }]);
+    first.runs![0].text = 'changed';
+    first.runs![0].styles[0] = 'blue';
+    if (first.value.type !== 'list' || first.value.items[0].type !== 'list') throw new Error('Expected nested lists');
+    const nested = first.value.items[0].items[0];
+
+    if (nested.type !== 'text') throw new Error('Expected styled text');
+    nested.runs![0].styles.push('b');
+    const second = f.evaluate();
+
+    expect(second).toMatchObject({
+      text: 'A',
+      runs: [{ text: 'A', styles: ['red'] }],
+      value: {
+        type: 'list',
+        items: [{ type: 'list', items: [{ type: 'text', value: 'A', runs: [{ text: 'A', styles: ['red'] }] }] }],
+      },
+    });
+    second.runs![0].styles.pop();
+    expect(f.evaluate().runs).toEqual([{ text: 'A', styles: ['red'] }]);
+    expect(evaluateAst).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes style-only changes through nested formula dependencies', () => {
+    const f = fixture('prop("nested") + "!"');
+
+    addField(f.fields, {
+      id: 'nested',
+      type: FieldType.Formula,
+      option: { expression: 'style("A", if(prop("input") > 0, "red", "blue"))' },
+    });
+    expect(f.evaluate().runs).toEqual([
+      { text: 'A', styles: ['red'] },
+      { text: '!', styles: [] },
+    ]);
+    expect(f.evaluate().text).toBe('A!');
+    f.cell.set(YjsDatabaseKey.data, '-1');
+    expect(f.evaluate().runs).toEqual([
+      { text: 'A', styles: ['blue'] },
+      { text: '!', styles: [] },
+    ]);
+    expect(f.evaluate().text).toBe('A!');
+    expect(evaluateAst).toHaveBeenCalledTimes(4);
+  });
+
+  it('accounts for styled-run storage before caching a compact text result', () => {
+    const f = fixture('("A".style("red") + "B".style("blue")).repeat(1000)');
+
+    expect(f.evaluate().error).toBeUndefined();
+    expect(f.evaluate().text.length).toBe(2000);
+    expect(evaluateAst).toHaveBeenCalledTimes(2);
+  });
+
   it('does not cache caller-built schema arrays without a live source', () => {
     const f = fixture('prop("nested")');
     const nested = addField(f.fields, { id: 'nested', type: FieldType.Formula, option: { expression: '1' } });

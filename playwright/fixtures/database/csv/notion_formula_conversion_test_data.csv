@@ -1,0 +1,13 @@
+Name,Done,In progress
+No completed work,0,10
+Low conversion,2,8
+Half completed,5,5
+High conversion,9,1
+Just above threshold,91,9
+Very high conversion,19,1
+Fully completed,10,0
+Rounding below threshold,904,96
+Rounding above threshold,905,95
+Small numbers,1,2
+Uneven ratio,7,3
+Zero denominator,0,0

@@ -232,6 +232,40 @@ describe('FormulaCell', () => {
     expect(screen.getByTestId('formula-cell-r1-f1').textContent).toBe('$42');
   });
 
+  it('preserves inline styles around a date formatted for the viewer', () => {
+    const start = dayjs('2024-03-10T09:30:00').valueOf();
+    const cell = createCell({
+      resultType: { list: 'any' },
+      rawNumeric: undefined,
+      data: 'Due, 03/10/2024',
+      value: list([
+        { type: 'text', value: 'Due', runs: [{ text: 'Due', styles: ['b', 'u', 's', 'c'] }] },
+        date({ start, includeTime: false }),
+      ]),
+    });
+
+    render(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: true,
+          currentUser: { metadata: { [MetadataKey.DateFormat]: DateFormat.ISO } } as unknown as User,
+          updateCurrentUser: async () => undefined,
+          openLoginModal: () => undefined,
+        }}
+      >
+        <FormulaCell cell={cell} rowId={'r1'} fieldId={'f1'} wrap={false} />
+      </AFConfigContext.Provider>
+    );
+
+    expect(screen.getByTestId('formula-cell-r1-f1').textContent).toBe('Due, 2024-03-10');
+    const label = screen.getByText('Due');
+
+    expect(label.style.fontWeight).toBe('bold');
+    expect(label.style.textDecorationLine).toBe('underline line-through');
+    expect(label.className).toContain('font-mono');
+    expect(screen.getByText(', 2024-03-10').style.fontWeight).toBe('');
+  });
+
   it('mounts the (lazy) editor popover for its row while editing, never the dialog', async () => {
     const { rerender } = render(
       <FormulaCell cell={createCell()} rowId={'r1'} fieldId={'f1'} wrap={false} editing setEditing={jest.fn()} />

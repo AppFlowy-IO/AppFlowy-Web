@@ -2,10 +2,10 @@ import React from 'react';
 import * as Y from 'yjs';
 
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
-import type { FormulaType, FormulaValue } from '@/application/database-yjs/fields/formula/values';
-import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
+import type { FormulaTextRun, FormulaType, FormulaValue } from '@/application/database-yjs/fields/formula/values';
 import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
 import { RollupVisualizationOption } from '@/application/database-yjs/fields/rollup/rollup.type';
+import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
 import { DateFormat, FieldId, RowId, TimeFormat } from '@/application/types';
 
 export interface Cell {
@@ -136,6 +136,8 @@ export interface FormulaCell extends Cell {
   fieldType: FieldType.Formula;
   /** Result as text, with the field's number format and the default date format. */
   data: string;
+  /** Inline styling for the formatted display text; plain text remains available to copy/export. */
+  runs?: FormulaTextRun[];
   /** The evaluated value; the cell shows its dates in the viewer's date and time formats. */
   value?: FormulaValue;
   /** Static result type of the expression: text, number, boolean, date, list<...>, empty or any. */

@@ -4,8 +4,7 @@ Feature: Long formulas pasted from Notion
   formula editor overflowed the input box, and formulas using Notion's
   style() did not work. The editor keeps a long formula inside a box that
   scrolls on its own, so the preview and the function list stay in view,
-  and style()/unstyle() are accepted (formula results are plain text, so
-  the styles are not shown).
+  and style()/unstyle() preserve or remove the requested text formatting.
 
   The reporter's formulas are pasted verbatim. They refer to properties
   whose names have a trailing space ("Next ") and doubled spaces
@@ -88,7 +87,7 @@ Feature: Long formulas pasted from Notion
     When I hover the catalogue function "style"
     Then the docs panel describes "style()"
     And the docs panel shows the signature "style(text, style1, style2, ...)"
-    And the docs panel reads "so the styles are not applied"
+    And the docs panel reads "Applies formatting"
     When I type the formula "prop("Name").style("b", "red") + "!".unstyle()"
     Then the formula editor shows no error
     And the formula preview shows "Late!"

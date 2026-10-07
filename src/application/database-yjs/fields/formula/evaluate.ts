@@ -6,12 +6,12 @@ import { readFieldFormulaValue, ReadFieldValueContext } from './cell-values';
 import { compileFormula } from './compile';
 import { FormulaError, SourcePosition } from './errors';
 import { evaluateFormula } from './evaluator';
-import { formatFormulaValue, FormulaFormatOptions } from './format';
+import { formatFormulaText, FormulaFormatOptions } from './format';
 import { FORMULA_MAX_DEPTH, FormulaCellResult } from './formula.type';
 import { parseFormulaTypeOption } from './parse';
 import { withFormulaResultCache } from './result-cache';
 import { FormulaFieldSchema, refreshFormulaSchema, resolveFormulaField } from './schema';
-import { EMPTY, FormulaValue } from './values';
+import { EMPTY, FormulaTextValue, FormulaValue } from './values';
 
 export interface EvaluateFormulaCellOptions extends ReadFieldValueContext {
   schema: FormulaFieldSchema[];
@@ -31,8 +31,14 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : 'Formula failed';
 }
 
-function withRaw(value: FormulaValue, resultType: FormulaCellResult['resultType'], text: string): FormulaCellResult {
-  const result: FormulaCellResult = { value, resultType, text };
+function withRaw(
+  value: FormulaValue,
+  resultType: FormulaCellResult['resultType'],
+  display: FormulaTextValue
+): FormulaCellResult {
+  const result: FormulaCellResult = { value, resultType, text: display.value };
+
+  if (display.runs) result.runs = display.runs;
 
   switch (value.type) {
     case 'number':
@@ -180,7 +186,7 @@ function evaluateFormulaExpressionWithCache(
   try {
     const value = evaluateFormula(compiled.ast, { getProp, now, rowId, budget });
 
-    return withRaw(value, compiled.resultType, formatFormulaValue(value, formatOptions));
+    return withRaw(value, compiled.resultType, formatFormulaText(value, formatOptions));
   } catch (error) {
     return {
       value: EMPTY,

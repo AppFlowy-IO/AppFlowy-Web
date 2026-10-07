@@ -1,8 +1,9 @@
 import { RE2JS } from 're2js';
 
-import { asList, asNumber, asText, asTextWithBudget } from '../coerce';
+import { asList, asNumber, asText, asTextValueWithBudget } from '../coerce';
 import { FormulaError, SourcePosition } from '../errors';
 import { EvalContext, FormulaFunctionSpec, FormulaParam } from '../registry';
+import { joinText, repeatText, styleText, unstyleText } from '../styled-text';
 import { bool, EMPTY, FormulaValue, list, listOf, num, text } from '../values';
 
 // style() and unstyle(): the text, then any number of Notion style names.
@@ -243,11 +244,11 @@ export const textFunctions: FormulaFunctionSpec[] = [
     ],
     returnType: 'text',
     impl: ([value, count], ctx, _nodes, position) => {
-      const source = asText(value);
       const repetitions = Math.max(0, Math.min(10_000, Math.trunc(asNumber(count, position))));
 
-      ctx.consumeWork(source.length * repetitions, position);
-      return text(source.repeat(repetitions));
+      return repeatText(value.type === 'text' ? value : text(asText(value)), repetitions, (amount) =>
+        ctx.consumeWork(amount, position)
+      );
     },
   },
   {
@@ -260,29 +261,25 @@ export const textFunctions: FormulaFunctionSpec[] = [
     returnType: 'text',
     impl: ([value]) => text(asText(value).trim()),
   },
-  // Formula cells show plain text, so styles are accepted for Notion
-  // compatibility and dropped: the text comes back unchanged.
   {
     name: 'style',
     category: 'text',
     signature: 'style(text, style1, style2, ...)',
-    description:
-      'Accepts Notion text styles ("b", "i", "u", "s", "c", colors and "_background" colors) so pasted formulas work. Formula results show as plain text, so the styles are not applied.',
+    description: 'Applies formatting ("b", "i", "u", "s", "c"), named colors and "_background" colors to text.',
     examples: [{ expression: 'style("Done", "b", "green")', result: '"Done"' }],
     params: STYLE_PARAMS,
     returnType: 'text',
-    impl: ([value]) => text(asText(value)),
+    impl: ([value, ...styles]) => styleText(value.type === 'text' ? value : text(asText(value)), styles.map(asText)),
   },
   {
     name: 'unstyle',
     category: 'text',
     signature: 'unstyle(text, style1, style2, ...)',
-    description:
-      'Accepts Notion text styles to remove so pasted formulas work. Formula results show as plain text, so the text is returned unchanged.',
+    description: 'Removes the specified text styles and colors. Removes all styles when none are specified.',
     examples: [{ expression: 'unstyle("Done", "b")', result: '"Done"' }],
     params: STYLE_PARAMS,
     returnType: 'text',
-    impl: ([value]) => text(asText(value)),
+    impl: ([value, ...styles]) => unstyleText(value.type === 'text' ? value : text(asText(value)), styles.map(asText)),
   },
   {
     name: 'split',
@@ -335,11 +332,13 @@ export const textFunctions: FormulaFunctionSpec[] = [
     ],
     returnType: 'text',
     impl: ([value, separator], ctx, _nodes, position) => {
-      const parts = asList(value).map((item) => asTextWithBudget(item, (amount) => ctx.consumeWork(amount, position)));
-      const delimiter = asText(separator);
+      const consumeWork = (amount: number) => ctx.consumeWork(amount, position);
+      const parts = asList(value).map((item) => asTextValueWithBudget(item, consumeWork));
+      const delimiter = separator.type === 'text' ? separator : text(asText(separator));
 
-      ctx.consumeWork(Math.max(0, parts.length - 1) * delimiter.length, position);
-      return text(parts.join(delimiter));
+      // Parts are already charged; only repeated separators add new copies.
+      consumeWork(Math.max(0, parts.length - 1) * (delimiter.value.length + (delimiter.runs?.length ?? 0)));
+      return joinText(parts, delimiter);
     },
   },
   {
@@ -354,7 +353,7 @@ export const textFunctions: FormulaFunctionSpec[] = [
     params: [{ name: 'value', type: 'any' }],
     returnType: 'text',
     impl: ([value], ctx, _nodes, position) =>
-      text(asTextWithBudget(value, (amount) => ctx.consumeWork(amount, position))),
+      asTextValueWithBudget(value, (amount) => ctx.consumeWork(amount, position)),
   },
   {
     name: 'toNumber',

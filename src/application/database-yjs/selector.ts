@@ -3322,6 +3322,7 @@ export function useFormulaCellValue({
       lastModified: 0,
       fieldType: FieldType.Formula,
       data: result.text,
+      runs: result.runs,
       value: result.value,
       resultType: result.resultType,
       rawNumeric: result.rawNumeric,

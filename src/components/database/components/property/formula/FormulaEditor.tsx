@@ -27,6 +27,7 @@ import { Row, useFieldSelector, usePrimaryFieldId } from '@/application/database
 import { YDatabaseRow, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as WarningSvg } from '@/assets/icons/warning.svg';
+import { FormulaTextContent } from '@/components/database/components/cell/formula/FormulaTextContent';
 import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
 import { Button } from '@/components/ui/button';
 import {
@@ -527,7 +528,9 @@ export function FormulaEditor({
             </DropdownMenuContent>
           </DropdownMenu>
           <span className={'min-w-0 flex-1 truncate font-mono text-text-primary'} data-testid={'formula-preview-value'}>
-            {preview && !preview.error ? preview.text || (preview.value.type === 'empty' ? '—' : '') : ''}
+            {preview && !preview.error ? (
+              <FormulaTextContent text={preview.text || (preview.value.type === 'empty' ? '—' : '')} runs={preview.runs} />
+            ) : null}
           </span>
         </div>
       ) : null}
