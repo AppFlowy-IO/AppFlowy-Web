@@ -68,6 +68,14 @@ export async function mockServerInfoPreservingCapabilities(
     // route.fetch retains the browser's version/platform headers and bypasses
     // earlier stubs, so history availability is still the real server's answer.
     const response = await route.fetch();
+
+    // A conditional refresh has no JSON body. Preserve the 304 so the app's
+    // ETag cache replays the earlier capability response, including overrides.
+    if (response.status() === 304) {
+      await route.fulfill({ response });
+      return;
+    }
+
     const body = await response.json();
 
     if (!response.ok() || body.code !== 0 || !body.data || typeof body.data !== 'object') {
