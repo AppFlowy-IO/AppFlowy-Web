@@ -68,6 +68,111 @@ function BackgroundLoader({ scope, suspend = false }: { scope: string; suspend?:
 }
 
 describe('useBackgroundRowDocLoader', () => {
+  it('adopts a sibling live reader in one batch without destroying borrowed seed snapshots', async () => {
+    jest.useFakeTimers();
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const rowIds = ['initial-row', 'second-row', 'third-row'];
+    const seeds = Object.fromEntries(rowIds.map((id) => [id, createRowDoc(id, databaseId, {})]));
+    const canonical = Object.fromEntries(rowIds.map((id) => [id, createRowDoc(id, databaseId, {})]));
+    let readable = seeds;
+    let resolveLive!: () => void;
+    const liveReady = new Promise<void>((resolve) => { resolveLive = resolve; });
+    const ensureRow = jest.fn(async (id: string) => { await liveReady; return canonical[id]; });
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId, databaseDoc, databasePageId: viewId, readOnly: false,
+      rowMap: {}, workspaceId: 'workspace-id', seedsReady: true, blobPrefetchComplete: true,
+      ensureRow, peekRowDocFromSeed: (id) => readable[id] ?? null,
+    };
+
+    rowOrders.push(rowIds.slice(1).map((id) => ({ id, height: 44 })));
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { result, unmount } = renderHook(() => ({
+      cached: useBackgroundRowDocLoader(true, 'borrowed-consumer'),
+      live: useBackgroundRowDocLoader(true, 'canonical-producer', 'live'),
+    }), { wrapper });
+    const destroyed = jest.fn();
+
+    Object.values(seeds).forEach((doc) => doc.on('destroy', destroyed));
+    try {
+      await waitFor(() => expect(Object.keys(result.current.cached.cachedRowDocs)).toHaveLength(3));
+      const borrowedSnapshot = result.current.cached.cachedRowDocs;
+      const changes = jest.fn();
+      const unsubscribe = result.current.cached.subscribeToCachedRowDocChanges(changes);
+
+      await act(async () => {
+        readable = canonical;
+        resolveLive();
+        await jest.advanceTimersByTimeAsync(40);
+      });
+      expect(result.current.cached.cachedRowDocs).toEqual(canonical);
+      expect(changes).toHaveBeenCalledTimes(1);
+      expect(changes).toHaveBeenCalledWith({ added: canonical, removed: seeds });
+      expect(borrowedSnapshot).toEqual(seeds);
+      expect(destroyed).not.toHaveBeenCalled();
+      // Replacement detaches the old destroy observer and watches the current
+      // borrowed document instead, even though the row id did not change.
+      await act(async () => seeds['initial-row'].destroy());
+      expect(result.current.cached.cachedRowDocs['initial-row']).toBe(canonical['initial-row']);
+      const adopted = canonical['initial-row'];
+
+      await act(async () => {
+        delete readable['initial-row'];
+        adopted.destroy();
+        await jest.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.cached.cachedRowDocs['initial-row']).toBeUndefined();
+      unsubscribe();
+    } finally {
+      unmount();
+      Object.values(seeds).forEach((doc) => doc.destroy());
+      Object.values(canonical).forEach((doc) => doc.destroy());
+      databaseDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps the seed when a live result fails the current fence and adopts it only after commit', async () => {
+    jest.useFakeTimers();
+    const { databaseDoc, databaseId, viewId } = createDatabaseFixture();
+    const seed = createRowDoc('initial-row', databaseId, {});
+    const canonical = createRowDoc('initial-row', databaseId, {});
+    let current = seed;
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId, databaseDoc, databasePageId: viewId, readOnly: false,
+      rowMap: {}, workspaceId: 'workspace-id', seedsReady: true, blobPrefetchComplete: true,
+      ensureRow: jest.fn(async () => canonical), peekRowDocFromSeed: () => current,
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={{ ...contextValue }}>{children}</DatabaseContext.Provider>
+    );
+    const { result, rerender, unmount } = renderHook(() => ({
+      cached: useBackgroundRowDocLoader(true, 'fenced-borrower'),
+      live: useBackgroundRowDocLoader(true, 'fenced-producer', 'live'),
+    }), { wrapper });
+    const destroyed = jest.fn();
+
+    seed.on('destroy', destroyed);
+    try {
+      await act(async () => { await jest.advanceTimersByTimeAsync(80); });
+      expect(result.current.cached.cachedRowDocs['initial-row']).toBe(seed);
+      contextValue.seedsReady = false;
+      rerender();
+      current = canonical;
+      contextValue.seedsReady = true;
+      rerender();
+      expect(result.current.cached.cachedRowDocs['initial-row']).toBe(canonical);
+      expect(destroyed).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      seed.destroy();
+      canonical.destroy();
+      databaseDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
   it.each(['cached', 'live'] as const)(
     'does not load current rows for missing historical rows in %s mode',
     async (mode) => {

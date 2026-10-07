@@ -503,7 +503,19 @@ function cursorKey(cursor: Uint8Array) {
 
 const rowDocSeedCache = new Map<string, DatabaseRowDocSeed>();
 const rowDocSeedLookup = new Map<string, DatabaseRowDocSeed>();
-const rowDocSeedDocCache = new Map<string, YDoc>();
+
+/**
+ * Seed-only readers keep a stable decoded document for the residency window.
+ * Once a canonical row supersedes it, only its borrowers keep that retired
+ * graph alive. A weak reference still lets source invalidation reach them.
+ */
+type SeedDocReference = YDoc | WeakRef<YDoc>;
+const rowDocSeedDocCache = new Map<string, SeedDocReference>();
+
+function readSeedDoc(reference: SeedDocReference | undefined): YDoc | undefined {
+  return reference instanceof Y.Doc ? reference : reference?.deref();
+}
+
 const seedDocumentFences = new WeakMap<YDoc, DatabaseStorageFence>();
 const rowDocSeedCacheRetainCounts = new Map<string, number>();
 const pendingRowDocSeedCacheReleases = new Map<string, ReturnType<typeof setTimeout>>();
@@ -524,24 +536,22 @@ function dropProvisionalSeedDoc(rowKey: string) {
 
   if (!provisional) return;
   provisionalSeedDocOwners.delete(rowKey);
-  if (rowDocSeedDocCache.get(rowKey) !== provisional.doc) return;
+  if (readSeedDoc(rowDocSeedDocCache.get(rowKey)) !== provisional.doc) return;
   rowDocSeedDocCache.delete(rowKey);
   provisional.doc.destroy();
 }
 
 function clearRowDocSeeds(databaseId: string, rowId: string) {
   const rowKey = getRowKey(databaseId, rowId);
-  const seedDoc = rowDocSeedDocCache.get(rowKey);
+  const seedDoc = readSeedDoc(rowDocSeedDocCache.get(rowKey));
 
   rowDocSeedCache.delete(rowKey);
   rowDocSeedLookup.delete(rowKey);
   provisionalRowDocSeeds.delete(rowKey);
   provisionalSeedDocOwners.delete(rowKey);
 
-  if (seedDoc) {
-    seedDoc.destroy();
-    rowDocSeedDocCache.delete(rowKey);
-  }
+  seedDoc?.destroy();
+  rowDocSeedDocCache.delete(rowKey);
 }
 
 /**
@@ -637,9 +647,9 @@ export function invalidateDatabaseRowDocSeed(rowId: string) {
     }
   }
 
-  for (const [key, doc] of rowDocSeedDocCache.entries()) {
+  for (const [key, reference] of rowDocSeedDocCache.entries()) {
     if (key.endsWith(rowKeySuffix)) {
-      doc.destroy();
+      readSeedDoc(reference)?.destroy();
       rowDocSeedDocCache.delete(key);
       provisionalSeedDocOwners.delete(key);
     }
@@ -661,7 +671,7 @@ function sameSeedBytes(left: DatabaseRowDocSeed, right: DatabaseRowDocSeed) {
 }
 
 function applySeedToSharedRowDoc(rowKey: string, seed: DatabaseRowDocSeed) {
-  const doc = rowDocSeedDocCache.get(rowKey);
+  const doc = readSeedDoc(rowDocSeedDocCache.get(rowKey));
 
   if (!doc) return;
 
@@ -786,9 +796,17 @@ export function getDatabaseRowDocFromSeed(rowKey: string): YDoc | null {
   const liveFence = liveDoc && seedDocumentFences.get(liveDoc);
 
   if (liveFence && !isDatabaseStorageFenceCurrent(liveFence)) return null;
-  if (hasRowConditionData(liveDoc)) return liveDoc;
+  if (hasRowConditionData(liveDoc)) {
+    const previous = rowDocSeedDocCache.get(rowKey);
 
-  const cachedDoc = rowDocSeedDocCache.get(rowKey);
+    if (previous instanceof Y.Doc && previous !== liveDoc) {
+      rowDocSeedDocCache.set(rowKey, new WeakRef(previous));
+    }
+
+    return liveDoc;
+  }
+
+  const cachedDoc = readSeedDoc(rowDocSeedDocCache.get(rowKey));
 
   if (cachedDoc) {
     const fence = seedDocumentFences.get(cachedDoc);
@@ -799,7 +817,13 @@ export function getDatabaseRowDocFromSeed(rowKey: string): YDoc | null {
       return null;
     }
 
-    if (hasRowConditionData(cachedDoc)) return cachedDoc;
+    if (hasRowConditionData(cachedDoc)) {
+      // If the canonical cache is no longer available, this becomes the
+      // active seed-only document again and keeps the normal warm lifetime.
+      rowDocSeedDocCache.set(rowKey, cachedDoc);
+      return cachedDoc;
+    }
+
     cachedDoc.destroy();
     rowDocSeedDocCache.delete(rowKey);
     provisionalSeedDocOwners.delete(rowKey);
@@ -878,9 +902,9 @@ export function clearDatabaseRowDocSeedCache(databaseId: string) {
     }
   }
 
-  for (const [key, doc] of rowDocSeedDocCache.entries()) {
+  for (const [key, reference] of rowDocSeedDocCache.entries()) {
     if (key.startsWith(prefix)) {
-      doc.destroy();
+      readSeedDoc(reference)?.destroy();
       rowDocSeedDocCache.delete(key);
       provisionalSeedDocOwners.delete(key);
     }
@@ -919,7 +943,7 @@ export async function invalidateDatabaseBlobAfterRestore(
 
   for (const key of new Set([...rowDocSeedCache.keys(), ...rowDocSeedLookup.keys(), ...rowDocSeedDocCache.keys()])) {
     if (!key.startsWith(`${databaseId}_rows_`)) continue;
-    const doc = rowDocSeedDocCache.get(key);
+    const doc = readSeedDoc(rowDocSeedDocCache.get(key));
     const fence =
       (rowDocSeedCache.get(key) ?? rowDocSeedLookup.get(key))?.storageFence ?? (doc && seedDocumentFences.get(doc));
 

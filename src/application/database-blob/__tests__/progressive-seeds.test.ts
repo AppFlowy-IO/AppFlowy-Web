@@ -19,9 +19,10 @@ import { hasRowConditionData } from '@/application/database-yjs/condition-value-
 import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
 import { DASHBOARD_LOADING } from '@/application/database-yjs/dashboard-loading';
 import { openRowCollabDBWithProvider } from '@/application/db';
+import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
 import { emit, EventType } from '@/application/session/event';
-import { YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { database_blob } from '@/proto/database_blob';
 
 jest.mock('@/application/db', () => ({
@@ -63,6 +64,7 @@ jest.mock('@/utils/log', () => ({
 
 const mockedDatabaseBlobDiff = databaseBlobDiff as jest.MockedFunction<typeof databaseBlobDiff>;
 const mockedOpenRowCollabDB = openRowCollabDBWithProvider as jest.MockedFunction<typeof openRowCollabDBWithProvider>;
+const mockedGetCachedRowDoc = getCachedRowDoc as jest.MockedFunction<typeof getCachedRowDoc>;
 const databaseIds = new Set<string>();
 const retainedDatabaseIds: string[] = [];
 
@@ -152,6 +154,7 @@ describe('database blob seeds for filter and sort', () => {
     localStorage.clear();
     dashboardLoadStats.reset();
     mockedDatabaseBlobDiff.mockReset();
+    mockedGetCachedRowDoc.mockReset();
     mockedOpenRowCollabDB.mockImplementation(async () => {
       return {
         doc: new Y.Doc(),
@@ -167,6 +170,7 @@ describe('database blob seeds for filter and sort', () => {
     retainedDatabaseIds.splice(0).forEach(releaseDatabaseRowDocSeedCache);
     databaseIds.forEach(clearDatabaseRowDocSeedCache);
     databaseIds.clear();
+    jest.restoreAllMocks();
     jest.useRealTimers();
   });
 
@@ -436,6 +440,105 @@ describe('database blob seeds for filter and sort', () => {
     });
   });
 
+  describe('decoded seed ownership', () => {
+    it('reconstructs a collected retired doc from resident bytes without another storage or network read', async () => {
+      const databaseId = 'database-collected-seed';
+      const rowKey = `${databaseId}_rows_${FIRST_ROW_ID}`;
+      const NativeWeakRef = globalThis.WeakRef;
+      const collect = new Map<string, () => void>();
+
+      // Make collection deterministic: production must also handle a weak
+      // lookup disappearing between reads, without relying on GC scheduling.
+      jest.spyOn(globalThis, 'WeakRef').mockImplementation(<T extends WeakKey>(target: T): WeakRef<T> => {
+        const reference = new NativeWeakRef(target);
+        let collected = false;
+
+        if (target instanceof Y.Doc) {
+          collect.set(target.guid, () => {
+            collected = true;
+          });
+        }
+
+        return {
+          deref: () => (collected ? undefined : reference.deref()),
+          [Symbol.toStringTag]: 'WeakRef',
+        };
+      });
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(rowPage([{ rowId: FIRST_ROW_ID, department: 'HR' }]));
+      retain(databaseId);
+      await prefetchDatabaseBlobDiff('workspace', databaseId);
+      expect(readDepartment(rowKey)).toBe('HR');
+      const storageReads = mockedOpenRowCollabDB.mock.calls.length;
+
+      // Without a canonical replacement the source keeps its decoded doc for
+      // warm returns; only a superseded seed becomes weakly retained.
+      expect(collect.has(rowKey)).toBe(false);
+      const canonical = new Y.Doc({ guid: FIRST_ROW_ID }) as YDoc;
+
+      Y.applyUpdate(canonical, rowState(FIRST_ROW_ID, 'HR'));
+      mockedGetCachedRowDoc.mockReturnValue(canonical);
+      expect(getDatabaseRowDocFromSeed(rowKey)).toBe(canonical);
+      expect(collect.has(rowKey)).toBe(true);
+      collect.get(rowKey)!();
+      mockedGetCachedRowDoc.mockReturnValue(undefined);
+      canonical.destroy();
+      expect(readDepartment(rowKey)).toBe('HR');
+      expect(mockedOpenRowCollabDB).toHaveBeenCalledTimes(storageReads);
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(1);
+      expect(isDatabaseSourceResident(databaseId)).toBe(true);
+
+      // A reset must still fence out the retained bytes and the rebuilt doc.
+      const rebuilt = getDatabaseRowDocFromSeed(rowKey);
+      const destroyed = jest.fn();
+
+      rebuilt?.on('destroy', destroyed);
+      invalidateDatabaseRowDocSeed(FIRST_ROW_ID);
+      expect(destroyed).toHaveBeenCalledTimes(1);
+      expect(getDatabaseRowDocFromSeed(rowKey)).toBeNull();
+    });
+
+    it('keeps borrowed seed docs usable when a ready canonical row supersedes them', async () => {
+      const databaseId = 'database-borrowed-seed';
+      const rowKey = `${databaseId}_rows_${FIRST_ROW_ID}`;
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(rowPage([{ rowId: FIRST_ROW_ID, department: 'HR' }]));
+      retain(databaseId);
+      await prefetchDatabaseBlobDiff('workspace', databaseId);
+      const borrowed = getDatabaseRowDocFromSeed(rowKey);
+      const destroyed = jest.fn();
+
+      borrowed?.on('destroy', destroyed);
+      // A consumer can await other row opens while retaining its borrowed doc.
+      await flushPendingWork();
+      expect(getDatabaseRowDocFromSeed(rowKey)).toBe(borrowed);
+      const canonical = new Y.Doc({ guid: FIRST_ROW_ID }) as YDoc;
+      const canonicalDestroyed = jest.fn();
+
+      canonical.on('destroy', canonicalDestroyed);
+      Y.applyUpdate(canonical, rowState(FIRST_ROW_ID, 'Finance'));
+      mockedGetCachedRowDoc.mockReturnValue(canonical);
+      expect(getDatabaseRowDocFromSeed(rowKey)).toBe(canonical);
+      expect(destroyed).not.toHaveBeenCalled();
+      expect(hasRowConditionData(borrowed)).toBe(true);
+
+      mockedGetCachedRowDoc.mockReturnValue(undefined);
+      expect(getDatabaseRowDocFromSeed(rowKey)).toBe(borrowed);
+      await flushPendingWork();
+      expect(getDatabaseRowDocFromSeed(rowKey)).toBe(borrowed);
+      mockedGetCachedRowDoc.mockReturnValue(canonical);
+      expect(getDatabaseRowDocFromSeed(rowKey)).toBe(canonical);
+
+      // Releasing the source still destroys a borrowed detached doc, never
+      // the canonical document owned by the row cache.
+      clearDatabaseRowDocSeedCache(databaseId);
+      expect(destroyed).toHaveBeenCalledTimes(1);
+      expect(canonicalDestroyed).not.toHaveBeenCalled();
+      canonical.destroy();
+    });
+  });
+
   describe('released seed cache', () => {
     it('reuses the settled seeds of a database released within the grace period', async () => {
       jest.useFakeTimers();
@@ -449,6 +552,8 @@ describe('database blob seeds for filter and sort', () => {
       // The source grid: an unfiltered view walks the cold delta, which covers the full snapshot.
       retain(databaseId);
       await prefetchDatabaseBlobDiff('workspace', databaseId);
+      const borrowed = getDatabaseRowDocFromSeed(firstRowKey);
+
       release(databaseId);
 
       await jest.advanceTimersByTimeAsync(ROW_DOC_SEED_CACHE_RELEASE_GRACE_MS - 1000);
@@ -463,6 +568,7 @@ describe('database blob seeds for filter and sort', () => {
       expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(1);
       expect(onSeedsReady).toHaveBeenCalledTimes(1);
       expect(readDepartment(firstRowKey)).toBe('HR');
+      expect(getDatabaseRowDocFromSeed(firstRowKey)).toBe(borrowed);
 
       // Retained again, the seeds outlive the original grace period.
       await jest.advanceTimersByTimeAsync(ROW_DOC_SEED_CACHE_RELEASE_GRACE_MS);

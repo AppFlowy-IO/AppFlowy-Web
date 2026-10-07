@@ -18,6 +18,7 @@ import {
   useRowMap,
   useRowPassState,
 } from '@/application/database-yjs/context';
+import { shareEquivalentRowDocRevision } from '@/application/database-yjs/row-doc-revision';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { openRowCollabDBWithProvider } from '@/application/db';
@@ -251,6 +252,58 @@ type LoaderStore = {
 
 const loaderStores = new Map<string, LoaderStore>();
 const NO_ROWS: RowDocMap = Object.freeze({});
+const announcedCanonicalDocs = new WeakSet<YDoc>();
+const pendingCanonicalDocs = new Map<string, YDoc>();
+let canonicalDocsFrame: number | null = null;
+
+function replaceSharedCachedDocs(store: LoaderStore, ready: ReadonlyMap<string, YDoc>) {
+  if (store.activeRefCount === 0 || !store.peekRowDocFromSeed) return;
+  setStoreCachedRowDocs(store, (previous) => {
+    const added: RowDocMap = {};
+    const removed: RowDocMap = {};
+
+    ready.forEach((canonical, id) => {
+      const borrowed = previous[id];
+
+      if (
+        !borrowed || borrowed === canonical || !store.sharedCachedRowDocIds.has(id) ||
+        !hasRowConditionData(canonical) || store.peekRowDocFromSeed?.(id) !== canonical
+      ) return;
+      // The current seed accessor is also the restore/provisional fence.
+      // Borrowers of the old snapshot may still be rendering it; it must
+      // not be destroyed as part of adopting the live document.
+      shareEquivalentRowDocRevision(borrowed, canonical);
+      removed[id] = borrowed;
+      added[id] = canonical;
+    });
+    return {
+      added,
+      removed,
+      next: Object.keys(added).length > 0 ? { ...previous, ...added } : previous,
+    };
+  });
+}
+
+/**
+ * A live reader has connected this row. Other scopes can now read that same
+ * document instead of retaining a detached copy of its seed. Publish a whole
+ * frame's arrivals together: a chart may connect thousands of rows.
+ */
+function shareCanonicalRowDoc(rowId: string, doc: YDoc) {
+  if (announcedCanonicalDocs.has(doc)) return;
+  announcedCanonicalDocs.add(doc);
+  pendingCanonicalDocs.set(rowId, doc);
+  if (canonicalDocsFrame !== null) return;
+  canonicalDocsFrame = requestAnimationFrame(() => {
+    canonicalDocsFrame = null;
+    const ready = new Map(pendingCanonicalDocs);
+
+    pendingCanonicalDocs.clear();
+    startTransition(() => {
+      loaderStores.forEach((store) => replaceSharedCachedDocs(store, ready));
+    });
+  });
+}
 
 function createLoaderStore(key: string): LoaderStore {
   const store: LoaderStore = {
@@ -638,6 +691,11 @@ function destroyStore(store: LoaderStore) {
   store.sharedCachedRowDocIds.clear();
   store.cachedRowDocPending.clear();
   loaderStores.delete(store.key);
+  if (loaderStores.size === 0) {
+    if (canonicalDocsFrame !== null) cancelAnimationFrame(canonicalDocsFrame);
+    canonicalDocsFrame = null;
+    pendingCanonicalDocs.clear();
+  }
 }
 
 /**
@@ -845,6 +903,19 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
   useEffect(() => {
     if (!active || !(seedsReady || seedsRevision > 0) || !peekRowDocFromSeed || !rowOrders) return;
 
+    if (seedsReady) {
+      // A live notification may have arrived while a replacement walk's
+      // provisional fence rejected it. Recheck when that walk commits.
+      const ready = new Map<string, YDoc>();
+
+      Object.keys(store.cachedRowDocs).forEach((rowId) => {
+        const current = peekRowDocFromSeed(rowId);
+
+        if (current && current !== store.cachedRowDocs[rowId]) ready.set(rowId, current);
+      });
+      replaceSharedCachedDocs(store, ready);
+    }
+
     store.seedHydrator.sync({
       rowOrders,
       walkInFlight: !seedsReady,
@@ -871,7 +942,10 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
       if (mode === 'live' && store.ensureRow) {
         const synced = store.syncedRowDocs[rowId];
 
-        return hasRowConditionData(synced) && store.rowMaps.every((rows) => !rows[rowId] || rows[rowId] === synced);
+        const ready = hasRowConditionData(synced) && store.rowMaps.every((rows) => !rows[rowId] || rows[rowId] === synced);
+
+        if (ready) shareCanonicalRowDoc(rowId, synced);
+        return ready;
       }
 
       return hasRowConditionData(store.cachedRowDocs[rowId]) || everyConsumerHasRow(store, rowId);
@@ -934,6 +1008,7 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
           if (!isRunActive()) return;
           if (doc) store.syncedRowDocs[rowId] = doc;
           if (doc && hasRowConditionData(doc)) {
+            shareCanonicalRowDoc(rowId, doc);
             retryAttempts.delete(rowId);
             return;
           }

@@ -9,7 +9,7 @@
  *   window, computes again;
  * - a board's grouping of a return within the window is not computed again.
  */
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { type ReactNode } from 'react';
 import * as Y from 'yjs';
 
@@ -25,6 +25,7 @@ import {
   useRowsByGroup,
 } from '@/application/database-yjs';
 import * as groupModule from '@/application/database-yjs/group';
+import { useBackgroundRowDocLoader } from '@/application/database-yjs/hooks/useBackgroundRowDocLoader';
 import {
   CONDITION_REMOTE_CHANGE_DEBOUNCE_MS,
   clearDerivedResults,
@@ -164,6 +165,7 @@ function createFixture(salaries: number[], documentGuid?: string) {
       .get(fieldId);
 
   return {
+    contextValue,
     databaseId,
     rowIds,
     rowMap,
@@ -330,6 +332,155 @@ describe('row selector recompute budgets', () => {
   });
 
   describe('derived row orders of a resident source (W6 b)', () => {
+    it('recomputes for a replacement document with the same guid and revision count', () => {
+      const fixture = createFixture([100, 300, 200]);
+      const oldDoc = fixture.rowMap['row-0'];
+
+      renderHook(() => useRowOrdersSelector(), { wrapper: fixture.wrapper }).unmount();
+      const replacement = createRowDoc('row-0', fixture.databaseId, {
+        [salaryFieldId]: createCell(FieldType.Number, '999'),
+      });
+
+      replacement.guid = oldDoc.guid;
+      fixture.rowMap['row-0'] = replacement;
+      sortSpy.mockClear();
+      const next = renderHook(() => useRowOrdersSelector(), { wrapper: fixture.wrapper });
+
+      expect(ids(next.result.current)).toEqual(['row-0', 'row-1', 'row-2']);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+      next.unmount();
+      oldDoc.destroy();
+      fixture.destroy();
+    });
+
+    it('invalidates the identity record when its document is destroyed', () => {
+      const fixture = createFixture([100, 300, 200]);
+
+      renderHook(() => useRowOrdersSelector(), { wrapper: fixture.wrapper }).unmount();
+      fixture.rowMap['row-0'].destroy();
+      sortSpy.mockClear();
+      // Yjs still exposes the immutable contents after destroy. Even if a
+      // caller holds that old doc, the previously derived result is invalid.
+      const next = renderHook(() => useRowOrdersSelector(), { wrapper: fixture.wrapper });
+
+      expect(ids(next.result.current)).toEqual(['row-1', 'row-2', 'row-0']);
+      expect(sortSpy).toHaveBeenCalledTimes(1);
+      next.unmount();
+      fixture.destroy();
+    });
+
+    it('keeps filtered, sorted and grouped seed consumers current after a sibling adopts live rows', async () => {
+      const fixture = createFixture([100, 300, 200]);
+      const seeds = { ...fixture.rowMap };
+      const canonical = Object.fromEntries(Object.entries(seeds).map(([id, seed]) => {
+        const doc = new Y.Doc({ guid: seed.guid }) as YDoc;
+
+        Y.applyUpdate(doc, Y.encodeStateAsUpdate(seed));
+        return [id, doc];
+      }));
+      let release!: () => void;
+      const liveReady = new Promise<void>((resolve) => { release = resolve; });
+
+      fixture.contextValue.rowMap = {};
+      fixture.contextValue.ensureRow = async (id) => { await liveReady; return canonical[id]; };
+
+      fixture.filterSalaryAbove(150);
+      const { result, unmount } = renderHook(() => {
+        useBackgroundRowDocLoader(true, 'live-sibling', 'live');
+        return { rows: useRowOrdersSelector(), grouped: useRowsByGroup(groupId) };
+      }, { wrapper: fixture.wrapper });
+
+      try {
+        await waitFor(() => expect(ids(result.current.rows)).toEqual(['row-1', 'row-2']));
+        await act(async () => {
+          Object.assign(fixture.rowMap, canonical);
+          release();
+          await jest.advanceTimersByTimeAsync(80);
+        });
+        const row = canonical['row-0'].getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+        await act(async () => {
+          canonical['row-0'].transact(() => {
+            row.get(YjsDatabaseKey.cells).get(salaryFieldId).set(YjsDatabaseKey.data, '999');
+            row.get(YjsDatabaseKey.cells).get(statusFieldId).set(YjsDatabaseKey.data, 'doing');
+          });
+          await jest.advanceTimersByTimeAsync(250);
+        });
+        expect(ids(result.current.rows)).toEqual(['row-0', 'row-1', 'row-2']);
+        expect(result.current.grouped.groupResult.get('doing')?.map(({ id }) => id)).toEqual(['row-0', 'row-1']);
+        expect(result.current.grouped.groupResult.get('todo') ?? []).toEqual([]);
+      } finally {
+        unmount();
+        Object.values(seeds).forEach((doc) => doc.destroy());
+        fixture.destroy();
+      }
+    });
+
+    it('adopts equal rows without recomputing or rebinding observers of unchanged rows', async () => {
+      const fixture = createFixture([100, 300, 200]);
+      const seeds = { ...fixture.rowMap };
+      const canonical = Object.fromEntries(Object.entries(seeds).map(([id, seed]) => {
+        const doc = new Y.Doc({ guid: seed.guid }) as YDoc;
+
+        Y.applyUpdate(doc, Y.encodeStateAsUpdate(seed));
+        return [id, doc];
+      }));
+      const releases: Record<string, () => void> = {};
+      const pending = Object.fromEntries(Object.keys(seeds).map((id) => [id, new Promise<void>((resolve) => {
+        releases[id] = resolve;
+      })]));
+      const unchanged = seeds['row-1'].getMap(YjsEditorKey.data_section);
+      const observe = jest.spyOn(unchanged, 'observeDeep');
+      const unobserve = jest.spyOn(unchanged, 'unobserveDeep');
+      const canonicalUnobserve = jest.spyOn(canonical['row-0'].getMap(YjsEditorKey.data_section), 'unobserveDeep');
+
+      fixture.contextValue.rowMap = {};
+      fixture.contextValue.ensureRow = async (id) => { await pending[id]; return canonical[id]; };
+
+      const { result, unmount } = renderHook(() => {
+        useBackgroundRowDocLoader(true, 'live-sibling', 'live');
+        return useRowOrdersSelector();
+      }, { wrapper: fixture.wrapper });
+
+      try {
+        await waitFor(() => expect(ids(result.current)).toEqual(['row-1', 'row-2', 'row-0']));
+        sortSpy.mockClear();
+        observe.mockClear();
+        unobserve.mockClear();
+        await act(async () => {
+          fixture.rowMap['row-0'] = canonical['row-0'];
+          releases['row-0']();
+          await jest.advanceTimersByTimeAsync(80);
+        });
+        expect(sortSpy).not.toHaveBeenCalled();
+        expect(observe).not.toHaveBeenCalled();
+        expect(unobserve).not.toHaveBeenCalled();
+        expect(ids(result.current)).toEqual(['row-1', 'row-2', 'row-0']);
+
+        await act(async () => {
+          for (const id of ['row-1', 'row-2']) {
+            fixture.rowMap[id] = canonical[id];
+            releases[id]();
+          }
+
+          await jest.advanceTimersByTimeAsync(80);
+        });
+        expect(sortSpy).not.toHaveBeenCalled();
+
+        await act(async () => {
+          fixture.setSalaryLocally('row-0', 999);
+          await jest.advanceTimersByTimeAsync(FRAME_MS);
+        });
+        expect(ids(result.current)).toEqual(['row-0', 'row-1', 'row-2']);
+        expect(sortSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        unmount();
+        expect(canonicalUnobserve).toHaveBeenCalledTimes(1);
+        Object.values(seeds).forEach((doc) => doc.destroy());
+        fixture.destroy();
+      }
+    });
+
     it('computes once for two consumers of the same view and conditions', () => {
       const fixture = createFixture([100, 300, 200]);
       const { result, unmount } = renderHook(() => [useRowOrdersSelector(), useRowOrdersSelector()], {

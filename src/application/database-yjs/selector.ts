@@ -24,6 +24,7 @@ import { DateTimeCell, FormulaCell, RollupCell } from '@/application/database-yj
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { DEFAULT_FIELD_WRAP, getCell, MIN_COLUMN_WIDTH } from '@/application/database-yjs/const';
 import {
+  type DatabaseContextState,
   useDatabase,
   useDatabaseContext,
   useDatabaseExtraFilters,
@@ -130,6 +131,7 @@ import {
 } from '@/application/database-yjs/rollup/cache';
 import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
 import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
+import { captureRowDocRevision, hasRowDocRevision, RowDocRevision } from '@/application/database-yjs/row-doc-revision';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
@@ -349,20 +351,6 @@ export const DERIVED_ROW_ORDERS_TTL_MS = DASHBOARD_LOADING.sourceIdleReleaseMs;
 /** The results kept at most per kind; the least recently used goes first. */
 const DERIVED_RESULTS_LIMIT = 64;
 
-/** Bumped by every transaction that changes a row doc a derived result read, and when it is destroyed. */
-const rowDocVersions = new WeakMap<YDoc, number>();
-
-function watchRowDocVersion(doc: YDoc) {
-  if (rowDocVersions.has(doc)) return;
-  const bump = () => rowDocVersions.set(doc, (rowDocVersions.get(doc) ?? 0) + 1);
-
-  rowDocVersions.set(doc, 0);
-  doc.on('afterTransaction', (transaction: Transaction) => {
-    if (transaction.changed.size > 0 || transaction.deleteSet.clients.size > 0) bump();
-  });
-  doc.on('destroy', bump);
-}
-
 /** What a derived result was computed from, besides its key (database, view and conditions). */
 interface DerivedInputs {
   /** The row source's id; a published document's guid can be its publish name instead. */
@@ -382,13 +370,119 @@ interface DerivedEntry<T> {
   fieldsKey: string;
   /** Relative date filters resolve against the day. */
   day: string;
-  docs: Map<string, { doc: YDoc; version: number }>;
+  docs: Map<string, RowDocRevision>;
   expiresAt: number;
 }
 
 /** A key of the fields or conditions a result read: their JSON (desktop-authored values can be BigInts). */
 function derivedInputKey(value: unknown) {
   return JSON.stringify(value, (_key, item) => (typeof item === 'bigint' ? `${item}n` : item)) ?? '';
+}
+
+type ConditionRowChangeHandler = (doc: YDoc, rowId: string, transaction: Transaction) => void;
+
+/**
+ * These observers survive renders. Construct them outside the hook so their
+ * closure cannot retain an old render's complete row maps through its scope.
+ */
+function createConditionRowObserver(
+  doc: YDoc,
+  rowId: string,
+  handlerRef: { current: ConditionRowChangeHandler | null }
+) {
+  return (_events: unknown, transaction: Transaction) => handlerRef.current?.(doc, rowId, transaction);
+}
+
+/** Construct long-lived hydration callbacks without a selector render's row maps. */
+function createMissingConditionRowsRequester({
+  ensureRow,
+  loadRowFromSeed,
+  seedsReady,
+  blobPrefetchComplete,
+  conditionSignatureRef,
+  pendingConditionRowLoadsRef,
+  unavailableConditionRowsRef,
+  rowDocsForConditionsRef,
+  setConditionLoadRevision,
+}: Pick<DatabaseContextState, 'ensureRow' | 'loadRowFromSeed' | 'seedsReady' | 'blobPrefetchComplete'> & {
+  conditionSignatureRef: { current: string };
+  pendingConditionRowLoadsRef: { current: Set<string> };
+  unavailableConditionRowsRef: { current: Set<string> };
+  rowDocsForConditionsRef: { current: Record<RowId, YDoc> };
+  setConditionLoadRevision: (update: (value: number) => number) => void;
+}) {
+  const markConditionRowsUnavailable = (missingRows: Row[]) => {
+    let changed = false;
+
+    missingRows.forEach(({ id: rowId }) => {
+      if (!rowId || unavailableConditionRowsRef.current.has(rowId)) return;
+
+      unavailableConditionRowsRef.current.add(rowId);
+      changed = true;
+    });
+
+    if (changed) {
+      setConditionLoadRevision((revision) => revision + 1);
+    }
+  };
+
+  return (missingRows: Row[]) => {
+    if (!ensureRow && !loadRowFromSeed) {
+      markConditionRowsUnavailable(missingRows);
+      return;
+    }
+
+    const requestConditionSignature = conditionSignatureRef.current;
+
+    missingRows
+      .filter(({ id: rowId }) => rowId && !pendingConditionRowLoadsRef.current.has(rowId))
+      .slice(0, CONDITION_ROW_LOAD_BATCH_SIZE)
+      .forEach(({ id: rowId }) => {
+        if (!rowId) return;
+
+        pendingConditionRowLoadsRef.current.add(rowId);
+
+        void (async () => {
+          try {
+            let seededDoc: YDoc | undefined;
+
+            if (loadRowFromSeed) {
+              try {
+                seededDoc = await loadRowFromSeed(rowId);
+              } catch (error) {
+                if (!ensureRow) throw error;
+              }
+            }
+
+            if (!hasRowConditionData(seededDoc)) {
+              const ensuredDoc = await ensureRow?.(rowId);
+              const ensuredHasConditionData = ensuredDoc ? hasRowConditionData(ensuredDoc) : false;
+              // An opened row doc can still receive its row data from sync; don't settle it as unavailable yet.
+              const rowDocOpenedForHydration = Boolean(seededDoc || ensuredDoc);
+
+              const shouldMarkUnavailable =
+                !ensuredHasConditionData &&
+                !hasRowConditionData(rowDocsForConditionsRef.current[rowId]) &&
+                (!rowDocOpenedForHydration || seedsReady || blobPrefetchComplete);
+
+              if (conditionSignatureRef.current === requestConditionSignature && shouldMarkUnavailable) {
+                markConditionRowsUnavailable([{ id: rowId, height: 0 }]);
+              }
+            }
+          } catch (error) {
+            if (conditionSignatureRef.current === requestConditionSignature) {
+              markConditionRowsUnavailable([{ id: rowId, height: 0 }]);
+            }
+
+            if (shouldLogDatabaseConditionPerformance()) {
+              console.debug('[Database] failed to hydrate row for conditions', { rowId, error });
+            }
+          } finally {
+            pendingConditionRowLoadsRef.current.delete(rowId);
+          }
+        })();
+      });
+  };
 }
 
 function rowOrdersKey(rowOrders: Row[]) {
@@ -404,7 +498,7 @@ function derivedSourceDatabaseId(doc: YDoc) {
 /**
  * Results derived from a resident source's rows, by key. An entry is the
  * result while the row orders and fields it read are the same and every row
- * is read from the same doc, unchanged since (`rowDocVersions`); anything
+ * is read from an unchanged doc (or its proven equal canonical replacement); anything
  * else is a miss, and the caller computes. Entries live for the residency
  * window after their last use.
  */
@@ -429,9 +523,11 @@ function createDerivedStore<T>() {
         entry.fieldsKey === inputs.fieldsKey &&
         entry.day === dayjs().format('YYYY-MM-DD') &&
         entry.orderKey === rowOrdersKey(inputs.rowOrders) &&
-        Array.from(entry.docs).every(
-          ([rowId, { doc, version }]) => inputs.resolveDoc(rowId) === doc && rowDocVersions.get(doc) === version
-        );
+        Array.from(entry.docs).every(([rowId, revision]) => {
+          const doc = inputs.resolveDoc(rowId);
+
+          return Boolean(doc && hasRowDocRevision(doc, revision));
+        });
 
       if (!valid) {
         entries.delete(key);
@@ -442,15 +538,14 @@ function createDerivedStore<T>() {
       return entry.value;
     },
     store(key: string, inputs: DerivedInputs, value: T) {
-      const docs = new Map<string, { doc: YDoc; version: number }>();
+      const docs = new Map<string, RowDocRevision>();
 
       for (const { id } of inputs.rowOrders) {
         const doc = inputs.resolveDoc(id);
 
         // A row read from nowhere cannot be checked later: nothing is kept.
         if (!doc) return;
-        watchRowDocVersion(doc);
-        docs.set(id, { doc, version: rowDocVersions.get(doc) ?? 0 });
+        docs.set(id, captureRowDocRevision(doc));
       }
 
       const now = Date.now();
@@ -497,9 +592,8 @@ const derivedRowOrders = createDerivedStore<Row[]>();
 /** A board's rows by column, by database, view, grouping and the rows it grouped. */
 const derivedGroups = createDerivedStore<Map<string, Row[]>>();
 
-// A source's final release also releases the strong row-doc references held
-// by its derived results. The residency manager already includes the grace
-// period that permits a warm return to reuse them.
+// A source's final release also releases its derived results. The residency
+// manager already includes the grace period that permits a warm return.
 subscribeRowDocRelease({
   onDatabaseReleased(databaseId) {
     derivedRowOrders.releaseDatabase(databaseId);
@@ -3250,6 +3344,19 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   const partialFilterInputsRef = useRef<object | null>(null);
   // Row data, a field or a computed cell changed in place: every verdict is stale.
   const partialVerdictsStaleRef = useRef(false);
+  const conditionRowObserversRef = useRef(new Map<YDoc, {
+    rowId: string;
+    observer: (events: unknown, transaction: Transaction) => void;
+  }>());
+  const handleConditionRowChangeRef = useRef<ConditionRowChangeHandler | null>(null);
+
+  useEffect(() => () => {
+    conditionRowObserversRef.current.forEach(({ observer }, doc) => {
+      doc.getMap(YjsEditorKey.data_section).unobserveDeep(observer);
+    });
+    conditionRowObserversRef.current.clear();
+    handleConditionRowChangeRef.current = null;
+  }, []);
 
   // Check if there are active conditions (a search reads every row too)
   const hasConditions = (sorts?.length ?? 0) > 0 || hasEffectiveFilters(filters, fields) || searchQuery !== '';
@@ -3288,80 +3395,19 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     rowDocsForConditionsRef.current = rowDocsForConditions;
   }, [rowDocsForConditions]);
 
-  const markConditionRowsUnavailable = useCallback((missingRows: Row[]) => {
-    let changed = false;
-
-    missingRows.forEach(({ id: rowId }) => {
-      if (!rowId || unavailableConditionRowsRef.current.has(rowId)) return;
-
-      unavailableConditionRowsRef.current.add(rowId);
-      changed = true;
-    });
-
-    if (changed) {
-      setConditionLoadRevision((revision) => revision + 1);
-    }
-  }, []);
-
-  const requestMissingConditionRows = useCallback(
-    (missingRows: Row[]) => {
-      if (!ensureRow && !loadRowFromSeed) {
-        markConditionRowsUnavailable(missingRows);
-        return;
-      }
-
-      const requestConditionSignature = conditionSignatureRef.current;
-
-      missingRows
-        .filter(({ id: rowId }) => rowId && !pendingConditionRowLoadsRef.current.has(rowId))
-        .slice(0, CONDITION_ROW_LOAD_BATCH_SIZE)
-        .forEach(({ id: rowId }) => {
-          if (!rowId) return;
-
-          pendingConditionRowLoadsRef.current.add(rowId);
-
-          void (async () => {
-            try {
-              let seededDoc: YDoc | undefined;
-
-              if (loadRowFromSeed) {
-                try {
-                  seededDoc = await loadRowFromSeed(rowId);
-                } catch (error) {
-                  if (!ensureRow) throw error;
-                }
-              }
-
-              if (!hasRowConditionData(seededDoc)) {
-                const ensuredDoc = await ensureRow?.(rowId);
-                const ensuredHasConditionData = ensuredDoc ? hasRowConditionData(ensuredDoc) : false;
-                // An opened row doc can still receive its row data from sync; don't settle it as unavailable yet.
-                const rowDocOpenedForHydration = Boolean(seededDoc || ensuredDoc);
-
-                const shouldMarkUnavailable =
-                  !ensuredHasConditionData &&
-                  !hasRowConditionData(rowDocsForConditionsRef.current[rowId]) &&
-                  (!rowDocOpenedForHydration || seedsReady || blobPrefetchComplete);
-
-                if (conditionSignatureRef.current === requestConditionSignature && shouldMarkUnavailable) {
-                  markConditionRowsUnavailable([{ id: rowId, height: 0 }]);
-                }
-              }
-            } catch (error) {
-              if (conditionSignatureRef.current === requestConditionSignature) {
-                markConditionRowsUnavailable([{ id: rowId, height: 0 }]);
-              }
-
-              if (shouldLogDatabaseConditionPerformance()) {
-                console.debug('[Database] failed to hydrate row for conditions', { rowId, error });
-              }
-            } finally {
-              pendingConditionRowLoadsRef.current.delete(rowId);
-            }
-          })();
-        });
-    },
-    [blobPrefetchComplete, ensureRow, loadRowFromSeed, markConditionRowsUnavailable, seedsReady]
+  const requestMissingConditionRows = useMemo(
+    () => createMissingConditionRowsRequester({
+      ensureRow,
+      loadRowFromSeed,
+      seedsReady,
+      blobPrefetchComplete,
+      conditionSignatureRef,
+      pendingConditionRowLoadsRef,
+      unavailableConditionRowsRef,
+      rowDocsForConditionsRef,
+      setConditionLoadRevision,
+    }),
+    [blobPrefetchComplete, ensureRow, loadRowFromSeed, seedsReady]
   );
 
   const readVisibleRowOrders = useCallback(() => {
@@ -3774,7 +3820,14 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   useEffect(() => {
     // A complete historical snapshot cannot change. Registering every row
     // would also retain the full CRDT graph outside its bounded row store.
-    if (isHistory) return;
+    if (isHistory) {
+      conditionRowObserversRef.current.forEach(({ observer }, doc) => {
+        doc.getMap(YjsEditorKey.data_section).unobserveDeep(observer);
+      });
+      conditionRowObserversRef.current.clear();
+      return;
+    }
+
     // One scheduler for every data change: the user's own writes recompute on
     // the next frame, remote bursts once after they pause.
     const scheduleChange = createConditionChangeScheduler((trigger) => {
@@ -3810,7 +3863,6 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
       inlineRowOrders?.observeDeep(handleRowOrdersChange);
     }
 
-    const observers = new Map<string, (events: unknown, transaction: Transaction) => void>();
     let relationFieldIds: string[] = [];
     let rollupFieldIds: string[] = [];
 
@@ -3874,34 +3926,54 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     // Keep relation/rollup field IDs updated as schema changes to avoid stale invalidation.
     refreshConditionFieldIds();
 
+    const handleRowDataChange = (rowDoc: YDoc, rowId: string, transaction: Transaction) => {
+      invalidateRowConditionCache(rowDoc);
+      // A live doc was empty when merged with its cached copy: merge again
+      // once it has row data. Adopted offscreen docs already belong to the map.
+      if (
+        rows?.[rowId] === rowDoc && rowDocsForConditionsRef.current[rowId] !== rowDoc && hasRowConditionData(rowDoc)
+      ) {
+        setLiveRowDataVersion((version) => version + 1);
+      }
+
+      for (const fieldId of relationFieldIds) {
+        invalidateRelationCell(`${rowId}:${fieldId}`);
+      }
+
+      for (const fieldId of rollupFieldIds) {
+        invalidateRollupCell(`${rowId}:${fieldId}`);
+      }
+
+      scheduleChange(transaction);
+    };
+
+    handleConditionRowChangeRef.current = handleRowDataChange;
+    const observedRows = new Map<YDoc, string>();
+
     if (hasConditions) {
-      Object.entries(rows || {}).forEach(([rowId, rowDoc]) => {
-        const observerRowsEvent = (_events: unknown, transaction: Transaction) => {
-          invalidateRowConditionCache(rowDoc);
-          // The conditions read a cached copy of this row (its live doc had no
-          // row data when the docs were merged): merge again now that it has.
-          if (rowDocsForConditionsRef.current[rowId] !== rowDoc && hasRowConditionData(rowDoc)) {
-            setLiveRowDataVersion((version) => version + 1);
-          }
-
-          // A regular field sort/filter reads row data directly. Invalidating
-          // unrelated computed cells here can supersede their own observer's
-          // in-flight refresh without scheduling a replacement computation.
-          for (const fieldId of relationFieldIds) {
-            invalidateRelationCell(`${rowId}:${fieldId}`);
-          }
-
-          for (const fieldId of rollupFieldIds) {
-            invalidateRollupCell(`${rowId}:${fieldId}`);
-          }
-
-          scheduleChange(transaction);
-        };
-
-        observers.set(rowId, observerRowsEvent);
-        rowDoc.getMap(YjsEditorKey.data_section).observeDeep(observerRowsEvent);
-      });
+      // A sibling live reader can supply an offscreen row through the shared
+      // cache without adding it to this view's own row map. Observe the docs
+      // the conditions actually read, as well as live docs still hydrating.
+      Object.entries(rowDocsForConditions).forEach(([rowId, doc]) => observedRows.set(doc, rowId));
+      Object.entries(rows ?? {}).forEach(([rowId, doc]) => observedRows.set(doc, rowId));
     }
+
+    // Preserve observers of unchanged docs across adoption batches. Rebinding
+    // every row on each batch competes with scrolling over a large source.
+    const observers = conditionRowObserversRef.current;
+
+    observers.forEach(({ rowId, observer }, doc) => {
+      if (observedRows.get(doc) === rowId) return;
+      doc.getMap(YjsEditorKey.data_section).unobserveDeep(observer);
+      observers.delete(doc);
+    });
+    observedRows.forEach((rowId, doc) => {
+      if (observers.has(doc)) return;
+      const observer = createConditionRowObserver(doc, rowId, handleConditionRowChangeRef);
+
+      observers.set(doc, { rowId, observer });
+      doc.getMap(YjsEditorKey.data_section).observeDeep(observer);
+    });
 
     return () => {
       rowOrders?.unobserveDeep(handleRowOrdersChange);
@@ -3914,9 +3986,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
       fields?.unobserveDeep(handleFieldChange);
       if (scheduleChange.pending()) carriedConditionChangeRef.current = true;
       scheduleChange.cancel();
-      observers.forEach((observer, rowId) => {
-        rows?.[rowId]?.getMap(YjsEditorKey.data_section).unobserveDeep(observer);
-      });
+      if (handleConditionRowChangeRef.current === handleRowDataChange) handleConditionRowChangeRef.current = null;
     };
   }, [
     onConditionsChange,
@@ -3929,6 +3999,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     extraFilters,
     sorts,
     rows,
+    rowDocsForConditions,
     viewId,
     searchKey,
     syncUnconditionedRowOrders,
