@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { useBackgroundRowDocLoader, useDatabaseContext, useRowPassState } from '@/application/database-yjs';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
@@ -43,7 +43,7 @@ type RowDocs = Record<RowId, YDoc>;
  */
 type RowSource = 'ensure' | 'wait' | 'seeds' | 'timeout';
 
-/** The row set a retry belongs to. `rowIdsKey` compares by reference first, so this is cheap. */
+/** A row set of a view: what a load, its retries and the loaded flag belong to. `rowIdsKey` compares by reference first, so this is cheap. */
 interface RetryScope {
   viewId: string;
   rowIdsKey: string;
@@ -128,14 +128,15 @@ export interface ChartRowHydration {
 }
 
 /**
- * Gets the row docs a chart reads, without a live doc per row.
+ * Gets the row docs a chart reads and keeps them connected to realtime.
  *
  * A row-reading chart needs every row of its view. The blob walk already
  * delivers each row as a seed, and `useBackgroundRowDocLoader` turns the seeds
- * into shared detached docs, a bounded batch per frame. The chart reads those:
- * a seeded row costs no `ensureRow`, so no IndexedDB open and no sync
- * handshake. Only a row without a seed (created after the walk) falls back to
- * `ensureRow`, through a small worker pool.
+ * into shared detached docs, a bounded batch per frame. The chart can render
+ * those before IndexedDB opens and sync handshakes finish. After the walk
+ * completes, the loader connects every row through `ensureRow` in bounded
+ * batches, including filtered-out rows whose remote edits can change filter
+ * membership. Rows without a seed also load through a small worker pool.
  *
  * The chart is all or nothing: it stays in the loading state until every row
  * has its doc, so a partial aggregate is never shown as the result. The one
@@ -153,16 +154,28 @@ export function useChartRowHydration({
   needsRowDocs,
 }: UseChartRowHydrationOptions): ChartRowHydration {
   const databaseContext = useDatabaseContext();
-  const { ensureRow, dataSource, activeViewId, peekRowDocFromSeed, getSeedsRevision, subscribeToSeedsProgress } =
+  const { ensureRow, databaseDoc, workspaceId, dataSource, activeViewId, peekRowDocFromSeed, getSeedsRevision, subscribeToSeedsProgress } =
     databaseContext;
   const { seedsReady, blobPrefetchComplete } = useRowPassState(databaseContext);
   const isHistory = dataSource?.type === 'history';
   const rowOrdersReady = Boolean(rowOrders);
   const canReadSeeds = Boolean(peekRowDocFromSeed) && !isHistory;
+  // Each Database instance owns its row sync registrations. A sibling chart
+  // of the same view must not become the only owner of this chart's live rows.
+  // Seed and canonical docs remain shared by the underlying row caches.
+  const loaderId = useId();
+  const [loaderOwner, setLoaderOwner] = useState(() => ({ databaseDoc, workspaceId, ensureRow, generation: 0 }));
+
+  // A database reset can keep its guid while releasing all sync owners. Start
+  // a new loader so its old synced-row cache cannot skip reacquiring them.
+  if (loaderOwner.databaseDoc !== databaseDoc || loaderOwner.workspaceId !== workspaceId || loaderOwner.ensureRow !== ensureRow) {
+    setLoaderOwner({ databaseDoc, workspaceId, ensureRow, generation: loaderOwner.generation + 1 });
+  }
+
   const { cachedRowDocs, getCachedRowDocs } = useBackgroundRowDocLoader(
     canReadSeeds && needsRowDocs,
-    'chart',
-    'cached'
+    `chart:${loaderId}:${loaderOwner.generation}`,
+    'live'
   );
 
   // --- Which source the missing rows come from ---
@@ -197,33 +210,27 @@ export function useChartRowHydration({
   if (canReadSeeds) rowSource = seedsSettled ? 'seeds' : seedWaitTimedOut ? 'timeout' : 'wait';
 
   // --- Loading state ---
-  // Always start in the loading state. The effect below decides when the rows
-  // are loaded: after their docs arrived (populated view) or after a short
-  // grace period in which no rows arrived (empty view).
-  const [rowsLoaded, setRowsLoaded] = useState(false);
+  // The row set whose rows finished loading (their docs arrived, or no rows
+  // arrived within a short grace period): `null` until the first finish, and
+  // after an explicit retry. The loaded flag is derived from it below, in the
+  // render itself: a changed row set whose load is a bulk one is in the
+  // loading state in that same render, so a partial aggregate is never built
+  // or painted.
+  const [loadedScope, setLoadedScope] = useState<RetryScope | null>(null);
   const [failedRowIds, setFailedRowIds] = useState<ReadonlySet<string>>(NO_FAILED_ROWS);
-  // `silentFor` marks an automatic retry of that row set: it runs behind
-  // whatever the chart shows. A different row set loads as usual.
-  const [retryRequest, setRetryRequest] = useState<{ clock: number; silentFor: RetryScope | null }>({
-    clock: 0,
-    silentFor: null,
-  });
+  // Bumped to load the failed rows again: by `retry`, and by the automatic backoff.
+  const [retryClock, setRetryClock] = useState(0);
 
   /** Rows `ensureRow` delivered. Seeded rows are not listed: their doc is the proof. */
   const ensuredRowIdsRef = useRef<Set<string>>(new Set());
-  // The view whose rows finished their first load. A few rows added to it
-  // later (a row created in a grid next to this chart, a collaborator's row)
-  // load in the background, so the chart stays mounted; another view, which a
-  // chart tab switch shows through this same hook, gets the loading state again.
-  const hydratedViewIdRef = useRef<string | null>(null);
   /** Automatic retries spent on the row set in `retryScopeRef`. */
   const retryAttemptRef = useRef(0);
   const retryScopeRef = useRef<RetryScope | null>(null);
   const retry = useCallback(() => {
     retryAttemptRef.current = 0;
     setFailedRowIds(NO_FAILED_ROWS);
-    setRowsLoaded(false);
-    setRetryRequest((previous) => ({ clock: previous.clock + 1, silentFor: null }));
+    setLoadedScope(null);
+    setRetryClock((clock) => clock + 1);
   }, []);
 
   // The async load reads the newest row sources through this ref, and a load
@@ -237,17 +244,17 @@ export function useChartRowHydration({
   }, [liveRows, cachedRowDocs, getCachedRowDocs, peekRowDocFromSeed]);
 
   useEffect(() => {
-    // Every path that finishes sets both: the loaded flag and the failed rows.
+    const scope: RetryScope = { viewId: activeViewId, rowIdsKey };
+    // Every path that finishes sets both: the loaded row set and the failed rows.
     // A finish without failures therefore always clears an earlier error.
     const finish = (failed: readonly string[]) => {
       setFailedRowIds(failed.length > 0 ? new Set(failed) : NO_FAILED_ROWS);
-      setRowsLoaded(true);
+      setLoadedScope((previous) => (sameRetryScope(previous, scope) ? previous : scope));
     };
 
     if (isHistory) {
       // History snapshots are complete: their rows decode on read.
       if (rowOrders) finish(NO_ROW_IDS);
-      else setRowsLoaded(false);
       return;
     }
 
@@ -286,7 +293,6 @@ export function useChartRowHydration({
     const pendingRowIds = rowOrders.filter((row) => !isHydrated(row.id)).map((row) => row.id);
 
     if (pendingRowIds.length === 0) {
-      hydratedViewIdRef.current = activeViewId;
       finish(NO_ROW_IDS);
       return;
     }
@@ -294,20 +300,16 @@ export function useChartRowHydration({
     // A few new rows (one added in a neighbouring grid, a collaborator's row)
     // load behind the mounted chart, which leaves them out until their doc
     // arrives. A view's first load or a bulk change (an import, a widened
-    // filter) shows the loading state: streaming it in would chart partial
-    // data and recompute and re-observe every row per arrival.
-    const isBulkLoad = hydratedViewIdRef.current !== activeViewId || pendingRowIds.length > ROW_LOAD_CONCURRENCY;
-    const retryScope: RetryScope = { viewId: activeViewId, rowIdsKey };
-    const isSilentRetry = sameRetryScope(retryRequest.silentFor, retryScope);
-
-    if (isBulkLoad && !isSilentRetry) setRowsLoaded(false);
+    // filter) is in the loading state (`rowsLoaded` below): streaming it in
+    // would chart partial data and recompute and re-observe every row per
+    // arrival.
 
     // The loader publishes each seed as its page arrives; asking for row docs
     // now would open a live doc for every row the walk is about to deliver.
     if (rowSource === 'wait') return;
 
-    if (!sameRetryScope(retryScopeRef.current, retryScope)) {
-      retryScopeRef.current = retryScope;
+    if (!sameRetryScope(retryScopeRef.current, scope)) {
+      retryScopeRef.current = scope;
       retryAttemptRef.current = 0;
     }
 
@@ -350,7 +352,6 @@ export function useChartRowHydration({
       await untilPublished(seeded);
       if (cancelled) return;
 
-      hydratedViewIdRef.current = activeViewId;
       finish(failed);
       if (failed.length === 0) {
         retryAttemptRef.current = 0;
@@ -368,9 +369,8 @@ export function useChartRowHydration({
       }
 
       retryAttemptRef.current = attempt + 1;
-      retryTimer = setTimeout(() => {
-        setRetryRequest((previous) => ({ clock: previous.clock + 1, silentFor: retryScope }));
-      }, ROW_SYNC_RETRY_DELAYS_MS[attempt]);
+      // The same row set stays loaded through its automatic retry: it runs behind whatever the chart shows.
+      retryTimer = setTimeout(() => setRetryClock((clock) => clock + 1), ROW_SYNC_RETRY_DELAYS_MS[attempt]);
     };
 
     void loadPending();
@@ -383,7 +383,32 @@ export function useChartRowHydration({
     };
     // `rowOrders` is read through `rowIdsKey`: the array is replaced after unrelated changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowOrdersReady, rowIdsKey, ensureRow, needsRowDocs, isHistory, activeViewId, retryRequest, rowSource]);
+  }, [rowOrdersReady, rowIdsKey, ensureRow, needsRowDocs, isHistory, activeViewId, retryClock, rowSource]);
+
+  // --- The loaded flag, derived in render ---
+  // Whether this row set's load is a bulk one, judged when the row set
+  // arrives: another view, which a chart tab switch shows through this same
+  // hook, or more rows without a doc than one round of loads. The docs that
+  // arrive for it later finish its load instead (`finish` above).
+  const isBulkPending = useMemo(() => {
+    if (!rowOrders || isHistory || !needsRowDocs) return false;
+    if (loadedScope === null || loadedScope.viewId !== activeViewId) return true;
+    let pending = 0;
+
+    for (const row of rowOrders) {
+      if (hasRowConditionData(liveRows?.[row.id]) || cachedRowDocs[row.id]) continue;
+      pending += 1;
+      if (pending > ROW_LOAD_CONCURRENCY) return true;
+    }
+
+    return false;
+    // Once per row set: `rowOrders` is read through `rowIdsKey`, and the docs are the ones it arrived with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowIdsKey, activeViewId, isHistory, needsRowDocs]);
+  const rowsLoaded =
+    rowOrdersReady &&
+    loadedScope !== null &&
+    (sameRetryScope(loadedScope, { viewId: activeViewId, rowIdsKey }) || !isBulkPending);
 
   return {
     rowsLoaded,

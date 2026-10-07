@@ -3,7 +3,7 @@ import { act, fireEvent, screen } from '@testing-library/react';
 import { ChartAggregationType, ChartDataItem } from '@/application/database-yjs/chart.type';
 import DonutChartWidget from '@/components/database/chart/widgets/DonutChart';
 
-import { installChartEnvironment, renderChart, setObservedSize } from './chartTestUtils';
+import { installChartEnvironment, renderChart, setObservedSize, seriesDataOf } from './chartTestUtils';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -30,7 +30,7 @@ describe('DonutChartWidget', () => {
   installChartEnvironment();
 
   it('shows the rounded total over its caption', () => {
-    renderChart(<DonutChartWidget data={STAGES} fill />, COUNT);
+    renderChart(<DonutChartWidget data={seriesDataOf(STAGES)} fill />, COUNT);
 
     expect(screen.getByTestId('chart-donut-total').textContent).toBe('12');
     expect(screen.getByTestId('chart-donut-total').getAttribute('data-value')).toBe('12');
@@ -38,14 +38,14 @@ describe('DonutChartWidget', () => {
   });
 
   it('prints a compact currency total', () => {
-    renderChart(<DonutChartWidget data={OWNERS} fill />);
+    renderChart(<DonutChartWidget data={seriesDataOf(OWNERS)} fill />);
 
     expect(screen.getByTestId('chart-donut-total').textContent).toBe('$2M');
   });
 
   it('draws positive values only', () => {
     const { container } = renderChart(
-      <DonutChartWidget data={[...STAGES, { key: 'refund', label: 'Refund', value: -5, rowIds: ['m'] }]} fill />,
+      <DonutChartWidget data={seriesDataOf([...STAGES, { key: 'refund', label: 'Refund', value: -5, rowIds: ['m'] }])} fill />,
       COUNT
     );
 
@@ -61,10 +61,10 @@ describe('DonutChartWidget', () => {
   it('shows the empty ring with "No data" when no value is positive', () => {
     renderChart(
       <DonutChartWidget
-        data={[
+        data={seriesDataOf([
           { key: 'a', label: 'A', value: 0, rowIds: [] },
           { key: 'b', label: 'B', value: -2, rowIds: ['x'] },
-        ]}
+        ])}
         fill
       />,
       COUNT
@@ -75,7 +75,7 @@ describe('DonutChartWidget', () => {
   });
 
   it('separates slices with 1px card-color strokes and no padding angle', () => {
-    const { container } = renderChart(<DonutChartWidget data={STAGES} fill />, COUNT);
+    const { container } = renderChart(<DonutChartWidget data={seriesDataOf(STAGES)} fill />, COUNT);
     const sector = container.querySelector('.recharts-pie-sector path') as SVGPathElement;
 
     expect(sector.getAttribute('stroke')).toBe('var(--dash-card-bg)');
@@ -84,7 +84,7 @@ describe('DonutChartWidget', () => {
   });
 
   it('shows the share in the tooltip', () => {
-    const { container } = renderChart(<DonutChartWidget data={STAGES} onItemClick={jest.fn()} fill />, COUNT);
+    const { container } = renderChart(<DonutChartWidget data={seriesDataOf(STAGES)} onItemClick={jest.fn()} fill />, COUNT);
     const won = container.querySelectorAll('.recharts-pie-sector')[3];
 
     act(() => {
@@ -96,7 +96,7 @@ describe('DonutChartWidget', () => {
   });
 
   it('labels the slices outside the ring, except a slice under 3%', () => {
-    renderChart(<DonutChartWidget data={OWNERS} fill />);
+    renderChart(<DonutChartWidget data={seriesDataOf(OWNERS)} fill />);
 
     expect(screen.getAllByTestId('chart-donut-outside-label').map((label) => label.getAttribute('data-label'))).toEqual([
       'Bob',
@@ -107,7 +107,7 @@ describe('DonutChartWidget', () => {
 
   it('drops the outside labels in a small frame', () => {
     setObservedSize(240, 200);
-    renderChart(<DonutChartWidget data={OWNERS} fill />);
+    renderChart(<DonutChartWidget data={seriesDataOf(OWNERS)} fill />);
 
     expect(screen.queryByTestId('chart-donut-outside-label')).toBeNull();
     expect(screen.getAllByTestId('chart-donut-slice-anchor')).toHaveLength(3);
@@ -123,7 +123,7 @@ describe('DonutChartWidget', () => {
     }));
 
     setObservedSize(260, 400);
-    renderChart(<DonutChartWidget data={regions} fill />, COUNT);
+    renderChart(<DonutChartWidget data={seriesDataOf(regions)} fill />, COUNT);
 
     expect(screen.getByTestId('chart-legend-pager')).toBeTruthy();
     expect(screen.getByTestId('chart-legend-page').textContent).toBe('1/3');

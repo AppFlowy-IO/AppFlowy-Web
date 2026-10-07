@@ -18,9 +18,10 @@ export enum ChartType {
 }
 
 /**
- * Chart aggregation type enum matching Flutter's ChartAggregationTypePB.
- * These are the aggregations this client computes; WP11 adds 7–16 here
- * together with their `computeAggregation` cases.
+ * Chart aggregation type enum matching Flutter's ChartAggregationTypePB
+ * (`dashboard-parity/aggregations.json`). WP11 computes every value 0–16 in
+ * `chart-config/aggregate.ts`; `effectiveChartAggregation` there decides what a
+ * chart computes, formats and titles.
  */
 export enum ChartAggregationType {
   Count = 0,
@@ -29,35 +30,20 @@ export enum ChartAggregationType {
   Min = 3,
   Max = 4,
   Median = 5,
-  CountValues = 6,
+  /** "Count unique values": the distinct values of the Y property. */
+  CountUnique = 6,
+  /** "Count values": rows whose Y cell is not empty. */
+  CountNotEmpty = 7,
+  CountEmpty = 8,
+  PercentEmpty = 9,
+  PercentNotEmpty = 10,
+  PercentChecked = 11,
+  PercentUnchecked = 12,
+  Earliest = 13,
+  Latest = 14,
+  DateRange = 15,
+  Range = 16,
 }
 
 /** The largest `decimal_places` a chart stores; larger values read as auto. */
 export const CHART_MAX_DECIMAL_PLACES = 5;
-
-const COMPUTED_AGGREGATIONS: ReadonlySet<number> = new Set([
-  ChartAggregationType.Count,
-  ChartAggregationType.Sum,
-  ChartAggregationType.Average,
-  ChartAggregationType.Min,
-  ChartAggregationType.Max,
-  ChartAggregationType.Median,
-  ChartAggregationType.CountValues,
-]);
-
-/**
- * The aggregation a chart computes, formats and titles. This is the one place
- * the rule lives:
- * - an aggregation without its Y field counts rows;
- * - so does a stored value this client does not compute yet (another client's
- *   7–16, until WP11 lands), so the value and its format never disagree.
- */
-export function resolveEffectiveAggregation(stored: unknown, hasYField: boolean): ChartAggregationType {
-  const value = typeof stored === 'bigint' ? Number(stored) : stored;
-
-  if (!hasYField || typeof value !== 'number' || !COMPUTED_AGGREGATIONS.has(value)) {
-    return ChartAggregationType.Count;
-  }
-
-  return value as ChartAggregationType;
-}

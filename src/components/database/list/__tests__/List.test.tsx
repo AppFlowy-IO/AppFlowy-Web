@@ -14,11 +14,13 @@ const grouping = {
   visibleGroups: [],
 };
 const mockCreateRow = jest.fn();
+let mockSearchQuery = '';
 
 jest.mock('@/application/database-yjs', () => ({
   FieldVisibility: { AlwaysHidden: 2, AlwaysShown: 0, HideWhenEmpty: 1 },
   isAIFieldType: () => false,
   useDatabaseContext: jest.fn(),
+  useDatabaseSearchQuery: () => mockSearchQuery,
   useFieldsSelector: jest.fn(),
   useReadOnly: jest.fn(),
   useSortsSelector: jest.fn(),
@@ -86,6 +88,7 @@ describe('List incremental rendering', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSearchQuery = '';
     grouping.isGrouped = false;
     grouping.visibleGroups = [];
     grouping.rowOrders = Array.from({ length: 100 }, (_, index) => ({ height: 36, id: `row-${index + 1}` }));
@@ -102,6 +105,23 @@ describe('List incremental rendering', () => {
       typeof useFieldsSelector
     >);
     mockCreateRow.mockResolvedValue('new-row');
+  });
+
+  it('replaces the rows and the new row with "No results" when a search matches nothing (WP09)', () => {
+    mockSearchQuery = 'zzqx';
+    grouping.rowOrders = [];
+    render(<List />);
+
+    expect(screen.getByTestId('database-search-empty-state').getAttribute('role')).toBe('status');
+    expect(screen.queryByTestId('list-new-row')).toBeNull();
+    expect(screen.queryAllByTestId(/^list-row-row-/)).toHaveLength(0);
+  });
+
+  it('keeps an empty list without a search as it is (no search empty state)', () => {
+    grouping.rowOrders = [];
+    render(<List />);
+
+    expect(screen.queryByTestId('database-search-empty-state')).toBeNull();
   });
 
   it('database_list_load_more.dart: list view shows imported rows (seeded 100-row Web equivalent)', () => {

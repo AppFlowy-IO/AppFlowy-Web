@@ -20,8 +20,9 @@ export type WidgetSortDirection = 'ascending' | 'descending';
 /**
  * Sort a widget from its Sort tool: it opens the property list while the
  * widget has no sort, and the widget's Sorts popover (with "Add sort")
- * otherwise. The UI belongs to scope; fixture identities always belong to the
- * scenario's owner page.
+ * otherwise. A property the widget sorts by already (a saved sort, say) only
+ * changes direction there. The UI belongs to scope; fixture identities always
+ * belong to the scenario's owner page.
  */
 export async function addWidgetSort(
   scope: Page,
@@ -33,20 +34,25 @@ export async function addWidgetSort(
   const widget = DashboardSelectors.widget(scope, knownWidget(ownerPage, label).id);
   const sortTool = widget.getByTestId('database-actions-sort');
   const popover = scope.getByTestId('dashboard-widget-sorts-popover');
+  // The sort is edited in the widget's Sorts popover.
+  const sort = popover.getByTestId('sort-condition').filter({ hasText: new RegExp(escapeRegExp(field)) });
 
   await expect(widget).toBeVisible({ timeout: 30_000 });
   await widget.hover();
   if ((await sortTool.getAttribute('data-active')) === 'true') {
     await sortTool.click();
     await expect(popover).toBeVisible();
-    await popover.getByRole('button', { name: /add.*sort/i }).click();
+    // An active tool means a sort exists; its row shows before the count is read.
+    await expect(popover.getByTestId('sort-condition').first()).toBeVisible();
+    if ((await sort.count()) === 0) {
+      await popover.getByRole('button', { name: /add.*sort/i }).click();
+      await DatabaseFilterSelectors.propertyItemByName(scope, field).filter({ visible: true }).click();
+    }
   } else {
     await sortTool.click();
+    await DatabaseFilterSelectors.propertyItemByName(scope, field).filter({ visible: true }).click();
   }
 
-  await DatabaseFilterSelectors.propertyItemByName(scope, field).filter({ visible: true }).click();
-  // The new sort is edited in the widget's Sorts popover.
-  const sort = popover.getByTestId('sort-condition').filter({ hasText: new RegExp(escapeRegExp(field)) });
   const directionButton = sort.getByRole('button', { name: /ascending|descending/i });
 
   await expect(directionButton).toBeVisible();
@@ -81,11 +87,13 @@ export async function expectWidgetRowsInOrder(scope: Page, ownerPage: Page, labe
 }
 
 export async function resetDashboardConditions(scope: Page) {
-  const reset = scope.getByTestId('dashboard-global-filter-reset');
+  const reset = DashboardSelectors.globalFilterReset(scope);
 
   await expect(reset).toBeVisible();
   await reset.click();
-  await expect(DashboardSelectors.globalFilterLocalBadge(scope)).toHaveCount(0);
+  // Nothing differs from the saved dashboard any more: no orange dot, no controls.
+  await expect(DashboardSelectors.unsavedDots(scope)).toHaveCount(0);
+  await expect(DashboardSelectors.privateControls(scope)).toHaveCount(0);
 }
 
 /** Read the canonical shared documents, never the private overlay used to render a widget. */

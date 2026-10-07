@@ -4,13 +4,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as Y from 'yjs';
 
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
-import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { CalendarLayoutUpdate, updateCalendarLayoutSetting } from '@/application/database-yjs/calendar-layout';
-import {
-  initializeTimelineLayoutSetting,
-  TimelineLayoutUpdate,
-  updateTimelineLayoutSetting,
-} from '@/application/database-yjs/timeline-layout';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -77,10 +71,7 @@ import { createRollupField } from '@/application/database-yjs/fields/rollup/util
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
-import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
-import { assertViewCreationOnline, onlineViewCreationRequiredError } from '@/application/view-online-policy';
-import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { observeFormulaRelatedDocuments, resolveFormulaRowContext } from '@/application/database-yjs/formula/materialize';
 import {
   initializeGalleryLayoutSetting,
@@ -104,7 +95,8 @@ import {
   registerDatabaseHistoryRowDoc,
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
-import type { DatabaseHistoryAction } from '@/application/database-yjs/history';
+import type { DatabaseHistoryAction, DatabaseHistoryPolicy } from '@/application/database-yjs/history';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import {
   initializeListLayoutSetting,
 } from '@/application/database-yjs/list-layout';
@@ -122,7 +114,12 @@ import {
   rollupResultType,
 } from '@/application/database-yjs/rollup/filter';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
-import { useCalculationFieldType, useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
+import { useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
+import {
+  initializeTimelineLayoutSetting,
+  TimelineLayoutUpdate,
+  updateTimelineLayoutSetting,
+} from '@/application/database-yjs/timeline-layout';
 import { deleteCollabDB } from '@/application/db';
 import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import {
@@ -136,8 +133,6 @@ import {
   ViewLayout,
   YDatabase,
   YDatabaseBoardLayoutSetting,
-  YDatabaseCalculation,
-  YDatabaseCalculations,
   YDatabaseCalendarLayoutSetting,
   YDatabaseCell,
   YDatabaseCells,
@@ -167,6 +162,8 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
+import { assertViewCreationOnline, onlineViewCreationRequiredError } from '@/application/view-online-policy';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
@@ -1477,118 +1474,10 @@ export function useBulkDeleteRowDispatch() {
   );
 }
 
-export function useCalculateFieldDispatch(fieldId: string) {
-  const view = useDatabaseView();
-  const sharedRoot = useSharedRoot();
-  const fieldType = useCalculationFieldType(fieldId);
-
-  return useCallback(
-    (cells: Map<string, unknown>) => {
-      const calculations = view?.get(YjsDatabaseKey.calculations);
-      const index = (calculations?.toArray() || []).findIndex((calculation) => {
-        return calculation.get(YjsDatabaseKey.field_id) === fieldId;
-      });
-
-      if (index === -1 || !calculations) {
-        return;
-      }
-
-      const cellValues = Array.from(cells.values());
-
-      const item = calculations.get(index);
-      const type = Number(item.get(YjsDatabaseKey.type)) as CalculationType;
-      const oldValue = item.get(YjsDatabaseKey.calculation_value) as string | number;
-
-      const newValue = calculateFieldValue({
-        fieldType,
-        calculationType: type,
-        cellValues,
-      });
-
-      if (newValue !== null && newValue !== oldValue) {
-        executeOperations(
-          sharedRoot,
-          [
-            () => {
-              item.set(YjsDatabaseKey.calculation_value, newValue);
-            },
-          ],
-          'calculateFieldDispatch',
-          { type: 'database.calculate-field-value', policy: 'skip' }
-        );
-      }
-    },
-    [view, fieldId, fieldType, sharedRoot]
-  );
-}
-
-export function useUpdateCalculate(fieldId: string) {
-  const sharedRoot = useSharedRoot();
-  const view = useDatabaseView();
-
-  return useCallback(
-    (type: CalculationType) => {
-      if (!view) return;
-      executeOperations(
-        sharedRoot,
-        [
-          () => {
-            let calculations = view?.get(YjsDatabaseKey.calculations);
-
-            if (!calculations) {
-              calculations = new Y.Array() as YDatabaseCalculations;
-              view.set(YjsDatabaseKey.calculations, calculations);
-            }
-
-            let item = calculations.toArray().find((calculation) => {
-              return calculation.get(YjsDatabaseKey.field_id) === fieldId;
-            });
-
-            if (!item) {
-              item = new Y.Map() as YDatabaseCalculation;
-              item.set(YjsDatabaseKey.id, nanoid(6));
-              item.set(YjsDatabaseKey.field_id, fieldId);
-              calculations.push([item]);
-            }
-
-            item.set(YjsDatabaseKey.type, type);
-          },
-        ],
-        'updateCalculate'
-      );
-    },
-    [fieldId, sharedRoot, view]
-  );
-}
-
-export function useClearCalculate(fieldId: string) {
-  const sharedRoot = useSharedRoot();
-  const view = useDatabaseView();
-
-  return useCallback(() => {
-    executeOperations(
-      sharedRoot,
-      [
-        () => {
-          const calculations = view?.get(YjsDatabaseKey.calculations);
-
-          if (!calculations) {
-            throw new Error(`Calculations not found`);
-          }
-
-          const index = calculations.toArray().findIndex((calculation) => {
-            return calculation.get(YjsDatabaseKey.field_id) === fieldId;
-          });
-
-          if (index !== -1) {
-            calculations.delete(index);
-          }
-        },
-      ],
-      'clearCalculate'
-    );
-  }, [fieldId, sharedRoot, view]);
-}
+// One implementation of the footer calculation hooks: this module shadows
+// `dispatch/index.ts` in Vite, so the dashboard-widget guard (WP07 P0-5) must
+// live in the one copy both bundler paths reach.
+export { useCalculateFieldDispatch, useUpdateCalculate, useClearCalculate } from './dispatch/calculation';
 
 export function useUpdatePropertyNameDispatch(fieldId: string) {
   const database = useDatabase();
@@ -2833,7 +2722,12 @@ export function useUpdateDatabaseLayout(viewId: string) {
   const enhanceCalendarLayoutByFieldExists = useEnhanceCalendarLayoutByFieldExists();
 
   return useCallback(
-    (layout: DatabaseViewLayout) => {
+    /**
+     * `history: 'skip'` keeps the switch out of the undo history: the add
+     * flow's "New view" type pick is part of creating the widget's view
+     * (WP06 §1.5). Default `'capture'`.
+     */
+    (layout: DatabaseViewLayout, options?: { history?: DatabaseHistoryPolicy }) => {
       const revision = ++requestRevision.current;
       const isLatestChoice = claimLayoutChoice(viewDocDeps.databaseDoc, viewId);
       const applyLayout = () => executeOperations(
@@ -2931,7 +2825,8 @@ export function useUpdateDatabaseLayout(viewId: string) {
             view.set(YjsDatabaseKey.layout, layout);
           },
         ],
-        'updateDatabaseLayout'
+        'updateDatabaseLayout',
+        { type: 'database.updateDatabaseLayout', policy: options?.history ?? 'capture' }
       );
 
       if (Number(database.get(YjsDatabaseKey.views)?.get(viewId)?.get(YjsDatabaseKey.layout)) === layout) return;

@@ -19,6 +19,31 @@ const userIndexes = new WeakMap<readonly MentionablePerson[], ReadonlyMap<string
 const EMPTY_USERS: MentionablePerson[] = [];
 const MEMORY_CACHE_TTL_MS = 30 * 1000; // 30 seconds for in-memory
 const DISK_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes for IndexedDB
+/**
+ * When a workspace's full member list was last fetched (`saveToDisk`). The
+ * viewer's own profile and profile change notifications put single rows in
+ * the same table, so the rows alone never say that the list is complete.
+ */
+const MEMBER_LIST_SYNCED_AT_PREFIX = 'af_mentionable_users_synced_at:';
+
+function readMemberListSyncedAt(workspaceId: string): number | null {
+  try {
+    const value = localStorage.getItem(`${MEMBER_LIST_SYNCED_AT_PREFIX}${workspaceId}`);
+    const syncedAt = value === null ? NaN : Number(value);
+
+    return Number.isFinite(syncedAt) ? syncedAt : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeMemberListSyncedAt(workspaceId: string, syncedAt: number): void {
+  try {
+    localStorage.setItem(`${MEMBER_LIST_SYNCED_AT_PREFIX}${workspaceId}`, String(syncedAt));
+  } catch {
+    // Without the stamp the next cold load refreshes from the API.
+  }
+}
 
 function isMemoryCacheValid(entry: CacheEntry | undefined): entry is CacheEntry {
   if (!entry) return false;
@@ -78,7 +103,10 @@ export function getMentionableUserIndex(
 
 /**
  * Load mentionable users from IndexedDB (workspace_member_profiles table).
- * Returns the users if any exist for this workspace with a valid TTL, otherwise empty array.
+ * Returns the users if any exist for this workspace, fresh while the full
+ * list was fetched within the TTL (a table holding only the viewer's own
+ * profile is not a member list: a newly joined member would stay unknown
+ * until the TTL ran out), otherwise empty array.
  */
 async function loadFromDisk(workspaceId: string): Promise<{ users: MentionablePerson[]; fresh: boolean }> {
   try {
@@ -91,8 +119,7 @@ async function loadFromDisk(workspaceId: string): Promise<{ users: MentionablePe
       return { users: [], fresh: false };
     }
 
-    // Check freshness using the newest updated_at among all profiles
-    const newestUpdatedAt = Math.max(...profiles.map((p) => p.updated_at));
+    const syncedAt = readMemberListSyncedAt(workspaceId);
     // Profiles cached before attribution fields were introduced do not have
     // the numeric uid needed to resolve created_by/last_edited_by values.
     const users = profiles.map((profile) => {
@@ -101,7 +128,7 @@ async function loadFromDisk(workspaceId: string): Promise<{ users: MentionablePe
       return uid === null ? profile : { ...profile, uid };
     });
     const hasAttributionIdentifiers = users.every((profile) => canonicalizeUserUid(profile.uid) !== null);
-    const fresh = hasAttributionIdentifiers && Date.now() - newestUpdatedAt < DISK_CACHE_TTL_MS;
+    const fresh = hasAttributionIdentifiers && syncedAt !== null && Date.now() - syncedAt < DISK_CACHE_TTL_MS;
 
     return { users, fresh };
   } catch (error) {
@@ -140,6 +167,7 @@ async function saveToDisk(workspaceId: string, users: MentionablePerson[]): Prom
     // Delete stale entries for this workspace before writing fresh data
     await db.workspace_member_profiles.where('workspace_id').equals(workspaceId).delete();
     await db.workspace_member_profiles.bulkPut(records);
+    writeMemberListSyncedAt(workspaceId, now);
   } catch (error) {
     console.error('Failed to save mentionable users to disk:', error);
   }

@@ -24,7 +24,11 @@ import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AppNavigationContext, AppNavigationContextType } from '@/components/app/contexts/AppNavigationContext';
 import { AppOperationsContext, AppOperationsContextType } from '@/components/app/contexts/AppOperationsContext';
-import { AppOutlineContext, AppOutlineContextType } from '@/components/app/contexts/AppOutlineContext';
+import {
+  AppOutlineContext,
+  AppOutlineContextType,
+  AppOutlineReaderContext,
+} from '@/components/app/contexts/AppOutlineContext';
 import { AppSyncContext, AppSyncContextType } from '@/components/app/contexts/AppSyncContext';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import {
@@ -996,6 +1000,10 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     ]
   );
 
+  // The outline read at call time (the ref is kept in step with the state):
+  // for callbacks that must not re-render their owner on folder changes.
+  const readOutline = useCallback(() => stableOutlineRef.current, [stableOutlineRef]);
+
   // Outline state — MEDIUM change frequency (outline, favorites, recent, trash)
   const outlineValue: AppOutlineContextType = useMemo(
     () => ({
@@ -1141,27 +1149,29 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   return (
     <AppNavigationContext.Provider value={navigationValue}>
-      <AppOutlineContext.Provider value={outlineValue}>
-        <AppOperationsContext.Provider value={operationsValue}>
-          <AppEventEmitterContext.Provider value={syncContext.eventEmitter}>
-            <AppSyncContext.Provider value={syncValue}>
-              <DatabaseRestoreNoticeProvider
-                key={`${requesterId}:${currentWorkspaceId}`}
-                workspaceId={currentWorkspaceId || ''}
-                eventEmitter={syncContext.eventEmitter}
-              >
-                <AppContextConsumer
-                  requestAccessError={requestAccessError}
-                  openModalViewId={openModalViewId}
-                  setOpenModalViewId={setOpenModalViewId}
+      <AppOutlineReaderContext.Provider value={readOutline}>
+        <AppOutlineContext.Provider value={outlineValue}>
+          <AppOperationsContext.Provider value={operationsValue}>
+            <AppEventEmitterContext.Provider value={syncContext.eventEmitter}>
+              <AppSyncContext.Provider value={syncValue}>
+                <DatabaseRestoreNoticeProvider
+                  key={`${requesterId}:${currentWorkspaceId}`}
+                  workspaceId={currentWorkspaceId || ''}
+                  eventEmitter={syncContext.eventEmitter}
                 >
-                  {children}
-                </AppContextConsumer>
-              </DatabaseRestoreNoticeProvider>
-            </AppSyncContext.Provider>
-          </AppEventEmitterContext.Provider>
-        </AppOperationsContext.Provider>
-      </AppOutlineContext.Provider>
+                  <AppContextConsumer
+                    requestAccessError={requestAccessError}
+                    openModalViewId={openModalViewId}
+                    setOpenModalViewId={setOpenModalViewId}
+                  >
+                    {children}
+                  </AppContextConsumer>
+                </DatabaseRestoreNoticeProvider>
+              </AppSyncContext.Provider>
+            </AppEventEmitterContext.Provider>
+          </AppOperationsContext.Provider>
+        </AppOutlineContext.Provider>
+      </AppOutlineReaderContext.Provider>
     </AppNavigationContext.Provider>
   );
 };

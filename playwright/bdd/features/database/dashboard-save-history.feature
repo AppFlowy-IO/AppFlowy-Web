@@ -1,5 +1,5 @@
 @dashboard @cloud
-Feature: Undo and redo Save for everybody from a dashboard
+Feature: Undo and redo Save for everyone from a dashboard
   Saving private dashboard conditions is one undoable action even when its
   widgets use different databases. Undo follows the button's current history
   scope, and preserves changes another editor made after the save.
@@ -26,8 +26,8 @@ Feature: Undo and redo Save for everybody from a dashboard
     Then the "Tasks Grid" widget shows the rows "Ship"
     And the "Tasks Grid" view has 0 saved filters
     And the member sees the "Tasks Grid" widget rows "Write launch plan, Review, Ship"
-    When I save the global filters for everybody
-    Then no global filter shows the local changes badge
+    When I click "Save for everyone" in the filter bar
+    Then no unsaved dot is shown on the dashboard
     And the "Tasks Grid" view has 1 saved filters
     And the member sees the "Tasks Grid" widget rows "Ship"
     When I press undo without changing the dashboard focus
@@ -58,8 +58,8 @@ Feature: Undo and redo Save for everybody from a dashboard
     Then the saved "Status" filter still matches only "Doing"
     And the "Projects Grid" view has 0 saved filters
     And the "Tasks Grid" view has 0 saved filters
-    When I save the global filters for everybody
-    Then no global filter shows the local changes badge
+    When I click "Save for everyone" in the filter bar
+    Then no unsaved dot is shown on the dashboard
     And the saved "Status" filter matches "Doing, Done"
     And the "Projects Grid" view has 1 saved filters
     And the "Tasks Grid" view has 1 saved filters
@@ -89,7 +89,7 @@ Feature: Undo and redo Save for everybody from a dashboard
     And a workspace member with "read-and-write" access to the dashboard space
     And the member opens the dashboard
     And I add a "Stage" is "Done" filter inside the "Tasks Grid" widget
-    And I save the global filters for everybody
+    And I click "Save for everyone" in the filter bar
     Then the member sees the "Tasks Grid" widget rows "Ship"
     When the collaborator sets a shared descending "Points" sort in the "Tasks Grid" widget
     Then the "Tasks Grid" view has a saved "descending" sort by "Points"

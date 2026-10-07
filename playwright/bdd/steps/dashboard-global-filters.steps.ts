@@ -1,6 +1,21 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
+import {
+  defaultGlobalFilterCondition,
+  deleteGlobalFilter,
+  deleteOpenGlobalFilter,
+  fixturePropertyType,
+  toggleGlobalFilterOptionByName,
+  type PersistedGlobalFilterWithNames,
+} from '../../support/dashboard-global-filter-helpers';
+import {
+  clickFilterBarControl,
+  expectChipDot,
+  expectNoUnsavedDots,
+  filterBarControl,
+  PrivateSelectors,
+} from '../../support/dashboard-private-helpers';
 import { WIDGET_TIMEOUT } from '../../support/dashboard-shared-helpers';
 import {
   addGlobalFilter,
@@ -55,8 +70,21 @@ async function appendSavedFilter(page: Page, request: APIRequestContext, filter:
   await waitForDashboardSync(page, request);
 }
 
+/**
+ * A select filter saved by a current client: the option names go with the
+ * ids (WP08 §1.9), so a viewer who picks the same options again has nothing
+ * left to save.
+ */
+function savedSelectFilter(page: Page, name: string, options: string[], mapping: Record<string, string>) {
+  const filter: PersistedGlobalFilterWithNames = selectGlobalFilter(page, name, options, mapping);
+
+  return options.length > 0 ? { ...filter, option_names: options } : filter;
+}
+
 /** Toggle an option of a saved filter from its chip, as any viewer would in View mode. */
 async function alsoSelectOption(scope: Page, filterName: string, option: string) {
+  // A menu left open (the toolbar's filter list) closes first, as a click outside it would.
+  if (await DashboardSelectors.globalFilterMenu(scope).isVisible()) await closeGlobalFilterMenu(scope);
   await openGlobalFilterChip(scope, filterName);
   await toggleGlobalFilterOption(scope, option);
   await closeGlobalFilterMenu(scope);
@@ -80,17 +108,24 @@ When(
   }
 );
 
+/** Options are listed merged by name across the filter's sources (WP08 §1.9). */
 When('I select {string} in the open global filter', async ({ page }, option: string) => {
-  await toggleGlobalFilterOption(page, option);
+  await toggleGlobalFilterOptionByName(page, option, true);
 });
 
+When('I deselect {string} in the open global filter', async ({ page }, option: string) => {
+  await toggleGlobalFilterOptionByName(page, option, false);
+});
+
+// The editor shows the condition in Notion's lowercase (`is not ˅`).
 When('I choose the {string} condition in the open global filter', async ({ page }, condition: string) => {
   const trigger = DashboardSelectors.globalFilterCondition(page);
+  const exactly = new RegExp(`^\\s*${escapeRegExp(condition)}\\s*$`, 'i');
 
   await expect(trigger).toBeVisible();
-  if (new RegExp(`^\\s*${escapeRegExp(condition)}\\s*$`, 'i').test((await trigger.textContent()) ?? '')) return;
+  if (exactly.test((await trigger.textContent()) ?? '')) return;
   await chooseGlobalFilterCondition(page, condition);
-  await expect(trigger).toContainText(condition);
+  await expect(trigger).toHaveText(exactly);
 });
 
 When('I type {string} into the open global filter', async ({ page }, text: string) => {
@@ -109,9 +144,13 @@ When('I remove the {string} source from the open global filter', async ({ page }
   await removeGlobalFilterTarget(page, fixtureDatabase(page, database).databaseId);
 });
 
+/** Delete is in the pill editor's `···` menu (writers). */
 When('I delete the open global filter', async ({ page }) => {
-  await DashboardSelectors.globalFilterDelete(page).click();
-  await expect(DashboardSelectors.globalFilterMenu(page)).toBeHidden();
+  await deleteOpenGlobalFilter(page);
+});
+
+When('I delete the {string} global filter', async ({ page }, name: string) => {
+  await deleteGlobalFilter(page, name);
 });
 
 /**
@@ -153,7 +192,7 @@ Given(
   ) => {
     const mapping = parseMapping(pairs(firstProperty, firstDatabase, secondProperty, secondDatabase));
 
-    await appendSavedFilter(page, request, selectGlobalFilter(page, name, splitList(options), mapping));
+    await appendSavedFilter(page, request, savedSelectFilter(page, name, splitList(options), mapping));
   }
 );
 
@@ -163,7 +202,7 @@ Given(
     await appendSavedFilter(
       page,
       request,
-      selectGlobalFilter(page, name, splitList(options), parseMapping(pairs(property, database)))
+      savedSelectFilter(page, name, splitList(options), parseMapping(pairs(property, database)))
     );
   }
 );
@@ -188,19 +227,71 @@ Given(
   }
 );
 
+/** A filter of the first property's type with its default condition and no value (a grey pill, WP08 §1.5). */
+async function appendEmptyFilter(page: Page, request: APIRequestContext, name: string, mapping: Record<string, string>) {
+  const [database, property] = Object.entries(mapping)[0];
+  const type = fixturePropertyType(database, property);
+
+  await appendSavedFilter(
+    page,
+    request,
+    buildGlobalFilter(page, name, type, defaultGlobalFilterCondition(type), '', mapping)
+  );
+}
+
+Given(
+  'the dashboard has a saved {string} filter with no value mapped to {string} in {string} and {string} in {string}',
+  async (
+    { page, request },
+    name: string,
+    firstProperty: string,
+    firstDatabase: string,
+    secondProperty: string,
+    secondDatabase: string
+  ) => {
+    await appendEmptyFilter(
+      page,
+      request,
+      name,
+      parseMapping(pairs(firstProperty, firstDatabase, secondProperty, secondDatabase))
+    );
+  }
+);
+
+Given(
+  'the dashboard has a saved {string} filter with no value mapped to {string} in {string}',
+  async ({ page, request }, name: string, property: string, database: string) => {
+    await appendEmptyFilter(page, request, name, parseMapping(pairs(property, database)));
+  }
+);
+
 // ---------------------------------------------------------------------------
 // Chips and saved state
 // ---------------------------------------------------------------------------
 
+/**
+ * The pill counts its usable sources from 2 on (a badge on its type icon);
+ * with one source it has no badge (WP08 §1.5). Sources are a shared setting,
+ * so the saved filter maps the same number.
+ */
 Then('the {string} global filter chip shows {int} source(s)', async ({ page }, name: string, count: number) => {
   const chip = globalFilterChip(page, name);
+  const badge = chip.getByTestId('dashboard-global-filter-chip-count');
 
   await expect(DashboardSelectors.globalFilterBar(page)).toBeVisible();
   await expect(chip).toBeVisible(WIDGET_TIMEOUT);
-  await expect(chip.getByTestId('dashboard-global-filter-chip-count')).toHaveText(String(count));
-  // A View-mode change stays local to this viewer, so only the chip shows it.
-  if (await DashboardSelectors.globalFilterLocalBadge(page).first().isVisible()) return;
+  await expect(chip).toHaveAttribute('data-source-count', String(count));
+  if (count >= 2) await expect(badge).toHaveText(count > 9 ? '9+' : String(count));
+  else await expect(badge).toHaveCount(0);
   await expect.poll(async () => Object.keys((await savedFilter(page, name))?.targets ?? {}).length).toBe(count);
+});
+
+Then('the {string} global filter pill has no source count badge', async ({ page }, name: string) => {
+  const chip = globalFilterChip(page, name);
+
+  await expect(chip).toBeVisible(WIDGET_TIMEOUT);
+  await expect(chip).toHaveAttribute('data-source-count', '1');
+  await expect(chip.getByTestId('dashboard-global-filter-chip-count')).toHaveCount(0);
 });
 
 Then('the dashboard shows {int} global filter chip(s)', async ({ page }, count: number) => {
@@ -255,6 +346,12 @@ When('I also select {string} in the {string} global filter', async ({ page }, op
   await alsoSelectOption(page, name, option);
 });
 
+When('I deselect {string} in the {string} global filter', async ({ page }, option: string, name: string) => {
+  await openGlobalFilterChip(page, name);
+  await toggleGlobalFilterOptionByName(page, option, false);
+  await closeGlobalFilterMenu(page);
+});
+
 When(
   'the member also selects {string} in the {string} global filter',
   async ({ page }, option: string, name: string) => {
@@ -262,29 +359,32 @@ When(
   }
 );
 
-Then('the {string} global filter shows the local changes badge', async ({ page }, name: string) => {
-  await expect(globalFilterChip(page, name)).toBeVisible();
-  await expect(DashboardSelectors.globalFilterLocalBadge(page).first()).toBeVisible();
-  await expect(DashboardSelectors.globalFilterLocalBadge(page).first()).toContainText(/Only you see/);
+Then('the {string} global filter shows an unsaved dot', async ({ page }, name: string) => {
+  await expectChipDot(page, name);
 });
 
-Then('no global filter shows the local changes badge', async ({ page }) => {
-  await expect(DashboardSelectors.globalFilterLocalBadge(page)).toHaveCount(0, WIDGET_TIMEOUT);
+Then('no unsaved dot is shown on the dashboard', async ({ page }) => {
+  await expectNoUnsavedDots(page);
 });
 
-When('I save the global filters for everybody', async ({ page }) => {
-  const save = DashboardSelectors.globalFilterSaveForEverybody(page);
-
-  if (!(await save.isVisible())) await DashboardSelectors.globalFilterLocalBadge(page).first().click();
-  await expect(save).toBeVisible();
-  await save.click();
+When('I click {string} in the filter bar', async ({ page }, label: string) => {
+  await clickFilterBarControl(page, label);
 });
 
-Then('the member sees the local changes badge without a Save for everybody button', async ({ page }) => {
+When('the member clicks {string} in the filter bar', async ({ page }, label: string) => {
+  await clickFilterBarControl(memberPage(page), label);
+});
+
+Then('the member sees no unsaved dot on the dashboard', async ({ page }) => {
+  await expectNoUnsavedDots(memberPage(page));
+});
+
+Then('the member sees {string} but no {string} in the filter bar', async ({ page }, shown: string, hidden: string) => {
   const member = memberPage(page);
 
-  await expect(DashboardSelectors.globalFilterLocalBadge(member).first()).toBeVisible();
-  await DashboardSelectors.globalFilterLocalBadge(member).first().click();
-  await expect(DashboardSelectors.globalFilterSaveForEverybody(member)).toHaveCount(0);
-  await member.keyboard.press('Escape');
+  await expect(DashboardSelectors.privateControls(member)).toBeVisible(WIDGET_TIMEOUT);
+  await expect(filterBarControl(member, shown)).toHaveText(shown);
+  await expect(filterBarControl(member, hidden)).toHaveCount(0);
+  // Without "Save for everyone" there is no save menu either.
+  if (hidden === 'Save for everyone') await expect(PrivateSelectors.saveMenuTrigger(member)).toHaveCount(0);
 });

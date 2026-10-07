@@ -399,7 +399,11 @@
       "editProperty": "ویرایش ویژگی",
       "newProperty": "ویژگی جدید",
       "deleteFieldPromptMessage": "آیا مطمئن هستید؟ این ویژگی حذف خواهد شد",
-      "newColumn": "ستون جدید"
+      "newColumn": "ستون جدید",
+      "person": {
+        "searchForMore_one": "برای یافتن {{count}} نفر دیگر جستجو کنید",
+        "searchForMore_other": "برای یافتن {{count}} نفر دیگر جستجو کنید"
+      }
     },
     "sort": {
       "ascending": "صعودی",
@@ -413,8 +417,10 @@
       "textPlaceholder": "خالی",
       "copyProperty": "ویژگی در کلیپ‌بورد کپی شد.",
       "count": "شمارش",
-      "newRow": "سطر جدید",
-      "action": "اعمال"
+      "newRow": "صفحه جدید",
+      "action": "اعمال",
+      "loadingRowsProgress": "در حال بارگیری سطرها… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "برخی سطرها هنوز بارگیری نشده‌اند"
     },
     "selectOption": {
       "create": "ایجاد",
@@ -436,7 +442,24 @@
       "addNew": "یک مورد اضافه کنید"
     },
     "menuName": "شبکه‌ای",
-    "referencedGridPrefix": "نمایش"
+    "referencedGridPrefix": "نمایش",
+    "calculationTypeLabel": {
+      "countChecked": "علامت‌خورده",
+      "countUnchecked": "علامت‌نخورده"
+    },
+    "dateFilter": {
+      "is": "هست"
+    },
+    "openPagesIn": {
+      "title": "باز کردن صفحه‌ها در",
+      "sidePeek": "پنل کناری",
+      "centerPeek": "پنجره میانی",
+      "fullPage": "صفحه کامل"
+    },
+    "rowPage": {
+      "openInCenterPeek": "باز کردن در پنجره میانی",
+      "resizeSidePeek": "تغییر اندازه پنل کناری"
+    }
   },
   "document": {
     "menuName": "سند",
@@ -598,7 +621,11 @@
   },
   "board": {
     "column": {
-      "createNewCard": "ایجاد"
+      "createNewCard": "ایجاد",
+      "calculate": "محاسبه",
+      "calculationTooltip": "{{calculation}} {{property}}",
+      "colorColumns": "رنگی کردن ستون‌ها",
+      "properties": "ویژگی‌ها"
     },
     "menuName": "بورد",
     "referencedBoardPrefix": "نمای",
@@ -682,5 +709,422 @@
       "nature": "طبیعت",
       "frequentlyUsed": "استفاده‌شده"
     }
+  },
+  "chart": {
+    "a11y": {
+      "table": "داده‌های نمودار"
+    },
+    "agg": {
+      "average": "میانگین",
+      "countAll": "شمارش همه",
+      "countEmpty": "شمارش خالی‌ها",
+      "countUnique": "شمارش مقادیر یکتا",
+      "countValues": "شمارش مقادیر",
+      "dateRange": "بازه تاریخ",
+      "earliest": "قدیمی‌ترین",
+      "latest": "جدیدترین",
+      "max": "بیشینه",
+      "median": "میانه",
+      "min": "کمینه",
+      "percentChecked": "درصد علامت‌خورده",
+      "percentEmpty": "درصد خالی",
+      "percentNotEmpty": "درصد غیرخالی",
+      "percentUnchecked": "درصد علامت‌نخورده",
+      "range": "دامنه",
+      "sum": "مجموع"
+    },
+    "aggregation": "تجمیع",
+    "barChart": "میله‌ای",
+    "chartType": "نوع نمودار",
+    "checked": "علامت‌خورده",
+    "color": {
+      "auto": "خودکار",
+      "blue": "آبی",
+      "colorful": "رنگی",
+      "colorless": "بی‌رنگ",
+      "green": "سبز",
+      "orange": "نارنجی",
+      "pink": "صورتی",
+      "purple": "بنفش",
+      "red": "قرمز",
+      "teal": "سبزآبی",
+      "yellow": "زرد"
+    },
+    "cumulative": "تجمعی",
+    "dateCondition": "گروه‌بندی تاریخ",
+    "dateGrouping": {
+      "day": "روز",
+      "month": "ماه",
+      "relative": "نسبی",
+      "week": "هفته",
+      "year": "سال"
+    },
+    "decimalPlaces": {
+      "auto": "خودکار"
+    },
+    "donutChart": "دونات",
+    "emptyState": {
+      "description": "برای دیدن نمودار، سطرهایی با داده اضافه کنید",
+      "noField": "فیلدی برای گروه‌بندی موجود نیست",
+      "noFieldDescription": "برای استفاده از نمای نمودار، یک فیلد تک‌انتخابی، چندانتخابی، چک‌باکس یا تاریخ بسازید.",
+      "title": "داده‌ای برای نمایش وجود ندارد"
+    },
+    "emptyValue": "خالی",
+    "groups": {
+      "count": "{{count}} گروه",
+      "hideAll": "پنهان کردن همه",
+      "hideGroup": "پنهان کردن گروه",
+      "noGroups": "گروهی وجود ندارد",
+      "showAll": "نمایش همه",
+      "showGroup": "نمایش گروه",
+      "unknownPerson": "شخص ناشناس",
+      "unknownUser": "کاربر ناشناس",
+      "untitled": "بدون عنوان",
+      "visibleOfTotal": "{{visible}} از {{total}}"
+    },
+    "horizontalBarChart": "میله‌ای افقی",
+    "legend": {
+      "auto": "خودکار",
+      "bottom": "پایین",
+      "nextPage": "صفحه بعد",
+      "off": "خاموش",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "صفحه قبل"
+    },
+    "lineChart": "خطی",
+    "menuName": "نمودار",
+    "noFieldValue": "بدون {}",
+    "noGroupableFields": "فیلد قابل گروه‌بندی موجود نیست",
+    "number": {
+      "calculate": "محاسبه",
+      "countAll": "شمارش همه",
+      "emptyState": "بدون داده",
+      "format": "قالب",
+      "formatAuto": "خودکار",
+      "formatCompact": "فشرده",
+      "formatPercent": "درصد",
+      "property": "ویژگی",
+      "title": "عنوان",
+      "titleOf": "{{aggregation}} {{field}}",
+      "titlePlaceholder": "عنوان پیش‌فرض"
+    },
+    "numberChart": "عدد",
+    "numberColor": {
+      "addRule": "افزودن قاعده",
+      "blue": "آبی",
+      "brown": "قهوه‌ای",
+      "default": "پیش‌فرض",
+      "deleteRule": "حذف قاعده",
+      "dynamic": "پویا",
+      "dynamicColor": "رنگ پویا",
+      "else": "در غیر این صورت",
+      "equal": "برابر با",
+      "gray": "خاکستری",
+      "greaterThan": "بزرگ‌تر از",
+      "greaterThanOrEqual": "بزرگ‌تر یا مساوی",
+      "green": "سبز",
+      "ifValue": "اگر مقدار",
+      "lessThan": "کوچک‌تر از",
+      "lessThanOrEqual": "کوچک‌تر یا مساوی",
+      "notEqual": "نابرابر با",
+      "orange": "نارنجی",
+      "pink": "صورتی",
+      "purple": "بنفش",
+      "red": "قرمز",
+      "sameAsColor": "همانند رنگ",
+      "yellow": "زرد"
+    },
+    "settings": {
+      "auto": "خودکار",
+      "back": "بازگشت",
+      "calculate": "محاسبه",
+      "chartSettings": "تنظیمات نمودار",
+      "chartTitle": "عنوان نمودار",
+      "chartType": "نوع نمودار",
+      "color": "رنگ",
+      "count": "تعداد",
+      "cumulative": "تجمعی",
+      "data": "داده‌ها",
+      "dataLabels": "برچسب‌های داده",
+      "dateGrouping": "گروه‌بندی تاریخ",
+      "decimalPlaces": "رقم اعشار",
+      "default": "پیش‌فرض",
+      "donut": "دونات",
+      "eachSliceRepresents": "هر برش نشان‌دهنده",
+      "endAt": "پایان در",
+      "exactValue": "مقدار دقیق",
+      "firstLetter": "حرف اول",
+      "format": "قالب",
+      "groupBy": "گروه‌بندی بر اساس",
+      "groupByNone": "هیچ‌کدام",
+      "groupByText": "گروه‌بندی متن",
+      "groupStyle": "سبک گروه‌بندی",
+      "groupStyleGrouped": "گروه‌بندی‌شده",
+      "groupStylePercent": "درصدی",
+      "groupStyleStacked": "انباشته",
+      "groups": "گروه‌ها",
+      "horizontalBar": "میله‌ای افقی",
+      "legend": "راهنما",
+      "line": "خطی",
+      "moreOptions": "گزینه‌های بیشتر",
+      "moreSeries": "+{{n}} مورد دیگر",
+      "noResults": "نتیجه‌ای یافت نشد",
+      "number": "عدد",
+      "onlyShowingFirstGroups": "فقط {{n}} گروه اول نمایش داده می‌شود",
+      "percent": "درصد",
+      "rangeSize": "اندازه بازه",
+      "ranges": "بازه‌ها",
+      "rangesPreview": "{{count}} بازه از {{from}} تا {{to}}",
+      "searchProperty": "جستجوی ویژگی…",
+      "size": "اندازه {{size}}",
+      "sortBy": "مرتب‌سازی بر اساس",
+      "startAt": "شروع از",
+      "style": "سبک",
+      "verticalBar": "میله‌ای عمودی",
+      "viewSettings": "تنظیمات نما",
+      "whatToShow": "چه چیزی نمایش داده شود",
+      "xAxis": "محور X",
+      "yAxis": "محور Y"
+    },
+    "showEmptyValues": "نمایش مقادیر خالی",
+    "sort": {
+      "default": "پیش‌فرض",
+      "labelAsc": "الف ← ی",
+      "labelDesc": "ی ← الف",
+      "manual": "دستی",
+      "valueAsc": "مقدار: کم به زیاد",
+      "valueDesc": "مقدار: زیاد به کم"
+    },
+    "state": {
+      "error": "بارگیری این نمودار ممکن نشد",
+      "noData": "بدون داده",
+      "preparing": "در حال آماده‌سازی نمودار",
+      "retry": "تلاش دوباره"
+    },
+    "style": {
+      "color": "رنگ",
+      "dataLabels": "برچسب‌های داده",
+      "decimalPlaces": "رقم اعشار",
+      "legend": "راهنما",
+      "title": "سبک"
+    },
+    "tooltip": {
+      "average": "میانگین",
+      "clickToView": "برای دیدن داده‌ها کلیک کنید",
+      "count": "تعداد",
+      "countValues": "شمارش مقادیر",
+      "max": "بیشینه",
+      "median": "میانه",
+      "min": "کمینه",
+      "rows": "{{count}} سطر",
+      "sum": "مجموع",
+      "tapAgainToView": "برای دیدن داده‌ها دوباره ضربه بزنید"
+    },
+    "total": "کل",
+    "unchecked": "علامت‌نخورده",
+    "upgradeRequired": "نیاز به ارتقا",
+    "upgradeToProForChartTypes": "برای استفاده از نمودارهای میله‌ای افقی، خطی و دونات به طرح Pro ارتقا دهید",
+    "value": {
+      "days_one": "{{count}} روز",
+      "days_other": "{{count}} روز"
+    },
+    "xAxis": "محور X",
+    "yAxis": "محور Y",
+    "drilldown": {
+      "ariaLabel": "پیش‌نمایش داده‌های جدول",
+      "search": "جستجو",
+      "dismiss": "بستن",
+      "more": "بیشتر",
+      "saveAsView": "ذخیره به‌عنوان نما…",
+      "openDatabase": "باز کردن {{database}}",
+      "selectedRows": "سطرهای انتخاب‌شده ({{count}})",
+      "cannotSaveSelectedRows": "سطرهای انتخاب‌شده را نمی‌توان به‌عنوان نما ذخیره کرد",
+      "open": "باز کردن",
+      "fromDashboardFilter": "از فیلتر داشبورد",
+      "rowCount_one": "{{count}} سطر",
+      "rowCount_other": "{{count}} سطر"
+    }
+  },
+  "dashboard": {
+    "addWidget": "افزودن ویجت",
+    "creationRequiresPro": "ساخت نمای داشبورد به فضای کار Pro نیاز دارد.",
+    "done": "انجام شد",
+    "edit": "ویرایش",
+    "empty": {
+      "editDashboard": "ویرایش داشبورد",
+      "newView": "نمای جدید",
+      "text": "نمودار، جدول و فهرست اضافه کنید"
+    },
+    "globalFilters": {
+      "addAnother": "افزودن مورد دیگر",
+      "addToFilter": "افزودن به فیلتر",
+      "appliesTo": "این فیلتر روی ویژگی‌های {{type}} انتخاب‌شده در زیر اعمال می‌شود",
+      "button": "فیلتر",
+      "delete": "حذف فیلتر",
+      "done": "انجام شد",
+      "endDate": "تاریخ پایان",
+      "filterBy": "فیلتر بر اساس…",
+      "isChecked": "علامت‌خورده است",
+      "isUnchecked": "علامت‌نخورده است",
+      "more": "{{count}} مورد دیگر",
+      "moreActions": "اقدامات بیشتر",
+      "multipleSourcesIntro": "فیلتری بسازید که روی ویژگی‌های چند منبع اعمال شود",
+      "name": "نام فیلتر",
+      "noResults": "نتیجه‌ای یافت نشد",
+      "op": {
+        "after": "بعد از",
+        "before": "قبل از",
+        "between": "بین",
+        "checked": "علامت‌خورده",
+        "complete": "کامل",
+        "doesNotContain": "شامل نمی‌شود",
+        "endsWith": "پایان با",
+        "incomplete": "ناقص",
+        "is": "هست",
+        "isEmpty": "خالی است",
+        "isNot": "نیست",
+        "isNotEmpty": "خالی نیست",
+        "onOrAfter": "در یا بعد از",
+        "onOrBefore": "در یا قبل از",
+        "startsWith": "شروع با",
+        "unchecked": "علامت‌نخورده"
+      },
+      "people_one": "{{count}} نفر",
+      "people_other": "{{count}} نفر",
+      "relative": {
+        "amount": "مقدار",
+        "next": "آینده",
+        "past": "گذشته",
+        "summaryNext_one": "{{unit}} آینده",
+        "summaryNext_other": "{{count}} {{unit}} آینده",
+        "summaryPast_one": "{{unit}} گذشته",
+        "summaryPast_other": "{{count}} {{unit}} گذشته",
+        "summaryThis": "این {{unit}}",
+        "this": "جاری"
+      },
+      "relativeHint": "فیلتر با تاریخ جاری به‌روز می‌شود",
+      "relativeToToday": "نسبت به امروز",
+      "remove": "حذف",
+      "reset": "بازنشانی",
+      "sourceLine": "{{property}} در {{source}}",
+      "startDate": "تاریخ شروع",
+      "title": "فیلتر چند منبع",
+      "units": {
+        "day_one": "روز",
+        "day_other": "روز",
+        "month_one": "ماه",
+        "month_other": "ماه",
+        "week_one": "هفته",
+        "week_other": "هفته",
+        "year_one": "سال",
+        "year_other": "سال"
+      },
+      "viewCount_one": "{{count}} نما",
+      "viewCount_other": "{{count}} نما"
+    },
+    "historyPreviewUnavailable": "داشبوردها در تاریخچه نسخه‌ها پیش‌نمایش داده نمی‌شوند.",
+    "limit": {
+      "fullHint": "برای افزودن نمای جدید، یک نما را حذف کنید",
+      "fullTitle": "داشبورد پر است"
+    },
+    "menuName": "داشبورد",
+    "picker": {
+      "back": "بازگشت",
+      "changeViewTitle": "تغییر نما",
+      "close": "بستن",
+      "createFailed": "ساخت نما ممکن نشد",
+      "editChart": "ویرایش نمودار",
+      "layout": {
+        "board": "بورد",
+        "calendar": "تقویم",
+        "chart": "نمودار",
+        "feed": "فید",
+        "gallery": "گالری",
+        "list": "فهرست",
+        "table": "جدول",
+        "timeline": "خط زمانی"
+      },
+      "loadFailed": "بارگیری پایگاه‌های داده ممکن نشد",
+      "newView": "نمای جدید",
+      "newViewIn": "نمای جدید در {{database}}",
+      "noResults": "نمایی یافت نشد",
+      "otherSources": "منابع داده دیگر",
+      "searchPlaceholder": "جستجوی نما...",
+      "showMore": "نمایش {{count}} مورد دیگر",
+      "source": "منبع",
+      "thisDatabase": "این پایگاه داده",
+      "viewName": "نام نما",
+      "viewsOn": "نماهای {{database}}",
+      "viewsOnThisDatabase": "نماهای این پایگاه داده"
+    },
+    "private": {
+      "reset": "بازنشانی",
+      "resetAll": "بازنشانی همه تغییرات",
+      "saveForEveryone": "ذخیره برای همه",
+      "saveOptions": "گزینه‌های بیشتر ذخیره",
+      "saved": "تغییرات برای همه ذخیره شد.",
+      "undo": "واگرد",
+      "unsaved": "تغییرات ذخیره‌نشده"
+    },
+    "referencedDashboardPrefix": "نمای",
+    "row": {
+      "addToNewRow": "افزودن به ردیف جدید",
+      "addToRow": "افزودن به ردیف",
+      "moveDown": "انتقال به پایین",
+      "moveUp": "انتقال به بالا",
+      "movedDown": "ردیف به پایین منتقل شد",
+      "movedUp": "ردیف به بالا منتقل شد"
+    },
+    "rowLimit": "هر ردیف حداکثر {{count}} ویجت جا می‌گیرد.",
+    "settings": {
+      "name": "تنظیمات داشبورد",
+      "showIconsInHeading": "نمایش آیکون‌ها در سرعنوان",
+      "showWidgetTitles": "نمایش عنوان ویجت‌ها"
+    },
+    "toolbar": {
+      "openAsFullPage": "باز کردن به‌صورت صفحه کامل",
+      "settings": "تنظیمات"
+    },
+    "widget": {
+      "changeView": "تغییر نما",
+      "close": "بستن",
+      "createRowAbove": "ایجاد ردیف جدید در بالا",
+      "createRowBelow": "ایجاد ردیف جدید در پایین",
+      "delete": "حذف",
+      "dragHandle": "برای جابه‌جایی بکشید",
+      "duplicate": "تکثیر",
+      "editView": "ویرایش نما",
+      "filters": "فیلترها",
+      "loading": "در حال بارگیری…",
+      "menu": "گزینه‌های ویجت",
+      "moveLeft": "انتقال به چپ",
+      "moveRight": "انتقال به راست",
+      "moveToRow": "انتقال به ردیف",
+      "noAccess": "به این پایگاه داده دسترسی ندارید",
+      "notFound": "این نما دیگر وجود ندارد",
+      "offline": "پس از برقراری دوباره اتصال در دسترس است",
+      "openFailed": "باز کردن نما ممکن نشد",
+      "remove": "حذف ویجت",
+      "resizeHeight": "برای تغییر ارتفاع ردیف بکشید",
+      "resizeHeightValue": "{{height}} پیکسل",
+      "resizeWidth": "برای تغییر اندازه بکشید",
+      "resizeWidthValue": "{{columns}} از 12 ستون",
+      "settings": "تنظیمات",
+      "sorts": "مرتب‌سازی‌ها",
+      "source": "منبع",
+      "unsupported": "داشبورد را نمی‌توان داخل داشبورد نمایش داد",
+      "viewDataSource": "مشاهده منبع داده",
+      "viewNameHint": "نام این نما را تغییر می‌دهد",
+      "viewSettings": "تنظیمات نما"
+    },
+    "mobile": {
+      "viewCount_one": "{{count}} نما",
+      "viewCount_other": "{{count}} نما"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "پاک کردن جستجو",
+    "noResults": "نتیجه‌ای یافت نشد",
+    "placeholder": "برای جستجو تایپ کنید..."
   }
 }

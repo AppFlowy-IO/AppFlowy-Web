@@ -769,7 +769,10 @@
       "newColumn": "新增欄位",
       "format": "格式",
       "reminderOnDateTooltip": "此欄位設有預定提醒",
-      "optionAlreadyExist": "選項已存在"
+      "optionAlreadyExist": "選項已存在",
+      "person": {
+        "searchForMore_other": "搜尋以尋找另外 {{count}} 人"
+      }
     },
     "rowPage": {
       "newField": "新增欄位",
@@ -784,7 +787,9 @@
         "many": "隱藏 {{count}} 個隱藏欄位",
         "other": "隱藏 {{count}} 個隱藏欄位"
       },
-      "openAsFullPage": "以整頁形式打開"
+      "openAsFullPage": "以整頁形式打開",
+      "openInCenterPeek": "在置中預覽中開啟",
+      "resizeSidePeek": "調整側邊預覽大小"
     },
     "sort": {
       "ascending": "升冪",
@@ -799,14 +804,16 @@
       "textPlaceholder": "空白",
       "copyProperty": "已將屬性複製到剪貼簿",
       "count": "計數",
-      "newRow": "新增列",
+      "newRow": "新頁面",
       "action": "操作",
       "add": "點選以在下方新增",
       "drag": "拖曳以移動",
       "dragAndClick": "拖曳以移動，點選以開啟選單",
       "insertRecordAbove": "在上方插入記錄",
       "insertRecordBelow": "在下方插入記錄",
-      "noContent": "無內容"
+      "noContent": "無內容",
+      "loadingRowsProgress": "正在載入列… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "部分列尚未載入"
     },
     "selectOption": {
       "create": "建立",
@@ -851,7 +858,15 @@
       "max": "最大值",
       "median": "中間值",
       "min": "最小值",
-      "sum": "總和"
+      "sum": "總和",
+      "countChecked": "已勾選",
+      "countUnchecked": "未勾選"
+    },
+    "openPagesIn": {
+      "title": "頁面開啟方式",
+      "sidePeek": "側邊預覽",
+      "centerPeek": "置中預覽",
+      "fullPage": "整頁"
     }
   },
   "document": {
@@ -1115,7 +1130,11 @@
       "newGroup": "新增群組",
       "deleteColumn": "刪除",
       "deleteColumnConfirmation": "這將刪除此群組及其中所有卡片。\n您確定要繼續嗎？",
-      "groupActions": "群組操作"
+      "groupActions": "群組操作",
+      "calculate": "計算",
+      "calculationTooltip": "{{property}}的{{calculation}}",
+      "colorColumns": "欄位著色",
+      "properties": "屬性"
     },
     "hiddenGroupSection": {
       "sectionTitle": "隱藏的群組",
@@ -1551,5 +1570,411 @@
     "loadingTooltip": "我們正在尋找結果...",
     "betaLabel": "BETA",
     "betaTooltip": "目前我們只支援搜尋頁面"
+  },
+  "chart": {
+    "a11y": {
+      "table": "圖表資料"
+    },
+    "agg": {
+      "average": "平均值",
+      "countAll": "全部計數",
+      "countEmpty": "空白計數",
+      "countUnique": "唯一值計數",
+      "countValues": "值計數",
+      "dateRange": "日期範圍",
+      "earliest": "最早",
+      "latest": "最晚",
+      "max": "最大值",
+      "median": "中位數",
+      "min": "最小值",
+      "percentChecked": "已勾選百分比",
+      "percentEmpty": "空白百分比",
+      "percentNotEmpty": "非空白百分比",
+      "percentUnchecked": "未勾選百分比",
+      "range": "範圍",
+      "sum": "總和"
+    },
+    "aggregation": "彙總方式",
+    "barChart": "長條圖",
+    "chartType": "圖表類型",
+    "checked": "已勾選",
+    "color": {
+      "auto": "自動",
+      "blue": "藍色",
+      "colorful": "多彩",
+      "colorless": "無色",
+      "green": "綠色",
+      "orange": "橘色",
+      "pink": "粉紅色",
+      "purple": "紫色",
+      "red": "紅色",
+      "teal": "藍綠色",
+      "yellow": "黃色"
+    },
+    "cumulative": "累計",
+    "dateCondition": "日期分組",
+    "dateGrouping": {
+      "day": "日",
+      "month": "月",
+      "relative": "相對",
+      "week": "週",
+      "year": "年"
+    },
+    "decimalPlaces": {
+      "auto": "自動"
+    },
+    "donutChart": "環圈圖",
+    "emptyState": {
+      "description": "新增含有資料的列即可查看圖表",
+      "noField": "沒有可用於分組的欄位",
+      "noFieldDescription": "建立單選、多選、核取方塊或日期欄位，即可使用圖表檢視。",
+      "title": "沒有可顯示的資料"
+    },
+    "emptyValue": "空白",
+    "groups": {
+      "count": "{{count}} 個群組",
+      "hideAll": "全部隱藏",
+      "hideGroup": "隱藏群組",
+      "noGroups": "沒有群組",
+      "showAll": "全部顯示",
+      "showGroup": "顯示群組",
+      "unknownPerson": "未知人員",
+      "unknownUser": "未知使用者",
+      "untitled": "未命名",
+      "visibleOfTotal": "{{visible}}/{{total}}"
+    },
+    "horizontalBarChart": "橫條圖",
+    "legend": {
+      "auto": "自動",
+      "bottom": "底部",
+      "nextPage": "下一頁",
+      "off": "關閉",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "上一頁"
+    },
+    "lineChart": "折線圖",
+    "menuName": "圖表",
+    "noFieldValue": "無{}",
+    "noGroupableFields": "沒有可分組的欄位",
+    "number": {
+      "calculate": "計算",
+      "countAll": "全部計數",
+      "emptyState": "沒有資料",
+      "format": "格式",
+      "formatAuto": "自動",
+      "formatCompact": "精簡",
+      "formatPercent": "百分比",
+      "property": "屬性",
+      "title": "標題",
+      "titleOf": "{{field}}的{{aggregation}}",
+      "titlePlaceholder": "預設標題"
+    },
+    "numberChart": "數字",
+    "numberColor": {
+      "addRule": "新增規則",
+      "blue": "藍色",
+      "brown": "棕色",
+      "default": "預設",
+      "deleteRule": "刪除規則",
+      "dynamic": "動態",
+      "dynamicColor": "動態顏色",
+      "else": "否則",
+      "equal": "等於",
+      "gray": "灰色",
+      "greaterThan": "大於",
+      "greaterThanOrEqual": "大於或等於",
+      "green": "綠色",
+      "ifValue": "如果值",
+      "lessThan": "小於",
+      "lessThanOrEqual": "小於或等於",
+      "notEqual": "不等於",
+      "orange": "橘色",
+      "pink": "粉紅色",
+      "purple": "紫色",
+      "red": "紅色",
+      "sameAsColor": "與顏色相同",
+      "yellow": "黃色"
+    },
+    "settings": {
+      "auto": "自動",
+      "back": "返回",
+      "calculate": "計算",
+      "chartSettings": "圖表設定",
+      "chartTitle": "圖表標題",
+      "chartType": "圖表類型",
+      "color": "顏色",
+      "count": "計數",
+      "cumulative": "累計",
+      "data": "資料",
+      "dataLabels": "資料標籤",
+      "dateGrouping": "日期分組",
+      "decimalPlaces": "小數位數",
+      "default": "預設",
+      "donut": "環圈圖",
+      "eachSliceRepresents": "每個區塊代表",
+      "endAt": "結束於",
+      "exactValue": "精確值",
+      "firstLetter": "首字母",
+      "format": "格式",
+      "groupBy": "分組依據",
+      "groupByNone": "無",
+      "groupByText": "文字分組方式",
+      "groupStyle": "群組樣式",
+      "groupStyleGrouped": "並排",
+      "groupStylePercent": "百分比",
+      "groupStyleStacked": "堆疊",
+      "groups": "群組",
+      "horizontalBar": "橫條圖",
+      "legend": "圖例",
+      "line": "折線圖",
+      "moreOptions": "更多選項",
+      "moreSeries": "還有 {{n}} 項",
+      "noResults": "無結果",
+      "number": "數字",
+      "onlyShowingFirstGroups": "僅顯示前 {{n}} 個群組",
+      "percent": "百分比",
+      "rangeSize": "區間大小",
+      "ranges": "區間",
+      "rangesPreview": "從 {{from}} 到 {{to}} 共 {{count}} 個區間",
+      "searchProperty": "搜尋屬性…",
+      "size": "大小 {{size}}",
+      "sortBy": "排序方式",
+      "startAt": "開始於",
+      "style": "樣式",
+      "verticalBar": "長條圖",
+      "viewSettings": "檢視設定",
+      "whatToShow": "顯示內容",
+      "xAxis": "X 軸",
+      "yAxis": "Y 軸"
+    },
+    "showEmptyValues": "顯示空白值",
+    "sort": {
+      "default": "預設",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "手動",
+      "valueAsc": "數值由低到高",
+      "valueDesc": "數值由高到低"
+    },
+    "state": {
+      "error": "無法載入此圖表",
+      "noData": "沒有資料",
+      "preparing": "正在準備圖表",
+      "retry": "重試"
+    },
+    "style": {
+      "color": "顏色",
+      "dataLabels": "資料標籤",
+      "decimalPlaces": "小數位數",
+      "legend": "圖例",
+      "title": "樣式"
+    },
+    "tooltip": {
+      "average": "平均值",
+      "clickToView": "點按以檢視資料",
+      "count": "計數",
+      "countValues": "值計數",
+      "max": "最大值",
+      "median": "中位數",
+      "min": "最小值",
+      "rows": "{{count}} 列",
+      "sum": "總和",
+      "tapAgainToView": "再點一下以檢視資料"
+    },
+    "total": "總計",
+    "unchecked": "未勾選",
+    "upgradeRequired": "需要升級",
+    "upgradeToProForChartTypes": "升級至 Pro 方案即可使用橫條圖、折線圖和環圈圖",
+    "value": {
+      "days_other": "{{count}} 天"
+    },
+    "xAxis": "X 軸",
+    "yAxis": "Y 軸",
+    "drilldown": {
+      "ariaLabel": "表格資料預覽",
+      "search": "搜尋",
+      "dismiss": "關閉",
+      "more": "更多",
+      "saveAsView": "另存為檢視…",
+      "openDatabase": "開啟 {{database}}",
+      "selectedRows": "已選取的列 ({{count}})",
+      "cannotSaveSelectedRows": "無法將選取的列另存為檢視",
+      "open": "開啟",
+      "fromDashboardFilter": "來自儀表板篩選",
+      "rowCount_other": "{{count}} 列"
+    }
+  },
+  "dashboard": {
+    "addWidget": "新增小工具",
+    "creationRequiresPro": "建立儀表板檢視需要 Pro 工作區。",
+    "done": "完成",
+    "edit": "編輯",
+    "empty": {
+      "editDashboard": "編輯儀表板",
+      "newView": "建立檢視",
+      "text": "新增圖表、表格、清單"
+    },
+    "globalFilters": {
+      "addAnother": "再新增一個",
+      "addToFilter": "新增至篩選",
+      "appliesTo": "此篩選將套用至下方所選的{{type}}屬性",
+      "button": "篩選",
+      "delete": "刪除篩選",
+      "done": "完成",
+      "endDate": "結束日期",
+      "filterBy": "篩選條件…",
+      "isChecked": "已勾選",
+      "isUnchecked": "未勾選",
+      "more": "還有 {{count}} 個",
+      "moreActions": "更多動作",
+      "multipleSourcesIntro": "建立可套用至多個資料來源屬性的篩選",
+      "name": "篩選名稱",
+      "noResults": "無結果",
+      "op": {
+        "after": "晚於",
+        "before": "早於",
+        "between": "介於",
+        "checked": "已勾選",
+        "complete": "已完成",
+        "doesNotContain": "不包含",
+        "endsWith": "結尾是",
+        "incomplete": "未完成",
+        "is": "是",
+        "isEmpty": "為空",
+        "isNot": "不是",
+        "isNotEmpty": "不為空",
+        "onOrAfter": "不早於",
+        "onOrBefore": "不晚於",
+        "startsWith": "開頭是",
+        "unchecked": "未勾選"
+      },
+      "people_other": "{{count}} 人",
+      "relative": {
+        "amount": "數量",
+        "next": "未來",
+        "past": "過去",
+        "summaryNext_other": "未來 {{count}} {{unit}}",
+        "summaryPast_other": "過去 {{count}} {{unit}}",
+        "summaryThis": "這{{unit}}",
+        "this": "目前"
+      },
+      "relativeHint": "篩選會隨目前日期自動更新",
+      "relativeToToday": "相對於今天",
+      "remove": "移除",
+      "reset": "重設",
+      "sourceLine": "{{source}} 中的 {{property}}",
+      "startDate": "開始日期",
+      "title": "篩選多個資料來源",
+      "units": {
+        "day_other": "天",
+        "month_other": "個月",
+        "week_other": "週",
+        "year_other": "年"
+      },
+      "viewCount_other": "{{count}} 個檢視"
+    },
+    "historyPreviewUnavailable": "版本紀錄中不提供儀表板預覽。",
+    "limit": {
+      "fullHint": "刪除一個檢視後才能新增檢視",
+      "fullTitle": "儀表板已滿"
+    },
+    "menuName": "儀表板",
+    "picker": {
+      "back": "返回",
+      "changeViewTitle": "變更檢視",
+      "close": "關閉",
+      "createFailed": "無法建立檢視",
+      "editChart": "編輯圖表",
+      "layout": {
+        "board": "看板",
+        "calendar": "日曆",
+        "chart": "圖表",
+        "feed": "動態",
+        "gallery": "圖庫",
+        "list": "清單",
+        "table": "表格",
+        "timeline": "時間軸"
+      },
+      "loadFailed": "無法載入資料庫",
+      "newView": "建立檢視",
+      "newViewIn": "在 {{database}} 中建立檢視",
+      "noResults": "找不到檢視",
+      "otherSources": "其他資料來源",
+      "searchPlaceholder": "搜尋檢視...",
+      "showMore": "再顯示 {{count}} 個",
+      "source": "資料來源",
+      "thisDatabase": "此資料庫",
+      "viewName": "檢視名稱",
+      "viewsOn": "{{database}} 的檢視",
+      "viewsOnThisDatabase": "此資料庫的檢視"
+    },
+    "private": {
+      "reset": "重設",
+      "resetAll": "重設所有變更",
+      "saveForEveryone": "為所有人儲存",
+      "saveOptions": "更多儲存選項",
+      "saved": "已為所有人儲存變更。",
+      "undo": "復原",
+      "unsaved": "未儲存的變更"
+    },
+    "referencedDashboardPrefix": "檢視",
+    "row": {
+      "addToNewRow": "新增至新的列",
+      "addToRow": "新增至列",
+      "moveDown": "下移",
+      "moveUp": "上移",
+      "movedDown": "已將列下移",
+      "movedUp": "已將列上移"
+    },
+    "rowLimit": "每一列最多可容納 {{count}} 個小工具。",
+    "settings": {
+      "name": "儀表板設定",
+      "showIconsInHeading": "在標題中顯示圖示",
+      "showWidgetTitles": "顯示小工具標題"
+    },
+    "toolbar": {
+      "openAsFullPage": "以整頁開啟",
+      "settings": "設定"
+    },
+    "widget": {
+      "changeView": "變更檢視",
+      "close": "關閉",
+      "createRowAbove": "在上方建立新的列",
+      "createRowBelow": "在下方建立新的列",
+      "delete": "刪除",
+      "dragHandle": "拖曳以移動",
+      "duplicate": "複製",
+      "editView": "編輯檢視",
+      "filters": "篩選",
+      "loading": "載入中…",
+      "menu": "小工具選項",
+      "moveLeft": "左移",
+      "moveRight": "右移",
+      "moveToRow": "移至列",
+      "noAccess": "你沒有此資料庫的存取權",
+      "notFound": "此檢視已不存在",
+      "offline": "恢復連線後即可使用",
+      "openFailed": "無法開啟檢視",
+      "remove": "移除小工具",
+      "resizeHeight": "拖曳以變更列高",
+      "resizeHeightValue": "{{height}} 像素",
+      "resizeWidth": "拖曳以調整大小",
+      "resizeWidthValue": "12 欄中的 {{columns}} 欄",
+      "settings": "設定",
+      "sorts": "排序",
+      "source": "資料來源",
+      "unsupported": "儀表板中無法顯示儀表板",
+      "viewDataSource": "檢視資料來源",
+      "viewNameHint": "重新命名此檢視",
+      "viewSettings": "檢視設定"
+    },
+    "mobile": {
+      "viewCount_other": "{{count}} 個檢視"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "清除搜尋",
+    "noResults": "無結果",
+    "placeholder": "輸入以搜尋..."
   }
 }

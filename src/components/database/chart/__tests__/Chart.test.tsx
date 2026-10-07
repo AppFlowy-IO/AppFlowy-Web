@@ -4,6 +4,7 @@ import { ReactNode } from 'react';
 import { ChartAggregationType, ChartType } from '@/application/database-yjs/chart.type';
 import Chart from '@/components/database/chart/Chart';
 import { ChartContextValue, DEFAULT_CHART_CONTEXT } from '@/components/database/chart/useChartContext';
+import { seriesDataOf } from '@/components/database/chart/widgets/__tests__/chartTestUtils';
 
 const mockDatabaseContext: { isDashboardWidget?: boolean; paddingStart?: number; onRendered?: () => void } = {};
 let mockContext: ChartContextValue = DEFAULT_CHART_CONTEXT;
@@ -52,7 +53,7 @@ function context(overrides: Partial<ChartContextValue>): ChartContextValue {
     effectiveAggregation: ChartAggregationType.Count,
     hasGroupableFields: true,
     isLoading: false,
-    chartData: [{ key: 'a', label: 'A', value: 1, rowIds: ['r1'] }],
+    seriesData: seriesDataOf([{ key: 'a', label: 'A', value: 1, rowIds: ['r1'] }]),
     ...overrides,
   };
 }
@@ -124,7 +125,7 @@ describe('Chart', () => {
   });
 
   it('draws the empty donut ring for a donut without data', () => {
-    mockContext = context({ chartType: ChartType.Donut, chartData: [] });
+    mockContext = context({ chartType: ChartType.Donut, seriesData: seriesDataOf([]) });
     render(<Chart />);
 
     expect(screen.getByTestId('chart-no-data')).toBeTruthy();
@@ -157,9 +158,11 @@ describe('Chart', () => {
 
       mockContext = context({
         chartType: ChartType.Number,
-        chartData: [item],
+        numberItem: item,
         format,
         seriesLabel: 'Sum of Amount',
+        // `ChartProvider` resolves the caption (`getNumberChartTitle`): the generated title here.
+        numberTitle: 'Sum of Amount',
         hasGroupableFields: false,
       });
       render(<Chart />);
@@ -174,9 +177,11 @@ describe('Chart', () => {
 
       mockContext = context({
         chartType: ChartType.Number,
-        chartData: [item],
+        numberItem: item,
         seriesLabel: 'Sum of Amount',
         settings: { titleText: '  Revenue  ' } as ChartContextValue['settings'],
+        // What `ChartProvider` resolves for that title (its own test covers the trim and the fallback).
+        numberTitle: 'Revenue',
         onItemClick,
       });
       render(<Chart />);
@@ -187,7 +192,7 @@ describe('Chart', () => {
     });
 
     it('shows its empty state, not a formatted zero, while there is no item', () => {
-      mockContext = context({ chartType: ChartType.Number, chartData: [], seriesLabel: 'Count all' });
+      mockContext = context({ chartType: ChartType.Number, numberItem: null, seriesLabel: 'Count all' });
       render(<Chart />);
 
       expect(screen.getByTestId('number-chart').getAttribute('data-empty')).toBe('true');

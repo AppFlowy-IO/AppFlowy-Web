@@ -519,7 +519,10 @@
       "editProperty": "Ubah properti",
       "newProperty": "Properti baru",
       "deleteFieldPromptMessage": "Apa kamu yakin? Properti ini akan dihapus",
-      "newColumn": "Kolom baru"
+      "newColumn": "Kolom baru",
+      "person": {
+        "searchForMore_other": "Cari untuk menemukan {{count}} orang lagi"
+      }
     },
     "rowPage": {
       "newField": "Tambah bidang baru",
@@ -533,7 +536,9 @@
         "one": "Sembunyikan {} bidang tersembunyi",
         "many": "Sembunyikan {} bidang tersembunyi",
         "other": "Sembunyikan {} bidang tersembunyi"
-      }
+      },
+      "openInCenterPeek": "Buka di panel tengah",
+      "resizeSidePeek": "Ubah ukuran panel samping"
     },
     "sort": {
       "ascending": "Naik",
@@ -549,10 +554,12 @@
       "textPlaceholder": "Kosong",
       "copyProperty": "Salin properti ke papan klip",
       "count": "Menghitung",
-      "newRow": "Baris baru",
+      "newRow": "Lembaran baru",
       "action": "Tindakan",
       "add": "Klik tambah ke bawah",
-      "drag": "Seret untuk pindah"
+      "drag": "Seret untuk pindah",
+      "loadingRowsProgress": "Memuat baris… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "Beberapa baris belum dimuat"
     },
     "selectOption": {
       "create": "Buat",
@@ -581,7 +588,20 @@
       "showComplete": "Tampilkan semua tugas"
     },
     "menuName": "Grid",
-    "referencedGridPrefix": "Pemandangan dari"
+    "referencedGridPrefix": "Pemandangan dari",
+    "calculationTypeLabel": {
+      "countChecked": "Dicentang",
+      "countUnchecked": "Tidak dicentang"
+    },
+    "dateFilter": {
+      "is": "Adalah"
+    },
+    "openPagesIn": {
+      "title": "Buka halaman di",
+      "sidePeek": "Panel samping",
+      "centerPeek": "Panel tengah",
+      "fullPage": "Halaman penuh"
+    }
   },
   "document": {
     "menuName": "Dokter",
@@ -781,7 +801,11 @@
   "board": {
     "column": {
       "createNewCard": "Baru",
-      "renameGroupTooltip": "Tekan untuk mengganti nama grup"
+      "renameGroupTooltip": "Tekan untuk mengganti nama grup",
+      "calculate": "Hitung",
+      "calculationTooltip": "{{calculation}} dari {{property}}",
+      "colorColumns": "Warnai kolom",
+      "properties": "Properti"
     },
     "menuName": "Papan",
     "showUngrouped": "Tampilkan item yang tidak dikelompokkan",
@@ -1052,5 +1076,411 @@
   "favorite": {
     "noFavorite": "Tidak ada halaman favorit",
     "noFavoriteHintText": "Geser halaman ke kiri untuk menambahkannya ke favorit Anda"
+  },
+  "chart": {
+    "a11y": {
+      "table": "Data bagan"
+    },
+    "agg": {
+      "average": "Rata-rata",
+      "countAll": "Hitung semua",
+      "countEmpty": "Hitung yang kosong",
+      "countUnique": "Hitung nilai unik",
+      "countValues": "Hitung nilai",
+      "dateRange": "Rentang tanggal",
+      "earliest": "Paling awal",
+      "latest": "Paling akhir",
+      "max": "Maksimum",
+      "median": "Median",
+      "min": "Minimum",
+      "percentChecked": "Persen dicentang",
+      "percentEmpty": "Persen kosong",
+      "percentNotEmpty": "Persen tidak kosong",
+      "percentUnchecked": "Persen tidak dicentang",
+      "range": "Rentang",
+      "sum": "Jumlah"
+    },
+    "aggregation": "Agregasi",
+    "barChart": "Batang",
+    "chartType": "Jenis bagan",
+    "checked": "Dicentang",
+    "color": {
+      "auto": "Otomatis",
+      "blue": "Biru",
+      "colorful": "Berwarna",
+      "colorless": "Tanpa warna",
+      "green": "Hijau",
+      "orange": "Oranye",
+      "pink": "Merah muda",
+      "purple": "Ungu",
+      "red": "Merah",
+      "teal": "Hijau kebiruan",
+      "yellow": "Kuning"
+    },
+    "cumulative": "Kumulatif",
+    "dateCondition": "Pengelompokan tanggal",
+    "dateGrouping": {
+      "day": "Hari",
+      "month": "Bulan",
+      "relative": "Relatif",
+      "week": "Minggu",
+      "year": "Tahun"
+    },
+    "decimalPlaces": {
+      "auto": "Otomatis"
+    },
+    "donutChart": "Donat",
+    "emptyState": {
+      "description": "Tambahkan baris berisi data untuk melihat bagan",
+      "noField": "Tidak ada bidang untuk pengelompokan",
+      "noFieldDescription": "Buat bidang Seleksi, Multi seleksi, Kotak Centang, atau Tanggal untuk menggunakan tampilan bagan.",
+      "title": "Tidak ada data untuk ditampilkan"
+    },
+    "emptyValue": "Kosong",
+    "groups": {
+      "count": "{{count}} grup",
+      "hideAll": "Sembunyikan semua",
+      "hideGroup": "Sembunyikan grup",
+      "noGroups": "Tidak ada grup",
+      "showAll": "Tampilkan semua",
+      "showGroup": "Tampilkan grup",
+      "unknownPerson": "Orang tidak dikenal",
+      "unknownUser": "Pengguna tidak dikenal",
+      "untitled": "Tanpa judul",
+      "visibleOfTotal": "{{visible}} dari {{total}}"
+    },
+    "horizontalBarChart": "Batang horizontal",
+    "legend": {
+      "auto": "Otomatis",
+      "bottom": "Bawah",
+      "nextPage": "Halaman berikutnya",
+      "off": "Mati",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "Halaman sebelumnya"
+    },
+    "lineChart": "Garis",
+    "menuName": "Bagan",
+    "noFieldValue": "Tanpa {}",
+    "noGroupableFields": "Tidak ada bidang yang dapat dikelompokkan",
+    "number": {
+      "calculate": "Hitung",
+      "countAll": "Hitung semua",
+      "emptyState": "Tidak ada data",
+      "format": "Format",
+      "formatAuto": "Otomatis",
+      "formatCompact": "Ringkas",
+      "formatPercent": "Persen",
+      "property": "Properti",
+      "title": "Judul",
+      "titleOf": "{{aggregation}} dari {{field}}",
+      "titlePlaceholder": "Judul bawaan"
+    },
+    "numberChart": "Angka",
+    "numberColor": {
+      "addRule": "Tambah aturan",
+      "blue": "Biru",
+      "brown": "Cokelat",
+      "default": "Bawaan",
+      "deleteRule": "Hapus aturan",
+      "dynamic": "Dinamis",
+      "dynamicColor": "Warna dinamis",
+      "else": "Selain itu",
+      "equal": "Sama dengan",
+      "gray": "Abu-abu",
+      "greaterThan": "Lebih dari",
+      "greaterThanOrEqual": "Lebih dari atau sama dengan",
+      "green": "Hijau",
+      "ifValue": "Jika nilai",
+      "lessThan": "Kurang dari",
+      "lessThanOrEqual": "Kurang dari atau sama dengan",
+      "notEqual": "Tidak sama dengan",
+      "orange": "Oranye",
+      "pink": "Merah muda",
+      "purple": "Ungu",
+      "red": "Merah",
+      "sameAsColor": "Sama dengan warna",
+      "yellow": "Kuning"
+    },
+    "settings": {
+      "auto": "Otomatis",
+      "back": "Kembali",
+      "calculate": "Hitung",
+      "chartSettings": "Pengaturan bagan",
+      "chartTitle": "Judul bagan",
+      "chartType": "Jenis bagan",
+      "color": "Warna",
+      "count": "Hitungan",
+      "cumulative": "Kumulatif",
+      "data": "Data",
+      "dataLabels": "Label data",
+      "dateGrouping": "Pengelompokan tanggal",
+      "decimalPlaces": "Tempat desimal",
+      "default": "Bawaan",
+      "donut": "Donat",
+      "eachSliceRepresents": "Setiap irisan mewakili",
+      "endAt": "Berakhir di",
+      "exactValue": "Nilai persis",
+      "firstLetter": "Huruf pertama",
+      "format": "Format",
+      "groupBy": "Kelompokkan berdasarkan",
+      "groupByNone": "Tidak ada",
+      "groupByText": "Kelompokkan teks",
+      "groupStyle": "Gaya grup",
+      "groupStyleGrouped": "Dikelompokkan",
+      "groupStylePercent": "Persen",
+      "groupStyleStacked": "Bertumpuk",
+      "groups": "Grup",
+      "horizontalBar": "Batang horizontal",
+      "legend": "Legenda",
+      "line": "Garis",
+      "moreOptions": "Opsi lainnya",
+      "moreSeries": "+{{n}} lainnya",
+      "noResults": "Tidak ada hasil",
+      "number": "Angka",
+      "onlyShowingFirstGroups": "Hanya menampilkan {{n}} grup pertama",
+      "percent": "Persen",
+      "rangeSize": "Ukuran rentang",
+      "ranges": "Rentang",
+      "rangesPreview": "{{count}} rentang dari {{from}} sampai {{to}}",
+      "searchProperty": "Cari properti…",
+      "size": "Ukuran {{size}}",
+      "sortBy": "Sortir dengan",
+      "startAt": "Mulai dari",
+      "style": "Gaya",
+      "verticalBar": "Batang vertikal",
+      "viewSettings": "Pengaturan tampilan",
+      "whatToShow": "Yang ditampilkan",
+      "xAxis": "Sumbu X",
+      "yAxis": "Sumbu Y"
+    },
+    "showEmptyValues": "Tampilkan nilai kosong",
+    "sort": {
+      "default": "Bawaan",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "Manual",
+      "valueAsc": "Nilai rendah → tinggi",
+      "valueDesc": "Nilai tinggi → rendah"
+    },
+    "state": {
+      "error": "Tidak dapat memuat bagan ini",
+      "noData": "Tidak ada data",
+      "preparing": "Menyiapkan bagan Anda",
+      "retry": "Coba lagi"
+    },
+    "style": {
+      "color": "Warna",
+      "dataLabels": "Label data",
+      "decimalPlaces": "Tempat desimal",
+      "legend": "Legenda",
+      "title": "Gaya"
+    },
+    "tooltip": {
+      "average": "Rata-rata",
+      "clickToView": "Klik untuk melihat data",
+      "count": "Hitungan",
+      "countValues": "Hitung nilai",
+      "max": "Maksimum",
+      "median": "Median",
+      "min": "Minimum",
+      "rows": "{{count}} baris",
+      "sum": "Jumlah",
+      "tapAgainToView": "Ketuk lagi untuk melihat data"
+    },
+    "total": "Total",
+    "unchecked": "Tidak dicentang",
+    "upgradeRequired": "Perlu peningkatan",
+    "upgradeToProForChartTypes": "Tingkatkan ke paket Pro untuk menggunakan bagan batang horizontal, garis, dan donat",
+    "value": {
+      "days_other": "{{count}} hari"
+    },
+    "xAxis": "Sumbu X",
+    "yAxis": "Sumbu Y",
+    "drilldown": {
+      "ariaLabel": "Pratinjau data tabel",
+      "search": "Cari",
+      "dismiss": "Tutup",
+      "more": "Lainnya",
+      "saveAsView": "Simpan sebagai tampilan…",
+      "openDatabase": "Buka {{database}}",
+      "selectedRows": "Baris terpilih ({{count}})",
+      "cannotSaveSelectedRows": "Baris terpilih tidak dapat disimpan sebagai tampilan",
+      "open": "BUKA",
+      "fromDashboardFilter": "Dari filter dasbor",
+      "rowCount_other": "{{count}} baris"
+    }
+  },
+  "dashboard": {
+    "addWidget": "Tambah widget",
+    "creationRequiresPro": "Membuat tampilan Dasbor memerlukan ruang kerja Pro.",
+    "done": "Selesai",
+    "edit": "Sunting",
+    "empty": {
+      "editDashboard": "Sunting dasbor",
+      "newView": "Tampilan baru",
+      "text": "Tambahkan bagan, tabel, daftar"
+    },
+    "globalFilters": {
+      "addAnother": "Tambah lagi",
+      "addToFilter": "Tambahkan ke filter",
+      "appliesTo": "Filter ini akan berlaku untuk properti {{type}} yang dipilih di bawah",
+      "button": "Filter",
+      "delete": "Hapus filter",
+      "done": "Selesai",
+      "endDate": "Tanggal akhir",
+      "filterBy": "Filter berdasarkan…",
+      "isChecked": "Dicentang",
+      "isUnchecked": "Tidak dicentang",
+      "more": "{{count}} lagi",
+      "moreActions": "Tindakan lainnya",
+      "multipleSourcesIntro": "Buat filter yang berlaku untuk properti dari beberapa sumber",
+      "name": "Nama filter",
+      "noResults": "Tidak ada hasil",
+      "op": {
+        "after": "Setelah",
+        "before": "Sebelum",
+        "between": "Di antara",
+        "checked": "Dicentang",
+        "complete": "Selesai",
+        "doesNotContain": "Tidak mengandung",
+        "endsWith": "Berakhir dengan",
+        "incomplete": "Belum selesai",
+        "is": "Adalah",
+        "isEmpty": "Kosong",
+        "isNot": "Bukan",
+        "isNotEmpty": "Tidak kosong",
+        "onOrAfter": "Pada atau setelah",
+        "onOrBefore": "Pada atau sebelum",
+        "startsWith": "Dimulai dengan",
+        "unchecked": "Tidak dicentang"
+      },
+      "people_other": "{{count}} orang",
+      "relative": {
+        "amount": "Jumlah",
+        "next": "Ke depan",
+        "past": "Terakhir",
+        "summaryNext_other": "{{count}} {{unit}} ke depan",
+        "summaryPast_other": "{{count}} {{unit}} terakhir",
+        "summaryThis": "{{unit}} ini",
+        "this": "Saat ini"
+      },
+      "relativeHint": "Filter akan diperbarui mengikuti tanggal saat ini",
+      "relativeToToday": "Relatif terhadap hari ini",
+      "remove": "Hapus",
+      "reset": "Atur ulang",
+      "sourceLine": "{{property}} di {{source}}",
+      "startDate": "Tanggal mulai",
+      "title": "Filter beberapa sumber",
+      "units": {
+        "day_other": "hari",
+        "month_other": "bulan",
+        "week_other": "minggu",
+        "year_other": "tahun"
+      },
+      "viewCount_other": "{{count}} tampilan"
+    },
+    "historyPreviewUnavailable": "Dasbor tidak dapat dipratinjau di riwayat versi.",
+    "limit": {
+      "fullHint": "Hapus tampilan untuk menambahkan yang baru",
+      "fullTitle": "Dasbor penuh"
+    },
+    "menuName": "Dasbor",
+    "picker": {
+      "back": "Kembali",
+      "changeViewTitle": "Ganti tampilan",
+      "close": "Tutup",
+      "createFailed": "Tidak dapat membuat tampilan",
+      "editChart": "Sunting bagan",
+      "layout": {
+        "board": "Papan",
+        "calendar": "Kalender",
+        "chart": "Bagan",
+        "feed": "Umpan",
+        "gallery": "Galeri",
+        "list": "Daftar",
+        "table": "Tabel",
+        "timeline": "Linimasa"
+      },
+      "loadFailed": "Tidak dapat memuat basis data",
+      "newView": "Tampilan baru",
+      "newViewIn": "Tampilan baru di {{database}}",
+      "noResults": "Tampilan tidak ditemukan",
+      "otherSources": "Sumber data lain",
+      "searchPlaceholder": "Cari tampilan...",
+      "showMore": "Tampilkan {{count}} lagi",
+      "source": "Sumber",
+      "thisDatabase": "Basis data ini",
+      "viewName": "Nama tampilan",
+      "viewsOn": "Tampilan di {{database}}",
+      "viewsOnThisDatabase": "Tampilan di basis data ini"
+    },
+    "private": {
+      "reset": "Atur ulang",
+      "resetAll": "Atur ulang semua perubahan",
+      "saveForEveryone": "Simpan untuk semua orang",
+      "saveOptions": "Opsi simpan lainnya",
+      "saved": "Perubahan disimpan untuk semua orang.",
+      "undo": "Urungkan",
+      "unsaved": "Perubahan belum disimpan"
+    },
+    "referencedDashboardPrefix": "Tampilan dari",
+    "row": {
+      "addToNewRow": "Tambahkan ke baris baru",
+      "addToRow": "Tambahkan ke baris",
+      "moveDown": "Pindahkan ke bawah",
+      "moveUp": "Pindahkan ke atas",
+      "movedDown": "Baris dipindahkan ke bawah",
+      "movedUp": "Baris dipindahkan ke atas"
+    },
+    "rowLimit": "Satu baris memuat hingga {{count}} widget.",
+    "settings": {
+      "name": "Pengaturan dasbor",
+      "showIconsInHeading": "Tampilkan ikon di judul",
+      "showWidgetTitles": "Tampilkan judul widget"
+    },
+    "toolbar": {
+      "openAsFullPage": "Buka sebagai halaman penuh",
+      "settings": "Pengaturan"
+    },
+    "widget": {
+      "changeView": "Ganti tampilan",
+      "close": "Tutup",
+      "createRowAbove": "Buat baris baru di atas",
+      "createRowBelow": "Buat baris baru di bawah",
+      "delete": "Hapus",
+      "dragHandle": "Seret untuk memindahkan",
+      "duplicate": "Duplikat",
+      "editView": "Sunting tampilan",
+      "filters": "Filter",
+      "loading": "Memuat…",
+      "menu": "Opsi widget",
+      "moveLeft": "Pindahkan ke kiri",
+      "moveRight": "Pindahkan ke kanan",
+      "moveToRow": "Pindahkan ke baris",
+      "noAccess": "Anda tidak memiliki akses ke basis data ini",
+      "notFound": "Tampilan ini sudah tidak ada",
+      "offline": "Tersedia saat Anda kembali online",
+      "openFailed": "Tidak dapat membuka tampilan",
+      "remove": "Hapus widget",
+      "resizeHeight": "Seret untuk mengubah tinggi baris",
+      "resizeHeightValue": "{{height}} piksel",
+      "resizeWidth": "Seret untuk mengubah ukuran",
+      "resizeWidthValue": "{{columns}} dari 12 kolom",
+      "settings": "Pengaturan",
+      "sorts": "Pengurutan",
+      "source": "Sumber",
+      "unsupported": "Dasbor tidak dapat ditampilkan di dalam dasbor",
+      "viewDataSource": "Lihat sumber data",
+      "viewNameHint": "Mengganti nama tampilan ini",
+      "viewSettings": "Pengaturan tampilan"
+    },
+    "mobile": {
+      "viewCount_other": "{{count}} tampilan"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "Hapus pencarian",
+    "noResults": "Tidak ada hasil",
+    "placeholder": "Ketik untuk mencari..."
   }
 }

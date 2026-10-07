@@ -4,29 +4,53 @@ import type { DatabaseContextState } from '@/application/database-yjs/context';
 import { DashboardRow, DashboardWidgetPlacement } from '@/application/database-yjs/dashboard.type';
 import { YDoc } from '@/application/types';
 
-export type WidgetPickerRequest =
-  | { mode: 'add'; placement: DashboardWidgetPlacement }
-  | { mode: 'replace'; widgetId: string };
-
-export type DashboardLimitReason = 'dashboard' | 'row';
+import type { DashboardAddWidgetApi } from './add-widget/add-widget-api';
+import type { DragGhostStore, DropIndicatorStore, RowMoveControlId } from './arrange-stores';
+import type { OwnedWidgetViews } from './hooks/useOwnedWidgetViews';
 
 /**
- * UI plumbing owned by the `Dashboard` component (picker, limit message,
- * drag-and-drop scope, source-doc reference counting). Separate from
- * `DashboardContext`, which also serves the tab bar outside the grid. Every
- * entry is stable, so widgets reading it never re-render for layout changes.
+ * UI plumbing owned by the `Dashboard` component (the add flow, announcements,
+ * drag-and-drop scope and feedback, source-doc reference counting). Separate
+ * from `DashboardContext`, which also serves the tab bar outside the grid.
+ * Every entry is stable (created once), so widgets reading it never re-render
+ * for layout changes.
  */
 export interface DashboardUiContextValue {
   /** The host database id; widgets may reference other databases too. */
   hostDatabaseId: string;
-  openPicker: (request: WidgetPickerRequest) => void;
-  showLimitMessage: (reason: DashboardLimitReason) => void;
+  /**
+   * The add controls' entry point (the row "+", "Add to new row", the empty
+   * dashboard's "+ New view"): inserts a selected default widget at
+   * `placement` and opens the "New view" picker beside it (WP06 §1.1). A full
+   * dashboard or row is refused with an announcement, never a banner, and
+   * nothing is created.
+   */
+  startAddWidget: (placement: DashboardWidgetPlacement) => void;
+  /** The add flow, the dock anchors and the docked panels' requests to widgets. */
+  addWidget: DashboardAddWidgetApi;
+  /** The views this dashboard owns (duplicate with a copy, rename, delete). */
+  ownedViews: OwnedWidgetViews;
+  /** Tells assistive technology (a polite live region); nothing shows on screen. */
+  announce: (message: string) => void;
   /** Scopes drag-and-drop to this dashboard instance. */
   dndInstanceId: symbol;
+  /** The vertical drop line of a widget drag (drawn by the row it belongs to). */
+  dropIndicatorStore: DropIndicatorStore;
+  /** The drag ghost (`DashboardDragGhost`). */
+  dragGhostStore: DragGhostStore;
+  /** Focus `control` of row `rowId` once the row renders at its new place (a row move). */
+  requestRowFocus: (rowId: string, control: RowMoveControlId) => void;
+  /** The pending focus request of `rowId`, taken. */
+  consumeRowFocus: (rowId: string) => RowMoveControlId | null;
+  /**
+   * Set once the dashboard painted for the first time: widgets mounted later
+   * (moved across rows, added) fade in, the first ones do not. Read at mount.
+   */
+  firstPaintDone: { readonly current: boolean };
   /** Latest persisted rows, read at call time. */
   getRows: () => DashboardRow[];
-  /** Persist a row transformation computed from the latest rows. */
-  updateRows: (updater: (rows: DashboardRow[]) => DashboardRow[]) => void;
+  /** Persist a row transformation computed from the latest rows; returns whether it wrote. */
+  updateRows: (updater: (rows: DashboardRow[]) => DashboardRow[]) => boolean;
   /**
    * Expose a mounted widget's source doc to the global-filter editor. Returns
    * the release callback; the doc stays registered while any widget holds it.
@@ -42,6 +66,11 @@ export interface DashboardUiContextValue {
 }
 
 export const DashboardUiContext = createContext<DashboardUiContextValue | null>(null);
+
+/** The dashboard UI plumbing, or `null` outside a dashboard (a widget rendered on its own). */
+export function useDashboardUiOptional(): DashboardUiContextValue | null {
+  return useContext(DashboardUiContext);
+}
 
 export function useDashboardUi(): DashboardUiContextValue {
   const context = useContext(DashboardUiContext);

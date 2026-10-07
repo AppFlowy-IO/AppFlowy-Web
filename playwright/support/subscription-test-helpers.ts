@@ -1,15 +1,16 @@
 import { execFileSync } from 'node:child_process';
 
+import { mockServerInfoPreservingCapabilities } from './server-info-helpers';
+
 import type { Page } from '@playwright/test';
 
-import { mockServerInfo } from './server-info-helpers';
 
 /**
  * Pro feature fixtures explicitly model an official cloud server, independent
  * of CI's localhost URL, and provide its active plans and subscription details.
  */
 export async function mockProSubscription(page: Page): Promise<void> {
-  await mockServerInfo(page, { self_hosted: false });
+  await mockServerInfoPreservingCapabilities(page, { self_hosted: false });
   await page.route('**/billing/api/v1/active-subscription/**', async (route) => {
     await route.fulfill({
       status: 200,

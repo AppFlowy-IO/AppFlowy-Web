@@ -409,36 +409,69 @@ export const ChartSelectors = {
 };
 
 /**
- * Chart settings dropdown selectors. The dropdown opens off the
- * `database-actions-settings` (gear) button and contains nested submenus.
- * Items are matched by visible label since the dropdown items have no
- * dedicated test ids.
+ * Chart settings panel selectors (WP11). The standalone chart page opens it
+ * from the gear menu's "Chart settings ›"; a dashboard widget shows it inside
+ * its settings host. Rows, options and items carry test ids.
  */
+const CHART_TYPE_SLUGS: Record<string, string> = {
+  'Vertical bar': 'bar',
+  Bar: 'bar',
+  'Horizontal bar': 'horizontal-bar',
+  'Horizontal Bar': 'horizontal-bar',
+  Line: 'line',
+  Donut: 'donut',
+  Number: 'number',
+};
+
 export const ChartSettingsSelectors = {
   settingsButton: (page: Page) => page.getByTestId('database-actions-settings'),
-  // Submenu triggers in the top-level Properties / Layout / Chart settings menu
-  chartSettingsSubTrigger: (page: Page) => page.getByRole('menuitem', { name: /chart settings/i }),
-  // Sub-submenu trigger inside Chart settings for the four chart types
-  chartTypeSubTrigger: (page: Page) => page.getByRole('menuitem', { name: /^chart type$/i }),
-  // Section labels inside the Chart settings submenu
-  xAxisLabel: (page: Page) => page.getByText('X-Axis', { exact: true }),
-  aggregationLabel: (page: Page) => page.getByText('Aggregation', { exact: true }),
-  yAxisLabel: (page: Page) => page.getByText('Y-Axis', { exact: true }),
-  // A specific aggregation row by label (e.g. "Count", "Sum", "Average").
-  aggregationItem: (page: Page, label: string) => page.getByRole('menuitem', { name: new RegExp(`^${label}$`, 'i') }),
-  // A chart type row by label (Bar / Horizontal Bar / Line / Donut)
-  chartTypeItem: (page: Page, label: string) => page.getByRole('menuitem', { name: new RegExp(`^${label}$`, 'i') }),
-  // Toggle rows
-  showEmptyValuesItem: (page: Page) => page.getByRole('menuitem', { name: /show empty values/i }),
-  cumulativeItem: (page: Page) => page.getByRole('menuitem', { name: /cumulative/i }),
+  // "Chart settings ›" in the gear menu of a chart page.
+  chartSettingsSubTrigger: (page: Page) => page.getByTestId('chart-settings-trigger'),
+  panel: (page: Page) => page.getByTestId('chart-settings-panel'),
+  /** A root row by its id: `x_sort` → `chart-settings-row-x-sort`. */
+  row: (page: Page, rowId: string) => page.getByTestId(`chart-settings-row-${rowId.replace(/_/g, '-')}`),
+  back: (page: Page) => page.getByTestId('chart-settings-back'),
+  section: (page: Page, title: string) =>
+    page.getByTestId('chart-settings-panel').locator(`[data-section-title="${title}"]`),
+  /** A chart type button by its label; the old menu labels (Bar, Horizontal Bar) map to the icon buttons. */
+  chartTypeButton: (page: Page, label: string) =>
+    page.getByTestId(`chart-type-${CHART_TYPE_SLUGS[label] ?? label.toLowerCase().replace(/\s+/g, '-')}`),
+  fieldSearch: (page: Page) => page.getByTestId('chart-field-search'),
+  fieldItem: (page: Page, fieldId: string) => page.getByTestId(`chart-field-${fieldId}`),
+  fieldItemByName: (page: Page, name: string) =>
+    page.getByTestId('chart-settings-panel').locator(`[data-field-name="${name}"]`),
+  fieldNone: (page: Page) => page.getByTestId('chart-field-none'),
+  /** An option of a single-choice page: `option(page, 'x-sort', 'value_desc')`. */
+  option: (page: Page, pageId: string, value: string) => page.getByTestId(`chart-option-${pageId}-${value}`),
+  aggItem: (page: Page, aggregation: number) => page.getByTestId(`chart-agg-${aggregation}`),
+  groupRow: (page: Page, key: string) => page.getByTestId(`chart-group-${key}`),
+  groupEye: (page: Page, key: string) => page.getByTestId(`chart-group-eye-${key}`),
+  showEmptyToggle: (page: Page) => page.getByTestId('chart-settings-row-x-show-empty'),
+  cumulativeToggle: (page: Page) => page.getByTestId('chart-settings-row-y-cumulative'),
 };
 
 /**
- * Drill-down popup selectors (rendered when the user clicks a chart element).
+ * Chart drill-down selectors (WP13: the live table a chart click opens). The
+ * side peek of a record opened from it is a dialog too, so never use the role.
  */
 export const ChartDrilldownSelectors = {
-  dialog: (page: Page) => page.getByRole('dialog'),
-  closeButton: (page: Page) => page.getByRole('dialog').getByRole('button').first(),
+  dialog: (page: Page) => page.getByTestId('chart-drilldown'),
+  closeButton: (page: Page) => page.getByTestId('chart-drilldown-dismiss'),
+  title: (page: Page) => page.getByTestId('chart-drilldown-title'),
+  count: (page: Page) => page.getByTestId('chart-drilldown-count'),
+  search: (page: Page) => page.getByTestId('chart-drilldown-search'),
+  searchInput: (page: Page) => page.getByTestId('chart-drilldown-search-input'),
+  more: (page: Page) => page.getByTestId('chart-drilldown-more'),
+  /** Every row, or the row of one record. */
+  row: (page: Page, rowId?: string) =>
+    rowId
+      ? page.getByTestId(`drill-row-${rowId}`)
+      : page.getByTestId('chart-drilldown').locator('[data-testid^="drill-row-"][role="row"]'),
+  rowTitles: (page: Page) => page.getByTestId('chart-drilldown').getByTestId('drill-row-title'),
+  chips: (page: Page, kind?: 'filter' | 'global' | 'category' | 'subgroup' | 'rows') =>
+    kind
+      ? page.getByTestId('chart-drilldown').locator(`[data-testid="drill-chip"][data-chip-kind="${kind}"]`)
+      : page.getByTestId('chart-drilldown').getByTestId('drill-chip'),
 };
 
 /**

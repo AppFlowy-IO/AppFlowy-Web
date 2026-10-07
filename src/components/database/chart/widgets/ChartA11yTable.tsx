@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export interface ChartA11yRow {
@@ -14,8 +15,11 @@ export interface ChartA11yRow {
  * A visually hidden table of the charted data (WP10 §2.4): screen readers
  * get every category, including labels the axis thinned out, and tests read
  * raw values and colors from its rows.
+ *
+ * Memoized: the chart frame renders on every hover change (the tooltip), and
+ * the rows keep their identity until the data changes (W13).
  */
-export function ChartA11yTable({ rows }: { rows: ChartA11yRow[] }) {
+export const ChartA11yTable = memo(function ChartA11yTable({ rows }: { rows: ChartA11yRow[] }) {
   const { t } = useTranslation();
 
   return (
@@ -30,6 +34,6 @@ export function ChartA11yTable({ rows }: { rows: ChartA11yRow[] }) {
       </tbody>
     </table>
   );
-}
+});
 
 export default ChartA11yTable;

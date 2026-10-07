@@ -15,11 +15,12 @@ Feature: Dashboard layout editing
       | 1   | Notes Grid    |
       | 2   | Tasks Grid #2 |
 
-  Scenario: The insert-row control starts a new row below a row
-    When I add the "Projects Grid" view through the insert-row control of dashboard row 1
-    Then dashboard row 1 holds "Projects Grid, Tasks Grid, Notes Grid"
-    And dashboard row 2 holds "Projects Grid"
+  Scenario: Create new row below moves a widget into its own row
+    When I choose "create-row-below" in the "Tasks Grid" widget menu
+    Then dashboard row 1 holds "Projects Grid, Notes Grid"
+    And dashboard row 2 holds "Tasks Grid"
     And dashboard row 3 holds "Tasks Grid #2"
+    And the widths of dashboard row 1 are "6, 6"
     And every dashboard row spans 12 columns
 
   Scenario: Dragging a widget within its row reorders the row
@@ -72,14 +73,15 @@ Feature: Dashboard layout editing
     When I press the dashboard redo shortcut
     Then dashboard row 1 holds "Tasks Grid, Notes Grid, Projects Grid"
 
-  Scenario: The widget menu moves a widget left, right, down and up
+  Scenario: The widget menu moves a widget left and right, and the row control moves its row up
     When I choose "move-left" in the "Tasks Grid" widget menu
     Then dashboard row 1 holds "Tasks Grid, Projects Grid, Notes Grid"
     When I choose "move-right" in the "Tasks Grid" widget menu
     Then dashboard row 1 holds "Projects Grid, Tasks Grid, Notes Grid"
-    When I choose "move-down" in the "Tasks Grid" widget menu
+    When I choose "create-row-below" in the "Tasks Grid" widget menu
     Then the "Tasks Grid" widget is in dashboard row 2
     And dashboard row 1 holds "Projects Grid, Notes Grid"
-    When I choose "move-up" in the "Tasks Grid" widget menu
-    Then the "Tasks Grid" widget is in dashboard row 1
+    When I move dashboard row 2 up
+    Then dashboard row 1 holds "Tasks Grid"
+    And dashboard row 2 holds "Projects Grid, Notes Grid"
     And every dashboard row spans 12 columns

@@ -1,9 +1,10 @@
-import { ComponentType, ReactNode, useEffect, useState } from 'react';
+import { ComponentType, ReactNode, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import {
   useConditionsReadOnly,
+  useDatabaseContext,
   useDatabaseViewLayout,
   useFieldSelector,
   useFiltersSelector,
@@ -11,6 +12,7 @@ import {
   useSortsSelector,
 } from '@/application/database-yjs';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
+import { ReactComponent as BackIcon } from '@/assets/icons/alt_arrow_left.svg';
 import { ReactComponent as ChevronRightIcon } from '@/assets/icons/alt_arrow_right.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as DatabaseIcon } from '@/assets/icons/database.svg';
@@ -38,8 +40,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+import { useAddWidgetFlowState } from './add-widget/add-widget-api';
+import { AddWidgetFlowState } from './add-widget/add-widget-flow';
+import { DOCK_GAP, DOCK_PADDING, dockedPopoverSide, DockSide } from './add-widget/docked-popover';
 import { DASHBOARD_POPOVER_RADIUS, WIDGET_SETTINGS_WIDTH } from './constants';
+import { useDashboardUi } from './DashboardUiContext';
 import { useWidgetSourceName } from './hooks/useWidgetSourceName';
+import { WidgetOpenPagesInRow } from './settings/WidgetOpenPagesInRow';
+import { WIDGET_VIEW_NAME_FIELD_ATTR, WidgetViewNameField } from './owned-views/WidgetViewNameField';
+import { getLayoutLabel } from './utils';
 import { getDashboardWidgetTools } from './widget-tools';
 import { WidgetFiltersBody, WidgetSortsBody } from './WidgetConditionsPopover';
 import { useWidgetContext } from './WidgetContext';
@@ -115,7 +124,7 @@ function ConditionsRow({
 
 function WidgetSettingsBody() {
   const { t } = useTranslation();
-  const { databaseId, settingsOpen, actions } = useWidgetContext();
+  const { databaseId, viewId, settingsOpen, actions } = useWidgetContext();
   // `null` until the view's layout is read (and for a view that stores none):
   // only the Source row, which needs no layout, shows meanwhile.
   const layout = useDatabaseViewLayout();
@@ -160,6 +169,8 @@ function WidgetSettingsBody() {
             <WidgetSortsBody onClose={() => undefined} />
           </ConditionsRow>
         ) : null}
+        {/* How the widget opens its records (WP13 §3.8); not for charts. */}
+        <WidgetOpenPagesInRow layout={layout} viewId={viewId} />
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
       <DropdownMenuItem
@@ -190,26 +201,67 @@ function WidgetSettingsBody() {
   );
 }
 
+/** The widget's name, which is its view's name (WP05): renames the view. */
+function WidgetSettingsNameField() {
+  const { t } = useTranslation();
+  const { widgetId, name, layout } = useWidgetContext();
+  const { ownedViews } = useDashboardUi();
+  // The widget's own database: the doc a rename of another database's view writes.
+  const { databaseDoc } = useDatabaseContext();
+  const readOnly = useReadOnly();
+  const label = getLayoutLabel(layout);
+
+  return (
+    <WidgetViewNameField
+      disabled={readOnly}
+      onCommit={(next) => ownedViews.renameWidgetView(widgetId, next, { name, doc: databaseDoc })}
+      placeholder={t(label.key, { defaultValue: label.defaultValue })}
+      value={name}
+    />
+  );
+}
+
+const isFlowSettingsOf = (widgetId: string) => (state: AddWidgetFlowState) =>
+  state.kind === 'settings' && state.widgetId === widgetId;
+
 /**
  * The settings host of a dashboard widget ("View settings"), opened by the
- * Edit-mode settings tool. 300px wide, anchored to the right of the widget
- * box and top-aligned (it flips left when there is no room), capped at 560px
- * with scrolling. A dropdown menu, so the view's existing settings rows and
- * their submenus work unchanged; its trigger is a span portaled into the
- * widget box, so React context (the widget's database) is kept. The span
- * covers the box without taking pointer events: the menu is placed against
- * the whole box, so it flips to the box's left side (as desktop's
- * `flipToFit`) instead of over the widget.
+ * Edit-mode settings tool, "Edit view" or the add flow's "Edit chart". 300px
+ * wide and capped at 560px with scrolling; docked to the widget box's
+ * top-right corner like the add flow's panels (WP06 §1.6): on its right when
+ * there is room, else on its left, overlapping the widget. A dropdown menu, so
+ * the view's existing settings rows and their submenus work unchanged; its
+ * trigger is a zero-size span portaled into the widget box's corner, so React
+ * context (the widget's database) is kept.
  *
- * `nameField` is the header slot for the widget name (WP05).
+ * The header holds the widget name (WP05), and a back button when the add
+ * flow's New view panel opened it.
  */
 export function WidgetSettingsHost({ nameField }: { nameField?: ReactNode }) {
   const { t } = useTranslation();
-  const { editing, settingsOpen, setSettingsOpen, getBoxElement, settingsToolRef } = useWidgetContext();
+  const { widgetId, editing, settingsOpen, setSettingsOpen, getBoxElement, settingsToolRef } = useWidgetContext();
+  const { addWidget } = useDashboardUi();
+  const fromFlow = useAddWidgetFlowState(addWidget.flow, isFlowSettingsOf(widgetId));
   const [box, setBox] = useState<HTMLElement | null>(null);
+  const [side, setSide] = useState<DockSide>('right');
 
   // The box is an ancestor: its ref is attached once this commit's effects run.
   useEffect(() => setBox(getBoxElement()), [getBoxElement]);
+
+  // The dock side, decided when the host opens.
+  useEffect(() => {
+    if (!settingsOpen || !box) return;
+    setSide(dockedPopoverSide(box.getBoundingClientRect().right, window.innerWidth));
+  }, [box, settingsOpen]);
+
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      setSettingsOpen(open);
+      // Closing the host the flow opened ends the flow (the widget stays).
+      if (!open && addWidget.flow.getState().kind === 'settings') addWidget.flow.dispatch({ type: 'dismiss' });
+    },
+    [addWidget, setSettingsOpen]
+  );
 
   if (!editing || !box) return null;
   // The tool that toggles the host: the widget's ref, else the tool in its slot of the box.
@@ -217,10 +269,10 @@ export function WidgetSettingsHost({ nameField }: { nameField?: ReactNode }) {
     settingsToolRef.current ?? box.querySelector<HTMLElement>(`${SETTINGS_TOOL_SELECTOR} button`);
 
   return (
-    <DropdownMenu modal={false} onOpenChange={setSettingsOpen} open={settingsOpen}>
+    <DropdownMenu modal={false} onOpenChange={handleOpenChange} open={settingsOpen}>
       {createPortal(
         <DropdownMenuTrigger asChild>
-          <span aria-hidden='true' className='pointer-events-none absolute inset-0' tabIndex={-1} />
+          <span aria-hidden='true' className='pointer-events-none absolute right-0 top-0 h-0 w-0' tabIndex={-1} />
         </DropdownMenuTrigger>,
         box
       )}
@@ -231,23 +283,51 @@ export function WidgetSettingsHost({ nameField }: { nameField?: ReactNode }) {
           // row's trailing value is secondary text beside its chevron (both have `ml-auto`
           // in the shared rows, which would leave the value in the middle of this wider menu).
           className='max-h-[560px] overflow-y-auto bg-surface-primary p-0 [&_[data-slot=dropdown-menu-sub-trigger]>.ml-auto+svg]:!ml-0 [&_[data-slot=dropdown-menu-sub-trigger]>svg:last-child]:!h-4 [&_[data-slot=dropdown-menu-sub-trigger]>svg:last-child]:!w-4 [&_[role=menuitem]>.ml-auto]:!text-text-secondary [&_[role=menuitem]]:!gap-2'
-          collisionPadding={16}
+          collisionPadding={DOCK_PADDING}
           data-parity-id='dash-widget-settings'
+          data-side={side}
           data-testid='dashboard-widget-settings'
           onClick={(event) => event.stopPropagation()}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
+            // A panel the host handed over to (Settings › Source docks in its place) may already hold the
+            // focus: taking it back to the tool would count as a focus outside that panel and close it.
+            const active = document.activeElement;
+
+            if (active && active !== document.body && active.isConnected) return;
             getSettingsTool()?.focus();
+          }}
+          onEscapeKeyDown={(event) => {
+            // The first Escape in the name field only reverts the name.
+            if ((document.activeElement as HTMLElement | null)?.hasAttribute(WIDGET_VIEW_NAME_FIELD_ATTR)) {
+              event.preventDefault();
+            }
           }}
           onInteractOutside={(event) => {
             // The settings tool toggles the host itself.
             if (getSettingsTool()?.contains(event.target as Node | null)) event.preventDefault();
           }}
-          side='right'
-          sideOffset={8}
+          side={side}
+          sideOffset={DOCK_GAP}
           style={HOST_SIZE_STYLE}
         >
           <div className='flex items-center gap-2 px-3 pb-1 pt-3'>
+            {fromFlow ? (
+              <Button
+                aria-label={t('dashboard.picker.back', { defaultValue: 'Back' })}
+                className='-ml-1 text-icon-secondary [&_svg]:h-4 [&_svg]:w-4'
+                data-testid='dashboard-widget-settings-back'
+                onClick={() => {
+                  setSettingsOpen(false);
+                  addWidget.flow.dispatch({ type: 'back' });
+                }}
+                size='icon-sm'
+                type='button'
+                variant='ghost'
+              >
+                <BackIcon aria-hidden='true' />
+              </Button>
+            ) : null}
             <span
               className='flex-1 truncate text-sm font-semibold leading-5 text-text-primary'
               data-parity-id='dash-widget-settings__title'
@@ -259,7 +339,7 @@ export function WidgetSettingsHost({ nameField }: { nameField?: ReactNode }) {
               className='!rounded-full text-icon-secondary [&_svg]:h-4 [&_svg]:w-4'
               data-parity-id='dash-widget-settings-close'
               data-testid='dashboard-widget-settings-close'
-              onClick={() => setSettingsOpen(false)}
+              onClick={() => handleOpenChange(false)}
               size='icon-sm'
               type='button'
               variant='ghost'
@@ -267,7 +347,7 @@ export function WidgetSettingsHost({ nameField }: { nameField?: ReactNode }) {
               <CloseIcon aria-hidden='true' />
             </Button>
           </div>
-          {nameField ? <div className='px-3 pb-1'>{nameField}</div> : null}
+          <div className='px-3 pb-1'>{nameField ?? <WidgetSettingsNameField />}</div>
           <WidgetSettingsBody />
         </DropdownMenuContent>
       ) : null}

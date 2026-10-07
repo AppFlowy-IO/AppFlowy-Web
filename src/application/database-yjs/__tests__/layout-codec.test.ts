@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 
 import {
   clampInteger,
+  cloneYValue,
   isPlainRecord,
   nonEmptyString,
   pickUnknownKeys,
@@ -25,6 +26,32 @@ function recordingMap(entries: Record<string, unknown>) {
 }
 
 describe('layout codec', () => {
+  it('clones a stored Y value Yjs can insert again: detached, bigints as numbers, the source untouched', () => {
+    const doc = new Y.Doc();
+    const source = new Y.Map<unknown>();
+    const list = new Y.Array<unknown>();
+
+    doc.getMap('root').set('source', source);
+    source.set('condition', 2);
+    source.set('children', list);
+    list.push([{ id: 'c1' }, 'x']);
+
+    const copy = cloneYValue(source) as Y.Map<unknown>;
+
+    expect(copy).toBeInstanceOf(Y.Map);
+    expect(copy).not.toBe(source);
+    expect(copy.doc).toBeNull();
+    doc.getMap('root').set('copy', copy);
+    expect(toPlainValue(copy)).toEqual({ condition: 2, children: [{ id: 'c1' }, 'x'] });
+    (copy.get('children') as Y.Array<unknown>).push(['added']);
+    expect(toPlainValue(source)).toEqual({ condition: 2, children: [{ id: 'c1' }, 'x'] });
+
+    // A native client's integer (yrs `Any::BigInt`) becomes the number Yjs can author.
+    expect(cloneYValue(BigInt(7))).toBe(7);
+    expect(cloneYValue('text')).toBe('text');
+    expect(cloneYValue(null)).toBeNull();
+  });
+
   it('reads integers from numbers and bigints only', () => {
     expect(readInteger(3)).toBe(3);
     expect(readInteger(2.5)).toBe(3);

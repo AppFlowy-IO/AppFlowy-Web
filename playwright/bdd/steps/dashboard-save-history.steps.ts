@@ -15,7 +15,7 @@ import {
 const { When, Then } = createBdd();
 
 /**
- * Keep the real active history scope after Save for everybody. Pointing at the
+ * Keep the real active history scope after Save for everyone. Pointing at the
  * host dashboard before the shortcut would hide the foreign-widget regression.
  */
 async function pressCurrentHistoryShortcut(page: Page, action: 'undo' | 'redo') {

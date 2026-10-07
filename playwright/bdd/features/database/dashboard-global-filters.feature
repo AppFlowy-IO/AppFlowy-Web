@@ -1,9 +1,10 @@
 @dashboard @cloud
 Feature: Dashboard global filters
-  "Filter multiple sources" adds dashboard-level filters. Each filter has one
-  property type and maps it to one property per source database; it is
-  AND-ed with every mapped widget's own view filters and leaves widgets whose
-  database has no mapping untouched.
+  The toolbar's Filter button lists the dashboard's properties by source;
+  picking one adds a dashboard-level filter for that source, and "Filter
+  multiple sources" maps one filter to a property of the same type in each
+  source database. A filter is AND-ed with every mapped widget's own view
+  filters and leaves widgets whose database has no mapping untouched.
 
   Background:
     Given the dashboard fixture workspace is ready
@@ -64,7 +65,7 @@ Feature: Dashboard global filters
     When I open the "Status" global filter
     And I remove the "Tasks" source from the open global filter
     And I close the global filter editor
-    Then the "Status" global filter chip shows 1 source
+    Then the "Status" global filter pill has no source count badge
     And the "Tasks Grid" widget shows the rows "Write launch plan, Review, Ship"
     And the "Projects Grid" widget shows the rows "Website launch"
 

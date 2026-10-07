@@ -78,14 +78,14 @@ async function expectLastRowHeight(page: Page, height: number) {
     .toBeLessThanOrEqual(RENDERED_HEIGHT_TOLERANCE);
 }
 
-/** Open the chart settings of a chart widget (WP11 moves these into the settings panel). */
+/** Open the chart settings of a chart widget: the WP11 panel is the body of its settings host. */
 async function openWidgetChartSettings(page: Page, label: string) {
   const widget = widgetLocator(page, label);
 
   await widget.hover();
   // The Edit-mode settings tool opens the widget's settings host (WP03).
   await widget.getByTestId('dashboard-widget-settings-button').click();
-  await ChartSettingsSelectors.chartSettingsSubTrigger(page).click();
+  await expect(ChartSettingsSelectors.panel(page)).toBeVisible(WIDGET_TIMEOUT);
   await expect(page.getByTestId('chart-type-donut')).toBeVisible(WIDGET_TIMEOUT);
 }
 
@@ -145,6 +145,18 @@ Given('the chart holds settings from a newer app version', async ({ page }) => {
   await expect.poll(async () => (await readChartLayout(page)).zz_parity_enum).toBe(PARITY_ENUM);
 });
 
+Given(
+  'another client grouped the chart by {string} in the {string} style',
+  async ({ page }, property: string, style: string) => {
+    // WP12 keys, as a newer client writes them into the chart map (WP01 `mergeRawLayout`).
+    await mergeRawLayout(page, viewIdForLabel(page, CHART_LABEL), CHART_LAYOUT_KEY, {
+      group_by_field_id: fixtureDatabase(page, 'Projects').fieldIds[property],
+      group_style: style,
+    });
+    await expect.poll(async () => (await readChartLayout(page)).group_style).toBe(style);
+  }
+);
+
 // ---------------------------------------------------------------------------
 // When
 // ---------------------------------------------------------------------------
@@ -160,7 +172,8 @@ When('the checkbox global filter is changed to checked in Edit mode', async ({ p
   await enterEditMode(page);
   await openGlobalFilterChip(page, GLOBAL_FILTER_NAME);
   await chooseGlobalFilterCondition(page, 'Is checked');
-  await expect(DashboardSelectors.globalFilterCondition(page)).toContainText('Is checked');
+  // The pill editor header shows the condition with a lowercase first letter (WP08 §1.6, Notion's `is ˅`).
+  await expect(DashboardSelectors.globalFilterCondition(page)).toHaveText(/^is checked$/i);
   await closeGlobalFilterMenu(page);
 });
 
@@ -217,6 +230,13 @@ Then('the checkbox global filter still holds the settings from the newer app ver
 
 Then('the chart is saved as a donut chart', async ({ page }) => {
   await expect.poll(async () => (await readChartLayout(page)).chart_type).toBe(CHART_TYPE_DONUT);
+});
+
+Then('the chart is still grouped by {string} in the {string} style', async ({ page }, property: string, style: string) => {
+  const chart = await readChartLayout(page);
+
+  expect(chart.group_by_field_id).toBe(fixtureDatabase(page, 'Projects').fieldIds[property]);
+  expect(chart.group_style).toBe(style);
 });
 
 Then('the chart still holds the settings from the newer app version', async ({ page }) => {

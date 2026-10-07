@@ -12,6 +12,8 @@ import {
   WIDGET_TOOLS_CONTAINER_CLASS,
   WidgetTool,
   WidgetToolCaps,
+  WidgetToolContext,
+  WP03_WIDGET_TOOL_CAPS,
 } from '../widget-tools';
 
 /** `dashboard-parity/widget-tools.json` (WP03), shared with desktop. */
@@ -19,6 +21,10 @@ interface WidgetToolsFixture {
   caps: Record<string, { content_tools: boolean; sort_layouts: string[] }>;
   cases: {
     caps: string;
+    /** WP09: absent means widget. */
+    context?: WidgetToolContext;
+    /** WP14b: a mobile context; absent means false. */
+    mobile?: boolean;
     role: string;
     layout: string;
     editing: boolean;
@@ -29,6 +35,12 @@ interface WidgetToolsFixture {
   visibility: {
     tool: WidgetTool;
     active: boolean;
+    /** WP07: absent means false. */
+    dirty?: boolean;
+    /** WP09: absent means false. */
+    search_active?: boolean;
+    /** WP14b: absent means false. */
+    mobile?: boolean;
     editing: boolean;
     coarse_pointer: boolean;
     hovered: boolean;
@@ -67,13 +79,20 @@ function capsOf(name: string): WidgetToolCaps {
 }
 
 describe('WIDGET_TOOL_CAPS', () => {
-  it('equals the fixture wp03 capabilities', () => {
-    expect(WIDGET_TOOL_CAPS.contentTools).toBe(fixture.caps.wp03.content_tools);
-    expect([...WIDGET_TOOL_CAPS.sortLayouts].sort()).toEqual(fixture.caps.wp03.sort_layouts.map(layoutOf).sort());
+  // WP09 turned the content tools on and added Board to the sortable layouts, on both clients.
+  it('equals the fixture wp09 capabilities', () => {
+    expect(WIDGET_TOOL_CAPS.contentTools).toBe(fixture.caps.wp09.content_tools);
+    expect([...WIDGET_TOOL_CAPS.sortLayouts].sort()).toEqual(fixture.caps.wp09.sort_layouts.map(layoutOf).sort());
   });
 
-  it('sorts where the toolbar sorts: one set for both', () => {
+  it('keeps the earlier wp03 capabilities as WP03_WIDGET_TOOL_CAPS', () => {
+    expect(WP03_WIDGET_TOOL_CAPS.contentTools).toBe(fixture.caps.wp03.content_tools);
+    expect([...WP03_WIDGET_TOOL_CAPS.sortLayouts].sort()).toEqual(fixture.caps.wp03.sort_layouts.map(layoutOf).sort());
+  });
+
+  it('sorts where the toolbar sorts: one set for both, boards included', () => {
     expect(WIDGET_TOOL_CAPS.sortLayouts).toBe(SORTABLE_LAYOUTS);
+    expect(SORTABLE_LAYOUTS.has(DatabaseViewLayout.Board)).toBe(true);
     expect(SORTABLE_LAYOUTS.has(DatabaseViewLayout.Chart)).toBe(false);
   });
 });
@@ -102,8 +121,18 @@ describe('which layouts can be a widget', () => {
 
 describe('getDashboardWidgetTools', () => {
   it.each(
-    fixture.cases.map((entry) => [entry.caps, entry.role, entry.layout, entry.editing ? 'Edit' : 'View', entry] as const)
-  )('%s: a %s gets these %s tools in %s mode', (_caps, _role, _layout, _mode, entry) => {
+    fixture.cases.map(
+      (entry) =>
+        [
+          entry.caps,
+          entry.mobile ? 'mobile' : entry.context ?? 'widget',
+          entry.role,
+          entry.layout,
+          entry.editing ? 'Edit' : 'View',
+          entry,
+        ] as const
+    )
+  )('%s %s: a %s gets these %s tools in %s mode', (_caps, _context, _role, _layout, _mode, entry) => {
     expect(
       getDashboardWidgetTools({
         layout: layoutOf(entry.layout),
@@ -111,11 +140,50 @@ describe('getDashboardWidgetTools', () => {
         canWrite: entry.can_write,
         canEditConditions: entry.can_edit_conditions,
         caps: capsOf(entry.caps),
+        context: entry.context ?? 'widget',
+        mobile: entry.mobile ?? false,
       })
     ).toEqual(entry.expected);
   });
 
-  it('defaults to the WP03 capabilities', () => {
+  // WP14 §1.4.4: every widget layout, role and capability set has a mobile case.
+  it('covers the mobile header of every widget layout, for writers, readers and published viewers', () => {
+    const mobile = fixture.cases.filter((entry) => entry.mobile === true);
+    const widgetLayouts = ['grid', 'board', 'calendar', 'chart', 'list', 'gallery', 'feed', 'timeline'];
+
+    for (const caps of ['wp03', 'wp09']) {
+      for (const role of ['writer', 'reader', 'published']) {
+        const layouts = mobile
+          .filter((entry) => entry.caps === caps && entry.role === role && !entry.editing)
+          .map((entry) => entry.layout);
+
+        expect(widgetLayouts.every((layout) => layouts.includes(layout))).toBe(true);
+      }
+    }
+
+    // Search then Filter, never Sort, New or Settings, even with an editing input.
+    mobile.forEach((entry) => {
+      expect(entry.expected).toEqual(
+        (['search', 'filter'] as WidgetTool[]).filter((tool) => entry.expected.includes(tool))
+      );
+    });
+    expect(
+      mobile.find((entry) => entry.caps === 'wp09' && entry.role === 'writer' && entry.layout === 'grid')?.expected
+    ).toEqual(['search', 'filter']);
+    expect(
+      mobile.find((entry) => entry.caps === 'wp09' && entry.role === 'writer' && entry.layout === 'chart')?.expected
+    ).toEqual(['filter']);
+  });
+
+  it('ignores the mobile flag in the standalone toolbar', () => {
+    const input = { layout: DatabaseViewLayout.Grid, editing: false, canWrite: true, canEditConditions: true };
+
+    expect(getDashboardWidgetTools({ ...input, context: 'standalone', mobile: true })).toEqual(
+      getDashboardWidgetTools({ ...input, context: 'standalone' })
+    );
+  });
+
+  it('defaults to the WP09 capabilities in a widget', () => {
     expect(
       getDashboardWidgetTools({
         layout: DatabaseViewLayout.Board,
@@ -123,7 +191,32 @@ describe('getDashboardWidgetTools', () => {
         canWrite: true,
         canEditConditions: true,
       })
-    ).toEqual(['filter']);
+    ).toEqual(['filter', 'sort', 'search', 'new']);
+  });
+
+  it('covers the standalone toolbar of every layout the fixture lists, for writers and read-only viewers', () => {
+    const standalone = fixture.cases.filter((entry) => entry.context === 'standalone');
+
+    expect(new Set(standalone.map((entry) => entry.role))).toEqual(new Set(['writer', 'read-only']));
+    expect(standalone.every((entry) => !entry.editing)).toBe(true);
+    // Read-only Grid/List/Board still search; the standalone toolbar adds Settings and New for writers.
+    expect(standalone.find((entry) => entry.role === 'read-only' && entry.layout === 'board')?.expected).toEqual([
+      'search',
+    ]);
+    expect(standalone.find((entry) => entry.role === 'writer' && entry.layout === 'grid')?.expected).toEqual([
+      'filter',
+      'sort',
+      'search',
+      'settings',
+      'new',
+    ]);
+  });
+
+  it('gives a Form view a standalone Filter only, and a dashboard none (its own toolbar)', () => {
+    const input = { editing: false, canWrite: true, canEditConditions: true, context: 'standalone' as const };
+
+    expect(getDashboardWidgetTools({ ...input, layout: DatabaseViewLayout.Form })).toEqual(['filter']);
+    expect(getDashboardWidgetTools({ ...input, layout: DatabaseViewLayout.Dashboard })).toEqual([]);
   });
 });
 
@@ -135,6 +228,9 @@ describe('isWidgetToolVisible', () => {
         isWidgetToolVisible({
           tool: entry.tool,
           active: entry.active,
+          dirty: entry.dirty ?? false,
+          searchActive: entry.search_active ?? false,
+          mobile: entry.mobile ?? false,
           editing: entry.editing,
           coarsePointer: entry.coarse_pointer,
           hovered: entry.hovered,
@@ -178,11 +274,18 @@ describe('the visibility rule and its CSS', () => {
     ],
     ['active', { active: true }, 'data-[active=true]:opacity-100', 'data-[has-active=true]:opacity-100'],
     [
+      'searchActive',
+      { searchActive: true },
+      'group-has-[[data-search-active=true]]/tools:opacity-100',
+      'has-[[data-search-active=true]]:opacity-100',
+    ],
+    [
       'coarsePointer',
       { coarsePointer: true },
       '[@media(pointer:coarse)]:opacity-100',
       '[@media(pointer:coarse)]:opacity-100',
     ],
+    ['mobile', { mobile: true }, 'group-data-[mobile=true]/tools:opacity-100', 'data-[mobile=true]:opacity-100'],
   ] as const)(
     'shows a filter tool when %s holds, in the rule and in both classes',
     (_name, condition, slot, container) => {
@@ -193,11 +296,54 @@ describe('the visibility rule and its CSS', () => {
     }
   );
 
+  it('keeps a filter or sort tool with an unsaved dot shown, through the active class', () => {
+    // A dirty part can have no rule at all (a saved filter removed privately); its slot carries `data-active`.
+    expect(isWidgetToolVisible({ tool: 'filter', ...HIDDEN, dirty: true })).toBe(true);
+    expect(isWidgetToolVisible({ tool: 'sort', ...HIDDEN, dirty: true })).toBe(true);
+    expect(isWidgetToolVisible({ tool: 'search', ...HIDDEN, dirty: true })).toBe(false);
+    expect(isWidgetToolVisible({ tool: 'settings', ...HIDDEN, dirty: true })).toBe(false);
+    expect(fixture.visibility.filter((entry) => entry.dirty === true).map((entry) => entry.tool)).toEqual([
+      'filter',
+      'sort',
+      'search',
+      'settings',
+    ]);
+  });
+
+  it('keeps every tool shown while the search field is expanded (WP09)', () => {
+    (['filter', 'sort', 'search', 'new', 'settings'] as WidgetTool[]).forEach((tool) => {
+      expect(isWidgetToolVisible({ tool, ...HIDDEN, searchActive: true })).toBe(true);
+    });
+    expect(fixture.visibility.filter((entry) => entry.search_active === true).map((entry) => entry.tool)).toEqual([
+      'filter',
+      'sort',
+      'search',
+      'new',
+      'settings',
+    ]);
+  });
+
+  it('shows every tool in a mobile context, without hover (WP14b)', () => {
+    (['filter', 'sort', 'search', 'new', 'settings'] as WidgetTool[]).forEach((tool) => {
+      expect(isWidgetToolVisible({ tool, ...HIDDEN, mobile: true })).toBe(true);
+      expect(isWidgetToolVisible({ tool, ...HIDDEN, mobile: false })).toBe(false);
+    });
+    expect(fixture.visibility.filter((entry) => entry.mobile === true).map((entry) => entry.tool)).toEqual([
+      'search',
+      'filter',
+      'sort',
+      'new',
+      'settings',
+    ]);
+    expect(fixture.visibility.filter((entry) => entry.mobile === true).every((entry) => entry.expected)).toBe(true);
+  });
+
+  // Eight conditions since WP14b added the mobile context (WP09 added the expanded search field).
   it('has exactly one class per condition', () => {
     const shown = (className: string) => className.split(' ').filter((name) => name.endsWith(':opacity-100'));
 
-    expect(shown(WIDGET_TOOL_SLOT_CLASS)).toHaveLength(6);
-    expect(shown(WIDGET_TOOLS_CONTAINER_CLASS)).toHaveLength(6);
+    expect(shown(WIDGET_TOOL_SLOT_CLASS)).toHaveLength(8);
+    expect(shown(WIDGET_TOOLS_CONTAINER_CLASS)).toHaveLength(8);
   });
 });
 

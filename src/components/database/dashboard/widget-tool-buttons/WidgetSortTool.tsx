@@ -8,6 +8,8 @@ import { useConditionsContext } from '@/components/database/components/condition
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
 import { useRollupSortableIds } from '@/components/database/components/sorts/utils';
 
+import { UnsavedDot } from '../private/UnsavedDot';
+import { useWidgetPrivateSnapshot } from '../private/WidgetPrivateContext';
 import { WidgetConditionsPopover } from '../WidgetConditionsPopover';
 import { useWidgetContext } from '../WidgetContext';
 
@@ -27,6 +29,8 @@ export function WidgetSortTool() {
   const conditions = useConditionsContext();
   const { editing } = useWidgetContext();
   const [pickerOpen, setPickerOpen] = useState(false);
+  // The widget's sorts differ from its saved view (WP07): the orange dot.
+  const unsaved = Boolean(useWidgetPrivateSnapshot()?.sorts);
   const rollupSortableIds = useRollupSortableIds();
   const propertyFilter = useCallback(
     (property: { id: string; type: FieldType }) =>
@@ -57,16 +61,18 @@ export function WidgetSortTool() {
         <div>
           <WidgetToolButton
             accent={editing}
+            badge={unsaved ? <UnsavedDot placement='tool' testId='database-actions-sort-dot' /> : null}
             className='relative'
             data-active={String(active)}
+            data-unsaved={String(unsaved)}
             data-testid='database-actions-sort'
             icon={SortIcon}
             iconClassName='h-5 w-5'
             label={t('grid.settings.sort')}
             onClick={(event) => {
               event.stopPropagation();
-              // No sorts: pick a property first. Otherwise toggle the popover.
-              if (!readOnly && !active) setPickerOpen(true);
+              // No sorts (and nothing unsaved to reset): pick a property first. Otherwise toggle the popover.
+              if (!readOnly && !active && !unsaved) setPickerOpen(true);
               else conditions?.setSortMenuOpen?.(!conditions.sortMenuOpen);
             }}
             parityId='dash-widget-tool-sort'

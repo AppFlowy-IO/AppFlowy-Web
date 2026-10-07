@@ -11,7 +11,7 @@ import { APIRequestContext, APIResponse, expect, Locator, Page } from '@playwrig
 import * as Y from 'yjs';
 
 import { DASHBOARD_GRID_COLUMNS } from '../../src/application/database-yjs/dashboard-geometry';
-import { Types } from '../../src/application/types';
+import { Types, YjsEditorKey } from '../../src/application/types';
 
 import { TestConfig } from './test-config';
 
@@ -98,6 +98,13 @@ export function parseJson<T>(value: string): T | null {
 const API_BUSY_CODE = 1079;
 const API_BUSY_ATTEMPTS = 6;
 
+/** The server's storage write queue is full: the same request succeeds shortly. */
+const API_QUEUE_FULL = /write queue is full\. Retry shortly/;
+
+function isBusy(body: ApiEnvelope<unknown> | null | undefined) {
+  return body?.code === API_BUSY_CODE || API_QUEUE_FULL.test(body?.message ?? '');
+}
+
 /** Send a request, again after a short pause while the server answers "busy". */
 async function sendUntilNotBusy<T>(send: () => Promise<APIResponse>) {
   for (let attempt = 1; ; attempt += 1) {
@@ -105,7 +112,7 @@ async function sendUntilNotBusy<T>(send: () => Promise<APIResponse>) {
     const text = await response.text();
     const body = parseJson<ApiEnvelope<T>>(text);
 
-    if (body?.code !== API_BUSY_CODE || attempt >= API_BUSY_ATTEMPTS) return { response, text, body };
+    if (!isBusy(body) || attempt >= API_BUSY_ATTEMPTS) return { response, text, body };
     await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
   }
 }
@@ -188,16 +195,37 @@ export async function readServerDatabaseDoc<T>(
   databaseId: string,
   read: (database: Y.Map<unknown> | undefined) => T
 ): Promise<T> {
+  return readServerCollabMap(request, access, databaseId, Types.Database, YjsEditorKey.database, read);
+}
+
+/** Read raw persisted cells, independently of the row-detail API's display formatting. */
+export async function readServerRowDoc<T>(
+  request: APIRequestContext,
+  access: ServerDatabaseAccess,
+  rowId: string,
+  read: (row: Y.Map<unknown> | undefined) => T
+): Promise<T> {
+  return readServerCollabMap(request, access, rowId, Types.DatabaseRow, YjsEditorKey.database_row, read);
+}
+
+async function readServerCollabMap<T>(
+  request: APIRequestContext,
+  access: ServerDatabaseAccess,
+  objectId: string,
+  type: Types,
+  key: YjsEditorKey,
+  read: (value: Y.Map<unknown> | undefined) => T
+): Promise<T> {
   const collab = await apiGet<{ doc_state: number[] }>(
     request,
     access.token,
-    `/api/workspace/v1/${access.workspaceId}/collab/${databaseId}?collab_type=${Types.Database}`
+    `/api/workspace/v1/${access.workspaceId}/collab/${objectId}?collab_type=${type}`
   );
-  const doc = new Y.Doc({ guid: databaseId });
+  const doc = new Y.Doc({ guid: objectId });
 
   try {
     Y.applyUpdate(doc, new Uint8Array(collab.doc_state));
-    return read(doc.getMap('data').get('database') as Y.Map<unknown> | undefined);
+    return read(doc.getMap(YjsEditorKey.data_section).get(key) as Y.Map<unknown> | undefined);
   } finally {
     doc.destroy();
   }

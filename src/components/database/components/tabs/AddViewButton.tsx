@@ -23,7 +23,31 @@ interface AddViewButtonProps {
   onViewAdded: (viewId: string) => void;
 }
 
-export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView, onViewAdded }: AddViewButtonProps) {
+/** One layout a new view can have, as the "+" menu and the phone's view list offer it. */
+export interface AddViewLayoutOption {
+  layout: DatabaseViewLayout;
+  /** The icon's layout. */
+  viewLayout: ViewLayout;
+  /** The menu label, also the new view's name. */
+  label: string;
+  testId?: string;
+  /** Shown disabled with this reason (the workspace plan, or its check still running). */
+  disabledReason?: string;
+}
+
+/**
+ * Adding a view to a database: the layouts offered (`options`, in menu
+ * order), the creation with its spinner, and the open state of the menu that
+ * lists them, whose opening starts the plan checks. Dashboard is offered only
+ * where one can be created (never in a mobile context). Shared by the tab
+ * bar's "+" menu and the phone's view list (`MobileDatabaseViewPill`).
+ */
+export function useAddDatabaseViewMenu({
+  databasePageId,
+  onBeforeAddView,
+  onAfterAddView,
+  onViewAdded,
+}: AddViewButtonProps) {
   const { t } = useTranslation();
   const onAddView = useAddDatabaseView();
   const [addLoading, setAddLoading] = useState(false);
@@ -108,31 +132,74 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
     }
   };
 
-  const timelineAction = (
-    <DropdownMenuItem
-      data-testid='add-timeline-view-button'
-      disabled={Boolean(timelineDisabledReason)}
-      onClick={() => {
-        void handleAddView(DatabaseViewLayout.Timeline, t('timeline.menuName', { defaultValue: 'Timeline' }));
-      }}
-    >
-      <ViewIcon layout={ViewLayout.Timeline} size={'small'} />
-      {t('timeline.menuName', { defaultValue: 'Timeline' })}
-    </DropdownMenuItem>
-  );
+  const options: AddViewLayoutOption[] = [
+    { layout: DatabaseViewLayout.Grid, viewLayout: ViewLayout.Grid, label: t('grid.menuName') },
+    { layout: DatabaseViewLayout.Board, viewLayout: ViewLayout.Board, label: t('board.menuName') },
+    { layout: DatabaseViewLayout.Calendar, viewLayout: ViewLayout.Calendar, label: t('calendar.menuName') },
+    ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
+      ? [
+          {
+            layout: DatabaseViewLayout.Timeline,
+            viewLayout: ViewLayout.Timeline,
+            label: t('timeline.menuName', { defaultValue: 'Timeline' }),
+            testId: 'add-timeline-view-button',
+            disabledReason: timelineDisabledReason,
+          },
+        ]
+      : []),
+    ...(canCreateDashboard
+      ? [
+          {
+            layout: DatabaseViewLayout.Dashboard,
+            viewLayout: ViewLayout.Dashboard,
+            label: t('dashboard.menuName', { defaultValue: 'Dashboard' }),
+            testId: 'add-dashboard-view-button',
+            disabledReason: dashboardDisabledReason,
+          },
+        ]
+      : []),
+    { layout: DatabaseViewLayout.Chart, viewLayout: ViewLayout.Chart, label: t('chart.menuName') },
+    ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
+      ? [
+          {
+            layout: DatabaseViewLayout.Form,
+            viewLayout: ViewLayout.Form,
+            label: t('form.builderName', { defaultValue: 'Form builder' }),
+            testId: 'add-form-view-option',
+          },
+        ]
+      : []),
+    {
+      layout: DatabaseViewLayout.List,
+      viewLayout: ViewLayout.List,
+      label: t('list.menuName'),
+      testId: 'add-list-view-button',
+    },
+    {
+      layout: DatabaseViewLayout.Gallery,
+      viewLayout: ViewLayout.Gallery,
+      label: t('gallery.menuName'),
+      testId: 'add-gallery-view-button',
+    },
+    {
+      layout: DatabaseViewLayout.Feed,
+      viewLayout: ViewLayout.Feed,
+      label: t('feed.menuName'),
+      testId: 'add-feed-view-button',
+    },
+  ];
 
-  const dashboardAction = (
-    <DropdownMenuItem
-      data-testid='add-dashboard-view-button'
-      disabled={Boolean(dashboardDisabledReason)}
-      onClick={() => {
-        void handleAddView(DatabaseViewLayout.Dashboard, t('dashboard.menuName', { defaultValue: 'Dashboard' }));
-      }}
-    >
-      <ViewIcon layout={ViewLayout.Dashboard} size={'small'} />
-      {t('dashboard.menuName', { defaultValue: 'Dashboard' })}
-    </DropdownMenuItem>
-  );
+  return { addLoading, menuOpen, setMenuOpen, options, addView: handleAddView };
+}
+
+export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView, onViewAdded }: AddViewButtonProps) {
+  const { t } = useTranslation();
+  const { addLoading, menuOpen, setMenuOpen, options, addView } = useAddDatabaseViewMenu({
+    databasePageId,
+    onBeforeAddView,
+    onAfterAddView,
+    onViewAdded,
+  });
 
   return (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -150,105 +217,33 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side={'bottom'} align={'start'} className={'!min-w-[120px]'}>
-        <DropdownMenuItem
-          onClick={() => {
-            void handleAddView(DatabaseViewLayout.Grid, t('grid.menuName'));
-          }}
-        >
-          <ViewIcon layout={ViewLayout.Grid} size={'small'} />
-          {t('grid.menuName')}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => {
-            void handleAddView(DatabaseViewLayout.Board, t('board.menuName'));
-          }}
-        >
-          <ViewIcon layout={ViewLayout.Board} size={'small'} />
-          {t('board.menuName')}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => {
-            void handleAddView(DatabaseViewLayout.Calendar, t('calendar.menuName'));
-          }}
-        >
-          <ViewIcon layout={ViewLayout.Calendar} size={'small'} />
-          {t('calendar.menuName')}
-        </DropdownMenuItem>
+        {options.map((option) => {
+          const item = (
+            <DropdownMenuItem
+              data-testid={option.testId}
+              disabled={Boolean(option.disabledReason)}
+              key={option.layout}
+              onClick={() => {
+                void addView(option.layout, option.label);
+              }}
+            >
+              <ViewIcon layout={option.viewLayout} size={'small'} />
+              {option.label}
+            </DropdownMenuItem>
+          );
 
-        {EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED &&
-          (timelineDisabledReason ? (
-            <Tooltip>
+          // A refused layout explains itself on hover.
+          return option.disabledReason ? (
+            <Tooltip key={option.layout}>
               <TooltipTrigger asChild>
-                <div>{timelineAction}</div>
+                <div>{item}</div>
               </TooltipTrigger>
-              <TooltipContent>{timelineDisabledReason}</TooltipContent>
+              <TooltipContent>{option.disabledReason}</TooltipContent>
             </Tooltip>
           ) : (
-            timelineAction
-          ))}
-
-        {canCreateDashboard &&
-          (dashboardDisabledReason ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div>{dashboardAction}</div>
-              </TooltipTrigger>
-              <TooltipContent>{dashboardDisabledReason}</TooltipContent>
-            </Tooltip>
-          ) : (
-            dashboardAction
-          ))}
-
-        <DropdownMenuItem
-          onClick={() => {
-            void handleAddView(DatabaseViewLayout.Chart, t('chart.menuName'));
-          }}
-        >
-          <ViewIcon layout={ViewLayout.Chart} size={'small'} />
-          {t('chart.menuName')}
-        </DropdownMenuItem>
-
-        {EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && (
-          <DropdownMenuItem
-            data-testid='add-form-view-option'
-            onClick={() => {
-              void handleAddView(DatabaseViewLayout.Form, t('form.builderName', { defaultValue: 'Form builder' }));
-            }}
-          >
-            <ViewIcon layout={ViewLayout.Form} size={'small'} />
-            {t('form.builderName', { defaultValue: 'Form builder' })}
-          </DropdownMenuItem>
-        )}
-
-        <DropdownMenuItem
-          data-testid='add-list-view-button'
-          onClick={() => {
-            void handleAddView(DatabaseViewLayout.List, t('list.menuName'));
-          }}
-        >
-          <ViewIcon layout={ViewLayout.List} size={'small'} />
-          {t('list.menuName')}
-        </DropdownMenuItem>
-
-        <DropdownMenuItem
-          data-testid='add-gallery-view-button'
-          onClick={() => {
-            void handleAddView(DatabaseViewLayout.Gallery, t('gallery.menuName'));
-          }}
-        >
-          <ViewIcon layout={ViewLayout.Gallery} size={'small'} />
-          {t('gallery.menuName')}
-        </DropdownMenuItem>
-
-        <DropdownMenuItem
-          data-testid='add-feed-view-button'
-          onClick={() => {
-            void handleAddView(DatabaseViewLayout.Feed, t('feed.menuName'));
-          }}
-        >
-          <ViewIcon layout={ViewLayout.Feed} size={'small'} />
-          {t('feed.menuName')}
-        </DropdownMenuItem>
+            item
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -19,6 +19,7 @@ import { DatabaseViewLayout } from '../../src/application/types';
 import { WIDGET_TOOL_CAPS } from '../../src/components/database/dashboard/widget-tools';
 
 import { chartTable, chartTooltip, hoverChartCategory } from './chart-render-helpers';
+import { pressDashboardUndo } from './dashboard-add-widget-helpers';
 import { frameworkErrorCollector } from './dashboard-error-collector';
 import { expectDashboardViewMode } from './dashboard-platform-helpers';
 import { canonicalJson, WIDGET_TIMEOUT, WIDGET_TIMEOUT_MS } from './dashboard-shared-helpers';
@@ -201,7 +202,15 @@ async function expectWidgetRendered(page: Page, widget: SweepWidget) {
 
 interface WidgetToolsFixture {
   caps: Record<string, { content_tools: boolean; sort_layouts: string[] }>;
-  cases: { caps: string; role: string; layout: string; editing: boolean; expected: string[] }[];
+  cases: {
+    caps: string;
+    /** WP09: absent means widget; standalone rows are the database toolbar. */
+    context?: string;
+    role: string;
+    layout: string;
+    editing: boolean;
+    expected: string[];
+  }[];
 }
 
 const WIDGET_TOOLS_FIXTURE = fileURLToPath(
@@ -219,7 +228,7 @@ const FIXTURE_LAYOUT_NAMES: Partial<Record<DatabaseViewLayout, string>> = {
   [DatabaseViewLayout.Timeline]: 'timeline',
 };
 
-/** The fixture's capability set the app ships with today (WP03, until WP09 flips the content tools on). */
+/** The fixture's capability set the app ships with today (WP09: Search and `+ New` on, boards sort). */
 function shippedCaps(fixture: WidgetToolsFixture): string {
   const sortLayouts = [...WIDGET_TOOL_CAPS.sortLayouts]
     .map((layout) => FIXTURE_LAYOUT_NAMES[layout])
@@ -241,6 +250,7 @@ function expectedWidgetTools(layout: FixtureLayout, mode: DashboardMode): string
   const entry = fixture.cases.find(
     (candidate) =>
       candidate.caps === caps &&
+      (candidate.context ?? 'widget') === 'widget' &&
       candidate.role === 'writer' &&
       candidate.layout === layout &&
       candidate.editing === (mode === 'Edit')
@@ -403,6 +413,27 @@ export async function openAndCloseEveryWidgetControl(page: Page, name: string) {
         return;
       }
 
+      // Search expands in place (no overlay): open the field, then Escape collapses it.
+      if (tool === 'search') {
+        if (mode === 'View') await widget.hover();
+        await widget.locator('[data-widget-tool="search"]').getByRole('button').first().click();
+        const field = widget.getByTestId('database-actions-search-field');
+
+        await expect(field, `${context}: the search field did not open`).toHaveAttribute('data-search-active', 'true');
+        await page.keyboard.press('Escape');
+        await expect(field, `${context}: the search field did not close`).toHaveCount(0);
+        return;
+      }
+
+      // `+ New` creates a row from its "+": only its template chevron is opened.
+      if (tool === 'new') {
+        await openAndCloseOverlay(page, context, async () => {
+          if (mode === 'View') await widget.hover();
+          await widget.locator('[data-widget-tool="new"]').getByTestId('database-template-menu-trigger').click();
+        });
+        return;
+      }
+
       await openAndCloseOverlay(page, context, async () => {
         // In View mode the tools show on hover, as for a user.
         if (mode === 'View') await widget.hover();
@@ -529,7 +560,7 @@ async function openWidgetSettingsHost(page: Page, widget: Locator, context: stri
 /**
  * Hover and click each row of the open "View settings" panel: its sub-menu
  * must list at least one item, then it is closed. The Source row comes last:
- * the picker opens in replace mode and is cancelled.
+ * the docked Source panel opens in replace mode and is cancelled.
  */
 export async function openEveryViewSettingsRow(page: Page, context: string) {
   const collector = frameworkErrorCollector(page);
@@ -575,12 +606,14 @@ export async function openEveryViewSettingsRow(page: Page, context: string) {
   collector.setContext(sourceContext);
   await source.hover();
   await source.click();
-  await expect(picker, `${sourceContext}: the picker did not open`).toBeVisible(WIDGET_TIMEOUT);
+  // WP06: Source opens the docked Source panel (replace mode), which writes only on a pick.
+  await expect(picker, `${sourceContext}: the Source panel did not open`).toBeVisible(WIDGET_TIMEOUT);
   await expect(picker).toHaveAttribute('data-mode', 'replace');
+  await expect(picker).toHaveAttribute('data-state', 'ready');
   await expect(picker.getByTestId('dashboard-widget-picker-option').first()).toBeVisible(WIDGET_TIMEOUT);
   await collector.expectNone(sourceContext);
   await page.keyboard.press('Escape');
-  await expect(picker, `${sourceContext}: the picker did not close`).toBeHidden();
+  await expect(picker, `${sourceContext}: the Source panel did not close`).toBeHidden();
   await collector.expectNone(sourceContext);
 }
 
@@ -614,8 +647,8 @@ export function widgetWithOpenSettings(page: Page): Locator {
 
 /**
  * Open and close every dashboard toolbar control: the global Filter button
- * and its popover; in Edit mode "+ Add global filter" and the menu it opens,
- * and a chip's popover when a global filter exists; the Settings menu. A
+ * and its popover (in Edit mode the "Filter by…" property picker), and a
+ * chip's popover when a global filter exists; the Settings menu. A
  * full-page dashboard offers no Expand button.
  */
 export async function openAndCloseEveryToolbarControl(page: Page) {
@@ -640,9 +673,9 @@ export async function openAndCloseEveryToolbarControl(page: Page) {
       async () => {
         await expect(DashboardSelectors.globalFilterMenu(page)).toBeVisible();
         if (mode !== 'Edit') return;
-        await DashboardSelectors.globalFilterAdd(page).click();
-        await expect(page.getByTestId('dashboard-global-filter-property-picker')).toBeVisible();
-        await expect(page.getByTestId('dashboard-global-filter-property-option').first()).toBeVisible();
+        // Writers get the property-first picker straight away (WP08 §1.2).
+        await expect(DashboardSelectors.globalFilterSearch(page)).toBeVisible();
+        await expect(DashboardSelectors.globalFilterFieldOptions(page).first()).toBeVisible();
       }
     )
   );
@@ -678,7 +711,13 @@ export async function openAndCloseEveryToolbarControl(page: Page) {
   expect(canonicalJson(await readDashboardSetting(page)), `Toolbar / ${mode}: persisted state changed`).toBe(before);
 }
 
-/** Open the widget picker from the add-widget control, show each of its tabs, then cancel it. */
+/**
+ * Open the "New view" picker from the add-widget control and cancel it
+ * (WP06): the "+" inserts a default widget and docks the picker beside it,
+ * so the routine shows the picker's "Other data sources" section, closes the
+ * picker, then undoes the add in one step. The dashboard layout ends as it
+ * began; the widget's own view is queued for deletion and removed on Done.
+ */
 export async function openAndCloseWidgetPicker(page: Page) {
   const collector = frameworkErrorCollector(page);
   const context = 'Widget picker';
@@ -691,27 +730,55 @@ export async function openAndCloseWidgetPicker(page: Page) {
   await expect(button, `${context}: no add-widget control`).toBeEnabled(WIDGET_TIMEOUT);
   await button.click();
   await expect(picker, `${context}: the picker did not open`).toBeVisible(WIDGET_TIMEOUT);
-  const tabs = picker.getByRole('tab');
-  const count = await tabs.count();
+  await expect(picker, `${context}: the picker did not become ready`).toHaveAttribute('data-state', 'ready', WIDGET_TIMEOUT);
+  const widgetId = (await picker.getAttribute('data-widget-id')) ?? '';
 
-  expect(count, `${context}: the picker shows no tabs`).toBeGreaterThan(0);
-  for (let index = 0; index < count; index += 1) {
-    const tab = tabs.nth(index);
+  expect(widgetId, `${context}: the picker names no widget`).not.toBe('');
+  await expect(DashboardSelectors.widget(page, widgetId), `${context}: the added widget is not shown`).toBeVisible(
+    WIDGET_TIMEOUT
+  );
+  await expect(
+    DashboardSelectors.pickerLayoutOptions(page).first(),
+    `${context}: the picker lists no new view types`
+  ).toBeVisible(WIDGET_TIMEOUT);
+  await collector.expectNone(context);
 
-    if (await tab.isDisabled()) continue;
-    const tabContext = `${context} / ${((await tab.innerText()) || `tab ${index + 1}`).trim()}`;
+  const otherContext = `${context} / Other data sources`;
+  const other = DashboardSelectors.pickerSection(page, 'other');
 
-    collector.setContext(tabContext);
-    await tab.click();
-    await expect(tab, `${tabContext}: the tab did not open`).toHaveAttribute('aria-selected', 'true');
-    await expect(picker.locator('[role="tabpanel"][data-state="active"]')).toBeVisible();
-    await collector.expectNone(tabContext);
-  }
+  collector.setContext(otherContext);
+  await DashboardSelectors.pickerOtherSources(page).click();
+  await expect(
+    other.getByTestId('dashboard-widget-picker-section-title'),
+    `${otherContext}: the section did not expand`
+  ).toBeVisible(WIDGET_TIMEOUT);
+  await expect(other.getByTestId('dashboard-widget-picker-loading'), `${otherContext}: the databases did not load`).toHaveCount(
+    0,
+    WIDGET_TIMEOUT
+  );
+  await expect(other.getByTestId('dashboard-widget-picker-load-failed'), `${otherContext}: loading failed`).toHaveCount(0);
+  await collector.expectNone(otherContext);
 
   collector.setContext(context);
-  await page.keyboard.press('Escape');
+  await DashboardSelectors.pickerClose(page).click();
   await expect(picker, `${context}: the picker did not close`).toBeHidden({ timeout: WIDGET_TIMEOUT_MS });
+  await expect(DashboardSelectors.widget(page, widgetId), `${context}: closing the picker removed the widget`).toBeVisible();
   await collector.expectNone(context);
+
+  const undoContext = `${context} / Undo`;
+
+  collector.setContext(undoContext);
+  await pressDashboardUndo(page);
+  await expect(DashboardSelectors.widget(page, widgetId), `${undoContext}: undo kept the added widget`).toHaveCount(
+    0,
+    WIDGET_TIMEOUT
+  );
+  await collector.expectNone(undoContext);
   collector.setContext('the dashboard');
-  expect(canonicalJson(await readDashboardSetting(page)), `${context}: persisted state changed`).toBe(before);
+  await expect
+    .poll(async () => canonicalJson(await readDashboardSetting(page)), {
+      ...WIDGET_TIMEOUT,
+      message: `${context}: persisted state changed`,
+    })
+    .toBe(before);
 }

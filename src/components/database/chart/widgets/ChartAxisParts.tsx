@@ -127,13 +127,24 @@ export interface DataLabelTarget {
 /**
  * A data label 4px past the value end: above a positive bar or point, below
  * a negative one; for horizontal bars right of a positive bar, left of a
- * negative one.
+ * negative one. `series` names the labelled bar of a grouped chart (`''` for
+ * a stack total and a single series).
  */
-export function DataLabel({ target, layout }: { target: DataLabelTarget; layout: 'vertical' | 'horizontal' }) {
+export function DataLabel({
+  target,
+  layout,
+  series,
+}: {
+  target: DataLabelTarget;
+  layout: 'vertical' | 'horizontal';
+  series?: string;
+}) {
   const common = {
     className: cn(TEXT_CLASS, 'text-chart-data-label'),
+    'data-category': target.label,
     'data-label': target.label,
     'data-parity-id': 'dash-chart-data-label',
+    'data-series': series ?? '',
     'data-testid': 'chart-data-label',
   };
 

@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
-import { StrictMode, useEffect, useRef, useState } from 'react';
+import { RefObject, StrictMode, useEffect, useRef, useState } from 'react';
 
 import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
 import { DASHBOARD_LOADING } from '@/application/database-yjs/dashboard-loading';
@@ -93,17 +93,24 @@ function FakeDatabase({
   return <div data-testid={`database-${widgetId}`} />;
 }
 
+/** The part of a widget inside its box that waits for its turn (`WidgetSource` in the app). */
+function WidgetContent({ id, sourceId, boxRef }: TestWidgetSpec & { boxRef: RefObject<HTMLDivElement> }) {
+  const { started, report } = useWidgetLoadStart({ widgetId: id, sourceId, boxRef, resume: false });
+
+  return started ? <FakeDatabase report={report} sourceId={sourceId} widgetId={id} /> : <Placeholder widgetId={id} />;
+}
+
+/**
+ * A widget box with its content inside, as `DashboardWidget` renders it: the
+ * box's ref is attached only after the layout effects of the content, and a
+ * new source remounts the content inside the same box.
+ */
 function TestWidget({ id, sourceId }: TestWidgetSpec) {
   const boxRef = useRef<HTMLDivElement>(null);
-  const { started, report } = useWidgetLoadStart({ widgetId: id, sourceId, boxRef, resume: false });
 
   return (
     <div data-widget-id={id} ref={boxRef}>
-      {started ? (
-        <FakeDatabase report={report} sourceId={sourceId} widgetId={id} />
-      ) : (
-        <div data-testid={`placeholder-${id}`} />
-      )}
+      <WidgetContent boxRef={boxRef} id={id} key={sourceId} sourceId={sourceId} />
     </div>
   );
 }
@@ -160,19 +167,52 @@ function startedWidgetIds() {
   return dashboardLoadStats.snapshot().widgetStarts.map((start) => start.widgetId);
 }
 
+/**
+ * The widget boxes the browser would lay out on screen, by widget id: jsdom
+ * lays nothing out, so every other box has no area (it is never on screen).
+ */
+const onScreenBoxes = new Set<string>();
+
+/** A box inside jsdom's 1024 x 768 viewport, or one far below it. */
+function layOutBox(element: HTMLElement): DOMRect {
+  const widgetId = element.dataset.widgetId;
+  const top = widgetId !== undefined && onScreenBoxes.has(widgetId) ? 40 : 4000;
+
+  return { x: 0, y: top, top, left: 0, width: 300, height: 200, right: 300, bottom: top + 200 } as DOMRect;
+}
+
+/**
+ * Records every widget that rendered its placeholder, by id: a widget that
+ * starts before the first paint renders its placeholder only in the commit it
+ * replaces at once, never in one the browser paints.
+ */
+const placeholderRenders = new Map<string, number>();
+
+function Placeholder({ widgetId }: { widgetId: string }) {
+  placeholderRenders.set(widgetId, (placeholderRenders.get(widgetId) ?? 0) + 1);
+  return <div data-testid={`placeholder-${widgetId}`} />;
+}
+
 const originalIntersectionObserver = window.IntersectionObserver;
+const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
 
 beforeEach(() => {
   FakeIntersectionObserver.instances = [];
   mountedDatabases.clear();
   reporters.clear();
   mockResidentSources.clear();
+  onScreenBoxes.clear();
+  placeholderRenders.clear();
   dashboardLoadStats.reset();
   window.IntersectionObserver = FakeIntersectionObserver as unknown as typeof IntersectionObserver;
+  HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect(this: HTMLElement) {
+    return this.dataset.widgetId === undefined ? originalGetBoundingClientRect.call(this) : layOutBox(this);
+  };
 });
 
 afterEach(() => {
   window.IntersectionObserver = originalIntersectionObserver;
+  HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
   jest.useRealTimers();
 });
 
@@ -305,7 +345,7 @@ describe('the dashboard load queue', () => {
     expect(screen.getByTestId('placeholder-w3')).toBeTruthy();
   });
 
-  it('starts the widgets of the host database at once, without a slot', () => {
+  it('starts a visible widget of the host database before the first paint, without a slot', () => {
     const widgets = [
       { id: 'w1', sourceId: 'S1' },
       { id: 'w2', sourceId: 'S2' },
@@ -313,13 +353,119 @@ describe('the dashboard load queue', () => {
       { id: 'w4', sourceId: 'host' },
     ];
 
+    widgets.forEach((widget) => onScreenBoxes.add(widget.id));
     render(<TestDashboard widgets={widgets} />);
 
-    // Before any visibility report, the host widget is already shown.
-    expect(mountedDatabases.has('w4')).toBe(true);
-    observer().report((id) => id !== 'w4');
+    // No observer report and no timer yet: the host widget started in the
+    // commit of its first render (from its box, read before the paint), and
+    // the placeholder it rendered there was replaced in the same task.
+    expect(Array.from(mountedDatabases.keys())).toEqual(['w4']);
+    expect(screen.queryByTestId('placeholder-w4')).toBeNull();
+    expect(placeholderRenders.get('w4')).toBe(1);
+    // The cold widgets wait for the observer: their visibility is not known yet.
+    expect(screen.getAllByTestId(/^placeholder-w[123]$/)).toHaveLength(3);
 
+    observer().report(() => true);
+
+    // The host takes no slot: two cold sources load beside it.
     expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2', 'w4']);
+    expect(loadingSources()).toEqual(new Set(['S1', 'S2']));
+    expect(dashboardLoadStats.snapshot().maxConcurrentSourceLoads).toBe(2);
+    expect(dashboardLoadStats.snapshot().widgetStarts.find((start) => start.widgetId === 'w4')?.visibleAtStart).toBe(
+      true
+    );
+  });
+
+  it('starts a visible widget switched to the host database before the next paint, inside its box', () => {
+    const widgets = [
+      { id: 'w1', sourceId: 'S1' },
+      { id: 'w2', sourceId: 'S2' },
+      { id: 'w3', sourceId: 'S3' },
+    ];
+    const { rerender } = render(<TestDashboard widgets={widgets} />);
+
+    onScreenBoxes.add('w3');
+    observer().report((id) => id === 'w1' || id === 'w2');
+    expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2']);
+
+    // w3 now shows a view of the host: its content remounts in the box it had.
+    rerender(<TestDashboard widgets={[...widgets.slice(0, 2), { id: 'w3', sourceId: 'host' }]} />);
+
+    expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2', 'w3']);
+    expect(placeholderRenders.get('w3')).toBe(2);
+    expect(loadingSources()).toEqual(new Set(['S1', 'S2']));
+  });
+
+  /**
+   * A dashboard inside its own source database: two visible and two
+   * off-screen widgets of the host, and two cold sources beside them.
+   */
+  const hostDashboard = [
+    { id: 'w1', sourceId: 'host' },
+    { id: 'w2', sourceId: 'host' },
+    { id: 'w3', sourceId: 'S1' },
+    { id: 'w4', sourceId: 'S2' },
+    { id: 'w5', sourceId: 'host' },
+    { id: 'w6', sourceId: 'host' },
+    { id: 'w7', sourceId: 'S3' },
+  ];
+  const hostDashboardVisible = new Set(['w1', 'w2', 'w3', 'w4']);
+
+  function openHostDashboard() {
+    hostDashboardVisible.forEach((id) => onScreenBoxes.add(id));
+    render(<TestDashboard widgets={hostDashboard} />);
+    // Before the observer reports, only the visible host widgets started.
+    expect(startedWidgetIds()).toEqual(['w1', 'w2']);
+    observer().report((id) => hostDashboardVisible.has(id));
+    expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w3', 'w4']);
+  }
+
+  it('starts the off-screen widgets of the host database after the first data of every visible widget, without a slot', () => {
+    openHostDashboard();
+
+    // Off-screen host widgets wait for the visible ones, though they need no slot.
+    report('w1', 'first-data');
+    report('w2', 'first-data');
+    report('w3', 'first-data');
+    expect(screen.getByTestId('placeholder-w5')).toBeTruthy();
+    expect(mountedDatabases.has('w5')).toBe(false);
+
+    report('w4', 'first-data');
+
+    // Both slots are still held by S1 and S2: the host widgets start beside
+    // them, and the off-screen widget of a third cold source still waits.
+    expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w3', 'w4', 'w5', 'w6']);
+    expect(loadingSources()).toEqual(new Set(['S1', 'S2']));
+    expect(mountedDatabases.has('w7')).toBe(false);
+    expect(dashboardLoadStats.snapshot().widgetStarts.map((start) => start.visibleAtStart)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+    ]);
+    expect(dashboardLoadStats.snapshot().maxConcurrentSourceLoads).toBe(2);
+  });
+
+  it('starts the off-screen widgets of the host database 10 s after the first visible start when a visible widget shows no data', () => {
+    jest.useFakeTimers();
+    openHostDashboard();
+    report('w1', 'first-data');
+    report('w2', 'first-data');
+    report('w3', 'first-data');
+
+    act(() => {
+      jest.advanceTimersByTime(DASHBOARD_LOADING.deferredStartTimeoutMs - 1);
+    });
+    expect(mountedDatabases.has('w5')).toBe(false);
+    act(() => {
+      jest.advanceTimersByTime(1);
+    });
+
+    expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w3', 'w4', 'w5', 'w6']);
+    expect(loadingSources()).toEqual(new Set(['S1', 'S2']));
+    expect(mountedDatabases.has('w7')).toBe(false);
     expect(dashboardLoadStats.snapshot().maxConcurrentSourceLoads).toBe(2);
   });
 

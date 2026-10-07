@@ -48,8 +48,11 @@ function GridNewRow({ groupFieldId, groupId }: { groupFieldId?: string; groupId?
       }
       data-group-id={groupId}
     >
-      <PlusIcon className={'h-5 w-5'} />
-      {t('grid.row.newRow')}
+      {/* "+ New page" (addendum A6): the 16px add glyph and the shared grid.row.newRow label. */}
+      <PlusIcon aria-hidden='true' className={'h-4 w-4'} data-parity-id='dash-widget-grid-new-row__icon' />
+      <span className='leading-5' data-parity-id='dash-widget-grid-new-row__label'>
+        {t('grid.row.newRow')}
+      </span>
     </div>
   );
 }

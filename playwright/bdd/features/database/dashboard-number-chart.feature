@@ -33,7 +33,7 @@ Feature: Number chart widgets
       | 1   | Projects Chart |
     Then the "Projects Chart" widget shows a number starting with "5.3"
 
-  Scenario: A Number chart over an empty database shows nothing to count
+  Scenario: A Number chart over an empty database shows no data
     Given the fixture also has the "Backlog" database
     And "Backlog" also has a "Chart" view
     And the "Backlog" chart is a Number chart using "Count"

@@ -17,11 +17,14 @@ import {
   ChecklistFilterCondition,
   DateFilter,
   DateFilterCondition,
+  isEndDateCondition,
+  isParameterizedRelativeCondition,
   isRelativeDateCondition,
   NumberFilter,
   NumberFilterCondition,
   parseChecklistFlexible,
   parseSelectOptionTypeOptions,
+  parseRelativeDateSpec,
   PersonFilterCondition,
   RelationFilterCondition,
   resolveRelativeDates,
@@ -61,7 +64,13 @@ import {
   YjsDatabaseKey,
 } from '@/application/types';
 import { canonicalizeUserUid } from '@/application/user-uid';
-import { isAfterOneDay, isTimestampBefore, isTimestampBetweenRange, isTimestampInSameDay } from '@/utils/time';
+import {
+  isAfterOneDay,
+  isTimestampBefore,
+  isTimestampBetweenDays,
+  isTimestampBetweenRange,
+  isTimestampInSameDay,
+} from '@/utils/time';
 
 export function parseFilter(storedFieldType: FieldType, filter: YDatabaseFilter, fields?: YDatabaseFields) {
   const fieldId = filter.get(YjsDatabaseKey.field_id);
@@ -112,6 +121,18 @@ export function parseFilter(storedFieldType: FieldType, filter: YDatabaseFilter,
     case FieldType.DateTime:
     case FieldType.CreatedTime:
     case FieldType.LastEditedTime:
+      // "Is relative to today": the content is the spec, read with its defaults.
+      if (isParameterizedRelativeCondition(condition)) {
+        const spec = parseRelativeDateSpec(content);
+
+        return {
+          ...value,
+          relative_direction: spec.direction,
+          relative_amount: spec.amount,
+          relative_unit: spec.unit,
+        } as DateFilter;
+      }
+
       if (
         condition === DateFilterCondition.DateStartIsEmpty ||
         condition === DateFilterCondition.DateStartIsNotEmpty ||
@@ -1126,10 +1147,12 @@ export function textFilterCheck(data: string, content: string, condition: TextFi
       return data.toLocaleLowerCase().includes(content.toLocaleLowerCase());
     case TextFilterCondition.TextDoesNotContain:
       return !data.toLocaleLowerCase().includes(content.toLocaleLowerCase());
+    // Case-insensitive like desktop (`cell_filter.rs`), so a text drill-down
+    // matches the same rows on both clients (WP13 decision 12).
     case TextFilterCondition.TextIs:
-      return data === content;
+      return data.toLocaleLowerCase() === content.toLocaleLowerCase();
     case TextFilterCondition.TextIsNot:
-      return data !== content;
+      return data.toLocaleLowerCase() !== content.toLocaleLowerCase();
     case TextFilterCondition.TextIsEmpty:
       return data === '';
     case TextFilterCondition.TextIsNotEmpty:
@@ -1236,7 +1259,7 @@ export function rowTimeFilterCheck(data: string, filter: DateFilter) {
       return isTimestampBefore(timestamp.toString(), data) || isTimestampInSameDay(timestamp.toString(), data);
     case DateFilterCondition.DateStartsBetween:
       if (!data) return false;
-      return isTimestampBetweenRange(data, start.toString(), end.toString());
+      return isTimestampBetweenDays(data, start.toString(), end.toString());
     default:
       return false;
   }
@@ -1245,9 +1268,9 @@ export function rowTimeFilterCheck(data: string, filter: DateFilter) {
 // Resolves a relative-date filter to a concrete [start, end] range and tests whether
 // the cell's relevant timestamp (start for "DateStarts*", end for "DateEnds*") falls in it.
 function relativeDateRangeMatches(data: string, filter: DateFilter, endTimestamp?: string): boolean {
-  // Mirrors desktop: DateStarts* relatives match against cell.start; DateEnds* match against cell.end.
-  const isEndCondition = filter.condition >= DateFilterCondition.DateEndsToday;
-  const target = isEndCondition ? endTimestamp ?? '' : data;
+  // Mirrors desktop: DateStarts* relatives match against cell.start; DateEnds* match against
+  // cell.end, falling back to cell.start when the cell has no end (Rust `end_timestamp.or(timestamp)`).
+  const target = isEndDateCondition(filter.condition) ? endTimestamp || data : data;
 
   if (!target) return false;
 
@@ -1321,12 +1344,14 @@ export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
       return (
         isTimestampBefore(timestamp.toString(), endTimestamp) || isTimestampInSameDay(timestamp.toString(), endTimestamp)
       );
+    // "Is between" counts both of its days, as the desktop does: the window's dates are
+    // midnights, while a cell's date may carry a time of its day.
     case DateFilterCondition.DateStartsBetween:
       if (!data) return false;
-      return isTimestampBetweenRange(data, start.toString(), end.toString());
+      return isTimestampBetweenDays(data, start.toString(), end.toString());
     case DateFilterCondition.DateEndsBetween:
       if (!endTimestamp) return false;
-      return isTimestampBetweenRange(endTimestamp, start.toString(), end.toString());
+      return isTimestampBetweenDays(endTimestamp, start.toString(), end.toString());
     default:
       return false;
   }
@@ -1447,13 +1472,19 @@ export function dateFilterFillData(filter: YDatabaseFilter): {
   // timestamp and always pre-fill from the resolved range so the new row
   // satisfies the filter.
   if (isRelativeDateCondition(condition)) {
+    const isEnd = isEndDateCondition(condition);
+
+    // Today lies in every "relative to today" range.
+    if (isParameterizedRelativeCondition(condition)) {
+      return isEnd ? { data: today, endTimestamp: today, isRange: true } : { data: today, isRange: false };
+    }
+
     const resolved = resolveRelativeDates({
       condition,
       timestamp: undefined,
       start: undefined,
       end: undefined,
     } as DateFilter);
-    const isEnd = condition >= DateFilterCondition.DateEndsToday;
     const fill = (resolved.timestamp ?? resolved.start ?? Number(today)).toString();
 
     return isEnd ? { data: fill, endTimestamp: fill, isRange: true } : { data: fill, isRange: false };

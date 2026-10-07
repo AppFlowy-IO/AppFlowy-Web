@@ -1,10 +1,12 @@
 import {
   prefetchDatabaseBlobDiff,
   clearDatabaseRowDocSeedCache,
+  holdsDatabaseSourceRows,
   invalidateDatabaseRowDocSeed,
   invalidateDatabaseBlobAfterRestore,
   isDatabaseSourceResident,
   peekDatabaseRowDocSeed,
+  subscribeToDatabaseSourceResidency,
   takeDatabaseRowDocSeed,
 } from '@/application/database-blob';
 import * as pageStageModule from '@/application/database-blob/page-stage';
@@ -300,6 +302,85 @@ describe('database blob prefetch deduplication', () => {
 
     expect(isDatabaseSourceResident(restoredDatabaseId)).toBe(false);
     expect(isDatabaseSourceResident(reconciledDatabaseId)).toBe(true);
+  });
+
+  describe('rows the tab holds before the walk settles', () => {
+    /** Holds the row writes of the walk, so it stays between its commit and its end. */
+    function holdRowWrites() {
+      const write = createDeferred<void>();
+
+      mockedOpenRowCollabDB.mockImplementation(async () => {
+        await write.promise;
+        return {
+          doc: { destroy: jest.fn() },
+          provider: {
+            destroy: jest.fn().mockResolvedValue(undefined),
+            whenPersisted: jest.fn().mockResolvedValue(undefined),
+          },
+        } as unknown as Awaited<ReturnType<typeof openRowCollabDBWithProvider>>;
+      });
+      return write;
+    }
+
+    it('holds the rows of a complete walk from its commit, while it writes them, and is resident once it settles', async () => {
+      const databaseId = 'database-held-while-persisting';
+      const write = holdRowWrites();
+      const onSeedsReady = jest.fn();
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 110, seqNo: 1 }));
+      const walk = prefetchDatabaseBlobDiff('workspace', databaseId, { onSeedsReady });
+
+      await flushPendingWork();
+      expect(onSeedsReady).toHaveBeenCalledTimes(1);
+      expect(isDatabaseSourceResident(databaseId)).toBe(false);
+      expect(holdsDatabaseSourceRows(databaseId)).toBe(true);
+
+      write.resolve();
+      await walk;
+      expect(isDatabaseSourceResident(databaseId)).toBe(true);
+      expect(holdsDatabaseSourceRows(databaseId)).toBe(true);
+    });
+
+    it('does not hold the rows of a walk of only the changes since a RID', async () => {
+      const databaseId = 'database-held-delta';
+      const write = holdRowWrites();
+
+      databaseIds.add(databaseId);
+      localStorage.setItem(`af_database_blob_rid:${databaseId}`, JSON.stringify({ timestamp: 50, seqNo: 1 }));
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 120, seqNo: 1 }));
+      const walk = prefetchDatabaseBlobDiff('workspace', databaseId);
+
+      await flushPendingWork();
+      expect(holdsDatabaseSourceRows(databaseId)).toBe(false);
+      write.resolve();
+      await walk;
+      expect(holdsDatabaseSourceRows(databaseId)).toBe(false);
+    });
+
+    it('tells the residency listeners when a restore retires a walk that held the rows', async () => {
+      const databaseId = 'database-held-restored';
+      const write = holdRowWrites();
+      const onResidencyChange = jest.fn();
+      const unsubscribe = subscribeToDatabaseSourceResidency(onResidencyChange);
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 130, seqNo: 1 }));
+      const walk = prefetchDatabaseBlobDiff('workspace', databaseId).catch((error: Error) => error);
+
+      await flushPendingWork();
+      expect(holdsDatabaseSourceRows(databaseId)).toBe(true);
+      const restore = invalidateDatabaseBlobAfterRestore(databaseId, 'R', null);
+
+      await flushPendingWork();
+      write.resolve();
+      await restore;
+      expect(await walk).toBeInstanceOf(Error);
+      expect(onResidencyChange).toHaveBeenCalled();
+      expect(holdsDatabaseSourceRows(databaseId)).toBe(false);
+      expect(isDatabaseSourceResident(databaseId)).toBe(false);
+      unsubscribe();
+    });
   });
 
   it('keeps current seeds and RID when another tab reconciles the same committed restore', async () => {
@@ -647,6 +728,38 @@ describe('database blob prefetch deduplication', () => {
       await prefetchDatabaseBlobDiff(workspaceId, databaseId);
 
       expect(dashboardLoadStats.snapshot().rowLoadPasses).toEqual({ [databaseId]: 1 });
+    });
+
+    it('counts every row of each page fetched as read once, and nothing for a request served from memory', async () => {
+      const workspaceId = 'workspace-rows-read';
+      const databaseId = 'database-rows-read';
+      const firstPage = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+      databaseIds.add(databaseId);
+      dashboardLoadStats.reset();
+      mockedDatabaseBlobDiff
+        .mockReturnValueOnce(firstPage.promise)
+        .mockResolvedValueOnce(persistablePage({ timestamp: 970, seqNo: 2 }))
+        .mockResolvedValueOnce(readyDiff());
+
+      // A plain grid and a chart of the same database share one two-page walk.
+      const prefetches = [
+        prefetchDatabaseBlobDiff(workspaceId, databaseId),
+        prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true }),
+      ];
+
+      firstPage.resolve(
+        persistablePage({ timestamp: 970, seqNo: 1 }, { hasMore: true, nextCursor: new Uint8Array([1]) })
+      );
+      await Promise.all(prefetches);
+      expect(dashboardLoadStats.snapshot().rowsRead).toEqual({ [databaseId]: 2 });
+
+      // A later chart reuses the settled seeds; the grid's refresh brings no changed row.
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true });
+      await prefetchDatabaseBlobDiff(workspaceId, databaseId);
+
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(3);
+      expect(dashboardLoadStats.snapshot().rowsRead).toEqual({ [databaseId]: 2 });
     });
   });
 

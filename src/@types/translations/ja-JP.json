@@ -1352,7 +1352,10 @@
       "newColumn": "新しい列",
       "format": "形式",
       "reminderOnDateTooltip": "このセルにはリマインダーが設定されています",
-      "optionAlreadyExist": "オプションはすでに存在します"
+      "optionAlreadyExist": "オプションはすでに存在します",
+      "person": {
+        "searchForMore_other": "検索してさらに{{count}}人を表示"
+      }
     },
     "rowPage": {
       "newField": "新しいフィールドを追加",
@@ -1368,7 +1371,9 @@
         "other": "{{count}} 非表示フィールドを隠す"
       },
       "openAsFullPage": "全画面で開く",
-      "moreRowActions": "その他の行アクション"
+      "moreRowActions": "その他の行アクション",
+      "openInCenterPeek": "センターピークで開く",
+      "resizeSidePeek": "サイドピークのサイズを変更"
     },
     "sort": {
       "ascending": "昇順",
@@ -1388,7 +1393,7 @@
       "textPlaceholder": "空",
       "copyProperty": "プロパティをクリップボードにコピー",
       "count": "カウント",
-      "newRow": "新しい行",
+      "newRow": "新しいページ",
       "action": "アクション",
       "add": "下に追加をクリック",
       "drag": "ドラッグして移動",
@@ -1397,7 +1402,9 @@
       "dragAndClick": "ドラッグして移動、クリックしてメニューを開く",
       "insertRecordAbove": "上にレコードを挿入",
       "insertRecordBelow": "下にレコードを挿入",
-      "noContent": "コンテンツなし"
+      "noContent": "コンテンツなし",
+      "loadingRowsProgress": "行を読み込み中… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "一部の行はまだ読み込まれていません"
     },
     "selectOption": {
       "create": "作成",
@@ -1457,7 +1464,9 @@
       "countEmpty": "空のカウント",
       "countEmptyShort": "空",
       "countNonEmpty": "空でないカウント",
-      "countNonEmptyShort": "入力済み"
+      "countNonEmptyShort": "入力済み",
+      "countChecked": "チェック済み",
+      "countUnchecked": "未チェック"
     },
     "media": {
       "rename": "名前を変更",
@@ -1469,6 +1478,12 @@
       "addFileMobile": "ファイルを追加",
       "open": "開く",
       "showMore": "{} ファイルがさらにあります。クリックして表示"
+    },
+    "openPagesIn": {
+      "title": "ページの開き方",
+      "sidePeek": "サイドピーク",
+      "centerPeek": "センターピーク",
+      "fullPage": "全画面"
     }
   },
   "document": {
@@ -1835,7 +1850,11 @@
       "hideColumn": "非表示",
       "newGroup": "新しいグループ",
       "deleteColumn": "削除",
-      "deleteColumnConfirmation": "このグループとその中のすべてのカードが削除されます。\n続行してもよろしいですか？"
+      "deleteColumnConfirmation": "このグループとその中のすべてのカードが削除されます。\n続行してもよろしいですか？",
+      "calculate": "計算",
+      "calculationTooltip": "{{property}}の{{calculation}}",
+      "colorColumns": "列に色を付ける",
+      "properties": "プロパティ"
     },
     "hiddenGroupSection": {
       "sectionTitle": "非表示のグループ",
@@ -2552,5 +2571,411 @@
     "resetZoom": "ズームをリセット",
     "zoomIn": "ズームイン",
     "zoomOut": "ズームアウト"
+  },
+  "chart": {
+    "a11y": {
+      "table": "グラフデータ"
+    },
+    "agg": {
+      "average": "平均",
+      "countAll": "すべてカウント",
+      "countEmpty": "空の数をカウント",
+      "countUnique": "一意の値をカウント",
+      "countValues": "値の数をカウント",
+      "dateRange": "日付範囲",
+      "earliest": "最も早い",
+      "latest": "最も遅い",
+      "max": "最大",
+      "median": "中央値",
+      "min": "最小",
+      "percentChecked": "チェック済みの割合",
+      "percentEmpty": "空の割合",
+      "percentNotEmpty": "空でない割合",
+      "percentUnchecked": "未チェックの割合",
+      "range": "範囲",
+      "sum": "合計"
+    },
+    "aggregation": "集計",
+    "barChart": "棒グラフ",
+    "chartType": "グラフの種類",
+    "checked": "チェック済み",
+    "color": {
+      "auto": "自動",
+      "blue": "青",
+      "colorful": "カラフル",
+      "colorless": "無色",
+      "green": "緑",
+      "orange": "オレンジ",
+      "pink": "ピンク",
+      "purple": "紫",
+      "red": "赤",
+      "teal": "青緑",
+      "yellow": "黄色"
+    },
+    "cumulative": "累計",
+    "dateCondition": "日付のグループ化",
+    "dateGrouping": {
+      "day": "日",
+      "month": "月",
+      "relative": "相対",
+      "week": "週",
+      "year": "年"
+    },
+    "decimalPlaces": {
+      "auto": "自動"
+    },
+    "donutChart": "ドーナツグラフ",
+    "emptyState": {
+      "description": "データを含む行を追加するとグラフが表示されます",
+      "noField": "グループ化に使用できるフィールドがありません",
+      "noFieldDescription": "グラフビューを使用するには、選択、マルチセレクト、チェックボックス、または日付フィールドを作成してください。",
+      "title": "表示するデータがありません"
+    },
+    "emptyValue": "空",
+    "groups": {
+      "count": "{{count}}個のグループ",
+      "hideAll": "すべて非表示",
+      "hideGroup": "グループを非表示",
+      "noGroups": "グループがありません",
+      "showAll": "すべて表示",
+      "showGroup": "グループを表示",
+      "unknownPerson": "不明な人物",
+      "unknownUser": "不明なユーザー",
+      "untitled": "無題",
+      "visibleOfTotal": "{{visible}}/{{total}}"
+    },
+    "horizontalBarChart": "横棒グラフ",
+    "legend": {
+      "auto": "自動",
+      "bottom": "下",
+      "nextPage": "次のページ",
+      "off": "オフ",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "前のページ"
+    },
+    "lineChart": "折れ線グラフ",
+    "menuName": "グラフ",
+    "noFieldValue": "{}なし",
+    "noGroupableFields": "グループ化できるフィールドがありません",
+    "number": {
+      "calculate": "計算",
+      "countAll": "すべてカウント",
+      "emptyState": "データなし",
+      "format": "形式",
+      "formatAuto": "自動",
+      "formatCompact": "短縮",
+      "formatPercent": "パーセント",
+      "property": "プロパティ",
+      "title": "タイトル",
+      "titleOf": "{{field}}の{{aggregation}}",
+      "titlePlaceholder": "デフォルトのタイトル"
+    },
+    "numberChart": "数値",
+    "numberColor": {
+      "addRule": "ルールを追加",
+      "blue": "青",
+      "brown": "茶色",
+      "default": "デフォルト",
+      "deleteRule": "ルールを削除",
+      "dynamic": "動的",
+      "dynamicColor": "動的な色",
+      "else": "それ以外",
+      "equal": "等しい",
+      "gray": "灰色",
+      "greaterThan": "より大きい",
+      "greaterThanOrEqual": "以上",
+      "green": "緑",
+      "ifValue": "値が",
+      "lessThan": "より小さい",
+      "lessThanOrEqual": "以下",
+      "notEqual": "等しくない",
+      "orange": "オレンジ",
+      "pink": "ピンク",
+      "purple": "紫",
+      "red": "赤",
+      "sameAsColor": "色と同じ",
+      "yellow": "黄色"
+    },
+    "settings": {
+      "auto": "自動",
+      "back": "戻る",
+      "calculate": "計算",
+      "chartSettings": "グラフの設定",
+      "chartTitle": "グラフのタイトル",
+      "chartType": "グラフの種類",
+      "color": "色",
+      "count": "カウント",
+      "cumulative": "累計",
+      "data": "データ",
+      "dataLabels": "データラベル",
+      "dateGrouping": "日付のグループ化",
+      "decimalPlaces": "小数点以下の桁数",
+      "default": "デフォルト",
+      "donut": "ドーナツ",
+      "eachSliceRepresents": "各スライスが表すもの",
+      "endAt": "終了値",
+      "exactValue": "正確な値",
+      "firstLetter": "先頭の文字",
+      "format": "形式",
+      "groupBy": "グループ化",
+      "groupByNone": "なし",
+      "groupByText": "テキストのグループ化",
+      "groupStyle": "グループのスタイル",
+      "groupStyleGrouped": "並列",
+      "groupStylePercent": "パーセント",
+      "groupStyleStacked": "積み上げ",
+      "groups": "グループ",
+      "horizontalBar": "横棒",
+      "legend": "凡例",
+      "line": "折れ線",
+      "moreOptions": "その他のオプション",
+      "moreSeries": "他{{n}}件",
+      "noResults": "結果なし",
+      "number": "数値",
+      "onlyShowingFirstGroups": "最初の{{n}}個のグループのみ表示しています",
+      "percent": "パーセント",
+      "rangeSize": "範囲のサイズ",
+      "ranges": "範囲",
+      "rangesPreview": "{{from}}から{{to}}まで{{count}}個の範囲",
+      "searchProperty": "プロパティを検索…",
+      "size": "サイズ {{size}}",
+      "sortBy": "並べ替え基準",
+      "startAt": "開始値",
+      "style": "スタイル",
+      "verticalBar": "縦棒",
+      "viewSettings": "ビューの設定",
+      "whatToShow": "表示する内容",
+      "xAxis": "X軸",
+      "yAxis": "Y軸"
+    },
+    "showEmptyValues": "空の値を表示",
+    "sort": {
+      "default": "デフォルト",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "手動",
+      "valueAsc": "値の小さい順",
+      "valueDesc": "値の大きい順"
+    },
+    "state": {
+      "error": "このグラフを読み込めませんでした",
+      "noData": "データなし",
+      "preparing": "グラフを準備しています",
+      "retry": "再試行"
+    },
+    "style": {
+      "color": "色",
+      "dataLabels": "データラベル",
+      "decimalPlaces": "小数点以下の桁数",
+      "legend": "凡例",
+      "title": "スタイル"
+    },
+    "tooltip": {
+      "average": "平均",
+      "clickToView": "クリックしてデータを表示",
+      "count": "カウント",
+      "countValues": "値の数をカウント",
+      "max": "最大",
+      "median": "中央値",
+      "min": "最小",
+      "rows": "{{count}}行",
+      "sum": "合計",
+      "tapAgainToView": "もう一度タップしてデータを表示"
+    },
+    "total": "総計",
+    "unchecked": "未チェック",
+    "upgradeRequired": "アップグレードが必要です",
+    "upgradeToProForChartTypes": "横棒グラフ、折れ線グラフ、ドーナツグラフを使用するには、Proプランにアップグレードしてください",
+    "value": {
+      "days_other": "{{count}}日"
+    },
+    "xAxis": "X軸",
+    "yAxis": "Y軸",
+    "drilldown": {
+      "ariaLabel": "テーブルデータのプレビュー",
+      "search": "検索",
+      "dismiss": "閉じる",
+      "more": "その他",
+      "saveAsView": "ビューとして保存…",
+      "openDatabase": "{{database}}を開く",
+      "selectedRows": "選択した行 ({{count}})",
+      "cannotSaveSelectedRows": "選択した行はビューとして保存できません",
+      "open": "開く",
+      "fromDashboardFilter": "ダッシュボードのフィルターから",
+      "rowCount_other": "{{count}}行"
+    }
+  },
+  "dashboard": {
+    "addWidget": "ウィジェットを追加",
+    "creationRequiresPro": "ダッシュボードビューの作成にはProワークスペースが必要です。",
+    "done": "完了",
+    "edit": "編集",
+    "empty": {
+      "editDashboard": "ダッシュボードを編集",
+      "newView": "新しいビュー",
+      "text": "グラフ、テーブル、リストを追加"
+    },
+    "globalFilters": {
+      "addAnother": "もう1つ追加",
+      "addToFilter": "フィルターに追加",
+      "appliesTo": "このフィルターは、以下で選択した{{type}}プロパティ全体に適用されます",
+      "button": "フィルター",
+      "delete": "フィルターを削除",
+      "done": "完了",
+      "endDate": "終了日",
+      "filterBy": "フィルター条件…",
+      "isChecked": "チェック済み",
+      "isUnchecked": "未チェック",
+      "more": "他{{count}}件",
+      "moreActions": "その他の操作",
+      "multipleSourcesIntro": "複数のデータソースのプロパティにまたがって適用されるフィルターを作成します",
+      "name": "フィルター名",
+      "noResults": "結果なし",
+      "op": {
+        "after": "より後",
+        "before": "より前",
+        "between": "の間",
+        "checked": "チェック済み",
+        "complete": "完了",
+        "doesNotContain": "を含まない",
+        "endsWith": "で終わる",
+        "incomplete": "未完了",
+        "is": "である",
+        "isEmpty": "空",
+        "isNot": "でない",
+        "isNotEmpty": "空でない",
+        "onOrAfter": "以降",
+        "onOrBefore": "以前",
+        "startsWith": "で始まる",
+        "unchecked": "未チェック"
+      },
+      "people_other": "{{count}}人",
+      "relative": {
+        "amount": "数",
+        "next": "今後",
+        "past": "過去",
+        "summaryNext_other": "今後{{count}}{{unit}}間",
+        "summaryPast_other": "過去{{count}}{{unit}}間",
+        "summaryThis": "今{{unit}}",
+        "this": "現在"
+      },
+      "relativeHint": "フィルターは現在の日付に合わせて更新されます",
+      "relativeToToday": "今日を基準にする",
+      "remove": "削除",
+      "reset": "リセット",
+      "sourceLine": "{{source}}の{{property}}",
+      "startDate": "開始日",
+      "title": "複数のデータソースをフィルター",
+      "units": {
+        "day_other": "日",
+        "month_other": "月",
+        "week_other": "週",
+        "year_other": "年"
+      },
+      "viewCount_other": "{{count}}個のビュー"
+    },
+    "historyPreviewUnavailable": "ダッシュボードはバージョン履歴でプレビューできません。",
+    "limit": {
+      "fullHint": "新しいビューを追加するには、ビューを1つ削除してください",
+      "fullTitle": "ダッシュボードがいっぱいです"
+    },
+    "menuName": "ダッシュボード",
+    "picker": {
+      "back": "戻る",
+      "changeViewTitle": "ビューを変更",
+      "close": "閉じる",
+      "createFailed": "ビューを作成できませんでした",
+      "editChart": "グラフを編集",
+      "layout": {
+        "board": "ボード",
+        "calendar": "カレンダー",
+        "chart": "グラフ",
+        "feed": "フィード",
+        "gallery": "ギャラリー",
+        "list": "リスト",
+        "table": "テーブル",
+        "timeline": "タイムライン"
+      },
+      "loadFailed": "データベースを読み込めませんでした",
+      "newView": "新しいビュー",
+      "newViewIn": "{{database}}に新しいビューを作成",
+      "noResults": "ビューが見つかりません",
+      "otherSources": "その他のデータソース",
+      "searchPlaceholder": "ビューを検索...",
+      "showMore": "さらに{{count}}件表示",
+      "source": "データソース",
+      "thisDatabase": "このデータベース",
+      "viewName": "ビュー名",
+      "viewsOn": "{{database}}のビュー",
+      "viewsOnThisDatabase": "このデータベースのビュー"
+    },
+    "private": {
+      "reset": "リセット",
+      "resetAll": "すべての変更をリセット",
+      "saveForEveryone": "全員向けに保存",
+      "saveOptions": "その他の保存オプション",
+      "saved": "変更を全員向けに保存しました。",
+      "undo": "元に戻す",
+      "unsaved": "未保存の変更"
+    },
+    "referencedDashboardPrefix": "ビュー",
+    "row": {
+      "addToNewRow": "新しい行に追加",
+      "addToRow": "行に追加",
+      "moveDown": "下に移動",
+      "moveUp": "上に移動",
+      "movedDown": "行を下に移動しました",
+      "movedUp": "行を上に移動しました"
+    },
+    "rowLimit": "1行に配置できるウィジェットは最大{{count}}個です。",
+    "settings": {
+      "name": "ダッシュボードの設定",
+      "showIconsInHeading": "見出しにアイコンを表示",
+      "showWidgetTitles": "ウィジェットのタイトルを表示"
+    },
+    "toolbar": {
+      "openAsFullPage": "全画面で開く",
+      "settings": "設定"
+    },
+    "widget": {
+      "changeView": "ビューを変更",
+      "close": "閉じる",
+      "createRowAbove": "上に新しい行を作成",
+      "createRowBelow": "下に新しい行を作成",
+      "delete": "削除",
+      "dragHandle": "ドラッグして移動",
+      "duplicate": "複製",
+      "editView": "ビューを編集",
+      "filters": "フィルター",
+      "loading": "読み込み中…",
+      "menu": "ウィジェットのオプション",
+      "moveLeft": "左に移動",
+      "moveRight": "右に移動",
+      "moveToRow": "行に移動",
+      "noAccess": "このデータベースへのアクセス権がありません",
+      "notFound": "このビューはもう存在しません",
+      "offline": "オンラインに戻ると利用できます",
+      "openFailed": "ビューを開けませんでした",
+      "remove": "ウィジェットを削除",
+      "resizeHeight": "ドラッグして行の高さを変更",
+      "resizeHeightValue": "{{height}}ピクセル",
+      "resizeWidth": "ドラッグしてサイズを変更",
+      "resizeWidthValue": "12列中{{columns}}列",
+      "settings": "設定",
+      "sorts": "並べ替え",
+      "source": "データソース",
+      "unsupported": "ダッシュボード内にダッシュボードは表示できません",
+      "viewDataSource": "データソースを表示",
+      "viewNameHint": "このビューの名前を変更します",
+      "viewSettings": "ビューの設定"
+    },
+    "mobile": {
+      "viewCount_other": "{{count}}個のビュー"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "検索をクリア",
+    "noResults": "結果なし",
+    "placeholder": "入力して検索..."
   }
 }

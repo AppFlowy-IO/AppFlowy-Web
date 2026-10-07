@@ -1,48 +1,42 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as liveRegion from '@atlaskit/pragmatic-drag-and-drop-live-region';
+import { ComponentProps, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useDatabaseContext } from '@/application/database-yjs';
 import {
-  addDashboardWidget,
-  canAddDashboardWidget,
-  createDashboardWidget,
+  classifyDashboardMove,
   dashboardSourceDatabaseIds,
   findDashboardWidget,
   moveDashboardWidget,
-  replaceDashboardWidgetView,
 } from '@/application/database-yjs/dashboard-layout';
 import { DashboardWidgetPlacement } from '@/application/database-yjs/dashboard.type';
 import { UIVariant } from '@/application/types';
 import { cn } from '@/lib/utils';
 
-import {
-  DASHBOARD_COMPACT_INSET_CLASS,
-  DASHBOARD_DEFAULT_INLINE_PADDING,
-  DASHBOARD_LIMIT_MESSAGE_DURATION,
-} from './constants';
+import { useAddWidgetFlowState } from './add-widget/add-widget-api';
+import { AddWidgetFlowState } from './add-widget/add-widget-flow';
+import { getCatalogDatabaseName } from './add-widget/picker-sections';
+import { useAddWidgetFlow } from './add-widget/useAddWidgetFlow';
+import { createDragGhostStore, createDropIndicatorStore, createRowFocusRequests } from './arrange-stores';
+import { DASHBOARD_COMPACT_INSET_CLASS, DASHBOARD_DEFAULT_INLINE_PADDING } from './constants';
 import { useDashboardContext, useDashboardLayout, useDashboardSourceRegistry } from './DashboardContext';
+import { DashboardDragGhost } from './DashboardDragGhost';
 import { DashboardEmptyState } from './DashboardEmptyState';
-import { DashboardGrid } from './DashboardGrid';
-import { DashboardLimitMessage } from './DashboardLimitMessage';
+import { DashboardGrid, selectPendingAdd } from './DashboardGrid';
 import { DashboardLoadSchedulerProvider } from './DashboardLoadScheduler';
 import {
   DashboardDraggingContext,
   DashboardHostContext,
-  DashboardLimitReason,
   DashboardSelectionContext,
   DashboardUiContext,
   DashboardUiContextValue,
-  WidgetPickerRequest,
 } from './DashboardUiContext';
 import { GlobalFilterBar } from './global-filters/GlobalFilterBar';
-import { CreateWidgetViewRequest, useCreateWidgetView } from './hooks/useCreateWidgetView';
 import { useDashboardDndMonitor } from './hooks/useDashboardDnd';
 import { useDashboardHostServices } from './hooks/useDashboardHostServices';
 import { useSourceDocRegistry } from './hooks/useSourceDocRegistry';
 import { useWorkspaceDatabases } from './hooks/useWorkspaceDatabases';
-import { getCatalogDatabaseName } from './picker-options';
 import { getDashboardInlinePadding } from './utils';
-import { resolveAddPlacement } from './widget-moves';
-import { WidgetPicker } from './WidgetPicker';
+import { LazyWidgetDockHost, preloadWidgetPicker } from './WidgetPicker';
 
 const POPPER_SELECTOR = '[data-radix-popper-content-wrapper]';
 
@@ -57,30 +51,35 @@ function isLayerOpen() {
   );
 }
 
+const isFlowActive = (state: AddWidgetFlowState) => state.kind !== 'idle';
+
 /** The Dashboard layout: global filters, then the widget grid (or its empty state). */
 export function Dashboard() {
-  const { paddingStart, paddingEnd, workspaceId, variant } = useDatabaseContext();
-  const { isEditing, canEdit, canEnterEdit, pinEditing, updateRows, hostDatabaseId } = useDashboardContext();
+  const { paddingStart, paddingEnd, workspaceId, variant, databaseDoc, updatePage } = useDatabaseContext();
+  const { isEditing, canEdit, canEnterEdit, pinEditing, updateRows, hostDatabaseId, ownedViews } = useDashboardContext();
   const { rows } = useDashboardLayout();
   const { registerSourceDoc, registerSourceName } = useDashboardSourceRegistry();
   const hostServices = useDashboardHostServices();
   const editing = isEditing && canEdit;
-  const [pickerRequest, setPickerRequest] = useState<WidgetPickerRequest | null>(null);
-  // The request whose view is being created from the picker.
-  const [creatingRequest, setCreatingRequest] = useState<WidgetPickerRequest | null>(null);
-  const [limitMessage, setLimitMessage] = useState<{ reason: DashboardLimitReason; key: number } | null>(null);
   const [dndInstanceId] = useState(() => Symbol('dashboard'));
+  // The arrange feedback stores (drop line, drag ghost, row focus): created once.
+  const [arrange] = useState(() => ({
+    dropIndicatorStore: createDropIndicatorStore(),
+    dragGhostStore: createDragGhostStore(),
+    rowFocus: createRowFocusRequests(),
+  }));
+  const firstPaintDone = useRef(false);
   // The selected widget (Edit mode only): its box shows the outline.
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
+  // The widget whose Settings › Source panel is docked beside it.
+  const [sourceWidgetId, setSourceWidgetId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowsRef = useRef(rows);
   const editingRef = useRef(editing);
-  const pickerRequestRef = useRef(pickerRequest);
   const pendingScrollWidgetIdRef = useRef<string | null>(null);
 
   rowsRef.current = rows;
   editingRef.current = editing;
-  pickerRequestRef.current = pickerRequest;
 
   const getRows = useCallback(() => rowsRef.current, []);
 
@@ -93,10 +92,58 @@ export function Dashboard() {
     if (editingRef.current) setSelectedWidgetId(id);
   }, []);
 
-  // The selection ends with Edit mode and with its widget.
-  const selectionVisible = editing && selectedWidgetId !== null && findDashboardWidget(rows, selectedWidgetId) !== null;
+  // Refusals are told to assistive technology only: never a banner (Notion).
+  const announce = useCallback((message: string) => liveRegion.announce(message), []);
+
+  useEffect(() => () => liveRegion.cleanup(), []);
+
+  const scrollToWidget = useCallback((widgetId: string) => {
+    pendingScrollWidgetIdRef.current = widgetId;
+  }, []);
+  const preloadPicker = useCallback(() => preloadWidgetPicker(workspaceId, variant), [variant, workspaceId]);
+  const openSourcePanel = useCallback((widgetId: string) => setSourceWidgetId(widgetId), []);
+  const closeSourcePanel = useCallback(() => setSourceWidgetId(null), []);
+
+  // The add flow (WP06): "+" inserts a selected default widget and docks the picker beside it.
+  const {
+    api: addWidget,
+    startAddWidget,
+    bindFlowView,
+  } = useAddWidgetFlow({
+    hostDoc: databaseDoc,
+    hostDatabaseId,
+    canEnterEdit,
+    editing,
+    canEdit,
+    pinEditing,
+    getRows,
+    updateRows,
+    ownedViews,
+    selectWidget,
+    announce,
+    scrollToWidget,
+    openSourcePanel,
+    preloadPicker,
+    workspaceId,
+    getSubscriptions: hostServices.getSubscriptions,
+    updatePage,
+  });
+  const pending = useAddWidgetFlowState(addWidget.flow, selectPendingAdd);
+  const flowActive = useAddWidgetFlowState(addWidget.flow, isFlowActive);
+  const pendingWidgetId = pending?.widgetId ?? null;
+
+  // The selection ends with Edit mode and with its widget (the pending widget of an add counts).
+  const selectionVisible =
+    editing &&
+    selectedWidgetId !== null &&
+    (selectedWidgetId === pendingWidgetId || findDashboardWidget(rows, selectedWidgetId) !== null);
 
   if (selectedWidgetId !== null && !selectionVisible) setSelectedWidgetId(null);
+
+  // The Source panel goes with Edit mode and with its widget.
+  if (sourceWidgetId !== null && (!editing || findDashboardWidget(rows, sourceWidgetId) === null)) {
+    setSourceWidgetId(null);
+  }
 
   // Esc, or a press outside the selected widget while nothing is open, clears it.
   useEffect(() => {
@@ -121,31 +168,17 @@ export function Dashboard() {
     };
   }, [selectedWidgetId, selectionVisible]);
 
-  // The picker only makes sense while editing (Edit mode itself, including
-  // the automatic one of an empty dashboard, is derived by DashboardProvider).
-  // Leaving Edit mode (Done, or a window narrowed to a mobile context) drops
-  // it; write access that is only being re-checked (back on the tab, a
-  // reconnect) hides it until Edit mode returns.
-  if (canEdit && !isEditing && pickerRequest) setPickerRequest(null);
-
   const acquireSourceDoc = useSourceDocRegistry(registerSourceDoc, hostDatabaseId);
-  const { createView, canCreateInOtherDatabases, bridge } = useCreateWidgetView();
   // The catalog only names other databases in the global-filter editor, and it
   // is refetched on every folder change: leave it off while every widget shows
   // the host database (its name has a fallback).
   const hasOtherDatabases = rows.some((row) => row.widgets.some((widget) => widget.databaseId !== hostDatabaseId));
   const { databases: catalog } = useWorkspaceDatabases(workspaceId, variant !== UIVariant.Publish && hasOtherDatabases);
 
-  const showLimitMessage = useCallback((reason: DashboardLimitReason) => {
-    setLimitMessage((current) => ({ reason, key: (current?.key ?? 0) + 1 }));
-  }, []);
-
+  // Widgets mounted after this (moved across rows, added) fade in.
   useEffect(() => {
-    if (!limitMessage) return;
-    const timeout = window.setTimeout(() => setLimitMessage(null), DASHBOARD_LIMIT_MESSAGE_DURATION);
-
-    return () => window.clearTimeout(timeout);
-  }, [limitMessage]);
+    firstPaintDone.current = true;
+  }, []);
 
   // Name every source database for the global-filter editor. Keyed by the
   // source ids, so resizing or moving widgets never walks the catalog.
@@ -163,11 +196,11 @@ export function Dashboard() {
     });
   }, [catalog, registerSourceName, sourceIdsKey]);
 
-  // Bring a freshly added widget into view once it is rendered.
+  // Bring an added widget (or its pending slot) into view once it is rendered.
   useEffect(() => {
     const widgetId = pendingScrollWidgetIdRef.current;
 
-    if (!widgetId || !findDashboardWidget(rows, widgetId)) return;
+    if (!widgetId || (widgetId !== pendingWidgetId && !findDashboardWidget(rows, widgetId))) return;
     pendingScrollWidgetIdRef.current = null;
     const frame = window.requestAnimationFrame(() => {
       const element = Array.from(scrollRef.current?.querySelectorAll<HTMLElement>('[data-widget-id]') ?? []).find(
@@ -178,90 +211,12 @@ export function Dashboard() {
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [rows]);
+  }, [pendingWidgetId, rows]);
 
-  const openPicker = useCallback(
-    (request: WidgetPickerRequest) => {
-      if (!canEnterEdit) return;
-      // The editor started building: keep Edit mode whatever the sync brings.
-      pinEditing();
-
-      if (request.mode === 'add' && !canAddDashboardWidget(rowsRef.current, request.placement)) {
-        const dashboardFull = !canAddDashboardWidget(rowsRef.current);
-
-        showLimitMessage(dashboardFull ? 'dashboard' : 'row');
-        return;
-      }
-
-      setPickerRequest(request);
-    },
-    [canEnterEdit, pinEditing, showLimitMessage]
-  );
-
-  const applyPick = useCallback(
-    (request: WidgetPickerRequest, viewId: string, databaseId: string) => {
-      if (request.mode === 'replace') {
-        updateRows((current) => replaceDashboardWidgetView(current, request.widgetId, viewId, databaseId));
-        return;
-      }
-
-      const placement = resolveAddPlacement(rowsRef.current, request.placement);
-
-      if (!placement) {
-        showLimitMessage('dashboard');
-        return;
-      }
-
-      const widget = createDashboardWidget(viewId, databaseId);
-
-      pendingScrollWidgetIdRef.current = widget.id;
-      updateRows((current) => addDashboardWidget(current, widget, resolveAddPlacement(current, placement) ?? placement));
-      // A new widget starts selected.
-      selectWidget(widget.id);
-    },
-    [selectWidget, showLimitMessage, updateRows]
-  );
-
-  const handlePick = useCallback(
-    (viewId: string, databaseId: string) => {
-      const request = pickerRequestRef.current;
-
-      setPickerRequest(null);
-      if (request) applyPick(request, viewId, databaseId);
-    },
-    [applyPick]
-  );
-
-  // A view created from the picker always gets its widget: the request is
-  // captured before the (slow) creation, the picker cannot be dismissed
-  // meanwhile, and a full dashboard is refused before anything is created.
-  const handleCreateView = useCallback(
-    async (createRequest: CreateWidgetViewRequest) => {
-      const request = pickerRequestRef.current;
-
-      if (!request) return null;
-      if (request.mode === 'add' && !resolveAddPlacement(rowsRef.current, request.placement)) {
-        setPickerRequest(null);
-        showLimitMessage('dashboard');
-        return null;
-      }
-
-      setCreatingRequest(request);
-      try {
-        const viewId = await createView(createRequest);
-
-        setPickerRequest((current) => (current === request ? null : current));
-        applyPick(request, viewId, createRequest.databaseId);
-        return viewId;
-      } finally {
-        setCreatingRequest((current) => (current === request ? null : current));
-      }
-    },
-    [applyPick, createView, showLimitMessage]
-  );
-
+  // Only a move that changes the layout writes (no undo step for a no-op).
   const handleMove = useCallback(
     (widgetId: string, placement: DashboardWidgetPlacement) => {
+      if (classifyDashboardMove(rowsRef.current, widgetId, placement) !== 'allowed') return;
       updateRows((current) => moveDashboardWidget(current, widgetId, placement));
     },
     [updateRows]
@@ -273,32 +228,49 @@ export function Dashboard() {
     getRows,
     onMove: handleMove,
     scrollContainerRef: scrollRef,
+    announce,
+    ghostStore: arrange.dragGhostStore,
+    indicatorStore: arrange.dropIndicatorStore,
   });
 
   const uiValue = useMemo<DashboardUiContextValue>(
     () => ({
       hostDatabaseId,
-      openPicker,
-      showLimitMessage,
+      startAddWidget,
+      addWidget,
+      ownedViews,
+      announce,
       dndInstanceId,
+      dropIndicatorStore: arrange.dropIndicatorStore,
+      dragGhostStore: arrange.dragGhostStore,
+      requestRowFocus: arrange.rowFocus.request,
+      consumeRowFocus: arrange.rowFocus.consume,
+      firstPaintDone,
       getRows,
       updateRows,
       acquireSourceDoc,
       selectWidget,
     }),
-    [acquireSourceDoc, dndInstanceId, getRows, hostDatabaseId, openPicker, selectWidget, showLimitMessage, updateRows]
+    [
+      acquireSourceDoc,
+      addWidget,
+      announce,
+      arrange,
+      dndInstanceId,
+      getRows,
+      hostDatabaseId,
+      ownedViews,
+      selectWidget,
+      startAddWidget,
+      updateRows,
+    ]
   );
 
-  const handleAddFirstWidget = useCallback(
-    () => openPicker({ mode: 'add', placement: { type: 'new_row' } }),
-    [openPicker]
-  );
-
-  // Kept mounted mid-creation even without Edit mode: a remount would unlock
-  // the picker and let a second view be created for the same request.
-  const visiblePickerRequest = editing || pickerRequest === creatingRequest ? pickerRequest : null;
+  const handleNewView = useCallback(() => startAddWidget({ type: 'new_row' }), [startAddWidget]);
   // The load queue starts widgets in layout order: top to bottom, left to right.
   const widgetOrder = useMemo(() => rows.flatMap((row) => row.widgets.map((widget) => widget.id)), [rows]);
+  // The dock (picker, New view panel, Source panel) loads with the first add or Source.
+  const dockWanted = canEdit && (flowActive || sourceWidgetId !== null);
 
   return (
     <DashboardHostContext.Provider value={hostServices}>
@@ -324,15 +296,9 @@ export function Dashboard() {
                   })}
                 >
                   <GlobalFilterBar className='mt-3' />
-                  {limitMessage ? (
-                    // Sticky, so the message stays in sight wherever the add was refused.
-                    <div className='pointer-events-none sticky top-2 z-30 mt-3' key={limitMessage.key}>
-                      <DashboardLimitMessage className='pointer-events-auto' reason={limitMessage.reason} />
-                    </div>
-                  ) : null}
-                  {rows.length === 0 ? (
+                  {rows.length === 0 && pending === null ? (
                     <div className='pt-3'>
-                      <DashboardEmptyState onAddWidget={handleAddFirstWidget} />
+                      <DashboardEmptyState onNewView={handleNewView} onPreload={addWidget.preload} />
                     </div>
                   ) : (
                     <DashboardGrid />
@@ -340,18 +306,34 @@ export function Dashboard() {
                 </div>
               </div>
             </DashboardLoadSchedulerProvider>
-            <WidgetPicker
-              canCreateInOtherDatabases={canCreateInOtherDatabases}
-              createView={handleCreateView}
-              onClose={() => setPickerRequest(null)}
-              onPick={handlePick}
-              request={visiblePickerRequest}
+            <DockHostSlot
+              bindFlowView={bindFlowView}
+              closeSourcePanel={closeSourcePanel}
+              scrollRef={scrollRef}
+              sourceWidgetId={sourceWidgetId}
+              wanted={dockWanted}
             />
-            {bridge}
+            <DashboardDragGhost store={arrange.dragGhostStore} />
           </DashboardSelectionContext.Provider>
         </DashboardDraggingContext.Provider>
       </DashboardUiContext.Provider>
     </DashboardHostContext.Provider>
+  );
+}
+
+/**
+ * The dock, mounted from the first add or Source panel on (the flow's later
+ * panels need it mounted, and it keeps the chunk loaded).
+ */
+function DockHostSlot({ wanted, ...props }: { wanted: boolean } & ComponentProps<typeof LazyWidgetDockHost>) {
+  const [mounted, setMounted] = useState(wanted);
+
+  if (wanted && !mounted) setMounted(true);
+  if (!mounted) return null;
+  return (
+    <Suspense fallback={null}>
+      <LazyWidgetDockHost {...props} />
+    </Suspense>
   );
 }
 

@@ -1,0 +1,572 @@
+{
+  "fixture": "option-merge",
+  "version": 1,
+  "encoding": {
+    "normalize": "normalizeDashboardText (text-normalize.json): lowercase, NFKD, strip combining marks, trim.",
+    "option_names": "A select global filter's option_names: the names of the option ids in content, same order. Usable only when it is an array of strings whose length equals the number of ids in content; otherwise it is absent.",
+    "resolve": "resolveGlobalFilterOptionIds(content, option_names, target_options) -> content for one widget's database. ids = content split on ',' with empty items dropped. When option_names is not usable or target_options is null (the source is not loaded), content is returned unchanged. Otherwise ids[i] becomes the ids of every target option whose normalized name equals the normalized option_names[i] (an empty name matches nothing), in target option order, or stays ids[i] when none matches. The result keeps the first occurrence of each id and is joined with ','.",
+    "merged_list": "getMergedGlobalFilterOptions: walk the targets in order (options null = not loaded, skipped) and each target's options in order. key = normalized name, or '#' + id for an empty name. The first option of a key gives the entry's id, name and color; later ones append their id to ids. An entry is checked when any content id is in its ids, or when the normalized name of a usable option_names item equals its key.",
+    "toggle": "toggleMergedOption(key): flip that entry's checked state, then content = the checked entries' id in merged order and option_names = their names, followed by every content id that no entry claims (neither by id nor by its stored name) with its stored name, or '' when option_names is not usable. An empty selection is content '' with no option_names (written as absent)."
+  },
+  "resolve": [
+    {
+      "name": "same ids",
+      "content": "o-eu,o-us",
+      "option_names": [
+        "Europe",
+        "United States"
+      ],
+      "target_options": [
+        {
+          "id": "o-eu",
+          "name": "Europe"
+        },
+        {
+          "id": "o-us",
+          "name": "United States"
+        }
+      ],
+      "expected": "o-eu,o-us"
+    },
+    {
+      "name": "different ids with the same name",
+      "content": "a-eu",
+      "option_names": [
+        "Europe"
+      ],
+      "target_options": [
+        {
+          "id": "b-asia",
+          "name": "Asia"
+        },
+        {
+          "id": "b-eu",
+          "name": "Europe"
+        }
+      ],
+      "expected": "b-eu"
+    },
+    {
+      "name": "case and accents are ignored",
+      "content": "a-eu",
+      "option_names": [
+        "europe"
+      ],
+      "target_options": [
+        {
+          "id": "b-eu",
+          "name": "Éurope"
+        }
+      ],
+      "expected": "b-eu"
+    },
+    {
+      "name": "an unmatched name keeps its id",
+      "content": "a-eu,a-mars",
+      "option_names": [
+        "Europe",
+        "Mars"
+      ],
+      "target_options": [
+        {
+          "id": "b-eu",
+          "name": "Europe"
+        },
+        {
+          "id": "b-asia",
+          "name": "Asia"
+        }
+      ],
+      "expected": "b-eu,a-mars"
+    },
+    {
+      "name": "a length mismatch leaves the content unchanged",
+      "content": "a-eu,a-us",
+      "option_names": [
+        "Europe"
+      ],
+      "target_options": [
+        {
+          "id": "b-eu",
+          "name": "Europe"
+        },
+        {
+          "id": "b-us",
+          "name": "United States"
+        }
+      ],
+      "expected": "a-eu,a-us"
+    },
+    {
+      "name": "two target options with the same normalized name both match",
+      "content": "a-eu",
+      "option_names": [
+        "Europe"
+      ],
+      "target_options": [
+        {
+          "id": "b-eu-1",
+          "name": "Europe"
+        },
+        {
+          "id": "b-asia",
+          "name": "Asia"
+        },
+        {
+          "id": "b-eu-2",
+          "name": " EUROPE "
+        }
+      ],
+      "expected": "b-eu-1,b-eu-2"
+    },
+    {
+      "name": "absent names leave the content unchanged",
+      "content": "a-eu",
+      "target_options": [
+        {
+          "id": "b-eu",
+          "name": "Europe"
+        }
+      ],
+      "expected": "a-eu"
+    },
+    {
+      "name": "names that are not all strings leave the content unchanged",
+      "content": "a-eu,a-us",
+      "option_names": [
+        "Europe",
+        3
+      ],
+      "target_options": [
+        {
+          "id": "b-eu",
+          "name": "Europe"
+        }
+      ],
+      "expected": "a-eu,a-us"
+    },
+    {
+      "name": "a source that is not loaded leaves the content unchanged",
+      "content": "a-eu",
+      "option_names": [
+        "Europe"
+      ],
+      "target_options": null,
+      "expected": "a-eu"
+    },
+    {
+      "name": "duplicates are removed and the first one wins",
+      "content": "a-eu,a-europe",
+      "option_names": [
+        "Europe",
+        "europe"
+      ],
+      "target_options": [
+        {
+          "id": "b-eu",
+          "name": "Europe"
+        }
+      ],
+      "expected": "b-eu"
+    },
+    {
+      "name": "an empty name matches nothing",
+      "content": "a-blank",
+      "option_names": [
+        ""
+      ],
+      "target_options": [
+        {
+          "id": "b-blank",
+          "name": ""
+        }
+      ],
+      "expected": "a-blank"
+    },
+    {
+      "name": "empty ids in the content are skipped",
+      "content": ",a-eu,",
+      "option_names": [
+        "Europe"
+      ],
+      "target_options": [
+        {
+          "id": "b-eu",
+          "name": "Europe"
+        }
+      ],
+      "expected": "b-eu"
+    },
+    {
+      "name": "empty content stays empty",
+      "content": "",
+      "option_names": [],
+      "target_options": [
+        {
+          "id": "b-eu",
+          "name": "Europe"
+        }
+      ],
+      "expected": ""
+    }
+  ],
+  "merged_list": [
+    {
+      "name": "options with the same name merge in target order",
+      "targets": [
+        {
+          "options": [
+            {
+              "id": "p-eu",
+              "name": "Europe",
+              "color": "purple"
+            },
+            {
+              "id": "p-asia",
+              "name": "Asia",
+              "color": "pink"
+            }
+          ]
+        },
+        {
+          "options": [
+            {
+              "id": "t-eu",
+              "name": "EUROPE",
+              "color": "blue"
+            },
+            {
+              "id": "t-asia",
+              "name": "Asia",
+              "color": "green"
+            },
+            {
+              "id": "t-africa",
+              "name": "Africa",
+              "color": "yellow"
+            }
+          ]
+        }
+      ],
+      "content": "",
+      "expected_entries": [
+        {
+          "key": "europe",
+          "id": "p-eu",
+          "name": "Europe",
+          "color": "purple",
+          "ids": [
+            "p-eu",
+            "t-eu"
+          ]
+        },
+        {
+          "key": "asia",
+          "id": "p-asia",
+          "name": "Asia",
+          "color": "pink",
+          "ids": [
+            "p-asia",
+            "t-asia"
+          ]
+        },
+        {
+          "key": "africa",
+          "id": "t-africa",
+          "name": "Africa",
+          "color": "yellow",
+          "ids": [
+            "t-africa"
+          ]
+        }
+      ],
+      "expected_checked": [],
+      "toggle": [
+        {
+          "key": "europe",
+          "expected_content": "p-eu",
+          "expected_option_names": [
+            "Europe"
+          ]
+        },
+        {
+          "key": "africa",
+          "expected_content": "t-africa",
+          "expected_option_names": [
+            "Africa"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "an id of any merged option checks the entry",
+      "targets": [
+        {
+          "options": [
+            {
+              "id": "p-eu",
+              "name": "Europe",
+              "color": "purple"
+            },
+            {
+              "id": "p-asia",
+              "name": "Asia",
+              "color": "pink"
+            }
+          ]
+        },
+        {
+          "options": [
+            {
+              "id": "t-eu",
+              "name": "Europe",
+              "color": "blue"
+            },
+            {
+              "id": "t-asia",
+              "name": "Asia",
+              "color": "green"
+            }
+          ]
+        }
+      ],
+      "content": "t-asia",
+      "expected_entries": [
+        {
+          "key": "europe",
+          "id": "p-eu",
+          "name": "Europe",
+          "color": "purple",
+          "ids": [
+            "p-eu",
+            "t-eu"
+          ]
+        },
+        {
+          "key": "asia",
+          "id": "p-asia",
+          "name": "Asia",
+          "color": "pink",
+          "ids": [
+            "p-asia",
+            "t-asia"
+          ]
+        }
+      ],
+      "expected_checked": [
+        "asia"
+      ],
+      "toggle": [
+        {
+          "key": "europe",
+          "expected_content": "p-eu,p-asia",
+          "expected_option_names": [
+            "Europe",
+            "Asia"
+          ]
+        },
+        {
+          "key": "asia",
+          "expected_content": "",
+          "expected_option_names": []
+        }
+      ]
+    },
+    {
+      "name": "a stored name checks the entry and an unknown id is kept at the end",
+      "targets": [
+        {
+          "options": [
+            {
+              "id": "p-eu",
+              "name": "Europe",
+              "color": "purple"
+            },
+            {
+              "id": "p-asia",
+              "name": "Asia",
+              "color": "pink"
+            }
+          ]
+        },
+        {
+          "options": null
+        }
+      ],
+      "content": "x-eu,x-mars",
+      "option_names": [
+        "Europe",
+        "Mars"
+      ],
+      "expected_entries": [
+        {
+          "key": "europe",
+          "id": "p-eu",
+          "name": "Europe",
+          "color": "purple",
+          "ids": [
+            "p-eu"
+          ]
+        },
+        {
+          "key": "asia",
+          "id": "p-asia",
+          "name": "Asia",
+          "color": "pink",
+          "ids": [
+            "p-asia"
+          ]
+        }
+      ],
+      "expected_checked": [
+        "europe"
+      ],
+      "toggle": [
+        {
+          "key": "asia",
+          "expected_content": "p-eu,p-asia,x-mars",
+          "expected_option_names": [
+            "Europe",
+            "Asia",
+            "Mars"
+          ]
+        },
+        {
+          "key": "europe",
+          "expected_content": "x-mars",
+          "expected_option_names": [
+            "Mars"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "an option without a name is its own entry",
+      "targets": [
+        {
+          "options": [
+            {
+              "id": "p-blank",
+              "name": "",
+              "color": "grey"
+            },
+            {
+              "id": "p-eu",
+              "name": "Europe",
+              "color": "purple"
+            }
+          ]
+        },
+        {
+          "options": [
+            {
+              "id": "t-blank",
+              "name": "",
+              "color": "blue"
+            }
+          ]
+        }
+      ],
+      "content": "t-blank",
+      "expected_entries": [
+        {
+          "key": "#p-blank",
+          "id": "p-blank",
+          "name": "",
+          "color": "grey",
+          "ids": [
+            "p-blank"
+          ]
+        },
+        {
+          "key": "europe",
+          "id": "p-eu",
+          "name": "Europe",
+          "color": "purple",
+          "ids": [
+            "p-eu"
+          ]
+        },
+        {
+          "key": "#t-blank",
+          "id": "t-blank",
+          "name": "",
+          "color": "blue",
+          "ids": [
+            "t-blank"
+          ]
+        }
+      ],
+      "expected_checked": [
+        "#t-blank"
+      ],
+      "toggle": [
+        {
+          "key": "europe",
+          "expected_content": "p-eu,t-blank",
+          "expected_option_names": [
+            "Europe",
+            ""
+          ]
+        }
+      ]
+    },
+    {
+      "name": "names of another length are ignored and only ids check entries",
+      "targets": [
+        {
+          "options": [
+            {
+              "id": "p-eu",
+              "name": "Europe",
+              "color": "purple"
+            },
+            {
+              "id": "p-asia",
+              "name": "Asia",
+              "color": "pink"
+            }
+          ]
+        }
+      ],
+      "content": "p-asia,x-gone",
+      "option_names": [
+        "Europe"
+      ],
+      "expected_entries": [
+        {
+          "key": "europe",
+          "id": "p-eu",
+          "name": "Europe",
+          "color": "purple",
+          "ids": [
+            "p-eu"
+          ]
+        },
+        {
+          "key": "asia",
+          "id": "p-asia",
+          "name": "Asia",
+          "color": "pink",
+          "ids": [
+            "p-asia"
+          ]
+        }
+      ],
+      "expected_checked": [
+        "asia"
+      ],
+      "toggle": [
+        {
+          "key": "europe",
+          "expected_content": "p-eu,p-asia,x-gone",
+          "expected_option_names": [
+            "Europe",
+            "Asia",
+            ""
+          ]
+        }
+      ]
+    }
+  ]
+}

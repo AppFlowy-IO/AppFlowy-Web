@@ -4,8 +4,12 @@ import { toast } from 'sonner';
 
 import { DashboardRow } from '@/application/database-yjs/dashboard.type';
 
-import { DashboardHostContext, DashboardHostServices, DashboardUiContext, DashboardUiContextValue } from '../DashboardUiContext';
+import { createInertAddWidgetApi } from '../add-widget/add-widget-api';
+import { DashboardHostContext, DashboardHostServices, DashboardUiContext } from '../DashboardUiContext';
+import { createInertOwnedWidgetViews } from '../hooks/useOwnedWidgetViews';
 import { useWidgetActions } from '../hooks/useWidgetActions';
+
+import { createDashboardUiValue } from './dashboardTestHarness';
 
 jest.mock('react-i18next', () => {
   // Stable, like the real `t` of one language.
@@ -22,20 +26,21 @@ const ROWS: DashboardRow[] = [
   { id: 'r1', height: 360, widgets: [{ id: 'w1', viewId: 'v1', databaseId: 'db', width: 12 }] },
 ];
 
-function renderActions(host: Partial<DashboardHostServices>) {
-  let rows = ROWS;
-  const ui: DashboardUiContextValue = {
+function renderActions(host: Partial<DashboardHostServices>, initialRows: DashboardRow[] = ROWS) {
+  let rows = initialRows;
+  const ui = createDashboardUiValue({
     hostDatabaseId: 'host-db',
-    openPicker: jest.fn(),
-    showLimitMessage: jest.fn(),
-    dndInstanceId: Symbol('actions-test'),
     getRows: () => rows,
     updateRows: (updater) => {
-      rows = updater(rows);
+      const next = updater(rows);
+      const written = next !== rows;
+
+      rows = next;
+      return written;
     },
-    acquireSourceDoc: () => () => undefined,
-    selectWidget: jest.fn(),
-  };
+    addWidget: { ...createInertAddWidgetApi(), openSourcePanel: jest.fn() },
+    ownedViews: { ...createInertOwnedWidgetViews(), duplicateWidget: jest.fn().mockResolvedValue(undefined) },
+  });
   const openSettings = jest.fn();
   const wrapper = ({ children }: { children: ReactNode }) => (
     <DashboardHostContext.Provider value={host as DashboardHostServices}>
@@ -118,17 +123,28 @@ describe('useWidgetActions: layout', () => {
     expect(openSettings).toHaveBeenCalledTimes(1);
   });
 
-  it('duplicates, moves and removes the widget in the latest rows', () => {
-    const { result, rows, ui } = renderActions({});
+  it('duplicates the widget with a copy of its view, and moves and removes it in the latest rows', () => {
+    const { result, rows, ui } = renderActions({}, [
+      {
+        id: 'r1',
+        height: 360,
+        widgets: [
+          { id: 'w1', viewId: 'v1', databaseId: 'db', width: 6 },
+          { id: 'w2', viewId: 'v1-copy', databaseId: 'db', width: 6 },
+        ],
+      },
+    ]);
 
+    // WP05 §1.4: the duplicate is created by the owned-view operations (a copy of the view, then the insert).
     result.current.duplicate();
-    expect(rows()[0].widgets.map((widget) => widget.viewId)).toEqual(['v1', 'v1']);
+    expect(ui.ownedViews.duplicateWidget).toHaveBeenCalledWith('w1');
     result.current.move('right');
     expect(rows()[0].widgets[1].id).toBe('w1');
     result.current.remove();
     expect(rows()[0].widgets.map((widget) => widget.id)).not.toContain('w1');
 
+    // Settings › Source docks the Source panel (replace mode) beside the widget.
     result.current.changeView();
-    expect(ui.openPicker).toHaveBeenCalledWith({ mode: 'replace', widgetId: 'w1' });
+    expect(ui.addWidget.openSourcePanel).toHaveBeenCalledWith('w1');
   });
 });

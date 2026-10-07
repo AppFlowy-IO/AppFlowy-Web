@@ -1,8 +1,8 @@
-import { useDatabaseDependencyRestoreRevision } from '@/application/database-yjs/restore-dependencies';
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import {
   createContext,
+  startTransition,
   useCallback,
   useContext,
   useDeferredValue,
@@ -15,6 +15,8 @@ import {
 } from 'react';
 import { AbstractType, type Transaction, type YEvent } from 'yjs';
 
+import { subscribeRowDocRelease } from '@/application/database-blob/row-doc-retention';
+import { readBoardGroupCalculation } from '@/application/database-yjs/board-group-calculation';
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { createCalendarLayoutStore } from '@/application/database-yjs/calendar-layout';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -26,6 +28,7 @@ import {
   useDatabaseContext,
   useDatabaseExtraFilters,
   useDatabaseFields,
+  useDatabaseSearchQuery,
   useDatabaseView,
   useDatabaseViewId,
   useRow,
@@ -34,7 +37,9 @@ import {
 } from '@/application/database-yjs/context';
 import { createDashboardLayoutStore } from '@/application/database-yjs/dashboard-layout';
 import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
+import { DASHBOARD_LOADING } from '@/application/database-yjs/dashboard-loading';
 import { filterOwnedTabViewIds } from '@/application/database-yjs/dashboard-owned-views';
+import { getSearchableFields, normalizeSearchQuery, searchRows, type SearchTextOptions } from '@/application/database-yjs/database-search';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import {
   collectFormulaExternalReferences,
@@ -68,6 +73,7 @@ import {
   normalizeFilterNode,
   parseFilter,
 } from '@/application/database-yjs/filter';
+import { useFormulaClock } from '@/application/database-yjs/formula/clock';
 import {
   formulaConditionContext,
   formulaRowContext,
@@ -75,7 +81,6 @@ import {
   memberNames,
   useFormulaReadContext,
 } from '@/application/database-yjs/formula/read-context';
-import { useFormulaClock } from '@/application/database-yjs/formula/clock';
 import { FormulaRowSources, useFormulaRelationTitles } from '@/application/database-yjs/formula/useFormulaRelationTitles';
 import { DEFAULT_GALLERY_LAYOUT_SETTINGS } from '@/application/database-yjs/gallery-layout';
 import {
@@ -99,7 +104,7 @@ import {
   useRollupFieldObservers,
 } from '@/application/database-yjs/hooks';
 import { useTimelineRowSource } from '@/application/database-yjs/hooks/TimelineRowValuesProvider';
-import { useTimelineRowValues } from '@/application/database-yjs/hooks/useTimelineRowValues';
+import { useTimelineRowValuesSnapshot } from '@/application/database-yjs/hooks/useTimelineRowValues';
 import { createLocalFirstObserver } from '@/application/database-yjs/local-first-observer';
 import { createNumberGroupingPolicy, NumberGroupingPolicy } from '@/application/database-yjs/number-grouping';
 import {
@@ -112,10 +117,9 @@ import {
   subscribeRelationCache,
   subscribeRelationGroupLabels,
 } from '@/application/database-yjs/relation/cache';
-import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
-import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { readHistoricalRelationText } from '@/application/database-yjs/relation/history';
+import { useDatabaseDependencyRestoreRevision } from '@/application/database-yjs/restore-dependencies';
 import {
   invalidateRollupCell,
   readRollupCell,
@@ -124,6 +128,8 @@ import {
   subscribeRollupCell,
   subscribeRollupCache,
 } from '@/application/database-yjs/rollup/cache';
+import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
+import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
@@ -135,6 +141,7 @@ import {
   GalleryCardPreview,
   GalleryCardSize,
   GalleryLayoutSettings,
+  MentionablePerson,
   RowId,
   SortId,
   TimeFormat,
@@ -262,7 +269,253 @@ function getComputedConditionFieldIds(sorts?: YDatabaseSorts, filters?: FilterLi
 }
 
 const CONDITION_ROW_LOAD_BATCH_SIZE = 24;
+
+/** Remote changes (sync, other tabs) arrive in bursts: the conditions recompute once they pause. */
+export const CONDITION_REMOTE_CHANGE_DEBOUNCE_MS = 200;
 const ROLLUP_CELL_OBSERVER_POOL_SIZE = 4;
+
+/** What ran a scheduled recompute: the next frame after the user's own write, or the trailing debounce. */
+type ConditionChangeTrigger = 'frame' | 'debounce';
+
+interface ConditionChangeScheduler {
+  /** Schedules a recompute for a change made in `transaction` (none: treated as remote). */
+  (transaction?: Pick<Transaction, 'local'>): void;
+  /** Whether a recompute is scheduled and has not run. */
+  pending: () => boolean;
+  cancel: () => void;
+}
+
+/** A recompute carried over from an observer that was replaced before it ran: the next frame. */
+const CARRIED_OVER_CHANGE = { local: true };
+const HOLD_REMOVED_ROWS = { holdRemovedRows: true };
+
+/**
+ * Schedules the recompute after something the conditions read changed in
+ * place. The user's own write (a local Yjs transaction: a cell edit, a new
+ * row) recomputes on the next animation frame, which still folds a paste or a
+ * fill into one pass; remote changes wait for the trailing debounce, so a
+ * burst recomputes once. Whichever runs first covers the other.
+ */
+function createConditionChangeScheduler(run: (trigger: ConditionChangeTrigger) => void): ConditionChangeScheduler {
+  let frame: number | null = null;
+  let remotePending = false;
+  const remote = debounce(() => {
+    remotePending = false;
+    run('debounce');
+  }, CONDITION_REMOTE_CHANGE_DEBOUNCE_MS);
+  const cancelRemote = () => {
+    remotePending = false;
+    remote.cancel();
+  };
+
+  const flush = () => {
+    frame = null;
+    cancelRemote();
+    run('frame');
+  };
+
+  const schedule = ((transaction?: Pick<Transaction, 'local'>) => {
+    if (transaction?.local) {
+      if (frame === null) frame = requestAnimationFrame(flush);
+      return;
+    }
+
+    // A frame already scheduled covers the remote change too.
+    if (frame !== null) return;
+    remotePending = true;
+    remote();
+  }) as ConditionChangeScheduler;
+
+  schedule.pending = () => frame !== null || remotePending;
+  schedule.cancel = () => {
+    cancelRemote();
+    if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
+  };
+
+  return schedule;
+}
+
+// ---------------------------------------------------------------------------
+// Derived results of resident sources (PERFORMANCE-REPORT W6 b, theme 3)
+// ---------------------------------------------------------------------------
+
+/**
+ * How long a view's derived result is kept after its last use: the residency
+ * window of its source (`DASHBOARD_LOADING.sourceIdleReleaseMs`), so a return
+ * to the dashboard within it shows the result without computing it again.
+ */
+export const DERIVED_ROW_ORDERS_TTL_MS = DASHBOARD_LOADING.sourceIdleReleaseMs;
+/** The results kept at most per kind; the least recently used goes first. */
+const DERIVED_RESULTS_LIMIT = 64;
+
+/** Bumped by every transaction that changes a row doc a derived result read, and when it is destroyed. */
+const rowDocVersions = new WeakMap<YDoc, number>();
+
+function watchRowDocVersion(doc: YDoc) {
+  if (rowDocVersions.has(doc)) return;
+  const bump = () => rowDocVersions.set(doc, (rowDocVersions.get(doc) ?? 0) + 1);
+
+  rowDocVersions.set(doc, 0);
+  doc.on('afterTransaction', (transaction: Transaction) => {
+    if (transaction.changed.size > 0 || transaction.deleteSet.clients.size > 0) bump();
+  });
+  doc.on('destroy', bump);
+}
+
+/** What a derived result was computed from, besides its key (database, view and conditions). */
+interface DerivedInputs {
+  /** The row source's id; a published document's guid can be its publish name instead. */
+  databaseId: string;
+  /** The view's visible row orders it read. */
+  rowOrders: Row[];
+  /** The fields it read, as JSON (a type or an option change changes it). */
+  fieldsKey: string;
+  /** The doc each row is read from now. */
+  resolveDoc: (rowId: string) => YDoc | null | undefined;
+}
+
+interface DerivedEntry<T> {
+  databaseId: string;
+  value: T;
+  orderKey: string;
+  fieldsKey: string;
+  /** Relative date filters resolve against the day. */
+  day: string;
+  docs: Map<string, { doc: YDoc; version: number }>;
+  expiresAt: number;
+}
+
+/** A key of the fields or conditions a result read: their JSON (desktop-authored values can be BigInts). */
+function derivedInputKey(value: unknown) {
+  return JSON.stringify(value, (_key, item) => (typeof item === 'bigint' ? `${item}n` : item)) ?? '';
+}
+
+function rowOrdersKey(rowOrders: Row[]) {
+  return rowOrders.map(({ id, height, is_deleted }) => `${id}|${height}|${is_deleted ? 1 : 0}`).join('\n');
+}
+
+function derivedSourceDatabaseId(doc: YDoc) {
+  const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
+
+  return database?.get(YjsDatabaseKey.id) || doc.guid;
+}
+
+/**
+ * Results derived from a resident source's rows, by key. An entry is the
+ * result while the row orders and fields it read are the same and every row
+ * is read from the same doc, unchanged since (`rowDocVersions`); anything
+ * else is a miss, and the caller computes. Entries live for the residency
+ * window after their last use.
+ */
+function createDerivedStore<T>() {
+  const entries = new Map<string, DerivedEntry<T>>();
+
+  const touch = (key: string, entry: DerivedEntry<T>) => {
+    entry.expiresAt = Date.now() + DERIVED_ROW_ORDERS_TTL_MS;
+    // Most recently used last.
+    entries.delete(key);
+    entries.set(key, entry);
+  };
+
+  return {
+    read(key: string, inputs: DerivedInputs): T | undefined {
+      const entry = entries.get(key);
+
+      if (!entry) return undefined;
+      const valid =
+        entry.expiresAt > Date.now() &&
+        entry.databaseId === inputs.databaseId &&
+        entry.fieldsKey === inputs.fieldsKey &&
+        entry.day === dayjs().format('YYYY-MM-DD') &&
+        entry.orderKey === rowOrdersKey(inputs.rowOrders) &&
+        Array.from(entry.docs).every(
+          ([rowId, { doc, version }]) => inputs.resolveDoc(rowId) === doc && rowDocVersions.get(doc) === version
+        );
+
+      if (!valid) {
+        entries.delete(key);
+        return undefined;
+      }
+
+      touch(key, entry);
+      return entry.value;
+    },
+    store(key: string, inputs: DerivedInputs, value: T) {
+      const docs = new Map<string, { doc: YDoc; version: number }>();
+
+      for (const { id } of inputs.rowOrders) {
+        const doc = inputs.resolveDoc(id);
+
+        // A row read from nowhere cannot be checked later: nothing is kept.
+        if (!doc) return;
+        watchRowDocVersion(doc);
+        docs.set(id, { doc, version: rowDocVersions.get(doc) ?? 0 });
+      }
+
+      const now = Date.now();
+
+      entries.forEach((entry, entryKey) => {
+        if (entry.expiresAt <= now) entries.delete(entryKey);
+      });
+      touch(key, {
+        databaseId: inputs.databaseId,
+        value,
+        orderKey: rowOrdersKey(inputs.rowOrders),
+        fieldsKey: inputs.fieldsKey,
+        day: dayjs().format('YYYY-MM-DD'),
+        docs,
+        expiresAt: 0,
+      });
+
+      while (entries.size > DERIVED_RESULTS_LIMIT) {
+        const oldest = entries.keys().next().value;
+
+        if (oldest === undefined) break;
+        entries.delete(oldest);
+      }
+    },
+    /** Keeps the entry for the residency window, from now. */
+    retain(key: string) {
+      const entry = entries.get(key);
+
+      if (entry) touch(key, entry);
+    },
+    clear() {
+      entries.clear();
+    },
+    releaseDatabase(databaseId: string) {
+      entries.forEach((entry, key) => {
+        if (entry.databaseId === databaseId) entries.delete(key);
+      });
+    },
+  };
+}
+
+/** The filtered and sorted rows of a view, by database, view and conditions. */
+const derivedRowOrders = createDerivedStore<Row[]>();
+/** A board's rows by column, by database, view, grouping and the rows it grouped. */
+const derivedGroups = createDerivedStore<Map<string, Row[]>>();
+
+// A source's final release also releases the strong row-doc references held
+// by its derived results. The residency manager already includes the grace
+// period that permits a warm return to reuse them.
+subscribeRowDocRelease({
+  onDatabaseReleased(databaseId) {
+    derivedRowOrders.releaseDatabase(databaseId);
+    derivedGroups.releaseDatabase(databaseId);
+  },
+  onRowUnbound() {
+    // A row can unbind while the source stays resident for a warm return.
+  },
+});
+
+/** Forget every kept result (tests). */
+export function clearDerivedResults() {
+  derivedRowOrders.clear();
+  derivedGroups.clear();
+}
+
 const defaultVisible = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty];
 
 type ConditionReference = { id: string; fieldId: string };
@@ -1260,11 +1513,32 @@ export function useGroup(groupId: string) {
   };
 }
 
+/** A stored value as plain JSON (a `Y.Map` through `toJSON`), for a stable comparison key. */
+function plainLayoutValue(value: unknown): unknown {
+  return value instanceof AbstractType ? value.toJSON() : value;
+}
+
+function layoutValueKey(value: unknown) {
+  try {
+    return JSON.stringify(value, (_key, inner) => (typeof inner === 'bigint' ? `${inner}n` : inner)) ?? '';
+  } catch {
+    return String(value);
+  }
+}
+
 export function useBoardLayoutSettings() {
   const view = useDatabaseView();
+  const fields = useDatabaseFields();
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [hideUnGroup, setHideUnGroup] = useState(false);
   const [hideEmptyGroups, setHideEmptyGroups] = useState(false);
+  // "Color columns" (WP09 §1.5): on only when stored as `true`.
+  const [showColorColumns, setShowColorColumns] = useState(false);
+  // The stored `group_calculation` as plain JSON (WP09 §1.6); read below against the fields.
+  const [rawGroupCalculation, setRawGroupCalculation] = useState<{ key: string; value: unknown }>({
+    key: '',
+    value: undefined,
+  });
   const [shownEmptyGroupIds, setShownEmptyGroupIds] = useState<ReadonlySet<string>>(() => new Set());
   const groups = view?.get(YjsDatabaseKey.groups);
   const [fieldId, setFieldId] = useState<string | null>(null);
@@ -1280,6 +1554,13 @@ export function useBoardLayoutSettings() {
       setIsCollapsed(collapseHiddenGroups === undefined ? true : Boolean(collapseHiddenGroups));
       setHideUnGroup(Boolean(layoutSetting?.get(YjsDatabaseKey.hide_ungrouped_column)));
       setHideEmptyGroups(Boolean(layoutSetting?.get(YjsDatabaseKey.hide_empty_groups)));
+      setShowColorColumns(layoutSetting?.get(YjsDatabaseKey.show_color_columns) === true);
+      const groupCalculationValue = plainLayoutValue(layoutSetting?.get(YjsDatabaseKey.group_calculation));
+      const groupCalculationKey = layoutValueKey(groupCalculationValue);
+
+      setRawGroupCalculation((current) =>
+        current.key === groupCalculationKey ? current : { key: groupCalculationKey, value: groupCalculationValue }
+      );
       const rawShownEmptyGroupIds = layoutSetting?.get(YjsDatabaseKey.shown_empty_group_ids) as unknown;
       const shownIds: unknown[] = Array.isArray(rawShownEmptyGroupIds)
         ? rawShownEmptyGroupIds
@@ -1353,6 +1634,17 @@ export function useBoardLayoutSettings() {
     column: ungroupedColumn,
     hideUngroupedColumn: hideUnGroup,
   });
+  // A field that is deleted or changes type turns the calculation back into the card count.
+  const fieldsVersion = useDatabaseFieldsVersion(rawGroupCalculation.value !== undefined);
+  const groupCalculation = useMemo(() => {
+    void fieldsVersion;
+    if (rawGroupCalculation.value === undefined) return undefined;
+    return readBoardGroupCalculation(rawGroupCalculation.value, (id) => {
+      const field = fields?.get(id);
+
+      return field ? (Number(field.get(YjsDatabaseKey.type)) as FieldType) : undefined;
+    });
+  }, [fields, fieldsVersion, rawGroupCalculation]);
 
   return {
     isCollapsed,
@@ -1361,6 +1653,8 @@ export function useBoardLayoutSettings() {
     shownEmptyGroupIds,
     fieldId,
     ungroupedColumnHidden,
+    showColorColumns,
+    groupCalculation,
   };
 }
 
@@ -1427,7 +1721,7 @@ export function useRowsByGroup(groupId: string) {
   const rows = useRowMap();
   const rowOrders = useRowOrdersSelector();
   const viewId = useDatabaseViewId();
-  const { databaseDoc, dataSource } = useDatabaseContext();
+  const { databaseDoc, dataSource, peekRowDocFromSeed } = useDatabaseContext();
   const isHistory = dataSource?.type === 'history';
   const { cachedRowDocs } = useBackgroundRowDocLoader(Boolean(fieldId), 'board-grouping');
   const groupingRows = useMemo(() => {
@@ -1454,14 +1748,31 @@ export function useRowsByGroup(groupId: string) {
   const filters = view?.get(YjsDatabaseKey.filters);
   const { hideEmptyGroups, hideUnGroup, shownEmptyGroupIds } = useBoardLayoutSettings();
   const groupingKey = fieldId ? `${viewId ?? ''}:${groupId}:${fieldId}` : null;
+  // The grouping the board shows: the result below is for this key.
+  const shownGroupingKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!fieldId || !rowOrders) {
-      setGroupResult(new Map());
+      // While the rows are filtered again (a dashboard's global filter, the
+      // viewer's private conditions) the board keeps the grouping it shows,
+      // so its columns change once, to the new result, instead of emptying
+      // first. Another grouping, or none, starts empty.
+      if (!fieldId || shownGroupingKeyRef.current !== groupingKey) {
+        shownGroupingKeyRef.current = null;
+        setGroupResult(new Map());
+      }
+
       return;
     }
 
-    const onConditionsChange = () => {
+    // The rows of a grouping the board already shows changed (a dashboard's
+    // global filter, the view's conditions): the new columns render as a
+    // transition, in slices, instead of every card in one task.
+    const regroupsShownGrouping = shownGroupingKeyRef.current === groupingKey;
+
+    shownGroupingKeyRef.current = groupingKey;
+
+    const onConditionsChange = (renderInTransition = false) => {
       const newResult = new Map<string, Row[]>();
 
       const field = fields.get(fieldId);
@@ -1483,20 +1794,45 @@ export function useRowsByGroup(groupId: string) {
       }
 
       const filter = filters?.toArray().find((filter) => filter.get(YjsDatabaseKey.field_id) === fieldId);
+      const rowsHydrated = areGroupRowsHydrated(rowOrders, groupingRows);
+      // The grouping of every row is kept for the source's residency window
+      // (`derivedGroups`), so the board of a return shows its columns without
+      // grouping the rows again.
+      const derived =
+        !isHistory && peekRowDocFromSeed && groupingKey
+          ? {
+              key: `${databaseDoc.guid}\n${groupingKey}\n${derivedInputKey(filter?.toJSON() ?? null)}`,
+              inputs: {
+                databaseId: derivedSourceDatabaseId(databaseDoc),
+                rowOrders,
+                fieldsKey: derivedInputKey(field.toJSON()),
+                resolveDoc: (rowId: string) => {
+                  const doc = groupingRows[rowId];
 
-      const groupResult = groupByField(rowOrders, groupingRows, field, filter);
+                  return hasRowConditionData(doc) ? doc : peekRowDocFromSeed(rowId);
+                },
+              },
+            }
+          : null;
+      const kept = derived ? derivedGroups.read(derived.key, derived.inputs) : undefined;
+      const groupResult = kept ?? groupByField(rowOrders, groupingRows, field, filter);
 
       if (!groupResult) {
         setGroupResult(newResult);
         return;
       }
 
+      if (derived && !kept && rowsHydrated) derivedGroups.store(derived.key, derived.inputs, groupResult);
+
       // A regroup that changes no column keeps the previous result, so the
       // columns and every card under them do not re-render for nothing.
-      setGroupResult((previous) => (haveSameGroupRows(previous, groupResult) ? previous : groupResult));
-      const rowsHydrated = areGroupRowsHydrated(rowOrders, groupingRows);
+      const showResult = () =>
+        setGroupResult((previous) => (haveSameGroupRows(previous, groupResult) ? previous : groupResult));
 
-      if (rowsHydrated && groupingKey) {
+      if (renderInTransition) startTransition(showResult);
+      else showResult();
+
+      if ((rowsHydrated || kept) && groupingKey) {
         setHydratedGroupingIdentity((current) =>
           current?.databaseDoc === databaseDoc && current.groupingKey === groupingKey
             ? current
@@ -1505,13 +1841,15 @@ export function useRowsByGroup(groupId: string) {
       }
     };
 
-    onConditionsChange();
+    onConditionsChange(regroupsShownGrouping);
     if (isHistory) return;
 
-    fields.observeDeep(onConditionsChange);
-    filters?.observeDeep(onConditionsChange);
+    const regroup = () => onConditionsChange();
 
-    const debouncedConditionsChange = debounce(onConditionsChange, 150);
+    fields.observeDeep(regroup);
+    filters?.observeDeep(regroup);
+
+    const debouncedConditionsChange = debounce(regroup, 150);
 
     const observerRowsEvent = () => {
       debouncedConditionsChange();
@@ -1523,13 +1861,13 @@ export function useRowsByGroup(groupId: string) {
     return () => {
       debouncedConditionsChange.cancel();
 
-      fields.unobserveDeep(onConditionsChange);
-      filters?.unobserveDeep(onConditionsChange);
+      fields.unobserveDeep(regroup);
+      filters?.unobserveDeep(regroup);
       Object.values(groupingRows).forEach((row) => {
         row.getMap(YjsEditorKey.data_section).unobserveDeep(observerRowsEvent);
       });
     };
-  }, [databaseDoc, fieldId, fields, rowOrders, groupingRows, filters, groupingKey, isHistory]);
+  }, [databaseDoc, fieldId, fields, rowOrders, groupingRows, filters, groupingKey, isHistory, peekRowDocFromSeed]);
 
   // Cold Boards must wait for their first complete grouping before empty
   // columns can be classified safely. Once that baseline exists, a later
@@ -1561,6 +1899,8 @@ export function useRowsByGroup(groupId: string) {
     groupRowsReady: groupVisibilityReady,
     hideEmptyGroups,
     notFound,
+    /** The row docs the grouping read (the row map plus background-loaded docs), by row id. */
+    groupingRows,
   };
 }
 
@@ -2219,39 +2559,16 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
       primarySortCondition === undefined || numberPolicy
         ? orderedIds
         : orderDatabaseGroupsForPrimarySort(orderedIds, result, rowOrders, primarySortCondition);
-    const identifierLabels = new Map<string, string>();
-
-    if (fieldType === FieldType.Person) {
-      // Seed from the field's own type option once. getGroupLabel falls back to
-      // parsing it per group otherwise, which is a JSON.parse for every header.
-      parsePersonTypeOptions(field).persons.forEach((person) => {
-        const label = person.name?.trim();
-
-        if (label) identifierLabels.set(person.id, label);
-      });
-      mentionableUsers.forEach((person) => {
-        const label = person.name?.trim() || person.email?.trim();
-
-        if (label) identifierLabels.set(person.person_id, label);
-      });
-    } else if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) {
-      mentionableUsers.forEach((person) => {
-        const label = person.name?.trim() || person.email?.trim();
-        const uid = canonicalizeUserUid(person.uid);
-
-        if (label && uid) identifierLabels.set(uid, label);
-      });
-    } else if (fieldType === FieldType.Relation) {
-      displayIds.forEach((id) => {
-        if (id === currentFieldId) return;
-
-        const label = isHistory
+    const identifierLabels = buildIdentifierLabels({
+      fieldType,
+      field,
+      mentionableUsers,
+      relationIds: displayIds.filter((id) => id !== currentFieldId),
+      readRelationLabel: (id) =>
+        isHistory
           ? readHistoricalRelationText(database, parseRelationTypeOption(field).database_id, [id], groupingRows)
-          : readRelationGroupLabel({ relationField: field, relatedRowId: id });
-
-        if (label) identifierLabels.set(id, label);
-      });
-    }
+          : readRelationGroupLabel({ relationField: field, relatedRowId: id }),
+    });
 
     const now = new Date();
     const groups = displayIds.map((id): GridGroup => {
@@ -2678,6 +2995,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     getViewIdFromDatabaseId,
     ensureRow,
     loadRowFromSeed,
+    peekRowDocFromSeed,
   } = databaseContext;
   const { blobPrefetchComplete, seedsReady } = useRowPassState(databaseContext);
   const extraFilters = useDatabaseExtraFilters();
@@ -2686,6 +3004,15 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   // filter whose mapped field changed type is skipped (read live, so the field
   // observer's recompute picks the change up).
   const filters = useMemo(() => combineFilters(viewFilters, extraFilters, fields), [viewFilters, extraFilters, fields]);
+  // The view instance's row search (WP09 §1.2), ANDed after the filters. It is
+  // part of every condition state key, so a new query is a new result.
+  const searchQuery = normalizeSearchQuery(useDatabaseSearchQuery());
+  const searchKey = searchQuery ? `:q=${searchQuery}` : '';
+  const searchReadsPeople =
+    searchQuery !== '' &&
+    getSearchableFields(fields, view).some(({ type }) =>
+      [FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(type)
+    );
   const isHistory = dataSource?.type === 'history';
   const hasAttributionSort =
     sorts?.toArray().some((sort) => {
@@ -2712,7 +3039,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     [fields, conditionFormulaKey, conditionFieldsVersion]
   );
   const { users: conditionMentionableUsers } = useMentionableUsersWithAutoFetch(
-    !isHistory && (hasAttributionSort || formulaConditionReferences.people)
+    !isHistory && (hasAttributionSort || formulaConditionReferences.people || searchReadsPeople)
   );
   const attributionNameByUid = useMemo(() => {
     const names = new Map<string, string>();
@@ -2728,9 +3055,65 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     return names;
   }, [conditionMentionableUsers, isHistory]);
   const attributionNameGetter = useCallback((uid: string) => attributionNameByUid.get(uid), [attributionNameByUid]);
+  const searchNameById = useMemo(() => {
+    // Person cells store workspace person ids; attribution fields store user uids.
+    const names = new Map(attributionNameByUid);
+
+    if (isHistory) return names;
+    conditionMentionableUsers.forEach((person) => {
+      const name = person.name?.trim() || person.email?.trim();
+
+      if (name && person.person_id) names.set(person.person_id, name);
+    });
+    return names;
+  }, [attributionNameByUid, conditionMentionableUsers, isHistory]);
+  const searchNameGetter = useCallback((id: string) => searchNameById.get(id), [searchNameById]);
   const conditionMembers = useMemo(() => memberNames(isHistory ? [] : conditionMentionableUsers), [conditionMentionableUsers, isHistory]);
   const conditionReadsRelatedTitles = formulaConditionReferences.relations.length > 0;
   const formulaClock = useFormulaClock(!isHistory && formulaConditionReferences.clock);
+
+  // A complete result is kept per database, view and conditions for the
+  // source's residency window (`derivedRowOrders`) when the conditions
+  // read only the rows' own cells: a remount (a return to the dashboard) or a
+  // second consumer of the same view and conditions shows it without
+  // computing it again. A search, a formula, a relation, a rollup or a
+  // person's name reads more than the row, so those results are not kept.
+  const derivedRowOrdersCacheable =
+    !isHistory && !searchQuery && Boolean(peekRowDocFromSeed) && conditionFormulas.length === 0 && !hasAttributionSort;
+  const derivedRowOrdersOf = useCallback(
+    (visibleRowOrders: Row[], conditionStateKey: string, docs: Record<RowId, YDoc>) => {
+      if (!derivedRowOrdersCacheable) return null;
+      const computed = getComputedConditionFieldIds(sorts, filters, fields);
+
+      if (computed.relationFieldIds.length > 0 || computed.rollupFieldIds.length > 0) return null;
+      const fieldIds = Array.from(getConditionFieldIds(sorts, filters, fields)).sort();
+
+      return {
+        key: `${databaseDoc.guid}\n${conditionStateKey}`,
+        inputs: {
+          databaseId: derivedSourceDatabaseId(databaseDoc),
+          rowOrders: visibleRowOrders,
+          fieldsKey: derivedInputKey(fieldIds.map((fieldId) => [fieldId, fields?.get(fieldId)?.toJSON() ?? null])),
+          resolveDoc: (rowId: string) => {
+            const doc = docs[rowId];
+
+            return hasRowConditionData(doc) ? doc : peekRowDocFromSeed?.(rowId);
+          },
+        },
+      };
+    },
+    [databaseDoc, derivedRowOrdersCacheable, fields, filters, peekRowDocFromSeed, sorts]
+  );
+  // The key of the kept result this consumer showed last: kept for the
+  // residency window from the moment the consumer goes away.
+  const derivedRowOrdersKeyRef = useRef<string | null>(null);
+
+  useEffect(
+    () => () => {
+      if (derivedRowOrdersKeyRef.current) derivedRowOrders.retain(derivedRowOrdersKeyRef.current);
+    },
+    []
+  );
 
   const [rowOrdersState, setRowOrdersState] = useState<{
     rows?: Row[];
@@ -2739,10 +3122,33 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     /** The view and the (combined) filters the rows were computed for. */
     viewId?: string;
     filters?: FilterList;
-  }>({ conditionSignature: '' });
+    /** The normalized search the rows were computed for (`''` for none). */
+    query?: string;
+  }>(() => {
+    // A consumer mounting again within the residency window shows the kept
+    // result in its first render, before any row doc of its own has loaded.
+    const conditionSignature = getConditionSignature(sorts, filters, fields);
+    const visibleRowOrders = conditionSignature
+      ? materializeVisibleRowOrders(
+          rowOrders?.toJSON() as Row[] | undefined,
+          inlineRowOrders?.toJSON() as Row[] | undefined
+        )
+      : undefined;
+    const conditionStateKey = `${viewId ?? ''}:${conditionSignature}${searchKey}`;
+    const derived = visibleRowOrders ? derivedRowOrdersOf(visibleRowOrders, conditionStateKey, rows ?? {}) : null;
+    const kept = derived ? derivedRowOrders.read(derived.key, derived.inputs) : undefined;
+
+    if (!derived || !kept) return { conditionSignature: '' };
+    derivedRowOrdersKeyRef.current = derived.key;
+    return { rows: kept, conditionSignature: conditionStateKey, viewId, filters, query: searchQuery };
+  });
   const loadReporter = useContext(RowOrdersLoadReporterContext);
   // Identifies this result to the reporter for as long as the hook is mounted.
   const [loadSource] = useState(() => ({}));
+  // What the last publish was for: the view, the (combined) filters and the search, and whether it was complete.
+  const publishedRef = useRef<{ viewId?: string; filters?: FilterList; query: string; complete: boolean } | null>(null);
+  // The last complete result published, and the conditions it is for.
+  const shownResultRef = useRef<{ conditionStateKey: string; rows: Row[] } | null>(null);
 
   useEffect(() => {
     if (!loadReporter) return;
@@ -2763,11 +3169,27 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
         complete: !hydrating,
         hasMatches: Boolean(state?.conditioned && rows?.length),
       });
-      setRowOrdersState((previous) => {
+      const last = publishedRef.current;
+      // The result of new dashboard global filters or a new search. The view
+      // shows its last result until this one renders (`showsPublishedResult`),
+      // so it renders as a transition: in slices, interrupted by later input,
+      // instead of every widget of the source re-rendering in one task.
+      const rendersInTransition = Boolean(
+        last?.complete && last.viewId === viewId && (last.filters !== filters || last.query !== searchQuery)
+      );
+
+      publishedRef.current = { viewId, filters, query: searchQuery, complete: !hydrating };
+      if (!hydrating && rows) shownResultRef.current = { conditionStateKey: conditionSignature, rows };
+      const setState: typeof setRowOrdersState = rendersInTransition
+        ? (update) => startTransition(() => setRowOrdersState(update))
+        : setRowOrdersState;
+
+      setState((previous) => {
         const sameConditions =
           previous.conditionSignature === conditionSignature &&
           previous.viewId === viewId &&
-          previous.filters === filters;
+          previous.filters === filters &&
+          previous.query === searchQuery;
 
         // A complete result computed again (a row doc loaded, a cell the
         // conditions do not read changed) keeps its rows when they are the
@@ -2785,7 +3207,9 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
 
         const republishesPartialResult = hydrating && previous.hydrating && sameConditions;
 
-        if (!republishesPartialResult) return { rows, hydrating, conditionSignature, viewId, filters };
+        if (!republishesPartialResult) {
+          return { rows, hydrating, conditionSignature, viewId, filters, query: searchQuery };
+        }
 
         // A partial result is published again each time more rows were read.
         // Keep what did not change, so the rows already shown do not re-render.
@@ -2800,10 +3224,11 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
           conditionSignature,
           viewId,
           filters,
+          query: searchQuery,
         };
       });
     },
-    [filters, loadReporter, loadSource, viewId]
+    [filters, loadReporter, loadSource, searchQuery, viewId]
   );
   const [rollupWatchVersion, setRollupWatchVersion] = useState(0);
   const [conditionLoadRevision, setConditionLoadRevision] = useState(0);
@@ -2815,6 +3240,10 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   const pendingConditionRowLoadsRef = useRef(new Set<string>());
   const unavailableConditionRowsRef = useRef(new Set<string>());
   const lastProcessedRowOrderTransactionRef = useRef<Transaction | null>(null);
+  // A data change whose recompute was scheduled by observers replaced before it ran.
+  const carriedConditionChangeRef = useRef(false);
+  // Schedules the recompute that removes rows the user's own edit filtered out.
+  const holdRemovedRowsRef = useRef<(() => void) | null>(null);
   // The partial result of a filter-only view whose rows still load.
   const partialFilterRef = useRef<PartialFilterState | null>(null);
   // What the partial filter's verdicts were computed with, besides the row docs.
@@ -2822,8 +3251,8 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   // Row data, a field or a computed cell changed in place: every verdict is stale.
   const partialVerdictsStaleRef = useRef(false);
 
-  // Check if there are active conditions
-  const hasConditions = (sorts?.length ?? 0) > 0 || hasEffectiveFilters(filters, fields);
+  // Check if there are active conditions (a search reads every row too)
+  const hasConditions = (sorts?.length ?? 0) > 0 || hasEffectiveFilters(filters, fields) || searchQuery !== '';
 
   // Background loading of row docs for sorting/filtering
   const { cachedRowDocs } = useBackgroundRowDocLoader(hasConditions);
@@ -2832,7 +3261,13 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   // useDeferredValue lets React treat the filter/sort recompute as low-priority
   // so a burst of cache updates coalesces into fewer renders — React will
   // abandon in-progress filter work when a newer snapshot arrives.
+  // Bumped when a live row doc that a cached copy shadows gets its row data:
+  // the merge below is memoised on the maps' identities, so without it the
+  // copy (a seed or IndexedDB snapshot taken before the row had its cells)
+  // would keep answering the conditions after the live doc changed.
+  const [liveRowDataVersion, setLiveRowDataVersion] = useState(0);
   const rowDocsForConditionsRaw = useMemo(() => {
+    void liveRowDataVersion;
     if (isHistory) return rows ?? {};
     const next = { ...cachedRowDocs };
 
@@ -2843,7 +3278,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     });
 
     return next;
-  }, [cachedRowDocs, rows, isHistory]);
+  }, [cachedRowDocs, rows, isHistory, liveRowDataVersion]);
   const rowDocsForConditions = useDeferredValue(rowDocsForConditionsRaw);
   const rowDocsForConditionsRef = useRef(rowDocsForConditions);
 
@@ -2942,8 +3377,8 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     if (!originalRowOrders) return false;
 
     const conditionSignature = getConditionSignature(sorts, filters, fields);
-    const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
-    const currentHasConditions = conditionSignature !== '';
+    const conditionStateKey = `${viewId ?? ''}:${conditionSignature}${searchKey}`;
+    const currentHasConditions = conditionSignature !== '' || searchKey !== '';
 
     if (conditionSignatureRef.current !== conditionStateKey) {
       conditionSignatureRef.current = conditionStateKey;
@@ -2957,7 +3392,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     filtersAppliedRef.current = false;
     publishRows(originalRowOrders, conditionStateKey);
     return true;
-  }, [fields, filters, publishRows, readVisibleRowOrders, sorts, viewId]);
+  }, [fields, filters, publishRows, readVisibleRowOrders, searchKey, sorts, viewId]);
 
   // Getter for relation cell text (used in sorting/filtering)
   const relationTextGetter = useCallback(
@@ -3042,6 +3477,15 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     },
     [rollupValueGetter]
   );
+  // How the search reads cells that reference other rows or people.
+  const searchTextOptions = useMemo<SearchTextOptions>(
+    () => ({
+      getRelationCellText: relationTextGetter,
+      getRollupCellText: rollupTextGetter,
+      getUserName: searchNameGetter,
+    }),
+    [relationTextGetter, rollupTextGetter, searchNameGetter]
+  );
 
   // Changes whenever something the conditions read, other than the row docs,
   // is replaced: what the partial filter judged with the old value is stale.
@@ -3075,7 +3519,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   );
 
   // Main computation: apply sorts and filters to row orders
-  const onConditionsChange = useCallback(() => {
+  const onConditionsChange = useCallback((options?: { holdRemovedRows?: boolean }) => {
     const shouldLogConditionCompute = shouldLogDatabaseConditionPerformance();
     const computeStartedAt = shouldLogConditionCompute ? performance.now() : 0;
     const originalRowOrders = readVisibleRowOrders();
@@ -3111,8 +3555,8 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     // a stale-closure problem when the callback is invoked by a Yjs observer
     // before React has re-rendered (e.g. remote filter/sort sync from desktop).
     const conditionSignature = getConditionSignature(sorts, filters, fields);
-    const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
-    const currentHasConditions = conditionSignature !== '';
+    const conditionStateKey = `${viewId ?? ''}:${conditionSignature}${searchKey}`;
+    const currentHasConditions = conditionSignature !== '' || searchKey !== '';
 
     if (conditionSignatureRef.current !== conditionStateKey) {
       conditionSignatureRef.current = conditionStateKey;
@@ -3153,6 +3597,22 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
       partialVerdictsStaleRef.current = false;
     }
 
+    // The result kept for these conditions, while nothing it was computed from changed.
+    const derived =
+      unavailableConditionRowsRef.current.size === 0
+        ? derivedRowOrdersOf(originalRowOrders, conditionStateKey, rowDocsForConditions)
+        : null;
+    const kept = derived ? derivedRowOrders.read(derived.key, derived.inputs) : undefined;
+
+    if (derived && kept) {
+      derivedRowOrdersKeyRef.current = derived.key;
+      filtersAppliedRef.current = true;
+      partialFilterRef.current = null;
+      publishRows(kept, conditionStateKey, { conditioned: true });
+      logConditionCompute(originalRowOrders.length, kept.length);
+      return;
+    }
+
     const result = computeRowOrders({
       rowOrders: originalRowOrders,
       docs: rowDocsForConditions,
@@ -3166,15 +3626,24 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
               getFormulaContext: formulaContextGetter,
             })
         : undefined,
-      filter: filters?.length
-        ? (rows) =>
-            filterBy(rows, filters, fields, rowDocsForConditions, {
-              getRelationCellText: relationTextGetter,
-              getRollupCellText: rollupTextGetter,
-              getRollupCellValue: rollupValueGetter,
-              getFormulaContext: formulaContextGetter,
-            })
-        : undefined,
+      filter:
+        filters?.length || searchQuery
+          ? (rows) => {
+              const filtered = filters?.length
+                ? filterBy(rows, filters, fields, rowDocsForConditions, {
+                    getRelationCellText: relationTextGetter,
+                    getRollupCellText: rollupTextGetter,
+                    getRollupCellValue: rollupValueGetter,
+                    getFormulaContext: formulaContextGetter,
+                  })
+                : rows;
+
+              // The search is one more AND term: after the filters, in their order.
+              return searchQuery
+                ? searchRows(filtered, searchQuery, fields, view, rowDocsForConditions, searchTextOptions)
+                : filtered;
+            }
+          : undefined,
       partial: partialFilter,
     });
 
@@ -3217,15 +3686,38 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
       return;
     }
 
+    // The user's own edit filtered out a row the view shows: as before, the
+    // row leaves after the trailing debounce (`CONDITION_REMOTE_CHANGE_DEBOUNCE_MS`),
+    // so an editor open on it (a select menu mid-pick) is not torn down under
+    // the pointer. An edit that only changes values or order shows at once.
+    const shown = shownResultRef.current;
+
+    if (options?.holdRemovedRows && shown?.conditionStateKey === conditionStateKey && result.rows) {
+      const kept = new Set(result.rows.map(({ id }) => id));
+      const ordered = new Set(originalRowOrders.map(({ id }) => id));
+
+      if (shown.rows.some(({ id }) => !kept.has(id) && ordered.has(id))) {
+        holdRemovedRowsRef.current?.();
+        logConditionCompute(result.readable, result.rows.length);
+        return;
+      }
+    }
+
     filtersAppliedRef.current = true;
     partialFilterRef.current = null;
     dashboardLoadStats.recordDerivedCompute(`${viewId ?? ''}:${hashConditionSignature(conditionSignature)}`);
+    if (derived && result.rows) {
+      derivedRowOrders.store(derived.key, derived.inputs, result.rows);
+      derivedRowOrdersKeyRef.current = derived.key;
+    }
+
     publishRows(result.rows, conditionStateKey, { conditioned: true });
     logConditionCompute(result.readable, result.rows?.length);
   }, [
     fields,
     attributionNameGetter,
     conditionInputs,
+    derivedRowOrdersOf,
     formulaContextGetter,
     filters,
     partial,
@@ -3237,15 +3729,22 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     rollupTextGetter,
     requestMissingConditionRows,
     publishRows,
+    searchKey,
+    searchQuery,
+    searchTextOptions,
+    view,
     viewId,
   ]);
 
   // Recomputes after something the conditions read changed in place (row data,
   // a field, a related or rolled-up cell, the day of a relative date filter).
-  const refreshConditions = useCallback(() => {
-    partialVerdictsStaleRef.current = true;
-    onConditionsChange();
-  }, [onConditionsChange]);
+  const refreshConditions = useCallback(
+    (trigger?: ConditionChangeTrigger) => {
+      partialVerdictsStaleRef.current = true;
+      onConditionsChange(trigger === 'frame' ? HOLD_REMOVED_ROWS : undefined);
+    },
+    [onConditionsChange]
+  );
 
   // Trigger computation when dependencies change
   useEffect(() => {
@@ -3276,11 +3775,22 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     // A complete historical snapshot cannot change. Registering every row
     // would also retain the full CRDT graph outside its bounded row store.
     if (isHistory) return;
-    // Single debounced handler for all data changes (consolidated from 4 separate debounced callbacks)
-    const debouncedChange = debounce(() => {
+    // One scheduler for every data change: the user's own writes recompute on
+    // the next frame, remote bursts once after they pause.
+    const scheduleChange = createConditionChangeScheduler((trigger) => {
       setRollupWatchVersion((prev) => prev + 1);
-      refreshConditions();
-    }, 200);
+      refreshConditions(trigger);
+    });
+
+    // A row the user's own edit filtered out leaves with the trailing debounce.
+    holdRemovedRowsRef.current = () => scheduleChange();
+
+    // A change can replace these observers before its recompute ran (a field
+    // whose type changed turns the conditions off or on): it still runs.
+    if (carriedConditionChangeRef.current) {
+      carriedConditionChangeRef.current = false;
+      scheduleChange(CARRIED_OVER_CHANGE);
+    }
 
     const handleRowOrdersChange = (_events: unknown, transaction: Transaction) => {
       // Row mutations normally update every view in one Yjs transaction. The
@@ -3291,7 +3801,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
       lastProcessedRowOrderTransactionRef.current = transaction;
 
       if (!syncUnconditionedRowOrders()) {
-        debouncedChange();
+        scheduleChange(transaction);
       }
     };
 
@@ -3300,7 +3810,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
       inlineRowOrders?.observeDeep(handleRowOrdersChange);
     }
 
-    const observers = new Map<string, () => void>();
+    const observers = new Map<string, (events: unknown, transaction: Transaction) => void>();
     let relationFieldIds: string[] = [];
     let rollupFieldIds: string[] = [];
 
@@ -3313,7 +3823,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
 
     const handleSortFilterChange = () => {
       refreshConditionFieldIds();
-      const nextConditionStateKey = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
+      const nextConditionStateKey = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}${searchKey}`;
 
       if (conditionSignatureRef.current === nextConditionStateKey) return;
 
@@ -3324,13 +3834,21 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
       setRollupWatchVersion((prev) => prev + 1);
     };
 
-    const handleFieldChange = () => {
+    const handleFieldChange = (_events: unknown, transaction: Transaction) => {
       // Schema changes cannot affect row order when the view has no configured
       // filters or sorts. Avoid serializing every row for unrelated field edits
       // such as renames while an unconditioned Grid view is open.
       // Injected dashboard filters count even while a field-type mismatch hides
       // them: changing the type back must recompute too.
-      if ((sorts?.length ?? 0) === 0 && (viewFilters?.length ?? 0) === 0 && (extraFilters?.length ?? 0) === 0) return;
+      // A search reads option names and field visibility, so it counts too.
+      if (
+        (sorts?.length ?? 0) === 0 &&
+        (viewFilters?.length ?? 0) === 0 &&
+        (extraFilters?.length ?? 0) === 0 &&
+        !searchKey
+      ) {
+        return;
+      }
 
       refreshConditionFieldIds();
 
@@ -3346,7 +3864,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
         });
       }
 
-      debouncedChange();
+      scheduleChange(transaction);
     };
 
     sorts?.observeDeep(handleSortFilterChange);
@@ -3358,8 +3876,13 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
 
     if (hasConditions) {
       Object.entries(rows || {}).forEach(([rowId, rowDoc]) => {
-        const observerRowsEvent = () => {
+        const observerRowsEvent = (_events: unknown, transaction: Transaction) => {
           invalidateRowConditionCache(rowDoc);
+          // The conditions read a cached copy of this row (its live doc had no
+          // row data when the docs were merged): merge again now that it has.
+          if (rowDocsForConditionsRef.current[rowId] !== rowDoc && hasRowConditionData(rowDoc)) {
+            setLiveRowDataVersion((version) => version + 1);
+          }
 
           // A regular field sort/filter reads row data directly. Invalidating
           // unrelated computed cells here can supersede their own observer's
@@ -3372,7 +3895,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
             invalidateRollupCell(`${rowId}:${fieldId}`);
           }
 
-          debouncedChange();
+          scheduleChange(transaction);
         };
 
         observers.set(rowId, observerRowsEvent);
@@ -3389,7 +3912,8 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
       sorts?.unobserveDeep(handleSortFilterChange);
       viewFilters?.unobserveDeep(handleSortFilterChange);
       fields?.unobserveDeep(handleFieldChange);
-      debouncedChange.cancel();
+      if (scheduleChange.pending()) carriedConditionChangeRef.current = true;
+      scheduleChange.cancel();
       observers.forEach((observer, rowId) => {
         rows?.[rowId]?.getMap(YjsEditorKey.data_section).unobserveDeep(observer);
       });
@@ -3406,6 +3930,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     sorts,
     rows,
     viewId,
+    searchKey,
     syncUnconditionedRowOrders,
     hasConditions,
     isHistory,
@@ -3415,16 +3940,18 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   useRollupFieldObservers(refreshConditions, rollupWatchVersion, { rows: rowDocsForConditions });
   useRelativeDateFilterRefresh(filters, fields, refreshConditions);
 
-  const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
+  const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}${searchKey}`;
   // The published result is shown when it is the one for the live conditions.
   // It is also shown, knowingly stale, for one render: dashboard global filters
-  // arrive through React, not a Yjs observer, so the render that brings new
-  // ones (a new combined list) precedes their recompute (an effect). Keeping
-  // this view's last result for that render avoids flashing the loading state,
-  // which unmounts every row and replays chart animations.
+  // and the search query arrive through React, not a Yjs observer, so the
+  // render that brings new ones (a new combined list, a new query) precedes
+  // their recompute (an effect). Keeping this view's last result for that
+  // render avoids flashing the loading state on each keystroke, which unmounts
+  // every row and replays chart animations.
   const showsPublishedResult =
     rowOrdersState.conditionSignature === liveConditionSignature ||
-    (rowOrdersState.viewId === viewId && rowOrdersState.filters !== filters);
+    (rowOrdersState.viewId === viewId &&
+      (rowOrdersState.filters !== filters || (rowOrdersState.query ?? '') !== searchQuery));
   const { rows: publishedRows, hydrating: publishedHydration } = rowOrdersState;
 
   return useMemo(
@@ -4075,7 +4602,9 @@ export function useTimelineEventsSelector() {
       startFieldId,
     ]
   );
-  const values = useTimelineRowValues(parseRow);
+  // `complete` once every ordered row has its document: until then a row
+  // without a bar may only be one whose date has not arrived.
+  const { values, complete } = useTimelineRowValuesSnapshot(parseRow);
   const { events, emptyEvents } = useMemo(() => {
     const events: CalendarEvent[] = [];
     const emptyEvents: CalendarEvent[] = [];
@@ -4091,7 +4620,7 @@ export function useTimelineEventsSelector() {
     return { events, emptyEvents };
   }, [hasStartField, primaryFieldId, rowOrders, values]);
 
-  return { events, emptyEvents, hasEndField };
+  return { events, emptyEvents, hasEndField, loading: !complete };
 }
 
 /**
@@ -4109,6 +4638,25 @@ export function useDateFieldEventsSelector(fieldId: string) {
   const isHistory = dataSource?.type === 'history';
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [emptyEvents, setEmptyEvents] = useState<CalendarEvent[]>([]);
+  // Rows whose document has not arrived cannot be placed: the month is not
+  // the result yet. Counted at render, so no frame shows an empty month
+  // before the effect below asked for them. A row whose load failed is not
+  // waited for (`failedRowIds`, bumping the version to count again).
+  const failedRowIdsRef = useRef(new Set<string>());
+  const [failedRowsVersion, setFailedRowsVersion] = useState(0);
+  const pendingRows = useMemo(() => {
+    void failedRowsVersion;
+    if (!rowOrders || !ensureRow) return 0;
+    return rowOrders.reduce(
+      (count, row) => count + (!rows?.[row.id] && !failedRowIdsRef.current.has(row.id) ? 1 : 0),
+      0
+    );
+  }, [ensureRow, failedRowsVersion, rowOrders, rows]);
+  // The rows and row orders `events` were read from: until the effect below
+  // has read the current ones, the events on screen are the previous result.
+  const [eventsReadFrom, setEventsReadFrom] = useState<{ rowOrders: Row[] | undefined; rows: unknown } | null>(
+    null
+  );
 
   useEffect(() => {
     if (!field || !rowOrders || !fieldId || !primaryFieldId) {
@@ -4125,6 +4673,7 @@ export function useDateFieldEventsSelector(fieldId: string) {
       return;
     }
 
+    const failedRowIds = failedRowIdsRef.current;
     const observerEvent = () => {
       const newEvents: CalendarEvent[] = [];
       const emptyEvents: CalendarEvent[] = [];
@@ -4141,6 +4690,9 @@ export function useDateFieldEventsSelector(fieldId: string) {
             if (promise) {
               promise.catch((error: unknown) => {
                 console.error('[useCalendarEventsSelector] Failed to ensure row doc:', error);
+                if (failedRowIds.has(row.id)) return;
+                failedRowIds.add(row.id);
+                setFailedRowsVersion((version) => version + 1);
               });
             }
           }
@@ -4154,6 +4706,7 @@ export function useDateFieldEventsSelector(fieldId: string) {
           return;
         }
 
+        failedRowIds.delete(row.id);
         const cell = getCell(row.id, fieldId, rows);
         const primaryCell = getCell(row.id, primaryFieldId, rows);
         const title = primaryCell && primaryField ? decodeCellToText(primaryCell, primaryField) : '';
@@ -4215,6 +4768,9 @@ export function useDateFieldEventsSelector(fieldId: string) {
 
       setEvents(newEvents);
       setEmptyEvents(emptyEvents);
+      setEventsReadFrom((current) =>
+        current?.rowOrders === rowOrders && current.rows === rows ? current : { rowOrders, rows }
+      );
     };
 
     observerEvent();
@@ -4243,7 +4799,12 @@ export function useDateFieldEventsSelector(fieldId: string) {
     };
   }, [field, fieldClock, rowOrders, rows, fieldId, primaryFieldId, primaryField, primaryFieldClock, ensureRow, isHistory]);
 
-  return { events, emptyEvents };
+  // The view's rows are still being read, some of their documents have not
+  // arrived, or the events have not been read from the rows on hand yet: the
+  // month is not the result yet. Never a frame of an empty month in between.
+  const eventsStale = rowOrders !== undefined && (eventsReadFrom?.rowOrders !== rowOrders || eventsReadFrom.rows !== rows);
+
+  return { events, emptyEvents, loading: rowOrders === undefined || pendingRows > 0 || eventsStale };
 }
 
 export function useCalendarLayoutSetting() {
@@ -4842,6 +5403,59 @@ export function useRowPrimaryContentSelector(rowDoc: YDoc | null, primaryFieldId
   }, [primaryFieldId, row, rowDoc, field, fieldClock]);
 
   return primaryContent;
+}
+
+/**
+ * Display names of person, created-by / last-edited-by and relation group ids,
+ * shared by board groups and chart categories (WP11): Person ids from the
+ * field's type option, then the workspace members (name, else email); user
+ * uids (canonical) from the members; relation row ids through
+ * `readRelationLabel`. Ids without a name are left out.
+ */
+export function buildIdentifierLabels({
+  fieldType,
+  field,
+  mentionableUsers,
+  relationIds = [],
+  readRelationLabel,
+}: {
+  fieldType: FieldType;
+  field: YDatabaseField;
+  mentionableUsers: ReadonlyArray<Pick<MentionablePerson, 'person_id' | 'uid' | 'name' | 'email'>>;
+  relationIds?: readonly string[];
+  readRelationLabel?: (id: string) => string;
+}): Map<string, string> {
+  const identifierLabels = new Map<string, string>();
+
+  if (fieldType === FieldType.Person) {
+    // Seed from the field's own type option once. getGroupLabel falls back to
+    // parsing it per group otherwise, which is a JSON.parse for every header.
+    parsePersonTypeOptions(field).persons.forEach((person) => {
+      const label = person.name?.trim();
+
+      if (label) identifierLabels.set(person.id, label);
+    });
+    mentionableUsers.forEach((person) => {
+      const label = person.name?.trim() || person.email?.trim();
+
+      if (label) identifierLabels.set(person.person_id, label);
+    });
+  } else if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) {
+    mentionableUsers.forEach((person) => {
+      const label = person.name?.trim() || person.email?.trim();
+      const uid = canonicalizeUserUid(person.uid);
+
+      if (label && uid) identifierLabels.set(uid, label);
+    });
+  } else if (fieldType === FieldType.Relation && readRelationLabel) {
+    relationIds.forEach((id) => {
+      const label = readRelationLabel(id);
+
+      if (label) identifierLabels.set(id, label);
+    });
+  }
+
+  return identifierLabels;
 }
 
 function chartSettingsEqual(a: ChartLayoutSettings | null, b: ChartLayoutSettings | null): boolean {

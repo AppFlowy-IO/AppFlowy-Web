@@ -56,4 +56,59 @@ describe('ChartTooltip', () => {
 
     expect(screen.getByTestId('chart-tooltip-title').textContent).toBe('Q1');
   });
+
+  it('lists the series rows of a group in order and the rest as "+{n} more" above the hint', () => {
+    const rows = Array.from({ length: 10 }, (_, index) => ({
+      color: '#5E9FE8',
+      name: `Group ${index + 1}`,
+      value: String(index + 1),
+      seriesKey: `g${index + 1}`,
+    }));
+
+    render(<ChartTooltip more={2} rows={rows} showDrilldownHint title='Blog' />);
+
+    expect(screen.getByTestId('chart-tooltip-title').textContent).toBe('Blog');
+    expect(screen.getAllByTestId('chart-tooltip-row').map((row) => row.getAttribute('data-series'))).toEqual(
+      rows.map((row) => row.seriesKey)
+    );
+    const more = screen.getByTestId('chart-tooltip-more');
+
+    expect(more.textContent).toBe('+2 more');
+    expect(more.nextElementSibling?.getAttribute('data-parity-id')).toBe('dash-chart-tooltip__divider');
+  });
+
+  it('shows no "+{n} more" row when every series is listed', () => {
+    render(<ChartTooltip rows={ROWS} title='Blog' />);
+
+    expect(screen.queryByTestId('chart-tooltip-more')).toBeNull();
+  });
+
+  it('names its category on the root', () => {
+    render(<ChartTooltip category='Bob' rows={ROWS} />);
+
+    const tooltip = screen.getByTestId('chart-tooltip');
+
+    expect(tooltip.getAttribute('data-category')).toBe('Bob');
+    expect(tooltip.hasAttribute('data-mobile')).toBe(false);
+  });
+
+  it('reads "Tap again to view data" in a mobile context (WP14 §1.4.6)', () => {
+    render(<ChartTooltip category='Doing' mobile rows={ROWS} showDrilldownHint />);
+
+    const tooltip = screen.getByTestId('chart-tooltip');
+
+    expect(tooltip.getAttribute('data-category')).toBe('Doing');
+    expect(tooltip.getAttribute('data-mobile')).toBe('true');
+    const footer = screen.getByTestId('chart-tooltip-footer');
+
+    expect(footer.textContent).toBe('Tap again to view data');
+    expect(footer.getAttribute('data-parity-id')).toBe('dash-chart-tooltip__footer');
+    expect(screen.queryByText('Click to view data')).toBeNull();
+  });
+
+  it('shows no hint in a mobile context when the chart opens no drill-down', () => {
+    render(<ChartTooltip mobile rows={ROWS} />);
+
+    expect(screen.queryByTestId('chart-tooltip-footer')).toBeNull();
+  });
 });

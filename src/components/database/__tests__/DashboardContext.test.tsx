@@ -72,7 +72,12 @@ function createDatabaseDoc() {
   return { doc, database, view };
 }
 
-type Options = { readOnly?: boolean; activeViewId?: string; modeStore?: DashboardModeStore };
+type Options = {
+  readOnly?: boolean;
+  activeViewId?: string;
+  modeStore?: DashboardModeStore;
+  deletePage?: DatabaseContextState['deletePage'];
+};
 
 function renderDashboard(doc: YDoc, initial: Options = {}) {
   const current: Options = { readOnly: false, activeViewId: DASHBOARD_VIEW_ID, ...initial };
@@ -84,6 +89,7 @@ function renderDashboard(doc: YDoc, initial: Options = {}) {
       activeViewId: current.activeViewId ?? DASHBOARD_VIEW_ID,
       rowMap: {},
       workspaceId: 'workspace-id',
+      deletePage: current.deletePage,
     };
 
     return (
@@ -134,7 +140,8 @@ describe('DashboardProvider', () => {
     expect(result.current.showWidgetTitles).toBe(true);
     expect(result.current.showIconsInHeading).toBe(false);
     expect(result.current.effectiveGlobalFilters).toBe(result.current.globalFilters);
-    expect(result.current.localGlobalFilters).toBeNull();
+    expect(result.current.privateGlobalValues).toEqual({});
+    expect(result.current.dirtyGlobalFilterIds.size).toBe(0);
     expect(result.current.canEdit).toBe(true);
     expect(result.current.isEditing).toBe(false);
     expect(result.current.mobileContext).toBe(false);
@@ -223,20 +230,20 @@ describe('DashboardProvider', () => {
       expect(result.current.isEditing).toBe(false);
     });
 
-    it('resets edit mode and local filters when the dashboard view changes', () => {
+    it('resets edit mode and private filter values when the dashboard view changes', () => {
       const { doc } = createDatabaseDoc();
       const { result, update } = renderDashboard(doc);
 
       act(() => {
         result.current.setEditing(true);
-        result.current.setLocalGlobalFilters([]);
+        result.current.setPrivateGlobalValue(GLOBAL_FILTER.id, { condition: 0, content: 'mine' });
       });
       expect(result.current.isEditing).toBe(true);
-      expect(result.current.localGlobalFilters).toEqual([]);
+      expect(result.current.privateGlobalValues).toEqual({ [GLOBAL_FILTER.id]: { condition: 0, content: 'mine' } });
 
       act(() => update({ activeViewId: OTHER_VIEW_ID }));
       expect(result.current.dashboardViewId).toBe(OTHER_VIEW_ID);
-      expect(result.current.localGlobalFilters).toBeNull();
+      expect(result.current.privateGlobalValues).toEqual({});
       expect(result.current.rows).toEqual([]);
       // The other dashboard is empty, so it opens in (automatic) Edit mode.
       expect(result.current.isEditing).toBe(true);
@@ -374,7 +381,9 @@ describe('DashboardProvider', () => {
       const { result } = renderDashboard(doc);
       const updater = jest.fn((rows: DashboardRow[]) => rows.map((row) => ({ ...row, height: 600 })));
 
-      act(() => result.current.updateRows(updater));
+      act(() => {
+        result.current.updateRows(updater);
+      });
 
       expect(updater).toHaveBeenCalledWith(ROWS);
       expect(readDashboardLayoutSetting(database, DASHBOARD_VIEW_ID).rows[0].height).toBe(600);
@@ -393,8 +402,12 @@ describe('DashboardProvider', () => {
       const updates = countUpdates(doc);
       const before = result.current.rows;
 
-      act(() => result.current.updateRows((rows) => rows));
-      act(() => result.current.updateRows((rows) => JSON.parse(JSON.stringify(rows)) as DashboardRow[]));
+      act(() => {
+        result.current.updateRows((rows) => rows);
+      });
+      act(() => {
+        result.current.updateRows((rows) => JSON.parse(JSON.stringify(rows)) as DashboardRow[]);
+      });
 
       expect(updates).not.toHaveBeenCalled();
       expect(result.current.rows).toBe(before);
@@ -423,23 +436,30 @@ describe('DashboardProvider', () => {
       const { result } = renderDashboard(doc);
 
       act(() => result.current.updateSetting({ globalFilters: [GLOBAL_FILTER, shared] }));
-      act(() => result.current.setLocalGlobalFilters([{ ...shared, content: 'mine' }]));
+      act(() => result.current.setPrivateGlobalValue(shared.id, { condition: shared.condition, content: 'mine' }));
       const writes = countUpdates(doc);
 
       // Resizing keeps every database.
-      act(() => result.current.updateRows((rows) => rows.map((row) => ({ ...row, height: 400 }))));
+      act(() => {
+        result.current.updateRows((rows) => rows.map((row) => ({ ...row, height: 400 })));
+      });
       expect(readDashboardLayoutSetting(database, DASHBOARD_VIEW_ID).globalFilters).toEqual([GLOBAL_FILTER, shared]);
 
-      act(() => result.current.updateRows((rows) => rows.map((row) => ({ ...row, widgets: row.widgets.slice(0, 1) }))));
+      act(() => {
+        result.current.updateRows((rows) => rows.map((row) => ({ ...row, widgets: row.widgets.slice(0, 1) })));
+      });
 
       const stored = readDashboardLayoutSetting(database, DASHBOARD_VIEW_ID).globalFilters;
 
       expect(stored[0]).toEqual(GLOBAL_FILTER);
       expect(stored[1].targets).toEqual({ [DATABASE_ID]: 'status' });
       expect(result.current.globalFilters[1].targets).toEqual({ [DATABASE_ID]: 'status' });
-      expect(result.current.localGlobalFilters).toEqual([
-        { ...shared, content: 'mine', targets: { [DATABASE_ID]: 'status' } },
-      ]);
+      // The private value (values only, WP07) applies to the detached filter.
+      expect(result.current.effectiveGlobalFilters[1]).toEqual({
+        ...shared,
+        content: 'mine',
+        targets: { [DATABASE_ID]: 'status' },
+      });
       expect(writes).toHaveBeenCalledTimes(2);
 
       act(() => {
@@ -449,19 +469,140 @@ describe('DashboardProvider', () => {
       expect(result.current.rows[0].widgets).toHaveLength(2);
     });
 
+    it('says whether it wrote', () => {
+      const { doc } = createDatabaseDoc();
+      const { result } = renderDashboard(doc);
+      let written: boolean[] = [];
+
+      act(() => {
+        written = [
+          result.current.updateRows((rows) => rows.map((row) => ({ ...row, height: 400 }))),
+          result.current.updateRows((rows) => rows),
+        ];
+      });
+      expect(written).toEqual([true, false]);
+    });
+
     it('is a no-op for read-only viewers', () => {
       const { doc } = createDatabaseDoc();
       const { result } = renderDashboard(doc, { readOnly: true });
       const updates = countUpdates(doc);
       const updater = jest.fn((rows: DashboardRow[]) => rows.slice(1));
+      let written: boolean | undefined;
 
-      act(() => result.current.updateRows(updater));
+      act(() => {
+        written = result.current.updateRows(updater);
+      });
+      expect(written).toBe(false);
       act(() => result.current.updateSetting({ showWidgetTitles: false }));
 
       expect(updater).not.toHaveBeenCalled();
       expect(updates).not.toHaveBeenCalled();
       expect(result.current.rows).toEqual(ROWS);
       expect(result.current.showWidgetTitles).toBe(true);
+    });
+  });
+
+  // WP05 §1.5: an owned view the editor's changes left without a widget is deleted on Done or close.
+  describe('owned widget views', () => {
+    function withOwnedWidget() {
+      const fixture = createDatabaseDoc();
+      const owned = new Y.Map() as YDatabaseView;
+      const views = fixture.database.get(YjsDatabaseKey.views);
+
+      fixture.doc.transact(() => {
+        owned.set(YjsDatabaseKey.dashboard_owner, DASHBOARD_VIEW_ID);
+        views.set('owned-view', owned);
+        updateDashboardLayoutSetting(fixture.view, {
+          rows: [
+            ...ROWS,
+            { id: 'r2', height: 360, widgets: [{ id: 'w3', viewId: 'owned-view', databaseId: DATABASE_ID, width: 12 }] },
+          ],
+        });
+      });
+      return { ...fixture, views };
+    }
+
+    async function settle() {
+      await act(async () => {
+        for (let index = 0; index < 6; index += 1) await Promise.resolve();
+      });
+    }
+
+    it('deletes the owned view of a removed widget when editing ends, and keeps shared views', async () => {
+      const { doc, views } = withOwnedWidget();
+      const deletePage = jest.fn().mockResolvedValue(undefined);
+      const { result } = renderDashboard(doc, { deletePage });
+
+      act(() => result.current.setEditing(true));
+      act(() => {
+        result.current.updateRows((rows) => rows.map((row) => ({ ...row, widgets: [] })));
+      });
+      expect(views.has('owned-view')).toBe(true);
+      act(() => result.current.setEditing(false));
+      await settle();
+
+      expect(deletePage.mock.calls).toEqual([['owned-view']]);
+      expect(views.has('owned-view')).toBe(false);
+      expect(views.has(DASHBOARD_VIEW_ID)).toBe(true);
+    });
+
+    it('keeps the view when the removal is undone before Done', async () => {
+      const { doc, views } = withOwnedWidget();
+      const history = getOrCreateDatabaseHistoryManager(doc);
+      const deletePage = jest.fn().mockResolvedValue(undefined);
+      const { result } = renderDashboard(doc, { deletePage });
+
+      act(() => result.current.setEditing(true));
+      act(() => {
+        result.current.updateRows((rows) => rows.slice(0, 1));
+      });
+      act(() => {
+        history.undo();
+      });
+      act(() => result.current.setEditing(false));
+      await settle();
+
+      expect(deletePage).not.toHaveBeenCalled();
+      expect(views.has('owned-view')).toBe(true);
+    });
+
+    it('flushes when the dashboard closes', async () => {
+      const { doc, views } = withOwnedWidget();
+      const deletePage = jest.fn().mockResolvedValue(undefined);
+      const { result, unmount } = renderDashboard(doc, { deletePage });
+
+      act(() => {
+        result.current.updateRows((rows) => rows.slice(0, 1));
+      });
+      unmount();
+      await settle();
+
+      expect(deletePage.mock.calls).toEqual([['owned-view']]);
+      expect(views.has('owned-view')).toBe(false);
+    });
+
+    it('never deletes for a remote removal', async () => {
+      const { doc, database, views } = withOwnedWidget();
+      const deletePage = jest.fn().mockResolvedValue(undefined);
+      const { result } = renderDashboard(doc, { deletePage });
+      const remote = new Y.Doc();
+
+      Y.applyUpdate(remote, Y.encodeStateAsUpdate(doc));
+      const remoteView = (remote.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase)
+        .get(YjsDatabaseKey.views)
+        .get(DASHBOARD_VIEW_ID);
+
+      remote.transact(() => updateDashboardLayoutSetting(remoteView, { rows: ROWS }));
+      act(() => {
+        Y.applyUpdate(doc, Y.encodeStateAsUpdate(remote, Y.encodeStateVector(doc)), 'remote');
+      });
+      expect(readDashboardLayoutSetting(database, DASHBOARD_VIEW_ID).rows).toHaveLength(1);
+      act(() => result.current.setEditing(false));
+      await settle();
+
+      expect(deletePage).not.toHaveBeenCalled();
+      expect(views.has('owned-view')).toBe(true);
     });
   });
 
@@ -485,61 +626,57 @@ describe('DashboardProvider', () => {
     expect(result.current.showIconsInHeading).toBe(true);
   });
 
-  it('prefers local global filters without persisting them', () => {
+  it('prefers private global filter values without persisting them', () => {
     const { doc, database } = createDatabaseDoc();
     const { result } = renderDashboard(doc);
     const updates = countUpdates(doc);
-    const local = [{ ...GLOBAL_FILTER, content: 'todo' }];
 
-    act(() => result.current.setLocalGlobalFilters(local));
-    expect(result.current.localGlobalFilters).toBe(local);
-    expect(result.current.effectiveGlobalFilters).toBe(local);
+    act(() => result.current.setPrivateGlobalValue(GLOBAL_FILTER.id, { condition: 0, content: 'todo' }));
+    expect(result.current.privateGlobalValues).toEqual({ [GLOBAL_FILTER.id]: { condition: 0, content: 'todo' } });
+    expect(result.current.effectiveGlobalFilters).toEqual([{ ...GLOBAL_FILTER, content: 'todo' }]);
+    expect([...result.current.dirtyGlobalFilterIds]).toEqual([GLOBAL_FILTER.id]);
     expect(readDashboardLayoutSetting(database, DASHBOARD_VIEW_ID).globalFilters).toEqual([GLOBAL_FILTER]);
     expect(updates).not.toHaveBeenCalled();
 
-    act(() => result.current.setLocalGlobalFilters(null));
+    act(() => result.current.setPrivateGlobalValue(GLOBAL_FILTER.id, null));
     expect(result.current.effectiveGlobalFilters).toEqual([GLOBAL_FILTER]);
+    expect(result.current.dirtyGlobalFilterIds.size).toBe(0);
   });
 
-  it('drops a local override that a concurrent change made identical to the persisted filters', () => {
+  it('drops a private value that a concurrent change made identical to the persisted filters', () => {
     const { doc, view } = createDatabaseDoc();
     const { result } = renderDashboard(doc);
     const local = [{ ...GLOBAL_FILTER, content: 'todo' }];
 
-    act(() => result.current.setLocalGlobalFilters(local));
-    expect(result.current.localGlobalFilters).toBe(local);
+    act(() => result.current.setPrivateGlobalValue(GLOBAL_FILTER.id, { condition: 0, content: 'todo' }));
+    expect(result.current.dirtyGlobalFilterIds.size).toBe(1);
 
     // A collaborator saves the same change: nothing is left to save.
     act(() => {
       doc.transact(() => updateDashboardLayoutSetting(view, { globalFilters: local }));
     });
-    expect(result.current.localGlobalFilters).toBeNull();
+    expect(result.current.privateGlobalValues).toEqual({});
     expect(result.current.effectiveGlobalFilters).toBe(result.current.globalFilters);
 
-    // The dropped override never comes back with a later change.
+    // The dropped value never comes back with a later change.
     act(() => {
       doc.transact(() => updateDashboardLayoutSetting(view, { globalFilters: [GLOBAL_FILTER] }));
     });
-    expect(result.current.localGlobalFilters).toBeNull();
+    expect(result.current.privateGlobalValues).toEqual({});
     expect(result.current.effectiveGlobalFilters).toEqual([GLOBAL_FILTER]);
   });
 
-  it('drops a local override that only differed by a removed widget', () => {
+  it('a deleted global filter drops its private value', () => {
     const { doc } = createDatabaseDoc();
     const { result } = renderDashboard(doc);
 
-    // The viewer maps the filter to the second widget's database too.
-    act(() =>
-      result.current.setLocalGlobalFilters([
-        { ...GLOBAL_FILTER, targets: { ...GLOBAL_FILTER.targets, 'other-database': 'stage' } },
-      ])
-    );
-    expect(result.current.localGlobalFilters).not.toBeNull();
+    act(() => result.current.setPrivateGlobalValue(GLOBAL_FILTER.id, { condition: 0, content: 'mine' }));
+    expect(result.current.dirtyGlobalFilterIds.size).toBe(1);
 
-    // An editor removes that widget: the override now equals the saved filters.
-    act(() => result.current.updateRows((rows) => rows.map((row) => ({ ...row, widgets: row.widgets.slice(0, 1) }))));
-    expect(result.current.localGlobalFilters).toBeNull();
-    expect(result.current.effectiveGlobalFilters).toEqual([GLOBAL_FILTER]);
+    // An editor deletes the filter: its value has nothing left to apply to.
+    act(() => result.current.updateSetting({ globalFilters: [] }));
+    expect(result.current.privateGlobalValues).toEqual({});
+    expect(result.current.effectiveGlobalFilters).toEqual([]);
   });
 
   it('ignores global filter mappings of databases without a widget', () => {
@@ -557,7 +694,7 @@ describe('DashboardProvider', () => {
     // Nothing is written until the filters are edited.
     expect(readDashboardLayoutSetting(database, DASHBOARD_VIEW_ID).globalFilters).toEqual([stale]);
 
-    act(() => result.current.setLocalGlobalFilters([{ ...stale, content: 'mine' }]));
+    act(() => result.current.setPrivateGlobalValue(stale.id, { condition: stale.condition, content: 'mine' }));
     expect(result.current.effectiveGlobalFilters).toEqual([{ ...GLOBAL_FILTER, content: 'mine' }]);
   });
 
@@ -582,8 +719,8 @@ describe('DashboardProvider', () => {
     expect(result.current.parts.registry).toBe(previous.registry);
     previous = result.current.parts;
 
-    // Filter edits (local or persisted) leave the mode and the layout alone.
-    act(() => result.current.setLocalGlobalFilters([{ ...GLOBAL_FILTER, content: 'mine' }]));
+    // Filter edits (private or persisted) leave the mode and the layout alone.
+    act(() => result.current.setPrivateGlobalValue(GLOBAL_FILTER.id, { condition: 0, content: 'mine' }));
     expect(result.current.parts.context).toBe(previous.context);
     expect(result.current.parts.layout).toBe(previous.layout);
     expect(result.current.parts.sources).toBe(previous.sources);
@@ -600,7 +737,9 @@ describe('DashboardProvider', () => {
 
     // Layout edits that keep the widget databases leave the filters alone,
     // and the mode context with them: the toolbar never re-renders for a resize.
-    act(() => result.current.updateRows((rows) => rows.map((row) => ({ ...row, height: 400 }))));
+    act(() => {
+        result.current.updateRows((rows) => rows.map((row) => ({ ...row, height: 400 })));
+      });
     expect(result.current.parts.filters).toBe(previous.filters);
     expect(result.current.parts.sources).toBe(previous.sources);
     expect(result.current.parts.context).toBe(previous.context);
@@ -661,7 +800,7 @@ describe('DashboardProvider', () => {
     it('keeps callbacks stable across renders', () => {
       const { doc } = createDatabaseDoc();
       const { result, rerender } = renderDashboard(doc);
-      const { registerSourceDoc, registerSourceName, setLocalGlobalFilters, setEditing, pinEditing } = result.current;
+      const { registerSourceDoc, registerSourceName, setPrivateGlobalValue, setEditing, pinEditing } = result.current;
 
       rerender();
       act(() => result.current.registerSourceName('x', 'X'));
@@ -669,7 +808,7 @@ describe('DashboardProvider', () => {
 
       expect(result.current.registerSourceDoc).toBe(registerSourceDoc);
       expect(result.current.registerSourceName).toBe(registerSourceName);
-      expect(result.current.setLocalGlobalFilters).toBe(setLocalGlobalFilters);
+      expect(result.current.setPrivateGlobalValue).toBe(setPrivateGlobalValue);
       expect(result.current.setEditing).toBe(setEditing);
       expect(result.current.pinEditing).toBe(pinEditing);
     });

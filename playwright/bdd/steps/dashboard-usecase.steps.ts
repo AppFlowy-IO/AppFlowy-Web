@@ -53,6 +53,8 @@ import {
   resizeWidgetTo,
   rowIdByTitle,
   expectRowPage,
+  rowPage,
+  seedEmptyUseCaseGlobalFilter,
   seedUseCaseDashboard,
   setRowPageProperty,
   shownDashboardRows,
@@ -69,6 +71,22 @@ const WAIT = { timeout: USE_CASE_TIMEOUT };
 
 function hashes(table: DataTable): Record<string, string>[] {
   return table.hashes();
+}
+
+type Box = { x: number; y: number; width: number; height: number };
+
+/** The part of `box` shown inside `clip` and the viewport (a board clips the columns it scrolls past), if wide enough to drop on. */
+function visiblePart(box: Box | null, clip: Box, page: Page): Box | null {
+  const viewport = page.viewportSize();
+
+  if (!box || !viewport) return null;
+  const x = Math.max(box.x, clip.x, 0);
+  const y = Math.max(box.y, clip.y, 0);
+  const right = Math.min(box.x + box.width, clip.x + clip.width, viewport.width);
+  const bottom = Math.min(box.y + box.height, clip.y + clip.height, viewport.height);
+
+  if (right - x < 40 || bottom - y < 40) return null;
+  return { x, y, width: right - x, height: bottom - y };
 }
 
 // ---------------------------------------------------------------------------
@@ -204,9 +222,14 @@ When(
 
     await expect(card).toBeVisible(WAIT);
     await expect(target).toBeVisible(WAIT);
+    // The board scrolls sideways, so a column past the widget's edge ("Offer" on a seven-column
+    // board) has to be brought into view first; the card follows (a no-op while it still shows).
     await card.scrollIntoViewIfNeeded();
-    const from = await card.boundingBox();
-    const to = await target.boundingBox();
+    await target.scrollIntoViewIfNeeded();
+    await card.scrollIntoViewIfNeeded();
+    const clip = await widget.boundingBox();
+    const from = clip && visiblePart(await card.boundingBox(), clip, page);
+    const to = clip && visiblePart(await target.boundingBox(), clip, page);
 
     if (!from || !to) throw new Error('The card or the column is not visible');
     const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
@@ -245,7 +268,15 @@ When('I click the {string} segment of the {string} chart', async ({ page }, labe
 });
 
 When('I open {string} from the drill-down', async ({ page }, title: string) => {
-  await drillDown(page).locator('.MuiDialogContent-root button').filter({ hasText: title }).first().click();
+  const titleCell = drillDown(page)
+    .getByTestId('drill-row-title')
+    .filter({ hasText: new RegExp(`^\\s*${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`) })
+    .first();
+
+  await expect(titleCell).toBeVisible(WAIT);
+  await titleCell.click();
+  // WP13: the record opens above the drill-down (a side peek by default).
+  await expect(rowPage(page)).toBeVisible(WAIT);
 });
 
 Then('the drill-down lists {string}', async ({ page }, titles: string) => {
@@ -253,11 +284,13 @@ Then('the drill-down lists {string}', async ({ page }, titles: string) => {
   await expect.poll(async () => (await drillDownTitles(page)).sort(), WAIT).toEqual(splitList(titles).sort());
 });
 
-Then('the {string} widget shows that there are no rows to count', async ({ page }, view: string) => {
+Then('the {string} widget shows no data', async ({ page }, view: string) => {
   const chart = widgetLocator(page, view).getByTestId('number-chart');
 
+  // WP11: a Number card over no rows shows only "No data", without a caption.
   await expect(chart).toHaveAttribute('data-empty', 'true', WAIT);
-  await expect(chart.getByTestId('number-chart-empty')).toHaveText('No rows to count');
+  await expect(chart.getByTestId('number-chart-empty')).toHaveText('No data');
+  await expect(chart.getByTestId('number-chart-title')).toHaveCount(0);
 });
 
 Then('the {string} chart total is {string}', async ({ page }, view: string, total: string) => {
@@ -403,15 +436,20 @@ When('the executive reloads the page', async ({ page }) => {
   await expect(DashboardSelectors.view(member)).toBeVisible(WAIT);
 });
 
-When(
-  'the teammate adds a global filter where {string} is {string}',
-  async ({ page }, property: string, options: string) => {
-    await addSelectGlobalFilter(memberPage(page), page, property, options);
+/**
+ * Readers cannot add global filters (WP07/WP08); they change the values of
+ * the saved ones for themselves. The filter maps `property` in the dashboard's
+ * host database, with its default condition and no value.
+ */
+Given(
+  'the {string} dashboard has a saved {string} global filter with no value',
+  async ({ page, request }, name: string, property: string) => {
+    await seedEmptyUseCaseGlobalFilter(page, request, name, property);
   }
 );
 
 When(
-  'the executive changes the global filter {string} to {string}',
+  'the teammate/executive changes the global filter {string} to {string}',
   async ({ page }, name: string, option: string) => {
     await changeSelectGlobalFilter(memberPage(page), name, option);
   }

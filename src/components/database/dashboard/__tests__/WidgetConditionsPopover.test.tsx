@@ -7,6 +7,7 @@ import {
   useConditionsContext,
 } from '@/components/database/components/conditions/context';
 
+import { WidgetPrivateContext, WidgetPrivateHandle, WidgetPrivateSnapshot } from '../private/WidgetPrivateContext';
 import { WidgetFilterTool } from '../widget-tool-buttons/WidgetFilterTool';
 import { WidgetSortTool } from '../widget-tool-buttons/WidgetSortTool';
 import { WidgetContext } from '../WidgetContext';
@@ -18,6 +19,7 @@ let mockSorts: { id: string; fieldId: string }[] = [];
 const mockAddFilter = jest.fn(() => 'new-filter');
 const mockAddSort = jest.fn();
 const mockDeleteAllSorts = jest.fn();
+const mockMoveFilter = jest.fn();
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -38,6 +40,10 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
   useAddAdvancedFilterAndRebuild: () => jest.fn(),
   useAddSort: () => mockAddSort,
   useClearSortingDispatch: () => mockDeleteAllSorts,
+}));
+
+jest.mock('@/application/database-yjs/dispatch/sort-filter', () => ({
+  useMoveFilter: () => mockMoveFilter,
 }));
 
 // The property picker: its trigger, and a property to pick while it is open.
@@ -94,6 +100,18 @@ jest.mock('@/components/database/components/sorts/utils', () => ({
 
 const WIDGET = createWidgetContextValue();
 
+/** A widget's private state as `DashboardProvider` resolves it. */
+function privateHandle(snapshot: WidgetPrivateSnapshot): WidgetPrivateHandle {
+  return {
+    subscribe: () => () => undefined,
+    getSnapshot: () => snapshot,
+    reset: jest.fn(),
+    save: jest.fn(),
+  };
+}
+
+let mockHandle: WidgetPrivateHandle | null = null;
+
 /**
  * The conditions context of a dashboard widget, as `DatabaseViews`
  * (`WidgetConditionsProvider`) maps it: the bar's "expand" and the sort menu
@@ -127,23 +145,30 @@ function WidgetConditions({ children }: { children: ReactNode }) {
     [openFilterId, popover, setExpanded, setSortMenuOpen]
   );
 
+  const resolver = useMemo(
+    () => (mockHandle ? { getWidgetPrivateHandle: () => mockHandle as WidgetPrivateHandle } : null),
+    []
+  );
+
   return (
     <WidgetContext.Provider value={WIDGET}>
-      <DatabaseConditionsContext.Provider value={value}>
-        <DatabaseConditionsActionsContext.Provider
-          value={{
-            setExpanded,
-            setOpenFilterId,
-            setAdvancedMode: jest.fn(),
-            setAdvancedPanelOpen: jest.fn(),
-            setSortMenuOpen,
-          }}
-        >
-          <output data-testid='popover-state'>{popover ?? 'none'}</output>
-          {children}
-          <button data-testid='column-header-filter' onClick={() => setExpanded(true)} type='button' />
-        </DatabaseConditionsActionsContext.Provider>
-      </DatabaseConditionsContext.Provider>
+      <WidgetPrivateContext.Provider value={resolver}>
+        <DatabaseConditionsContext.Provider value={value}>
+          <DatabaseConditionsActionsContext.Provider
+            value={{
+              setExpanded,
+              setOpenFilterId,
+              setAdvancedMode: jest.fn(),
+              setAdvancedPanelOpen: jest.fn(),
+              setSortMenuOpen,
+            }}
+          >
+            <output data-testid='popover-state'>{popover ?? 'none'}</output>
+            {children}
+            <button data-testid='column-header-filter' onClick={() => setExpanded(true)} type='button' />
+          </DatabaseConditionsActionsContext.Provider>
+        </DatabaseConditionsContext.Provider>
+      </WidgetPrivateContext.Provider>
     </WidgetContext.Provider>
   );
 }
@@ -154,6 +179,7 @@ const sortTool = () => screen.getByTestId('database-actions-sort');
 beforeEach(() => {
   mockFilters = [];
   mockSorts = [];
+  mockHandle = null;
   jest.clearAllMocks();
 });
 
@@ -308,5 +334,93 @@ describe('the widget sort tool', () => {
     fireEvent.click(sortTool());
     expect(await screen.findByTestId('dashboard-widget-sorts-popover')).toBeTruthy();
     expect(screen.queryByTestId('dashboard-widget-filters-popover')).toBeNull();
+  });
+});
+
+describe('private widget conditions (WP07)', () => {
+  it('a dirty Filter tool carries the dot, and its popover the Reset and Save footer', async () => {
+    mockFilters = [{ id: 'f1' }];
+    mockHandle = privateHandle({ filters: true, sorts: false, canSave: true, suspended: false });
+    render(
+      <WidgetConditions>
+        <WidgetFilterTool />
+        <WidgetSortTool />
+      </WidgetConditions>
+    );
+
+    expect(screen.getByTestId('database-actions-filter-dot')).toBeTruthy();
+    expect(filterTool().getAttribute('data-unsaved')).toBe('true');
+    expect(screen.queryByTestId('database-actions-sort-dot')).toBeNull();
+
+    fireEvent.click(filterTool());
+    const footer = await screen.findByTestId('dashboard-widget-private-footer');
+
+    fireEvent.click(screen.getByTestId('dashboard-widget-private-reset'));
+    expect(mockHandle.reset).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId('dashboard-widget-save-for-everyone'));
+    expect(mockHandle.save).toHaveBeenCalledTimes(1);
+    expect(footer.textContent).toContain('Save for everyone');
+  });
+
+  it('a read-only source gets Reset only; a clean or suspended widget no footer', async () => {
+    mockFilters = [{ id: 'f1' }];
+    mockHandle = privateHandle({ filters: false, sorts: true, canSave: false, suspended: false });
+    const { unmount } = render(
+      <WidgetConditions>
+        <WidgetSortTool />
+      </WidgetConditions>
+    );
+
+    mockSorts = [{ id: 's1', fieldId: 'title' }];
+    fireEvent.click(sortTool());
+    expect(await screen.findByTestId('dashboard-widget-private-footer')).toBeTruthy();
+    expect(screen.queryByTestId('dashboard-widget-save-for-everyone')).toBeNull();
+    unmount();
+
+    mockHandle = privateHandle({ filters: false, sorts: false, canSave: false, suspended: true });
+    render(
+      <WidgetConditions>
+        <WidgetFilterTool />
+      </WidgetConditions>
+    );
+    fireEvent.click(filterTool());
+    expect(await screen.findByTestId('dashboard-widget-filters-popover')).toBeTruthy();
+    expect(screen.queryByTestId('dashboard-widget-private-footer')).toBeNull();
+    expect(screen.queryByTestId('database-actions-filter-dot')).toBeNull();
+  });
+
+  it('a dirty tool with no rule left opens its popover instead of the property picker', async () => {
+    mockHandle = privateHandle({ filters: true, sorts: false, canSave: false, suspended: false });
+    render(
+      <WidgetConditions>
+        <WidgetFilterTool />
+      </WidgetConditions>
+    );
+
+    fireEvent.click(filterTool());
+    expect(await screen.findByTestId('dashboard-widget-private-footer')).toBeTruthy();
+    expect(screen.queryByTestId('pick-property')).toBeNull();
+  });
+
+  it('the top-level rules carry a drag handle that moves them (R7)', async () => {
+    mockFilters = [{ id: 'f1' }, { id: 'f2' }];
+    render(
+      <WidgetConditions>
+        <WidgetFilterTool />
+      </WidgetConditions>
+    );
+
+    fireEvent.click(filterTool());
+    await screen.findByTestId('dashboard-widget-filters-popover');
+    const rules = document.querySelectorAll('[data-parity-id="dash-widget-filters-popover-rule"]');
+    const handles = document.querySelectorAll('[data-parity-id="dash-widget-filters-popover-rule__drag-icon"]');
+
+    expect(rules).toHaveLength(2);
+    expect(handles).toHaveLength(2);
+    // The keyboard alternative of the drag.
+    fireEvent.keyDown(handles[0].parentElement as HTMLElement, { key: 'ArrowDown' });
+    expect(mockMoveFilter).toHaveBeenCalledWith('f1', 1);
+    fireEvent.keyDown(handles[1].parentElement as HTMLElement, { key: 'ArrowUp' });
+    expect(mockMoveFilter).toHaveBeenCalledWith('f2', 0);
   });
 });

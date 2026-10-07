@@ -1,4 +1,4 @@
-export { ChartColorSetting } from './ChartColorSetting';
+export { ChartColorPage, ChartColorSetting } from './ChartColorSetting';
 export { ChartDataLabelsSetting } from './ChartDataLabelsSetting';
-export { ChartDecimalPlacesSetting } from './ChartDecimalPlacesSetting';
-export { ChartLegendSetting } from './ChartLegendSetting';
+export { ChartDecimalPlacesPage, ChartDecimalPlacesSetting } from './ChartDecimalPlacesSetting';
+export { ChartLegendPage, ChartLegendSetting } from './ChartLegendSetting';

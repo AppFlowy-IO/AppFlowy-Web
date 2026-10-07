@@ -1,7 +1,16 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { ReactNode } from 'react';
 
 import { DashboardActions } from '../DashboardActions';
-import { DashboardContext, DashboardContextValue, DashboardFiltersContext } from '../DashboardContext';
+import {
+  DashboardContext,
+  DashboardContextValue,
+  DashboardFiltersContext,
+  DashboardLayoutContext,
+  DashboardLayoutContextValue,
+  DashboardSourcesContext,
+  DashboardSourcesContextValue,
+} from '../DashboardContext';
 
 import { createDashboardContextValue as createContext, createDashboardFiltersValue } from './dashboardTestHarness';
 
@@ -12,14 +21,33 @@ jest.mock('react-i18next', () => ({
 }));
 
 const FILTERS = createDashboardFiltersValue();
+// No widget is mounted: the filter button trusts every mapping it counts.
+const LAYOUT: DashboardLayoutContextValue = { rows: [], hostViewIds: [], showWidgetTitles: true, showIconsInHeading: false };
+const SOURCES: DashboardSourcesContextValue = {
+  sourceDocs: {},
+  registerSourceDoc: jest.fn(),
+  sourceNames: {},
+  registerSourceName: jest.fn(),
+};
+
+/** The dashboard contexts the toolbar and its filter button read. */
+function DashboardProviders({ context, children }: { context: DashboardContextValue; children: ReactNode }) {
+  return (
+    <DashboardContext.Provider value={context}>
+      <DashboardLayoutContext.Provider value={LAYOUT}>
+        <DashboardSourcesContext.Provider value={SOURCES}>
+          <DashboardFiltersContext.Provider value={FILTERS}>{children}</DashboardFiltersContext.Provider>
+        </DashboardSourcesContext.Provider>
+      </DashboardLayoutContext.Provider>
+    </DashboardContext.Provider>
+  );
+}
 
 function renderActions(context: DashboardContextValue) {
   return render(
-    <DashboardContext.Provider value={context}>
-      <DashboardFiltersContext.Provider value={FILTERS}>
-        <DashboardActions />
-      </DashboardFiltersContext.Provider>
-    </DashboardContext.Provider>
+    <DashboardProviders context={context}>
+      <DashboardActions />
+    </DashboardProviders>
   );
 }
 
@@ -55,11 +83,9 @@ describe('DashboardActions outside a mobile context', () => {
     expect(setEditing).toHaveBeenLastCalledWith(true);
 
     rerender(
-      <DashboardContext.Provider value={createContext({ setEditing, isEditing: true })}>
-        <DashboardFiltersContext.Provider value={FILTERS}>
-          <DashboardActions />
-        </DashboardFiltersContext.Provider>
-      </DashboardContext.Provider>
+      <DashboardProviders context={createContext({ setEditing, isEditing: true })}>
+        <DashboardActions />
+      </DashboardProviders>
     );
     fireEvent.click(screen.getByTestId('dashboard-done-button'));
     expect(setEditing).toHaveBeenLastCalledWith(false);

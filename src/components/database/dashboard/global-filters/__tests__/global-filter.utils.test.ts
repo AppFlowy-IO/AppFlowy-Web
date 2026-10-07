@@ -10,9 +10,7 @@ import { TextFilterCondition } from '@/application/database-yjs/fields/text/text
 import {
   applyConditionChange,
   conditionHidesContent,
-  getGlobalFilterChipText,
   getGlobalFilterConditions,
-  getGlobalFilterDescription,
   hasRequiredDate,
   isGlobalFilterActive,
   parseDateContent,
@@ -20,19 +18,17 @@ import {
   Translate,
 } from '../global-filter.conditions';
 import {
-  addGlobalFilterSource,
-  buildDefaultTargets,
-  countGlobalFilterSources,
-  createGlobalFilter,
+  countUsableTargets,
+  createGlobalFilterForField,
   detachRemovedGlobalFilterSources,
+  findSingleTargetFilter,
   getAddableSources,
-  getAvailableFieldTypes,
   getMappedSources,
   getPrimaryTargetField,
   getTargetCandidates,
+  getUsableTargets,
   GLOBAL_FILTER_FIELD_TYPES,
   isGlobalFilterTargetUsable,
-  pruneOptionContent,
   removeGlobalFilter,
   removeGlobalFilterTarget,
   replaceGlobalFilter,
@@ -91,17 +87,7 @@ function filterOf(patch: Partial<DashboardGlobalFilter>): DashboardGlobalFilter 
   };
 }
 
-describe('available property types', () => {
-  it('lists the union of supported types in picker order', () => {
-    expect(getAvailableFieldTypes(sources)).toEqual([
-      FieldType.RichText,
-      FieldType.Number,
-      FieldType.SingleSelect,
-      FieldType.DateTime,
-      FieldType.Person,
-    ]);
-  });
-
+describe('property types', () => {
   it('excludes Time, Relation, Rollup, AI and media properties', () => {
     [
       FieldType.Time,
@@ -112,33 +98,11 @@ describe('available property types', () => {
       FieldType.Media,
     ].forEach((type) => expect(GLOBAL_FILTER_FIELD_TYPES).not.toContain(type));
   });
-
-  it('is empty without sources', () => {
-    expect(getAvailableFieldTypes([])).toEqual([]);
-  });
 });
 
-describe('target defaults', () => {
-  it('maps every source with a property of the type to its first such property', () => {
-    expect(buildDefaultTargets(sources, FieldType.RichText)).toEqual({
-      'db-tasks': 'tasks-name',
-      'db-archive': 'archive-title',
-      'db-bugs': 'bugs-title',
-    });
-    expect(buildDefaultTargets(sources, FieldType.DateTime)).toEqual({ 'db-archive': 'archive-date' });
-  });
-
-  it('only maps select properties whose options match the primary one by id and name', () => {
-    // Bugs' first select has the same names but other ids; its second select matches.
-    expect(buildDefaultTargets(sources, FieldType.SingleSelect)).toEqual({
-      'db-tasks': 'tasks-status',
-      'db-archive': 'archive-state',
-      'db-bugs': 'bugs-priority',
-    });
-  });
-
-  it('creates a filter named after the primary property with the view-filter defaults', () => {
-    const filter = createGlobalFilter(sources, FieldType.Number, 'Number');
+describe('a filter for one property', () => {
+  it('maps exactly that property, named after it, with the view-filter default condition', () => {
+    const filter = createGlobalFilterForField('db-tasks', tasks.fields[2], 'Number');
 
     expect(filter).toEqual({
       id: expect.stringMatching(/^gf:/),
@@ -148,19 +112,32 @@ describe('target defaults', () => {
       content: '',
       targets: { 'db-tasks': 'tasks-points' },
     });
-    expect(createGlobalFilter([], FieldType.Checkbox, 'Checkbox')).toMatchObject({
+    // No auto-mapping of the other sources, even when they have the type.
+    expect(Object.keys(createGlobalFilterForField('db-tasks', tasks.fields[0], 'Text').targets)).toEqual(['db-tasks']);
+    expect(
+      createGlobalFilterForField('db-x', { id: 'f', name: '', type: FieldType.Checkbox }, 'Checkbox')
+    ).toMatchObject({
       name: 'Checkbox',
       condition: CheckboxFilterCondition.IsChecked,
       content: '',
-      targets: {},
     });
   });
 
-  it('seeds date filters with today like a new view filter', () => {
-    const filter = createGlobalFilter(sources, FieldType.DateTime, 'Date');
+  it('starts every type without a value, dates too', () => {
+    const date = createGlobalFilterForField('db-archive', archive.fields[2], 'Date');
 
-    expect(filter.condition).toBe(DateFilterCondition.DateStartsOn);
-    expect(parseDateContent(filter.content).timestamp).toEqual(expect.any(Number));
+    expect(date.condition).toBe(DateFilterCondition.DateStartsOn);
+    expect(date.content).toBe('');
+    expect(parseDateContent(date.content)).toEqual({});
+    expect(isGlobalFilterActive(date)).toBe(false);
+  });
+
+  it('finds the filter whose only mapping is that property', () => {
+    const single = filterOf({ id: 'single', targets: { 'db-tasks': 'tasks-name' } });
+    const shared = filterOf({ id: 'shared', targets: { 'db-tasks': 'tasks-name', 'db-bugs': 'bugs-title' } });
+
+    expect(findSingleTargetFilter([shared, single], 'db-tasks', 'tasks-name')).toBe(single);
+    expect(findSingleTargetFilter([shared], 'db-tasks', 'tasks-name')).toBeUndefined();
   });
 });
 
@@ -178,18 +155,18 @@ describe('target candidates', () => {
     expect(getTargetCandidates(filter, sources, 'db-bugs').map((field) => field.id)).toEqual(['bugs-title']);
   });
 
-  it('offers only compatible select properties outside the primary source', () => {
-    expect(getTargetCandidates(statusFilter, sources, 'db-bugs').map((field) => field.id)).toEqual(['bugs-priority']);
+  it('offers every select property of the type: options are matched by name', () => {
+    expect(getTargetCandidates(statusFilter, sources, 'db-bugs').map((field) => field.id)).toEqual([
+      'bugs-status',
+      'bugs-priority',
+    ]);
     expect(getTargetCandidates(statusFilter, sources, 'db-tasks').map((field) => field.id)).toEqual(['tasks-status']);
+    expect(
+      getTargetCandidates({ ...statusFilter, targets: { 'db-missing': 'field' } }, sources, 'db-bugs')
+    ).toHaveLength(2);
   });
 
-  it('offers nothing when the primary property cannot be read', () => {
-    const filter = { ...statusFilter, targets: { 'db-missing': 'field' } };
-
-    expect(getTargetCandidates(filter, sources, 'db-bugs')).toEqual([]);
-  });
-
-  it('offers only unmapped sources with a usable property for adding', () => {
+  it('offers every unmapped source with a property of the type for adding', () => {
     const tasksOnly = source('db-tasks', 'Tasks', [
       { id: 'tasks-status', name: 'Status', type: FieldType.SingleSelect, options: [todo] },
     ]);
@@ -202,7 +179,7 @@ describe('target candidates', () => {
     const all = [tasksOnly, compatible, unrelated];
     const filter = { ...statusFilter, targets: { 'db-tasks': 'tasks-status' } };
 
-    expect(getAddableSources(filter, all).map((item) => item.databaseId)).toEqual(['db-copy']);
+    expect(getAddableSources(filter, all).map((item) => item.databaseId)).toEqual(['db-copy', 'db-other']);
     // Without any mapping every source with the type can become the primary one.
     expect(getAddableSources({ ...filter, targets: {} }, all).map((item) => item.databaseId)).toEqual([
       'db-tasks',
@@ -228,28 +205,7 @@ describe('editing targets', () => {
 
     expect(Object.keys(next.targets)).toEqual(['db-tasks', 'db-bugs']);
     expect(next.name).toBe('Name');
-    expect(countGlobalFilterSources(next)).toBe(2);
-  });
-
-  it('adds a source through its first compatible property', () => {
-    const filter = filterOf({
-      name: 'Status',
-      fieldType: FieldType.SingleSelect,
-      condition: SelectOptionFilterCondition.OptionIs,
-      content: 'o-done',
-      targets: { 'db-tasks': 'tasks-status' },
-    });
-    const next = addGlobalFilterSource(filter, sources, 'db-bugs');
-
-    // Bugs' Status has other option ids, so its Priority is mapped.
-    expect(next.targets).toEqual({ 'db-tasks': 'tasks-status', 'db-bugs': 'bugs-priority' });
-    expect(next.content).toBe('o-done');
-    expect(addGlobalFilterSource(next, sources, 'db-bugs')).toBe(next);
-    expect(addGlobalFilterSource(filter, [tasks], 'db-bugs')).toBe(filter);
-
-    const fresh = addGlobalFilterSource({ ...filter, name: '', targets: {} }, sources, 'db-archive');
-
-    expect(fresh).toMatchObject({ name: 'State', targets: { 'db-archive': 'archive-state' }, content: 'o-done' });
+    expect(countUsableTargets(next)).toBe(2);
   });
 
   it('returns the same filter when the mapping does not change', () => {
@@ -259,21 +215,23 @@ describe('editing targets', () => {
     expect(removeGlobalFilterTarget(filter, sources, 'db-bugs')).toBe(filter);
   });
 
-  it('re-validates select content and mappings when the primary property changes', () => {
+  it('keeps the selection, its names and the other mappings when the primary property changes', () => {
     const filter = filterOf({
-      name: 'Status',
+      name: 'Priority',
       fieldType: FieldType.SingleSelect,
       condition: SelectOptionFilterCondition.OptionIs,
       content: 'o-todo,o-done',
+      optionNames: ['Todo', 'Done'],
       targets: { 'db-bugs': 'bugs-priority', 'db-tasks': 'tasks-status' },
     });
     const next = setGlobalFilterTarget(filter, sources, 'db-bugs', 'bugs-status');
 
-    // The Bugs status options have other ids: selection and the Tasks mapping are dropped.
-    expect(next.targets).toEqual({ 'db-bugs': 'bugs-status' });
-    expect(next.content).toBe('');
-    // A custom name is kept.
+    expect(next.targets).toEqual({ 'db-bugs': 'bugs-status', 'db-tasks': 'tasks-status' });
+    expect(next.content).toBe('o-todo,o-done');
+    expect(next.optionNames).toEqual(['Todo', 'Done']);
+    // A default name follows the primary property; a custom one is kept.
     expect(next.name).toBe('Status');
+    expect(setGlobalFilterTarget({ ...filter, name: 'Board' }, sources, 'db-bugs', 'bugs-status').name).toBe('Board');
   });
 
   it('lets a default name follow the primary property', () => {
@@ -316,8 +274,8 @@ describe('editing targets', () => {
     const next = removeGlobalFilterTarget(filter, sources, 'db-tasks');
 
     expect(getPrimaryTargetField(next, sources)?.id).toBe('archive-state');
-    // Bugs' priority lacks the Archive-only option, so it no longer matches the primary.
-    expect(next.targets).toEqual({ 'db-archive': 'archive-state' });
+    // The other mappings stay: options are matched by name per source.
+    expect(next.targets).toEqual({ 'db-archive': 'archive-state', 'db-bugs': 'bugs-priority' });
     expect(next.content).toBe('o-doing');
     expect(next.name).toBe('Kanban');
   });
@@ -329,13 +287,6 @@ describe('editing targets', () => {
     expect(next.targets).toEqual({});
     expect(next.content).toBe('abc');
     expect(isGlobalFilterActive(next)).toBe(false);
-  });
-
-  it('prunes option content to the field options in option order', () => {
-    const field = tasks.fields[1];
-
-    expect(pruneOptionContent('o-done,missing,o-todo', field)).toBe('o-todo,o-done');
-    expect(pruneOptionContent('o-done', undefined)).toBe('o-done');
   });
 });
 
@@ -352,13 +303,13 @@ describe('mappings that no longer apply', () => {
     const converted = source('db-tasks', 'Tasks', [{ id: 'tasks-status', name: 'Status', type: FieldType.RichText }]);
     const withoutProperty = source('db-archive', 'Archive', []);
 
-    expect(countGlobalFilterSources(statusFilter)).toBe(3);
-    expect(countGlobalFilterSources(statusFilter, sources)).toBe(3);
+    expect(countUsableTargets(statusFilter)).toBe(3);
+    expect(countUsableTargets(statusFilter, sources)).toBe(3);
     expect(isGlobalFilterTargetUsable(statusFilter, [converted], 'db-tasks')).toBe(false);
     expect(isGlobalFilterTargetUsable(statusFilter, [withoutProperty], 'db-archive')).toBe(false);
     // A source that is not loaded yet is trusted.
     expect(isGlobalFilterTargetUsable(statusFilter, [converted], 'db-bugs')).toBe(true);
-    expect(countGlobalFilterSources(statusFilter, [converted, withoutProperty])).toBe(1);
+    expect(countUsableTargets(statusFilter, [converted, withoutProperty])).toBe(1);
 
     const textFilter = filterOf({ content: 'x', targets: { 'db-tasks': 'tasks-status' } });
 
@@ -372,20 +323,20 @@ describe('mappings that no longer apply', () => {
     const list = [statusFilter, untouched];
     const next = detachRemovedGlobalFilterSources(list, remaining, sources);
 
-    // The primary Tasks mapping hands over to Archive (its name follows), which re-validates Bugs.
+    // The primary Tasks mapping hands over to Archive (its name follows); Bugs stays.
     expect(next[0]).toMatchObject({
       name: 'State',
       content: 'o-doing',
-      targets: { 'db-archive': 'archive-state' },
+      targets: { 'db-archive': 'archive-state', 'db-bugs': 'bugs-priority' },
     });
-    expect(Object.keys(next[0].targets)).toEqual(['db-archive']);
+    expect(Object.keys(next[0].targets)).toEqual(['db-archive', 'db-bugs']);
     expect(next[1]).toBe(untouched);
     expect(detachRemovedGlobalFilterSources(list, new Set(['db-tasks', 'db-archive', 'db-bugs']), sources)).toBe(list);
     // Without the source properties the mappings are simply dropped.
     expect(detachRemovedGlobalFilterSources(list, new Set(['db-bugs']))[0].targets).toEqual({
       'db-bugs': 'bugs-priority',
     });
-    expect(countGlobalFilterSources(detachRemovedGlobalFilterSources(list, new Set())[0])).toBe(0);
+    expect(countUsableTargets(detachRemovedGlobalFilterSources(list, new Set())[0])).toBe(0);
   });
 });
 
@@ -470,10 +421,13 @@ describe('conditions', () => {
     ).not.toContain(DateFilterCondition.DateStartIsEmpty);
   });
 
-  it('hides the value control for empty checks, relative dates and booleans', () => {
+  it('hides the value control for empty checks, date presets and booleans', () => {
     expect(conditionHidesContent(FieldType.RichText, TextFilterCondition.TextIsEmpty)).toBe(true);
     expect(conditionHidesContent(FieldType.RichText, TextFilterCondition.TextIs)).toBe(false);
     expect(conditionHidesContent(FieldType.DateTime, DateFilterCondition.DateStartsToday)).toBe(true);
+    // "Is relative to today" shows its builder.
+    expect(conditionHidesContent(FieldType.DateTime, DateFilterCondition.DateStartsRelative)).toBe(false);
+    expect(conditionHidesContent(FieldType.CreatedTime, DateFilterCondition.DateEndsRelative)).toBe(false);
     expect(conditionHidesContent(FieldType.DateTime, DateFilterCondition.DateStartsBetween)).toBe(false);
     expect(conditionHidesContent(FieldType.Checkbox, CheckboxFilterCondition.IsChecked)).toBe(true);
   });
@@ -493,110 +447,39 @@ describe('conditions', () => {
     expect(applyConditionChange(single, DateFilterCondition.DateStartsOn)).toBe(single);
     expect(applyConditionChange(single, DateFilterCondition.DateStartsToday).content).toBe(single.content);
   });
+
+  it('starts a relative condition at This week and clears it on the way back', () => {
+    const single = filterOf({
+      fieldType: FieldType.DateTime,
+      condition: DateFilterCondition.DateStartsOn,
+      content: JSON.stringify({ timestamp: 100 }),
+    });
+    const relative = applyConditionChange(single, DateFilterCondition.DateStartsRelative);
+
+    expect(JSON.parse(relative.content)).toEqual({
+      relative_direction: 'this',
+      relative_amount: 1,
+      relative_unit: 'week',
+    });
+    expect(isGlobalFilterActive({ ...relative, targets: { 'db-archive': 'archive-date' } })).toBe(true);
+    // The end side keeps the spec.
+    expect(applyConditionChange(relative, DateFilterCondition.DateEndsRelative).content).toBe(relative.content);
+    expect(applyConditionChange(relative, DateFilterCondition.DateStartsAfter).content).toBe('');
+  });
+
+  it('lists the relative condition right after "Is between"', () => {
+    const values = getGlobalFilterConditions(FieldType.DateTime, DateFilterCondition.DateStartsOn, t).map(
+      (item) => item.value
+    );
+
+    expect(values.slice(0, 9)).toEqual([0, 1, 2, 3, 4, 5, DateFilterCondition.DateStartsRelative, 6, 7]);
+    expect(
+      getGlobalFilterConditions(FieldType.DateTime, DateFilterCondition.DateEndsOn, t).map((item) => item.value)
+    ).toContain(DateFilterCondition.DateEndsRelative);
+  });
 });
 
-describe('chip label', () => {
-  const options = { dateFormat: 'YYYY-MM-DD', t };
-  const label = (filter: DashboardGlobalFilter, fallback = 'Fallback') =>
-    getGlobalFilterChipText(
-      filter,
-      getGlobalFilterDescription(filter, { ...options, primaryField: getPrimaryTargetField(filter, sources) }),
-      fallback
-    );
-
-  it('formats text filters like view filter chips', () => {
-    const filter = filterOf({ name: 'Name', content: 'bug', targets: { 'db-tasks': 'tasks-name' } });
-
-    expect(label(filter)).toBe('Name: grid.textFilter.contains bug');
-    expect(label({ ...filter, condition: TextFilterCondition.TextIsNot })).toBe(
-      'Name: grid.textFilter.choicechipPrefix.isNot bug'
-    );
-    expect(label({ ...filter, condition: TextFilterCondition.TextIsEmpty, content: '' })).toBe(
-      'Name: grid.textFilter.choicechipPrefix.isEmpty'
-    );
-  });
-
-  it('shows the bare name while the filter has no value or no source', () => {
-    expect(label(filterOf({ name: 'Name', targets: { 'db-tasks': 'tasks-name' } }))).toBe('Name');
-    expect(label(filterOf({ name: 'Name', content: 'bug' }))).toBe('Name');
-    expect(label(filterOf({ name: '  ', content: 'bug' }), 'Text')).toBe('Text');
-  });
-
-  it('uses number symbols', () => {
-    const filter = filterOf({
-      name: 'Points',
-      fieldType: FieldType.Number,
-      condition: NumberFilterCondition.GreaterThanOrEqualTo,
-      content: '3',
-      targets: { 'db-tasks': 'tasks-points' },
-    });
-
-    expect(label(filter)).toBe('Points: ≥ 3');
-  });
-
-  it('names selected options from the primary property', () => {
-    const filter = filterOf({
-      name: 'Status',
-      fieldType: FieldType.SingleSelect,
-      condition: SelectOptionFilterCondition.OptionIs,
-      content: 'o-done,o-todo',
-      targets: { 'db-tasks': 'tasks-status' },
-    });
-
-    expect(label(filter)).toBe('Status: grid.selectOptionFilter.is Todo, Done');
-    expect(label({ ...filter, targets: { 'db-missing': 'x' } })).toBe('Status: grid.selectOptionFilter.is (2)');
-  });
-
-  it('describes checkbox, person and date filters', () => {
-    expect(
-      label(
-        filterOf({
-          name: 'Done',
-          fieldType: FieldType.Checkbox,
-          condition: CheckboxFilterCondition.IsChecked,
-          targets: { 'db-tasks': 'x' },
-        })
-      )
-    ).toBe('Done: grid.checkboxFilter.isChecked');
-    expect(
-      label(
-        filterOf({
-          name: 'Done',
-          fieldType: FieldType.Checkbox,
-          condition: CheckboxFilterCondition.IsUnChecked,
-          targets: { 'db-tasks': 'x' },
-        })
-      )
-    ).toBe('Done: grid.checkboxFilter.isUnchecked');
-    expect(
-      label(
-        filterOf({
-          name: 'Owner',
-          fieldType: FieldType.Person,
-          condition: PersonFilterCondition.PersonContains,
-          content: JSON.stringify(['p1', 'p2']),
-          targets: { 'db-tasks': 'tasks-owner' },
-        })
-      )
-    ).toBe('Owner: grid.personFilter.contains: grid.person.count(2)');
-
-    const date = filterOf({
-      name: 'Due',
-      fieldType: FieldType.DateTime,
-      condition: DateFilterCondition.DateStartsToday,
-      targets: { 'db-archive': 'archive-date' },
-    });
-
-    expect(label(date)).toBe('Due: relativeDates.today');
-    expect(
-      label({
-        ...date,
-        condition: DateFilterCondition.DateStartsBetween,
-        content: JSON.stringify({ start: 0, end: 86400 }),
-      })
-    ).toMatch(/^Due: grid\.dateFilter\.choicechipPrefix\.between \d{4}-\d{2}-\d{2} - \d{4}-\d{2}-\d{2}$/);
-  });
-
+describe('active filters', () => {
   it('treats empty checks as active and valueless filters as inactive', () => {
     const base = filterOf({ fieldType: FieldType.Person, targets: { 'db-tasks': 'tasks-owner' } });
 
@@ -605,6 +488,21 @@ describe('chip label', () => {
       false
     );
     expect(isGlobalFilterActive({ ...base, condition: PersonFilterCondition.PersonIsEmpty })).toBe(true);
+  });
+
+  it('lists the usable mappings with their source and property', () => {
+    const converted = source('db-tasks', 'Tasks', [{ id: 'tasks-status', name: 'Status', type: FieldType.RichText }]);
+    const filter = filterOf({
+      fieldType: FieldType.SingleSelect,
+      targets: { 'db-tasks': 'tasks-status', 'db-archive': 'archive-state', 'db-unloaded': 'x' },
+    });
+
+    expect(
+      getUsableTargets(filter, [converted, archive]).map((target) => [target.databaseId, target.field?.name ?? null])
+    ).toEqual([
+      ['db-archive', 'State'],
+      ['db-unloaded', null],
+    ]);
   });
 });
 

@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 
 import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
 import { FieldType, FilterType } from '@/application/database-yjs/database.type';
+import { SelectOptionFilterCondition } from '@/application/database-yjs/fields/select-option/select_option.type';
 import {
   DatabaseViewLayout,
   YDatabase,
@@ -13,6 +14,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 
+import { createSourceDoc, option } from '../global-filters/__tests__/source-doc.fixture';
 import { useSourceDocRegistry } from '../hooks/useSourceDocRegistry';
 import { sameExtraFilters, useWidgetExtraFilters } from '../hooks/useWidgetExtraFilters';
 import { useDelayedFlag, useWidgetViewSnapshot } from '../hooks/useWidgetViewSnapshot';
@@ -103,6 +105,42 @@ describe('useWidgetExtraFilters', () => {
     const { result } = renderHook(() => useWidgetExtraFilters([globalFilter('a', { db2: 'f2' })], 'db1'));
 
     expect(result.current).toBeUndefined();
+  });
+
+  it("resolves a select filter's option names to the widget doc's own ids on the first render", () => {
+    // Picked in Projects as o-done; this widget's database calls its Done t-done.
+    const statusFilter: DashboardGlobalFilter = {
+      id: 'gf:status',
+      name: 'Status',
+      fieldType: FieldType.SingleSelect,
+      condition: SelectOptionFilterCondition.OptionIs,
+      content: 'o-done',
+      optionNames: ['Done'],
+      targets: { 'db-projects': 'p-status', db1: 'f-stage' },
+    };
+    const doc = createSourceDoc('db1', [
+      {
+        id: 'f-stage',
+        name: 'Stage',
+        type: FieldType.SingleSelect,
+        options: [option('t-todo', 'Todo'), option('t-done', 'Done')],
+      },
+    ]);
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders += 1;
+      return useWidgetExtraFilters([statusFilter], 'db1', doc);
+    });
+
+    expect(renders).toBe(1);
+    expect(result.current).toEqual([
+      expect.objectContaining({ id: 'gf:status', field_id: 'f-stage', ty: FieldType.SingleSelect, content: 't-done' }),
+    ]);
+
+    // Without the doc (not loaded yet) the stored ids stay as they are.
+    const { result: unloaded } = renderHook(() => useWidgetExtraFilters([statusFilter], 'db1', null));
+
+    expect(unloaded.current?.[0].content).toBe('o-done');
   });
 
   it('keeps the same array while the resolved filters are unchanged', () => {

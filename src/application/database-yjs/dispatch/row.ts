@@ -31,6 +31,7 @@ import {
   useSharedRoot,
 } from '@/application/database-yjs/context';
 import { FieldType, isAttributionFieldType, RowMetaKey } from '@/application/database-yjs/database.type';
+import { useEffectiveViewFilters } from '@/application/database-yjs/effective-conditions';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { getNumberGroupingCellData } from '@/application/database-yjs/group';
@@ -169,6 +170,13 @@ export function useMoveCardDispatch() {
         throw new Error(`Unable to reorder card`);
       }
 
+      // A sorted board (the effective view, a widget's private sorts included)
+      // places cards by their sort (WP09 §1.4): a move within a column changes
+      // nothing, and a move across columns writes only the group cell.
+      const sorted = (view.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0;
+
+      if (sorted && startColumnId === finishColumnId) return;
+
       const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
       if (!field) {
@@ -283,7 +291,8 @@ export function useMoveCardDispatch() {
               }
             );
 
-            reorderRow(rowId, beforeRowId, view);
+            // Sorted: `row_orders` keeps the card's manual place for when the sort is removed.
+            if (!sorted) reorderRow(rowId, beforeRowId, view);
           },
         ],
         'reorderCard',
@@ -539,7 +548,9 @@ export function useNewRowDispatch() {
   const layout = useDatabaseViewLayout();
   const isCalendar = layout === DatabaseViewLayout.Calendar;
   const calendarSetting = useCalendarLayoutSetting();
-  const filters = currentView?.get(YjsDatabaseKey.filters);
+  // The filters the view applies right now: a widget's private ones and the
+  // dashboard's global filters too, so a new row stays visible (WP07 P0-5).
+  const filters = useEffectiveViewFilters();
   const {
     navigateToRow,
     databaseDoc,

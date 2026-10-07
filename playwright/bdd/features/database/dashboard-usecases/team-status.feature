@@ -98,11 +98,12 @@ Feature: Weekly team status hub across two databases
       | row | widgets                           |
       | 1   | Active projects, Status breakdown |
       | 2   | Roadmap, Tasks per person         |
+    And the "Weekly status" dashboard has a saved "Owner" global filter with no value
     And a teammate who can only view the "Team status" space
     When the teammate opens the "Weekly status" dashboard
     Then the teammate sees the dashboard in View mode without an Edit button
     And the teammate sees the "Active projects" widget list "Research study, Marketing campaign, Product launch"
-    When the teammate adds a global filter where "Owner" is "Leo"
+    When the teammate changes the global filter "Owner" to "Leo"
     Then the teammate sees the "Active projects" widget list "Marketing campaign, Product launch"
     And the teammate sees that the global filter only applies for them
     And the "Active projects" widget lists "Research study, Marketing campaign, Product launch"

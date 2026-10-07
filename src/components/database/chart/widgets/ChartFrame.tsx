@@ -8,6 +8,7 @@ import { ChartA11yRow, ChartA11yTable } from './ChartA11yTable';
 import { ChartLegend, ChartLegendGlyph, ChartLegendItem, layoutChartLegend } from './ChartLegend';
 import { ChartTooltip, ChartTooltipRow } from './ChartTooltip';
 import { ChartTooltipLayer } from './ChartTooltipLayer';
+import { CHART_TRUNCATION_CAPTION_HEIGHT, ChartTruncationCaption } from './ChartTruncationCaption';
 import { useChartMeasure } from './measureText';
 import { ChartPointer } from './useChartHover';
 
@@ -20,8 +21,14 @@ export const STANDALONE_CHART_HEIGHT = 400;
 /** What the tooltip says. Where it is comes from the chart's pointer, not from here. */
 export interface ChartFrameTooltip {
   title?: string;
+  /** The category the tooltip describes (its label): the root's `data-category`. */
+  category?: string;
   rows: ChartTooltipRow[];
+  /** Series rows left out after the first ten (WP12). */
+  more?: number;
   showDrilldownHint: boolean;
+  /** A mobile context: the hint reads "Tap again to view data". */
+  mobile?: boolean;
 }
 
 export interface ChartFrameProps {
@@ -40,6 +47,10 @@ export interface ChartFrameProps {
   pointer?: ChartPointer;
   /** `useChartHover`'s frame handlers, with the ref it reads the frame through. */
   frameHandlers?: HTMLAttributes<HTMLDivElement> & { ref?: Ref<HTMLDivElement> };
+  /** The `{n}` of "Only showing the first {n} groups" (WP12 §2.9), or `null` when nothing was cut. */
+  truncationCount?: number | null;
+  /** Extra `data-*` attributes of the root (the series charts' group style and series count). */
+  rootAttributes?: Record<`data-${string}`, string | number>;
   /** `height` is the plot's; `legendHeight` is reserved below it. */
   children: (size: { width: number; height: number; legendHeight: number }) => ReactNode;
 }
@@ -62,6 +73,8 @@ export function ChartFrame({
   tooltip,
   pointer,
   frameHandlers,
+  truncationCount = null,
+  rootAttributes,
   children,
 }: ChartFrameProps) {
   const { measure12 } = useChartMeasure();
@@ -71,19 +84,29 @@ export function ChartFrame({
     [legend, size.width, measure12]
   );
   const legendHeight = legendLayout?.height ?? 0;
-  const plotHeight = Math.max(0, size.height - legendHeight);
+  // The caption's line comes out of the plot height, like the legend.
+  const captionHeight = truncationCount === null ? 0 : CHART_TRUNCATION_CAPTION_HEIGHT;
+  const plotHeight = Math.max(0, size.height - legendHeight - captionHeight);
   const ready = size.width >= MIN_PLOT_SIZE && plotHeight >= MIN_PLOT_SIZE;
   const inset = DASHBOARD_CHART_GEOMETRY.insetWidget;
   const tooltipContent = useMemo(
     () =>
       tooltip ? (
-        <ChartTooltip rows={tooltip.rows} showDrilldownHint={tooltip.showDrilldownHint} title={tooltip.title} />
+        <ChartTooltip
+          category={tooltip.category}
+          mobile={tooltip.mobile}
+          more={tooltip.more}
+          rows={tooltip.rows}
+          showDrilldownHint={tooltip.showDrilldownHint}
+          title={tooltip.title}
+        />
       ) : null,
     [tooltip]
   );
 
   return (
     <div
+      {...rootAttributes}
       {...frameHandlers}
       className={cn('relative flex w-full flex-col', fill && 'h-full min-h-0 flex-1')}
       data-fill={fill ? 'true' : 'false'}
@@ -108,6 +131,7 @@ export function ChartFrame({
         {legend && legendLayout && ready ? (
           <ChartLegend glyph={legend.glyph} items={legend.items} layout={legendLayout} />
         ) : null}
+        {ready ? <ChartTruncationCaption count={truncationCount} /> : null}
       </div>
       <ChartA11yTable rows={rows} />
       <ChartTooltipLayer pointer={tooltip && pointer ? pointer : null}>{tooltipContent}</ChartTooltipLayer>

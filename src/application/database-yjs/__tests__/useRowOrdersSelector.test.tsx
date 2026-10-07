@@ -5,7 +5,11 @@ import * as Y from 'yjs';
 import {
   DatabaseContext,
   DatabaseContextState,
+  DatabaseExtraFiltersContext,
+  DatabaseSearchQueryContext,
+  DatabaseViewOverlayContext,
   FieldType,
+  FieldVisibility,
   FilterType,
   NumberFilterCondition,
   SortCondition,
@@ -24,7 +28,9 @@ import * as databaseFilter from '@/application/database-yjs/filter';
 import { DatabaseHistoryRowStore } from '@/application/database-yjs/history-row-store';
 import * as rollupCache from '@/application/database-yjs/rollup/cache';
 import * as rowOrderVisibility from '@/application/database-yjs/row-order-visibility';
+import { createViewConditionsOverlay } from '@/application/database-yjs/view-conditions-overlay';
 import {
+  MentionablePerson,
   RowId,
   YDatabase,
   YDatabaseCalculation,
@@ -43,6 +49,7 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
+import * as mentionableUsers from '@/components/database/components/cell/person/useMentionableUsers';
 
 import { createCell, createRowDoc } from './test-helpers';
 
@@ -947,5 +954,213 @@ describe('useAddAdvancedFilterAndRebuild', () => {
 
     expect(rollupFilter.get(YjsDatabaseKey.condition)).toBe(NumberFilterCondition.Equal);
     expect(rollupFilter.get(YjsDatabaseKey.rollup_target_type)).toBe(FieldType.Number);
+  });
+});
+
+describe('useRowOrdersSelector row search (WP09 §1.2)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+
+  /** The selector under a search query (and optionally a viewer overlay and global filters). */
+  function renderSearch(
+    fixture: DatabaseFixture,
+    initial: { query: string; overlay?: YDatabaseView; extraFilters?: Record<string, unknown>[] }
+  ) {
+    const state = { ...initial };
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: fixture.databaseDoc,
+      databasePageId: fixture.viewId,
+      activeViewId: fixture.viewId,
+      rowMap: fixture.rowMap,
+      workspaceId: 'workspace-id',
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>
+        <DatabaseViewOverlayContext.Provider value={state.overlay}>
+          <DatabaseExtraFiltersContext.Provider value={state.extraFilters as never}>
+            <DatabaseSearchQueryContext.Provider value={state.query}>{children}</DatabaseSearchQueryContext.Provider>
+          </DatabaseExtraFiltersContext.Provider>
+        </DatabaseViewOverlayContext.Provider>
+      </DatabaseContext.Provider>
+    );
+    const rendered: Array<string[] | undefined> = [];
+    const hook = renderHook(
+      () => {
+        const rows = useRowOrdersSelector();
+
+        rendered.push(rows?.map((row) => row.id));
+        return rows;
+      },
+      { wrapper }
+    );
+
+    return {
+      ...hook,
+      rendered,
+      setQuery(query: string) {
+        state.query = query;
+        hook.rerender();
+      },
+      ids: () => hook.result.current?.map((row) => row.id),
+    };
+  }
+
+  it('lists only the rows that match the trimmed, case-insensitive query', async () => {
+    const fixture = createDatabaseFixture();
+    const search = renderSearch(fixture, { query: '  FIRST ' });
+
+    await waitFor(() => expect(search.ids()).toEqual(['row-a']));
+    search.setQuery('');
+    await waitFor(() => expect(search.ids()).toEqual(['row-c', 'row-a', 'row-b']));
+  });
+
+  it.each([FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy])(
+    'loads names on demand and matches member names for field type %s',
+    async (fieldType) => {
+      const fixture = createDatabaseFixture();
+      const personField = new Y.Map() as YDatabaseField;
+      const member = { uid: '123', person_id: 'person-uuid', name: 'Alice', email: 'alice@example.com' } as MentionablePerson;
+      const users = jest.spyOn(mentionableUsers, 'useMentionableUsersWithAutoFetch').mockReturnValue({
+        users: [],
+        usersByUid: new Map(),
+        loading: false,
+      });
+
+      personField.set(YjsDatabaseKey.id, 'person');
+      personField.set(YjsDatabaseKey.name, 'Person');
+      personField.set(YjsDatabaseKey.type, fieldType);
+      fixture.fields.set('person', personField);
+      if (fieldType === FieldType.Person) {
+        // Modern Person cells store workspace UUIDs, with no legacy type-option names.
+        fixture.rowMap['row-a'] = createRowDoc('row-a', databaseId, {
+          person: createCell(FieldType.Person, JSON.stringify([member.person_id])),
+        });
+      } else {
+        const row = fixture.rowMap['row-a'].getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+        row.set(fieldType === FieldType.CreatedBy ? YjsDatabaseKey.created_by : YjsDatabaseKey.last_edited_by, member.uid);
+      }
+
+      const search = renderSearch(fixture, { query: '' });
+
+      await waitFor(() => expect(search.ids()).toEqual(['row-c', 'row-a', 'row-b']));
+      expect(users).toHaveBeenLastCalledWith(false);
+      search.setQuery('alice');
+      expect(users).toHaveBeenLastCalledWith(true);
+      // The request completes after the search starts; its new names recompute the rows.
+      users.mockReturnValue({ users: [member], usersByUid: new Map([['123', member]]), loading: false });
+      search.rerender();
+      await waitFor(() => expect(search.ids()).toEqual(['row-a']));
+
+      search.setQuery('');
+      await waitFor(() => expect(search.ids()).toEqual(['row-c', 'row-a', 'row-b']));
+      expect(users).toHaveBeenLastCalledWith(false);
+    }
+  );
+
+  it('does not request member names when the search has no visible person fields', async () => {
+    const fixture = createDatabaseFixture();
+    const users = jest.spyOn(mentionableUsers, 'useMentionableUsersWithAutoFetch').mockReturnValue({
+      users: [],
+      usersByUid: new Map(),
+      loading: false,
+    });
+    const search = renderSearch(fixture, { query: 'first' });
+
+    await waitFor(() => expect(search.ids()).toEqual(['row-a']));
+    expect(users).toHaveBeenLastCalledWith(false);
+
+    act(() => {
+      const personField = new Y.Map() as YDatabaseField;
+      const settings = new Y.Map();
+      const personSettings = new Y.Map();
+
+      personField.set(YjsDatabaseKey.id, 'person');
+      personField.set(YjsDatabaseKey.type, FieldType.Person);
+      personSettings.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysHidden);
+      settings.set('person', personSettings);
+      fixture.view.set(YjsDatabaseKey.field_settings, settings as never);
+      fixture.fields.set('person', personField);
+    });
+
+    expect(users).toHaveBeenLastCalledWith(false);
+    expect(search.ids()).toEqual(['row-a']);
+  });
+
+  it('ANDs the search with the view filters', async () => {
+    const fixture = createDatabaseFixture();
+
+    fixture.filters.push([createTextFilter('match')]);
+    const search = renderSearch(fixture, { query: 'second' });
+
+    await waitFor(() => expect(search.ids()).toEqual(['row-b']));
+    search.setQuery('skip');
+    await waitFor(() => expect(search.ids()).toEqual([]));
+  });
+
+  it("ANDs the search with a viewer's private overlay filters", async () => {
+    const fixture = createDatabaseFixture();
+    const overlay = createViewConditionsOverlay(fixture.view);
+
+    (overlay.view.get(YjsDatabaseKey.filters) as Y.Array<unknown>).push([createTextFilter('second', 'private')]);
+    const search = renderSearch(fixture, { query: 'match', overlay: overlay.view });
+
+    await waitFor(() => expect(search.ids()).toEqual(['row-b']));
+    // The shared view itself has no filter: the overlay holds it.
+    expect(fixture.filters.length).toBe(0);
+    overlay.destroy();
+  });
+
+  it('ANDs the search with the dashboard global filters', async () => {
+    const fixture = createDatabaseFixture();
+    const search = renderSearch(fixture, {
+      query: 'match',
+      extraFilters: [
+        {
+          id: 'gf-first',
+          filter_type: FilterType.Data,
+          field_id: fieldId,
+          ty: FieldType.RichText,
+          condition: TextFilterCondition.TextContains,
+          content: 'first',
+        },
+      ],
+    });
+
+    await waitFor(() => expect(search.ids()).toEqual(['row-a']));
+  });
+
+  it('keeps the sorted order of the matching rows', async () => {
+    const fixture = createDatabaseFixture();
+    const sort = new Y.Map() as YDatabaseSort;
+
+    sort.set(YjsDatabaseKey.id, 'sort-desc');
+    sort.set(YjsDatabaseKey.field_id, fieldId);
+    sort.set(YjsDatabaseKey.condition, SortCondition.Descending);
+    fixture.sorts.push([sort]);
+    const search = renderSearch(fixture, { query: 'match' });
+
+    await waitFor(() => expect(search.ids()).toEqual(['row-b', 'row-a']));
+  });
+
+  it('keeps the previous rows for the render that brings a new query, never the loading state', async () => {
+    const fixture = createDatabaseFixture();
+    const search = renderSearch(fixture, { query: 'match' });
+
+    await waitFor(() => expect(search.ids()).toEqual(['row-a', 'row-b']));
+    const before = search.rendered.length;
+
+    search.setQuery('second');
+    await waitFor(() => expect(search.ids()).toEqual(['row-b']));
+    search.setQuery('');
+    await waitFor(() => expect(search.ids()).toEqual(['row-c', 'row-a', 'row-b']));
+    expect(search.rendered.slice(before)).not.toContain(undefined);
   });
 });

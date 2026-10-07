@@ -8,6 +8,8 @@ import { useConditionsContext } from '@/components/database/components/condition
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
 import { FILTER_EXCLUDED_FIELD_TYPES } from '@/components/database/components/filters/filter-field-types';
 
+import { UnsavedDot } from '../private/UnsavedDot';
+import { useWidgetPrivateSnapshot } from '../private/WidgetPrivateContext';
 import { WidgetConditionsPopover } from '../WidgetConditionsPopover';
 import { useWidgetContext } from '../WidgetContext';
 
@@ -29,6 +31,8 @@ export function WidgetFilterTool() {
   const conditions = useConditionsContext();
   const { editing } = useWidgetContext();
   const [pickerOpen, setPickerOpen] = useState(false);
+  // The widget's filters differ from its saved view (WP07): the orange dot.
+  const unsaved = Boolean(useWidgetPrivateSnapshot()?.filters);
   const active = filters.length > 0;
 
   return (
@@ -54,16 +58,18 @@ export function WidgetFilterTool() {
         <div>
           <WidgetToolButton
             accent={editing}
+            badge={unsaved ? <UnsavedDot placement='tool' testId='database-actions-filter-dot' /> : null}
             className='relative'
             data-active={String(active)}
+            data-unsaved={String(unsaved)}
             data-testid='database-actions-filter'
             icon={FilterIcon}
             iconClassName='h-5 w-5'
             label={t('grid.settings.filter')}
             onClick={(event) => {
               event.stopPropagation();
-              // No filters: pick a property first. Otherwise toggle the popover.
-              if (!readOnly && !active) setPickerOpen(true);
+              // No filters (and nothing unsaved to reset): pick a property first. Otherwise toggle the popover.
+              if (!readOnly && !active && !unsaved) setPickerOpen(true);
               else conditions?.toggleExpanded();
             }}
             parityId='dash-widget-tool-filter'

@@ -7,6 +7,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useSyncExternalStore,
 } from 'react';
@@ -16,14 +17,87 @@ import { dashboardLoadStats, isDashboardLoadStatsRecording } from '@/application
 
 import { createDashboardLoadScheduler, DashboardLoadScheduler, WidgetLoadReport } from './load-scheduler';
 
+/** A widget of the host database asking to start before the first paint when its box is on screen. */
+interface BeforePaintRead {
+  id: string;
+  box: RefObject<Element>;
+  /** Renders the widget again, so it reads that it started. */
+  rerender: () => void;
+}
+
 interface DashboardLoadSchedulerContextValue {
   scheduler: DashboardLoadScheduler;
   hostSourceId: string;
   /** Follows whether the widget box intersects the dashboard's viewport, until the returned cleanup runs. */
   observe: (id: string, element: Element) => () => void;
+  /**
+   * Reads the box of a host widget once, before the first paint: on screen,
+   * the widget is marked visible (it needs no slot, so it starts) and renders
+   * again. The returned cleanup drops a read that has not happened yet.
+   */
+  startBeforePaint: (read: BeforePaintRead) => () => void;
 }
 
 const DashboardLoadSchedulerContext = createContext<DashboardLoadSchedulerContextValue | null>(null);
+
+/** Whether `value`, a computed `overflow-x` or `overflow-y`, clips the content of its box. */
+function clipsContent(value: string) {
+  return value !== '' && value !== 'visible';
+}
+
+/**
+ * Whether the box intersects the viewport, clipped by every ancestor that
+ * clips its content: what the dashboard's `IntersectionObserver` reports
+ * first (`isIntersecting`), read synchronously. As for the observer, touching
+ * edges count, and so does a box with no area that lies inside.
+ */
+function intersectsViewport(element: Element): boolean {
+  const box = element.getBoundingClientRect();
+  let top = Math.max(box.top, 0);
+  let left = Math.max(box.left, 0);
+  let bottom = Math.min(box.bottom, window.innerHeight);
+  let right = Math.min(box.right, window.innerWidth);
+
+  for (
+    let ancestor = element.parentElement;
+    ancestor && ancestor !== document.body && top <= bottom && left <= right;
+    ancestor = ancestor.parentElement
+  ) {
+    const { overflowX, overflowY } = window.getComputedStyle(ancestor);
+
+    if (!clipsContent(overflowX) && !clipsContent(overflowY)) continue;
+    const clip = ancestor.getBoundingClientRect();
+
+    top = Math.max(top, clip.top);
+    left = Math.max(left, clip.left);
+    bottom = Math.min(bottom, clip.bottom);
+    right = Math.min(right, clip.right);
+  }
+
+  return top <= bottom && left <= right;
+}
+
+/**
+ * Tells the queue which of `reads` have their box on screen, in one plan, and
+ * renders again those that started. Only "visible" is told: an off-screen
+ * widget waits for the observer's report of every box, so it is never planned
+ * against a partial view of the dashboard.
+ */
+function startOnScreenBeforePaint(scheduler: DashboardLoadScheduler, reads: BeforePaintRead[]) {
+  const onScreen = reads.filter(({ id, box }) => {
+    const element = box.current;
+
+    return element !== null && !scheduler.isStarted(id) && intersectsViewport(element);
+  });
+
+  if (onScreen.length === 0) return;
+  scheduler.setVisibility(onScreen.map(({ id }) => [id, true] as [string, boolean]));
+  onScreen.forEach(({ id, rerender }) => {
+    if (scheduler.isStarted(id)) rerender();
+  });
+}
+
+const noop = () => undefined;
 
 /**
  * What a started widget shows when it looks empty: a grid that lists no row,
@@ -38,7 +112,7 @@ const EMPTY_STATE_SELECTOR = [
 ].join(', ');
 
 interface DashboardLoadSchedulerProviderProps {
-  /** The dashboard's own database: its widgets start at once. */
+  /** The dashboard's own database: open already, so its widgets never take a slot. */
   hostSourceId: string;
   /** The dashboard's root element: test builds sample the widgets inside it for empty states. */
   scrollRef: RefObject<HTMLElement>;
@@ -49,9 +123,9 @@ interface DashboardLoadSchedulerProviderProps {
 
 /**
  * Queues the widgets of one open dashboard (`load-scheduler.ts`): visible
- * widgets first, at most two source databases loading cold at a time (a
- * database whose settled walk the tab still holds is resident: its widgets
- * take no slot, see `isDatabaseSourceResident`). It watches
+ * widgets first, the host database's included, at most two source databases
+ * loading cold at a time (the host and a database whose settled walk the tab
+ * still holds take no slot, see `isDatabaseSourceResident`). It watches
  * every widget box with one `IntersectionObserver` on the viewport (every
  * widget counts as visible where the browser has none). Unmounting it
  * (leaving the dashboard) closes the queue: nothing starts afterwards.
@@ -72,6 +146,8 @@ export function DashboardLoadSchedulerProvider({
   );
   // Every observed widget box, by element; the observer is created after the widgets' first effects.
   const targetsRef = useRef(new Map<Element, string>());
+  // The host widgets whose box this commit has not placed yet when they registered, by widget id.
+  const beforePaintRef = useRef(new Map<string, BeforePaintRead>());
   const observerRef = useRef<IntersectionObserver | null>(null);
   // The browser has no IntersectionObserver: every widget counts as visible.
   const allVisibleRef = useRef(typeof IntersectionObserver === 'undefined');
@@ -84,6 +160,20 @@ export function DashboardLoadSchedulerProvider({
     scheduler.open();
     return () => scheduler.close();
   }, [scheduler]);
+
+  // After every commit of the dashboard, before the paint: React attaches a
+  // widget box's ref after the layout effects inside it, so the host widgets
+  // that registered in this commit have their box only now. Those on screen
+  // start, all in one plan.
+  useLayoutEffect(() => {
+    const pending = beforePaintRef.current;
+
+    if (pending.size === 0) return;
+    const reads = Array.from(pending.values());
+
+    pending.clear();
+    startOnScreenBeforePaint(scheduler, reads);
+  });
 
   useEffect(() => {
     scheduler.setOrder(orderKey ? orderKey.split('\n') : []);
@@ -156,7 +246,28 @@ export function DashboardLoadSchedulerProvider({
     [scheduler]
   );
 
-  const value = useMemo(() => ({ scheduler, hostSourceId, observe }), [hostSourceId, observe, scheduler]);
+  const startBeforePaint = useCallback(
+    (read: BeforePaintRead) => {
+      // A widget that remounted inside its box reads it at once.
+      if (read.box.current) {
+        startOnScreenBeforePaint(scheduler, [read]);
+        return noop;
+      }
+
+      const pending = beforePaintRef.current;
+
+      pending.set(read.id, read);
+      return () => {
+        if (pending.get(read.id) === read) pending.delete(read.id);
+      };
+    },
+    [scheduler]
+  );
+
+  const value = useMemo(
+    () => ({ scheduler, hostSourceId, observe, startBeforePaint }),
+    [hostSourceId, observe, scheduler, startBeforePaint]
+  );
 
   return <DashboardLoadSchedulerContext.Provider value={value}>{children}</DashboardLoadSchedulerContext.Provider>;
 }
@@ -182,17 +293,22 @@ export interface WidgetLoadStart {
 
 /**
  * A widget's turn to load. Until it is granted the widget shows its header and
- * the loading placeholder, and loads nothing. A widget of the host database,
- * a widget that resumes after a move and a widget outside a dashboard (no
- * scheduler) start at once. Unmounting gives the slot back.
+ * the loading placeholder, and loads nothing. A widget that resumes after a
+ * move and a widget outside a dashboard (no scheduler) start at once. A widget
+ * of the host database is queued like the others, but takes no slot: when its
+ * box is on screen at mount it starts before the first paint, so it never
+ * shows the placeholder. Unmounting gives the slot back.
  */
 export function useWidgetLoadStart({ widgetId, sourceId, boxRef, resume }: WidgetLoadStartOptions): WidgetLoadStart {
   const context = useContext(DashboardLoadSchedulerContext);
   const scheduler = context?.scheduler ?? null;
   const observe = context?.observe;
+  const startBeforePaint = context?.startBeforePaint;
+  const isHostSource = context !== null && sourceId === context.hostSourceId;
   const resumeRef = useRef(resume);
   // Reports reach the scheduler only while this widget's registration is the current one.
   const registeredRef = useRef(false);
+  const [, renderAgain] = useReducer((count: number) => count + 1, 0);
 
   // A layout effect: registered before the passive effects of the nested database, which may report at once.
   useLayoutEffect(() => {
@@ -200,11 +316,18 @@ export function useWidgetLoadStart({ widgetId, sourceId, boxRef, resume }: Widge
     const unregister = scheduler.register({ id: widgetId, sourceId, resume: resumeRef.current });
 
     registeredRef.current = true;
+    // A host widget needs no slot: it starts as soon as the queue knows it is
+    // visible. Its box is read before the paint rather than at the observer's
+    // first report (after it), so on screen it never shows the placeholder.
+    const cancelRead =
+      isHostSource && startBeforePaint ? startBeforePaint({ id: widgetId, box: boxRef, rerender: renderAgain }) : noop;
+
     return () => {
       registeredRef.current = false;
+      cancelRead();
       unregister();
     };
-  }, [scheduler, sourceId, widgetId]);
+  }, [boxRef, isHostSource, scheduler, sourceId, startBeforePaint, widgetId]);
 
   useEffect(() => {
     const element = boxRef.current;
@@ -224,7 +347,7 @@ export function useWidgetLoadStart({ widgetId, sourceId, boxRef, resume }: Widge
   );
 
   // Decided while rendering for the widgets that never wait, so they never flash the placeholder.
-  const started = !context || granted || resume || sourceId === context.hostSourceId;
+  const started = !context || granted || resume;
 
   return { started, report };
 }

@@ -16,11 +16,6 @@ jest.mock('react-i18next', () => ({
   }),
 }));
 
-// The indicator package ships compiled CSS that jest cannot parse.
-jest.mock('@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box', () => ({
-  DropIndicator: () => null,
-}));
-
 jest.mock('@atlaskit/pragmatic-drag-and-drop-auto-scroll/element', () => ({
   autoScrollForElements: () => () => undefined,
 }));
@@ -39,14 +34,10 @@ jest.mock('../DashboardWidget', () => ({
   ),
 }));
 
-jest.mock('../WidgetPicker', () => ({ WidgetPicker: () => null, preloadWidgetPicker: () => undefined }));
+jest.mock('../WidgetPicker', () => ({ LazyWidgetDockHost: () => null, preloadWidgetPicker: () => undefined }));
 
 jest.mock('../hooks/useWorkspaceDatabases', () => ({
   useWorkspaceDatabases: () => ({ databases: [], loading: false, error: null }),
-}));
-
-jest.mock('../hooks/useCreateWidgetView', () => ({
-  useCreateWidgetView: () => ({ createView: jest.fn(), canCreateInOtherDatabases: true, bridge: null }),
 }));
 
 type ResizeCallback = (entries: Array<{ contentRect: { width: number } }>) => void;
@@ -135,7 +126,7 @@ afterEach(() => {
 
 describe('DashboardGrid', () => {
   it('wraps a row of three into two plus one on a 704px track, without width handles', () => {
-    renderGrid(makeRows([4, 4, 4]));
+    renderGrid(makeRows([4, 4, 4], [12]));
     measureGrid(692);
     fireEvent.click(screen.getByTestId('dashboard-edit-button'));
 
@@ -190,6 +181,40 @@ describe('DashboardGrid', () => {
     expect(within(bands()[0]).queryByTestId('dashboard-height-handle')).toBeNull();
     expect(within(bands()[1]).getByTestId('dashboard-height-handle').getAttribute('data-row-id')).toBe('r1');
     expect(within(bands()[2]).getByTestId('dashboard-height-handle').getAttribute('data-row-id')).toBe('r2');
+  });
+
+  it('hands every row its controls and puts "Add to new row" under the last row (WP04)', () => {
+    renderGrid(makeRows([3, 3, 3, 3], [6, 6], [12]));
+    fireEvent.click(screen.getByTestId('dashboard-edit-button'));
+
+    const moves = (rowId: string) =>
+      within(row(rowId))
+        .queryAllByTestId(/^dashboard-row-move-(up|down)$/)
+        .map((button) => button.getAttribute('data-testid'));
+
+    expect(moves('r1')).toEqual(['dashboard-row-move-down']);
+    expect(moves('r2')).toEqual(['dashboard-row-move-up', 'dashboard-row-move-down']);
+    expect(moves('r3')).toEqual(['dashboard-row-move-up']);
+    // The full row has no "Add to row"; the others do.
+    expect(within(row('r1')).queryByTestId('dashboard-add-widget-row-button')).toBeNull();
+    expect(within(row('r2')).getByTestId('dashboard-add-widget-row-button')).toBeTruthy();
+
+    const addToNewRow = screen.getByTestId('dashboard-add-widget-button');
+    const grid = screen.getByTestId('dashboard-grid');
+
+    expect(addToNewRow.getAttribute('aria-label')).toBe('Add to new row');
+    expect(addToNewRow.hasAttribute('aria-disabled')).toBe(false);
+    // In flow after the last band, the grid's last child.
+    expect(grid.lastElementChild?.contains(addToNewRow)).toBe(true);
+    expect(screen.queryByTestId('dashboard-insert-row-button')).toBeNull();
+  });
+
+  it('shows no row controls and no "Add to new row" in View mode', () => {
+    renderGrid(makeRows([6, 6], [12]));
+
+    expect(screen.queryByTestId('dashboard-row-move-control')).toBeNull();
+    expect(screen.queryByTestId('dashboard-add-widget-row-button')).toBeNull();
+    expect(screen.queryByTestId('dashboard-add-widget-button')).toBeNull();
   });
 
   it('reserves the same page inset in View and Edit mode for editors', () => {

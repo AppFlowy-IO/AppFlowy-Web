@@ -19,13 +19,27 @@ const mockSeedLoadPromises: Array<Promise<YDoc | undefined>> = [];
 const mockEnsureRowPromises: Array<Promise<YDoc | undefined> | void> = [];
 let mockDatabaseContext: DatabaseContextState | undefined;
 let mockLoadSeedOnLifecycleChange = false;
+/** Databases whose rows the tab holds (`isDatabaseSourceResident`). */
+const mockResidentSources = new Set<string>();
+/** Databases whose walk committed every row and still writes them to storage: held, not yet resident. */
+const mockHeldSources = new Set<string>();
+const mockResidencyListeners = new Set<() => void>();
 
 jest.mock('@/application/database-blob', () => ({
   getDatabaseRowDocFromSeed: jest.fn(),
+  holdsDatabaseSourceRows: (databaseId: string) =>
+    mockResidentSources.has(databaseId) || mockHeldSources.has(databaseId),
+  isDatabaseSourceResident: (databaseId: string) => mockResidentSources.has(databaseId),
   peekDatabaseRowDocSeed: jest.fn(),
   prefetchDatabaseBlobDiff: jest.fn(),
   releaseDatabaseRowDocSeedCache: jest.fn(),
   retainDatabaseRowDocSeedCache: jest.fn(),
+  subscribeToDatabaseSourceResidency: (listener: () => void) => {
+    mockResidencyListeners.add(listener);
+    return () => {
+      mockResidencyListeners.delete(listener);
+    };
+  },
 }));
 
 jest.mock('@/application/services/js-services/cache', () => ({
@@ -318,6 +332,15 @@ function createHydratedRowDoc(guid: string) {
   return doc;
 }
 
+/** The source's seeds are released (or retired by a restore): it is no longer resident. */
+function releaseResidentSource(databaseId: string) {
+  mockResidentSources.delete(databaseId);
+  mockHeldSources.delete(databaseId);
+  act(() => {
+    mockResidencyListeners.forEach((listener) => listener());
+  });
+}
+
 describe('Database blob prefetch lifecycle', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -333,6 +356,11 @@ describe('Database blob prefetch lifecycle', () => {
     mockedGetCachedRowDoc.mockReturnValue(undefined);
     mockedPrefetch.mockImplementation(() => new Promise(() => undefined));
     dashboardLoadStats.reset();
+  });
+
+  afterEach(() => {
+    // Bindings a test left with a resident source go with it.
+    Array.from(new Set([...mockResidentSources, ...mockHeldSources])).forEach(releaseResidentSource);
   });
 
   it.each([
@@ -557,6 +585,420 @@ describe('Database blob prefetch lifecycle', () => {
         liveRowDoc.destroy();
         deliveredDoc.destroy();
       }
+    });
+  });
+
+  describe('a resident source, while the walk that refreshes it is held open', () => {
+    const rowKey = 'database-id_rows_row-id';
+    const remoteRowKey = 'database-id_rows_remote-row-id';
+    const seedOf = (rowId: string) => ({ rowId } as unknown as ReturnType<typeof peekDatabaseRowDocSeed>);
+    const flush = async () => {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(0);
+      });
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      // Neither a page, nor the commit, nor the answer of the blob walk ever comes.
+      mockedPrefetch.mockImplementation(() => new Promise(() => undefined));
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it.each([
+      ['reaches the row map before the delta walk resolves on a resident source', true],
+      ['waits for the gate on a source that is not resident', false],
+    ])('a row with a committed seed %s', async (_name, resident) => {
+      const doc = createDatabaseDoc('database-id');
+      const seededRowDoc = createHydratedRowDoc('seeded-row');
+      const createRow = jest.fn(async () => seededRowDoc);
+      const seed = seedOf('row-id');
+
+      if (resident) mockResidentSources.add('database-id');
+      mockedPeekSeed.mockImplementation((key) => (key === rowKey ? seed : null));
+      mockedSeedDoc.mockImplementation((key) => (key === rowKey ? seededRowDoc : null));
+      mockedOpenRowDoc.mockResolvedValue(seededRowDoc);
+      const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+      try {
+        await flush();
+        // The walk still starts: it refreshes the rows in the background.
+        expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+        expect(mockedPrefetch.mock.calls[0][2]?.forceFullSync).toBe(false);
+        let settled = false;
+
+        void Promise.resolve(requestEnsureRow()).then(() => {
+          settled = true;
+        });
+        await flush();
+
+        if (resident) {
+          expect(settled).toBe(true);
+          expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(seededRowDoc);
+          expect(mockedOpenRowDoc).toHaveBeenCalledWith(rowKey, seed);
+          expect(mockDatabaseContext?.getRowPassState?.()).toEqual({ blobPrefetchComplete: false, seedsReady: true });
+        } else {
+          // The row waits for the walk to commit its seeds.
+          expect(settled).toBe(false);
+          expect(mockDatabaseContext?.rowMap?.['row-id']).toBeUndefined();
+          expect(mockedOpenRowDoc).not.toHaveBeenCalled();
+          expect(createRow).not.toHaveBeenCalled();
+          expect(mockDatabaseContext?.getRowPassState?.()).toEqual({ blobPrefetchComplete: false, seedsReady: false });
+        }
+      } finally {
+        unmount();
+        doc.destroy();
+        seededRowDoc.destroy();
+      }
+    });
+
+    it('lets a row the tab holds pass the gate at once, even outside the first rows and with the gate closed', async () => {
+      const doc = createDatabaseDoc('database-id');
+      const remoteRowDoc = createHydratedRowDoc('remote-row');
+      const createRow = jest.fn(async () => remoteRowDoc);
+
+      mockResidentSources.add('database-id');
+      mockedSeedDoc.mockImplementation((key) => (key === remoteRowKey ? remoteRowDoc : null));
+      // The preload of the first rows never ends, so the gate stays closed.
+      mockedOpenRowDoc.mockImplementation((key) =>
+        key === remoteRowKey ? Promise.resolve(remoteRowDoc) : new Promise(() => undefined)
+      );
+      mockedPeekSeed.mockImplementation((key) => (key === rowKey || key === remoteRowKey ? seedOf(key) : null));
+      const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+      try {
+        await flush();
+        let ensured: YDoc | undefined;
+
+        // "remote-row-id" is not one of the rows the view lists first.
+        void Promise.resolve(requestRemoteRowEnsure()).then((rowDoc) => {
+          ensured = rowDoc;
+        });
+        await flush();
+        expect(ensured).toBe(remoteRowDoc);
+        expect(mockDatabaseContext?.rowMap?.['remote-row-id']).toBe(remoteRowDoc);
+        expect(createRow).toHaveBeenCalledWith(remoteRowKey);
+        expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+      } finally {
+        unmount();
+        doc.destroy();
+        remoteRowDoc.destroy();
+      }
+    });
+
+    it('applies the seed of a row the tab lacks once the refresh commits, without a recovery walk, and counts it read', async () => {
+      const doc = createDatabaseDoc('database-id');
+      const seededRowDoc = createHydratedRowDoc('seeded-row');
+      const emptyRemoteRowDoc = new Y.Doc({ guid: 'remote-row-id' }) as YDoc;
+      const createRow = jest.fn(async (key: string) => (key === rowKey ? seededRowDoc : emptyRemoteRowDoc));
+      const remoteSeed = seedOf('remote-row-id');
+
+      mockResidentSources.add('database-id');
+      mockedPeekSeed.mockImplementation((key) => (key === rowKey ? seedOf('row-id') : null));
+      mockedSeedDoc.mockImplementation((key) => (key === rowKey ? seededRowDoc : null));
+      mockedOpenRowDoc.mockImplementation(async (key) => (key === rowKey ? seededRowDoc : emptyRemoteRowDoc));
+      const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+      try {
+        await flush();
+        const walk = mockedPrefetch.mock.calls[0][2];
+
+        // A row created since the snapshot: no seed, no data in the tab.
+        await act(async () => {
+          await requestRemoteRowEnsure();
+        });
+        expect(mockedOpenRowDoc).toHaveBeenCalledWith(remoteRowKey, undefined);
+        // Its data may come with the refresh: no full walk to recover it.
+        expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+        // It was read on its own; the seeded row was not.
+        expect(dashboardLoadStats.snapshot().rowsRead).toEqual({ 'database-id': 1 });
+
+        // The refresh commits the row's seed: it lands in the doc the row renders.
+        mockedPeekSeed.mockImplementation((key) => {
+          if (key === remoteRowKey) return remoteSeed;
+          return key === rowKey ? seedOf('row-id') : null;
+        });
+        act(() => {
+          walk?.onSeedsReady?.();
+        });
+        await flush();
+        expect(mockedOpenRowDoc).toHaveBeenCalledWith(remoteRowKey, remoteSeed);
+        expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+      } finally {
+        unmount();
+        doc.destroy();
+        seededRowDoc.destroy();
+        emptyRemoteRowDoc.destroy();
+      }
+    });
+
+    it('recovers a row the refresh left without data when the walk ends without a commit of its own', async () => {
+      const doc = createDatabaseDoc('database-id');
+      const seededRowDoc = createHydratedRowDoc('seeded-row');
+      const emptyRemoteRowDoc = new Y.Doc({ guid: 'remote-row-id' }) as YDoc;
+      const createRow = jest.fn(async (key: string) => (key === rowKey ? seededRowDoc : emptyRemoteRowDoc));
+      const refresh = createDeferred<void>();
+
+      mockResidentSources.add('database-id');
+      mockedPrefetch.mockImplementationOnce(() => refresh.promise as ReturnType<typeof prefetchDatabaseBlobDiff>);
+      mockedPeekSeed.mockImplementation((key) => (key === rowKey ? seedOf('row-id') : null));
+      mockedSeedDoc.mockImplementation((key) => (key === rowKey ? seededRowDoc : null));
+      mockedOpenRowDoc.mockImplementation(async (key) => (key === rowKey ? seededRowDoc : emptyRemoteRowDoc));
+      const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+      try {
+        await flush();
+        await act(async () => {
+          await requestRemoteRowEnsure();
+        });
+        // It waits for the refresh, which may bring it.
+        expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+
+        // The refresh answers without committing seeds (it reused a walk whose fence moved, say).
+        await act(async () => {
+          refresh.resolve();
+          await refresh.promise;
+        });
+        await flush();
+        // The row has neither data nor a seed: the one-shot full walk recovers it.
+        expect(mockedPrefetch).toHaveBeenCalledTimes(2);
+        expect(mockedPrefetch.mock.calls[1][2]?.forceFullSync).toBe(true);
+      } finally {
+        unmount();
+        doc.destroy();
+        seededRowDoc.destroy();
+        emptyRemoteRowDoc.destroy();
+      }
+    });
+  });
+
+  describe('the row bindings of a resident source', () => {
+    const rowKey = 'database-id_rows_row-id';
+
+    beforeEach(() => {
+      // The walk commits at once.
+      mockedPrefetch.mockImplementation(async (_workspaceId, _databaseId, options) => {
+        options?.onSeedsReady?.();
+      });
+    });
+
+    it('are adopted by a view mounted within the residency window: no new registration and no forced sync', async () => {
+      const doc = createDatabaseDoc('database-id');
+      const rowDoc = createHydratedRowDoc('row-id');
+      const createRow = jest.fn(async (_rowKey: string, _options?: { forceSync?: boolean }) => rowDoc);
+      const scheduleDeferredCleanup = jest.fn();
+      const props = { ...databaseProps(doc), createRow, scheduleDeferredCleanup };
+
+      // The row document stays in the tab's row cache while its binding lives.
+      mockedGetCachedRowDoc.mockImplementation((key) => (key === rowKey ? rowDoc : undefined));
+      const first = render(<Database {...props} />);
+
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        await requestEnsureRow();
+      });
+      await act(async () => {
+        await requestEnsureRow();
+      });
+      expect(createRow).toHaveBeenCalledWith(rowKey);
+      expect(dashboardLoadStats.snapshot().rowsBound).toEqual({ 'database-id': 1 });
+      const registrations = createRow.mock.calls.length;
+
+      // The view unmounts while the source is resident: its binding stays.
+      mockResidentSources.add('database-id');
+      first.unmount();
+      expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+
+      // A view of the same source mounts within the window.
+      const second = render(<Database {...props} />);
+      let ensured: YDoc | undefined;
+
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(2));
+      await act(async () => {
+        ensured = await requestEnsureRow();
+      });
+      await act(async () => {
+        await requestEnsureRow();
+      });
+      expect(ensured).toBe(rowDoc);
+      expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(rowDoc);
+      // 0 new registrations and 0 forced syncs: the row is not bound again.
+      expect(createRow).toHaveBeenCalledTimes(registrations);
+      expect(createRow.mock.calls.slice(registrations).filter(([, options]) => options?.forceSync)).toEqual([]);
+      expect(dashboardLoadStats.snapshot().rowsBound).toEqual({ 'database-id': 1 });
+
+      // It is released with the source, as before.
+      second.unmount();
+      expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+      releaseResidentSource('database-id');
+      expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+      expect(scheduleDeferredCleanup).toHaveBeenCalledWith('row-id');
+
+      // After the release, the next view registers the row again.
+      const third = render(<Database {...props} />);
+
+      await act(async () => {
+        await requestEnsureRow();
+      });
+      expect(createRow).toHaveBeenCalledTimes(registrations + 1);
+      expect(createRow).toHaveBeenLastCalledWith(rowKey);
+      expect(dashboardLoadStats.snapshot().rowsBound).toEqual({ 'database-id': 2 });
+      third.unmount();
+      expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(2);
+
+      doc.destroy();
+      rowDoc.destroy();
+    });
+
+    it('are kept while the walk that makes the source resident still writes its rows, and released if it never does', async () => {
+      const doc = createDatabaseDoc('database-id');
+      const rowDoc = createHydratedRowDoc('row-id');
+      const createRow = jest.fn(async () => rowDoc);
+      const scheduleDeferredCleanup = jest.fn();
+      const props = { ...databaseProps(doc), createRow, scheduleDeferredCleanup };
+
+      mockedGetCachedRowDoc.mockImplementation((key) => (key === rowKey ? rowDoc : undefined));
+      const first = render(<Database {...props} />);
+
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        await requestEnsureRow();
+      });
+      // Every row is in memory; the walk still writes them to storage.
+      mockHeldSources.add('database-id');
+      first.unmount();
+      expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+
+      // Another source becomes resident: this one still holds its rows.
+      act(() => {
+        mockResidencyListeners.forEach((listener) => listener());
+      });
+      expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+
+      // The walk ends without making the source resident (a restore retired it).
+      releaseResidentSource('database-id');
+      expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+      expect(scheduleDeferredCleanup).toHaveBeenCalledWith('row-id');
+
+      doc.destroy();
+      rowDoc.destroy();
+    });
+
+    it('keeps a binding still registering when the view unmounts, for the next view of the source', async () => {
+      const doc = createDatabaseDoc('database-id');
+      const rowDoc = createHydratedRowDoc('row-id');
+      const registering = createDeferred<YDoc>();
+      const createRow = jest.fn((_rowKey: string, _options?: { forceSync?: boolean }) => registering.promise);
+      const scheduleDeferredCleanup = jest.fn();
+      const props = { ...databaseProps(doc), createRow, scheduleDeferredCleanup };
+
+      mockedGetCachedRowDoc.mockImplementation((key) => (key === rowKey ? rowDoc : undefined));
+      mockResidentSources.add('database-id');
+      const first = render(<Database {...props} />);
+
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+      fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+      expect(createRow).toHaveBeenCalledTimes(1);
+      // The view unmounts before the row's realtime binding is registered.
+      first.unmount();
+      expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+
+      const second = render(<Database {...props} />);
+      let ensured: YDoc | undefined;
+      const ensure = requestEnsureRow();
+
+      await act(async () => {
+        registering.resolve(rowDoc);
+        ensured = await ensure;
+      });
+      await act(async () => {
+        await requestEnsureRow();
+      });
+      expect(ensured).toBe(rowDoc);
+      expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(rowDoc);
+      // The one registration, no forced sync.
+      expect(createRow).toHaveBeenCalledTimes(1);
+      expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+
+      second.unmount();
+      releaseResidentSource('database-id');
+      expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+      expect(scheduleDeferredCleanup).toHaveBeenCalledWith('row-id');
+
+      doc.destroy();
+      rowDoc.destroy();
+    });
+
+    it('releases a kept binding that was still registering once it completes, when the source goes first', async () => {
+      const doc = createDatabaseDoc('database-id');
+      const rowDoc = createHydratedRowDoc('row-id');
+      const registering = createDeferred<YDoc>();
+      const createRow = jest.fn(() => registering.promise);
+      const scheduleDeferredCleanup = jest.fn();
+
+      mockResidentSources.add('database-id');
+      const { unmount } = render(
+        <Database {...databaseProps(doc)} createRow={createRow} scheduleDeferredCleanup={scheduleDeferredCleanup} />
+      );
+
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+      fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+      unmount();
+      releaseResidentSource('database-id');
+      // Nothing to release before the registration completes.
+      expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+
+      await act(async () => {
+        registering.resolve(rowDoc);
+        await registering.promise;
+      });
+      expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+      expect(scheduleDeferredCleanup).toHaveBeenCalledWith('row-id');
+
+      doc.destroy();
+      rowDoc.destroy();
+    });
+
+    it('binds the row again when a version reset replaced its document while the binding was kept', async () => {
+      const doc = createDatabaseDoc('database-id');
+      const rowDoc = createHydratedRowDoc('row-id');
+      const replacementDoc = createHydratedRowDoc('row-id');
+      const createRow = jest.fn(async () => rowDoc);
+      const scheduleDeferredCleanup = jest.fn();
+      const props = { ...databaseProps(doc), createRow, scheduleDeferredCleanup };
+
+      mockedGetCachedRowDoc.mockImplementation((key) => (key === rowKey ? rowDoc : undefined));
+      const first = render(<Database {...props} />);
+
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        await requestEnsureRow();
+      });
+      mockResidentSources.add('database-id');
+      first.unmount();
+      expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+
+      // The tab now caches the replacement document of the row.
+      mockedGetCachedRowDoc.mockImplementation((key) => (key === rowKey ? replacementDoc : undefined));
+      createRow.mockResolvedValue(replacementDoc);
+      const second = render(<Database {...props} />);
+
+      await act(async () => {
+        await requestEnsureRow();
+      });
+      // The stale binding is released and the row registered on its replacement.
+      expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+      expect(createRow).toHaveBeenCalledTimes(2);
+      expect(createRow).toHaveBeenLastCalledWith(rowKey);
+      expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(replacementDoc);
+
+      second.unmount();
+      doc.destroy();
+      rowDoc.destroy();
+      replacementDoc.destroy();
     });
   });
 

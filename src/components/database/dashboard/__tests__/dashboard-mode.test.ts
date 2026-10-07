@@ -3,11 +3,13 @@ import { join } from 'path';
 
 import {
   canEnterDashboardEdit,
+  DASHBOARD_EDIT_ONLY_ACTIONS,
   DASHBOARD_EDIT_ONLY_UPDATE_KEYS,
   DashboardEditPreference,
   DashboardModeEvent,
   reduceDashboardEditPreference,
   resolveDashboardEditing,
+  refusesEditOnlyAction,
   touchesEditOnlyKeys,
 } from '../dashboard-mode';
 
@@ -79,9 +81,26 @@ describe('R-MODE (mode-transitions.json)', () => {
 });
 
 describe('touchesEditOnlyKeys', () => {
-  it('lists the Edit-only update keys', () => {
-    expect(DASHBOARD_EDIT_ONLY_UPDATE_KEYS).toEqual(['rows', 'showWidgetTitles', 'showIconsInHeading']);
+  it('lists the Edit-only update keys and view writes', () => {
+    // WP05b / WP06: the add flow's view writes, the owned-view duplicate and the widget rename joined the list.
+    expect(DASHBOARD_EDIT_ONLY_UPDATE_KEYS).toEqual([
+      'rows',
+      'showWidgetTitles',
+      'showIconsInHeading',
+      'addWidgetView',
+      'duplicateWidget',
+      'renameWidgetView',
+    ]);
+    expect(DASHBOARD_EDIT_ONLY_ACTIONS).toEqual(['addWidgetView', 'duplicateWidget', 'renameWidgetView']);
   });
+
+  it.each(DASHBOARD_EDIT_ONLY_ACTIONS.map((action) => [action] as const))(
+    'refuses the %s view write in a mobile context only',
+    (action) => {
+      expect(refusesEditOnlyAction(action, { mobileContext: true })).toBe(true);
+      expect(refusesEditOnlyAction(action, { mobileContext: false })).toBe(false);
+    }
+  );
 
   it('flags rows and display-setting writes', () => {
     expect(touchesEditOnlyKeys({ rows: [] })).toBe(true);

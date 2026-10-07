@@ -7,21 +7,25 @@ import { TextFilterCondition } from '@/application/database-yjs/fields/text/text
 import { YDoc } from '@/application/types';
 import type {
   DashboardContextValue,
-  DashboardLayoutContextValue,
   DashboardFiltersContextValue,
+  DashboardLayoutContextValue,
+  DashboardPrivateSummary,
   DashboardSourcesContextValue,
 } from '@/components/database/dashboard/DashboardContext';
 
 import { GlobalFilterBar } from '../GlobalFilterBar';
 import { GlobalFilterButton } from '../GlobalFilterButton';
+import { getPendingGlobalFilterEditor, requestGlobalFilterEditor } from '../pendingEditorStore';
+import { globalFilterSourceLines } from '../useGlobalFilterLabel';
 
-import { createSourceDoc, option, setFieldOptions } from './source-doc.fixture';
+import { MOCK_TRANSLATE } from './global-filter-test-context';
+import { createSourceDoc, option, setFieldOptions, source } from './source-doc.fixture';
 
-/** The four dashboard contexts, served from one object. */
+/** The dashboard contexts, served from one object. */
 type MockDashboard = DashboardContextValue &
   DashboardLayoutContextValue &
   DashboardFiltersContextValue &
-  DashboardSourcesContextValue;
+  DashboardSourcesContextValue & { summary: DashboardPrivateSummary };
 
 let mockContext: MockDashboard | null = null;
 
@@ -37,7 +41,7 @@ jest.mock('@/components/database/dashboard/DashboardContext', () => {
     useDashboardFilters: required,
     useDashboardSources: required,
     useDashboardContextOptional: () => mockContext,
-    useDashboardLocalWidgetChanges: () => ({ unsaved: 0, savable: 0 }),
+    useDashboardPrivateSummary: () => mockContext?.summary,
   };
 });
 
@@ -108,9 +112,16 @@ const nameFilter: DashboardGlobalFilter = {
   targets: { 'db-host': 'host-name' },
 };
 
+const CLEAN: DashboardPrivateSummary = {
+  hasChanges: false,
+  canSave: false,
+  dirtyGlobalCount: 0,
+  dirtyWidgetCount: 0,
+  savableWidgetCount: 0,
+};
+
 function createContext(overrides: Partial<MockDashboard> = {}): MockDashboard {
   const globalFilters = overrides.globalFilters ?? [statusFilter, nameFilter];
-  const localGlobalFilters = overrides.localGlobalFilters ?? null;
 
   return {
     dashboardViewId: 'dashboard-view',
@@ -118,11 +129,17 @@ function createContext(overrides: Partial<MockDashboard> = {}): MockDashboard {
     hostViewIds: ['view-host', 'dashboard-view'],
     rows,
     showWidgetTitles: true,
+    showIconsInHeading: false,
     globalFilters,
-    effectiveGlobalFilters: localGlobalFilters ?? globalFilters,
-    localGlobalFilters,
-    setLocalGlobalFilters: jest.fn(),
+    effectiveGlobalFilters: overrides.effectiveGlobalFilters ?? globalFilters,
+    privateGlobalValues: {},
+    dirtyGlobalFilterIds: new Set(),
+    setPrivateGlobalValue: jest.fn(),
+    saveForEveryone: jest.fn(() => null),
+    resetPrivateChanges: jest.fn(),
+    getWidgetPrivateParts: jest.fn(),
     getViewOverlay: jest.fn(),
+    setViewOverlayWritable: jest.fn(),
     resetViewOverlays: jest.fn(),
     commitViewOverlays: jest.fn(),
     canEdit: true,
@@ -137,6 +154,7 @@ function createContext(overrides: Partial<MockDashboard> = {}): MockDashboard {
     registerSourceDoc: jest.fn(),
     sourceNames: { 'db-host': 'Tasks', 'db-other': 'Projects' },
     registerSourceName: jest.fn(),
+    summary: CLEAN,
     ...overrides,
   };
 }
@@ -152,42 +170,48 @@ describe('GlobalFilterBar', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('is hidden without filters unless the dashboard is being edited', () => {
+  it('is hidden without filters, in View and Edit mode, until something is dirty', () => {
     mockContext = createContext({ globalFilters: [] });
     const { rerender } = render(<GlobalFilterBar />);
 
     expect(screen.queryByTestId('dashboard-global-filter-bar')).toBeNull();
 
-    mockContext = { ...mockContext, isEditing: true };
     // The mocked context hooks are not reactive and the bar is memoized: remount it.
+    mockContext = { ...mockContext, isEditing: true };
     rerender(<GlobalFilterBar key='editing' />);
+    expect(screen.queryByTestId('dashboard-global-filter-bar')).toBeNull();
+
+    mockContext = { ...mockContext, isEditing: false, summary: { ...CLEAN, hasChanges: true, dirtyWidgetCount: 1 } };
+    rerender(<GlobalFilterBar key='dirty' />);
     expect(screen.getByTestId('dashboard-global-filter-bar')).toBeTruthy();
-    expect(screen.getByTestId('dashboard-global-filter-bar-add').textContent).toBe('Add global filter');
   });
 
-  it('renders one chip per filter with its summary and source count', () => {
+  it('renders one pill per filter with its summary, without the default operator', () => {
     mockContext = createContext();
     render(<GlobalFilterBar />);
 
     const chips = screen.getAllByTestId('dashboard-global-filter-chip');
 
     expect(chips.map((chip) => chip.getAttribute('data-filter-id'))).toEqual(['gf:status', 'gf:name']);
-    expect(within(chips[0]).getByTestId('dashboard-global-filter-chip-label').textContent).toBe(
-      'Status: grid.selectOptionFilter.is Done'
-    );
+    expect(within(chips[0]).getByTestId('dashboard-global-filter-chip-label').textContent).toBe('Status: Done');
     expect(chips[0].getAttribute('data-active')).toBe('true');
-    expect(within(chips[0]).getByTestId('dashboard-global-filter-chip-count').textContent).toBe('2');
-    expect(within(chips[0]).getByTestId('dashboard-global-filter-chip-count').getAttribute('aria-label')).toBe(
-      '2 sources'
-    );
+    expect(chips[0].getAttribute('data-parity-id')).toBe('dash-global-filter-pill');
     // A text filter without a value does not narrow anything yet.
     expect(within(chips[1]).getByTestId('dashboard-global-filter-chip-label').textContent).toBe('Name');
     expect(chips[1].getAttribute('data-active')).toBe('false');
-    expect(within(chips[1]).getByTestId('dashboard-global-filter-chip-count').getAttribute('aria-label')).toBe(
-      '1 source'
-    );
     expect(screen.queryByTestId('dashboard-global-filter-local-badge')).toBeNull();
-    expect(screen.queryByTestId('dashboard-global-filter-bar-add')).toBeNull();
+  });
+
+  it('shows the source count badge only from 2 sources', () => {
+    mockContext = createContext();
+    render(<GlobalFilterBar />);
+
+    const [status, name] = screen.getAllByTestId('dashboard-global-filter-chip');
+
+    expect(within(status).getByTestId('dashboard-global-filter-chip-count').textContent).toBe('2');
+    expect(status.getAttribute('data-source-count')).toBe('2');
+    expect(within(name).queryByTestId('dashboard-global-filter-chip-count')).toBeNull();
+    expect(name.getAttribute('data-source-count')).toBe('1');
   });
 
   it('refreshes option names when a source property changes', () => {
@@ -202,66 +226,171 @@ describe('GlobalFilterBar', () => {
         { ...done, name: 'Finished' },
       ]);
     });
-    expect(screen.getAllByTestId('dashboard-global-filter-chip-label')[0].textContent).toBe(
-      'Status: grid.selectOptionFilter.is Finished'
-    );
+    // Merged by name: the other source still calls it Done.
+    expect(screen.getAllByTestId('dashboard-global-filter-chip-label')[0].textContent).toBe('Status: Finished, Done');
   });
 
-  it('lets writers save or reset local filter changes', () => {
-    const local = [{ ...statusFilter, content: 'o-todo' }];
-
-    mockContext = createContext({ localGlobalFilters: local });
+  it('a dirty chip shows the dot', () => {
+    mockContext = createContext({
+      dirtyGlobalFilterIds: new Set(['gf:status']),
+      summary: { ...CLEAN, hasChanges: true, canSave: true, dirtyGlobalCount: 1 },
+    });
     render(<GlobalFilterBar />);
 
-    expect(screen.getByTestId('dashboard-global-filter-local-badge').textContent).toBe(
-      'Only you see these filter changes'
-    );
-    expect(screen.getByTestId('dashboard-global-filter-chip-label').textContent).toBe(
-      'Status: grid.selectOptionFilter.is Todo'
-    );
+    const [status, name] = screen.getAllByTestId('dashboard-global-filter-chip');
 
-    fireEvent.click(screen.getByTestId('dashboard-global-filter-save-for-everybody'));
-    expect(mockContext.commitViewOverlays).toHaveBeenCalledWith(local);
-    expect(mockContext.setLocalGlobalFilters).toHaveBeenCalledWith(null);
+    expect(within(status).getByTestId('dashboard-global-filter-chip-dot')).toBeTruthy();
+    expect(status.getAttribute('data-unsaved')).toBe('true');
+    expect(within(name).queryByTestId('dashboard-global-filter-chip-dot')).toBeNull();
+  });
 
+  it('the bar renders for widget-only changes with controls only', () => {
+    mockContext = createContext({
+      globalFilters: [],
+      canEdit: false,
+      summary: { ...CLEAN, hasChanges: true, dirtyWidgetCount: 1 },
+    });
+    render(<GlobalFilterBar />);
+
+    expect(screen.queryAllByTestId('dashboard-global-filter-chip')).toHaveLength(0);
+    expect(screen.queryByTestId('dashboard-global-filter-bar-add')).toBeNull();
+    expect(screen.getByTestId('dashboard-private-controls')).toBeTruthy();
+  });
+
+  it('lets writers save for everyone or reset', () => {
+    mockContext = createContext({ summary: { ...CLEAN, hasChanges: true, canSave: true, dirtyGlobalCount: 1 } });
+    render(<GlobalFilterBar />);
+
+    const save = screen.getByTestId('dashboard-global-filter-save-for-everyone');
+
+    expect(save.textContent).toBe('Save for everyone');
+    fireEvent.click(save);
+    expect(mockContext.saveForEveryone).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByTestId('dashboard-global-filter-reset'));
-    expect(mockContext.setLocalGlobalFilters).toHaveBeenCalledTimes(2);
-    expect(mockContext.commitViewOverlays).toHaveBeenCalledTimes(1);
+    expect(mockContext.resetPrivateChanges).toHaveBeenCalledTimes(1);
   });
 
   it('only offers a reset to readers', () => {
-    mockContext = createContext({ canEdit: false, localGlobalFilters: [] });
+    mockContext = createContext({ canEdit: false, summary: { ...CLEAN, hasChanges: true, dirtyGlobalCount: 1 } });
     render(<GlobalFilterBar />);
 
-    expect(screen.getByTestId('dashboard-global-filter-bar')).toBeTruthy();
-    expect(screen.queryAllByTestId('dashboard-global-filter-chip')).toHaveLength(0);
     expect(screen.getByTestId('dashboard-global-filter-reset')).toBeTruthy();
-    expect(screen.queryByTestId('dashboard-global-filter-save-for-everybody')).toBeNull();
-
+    expect(screen.queryByTestId('dashboard-global-filter-save-for-everyone')).toBeNull();
     fireEvent.click(screen.getByTestId('dashboard-global-filter-reset'));
-    expect(mockContext.setLocalGlobalFilters).toHaveBeenCalledWith(null);
+    expect(mockContext.resetPrivateChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers a grey "+ Filter" to writers in both modes, never to readers', () => {
+    mockContext = createContext();
+    const { rerender } = render(<GlobalFilterBar />);
+    const add = screen.getByTestId('dashboard-global-filter-bar-add');
+
+    expect(add.textContent).toBe('Filter');
+    expect(add.getAttribute('data-parity-id')).toBe('dash-global-filter-add');
+    expect(add.className).toContain('text-text-secondary');
+
+    mockContext = { ...mockContext, isEditing: true };
+    rerender(<GlobalFilterBar key='editing' />);
+    expect(screen.getByTestId('dashboard-global-filter-bar-add')).toBeTruthy();
+
+    mockContext = { ...mockContext, isEditing: false, canEdit: false };
+    rerender(<GlobalFilterBar key='reader' />);
+    expect(screen.queryByTestId('dashboard-global-filter-bar-add')).toBeNull();
+  });
+
+  it('is left-aligned', () => {
+    mockContext = createContext();
+    render(<GlobalFilterBar />);
+
+    expect(screen.getByTestId('dashboard-global-filter-bar').className).toContain('justify-start');
   });
 });
 
 describe('GlobalFilterButton', () => {
-  it('shows no count on the button; the menu it opens lists every filter', async () => {
+  it('colours the icon while a filter is active and shows no count', () => {
     mockContext = createContext();
-    render(<GlobalFilterButton />);
+    const { rerender } = render(<GlobalFilterButton />);
     const button = screen.getByTestId('dashboard-global-filter-button');
 
-    // No test-only attribute and no context read for it: the count is what the menu lists.
-    expect(button.hasAttribute('data-count')).toBe(false);
-    expect(screen.queryByTestId('dashboard-global-filter-button-badge')).toBeNull();
-    fireEvent.click(button);
-    expect(await screen.findAllByTestId('dashboard-global-filter-item')).toHaveLength(2);
-    expect(button.getAttribute('data-state')).toBe('open');
-    fireEvent.keyDown(screen.getByTestId('dashboard-global-filter-menu'), { key: 'Escape' });
+    expect(button.getAttribute('data-count')).toBe('1');
+    expect(button.className).toContain('text-dash-accent');
     expect(button.textContent).toBe('');
-    // The empty slot of the unsaved-changes dot (WP07), out of the flow so the glyph stays centred.
-    expect(button.querySelector('[data-slot="unsaved-dot"]')?.className).toContain('absolute');
-    // Its own open state, not the tooltip's, so the open fill applies.
-    expect(button.getAttribute('data-state')).toBe('closed');
-    expect(button.className).toContain('data-[state=open]:bg-dash-hover-fill');
+    expect(screen.queryByTestId('dashboard-global-filter-button-badge')).toBeNull();
+
+    mockContext = createContext({ globalFilters: [nameFilter] });
+    rerender(<GlobalFilterButton key='inactive' />);
+    expect(screen.getByTestId('dashboard-global-filter-button').className).toContain('text-dash-tool-icon');
+  });
+
+  it('counts a filter as active through its usable mappings only, as the pill does', () => {
+    // Its only mapping points at a property Tasks no longer has: the evaluator skips the filter.
+    const orphan: DashboardGlobalFilter = { ...statusFilter, targets: { 'db-host': 'host-deleted' } };
+
+    mockContext = createContext({ globalFilters: [orphan] });
+    const { rerender } = render(
+      <>
+        <GlobalFilterBar />
+        <GlobalFilterButton />
+      </>
+    );
+    const button = () => screen.getByTestId('dashboard-global-filter-button');
+    const pill = () => screen.getByTestId('dashboard-global-filter-chip');
+
+    expect(button().getAttribute('data-active')).toBe('false');
+    expect(button().getAttribute('data-count')).toBe('0');
+    expect(button().className).toContain('text-dash-tool-icon');
+    expect(pill().getAttribute('data-active')).toBe('false');
+    expect(pill().getAttribute('data-source-count')).toBe('0');
+
+    // A source that is not loaded yet is trusted, on the button as on the pill.
+    mockContext = createContext({ globalFilters: [{ ...statusFilter, targets: { 'db-later': 'later-status' } }] });
+    rerender(
+      <>
+        <GlobalFilterBar key='trusted-bar' />
+        <GlobalFilterButton key='trusted-button' />
+      </>
+    );
+    expect(button().getAttribute('data-active')).toBe('true');
+    expect(button().getAttribute('data-count')).toBe('1');
+    expect(pill().getAttribute('data-active')).toBe('true');
+  });
+
+  it('lists one tooltip line per usable source, told apart by their database when they read the same', () => {
+    const lines = globalFilterSourceLines(
+      { ...statusFilter, targets: { 'db-host': 'host-status', 'db-other': 'other-status', 'db-gone': 'x' } },
+      [
+        source('db-host', 'Tasks', [{ id: 'host-status', name: 'Status', type: FieldType.SingleSelect }]),
+        source('db-other', 'Tasks', [{ id: 'other-status', name: 'Status', type: FieldType.SingleSelect }]),
+        // The property was deleted: the mapping filters nothing and gets no line.
+        source('db-gone', 'Archive', []),
+      ],
+      MOCK_TRANSLATE
+    );
+
+    expect(lines).toEqual([
+      { databaseId: 'db-host', text: 'Status in Tasks' },
+      { databaseId: 'db-other', text: 'Status in Tasks' },
+    ]);
+  });
+
+  it('the button shows a dot instead of a count', () => {
+    mockContext = createContext({ dirtyGlobalFilterIds: new Set(['gf:status']) });
+    render(<GlobalFilterButton />);
+    const dot = screen.getByTestId('dashboard-global-filter-button-dot');
+
+    expect(dot.getAttribute('data-slot')).toBe('unsaved-dot');
+    expect(dot.getAttribute('data-parity-id')).toBe('dash-toolbar-filter__dot');
+    expect(dot.className).toContain('bg-dash-unsaved-dot');
+  });
+
+  it('hides the button for readers without filters', () => {
+    mockContext = createContext({ canEdit: false, globalFilters: [] });
+    const { container, rerender } = render(<GlobalFilterButton />);
+
+    expect(container.innerHTML).toBe('');
+    mockContext = createContext({ canEdit: false });
+    rerender(<GlobalFilterButton key='with-filters' />);
+    expect(screen.getByTestId('dashboard-global-filter-button')).toBeTruthy();
   });
 
   it('renders nothing outside a dashboard', () => {
@@ -269,10 +398,29 @@ describe('GlobalFilterButton', () => {
 
     expect(container.innerHTML).toBe('');
   });
+
+  // "Filter multiple sources" adds the first filter while the menu is open and
+  // goes on to the builder: the popover must outlive the 0 → 1 filter change.
+  it('keeps its popover open when the first filter is added from it', async () => {
+    mockContext = createContext({ globalFilters: [] });
+    const { rerender } = render(<GlobalFilterButton />);
+    const button = () => screen.getByTestId('dashboard-global-filter-button');
+
+    fireEvent.click(button());
+    await screen.findByTestId('dashboard-global-filter-menu');
+    expect(button().getAttribute('data-state')).toBe('open');
+
+    mockContext = createContext({ globalFilters: [nameFilter] });
+    rerender(<GlobalFilterButton />);
+
+    expect(screen.getByTestId('dashboard-global-filter-menu')).toBeTruthy();
+    expect(button().getAttribute('data-state')).toBe('open');
+    expect(button().getAttribute('data-count')).toBe('0');
+  });
 });
 
 describe('GlobalFilterPopover (one popover for every entry point)', () => {
-  const popover = () => document.querySelector('[data-parity-id="dash-global-filter-popover"]');
+  const popover = () => document.querySelector<HTMLElement>('[data-parity-id="dash-global-filter-popover"]');
 
   async function openFrom(trigger: HTMLElement) {
     fireEvent.click(trigger);
@@ -286,7 +434,21 @@ describe('GlobalFilterPopover (one popover for every entry point)', () => {
     expect(popover()).toBeNull();
   }
 
-  it("opens the same popover from a chip, the bar's add button and the toolbar button", async () => {
+  it('opens the requested pill on the next frame after a pick in the menu', async () => {
+    mockContext = createContext({ isEditing: true });
+    render(<GlobalFilterBar />);
+    expect(screen.queryByTestId('dashboard-global-filter-pill-editor')).toBeNull();
+
+    act(() => requestGlobalFilterEditor('gf:name'));
+
+    // Consuming the request must not cancel the frame that opens the pill.
+    const editor = await screen.findByTestId('dashboard-global-filter-pill-editor');
+
+    expect(editor.getAttribute('data-filter-id')).toBe('gf:name');
+    expect(getPendingGlobalFilterEditor()).toBeNull();
+  });
+
+  it("opens the same 290px popover from a pill, the bar's + Filter and the toolbar button", async () => {
     mockContext = createContext({ isEditing: true });
     render(
       <>
@@ -295,29 +457,27 @@ describe('GlobalFilterPopover (one popover for every entry point)', () => {
       </>
     );
 
-    // A chip opens straight on its filter's editor.
+    // A pill opens straight on its filter's editor.
     const chip = await openFrom(screen.getAllByTestId('dashboard-global-filter-chip')[0]);
 
-    expect(chip.menu.getAttribute('data-screen')).toBe('edit');
-    expect(screen.getByTestId('dashboard-global-filter-editor').getAttribute('data-filter-id')).toBe('gf:status');
+    expect(chip.menu.getAttribute('data-screen')).toBe('pill');
+    expect(screen.getByTestId('dashboard-global-filter-pill-editor').getAttribute('data-filter-id')).toBe('gf:status');
+    expect(chip.content.style.width).toBe('290px');
     const className = chip.content.className;
 
-    // The width both clients ship today; it changes in this one place with WP08.
-    expect(className).toContain('w-[360px]');
     close(chip.menu);
 
-    // "Add global filter" opens on the property-type picker.
+    // "+ Filter" and the toolbar button open on the property picker.
     const add = await openFrom(screen.getByTestId('dashboard-global-filter-bar-add'));
 
-    expect(add.menu.getAttribute('data-screen')).toBe('pick');
+    expect(add.menu.getAttribute('data-screen')).toBe('picker');
     expect(add.content.className).toBe(className);
     close(add.menu);
 
-    // The toolbar button opens on the filter list.
     const button = await openFrom(screen.getByTestId('dashboard-global-filter-button'));
 
-    expect(button.menu.getAttribute('data-screen')).toBe('list');
-    expect(button.content.className).toBe(className);
+    expect(button.menu.getAttribute('data-screen')).toBe('picker');
+    expect(button.content.style.width).toBe('290px');
     close(button.menu);
   });
 });

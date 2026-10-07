@@ -1,14 +1,20 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ReactNode, useState } from 'react';
 
 import { DASHBOARD_MAX_WIDGETS, DashboardRow, DashboardWidget } from '@/application/database-yjs/dashboard.type';
 
 import { DashboardContext, DashboardLayoutContext, DashboardLayoutContextValue } from '../DashboardContext';
+import { DashboardUiContext, DashboardUiContextValue } from '../DashboardUiContext';
 import { NO_WIDGET_MOVES, WidgetMoveTargets } from '../widget-moves';
 import { WidgetActions, WidgetContext, WidgetContextValue } from '../WidgetContext';
 import { buildWidgetMenuEntries, WidgetMenu } from '../WidgetMenu';
 
-import { createDashboardContextValue, createWidgetActions, createWidgetContextValue } from './dashboardTestHarness';
+import {
+  createDashboardContextValue,
+  createDashboardUiValue,
+  createWidgetActions,
+  createWidgetContextValue,
+} from './dashboardTestHarness';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -19,8 +25,8 @@ jest.mock('react-i18next', () => ({
 const ALL_MOVES: WidgetMoveTargets = {
   left: { type: 'existing_row', rowId: 'r1', index: 0 },
   right: { type: 'existing_row', rowId: 'r1', index: 2 },
-  up: { type: 'new_row', rowIndex: 0 },
-  down: { type: 'new_row', rowIndex: 1 },
+  rowAbove: { type: 'new_row', rowIndex: 0 },
+  rowBelow: { type: 'new_row', rowIndex: 1 },
 };
 
 function createActions(overrides: Partial<WidgetActions> = {}): WidgetActions {
@@ -42,24 +48,27 @@ const FULL_ROWS = Array.from({ length: DASHBOARD_MAX_WIDGETS / 4 }, (_, rowIndex
   )
 );
 
-function createDashboardContext() {
-  return createDashboardContextValue({ dashboardViewId: 'dashboard', isEditing: true });
-}
-
 function createDashboardLayout(rows: DashboardRow[]): DashboardLayoutContextValue {
   return { rows, hostViewIds: [], showWidgetTitles: true, showIconsInHeading: false };
 }
 
 /** `w1` in Edit mode. */
 function createContext(overrides: Partial<WidgetContextValue> = {}): WidgetContextValue {
-  return createWidgetContextValue({ editing: true, actions: createActions(), ...overrides });
+  return createWidgetContextValue({ editing: true, isEditing: true, actions: createActions(), ...overrides });
 }
 
-function withContext(value: WidgetContextValue, children: ReactNode, rows: DashboardRow[] = MOVABLE_ROWS) {
+function withContext(
+  value: WidgetContextValue,
+  children: ReactNode,
+  rows: DashboardRow[] = MOVABLE_ROWS,
+  ui: DashboardUiContextValue = createDashboardUiValue()
+) {
   return (
-    <DashboardContext.Provider value={createDashboardContext()}>
+    <DashboardContext.Provider value={createDashboardContextValue({ dashboardViewId: 'dashboard', isEditing: true })}>
       <DashboardLayoutContext.Provider value={createDashboardLayout(rows)}>
-        <WidgetContext.Provider value={value}>{children}</WidgetContext.Provider>
+        <DashboardUiContext.Provider value={ui}>
+          <WidgetContext.Provider value={value}>{children}</WidgetContext.Provider>
+        </DashboardUiContext.Provider>
       </DashboardLayoutContext.Provider>
     </DashboardContext.Provider>
   );
@@ -84,114 +93,117 @@ function menuItemIds() {
 }
 
 describe('buildWidgetMenuEntries', () => {
-  it('offers only "Open view" outside Edit mode', () => {
+  it('offers only "View data source" outside Edit mode', () => {
     expect(
       buildWidgetMenuEntries({ editing: false, canDuplicate: true, moveTargets: ALL_MOVES }).map((entry) => entry.id)
-    ).toEqual(['open']);
+    ).toEqual(['view-data-source']);
   });
 
-  it('lists every layout action in Edit mode', () => {
+  it('follows Notion in Edit mode', () => {
     const entries = buildWidgetMenuEntries({ editing: true, canDuplicate: true, moveTargets: ALL_MOVES });
 
     expect(entries.map((entry) => entry.id)).toEqual([
-      'open',
-      'change-view',
-      'duplicate',
+      'edit-view',
       'move-left',
       'move-right',
-      'move-up',
-      'move-down',
+      'move-to-row',
+      'duplicate',
       'delete',
     ]);
     expect(entries.every((entry) => !entry.disabled)).toBe(true);
-    expect(entries.map((entry) => entry.group)).toEqual([
-      'navigate',
-      'edit',
-      'edit',
-      'move',
-      'move',
-      'move',
-      'move',
-      'danger',
+    expect(entries.map((entry) => entry.group)).toEqual(['settings', 'move', 'move', 'move', 'manage', 'manage']);
+    expect(entries[3].children?.map((child) => [child.id, child.disabled])).toEqual([
+      ['create-row-above', false],
+      ['create-row-below', false],
     ]);
   });
 
-  it('keeps Duplicate selectable at the widget limit so it can explain the limit', () => {
-    const duplicate = buildWidgetMenuEntries({ editing: true, canDuplicate: false, moveTargets: ALL_MOVES }).find(
-      (entry) => entry.id === 'duplicate'
+  it('omits Move left and Move right at the row ends', () => {
+    const ids = (moveTargets: WidgetMoveTargets) =>
+      buildWidgetMenuEntries({ editing: true, canDuplicate: true, moveTargets }).map((entry) => entry.id);
+
+    expect(ids({ ...ALL_MOVES, left: null })).toEqual(['edit-view', 'move-right', 'move-to-row', 'duplicate', 'delete']);
+    expect(ids({ ...ALL_MOVES, right: null })).toEqual(['edit-view', 'move-left', 'move-to-row', 'duplicate', 'delete']);
+  });
+
+  it('disables both new-row entries of a widget alone in its row', () => {
+    const moveToRow = buildWidgetMenuEntries({ editing: true, canDuplicate: true, moveTargets: NO_WIDGET_MOVES }).find(
+      (entry) => entry.id === 'move-to-row'
     );
 
-    expect(duplicate).toMatchObject({ disabled: false, limitReached: true });
-    expect(
-      buildWidgetMenuEntries({ editing: true, canDuplicate: true, moveTargets: ALL_MOVES }).find(
-        (entry) => entry.id === 'duplicate'
-      )?.limitReached
-    ).toBe(false);
-  });
-
-  it('disables each impossible move', () => {
-    const entries = buildWidgetMenuEntries({
-      editing: true,
-      canDuplicate: true,
-      moveTargets: { ...NO_WIDGET_MOVES, right: ALL_MOVES.right, down: ALL_MOVES.down },
-    });
-    const disabled = Object.fromEntries(entries.map((entry) => [entry.id, entry.disabled]));
-
-    expect(disabled).toMatchObject({
-      'move-left': true,
-      'move-right': false,
-      'move-up': true,
-      'move-down': false,
-      delete: false,
-      'change-view': false,
-    });
-  });
-
-  it('uses the contract translation keys', () => {
-    expect(
-      buildWidgetMenuEntries({ editing: true, canDuplicate: true, moveTargets: ALL_MOVES }).map((entry) => [
-        entry.labelKey,
-        entry.defaultLabel,
-      ])
-    ).toEqual([
-      ['dashboard.widget.open', 'Open view'],
-      ['dashboard.widget.changeView', 'Change view'],
-      ['dashboard.widget.duplicate', 'Duplicate'],
-      ['dashboard.widget.moveLeft', 'Move left'],
-      ['dashboard.widget.moveRight', 'Move right'],
-      ['dashboard.widget.moveUp', 'Move up'],
-      ['dashboard.widget.moveDown', 'Move down'],
-      ['dashboard.widget.delete', 'Delete'],
+    expect(moveToRow?.disabled).toBe(false);
+    expect(moveToRow?.children?.map((child) => [child.id, child.disabled])).toEqual([
+      ['create-row-above', true],
+      ['create-row-below', true],
     ]);
+  });
+
+  it('disables Duplicate on a full dashboard and says why', () => {
+    const duplicate = (canDuplicate: boolean) =>
+      buildWidgetMenuEntries({ editing: true, canDuplicate, moveTargets: ALL_MOVES }).find(
+        (entry) => entry.id === 'duplicate'
+      );
+
+    expect(duplicate(false)).toEqual({ id: 'duplicate', group: 'manage', disabled: true, disabledReason: 'dashboard_full' });
+    expect(duplicate(true)).toEqual({ id: 'duplicate', group: 'manage', disabled: false });
   });
 });
 
 describe('WidgetMenu', () => {
-  it('renders the Edit-mode entries with their test ids', () => {
+  it('renders the Edit-mode entries with their test ids and the contract labels', () => {
     render(withContext(createContext(), <ControlledMenu />));
 
     expect(menuItemIds()).toEqual([
-      'dashboard-widget-menu-open',
-      'dashboard-widget-menu-change-view',
-      'dashboard-widget-menu-duplicate',
+      'dashboard-widget-menu-edit-view',
       'dashboard-widget-menu-move-left',
       'dashboard-widget-menu-move-right',
-      'dashboard-widget-menu-move-up',
-      'dashboard-widget-menu-move-down',
+      'dashboard-widget-menu-move-to-row',
+      'dashboard-widget-menu-duplicate',
       'dashboard-widget-menu-delete',
     ]);
-    expect(screen.getByTestId('dashboard-widget-menu-delete').textContent).toBe('Delete');
+    expect(menuItemIds().map((id) => screen.getByTestId(id as string).textContent)).toEqual([
+      'Edit view',
+      'Move left',
+      'Move right',
+      'Move to row',
+      'Duplicate',
+      'Delete',
+    ]);
+    // Two separators: settings | move | manage.
+    expect(within(screen.getByTestId('dashboard-widget-menu')).getAllByRole('separator')).toHaveLength(2);
+  });
+
+  it('has Notion chrome: 220 wide, radius 10, padding 4, neutral Delete and the parity ids', () => {
+    render(withContext(createContext(), <ControlledMenu />));
+    const menu = screen.getByTestId('dashboard-widget-menu');
+
+    expect(menu.className).toContain('w-[220px]');
+    expect(menu.className).toContain('!min-w-[220px]');
+    expect(menu.className).toContain('!rounded-[10px]');
+    expect(menu.className).toContain('!p-1');
+    expect(menu.getAttribute('data-parity-id')).toBe('dash-widget-menu');
+
+    const remove = screen.getByTestId('dashboard-widget-menu-delete');
+
+    expect(remove.getAttribute('data-variant')).toBe('default');
+    expect(remove.className).not.toContain('text-text-error');
+    expect(remove.className).toContain('!h-7');
+    expect(remove.getAttribute('data-parity-id')).toBe('dash-widget-menu-item-delete');
+    expect(remove.querySelector('[data-parity-id="dash-widget-menu-item-delete__icon"]')).not.toBeNull();
+    expect(remove.querySelector('[data-parity-id="dash-widget-menu-item-delete__label"]')?.textContent).toBe('Delete');
+    expect(
+      screen
+        .getByTestId('dashboard-widget-menu-move-to-row')
+        .querySelector('[data-parity-id="dash-widget-menu-item-move-to-row__chevron"]')
+    ).not.toBeNull();
   });
 
   it.each([
-    ['dashboard-widget-menu-open', 'open', undefined],
-    ['dashboard-widget-menu-change-view', 'changeView', undefined],
+    ['dashboard-widget-menu-edit-view', 'openSettings', undefined],
     ['dashboard-widget-menu-duplicate', 'duplicate', undefined],
     ['dashboard-widget-menu-delete', 'remove', undefined],
     ['dashboard-widget-menu-move-left', 'move', 'left'],
     ['dashboard-widget-menu-move-right', 'move', 'right'],
-    ['dashboard-widget-menu-move-up', 'move', 'up'],
-    ['dashboard-widget-menu-move-down', 'move', 'down'],
   ] as const)('%s runs its action and closes the menu', async (testId, action, argument) => {
     const actions = createActions();
 
@@ -203,13 +215,73 @@ describe('WidgetMenu', () => {
     await waitFor(() => expect(screen.queryByTestId('dashboard-widget-menu')).toBeNull());
   });
 
-  it('ignores disabled entries', () => {
+  it('opens Move to row on hover and creates a row below from it', async () => {
+    const actions = createActions();
+    // jsdom has no PointerEvent, and the submenu opens for a mouse only (`pointerType`).
+    const original = window.PointerEvent;
+
+    class MousePointerEvent extends MouseEvent {
+      pointerType: string;
+
+      constructor(type: string, init: PointerEventInit = {}) {
+        super(type, init);
+        this.pointerType = init.pointerType ?? 'mouse';
+      }
+    }
+
+    window.PointerEvent = MousePointerEvent as unknown as typeof PointerEvent;
+    render(withContext(createContext({ actions }), <ControlledMenu />));
+    try {
+      fireEvent.pointerMove(screen.getByTestId('dashboard-widget-menu-move-to-row'), { pointerType: 'mouse' });
+      await screen.findByTestId('dashboard-widget-menu-move-to-row-content');
+    } finally {
+      window.PointerEvent = original;
+    }
+
+    const content = screen.getByTestId('dashboard-widget-menu-move-to-row-content');
+
+    expect(content.className).toContain('w-[220px]');
+    expect(
+      within(content)
+        .getAllByRole('menuitem')
+        .map((item) => [item.getAttribute('data-testid'), item.textContent])
+    ).toEqual([
+      ['dashboard-widget-menu-create-row-above', 'Create new row above'],
+      ['dashboard-widget-menu-create-row-below', 'Create new row below'],
+    ]);
+    fireEvent.click(screen.getByTestId('dashboard-widget-menu-create-row-below'));
+    expect(actions.move.mock.calls).toEqual([['rowBelow']]);
+    await waitFor(() => expect(screen.queryByTestId('dashboard-widget-menu')).toBeNull());
+  });
+
+  it('opens Move to row with ArrowRight and creates a row above from it', async () => {
+    const actions = createActions();
+
+    render(withContext(createContext({ actions }), <ControlledMenu />));
+    const trigger = screen.getByTestId('dashboard-widget-menu-move-to-row');
+
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+    await screen.findByTestId('dashboard-widget-menu-move-to-row-content');
+    fireEvent.click(screen.getByTestId('dashboard-widget-menu-create-row-above'));
+    expect(actions.move.mock.calls).toEqual([['rowAbove']]);
+  });
+
+  it('ignores the disabled new-row entries of a widget alone in its row and shows no move', async () => {
     const actions = createActions();
 
     render(withContext(createContext({ actions }), <ControlledMenu />, LONE_ROWS));
+    expect(menuItemIds()).toEqual([
+      'dashboard-widget-menu-edit-view',
+      'dashboard-widget-menu-move-to-row',
+      'dashboard-widget-menu-duplicate',
+      'dashboard-widget-menu-delete',
+    ]);
+    fireEvent.click(screen.getByTestId('dashboard-widget-menu-move-to-row'));
+    await screen.findByTestId('dashboard-widget-menu-move-to-row-content');
 
-    for (const testId of ['move-left', 'move-right', 'move-up', 'move-down']) {
-      const item = screen.getByTestId(`dashboard-widget-menu-${testId}`);
+    for (const id of ['create-row-above', 'create-row-below']) {
+      const item = screen.getByTestId(`dashboard-widget-menu-${id}`);
 
       expect(item.getAttribute('aria-disabled')).toBe('true');
       fireEvent.click(item);
@@ -218,38 +290,115 @@ describe('WidgetMenu', () => {
     expect(actions.move).not.toHaveBeenCalled();
   });
 
-  it('lets Duplicate at the widget limit run, so the limit message can be shown', () => {
+  it('keeps Duplicate on a full dashboard hoverable with the full tooltip, and announces instead of duplicating', async () => {
     const actions = createActions();
+    const ui = createDashboardUiValue();
 
-    render(withContext(createContext({ actions }), <ControlledMenu />, FULL_ROWS));
+    render(withContext(createContext({ actions }), <ControlledMenu />, FULL_ROWS, ui));
     const item = screen.getByTestId('dashboard-widget-menu-duplicate');
 
-    expect(item.getAttribute('aria-disabled')).toBeNull();
-    expect(item.getAttribute('data-limit-reached')).toBe('true');
-    expect(item.getAttribute('title')).toBe('Dashboards support up to {{count}} widgets.');
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+    expect(item.hasAttribute('data-disabled')).toBe(false);
+    expect(item.getAttribute('data-disabled-reason')).toBe('dashboard-full');
+    expect(item.className).toContain('!text-text-tertiary');
+
+    act(() => item.focus());
+    const tooltip = await screen.findByTestId('dashboard-full-tooltip');
+
+    expect(tooltip.textContent).toContain('Dashboard is full');
+    expect(tooltip.textContent).toContain('Delete a view to add a new one');
+    expect(tooltip.getAttribute('data-parity-id')).toBe('dash-tooltip');
+
     fireEvent.click(item);
-    expect(actions.duplicate).toHaveBeenCalledTimes(1);
+    expect(actions.duplicate).not.toHaveBeenCalled();
+    expect(ui.announce).toHaveBeenCalledWith('Dashboard is full. Delete a view to add a new one.');
+    // The menu stays open.
+    expect(screen.getByTestId('dashboard-widget-menu')).toBeTruthy();
+  });
+
+  // WP05 §1.4: one duplicate at a time per widget, while its view copy is being created.
+  it('disables Duplicate while this widget\'s duplicate is in flight', () => {
+    const actions = createActions();
+    const ui = createDashboardUiValue();
+    let inFlight: string | null = 'w1';
+    const listeners = new Set<() => void>();
+
+    ui.ownedViews = {
+      ...ui.ownedViews,
+      duplicatingWidget: {
+        get: () => inFlight,
+        subscribe: (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      },
+    };
+    render(withContext(createContext({ actions }), <ControlledMenu />, MOVABLE_ROWS, ui));
+    const item = () => screen.getByTestId('dashboard-widget-menu-duplicate');
+
+    expect(item().hasAttribute('data-disabled')).toBe(true);
+    fireEvent.click(item());
+    expect(actions.duplicate).not.toHaveBeenCalled();
+
+    act(() => {
+      inFlight = null;
+      listeners.forEach((listener) => listener());
+    });
+    expect(item().hasAttribute('data-disabled')).toBe(false);
   });
 
   it('follows a layout change while it is open', () => {
     const context = createContext();
     const { rerender } = render(withContext(context, <ControlledMenu />));
 
-    expect(screen.getByTestId('dashboard-widget-menu-move-left').getAttribute('aria-disabled')).toBeNull();
+    expect(screen.getByTestId('dashboard-widget-menu-move-left')).toBeTruthy();
     rerender(withContext(context, <ControlledMenu />, LONE_ROWS));
-    expect(screen.getByTestId('dashboard-widget-menu-move-left').getAttribute('aria-disabled')).toBe('true');
-    expect(screen.getByTestId('dashboard-widget-menu-move-down').getAttribute('aria-disabled')).toBe('true');
+    expect(screen.queryByTestId('dashboard-widget-menu-move-left')).toBeNull();
+    expect(screen.queryByTestId('dashboard-widget-menu-move-right')).toBeNull();
   });
 
-  it('offers only "Open view" to viewers', () => {
-    render(withContext(createContext({ isEditing: false }), <ControlledMenu />));
+  it('offers only "View data source" to viewers, which opens the view', async () => {
+    const actions = createActions();
 
-    expect(menuItemIds()).toEqual(['dashboard-widget-menu-open']);
+    render(withContext(createContext({ isEditing: false, editing: false, actions }), <ControlledMenu />));
+
+    expect(menuItemIds()).toEqual(['dashboard-widget-menu-view-data-source']);
+    const item = screen.getByTestId('dashboard-widget-menu-view-data-source');
+
+    expect(item.textContent).toBe('View data source');
+    expect(item.getAttribute('data-parity-id')).toBe('dash-widget-menu-item-view-data-source');
+    fireEvent.click(item);
+    expect(actions.open).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByTestId('dashboard-widget-menu')).toBeNull());
   });
 
   it('treats Edit mode without write access as View mode', () => {
     render(withContext(createContext({ isEditing: true, canEdit: false }), <ControlledMenu />));
 
-    expect(menuItemIds()).toEqual(['dashboard-widget-menu-open']);
+    expect(menuItemIds()).toEqual(['dashboard-widget-menu-view-data-source']);
+  });
+
+  // WP14 §1.4.2: the same open state, as a bottom sheet with the View-mode model.
+  it('is a bottom sheet in a mobile context, offering only View data source', async () => {
+    const actions = createActions();
+
+    render(
+      withContext(
+        createContext({ isEditing: false, editing: false, mobileContext: true, name: 'Projects Grid', actions }),
+        <ControlledMenu />
+      )
+    );
+
+    expect(screen.queryByTestId('dashboard-widget-menu')).toBeNull();
+    const sheet = screen.getByTestId('mobile-sheet');
+
+    expect(sheet.getAttribute('data-sheet')).toBe('widget-menu');
+    expect(within(sheet).getByTestId('mobile-sheet-title').textContent).toBe('Projects Grid');
+    const items = within(sheet).getAllByTestId('mobile-sheet-item');
+
+    expect(items.map((item) => item.getAttribute('data-item-id'))).toEqual(['view-data-source']);
+    fireEvent.click(items[0]);
+    expect(actions.open).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByTestId('mobile-sheet')).toBeNull());
   });
 });

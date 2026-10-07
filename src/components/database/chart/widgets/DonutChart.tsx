@@ -10,9 +10,10 @@ import {
   layoutDonutLabels,
   TextMeasurer,
 } from '@/application/database-yjs/chart-scale';
-import { ChartDataItem, ChartType } from '@/application/database-yjs/chart.type';
+import { ChartDataItem, ChartSeriesData, ChartType } from '@/application/database-yjs/chart.type';
 import { DASHBOARD_TYPOGRAPHY } from '@/application/database-yjs/dashboard-geometry';
 import { ChartNoDataState } from '@/components/database/chart/ChartStates';
+import { toCategoryItems, toDrillItem, truncationCaptionCount } from '@/components/database/chart/hooks/chartSeries';
 import { useChartContext } from '@/components/database/chart/useChartContext';
 
 import { ChartFrame } from './ChartFrame';
@@ -20,10 +21,11 @@ import { CHART_ENTRY_ANIMATION_MS, chartItemKey } from './chartUtils';
 import { useChartMeasure } from './measureText';
 import { useChartA11yRows, useChartItemTooltip, useChartLegend } from './useChartFrameModels';
 import { useChartHover } from './useChartHover';
-import { useReducedMotion } from './useReducedMotion';
+import { useChartAnimation } from './useReducedMotion';
 
 interface DonutChartWidgetProps {
-  data: ChartDataItem[];
+  /** The series build (WP12): a donut ignores Group by, so its one series is `__all__`. */
+  data: ChartSeriesData;
   /** Opens the drill-down of the clicked slice. */
   onItemClick?: (item: ChartDataItem) => void;
   /** Fill a dashboard widget card instead of the standalone 400px height. */
@@ -122,7 +124,7 @@ interface DonutPlotProps {
   height: number;
   legendHeight: number;
   clickable: boolean;
-  onSliceClick: (_: unknown, index: number) => void;
+  onSliceClick: (_: unknown, index: number, event?: unknown) => void;
   onSliceEnter: (_: unknown, index: number, event?: PointerLike) => void;
   onSliceLeave: () => void;
 }
@@ -146,7 +148,9 @@ const DonutPlot = memo(function DonutPlot({
   const { t } = useTranslation();
   const { style, format } = useChartContext();
   const { measure10, measure12 } = useChartMeasure();
-  const reducedMotion = useReducedMotion();
+  // No animation while the widget box resizes, nor after it until the data changes (W21). Recharts
+  // starts a pie whose animation turns back on from empty, so that first new data sweeps in.
+  const animation = useChartAnimation(slices);
   const cx = width / 2;
   const cy = height / 2;
   const geometry = useMemo(
@@ -190,7 +194,7 @@ const DonutPlot = memo(function DonutPlot({
           dataKey='value'
           endAngle={-270}
           innerRadius={geometry.inner}
-          isAnimationActive={!reducedMotion}
+          isAnimationActive={animation}
           label={renderLabel}
           labelLine={false}
           nameKey='label'
@@ -245,28 +249,39 @@ const DonutPlot = memo(function DonutPlot({
  * outside labels with leaders, a paginated category legend.
  */
 function DonutChartWidgetImpl({ data, onItemClick, fill = false }: DonutChartWidgetProps) {
-  const { style, format } = useChartContext();
-  // Slices, shares and the total come from the positive values only.
-  const slices = useMemo(() => data.filter((item) => item.value > 0), [data]);
+  const { style, format, paint, mobile } = useChartContext();
+  // One item per category (its total and colour); slices, shares and the total come from the positive values only.
+  const items = useMemo(() => toCategoryItems(data, paint), [data, paint]);
+  const slices = useMemo(() => items.filter((item) => item.value > 0), [items]);
   const total = useMemo(() => slices.reduce((sum, item) => sum + item.value, 0), [slices]);
-  const { hoveredIndex, pointer, show, clear, frameHandlers } = useChartHover(slices);
+  const { hoveredIndex, pointer, show, leave, tap, frameHandlers } = useChartHover(slices, {
+    mobile,
+    chartType: ChartType.Donut,
+  });
   const legend = useChartLegend(ChartType.Donut, style.legendPosition, slices);
-  const rows = useChartA11yRows(data, format);
+  const rows = useChartA11yRows(items, format);
   const hovered = hoveredIndex === null ? undefined : slices[hoveredIndex];
   const tooltip = useChartItemTooltip(
     hovered,
     hovered ? `${format(hovered.value, 'tooltip')} (${formatShare(hovered.value, total)})` : undefined,
     hovered?.color,
-    Boolean(onItemClick)
+    Boolean(onItemClick),
+    mobile
   );
 
+  // A slice click drills at once; in a mobile context the first tap shows its tooltip (`resolveChartTap`).
   const handleClick = useCallback(
-    (_: unknown, index: number) => {
-      const item = slices[index];
+    (_: unknown, index: number, event?: unknown) => {
+      const slice = slices[index];
+      const categoryIndex = slice ? data.categories.findIndex((category) => category.key === slice.key) : -1;
 
-      if (item) onItemClick?.(item);
+      tap(categoryIndex === -1 ? null : { index, key: data.categories[categoryIndex].key }, event, () => {
+        const item = toDrillItem(data, { categoryIndex, seriesIndex: null }, paint);
+
+        if (item) onItemClick?.(item);
+      });
     },
-    [slices, onItemClick]
+    [slices, data, paint, onItemClick, tap]
   );
   const handleEnter = useCallback((_: unknown, index: number, event?: PointerLike) => show(index, event), [show]);
 
@@ -283,6 +298,7 @@ function DonutChartWidgetImpl({ data, onItemClick, fill = false }: DonutChartWid
       rows={rows}
       testId='donut-chart-widget'
       tooltip={tooltip}
+      truncationCount={truncationCaptionCount(data)}
     >
       {({ width, height, legendHeight }) => (
         <DonutPlot
@@ -291,7 +307,7 @@ function DonutChartWidgetImpl({ data, onItemClick, fill = false }: DonutChartWid
           legendHeight={legendHeight}
           onSliceClick={handleClick}
           onSliceEnter={handleEnter}
-          onSliceLeave={clear}
+          onSliceLeave={leave}
           slices={slices}
           total={total}
           width={width}

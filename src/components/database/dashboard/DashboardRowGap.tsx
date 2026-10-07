@@ -1,19 +1,32 @@
-import { DropIndicator } from '@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box';
 import { memo, ReactNode, useRef } from 'react';
 
-import { DASHBOARD_GRID_TOP_BAND, DASHBOARD_ROW_GAP, DASHBOARD_WIDGET_BOX_INSET } from './constants';
+import {
+  DASHBOARD_DROP_INDICATOR_WIDTH,
+  DASHBOARD_GRID_TOP_BAND,
+  DASHBOARD_ROW_GAP,
+  DASHBOARD_WIDGET_BOX_INSET,
+} from './constants';
 import { useDashboardUi } from './DashboardUiContext';
 import { useRowGapDropTarget } from './hooks/useDashboardDnd';
 
 // Spans the row track: the content column plus the box bleed on both sides.
 const DROP_ZONE_STYLE = { left: -DASHBOARD_WIDGET_BOX_INSET, right: -DASHBOARD_WIDGET_BOX_INSET };
+// The line spans the content column: from the first card's left edge to the last card's right edge.
+const DROP_LINE_STYLE = {
+  left: DASHBOARD_WIDGET_BOX_INSET,
+  right: DASHBOARD_WIDGET_BOX_INSET,
+  height: DASHBOARD_DROP_INDICATOR_WIDTH,
+};
 
 /**
  * The band in front of row `rowIndex` as a drop target: dropping a widget
  * here puts it in a new row at that index. Spans the row track and only
  * catches the pointer while a widget is dragged (`data-dragging` on the
  * dashboard, read in CSS so a drag start renders no band), so the height
- * handle inside it works the rest of the time.
+ * handle inside it works the rest of the time. It accepts only a drop that
+ * changes the layout (`getDashboardDropFeedback`): a widget alone in its row
+ * finds no target right above or below that row (#15), and the line shows
+ * only where a drop is accepted.
  */
 function RowGapDropZone({ rowIndex, children }: { rowIndex: number; children?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -37,9 +50,14 @@ function RowGapDropZone({ rowIndex, children }: { rowIndex: number; children?: R
     >
       {children}
       {active ? (
-        <div aria-hidden='true' className='absolute inset-x-0 top-1/2 h-0'>
-          <DropIndicator edge='top' type='terminal-no-bleed' />
-        </div>
+        <div
+          aria-hidden='true'
+          className='pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-full bg-dash-accent'
+          data-orientation='horizontal'
+          data-row-index={rowIndex}
+          data-testid='dashboard-drop-indicator'
+          style={DROP_LINE_STYLE}
+        />
       ) : null}
     </div>
   );

@@ -142,7 +142,7 @@ export function ListGroupHeader({
             </DropdownMenuContent>
           </DropdownMenu>
           <Button
-            aria-label={t('grid.row.newRow', 'New row in group')}
+            aria-label={t('grid.row.newRow', 'New page')}
             className='h-7 w-7 rounded-[4px] p-1 opacity-0 focus-visible:opacity-100 group-focus-within/list-group-header:opacity-100 group-hover/list-group-header:opacity-100'
             data-testid='list-group-new-row'
             onClick={() => void createRow()}

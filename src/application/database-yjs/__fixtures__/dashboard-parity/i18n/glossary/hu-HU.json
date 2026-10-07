@@ -1,0 +1,37 @@
+{
+  "locale": "hu-HU",
+  "terms": {
+    "dashboard": "Irányítópult",
+    "widget": "Widget",
+    "chart": "Diagram",
+    "view": "Nézet",
+    "row": "Sor",
+    "property": "Tulajdonság",
+    "database": "Adatbázis",
+    "workspace": "Munkaterület",
+    "done": "Kész",
+    "edit": "Szerkesztés",
+    "delete": "Törlés",
+    "duplicate": "Duplikálás",
+    "save": "Mentés",
+    "cancel": "Mégse",
+    "close": "Bezárás",
+    "back": "Vissza",
+    "remove": "Eltávolítás",
+    "filter": "Szűrő",
+    "sort": "Rendezés",
+    "search": "Keresés",
+    "settings": "Beállítások",
+    "undo": "Visszavonás",
+    "redo": "Mégis",
+    "group": "Csoport",
+    "source": "Forrás",
+    "checked": "Bejelölve",
+    "unchecked": "Nincs bejelölve"
+  },
+  "untranslated_ok": [
+    "chart.legend.page",
+    "chart.sort.labelAsc",
+    "chart.sort.labelDesc"
+  ]
+}

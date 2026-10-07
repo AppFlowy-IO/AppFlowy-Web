@@ -11,7 +11,7 @@ Feature: Dashboard view creation
   Scenario: The view tab menu adds an empty dashboard named Dashboard in Edit mode
     When I add a dashboard to "Projects" from the view tab menu
     Then the dashboard is in Edit mode
-    And the dashboard shows its empty state with an Add widget button
+    And the dashboard shows its edit-mode empty state with a New view button
     And the active dashboard tab is named "Dashboard"
     And the dashboard layout setting exists with 0 widgets
 
@@ -28,11 +28,11 @@ Feature: Dashboard view creation
     And widget 1 shows a copy of the "Projects Board" view
     And the dashboard view tab shows the dashboard icon
 
-  Scenario: An empty dashboard in View mode tells viewers it has no widgets
+  Scenario: An empty dashboard in View mode invites editors to edit it
     When I add a dashboard to "Projects" from the view tab menu
     And I click the dashboard Done button
     Then the dashboard is in View mode
-    And the dashboard empty state reads "This dashboard has no widgets yet."
+    And the dashboard empty state reads "Add charts, tables, lists"
 
   Scenario: Deleting the dashboard keeps the views its widgets showed
     Given I added a dashboard to "Projects"

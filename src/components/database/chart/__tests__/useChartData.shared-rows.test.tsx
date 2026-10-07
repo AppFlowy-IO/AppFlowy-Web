@@ -1,3 +1,5 @@
+import EventEmitter from 'events';
+
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { ReactNode } from 'react';
 import * as Y from 'yjs';
@@ -31,7 +33,9 @@ import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/t
 import { DEFAULT_CHART_EXTENDED_SETTINGS } from '@/application/database-yjs/chart-extended-settings';
 import { ChartAggregationType, ChartLayoutSettings, ChartType } from '@/application/database-yjs/chart.type';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
+import { UpdateFlags } from '@/application/services/js-services/sync-protocol';
 import {
+  Types,
   YDatabaseField,
   YDatabaseFields,
   YDatabaseFieldTypeOption,
@@ -42,8 +46,11 @@ import {
   YjsEditorKey,
   YMapFieldTypeOption,
 } from '@/application/types';
+import { toCategoryItems } from '@/components/database/chart/hooks/chartSeries';
 import { useChartData } from '@/components/database/chart/hooks/useChartData';
 import { SEED_WAIT_TIMEOUT_MS } from '@/components/database/chart/hooks/useChartRowHydration';
+import { useSyncRefs } from '@/components/ws/sync/syncRefs';
+import { useCollabMessageHandler } from '@/components/ws/sync/useCollabMessageHandler';
 
 const DATABASE_ID = 'shared-rows-database';
 const VIEW_ID = 'chart-view';
@@ -117,7 +124,7 @@ function rowIdsOf(count: number) {
   return Array.from({ length: count }, (_, index) => `row-${index}`);
 }
 
-/** Sum of the amounts per stage for rows `0..count-1`, in label order. */
+/** Sum of the amounts per stage for rows `0..count-1`, in option order (the default sort, WP11 §1.7). */
 function expectedSums(count: number, amountOf: (index: number) => number = (index) => index + 1) {
   const sums = new Map<string, number>();
 
@@ -127,7 +134,7 @@ function expectedSums(count: number, amountOf: (index: number) => number = (inde
     sums.set(stage, (sums.get(stage) ?? 0) + amountOf(index));
   }
 
-  return [...sums.entries()].sort(([a], [b]) => a.localeCompare(b));
+  return [...sums.entries()].sort(([a], [b]) => STAGES.indexOf(a) - STAGES.indexOf(b));
 }
 
 function sums(chartData: { label: string; value: number }[]) {
@@ -164,12 +171,23 @@ function renderChart(initial: Partial<DatabaseContextState> & Pick<DatabaseConte
   };
 }
 
+function renderSyncHandler() {
+  const events = new EventEmitter();
+
+  return renderHook(() => {
+    const refs = useSyncRefs();
+    const handler = useCollabMessageHandler(refs, undefined, undefined, events, jest.fn(), jest.fn());
+
+    return { refs, ...handler };
+  });
+}
+
 describe('useChartData over shared row docs', () => {
   afterEach(() => {
     jest.useRealTimers();
   });
 
-  it('charts N seeded rows without one ensureRow call, with the aggregate of loading every row', async () => {
+  it('charts N seeded rows before the completed walk starts realtime binding', async () => {
     // More than one hydration batch of the loader (128 docs per frame).
     const count = 300;
     const rowIds = rowIdsOf(count);
@@ -182,7 +200,7 @@ describe('useChartData over shared row docs', () => {
         ensureRow,
         peekRowDocFromSeed: (rowId) => seeds[rowId] ?? null,
         seedsReady: true,
-        blobPrefetchComplete: true,
+        blobPrefetchComplete: false,
       },
       rowIds
     );
@@ -190,9 +208,9 @@ describe('useChartData over shared row docs', () => {
     await waitFor(() => expect(shared.result.current.isLoading).toBe(false));
     expect(ensureRow).not.toHaveBeenCalled();
     expect(shared.result.current.loadError).toBe(false);
-    expect(sums(shared.result.current.chartData)).toEqual(expectedSums(count));
-    expect(shared.result.current.chartData.reduce((total, item) => total + item.rowIds.length, 0)).toBe(count);
-    const sharedData = shared.result.current.chartData;
+    expect(sums(toCategoryItems(shared.result.current.seriesData))).toEqual(expectedSums(count));
+    expect(toCategoryItems(shared.result.current.seriesData).reduce((total, item) => total + item.rowIds.length, 0)).toBe(count);
+    const sharedData = shared.result.current.seriesData;
 
     shared.unmount();
 
@@ -208,7 +226,178 @@ describe('useChartData over shared row docs', () => {
     await waitFor(() => expect(ensureLiveRow).toHaveBeenCalledTimes(count));
     perRow.update({ rowMap: { ...live } });
     await waitFor(() => expect(perRow.result.current.isLoading).toBe(false));
-    expect(perRow.result.current.chartData).toEqual(sharedData);
+    expect(perRow.result.current.seriesData).toEqual(sharedData);
+  });
+
+  it('connects seeded chart rows in bounded batches and applies remote collab updates to their aggregates', async () => {
+    const rowIds = rowIdsOf(30);
+    const seeds = Object.fromEntries(rowIds.map((rowId, index) => [rowId, rowDoc(rowId, index)]));
+    const live: Record<string, YDoc> = {};
+    const sync = renderSyncHandler();
+    let releaseSync: () => void = () => undefined;
+    const syncReady = new Promise<void>((resolve) => {
+      releaseSync = resolve;
+    });
+    let pending = 0;
+    let maxPending = 0;
+    // Model Database.ensureRow: acquire a sync context for the canonical doc;
+    // the detached seed itself never receives remote transport messages.
+    const ensureRow = jest.fn(async (rowId: string) => {
+      pending += 1;
+      maxPending = Math.max(maxPending, pending);
+      await syncReady;
+      const doc = new Y.Doc({ guid: rowId }) as YDoc;
+
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(seeds[rowId]));
+      sync.result.current.refs.registeredContexts.current.set(rowId, {
+        doc,
+        collabType: Types.DatabaseRow,
+        emit: jest.fn(),
+      });
+      live[rowId] = doc;
+      pending -= 1;
+      return doc;
+    });
+    const { databaseDoc } = createDatabase(rowIds);
+    const chart = renderChart(
+      {
+        databaseDoc,
+        ensureRow,
+        peekRowDocFromSeed: (rowId) => seeds[rowId] ?? null,
+        seedsReady: true,
+        blobPrefetchComplete: false,
+      },
+      rowIds
+    );
+
+    await waitFor(() => expect(chart.result.current.isLoading).toBe(false));
+    expect(sums(toCategoryItems(chart.result.current.seriesData))).toEqual(expectedSums(30));
+    expect(ensureRow).not.toHaveBeenCalled();
+
+    chart.update({ blobPrefetchComplete: true });
+    await waitFor(() => expect(ensureRow).toHaveBeenCalled());
+    expect(pending).toBeGreaterThan(0);
+    expect(pending).toBeLessThan(rowIds.length);
+    expect(chart.result.current.isLoading).toBe(false);
+    await act(async () => releaseSync());
+    await waitFor(() => expect(sync.result.current.refs.registeredContexts.current.size).toBe(rowIds.length));
+    expect(maxPending).toBeLessThan(rowIds.length);
+    expect(ensureRow).toHaveBeenCalledTimes(rowIds.length);
+    // Database publishes the canonical docs in its live row map.
+    chart.update({ rowMap: { ...live } });
+
+    const remote = new Y.Doc();
+
+    Y.applyUpdate(remote, Y.encodeStateAsUpdate(live['row-0']));
+    const remoteRow = remote.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+    remoteRow.get(YjsDatabaseKey.cells).get('Amount').set(YjsDatabaseKey.data, '900');
+    await act(async () => {
+      await expect(sync.result.current.enqueueIncomingCollabMessage({
+        objectId: 'row-0',
+        collabType: Types.DatabaseRow,
+        update: { flags: UpdateFlags.Lib0v1, payload: Y.encodeStateAsUpdate(remote) },
+      }, { requireActiveContext: true })).resolves.toBe(true);
+    });
+
+    await waitFor(() =>
+      expect(sums(toCategoryItems(chart.result.current.seriesData))).toEqual(expectedSums(30, (index) => (index === 0 ? 900 : index + 1)))
+    );
+    const seededRow = seeds['row-0'].getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+    expect(seededRow.get(YjsDatabaseKey.cells).get('Amount').get(YjsDatabaseKey.data)).toBe('1');
+    chart.unmount();
+    sync.unmount();
+    remote.destroy();
+    Object.values(live).forEach((doc) => doc.destroy());
+  });
+
+  it('keeps its own realtime owner after another chart of the same view unmounts', async () => {
+    const rowIds = ['row-0'];
+    const { databaseDoc } = createDatabase(rowIds);
+    const seed = rowDoc('row-0', 0);
+    const live = new Y.Doc({ guid: 'row-0' }) as YDoc;
+    const owners = new Set<string>();
+    const sync = renderSyncHandler();
+
+    Y.applyUpdate(live, Y.encodeStateAsUpdate(seed));
+    const ensureFor = (owner: string) => jest.fn(async () => {
+      owners.add(owner);
+      sync.result.current.refs.registeredContexts.current.set('row-0', {
+        doc: live,
+        collabType: Types.DatabaseRow,
+        emit: jest.fn(),
+      });
+      return live;
+    });
+    const ensureFirst = ensureFor('first');
+    const ensureSecond = ensureFor('second');
+    const context = {
+      databaseDoc,
+      peekRowDocFromSeed: () => seed,
+      seedsReady: true,
+      blobPrefetchComplete: true,
+    };
+    const first = renderChart({ ...context, ensureRow: ensureFirst }, rowIds);
+    const second = renderChart({ ...context, ensureRow: ensureSecond }, rowIds);
+
+    await waitFor(() => expect(owners).toEqual(new Set(['first', 'second'])));
+    first.update({ rowMap: { 'row-0': live } });
+    second.update({ rowMap: { 'row-0': live } });
+    await waitFor(() => expect(second.result.current.isLoading).toBe(false));
+    first.unmount();
+    // Each Database releases its own registration when it unmounts; the
+    // canonical context is removed only when no Database still owns it.
+    owners.delete('first');
+    if (owners.size === 0) sync.result.current.refs.registeredContexts.current.delete('row-0');
+
+    const remote = new Y.Doc();
+
+    Y.applyUpdate(remote, Y.encodeStateAsUpdate(live));
+    const remoteRow = remote.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+    remoteRow.get(YjsDatabaseKey.cells).get('Amount').set(YjsDatabaseKey.data, '700');
+    await act(async () => {
+      await expect(sync.result.current.enqueueIncomingCollabMessage({
+        objectId: 'row-0',
+        collabType: Types.DatabaseRow,
+        update: { flags: UpdateFlags.Lib0v1, payload: Y.encodeStateAsUpdate(remote) },
+      }, { requireActiveContext: true })).resolves.toBe(true);
+    });
+    await waitFor(() => expect(sums(toCategoryItems(second.result.current.seriesData))).toEqual([['lead', 700]]));
+    expect(ensureFirst).toHaveBeenCalledTimes(1);
+    expect(ensureSecond).toHaveBeenCalledTimes(1);
+    second.unmount();
+    sync.unmount();
+    remote.destroy();
+    live.destroy();
+  });
+
+  it('reacquires realtime ownership when a same-guid database document replaces its lifecycle', async () => {
+    const rowIds = ['row-0'];
+    const { databaseDoc } = createDatabase(rowIds);
+    const seed = rowDoc('row-0', 0);
+    const ensureRow = jest.fn(async () => seed);
+    const chart = renderChart({
+      databaseDoc,
+      ensureRow,
+      peekRowDocFromSeed: () => seed,
+      seedsReady: true,
+      blobPrefetchComplete: true,
+    }, rowIds);
+
+    await waitFor(() => expect(ensureRow).toHaveBeenCalledTimes(1));
+    const replacement = new Y.Doc({ guid: databaseDoc.guid }) as YDoc;
+    const ensureReplacement = jest.fn(async () => seed);
+
+    Y.applyUpdate(replacement, Y.encodeStateAsUpdate(databaseDoc));
+    chart.update({ databaseDoc: replacement, ensureRow: ensureReplacement, rowMap: {} });
+
+    await waitFor(() => expect(ensureReplacement).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(chart.result.current.isLoading).toBe(false));
+    expect(sums(toCategoryItems(chart.result.current.seriesData))).toEqual([['lead', 1]]);
+    chart.unmount();
+    replacement.destroy();
   });
 
   it('keeps reading the live doc of a row that is open in a widget', async () => {
@@ -231,7 +420,7 @@ describe('useChartData over shared row docs', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(ensureRow).not.toHaveBeenCalled();
-    expect(sums(result.current.chartData)).toEqual(expectedSums(3, (index) => (index === 0 ? 500 : index + 1)));
+    expect(sums(toCategoryItems(result.current.seriesData))).toEqual(expectedSums(3, (index) => (index === 0 ? 500 : index + 1)));
 
     // A realtime edit of the live row reaches the chart.
     act(() => {
@@ -240,7 +429,7 @@ describe('useChartData over shared row docs', () => {
       row.get(YjsDatabaseKey.cells).get('Amount').set(YjsDatabaseKey.data, '900');
     });
     await waitFor(() =>
-      expect(sums(result.current.chartData)).toEqual(expectedSums(3, (index) => (index === 0 ? 900 : index + 1)))
+      expect(sums(toCategoryItems(result.current.seriesData))).toEqual(expectedSums(3, (index) => (index === 0 ? 900 : index + 1)))
     );
   });
 
@@ -270,7 +459,7 @@ describe('useChartData over shared row docs', () => {
     chart.update({ rowMap: { 'row-3': unseeded } });
 
     await waitFor(() => expect(chart.result.current.isLoading).toBe(false));
-    expect(sums(chart.result.current.chartData)).toEqual(expectedSums(4));
+    expect(sums(toCategoryItems(chart.result.current.seriesData))).toEqual(expectedSums(4));
     expect(ensureRow).toHaveBeenCalledTimes(1);
   });
 
@@ -298,7 +487,7 @@ describe('useChartData over shared row docs', () => {
 
     await waitFor(() => expect(chart.result.current.isLoading).toBe(false));
     expect(ensureRow).not.toHaveBeenCalled();
-    expect(sums(chart.result.current.chartData)).toEqual(expectedSums(40));
+    expect(sums(toCategoryItems(chart.result.current.seriesData))).toEqual(expectedSums(40));
   });
 
   it('refreshes a mounted chart when the loader publishes a new row or a shared doc changes', async () => {
@@ -312,7 +501,7 @@ describe('useChartData over shared row docs', () => {
     );
 
     await waitFor(() => expect(chart.result.current.isLoading).toBe(false));
-    expect(sums(chart.result.current.chartData)).toEqual(expectedSums(3));
+    expect(sums(toCategoryItems(chart.result.current.seriesData))).toEqual(expectedSums(3));
 
     // A row the walk delivered later: the loader publishes its seed.
     seeds['row-3'] = rowDoc('row-3', 3);
@@ -322,7 +511,7 @@ describe('useChartData over shared row docs', () => {
     });
     chart.rerender();
 
-    await waitFor(() => expect(sums(chart.result.current.chartData)).toEqual(expectedSums(4)));
+    await waitFor(() => expect(sums(toCategoryItems(chart.result.current.seriesData))).toEqual(expectedSums(4)));
     // The chart stayed mounted while the row arrived.
     expect(chart.result.current.isLoading).toBe(false);
 
@@ -333,7 +522,7 @@ describe('useChartData over shared row docs', () => {
       row.get(YjsDatabaseKey.cells).get('Amount').set(YjsDatabaseKey.data, '70');
     });
     await waitFor(() =>
-      expect(sums(chart.result.current.chartData)).toEqual(expectedSums(4, (index) => (index === 1 ? 70 : index + 1)))
+      expect(sums(toCategoryItems(chart.result.current.seriesData))).toEqual(expectedSums(4, (index) => (index === 1 ? 70 : index + 1)))
     );
     expect(ensureRow).not.toHaveBeenCalled();
   });
@@ -387,6 +576,6 @@ describe('useChartData over shared row docs', () => {
     await advance(0);
 
     expect(chart.result.current.isLoading).toBe(false);
-    expect(sums(chart.result.current.chartData)).toEqual(expectedSums(5));
+    expect(sums(toCategoryItems(chart.result.current.seriesData))).toEqual(expectedSums(5));
   });
 });

@@ -5,12 +5,48 @@ import {
   ChartExtendedSettings,
   DEFAULT_CHART_EXTENDED_SETTINGS,
 } from '@/application/database-yjs/chart-extended-settings';
+import { effectiveChartAggregation } from '@/application/database-yjs/chart-config';
 import { ChartFormatYField, formatChartValue } from '@/application/database-yjs/chart-format';
-import { ChartAggregationType, resolveEffectiveAggregation } from '@/application/database-yjs/chart.type';
+import {
+  CHART_ALL_SERIES_KEY,
+  ChartAggregationType,
+  ChartDataItem,
+  ChartSeriesData,
+} from '@/application/database-yjs/chart.type';
+import { FieldType } from '@/application/database-yjs/database.type';
 import { NumberFormat } from '@/application/database-yjs/fields';
+import { paintChartColor } from '@/components/database/chart/hooks/chartSeries';
 import { ChartContext, ChartContextValue, DEFAULT_CHART_CONTEXT } from '@/components/database/chart/useChartContext';
 
 import { ChartMeasureContext } from '../measureText';
+
+/**
+ * A chart without a Group by from its category items, as `buildChartSeries`
+ * builds it: one category per item (its colour opaque) and the one
+ * `__all__` series holding the values and rows.
+ */
+export function seriesDataOf(items: readonly ChartDataItem[]): ChartSeriesData {
+  return {
+    categories: items.map((item) => ({
+      key: item.key ?? item.label,
+      label: item.label,
+      isEmpty: Boolean(item.isEmptyCategory),
+      color: item.color ? { kind: 'hex' as const, hex: item.color, alpha: 1 } : null,
+      rowIds: item.rowIds,
+    })),
+    series: [
+      {
+        key: CHART_ALL_SERIES_KEY,
+        label: '',
+        color: null,
+        isEmpty: false,
+        values: items.map((item) => item.value),
+        rowIds: items.map((item) => item.rowIds),
+      },
+    ],
+    truncated: { categories: false, series: false },
+  };
+}
 
 /** The fake measurer of `chart-geometry.json`: 6px per character at 12px, 5px at 10px. */
 export const FIXTURE_MEASURE = {
@@ -89,6 +125,14 @@ export interface ChartStub {
   isDark?: boolean;
 }
 
+/** A representative field type per format kind, for the aggregation rule (`other` is text). */
+const Y_FIELD_TYPES: Record<ChartFormatYField['type'], FieldType> = {
+  number: FieldType.Number,
+  checkbox: FieldType.Checkbox,
+  date: FieldType.DateTime,
+  other: FieldType.RichText,
+};
+
 /** A chart context for `aggregation` over `yField` (USD Sum by default). */
 export function chartContextStub({
   aggregation = ChartAggregationType.Sum,
@@ -97,8 +141,9 @@ export function chartContextStub({
   seriesLabel = '',
   isDark = false,
 }: ChartStub = {}): ChartContextValue {
-  // What `useChartData` resolves: an aggregation without its Y field counts rows.
-  const effectiveAggregation = resolveEffectiveAggregation(aggregation, Boolean(yField));
+  // What `useChartData` resolves: the one rule of `effectiveChartAggregation`
+  // (an aggregation without its Y property, or one its type cannot compute, counts rows).
+  const effectiveAggregation = effectiveChartAggregation(aggregation, yField ? Y_FIELD_TYPES[yField.type] : null);
 
   return {
     ...DEFAULT_CHART_CONTEXT,
@@ -109,6 +154,7 @@ export function chartContextStub({
       formatChartValue(value, { aggregation: effectiveAggregation, yField, mode, locale: 'en-US' }),
     seriesLabel,
     isDark,
+    paint: (color) => paintChartColor(color, isDark),
   };
 }
 

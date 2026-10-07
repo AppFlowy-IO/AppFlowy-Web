@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -20,6 +20,8 @@ export interface ChartLegendItem {
   key: string;
   label: string;
   color: string;
+  /** A Group by series (WP12): the legend lists the series then. */
+  seriesKey?: string;
 }
 
 export type ChartLegendGlyph = 'square' | 'line';
@@ -57,10 +59,10 @@ export function ChartLegend({ items, glyph, layout }: ChartLegendProps) {
   const pageCount = layout.pages.length;
   const current = Math.min(page, Math.max(0, pageCount - 1));
 
-  // A resize can change the pages; never point past the last one.
-  useEffect(() => {
-    if (page > 0 && page >= pageCount) setPage(Math.max(0, pageCount - 1));
-  }, [page, pageCount]);
+  // A resize can change the pages; never point past the last one. The state
+  // is adjusted while rendering (no extra commit) and kept, so the legend does
+  // not jump back to the old page when the chart widens again.
+  if (page > 0 && page >= pageCount) setPage(Math.max(0, pageCount - 1));
 
   if (pageCount === 0) return null;
   const swatch =
@@ -88,6 +90,7 @@ export function ChartLegend({ items, glyph, layout }: ChartLegendProps) {
             <div
               className='flex min-w-0 items-center'
               data-label={item.label}
+              data-series-key={item.seriesKey}
               data-testid='chart-legend-item'
               key={item.key}
               style={{ gap: CHART_LEGEND_GLYPH_GAP, height: legend.lineHeight }}

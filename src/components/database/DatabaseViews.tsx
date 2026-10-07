@@ -1,4 +1,4 @@
-import { lazy, ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, memo, ReactNode, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { toast } from 'sonner';
@@ -7,6 +7,7 @@ import { useDatabase, useDatabaseContext, useDatabaseView, useDatabaseViewsSelec
 import { hasAdvancedFilterRoot } from '@/application/database-yjs/filter';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
+import GridSkeleton from '@/components/_shared/skeleton/GridSkeleton';
 import { Board } from '@/components/database/board';
 import { Chart } from '@/components/database/chart';
 import {
@@ -15,14 +16,13 @@ import {
 } from '@/components/database/components/conditions/context';
 import { DatabaseSearchProvider } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { DatabaseTabs } from '@/components/database/components/tabs';
-import { DashboardProvider } from '@/components/database/dashboard/DashboardContext';
 import { HistoricalDashboardPlaceholder } from '@/components/database/dashboard/HistoricalDashboardPlaceholder';
 import { useDashboardModeStore } from '@/components/database/dashboard/hooks/useDashboardModeStore';
+import { loadDashboard } from '@/components/database/dashboard/load';
 import { WidgetBody } from '@/components/database/dashboard/WidgetBody';
-// Not lazy: a lazy header suspends once on the first widget that mounts it, and
-// that widget lists its rows under a blank band until the chunk resolves. The
-// dashboard has already loaded this module (its placeholders render the frame).
-import DashboardWidgetHeader from '@/components/database/dashboard/WidgetHeader';
+import { WidgetCompositionContext } from '@/components/database/dashboard/WidgetComposition';
+import { useWidgetContextOptional } from '@/components/database/dashboard/WidgetContext';
+import { WidgetPlaceholder } from '@/components/database/dashboard/WidgetPlaceholder';
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
@@ -53,7 +53,12 @@ const List = lazy(() => import('@/components/database/list/List'));
 const Gallery = lazy(() => import('@/components/database/gallery'));
 const Feed = lazy(() => import('@/components/database/feed'));
 const Timeline = lazy(() => import('@/components/database/timeline'));
-const Dashboard = lazy(() => import('@/components/database/dashboard'));
+// The dashboard's chunk (`loadDashboard`): the layout, the page scope
+// (`DashboardProvider`) its tab bar shares with it, and the widget composition.
+// One import, so the tab bar of a dashboard page waits for one round trip,
+// never a second one; a dashboard page starts it while its document loads.
+const Dashboard = lazy(loadDashboard);
+const DashboardPageScope = lazy(() => loadDashboard().then((module) => ({ default: module.DashboardProvider })));
 const FormBuilderView = lazy(() =>
   import('@/components/database/form/FormBuilderView').then(({ FormBuilderView: Component }) => ({
     default: Component,
@@ -64,7 +69,8 @@ const FormBuilderView = lazy(() =>
  * Two compositions share the pieces below: a database page, a document
  * block or a row page (`PageDatabaseViews`: tabs, conditions bar, every view
  * of the database) and a dashboard widget (`WidgetDatabaseViews`: the widget
- * header, one view in the widget card, conditions in popovers).
+ * header from the dashboard chunk, one view in the widget card, conditions
+ * in popovers).
  */
 
 /** Where the views render: `history` is an immutable history preview, `widget` a dashboard widget. */
@@ -100,7 +106,9 @@ function renderDatabaseView(layout: DatabaseViewLayout | undefined, activeViewId
       if (host === 'history') return <HistoricalDashboardPlaceholder />;
       return <Dashboard key={activeViewId} />;
     default:
-      return null;
+      // A widget's view that the database store has not produced yet (its
+      // doc still settling) keeps the loading placeholder: never an empty card.
+      return host === 'widget' ? <WidgetPlaceholder reason='loading' /> : null;
   }
 }
 
@@ -156,6 +164,13 @@ function DatabaseViewport({ geometry, children }: { geometry: DatabaseViewportGe
     </div>
   );
 }
+
+/** Layouts whose search filters rows (WP09 §1.2); Gallery and Feed search their cards. */
+const ROW_SEARCH_LAYOUTS: ReadonlySet<DatabaseViewLayout | undefined> = new Set([
+  DatabaseViewLayout.Grid,
+  DatabaseViewLayout.List,
+  DatabaseViewLayout.Board,
+]);
 
 /** Grid, List and Timeline share their grouping between the toolbar and the layout. */
 function ViewGroupingProvider({ layout, children }: { layout: DatabaseViewLayout | undefined; children: ReactNode }) {
@@ -380,6 +395,11 @@ export interface DatabaseViewsProps {
    * fall back to the local (localStorage) tab order.
    */
   onReorderViews?: (movedViewId: string, prevViewId: string | null) => void | Promise<void>;
+  /**
+   * Called when the active view's row search starts or ends, so the host can
+   * read every row as it does for filters (WP09 §3.1).
+   */
+  onSearchActiveChange?: (active: boolean) => void;
 }
 
 /**
@@ -396,6 +416,7 @@ function PageDatabaseViews({
   fixedHeight,
   onViewIdsChanged,
   onReorderViews,
+  onSearchActiveChange,
 }: DatabaseViewsProps) {
   const { childViews, viewIds } = useDatabaseViewsSelector(databasePageId, visibleViewIds);
   const { dataSource, readOnly } = useDatabaseContext();
@@ -628,7 +649,7 @@ function PageDatabaseViews({
   const isDashboardLayout = effectiveLayout === DatabaseViewLayout.Dashboard;
 
   const content = (
-    <DatabaseSearchProvider activeViewId={activeViewId}>
+    <>
       <DatabaseTabs
         viewName={viewName}
         databasePageId={databasePageId}
@@ -646,22 +667,32 @@ function PageDatabaseViews({
       {isDashboardLayout ? null : <DatabaseConditionsPanel />}
 
       <DatabaseViewport geometry={geometry}>{view}</DatabaseViewport>
-    </DatabaseSearchProvider>
+    </>
   );
 
   return (
     <DatabaseHistoryScope className={historyScopeClass(geometry)}>
       {/* Above the layout's providers: the bar keeps its state across a tab switch. */}
       <BarConditionsProvider>
-        {isDashboardLayout && !isHistory ? (
-          // The tab bar's toolbar (Edit / Done, global filters) and the grid
-          // share one dashboard state.
-          <DashboardProvider modeStore={dashboardModeStore} viewIds={displayedViewIds}>
-            {content}
-          </DashboardProvider>
-        ) : (
-          <ViewGroupingProvider layout={effectiveLayout}>{content}</ViewGroupingProvider>
-        )}
+        <DatabaseSearchProvider
+          activeViewId={activeViewId}
+          applyToRows={ROW_SEARCH_LAYOUTS.has(effectiveLayout)}
+          onActiveChange={onSearchActiveChange}
+        >
+          {isDashboardLayout && !isHistory ? (
+            // The tab bar's toolbar (Edit / Done, global filters) and the grid
+            // share one dashboard state, from the dashboard's chunk: until it
+            // is loaded (once per session) the tab bar waits with the grid,
+            // behind the skeleton the page showed while its document loaded.
+            <Suspense fallback={<GridSkeleton includeTitle={false} />}>
+              <DashboardPageScope modeStore={dashboardModeStore} viewIds={displayedViewIds}>
+                {content}
+              </DashboardPageScope>
+            </Suspense>
+          ) : (
+            <ViewGroupingProvider layout={effectiveLayout}>{content}</ViewGroupingProvider>
+          )}
+        </DatabaseSearchProvider>
       </BarConditionsProvider>
     </DatabaseHistoryScope>
   );
@@ -672,27 +703,52 @@ function PageDatabaseViews({
  * and its one view in the widget card, which is the whole fixed slot (a
  * widget has no conditions bar to make room for). It reuses the page's
  * pieces: the search, the conditions contexts, the grouping and the viewport.
- * A widget shows exactly one view, so it neither orders nor persists tabs.
+ * The header is the dashboard chunk's (`WidgetCompositionContext`), so no
+ * page without a dashboard loads the widget chrome. A widget shows exactly
+ * one view, so it neither orders nor persists tabs.
  */
-export function WidgetDatabaseViews({ activeViewId, fixedHeight }: { activeViewId: string; fixedHeight?: number }) {
+export function WidgetDatabaseViews({
+  activeViewId,
+  fixedHeight,
+  onSearchActiveChange,
+}: {
+  activeViewId: string;
+  fixedHeight?: number;
+  onSearchActiveChange?: (active: boolean) => void;
+}) {
+  const composition = useContext(WidgetCompositionContext);
+
+  // A widget's database mounts under its dashboard (`WidgetDatabaseHost`).
+  if (!composition) throw new Error('WidgetDatabaseViews renders inside WidgetCompositionProvider');
+  const { Header } = composition;
   // The database store re-renders on every change of the database, so the
   // layout read here follows a conversion and a view that syncs in late.
   const view = useDatabase()?.get(YjsDatabaseKey.views)?.get(activeViewId);
   const layout = view ? (Number(view.get(YjsDatabaseKey.layout)) as DatabaseViewLayout) : undefined;
   const content = useMemo(() => renderDatabaseView(layout, activeViewId, 'widget'), [activeViewId, layout]);
   const geometry = useDatabaseViewportGeometry(fixedHeight, layout);
+  // Entering (or leaving) Edit mode clears the widget's search: Edit mode hides the Search tool.
+  const editing = Boolean(useWidgetContextOptional()?.editing);
 
   return (
     <DatabaseHistoryScope className={historyScopeClass(geometry)}>
       <WidgetConditionsProvider>
-        <ViewGroupingProvider layout={layout}>
-          <DatabaseSearchProvider activeViewId={activeViewId}>
-            <DashboardWidgetHeader />
+        <DatabaseSearchProvider
+          activeViewId={activeViewId}
+          applyToRows={ROW_SEARCH_LAYOUTS.has(layout)}
+          onActiveChange={onSearchActiveChange}
+          resetKey={editing}
+        >
+          <ViewGroupingProvider layout={layout}>
+            <Header />
             <WidgetBody>
-              <DatabaseViewport geometry={geometry}>{content}</DatabaseViewport>
+              <DatabaseViewport geometry={geometry}>
+                {/* A lazily loaded view (a timeline, a list) shows the loading placeholder while its code loads. */}
+                <Suspense fallback={<WidgetPlaceholder reason='loading' />}>{content}</Suspense>
+              </DatabaseViewport>
             </WidgetBody>
-          </DatabaseSearchProvider>
-        </ViewGroupingProvider>
+          </ViewGroupingProvider>
+        </DatabaseSearchProvider>
       </WidgetConditionsProvider>
     </DatabaseHistoryScope>
   );
@@ -702,15 +758,27 @@ export function WidgetDatabaseViews({ activeViewId, fixedHeight }: { activeViewI
  * The views of a database: a dashboard widget's own composition inside a
  * widget (`DatabaseContext.isDashboardWidget`), the page composition
  * everywhere else.
+ *
+ * Memoized: its host (`Database`) renders again whenever a dashboard's global
+ * filters (`extraFilters`) or the viewer's private conditions (the overlay)
+ * change, and both reach the components that read them through their own
+ * contexts (`DatabaseExtraFiltersContext`, `DatabaseViewOverlayContext`). The
+ * headers, providers and layouts under the views have nothing new to render.
  */
-function DatabaseViews(props: DatabaseViewsProps) {
+const DatabaseViews = memo(function DatabaseViews(props: DatabaseViewsProps) {
   const { isDashboardWidget } = useDatabaseContext();
 
   if (isDashboardWidget) {
-    return <WidgetDatabaseViews activeViewId={props.activeViewId} fixedHeight={props.fixedHeight} />;
+    return (
+      <WidgetDatabaseViews
+        activeViewId={props.activeViewId}
+        fixedHeight={props.fixedHeight}
+        onSearchActiveChange={props.onSearchActiveChange}
+      />
+    );
   }
 
   return <PageDatabaseViews {...props} />;
-}
+});
 
 export default DatabaseViews;

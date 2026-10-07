@@ -800,6 +800,23 @@ describe('database history production dispatch policies', () => {
     }
   );
 
+  // WP06 §1.5: the add flow's type pick switches the widget's own view outside the undo history.
+  it.each([
+    ['captures a layout switch by default', undefined, true],
+    ['skips a layout switch made with history skip', { history: 'skip' as const }, false],
+  ])('%s', async (_name, options, captured) => {
+    const fixture = createFixture();
+    const history = getOrCreateDatabaseHistoryManager(fixture.databaseDoc);
+    const hook = renderHook(() => useUpdateDatabaseLayout(viewId), { wrapper: createWrapper(fixture.databaseDoc) });
+
+    await act(async () => {
+      await hook.result.current(DatabaseViewLayout.List, options);
+    });
+
+    expect(Number(fixture.view.get(YjsDatabaseKey.layout))).toBe(DatabaseViewLayout.List);
+    expect(history.canUndo()).toBe(captured);
+  });
+
   it('skips relation target changes in the legacy relation hook', () => {
     const fixture = createFixture([[fieldId, createRelationField(fieldId)]]);
     const relationData = new Y.Array<string>();

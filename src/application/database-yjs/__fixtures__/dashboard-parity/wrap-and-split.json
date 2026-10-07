@@ -10,7 +10,10 @@
     "placement": "{\"type\": \"existing_row\", \"row_id\": \"r1\", \"index\": 0} or {\"type\": \"new_row\", \"row_index\": 1}; an absent index means the end.",
     "op": "add {widget, placement}, remove {widget}, move {widget, placement}, duplicate {widget}, set_height {row, height}.",
     "unchanged": "true: the result deep-equals the input rows (ids, heights, widths). For a move, classify gives noop, or the feedback value when one is given.",
-    "expect": "The rows after the operation, compared by row id, height, widget ids and widths."
+    "expect": "The rows after the operation, compared by row id, height, widget ids and widths.",
+    "row_controls": "getDashboardRowControls(rows, rowId) for each listed row id: move_up, move_down and add_to_row (enabled, disabled or hidden); an unknown row id gives false, false, hidden. add_to_new_row is getDashboardAddToNewRowState(rows): enabled or disabled.",
+    "drop": "Dragging widget `source` onto `target`: {\"type\": \"widget\", \"widget_id\": \"b\", \"edge\": \"left\" | \"right\"} or {\"type\": \"row_gap\", \"row_index\": 1} (0 = above the first row, rows.length = below the last). feedback is getDashboardDropFeedback (allowed, blocked or noop). placement is resolveDashboardDropPlacement: the positional placement, null only for an unknown source or target or a drop on the source itself; a drop applies it only when feedback is allowed. indicator is getDashboardDropIndicator, null unless allowed: {\"type\": \"column\", \"row_id\": \"r1\", \"boundary\": 2} (the insert position 0..n in the row before the source leaves it) or {\"type\": \"row_gap\", \"row_index\": 1}. expect (allowed drops only) is moveDashboardWidget(rows, source, placement).",
+    "menu": "The widget menu of `widget`. move_targets is getWidgetMoveTargets: left, right, row_above and row_below placements, or null. entries is buildWidgetMenuEntries({editing, canDuplicate: the dashboard has a free widget slot, moveTargets}) in display order, each {id, group, disabled, disabled_reason?, children?}; a separator goes between two groups."
   },
   "grid": {
     "column_gap": 12,
@@ -305,6 +308,23 @@
       "rows": [["r1", [["a", 8], ["b", 4]]]],
       "op": { "type": "set_height", "row": "r1", "height": 480 },
       "expect": [["r1", [["a", 8], ["b", 4]], 480]]
+    },
+    {
+      "id": "S30", "name": "Create new row below on a full dashboard is a move, not an add",
+      "rows": [
+        ["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]],
+        ["r2", [["e", 3], ["f", 3], ["g", 3], ["h", 3]]],
+        ["r3", [["i", 4], ["j", 4], ["k", 4]]],
+        ["r4", [["l", 12]]]
+      ],
+      "op": { "type": "move", "widget": "b", "placement": { "type": "new_row", "row_index": 1 } },
+      "expect": [
+        ["r1", [["a", 4], ["c", 4], ["d", 4]]],
+        ["*", [["b", 12]]],
+        ["r2", [["e", 3], ["f", 3], ["g", 3], ["h", 3]]],
+        ["r3", [["i", 4], ["j", 4], ["k", 4]]],
+        ["r4", [["l", 12]]]
+      ]
     }
   ],
   "row_moves": [
@@ -349,6 +369,346 @@
       "rows": [["r1", [["a", 8], ["b", 4]], 360], ["r2", [["c", 12]], 480], ["r3", [["d", 12]], 240]],
       "row": "missing", "delta": 1,
       "unchanged": true
+    }
+  ],
+  "row_controls": [
+    {
+      "id": "C1", "name": "a single row gets no move control; an unknown row gets nothing",
+      "rows": [["r1", [["a", 12]]]],
+      "controls": {
+        "r1": { "move_up": false, "move_down": false, "add_to_row": "enabled" },
+        "missing": { "move_up": false, "move_down": false, "add_to_row": "hidden" }
+      },
+      "add_to_new_row": "enabled"
+    },
+    {
+      "id": "C2", "name": "first, middle and last rows",
+      "rows": [["r1", [["a", 12]]], ["r2", [["b", 12]]], ["r3", [["c", 12]]]],
+      "controls": {
+        "r1": { "move_up": false, "move_down": true, "add_to_row": "enabled" },
+        "r2": { "move_up": true, "move_down": true, "add_to_row": "enabled" },
+        "r3": { "move_up": true, "move_down": false, "add_to_row": "enabled" }
+      },
+      "add_to_new_row": "enabled"
+    },
+    {
+      "id": "C3", "name": "a full row hides its add control",
+      "rows": [["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]], ["r2", [["e", 12]]]],
+      "controls": {
+        "r1": { "move_up": false, "move_down": true, "add_to_row": "hidden" },
+        "r2": { "move_up": true, "move_down": false, "add_to_row": "enabled" }
+      },
+      "add_to_new_row": "enabled"
+    },
+    {
+      "id": "C4", "name": "a full dashboard disables the add controls of rows with room",
+      "rows": [
+        ["r1", [["w1", 3], ["w2", 3], ["w3", 3], ["w4", 3]]],
+        ["r2", [["w5", 3], ["w6", 3], ["w7", 3], ["w8", 3]]],
+        ["r3", [["w9", 4], ["w10", 4], ["w11", 4]]],
+        ["r4", [["w12", 12]]]
+      ],
+      "controls": {
+        "r1": { "move_up": false, "move_down": true, "add_to_row": "hidden" },
+        "r2": { "move_up": true, "move_down": true, "add_to_row": "hidden" },
+        "r3": { "move_up": true, "move_down": true, "add_to_row": "disabled" },
+        "r4": { "move_up": true, "move_down": false, "add_to_row": "disabled" }
+      },
+      "add_to_new_row": "disabled"
+    },
+    {
+      "id": "C5", "name": "three full rows",
+      "rows": [
+        ["r1", [["w1", 3], ["w2", 3], ["w3", 3], ["w4", 3]]],
+        ["r2", [["w5", 3], ["w6", 3], ["w7", 3], ["w8", 3]]],
+        ["r3", [["w9", 3], ["w10", 3], ["w11", 3], ["w12", 3]]]
+      ],
+      "controls": {
+        "r1": { "move_up": false, "move_down": true, "add_to_row": "hidden" },
+        "r2": { "move_up": true, "move_down": true, "add_to_row": "hidden" },
+        "r3": { "move_up": true, "move_down": false, "add_to_row": "hidden" }
+      },
+      "add_to_new_row": "disabled"
+    }
+  ],
+  "drop": [
+    {
+      "id": "D1", "name": "a onto the left of its right neighbour: no change",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "a", "target": { "type": "widget", "widget_id": "b", "edge": "left" },
+      "feedback": "noop", "placement": { "type": "existing_row", "row_id": "r1", "index": 0 }, "indicator": null
+    },
+    {
+      "id": "D2", "name": "a onto the right of b",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "a", "target": { "type": "widget", "widget_id": "b", "edge": "right" },
+      "feedback": "allowed", "placement": { "type": "existing_row", "row_id": "r1", "index": 1 },
+      "indicator": { "type": "column", "row_id": "r1", "boundary": 2 },
+      "expect": [["r1", [["b", 4], ["a", 4], ["c", 4]]], ["r2", [["d", 12]]]]
+    },
+    {
+      "id": "D3", "name": "a onto the right of the last widget",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "a", "target": { "type": "widget", "widget_id": "c", "edge": "right" },
+      "feedback": "allowed", "placement": { "type": "existing_row", "row_id": "r1", "index": 2 },
+      "indicator": { "type": "column", "row_id": "r1", "boundary": 3 },
+      "expect": [["r1", [["b", 4], ["c", 4], ["a", 4]]], ["r2", [["d", 12]]]]
+    },
+    {
+      "id": "D4", "name": "c onto the left of the first widget",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "c", "target": { "type": "widget", "widget_id": "a", "edge": "left" },
+      "feedback": "allowed", "placement": { "type": "existing_row", "row_id": "r1", "index": 0 },
+      "indicator": { "type": "column", "row_id": "r1", "boundary": 0 },
+      "expect": [["r1", [["c", 4], ["a", 4], ["b", 4]]], ["r2", [["d", 12]]]]
+    },
+    {
+      "id": "D5", "name": "d from another row onto the left of b",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "d", "target": { "type": "widget", "widget_id": "b", "edge": "left" },
+      "feedback": "allowed", "placement": { "type": "existing_row", "row_id": "r1", "index": 1 },
+      "indicator": { "type": "column", "row_id": "r1", "boundary": 1 },
+      "expect": [["r1", [["a", 3], ["d", 3], ["b", 3], ["c", 3]]]]
+    },
+    {
+      "id": "D6", "name": "b onto the right of its left neighbour: no change",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "b", "target": { "type": "widget", "widget_id": "a", "edge": "right" },
+      "feedback": "noop", "placement": { "type": "existing_row", "row_id": "r1", "index": 1 }, "indicator": null
+    },
+    {
+      "id": "D7", "name": "a onto itself",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "a", "target": { "type": "widget", "widget_id": "a", "edge": "left" },
+      "feedback": "noop", "placement": null, "indicator": null
+    },
+    {
+      "id": "D8a", "name": "a lone widget into the gap above its own row (#15)",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "d", "target": { "type": "row_gap", "row_index": 1 },
+      "feedback": "noop", "placement": { "type": "new_row", "row_index": 1 }, "indicator": null
+    },
+    {
+      "id": "D8b", "name": "a lone widget into the gap below its own row (#15)",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "d", "target": { "type": "row_gap", "row_index": 2 },
+      "feedback": "noop", "placement": { "type": "new_row", "row_index": 2 }, "indicator": null
+    },
+    {
+      "id": "D9", "name": "a lone widget into the gap above the first row",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "d", "target": { "type": "row_gap", "row_index": 0 },
+      "feedback": "allowed", "placement": { "type": "new_row", "row_index": 0 },
+      "indicator": { "type": "row_gap", "row_index": 0 },
+      "expect": [["*", [["d", 12]]], ["r1", [["a", 4], ["b", 4], ["c", 4]]]]
+    },
+    {
+      "id": "D10", "name": "a widget that shares its row into the gap below it",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "a", "target": { "type": "row_gap", "row_index": 1 },
+      "feedback": "allowed", "placement": { "type": "new_row", "row_index": 1 },
+      "indicator": { "type": "row_gap", "row_index": 1 },
+      "expect": [["r1", [["b", 6], ["c", 6]]], ["*", [["a", 12]]], ["r2", [["d", 12]]]]
+    },
+    {
+      "id": "D11", "name": "into a full foreign row",
+      "rows": [["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]], ["r2", [["e", 12]]]],
+      "source": "e", "target": { "type": "widget", "widget_id": "a", "edge": "left" },
+      "feedback": "blocked", "placement": { "type": "existing_row", "row_id": "r1", "index": 0 }, "indicator": null
+    },
+    {
+      "id": "D12", "name": "reorder inside a full row",
+      "rows": [["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]], ["r2", [["e", 12]]]],
+      "source": "a", "target": { "type": "widget", "widget_id": "d", "edge": "right" },
+      "feedback": "allowed", "placement": { "type": "existing_row", "row_id": "r1", "index": 3 },
+      "indicator": { "type": "column", "row_id": "r1", "boundary": 4 },
+      "expect": [["r1", [["b", 3], ["c", 3], ["d", 3], ["a", 3]]], ["r2", [["e", 12]]]]
+    },
+    {
+      "id": "D13", "name": "left of c is the same line as right of b (D2)",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "a", "target": { "type": "widget", "widget_id": "c", "edge": "left" },
+      "feedback": "allowed", "placement": { "type": "existing_row", "row_id": "r1", "index": 1 },
+      "indicator": { "type": "column", "row_id": "r1", "boundary": 2 },
+      "expect": [["r1", [["b", 4], ["a", 4], ["c", 4]]], ["r2", [["d", 12]]]]
+    },
+    {
+      "id": "D14", "name": "an unknown source",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "missing", "target": { "type": "row_gap", "row_index": 0 },
+      "feedback": "noop", "placement": null, "indicator": null
+    },
+    {
+      "id": "D15", "name": "an unknown target widget",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "source": "a", "target": { "type": "widget", "widget_id": "missing", "edge": "right" },
+      "feedback": "noop", "placement": null, "indicator": null
+    },
+    {
+      "id": "D16", "name": "a widget of a full dashboard into the gap below the last row: a move, not an add",
+      "rows": [
+        ["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]],
+        ["r2", [["e", 3], ["f", 3], ["g", 3], ["h", 3]]],
+        ["r3", [["i", 4], ["j", 4], ["k", 4]]],
+        ["r4", [["l", 12]]]
+      ],
+      "source": "a", "target": { "type": "row_gap", "row_index": 4 },
+      "feedback": "allowed", "placement": { "type": "new_row", "row_index": 4 }, "indicator": { "type": "row_gap", "row_index": 4 },
+      "expect": [
+        ["r1", [["b", 4], ["c", 4], ["d", 4]]],
+        ["r2", [["e", 3], ["f", 3], ["g", 3], ["h", 3]]],
+        ["r3", [["i", 4], ["j", 4], ["k", 4]]],
+        ["r4", [["l", 12]]],
+        ["*", [["a", 12]]]
+      ]
+    },
+    {
+      "id": "D17", "name": "a widget of a full dashboard into a row with room: a move, not an add",
+      "rows": [
+        ["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]],
+        ["r2", [["e", 3], ["f", 3], ["g", 3], ["h", 3]]],
+        ["r3", [["i", 4], ["j", 4], ["k", 4]]],
+        ["r4", [["l", 12]]]
+      ],
+      "source": "a", "target": { "type": "widget", "widget_id": "l", "edge": "right" },
+      "feedback": "allowed", "placement": { "type": "existing_row", "row_id": "r4", "index": 1 }, "indicator": { "type": "column", "row_id": "r4", "boundary": 1 },
+      "expect": [
+        ["r1", [["b", 4], ["c", 4], ["d", 4]]],
+        ["r2", [["e", 3], ["f", 3], ["g", 3], ["h", 3]]],
+        ["r3", [["i", 4], ["j", 4], ["k", 4]]],
+        ["r4", [["l", 6], ["a", 6]]]
+      ]
+    },
+    {
+      "id": "D18", "name": "a widget of a full dashboard onto a full row of another: blocked",
+      "rows": [
+        ["r1", [["a", 3], ["b", 3], ["c", 3], ["d", 3]]],
+        ["r2", [["e", 3], ["f", 3], ["g", 3], ["h", 3]]],
+        ["r3", [["i", 4], ["j", 4], ["k", 4]]],
+        ["r4", [["l", 12]]]
+      ],
+      "source": "l", "target": { "type": "widget", "widget_id": "e", "edge": "left" },
+      "feedback": "blocked", "placement": { "type": "existing_row", "row_id": "r2", "index": 0 }, "indicator": null
+    }
+  ],
+  "menu": [
+    {
+      "id": "N1", "name": "a middle widget in Edit mode",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "widget": "b", "editing": true,
+      "move_targets": {
+        "left": { "type": "existing_row", "row_id": "r1", "index": 0 },
+        "right": { "type": "existing_row", "row_id": "r1", "index": 2 },
+        "row_above": { "type": "new_row", "row_index": 0 },
+        "row_below": { "type": "new_row", "row_index": 1 }
+      },
+      "entries": [
+        { "id": "edit-view", "group": "settings", "disabled": false },
+        { "id": "move-left", "group": "move", "disabled": false },
+        { "id": "move-right", "group": "move", "disabled": false },
+        { "id": "move-to-row", "group": "move", "disabled": false, "children": [
+          { "id": "create-row-above", "disabled": false },
+          { "id": "create-row-below", "disabled": false }
+        ] },
+        { "id": "duplicate", "group": "manage", "disabled": false },
+        { "id": "delete", "group": "manage", "disabled": false }
+      ]
+    },
+    {
+      "id": "N2", "name": "the first widget of a row has no Move left",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "widget": "a", "editing": true,
+      "move_targets": {
+        "left": null,
+        "right": { "type": "existing_row", "row_id": "r1", "index": 1 },
+        "row_above": { "type": "new_row", "row_index": 0 },
+        "row_below": { "type": "new_row", "row_index": 1 }
+      },
+      "entries": [
+        { "id": "edit-view", "group": "settings", "disabled": false },
+        { "id": "move-right", "group": "move", "disabled": false },
+        { "id": "move-to-row", "group": "move", "disabled": false, "children": [
+          { "id": "create-row-above", "disabled": false },
+          { "id": "create-row-below", "disabled": false }
+        ] },
+        { "id": "duplicate", "group": "manage", "disabled": false },
+        { "id": "delete", "group": "manage", "disabled": false }
+      ]
+    },
+    {
+      "id": "N3", "name": "the last widget of a row has no Move right",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "widget": "c", "editing": true,
+      "move_targets": {
+        "left": { "type": "existing_row", "row_id": "r1", "index": 1 },
+        "right": null,
+        "row_above": { "type": "new_row", "row_index": 0 },
+        "row_below": { "type": "new_row", "row_index": 1 }
+      },
+      "entries": [
+        { "id": "edit-view", "group": "settings", "disabled": false },
+        { "id": "move-left", "group": "move", "disabled": false },
+        { "id": "move-to-row", "group": "move", "disabled": false, "children": [
+          { "id": "create-row-above", "disabled": false },
+          { "id": "create-row-below", "disabled": false }
+        ] },
+        { "id": "duplicate", "group": "manage", "disabled": false },
+        { "id": "delete", "group": "manage", "disabled": false }
+      ]
+    },
+    {
+      "id": "N4", "name": "a widget alone in its row cannot create a new row",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "widget": "d", "editing": true,
+      "move_targets": { "left": null, "right": null, "row_above": null, "row_below": null },
+      "entries": [
+        { "id": "edit-view", "group": "settings", "disabled": false },
+        { "id": "move-to-row", "group": "move", "disabled": false, "children": [
+          { "id": "create-row-above", "disabled": true },
+          { "id": "create-row-below", "disabled": true }
+        ] },
+        { "id": "duplicate", "group": "manage", "disabled": false },
+        { "id": "delete", "group": "manage", "disabled": false }
+      ]
+    },
+    {
+      "id": "N5", "name": "a full dashboard disables Duplicate",
+      "rows": [
+        ["r1", [["w1", 3], ["w2", 3], ["w3", 3], ["w4", 3]]],
+        ["r2", [["w5", 3], ["w6", 3], ["w7", 3], ["w8", 3]]],
+        ["r3", [["w9", 3], ["w10", 3], ["w11", 3], ["w12", 3]]]
+      ],
+      "widget": "w1", "editing": true,
+      "move_targets": {
+        "left": null,
+        "right": { "type": "existing_row", "row_id": "r1", "index": 1 },
+        "row_above": { "type": "new_row", "row_index": 0 },
+        "row_below": { "type": "new_row", "row_index": 1 }
+      },
+      "entries": [
+        { "id": "edit-view", "group": "settings", "disabled": false },
+        { "id": "move-right", "group": "move", "disabled": false },
+        { "id": "move-to-row", "group": "move", "disabled": false, "children": [
+          { "id": "create-row-above", "disabled": false },
+          { "id": "create-row-below", "disabled": false }
+        ] },
+        { "id": "duplicate", "group": "manage", "disabled": true, "disabled_reason": "dashboard_full" },
+        { "id": "delete", "group": "manage", "disabled": false }
+      ]
+    },
+    {
+      "id": "N6", "name": "View mode only offers View data source",
+      "rows": [["r1", [["a", 4], ["b", 4], ["c", 4]]], ["r2", [["d", 12]]]],
+      "widget": "b", "editing": false,
+      "move_targets": {
+        "left": { "type": "existing_row", "row_id": "r1", "index": 0 },
+        "right": { "type": "existing_row", "row_id": "r1", "index": 2 },
+        "row_above": { "type": "new_row", "row_index": 0 },
+        "row_below": { "type": "new_row", "row_index": 1 }
+      },
+      "entries": [
+        { "id": "view-data-source", "group": "navigate", "disabled": false }
+      ]
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 
 import { DashboardWidget } from '../DashboardWidget';
@@ -12,7 +12,6 @@ jest.mock('react-i18next', () => {
 
   return { useTranslation: () => ({ t }) };
 });
-jest.mock('@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box', () => ({ DropIndicator: () => null }));
 jest.mock('@/application/publish-snapshot/database-yjs-render-bridge', () => ({
   getPublishedDatabaseRenderRowMap: () => undefined,
 }));
@@ -29,6 +28,9 @@ jest.mock('@/components/database', () => ({
         <output data-testid='widget-editing'>{String(widget.editing)}</output>
         <output data-testid='menu-open'>{String(widget.menuOpen)}</output>
         <output data-testid='settings-open'>{String(widget.settingsOpen)}</output>
+        <output data-testid='widget-mobile'>{String(widget.mobileContext)}</output>
+        <output data-testid='search-active'>{String(widget.searchActive)}</output>
+        <button data-testid='open-search' onClick={() => widget.setSearchActive(true)} type='button' />
         <button data-testid='open-menu' onClick={() => widget.setMenuOpen(true)} type='button' />
         <button data-testid='close-menu' onClick={() => widget.setMenuOpen(false)} type='button' />
         <button data-testid='open-settings' onClick={() => widget.actions.openSettings()} type='button' />
@@ -50,12 +52,24 @@ jest.mock('../hooks/useDashboardDnd', () => ({
 jest.mock('../WidgetHeader', () => ({ WidgetHeaderFrame: () => null }));
 
 /** The widget box on a dashboard, with the dashboard's real selection. */
-function Harness({ editing, showWidgetTitles = true }: { editing: boolean; showWidgetTitles?: boolean }) {
+function Harness({
+  editing,
+  showWidgetTitles = true,
+  isDragging = false,
+  firstPaintDone = false,
+}: {
+  editing: boolean;
+  showWidgetTitles?: boolean;
+  isDragging?: boolean;
+  /** The dashboard painted before this box mounted (moved from another row, added). */
+  firstPaintDone?: boolean;
+}) {
   const [host] = useState(() => createWidgetHost());
+  const [ui] = useState(() => ({ firstPaintDone: { current: firstPaintDone } }));
 
   return (
-    <DashboardWidgetProviders editing={editing} host={host}>
-      <DashboardWidget {...widgetBoxProps({ isEditing: editing, showWidgetTitles })} />
+    <DashboardWidgetProviders editing={editing} host={host} ui={ui}>
+      <DashboardWidget {...widgetBoxProps({ isEditing: editing, showWidgetTitles, isDragging })} />
     </DashboardWidgetProviders>
   );
 }
@@ -98,22 +112,61 @@ describe('DashboardWidget chrome', () => {
     expect(paddingOf(box())).toEqual(['6px', '6px', '6px', '6px']);
   });
 
-  it('animates its tint and outline only, never its width, and nothing under reduced motion', () => {
+  it('eases an arranged width over the reflow time, its tint, outline and fade over the fast time, and nothing under reduced motion or a hand resize', () => {
     render(<Harness editing />);
     const classes = box().className.split(' ');
 
-    expect(classes).toContain('transition-[background-color,box-shadow]');
-    expect(classes).toContain('duration-[var(--dash-motion-fast)]');
-    expect(classes).toContain('ease-[var(--dash-motion-ease)]');
+    // WP04 §2.5: an arrange operation (a row split equally) eases the width over 200ms.
+    expect(classes).toContain(
+      '[transition:flex-basis_var(--dash-motion-reflow)_var(--dash-motion-ease),background-color_var(--dash-motion-fast)_var(--dash-motion-ease),box-shadow_var(--dash-motion-fast)_var(--dash-motion-ease),opacity_var(--dash-motion-fast)_var(--dash-motion-ease)]'
+    );
     expect(classes).toContain('motion-reduce:transition-none');
-    // A layout change resizes the box at once: animating `flex-basis` would re-lay out the row and
-    // resize every nested database on each frame. No other transition class may out-rank the
-    // reduced-motion one either.
-    expect(box().className).not.toContain('flex-basis');
-    expect(classes.filter((name) => name.includes('transition-'))).toEqual([
-      'transition-[background-color,box-shadow]',
-      'motion-reduce:transition-none',
-    ]);
+    // A width or height handle drag (`data-resizing` on the row) never animates.
+    expect(classes).toContain('group-data-[resizing=true]/row:transition-none');
+    // No other transition class may out-rank those two.
+    const transitions = classes.filter((name) => name.includes('transition'));
+
+    expect(transitions).toHaveLength(3);
+    expect(transitions).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^\[transition:/),
+        'motion-reduce:transition-none',
+        'group-data-[resizing=true]/row:transition-none',
+      ])
+    );
+  });
+
+  it('fades to 40% while it is dragged', () => {
+    const { rerender } = render(<Harness editing />);
+
+    expect(box().className).not.toContain('opacity-40');
+    rerender(<Harness editing isDragging />);
+    expect(box().getAttribute('data-dragging')).toBe('true');
+    expect(box().className.split(' ')).toContain('opacity-40');
+  });
+
+  it('fades in when it mounts into a row after the first paint, in Edit mode only', () => {
+    const first = render(<Harness editing />);
+
+    expect(box().firstElementChild?.hasAttribute('data-fade-in')).toBe(false);
+    first.unmount();
+
+    const moved = render(<Harness editing firstPaintDone />);
+    const content = box().firstElementChild as HTMLElement;
+
+    expect(content.getAttribute('data-fade-in')).toBe('true');
+    expect(content.className.split(' ')).toEqual(
+      expect.arrayContaining([
+        'animate-in',
+        'fade-in-0',
+        '[animation-duration:var(--dash-motion-reflow)]',
+        'motion-reduce:animate-none',
+      ])
+    );
+    moved.unmount();
+
+    render(<Harness editing={false} firstPaintDone />);
+    expect(box().firstElementChild?.hasAttribute('data-fade-in')).toBe(false);
   });
 
   it('is outlined in Edit mode while its menu or its settings are open', () => {
@@ -184,5 +237,31 @@ describe('DashboardWidget chrome', () => {
 
     render(<Harness editing showWidgetTitles={false} />);
     expect(mockEmbeddedHeights.at(-1)).toBe(360 - 12);
+  });
+
+  // WP14 §1.4.5: the box owns the phone's search state, and a wider window drops it.
+  it('owns the mobile search state and collapses it when the mobile context ends', () => {
+    const initialWidth = window.innerWidth;
+    const resize = (width: number) =>
+      act(() => {
+        Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+        window.dispatchEvent(new Event('resize'));
+      });
+
+    try {
+      resize(390);
+      render(<Harness editing={false} />);
+      expect(screen.getByTestId('widget-mobile').textContent).toBe('true');
+      expect(screen.getByTestId('search-active').textContent).toBe('false');
+
+      fireEvent.click(screen.getByTestId('open-search'));
+      expect(screen.getByTestId('search-active').textContent).toBe('true');
+
+      resize(1024);
+      expect(screen.getByTestId('widget-mobile').textContent).toBe('false');
+      expect(screen.getByTestId('search-active').textContent).toBe('false');
+    } finally {
+      resize(initialWidth);
+    }
   });
 });

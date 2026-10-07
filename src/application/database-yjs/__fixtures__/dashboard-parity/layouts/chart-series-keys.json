@@ -1,0 +1,245 @@
+{
+  "fixture": "layouts/chart-series-keys",
+  "version": 1,
+  "encoding": {
+    "format": "The layouts/unknown-keys chart case format: {\"$bigint\": \"N\"} is a native integer, plain numbers are JS numbers, readers compare numbers by value.",
+    "ignoreOnCompare": ["chartType", "xFieldId", "showEmptyValues", "aggregationType", "yFieldId", "dateCondition"],
+    "parsed": "The three Group by keys (WP12 §2.1) as readers normalize them: group_by_field_id is a string or \"\", group_by_date_condition an integer 0-4 or 3 (Month), group_style \"stacked\" | \"grouped\" | \"percent\" or \"stacked\". Whether the Group by is effective (field type, not the X field, Bar/Line/HorizontalBar) is decided later, not here.",
+    "write": "The keys the client submits, in the persisted shape. A write touches exactly writtenKeys (after removing ignoreOnCompare keys); the Group by keys are written only by their own controls, or cleared with x_field_id when the Group by field becomes X.",
+    "expected": "The stored map after the write. Key order is irrelevant; zz_parity_probe and every value the reader could not read must survive."
+  },
+  "chartCases": [
+    {
+      "name": "group keys are absent by default",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "zz_parity_probe": {"from": "newer-app", "version": 99}
+      },
+      "parsed": {"group_by_field_id": "", "group_by_date_condition": 3, "group_style": "stacked"},
+      "write": {"group_by_field_id": "f:audience"},
+      "writtenKeys": ["group_by_field_id"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "zz_parity_probe": {"from": "newer-app", "version": 99},
+        "group_by_field_id": "f:audience"
+      }
+    },
+    {
+      "name": "an unknown group_style reads as stacked and survives an unrelated edit",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "group_by_field_id": "f:audience",
+        "group_by_date_condition": {"$bigint": "1"},
+        "group_style": "waterfall",
+        "zz_parity_probe": {"from": "newer-app", "version": 99}
+      },
+      "parsed": {"group_by_field_id": "f:audience", "group_by_date_condition": 1, "group_style": "stacked"},
+      "write": {"chart_type": 2},
+      "writtenKeys": ["chart_type"],
+      "expected": {
+        "chart_type": 2,
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "group_by_field_id": "f:audience",
+        "group_by_date_condition": 1,
+        "group_style": "waterfall",
+        "zz_parity_probe": {"from": "newer-app", "version": 99}
+      }
+    },
+    {
+      "name": "choosing the grouped style writes only group_style",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "group_by_field_id": "f:audience",
+        "zz_parity_probe": {"from": "newer-app", "version": 99}
+      },
+      "parsed": {"group_by_field_id": "f:audience", "group_by_date_condition": 3, "group_style": "stacked"},
+      "write": {"group_style": "grouped"},
+      "writtenKeys": ["group_style"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "group_by_field_id": "f:audience",
+        "zz_parity_probe": {"from": "newer-app", "version": 99},
+        "group_style": "grouped"
+      }
+    },
+    {
+      "name": "a JS-number date condition reads by value and is replaced by a pick",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "group_by_date_condition": 4,
+        "zz_parity_probe": {"from": "newer-app", "version": 99}
+      },
+      "parsed": {"group_by_field_id": "", "group_by_date_condition": 4, "group_style": "stacked"},
+      "write": {"group_by_date_condition": 1},
+      "writtenKeys": ["group_by_date_condition"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "group_by_date_condition": 1,
+        "zz_parity_probe": {"from": "newer-app", "version": 99}
+      }
+    },
+    {
+      "name": "picking the Group by field as X clears the Group by in the same write",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "group_by_field_id": "f:audience",
+        "zz_parity_probe": {"from": "newer-app", "version": 99}
+      },
+      "parsed": {"group_by_field_id": "f:audience", "group_by_date_condition": 3, "group_style": "stacked"},
+      "write": {"x_field_id": "f:audience", "group_by_field_id": ""},
+      "writtenKeys": ["x_field_id", "group_by_field_id"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:audience",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "group_by_field_id": "",
+        "zz_parity_probe": {"from": "newer-app", "version": 99}
+      }
+    },
+    {
+      "name": "wrong types read as defaults and are not rewritten",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "group_by_field_id": 5,
+        "group_by_date_condition": "month",
+        "group_style": true,
+        "zz_parity_probe": {"from": "newer-app", "version": 99}
+      },
+      "parsed": {"group_by_field_id": "", "group_by_date_condition": 3, "group_style": "stacked"},
+      "write": {"cumulative": true},
+      "writtenKeys": ["cumulative"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "cumulative": true,
+        "numberFormat": "auto",
+        "titleText": "",
+        "group_by_field_id": 5,
+        "group_by_date_condition": "month",
+        "group_style": true,
+        "zz_parity_probe": {"from": "newer-app", "version": 99}
+      }
+    },
+    {
+      "name": "choosing None writes the documented default",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "group_by_field_id": "f:audience",
+        "zz_parity_probe": {"from": "newer-app", "version": 99}
+      },
+      "parsed": {"group_by_field_id": "f:audience", "group_by_date_condition": 3, "group_style": "stacked"},
+      "write": {"group_by_field_id": ""},
+      "writtenKeys": ["group_by_field_id"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:channel",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "group_by_field_id": "",
+        "zz_parity_probe": {"from": "newer-app", "version": 99}
+      }
+    }
+  ]
+}

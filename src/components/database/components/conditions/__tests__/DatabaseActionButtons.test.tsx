@@ -5,6 +5,7 @@ import FiltersButton from '@/components/database/components/conditions/FiltersBu
 import SortsButton from '@/components/database/components/conditions/SortsButton';
 import { createWidgetContextValue } from '@/components/database/dashboard/__tests__/dashboardTestHarness';
 import { WidgetFilterTool } from '@/components/database/dashboard/widget-tool-buttons/WidgetFilterTool';
+import { WidgetSearchTool } from '@/components/database/dashboard/widget-tool-buttons/WidgetSearchTool';
 import { WidgetSortTool } from '@/components/database/dashboard/widget-tool-buttons/WidgetSortTool';
 import { WidgetContext } from '@/components/database/dashboard/WidgetContext';
 
@@ -49,6 +50,7 @@ jest.mock('react-i18next', () => ({
       ({
         'grid.settings.filter': 'Filter',
         'grid.settings.sort': 'Sort',
+        'search.label': 'Search',
       }[key] ?? key),
   }),
 }));
@@ -110,6 +112,24 @@ describe('Dashboard widget condition tools', () => {
     // Edit mode alone restyles the tool: no rule made it active.
     expect(screen.getByTestId(testId).className).not.toBe(viewModeLook);
     expect(screen.getByTestId(testId).getAttribute('data-active')).toBe('false');
+  });
+
+  it('renders the Search tool (WP09) as a quiet 24px button with a 16px glyph', () => {
+    render(inWidget(<WidgetSearchTool />));
+
+    const button = screen.getByTestId('database-actions-search');
+    const glyphs = button.querySelectorAll('svg');
+
+    expect(button.getAttribute('aria-label')).toBe('Search');
+    expect(button.getAttribute('type')).toBe('button');
+    expect(button.textContent).toBe('');
+    expect(button.className).toContain('h-6');
+    expect(button.className).toContain('w-6');
+    expect(button.className).toContain('!rounded-200');
+    expect(glyphs).toHaveLength(1);
+    expect(glyphs[0].getAttribute('class')).toContain('h-4');
+    expect(glyphs[0].getAttribute('data-parity-id')).toBe('dash-widget-tool-search__icon');
+    expect(button.getAttribute('data-parity-id')).toBe('dash-widget-tool-search');
   });
 
   it('keeps the standalone toolbar buttons free of the widget attributes', () => {

@@ -10,7 +10,7 @@
  * exposes (widgets mount their own `<Database>`, so `__TEST_DATABASE_CONTEXT__`
  * alone would point at whichever widget mounted last).
  */
-import { APIRequestContext, BrowserContext, expect, Locator, Page } from '@playwright/test';
+import { APIRequestContext, BrowserContext, expect, Locator, Page, test } from '@playwright/test';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
@@ -27,6 +27,13 @@ import { FieldType } from '../../src/application/database-yjs/database.type';
 import { DatabaseViewLayout, ViewLayout } from '../../src/application/types';
 
 import { AuthTestUtils } from './auth-utils';
+import {
+  CHART_AGGREGATION_BY_NAME,
+  chooseChartCalculation,
+  closeChartPanel,
+  openChartPagePanel,
+  openChartPanelRow,
+} from './chart-settings-helpers';
 import { mockProSubscription } from './chart-test-helpers';
 import {
   apiGet,
@@ -38,13 +45,14 @@ import {
   escapeRegExp,
   parseJson,
   plainYjs,
+  pressEscapeUntilHidden,
   readServerDatabaseDoc,
   WIDGET_TIMEOUT_MS,
 } from './dashboard-shared-helpers';
 import { ensurePageExpandedByViewId, expandSpaceByName } from './page-utils';
-import { ChartSettingsSelectors, DatabaseViewSelectors, SidebarSelectors, TimelineSelectors } from './selectors';
+import { DatabaseViewSelectors, SidebarSelectors, TimelineSelectors } from './selectors';
 import { grantWorkspaceProSubscription } from './subscription-test-helpers';
-import { setupPageErrorHandling, TestConfig } from './test-config';
+import { installRuntimeTestConfig, setupPageErrorHandling, TestConfig } from './test-config';
 
 export { DatabaseViewLayout, FieldType };
 export { apiGet, apiPatch, apiPost, escapeRegExp };
@@ -101,18 +109,38 @@ export const DashboardSelectors = {
   addWidgetButton: (page: Page) => page.getByTestId('dashboard-add-widget-button'),
   addWidgetRowButton: (page: Page, rowId: string) =>
     page.locator(`[data-testid="dashboard-add-widget-row-button"][data-row-id="${rowId}"]`),
-  insertRowButton: (page: Page, rowId: string) =>
-    page.locator(`[data-testid="dashboard-insert-row-button"][data-row-id="${rowId}"]`),
+  /** The docked "New view" picker (`data-state` creating | ready, `data-widget-id`, `data-side`), or the Source panel (`data-mode="replace"`). */
   picker: (page: Page) => page.getByTestId('dashboard-widget-picker'),
   pickerSearch: (page: Page) => page.getByTestId('dashboard-widget-picker-search'),
   pickerOption: (page: Page, viewId: string) =>
     page.locator(`[data-testid="dashboard-widget-picker-option"][data-view-id="${viewId}"]`),
   pickerOptions: (page: Page) => page.getByTestId('dashboard-widget-picker-option'),
-  pickerNewView: (page: Page) => page.getByTestId('dashboard-widget-picker-new-view'),
   pickerLayoutOption: (page: Page, layout: DatabaseViewLayout) =>
     page.locator(`[data-testid="dashboard-widget-picker-layout-option"][data-layout="${layout}"]`),
-  pickerDatabase: (page: Page, databaseId: string) =>
-    page.locator(`[data-testid="dashboard-widget-picker-database"][data-database-id="${databaseId}"]`),
+  pickerLayoutOptions: (page: Page) => page.getByTestId('dashboard-widget-picker-layout-option'),
+  /** A picker section: `host` ("Views on …"), `other` (Other data sources) or `new` (New view). */
+  pickerSection: (page: Page, section: 'host' | 'other' | 'new') =>
+    page.locator(`[data-testid="dashboard-widget-picker-section"][data-section="${section}"]`),
+  pickerShowMore: (page: Page, databaseId?: string) =>
+    databaseId
+      ? page.locator(`[data-testid="dashboard-widget-picker-show-more"][data-database-id="${databaseId}"]`)
+      : page.getByTestId('dashboard-widget-picker-show-more'),
+  pickerOtherSources: (page: Page) => page.getByTestId('dashboard-widget-picker-other-sources'),
+  pickerNewInDatabase: (page: Page, databaseId: string) =>
+    page.locator(`[data-testid="dashboard-widget-picker-new-in-database"][data-database-id="${databaseId}"]`),
+  pickerClose: (page: Page) => page.getByTestId('dashboard-widget-picker-close'),
+  pickerBack: (page: Page) => page.getByTestId('dashboard-widget-picker-back'),
+  /** The add flow's widget while its default view is created (`data-widget-id`). */
+  pendingWidget: (page: Page) => page.getByTestId('dashboard-widget-pending'),
+  newViewPanel: (page: Page) => page.getByTestId('dashboard-widget-new-view-panel'),
+  newViewName: (page: Page) => page.getByTestId('dashboard-widget-new-view-panel-name'),
+  newViewTile: (page: Page, layout: DatabaseViewLayout) =>
+    page.locator(`[data-testid="dashboard-widget-new-view-panel-tile"][data-layout="${layout}"]`),
+  editChartButton: (page: Page) => page.getByTestId('dashboard-widget-edit-chart'),
+  emptyNewViewButton: (page: Page) => page.getByTestId('dashboard-empty-new-view-button'),
+  emptyEditDashboardButton: (page: Page) => page.getByTestId('dashboard-empty-edit-dashboard-button'),
+  emptyIllustration: (page: Page) => page.getByTestId('dashboard-empty-illustration'),
+  emptyPlaceholder: (page: Page) => page.getByTestId('dashboard-empty-placeholder'),
   widthHandle: (page: Page, rowId: string, index: number) =>
     page.locator(`[data-testid="dashboard-width-handle"][data-row-id="${rowId}"][data-index="${index}"]`),
   widthHandles: (page: Page) => page.getByTestId('dashboard-width-handle'),
@@ -122,14 +150,41 @@ export const DashboardSelectors = {
       .getByTestId('dashboard-resize-pill'),
   heightHandle: (page: Page, rowId: string) =>
     page.locator(`[data-testid="dashboard-height-handle"][data-row-id="${rowId}"]`),
-  limitMessage: (page: Page) => page.getByTestId('dashboard-limit-message'),
   globalFilterButton: (page: Page) => page.getByTestId('dashboard-global-filter-button'),
   globalFilterBar: (page: Page) => page.getByTestId('dashboard-global-filter-bar'),
   globalFilterChips: (page: Page) => page.getByTestId('dashboard-global-filter-chip'),
   globalFilterMenu: (page: Page) => page.getByTestId('dashboard-global-filter-menu'),
-  globalFilterAdd: (page: Page) => page.getByTestId('dashboard-global-filter-add'),
-  globalFilterPropertyOption: (page: Page, fieldType: FieldType) =>
-    page.locator(`[data-testid="dashboard-global-filter-property-option"][data-field-type="${fieldType}"]`),
+  /** The bar's grey `+ Filter` (writers). */
+  globalFilterBarAdd: (page: Page) => page.getByTestId('dashboard-global-filter-bar-add'),
+  /** "Filter by…": the picker's search box (WP08 §1.2). */
+  globalFilterSearch: (page: Page) => page.getByTestId('dashboard-global-filter-search'),
+  globalFilterFieldOptions: (page: Page) => page.getByTestId('dashboard-global-filter-field-option'),
+  globalFilterFieldOption: (page: Page, databaseId: string, fieldId: string) =>
+    page.locator(
+      `[data-testid="dashboard-global-filter-field-option"][data-database-id="${databaseId}"][data-field-id="${fieldId}"]`
+    ),
+  globalFilterSourceGroups: (page: Page) => page.getByTestId('dashboard-global-filter-source-group'),
+  globalFilterSourceGroup: (page: Page, databaseId: string) =>
+    page.locator(`[data-testid="dashboard-global-filter-source-group"][data-database-id="${databaseId}"]`),
+  /** `··· N more` of a source group (or of the flat list). */
+  globalFilterMore: (page: Page, databaseId: string) =>
+    page.locator(`[data-testid="dashboard-global-filter-more"][data-database-id="${databaseId}"]`),
+  globalFilterNoResults: (page: Page) => page.getByTestId('dashboard-global-filter-no-results'),
+  globalFilterMultipleSources: (page: Page) => page.getByTestId('dashboard-global-filter-multiple-sources'),
+  globalFilterMultiIntro: (page: Page) => page.getByTestId('dashboard-global-filter-multi-intro'),
+  globalFilterAddToFilter: (page: Page) => page.getByTestId('dashboard-global-filter-add-to-filter'),
+  globalFilterBuilder: (page: Page) => page.getByTestId('dashboard-global-filter-builder'),
+  globalFilterAddAnother: (page: Page) => page.getByTestId('dashboard-global-filter-add-another'),
+  /** A reader's list of the dashboard's filters (toolbar popover). */
+  globalFilterReaderItems: (page: Page) => page.getByTestId('dashboard-global-filter-reader-item'),
+  globalFilterPillEditor: (page: Page) => page.getByTestId('dashboard-global-filter-pill-editor'),
+  /** The pill editor's `···` (writers): Filter multiple sources, Delete filter. */
+  globalFilterMoreActions: (page: Page) => page.getByTestId('dashboard-global-filter-more-actions'),
+  globalFilterOpenBuilder: (page: Page) => page.getByTestId('dashboard-global-filter-open-builder'),
+  globalFilterRelativeDirection: (page: Page) => page.getByTestId('dashboard-global-filter-relative-direction'),
+  globalFilterRelativeAmount: (page: Page) => page.getByTestId('dashboard-global-filter-relative-amount'),
+  globalFilterRelativeUnit: (page: Page) => page.getByTestId('dashboard-global-filter-relative-unit'),
+  globalFilterRelativeHint: (page: Page) => page.getByTestId('dashboard-global-filter-relative-hint'),
   globalFilterName: (page: Page) => page.getByTestId('dashboard-global-filter-name'),
   globalFilterTargets: (page: Page) => page.getByTestId('dashboard-global-filter-target'),
   globalFilterTarget: (page: Page, databaseId: string) =>
@@ -137,22 +192,49 @@ export const DashboardSelectors = {
   globalFilterCondition: (page: Page) => page.getByTestId('dashboard-global-filter-condition'),
   globalFilterContent: (page: Page) => page.getByTestId('dashboard-global-filter-content'),
   globalFilterDelete: (page: Page) => page.getByTestId('dashboard-global-filter-delete'),
+  /** Done of the multiple sources builder (the pill editor has none). */
   globalFilterDone: (page: Page) => page.getByTestId('dashboard-global-filter-done'),
-  globalFilterSaveForEverybody: (page: Page) => page.getByTestId('dashboard-global-filter-save-for-everybody'),
-  globalFilterLocalBadge: (page: Page) => page.getByTestId('dashboard-global-filter-local-badge'),
+  globalFilterReset: (page: Page) => page.getByTestId('dashboard-global-filter-reset'),
+  globalFilterSaveForEveryone: (page: Page) => page.getByTestId('dashboard-global-filter-save-for-everyone'),
+  /** Reset and "Save for everyone" at the bar's right end, while something is unsaved (WP07). */
+  privateControls: (page: Page) => page.getByTestId('dashboard-private-controls'),
+  /** Every orange "unsaved changes" dot: pills, the toolbar button and the widget tools. */
+  unsavedDots: (scope: Page | Locator) => scope.locator('[data-slot="unsaved-dot"]'),
   addDashboardViewOption: (page: Page) => page.getByTestId('add-dashboard-view-button'),
   viewIcon: (scope: Page | Locator) => scope.getByTestId('dashboard-view-icon'),
+  /** WP14b: a phone's bottom sheet, of one kind (`data-sheet`: widget-filter, widget-menu, global-filter, global-filter-pill, drilldown, views) or the open one. */
+  mobileSheet: (page: Page, kind?: string) =>
+    kind ? page.locator(`[data-testid="mobile-sheet"][data-sheet="${kind}"]`) : page.getByTestId('mobile-sheet').last(),
+  mobileSheetTitle: (page: Page) => page.getByTestId('mobile-sheet').last().getByTestId('mobile-sheet-title'),
+  /** A sheet row by its `data-item-id` (`view-data-source`, a view id, `new-view`, …). */
+  mobileSheetItem: (page: Page, id: string) =>
+    page.getByTestId('mobile-sheet').last().locator(`[data-testid="mobile-sheet-item"][data-item-id="${id}"]`),
+  mobileSheetItems: (page: Page) => page.getByTestId('mobile-sheet').last().getByTestId('mobile-sheet-item'),
+  mobileSheetClose: (page: Page) => page.getByTestId('mobile-sheet').last().getByTestId('mobile-sheet-close'),
+  mobileSheetBack: (page: Page) => page.getByTestId('mobile-sheet').last().getByTestId('mobile-sheet-back'),
+  /** The view switcher that replaces the tab strip below 768px. */
+  viewPill: (page: Page) => page.getByTestId('database-view-pill'),
+  /** The chart tooltip, of one category (`data-category`) or whichever shows. */
+  chartTooltip: (page: Page, category?: string) =>
+    category
+      ? page.locator(`[data-testid="chart-tooltip"][data-category="${category}"]`)
+      : page.getByTestId('chart-tooltip'),
+  /** A widget's tool by its slot (`data-widget-tool`): the same on desktop and on a phone. */
+  widgetTool: (widget: Locator, tool: string) =>
+    widget.locator(`[data-widget-tool="${tool.toLowerCase()}"]`).getByRole('button').first(),
 };
 
+/** The widget menu's entries (WP04 §1.7); `create-row-*` live in the "Move to row" submenu. */
 export type WidgetMenuAction =
-  | 'open'
-  | 'change-view'
-  | 'duplicate'
-  | 'delete'
+  | 'view-data-source'
+  | 'edit-view'
   | 'move-left'
   | 'move-right'
-  | 'move-up'
-  | 'move-down';
+  | 'move-to-row'
+  | 'create-row-above'
+  | 'create-row-below'
+  | 'duplicate'
+  | 'delete';
 
 /** Grid rows rendered inside a scope (a widget, usually). */
 export function gridDataRows(scope: Locator): Locator {
@@ -206,6 +288,11 @@ export interface FieldSpec {
   type: FieldType;
   /** Select option names; defaults to `STATUS_OPTIONS`. */
   options?: string[];
+  /**
+   * Option ids are `<prefix>-<slug>` instead of the shared named ids, so two
+   * databases list options of the same name under different ids (WP08 §1.9).
+   */
+  optionIdPrefix?: string;
 }
 
 export interface DatabaseSpec {
@@ -230,10 +317,17 @@ export function namedOptionId(name: string): string {
   return `uc-opt-${slug}`;
 }
 
+/** The id of a select option of `field`: its prefixed id, or the id shared by every option of that name. */
+function fieldOptionId(field: FieldSpec, name: string): string {
+  const id = namedOptionId(name);
+
+  return field.optionIdPrefix ? `${field.optionIdPrefix}-${id.slice('uc-opt-'.length)}` : id;
+}
+
 function selectOptionsFor(field: FieldSpec) {
   if (!field.options) return STATUS_OPTIONS;
   return field.options.map((name, index) => ({
-    id: namedOptionId(name),
+    id: fieldOptionId(field, name),
     name,
     color: OPTION_COLORS[index % OPTION_COLORS.length],
   }));
@@ -242,7 +336,10 @@ function selectOptionsFor(field: FieldSpec) {
 /**
  * Projects and Tasks share every property type under different names, so a
  * global filter maps one property per source. Notes has only a title and a
- * number, and Backlog has no rows.
+ * number, and Backlog has no rows. Projects.Region and Tasks.Area list
+ * options of the same names under different ids (and spellings), so a select
+ * filter mapped to both matches them by name (WP08 §1.9); they come after the
+ * Status / Stage selects, so boards and charts still group by those.
  */
 export const DASHBOARD_FIXTURE_DATABASES: Record<string, DatabaseSpec> = {
   Projects: {
@@ -251,10 +348,11 @@ export const DASHBOARD_FIXTURE_DATABASES: Record<string, DatabaseSpec> = {
       { name: 'Estimate', type: FieldType.Number },
       { name: 'Due', type: FieldType.DateTime },
       { name: 'Urgent', type: FieldType.Checkbox },
+      { name: 'Region', type: FieldType.SingleSelect, options: ['Europe', 'Asia'], optionIdPrefix: 'proj-region' },
     ],
     rows: [
-      { Name: 'Website launch', Status: 'Doing', Estimate: 3, Due: { dayOffset: 0 }, Urgent: true },
-      { Name: 'Mobile app', Status: 'Todo', Estimate: 5, Due: { dayOffset: 10 }, Urgent: false },
+      { Name: 'Website launch', Status: 'Doing', Estimate: 3, Due: { dayOffset: 0 }, Urgent: true, Region: 'Europe' },
+      { Name: 'Mobile app', Status: 'Todo', Estimate: 5, Due: { dayOffset: 10 }, Urgent: false, Region: 'Asia' },
       { Name: 'API cleanup', Status: 'Done', Estimate: 8, Due: { dayOffset: -3 }, Urgent: true },
     ],
   },
@@ -264,11 +362,24 @@ export const DASHBOARD_FIXTURE_DATABASES: Record<string, DatabaseSpec> = {
       { name: 'Points', type: FieldType.Number },
       { name: 'Deadline', type: FieldType.DateTime },
       { name: 'Blocked', type: FieldType.Checkbox },
+      {
+        name: 'Area',
+        type: FieldType.SingleSelect,
+        options: ['EUROPE', 'Asia', 'Africa'],
+        optionIdPrefix: 'task-area',
+      },
     ],
     rows: [
-      { Name: 'Write launch plan', Stage: 'Doing', Points: 2, Deadline: { dayOffset: 0 }, Blocked: false },
-      { Name: 'Review', Stage: 'Todo', Points: 1, Deadline: { dayOffset: 5 }, Blocked: false },
-      { Name: 'Ship', Stage: 'Done', Points: 4, Deadline: { dayOffset: -1 }, Blocked: true },
+      {
+        Name: 'Write launch plan',
+        Stage: 'Doing',
+        Points: 2,
+        Deadline: { dayOffset: 0 },
+        Blocked: false,
+        Area: 'EUROPE',
+      },
+      { Name: 'Review', Stage: 'Todo', Points: 1, Deadline: { dayOffset: 5 }, Blocked: false, Area: 'Africa' },
+      { Name: 'Ship', Stage: 'Done', Points: 4, Deadline: { dayOffset: -1 }, Blocked: true, Area: 'Asia' },
     ],
   },
   Notes: {
@@ -287,6 +398,24 @@ export const DASHBOARD_FIXTURE_DATABASES: Record<string, DatabaseSpec> = {
     rows: [{ Name: 'Salary review', Level: 3 }],
     privateSpace: true,
   },
+};
+
+/**
+ * WP14c (`dashboard-localization.feature`): Amount is a plain number and the
+ * two payments fall in January and February 2026 (local noon, as the web
+ * stores a picked date), 78,500,000 in all. Created through the `specs`
+ * argument of `addFixtureDatabases`; `dashboard-localization-helpers.ts` adds
+ * its "Monthly" bar chart and "Total" number chart.
+ */
+export const BUDGET_FIXTURE: DatabaseSpec = {
+  fields: [
+    { name: 'Amount', type: FieldType.Number },
+    { name: 'Paid on', type: FieldType.DateTime },
+  ],
+  rows: [
+    { Name: 'Ads', Amount: 50_000_000, 'Paid on': new Date(2026, 0, 15, 12).toISOString() },
+    { Name: 'Agency', Amount: 28_500_000, 'Paid on': new Date(2026, 1, 3, 12).toISOString() },
+  ],
 };
 
 function localNoonIso(dayOffset: number) {
@@ -476,6 +605,7 @@ export async function signInFixtureAccount(request: APIRequestContext, email: st
  * pages get it too.
  */
 export async function installDashboardTestBridge(context: BrowserContext) {
+  await installRuntimeTestConfig(context);
   // A busy dev server sometimes fails a lazy module fetch and the app shows one
   // of its error screens; reload as a user would (a few times per tab). Only a
   // recorded module fetch failure counts: those screens also catch real render
@@ -515,7 +645,11 @@ export async function installDashboardTestBridge(context: BrowserContext) {
     }, 500);
   });
   await context.addInitScript(() => {
-    type BridgeContext = { databaseDoc?: { guid?: string; getMap: (name: string) => any } };
+    type BridgeContext = {
+      workspaceId?: string;
+      activeViewId?: string;
+      databaseDoc?: { guid?: string; getMap: (name: string) => any };
+    };
     const win = window as unknown as Record<string, unknown> & { Cypress?: boolean };
 
     win.Cypress = true;
@@ -526,9 +660,23 @@ export async function installDashboardTestBridge(context: BrowserContext) {
       const ctx = value as BridgeContext | undefined;
 
       if (!ctx || !ctx.databaseDoc) return;
-      const index = contexts.indexOf(ctx);
+      const databaseId = ctx.databaseDoc.getMap('data')?.get('database')?.get('id') ?? ctx.databaseDoc.guid;
 
-      if (index !== -1) contexts.splice(index, 1);
+      // React exposes a fresh context value after row-map updates. Keep the
+      // newest value for each database/view, not hundreds of historical maps
+      // that would distort the heap and lifetime measurements of the app.
+      for (let index = contexts.length - 1; index >= 0; index -= 1) {
+        const previous = contexts[index];
+        const previousId =
+          previous.databaseDoc?.getMap('data')?.get('database')?.get('id') ?? previous.databaseDoc?.guid;
+        const sameDatabase =
+          previous.databaseDoc === ctx.databaseDoc || (databaseId !== undefined && previousId === databaseId);
+
+        if (previous.workspaceId === ctx.workspaceId && previous.activeViewId === ctx.activeViewId && sameDatabase) {
+          contexts.splice(index, 1);
+        }
+      }
+
       contexts.push(ctx);
       if (contexts.length > 300) contexts.splice(0, contexts.length - 300);
     };
@@ -839,22 +987,150 @@ async function pruneTemplateData(
 
   const base = `/api/workspace/${world.workspaceId}/database/${database.databaseId}`;
 
-  await expect
-    .poll(
-      async () => {
-        const [rows, fields] = await Promise.all([
-          apiGet<{ id: string }[]>(request, world.owner.accessToken, `${base}/row`),
-          apiGet<{ id: string }[]>(request, world.owner.accessToken, `${base}/fields`),
-        ]);
+  try {
+    await expect
+      .poll(
+        async () => {
+          const [rows, fields] = await Promise.all([
+            apiGet<{ id: string }[]>(request, world.owner.accessToken, `${base}/row`),
+            apiGet<{ id: string }[]>(request, world.owner.accessToken, `${base}/fields`),
+          ]);
 
-        return (
-          rows.every((row) => !defaultRowIds.includes(row.id)) &&
-          fields.every((field) => !templateFieldIds.includes(field.id))
-        );
-      },
-      { timeout: FIXTURE_TIMEOUT_MS, message: `waiting for "${database.name}" template data removal to sync` }
-    )
-    .toBe(true);
+          return (
+            rows.every((row) => !defaultRowIds.includes(row.id)) &&
+            fields.every((field) => !templateFieldIds.includes(field.id))
+          );
+        },
+        { timeout: FIXTURE_TIMEOUT_MS, message: `waiting for "${database.name}" template data removal to sync` }
+      )
+      .toBe(true);
+  } catch (error) {
+    // Inspect only after the persistence assertion fails. Do not flush, retry
+    // the deletion, or read payloads: a stranded update must remain a failure.
+    const diagnostic = await page
+      .evaluate(
+        async ({ databaseId, workspaceId }) => {
+          const win = window as any;
+          const bridgeDoc = win.__DASHBOARD_TEST__?.byDatabase(databaseId)?.databaseDoc;
+          const currentDoc = win.__TEST_DATABASE_CONTEXT__?.databaseDoc;
+          const describe = (doc: any) =>
+            doc
+              ? {
+                  guid: doc.guid,
+                  databaseId: doc.getMap('data').get('database')?.get('id'),
+                  destroyed: doc.isDestroyed,
+                  updateListeners: doc._observers?.get('update')?.size ?? null,
+                  databaseRestoreId: doc.databaseRestoreId ?? null,
+                }
+              : null;
+          const result: Record<string, unknown> = {
+            databaseId,
+            workspaceId,
+            bridgeDoc: describe(bridgeDoc),
+            currentDoc: describe(currentDoc),
+            sameDocument: bridgeDoc === currentDoc,
+          };
+
+          try {
+            const databases = await indexedDB.databases();
+            const cache = databases.find(({ name }) => name === 'af_database_cache');
+
+            if (!cache?.name) return { ...result, nativeIdbError: 'App cache database not present' };
+            result.outbox = await new Promise<unknown[]>((resolve, reject) => {
+              const open = indexedDB.open(cache.name as string);
+              let database: IDBDatabase | undefined;
+              let settled = false;
+              const timer = window.setTimeout(() => {
+                settled = true;
+                database?.close();
+                reject(new Error('Readonly outbox inspection timed out'));
+              }, 3000);
+              const fail = (reason: unknown) => {
+                settled = true;
+                window.clearTimeout(timer);
+                database?.close();
+                reject(reason);
+              };
+
+              open.onerror = () => fail(open.error);
+              open.onblocked = () => fail(new Error('Readonly outbox inspection was blocked'));
+              open.onupgradeneeded = () => {
+                open.transaction?.abort();
+                fail(new Error('App cache database disappeared before inspection'));
+              };
+
+              open.onsuccess = () => {
+                database = open.result;
+                if (settled) {
+                  database.close();
+                  return;
+                }
+
+                if (!database.objectStoreNames.contains('sync_outbox')) {
+                  fail(new Error('sync_outbox store not present'));
+                  return;
+                }
+
+                const transaction = database.transaction('sync_outbox', 'readonly');
+                const cursor = transaction.objectStore('sync_outbox').openCursor();
+                const records: unknown[] = [];
+
+                cursor.onerror = () => fail(cursor.error);
+                transaction.onabort = () => fail(transaction.error);
+                transaction.onerror = () => fail(transaction.error);
+                cursor.onsuccess = () => {
+                  const item = cursor.result;
+
+                  if (!item) return;
+                  const row = item.value;
+
+                  if (row.workspaceId === workspaceId && row.objectId === databaseId) {
+                    records.push({
+                      id: row.id,
+                      objectId: row.objectId,
+                      collabType: row.collabType,
+                      version: row.version ?? null,
+                      databaseRestoreId: row.databaseRestoreId ?? null,
+                      source: row.source ?? 'local',
+                      payloadBytes: row.payload?.byteLength ?? null,
+                      beforeStateVectorBytes: row.beforeStateVector?.byteLength ?? null,
+                      createdAt: row.createdAt,
+                    });
+                  }
+
+                  item.continue();
+                };
+
+                transaction.oncomplete = () => {
+                  settled = true;
+                  window.clearTimeout(timer);
+                  database?.close();
+                  resolve(records);
+                };
+              };
+            });
+          } catch (idbError) {
+            result.nativeIdbError =
+              idbError instanceof Error ? { name: idbError.name, message: idbError.message } : String(idbError);
+          }
+
+          return result;
+        },
+        { databaseId: database.databaseId, workspaceId: world.workspaceId }
+      )
+      .catch((diagnosticError: unknown) => ({
+        unavailable: diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError),
+      }));
+
+    await test
+      .info()
+      .attach('fixture-template-prune-sync-failure', {
+        body: JSON.stringify(diagnostic, null, 2),
+        contentType: 'application/json',
+      })
+      .catch(() => undefined);
+    throw error;
+  }
 }
 
 /** Navigate to a database page (optionally a given view tab) and wait for it to mount. */
@@ -1243,6 +1519,8 @@ export interface PersistedGlobalFilter {
   condition: number;
   content: string;
   targets: Record<string, string>;
+  /** The mapping order (the first target is primary); current clients always write it. */
+  target_order?: string[];
 }
 
 export interface PersistedDashboardSetting {
@@ -1769,24 +2047,97 @@ export async function openWidgetMenu(page: Page, widget: Locator) {
 
 export async function chooseWidgetMenuAction(page: Page, widget: Locator, action: WidgetMenuAction) {
   await openWidgetMenu(page, widget);
+  if (action === 'create-row-above' || action === 'create-row-below') {
+    // The new-row entries live in the "Move to row" submenu, which opens on hover.
+    await DashboardSelectors.widgetMenuItem(page, 'move-to-row').hover();
+    await expect(page.getByTestId('dashboard-widget-menu-move-to-row-content')).toBeVisible();
+  }
+
   await DashboardSelectors.widgetMenuItem(page, action).click();
 }
 
-export async function openWidgetPicker(page: Page, trigger?: Locator) {
-  const button = trigger ?? DashboardSelectors.addWidgetButton(page).filter({ visible: true }).first();
+const pickerWidgets = new WeakMap<Page, { widgetId: string; hostViewIds: string[] }>();
 
-  await expect(button).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
-  await button.click();
-  await expect(DashboardSelectors.picker(page)).toBeVisible();
+/**
+ * The widget the last `openWidgetPicker` added (WP06 §1.1: a "+" inserts a
+ * default widget and docks the picker beside it), and the host database's
+ * views before it.
+ */
+export function lastPickerWidget(page: Page): { widgetId: string; hostViewIds: string[] } {
+  const entry = pickerWidgets.get(page);
+
+  if (!entry) throw new Error('No widget was added through the picker in this scenario');
+  return entry;
 }
 
+/**
+ * Start an add (WP06): the empty dashboard's "+ New view" pill, else the
+ * visible "Add to new row" button, or `trigger`. Waits until the default
+ * widget is persisted (one more widget) and the docked picker is ready, then
+ * remembers the new widget's id and the host's views before the add.
+ */
+export async function openWidgetPicker(page: Page, trigger?: Locator) {
+  const emptyPill = DashboardSelectors.emptyNewViewButton(page);
+  const button =
+    trigger ??
+    ((await emptyPill.isVisible())
+      ? emptyPill
+      : DashboardSelectors.addWidgetButton(page).filter({ visible: true }).first());
+  const widgetCountBefore = allWidgets(await readDashboardSetting(page)).length;
+  const hostViewIds = (await readDatabaseViews(page, hostDatabase(page).databaseId)).map((view) => view.id);
+  const world = dashboardWorld(page);
+  const picker = DashboardSelectors.picker(page);
+
+  world.viewCountBefore = hostViewIds.length;
+  await expect(button).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+  await button.click();
+  await expect(picker).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+  await expect(picker).toHaveAttribute('data-state', 'ready', { timeout: WIDGET_TIMEOUT_MS });
+  await expect
+    .poll(async () => allWidgets(await readDashboardSetting(page)).length, { timeout: WIDGET_TIMEOUT_MS })
+    .toBe(widgetCountBefore + 1);
+  const widgetId = (await picker.getAttribute('data-widget-id')) ?? '';
+
+  expect(widgetId, 'the picker names the widget it was opened for').not.toBe('');
+  pickerWidgets.set(page, { widgetId, hostViewIds });
+  return widgetId;
+}
+
+/**
+ * Pick an existing view in the open picker: searched for, or revealed with
+ * "Show n more" / "Other data sources" when it is not listed. In the add
+ * flow the picker's widget swaps to the view; in the Source panel (replace
+ * mode) the widget it belongs to does.
+ */
 export async function pickExistingView(page: Page, viewId: string, search?: string) {
-  if (search !== undefined) await DashboardSelectors.pickerSearch(page).fill(search);
+  const picker = DashboardSelectors.picker(page);
   const option = DashboardSelectors.pickerOption(page, viewId);
+  const replace = (await picker.getAttribute('data-mode')) === 'replace';
+  const widgetId = replace ? null : await picker.getAttribute('data-widget-id');
+
+  if (search !== undefined) await DashboardSelectors.pickerSearch(page).fill(search);
+  if (!(await option.isVisible())) {
+    if (await DashboardSelectors.pickerOtherSources(page).isVisible())
+      await DashboardSelectors.pickerOtherSources(page).click();
+    for (const more of await DashboardSelectors.pickerShowMore(page).all()) {
+      if (await option.isVisible()) break;
+      if (await more.isVisible()) await more.click();
+    }
+  }
 
   await expect(option).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
   await option.click();
-  await expect(DashboardSelectors.picker(page)).toBeHidden();
+  await expect(picker).toBeHidden({ timeout: WIDGET_TIMEOUT_MS });
+  if (widgetId) {
+    await expect(DashboardSelectors.widget(page, widgetId)).toHaveAttribute('data-view-id', viewId, {
+      timeout: WIDGET_TIMEOUT_MS,
+    });
+    await expect
+      .poll(async () => allWidgets(await readDashboardSetting(page)).find((widget) => widget.id === widgetId)?.view_id, {
+        timeout: WIDGET_TIMEOUT_MS,
+      })
+      .toBe(viewId);
+  }
 }
 
 export async function expectDashboardMode(page: Page, mode: 'View' | 'Edit') {
@@ -1836,8 +2187,10 @@ export async function openWidgetRow(scope: Page, widget: Locator, rowId: string)
     const row = widget.getByTestId(`grid-row-${rowId}`);
 
     await expect(row).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
-    await row.hover();
-    const expand = widget.getByTestId('row-expand-button').first();
+    // Wide virtual rows extend beyond the clipped widget. Hover the primary
+    // cell, whose row-specific action opens this exact record.
+    await row.locator('.grid-row-cell[data-is-primary="true"]').hover();
+    const expand = row.getByTestId('row-expand-button');
 
     await expect(expand).toBeVisible();
     await expand.click();
@@ -1887,11 +2240,9 @@ export async function expectGridWidgetRows(widget: Locator, titles: string[]) {
 // Charts
 // ---------------------------------------------------------------------------
 
-/** The Number chart part of the open chart page's settings menu (gear → Chart settings). */
+/** The chart settings panel of the open chart page (gear → Chart settings ›), showing the chart types. */
 async function openNumberChartSettingsMenu(page: Page) {
-  await page.keyboard.press('Escape');
-  await ChartSettingsSelectors.settingsButton(page).click();
-  await ChartSettingsSelectors.chartSettingsSubTrigger(page).click();
+  await openChartPagePanel(page);
   await expect(page.getByTestId('chart-type-number')).toBeVisible({ timeout: 10_000 });
 }
 
@@ -1920,47 +2271,47 @@ export async function readChartSetting(page: Page, viewId: string): Promise<Char
   );
 }
 
-export const AGGREGATION_BY_NAME: Record<string, number> = { Count: 0, Sum: 1, Average: 2 };
+/** Calculation labels → `aggregation_type` (WP11: every value 0–16; "Count" is Count all). */
+export const AGGREGATION_BY_NAME: Record<string, number> = CHART_AGGREGATION_BY_NAME;
 
 /**
- * Turn a chart view into a Number chart through its settings menu, optionally
- * with an aggregation over a number property. Verified against the view's
- * persisted chart layout setting.
+ * Turn a chart view into a Number chart through its settings panel: the
+ * property first ("What to show"), then the calculation. A calculation other
+ * than Count needs its property. Verified against the view's persisted chart
+ * layout setting.
  */
 export async function configureNumberChart(page: Page, databaseName: string, aggregation = 'Count', property?: string) {
   const database = fixtureDatabase(page, databaseName);
   const viewId = database.views.Chart;
 
   if (!viewId) throw new Error(`"${databaseName}" has no Chart view`);
+  const aggregationType = AGGREGATION_BY_NAME[aggregation];
+
+  if (aggregationType === undefined) throw new Error(`Unknown number chart aggregation "${aggregation}"`);
+  if (aggregationType !== AGGREGATION_BY_NAME.Count && !property) {
+    throw new Error(`The "${aggregation}" calculation needs a property`);
+  }
+
   await openDatabasePage(page, databaseName, viewId);
   await openNumberChartSettingsMenu(page);
   await page.getByTestId('chart-type-number').click();
   await expect.poll(async () => (await readChartSetting(page, viewId))?.chartType).toBe(4);
 
-  const aggregationType = AGGREGATION_BY_NAME[aggregation];
-
-  if (aggregationType === undefined) throw new Error(`Unknown number chart aggregation "${aggregation}"`);
-  if (aggregationType !== AGGREGATION_BY_NAME.Count) {
-    const item = page.getByTestId(`chart-number-aggregation-${aggregationType}`);
-
-    if (!(await item.isVisible())) await openNumberChartSettingsMenu(page);
-    await item.click();
-    await expect.poll(async () => (await readChartSetting(page, viewId))?.aggregationType).toBe(aggregationType);
-  }
-
   if (property) {
     const fieldId = database.fieldIds[property];
 
     if (!fieldId) throw new Error(`"${databaseName}" has no "${property}" property`);
-    const item = page.getByTestId(`chart-number-property-${fieldId}`);
-
-    if (!(await item.isVisible())) await openNumberChartSettingsMenu(page);
-    await item.click();
+    await openChartPanelRow(page, 'y_what');
+    await page.getByTestId(`chart-field-${fieldId}`).click();
     await expect.poll(async () => (await readChartSetting(page, viewId))?.yFieldId).toBe(fieldId);
   }
 
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
+  if (aggregationType !== AGGREGATION_BY_NAME.Count) {
+    await chooseChartCalculation(page, aggregationType);
+    await expect.poll(async () => (await readChartSetting(page, viewId))?.aggregationType).toBe(aggregationType);
+  }
+
+  await closeChartPanel(page);
   await expect(page.getByTestId('number-chart')).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
 }
 
@@ -2116,44 +2467,117 @@ export async function openGlobalFilterChip(scope: Page, name: string) {
   await expect(DashboardSelectors.globalFilterMenu(scope)).toBeVisible();
 }
 
+/**
+ * Close the open global filter popover (the pill editor has no Done button):
+ * Escape, once per open layer (a condition dropdown first). Debounced inputs
+ * flush as the editor unmounts.
+ */
 export async function closeGlobalFilterMenu(scope: Page) {
   const menu = DashboardSelectors.globalFilterMenu(scope);
-  const done = DashboardSelectors.globalFilterDone(scope);
 
-  // Done closes the menu from the editor; the filter list has no Done button.
-  if (await done.isVisible()) {
-    await done.click();
-    await expect(done).toBeHidden();
-  }
-
-  if (await menu.isVisible()) await scope.keyboard.press('Escape');
-  await expect(menu).toBeHidden();
+  await pressEscapeUntilHidden(scope, menu);
 }
 
 /**
- * Start a global filter of `typeName`, map it to exactly the given
- * database → property pairs (unmapping every other suggested source) and name
- * it after the first mapped property, so chips are addressable by that name
- * whichever source the editor suggested first.
+ * Add a global filter the way a writer does (WP08 §1.3–1.4). One source:
+ * pick its property in the toolbar menu. More: "Filter multiple sources",
+ * "Add to filter", the first property, "Add another" for each other source,
+ * then Done. Either way the new pill's editor opens, and the filter is named
+ * after the first property. `typeName` (a type name or a `FieldType`) is kept
+ * for the steps and checked against the saved filter. Fixture identities
+ * belong to `owner`; the UI to `page`. Returns the new filter's id.
  */
-export async function addGlobalFilter(page: Page, typeName: string, mapping: Record<string, string>) {
-  const fieldType = FIELD_TYPE_BY_NAME[typeName];
+export async function addGlobalFilter(
+  page: Page,
+  typeName: string | FieldType,
+  mapping: Record<string, string>,
+  owner: Page = page
+): Promise<string> {
+  const fieldType = typeof typeName === 'number' ? typeName : FIELD_TYPE_BY_NAME[typeName];
+  const pairs = Object.entries(mapping);
 
   if (fieldType === undefined) throw new Error(`Unknown property type "${typeName}"`);
-  await openGlobalFilterMenu(page);
-  const option = DashboardSelectors.globalFilterPropertyOption(page, fieldType);
+  if (pairs.length === 0) throw new Error('A global filter needs at least one source');
+  // The search shows every match (a group lists 5 properties otherwise). The
+  // primary property has no fixture id: its row is matched by name.
+  const pick = async ([database, property]: [string, string]) => {
+    const search = DashboardSelectors.globalFilterSearch(page);
 
-  if (!(await option.isVisible())) await DashboardSelectors.globalFilterAdd(page).click();
-  await option.click();
-  await expect(page.getByTestId('dashboard-global-filter-editor')).toBeVisible();
-  await mapGlobalFilterTargets(page, mapping);
-  await renameGlobalFilter(page, Object.values(mapping)[0]);
+    await search.fill(property);
+    await expect(search).toHaveValue(property);
+    const fixture = fixtureDatabase(owner, database);
+    const fieldId = fixture.fieldIds[property];
+    const rows = page.locator(
+      `[data-testid="dashboard-global-filter-field-option"][data-database-id="${fixture.databaseId}"]`
+    );
+    const row = fieldId
+      ? rows.and(page.locator(`[data-field-id="${fieldId}"]`))
+      : rows.filter({ hasText: new RegExp(`^\\s*${escapeRegExp(property)}\\s*$`) }).first();
+
+    await expect(row, `the filter menu offers no "${property}" in "${database}"`).toBeVisible({
+      timeout: WIDGET_TIMEOUT_MS,
+    });
+    await row.click();
+  };
+
+  await openGlobalFilterMenu(page);
+  if (pairs.length === 1) {
+    await pick(pairs[0]);
+  } else {
+    await DashboardSelectors.globalFilterMultipleSources(page).click();
+    await DashboardSelectors.globalFilterAddToFilter(page).click();
+    await pick(pairs[0]);
+    await expect(DashboardSelectors.globalFilterBuilder(page)).toBeVisible();
+    for (const pair of pairs.slice(1)) {
+      await DashboardSelectors.globalFilterAddAnother(page).click();
+      await pick(pair);
+      await expect(
+        DashboardSelectors.globalFilterTarget(page, fixtureDatabase(owner, pair[0]).databaseId)
+      ).toBeVisible();
+    }
+
+    await DashboardSelectors.globalFilterDone(page).click();
+  }
+
+  const editor = DashboardSelectors.globalFilterPillEditor(page);
+
+  await expect(editor).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+  const filterId = (await editor.getAttribute('data-filter-id')) ?? '';
+  const expectedTargets = Object.fromEntries(
+    pairs.map(([database]) => [fixtureDatabase(owner, database).databaseId, expect.any(String)])
+  );
+
+  // Adding is a shared write in either mode: the saved filter has the type and exactly these sources.
+  await expect
+    .poll(async () => {
+      const saved = (await readDashboardSetting(page, dashboardViewId(owner))).global_filters.find(
+        (filter) => filter.id === filterId
+      );
+
+      return saved ? { ty: saved.ty, targets: saved.targets } : null;
+    })
+    .toEqual({ ty: fieldType, targets: expectedTargets });
+  return filterId;
 }
 
-export async function renameGlobalFilter(page: Page, name: string) {
-  const input = DashboardSelectors.globalFilterName(page);
-  const filterId = await page.getByTestId('dashboard-global-filter-editor').getAttribute('data-filter-id');
+/** Open the multiple sources builder of the open pill (through `···`), unless it shows already. */
+async function openGlobalFilterBuilderFromPill(page: Page) {
+  const builder = DashboardSelectors.globalFilterBuilder(page);
 
+  if (await builder.isVisible()) return builder;
+  await DashboardSelectors.globalFilterMoreActions(page).click();
+  await DashboardSelectors.globalFilterOpenBuilder(page).click();
+  await expect(builder).toBeVisible();
+  return builder;
+}
+
+/** Rename the open filter in its builder, only when the name differs. */
+export async function renameGlobalFilter(page: Page, name: string) {
+  const builder = await openGlobalFilterBuilderFromPill(page);
+  const input = DashboardSelectors.globalFilterName(page);
+  const filterId = await builder.getAttribute('data-filter-id');
+
+  if ((await input.inputValue()) === name) return;
   await input.fill(name);
   await expect(input).toHaveValue(name);
   // The name input is debounced; wait for the saved value.
@@ -2163,73 +2587,18 @@ export async function renameGlobalFilter(page: Page, name: string) {
 }
 
 /**
- * The editor lists one target row per mapped source (carrying its field id);
- * unmapped sources with a matching property sit under "Add source".
+ * Stop the open filter from applying to `databaseId`: `···` → "Filter
+ * multiple sources", remove the source in the builder, then Done (back to the
+ * pill's editor).
  */
-async function mappedTargetIds(page: Page): Promise<string[]> {
-  return DashboardSelectors.globalFilterTargets(page).evaluateAll((targets) =>
-    targets
-      .filter((target) => (target.getAttribute('data-field-id') ?? '') !== '')
-      .map((target) => target.getAttribute('data-database-id') ?? '')
-  );
-}
-
 export async function removeGlobalFilterTarget(page: Page, databaseId: string) {
+  await openGlobalFilterBuilderFromPill(page);
   const target = DashboardSelectors.globalFilterTarget(page, databaseId);
 
   await target.getByTestId('dashboard-global-filter-target-remove').click();
   await expect(target).toHaveCount(0);
-}
-
-/** Map an unmapped source through the "Add source" menu (it picks the first compatible property). */
-async function addGlobalFilterSource(page: Page, databaseId: string) {
-  await page.getByTestId('dashboard-global-filter-add-source').click();
-  await page
-    .locator(`[data-testid="dashboard-global-filter-add-source-option"][data-database-id="${databaseId}"]`)
-    .click();
-  await expect(DashboardSelectors.globalFilterTarget(page, databaseId)).toBeVisible();
-}
-
-export async function mapGlobalFilterTargets(page: Page, mapping: Record<string, string>) {
-  const wanted = new Map(
-    Object.entries(mapping).map(([database, property]) => {
-      const fixture = fixtureDatabase(page, database);
-      const fieldId = fixture.fieldIds[property] ?? '';
-
-      return [fixture.databaseId, { property, fieldId }] as const;
-    })
-  );
-
-  await expect(DashboardSelectors.globalFilterTargets(page).first()).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
-
-  for (const [databaseId, { property, fieldId }] of wanted) {
-    const target = DashboardSelectors.globalFilterTarget(page, databaseId);
-
-    if (!(await target.isVisible())) await addGlobalFilterSource(page, databaseId);
-    await expect(target, `the global filter lists no source for ${databaseId}`).toBeVisible();
-    // The primary field has no fixture id; match it by name instead.
-    const alreadyMapped = fieldId
-      ? (await target.getAttribute('data-field-id')) === fieldId
-      : new RegExp(`^\\s*${escapeRegExp(property)}\\s*$`).test(
-          (await target.getByTestId('dashboard-global-filter-target-select').textContent()) ?? ''
-        );
-
-    if (alreadyMapped) continue;
-    await target.getByTestId('dashboard-global-filter-target-select').click();
-    const options = page.locator('[data-testid="dashboard-global-filter-target-option"]');
-    const item = fieldId
-      ? options.and(page.locator(`[data-field-id="${fieldId}"]`))
-      : options.filter({ hasText: property, visible: true }).first();
-
-    await item.click();
-    await expect(target.getByTestId('dashboard-global-filter-target-select')).toContainText(property);
-  }
-
-  for (const databaseId of await mappedTargetIds(page)) {
-    if (!wanted.has(databaseId)) await removeGlobalFilterTarget(page, databaseId);
-  }
-
-  await expect.poll(async () => (await mappedTargetIds(page)).sort()).toEqual([...wanted.keys()].sort());
+  await DashboardSelectors.globalFilterDone(page).click();
+  await expect(DashboardSelectors.globalFilterPillEditor(page)).toBeVisible();
 }
 
 /**
@@ -2298,7 +2667,17 @@ export function buildGlobalFilter(
     if (!fieldId) throw new Error(`"${databaseName}" has no "${property}" property`);
     targets[database.databaseId] = fieldId;
   });
-  return { id: `gf-${uuidv4().slice(0, 12)}`, name, ty: fieldType, condition, content, targets };
+  // `targets` is a JSON map whose key order Yrs does not keep, so a current
+  // client writes the mapping order next to it, as this seed does.
+  return {
+    id: `gf-${uuidv4().slice(0, 12)}`,
+    name,
+    ty: fieldType,
+    condition,
+    content,
+    targets,
+    target_order: Object.keys(targets),
+  };
 }
 
 /** "Status" in "Projects", "Stage" in "Tasks" → { Projects: 'Status', Tasks: 'Stage' } */

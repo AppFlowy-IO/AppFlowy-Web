@@ -7,12 +7,12 @@ import {
   ChartValueFormatter,
   ChartValueMode,
   formatChartValue,
-  resolveChartLocale,
 } from '@/application/database-yjs/chart-format';
 import { ChartAggregationType, ChartNumberFormat } from '@/application/database-yjs/chart.type';
+import { useAppLocale } from '@/i18n/useAppLocale';
 
 export interface UseChartFormatterOptions {
-  /** The effective aggregation (`resolveEffectiveAggregation`). */
+  /** The effective aggregation (`effectiveChartAggregation`). */
   aggregation: ChartAggregationType;
   /** The Y field's kind and format, by value (`useChartFields`). */
   yField: ChartFormatYField | null;
@@ -23,7 +23,9 @@ export interface UseChartFormatterOptions {
 
 /**
  * `format(value, mode)` for the current chart: R-FORMAT with the effective
- * aggregation, the Y field's format, `decimal_places` and the app language.
+ * aggregation, the Y field's format, `decimal_places` and the app locale
+ * (`useAppLocale`). Every number a chart prints goes through it: the Number
+ * card, axes, data labels, the donut centre and tooltips.
  * Every input is a value, so the formatter changes exactly when what it
  * prints can change.
  */
@@ -33,8 +35,8 @@ export function useChartFormatter({
   decimalPlaces,
   numberFormat,
 }: UseChartFormatterOptions): ChartValueFormatter {
-  const { t, i18n } = useTranslation();
-  const language = i18n?.language;
+  const { t } = useTranslation();
+  const locale = useAppLocale();
 
   const context = useMemo<Omit<ChartFormatContext, 'mode'>>(
     () => ({
@@ -42,10 +44,10 @@ export function useChartFormatter({
       yField,
       decimalPlaces,
       numberFormat,
-      locale: resolveChartLocale(language),
+      locale,
       labels: { days: (count: number) => t('chart.value.days', { count, defaultValue: `${count} days` }) },
     }),
-    [aggregation, yField, decimalPlaces, numberFormat, language, t]
+    [aggregation, yField, decimalPlaces, numberFormat, locale, t]
   );
 
   return useCallback((value: number, mode: ChartValueMode) => formatChartValue(value, { ...context, mode }), [context]);

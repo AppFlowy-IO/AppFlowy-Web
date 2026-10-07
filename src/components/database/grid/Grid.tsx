@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 
-import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
+import { useDatabaseContext, useDatabaseSearchQuery, useDatabaseViewId } from '@/application/database-yjs';
+import { DatabaseSearchEmptyState } from '@/components/database/components/conditions/DatabaseSearchEmptyState';
 import { useRenderFields } from '@/components/database/components/grid/grid-column';
 import GridVirtualizer from '@/components/database/components/grid/grid-table/GridVirtualizer';
 import { useGridGrouping } from '@/components/database/grid/GridGroupingContext';
@@ -18,6 +19,9 @@ export function Grid() {
   const { rowOrders, hydrating } = grouping;
 
   const { onRendered, isDashboardWidget } = useDatabaseContext();
+  // A settled search with no match replaces the header, rows, footer and new row (WP09 §1.2).
+  const searchQuery = useDatabaseSearchQuery();
+  const searchFoundNothing = searchQuery !== '' && !hydrating && rowOrders !== undefined && rowOrders.length === 0;
 
   useEffect(() => {
     if (fields && rowOrders !== undefined) {
@@ -38,8 +42,12 @@ export function Grid() {
           data-hydrating={hydrating ? 'true' : undefined}
           className={`database-grid relative grid-table-${viewId} flex min-h-0 w-full flex-1 flex-col`}
         >
-          {/* Memoized: a progress-only tick re-renders this component, not the rows. */}
-          <GridVirtualizer columns={fields} />
+          {searchFoundNothing ? (
+            <DatabaseSearchEmptyState />
+          ) : (
+            // Memoized: a progress-only tick re-renders this component, not the rows.
+            <GridVirtualizer columns={fields} />
+          )}
         </div>
       </GridProvider>
     </GridOptionsContext.Provider>

@@ -46,6 +46,7 @@ import { useTimeFormat } from '@/components/database/fullcalendar/hooks/useTimeF
 import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { RowsLoadingPill } from '@/components/database/components/loading/RowsLoadingRow';
 import { cn } from '@/lib/utils';
 import { correctAllDayEndForStorage, dateToUnixTimestamp } from '@/utils/time';
 
@@ -210,7 +211,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
     [columnWidths, sidebarWidth]
   );
 
-  const { rows, emptyEvents, rowOrders, hasEndField } = useTimelineRows(showSidebar);
+  const { rows, emptyEvents, rowOrders, hasEndField, loading } = useTimelineRows(showSidebar);
   const grouping = useTimelineGrouping();
   // Rows, or group headers / rows / "+ New" footers when the view is grouped.
   const items = useTimelineItems(rows, grouping, permissions.editable);
@@ -660,6 +661,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
         // whatever an embedding document block dictates.
         style={{ ...columnWidthVars, marginLeft: paddingStart, marginRight: paddingEnd }}
         data-testid='timeline-view'
+        aria-busy={loading ? 'true' : undefined}
       >
         <TimelineToolbar
           title={title}
@@ -675,6 +677,14 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
           className={cn('appflowy-scroller relative w-full overflow-auto', fixedViewport ? 'h-full min-h-0 flex-1' : '')}
           style={fixedViewport ? undefined : { maxHeight: '75vh' }}
         >
+          {/* Rows still loading: the lanes are not the result yet, so they never read as empty. */}
+          {loading ? (
+            <RowsLoadingPill
+              testId={'timeline-loading-indicator'}
+              className='z-30'
+              style={{ top: TIMELINE_HEADER_HEIGHT + 8 }}
+            />
+          ) : null}
           <div className='relative' style={{ width: sidebarWidth + canvasWidth, minHeight: '100%' }}>
             <div className='sticky top-0 z-20 flex bg-background-primary' style={{ height: TIMELINE_HEADER_HEIGHT }}>
               <TimelineTableViewport>
@@ -898,14 +908,14 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                   <div
                     role='button'
                     tabIndex={0}
-                    // Same treatment as the grid's "+ New row" footer.
+                    // Same treatment as the grid's "+ New page" footer.
                     className={cn(
                       'sticky left-0 z-10 flex h-full shrink-0 cursor-pointer items-center gap-1.5 border-b border-r border-border-primary bg-fill-content text-sm font-medium text-text-secondary hover:bg-fill-content-hover',
                       showSidebar ? 'px-2' : 'justify-center'
                     )}
                     style={{ width: sidebarWidth }}
                     data-testid='timeline-new-row'
-                    aria-label={t('grid.row.newRow', { defaultValue: 'New row' })}
+                    aria-label={t('grid.row.newRow', { defaultValue: 'New page' })}
                     onClick={handleNewRow}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
@@ -915,7 +925,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                     }}
                   >
                     <PlusIcon aria-hidden className='h-5 w-5' />
-                    {showSidebar ? t('grid.row.newRow', { defaultValue: 'New row' }) : null}
+                    {showSidebar ? t('grid.row.newRow', { defaultValue: 'New page' }) : null}
                   </div>
                 </div>
               ) : null}

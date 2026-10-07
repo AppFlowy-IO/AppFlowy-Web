@@ -319,10 +319,12 @@ export function installParityProbe() {
   }
 
   function rows(): Element[] {
-    return Array.from(document.querySelectorAll(`${selector('dash-row')},[data-testid="dashboard-row"]`))
-      .filter((el, index, all) => all.indexOf(el) === index)
-      .filter(isVisible)
-      .sort(readingOrder);
+    // One element per row: the row wrapper holds the track and the row
+    // controls beside it; the track alone only where no wrapper exists.
+    const wrappers = Array.from(document.querySelectorAll('[data-testid="dashboard-row"]'));
+    const list = wrappers.length > 0 ? wrappers : Array.from(document.querySelectorAll(selector('dash-row')));
+
+    return list.filter(isVisible).sort(readingOrder);
   }
 
   function matchesId(el: Element, id: string | undefined, pattern: RegExp | null) {
@@ -443,8 +445,76 @@ export function installParityProbe() {
   }
 
   function unionRect(elements: Element[]) {
-    const rects = elements.map(rect);
+    return unionOf(elements.map(rect));
+  }
 
+  /**
+   * The `transition-property` list the element's style rules declare, outside
+   * a `prefers-reduced-motion` media query (the last matching rule wins).
+   */
+  function declaredTransitionProperties(el: Element): string[] | null {
+    let found: string[] | null = null;
+    const visit = (rules: CSSRuleList) => {
+      Array.from(rules).forEach((rule) => {
+        if (rule instanceof CSSMediaRule) {
+          if (!/prefers-reduced-motion/.test(rule.conditionText)) visit(rule.cssRules);
+          return;
+        }
+
+        if ('cssRules' in rule && !(rule instanceof CSSStyleRule)) {
+          visit((rule as CSSGroupingRule).cssRules);
+          return;
+        }
+
+        if (!(rule instanceof CSSStyleRule)) return;
+        // A `transition` shorthand with var() keeps its longhands pending
+        // until computed: read the property names from the shorthand text.
+        const listed = rule.style.transitionProperty
+          ? rule.style.transitionProperty.split(',').map((part) => part.trim())
+          : splitTopLevel(rule.style.getPropertyValue('transition')).map((part) => part.split(/\s+/)[0]);
+
+        if (listed.length === 0 || listed[0] === '' || listed[0] === 'none') return;
+        try {
+          if (el.matches(rule.selectorText)) found = listed;
+        } catch {
+          // A selector this engine cannot match.
+        }
+      });
+    };
+
+    Array.from(document.styleSheets).forEach((sheet) => {
+      try {
+        visit(sheet.cssRules);
+      } catch {
+        // A cross-origin sheet.
+      }
+    });
+    return found;
+  }
+
+  /** The boxes of the visible glyphs (`svg`) and text runs below `el`. */
+  function glyphAndTextRects(el: Element): DOMRect[] {
+    const rects: DOMRect[] = [];
+
+    el.querySelectorAll('svg').forEach((svg) => {
+      if (isVisible(svg) && !svg.parentElement?.closest('svg')) rects.push(rect(svg));
+    });
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.textContent?.trim() || (node.parentElement && !isVisible(node.parentElement))) continue;
+      const range = document.createRange();
+
+      range.selectNodeContents(node);
+      Array.from(range.getClientRects()).forEach((r) => {
+        if (r.width > 0 && r.height > 0) rects.push(r);
+      });
+    }
+
+    return rects;
+  }
+
+  function unionOf(rects: DOMRect[]) {
     return {
       left: Math.min(...rects.map((r) => r.left)),
       top: Math.min(...rects.map((r) => r.top)),
@@ -720,9 +790,12 @@ export function installParityProbe() {
         const content = ctx.content
           ? ctx.content.flatMap((contentId) => within(el, contentId, null).filter(isVisible))
           : parts(el, id);
+        // Without parts the content box is the union of the glyphs and text
+        // below the node, as the desktop probe reads it.
+        const rects = content.length > 0 || ctx.content ? content.map(rect) : glyphAndTextRects(el);
 
-        if (content.length === 0) return { value: null, note: ctx.content ? 'no content boxes' : 'no __parts' };
-        const union = unionRect(content);
+        if (rects.length === 0) return { value: null, note: ctx.content ? 'no content boxes' : 'no __parts' };
+        const union = unionOf(rects);
         const values: Record<string, number> = {
           paddingTop: union.top - box.top,
           paddingRight: box.right - union.right,
@@ -741,7 +814,10 @@ export function installParityProbe() {
         );
         const start = (r: DOMRect) => (axis === 'x' ? r.left : r.top);
         const end = (r: DOMRect) => (axis === 'x' ? r.right : r.bottom);
-        const isAfter = (candidate: Element) => start(rect(candidate)) > start(box) + 0.5;
+        // The next box along the axis starts at or after this one's end; a
+        // sibling overlapping it (a row control beside its row) is not next.
+        const isAfter = (candidate: Element) =>
+          start(rect(candidate)) > start(box) + 0.5 && start(rect(candidate)) >= end(box) - 0.5;
         const after = siblings.filter(isAfter);
         const sameId = after.filter((candidate) => pid(candidate) === id);
         let pool = sameId.length > 0 ? sameId : after;
@@ -893,13 +969,27 @@ export function installParityProbe() {
       case 'opacity':
         return { value: opacityChain(el) };
       case 'transitionMs': {
+        // §3.2: the duration of the colour or opacity transition, not of a
+        // size transition on the same element (a widget box animates its width).
+        // Under reduced motion `transition-property` is `none`; the durations
+        // then pair with the properties the element's own rules declare.
+        const computedProperties = computed.transitionProperty.split(',').map((part) => part.trim());
+        const properties =
+          computedProperties.length === 1 && computedProperties[0] === 'none'
+            ? declaredTransitionProperties(el) ?? ['all']
+            : computedProperties;
         const durations = computed.transitionDuration
           .split(',')
           .map((part) => part.trim())
-          .map((part) => (part.endsWith('ms') ? parseFloat(part) : parseFloat(part) * 1000))
-          .filter((number) => Number.isFinite(number));
+          .map((part) => (part.endsWith('ms') ? parseFloat(part) : parseFloat(part) * 1000));
+        const colourOrOpacity = (property: string) =>
+          property === 'all' || property === 'opacity' || /color|background|shadow|fill|stroke/.test(property);
+        const picked = properties
+          .map((property, index) => ({ property, duration: durations[index % durations.length] }))
+          .filter(({ property, duration }) => colourOrOpacity(property) && Number.isFinite(duration))
+          .map(({ duration }) => duration);
 
-        return { value: durations.length ? Math.max(...durations) : 0 };
+        return { value: picked.length ? Math.max(...picked) : 0 };
       }
 
       case 'strokeColor':
@@ -1037,7 +1127,8 @@ export function installParityProbe() {
 
       let pool = visible;
 
-      if (request.selected) pool = pool.filter(isSelected);
+      if (request.selected === true) pool = pool.filter(isSelected);
+      else if (request.selected === false) pool = pool.filter((candidate) => !isSelected(candidate));
       if (typeof request.nth === 'number') pool = pool.slice(request.nth, request.nth + 1);
       const targets = pattern ? pool : pool.slice(0, 1);
 

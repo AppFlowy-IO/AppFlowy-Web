@@ -1,29 +1,40 @@
-import dayjs, { Dayjs } from 'dayjs';
+import dayjs from 'dayjs';
 
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import {
-  ChartAggregationType,
-  ChartDataItem,
-  EMPTY_CATEGORY_KEY,
-  isDateGroupableFieldType,
-} from '@/application/database-yjs/chart.type';
+  aggregateChartCells,
+  canonicalNumber,
+  ChartCellValue,
+  ChartGroupContext,
+  ChartGroupField,
+  ChartGroupHint,
+  ChartGroupNameLookup,
+  chartGroupRefs,
+  chartValueOfAggregate,
+  ChartYCell,
+  CHECKBOX_CHECKED_KEY,
+  CHECKBOX_UNCHECKED_KEY,
+  EMPTY_GROUP_KEY,
+  resolveNumberBuckets,
+} from '@/application/database-yjs/chart-config';
+import { ChartTextGrouping } from '@/application/database-yjs/chart-extended-settings';
+import { ChartAggregationType, ChartDataItem } from '@/application/database-yjs/chart.type';
 import { getCell } from '@/application/database-yjs/const';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import { SelectOptionColor } from '@/application/database-yjs/fields';
 import { safeParseTimestamp } from '@/application/database-yjs/fields/date/utils';
+import { getRowIdentifierGroupIds } from '@/application/database-yjs/group';
 import { RowId, YDatabaseField, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
-import {
-  bucketDate,
-  ChartLabels,
-  CHECKBOX_CHECKED_KEY,
-  CHECKBOX_UNCHECKED_KEY,
-  GroupValue,
-} from './chartGrouping';
+import { ChartLabels } from './chartGrouping';
+import { ChartRowFact, ChartSeriesCandidate } from './chartSeries';
 
 /**
- * The pure half of the chart pipeline: rows and settings in, `ChartDataItem[]`
- * out. Nothing here touches React, so `useChartData` keeps it in `useMemo`.
+ * The pure half of the chart pipeline: rows and settings in, row facts out
+ * (R-GROUPKEY of WP11 for the X axis and the Group by property, and the Y
+ * cells the aggregations read). Nothing here touches React, so
+ * `useChartData` keeps it in `useMemo`; `buildChartSeries` aggregates,
+ * sorts, hides and colours.
  */
 
 /** The row docs a chart reads, by row id. A row without an entry has no doc yet and is left out. */
@@ -31,27 +42,10 @@ export type ChartRowDocs = Record<RowId, YDoc>;
 
 type ChartRowOrders = ReadonlyArray<{ id: string }>;
 
-interface GroupedData {
-  label: string;
-  /** Stable key (option id, checkbox key or date bucket); unset for the empty category. */
-  groupKey?: string;
-  rowIds: RowId[];
-  isEmptyCategory: boolean;
-  /** Code-unit sortable key for chronological ordering of date buckets */
-  sortKey?: string;
-}
-
-interface GroupingContext {
-  dateCondition: DateGroupCondition;
-  labels: ChartLabels;
-  /** Captured once per computation, so every row buckets against the same day. */
-  now: Dayjs;
-}
-
 /** The cells and row fields a chart reads; edits anywhere else never recompute it. */
 export interface ChartWatchedRowData {
   fieldIds: ReadonlySet<string>;
-  /** CreatedTime / LastEditedTime groups read the row's own timestamps. */
+  /** CreatedTime / LastEditedTime / CreatedBy / LastEditedBy read the row's own attributes. */
   rowTimes: boolean;
 }
 
@@ -74,7 +68,11 @@ export function touchesChartedRowData(
 
     return (
       keys.has(YjsDatabaseKey.cells) ||
-      (watched.rowTimes && (keys.has(YjsDatabaseKey.created_at) || keys.has(YjsDatabaseKey.last_modified)))
+      (watched.rowTimes &&
+        (keys.has(YjsDatabaseKey.created_at) ||
+          keys.has(YjsDatabaseKey.last_modified) ||
+          keys.has(YjsDatabaseKey.created_by) ||
+          keys.has(YjsDatabaseKey.last_edited_by)))
     );
   }
 
@@ -83,192 +81,206 @@ export function touchesChartedRowData(
   return watched.fieldIds.has(String(path[2]));
 }
 
+/** Field types whose chart value is read from the row's own attributes. */
+export function readsRowAttributes(fieldType: FieldType | null | undefined): boolean {
+  return (
+    fieldType === FieldType.CreatedTime ||
+    fieldType === FieldType.LastEditedTime ||
+    fieldType === FieldType.CreatedBy ||
+    fieldType === FieldType.LastEditedBy
+  );
+}
+
+function databaseRowOf(rowDocs: ChartRowDocs, rowId: RowId): YDatabaseRow | undefined {
+  return rowDocs[rowId]?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
+}
+
+function cellData(rowId: RowId, field: YDatabaseField, rowDocs: ChartRowDocs): unknown {
+  const cell = getCell(rowId, field.get(YjsDatabaseKey.id), rowDocs);
+
+  return cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
+}
+
 /**
- * Get cell value for grouping (x-axis field)
+ * A date cell or a row timestamp in seconds. DateTime reads the cell;
+ * CreatedTime / LastEditedTime have no cell (new rows have none at all) and
+ * read the row itself, the way `useRowTimeString` does.
  */
-function getCellGroupValue(
-  rowId: string,
+function readTimestamp(rowId: RowId, field: YDatabaseField, fieldType: FieldType, rowDocs: ChartRowDocs): number | null {
+  let raw: string | undefined;
+
+  if (fieldType === FieldType.DateTime) {
+    const data = cellData(rowId, field, rowDocs);
+
+    if ((typeof data === 'string' || typeof data === 'number') && String(data).length > 0) raw = String(data);
+  } else {
+    const row = databaseRowOf(rowDocs, rowId);
+    // YDatabaseRow has overloaded `.get` per key, so each lookup uses a literal key.
+    const value =
+      fieldType === FieldType.CreatedTime ? row?.get(YjsDatabaseKey.created_at) : row?.get(YjsDatabaseKey.last_modified);
+
+    raw = value !== undefined && value !== null ? String(value) : undefined;
+  }
+
+  if (!raw) return null;
+  const date = safeParseTimestamp(raw);
+
+  return date.isValid() ? date.unix() : null;
+}
+
+function readNumber(data: unknown): number | null {
+  if (data === null || data === undefined || data === '') return null;
+  const number = typeof data === 'number' ? data : parseFloat(String(data));
+
+  return Number.isFinite(number) ? number : null;
+}
+
+function readText(data: unknown): string {
+  if (typeof data === 'string' || typeof data === 'number') return String(data);
+  if (data && typeof (data as { toString?: unknown }).toString === 'function') {
+    const text = String(data);
+
+    return text === '[object Object]' ? '' : text;
+  }
+
+  return '';
+}
+
+function readSelectIds(data: unknown, fieldType: FieldType): string[] {
+  if (typeof data !== 'string' || data.length === 0) return [];
+  return fieldType === FieldType.MultiSelect ? data.split(',').filter(Boolean) : [data];
+}
+
+/**
+ * Whether a checkbox cell is checked, as desktop `ChartCellParser.isChecked`
+ * reads it: the server and older clients write `Yes`, `true` or `1`.
+ */
+function isChecked(data: unknown): boolean {
+  if (data === true) return true;
+  if (typeof data !== 'string' && typeof data !== 'number') return false;
+  return ['true', 'yes', '1', 'checked'].includes(String(data).trim().toLowerCase());
+}
+
+/** An X-axis cell as the abstract value `chartGroupRefs` groups. */
+export function readChartCellValue(
+  rowId: RowId,
   field: YDatabaseField,
-  rowDocs: ChartRowDocs,
-  { dateCondition, labels, now }: GroupingContext
-): GroupValue[] {
-  const fieldId = field.get(YjsDatabaseKey.id);
-  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
-  const rowDoc = rowDocs[rowId];
-  const dataSection = rowDoc?.getMap(YjsEditorKey.data_section);
-  const databaseRow = dataSection?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
-  const cells = databaseRow?.get(YjsDatabaseKey.cells);
-  const cell = cells?.get(fieldId);
-  const data = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
-
+  fieldType: FieldType,
+  rowDocs: ChartRowDocs
+): ChartCellValue {
   switch (fieldType) {
-    case FieldType.SingleSelect: {
-      if (typeof data === 'string' && data.length > 0) {
-        return [{ label: data, groupKey: data }];
-      }
+    case FieldType.SingleSelect:
+    case FieldType.MultiSelect:
+      return { kind: 'select', ids: readSelectIds(cellData(rowId, field, rowDocs), fieldType) };
+    case FieldType.Checkbox:
+      return { kind: 'checkbox', checked: isChecked(cellData(rowId, field, rowDocs)) };
+    case FieldType.DateTime:
+    case FieldType.CreatedTime:
+    case FieldType.LastEditedTime: {
+      const timestamp = readTimestamp(rowId, field, fieldType, rowDocs);
 
-      return [];
+      return timestamp === null ? { kind: 'empty' } : { kind: 'date', date: dayjs.unix(timestamp) };
     }
 
+    case FieldType.Person:
+    case FieldType.CreatedBy:
+    case FieldType.LastEditedBy:
+      return { kind: 'users', ids: getRowIdentifierGroupIds(rowId, rowDocs, field) };
+    case FieldType.Relation:
+      return { kind: 'relation', ids: getRowIdentifierGroupIds(rowId, rowDocs, field) };
+    case FieldType.RichText:
+    case FieldType.URL:
+      return { kind: 'text', text: readText(cellData(rowId, field, rowDocs)) };
+    case FieldType.Number: {
+      const value = readNumber(cellData(rowId, field, rowDocs));
+
+      return value === null ? { kind: 'empty' } : { kind: 'number', value };
+    }
+
+    default:
+      return { kind: 'empty' };
+  }
+}
+
+const EMPTY_Y_CELL: ChartYCell = { empty: true, tokens: [] };
+
+/**
+ * A Y cell as the aggregations read it (WP11 §1.9): numbers, checkbox state
+ * (also as 0/1 for legacy sums), timestamps in seconds (also as days since
+ * the epoch for legacy sums), or the cell's tokens (ids or trimmed text).
+ */
+export function readChartYCell(rowId: RowId, field: YDatabaseField, fieldType: FieldType, rowDocs: ChartRowDocs): ChartYCell {
+  switch (fieldType) {
+    case FieldType.Number: {
+      const value = readNumber(cellData(rowId, field, rowDocs));
+
+      return value === null ? EMPTY_Y_CELL : { empty: false, tokens: [canonicalNumber(value)], number: value };
+    }
+
+    case FieldType.Checkbox: {
+      const checked = isChecked(cellData(rowId, field, rowDocs));
+
+      return { empty: !checked, tokens: [checked ? CHECKBOX_CHECKED_KEY : CHECKBOX_UNCHECKED_KEY], checked, number: checked ? 1 : 0 };
+    }
+
+    case FieldType.DateTime:
+    case FieldType.CreatedTime:
+    case FieldType.LastEditedTime: {
+      const timestamp = readTimestamp(rowId, field, fieldType, rowDocs);
+
+      return timestamp === null
+        ? EMPTY_Y_CELL
+        : { empty: false, tokens: [String(timestamp)], timestamp, number: timestamp / (24 * 60 * 60) };
+    }
+
+    case FieldType.SingleSelect:
     case FieldType.MultiSelect: {
-      if (typeof data === 'string' && data.length > 0) {
-        return data
-          .split(',')
-          .filter(Boolean)
-          .map((id) => ({ label: id, groupKey: id }));
-      }
+      const ids = readSelectIds(cellData(rowId, field, rowDocs), fieldType);
 
-      return [];
+      return { empty: ids.length === 0, tokens: ids };
     }
 
-    case FieldType.Checkbox: {
-      if (data === 'Yes' || data === true) {
-        return [{ label: labels.checked, groupKey: CHECKBOX_CHECKED_KEY }];
-      }
+    case FieldType.Person:
+    case FieldType.CreatedBy:
+    case FieldType.LastEditedBy:
+    case FieldType.Relation: {
+      const ids = getRowIdentifierGroupIds(rowId, rowDocs, field);
 
-      return [{ label: labels.unchecked, groupKey: CHECKBOX_UNCHECKED_KEY }];
+      return { empty: ids.length === 0, tokens: ids };
     }
 
-    case FieldType.DateTime:
-    case FieldType.LastEditedTime:
-    case FieldType.CreatedTime: {
-      // For DateTime, the timestamp lives in the cell's `data`. For
-      // CreatedTime / LastEditedTime there's no per-field cell — newly
-      // created rows have no entry in `cells` at all. The timestamp is
-      // stored on the row itself, the same way `useRowTimeString` reads it.
-      let raw: string | undefined;
+    case FieldType.RichText:
+    case FieldType.URL: {
+      const text = readText(cellData(rowId, field, rowDocs)).trim();
 
-      if (fieldType === FieldType.DateTime) {
-        if (typeof data === 'string' && data.length > 0) raw = data;
-      } else {
-        // YDatabaseRow has overloaded `.get` per key, so the lookup must use
-        // a literal `YjsDatabaseKey` member rather than a computed variable.
-        const v =
-          fieldType === FieldType.CreatedTime
-            ? databaseRow?.get(YjsDatabaseKey.created_at)
-            : databaseRow?.get(YjsDatabaseKey.last_modified);
-
-        raw = v !== undefined && v !== null ? String(v) : undefined;
-      }
-
-      if (!raw) return [];
-
-      const date = safeParseTimestamp(raw);
-
-      if (!date.isValid()) return [];
-
-      return [bucketDate(date, dateCondition, labels, now)];
+      return text ? { empty: false, tokens: [text] } : EMPTY_Y_CELL;
     }
 
     default:
-      return [];
+      return EMPTY_Y_CELL;
   }
 }
 
-/**
- * Get numeric value for aggregation (y-axis field). Mirrors desktop's
- * `_yValueFromCell` in chart_bloc.dart: Number is parsed directly, Checkbox
- * yields 0/1, and date-typed fields yield "days since epoch" so Min/Max/Avg
- * make sense on a human scale.
- */
-function getCellNumericValue(rowId: string, field: YDatabaseField, rowDocs: ChartRowDocs): number | null {
-  const fieldId = field.get(YjsDatabaseKey.id);
-  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
-  const cell = getCell(rowId, fieldId, rowDocs);
-  const data = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
-
-  switch (fieldType) {
-    case FieldType.Checkbox: {
-      if (data === null || data === undefined || data === '') return 0;
-      return data === 'Yes' || data === true ? 1 : 0;
-    }
-
-    case FieldType.DateTime:
-    case FieldType.LastEditedTime:
-    case FieldType.CreatedTime: {
-      if (data === null || data === undefined || data === '') return null;
-      const parsed = safeParseTimestamp(String(data));
-
-      if (!parsed.isValid()) return null;
-
-      // Seconds → days since epoch (matches desktop's `timestamp / 86400`).
-      return parsed.unix() / (24 * 60 * 60);
-    }
-
-    case FieldType.Number:
-    default: {
-      if (data === null || data === undefined || data === '') return null;
-      const num = typeof data === 'number' ? data : parseFloat(String(data));
-
-      return isNaN(num) || !isFinite(num) ? null : num;
-    }
-  }
+function fieldTypeOf(field: YDatabaseField): FieldType {
+  return Number(field.get(YjsDatabaseKey.type)) as FieldType;
 }
 
-/**
- * Compute aggregation on an array of values
- */
-export function computeAggregation(values: number[], aggregationType: ChartAggregationType): number {
-  if (values.length === 0) {
-    return 0;
-  }
-
-  switch (aggregationType) {
-    case ChartAggregationType.Count:
-      return values.length;
-    case ChartAggregationType.Sum:
-      return values.reduce((acc, val) => acc + val, 0);
-    case ChartAggregationType.Average:
-      return values.reduce((acc, val) => acc + val, 0) / values.length;
-    case ChartAggregationType.Min: {
-      // Single-pass loop avoids `Math.min(...values)` spread-arg overflow on
-      // large arrays (RangeError around ~100k elements on V8).
-      let min = values[0];
-
-      for (let i = 1; i < values.length; i++) if (values[i] < min) min = values[i];
-      return min;
-    }
-
-    case ChartAggregationType.Max: {
-      let max = values[0];
-
-      for (let i = 1; i < values.length; i++) if (values[i] > max) max = values[i];
-      return max;
-    }
-
-    case ChartAggregationType.Median: {
-      const sorted = [...values].sort((a, b) => a - b);
-      const mid = Math.floor(sorted.length / 2);
-
-      return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
-    }
-
-    case ChartAggregationType.CountValues:
-      return new Set(values).size;
-    default:
-      return values.length;
-  }
-}
-
-/** The aggregate of `rowIds` over the Y field; rows with an empty cell are left out. */
+/** The aggregate of `rowIds` over the Y field, as the chart stores it (`null` is no value). */
 function aggregateRows(
   rowIds: readonly RowId[],
-  yField: YDatabaseField,
+  yField: YDatabaseField | null,
   rowDocs: ChartRowDocs,
   aggregation: ChartAggregationType
-): number {
-  const numericValues = rowIds
-    .map((rowId) => getCellNumericValue(rowId, yField, rowDocs))
-    .filter((value): value is number => value !== null);
+): number | null {
+  if (aggregation === ChartAggregationType.Count || !yField) return rowIds.length;
+  const yType = fieldTypeOf(yField);
+  const cells = rowIds.map((rowId) => readChartYCell(rowId, yField, yType, rowDocs));
 
-  return computeAggregation(numericValues, aggregation);
+  return chartValueOfAggregate(aggregation, aggregateChartCells(aggregation, cells));
 }
 
 export interface ComputeNumberChartDataInput {
-  /**
-   * The effective aggregation (`resolveEffectiveAggregation`): Count unless a
-   * value aggregation has its Y field.
-   */
+  /** The effective aggregation (`effectiveChartAggregation`): Count unless a value aggregation has its Y field. */
   aggregation: ChartAggregationType;
   rowOrders: ChartRowOrders | null | undefined;
   /** Only read when the value aggregates the Y field (not for a row count). */
@@ -280,11 +292,12 @@ export interface ComputeNumberChartDataInput {
  * Pure transform for the Number (KPI) chart: a single aggregated value over
  * every row that survived the view's filters (and any dashboard global
  * filters, which `useRowOrdersSelector` already applied). There is no x-axis
- * grouping. A Count is the row count.
+ * grouping, and `hidden_groups`, the sort and cumulative do not apply.
  *
  * Returns an empty array while row orders (or, when the Y field is
- * aggregated, row docs) are unavailable, otherwise exactly one item whose
- * `rowIds` holds every counted row (for drill-down).
+ * aggregated, row docs) are unavailable and when the value is "no value"
+ * (an Average over empty cells): the card then shows "No data". Otherwise
+ * exactly one item whose `rowIds` holds every counted row (for drill-down).
  */
 export function computeNumberChartData({
   aggregation,
@@ -292,12 +305,10 @@ export function computeNumberChartData({
   rowDocs,
   yField,
 }: ComputeNumberChartDataInput): ChartDataItem[] {
-  if (!rowOrders) {
-    return [];
-  }
+  if (!rowOrders) return [];
 
   let rowIds = rowOrders.map((row) => row.id);
-  let value: number;
+  let value: number | null;
 
   if (aggregation === ChartAggregationType.Count || !yField) {
     value = rowIds.length;
@@ -308,162 +319,151 @@ export function computeNumberChartData({
     value = aggregateRows(rowIds, yField, rowDocs, aggregation);
   }
 
-  return [
-    {
-      label: yField ? String(yField.get(YjsDatabaseKey.name) || '') : '',
-      value,
-      rowIds,
-    },
-  ];
+  if (value === null) return [];
+  return [{ label: yField ? String(yField.get(YjsDatabaseKey.name) || '') : '', value, rowIds }];
 }
 
-export interface ComputeChartDataInput {
-  /** The effective aggregation (`resolveEffectiveAggregation`). */
+/** A property a chart groups rows by: the X axis, or the Group by property (WP12). */
+export interface ChartGroupAxis {
+  field: YDatabaseField;
+  fieldType: FieldType;
+  dateCondition: DateGroupCondition;
+  textGrouping: ChartTextGrouping;
+  /** Number property: the three bucket keys (the Group by property always uses automatic ranges). */
+  buckets: { size: number | null; min: number | null; max: number | null };
+  /** Select property: the options in order (labels and ranks) and their colors. */
+  options: ReadonlyArray<{ id: string; name: string }>;
+  optionIdToColor: ReadonlyMap<string, SelectOptionColor>;
+  /** Names of people, users and related rows. */
+  names?: ChartGroupNameLookup;
+  /** R-FORMAT axis mode with the property's number format, for range labels. */
+  formatAxis?: (value: number) => string;
+}
+
+/** A group a property's rows map to, with its default-sort hint and colour metadata. */
+export interface ChartFactGroup extends ChartSeriesCandidate {
+  hint: ChartGroupHint;
+}
+
+export interface ComputeChartFactsInput {
+  /** The effective aggregation (`effectiveChartAggregation`). */
   aggregation: ChartAggregationType;
   /** The Y field a value aggregation reads; a Count ignores it. */
   yField: YDatabaseField | null;
-  showEmptyValues: boolean;
-  cumulative: boolean;
-  dateCondition: DateGroupCondition;
   rowOrders: ChartRowOrders | null | undefined;
   rowDocs: ChartRowDocs | null | undefined;
-  xAxisField: YDatabaseField | null;
-  fieldType: FieldType | null;
-  optionIdToName: ReadonlyMap<string, string>;
-  optionIdToColor: ReadonlyMap<string, SelectOptionColor>;
   labels: ChartLabels;
+  /** The Intl locale of the date labels (`useAppLocale`); the group keys and their order never depend on it. */
+  locale: string;
+  x: ChartGroupAxis | null;
+  /** The effective Group by property, or `null`. */
+  sub: ChartGroupAxis | null;
+}
+
+/** What the series builder reads from the rows: one fact per row and the groups of both properties. */
+export interface ChartFacts {
+  rows: ChartRowFact[];
+  /** The X groups in the order the rows first show them (`sortChartGroups` orders them). */
+  xGroups: ChartFactGroup[];
+  /** The Group by groups, or `null` without a Group by. */
+  subGroups: ChartFactGroup[] | null;
+}
+
+export const EMPTY_CHART_FACTS: ChartFacts = Object.freeze({ rows: [], xGroups: [], subGroups: null }) as ChartFacts;
+
+/** Reads every row's groups for one property: the values first, so a Number property can place its ranges. */
+function groupRowsBy(
+  rows: ChartRowOrders,
+  rowDocs: ChartRowDocs,
+  axis: ChartGroupAxis,
+  labels: ChartLabels,
+  locale: string,
+  now: dayjs.Dayjs
+): { keys: string[][]; groups: ChartFactGroup[] } {
+  const values = rows.map((row) => readChartCellValue(row.id, axis.field, axis.fieldType, rowDocs));
+  const buckets =
+    axis.fieldType === FieldType.Number
+      ? resolveNumberBuckets(
+          values.flatMap((value) => (value.kind === 'number' ? [value.value] : [])),
+          axis.buckets
+        )
+      : null;
+  const field: ChartGroupField = {
+    type: axis.fieldType,
+    name: String(axis.field.get(YjsDatabaseKey.name) || ''),
+    options: axis.options,
+  };
+  const context: ChartGroupContext = {
+    dateCondition: axis.dateCondition,
+    textGrouping: axis.textGrouping,
+    labels,
+    names: axis.names,
+    now,
+    locale,
+    buckets,
+    formatAxis: axis.formatAxis,
+  };
+  const isSelect = axis.fieldType === FieldType.SingleSelect || axis.fieldType === FieldType.MultiSelect;
+  const groups = new Map<string, ChartFactGroup>();
+  const keys = values.map((value) =>
+    chartGroupRefs(value, field, context).map((ref) => {
+      if (!groups.has(ref.key)) {
+        const group: ChartFactGroup = { key: ref.key, label: ref.label, hint: ref.hint, isEmpty: ref.key === EMPTY_GROUP_KEY };
+        const optionColor = isSelect ? axis.optionIdToColor.get(ref.key) : undefined;
+
+        // Colors are assigned by the series builder from this metadata.
+        if (optionColor) group.optionColor = optionColor;
+        if (axis.fieldType === FieldType.Checkbox && !group.isEmpty) {
+          group.checkboxState = ref.key === CHECKBOX_CHECKED_KEY ? 'checked' : 'unchecked';
+        }
+
+        groups.set(ref.key, group);
+      }
+
+      return ref.key;
+    })
+  );
+
+  return { keys, groups: [...groups.values()] };
 }
 
 /**
- * Pure transform: row orders + row docs + the grouping settings →
- * `ChartDataItem[]`. Style settings (WP10) are not an input, so a style
- * change never regroups the rows.
+ * Pure transform: row orders + row docs + the grouping settings → one fact
+ * per loaded row (its X keys, its Group by keys and its Y cell) and the
+ * groups of both properties, unsorted. `buildChartSeries` turns the facts
+ * into the drawn series; sort, hidden groups, cumulative, colours and the
+ * caps are its inputs, not these, so they never re-read the cells.
  */
-export function computeChartData({
+export function computeChartFacts({
   aggregation,
   yField,
-  showEmptyValues,
-  cumulative,
-  dateCondition,
   rowOrders,
   rowDocs,
-  xAxisField,
-  fieldType,
-  optionIdToName,
-  optionIdToColor,
   labels,
-}: ComputeChartDataInput): ChartDataItem[] {
-  if (!rowOrders || !rowDocs || !xAxisField || fieldType === null) {
-    return [];
-  }
+  locale,
+  x,
+  sub,
+}: ComputeChartFactsInput): ChartFacts {
+  if (!rowOrders || !rowDocs || !x) return EMPTY_CHART_FACTS;
 
-  const isDateBucketed = isDateGroupableFieldType(fieldType);
-  const groups = new Map<string, GroupedData>();
-  const emptyGroup: GroupedData = {
-    label: labels.noFieldValue(String(xAxisField.get(YjsDatabaseKey.name) || '')),
-    rowIds: [],
-    isEmptyCategory: true,
+  const rows = rowOrders.filter((row) => rowDocs[row.id]);
+  // Captured once, so every row buckets against the same day.
+  const now = dayjs();
+  const xKeys = groupRowsBy(rows, rowDocs, x, labels, locale, now);
+  const subKeys = sub ? groupRowsBy(rows, rowDocs, sub, labels, locale, now) : null;
+  const readsY = aggregation !== ChartAggregationType.Count && yField !== null;
+  const yType = yField ? fieldTypeOf(yField) : null;
+
+  return {
+    rows: rows.map((row, index) => ({
+      id: row.id,
+      x: xKeys.keys[index],
+      sub: subKeys ? subKeys.keys[index] : [],
+      y: readsY && yField && yType !== null ? readChartYCell(row.id, yField, yType, rowDocs) : null,
+    })),
+    xGroups: xKeys.groups,
+    subGroups: subKeys ? subKeys.groups : null,
   };
-  const context: GroupingContext = { dateCondition, labels, now: dayjs() };
-
-  rowOrders.forEach((row) => {
-    const rowId = row.id;
-
-    // A row whose doc has not arrived yet counts once it does.
-    if (!rowDocs[rowId]) return;
-    const groupValues = getCellGroupValue(rowId, xAxisField, rowDocs, context);
-
-    if (groupValues.length === 0) {
-      emptyGroup.rowIds.push(rowId);
-    } else {
-      groupValues.forEach((gv) => {
-        let label = gv.label;
-
-        if (fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect) {
-          label = optionIdToName.get(gv.groupKey) || gv.label;
-        }
-
-        const key = gv.groupKey;
-
-        if (!groups.has(key)) {
-          groups.set(key, {
-            label,
-            groupKey: key,
-            rowIds: [],
-            isEmptyCategory: false,
-            sortKey: gv.sortKey,
-          });
-        }
-
-        groups.get(key)?.rowIds.push(rowId);
-      });
-    }
-  });
-
-  if (showEmptyValues && emptyGroup.rowIds.length > 0) {
-    groups.set(`__empty__${emptyGroup.label}`, emptyGroup);
-  }
-
-  const data: ChartDataItem[] = [];
-  const isSelect = fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect;
-
-  groups.forEach((group) => {
-    const value =
-      aggregation === ChartAggregationType.Count || !yField
-        ? group.rowIds.length
-        : aggregateRows(group.rowIds, yField, rowDocs, aggregation);
-
-    // Colors are assigned at render time from this metadata (`chart-colors.ts`).
-    const item: ChartDataItem = {
-      label: group.label,
-      value,
-      rowIds: group.rowIds,
-      key: group.isEmptyCategory ? EMPTY_CATEGORY_KEY : group.groupKey,
-      isEmptyCategory: group.isEmptyCategory,
-    };
-    const optionColor = isSelect && group.groupKey ? optionIdToColor.get(group.groupKey) : undefined;
-
-    if (optionColor) item.optionColor = optionColor;
-    if (group.groupKey === CHECKBOX_CHECKED_KEY) item.checkboxState = 'checked';
-    if (group.groupKey === CHECKBOX_UNCHECKED_KEY) item.checkboxState = 'unchecked';
-    data.push(item);
-  });
-
-  // Pre-build a label → sortKey map so the comparator below is O(1) per
-  // call instead of scanning `groups.values()` every comparison.
-  const sortKeyByLabel = isDateBucketed ? new Map<string, string>() : null;
-
-  if (sortKeyByLabel) {
-    groups.forEach((g) => {
-      if (!sortKeyByLabel.has(g.label)) sortKeyByLabel.set(g.label, g.sortKey ?? g.label);
-    });
-  }
-
-  data.sort((a, b) => {
-    if (a.isEmptyCategory) return 1;
-    if (b.isEmptyCategory) return -1;
-    if (sortKeyByLabel) {
-      const ak = sortKeyByLabel.get(a.label) ?? a.label;
-      const bk = sortKeyByLabel.get(b.label) ?? b.label;
-
-      // Code-unit order, like desktop's `compareTo`, so the key prefixes hold.
-      return ak < bk ? -1 : ak > bk ? 1 : 0;
-    }
-
-    return a.label.localeCompare(b.label);
-  });
-
-  if (cumulative) {
-    let runningTotal = 0;
-
-    for (const item of data) {
-      if (item.isEmptyCategory) continue;
-      runningTotal += item.value;
-      item.value = runningTotal;
-    }
-  }
-
-  return data;
 }
 
 /**

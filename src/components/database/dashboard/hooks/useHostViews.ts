@@ -2,7 +2,7 @@ import { useMemo, useSyncExternalStore } from 'react';
 
 import { DatabaseViewLayout, YDatabase, YDatabaseViews, YjsDatabaseKey } from '@/application/types';
 
-import { HostViewEntry } from '../picker-options';
+import { HostViewEntry } from '../add-widget/picker-sections';
 import { databaseLayoutToViewLayout } from '../utils';
 
 function createdAtValue(value: unknown) {
@@ -26,6 +26,7 @@ export function readHostViews(views: YDatabaseViews | undefined): HostViewEntry[
     if (!view || view.get(YjsDatabaseKey.is_inline)) return;
     const layout = view.get(YjsDatabaseKey.layout);
     const name = view.get(YjsDatabaseKey.name);
+    const owner = view.get(YjsDatabaseKey.dashboard_owner);
 
     entries.push({
       viewId,
@@ -34,6 +35,7 @@ export function readHostViews(views: YDatabaseViews | undefined): HostViewEntry[
         layout === undefined || layout === null ? DatabaseViewLayout.Grid : (Number(layout) as DatabaseViewLayout)
       ),
       embedded: view.get(YjsDatabaseKey.embedded) === true,
+      dashboardOwner: typeof owner === 'string' && owner.length > 0 ? owner : null,
       createdAt: createdAtValue(view.get(YjsDatabaseKey.created_at)),
       order,
     });
@@ -41,7 +43,7 @@ export function readHostViews(views: YDatabaseViews | undefined): HostViewEntry[
 
   return entries
     .sort((left, right) => left.createdAt - right.createdAt || left.order - right.order)
-    .map(({ viewId, name, layout, embedded }) => ({ viewId, name, layout, embedded }));
+    .map(({ viewId, name, layout, embedded, dashboardOwner }) => ({ viewId, name, layout, embedded, dashboardOwner }));
 }
 
 function sameHostViews(a: HostViewEntry[], b: HostViewEntry[]) {
@@ -55,7 +57,8 @@ function sameHostViews(a: HostViewEntry[], b: HostViewEntry[]) {
       left.viewId !== right.viewId ||
       left.name !== right.name ||
       left.layout !== right.layout ||
-      left.embedded !== right.embedded
+      left.embedded !== right.embedded ||
+      left.dashboardOwner !== right.dashboardOwner
     )
       return false;
   }

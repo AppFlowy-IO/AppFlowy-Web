@@ -1,0 +1,4065 @@
+{
+  "version": 1,
+  "concepts": [
+    {
+      "id": "board.column.calculate",
+      "web": "board.column.calculate",
+      "desktop": "board.column.calculate",
+      "en": "Calculate",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "board.column.calculationTooltip",
+      "web": "board.column.calculationTooltip",
+      "desktop": "board.column.calculationTooltip",
+      "en": "{calculation} of {property}",
+      "placeholders": [
+        "calculation",
+        "property"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "board.column.colorColumns",
+      "web": "board.column.colorColumns",
+      "desktop": "board.column.colorColumns",
+      "en": "Color columns",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "board.column.properties",
+      "web": "board.column.properties",
+      "desktop": "board.column.properties",
+      "en": "Properties",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.a11y.table",
+      "web": "chart.a11y.table",
+      "desktop": "chart.a11y.table",
+      "en": "Chart data",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.average",
+      "web": "chart.agg.average",
+      "desktop": "chart.agg.average",
+      "en": "Average",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.countAll",
+      "web": "chart.agg.countAll",
+      "desktop": "chart.agg.countAll",
+      "en": "Count all",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.countEmpty",
+      "web": "chart.agg.countEmpty",
+      "desktop": "chart.agg.countEmpty",
+      "en": "Count empty",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.countUnique",
+      "web": "chart.agg.countUnique",
+      "desktop": "chart.agg.countUnique",
+      "en": "Count unique values",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.countValues",
+      "web": "chart.agg.countValues",
+      "desktop": "chart.agg.countValues",
+      "en": "Count values",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.dateRange",
+      "web": "chart.agg.dateRange",
+      "desktop": "chart.agg.dateRange",
+      "en": "Date range",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.earliest",
+      "web": "chart.agg.earliest",
+      "desktop": "chart.agg.earliest",
+      "en": "Earliest",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.latest",
+      "web": "chart.agg.latest",
+      "desktop": "chart.agg.latest",
+      "en": "Latest",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.max",
+      "web": "chart.agg.max",
+      "desktop": "chart.agg.max",
+      "en": "Max",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.median",
+      "web": "chart.agg.median",
+      "desktop": "chart.agg.median",
+      "en": "Median",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.min",
+      "web": "chart.agg.min",
+      "desktop": "chart.agg.min",
+      "en": "Min",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.percentChecked",
+      "web": "chart.agg.percentChecked",
+      "desktop": "chart.agg.percentChecked",
+      "en": "Percent checked",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.percentEmpty",
+      "web": "chart.agg.percentEmpty",
+      "desktop": "chart.agg.percentEmpty",
+      "en": "Percent empty",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.percentNotEmpty",
+      "web": "chart.agg.percentNotEmpty",
+      "desktop": "chart.agg.percentNotEmpty",
+      "en": "Percent not empty",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.percentUnchecked",
+      "web": "chart.agg.percentUnchecked",
+      "desktop": "chart.agg.percentUnchecked",
+      "en": "Percent unchecked",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.range",
+      "web": "chart.agg.range",
+      "desktop": "chart.agg.range",
+      "en": "Range",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.agg.sum",
+      "web": "chart.agg.sum",
+      "desktop": "chart.agg.sum",
+      "en": "Sum",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.aggregation",
+      "web": "chart.aggregation",
+      "desktop": "chart.aggregation",
+      "en": "Aggregation",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.aggregationAverage",
+      "web": null,
+      "desktop": "chart.aggregationAverage",
+      "en": "Average",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.aggregationCount",
+      "web": null,
+      "desktop": "chart.aggregationCount",
+      "en": "Count",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.aggregationCountValues",
+      "web": null,
+      "desktop": "chart.aggregationCountValues",
+      "en": "Count values",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.aggregationMax",
+      "web": null,
+      "desktop": "chart.aggregationMax",
+      "en": "Max",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.aggregationMedian",
+      "web": null,
+      "desktop": "chart.aggregationMedian",
+      "en": "Median",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.aggregationMin",
+      "web": null,
+      "desktop": "chart.aggregationMin",
+      "en": "Min",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.aggregationSum",
+      "web": null,
+      "desktop": "chart.aggregationSum",
+      "en": "Sum",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.barChart",
+      "web": "chart.barChart",
+      "desktop": "chart.barChart",
+      "en": "Bar",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.chartType",
+      "web": "chart.chartType",
+      "desktop": "chart.chartType",
+      "en": "Chart type",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.checked",
+      "web": "chart.checked",
+      "desktop": "chart.checked",
+      "en": "Checked",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.clickToViewData",
+      "web": null,
+      "desktop": "chart.clickToViewData",
+      "en": "Click to view data",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.color.auto",
+      "web": "chart.color.auto",
+      "desktop": "chart.color.auto",
+      "en": "Auto",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.color.blue",
+      "web": "chart.color.blue",
+      "desktop": "chart.color.blue",
+      "en": "Blue",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.color.colorful",
+      "web": "chart.color.colorful",
+      "desktop": "chart.color.colorful",
+      "en": "Colorful",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.color.colorless",
+      "web": "chart.color.colorless",
+      "desktop": "chart.color.colorless",
+      "en": "Colorless",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.color.green",
+      "web": "chart.color.green",
+      "desktop": "chart.color.green",
+      "en": "Green",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.color.orange",
+      "web": "chart.color.orange",
+      "desktop": "chart.color.orange",
+      "en": "Orange",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.color.pink",
+      "web": "chart.color.pink",
+      "desktop": "chart.color.pink",
+      "en": "Pink",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.color.purple",
+      "web": "chart.color.purple",
+      "desktop": "chart.color.purple",
+      "en": "Purple",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.color.red",
+      "web": "chart.color.red",
+      "desktop": "chart.color.red",
+      "en": "Red",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.color.teal",
+      "web": "chart.color.teal",
+      "desktop": "chart.color.teal",
+      "en": "Teal",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.color.yellow",
+      "web": "chart.color.yellow",
+      "desktop": "chart.color.yellow",
+      "en": "Yellow",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.cumulative",
+      "web": "chart.cumulative",
+      "desktop": "chart.cumulative",
+      "en": "Cumulative",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.dateCondition",
+      "web": "chart.dateCondition",
+      "desktop": null,
+      "en": "Date grouping",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.dateDay",
+      "web": null,
+      "desktop": "chart.dateDay",
+      "en": "Day",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.dateGrouping.day",
+      "web": "chart.dateGrouping.day",
+      "desktop": null,
+      "en": "Day",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.dateGrouping.month",
+      "web": "chart.dateGrouping.month",
+      "desktop": null,
+      "en": "Month",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.dateGrouping.relative",
+      "web": "chart.dateGrouping.relative",
+      "desktop": null,
+      "en": "Relative",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.dateGrouping.week",
+      "web": "chart.dateGrouping.week",
+      "desktop": null,
+      "en": "Week",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.dateGrouping.year",
+      "web": "chart.dateGrouping.year",
+      "desktop": null,
+      "en": "Year",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.dateMonth",
+      "web": null,
+      "desktop": "chart.dateMonth",
+      "en": "Month",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.dateRelative",
+      "web": null,
+      "desktop": "chart.dateRelative",
+      "en": "Relative",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.dateWeek",
+      "web": null,
+      "desktop": "chart.dateWeek",
+      "en": "Week",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.dateYear",
+      "web": null,
+      "desktop": "chart.dateYear",
+      "en": "Year",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.decimalPlaces.auto",
+      "web": "chart.decimalPlaces.auto",
+      "desktop": "chart.decimalPlaces.auto",
+      "en": "Auto",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.donutChart",
+      "web": "chart.donutChart",
+      "desktop": "chart.donutChart",
+      "en": "Donut",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.emptyState",
+      "web": null,
+      "desktop": "chart.emptyState",
+      "en": "No data to display",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.emptyState.description",
+      "web": "chart.emptyState.description",
+      "desktop": null,
+      "en": "Add rows with data to see the chart",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.emptyState.noField",
+      "web": "chart.emptyState.noField",
+      "desktop": null,
+      "en": "No fields available for grouping",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.emptyState.noFieldDescription",
+      "web": "chart.emptyState.noFieldDescription",
+      "desktop": null,
+      "en": "Create a SingleSelect, MultiSelect, Checkbox or Date field to use the chart view.",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.emptyState.title",
+      "web": "chart.emptyState.title",
+      "desktop": null,
+      "en": "No data to display",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.emptyValue",
+      "web": "chart.emptyValue",
+      "desktop": "chart.emptyValue",
+      "en": "Empty",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.groupBy",
+      "web": null,
+      "desktop": "chart.groupBy",
+      "en": "Group by",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.groups.count",
+      "web": "chart.groups.count",
+      "desktop": "chart.groups.count",
+      "en": "{count} groups",
+      "placeholders": [
+        "count"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.groups.hideAll",
+      "web": "chart.groups.hideAll",
+      "desktop": "chart.groups.hideAll",
+      "en": "Hide all",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.groups.hideGroup",
+      "web": "chart.groups.hideGroup",
+      "desktop": "chart.groups.hideGroup",
+      "en": "Hide group",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.groups.noGroups",
+      "web": "chart.groups.noGroups",
+      "desktop": "chart.groups.noGroups",
+      "en": "No groups",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.groups.showAll",
+      "web": "chart.groups.showAll",
+      "desktop": "chart.groups.showAll",
+      "en": "Show all",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.groups.showGroup",
+      "web": "chart.groups.showGroup",
+      "desktop": "chart.groups.showGroup",
+      "en": "Show group",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.groups.unknownPerson",
+      "web": "chart.groups.unknownPerson",
+      "desktop": "chart.groups.unknownPerson",
+      "en": "Unknown person",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.groups.unknownUser",
+      "web": "chart.groups.unknownUser",
+      "desktop": "chart.groups.unknownUser",
+      "en": "Unknown user",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.groups.untitled",
+      "web": "chart.groups.untitled",
+      "desktop": "chart.groups.untitled",
+      "en": "Untitled",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.groups.visibleOfTotal",
+      "web": "chart.groups.visibleOfTotal",
+      "desktop": "chart.groups.visibleOfTotal",
+      "en": "{visible} of {total}",
+      "placeholders": [
+        "total",
+        "visible"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.horizontalBarChart",
+      "web": "chart.horizontalBarChart",
+      "desktop": "chart.horizontalBarChart",
+      "en": "Horizontal Bar",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.legend.auto",
+      "web": "chart.legend.auto",
+      "desktop": "chart.legend.auto",
+      "en": "Auto",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.legend.bottom",
+      "web": "chart.legend.bottom",
+      "desktop": "chart.legend.bottom",
+      "en": "Bottom",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.legend.nextPage",
+      "web": "chart.legend.nextPage",
+      "desktop": "chart.legend.nextPage",
+      "en": "Next page",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.legend.off",
+      "web": "chart.legend.off",
+      "desktop": "chart.legend.off",
+      "en": "Off",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.legend.page",
+      "web": "chart.legend.page",
+      "desktop": "chart.legend.page",
+      "en": "{page}/{count}",
+      "placeholders": [
+        "count",
+        "page"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.legend.previousPage",
+      "web": "chart.legend.previousPage",
+      "desktop": "chart.legend.previousPage",
+      "en": "Previous page",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.lineChart",
+      "web": "chart.lineChart",
+      "desktop": "chart.lineChart",
+      "en": "Line",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.menuName",
+      "web": "chart.menuName",
+      "desktop": "chart.menuName",
+      "en": "Chart",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.noFieldValue",
+      "web": "chart.noFieldValue",
+      "desktop": "chart.noFieldValue",
+      "en": "No {0}",
+      "placeholders": [
+        "0"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.noGroupableFields@web",
+      "web": "chart.noGroupableFields",
+      "desktop": null,
+      "en": "No groupable fields available",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.noGroupableFields@desktop",
+      "web": null,
+      "desktop": "chart.noGroupableFields",
+      "en": "Add a Single Select, Multi Select, or Checkbox field to create a chart",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.noNumberFields",
+      "web": null,
+      "desktop": "chart.noNumberFields",
+      "en": "No number fields available",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.noValidData",
+      "web": null,
+      "desktop": "chart.noValidData",
+      "en": "No valid data to display",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.noYAxisFields",
+      "web": null,
+      "desktop": "chart.noYAxisFields",
+      "en": "No suitable fields for Y-axis",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.number.calculate",
+      "web": "chart.number.calculate",
+      "desktop": "chart.number.calculate",
+      "en": "Calculate",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.number.countAll",
+      "web": "chart.number.countAll",
+      "desktop": "chart.number.countAll",
+      "en": "Count all",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.number.emptyState",
+      "web": "chart.number.emptyState",
+      "desktop": "chart.number.emptyState",
+      "en": "No data",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.number.format",
+      "web": "chart.number.format",
+      "desktop": "chart.number.format",
+      "en": "Format",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.number.formatAuto",
+      "web": "chart.number.formatAuto",
+      "desktop": "chart.number.formatAuto",
+      "en": "Auto",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.number.formatCompact",
+      "web": "chart.number.formatCompact",
+      "desktop": "chart.number.formatCompact",
+      "en": "Compact",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.number.formatPercent",
+      "web": "chart.number.formatPercent",
+      "desktop": "chart.number.formatPercent",
+      "en": "Percent",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.number.property",
+      "web": "chart.number.property",
+      "desktop": "chart.number.property",
+      "en": "Property",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.number.title",
+      "web": "chart.number.title",
+      "desktop": "chart.number.title",
+      "en": "Title",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.number.titleOf",
+      "web": "chart.number.titleOf",
+      "desktop": "chart.number.titleOf",
+      "en": "{aggregation} of {field}",
+      "placeholders": [
+        "aggregation",
+        "field"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.number.titlePlaceholder",
+      "web": "chart.number.titlePlaceholder",
+      "desktop": "chart.number.titlePlaceholder",
+      "en": "Default title",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberChart",
+      "web": "chart.numberChart",
+      "desktop": "chart.numberChart",
+      "en": "Number",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.addRule",
+      "web": "chart.numberColor.addRule",
+      "desktop": "chart.numberColor.addRule",
+      "en": "Add rule",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.blue",
+      "web": "chart.numberColor.blue",
+      "desktop": "chart.numberColor.blue",
+      "en": "Blue",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.brown",
+      "web": "chart.numberColor.brown",
+      "desktop": "chart.numberColor.brown",
+      "en": "Brown",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.default",
+      "web": "chart.numberColor.default",
+      "desktop": "chart.numberColor.default",
+      "en": "Default",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.deleteRule",
+      "web": "chart.numberColor.deleteRule",
+      "desktop": "chart.numberColor.deleteRule",
+      "en": "Delete rule",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.dynamic",
+      "web": "chart.numberColor.dynamic",
+      "desktop": "chart.numberColor.dynamic",
+      "en": "Dynamic",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.dynamicColor",
+      "web": "chart.numberColor.dynamicColor",
+      "desktop": "chart.numberColor.dynamicColor",
+      "en": "Dynamic color",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.else",
+      "web": "chart.numberColor.else",
+      "desktop": "chart.numberColor.else",
+      "en": "Else",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.equal",
+      "web": "chart.numberColor.equal",
+      "desktop": "chart.numberColor.equal",
+      "en": "Equal",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.gray",
+      "web": "chart.numberColor.gray",
+      "desktop": "chart.numberColor.gray",
+      "en": "Gray",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.greaterThan",
+      "web": "chart.numberColor.greaterThan",
+      "desktop": "chart.numberColor.greaterThan",
+      "en": "Greater than",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.greaterThanOrEqual",
+      "web": "chart.numberColor.greaterThanOrEqual",
+      "desktop": "chart.numberColor.greaterThanOrEqual",
+      "en": "Greater than or equal",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.green",
+      "web": "chart.numberColor.green",
+      "desktop": "chart.numberColor.green",
+      "en": "Green",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.ifValue",
+      "web": "chart.numberColor.ifValue",
+      "desktop": "chart.numberColor.ifValue",
+      "en": "If value",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.lessThan",
+      "web": "chart.numberColor.lessThan",
+      "desktop": "chart.numberColor.lessThan",
+      "en": "Less than",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.lessThanOrEqual",
+      "web": "chart.numberColor.lessThanOrEqual",
+      "desktop": "chart.numberColor.lessThanOrEqual",
+      "en": "Less than or equal",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.notEqual",
+      "web": "chart.numberColor.notEqual",
+      "desktop": "chart.numberColor.notEqual",
+      "en": "Not equal",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.orange",
+      "web": "chart.numberColor.orange",
+      "desktop": "chart.numberColor.orange",
+      "en": "Orange",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.pink",
+      "web": "chart.numberColor.pink",
+      "desktop": "chart.numberColor.pink",
+      "en": "Pink",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.purple",
+      "web": "chart.numberColor.purple",
+      "desktop": "chart.numberColor.purple",
+      "en": "Purple",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.red",
+      "web": "chart.numberColor.red",
+      "desktop": "chart.numberColor.red",
+      "en": "Red",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.sameAsColor",
+      "web": "chart.numberColor.sameAsColor",
+      "desktop": "chart.numberColor.sameAsColor",
+      "en": "Same as Color",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.numberColor.yellow",
+      "web": "chart.numberColor.yellow",
+      "desktop": "chart.numberColor.yellow",
+      "en": "Yellow",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.referencedChartPrefix",
+      "web": null,
+      "desktop": "chart.referencedChartPrefix",
+      "en": "View of",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.rowCount",
+      "web": null,
+      "desktop": "chart.rowCount",
+      "en": "{0} row",
+      "placeholders": [
+        "0"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.rowsCount",
+      "web": null,
+      "desktop": "chart.rowsCount",
+      "en": "{0} rows",
+      "placeholders": [
+        "0"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.selectField",
+      "web": null,
+      "desktop": "chart.selectField",
+      "en": "Select field",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.selectNumberField",
+      "web": null,
+      "desktop": "chart.selectNumberField",
+      "en": "Select a number field",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.auto",
+      "web": "chart.settings.auto",
+      "desktop": "chart.settings.auto",
+      "en": "Auto",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.back",
+      "web": "chart.settings.back",
+      "desktop": "chart.settings.back",
+      "en": "Back",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.calculate",
+      "web": "chart.settings.calculate",
+      "desktop": "chart.settings.calculate",
+      "en": "Calculate",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.chartSettings",
+      "web": "chart.settings.chartSettings",
+      "desktop": null,
+      "en": "Chart settings",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.chartTitle",
+      "web": "chart.settings.chartTitle",
+      "desktop": "chart.settings.chartTitle",
+      "en": "Chart title",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.chartType",
+      "web": "chart.settings.chartType",
+      "desktop": "chart.settings.chartType",
+      "en": "Chart type",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.color",
+      "web": "chart.settings.color",
+      "desktop": "chart.settings.color",
+      "en": "Color",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.count",
+      "web": "chart.settings.count",
+      "desktop": "chart.settings.count",
+      "en": "Count",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.cumulative",
+      "web": "chart.settings.cumulative",
+      "desktop": "chart.settings.cumulative",
+      "en": "Cumulative",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.data",
+      "web": "chart.settings.data",
+      "desktop": "chart.settings.data",
+      "en": "Data",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.dataLabels",
+      "web": "chart.settings.dataLabels",
+      "desktop": "chart.settings.dataLabels",
+      "en": "Data labels",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.dateGrouping",
+      "web": "chart.settings.dateGrouping",
+      "desktop": "chart.settings.dateGrouping",
+      "en": "Date grouping",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.decimalPlaces",
+      "web": "chart.settings.decimalPlaces",
+      "desktop": "chart.settings.decimalPlaces",
+      "en": "Decimal places",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.default",
+      "web": "chart.settings.default",
+      "desktop": "chart.settings.default",
+      "en": "Default",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.donut",
+      "web": "chart.settings.donut",
+      "desktop": "chart.settings.donut",
+      "en": "Donut",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.eachSliceRepresents",
+      "web": "chart.settings.eachSliceRepresents",
+      "desktop": "chart.settings.eachSliceRepresents",
+      "en": "Each slice represents",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.endAt",
+      "web": "chart.settings.endAt",
+      "desktop": "chart.settings.endAt",
+      "en": "End at",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.exactValue",
+      "web": "chart.settings.exactValue",
+      "desktop": "chart.settings.exactValue",
+      "en": "Exact value",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.firstLetter",
+      "web": "chart.settings.firstLetter",
+      "desktop": "chart.settings.firstLetter",
+      "en": "First letter",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.format",
+      "web": "chart.settings.format",
+      "desktop": "chart.settings.format",
+      "en": "Format",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.groupBy",
+      "web": "chart.settings.groupBy",
+      "desktop": "chart.settings.groupBy",
+      "en": "Group by",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.groupByNone",
+      "web": "chart.settings.groupByNone",
+      "desktop": "chart.settings.groupByNone",
+      "en": "None",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.groupByText",
+      "web": "chart.settings.groupByText",
+      "desktop": "chart.settings.groupByText",
+      "en": "Group by text",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.groupStyle",
+      "web": "chart.settings.groupStyle",
+      "desktop": "chart.settings.groupStyle",
+      "en": "Group style",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.groupStyleGrouped",
+      "web": "chart.settings.groupStyleGrouped",
+      "desktop": "chart.settings.groupStyleGrouped",
+      "en": "Grouped",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.groupStylePercent",
+      "web": "chart.settings.groupStylePercent",
+      "desktop": "chart.settings.groupStylePercent",
+      "en": "Percent",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.groupStyleStacked",
+      "web": "chart.settings.groupStyleStacked",
+      "desktop": "chart.settings.groupStyleStacked",
+      "en": "Stacked",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.groups",
+      "web": "chart.settings.groups",
+      "desktop": "chart.settings.groups",
+      "en": "Groups",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.horizontalBar",
+      "web": "chart.settings.horizontalBar",
+      "desktop": "chart.settings.horizontalBar",
+      "en": "Horizontal bar",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.legend",
+      "web": "chart.settings.legend",
+      "desktop": "chart.settings.legend",
+      "en": "Legend",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.line",
+      "web": "chart.settings.line",
+      "desktop": "chart.settings.line",
+      "en": "Line",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.moreOptions",
+      "web": "chart.settings.moreOptions",
+      "desktop": "chart.settings.moreOptions",
+      "en": "More options",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.moreSeries",
+      "web": "chart.settings.moreSeries",
+      "desktop": "chart.settings.moreSeries",
+      "en": "+{n} more",
+      "placeholders": [
+        "n"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.name",
+      "web": null,
+      "desktop": "chart.settings.name",
+      "en": "Chart settings",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.noResults",
+      "web": "chart.settings.noResults",
+      "desktop": "chart.settings.noResults",
+      "en": "No results",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.number",
+      "web": "chart.settings.number",
+      "desktop": "chart.settings.number",
+      "en": "Number",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.onlyShowingFirstGroups",
+      "web": "chart.settings.onlyShowingFirstGroups",
+      "desktop": "chart.settings.onlyShowingFirstGroups",
+      "en": "Only showing the first {n} groups",
+      "placeholders": [
+        "n"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.percent",
+      "web": "chart.settings.percent",
+      "desktop": "chart.settings.percent",
+      "en": "Percent",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.rangeSize",
+      "web": "chart.settings.rangeSize",
+      "desktop": "chart.settings.rangeSize",
+      "en": "Range size",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.ranges",
+      "web": "chart.settings.ranges",
+      "desktop": "chart.settings.ranges",
+      "en": "Ranges",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.rangesPreview",
+      "web": "chart.settings.rangesPreview",
+      "desktop": "chart.settings.rangesPreview",
+      "en": "{count} ranges from {from} to {to}",
+      "placeholders": [
+        "count",
+        "from",
+        "to"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.searchProperty",
+      "web": "chart.settings.searchProperty",
+      "desktop": "chart.settings.searchProperty",
+      "en": "Search for a property…",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.size",
+      "web": "chart.settings.size",
+      "desktop": "chart.settings.size",
+      "en": "Size {size}",
+      "placeholders": [
+        "size"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.sortBy",
+      "web": "chart.settings.sortBy",
+      "desktop": "chart.settings.sortBy",
+      "en": "Sort by",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.startAt",
+      "web": "chart.settings.startAt",
+      "desktop": "chart.settings.startAt",
+      "en": "Start at",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.style",
+      "web": "chart.settings.style",
+      "desktop": "chart.settings.style",
+      "en": "Style",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.verticalBar",
+      "web": "chart.settings.verticalBar",
+      "desktop": "chart.settings.verticalBar",
+      "en": "Vertical bar",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.viewSettings",
+      "web": "chart.settings.viewSettings",
+      "desktop": "chart.settings.viewSettings",
+      "en": "View settings",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.whatToShow",
+      "web": "chart.settings.whatToShow",
+      "desktop": "chart.settings.whatToShow",
+      "en": "What to show",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.xAxis",
+      "web": "chart.settings.xAxis",
+      "desktop": "chart.settings.xAxis",
+      "en": "X axis",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.settings.yAxis",
+      "web": "chart.settings.yAxis",
+      "desktop": "chart.settings.yAxis",
+      "en": "Y axis",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.showEmptyValues",
+      "web": "chart.showEmptyValues",
+      "desktop": "chart.showEmptyValues",
+      "en": "Show empty values",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.sort.default",
+      "web": "chart.sort.default",
+      "desktop": "chart.sort.default",
+      "en": "Default",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.sort.labelAsc",
+      "web": "chart.sort.labelAsc",
+      "desktop": "chart.sort.labelAsc",
+      "en": "A → Z",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.sort.labelDesc",
+      "web": "chart.sort.labelDesc",
+      "desktop": "chart.sort.labelDesc",
+      "en": "Z → A",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.sort.manual",
+      "web": "chart.sort.manual",
+      "desktop": "chart.sort.manual",
+      "en": "Manual",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.sort.valueAsc",
+      "web": "chart.sort.valueAsc",
+      "desktop": "chart.sort.valueAsc",
+      "en": "Value low → high",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.sort.valueDesc",
+      "web": "chart.sort.valueDesc",
+      "desktop": "chart.sort.valueDesc",
+      "en": "Value high → low",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.state.error",
+      "web": "chart.state.error",
+      "desktop": "chart.state.error",
+      "en": "Couldn't load this chart",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.state.noData",
+      "web": "chart.state.noData",
+      "desktop": "chart.state.noData",
+      "en": "No data",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.state.preparing",
+      "web": "chart.state.preparing",
+      "desktop": "chart.state.preparing",
+      "en": "Preparing your chart",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.state.retry",
+      "web": "chart.state.retry",
+      "desktop": "chart.state.retry",
+      "en": "Retry",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.style.color",
+      "web": "chart.style.color",
+      "desktop": "chart.style.color",
+      "en": "Color",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.style.dataLabels",
+      "web": "chart.style.dataLabels",
+      "desktop": "chart.style.dataLabels",
+      "en": "Data labels",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.style.decimalPlaces",
+      "web": "chart.style.decimalPlaces",
+      "desktop": "chart.style.decimalPlaces",
+      "en": "Decimal places",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.style.legend",
+      "web": "chart.style.legend",
+      "desktop": "chart.style.legend",
+      "en": "Legend",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.style.title",
+      "web": "chart.style.title",
+      "desktop": "chart.style.title",
+      "en": "Style",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.tooltip.average",
+      "web": "chart.tooltip.average",
+      "desktop": null,
+      "en": "Average",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.tooltip.clickToView",
+      "web": "chart.tooltip.clickToView",
+      "desktop": null,
+      "en": "Click to view data",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.tooltip.count",
+      "web": "chart.tooltip.count",
+      "desktop": null,
+      "en": "Count",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.tooltip.countValues",
+      "web": "chart.tooltip.countValues",
+      "desktop": null,
+      "en": "Count values",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.tooltip.max",
+      "web": "chart.tooltip.max",
+      "desktop": null,
+      "en": "Max",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.tooltip.median",
+      "web": "chart.tooltip.median",
+      "desktop": null,
+      "en": "Median",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.tooltip.min",
+      "web": "chart.tooltip.min",
+      "desktop": null,
+      "en": "Min",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.tooltip.rows",
+      "web": "chart.tooltip.rows",
+      "desktop": null,
+      "en": "{count} rows",
+      "placeholders": [
+        "count"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.tooltip.sum",
+      "web": "chart.tooltip.sum",
+      "desktop": null,
+      "en": "Sum",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.total",
+      "web": "chart.total",
+      "desktop": "chart.total",
+      "en": "Total",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.unchecked",
+      "web": "chart.unchecked",
+      "desktop": "chart.unchecked",
+      "en": "Unchecked",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.upgradeRequired",
+      "web": "chart.upgradeRequired",
+      "desktop": "chart.upgradeRequired",
+      "en": "Upgrade Required",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.upgradeToProForChartTypes",
+      "web": "chart.upgradeToProForChartTypes",
+      "desktop": "chart.upgradeToProForChartTypes",
+      "en": "Upgrade to Pro plan to use horizontal bar, line, and donut charts",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.value.days@web",
+      "web": "chart.value.days",
+      "desktop": null,
+      "en": {
+        "one": "{count} day",
+        "other": "{count} days"
+      },
+      "placeholders": [
+        "count"
+      ],
+      "plural": true,
+      "source": "en"
+    },
+    {
+      "id": "chart.value.days@desktop",
+      "web": null,
+      "desktop": "chart.value.days",
+      "en": {
+        "one": "{0} day",
+        "other": "{0} days"
+      },
+      "placeholders": [
+        "0"
+      ],
+      "plural": true,
+      "source": "en"
+    },
+    {
+      "id": "chart.xAxis",
+      "web": "chart.xAxis",
+      "desktop": "chart.xAxis",
+      "en": "X-Axis",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "chart.yAxis",
+      "web": "chart.yAxis",
+      "desktop": "chart.yAxis",
+      "en": "Y-Axis",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.addWidget",
+      "web": "dashboard.addWidget",
+      "desktop": null,
+      "en": "Add widget",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.creationOffline",
+      "web": null,
+      "desktop": "dashboard.creationOffline",
+      "en": "Connect to your workspace to create a Dashboard view.",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.creationRequiresCloudAccount",
+      "web": null,
+      "desktop": "dashboard.creationRequiresCloudAccount",
+      "en": "Sign in with a cloud account to create a Dashboard view.",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.creationRequiresPro",
+      "web": "dashboard.creationRequiresPro",
+      "desktop": "dashboard.creationRequiresPro",
+      "en": "Creating a Dashboard view requires a Pro workspace.",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.done",
+      "web": "dashboard.done",
+      "desktop": "dashboard.done",
+      "en": "Done",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.edit",
+      "web": "dashboard.edit",
+      "desktop": "dashboard.edit",
+      "en": "Edit",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.empty.editDashboard",
+      "web": "dashboard.empty.editDashboard",
+      "desktop": "dashboard.empty.editDashboard",
+      "en": "Edit dashboard",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.empty.newView",
+      "web": "dashboard.empty.newView",
+      "desktop": "dashboard.empty.newView",
+      "en": "New view",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.empty.text",
+      "web": "dashboard.empty.text",
+      "desktop": "dashboard.empty.text",
+      "en": "Add charts, tables, lists",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.addAnother",
+      "web": "dashboard.globalFilters.addAnother",
+      "desktop": "dashboard.globalFilters.addAnother",
+      "en": "Add another",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.addToFilter",
+      "web": "dashboard.globalFilters.addToFilter",
+      "desktop": "dashboard.globalFilters.addToFilter",
+      "en": "Add to filter",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.appliesTo",
+      "web": "dashboard.globalFilters.appliesTo",
+      "desktop": "dashboard.globalFilters.appliesTo",
+      "en": "This filter will apply across {type} properties selected below",
+      "placeholders": [
+        "type"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.button",
+      "web": "dashboard.globalFilters.button",
+      "desktop": "dashboard.globalFilters.button",
+      "en": "Filter",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.delete",
+      "web": "dashboard.globalFilters.delete",
+      "desktop": "dashboard.globalFilters.delete",
+      "en": "Delete filter",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.done",
+      "web": "dashboard.globalFilters.done",
+      "desktop": "dashboard.globalFilters.done",
+      "en": "Done",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.endDate",
+      "web": "dashboard.globalFilters.endDate",
+      "desktop": "dashboard.globalFilters.endDate",
+      "en": "End date",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.filterBy",
+      "web": "dashboard.globalFilters.filterBy",
+      "desktop": "dashboard.globalFilters.filterBy",
+      "en": "Filter by…",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.historyFailed",
+      "web": null,
+      "desktop": "dashboard.globalFilters.historyFailed",
+      "en": "Couldn't undo or redo the filter change",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.isChecked",
+      "web": "dashboard.globalFilters.isChecked",
+      "desktop": "dashboard.globalFilters.isChecked",
+      "en": "Is checked",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.isUnchecked",
+      "web": "dashboard.globalFilters.isUnchecked",
+      "desktop": "dashboard.globalFilters.isUnchecked",
+      "en": "Is unchecked",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.layoutWriteFailed",
+      "web": null,
+      "desktop": "dashboard.globalFilters.layoutWriteFailed",
+      "en": "Couldn't save the dashboard change",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.more",
+      "web": "dashboard.globalFilters.more",
+      "desktop": "dashboard.globalFilters.more",
+      "en": "{count} more",
+      "placeholders": [
+        "count"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.moreActions",
+      "web": "dashboard.globalFilters.moreActions",
+      "desktop": "dashboard.globalFilters.moreActions",
+      "en": "More actions",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.multipleSourcesIntro",
+      "web": "dashboard.globalFilters.multipleSourcesIntro",
+      "desktop": "dashboard.globalFilters.multipleSourcesIntro",
+      "en": "Create a filter that applies across properties from multiple sources",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.name",
+      "web": "dashboard.globalFilters.name",
+      "desktop": "dashboard.globalFilters.name",
+      "en": "Filter name",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.noResults",
+      "web": "dashboard.globalFilters.noResults",
+      "desktop": "dashboard.globalFilters.noResults",
+      "en": "No results",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.after",
+      "web": "dashboard.globalFilters.op.after",
+      "desktop": "dashboard.globalFilters.op.after",
+      "en": "After",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.before",
+      "web": "dashboard.globalFilters.op.before",
+      "desktop": "dashboard.globalFilters.op.before",
+      "en": "Before",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.between",
+      "web": "dashboard.globalFilters.op.between",
+      "desktop": "dashboard.globalFilters.op.between",
+      "en": "Between",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.checked",
+      "web": "dashboard.globalFilters.op.checked",
+      "desktop": "dashboard.globalFilters.op.checked",
+      "en": "Checked",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.complete",
+      "web": "dashboard.globalFilters.op.complete",
+      "desktop": "dashboard.globalFilters.op.complete",
+      "en": "Complete",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.doesNotContain",
+      "web": "dashboard.globalFilters.op.doesNotContain",
+      "desktop": "dashboard.globalFilters.op.doesNotContain",
+      "en": "Does not contain",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.endsWith",
+      "web": "dashboard.globalFilters.op.endsWith",
+      "desktop": "dashboard.globalFilters.op.endsWith",
+      "en": "Ends with",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.incomplete",
+      "web": "dashboard.globalFilters.op.incomplete",
+      "desktop": "dashboard.globalFilters.op.incomplete",
+      "en": "Incomplete",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.is",
+      "web": "dashboard.globalFilters.op.is",
+      "desktop": "dashboard.globalFilters.op.is",
+      "en": "Is",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.isEmpty",
+      "web": "dashboard.globalFilters.op.isEmpty",
+      "desktop": "dashboard.globalFilters.op.isEmpty",
+      "en": "Is empty",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.isNot",
+      "web": "dashboard.globalFilters.op.isNot",
+      "desktop": "dashboard.globalFilters.op.isNot",
+      "en": "Is not",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.isNotEmpty",
+      "web": "dashboard.globalFilters.op.isNotEmpty",
+      "desktop": "dashboard.globalFilters.op.isNotEmpty",
+      "en": "Is not empty",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.onOrAfter",
+      "web": "dashboard.globalFilters.op.onOrAfter",
+      "desktop": "dashboard.globalFilters.op.onOrAfter",
+      "en": "On or after",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.onOrBefore",
+      "web": "dashboard.globalFilters.op.onOrBefore",
+      "desktop": "dashboard.globalFilters.op.onOrBefore",
+      "en": "On or before",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.startsWith",
+      "web": "dashboard.globalFilters.op.startsWith",
+      "desktop": "dashboard.globalFilters.op.startsWith",
+      "en": "Starts with",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.op.unchecked",
+      "web": "dashboard.globalFilters.op.unchecked",
+      "desktop": "dashboard.globalFilters.op.unchecked",
+      "en": "Unchecked",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.people",
+      "web": "dashboard.globalFilters.people",
+      "desktop": "dashboard.globalFilters.people",
+      "en": {
+        "one": "{count} person",
+        "other": "{count} people"
+      },
+      "placeholders": [
+        "count"
+      ],
+      "plural": true,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.relative.amount",
+      "web": "dashboard.globalFilters.relative.amount",
+      "desktop": null,
+      "en": "Amount",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.relative.next",
+      "web": "dashboard.globalFilters.relative.next",
+      "desktop": "dashboard.globalFilters.relative.next",
+      "en": "Next",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.relative.past",
+      "web": "dashboard.globalFilters.relative.past",
+      "desktop": "dashboard.globalFilters.relative.past",
+      "en": "Past",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.relative.summaryNext",
+      "web": "dashboard.globalFilters.relative.summaryNext",
+      "desktop": "dashboard.globalFilters.relative.summaryNext",
+      "en": {
+        "one": "Next {unit}",
+        "other": "Next {count} {unit}"
+      },
+      "placeholders": [
+        "count",
+        "unit"
+      ],
+      "plural": true,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.relative.summaryPast",
+      "web": "dashboard.globalFilters.relative.summaryPast",
+      "desktop": "dashboard.globalFilters.relative.summaryPast",
+      "en": {
+        "one": "Past {unit}",
+        "other": "Past {count} {unit}"
+      },
+      "placeholders": [
+        "count",
+        "unit"
+      ],
+      "plural": true,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.relative.summaryThis",
+      "web": "dashboard.globalFilters.relative.summaryThis",
+      "desktop": "dashboard.globalFilters.relative.summaryThis",
+      "en": "This {unit}",
+      "placeholders": [
+        "unit"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.relative.this",
+      "web": "dashboard.globalFilters.relative.this",
+      "desktop": "dashboard.globalFilters.relative.this",
+      "en": "This",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.relativeHint",
+      "web": "dashboard.globalFilters.relativeHint",
+      "desktop": "dashboard.globalFilters.relativeHint",
+      "en": "Filter will update with the current date",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.relativeToToday",
+      "web": "dashboard.globalFilters.relativeToToday",
+      "desktop": "dashboard.globalFilters.relativeToToday",
+      "en": "Is relative to today",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.remove",
+      "web": "dashboard.globalFilters.remove",
+      "desktop": "dashboard.globalFilters.remove",
+      "en": "Remove",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.reset",
+      "web": "dashboard.globalFilters.reset",
+      "desktop": "dashboard.globalFilters.reset",
+      "en": "Reset",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.resetFailed",
+      "web": null,
+      "desktop": "dashboard.globalFilters.resetFailed",
+      "en": "Couldn't reset your filter changes",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.saveFailed",
+      "web": null,
+      "desktop": "dashboard.globalFilters.saveFailed",
+      "en": "Couldn't save the filters for everybody",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.sourceLine",
+      "web": "dashboard.globalFilters.sourceLine",
+      "desktop": "dashboard.globalFilters.sourceLine",
+      "en": "{property} in {source}",
+      "placeholders": [
+        "property",
+        "source"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.startDate",
+      "web": "dashboard.globalFilters.startDate",
+      "desktop": "dashboard.globalFilters.startDate",
+      "en": "Start date",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.title",
+      "web": "dashboard.globalFilters.title",
+      "desktop": "dashboard.globalFilters.title",
+      "en": "Filter multiple sources",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.typeAValue",
+      "web": null,
+      "desktop": "dashboard.globalFilters.typeAValue",
+      "en": "Type a value",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.units.day",
+      "web": "dashboard.globalFilters.units.day",
+      "desktop": "dashboard.globalFilters.units.day",
+      "en": {
+        "one": "day",
+        "other": "days"
+      },
+      "placeholders": [],
+      "plural": true,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.units.month",
+      "web": "dashboard.globalFilters.units.month",
+      "desktop": "dashboard.globalFilters.units.month",
+      "en": {
+        "one": "month",
+        "other": "months"
+      },
+      "placeholders": [],
+      "plural": true,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.units.week",
+      "web": "dashboard.globalFilters.units.week",
+      "desktop": "dashboard.globalFilters.units.week",
+      "en": {
+        "one": "week",
+        "other": "weeks"
+      },
+      "placeholders": [],
+      "plural": true,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.units.year",
+      "web": "dashboard.globalFilters.units.year",
+      "desktop": "dashboard.globalFilters.units.year",
+      "en": {
+        "one": "year",
+        "other": "years"
+      },
+      "placeholders": [],
+      "plural": true,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.globalFilters.viewCount",
+      "web": "dashboard.globalFilters.viewCount",
+      "desktop": "dashboard.globalFilters.viewCount",
+      "en": {
+        "one": "{count} view",
+        "other": "{count} views"
+      },
+      "placeholders": [
+        "count"
+      ],
+      "plural": true,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.historyPreviewUnavailable",
+      "web": "dashboard.historyPreviewUnavailable",
+      "desktop": "dashboard.historyPreviewUnavailable",
+      "en": "Dashboards are not previewed in version history.",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.limit.fullHint",
+      "web": "dashboard.limit.fullHint",
+      "desktop": "dashboard.limit.fullHint",
+      "en": "Delete a view to add a new one",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.limit.fullTitle",
+      "web": "dashboard.limit.fullTitle",
+      "desktop": "dashboard.limit.fullTitle",
+      "en": "Dashboard is full",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.menuName",
+      "web": "dashboard.menuName",
+      "desktop": "dashboard.menuName",
+      "en": "Dashboard",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.back",
+      "web": "dashboard.picker.back",
+      "desktop": "dashboard.picker.back",
+      "en": "Back",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.changeViewTitle",
+      "web": "dashboard.picker.changeViewTitle",
+      "desktop": null,
+      "en": "Change view",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.close",
+      "web": "dashboard.picker.close",
+      "desktop": "dashboard.picker.close",
+      "en": "Close",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.createFailed",
+      "web": "dashboard.picker.createFailed",
+      "desktop": "dashboard.picker.createFailed",
+      "en": "Could not create the view",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.editChart",
+      "web": "dashboard.picker.editChart",
+      "desktop": "dashboard.picker.editChart",
+      "en": "Edit chart",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.layout.board",
+      "web": "dashboard.picker.layout.board",
+      "desktop": "dashboard.picker.layout.board",
+      "en": "Board",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.layout.calendar",
+      "web": "dashboard.picker.layout.calendar",
+      "desktop": "dashboard.picker.layout.calendar",
+      "en": "Calendar",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.layout.chart",
+      "web": "dashboard.picker.layout.chart",
+      "desktop": "dashboard.picker.layout.chart",
+      "en": "Chart",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.layout.feed",
+      "web": "dashboard.picker.layout.feed",
+      "desktop": "dashboard.picker.layout.feed",
+      "en": "Feed",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.layout.gallery",
+      "web": "dashboard.picker.layout.gallery",
+      "desktop": "dashboard.picker.layout.gallery",
+      "en": "Gallery",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.layout.list",
+      "web": "dashboard.picker.layout.list",
+      "desktop": "dashboard.picker.layout.list",
+      "en": "List",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.layout.table",
+      "web": "dashboard.picker.layout.table",
+      "desktop": "dashboard.picker.layout.table",
+      "en": "Table",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.layout.timeline",
+      "web": "dashboard.picker.layout.timeline",
+      "desktop": "dashboard.picker.layout.timeline",
+      "en": "Timeline",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.loadFailed",
+      "web": "dashboard.picker.loadFailed",
+      "desktop": "dashboard.picker.loadFailed",
+      "en": "Could not load databases",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.newView",
+      "web": "dashboard.picker.newView",
+      "desktop": "dashboard.picker.newView",
+      "en": "New view",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.newViewIn",
+      "web": "dashboard.picker.newViewIn",
+      "desktop": "dashboard.picker.newViewIn",
+      "en": "New view in {database}",
+      "placeholders": [
+        "database"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.noResults",
+      "web": "dashboard.picker.noResults",
+      "desktop": "dashboard.picker.noResults",
+      "en": "No views found",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.otherSources",
+      "web": "dashboard.picker.otherSources",
+      "desktop": "dashboard.picker.otherSources",
+      "en": "Other data sources",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.searchPlaceholder",
+      "web": "dashboard.picker.searchPlaceholder",
+      "desktop": "dashboard.picker.searchPlaceholder",
+      "en": "Search for a view...",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.showMore",
+      "web": "dashboard.picker.showMore",
+      "desktop": "dashboard.picker.showMore",
+      "en": "Show {count} more",
+      "placeholders": [
+        "count"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.source",
+      "web": "dashboard.picker.source",
+      "desktop": "dashboard.picker.source",
+      "en": "Source",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.thisDatabase",
+      "web": "dashboard.picker.thisDatabase",
+      "desktop": null,
+      "en": "This database",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.viewName",
+      "web": "dashboard.picker.viewName",
+      "desktop": "dashboard.picker.viewName",
+      "en": "View name",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.viewsOn",
+      "web": "dashboard.picker.viewsOn",
+      "desktop": "dashboard.picker.viewsOn",
+      "en": "Views on {database}",
+      "placeholders": [
+        "database"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.picker.viewsOnThisDatabase",
+      "web": "dashboard.picker.viewsOnThisDatabase",
+      "desktop": "dashboard.picker.viewsOnThisDatabase",
+      "en": "Views on this database",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.private.reset",
+      "web": "dashboard.private.reset",
+      "desktop": "dashboard.private.reset",
+      "en": "Reset",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.private.resetAll",
+      "web": "dashboard.private.resetAll",
+      "desktop": "dashboard.private.resetAll",
+      "en": "Reset all changes",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.private.saveForEveryone",
+      "web": "dashboard.private.saveForEveryone",
+      "desktop": "dashboard.private.saveForEveryone",
+      "en": "Save for everyone",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.private.saveOptions",
+      "web": "dashboard.private.saveOptions",
+      "desktop": "dashboard.private.saveOptions",
+      "en": "More save options",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.private.saved",
+      "web": "dashboard.private.saved",
+      "desktop": "dashboard.private.saved",
+      "en": "Changes saved for everyone.",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.private.undo",
+      "web": "dashboard.private.undo",
+      "desktop": "dashboard.private.undo",
+      "en": "Undo",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.private.unsaved",
+      "web": "dashboard.private.unsaved",
+      "desktop": "dashboard.private.unsaved",
+      "en": "Unsaved changes",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.redo",
+      "web": null,
+      "desktop": "dashboard.redo",
+      "en": "Redo",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.referencedDashboardPrefix",
+      "web": "dashboard.referencedDashboardPrefix",
+      "desktop": "dashboard.referencedDashboardPrefix",
+      "en": "View of",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.row.addToNewRow",
+      "web": "dashboard.row.addToNewRow",
+      "desktop": "dashboard.row.addToNewRow",
+      "en": "Add to new row",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.row.addToRow",
+      "web": "dashboard.row.addToRow",
+      "desktop": "dashboard.row.addToRow",
+      "en": "Add to row",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.row.moveDown",
+      "web": "dashboard.row.moveDown",
+      "desktop": "dashboard.row.moveDown",
+      "en": "Move down",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.row.moveUp",
+      "web": "dashboard.row.moveUp",
+      "desktop": "dashboard.row.moveUp",
+      "en": "Move up",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.row.movedDown",
+      "web": "dashboard.row.movedDown",
+      "desktop": "dashboard.row.movedDown",
+      "en": "Row moved down",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.row.movedUp",
+      "web": "dashboard.row.movedUp",
+      "desktop": "dashboard.row.movedUp",
+      "en": "Row moved up",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.rowLimit",
+      "web": "dashboard.rowLimit",
+      "desktop": "dashboard.rowLimit",
+      "en": "A row holds up to {count} widgets.",
+      "placeholders": [
+        "count"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.settings.name",
+      "web": "dashboard.settings.name",
+      "desktop": "dashboard.settings.name",
+      "en": "Dashboard settings",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.settings.showIconsInHeading",
+      "web": "dashboard.settings.showIconsInHeading",
+      "desktop": "dashboard.settings.showIconsInHeading",
+      "en": "Show icons in heading",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.settings.showWidgetTitles",
+      "web": "dashboard.settings.showWidgetTitles",
+      "desktop": "dashboard.settings.showWidgetTitles",
+      "en": "Show widget titles",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.toolbar.openAsFullPage",
+      "web": "dashboard.toolbar.openAsFullPage",
+      "desktop": "dashboard.toolbar.openAsFullPage",
+      "en": "Open as full page",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.toolbar.settings",
+      "web": "dashboard.toolbar.settings",
+      "desktop": "dashboard.toolbar.settings",
+      "en": "Settings",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.undo",
+      "web": null,
+      "desktop": "dashboard.undo",
+      "en": "Undo",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.changeView",
+      "web": "dashboard.widget.changeView",
+      "desktop": null,
+      "en": "Change view",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.close",
+      "web": "dashboard.widget.close",
+      "desktop": "dashboard.widget.close",
+      "en": "Close",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.createRowAbove",
+      "web": "dashboard.widget.createRowAbove",
+      "desktop": "dashboard.widget.createRowAbove",
+      "en": "Create new row above",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.createRowBelow",
+      "web": "dashboard.widget.createRowBelow",
+      "desktop": "dashboard.widget.createRowBelow",
+      "en": "Create new row below",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.delete",
+      "web": "dashboard.widget.delete",
+      "desktop": "dashboard.widget.delete",
+      "en": "Delete",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.dragHandle",
+      "web": "dashboard.widget.dragHandle",
+      "desktop": "dashboard.widget.dragHandle",
+      "en": "Drag to move",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.duplicate",
+      "web": "dashboard.widget.duplicate",
+      "desktop": "dashboard.widget.duplicate",
+      "en": "Duplicate",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.editView",
+      "web": "dashboard.widget.editView",
+      "desktop": "dashboard.widget.editView",
+      "en": "Edit view",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.filters",
+      "web": "dashboard.widget.filters",
+      "desktop": "dashboard.widget.filters",
+      "en": "Filters",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.loading",
+      "web": "dashboard.widget.loading",
+      "desktop": "dashboard.widget.loading",
+      "en": "Loading…",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.menu",
+      "web": "dashboard.widget.menu",
+      "desktop": "dashboard.widget.menu",
+      "en": "Widget options",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.moveLeft",
+      "web": "dashboard.widget.moveLeft",
+      "desktop": "dashboard.widget.moveLeft",
+      "en": "Move left",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.moveRight",
+      "web": "dashboard.widget.moveRight",
+      "desktop": "dashboard.widget.moveRight",
+      "en": "Move right",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.moveToRow",
+      "web": "dashboard.widget.moveToRow",
+      "desktop": "dashboard.widget.moveToRow",
+      "en": "Move to row",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.noAccess",
+      "web": "dashboard.widget.noAccess",
+      "desktop": "dashboard.widget.noAccess",
+      "en": "You don't have access to this database",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.notFound",
+      "web": "dashboard.widget.notFound",
+      "desktop": "dashboard.widget.notFound",
+      "en": "This view no longer exists",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.offline",
+      "web": "dashboard.widget.offline",
+      "desktop": "dashboard.widget.offline",
+      "en": "Available when you're back online",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.openFailed",
+      "web": "dashboard.widget.openFailed",
+      "desktop": "dashboard.widget.openFailed",
+      "en": "Could not open the view",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.remove",
+      "web": "dashboard.widget.remove",
+      "desktop": "dashboard.widget.remove",
+      "en": "Remove widget",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.resizeHeight",
+      "web": "dashboard.widget.resizeHeight",
+      "desktop": "dashboard.widget.resizeHeight",
+      "en": "Drag to change row height",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.resizeHeightValue",
+      "web": "dashboard.widget.resizeHeightValue",
+      "desktop": "dashboard.widget.resizeHeightValue",
+      "en": "{height} pixels",
+      "placeholders": [
+        "height"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.resizeWidth",
+      "web": "dashboard.widget.resizeWidth",
+      "desktop": "dashboard.widget.resizeWidth",
+      "en": "Drag to resize",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.resizeWidthValue",
+      "web": "dashboard.widget.resizeWidthValue",
+      "desktop": "dashboard.widget.resizeWidthValue",
+      "en": "{columns} of 12 columns",
+      "placeholders": [
+        "columns"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.settings",
+      "web": "dashboard.widget.settings",
+      "desktop": "dashboard.widget.settings",
+      "en": "Settings",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.sorts",
+      "web": "dashboard.widget.sorts",
+      "desktop": "dashboard.widget.sorts",
+      "en": "Sorts",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.source",
+      "web": "dashboard.widget.source",
+      "desktop": "dashboard.widget.source",
+      "en": "Source",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.unsupported",
+      "web": "dashboard.widget.unsupported",
+      "desktop": "dashboard.widget.unsupported",
+      "en": "A dashboard can't be shown inside a dashboard",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.viewDataSource",
+      "web": "dashboard.widget.viewDataSource",
+      "desktop": "dashboard.widget.viewDataSource",
+      "en": "View data source",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.viewNameHint",
+      "web": "dashboard.widget.viewNameHint",
+      "desktop": "dashboard.widget.viewNameHint",
+      "en": "Renames this view",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "dashboard.widget.viewSettings",
+      "web": "dashboard.widget.viewSettings",
+      "desktop": "dashboard.widget.viewSettings",
+      "en": "View settings",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "databaseSearch.clearSearch",
+      "web": "databaseSearch.clearSearch",
+      "desktop": "databaseSearch.clearSearch",
+      "en": "Clear search",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "databaseSearch.noResults",
+      "web": "databaseSearch.noResults",
+      "desktop": "databaseSearch.noResults",
+      "en": "No results",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "databaseSearch.placeholder",
+      "web": "databaseSearch.placeholder",
+      "desktop": "databaseSearch.placeholder",
+      "en": "Type to search...",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "grid.calculationTypeLabel.countChecked",
+      "web": "grid.calculationTypeLabel.countChecked",
+      "desktop": "grid.calculationTypeLabel.countChecked",
+      "en": "Checked",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "grid.calculationTypeLabel.countUnchecked",
+      "web": "grid.calculationTypeLabel.countUnchecked",
+      "desktop": "grid.calculationTypeLabel.countUnchecked",
+      "en": "Unchecked",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "grid.dateFilter.is",
+      "web": "grid.dateFilter.is",
+      "desktop": "grid.dateFilter.is",
+      "en": "Is",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "grid.field.person.searchForMore",
+      "web": "grid.field.person.searchForMore",
+      "desktop": null,
+      "en": {
+        "one": "Search to find {count} more person",
+        "other": "Search to find {count} more people"
+      },
+      "placeholders": [
+        "count"
+      ],
+      "plural": true,
+      "source": "en"
+    },
+    {
+      "id": "grid.row.loadingRows",
+      "web": null,
+      "desktop": "grid.row.loadingRows",
+      "en": "Loading rows…",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "grid.row.loadingRowsProgress",
+      "web": "grid.row.loadingRowsProgress",
+      "desktop": "grid.row.loadingRowsProgress",
+      "en": "Loading rows… {loaded}/{total}",
+      "placeholders": [
+        "loaded",
+        "total"
+      ],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "grid.row.newRow",
+      "web": "grid.row.newRow",
+      "desktop": "grid.row.newRow",
+      "en": "New page",
+      "placeholders": [],
+      "plural": false,
+      "source": "desktop-existing"
+    },
+    {
+      "id": "grid.row.rowsNotLoadedYet",
+      "web": "grid.row.rowsNotLoadedYet",
+      "desktop": "grid.row.rowsNotLoadedYet",
+      "en": "Some rows haven't loaded yet",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
+      "id": "grid.sort.sortCount",
+      "web": null,
+      "desktop": "grid.sort.sortCount",
+      "en": {
+        "one": "{count} sort",
+        "other": "{count} sorts"
+      },
+      "placeholders": [
+        "count"
+      ],
+      "plural": true,
+      "source": "en"
+    },
+    {
+      "id": "chart.drilldown.ariaLabel",
+      "web": "chart.drilldown.ariaLabel",
+      "desktop": "chart.drilldown.ariaLabel",
+      "en": "Table data preview",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "chart.drilldown.search",
+      "web": "chart.drilldown.search",
+      "desktop": "chart.drilldown.search",
+      "en": "Search",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "chart.drilldown.dismiss",
+      "web": "chart.drilldown.dismiss",
+      "desktop": "chart.drilldown.dismiss",
+      "en": "Dismiss",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "chart.drilldown.more",
+      "web": "chart.drilldown.more",
+      "desktop": "chart.drilldown.more",
+      "en": "More",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "chart.drilldown.saveAsView",
+      "web": "chart.drilldown.saveAsView",
+      "desktop": "chart.drilldown.saveAsView",
+      "en": "Save as view…",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "chart.drilldown.openDatabase",
+      "web": "chart.drilldown.openDatabase",
+      "desktop": "chart.drilldown.openDatabase",
+      "en": "Open {database}",
+      "placeholders": [
+        "database"
+      ],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "chart.drilldown.selectedRows",
+      "web": "chart.drilldown.selectedRows",
+      "desktop": "chart.drilldown.selectedRows",
+      "en": "Selected rows ({count})",
+      "placeholders": [
+        "count"
+      ],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "chart.drilldown.cannotSaveSelectedRows",
+      "web": "chart.drilldown.cannotSaveSelectedRows",
+      "desktop": "chart.drilldown.cannotSaveSelectedRows",
+      "en": "Selected rows can't be saved as a view",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "chart.drilldown.open",
+      "web": "chart.drilldown.open",
+      "desktop": "chart.drilldown.open",
+      "en": "OPEN",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "chart.drilldown.fromDashboardFilter",
+      "web": "chart.drilldown.fromDashboardFilter",
+      "desktop": "chart.drilldown.fromDashboardFilter",
+      "en": "From dashboard filter",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "chart.drilldown.rowCount",
+      "web": "chart.drilldown.rowCount",
+      "desktop": null,
+      "en": {
+        "one": "{count} row",
+        "other": "{count} rows"
+      },
+      "placeholders": [
+        "count"
+      ],
+      "plural": true,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "chart.drilldown.rowCount@desktop",
+      "web": null,
+      "desktop": "chart.drilldown.rowCount",
+      "en": {
+        "one": "{0} row",
+        "other": "{0} rows"
+      },
+      "placeholders": [
+        "0"
+      ],
+      "plural": true,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "grid.openPagesIn.title",
+      "web": "grid.openPagesIn.title",
+      "desktop": "grid.openPagesIn.title",
+      "en": "Open pages in",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "grid.openPagesIn.sidePeek",
+      "web": "grid.openPagesIn.sidePeek",
+      "desktop": "grid.openPagesIn.sidePeek",
+      "en": "Side peek",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "grid.openPagesIn.centerPeek",
+      "web": "grid.openPagesIn.centerPeek",
+      "desktop": "grid.openPagesIn.centerPeek",
+      "en": "Center peek",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "grid.openPagesIn.fullPage",
+      "web": "grid.openPagesIn.fullPage",
+      "desktop": "grid.openPagesIn.fullPage",
+      "en": "Full page",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "grid.rowPage.openInCenterPeek",
+      "web": "grid.rowPage.openInCenterPeek",
+      "desktop": "grid.rowPage.openInCenterPeek",
+      "en": "Open in center peek",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "grid.rowPage.resizeSidePeek",
+      "web": "grid.rowPage.resizeSidePeek",
+      "desktop": "grid.rowPage.resizeSidePeek",
+      "en": "Resize side peek",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "chart.tooltip.tapAgainToView",
+      "web": "chart.tooltip.tapAgainToView",
+      "desktop": "chart.tapAgainToViewData",
+      "en": "Tap again to view data",
+      "placeholders": [],
+      "plural": false,
+      "source": "w5-pinned"
+    },
+    {
+      "id": "dashboard.mobile.viewCount",
+      "web": "dashboard.mobile.viewCount",
+      "desktop": null,
+      "en": {
+        "one": "{count} view",
+        "other": "{count} views"
+      },
+      "placeholders": [
+        "count"
+      ],
+      "plural": true,
+      "source": "w5-pinned"
+    }
+  ],
+  "locales": [
+    {
+      "id": "zh-CN",
+      "web": "zh-CN",
+      "desktop": "zh-CN",
+      "plural": [
+        "other"
+      ]
+    },
+    {
+      "id": "zh-TW",
+      "web": "zh-TW",
+      "desktop": "zh-TW",
+      "plural": [
+        "other"
+      ]
+    },
+    {
+      "id": "ja-JP",
+      "web": "ja-JP",
+      "desktop": "ja-JP",
+      "plural": [
+        "other"
+      ]
+    },
+    {
+      "id": "ko-KR",
+      "web": "ko-KR",
+      "desktop": "ko-KR",
+      "plural": [
+        "other"
+      ]
+    },
+    {
+      "id": "th-TH",
+      "web": "th-TH",
+      "desktop": "th-TH",
+      "plural": [
+        "other"
+      ]
+    },
+    {
+      "id": "vi",
+      "web": "vi",
+      "desktop": "vi",
+      "plural": [
+        "other"
+      ]
+    },
+    {
+      "id": "vi-VN",
+      "web": "vi-VN",
+      "desktop": "vi-VN",
+      "plural": [
+        "other"
+      ]
+    },
+    {
+      "id": "fr-FR",
+      "web": "fr-FR",
+      "desktop": "fr-FR",
+      "plural": [
+        "one",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "fr-CA",
+      "web": "fr-CA",
+      "desktop": "fr-CA",
+      "plural": [
+        "one",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "es-VE",
+      "web": "es-VE",
+      "desktop": "es-VE",
+      "plural": [
+        "one",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "pt-BR",
+      "web": "pt-BR",
+      "desktop": "pt-BR",
+      "plural": [
+        "one",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "pt-PT",
+      "web": "pt-PT",
+      "desktop": "pt-PT",
+      "plural": [
+        "one",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "it-IT",
+      "web": "it-IT",
+      "desktop": "it-IT",
+      "plural": [
+        "one",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "ca-ES",
+      "web": "ca-ES",
+      "desktop": "ca-ES",
+      "plural": [
+        "one",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "de-DE",
+      "web": "de-DE",
+      "desktop": "de-DE",
+      "plural": [
+        "one",
+        "other"
+      ]
+    },
+    {
+      "id": "sv-SE",
+      "web": "sv-SE",
+      "desktop": "sv-SE",
+      "plural": [
+        "one",
+        "other"
+      ]
+    },
+    {
+      "id": "hu-HU",
+      "web": "hu-HU",
+      "desktop": "hu-HU",
+      "plural": [
+        "one",
+        "other"
+      ]
+    },
+    {
+      "id": "cs-CZ",
+      "web": "cs-CZ",
+      "desktop": "cs-CZ",
+      "plural": [
+        "one",
+        "few",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "pl-PL",
+      "web": "pl-PL",
+      "desktop": "pl-PL",
+      "plural": [
+        "one",
+        "few",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "el-GR",
+      "web": "el-GR",
+      "desktop": "el-GR",
+      "plural": [
+        "one",
+        "other"
+      ]
+    },
+    {
+      "id": "eu-ES",
+      "web": "eu-ES",
+      "desktop": "eu-ES",
+      "plural": [
+        "one",
+        "other"
+      ]
+    },
+    {
+      "id": "ru-RU",
+      "web": "ru-RU",
+      "desktop": "ru-RU",
+      "plural": [
+        "one",
+        "few",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "uk-UA",
+      "web": "uk-UA",
+      "desktop": "uk-UA",
+      "plural": [
+        "one",
+        "few",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "tr-TR",
+      "web": "tr-TR",
+      "desktop": "tr-TR",
+      "plural": [
+        "one",
+        "other"
+      ]
+    },
+    {
+      "id": "hin",
+      "web": "hin",
+      "desktop": "hin",
+      "plural": [
+        "one",
+        "other"
+      ]
+    },
+    {
+      "id": "mr-IN",
+      "web": null,
+      "desktop": "mr-IN",
+      "plural": [
+        "one",
+        "other"
+      ]
+    },
+    {
+      "id": "id-ID",
+      "web": "id-ID",
+      "desktop": "id-ID",
+      "plural": [
+        "other"
+      ]
+    },
+    {
+      "id": "ga-IE",
+      "web": null,
+      "desktop": "ga-IE",
+      "plural": [
+        "one",
+        "two",
+        "few",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "ar-SA",
+      "web": "ar-SA",
+      "desktop": "ar-SA",
+      "plural": [
+        "zero",
+        "one",
+        "two",
+        "few",
+        "many",
+        "other"
+      ]
+    },
+    {
+      "id": "he",
+      "web": "he",
+      "desktop": "he",
+      "plural": [
+        "one",
+        "two",
+        "other"
+      ]
+    },
+    {
+      "id": "fa",
+      "web": "fa",
+      "desktop": "fa",
+      "plural": [
+        "one",
+        "other"
+      ]
+    },
+    {
+      "id": "ur",
+      "web": "ur",
+      "desktop": "ur",
+      "plural": [
+        "one",
+        "other"
+      ]
+    },
+    {
+      "id": "ckb-KU",
+      "web": "ckb-KU",
+      "desktop": "ckb-KU",
+      "plural": [
+        "one",
+        "other"
+      ]
+    },
+    {
+      "id": "am-ET",
+      "web": "am-ET",
+      "desktop": "am-ET",
+      "plural": [
+        "one",
+        "other"
+      ]
+    }
+  ],
+  "english": [
+    {
+      "id": "en",
+      "web": "en",
+      "desktop": "en-US"
+    },
+    {
+      "id": "en-GB",
+      "web": null,
+      "desktop": "en-GB",
+      "copy_of": "en"
+    }
+  ],
+  "removed": {
+    "web": [
+      "chart.drilldown.close",
+      "chart.drilldown.noRows",
+      "chart.drilldown.showMore",
+      "chart.drilldown.title",
+      "dashboard.addRow",
+      "dashboard.emptyHint",
+      "dashboard.emptyTitle",
+      "dashboard.emptyViewerHint",
+      "dashboard.globalFilters.add",
+      "dashboard.globalFilters.addSource",
+      "dashboard.globalFilters.localChanges",
+      "dashboard.globalFilters.noTargets",
+      "dashboard.globalFilters.property",
+      "dashboard.globalFilters.saveForEverybody",
+      "dashboard.globalFilters.sources",
+      "dashboard.insertRowBelow",
+      "dashboard.picker.createIn",
+      "dashboard.picker.existing",
+      "dashboard.picker.otherDatabases",
+      "dashboard.picker.search",
+      "dashboard.picker.selectDatabase",
+      "dashboard.picker.title",
+      "dashboard.widget.moveDown",
+      "dashboard.widget.moveUp",
+      "dashboard.widget.open",
+      "dashboard.widgetLimit"
+    ],
+    "desktop": [
+      "dashboard.addWidget",
+      "dashboard.emptyHint",
+      "dashboard.emptyTitle",
+      "dashboard.emptyViewerHint",
+      "dashboard.globalFilters.add",
+      "dashboard.globalFilters.addSource",
+      "dashboard.globalFilters.localChanges",
+      "dashboard.globalFilters.noTargets",
+      "dashboard.globalFilters.property",
+      "dashboard.globalFilters.saveForEverybody",
+      "dashboard.globalFilters.sourceCount",
+      "dashboard.insertRowBelow",
+      "dashboard.picker.changeViewTitle",
+      "dashboard.picker.createIn",
+      "dashboard.picker.existing",
+      "dashboard.picker.otherDatabases",
+      "dashboard.picker.search",
+      "dashboard.picker.selectDatabase",
+      "dashboard.picker.thisDatabase",
+      "dashboard.picker.title",
+      "dashboard.rowHeightBadge",
+      "dashboard.widget.changeView",
+      "dashboard.widget.moveDown",
+      "dashboard.widget.moveUp",
+      "dashboard.widget.open",
+      "dashboard.widgetLimit"
+    ]
+  }
+}

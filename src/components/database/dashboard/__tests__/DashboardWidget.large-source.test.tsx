@@ -28,6 +28,7 @@ import {
 import type { RenderRow } from '@/components/database/components/grid/grid-row';
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 
+import { createInertAddWidgetApi } from '../add-widget/add-widget-api';
 import {
   DashboardProvider,
   useDashboardContext,
@@ -36,6 +37,7 @@ import {
 } from '../DashboardContext';
 import { DashboardGrid } from '../DashboardGrid';
 import { DashboardHostContext, DashboardUiContext } from '../DashboardUiContext';
+import { createInertOwnedWidgetViews } from '../hooks/useOwnedWidgetViews';
 import { useSourceDocRegistry } from '../hooks/useSourceDocRegistry';
 
 /** Row docs of the source database that have loaded so far, shared with the mocked Database. */
@@ -212,7 +214,9 @@ function TestDashboard() {
         dndInstanceId: Symbol.for('dashboard-large-source-test'),
         getRows: () => rows,
         updateRows,
-        openPicker: jest.fn(),
+        startAddWidget: jest.fn(),
+        addWidget: createInertAddWidgetApi(),
+        ownedViews: createInertOwnedWidgetViews(),
         showLimitMessage: jest.fn(),
         acquireSourceDoc,
       }}

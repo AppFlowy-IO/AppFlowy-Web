@@ -8,6 +8,7 @@ import {
   addDashboardWidget,
   balanceRowWidths,
   canAddDashboardWidget,
+  classifyDashboardMove,
   countDashboardWidgets,
   createDashboardLayoutStore,
   createDashboardRow,
@@ -17,11 +18,13 @@ import {
   duplicateDashboardWidget,
   findDashboardWidget,
   generateDashboardId,
-  getDashboardJoinWidth,
+  getDashboardAddToNewRowState,
+  getDashboardRowControls,
   initializeDashboardLayoutSetting,
   moveDashboardRow,
   moveDashboardWidget,
   normalizeDashboardRows,
+  observeLocalDashboardRowsChanges,
   readDashboardLayoutSetting,
   readStoredDashboardWidgets,
   removeDashboardWidget,
@@ -29,6 +32,7 @@ import {
   resizeDashboardWidget,
   sameDashboardGlobalFilters,
   sameDashboardRows,
+  serializeDashboardRows,
   setDashboardRowHeight,
   shareDashboardGlobalFilters,
   shareDashboardRows,
@@ -133,6 +137,13 @@ describe('generateDashboardId / factories', () => {
 
     expect(created).toEqual({ id: expect.stringMatching(/^w:/), viewId: 'view', databaseId: 'db', width: 12 });
     expect(createDashboardWidget('view', 'db', 4).width).toBe(4);
+    // WP06 §1.1: the add flow's pending slot and the persisted widget share the id generated at the click.
+    expect(createDashboardWidget('view', 'db', 12, 'w:pending1')).toEqual({
+      id: 'w:pending1',
+      viewId: 'view',
+      databaseId: 'db',
+      width: 12,
+    });
 
     const created2 = createDashboardRow([widget('a', 0), widget('b', 0), widget('c', 0)]);
 
@@ -1117,7 +1128,7 @@ describe('a stored layout over the widget limit', () => {
     doc.transact(() => storeRows(view, stored));
     doc.transact(() =>
       updateDashboardLayoutSetting(view, {
-        rows: moveDashboardRow(readDashboardLayoutSetting(database, VIEW_ID).rows, 'r0', 2),
+        rows: moveDashboardRow(readDashboardLayoutSetting(database, VIEW_ID).rows, 'r0', 1),
       })
     );
 
@@ -1135,12 +1146,71 @@ describe('a stored layout over the widget limit', () => {
     doc.transact(() => updateDashboardLayoutSetting(view, { rows: fullDashboard() }));
     doc.transact(() =>
       updateDashboardLayoutSetting(view, {
-        rows: moveDashboardRow(readDashboardLayoutSetting(database, VIEW_ID).rows, 'r0', 2),
+        // Down twice: to the end.
+        rows: moveDashboardRow(moveDashboardRow(readDashboardLayoutSetting(database, VIEW_ID).rows, 'r0', 1), 'r0', 1),
       })
     );
 
     expect(storedRows(view).map((item) => item.id)).toEqual(['r1', 'r2', 'r0']);
     expect(storedWidgetIds(view)).toHaveLength(DASHBOARD_MAX_WIDGETS);
+  });
+});
+
+describe('observeLocalDashboardRowsChanges', () => {
+  it('reports the writes, undo and redo of this client with every stored widget before and after', () => {
+    const { doc, view } = createFixture();
+    const listener = jest.fn();
+    const stop = observeLocalDashboardRowsChanges(doc, VIEW_ID, listener);
+    const one = [row('r1', [widget('w1')])];
+    const two = [row('r1', [widget('w1', 6), widget('w2', 6)])];
+    const undo = new Y.UndoManager(doc.getMap(YjsEditorKey.data_section), { trackedOrigins: new Set(['local']) });
+
+    doc.transact(() => updateDashboardLayoutSetting(view, { rows: one }), 'local');
+    undo.stopCapturing();
+    doc.transact(() => updateDashboardLayoutSetting(view, { rows: two }), 'local');
+    expect(listener.mock.calls.map(([before, after]) => [before, after].map((list) => list.map((item: DashboardWidget) => item.viewId)))).toEqual([
+      [[], ['view-w1']],
+      [['view-w1'], ['view-w1', 'view-w2']],
+    ]);
+
+    undo.undo();
+    expect(listener.mock.calls[2][1].map((item: DashboardWidget) => item.viewId)).toEqual(['view-w1']);
+    undo.redo();
+    expect(listener.mock.calls[3][1].map((item: DashboardWidget) => item.viewId)).toEqual(['view-w1', 'view-w2']);
+    stop();
+    doc.transact(() => updateDashboardLayoutSetting(view, { rows: one }), 'local');
+    expect(listener).toHaveBeenCalledTimes(4);
+  });
+
+  it('never reports remote changes, and moves its baseline with them', () => {
+    const local = createFixture();
+    const remote = new Y.Doc();
+    const listener = jest.fn();
+
+    sync(local.doc, remote);
+    observeLocalDashboardRowsChanges(local.doc, VIEW_ID, listener);
+    const remoteView = (remote.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase)
+      .get(YjsDatabaseKey.views)
+      .get(VIEW_ID);
+
+    remote.transact(() => updateDashboardLayoutSetting(remoteView, { rows: [row('r1', [widget('w1')])] }));
+    sync(remote, local.doc);
+    expect(listener).not.toHaveBeenCalled();
+
+    local.doc.transact(() => updateDashboardLayoutSetting(local.view, { rows: [] }));
+    expect(listener.mock.calls[0][0].map((item: DashboardWidget) => item.viewId)).toEqual(['view-w1']);
+    expect(listener.mock.calls[0][1]).toEqual([]);
+  });
+
+  it('ignores writes to another view', () => {
+    const { doc, views } = createFixture();
+    const other = new Y.Map() as YDatabaseView;
+    const listener = jest.fn();
+
+    views.set('other', other);
+    observeLocalDashboardRowsChanges(doc, VIEW_ID, listener);
+    doc.transact(() => updateDashboardLayoutSetting(other, { rows: [row('r1', [widget('w1')])] }));
+    expect(listener).not.toHaveBeenCalled();
   });
 });
 
@@ -1359,19 +1429,6 @@ describe('pure row operations', () => {
     });
   });
 
-  describe('getDashboardJoinWidth', () => {
-    it('asks for an equal share of the row', () => {
-      expect(getDashboardJoinWidth(row('r', []))).toBe(12);
-      expect(getDashboardJoinWidth(row('r', [widget('a', 12)]))).toBe(12);
-      expect(getDashboardJoinWidth(row('r', [widget('a', 8), widget('b', 4)]))).toBe(6);
-      expect(getDashboardJoinWidth(row('r', [widget('a', 4), widget('b', 4), widget('c', 4)]))).toBe(4);
-    });
-
-    it('treats a row without widths as a full row', () => {
-      expect(getDashboardJoinWidth(row('r', [widget('a', 0), widget('b', 0)]))).toBe(6);
-    });
-  });
-
   describe('addDashboardWidget', () => {
     it('appends a full-width row by default', () => {
       const rows = [row('r1', [widget('a')])];
@@ -1433,11 +1490,11 @@ describe('pure row operations', () => {
       ]);
     });
 
-    it('gives a joining widget an equal share and keeps the others proportional', () => {
+    it('splits the row equally when a widget joins, discarding custom widths (R-SPLIT)', () => {
       const rows = [row('r1', [widget('a', 8), widget('b', 4)])];
       const result = addDashboardWidget(rows, widget('c', 12), { type: 'existing_row', rowId: 'r1' });
 
-      expect(widths(result[0])).toEqual([5, 3, 4]);
+      expect(widths(result[0])).toEqual([4, 4, 4]);
     });
 
     it('splits a one-widget row in half when a widget joins', () => {
@@ -1521,6 +1578,20 @@ describe('pure row operations', () => {
       expect(duplicateDashboardWidget(full, 'w0-0')).toBe(full);
       expect(duplicateDashboardWidget(rows, 'missing')).toBe(rows);
     });
+
+    // WP05 §1.4: the copy shows the source view's owned copy, split 6 / 6.
+    it('points the copy at the given view copy', () => {
+      const rows = [row('r1', [widget('a', 12, 'db-other', 'view-x')])];
+      const result = duplicateDashboardWidget(rows, 'a', { viewId: 'view-x-copy', databaseId: 'db-other' });
+
+      expect(widths(result[0])).toEqual([6, 6]);
+      expect(result[0].widgets[0]).toMatchObject({ id: 'a', viewId: 'view-x' });
+      expect(result[0].widgets[1]).toMatchObject({ viewId: 'view-x-copy', databaseId: 'db-other' });
+      expect(result[0].widgets[1].id).not.toBe('a');
+      expect(duplicateDashboardWidget(fullDashboard(), 'w0-0', { viewId: 'copy', databaseId: 'db' })).toEqual(
+        fullDashboard()
+      );
+    });
   });
 
   describe('moveDashboardWidget', () => {
@@ -1548,6 +1619,7 @@ describe('pure row operations', () => {
       );
 
       expect(layoutShape(split)).toEqual([['b'], ['c', 'a']]);
+      expect(widths(split[0])).toEqual([12]);
       expect(widths(split[1])).toEqual([6, 6]);
     });
 
@@ -1729,20 +1801,130 @@ describe('pure row operations', () => {
   });
 
   describe('moveDashboardRow', () => {
-    const rows = [row('r1', [widget('a')]), row('r2', [widget('b')]), row('r3', [widget('c')])];
+    const rows = [
+      row('r1', [widget('a', 8), widget('b', 4)], 360),
+      row('r2', [widget('c')], 480),
+      row('r3', [widget('d')], 240),
+    ];
 
-    it('moves a row and clamps the target index', () => {
-      expect(moveDashboardRow(rows, 'r1', 2).map((item) => item.id)).toEqual(['r2', 'r3', 'r1']);
-      expect(moveDashboardRow(rows, 'r3', 0).map((item) => item.id)).toEqual(['r3', 'r1', 'r2']);
-      expect(moveDashboardRow(rows, 'r1', 99).map((item) => item.id)).toEqual(['r2', 'r3', 'r1']);
-      expect(moveDashboardRow(rows, 'r2', -3).map((item) => item.id)).toEqual(['r2', 'r1', 'r3']);
+    it('swaps a row with its neighbour above or below', () => {
+      expect(moveDashboardRow(rows, 'r1', 1).map((item) => item.id)).toEqual(['r2', 'r1', 'r3']);
+      expect(moveDashboardRow(rows, 'r2', 1).map((item) => item.id)).toEqual(['r1', 'r3', 'r2']);
+      expect(moveDashboardRow(rows, 'r3', -1).map((item) => item.id)).toEqual(['r1', 'r3', 'r2']);
+      expect(moveDashboardRow(rows, 'r2', -1).map((item) => item.id)).toEqual(['r2', 'r1', 'r3']);
+    });
+
+    it('keeps the row objects (ids, heights, widths) and never mutates the input', () => {
+      const result = moveDashboardRow(rows, 'r1', 1);
+
+      expect(result[1]).toBe(rows[0]);
+      expect(result[0]).toBe(rows[1]);
+      expect(result[2]).toBe(rows[2]);
+      expect(result.map((item) => item.height)).toEqual([480, 360, 240]);
+      expect(widths(result[1])).toEqual([8, 4]);
       expect(rows.map((item) => item.id)).toEqual(['r1', 'r2', 'r3']);
     });
 
-    it('returns the same rows for a no-op or unknown row', () => {
-      expect(moveDashboardRow(rows, 'r2', 1)).toBe(rows);
-      expect(moveDashboardRow(rows, 'r3', 10)).toBe(rows);
-      expect(moveDashboardRow(rows, 'missing', 0)).toBe(rows);
+    it('returns the same rows at either end, for a single row or an unknown row', () => {
+      const single = [row('r1', [widget('a')])];
+
+      expect(moveDashboardRow(rows, 'r1', -1)).toBe(rows);
+      expect(moveDashboardRow(rows, 'r3', 1)).toBe(rows);
+      expect(moveDashboardRow(single, 'r1', -1)).toBe(single);
+      expect(moveDashboardRow(single, 'r1', 1)).toBe(single);
+      expect(moveDashboardRow(rows, 'missing', 1)).toBe(rows);
+      expect(moveDashboardRow(rows, 'r2', 2 as 1)).toBe(rows);
+    });
+  });
+
+  describe('classifyDashboardMove', () => {
+    const rows = [row('r1', [widget('a', 3), widget('b', 3), widget('c', 3), widget('d', 3)]), row('r2', [widget('e')])];
+
+    it('allows a move that changes the layout', () => {
+      expect(classifyDashboardMove(rows, 'a', { type: 'existing_row', rowId: 'r1', index: 2 })).toBe('allowed');
+      expect(classifyDashboardMove(rows, 'a', { type: 'existing_row', rowId: 'r2', index: 0 })).toBe('allowed');
+      expect(classifyDashboardMove(rows, 'a', { type: 'new_row', rowIndex: 2 })).toBe('allowed');
+    });
+
+    it('blocks a widget joining a full row of another', () => {
+      expect(classifyDashboardMove(rows, 'e', { type: 'existing_row', rowId: 'r1', index: 0 })).toBe('blocked');
+    });
+
+    it('calls a move that changes nothing, or an unknown widget or row, a no-op', () => {
+      expect(classifyDashboardMove(rows, 'a', { type: 'existing_row', rowId: 'r1', index: 0 })).toBe('noop');
+      expect(classifyDashboardMove(rows, 'e', { type: 'new_row', rowIndex: 1 })).toBe('noop');
+      expect(classifyDashboardMove(rows, 'e', { type: 'new_row', rowIndex: 2 })).toBe('noop');
+      expect(classifyDashboardMove(rows, 'missing', { type: 'new_row' })).toBe('noop');
+      expect(classifyDashboardMove(rows, 'a', { type: 'existing_row', rowId: 'missing' })).toBe('noop');
+    });
+  });
+
+  describe('getDashboardRowControls / getDashboardAddToNewRowState', () => {
+    it('offers the moves a row can make, and none for a single row', () => {
+      const rows = [row('r1', [widget('a')]), row('r2', [widget('b')]), row('r3', [widget('c')])];
+
+      expect(getDashboardRowControls(rows, 'r1')).toEqual({ moveUp: false, moveDown: true, addToRow: 'enabled' });
+      expect(getDashboardRowControls(rows, 'r2')).toEqual({ moveUp: true, moveDown: true, addToRow: 'enabled' });
+      expect(getDashboardRowControls(rows, 'r3')).toEqual({ moveUp: true, moveDown: false, addToRow: 'enabled' });
+      expect(getDashboardRowControls([rows[0]], 'r1')).toEqual({ moveUp: false, moveDown: false, addToRow: 'enabled' });
+      expect(getDashboardRowControls(rows, 'missing')).toEqual({ moveUp: false, moveDown: false, addToRow: 'hidden' });
+    });
+
+    it('hides the add control of a full row and disables the others on a full dashboard', () => {
+      const partial = [
+        row('r1', [widget('a', 3), widget('b', 3), widget('c', 3), widget('d', 3)]),
+        row('r2', [widget('e')]),
+      ];
+      const full = [
+        ...fullDashboard().slice(0, 2),
+        row('r3', [widget('x1', 4), widget('x2', 4), widget('x3', 4)]),
+        row('r4', [widget('x4')]),
+      ];
+
+      expect(getDashboardRowControls(partial, 'r1').addToRow).toBe('hidden');
+      expect(getDashboardRowControls(partial, 'r2').addToRow).toBe('enabled');
+      expect(getDashboardAddToNewRowState(partial)).toBe('enabled');
+      expect(countDashboardWidgets(full)).toBe(DASHBOARD_MAX_WIDGETS);
+      expect(getDashboardRowControls(full, 'r3').addToRow).toBe('disabled');
+      expect(getDashboardRowControls(full, 'r4').addToRow).toBe('disabled');
+      expect(getDashboardAddToNewRowState(full)).toBe('disabled');
+      expect(getDashboardAddToNewRowState(fullDashboard())).toBe('disabled');
+    });
+  });
+
+  describe('serializeDashboardRows after a cross-row move', () => {
+    it('keeps the unknown keys of a widget that moved into another row (matched by widget id)', () => {
+      const stored = [
+        {
+          id: 'r1',
+          height: 360,
+          zz_row: 'one',
+          widgets: [
+            { id: 'a', view_id: 'view-a', database_id: 'db-host', width: 6, zz_widget: { pinned: true } },
+            { id: 'b', view_id: 'view-b', database_id: 'db-host', width: 6 },
+          ],
+        },
+        { id: 'r2', height: 480, widgets: [{ id: 'c', view_id: 'view-c', database_id: 'db-host', width: 12 }] },
+      ];
+      const rows = [row('r1', [widget('a', 6), widget('b', 6)], 360), row('r2', [widget('c', 12)], 480)];
+      const moved = moveDashboardWidget(rows, 'a', { type: 'existing_row', rowId: 'r2', index: 1 });
+
+      expect(serializeDashboardRows(moved, stored)).toEqual([
+        {
+          id: 'r1',
+          height: 360,
+          zz_row: 'one',
+          widgets: [{ id: 'b', view_id: 'view-b', database_id: 'db-host', width: 12 }],
+        },
+        {
+          id: 'r2',
+          height: 480,
+          widgets: [
+            { id: 'c', view_id: 'view-c', database_id: 'db-host', width: 6 },
+            { id: 'a', view_id: 'view-a', database_id: 'db-host', width: 6, zz_widget: { pinned: true } },
+          ],
+        },
+      ]);
     });
   });
 

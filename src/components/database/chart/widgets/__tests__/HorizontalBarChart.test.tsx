@@ -4,7 +4,7 @@ import { ChartDataItem } from '@/application/database-yjs/chart.type';
 import { NumberFormat } from '@/application/database-yjs/fields';
 import HorizontalBarChartWidget from '@/components/database/chart/widgets/HorizontalBarChart';
 
-import { hoverCategory, installChartEnvironment, renderChart, texts } from './chartTestUtils';
+import { hoverCategory, installChartEnvironment, renderChart, texts, seriesDataOf } from './chartTestUtils';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -25,7 +25,7 @@ describe('HorizontalBarChartWidget', () => {
   installChartEnvironment();
 
   it('fills a widget card without an inner scroll', () => {
-    renderChart(<HorizontalBarChartWidget data={MARGINS} fill />, { yField: NUMBER_FIELD });
+    renderChart(<HorizontalBarChartWidget data={seriesDataOf(MARGINS)} fill />, { yField: NUMBER_FIELD });
 
     const frame = screen.getByTestId('horizontal-bar-chart-widget');
 
@@ -35,7 +35,7 @@ describe('HorizontalBarChartWidget', () => {
   });
 
   it('keeps the scrolling height on a standalone page', () => {
-    renderChart(<HorizontalBarChartWidget data={MARGINS} />, { yField: NUMBER_FIELD });
+    renderChart(<HorizontalBarChartWidget data={seriesDataOf(MARGINS)} />, { yField: NUMBER_FIELD });
 
     const frame = screen.getByTestId('horizontal-bar-chart-widget');
 
@@ -44,7 +44,7 @@ describe('HorizontalBarChartWidget', () => {
   });
 
   it('draws the values along the bottom and a negative bar left of the zero line', () => {
-    const { container } = renderChart(<HorizontalBarChartWidget data={MARGINS} fill />, { yField: NUMBER_FIELD });
+    const { container } = renderChart(<HorizontalBarChartWidget data={seriesDataOf(MARGINS)} fill />, { yField: NUMBER_FIELD });
 
     expect(texts(container, '.recharts-xAxis [data-testid="chart-value-tick"]')).toEqual(['-2K', '-1K', '0', '1K', '2K']);
     const zero = container.querySelector('.recharts-reference-line line') as SVGLineElement;
@@ -61,7 +61,7 @@ describe('HorizontalBarChartWidget', () => {
   });
 
   it('labels each bar end, left of a negative one', () => {
-    const { container } = renderChart(<HorizontalBarChartWidget data={MARGINS} fill />, { yField: NUMBER_FIELD });
+    const { container } = renderChart(<HorizontalBarChartWidget data={seriesDataOf(MARGINS)} fill />, { yField: NUMBER_FIELD });
     const labels = Array.from(container.querySelectorAll('[data-testid="chart-data-label"]'));
 
     expect(labels.map((label) => [label.getAttribute('data-label'), label.textContent])).toEqual([
@@ -77,10 +77,10 @@ describe('HorizontalBarChartWidget', () => {
   it('truncates long category labels with an ellipsis and keeps the full name in a title', () => {
     const { container } = renderChart(
       <HorizontalBarChartWidget
-        data={[
+        data={seriesDataOf([
           { key: 'a', label: 'A category name far longer than the label column allows', value: 3, rowIds: [] },
           { key: 'b', label: 'Short', value: 1, rowIds: [] },
-        ]}
+        ])}
         fill
       />,
       { yField: NUMBER_FIELD }
@@ -93,7 +93,7 @@ describe('HorizontalBarChartWidget', () => {
   });
 
   it('shows the tooltip of the hovered row', () => {
-    const { container } = renderChart(<HorizontalBarChartWidget data={MARGINS} fill />, { yField: NUMBER_FIELD });
+    const { container } = renderChart(<HorizontalBarChartWidget data={seriesDataOf(MARGINS)} fill />, { yField: NUMBER_FIELD });
     const anchor = container.querySelectorAll('[data-testid="chart-category-anchor"]')[1] as SVGRectElement;
 
     act(() =>

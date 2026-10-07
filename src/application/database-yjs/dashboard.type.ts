@@ -53,3 +53,34 @@ export type DashboardLayoutUpdate = Partial<DashboardLayoutSetting>;
 export type DashboardWidgetPlacement =
   | { type: 'new_row'; rowIndex?: number }
   | { type: 'existing_row'; rowId: string; index?: number };
+
+/**
+ * Where a dragged widget is dropped (WP04): next to a widget (its left or
+ * right edge), or into the band in front of row `rowIndex` (0 = above the
+ * first row, `rows.length` = below the last), which starts a new row.
+ */
+export type DashboardDropTarget =
+  | { type: 'widget'; widgetId: string; edge: 'left' | 'right' }
+  | { type: 'row_gap'; rowIndex: number };
+
+/**
+ * The line a drop draws: a vertical line at insert position `boundary`
+ * (0..n, counted before the dragged widget leaves the row) of row `rowId`, or
+ * a horizontal line in the band in front of row `rowIndex`.
+ */
+export type DashboardDropIndicator =
+  | { type: 'column'; rowId: string; boundary: number }
+  | { type: 'row_gap'; rowIndex: number };
+
+/** `blocked`: a real move the limits refuse (a full row); `noop`: nothing would change. */
+export type DashboardMoveFeedback = 'allowed' | 'blocked' | 'noop';
+
+/** An add control: usable, shown but refused (the dashboard is full), or not shown (the row is full). */
+export type DashboardAddControlState = 'enabled' | 'disabled' | 'hidden';
+
+/** What the controls beside a row offer (Edit mode). */
+export interface DashboardRowControls {
+  moveUp: boolean;
+  moveDown: boolean;
+  addToRow: DashboardAddControlState;
+}

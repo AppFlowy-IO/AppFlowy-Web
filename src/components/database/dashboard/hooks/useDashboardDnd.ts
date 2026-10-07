@@ -1,92 +1,31 @@
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { draggable, dropTargetForElements, monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import { pointerOutsideOfPreview } from '@atlaskit/pragmatic-drag-and-drop/element/pointer-outside-of-preview';
-import { setCustomNativeDragPreview } from '@atlaskit/pragmatic-drag-and-drop/element/set-custom-native-drag-preview';
+import { disableNativeDragPreview } from '@atlaskit/pragmatic-drag-and-drop/element/disable-native-drag-preview';
 import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { RefObject, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import { findDashboardWidget } from '@/application/database-yjs/dashboard-layout';
 import {
-  DASHBOARD_MAX_WIDGETS_PER_ROW,
-  DashboardRow,
-  DashboardWidgetPlacement,
-} from '@/application/database-yjs/dashboard.type';
+  getDashboardDropFeedback,
+  getDashboardDropIndicator,
+  resolveDashboardDropPlacement,
+} from '@/application/database-yjs/dashboard-layout';
+import { DashboardDropTarget, DashboardRow, DashboardWidgetPlacement } from '@/application/database-yjs/dashboard.type';
+import { ViewLayout } from '@/application/types';
 
-import { DASHBOARD_ROW_GAP_DROP_TYPE, DASHBOARD_WIDGET_DRAG_TYPE, DASHBOARD_WIDGET_DROP_TYPE } from '../constants';
+import {
+  DASHBOARD_COLUMN_GAP,
+  DASHBOARD_ROW_GAP_DROP_TYPE,
+  DASHBOARD_WIDGET_DRAG_TYPE,
+  DASHBOARD_WIDGET_DROP_TYPE,
+  WIDGET_BOX_PADDING,
+} from '../constants';
+import { dashboardRowLimitAnnouncement } from '../DashboardFullTooltip';
+
+import type { DragGhostStore, DropIndicatorStore } from '../arrange-stores';
 
 export type WidgetDropEdge = 'left' | 'right';
-
-export type DashboardDropTarget =
-  | { type: 'widget'; widgetId: string; edge: WidgetDropEdge }
-  | { type: 'row-gap'; rowIndex: number };
-
-/** `blocked` = a real move the limits refuse; `noop` = the widget would not move. */
-export type DashboardDropFeedback = 'allowed' | 'blocked' | 'noop';
-
-/**
- * Classify dropping `sourceWidgetId` on `target`. Dropping next to a widget of
- * another row needs a free slot in that row; reordering inside a row always
- * fits. A widget alone in its row dropped into the gap right above or below
- * that row stays where it is.
- */
-export function getDropFeedback(
-  rows: DashboardRow[],
-  sourceWidgetId: string,
-  target: DashboardDropTarget
-): DashboardDropFeedback {
-  const source = findDashboardWidget(rows, sourceWidgetId);
-
-  if (!source) return 'noop';
-
-  if (target.type === 'widget') {
-    if (target.widgetId === sourceWidgetId) return 'noop';
-    const destination = findDashboardWidget(rows, target.widgetId);
-
-    if (!destination) return 'noop';
-
-    if (destination.row.id !== source.row.id) {
-      return destination.row.widgets.length >= DASHBOARD_MAX_WIDGETS_PER_ROW ? 'blocked' : 'allowed';
-    }
-
-    const insertAt = target.edge === 'left' ? destination.index : destination.index + 1;
-
-    return insertAt === source.index || insertAt === source.index + 1 ? 'noop' : 'allowed';
-  }
-
-  const rowIndex = Math.max(0, Math.min(target.rowIndex, rows.length));
-
-  if (source.row.widgets.length === 1 && (rowIndex === source.rowIndex || rowIndex === source.rowIndex + 1)) {
-    return 'noop';
-  }
-
-  return 'allowed';
-}
-
-/** The `moveDashboardWidget` placement of a drop, or `null` when nothing should change. */
-export function resolveDropPlacement(
-  rows: DashboardRow[],
-  sourceWidgetId: string,
-  target: DashboardDropTarget
-): DashboardWidgetPlacement | null {
-  if (getDropFeedback(rows, sourceWidgetId, target) !== 'allowed') return null;
-  const source = findDashboardWidget(rows, sourceWidgetId);
-
-  if (!source) return null;
-
-  if (target.type === 'row-gap') {
-    return { type: 'new_row', rowIndex: Math.max(0, Math.min(target.rowIndex, rows.length)) };
-  }
-
-  const destination = findDashboardWidget(rows, target.widgetId);
-
-  if (!destination) return null;
-  let index = target.edge === 'left' ? destination.index : destination.index + 1;
-
-  // `moveDashboardWidget` inserts into the row after removing the widget.
-  if (destination.row.id === source.row.id && source.index < index) index -= 1;
-  return { type: 'existing_row', rowId: destination.row.id, index };
-}
 
 interface SourceData {
   type: string;
@@ -121,7 +60,7 @@ export function parseDropTarget(data: DragData): DashboardDropTarget | null {
   }
 
   if (data.type === DASHBOARD_ROW_GAP_DROP_TYPE && typeof data.rowIndex === 'number') {
-    return { type: 'row-gap', rowIndex: data.rowIndex };
+    return { type: 'row_gap', rowIndex: data.rowIndex };
   }
 
   return null;
@@ -133,12 +72,18 @@ interface UseDashboardDndMonitorOptions {
   getRows: () => DashboardRow[];
   onMove: (widgetId: string, placement: DashboardWidgetPlacement) => void;
   scrollContainerRef: RefObject<HTMLElement>;
+  /** Tells assistive technology why a drop was refused. */
+  announce: (message: string) => void;
+  ghostStore: DragGhostStore;
+  indicatorStore: DropIndicatorStore;
 }
 
 /**
- * Owns drops for one dashboard: resolves the innermost target into a
- * placement, auto-scrolls the dashboard while dragging near its edges, and
- * reports which widget is being dragged.
+ * Owns drops for one dashboard: moves the drag ghost with the pointer,
+ * resolves the innermost target of a drop through the shared drop rules
+ * (`getDashboardDropFeedback`: an allowed drop moves the widget, a blocked one
+ * is announced, a no-op does nothing), auto-scrolls the dashboard while
+ * dragging near its edges, and reports which widget is being dragged.
  */
 export function useDashboardDndMonitor({
   instanceId,
@@ -146,17 +91,21 @@ export function useDashboardDndMonitor({
   getRows,
   onMove,
   scrollContainerRef,
+  announce,
+  ghostStore,
+  indicatorStore,
 }: UseDashboardDndMonitorOptions) {
+  const { t } = useTranslation();
   const [draggingWidgetId, setDraggingWidgetId] = useState<string | null>(null);
-  const getRowsRef = useRef(getRows);
-  const onMoveRef = useRef(onMove);
+  const latest = useRef({ getRows, onMove, announce, t });
 
-  getRowsRef.current = getRows;
-  onMoveRef.current = onMove;
+  latest.current = { getRows, onMove, announce, t };
 
   useEffect(() => {
     if (!enabled) {
       setDraggingWidgetId(null);
+      ghostStore.clear();
+      indicatorStore.clear();
       return;
     }
 
@@ -166,8 +115,13 @@ export function useDashboardDndMonitor({
         onDragStart: ({ source }) => {
           setDraggingWidgetId(String(source.data.widgetId));
         },
+        onDrag: ({ location }) => {
+          ghostStore.move(location.current.input.clientX, location.current.input.clientY);
+        },
         onDrop: ({ location, source }) => {
           setDraggingWidgetId(null);
+          ghostStore.clear();
+          indicatorStore.clear();
           // The innermost target may belong to the nested database (a board
           // column, a grid row); use the innermost dashboard target instead.
           const target = findDashboardDropTarget(
@@ -177,9 +131,17 @@ export function useDashboardDndMonitor({
 
           if (!target) return;
           const widgetId = String(source.data.widgetId);
-          const placement = resolveDropPlacement(getRowsRef.current(), widgetId, target);
+          const rows = latest.current.getRows();
+          const feedback = getDashboardDropFeedback(rows, widgetId, target);
 
-          if (placement) onMoveRef.current(widgetId, placement);
+          if (feedback === 'blocked') {
+            latest.current.announce(dashboardRowLimitAnnouncement(latest.current.t));
+            return;
+          }
+
+          const placement = feedback === 'allowed' ? resolveDashboardDropPlacement(rows, widgetId, target) : null;
+
+          if (placement) latest.current.onMove(widgetId, placement);
         },
       }),
     ];
@@ -195,40 +157,9 @@ export function useDashboardDndMonitor({
     }
 
     return combine(...cleanups);
-  }, [enabled, instanceId, scrollContainerRef]);
+  }, [enabled, ghostStore, indicatorStore, instanceId, scrollContainerRef]);
 
   return draggingWidgetId;
-}
-
-function renderDragPreview(container: HTMLElement, label: string, width: number) {
-  const preview = document.createElement('div');
-  const title = document.createElement('div');
-
-  const previewStyle: Partial<CSSStyleDeclaration> = {
-    width: `${Math.max(160, Math.min(width, 320))}px`,
-    padding: '10px 12px',
-    borderRadius: '12px',
-    border: '1px solid var(--border-theme-thick)',
-    background: 'var(--surface-primary)',
-    boxShadow: 'var(--custom-shadow-md)',
-    opacity: '0.85',
-    color: 'var(--text-primary)',
-    fontSize: '14px',
-    fontWeight: '500',
-  };
-  const titleStyle: Partial<CSSStyleDeclaration> = {
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  };
-
-  Object.assign(preview.style, previewStyle);
-  Object.assign(title.style, titleStyle);
-  title.textContent = label;
-  preview.appendChild(title);
-  container.appendChild(preview);
-
-  return () => container.replaceChildren();
 }
 
 interface UseDraggableWidgetOptions {
@@ -236,26 +167,32 @@ interface UseDraggableWidgetOptions {
   widgetId: string;
   instanceId: symbol;
   enabled: boolean;
-  /** Label of the translucent drag preview. */
+  /** Title and layout the drag ghost shows. */
   label: string;
-  /** Returns the card, whose width sizes the preview. */
-  getCardElement: () => HTMLElement | null;
+  layout: ViewLayout;
+  /** Returns the widget box, whose size the ghost takes. */
+  getBoxElement: () => HTMLElement | null;
+  ghostStore: DragGhostStore;
 }
 
-/** Make the widget header a drag handle (Edit mode). */
+/**
+ * Make the widget header a drag handle (Edit mode). The browser's drag image
+ * is turned off: the dashboard draws its own ghost (`DashboardDragGhost`) at
+ * the box's size, grabbed where the pointer went down.
+ */
 export function useDraggableWidget({
   handle,
   widgetId,
   instanceId,
   enabled,
   label,
-  getCardElement,
+  layout,
+  getBoxElement,
+  ghostStore,
 }: UseDraggableWidgetOptions) {
-  const labelRef = useRef(label);
-  const getCardElementRef = useRef(getCardElement);
+  const latest = useRef({ label, layout, getBoxElement, ghostStore });
 
-  labelRef.current = label;
-  getCardElementRef.current = getCardElement;
+  latest.current = { label, layout, getBoxElement, ghostStore };
 
   useEffect(() => {
     if (!handle || !enabled) return;
@@ -264,21 +201,29 @@ export function useDraggableWidget({
       element: handle,
       getInitialData: () => ({ type: DASHBOARD_WIDGET_DRAG_TYPE, instanceId, widgetId }),
       onGenerateDragPreview: ({ nativeSetDragImage }) => {
-        const width = getCardElementRef.current()?.getBoundingClientRect().width ?? 240;
+        disableNativeDragPreview({ nativeSetDragImage });
+      },
+      onDragStart: ({ location }) => {
+        const current = latest.current;
+        const box = current.getBoxElement()?.getBoundingClientRect();
+        const { clientX, clientY } = location.initial.input;
 
-        setCustomNativeDragPreview({
-          nativeSetDragImage,
-          getOffset: pointerOutsideOfPreview({ x: '12px', y: '8px' }),
-          render: ({ container }) => renderDragPreview(container, labelRef.current, width),
-        });
+        current.ghostStore.start(
+          {
+            widgetId,
+            name: current.label,
+            layout: current.layout,
+            width: box?.width ?? 0,
+            height: box?.height ?? 0,
+            offsetX: box ? clientX - box.left : 0,
+            offsetY: box ? clientY - box.top : 0,
+          },
+          clientX,
+          clientY
+        );
       },
     });
   }, [enabled, handle, instanceId, widgetId]);
-}
-
-export interface WidgetDropIndicatorState {
-  edge: WidgetDropEdge;
-  blocked: boolean;
 }
 
 interface UseWidgetDropTargetOptions {
@@ -287,37 +232,63 @@ interface UseWidgetDropTargetOptions {
   instanceId: symbol;
   enabled: boolean;
   getRows: () => DashboardRow[];
+  indicatorStore: DropIndicatorStore;
+  /** Where the card starts inside the box: under the 40px header, or under the 6px padding without titles. */
+  cardTop: number;
 }
 
-/** The left / right edges of a widget accept widgets into its row. */
-export function useWidgetDropTarget({ elementRef, widgetId, instanceId, enabled, getRows }: UseWidgetDropTargetOptions) {
-  const [indicator, setIndicator] = useState<WidgetDropIndicatorState | null>(null);
-  const getRowsRef = useRef(getRows);
+/** The centre of the gap next to a box: half the column gap outside its edge. */
+const EDGE_GAP_CENTER = DASHBOARD_COLUMN_GAP / 2;
 
-  getRowsRef.current = getRows;
+/**
+ * The left / right edges of a widget accept widgets into its row. While a
+ * widget is dragged over it, an allowed drop draws the row's vertical drop
+ * line (`getDashboardDropIndicator`) in the centre of the gap at that edge,
+ * over the card's height; a blocked or no-op target draws nothing.
+ */
+export function useWidgetDropTarget({
+  elementRef,
+  widgetId,
+  instanceId,
+  enabled,
+  getRows,
+  indicatorStore,
+  cardTop,
+}: UseWidgetDropTargetOptions) {
+  const latest = useRef({ getRows, cardTop });
+
+  latest.current = { getRows, cardTop };
 
   useEffect(() => {
     const element = elementRef.current;
 
-    if (!element || !enabled) {
-      setIndicator(null);
-      return;
-    }
+    if (!element || !enabled) return;
 
     const update = (edge: WidgetDropEdge | null, sourceWidgetId: string) => {
-      const feedback = edge
-        ? getDropFeedback(getRowsRef.current(), sourceWidgetId, { type: 'widget', widgetId, edge })
-        : 'noop';
+      const indicator = edge
+        ? getDashboardDropIndicator(latest.current.getRows(), sourceWidgetId, { type: 'widget', widgetId, edge })
+        : null;
+      const rowElement = element.closest<HTMLElement>("[data-testid='dashboard-row']");
 
-      setIndicator((current) => {
-        if (!edge || feedback === 'noop') return current === null ? current : null;
-        const blocked = feedback === 'blocked';
+      if (!edge || indicator?.type !== 'column' || !rowElement) {
+        indicatorStore.clear(widgetId);
+        return;
+      }
 
-        return current?.edge === edge && current.blocked === blocked ? current : { edge, blocked };
+      const box = element.getBoundingClientRect();
+      const row = rowElement.getBoundingClientRect();
+      const top = latest.current.cardTop;
+
+      indicatorStore.set({
+        widgetId,
+        rowId: indicator.rowId,
+        left: (edge === 'left' ? box.left - EDGE_GAP_CENTER : box.right + EDGE_GAP_CENTER) - row.left,
+        top: box.top - row.top + top,
+        height: box.height - top - WIDGET_BOX_PADDING,
       });
     };
 
-    return dropTargetForElements({
+    const cleanup = dropTargetForElements({
       element,
       canDrop: ({ source }) => isWidgetSource(source.data, instanceId) && source.data.widgetId !== widgetId,
       getData: ({ input }) =>
@@ -331,12 +302,15 @@ export function useWidgetDropTarget({ elementRef, widgetId, instanceId, enabled,
       onDrag: ({ self, source }) => {
         update(extractClosestEdge(self.data) as WidgetDropEdge | null, String(source.data.widgetId));
       },
-      onDragLeave: () => setIndicator(null),
-      onDrop: () => setIndicator(null),
+      onDragLeave: () => indicatorStore.clear(widgetId),
+      onDrop: () => indicatorStore.clear(widgetId),
     });
-  }, [elementRef, enabled, instanceId, widgetId]);
 
-  return indicator;
+    return () => {
+      cleanup();
+      indicatorStore.clear(widgetId);
+    };
+  }, [elementRef, enabled, indicatorStore, instanceId, widgetId]);
 }
 
 interface UseRowGapDropTargetOptions {
@@ -347,7 +321,11 @@ interface UseRowGapDropTargetOptions {
   getRows: () => DashboardRow[];
 }
 
-/** A horizontal zone between rows that turns the dropped widget into a new row. */
+/**
+ * A horizontal zone between rows that turns the dropped widget into a new
+ * row. It is a target only for a drop the shared rules allow, so a widget
+ * alone in its row finds none right above or below that row (#15).
+ */
 export function useRowGapDropTarget({ elementRef, rowIndex, instanceId, enabled, getRows }: UseRowGapDropTargetOptions) {
   const [active, setActive] = useState(false);
   const getRowsRef = useRef(getRows);
@@ -366,7 +344,8 @@ export function useRowGapDropTarget({ elementRef, rowIndex, instanceId, enabled,
       element,
       canDrop: ({ source }) =>
         isWidgetSource(source.data, instanceId) &&
-        getDropFeedback(getRowsRef.current(), String(source.data.widgetId), { type: 'row-gap', rowIndex }) === 'allowed',
+        getDashboardDropFeedback(getRowsRef.current(), String(source.data.widgetId), { type: 'row_gap', rowIndex }) ===
+          'allowed',
       getData: () => ({ type: DASHBOARD_ROW_GAP_DROP_TYPE, instanceId, rowIndex }),
       onDragEnter: () => setActive(true),
       onDragLeave: () => setActive(false),

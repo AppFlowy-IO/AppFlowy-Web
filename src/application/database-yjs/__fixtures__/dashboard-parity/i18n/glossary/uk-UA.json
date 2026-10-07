@@ -1,0 +1,37 @@
+{
+  "locale": "uk-UA",
+  "terms": {
+    "dashboard": "дашборд",
+    "widget": "віджет",
+    "chart": "діаграма",
+    "view": "вигляд",
+    "row": "рядок",
+    "property": "властивість",
+    "database": "база даних",
+    "source": "джерело",
+    "page": "сторінка",
+    "done": "Готово",
+    "edit": "Редагувати",
+    "delete": "Видалити",
+    "duplicate": "Дублювати",
+    "save": "Зберегти",
+    "cancel": "Скасувати",
+    "close": "Закрити",
+    "back": "Назад",
+    "settings": "Налаштування",
+    "filter": "Фільтр",
+    "sort": "Сортування",
+    "search": "Пошук",
+    "undo": "Скасувати",
+    "redo": "Повторити",
+    "reset": "Скинути",
+    "untitled": "Без назви",
+    "day": "День",
+    "week": "Тиждень",
+    "month": "Місяць",
+    "year": "Рік"
+  },
+  "untranslated_ok": [
+    "chart.legend.page"
+  ]
+}

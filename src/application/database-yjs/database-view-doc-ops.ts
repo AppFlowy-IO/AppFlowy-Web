@@ -100,8 +100,8 @@ function getSharedRoot(databaseDoc: YDoc) {
 
 /**
  * The folder write of an owner marker is retried after these waits (ms). After
- * the last one fails the marker stays in the collab mirror only; nothing
- * rewrites the folder copy later (`repairDashboardOwnerMarkers` is not wired).
+ * the last one fails the marker stays in the collab mirror only, until the
+ * dashboard's next open repairs it (`repairDashboardOwnerMarkers`).
  */
 export const DASHBOARD_OWNER_RETRY_DELAYS_MS: readonly number[] = [250, 1000, 4000];
 
@@ -612,6 +612,8 @@ const DUPLICATED_DATABASE_VIEW_CONFIGURATION_KEYS = [
   YjsDatabaseKey.layout_settings,
   YjsDatabaseKey.sorts,
   YjsDatabaseKey.calculations,
+  // How the view opens records (WP13 §3.8); absent stays absent.
+  YjsDatabaseKey.open_pages_in,
 ] as const;
 
 /**

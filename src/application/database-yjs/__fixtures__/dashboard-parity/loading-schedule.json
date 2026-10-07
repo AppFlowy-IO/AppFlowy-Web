@@ -22,7 +22,7 @@
     "cases": "{name, input, expected}: planDashboardLoads({...input, constants}) must equal expected.",
     "sequences": "{name, input, steps}: the state starts as input. For each step in order: set now to step.now; merge every step.set patch into the widget with that id (visible, state, firstData); set closed when the step has it; replace residentSources when the step has it; planDashboardLoads({...state, constants}) must equal step.expected; then every started widget becomes loading and, when visibleStartedAt is null and a started widget is visible, visibleStartedAt becomes now. After that the busy sources (rule 2), sorted, must equal step.busySources, and there are never more than maxConcurrentSources of them."
   },
-  "constants": { "maxConcurrentSources": 2, "deferredStartTimeoutMs": 10000, "rowBudget": 10000, "sourceIdleReleaseMs": 60000 },
+  "constants": { "maxConcurrentSources": 2, "deferredStartTimeoutMs": 10000, "rowBudget": 10000, "sourceIdleReleaseMs": 60000, "sourceLoadTimeoutMs": 30000 },
   "cases": [
     {
       "name": "visible widgets start before deferred ones, and the timeout counts from this first visible start",
@@ -971,6 +971,50 @@
           "residentSources": ["A", "B", "C", "E"],
           "expected": { "start": ["w7"], "nextWakeAt": null },
           "busySources": ["D", "F"]
+        }
+      ]
+    },
+    {
+      "name": "a dashboard inside its own source database: off-screen host widgets wait for the first data of every visible widget, and no host widget takes a slot",
+      "input": {
+        "now": 0,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": { "host": 5000 },
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "host", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "host", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "host", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "host", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w5", "sourceId": "host", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w6", "sourceId": "host", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "steps": [
+        {
+          "now": 0,
+          "expected": { "start": ["w1", "w2", "w3"], "nextWakeAt": 10000 },
+          "busySources": []
+        },
+        {
+          "now": 800,
+          "set": [{ "id": "w1", "firstData": true }, { "id": "w2", "firstData": true }],
+          "expected": { "start": [], "nextWakeAt": 10000 },
+          "busySources": []
+        },
+        {
+          "now": 1500,
+          "set": [{ "id": "w3", "firstData": true }],
+          "expected": { "start": ["w4", "w5", "w6"], "nextWakeAt": null },
+          "busySources": []
+        },
+        {
+          "now": 2500,
+          "set": [{ "id": "w1", "state": "done" }, { "id": "w2", "state": "done" }, { "id": "w3", "state": "done" }, { "id": "w4", "firstData": true, "state": "done" }, { "id": "w5", "firstData": true, "state": "done" }, { "id": "w6", "firstData": true, "state": "done" }],
+          "expected": { "start": [], "nextWakeAt": null },
+          "busySources": []
         }
       ]
     }

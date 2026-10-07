@@ -8,26 +8,148 @@
  * `extra` (through the Cloud API).
  */
 import { APIRequestContext, expect, Locator, Page } from '@playwright/test';
+import * as Y from 'yjs';
 
-import { DatabaseViewSelectors } from './selectors';
+import { ViewLayout } from '../../src/application/types';
+
+import { plainYjs, readServerDatabaseDoc } from './dashboard-shared-helpers';
 import {
+  allWidgets,
   apiGet,
   apiPatch,
   apiPost,
   dashboardViewId,
   dashboardWorld,
   DashboardSelectors,
+  DASHBOARD_LAYOUT_KEY,
   DatabaseViewLayout,
   DatabaseViewSummary,
   fixtureDatabase,
+  leaveEditMode,
   openDatabasePage,
+  PersistedRow,
+  PersistedWidget,
   readDashboardSetting,
   readDatabaseViews as readBaseDatabaseViews,
   waitForDatabaseContext,
+  waitForDashboardSync,
 } from './dashboard-test-helpers';
+import { duplicatePageByExactText } from './duplicate-test-helpers';
+import { expandSpaceByName } from './page-utils';
+import { DatabaseViewSelectors } from './selectors';
 
 const OWNED_VIEWS_TIMEOUT_MS = 30_000;
 const FOLDER_LAYOUT_GRID = 1;
+
+export interface CopiedDatabaseDashboard {
+  pageId: string;
+  databaseId: string;
+  dashboardViewId: string;
+  originalDatabaseId: string;
+  originals: { name: string; widget: PersistedWidget }[];
+}
+
+/** Duplicate through the sidebar, then discover and open the server-created dashboard. */
+export async function duplicateDatabaseDashboardFromSidebar(
+  page: Page,
+  request: APIRequestContext,
+  databaseName: string
+): Promise<CopiedDatabaseDashboard> {
+  const world = dashboardWorld(page);
+  const original = fixtureDatabase(page, databaseName);
+  const originalDashboard = dashboardViewId(page);
+  const widgets = allWidgets(await readDashboardSetting(page));
+  const originals = await Promise.all(
+    widgets.map(async (widget) => {
+      const view = (await readDatabaseViews(page, widget.database_id)).find((entry) => entry.id === widget.view_id);
+
+      if (!view) throw new Error(`Missing original widget view ${widget.view_id}`);
+      return { name: view.name, widget };
+    })
+  );
+  const children = async (parentId: string) => {
+    const parent = await apiGet<{ children?: { view_id: string; name: string; layout: number }[] }>(
+      request,
+      world.owner.accessToken,
+      `/api/workspace/${world.workspaceId}/view/${parentId}?depth=1`
+    );
+
+    return parent.children ?? [];
+  };
+
+  const existingIds = new Set((await children(world.spaceId)).map((entry) => entry.view_id));
+
+  if (await DashboardSelectors.doneButton(page).isVisible()) await leaveEditMode(page);
+  await waitForDashboardSync(page, request);
+  await expandSpaceByName(page, world.spaceName);
+  await duplicatePageByExactText(page, databaseName);
+  let pageId = '';
+
+  await expect
+    .poll(async () => {
+      const copies = (await children(world.spaceId)).filter(
+        (entry) => !existingIds.has(entry.view_id) && entry.name === `${databaseName} (Copy)`
+      );
+
+      pageId = copies.length === 1 ? copies[0].view_id : '';
+      return pageId;
+    }, { timeout: 60_000, message: 'waiting for the new copied database page' })
+    .not.toBe('');
+  let viewId = '';
+
+  await expect
+    .poll(async () => {
+      const dashboards = (await children(pageId)).filter((entry) => entry.layout === ViewLayout.Dashboard);
+
+      viewId = dashboards.length === 1 ? dashboards[0].view_id : '';
+      return viewId;
+    }, { timeout: OWNED_VIEWS_TIMEOUT_MS, message: 'waiting for the copied dashboard view' })
+    .not.toBe('');
+  expect(pageId).not.toBe(original.pageId);
+  expect(viewId).not.toBe(originalDashboard);
+  await page.goto(`/app/${world.workspaceId}/${pageId}?v=${viewId}`, { waitUntil: 'domcontentloaded' });
+  await expect(DashboardSelectors.view(page)).toBeVisible({ timeout: OWNED_VIEWS_TIMEOUT_MS });
+  await expect(DatabaseViewSelectors.viewTab(page, viewId)).toHaveAttribute('data-state', 'active');
+  let databaseId = '';
+
+  await expect
+    .poll(async () => {
+      databaseId = await page.evaluate((id) => String(
+        (window as any).__DASHBOARD_TEST__?.byView(id)?.databaseDoc.getMap('data').get('database')?.get('id') ?? ''
+      ), viewId);
+      return databaseId;
+    }, { timeout: OWNED_VIEWS_TIMEOUT_MS, message: 'waiting for the copied database document' })
+    .not.toBe('');
+  expect(databaseId).not.toBe(original.databaseId);
+  return { pageId, databaseId, dashboardViewId: viewId, originalDatabaseId: original.databaseId, originals };
+}
+
+/** Read a copy's widget at its original position from the authoritative persisted layout. */
+export async function copiedDatabaseWidget(
+  page: Page,
+  request: APIRequestContext,
+  copy: CopiedDatabaseDashboard,
+  name: string
+) {
+  const matches = copy.originals.map((entry, index) => ({ ...entry, index })).filter((entry) => entry.name === name);
+
+  expect(matches, `one original widget named "${name}"`).toHaveLength(1);
+  const world = dashboardWorld(page);
+  const widgets = await readServerDatabaseDoc(
+    request,
+    { token: world.owner.accessToken, workspaceId: world.workspaceId },
+    copy.databaseId,
+    (database) => {
+      const view = (database?.get('views') as Y.Map<Y.Map<unknown>> | undefined)?.get(copy.dashboardViewId);
+      const layout = (view?.get('layout_settings') as Y.Map<Y.Map<unknown>> | undefined)?.get(DASHBOARD_LAYOUT_KEY);
+
+      return ((plainYjs(layout?.get('rows')) as PersistedRow[] | undefined) ?? []).flatMap((row) => row.widgets);
+    }
+  );
+
+  expect(widgets).toHaveLength(copy.originals.length);
+  return { original: matches[0].widget, widget: widgets[matches[0].index] };
+}
 
 export interface OwnedDatabaseViewSummary extends DatabaseViewSummary {
   /** The collab mirror of the owner marker (`null` when absent). */

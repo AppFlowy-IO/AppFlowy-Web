@@ -21,7 +21,9 @@ export function useColumnsDrag(
   groupId: string,
   columns: GroupColumn[],
   getCards: (columnId: string) => Row[] | undefined,
-  fieldId: string | null
+  fieldId: string | null,
+  /** The effective view has a sort (WP09 §1.4). */
+  sorted = false
 ) {
   const readOnly = useReadOnly();
   const [instanceId] = useState(() => Symbol(`board-dnd-group-${groupId}`));
@@ -108,20 +110,19 @@ export function useColumnsDrag(
 
       const startColumnCards = getCards(startColumnId) || [];
       const finishColumnCards = getCards(finishColumnId) || [];
-
-      if (itemIndexInFinishColumn === undefined) {
-        throw new Error('No item index found for column ' + finishColumn);
-      }
-
       const rowId = startColumnCards[itemIndexInStartColumn].id;
 
+      // A drop on the column itself (no card under the pointer) appends. A
+      // sorted board places the card by its sort, so it passes no place.
+      const finishIndex = itemIndexInFinishColumn ?? -1;
       const length = finishColumnCards.length;
-      const beforeId =
-        itemIndexInFinishColumn < 0
-          ? finishColumnCards[length - 1]?.id
-          : itemIndexInFinishColumn === 0
-          ? undefined
-          : finishColumnCards[itemIndexInFinishColumn - 1]?.id;
+      const beforeId = sorted
+        ? undefined
+        : finishIndex < 0
+        ? finishColumnCards[length - 1]?.id
+        : finishIndex === 0
+        ? undefined
+        : finishColumnCards[finishIndex - 1]?.id;
 
       moveColumnCard({
         rowId,
@@ -131,7 +132,7 @@ export function useColumnsDrag(
         finishColumnId,
       });
     },
-    [fieldId, getCards, moveColumnCard]
+    [fieldId, getCards, moveColumnCard, sorted]
   );
 
   const contextValue: BoardDragContextValue = useMemo(() => {
@@ -143,8 +144,9 @@ export function useColumnsDrag(
       registerCard: registry.registerCard,
       registerColumn: registry.registerColumn,
       instanceId,
+      sorted,
     };
-  }, [getColumns, reorderColumn, reorderCard, registry, moveCard, instanceId]);
+  }, [getColumns, reorderColumn, reorderCard, registry, moveCard, instanceId, sorted]);
 
   useEffect(() => {
     if (!scrollableRef.current || readOnly) {
@@ -193,8 +195,9 @@ export function useColumnsDrag(
             const itemId = source.data.itemId;
             const targetItemId = location.current.dropTargets[0]?.data?.itemId;
 
+            // The card names its column; a sorted board has no card targets to read it from.
             const [, startColumnRecord] = location.initial.dropTargets;
-            const sourceId = startColumnRecord.data.columnId;
+            const sourceId = (source.data.columnId ?? startColumnRecord?.data.columnId) as string | undefined;
 
             const sourceColumn = columns.find((column) => column.id === sourceId);
 
@@ -226,6 +229,8 @@ export function useColumnsDrag(
 
               // reordering in same column
               if (sourceColumn.id === destinationColumn.id) {
+                // A sorted column keeps its order: the card snaps back to its sorted place.
+                if (sorted) return;
                 const destinationIndex = getReorderDestinationIndex({
                   startIndex: itemIndex,
                   indexOfTarget: sourceColumnsCards.length - 1,
@@ -268,6 +273,7 @@ export function useColumnsDrag(
 
               // case 1: ordering in the same column
               if (sourceColumn === destinationColumn) {
+                if (sorted) return;
                 const destinationIndex = getReorderDestinationIndex({
                   startIndex: itemIndex,
                   indexOfTarget,
@@ -304,7 +310,7 @@ export function useColumnsDrag(
       }),
       autoScrollForSharedElement(scrollableRef.current, canRespond)
     );
-  }, [columns, getCards, instanceId, moveCard, readOnly, reorderCard, reorderColumn]);
+  }, [columns, getCards, instanceId, moveCard, readOnly, reorderCard, reorderColumn, sorted]);
 
   return {
     scrollableRef,

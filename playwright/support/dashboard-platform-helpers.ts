@@ -259,7 +259,7 @@ export async function expectNoEditButton(page: Page) {
   await expect(DashboardSelectors.view(page)).toBeVisible();
   await expect(DashboardSelectors.editButton(page)).toHaveCount(0);
   await expect(DashboardSelectors.doneButton(page)).toHaveCount(0);
-  await expect(page.getByTestId('dashboard-empty-edit-button')).toHaveCount(0);
+  await expect(DashboardSelectors.emptyEditDashboardButton(page)).toHaveCount(0);
 }
 
 /**

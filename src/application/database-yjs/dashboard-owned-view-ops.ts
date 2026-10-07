@@ -21,6 +21,7 @@ import { DASHBOARD_LAYOUT_ORIGIN, readStoredDashboardWidgets } from './dashboard
 import {
   collectDatabaseViewNames,
   DashboardIdMap,
+  duplicateBaseName,
   nextViewName,
   readDashboardOwner,
   remapDashboardLayout,
@@ -186,9 +187,9 @@ export interface CreateOwnedDatabaseViewParams {
 }
 
 /**
- * Create a new view owned by `owner`, named with `nextViewName` among its database's views.
- *
- * WP05b: staged. Nothing creates a widget view this way yet.
+ * Create a new view owned by `owner`, named with `nextViewName` among its
+ * database's views: the picker's new views and the add flow's default widget
+ * view.
  */
 export async function createOwnedDatabaseView(
   deps: DashboardOwnedViewDeps,
@@ -218,8 +219,14 @@ export interface DuplicateOwnedDatabaseViewParams {
   /** The source view's database; the host's when absent. */
   databaseId?: string;
   owner: string;
-  /** The copy's name: kept verbatim. */
+  /** The copy's name: kept verbatim, unless `numbered`. */
   name: string;
+  /**
+   * Number the copy like a widget duplicate (WP05 §1.3): the first free
+   * `"<base> (n)"` among the database's view names, `base` being `name`
+   * without one trailing `" (n)"`.
+   */
+  numbered?: boolean;
   /**
    * Place the copy next to this view. Without it the copy is placed like any
    * new view of the host context (the tab bar's "+").
@@ -244,7 +251,16 @@ export async function duplicateOwnedDatabaseView(
       params.anchorViewId || !opened.isHost
         ? anchoredDeps(deps, opened, params.anchorViewId ?? params.sourceViewId)
         : deps;
-    const viewId = await duplicateDatabaseViewWithOwnedWidgets(viewDeps, params.sourceViewId, params.name, {
+    const name = params.numbered
+      ? nextViewName(
+          duplicateBaseName(params.name),
+          collectDatabaseViewNames(
+            opened.database,
+            await folderNamesAround(deps, params.anchorViewId ?? params.sourceViewId)
+          )
+        )
+      : params.name;
+    const viewId = await duplicateDatabaseViewWithOwnedWidgets(viewDeps, params.sourceViewId, name, {
       dashboardOwner: params.owner,
       placeBeforeSource: false,
     });
@@ -257,9 +273,58 @@ export async function duplicateOwnedDatabaseView(
 }
 
 /**
- * Rename a view in its folder and its database collab (not an undo step), as a tab rename does.
- *
- * WP05b: staged. Nothing renames a widget view this way yet.
+ * Delete an owned widget view the normal way (folder trash, then the view in
+ * its database collab): the host's doc, else the database's doc opened for
+ * the write. Used by the owned-view deletion queue and for a view that never
+ * reached a widget (WP05 §1.5, WP06 §1.1). Not an undo step.
+ */
+export async function deleteOwnedDatabaseView(
+  deps: DashboardOwnedViewDeps,
+  params: { viewId: string; databaseId: string }
+): Promise<void> {
+  const docs = createDatabaseDocCache(deps);
+
+  try {
+    const opened = await docs.open(params.databaseId, params.viewId).catch((error) => {
+      Log.warn('[Dashboard] could not open the database of an owned view', { ...params, error });
+      return null;
+    });
+
+    if (!opened || !opened.database?.get(YjsDatabaseKey.views)?.get(params.viewId)) {
+      // The collab view is already gone (or out of reach): the folder page still goes.
+      await deps.deletePage?.(params.viewId);
+      return;
+    }
+
+    await deleteDatabaseViewInDoc({ databaseDoc: opened.doc, deletePage: deps.deletePage }, params.viewId);
+    await docs.flush();
+  } finally {
+    docs.release();
+  }
+}
+
+/**
+ * The authoritative owner of a view at the time of a deletion: the folder
+ * marker, else the collab mirror in the host's doc or `knownDoc` (WP05 §1.1:
+ * read either, write both). `null` when neither says.
+ */
+export async function resolveDashboardViewOwner(
+  deps: Pick<DashboardOwnedViewDeps, 'databaseDoc' | 'loadViewMeta'>,
+  viewId: string,
+  knownDoc?: YDoc | null
+): Promise<string | null> {
+  const meta = await safeLoadViewMeta(deps, viewId);
+  const collabView =
+    getDatabaseFromDoc(deps.databaseDoc)?.get(YjsDatabaseKey.views)?.get(viewId) ??
+    getDatabaseFromDoc(knownDoc ?? undefined)?.get(YjsDatabaseKey.views)?.get(viewId);
+
+  return readDashboardOwner(meta, collabView);
+}
+
+/**
+ * Rename a view in its folder and its database collab (not an undo step), as
+ * a tab rename does. The widget name field uses it for a view of another
+ * database than the host's.
  */
 export async function renameDatabaseViewInDoc(params: {
   doc: YDoc;
@@ -553,46 +618,55 @@ export async function convertViewToDashboard(
 // Repair
 // ---------------------------------------------------------------------------
 
+export interface RepairDashboardOwnerMarkersOptions extends DashboardOwnerWriteOptions {
+  /**
+   * The doc of a widget source database the dashboard already has open (its
+   * registered source docs). The repair never loads a database itself: only
+   * the load scheduler decides when a cold source loads (LOADING-DESIGN R6,
+   * R7), so a widget whose doc is not open waits for a later open.
+   */
+  getOpenDoc?: (databaseId: string) => YDoc | undefined;
+}
+
 /**
  * Bring both copies of the owner marker of this dashboard's widget views back
  * in step (WP05 §2.2 step 3.3): a view whose mirror names this dashboard but
  * whose folder extra does not gets the folder marker, and the reverse gets the
- * mirror. Resolves to the number of markers written.
- *
- * WP05b: staged. Nothing calls this yet, so a folder marker that failed every
- * attempt of `markDashboardOwnedView` stays missing: the view is hidden from
- * its database's tab bars (they read the mirror) but still listed by the
- * readers that only see the folder (the sidebar, the database catalog). It is
- * wired together with the desktop read of the collab mirror, so both clients
- * keep reading the same marker.
+ * mirror. Checks the host's views and those of the source docs `getOpenDoc`
+ * returns, reading their folder metas in one batch (R5). Resolves to the
+ * number of markers written. A writer's dashboard runs it once per open, so a
+ * folder marker that failed every attempt of `markDashboardOwnedView` is
+ * written on the next open.
  */
 export async function repairDashboardOwnerMarkers(
   deps: DashboardOwnedViewDeps,
   dashboardViewId: string,
   rows: DashboardRow[],
-  options?: DashboardOwnerWriteOptions
+  options: RepairDashboardOwnerMarkersOptions = {}
 ): Promise<number> {
-  const docs = createDatabaseDocCache(deps);
+  const hostDatabaseId = getDatabaseFromDoc(deps.databaseDoc)?.get(YjsDatabaseKey.id);
+  const openDocOf = (databaseId: string | undefined): YDoc | undefined =>
+    !databaseId || databaseId === hostDatabaseId ? deps.databaseDoc : options.getOpenDoc?.(databaseId);
+  const candidates = uniqueWidgets(rows.flatMap((row) => row.widgets)).flatMap((widget) => {
+    const doc = openDocOf(widget.databaseId);
+
+    return doc ? [{ widget, doc }] : [];
+  });
+  const metas = await Promise.all(candidates.map(({ widget }) => safeLoadViewMeta(deps, widget.viewId)));
+  const folderWrites: Promise<boolean>[] = [];
   let written = 0;
 
-  try {
-    for (const widget of uniqueWidgets(rows.flatMap((row) => row.widgets))) {
-      const meta = await safeLoadViewMeta(deps, widget.viewId);
-      const opened = await docs.open(widget.databaseId, widget.viewId).catch(() => null);
-      const collabView: YDatabaseView | undefined = opened?.database?.get(YjsDatabaseKey.views)?.get(widget.viewId);
-      const folderOwner = readDashboardOwner(meta);
-      const collabOwner = readDashboardOwner(null, collabView);
+  candidates.forEach(({ widget, doc }, index) => {
+    const collabView: YDatabaseView | undefined = getDatabaseFromDoc(doc)?.get(YjsDatabaseKey.views)?.get(widget.viewId);
+    const folderOwner = readDashboardOwner(metas[index]);
+    const collabOwner = readDashboardOwner(null, collabView);
 
-      if (collabOwner === dashboardViewId && !folderOwner) {
-        if (await writeFolderDashboardOwner(deps, widget.viewId, dashboardViewId, options)) written += 1;
-      } else if (folderOwner === dashboardViewId && !collabOwner && opened && collabView) {
-        if (writeCollabDashboardOwner(opened.doc, widget.viewId, dashboardViewId)) written += 1;
-      }
+    if (collabOwner === dashboardViewId && !folderOwner) {
+      folderWrites.push(writeFolderDashboardOwner(deps, widget.viewId, dashboardViewId, options));
+    } else if (folderOwner === dashboardViewId && !collabOwner && collabView) {
+      if (writeCollabDashboardOwner(doc, widget.viewId, dashboardViewId)) written += 1;
     }
+  });
 
-    await docs.flush();
-    return written;
-  } finally {
-    docs.release();
-  }
+  return written + (await Promise.all(folderWrites)).filter(Boolean).length;
 }

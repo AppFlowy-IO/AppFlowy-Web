@@ -3,12 +3,14 @@ import { useCallback, useRef, useState } from 'react';
 
 import { DatabaseViewLayout } from '@/application/types';
 
+import { createAddWidgetFlowStore } from '../add-widget/add-widget-api';
 import { DashboardSourcesContext } from '../DashboardContext';
+import { DashboardUiContext } from '../DashboardUiContext';
 import { WidgetSettingsTool } from '../widget-tool-buttons/WidgetSettingsTool';
 import { WidgetContext, WidgetContextValue } from '../WidgetContext';
 import { WidgetSettingsHost } from '../WidgetSettingsHost';
 
-import { createWidgetActions, createWidgetContextValue } from './dashboardTestHarness';
+import { createDashboardUiValue, createWidgetActions, createWidgetContextValue } from './dashboardTestHarness';
 
 let mockLayout: DatabaseViewLayout | null = DatabaseViewLayout.Grid;
 let mockFilters: { id: string }[] = [];
@@ -20,8 +22,11 @@ jest.mock('react-i18next', () => ({
   }),
 }));
 
+const mockWidgetDoc = { guid: 'widget-source-doc' };
+
 jest.mock('@/application/database-yjs', () => ({
   ...jest.requireActual('@/application/database-yjs/database.type'),
+  useDatabaseContext: () => ({ databaseDoc: mockWidgetDoc }),
   useDatabaseViewLayout: () => mockLayout,
   useReadOnly: () => false,
   useConditionsReadOnly: () => false,
@@ -73,12 +78,22 @@ jest.mock('@/components/database/components/settings/TimelineSettings', () =>
   mockItems('TimelineSettingsItems', ['properties', 'layout', 'timeline'])
 );
 
+let mockOpenPagesIn: unknown;
+const mockSetOpenPagesIn = jest.fn();
+
+jest.mock('@/application/database-yjs/dispatch/open-pages-in', () => ({
+  useViewOpenPagesIn: () => mockOpenPagesIn,
+  useSetViewOpenPagesIn: () => mockSetOpenPagesIn,
+}));
+
 jest.mock('../WidgetConditionsPopover', () => ({
   WidgetFiltersBody: () => <div data-testid='filters-body' />,
   WidgetSortsBody: () => <div data-testid='sorts-body' />,
 }));
 
 let actions = createWidgetActions();
+let renameWidgetView = jest.fn().mockResolvedValue(true);
+let flow = createAddWidgetFlowStore(() => undefined);
 
 /**
  * How the settings tool sits in the box: the real tool (`WidgetSettingsTool`,
@@ -103,35 +118,43 @@ function Harness({ editing = true, tool = 'slot' }: { editing?: boolean; tool?: 
     actions: { ...actions, openSettings: () => setSettingsOpen(true) },
   });
 
+  const [ui] = useState(() => {
+    const base = createDashboardUiValue();
+
+    return { ...base, ownedViews: { ...base.ownedViews, renameWidgetView }, addWidget: { ...base.addWidget, flow } };
+  });
+
   return (
-    <DashboardSourcesContext.Provider
-      value={{
-        sourceDocs: {},
-        registerSourceDoc: jest.fn(),
-        sourceNames: { db: 'Projects' },
-        registerSourceName: jest.fn(),
-      }}
-    >
-      <WidgetContext.Provider value={value}>
-        <div className='relative' data-testid='dashboard-widget' ref={boxRef}>
-          {/* The tool as `WidgetTools` renders it: in its slot, toggling the host. */}
-          <div data-widget-tool={tool === 'ref' ? undefined : 'settings'}>
-            {tool === 'real' ? (
-              <WidgetSettingsTool />
-            ) : (
-              <button
-                data-testid='dashboard-widget-settings-button'
-                onClick={() => setSettingsOpen(!settingsOpen)}
-                ref={tool === 'ref' ? settingsToolRef : undefined}
-                type='button'
-              />
-            )}
+    <DashboardUiContext.Provider value={ui}>
+      <DashboardSourcesContext.Provider
+        value={{
+          sourceDocs: {},
+          registerSourceDoc: jest.fn(),
+          sourceNames: { db: 'Projects' },
+          registerSourceName: jest.fn(),
+        }}
+      >
+        <WidgetContext.Provider value={value}>
+          <div className='relative' data-testid='dashboard-widget' ref={boxRef}>
+            {/* The tool as `WidgetTools` renders it: in its slot, toggling the host. */}
+            <div data-widget-tool={tool === 'ref' ? undefined : 'settings'}>
+              {tool === 'real' ? (
+                <WidgetSettingsTool />
+              ) : (
+                <button
+                  data-testid='dashboard-widget-settings-button'
+                  onClick={() => setSettingsOpen(!settingsOpen)}
+                  ref={tool === 'ref' ? settingsToolRef : undefined}
+                  type='button'
+                />
+              )}
+            </div>
+            <button data-testid='elsewhere' type='button' />
+            <WidgetSettingsHost />
           </div>
-          <button data-testid='elsewhere' type='button' />
-          <WidgetSettingsHost />
-        </div>
-      </WidgetContext.Provider>
-    </DashboardSourcesContext.Provider>
+        </WidgetContext.Provider>
+      </DashboardSourcesContext.Provider>
+    </DashboardUiContext.Provider>
   );
 }
 
@@ -146,17 +169,22 @@ const rowIds = (host: HTMLElement) =>
     .map((item) => item.getAttribute('data-testid'));
 
 beforeEach(() => {
+  mockOpenPagesIn = undefined;
+  mockSetOpenPagesIn.mockReset();
   mockLayout = DatabaseViewLayout.Grid;
   mockFilters = [];
   mockSorts = [];
   actions = createWidgetActions();
+  renameWidgetView = jest.fn().mockResolvedValue(true);
+  flow = createAddWidgetFlowStore(() => undefined);
 });
 
 describe('WidgetSettingsHost', () => {
-  it('opens beside the widget box, 300px wide, with the "View settings" header', async () => {
+  it('opens docked to the widget box, 300px wide, with the "View settings" header', async () => {
     render(<Harness />);
     const host = await openHost();
 
+    // WP06 §1.6: the same dock as the add flow's panels (jsdom has no width: the box ends at 0, room on the right).
     expect(host.getAttribute('data-side')).toBe('right');
     expect(host.getAttribute('data-align')).toBe('start');
     // `tokens.json` `geometry.popover`: `widgetSettingsWidth` and `radius`.
@@ -166,22 +194,95 @@ describe('WidgetSettingsHost', () => {
     expect(host.className).toContain('max-h-[560px]');
     expect(host.textContent).toContain('View settings');
     expect(within(host).getByTestId('dashboard-widget-settings-close').getAttribute('aria-label')).toBe('Close');
-    // Its trigger is portaled into the widget box, which anchors it.
-    expect(screen.getByTestId('dashboard-widget').querySelector('[aria-haspopup="menu"]')).not.toBeNull();
+    // Its trigger is a zero-size anchor portaled into the widget box's top-right corner.
+    const anchor = screen.getByTestId('dashboard-widget').querySelector('[aria-haspopup="menu"]') as HTMLElement;
+
+    expect(anchor.getAttribute('class')).toContain('right-0 top-0 h-0 w-0');
   });
 
-  it('lists the view settings rows, Filter and Sort, then the Source', async () => {
+  it('opens on the left of a widget at the right edge of the window', async () => {
+    render(<Harness />);
+    const box = screen.getByTestId('dashboard-widget');
+
+    box.getBoundingClientRect = () => ({
+      right: window.innerWidth - 20,
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 0,
+      height: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const host = await openHost();
+
+    await waitFor(() => expect(host.getAttribute('data-side')).toBe('left'));
+  });
+
+  it('holds the widget name in its header and renames the view from it (WP05)', async () => {
+    render(<Harness />);
+    const host = await openHost();
+    const input = within(host).getByTestId<HTMLInputElement>('dashboard-widget-view-name-input');
+
+    expect(input.value).toBe('Tasks Grid');
+    fireEvent.change(input, { target: { value: 'Pipeline board' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(renameWidgetView).toHaveBeenCalledWith('w1', 'Pipeline board', { name: 'Tasks Grid', doc: mockWidgetDoc });
+    // The host stays open.
+    expect(screen.getByTestId('dashboard-widget-settings')).toBeTruthy();
+  });
+
+  it('keeps itself open on the Escape that reverts the name', async () => {
+    render(<Harness />);
+    const host = await openHost();
+    const input = within(host).getByTestId<HTMLInputElement>('dashboard-widget-view-name-input');
+
+    act(() => input.focus());
+    fireEvent.change(input, { target: { value: 'Typo' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(input.value).toBe('Tasks Grid');
+    expect(screen.getByTestId('dashboard-widget-settings')).toBeTruthy();
+    expect(renameWidgetView).not.toHaveBeenCalled();
+  });
+
+  it('goes back to the New view panel when the add flow opened it (Edit chart)', async () => {
+    const dispatch = jest.spyOn(flow, 'dispatch');
+
+    flow.dispatch({ type: 'start', placement: { type: 'new_row' }, widgetId: 'w1', spec: 'chart', refused: null });
+    flow.dispatch({ type: 'created', viewId: 'v1' });
+    flow.dispatch({ type: 'pick_layout', layout: DatabaseViewLayout.Chart });
+    flow.dispatch({ type: 'edit_chart' });
+    render(<Harness />);
+    const host = await openHost();
+
+    fireEvent.click(within(host).getByTestId('dashboard-widget-settings-back'));
+    expect(dispatch).toHaveBeenLastCalledWith({ type: 'back' });
+    expect(flow.getState().kind).toBe('configuring');
+    await waitFor(() => expect(screen.queryByTestId('dashboard-widget-settings')).toBeNull());
+  });
+
+  it('offers no back button when it was not opened by the add flow', async () => {
+    render(<Harness />);
+    const host = await openHost();
+
+    expect(within(host).queryByTestId('dashboard-widget-settings-back')).toBeNull();
+  });
+
+  it('lists the view settings rows, Filter, Sort and Open pages in, then the Source', async () => {
     mockFilters = [{ id: 'f1' }, { id: 'f2' }];
     mockSorts = [{ id: 's1', fieldId: 'status' }];
     render(<Harness />);
     const host = await openHost();
 
+    // WP13 §3.8: "Open pages in ›" sits after Sort, before the divider and Source.
     expect(rowIds(host)).toEqual([
       'settings-row-properties',
       'settings-row-layout',
       'settings-row-group',
       'dashboard-widget-settings-filter',
       'dashboard-widget-settings-sort',
+      'dashboard-widget-settings-open-pages-in',
       'dashboard-widget-settings-source',
     ]);
     expect(within(host).getByTestId('dashboard-widget-settings-filter').textContent).toContain('2');
@@ -226,6 +327,20 @@ describe('WidgetSettingsHost', () => {
     ]);
   });
 
+  it('shows the resolved "Open pages in" value of the widget\'s view, Side peek while none is stored', async () => {
+    render(<Harness />);
+    let host = await openHost();
+
+    expect(within(host).getByTestId('dashboard-widget-settings-open-pages-in').textContent).toContain('Open pages in');
+    expect(within(host).getByTestId('dashboard-widget-settings-open-pages-in').textContent).toContain('Side peek');
+    fireEvent.click(within(host).getByTestId('dashboard-widget-settings-close'));
+    await waitFor(() => expect(screen.queryByTestId('dashboard-widget-settings')).toBeNull());
+
+    mockOpenPagesIn = 'center_peek';
+    host = await openHost();
+    expect(within(host).getByTestId('dashboard-widget-settings-open-pages-in').textContent).toContain('Center peek');
+  });
+
   it('changes the source from the Source row', async () => {
     render(<Harness />);
     const host = await openHost();
@@ -245,6 +360,25 @@ describe('WidgetSettingsHost', () => {
     fireEvent.click(within(host).getByTestId('dashboard-widget-settings-close'));
     await waitFor(() => expect(screen.queryByTestId('dashboard-widget-settings')).toBeNull());
     expect(document.activeElement).toBe(screen.getByTestId('dashboard-widget-settings-button'));
+  });
+
+  it('leaves the focus in the panel the Source row handed over to', async () => {
+    const panel = document.createElement('input');
+
+    panel.setAttribute('data-testid', 'source-panel-search');
+    jest.mocked(actions.changeView).mockImplementation(() => {
+      // Settings › Source docks its panel in the same commit, and the panel focuses its search.
+      document.body.appendChild(panel);
+      panel.focus();
+    });
+    render(<Harness />);
+    const host = await openHost();
+
+    fireEvent.click(within(host).getByTestId('dashboard-widget-settings-source'));
+    await waitFor(() => expect(screen.queryByTestId('dashboard-widget-settings')).toBeNull());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(document.activeElement).toBe(panel);
+    panel.remove();
   });
 
   it.each([

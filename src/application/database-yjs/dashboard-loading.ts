@@ -22,6 +22,14 @@ export const DASHBOARD_LOADING = {
   rowBudget: 10000,
   /** A source with no attached widget is released this long after the last one detached. */
   sourceIdleReleaseMs: 60000,
+  /**
+   * A started widget whose source has not opened (its document or its
+   * permission probe never settled) this long after its start gives its slot
+   * up, so two stalled sources never hold every other widget back for good.
+   * A source that opened keeps its slot however slowly its rows load: the cap
+   * is hard.
+   */
+  sourceLoadTimeoutMs: 30000,
 } as const;
 
 export interface DashboardLoadingConstants {
@@ -29,6 +37,7 @@ export interface DashboardLoadingConstants {
   deferredStartTimeoutMs: number;
   rowBudget: number;
   sourceIdleReleaseMs: number;
+  sourceLoadTimeoutMs: number;
 }
 
 /**

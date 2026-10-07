@@ -62,6 +62,27 @@ describe('ChartLegend', () => {
     expect(screen.getByTestId('chart-legend-page').textContent).toBe('2/3');
   });
 
+  it('returns to the last page when the pages shrink, and stays there when they grow again', () => {
+    const legendItems = items(REGIONS);
+    const narrow = layoutChartLegend(legendItems, 'square', 260, FIXTURE_MEASURE.measure12);
+    const wide = layoutChartLegend(legendItems, 'square', 2000, FIXTURE_MEASURE.measure12);
+    const { rerender } = render(<ChartLegend glyph='square' items={legendItems} layout={narrow} />);
+
+    fireEvent.click(screen.getByTestId('chart-legend-next'));
+    fireEvent.click(screen.getByTestId('chart-legend-next'));
+    expect(screen.getByTestId('chart-legend-page').textContent).toBe('3/3');
+
+    // Widened to one page: every item, no pager.
+    rerender(<ChartLegend glyph='square' items={legendItems} layout={wide} />);
+    expect(screen.queryByTestId('chart-legend-pager')).toBeNull();
+    expect(shownLabels()).toEqual(REGIONS);
+
+    // Narrowed again: the first page, not the page from before.
+    rerender(<ChartLegend glyph='square' items={legendItems} layout={narrow} />);
+    expect(screen.getByTestId('chart-legend-page').textContent).toBe('1/3');
+    expect(shownLabels()).toEqual(REGIONS.slice(0, 4));
+  });
+
   it('shows one item per page when narrower than 160px', () => {
     renderLegend(['Lead', 'Proposal', 'Won'], 150);
 

@@ -161,52 +161,59 @@ function GridVirtualRow({
     });
   }, [columnItems, columns, rowIndex, rowData, onResizeColumnStart]);
 
-  const onResize = useCallback(() => {
+  const measureRow = useCallback(() => {
     const row = rowRef.current;
     // `row`: the reported size includes the row's 1px divider, so the pitch is
     // the 37px the row draws (addendum A5.2) and rows never overlap.
     const cells = row?.querySelectorAll(rowMeasure === 'row' ? '.grid-row-cell' : '.grid-cell');
 
-    if (!cells || !rowId) return;
-    const maxCellHeight = Array.from(cells).reduce((acc, cell) => {
+    if (!cells || !rowId) return undefined;
+    return Array.from(cells).reduce((acc, cell) => {
       const cellHeight = cell.getBoundingClientRect().height;
 
       return Math.max(acc, cellHeight, 35); // Ensure minimum height
     }, 0);
+  }, [rowMeasure, rowId]);
 
-    rowResizeStore.report(rowKey, maxCellHeight);
-  }, [rowMeasure, rowId, rowKey, rowResizeStore]);
+  // Inside a ResizeObserver callback the layout is clean, so the row reads it at once.
+  const onResize = useCallback(() => {
+    const maxCellHeight = measureRow();
 
+    if (maxCellHeight !== undefined) rowResizeStore.report(rowKey, maxCellHeight);
+  }, [measureRow, rowKey, rowResizeStore]);
+
+  // Anywhere else a read would force a layout per row: the grid measures every
+  // row that asked in one pass at the next frame (W18).
+  const scheduleResize = useCallback(
+    () => rowResizeStore.schedule(rowKey, measureRow),
+    [measureRow, rowKey, rowResizeStore]
+  );
+
+  // The grid's one ResizeObserver, not one per row (W15).
   useEffect(() => {
     const el = innerRef.current;
 
     if (!el) return;
 
-    const observer = new ResizeObserver(onResize);
-
-    observer.observe(el);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [onResize]);
+    return rowResizeStore.observe(el, onResize);
+  }, [onResize, rowResizeStore]);
 
   useEffect(() => {
     if (!cells || !cellsCount) return;
 
     if (isRegularRow && cells) {
-      onResize();
+      scheduleResize();
     }
 
-    cells.observeDeep(onResize);
+    cells.observeDeep(scheduleResize);
 
     return () => {
-      cells.unobserveDeep(onResize);
+      cells.unobserveDeep(scheduleResize);
     };
-  }, [isRegularRow, onResize, cells, cellsCount]);
+  }, [isRegularRow, scheduleResize, cells, cellsCount]);
 
   // Every cell of the row reads it: a new object would re-render them all.
-  const rowContextValue = useMemo(() => ({ isSticky, resizeRow: onResize }), [isSticky, onResize]);
+  const rowContextValue = useMemo(() => ({ isSticky, resizeRow: scheduleResize }), [isSticky, scheduleResize]);
 
   return (
     <GridRowProvider value={rowContextValue}>

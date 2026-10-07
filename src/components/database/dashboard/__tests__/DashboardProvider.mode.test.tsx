@@ -20,7 +20,6 @@ import {
   useDashboardContext,
   useDashboardFilters,
 } from '../DashboardContext';
-import { WidgetPickerRequest } from '../DashboardUiContext';
 import { DashboardModeSnapshot, DashboardModeStore } from '../hooks/useDashboardModeStore';
 
 import { createDatabaseDoc as createDatabaseFixture, makeRowsFor, resizeTo } from './dashboardTestHarness';
@@ -56,22 +55,16 @@ jest.mock('../DashboardWidget', () => ({
   ),
 }));
 
+// The add flow's dock (the "New view" picker) is not part of these checks.
 jest.mock('../WidgetPicker', () => ({
-  WidgetPicker: ({ request, onClose }: { request: WidgetPickerRequest | null; onClose: () => void }) =>
-    request ? (
-      <div data-testid='dashboard-widget-picker'>
-        <button data-testid='close-picker' onClick={onClose} type='button' />
-      </div>
-    ) : null,
+  LazyWidgetDockHost: () => null,
+  preloadWidgetPicker: jest.fn(),
 }));
 
 jest.mock('../hooks/useWorkspaceDatabases', () => ({
   useWorkspaceDatabases: () => ({ databases: [], loading: false, error: null }),
 }));
 
-jest.mock('../hooks/useCreateWidgetView', () => ({
-  useCreateWidgetView: () => ({ createView: jest.fn(), canCreateInOtherDatabases: true, bridge: null }),
-}));
 
 const DATABASE_ID = 'host-database';
 const VIEW_ID = 'dashboard-view';
@@ -281,12 +274,12 @@ describe('DashboardProvider R-MODE', () => {
     resizeTo(390);
     const updates = countUpdates();
 
-    act(() =>
+    act(() => {
       context().updateRows((current) => [
         ...current,
         { id: 'r2', height: 360, widgets: [{ id: 'b', viewId: 'view-b', databaseId: DATABASE_ID, width: 12 }] },
-      ])
-    );
+      ]);
+    });
     act(() => context().updateSetting({ showWidgetTitles: false }));
     act(() => context().updateSetting({ rows: [], globalFilters: [GLOBAL_FILTER] }));
 
@@ -355,9 +348,9 @@ describe('DashboardProvider R-MODE', () => {
 
     const second = renderDashboard([]);
 
-    fireEvent.click(screen.getByTestId('dashboard-add-widget-button'));
+    // "+ New view" starts the add flow (WP06): the editor started building.
+    fireEvent.click(screen.getByTestId('dashboard-empty-new-view-button'));
     expect(second.preference()).toBe('on');
-    fireEvent.click(screen.getByTestId('close-picker'));
     second.writeRows(makeRows(['a']));
     expect(editing()).toBe('true');
     second.unmount();

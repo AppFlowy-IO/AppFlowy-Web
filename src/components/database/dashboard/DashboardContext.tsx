@@ -1,4 +1,16 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 import {
   dashboardSourceDatabaseIds,
@@ -6,7 +18,6 @@ import {
   DashboardLayoutUpdate,
   DashboardRow,
   readDashboardLayoutSetting,
-  sameDashboardGlobalFilters,
   sameDashboardRows,
   useDashboardLayoutSetting,
   useDatabaseContext,
@@ -15,13 +26,30 @@ import {
   useUpdateDashboardSetting,
 } from '@/application/database-yjs';
 import {
+  applyPrivateGlobalValues,
+  dashboardPrivateStorageKey,
+  DashboardPrivateState,
+  EMPTY_PRIVATE_GLOBAL_VALUES,
+  globalFilterValueOf,
+  PrivateGlobalValue,
+  PrivateGlobalValues,
+  prunePrivateGlobalValues,
+  sameGlobalFilterValue,
+} from '@/application/database-yjs/dashboard-private';
+import {
   consumeDashboardCreatedThisSession,
   wasDashboardCreatedThisSession,
 } from '@/application/database-yjs/dashboard-session';
-import { runDatabaseHistoryGroupForDatabase } from '@/application/database-yjs/history';
-import { YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
+import {
+  createDatabaseHistoryGroup,
+  getOrCreateDatabaseHistoryManager,
+  runDatabaseHistoryGroupForDatabase,
+} from '@/application/database-yjs/history';
+import { UIVariant, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { useMobileContext } from '@/components/_shared/hooks/useMobileContext';
+import { FilterInputFlushContext } from '@/components/database/components/filters/hooks/FilterInputFlushContext';
 import { useDatabaseHistoryScopeContext } from '@/components/database/DatabaseHistoryScope';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
 import {
@@ -35,11 +63,24 @@ import {
 import { readGlobalFilterSourceFields } from './global-filters/global-filter.source-fields';
 import { detachRemovedGlobalFilterSources, GlobalFilterSource } from './global-filters/global-filter.utils';
 import { DashboardModeSnapshot, DashboardModeStore } from './hooks/useDashboardModeStore';
+import { useDashboardOwnerLookup } from './hooks/useDashboardOwnerLookup';
 import {
-  DashboardLocalWidgetChanges,
   DashboardViewOverlays,
+  DashboardWidgetPrivateSummary,
+  OverlayWidgetHandle,
+  OverlayWidgetParts,
   useDashboardViewOverlays,
 } from './hooks/useDashboardViewOverlays';
+import { OwnedWidgetViews, useOwnedWidgetViews } from './hooks/useOwnedWidgetViews';
+import { showSavedForEveryoneToast } from './private/savedToast';
+import { usePrivatePayload, usePrivatePersistence } from './private/usePrivatePersistence';
+import {
+  WidgetIdentity,
+  WidgetPrivateContext,
+  WidgetPrivateHandle,
+  WidgetPrivateResolver,
+  WidgetPrivateSnapshot,
+} from './private/WidgetPrivateContext';
 
 /**
  * Shared state of one dashboard view, split by how often it changes so a
@@ -51,8 +92,10 @@ import {
  * - `DashboardLayoutContext`: the persisted rows and display settings, for
  *   the grid and everything that reads the rows. Kept apart so the toolbar
  *   and the filter bar do not re-render for every resize or move.
- * - `DashboardFiltersContext`: the global filters and the viewer's unsaved
- *   overrides.
+ * - `DashboardFiltersContext`: the global filters, the viewer's private
+ *   (unsaved) values and widget conditions, and Save / Reset (WP07).
+ * - `DashboardPrivateSummaryContext`: whether anything is unsaved, for the
+ *   filter bar's Reset and "Save for everyone".
  * - `DashboardSourcesContext`: the registry of source-database docs (and
  *   names) that mounted widgets expose so the global filter editor can list
  *   every source's properties.
@@ -77,7 +120,10 @@ export interface DashboardContextValue {
    * UI state: never persisted, never synced.
    */
   isEditing: boolean;
-  /** Edit / Done. Entering Edit mode is ignored while `canEnterEdit` is false. */
+  /**
+   * Edit / Done. Entering Edit mode is ignored while `canEnterEdit` is false.
+   * Done also deletes the owned views no widget shows any more (WP05 §1.5).
+   */
   setEditing: (editing: boolean) => void;
   /**
    * A phone or a web viewport below 768px: the dashboard is view-only there,
@@ -90,8 +136,13 @@ export interface DashboardContextValue {
   pinEditing: () => void;
   /** Persist a partial update; a no-op for read-only viewers and edit-only keys in a mobile context. */
   updateSetting: (update: DashboardLayoutUpdate) => void;
-  /** Persist a row transformation computed from the latest rows; a no-op in a mobile context. */
-  updateRows: (updater: (rows: DashboardRow[]) => DashboardRow[]) => void;
+  /**
+   * Persist a row transformation computed from the latest rows; a no-op in a
+   * mobile context. Returns whether it wrote (false when refused or unchanged).
+   */
+  updateRows: (updater: (rows: DashboardRow[]) => DashboardRow[]) => boolean;
+  /** The views this dashboard owns: create, duplicate, rename, delete (WP05, WP06). */
+  ownedViews: OwnedWidgetViews;
 }
 
 export interface DashboardLayoutContextValue {
@@ -105,22 +156,51 @@ export interface DashboardLayoutContextValue {
   showIconsInHeading: boolean;
 }
 
+/** What a Save or a Reset applies to: the whole dashboard, or one widget. */
+export interface DashboardPrivateScope {
+  widget?: WidgetIdentity;
+}
+
 // The unsaved counts live in their own context: every widget reads this one,
 // and only the filter bar needs the counts.
 export interface DashboardFiltersContextValue
-  extends Omit<DashboardViewOverlays, keyof DashboardLocalWidgetChanges | 'commitViewOverlays'> {
-  /** Save writable widget conditions and optional global filters as one dashboard undo action. */
-  commitViewOverlays: (globalFilters?: DashboardGlobalFilter[]) => void;
+  extends Pick<DashboardViewOverlays, 'getViewOverlay' | 'setViewOverlayWritable' | 'resetViewOverlays'> {
   /** Persisted global filters (mappings of databases without a widget left out). */
   globalFilters: DashboardGlobalFilter[];
-  /** Persisted global filters unless the viewer changed them locally. */
+  /** What the widgets apply: the saved filters, with the viewer's private values in View mode. */
   effectiveGlobalFilters: DashboardGlobalFilter[];
+  /** The viewer's private values of existing global filters (dirty ones only), by filter id. */
+  privateGlobalValues: PrivateGlobalValues;
+  /** The global filters whose value is private right now (empty in Edit mode). */
+  dirtyGlobalFilterIds: ReadonlySet<string>;
+  /** Set (or with `null` drop) a private value; a value equal to the saved one is dropped. */
+  setPrivateGlobalValue: (filterId: string, value: PrivateGlobalValue | null) => void;
   /**
-   * Unsaved, viewer-only overrides of the global filters (`null` = none, also
-   * when the override no longer differs from the persisted filters).
+   * "Save for everyone" (writers): the private global values and every dirty,
+   * writable widget, or one widget, as one dashboard undo step. Returns the
+   * history group (for the toast's Undo), or `null` when nothing was saved.
    */
-  localGlobalFilters: DashboardGlobalFilter[] | null;
-  setLocalGlobalFilters: (filters: DashboardGlobalFilter[] | null) => void;
+  saveForEveryone: (scope?: DashboardPrivateScope) => object | null;
+  /** Drop the private state: everything, or one widget's filters and sorts. */
+  resetPrivateChanges: (scope?: DashboardPrivateScope) => void;
+  /** The widget's private parts, as the overlay store tracks them. */
+  getWidgetPrivateParts: DashboardViewOverlays['getWidgetPrivateHandle'];
+  /**
+   * Low level: save writable widget conditions and optional global filters as
+   * one dashboard undo action. `saveForEveryone` builds on it.
+   */
+  commitViewOverlays: (globalFilters?: DashboardGlobalFilter[]) => void;
+}
+
+/** Whether the viewer has unsaved private changes, for the filter bar (WP07 §3.3). */
+export interface DashboardPrivateSummary {
+  /** Something differs from the saved dashboard (never in Edit mode). */
+  hasChanges: boolean;
+  /** "Save for everyone" is offered: write access and something savable. */
+  canSave: boolean;
+  dirtyGlobalCount: number;
+  dirtyWidgetCount: number;
+  savableWidgetCount: number;
 }
 
 export interface DashboardSourcesContextValue {
@@ -148,10 +228,16 @@ export const DashboardLayoutContext = createContext<DashboardLayoutContextValue 
 export const DashboardFiltersContext = createContext<DashboardFiltersContextValue | null>(null);
 export const DashboardSourcesContext = createContext<DashboardSourcesContextValue | null>(null);
 export const DashboardSourceRegistryContext = createContext<DashboardSourceRegistryContextValue | null>(null);
-const NO_LOCAL_WIDGET_CHANGES: DashboardLocalWidgetChanges = { unsaved: 0, savable: 0 };
+export const NO_PRIVATE_CHANGES: DashboardPrivateSummary = {
+  hasChanges: false,
+  canSave: false,
+  dirtyGlobalCount: 0,
+  dirtyWidgetCount: 0,
+  savableWidgetCount: 0,
+};
 
-/** Widgets whose View-mode filters / sorts the viewer changed locally. */
-export const DashboardLocalWidgetChangesContext = createContext<DashboardLocalWidgetChanges>(NO_LOCAL_WIDGET_CHANGES);
+/** The viewer's unsaved changes, summed up. */
+export const DashboardPrivateSummaryContext = createContext<DashboardPrivateSummary>(NO_PRIVATE_CHANGES);
 
 function required<T>(value: T | null, name: string): T {
   if (!value) {
@@ -178,12 +264,18 @@ export function useDashboardFilters(): DashboardFiltersContextValue {
   return required(useContext(DashboardFiltersContext), 'DashboardFiltersContext');
 }
 
+/** The global filters outside a dashboard too: `null` there (a standalone chart's drill-down). */
+export function useDashboardFiltersOptional(): DashboardFiltersContextValue | null {
+  return useContext(DashboardFiltersContext);
+}
+
 export function useDashboardSources(): DashboardSourcesContextValue {
   return required(useContext(DashboardSourcesContext), 'DashboardSourcesContext');
 }
 
-export function useDashboardLocalWidgetChanges(): DashboardLocalWidgetChanges {
-  return useContext(DashboardLocalWidgetChangesContext);
+/** Whether anything is unsaved (no changes outside a dashboard). */
+export function useDashboardPrivateSummary(): DashboardPrivateSummary {
+  return useContext(DashboardPrivateSummaryContext);
 }
 
 /** The registration callbacks and shown-doc lookup alone: never re-renders when a source registers. */
@@ -192,9 +284,40 @@ export function useDashboardSourceRegistry(): DashboardSourceRegistryContextValu
 }
 
 const EMPTY_VIEW_IDS: string[] = [];
+const NO_DIRTY_IDS: ReadonlySet<string> = new Set();
+const SUSPENDED_SNAPSHOT: WidgetPrivateSnapshot = { filters: false, sorts: false, canSave: false, suspended: true };
+const CLEAN_SNAPSHOT: WidgetPrivateSnapshot = { filters: false, sorts: false, canSave: false, suspended: false };
+
+const widgetKey = ({ id, databaseId, viewId }: WidgetIdentity) => `${id}\n${databaseId}\n${viewId}`;
+
+interface PrivateValuesState {
+  /** The storage key and dashboard the values belong to. */
+  key: string | null;
+  viewId: string;
+  values: PrivateGlobalValues;
+}
 
 function hasDetachedTargets(filters: DashboardGlobalFilter[], widgetDatabaseIds: ReadonlySet<string>) {
   return filters.some((filter) => Object.keys(filter.targets).some((databaseId) => !widgetDatabaseIds.has(databaseId)));
+}
+
+/**
+ * `hasChanges` / `canSave` (WP07 §3.3): nothing shows in Edit mode, and Save
+ * needs write access plus a private global value or a writable dirty widget.
+ */
+export function summarizePrivateChanges(
+  dirtyGlobalCount: number,
+  widgets: DashboardWidgetPrivateSummary,
+  { canEdit, isEditing }: { canEdit: boolean; isEditing: boolean }
+): DashboardPrivateSummary {
+  if (isEditing || (dirtyGlobalCount === 0 && widgets.dirtyWidgets === 0)) return NO_PRIVATE_CHANGES;
+  return {
+    hasChanges: true,
+    canSave: canEdit && (dirtyGlobalCount > 0 || widgets.savableWidgets > 0),
+    dirtyGlobalCount,
+    dirtyWidgetCount: widgets.dirtyWidgets,
+    savableWidgetCount: widgets.savableWidgets,
+  };
 }
 
 interface DashboardModeState extends DashboardModeSnapshot {
@@ -211,7 +334,13 @@ export function DashboardProvider({
   /** Keeps the Edit preference across tab switches (owned by `DatabaseViews`). */
   modeStore?: DashboardModeStore;
 }) {
-  const { databaseDoc } = useDatabaseContext();
+  const { t } = useTranslation();
+  // Read at call time: `t` is not stable without an initialized i18n instance.
+  const tRef = useRef(t);
+
+  tRef.current = t;
+  const { databaseDoc, workspaceId, variant } = useDatabaseContext();
+  const currentUser = useCurrentUserOptional();
   const dashboardViewId = useDatabaseViewId();
   const readOnly = useReadOnly();
   const mobileContext = useMobileContext();
@@ -253,14 +382,12 @@ export function DashboardProvider({
   };
 
   const [mode, setMode] = useState(() => initialMode(dashboardViewId));
-  const [localGlobalFilters, setLocalGlobalFilters] = useState<DashboardGlobalFilter[] | null>(null);
 
   // Switching to another dashboard view (the provider stays mounted) starts
-  // that view's mode and drops the local filters. Reset during render, so the
-  // next view's first render never sees the previous view's state.
+  // that view's mode. Reset during render, so the next view's first render
+  // never sees the previous view's state.
   if (mode.viewId !== dashboardViewId) {
     setMode(initialMode(dashboardViewId));
-    setLocalGlobalFilters(null);
   } else if (mode.rowsEmpty !== rowsEmpty) {
     // Rows that became non-empty without a write of this client (a stale local
     // cache catching up, a collaborator) end an automatic Edit mode. Local
@@ -327,14 +454,22 @@ export function DashboardProvider({
     [getDatabase, databaseDoc]
   );
 
+  // This device's private state (WP07): one key per workspace, user and
+  // dashboard; none on a published dashboard or for an anonymous viewer.
+  const storageKey =
+    variant === UIVariant.Publish ? null : dashboardPrivateStorageKey(workspaceId, currentUser?.uid, dashboardViewId);
+  const storedPrivate = usePrivatePayload(storageKey);
+  const overlays = useDashboardViewOverlays(dashboardViewId, rows, storedPrivate?.widgets);
   const {
-    unsaved,
-    savable,
+    summary: widgetSummary,
     getViewOverlay,
     setViewOverlayWritable,
+    getWidgetPrivateHandle: getWidgetPrivateParts,
     resetViewOverlays,
     commitViewOverlays: persistViewOverlays,
-  } = useDashboardViewOverlays(dashboardViewId, rows);
+    exportPrivateWidgets,
+    subscribePrivateChanges,
+  } = overlays;
   const commitViewOverlays = useCallback(
     (globalFilters?: DashboardGlobalFilter[]) => {
       if (readOnly) return;
@@ -372,28 +507,125 @@ export function DashboardProvider({
     () => detachRemovedGlobalFilterSources(storedGlobalFilters, widgetDatabaseIds),
     [storedGlobalFilters, widgetDatabaseIds]
   );
-  const visibleLocalGlobalFilters = useMemo(() => {
-    if (!localGlobalFilters) return null;
-    const visible = detachRemovedGlobalFilterSources(localGlobalFilters, widgetDatabaseIds);
 
-    return sameDashboardGlobalFilters(visible, globalFilters) ? null : visible;
-  }, [globalFilters, localGlobalFilters, widgetDatabaseIds]);
+  // The private global values: dirty ones only. A dashboard (or a key that
+  // resolves later) starts from what this device stored.
+  const [privateState, setPrivateState] = useState<PrivateValuesState>(() => ({
+    key: storageKey,
+    viewId: dashboardViewId,
+    values: storedPrivate?.global_filters ?? EMPTY_PRIVATE_GLOBAL_VALUES,
+  }));
+  let privateValues = privateState.values;
 
-  // An override that a concurrent change made identical to the persisted
-  // filters (a removed widget, the same edit saved by a collaborator) has
-  // nothing left to save: drop it rather than let it resurface stale later.
-  if (localGlobalFilters && !visibleLocalGlobalFilters) {
-    setLocalGlobalFilters(null);
+  if (privateState.viewId !== dashboardViewId) {
+    privateValues = storedPrivate?.global_filters ?? EMPTY_PRIVATE_GLOBAL_VALUES;
+    setPrivateState({ key: storageKey, viewId: dashboardViewId, values: privateValues });
+  } else if (privateState.key !== storageKey) {
+    // The user resolved after the first render: keep what was set meanwhile.
+    privateValues = { ...storedPrivate?.global_filters, ...privateState.values };
+    setPrivateState({ key: storageKey, viewId: dashboardViewId, values: privateValues });
   }
+
+  // A value equal to the saved one (a collaborator saved it, an Edit-mode
+  // write matched it) or of a deleted filter has nothing left to save. Not
+  // while the layout is still empty: that is a dashboard still loading.
+  const layoutKnown = rows.length > 0 || globalFilters.length > 0;
+  const prunedValues = layoutKnown ? prunePrivateGlobalValues(privateValues, globalFilters) : privateValues;
+
+  if (prunedValues !== privateValues) {
+    privateValues = prunedValues;
+    setPrivateState((current) =>
+      current.viewId === dashboardViewId ? { ...current, values: prunePrivateGlobalValues(current.values, globalFilters) } : current
+    );
+  }
+
+  // A tab switch renders the next dashboard before the previous one's
+  // cleanup runs. Keep its drafts and value refs scoped to that dashboard.
+  const privateScope = useMemo(
+    () => ({
+      viewId: dashboardViewId,
+      values: EMPTY_PRIVATE_GLOBAL_VALUES,
+      globalFilters: [] as DashboardGlobalFilter[],
+      inputFlushers: new Set<() => void>(),
+    }),
+    [dashboardViewId]
+  );
+  const { inputFlushers } = privateScope;
+  const flushInputs = useCallback(() => inputFlushers.forEach((flush) => flush()), [inputFlushers]);
+
+  privateScope.values = privateValues;
+  privateScope.globalFilters = globalFilters;
+
+  // Edit mode sets the private state aside: widgets and pills show the saved dashboard.
+  const effectiveGlobalFilters = useMemo(
+    () => (isEditing ? globalFilters : applyPrivateGlobalValues(globalFilters, privateValues)),
+    [globalFilters, isEditing, privateValues]
+  );
+  const dirtyGlobalFilterIds = useMemo<ReadonlySet<string>>(() => {
+    const ids = Object.keys(privateValues);
+
+    return isEditing || ids.length === 0 ? NO_DIRTY_IDS : new Set(ids);
+  }, [isEditing, privateValues]);
+
+  const writePrivateValues = useCallback(
+    (updater: (values: PrivateGlobalValues) => PrivateGlobalValues) => {
+      const next = updater(privateScope.values);
+
+      if (next === privateScope.values) return;
+      privateScope.values = next;
+      setPrivateState((current) => (current.viewId === privateScope.viewId ? { ...current, values: next } : current));
+    },
+    [privateScope]
+  );
+
+  const setPrivateGlobalValue = useCallback(
+    (filterId: string, value: PrivateGlobalValue | null) => {
+      const saved = privateScope.globalFilters.find((filter) => filter.id === filterId);
+
+      writePrivateValues((values) => {
+        const keep = value !== null && saved !== undefined && !sameGlobalFilterValue(saved.fieldType, value, globalFilterValueOf(saved));
+
+        if (!keep) {
+          if (!(filterId in values)) return values;
+          const next = { ...values };
+
+          delete next[filterId];
+          return Object.keys(next).length === 0 ? EMPTY_PRIVATE_GLOBAL_VALUES : next;
+        }
+
+        const current = values[filterId];
+
+        if (current && sameGlobalFilterValue(saved.fieldType, current, value)) return values;
+        return { ...values, [filterId]: value };
+      });
+    },
+    [privateScope, writePrivateValues]
+  );
+
+  const collectPrivateState = useCallback(
+    (): DashboardPrivateState => ({ global_filters: privateScope.values, widgets: exportPrivateWidgets() }),
+    [exportPrivateWidgets, privateScope]
+  );
+  const persistence = usePrivatePersistence({
+    storageKey,
+    collect: collectPrivateState,
+    flushInputs,
+    subscribe: subscribePrivateChanges,
+  });
+  const { schedule: schedulePersist, flush: flushPrivate } = persistence;
+  const persistedValuesRef = useRef(privateValues);
+
+  // A value change is written after the debounce (not the values read from storage).
+  useEffect(() => {
+    if (persistedValuesRef.current === privateValues) return;
+    persistedValuesRef.current = privateValues;
+    schedulePersist();
+  }, [privateValues, schedulePersist]);
 
   const viewIdsKey = viewIds?.join(',') ?? '';
   // Stable identity while the tab list is unchanged.
   const hostViewIds = useMemo(() => (viewIdsKey ? viewIdsKey.split(',') : EMPTY_VIEW_IDS), [viewIdsKey]);
 
-  const setEditing = useCallback(
-    (editing: boolean) => dispatchMode({ type: 'set_editing', editing }),
-    [dispatchMode]
-  );
   const pinEditing = useCallback(() => dispatchMode({ type: 'pin' }), [dispatchMode]);
 
   // Reads the Y.Doc at call time (writes are synchronous), so consecutive
@@ -403,17 +635,17 @@ export function DashboardProvider({
   // undoable write; a primary mapping hands over to the next one.
   const updateRows = useCallback(
     (updater: (rows: DashboardRow[]) => DashboardRow[]) => {
-      if (readOnly) return;
+      if (readOnly) return false;
       // Every rows write is Edit-only (add, move, resize, remove, replace).
       if (inputsRef.current.mobileContext) {
         Log.warn('[Dashboard] edit-only write refused on mobile', ['rows']);
-        return;
+        return false;
       }
 
       const current = readDashboardLayoutSetting(getDatabase(), dashboardViewId);
       const next = updater(current.rows);
 
-      if (sameDashboardRows(current.rows, next)) return;
+      if (sameDashboardRows(current.rows, next)) return false;
       const nextDatabaseIds = new Set(dashboardSourceDatabaseIds(next));
       let sources: GlobalFilterSource[] | undefined;
       const detach = (filters: DashboardGlobalFilter[]) => {
@@ -435,10 +667,188 @@ export function DashboardProvider({
       updateSetting(
         nextGlobalFilters === current.globalFilters ? { rows: next } : { rows: next, globalFilters: nextGlobalFilters }
       );
-      setLocalGlobalFilters((local) => local && detach(local));
+      return true;
     },
     [readOnly, updateSetting, getDatabase, dashboardViewId]
   );
+
+  const getRows = useCallback(
+    () => readDashboardLayoutSetting(getDatabase(), dashboardViewId).rows,
+    [getDatabase, dashboardViewId]
+  );
+  const getSourceDoc = useCallback((databaseId: string) => sourceDocsRef.current[databaseId], []);
+  const ownerOfNow = useDashboardOwnerLookup({ hostDoc: databaseDoc, sourceDocs: sourceDocsRef });
+  const ownedViews = useOwnedWidgetViews({
+    dashboardViewId,
+    hostDatabaseId,
+    canEdit: !readOnly,
+    mobileContext,
+    updateRows,
+    getRows,
+    ownerOfNow,
+    getSourceDoc,
+  });
+  const { flushOwnedViews } = ownedViews;
+
+  const setEditing = useCallback(
+    (editing: boolean) => {
+      dispatchMode({ type: 'set_editing', editing });
+      // Done: the views the editor's changes left without a widget go now.
+      if (!editing) void flushOwnedViews();
+    },
+    [dispatchMode, flushOwnedViews]
+  );
+
+  // "Save for everyone": the private global values merged into the latest
+  // saved filters (key by key, read now) and the dirty parts of every
+  // writable widget, or one widget, as one step of the dashboard's history.
+  const saveForEveryone = useCallback(
+    (scope: DashboardPrivateScope = {}) => {
+      if (readOnly) return null;
+      const group = createDatabaseHistoryGroup();
+      const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+      const values = privateScope.values;
+      const saveGlobals = !scope.widget && Object.keys(values).length > 0;
+      // The private values are dropped only once their write landed: a write
+      // that threw (a doc observer, a refused transaction) keeps them, and
+      // their stored copy, for a retry.
+      let savedGlobals = false;
+      let failed = false;
+
+      hostHistoryScope?.activateHistoryScope();
+      try {
+        runDatabaseHistoryGroupForDatabase(
+          databaseDoc,
+          () => {
+            if (saveGlobals) {
+              const latest = detachRemovedGlobalFilterSources(
+                readDashboardLayoutSetting(getDatabase(), dashboardViewId).globalFilters,
+                widgetDatabaseIds
+              );
+              const merged = applyPrivateGlobalValues(latest, values);
+
+              if (merged !== latest) persistSetting({ globalFilters: merged });
+              savedGlobals = true;
+            }
+
+            persistViewOverlays(scope.widget);
+          },
+          group
+        );
+      } catch (error) {
+        failed = true;
+        Log.error('[Dashboard] save for everyone failed', error);
+        toast.error(tRef.current('dashboard.saveFailed', { defaultValue: 'Could not save for everyone' }));
+      }
+
+      if (savedGlobals) writePrivateValues(() => EMPTY_PRIVATE_GLOBAL_VALUES);
+      flushPrivate({ global_filters: savedGlobals ? EMPTY_PRIVATE_GLOBAL_VALUES : privateScope.values });
+      // Something was recorded: the toast offers to undo exactly this step.
+      if (failed || manager.latestUndoGroup() !== group) return null;
+      showSavedForEveryoneToast({ t: tRef.current, historyManager: manager, group });
+      return group;
+    },
+    [
+      databaseDoc,
+      dashboardViewId,
+      flushPrivate,
+      getDatabase,
+      hostHistoryScope,
+      persistSetting,
+      persistViewOverlays,
+      privateScope,
+      readOnly,
+      widgetDatabaseIds,
+      writePrivateValues,
+    ]
+  );
+
+  const resetPrivateChanges = useCallback(
+    (scope: DashboardPrivateScope = {}) => {
+      if (!scope.widget) writePrivateValues(() => EMPTY_PRIVATE_GLOBAL_VALUES);
+      resetViewOverlays(scope.widget);
+      flushPrivate(scope.widget ? undefined : { global_filters: EMPTY_PRIVATE_GLOBAL_VALUES });
+    },
+    [flushPrivate, resetViewOverlays, writePrivateValues]
+  );
+
+  // Per-widget handles for the Filter / Sort dots and the popover footers:
+  // the overlay store's parts, set aside in Edit mode, with Save offered to
+  // dashboard writers whose source is writable.
+  const canEdit = !readOnly;
+  const handleModeRef = useRef({ canEdit, isEditing });
+  const handleModeListeners = useRef(new Set<() => void>());
+  const saveRef = useRef(saveForEveryone);
+  const resetRef = useRef(resetPrivateChanges);
+
+  saveRef.current = saveForEveryone;
+  resetRef.current = resetPrivateChanges;
+  useLayoutEffect(() => {
+    const current = handleModeRef.current;
+
+    if (current.canEdit === canEdit && current.isEditing === isEditing) return;
+    handleModeRef.current = { canEdit, isEditing };
+    handleModeListeners.current.forEach((notify) => notify());
+  }, [canEdit, isEditing]);
+
+  const privateResolver = useMemo<WidgetPrivateResolver>(() => {
+    // One wrapper per widget, bound to the store's record it wraps. The store
+    // drops the records of widgets that left the rows (`retain`): a widget
+    // removed and brought back by undo gets a new record, so its cached
+    // wrapper is rebuilt instead of staying bound to the dropped one.
+    const handles = new Map<string, { parts: OverlayWidgetHandle; handle: WidgetPrivateHandle }>();
+
+    return {
+      getWidgetPrivateHandle: (widget) => {
+        const key = widgetKey(widget);
+        const parts = getWidgetPrivateParts(widget);
+        const existing = handles.get(key);
+
+        if (existing && existing.parts === parts) return existing.handle;
+        let cache: { parts: OverlayWidgetParts; mode: typeof handleModeRef.current; snapshot: WidgetPrivateSnapshot } | null =
+          null;
+        const handle: WidgetPrivateHandle = {
+          subscribe: (listener) => {
+            const unsubscribe = parts.subscribe(listener);
+
+            handleModeListeners.current.add(listener);
+            return () => {
+              unsubscribe();
+              handleModeListeners.current.delete(listener);
+            };
+          },
+          getSnapshot: () => {
+            const current = parts.getSnapshot();
+            const mode = handleModeRef.current;
+
+            if (cache && cache.parts === current && cache.mode === mode) return cache.snapshot;
+            let snapshot: WidgetPrivateSnapshot;
+
+            if (mode.isEditing) snapshot = SUSPENDED_SNAPSHOT;
+            else if (!current.filters && !current.sorts) snapshot = CLEAN_SNAPSHOT;
+            else {
+              snapshot = {
+                filters: current.filters,
+                sorts: current.sorts,
+                canSave: mode.canEdit && current.writable,
+                suspended: false,
+              };
+            }
+
+            cache = { parts: current, mode, snapshot };
+            return snapshot;
+          },
+          reset: () => resetRef.current({ widget }),
+          save: () => {
+            saveRef.current({ widget });
+          },
+        };
+
+        handles.set(key, { parts, handle });
+        return handle;
+      },
+    };
+  }, [getWidgetPrivateParts]);
 
   const registerSourceDoc = useCallback((databaseId: string, doc: YDoc | null) => {
     setWidgetSourceDocs((previous) => {
@@ -492,6 +902,7 @@ export function DashboardProvider({
       pinEditing,
       updateSetting,
       updateRows,
+      ownedViews,
     }),
     [
       dashboardViewId,
@@ -504,6 +915,7 @@ export function DashboardProvider({
       pinEditing,
       updateSetting,
       updateRows,
+      ownedViews,
     ]
   );
 
@@ -515,9 +927,13 @@ export function DashboardProvider({
   const filtersValue = useMemo<DashboardFiltersContextValue>(
     () => ({
       globalFilters,
-      effectiveGlobalFilters: visibleLocalGlobalFilters ?? globalFilters,
-      localGlobalFilters: visibleLocalGlobalFilters,
-      setLocalGlobalFilters,
+      effectiveGlobalFilters,
+      privateGlobalValues: privateValues,
+      dirtyGlobalFilterIds,
+      setPrivateGlobalValue,
+      saveForEveryone,
+      resetPrivateChanges,
+      getWidgetPrivateParts,
       getViewOverlay,
       setViewOverlayWritable,
       resetViewOverlays,
@@ -525,7 +941,13 @@ export function DashboardProvider({
     }),
     [
       globalFilters,
-      visibleLocalGlobalFilters,
+      effectiveGlobalFilters,
+      privateValues,
+      dirtyGlobalFilterIds,
+      setPrivateGlobalValue,
+      saveForEveryone,
+      resetPrivateChanges,
+      getWidgetPrivateParts,
       getViewOverlay,
       setViewOverlayWritable,
       resetViewOverlays,
@@ -533,7 +955,10 @@ export function DashboardProvider({
     ]
   );
 
-  const localWidgetChanges = useMemo<DashboardLocalWidgetChanges>(() => ({ unsaved, savable }), [unsaved, savable]);
+  const privateSummary = useMemo<DashboardPrivateSummary>(
+    () => summarizePrivateChanges(dirtyGlobalFilterIds.size, widgetSummary, { canEdit, isEditing }),
+    [canEdit, dirtyGlobalFilterIds.size, isEditing, widgetSummary]
+  );
 
   const sourcesValue = useMemo<DashboardSourcesContextValue>(
     () => ({ sourceDocs, registerSourceDoc, sourceNames, registerSourceName }),
@@ -549,11 +974,15 @@ export function DashboardProvider({
     <DashboardContext.Provider value={contextValue}>
       <DashboardLayoutContext.Provider value={layoutValue}>
         <DashboardFiltersContext.Provider value={filtersValue}>
-          <DashboardLocalWidgetChangesContext.Provider value={localWidgetChanges}>
-            <DashboardSourceRegistryContext.Provider value={registryValue}>
-              <DashboardSourcesContext.Provider value={sourcesValue}>{children}</DashboardSourcesContext.Provider>
-            </DashboardSourceRegistryContext.Provider>
-          </DashboardLocalWidgetChangesContext.Provider>
+          <DashboardPrivateSummaryContext.Provider value={privateSummary}>
+            <WidgetPrivateContext.Provider value={privateResolver}>
+              <DashboardSourceRegistryContext.Provider value={registryValue}>
+                <DashboardSourcesContext.Provider value={sourcesValue}>
+                  <FilterInputFlushContext.Provider value={inputFlushers}>{children}</FilterInputFlushContext.Provider>
+                </DashboardSourcesContext.Provider>
+              </DashboardSourceRegistryContext.Provider>
+            </WidgetPrivateContext.Provider>
+          </DashboardPrivateSummaryContext.Provider>
         </DashboardFiltersContext.Provider>
       </DashboardLayoutContext.Provider>
     </DashboardContext.Provider>

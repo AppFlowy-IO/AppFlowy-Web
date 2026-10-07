@@ -395,13 +395,29 @@ describe('dashboard tokens (tokens.json ↔ dashboard-geometry.ts)', () => {
     expect(Object.keys(tokens.layout.rowHeight).sort()).toEqual(['default', 'max', 'min', 'snap']);
   });
 
-  it('re-exports the same limits from dashboard.type.ts', () => {
-    expect(dashboardType.DASHBOARD_MAX_WIDGETS).toBe(DASHBOARD_MAX_WIDGETS);
-    expect(dashboardType.DASHBOARD_MAX_WIDGETS_PER_ROW).toBe(DASHBOARD_MAX_WIDGETS_PER_ROW);
-    expect(dashboardType.DASHBOARD_GRID_COLUMNS).toBe(DASHBOARD_GRID_COLUMNS);
-    expect(dashboardType.DASHBOARD_MIN_ROW_HEIGHT).toBe(DASHBOARD_MIN_ROW_HEIGHT);
-    expect(dashboardType.DASHBOARD_DEFAULT_ROW_HEIGHT).toBe(DASHBOARD_DEFAULT_ROW_HEIGHT);
-    expect(dashboardType.DASHBOARD_MAX_ROW_HEIGHT).toBe(DASHBOARD_MAX_ROW_HEIGHT);
+  it('re-exports the token limits from dashboard.type.ts, where the layout code reads them', () => {
+    // Against the token file itself: a literal redefined in dashboard.type.ts would drift unnoticed otherwise.
+    expect({
+      maxWidgets: dashboardType.DASHBOARD_MAX_WIDGETS,
+      maxWidgetsPerRow: dashboardType.DASHBOARD_MAX_WIDGETS_PER_ROW,
+      gridColumns: dashboardType.DASHBOARD_GRID_COLUMNS,
+      rowHeight: {
+        min: dashboardType.DASHBOARD_MIN_ROW_HEIGHT,
+        default: dashboardType.DASHBOARD_DEFAULT_ROW_HEIGHT,
+        max: dashboardType.DASHBOARD_MAX_ROW_HEIGHT,
+      },
+    }).toEqual({
+      maxWidgets: tokens.layout.maxWidgets,
+      maxWidgetsPerRow: tokens.layout.maxWidgetsPerRow,
+      gridColumns: tokens.layout.gridColumns,
+      rowHeight: {
+        min: tokens.layout.rowHeight.min,
+        default: tokens.layout.rowHeight.default,
+        max: tokens.layout.rowHeight.max,
+      },
+    });
+    // The keyboard step of the height handle is the shared snap.
+    expect(DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP).toBe(tokens.layout.rowHeight.snap);
   });
 
   it('matches the geometry, typography and motion exactly', () => {
@@ -451,9 +467,14 @@ describe('dashboard tokens (tokens.json ↔ dashboard-loading.ts)', () => {
 
   it('has no other loading constant (the source cap is hard: no slow-source escape)', () => {
     expect(Object.keys(tokens.loading).sort()).toEqual(
-      ['maxConcurrentSources', 'deferredStartTimeoutMs', 'rowBudget', 'sourceIdleReleaseMs'].sort()
+      ['maxConcurrentSources', 'deferredStartTimeoutMs', 'rowBudget', 'sourceIdleReleaseMs', 'sourceLoadTimeoutMs'].sort()
     );
     expect(tokens.loading).not.toHaveProperty('slowSourceSlotMs');
+  });
+
+  it('frees the slot of a source that never opens after 30 s (fix B4), a stall timeout and not a slow-source escape', () => {
+    expect(tokens.loading.sourceLoadTimeoutMs).toBe(30000);
+    expect(DASHBOARD_LOADING.sourceLoadTimeoutMs).toBeGreaterThan(DASHBOARD_LOADING.deferredStartTimeoutMs);
   });
 });
 

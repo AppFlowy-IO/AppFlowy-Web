@@ -3,7 +3,8 @@
   "version": 1,
   "format": {
     "geometry": "Content geometry inside a widget card (addendum A5), in px: the start inset of an editable grid widget (one 24px row handle plus its gap) and of every other widget, the end and top insets, the compact row handle, a one-line grid row (min height plus its bottom divider), and the inset of a list widget's row titles.",
-    "list_title_inset": "From the start edge of the widget card to the start of a list row's title cell (the row icon when the row shows one, else the title text): the 40px row-actions slot, which a read-only widget keeps empty, plus the 6px row padding and the 2px title inset. The same for an editable and a read-only list widget, in View and Edit mode."
+    "list_title_inset": "From the start edge of the widget card to the start of a list row's title cell (the row icon when the row shows one, else the title text): the 40px row-actions slot, which a read-only widget keeps empty, plus the 6px row padding and the 2px title inset. The same for an editable and a read-only list widget, in View and Edit mode.",
+    "labels": "English copy both clients show inside a widget (addendum A6): new_row_label is the inline new-row button of grid, list, feed and timeline views, in widgets and standalone (web en.json and desktop en-US.json grid.row.newRow)."
   },
   "geometry": {
     "grid_start_inset_editable": 32,
@@ -14,5 +15,8 @@
     "row_min_height": 36,
     "row_divider": 1,
     "list_title_inset": 48
+  },
+  "labels": {
+    "new_row_label": "New page"
   }
 }

@@ -67,17 +67,39 @@ export function reduceDashboardEditPreference(
   }
 }
 
-/**
- * `updateSetting` keys that only Edit mode may write; a mobile context refuses
- * an update that touches any of them. Every later edit-only display setting
- * joins this list.
- */
-export const DASHBOARD_EDIT_ONLY_UPDATE_KEYS = [
+/** The `updateSetting` keys that only Edit mode may write. */
+const DASHBOARD_EDIT_ONLY_LAYOUT_KEYS = [
   'rows',
   'showWidgetTitles',
   'showIconsInHeading',
 ] as const satisfies readonly (keyof DashboardLayoutUpdate)[];
 
+/**
+ * Writes outside the layout setting that only Edit mode may make (WP05b,
+ * WP06): creating a widget's view in the add flow (the default view, a type
+ * pick, a view in another database), duplicating a widget with an owned copy
+ * of its view, and renaming a widget's view. Desktop marks the same events
+ * with `DashboardEditOnlyEvent`.
+ */
+export const DASHBOARD_EDIT_ONLY_ACTIONS = ['addWidgetView', 'duplicateWidget', 'renameWidgetView'] as const;
+
+export type DashboardEditOnlyAction = (typeof DASHBOARD_EDIT_ONLY_ACTIONS)[number];
+
+/**
+ * Everything only Edit mode may write: the `updateSetting` keys and the
+ * view writes of `DASHBOARD_EDIT_ONLY_ACTIONS`. A mobile context refuses each
+ * of them. Every later edit-only display setting or action joins this list.
+ */
+export const DASHBOARD_EDIT_ONLY_UPDATE_KEYS = [
+  ...DASHBOARD_EDIT_ONLY_LAYOUT_KEYS,
+  ...DASHBOARD_EDIT_ONLY_ACTIONS,
+] as const;
+
 export function touchesEditOnlyKeys(update: DashboardLayoutUpdate): boolean {
-  return DASHBOARD_EDIT_ONLY_UPDATE_KEYS.some((key) => update[key] !== undefined);
+  return DASHBOARD_EDIT_ONLY_LAYOUT_KEYS.some((key) => update[key] !== undefined);
+}
+
+/** Whether a mobile context refuses `action` (every edit-only action is refused there). */
+export function refusesEditOnlyAction(action: DashboardEditOnlyAction, inputs: Pick<DashboardModeInputs, 'mobileContext'>) {
+  return inputs.mobileContext && (DASHBOARD_EDIT_ONLY_UPDATE_KEYS as readonly string[]).includes(action);
 }

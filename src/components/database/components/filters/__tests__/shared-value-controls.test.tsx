@@ -13,8 +13,8 @@ import {
   SelectOptionFilterCondition,
 } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { TextFilter, TextFilterCondition } from '@/application/database-yjs/fields/text/text.type';
+import { mergeOptionLists, MergedSelection } from '@/application/database-yjs/global-filter-options';
 import { MentionablePerson, YDatabaseField, YjsDatabaseKey as K } from '@/application/types';
-import { GlobalFilterSourceField } from '@/components/database/dashboard/global-filters/global-filter.utils';
 import {
   GlobalFilterContent,
   GlobalFilterValue,
@@ -137,6 +137,14 @@ function lastContent(onChange: jest.Mock): string {
   return onChange.mock.calls[onChange.mock.calls.length - 1][0];
 }
 
+/** A select pick in the global editor: only its ids are compared with the view filter's. */
+function contentOf(onChange: jest.Mock) {
+  return (selection: MergedSelection) => onChange(selection.content);
+}
+
+/** Not a select filter: the selection path is never taken. */
+const noSelection = jest.fn();
+
 function person(id: string, uid: number, name: string): MentionablePerson {
   return { person_id: id, uid: String(uid), name, email: `${id}@example.com` } as MentionablePerson;
 }
@@ -152,13 +160,8 @@ describe.each([
   ['a multi-select', FieldType.MultiSelect, SelectOptionFilterCondition.OptionContains, MultiSelectOptionFilterMenu],
   ['a single select', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, SingleSelectOptionFilterMenu],
 ] as const)('select value of %s filter', (_name, fieldType, condition, ViewMenu) => {
-  const primaryField: GlobalFilterSourceField = {
-    id: 'field-1',
-    name: 'Status',
-    type: fieldType,
-    isPrimary: false,
-    options: OPTIONS,
-  };
+  // The global editor lists the options of every source merged by name (one source here).
+  const optionEntries = mergeOptionLists([OPTIONS]);
 
   beforeEach(() => {
     mockField = createField(fieldType, OPTIONS);
@@ -171,7 +174,12 @@ describe.each([
     fireEvent.click(screen.getByText('Todo'));
     view.unmount();
     render(
-      <GlobalFilterContent filter={globalFilter(fieldType, condition, 'c')} primaryField={primaryField} onChange={onChange} />
+      <GlobalFilterContent
+        filter={globalFilter(fieldType, condition, 'c')}
+        optionEntries={optionEntries}
+        onChange={onChange}
+        onSelectionChange={contentOf(onChange)}
+      />
     );
     fireEvent.click(screen.getByText('Todo'));
 
@@ -186,7 +194,12 @@ describe.each([
     fireEvent.click(screen.getByText('Done'));
     view.unmount();
     render(
-      <GlobalFilterContent filter={globalFilter(fieldType, condition, 'a,c')} primaryField={primaryField} onChange={onChange} />
+      <GlobalFilterContent
+        filter={globalFilter(fieldType, condition, 'a,c')}
+        optionEntries={optionEntries}
+        onChange={onChange}
+        onSelectionChange={contentOf(onChange)}
+      />
     );
     fireEvent.click(screen.getByText('Done'));
 
@@ -201,7 +214,12 @@ describe.each([
     fireEvent.click(screen.getByTestId('filter-clear-selection'));
     view.unmount();
     render(
-      <GlobalFilterContent filter={globalFilter(fieldType, condition, 'a')} primaryField={primaryField} onChange={onChange} />
+      <GlobalFilterContent
+        filter={globalFilter(fieldType, condition, 'a')}
+        optionEntries={optionEntries}
+        onChange={onChange}
+        onSelectionChange={contentOf(onChange)}
+      />
     );
     fireEvent.click(screen.getByTestId('dashboard-global-filter-clear-selection'));
 
@@ -211,7 +229,12 @@ describe.each([
 
   it('searches the options and returns the list to the top in both editors', () => {
     render(
-      <GlobalFilterContent filter={globalFilter(fieldType, condition, '')} primaryField={primaryField} onChange={jest.fn()} />
+      <GlobalFilterContent
+        filter={globalFilter(fieldType, condition, '')}
+        optionEntries={optionEntries}
+        onChange={jest.fn()}
+        onSelectionChange={jest.fn()}
+      />
     );
     const results = screen.getByTestId('filter-option-results');
 
@@ -248,7 +271,13 @@ describe.each([
 
     fireEvent.click(screen.getByText('Bob'));
     view.unmount();
-    render(<GlobalFilterContent filter={globalFilter(fieldType, condition, content)} onChange={onChange} />);
+    render(
+      <GlobalFilterContent
+        filter={globalFilter(fieldType, condition, content)}
+        onChange={onChange}
+        onSelectionChange={noSelection}
+      />
+    );
     fireEvent.click(screen.getByText('Bob'));
 
     expect(viewContent()).toBe(bothSelected);
@@ -262,7 +291,13 @@ describe.each([
 
     fireEvent.click(screen.getByTestId('filter-clear-selection'));
     view.unmount();
-    render(<GlobalFilterContent filter={globalFilter(fieldType, condition, content)} onChange={onChange} />);
+    render(
+      <GlobalFilterContent
+        filter={globalFilter(fieldType, condition, content)}
+        onChange={onChange}
+        onSelectionChange={noSelection}
+      />
+    );
     fireEvent.click(screen.getByTestId('dashboard-global-filter-clear-selection'));
 
     expect(viewContent()).toBe('[]');
@@ -277,7 +312,11 @@ describe('person list', () => {
     const onChange = jest.fn();
 
     render(
-      <GlobalFilterContent filter={globalFilter(FieldType.Person, condition, '["alice","gone"]')} onChange={onChange} />
+      <GlobalFilterContent
+        filter={globalFilter(FieldType.Person, condition, '["alice","gone"]')}
+        onChange={onChange}
+        onSelectionChange={noSelection}
+      />
     );
     const rows = () =>
       screen.queryAllByTestId('dashboard-global-filter-person').map((item) => item.getAttribute('data-person-id'));
@@ -311,7 +350,11 @@ describe('person list', () => {
       rowTestId === 'person-filter-option' ? (
         <PersonFilterMenu filter={viewFilter<PersonFilter>(condition, content, { userIds: [selected] })} />
       ) : (
-        <GlobalFilterContent filter={globalFilter(FieldType.Person, condition, content)} onChange={jest.fn()} />
+        <GlobalFilterContent
+          filter={globalFilter(FieldType.Person, condition, content)}
+          onChange={jest.fn()}
+          onSelectionChange={noSelection}
+        />
       )
     );
     const rows = () => screen.queryAllByTestId(rowTestId);
@@ -344,6 +387,7 @@ describe('text and number values', () => {
       <GlobalFilterContent
         filter={globalFilter(FieldType.RichText, TextFilterCondition.TextContains, '')}
         onChange={onChange}
+        onSelectionChange={noSelection}
       />
     );
     fireEvent.change(screen.getByTestId('dashboard-global-filter-content'), { target: { value: 'road map' } });
@@ -363,7 +407,13 @@ describe('text and number values', () => {
     expect(mockUpdate.mock.calls.filter(([params]) => params.content !== undefined)).toHaveLength(1);
     view.unmount();
 
-    render(<GlobalFilterContent filter={globalFilter(FieldType.Number, NumberFilterCondition.Equal, '')} onChange={onChange} />);
+    render(
+      <GlobalFilterContent
+        filter={globalFilter(FieldType.Number, NumberFilterCondition.Equal, '')}
+        onChange={onChange}
+        onSelectionChange={noSelection}
+      />
+    );
     const globalInput = screen.getByTestId('dashboard-global-filter-content');
 
     fireEvent.change(globalInput, { target: { value: '-12.5' } });
@@ -392,11 +442,15 @@ describe('date value', () => {
   function pickInGlobal(condition: DateFilterCondition, content = '') {
     const onChange = jest.fn();
     const global = render(
-      <GlobalFilterContent filter={globalFilter(FieldType.DateTime, condition, content)} onChange={onChange} />
+      <GlobalFilterContent
+        filter={globalFilter(FieldType.DateTime, condition, content)}
+        onChange={onChange}
+        onSelectionChange={noSelection}
+      />
     );
 
-    fireEvent.click(screen.getByTestId('dashboard-global-filter-date-trigger'));
-    fireEvent.click(screen.getByTestId('calendar-pick'));
+    // The global editor shows its calendar inline (WP08 §1.6).
+    fireEvent.click(within(screen.getByTestId('dashboard-global-filter-date-calendar')).getByTestId('calendar-pick'));
     global.unmount();
     return lastContent(onChange);
   }
@@ -420,10 +474,11 @@ describe('date value', () => {
       <GlobalFilterContent
         filter={globalFilter(FieldType.DateTime, DateFilterCondition.DateStartsOn, JSON.stringify({ timestamp: dayUnix }))}
         onChange={jest.fn()}
+        onSelectionChange={noSelection}
       />
     );
 
-    expect(screen.getByTestId('dashboard-global-filter-date-trigger').textContent).toContain('2026');
+    expect(screen.getByTestId('dashboard-global-filter-date-value').textContent).toContain('2026');
   });
 });
 
@@ -451,8 +506,9 @@ describe('a read-only host view', () => {
     render(
       <GlobalFilterContent
         filter={globalFilter(FieldType.MultiSelect, SelectOptionFilterCondition.OptionContains, 'a')}
-        primaryField={{ id: 'field-1', name: 'Status', type: FieldType.MultiSelect, isPrimary: false, options: OPTIONS }}
+        optionEntries={mergeOptionLists([OPTIONS])}
         onChange={onChange}
+        onSelectionChange={contentOf(onChange)}
       />
     );
 

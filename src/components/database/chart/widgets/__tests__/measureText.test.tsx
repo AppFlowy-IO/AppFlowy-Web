@@ -3,6 +3,12 @@ import * as React from 'react';
 
 type MeasureModule = typeof import('../measureText');
 
+/** What `document.fonts` hands a `loadingdone` listener: the faces of the batch. */
+type FontsLoadedListener = (event?: { fontfaces?: Array<{ family: string }> }) => void;
+
+/** Resolves after the next animation frame, inside `act`: a reset of the metrics runs in one. */
+const nextFrame = () => act(() => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())));
+
 /**
  * Loads `measureText` as a browser would: a user agent that is not jsdom, a
  * canvas that measures 7px per character at 12px, and a `document.fonts` that
@@ -11,7 +17,7 @@ type MeasureModule = typeof import('../measureText');
 function loadInBrowser() {
   const assignedFonts: string[] = [];
   const measured: string[] = [];
-  const fontListeners: Record<string, () => void> = {};
+  const fontListeners: Record<string, FontsLoadedListener> = {};
   let font = '';
   const context = {
     get font() {
@@ -34,7 +40,7 @@ function loadInBrowser() {
     .spyOn(window, 'getComputedStyle')
     .mockReturnValue({ fontFamily: 'Inter, sans-serif' } as CSSStyleDeclaration);
   const fonts = {
-    addEventListener: jest.fn((type: string, listener: () => void) => {
+    addEventListener: jest.fn((type: string, listener: FontsLoadedListener) => {
       fontListeners[type] = listener;
     }),
   };
@@ -121,7 +127,7 @@ describe('measureChartText', () => {
     }
   });
 
-  it('drops its widths and font when fonts finish loading, and lays mounted charts out again', () => {
+  it('drops its widths and font when fonts finish loading, and lays mounted charts out again', async () => {
     const browser = loadInBrowser();
 
     try {
@@ -134,8 +140,12 @@ describe('measureChartText', () => {
       expect(browser.fonts.addEventListener).toHaveBeenCalledTimes(1);
 
       // The web font arrives: the body font and every width may have changed.
+      // (An old implementation that does not list the faces of the batch.)
       browser.computedStyle.mockReturnValue({ fontFamily: 'Loaded, sans-serif' } as CSSStyleDeclaration);
       act(() => browser.fontListeners.loadingdone());
+      // The reset runs in the next frame, not in the event.
+      expect(result.current).toBe(before);
+      await nextFrame();
 
       // Layouts are memoized on the measurers, so a new pair re-lays every chart out.
       expect(result.current).not.toBe(before);
@@ -146,6 +156,44 @@ describe('measureChartText', () => {
       expect(browser.measured).toHaveLength(measuredBefore + 1);
       expect(browser.assignedFonts[browser.assignedFonts.length - 1]).toBe('400 12px Loaded, sans-serif');
     } finally {
+      browser.restore();
+    }
+  });
+
+  it('ignores a batch of other faces, and lays out once for several batches of the body font', async () => {
+    const browser = loadInBrowser();
+    const frames = jest.spyOn(window, 'requestAnimationFrame');
+
+    try {
+      const { measureChartText, useChartMeasure } = browser.measure;
+      const { result } = renderHook(() => useChartMeasure());
+      const before = result.current;
+
+      expect(before.measure12('Alice')).toBe(35);
+      const measuredBefore = browser.measured.length;
+
+      // An emoji subset a document next to the charts pulled in: not the chart font.
+      act(() => browser.fontListeners.loadingdone({ fontfaces: [{ family: 'Noto Color Emoji' }] }));
+      expect(frames).not.toHaveBeenCalled();
+      await nextFrame();
+      expect(result.current).toBe(before);
+      measureChartText('Alice', 12);
+      expect(browser.measured).toHaveLength(measuredBefore);
+      frames.mockClear();
+
+      // Two batches of the body font in one task (a face reports its family quoted): one frame, one reset.
+      act(() => {
+        browser.fontListeners.loadingdone({ fontfaces: [{ family: '"Inter"' }] });
+        browser.fontListeners.loadingdone({ fontfaces: [{ family: 'Inter' }, { family: 'Noto Color Emoji' }] });
+      });
+      expect(frames).toHaveBeenCalledTimes(1);
+      expect(result.current).toBe(before);
+      await nextFrame();
+      expect(result.current).not.toBe(before);
+      measureChartText('Alice', 12);
+      expect(browser.measured).toHaveLength(measuredBefore + 1);
+    } finally {
+      frames.mockRestore();
       browser.restore();
     }
   });

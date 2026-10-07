@@ -1,6 +1,8 @@
-import { memo, Suspense, useCallback, useEffect, useMemo } from 'react';
+import { ComponentProps, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 
 import { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
+import { isDatabaseSourceResident } from '@/application/database-blob';
+import { setOverlaySuspended } from '@/application/database-yjs/view-conditions-overlay';
 import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot/database-yjs-render-bridge';
 import { UIVariant, ViewLayout, YDatabaseView, YDoc, YjsDatabaseKey } from '@/application/types';
 import { Database } from '@/components/database';
@@ -17,6 +19,7 @@ import { useDashboardHost } from './DashboardUiContext';
 import { useWidgetExtraFilters } from './hooks/useWidgetExtraFilters';
 import { useWidgetOverlayView } from './hooks/useWidgetOverlayView';
 import { useWidgetSource, WidgetSourceIdentity } from './hooks/useWidgetSource';
+import { WidgetCompositionProvider } from './WidgetCompositionProvider';
 import { useWidgetContext, WidgetFrame } from './WidgetContext';
 import { WidgetContextProvider, WidgetPlaceholderFrame } from './WidgetFrame';
 import { WidgetPlaceholder } from './WidgetPlaceholder';
@@ -35,8 +38,15 @@ function isUnavailable(status: WidgetStatus) {
 }
 
 // Widgets re-render for their own chrome (title, Edit mode, drag state); the
-// nested database only when one of its props changes.
-const WidgetDatabase = memo(Database);
+// nested database only when one of its props changes. Its views render the
+// widget header this chunk provides (`WidgetCompositionProvider`).
+const WidgetDatabase = memo(function WidgetDatabase(props: ComponentProps<typeof Database>) {
+  return (
+    <WidgetCompositionProvider>
+      <Database {...props} />
+    </WidgetCompositionProvider>
+  );
+});
 
 /**
  * Tells the dashboard whether this widget's source is writable: "Save for
@@ -80,6 +90,19 @@ function NestedDatabase({
   const { viewId, name, layout, editing } = useWidgetContext();
   const { navigateToView } = host;
   const isPublish = host.variant === UIVariant.Publish;
+
+  // The source document and the permission probe settled: the queue's source
+  // load timeout no longer applies to this widget (fix B4).
+  useEffect(() => {
+    onLoadStateChange?.('opened');
+  }, [onLoadStateChange]);
+  // Edit mode configures the real view: the viewer's private conditions are
+  // set aside and the overlay writes through to the real view until Done. It
+  // stays the nested database's view in both modes, so the toggle re-renders
+  // no cell or card (only a part whose private copy differs changes).
+  useLayoutEffect(() => {
+    if (overlayView) setOverlaySuspended(overlayView, editing);
+  }, [editing, overlayView]);
   const visibleViewIds = useMemo(() => [viewId], [viewId]);
   const initialRowMap = useMemo(() => (isPublish ? getPublishedDatabaseRenderRowMap(doc) : undefined), [doc, isPublish]);
   const handleOpenRowPage = useCallback(
@@ -142,8 +165,9 @@ function NestedDatabase({
         updatePage={host.updatePage}
         uploadFile={host.uploadFile}
         variant={host.variant}
-        // Edit mode configures the real view; published dashboards stay read-only.
-        viewConditionsOverlay={editing || isPublish ? undefined : overlayView}
+        // Published dashboards have no private conditions. In Edit mode a
+        // read-only source's conditions stay read-only: no overlay there.
+        viewConditionsOverlay={isPublish || (editing && permissions.readOnly) ? undefined : overlayView}
         visibleViewIds={visibleViewIds}
         workspaceId={host.workspaceId}
       />
@@ -196,13 +220,45 @@ export function WidgetDatabaseHost({ frame, viewportHeight, onLoadStateChange }:
     realView: source.snapshot.view,
     enabled: hostContext.variant !== UIVariant.Publish,
   });
-  const extraFilters = useWidgetExtraFilters(effectiveGlobalFilters, databaseId);
+  const extraFilters = useWidgetExtraFilters(effectiveGlobalFilters, databaseId, source.hasDatabase ? doc : null);
   const unavailable = isUnavailable(status);
 
-  // A placeholder for good ends the load: the source's slot goes to the next widget.
+  // A placeholder for good ends the load: the source's slot goes to the next
+  // widget, once the document request is no longer out (a probe can call the
+  // source unavailable first; its request in flight must not overlap the next
+  // source's, which would put a third database on the wire).
+  const loadInFlight = source.loadInFlight;
+
   useEffect(() => {
-    if (unavailable) onLoadStateChange?.('unavailable');
-  }, [onLoadStateChange, unavailable]);
+    if (unavailable && !loadInFlight) onLoadStateChange?.('unavailable');
+  }, [loadInFlight, onLoadStateChange, unavailable]);
+
+  // Fix B3 (LOADING-DESIGN R8): a row load that failed says so in the card
+  // ("Some rows haven't loaded yet") with a retry that mounts the nested
+  // database again, so it reads its rows from the start.
+  const [rowsLoadFailed, setRowsLoadFailed] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
+
+  useEffect(() => {
+    setRowsLoadFailed(false);
+  }, [databaseId, viewId]);
+  // Stable while the dashboard's report callback is, or the nested database re-renders.
+  const handleLoadStateChange = useCallback(
+    (report: WidgetLoadReport) => {
+      if (report === 'failed') setRowsLoadFailed(true);
+      onLoadStateChange?.(report);
+    },
+    [onLoadStateChange]
+  );
+  const retryRowsLoad = useCallback(() => {
+    setRowsLoadFailed(false);
+    setRetryKey((key) => key + 1);
+  }, []);
+  const cardFrame = useMemo<WidgetFrame>(
+    () => ({ ...frame, rowsLoadFailed, retryRowsLoad }),
+    [frame, retryRowsLoad, rowsLoadFailed]
+  );
+
   // The open source's size, for the dashboard's row budget.
   useReportSourceRows(databaseId, source.snapshot.view?.get(YjsDatabaseKey.row_orders)?.length);
   // The host's permissions are those of its database, which is the widget's.
@@ -219,11 +275,13 @@ export function WidgetDatabaseHost({ frame, viewportHeight, onLoadStateChange }:
   // so the source permission probe starts with the doc load instead of after
   // it (and after the deletion probe).
   const renderContent = (permissions: EmbeddedDatabasePermissions, access = SETTLED) => {
+    if (access.settled && access.canRead === false) return <WidgetPlaceholderFrame reason='no-access' />;
     if (status !== 'ready') return <WidgetPlaceholderFrame reason={status} />;
-    // The nested database waits for the probe's answer: mounted read-only
-    // meanwhile, it would load its rows one by one, then start over once it
-    // turns writable. A widget that remounts after a move keeps showing its view.
-    if (!access.settled && !source.seeded) return <WidgetPlaceholderFrame reason='loading' />;
+    // New sources wait for the probe; resident sources keep their verified
+    // answer while it refreshes. Invalidation drops that answer immediately.
+    // Mounting read-only meanwhile would load rows one by one, then restart
+    // the source's shared walk once it becomes writable.
+    if (!access.settled) return <WidgetPlaceholderFrame reason='loading' />;
 
     return (
       <>
@@ -235,10 +293,11 @@ export function WidgetDatabaseHost({ frame, viewportHeight, onLoadStateChange }:
         />
         {doc ? (
           <NestedDatabase
+            key={retryKey}
             doc={doc}
             extraFilters={extraFilters}
             isHost={isHost}
-            onLoadStateChange={onLoadStateChange}
+            onLoadStateChange={handleLoadStateChange}
             overlayView={overlayView}
             permissions={permissions}
             viewportHeight={viewportHeight}
@@ -249,7 +308,7 @@ export function WidgetDatabaseHost({ frame, viewportHeight, onLoadStateChange }:
   };
 
   return (
-    <WidgetContextProvider frame={frame} sourceView={doc ? source.snapshot : null}>
+    <WidgetContextProvider frame={cardFrame} sourceView={doc ? source.snapshot : null}>
       {isHost ? (
         renderContent(hostPermissions)
       ) : (
@@ -260,6 +319,10 @@ export function WidgetDatabaseHost({ frame, viewportHeight, onLoadStateChange }:
           sourceDatabaseId={databaseId}
           sourceViewId={viewId}
           variant={hostContext.variant}
+          permissionOptions={{
+            allowCachedPermission: source.seeded || isDatabaseSourceResident(databaseId),
+            eventEmitter: hostContext.eventEmitter,
+          }}
         >
           {renderContent}
         </EmbeddedDatabasePermissionsResolver>

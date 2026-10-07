@@ -25,9 +25,11 @@ export interface WorkspaceDatabasesState {
  * catalog is invalidated. Disabled callers never hit the network.
  */
 export function useWorkspaceDatabases(workspaceId: string | undefined, enabled: boolean): WorkspaceDatabasesState {
+  // Read only while enabled: a disabled caller is not re-rendered by the
+  // catalog invalidations that follow every folder change.
   const revision = useSyncExternalStore(
     subscribeWorkspaceDatabaseCatalog,
-    () => (workspaceId ? getWorkspaceDatabaseCatalogRevision(workspaceId) : ''),
+    () => (enabled && workspaceId ? getWorkspaceDatabaseCatalogRevision(workspaceId) : ''),
     () => SERVER_REVISION
   );
   // The catalog hands out one array object per snapshot, so it is read from

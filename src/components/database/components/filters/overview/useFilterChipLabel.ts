@@ -6,7 +6,12 @@ import { FieldType, Filter } from '@/application/database-yjs/database.type';
 import { CheckboxFilterCondition } from '@/application/database-yjs/fields/checkbox/checkbox.type';
 import { ChecklistFilterCondition } from '@/application/database-yjs/fields/checklist/checklist.type';
 import { DateFilter, DateFilterCondition } from '@/application/database-yjs/fields/date/date.type';
-import { toStartDateCondition } from '@/application/database-yjs/fields/date/relativeDate';
+import {
+  isParameterizedRelativeCondition,
+  parseRelativeDateSpec,
+  relativeDateSummary,
+  toStartDateCondition,
+} from '@/application/database-yjs/fields/date/relativeDate';
 import { NumberFilterCondition } from '@/application/database-yjs/fields/number/number.type';
 import { PersonFilter, PersonFilterCondition } from '@/application/database-yjs/fields/person/person.type';
 import { RelationFilterCondition } from '@/application/database-yjs/fields/relation/relation.type';
@@ -223,7 +228,10 @@ export function dateChipDescription(
 }
 
 function dateChipLabel(filter: DateFilter, dateFormat: string, t: Translate): FilterChipLabel {
-  const description = dateChipDescription(filter.condition, filter, dateFormat, t);
+  // "Is relative to today": Past 7 days, This month, Next week.
+  const description = isParameterizedRelativeCondition(filter.condition)
+    ? relativeDateSummary(parseRelativeDateSpec(filter), t)
+    : dateChipDescription(filter.condition, filter, dateFormat, t);
 
   // Desktop DateTimeFilter inherits getContent = getContentDescription, so any
   // non-empty description highlights the chip.

@@ -4,20 +4,23 @@ import { RowId } from '@/application/types';
 
 import { ChartAggregationType, ChartType } from './chart-enums';
 import {
+  CHART_GROUP_STYLES,
   ChartColorTheme,
-  ChartExtendedField,
-  ChartExtendedLayoutKeys,
   ChartExtendedSettings,
   ChartExtendedSettingsUpdate,
+  ChartGroupStyle,
+  ChartNumberColor,
   DEFAULT_CHART_EXTENDED_SETTINGS,
+  DEFAULT_CHART_GROUP_STYLE,
   parseChartExtendedSettings,
-  writeChartExtendedValue,
+  parseChartGroupStyle,
+  writeChartExtendedUpdate,
 } from './chart-extended-settings';
 import { DateGroupCondition, FieldType } from './database.type';
 import { SelectOptionColor } from './fields/select-option/select_option.type';
 import { setLayoutKeyIfChanged } from './layout-codec';
 
-export { ChartAggregationType, ChartType, resolveEffectiveAggregation } from './chart-enums';
+export { ChartAggregationType, ChartType } from './chart-enums';
 
 /**
  * Display format for the Number chart value.
@@ -59,7 +62,11 @@ export interface ChartLayoutSettings {
   extended: ChartExtendedSettings;
 }
 
-/** The style settings of a chart (WP10), defaults applied when there is no chart setting yet. */
+/**
+ * The extended settings of a chart (WP10 style, WP11 data configuration:
+ * sort, groups, buckets, the Number card), defaults applied when there is no
+ * chart setting yet.
+ */
 export function resolveChartStyle(
   settings: Pick<ChartLayoutSettings, 'extended'> | null | undefined
 ): ChartExtendedSettings {
@@ -89,8 +96,74 @@ export interface ChartLayoutSetting {
 /** The group key of the "No {field}" category. */
 export const EMPTY_CATEGORY_KEY = '__empty__';
 
+export type { ChartGroupStyle };
+export { CHART_GROUP_STYLES, DEFAULT_CHART_GROUP_STYLE, parseChartGroupStyle };
+
+/** The key of the one series of a chart without a Group by (WP12 §2.2). */
+export const CHART_ALL_SERIES_KEY = '__all__';
+
+/** At most this many categories are drawn, the first ones in sort order (WP12 §2.2). */
+export const CHART_MAX_CATEGORIES = 200;
+
+/** At most this many series are drawn, the first ones in sort order (WP12 §2.2). */
+export const CHART_MAX_SERIES = 50;
+
 /**
- * Computed chart data item for rendering
+ * A chart colour as the series builder resolves it (WP12 §2.2 step 8): a hex
+ * at an opacity step (`alpha` 1 is opaque; a single-hue ramp is composited
+ * over the card background at paint time), or the "No {field}" fill.
+ */
+export type ChartColor = { kind: 'hex'; hex: string; alpha: number } | { kind: 'empty' };
+
+/** A category of the X axis (WP12 §2.2). */
+export interface ChartCategory {
+  key: string;
+  label: string;
+  isEmpty: boolean;
+  /** The category's own colour; only set without a Group by (the series carry the colours then). */
+  color: ChartColor | null;
+  /** The rows of the category's drawn cells, in view order, each once. */
+  rowIds: RowId[];
+}
+
+/** One series: a sub-group of the Group by property, or `CHART_ALL_SERIES_KEY` without one. */
+export interface ChartSeries {
+  key: string;
+  label: string;
+  /** `null` for the `__all__` series (its categories carry the colours). */
+  color: ChartColor | null;
+  isEmpty: boolean;
+  /** Raw (post-cumulative) value per category; an empty cell is 0. */
+  values: number[];
+  /** The rows of each cell, per category, in view order. */
+  rowIds: RowId[][];
+  /** Percent bars only: each cell's share of its category's positive total. */
+  percents?: number[];
+}
+
+/** What every bar, line and donut chart draws (WP12 §2.2); the Number chart does not use it. */
+export interface ChartSeriesData {
+  categories: ChartCategory[];
+  series: ChartSeries[];
+  truncated: { categories: boolean; series: boolean };
+}
+
+export const EMPTY_CHART_SERIES_DATA: ChartSeriesData = Object.freeze({
+  categories: [],
+  series: [],
+  truncated: Object.freeze({ categories: false, series: false }),
+}) as ChartSeriesData;
+
+/** What a pointer hit in a chart: a segment (a series index) or the category band beside it (`null`). */
+export interface ChartElementTarget {
+  categoryIndex: number;
+  seriesIndex: number | null;
+}
+
+/**
+ * The drill-down payload of a chart click (and the Number card's item). WP13
+ * turns `categoryKey` / `seriesKey` into the `x_key` / `sub_group_key` of a
+ * drill query; until then the rows travel as a snapshot.
  */
 export interface ChartDataItem {
   /** Category label (e.g., "Completed", "In Progress", "No Status") */
@@ -112,6 +185,17 @@ export interface ChartDataItem {
   color?: string;
   /** True for "No {field}" category */
   isEmptyCategory?: boolean;
+  /**
+   * The group's default-sort hint (WP11 §1.4): a rank (option index, bucket
+   * order, range start) or label order. Set by the pipeline.
+   */
+  hint?: { rank: number; tie?: string } | { label: true };
+  /** The clicked category's key (WP12 drill payload). */
+  categoryKey?: string;
+  /** The clicked segment's series key; absent for a band click, `CHART_ALL_SERIES_KEY` without a Group by. */
+  seriesKey?: string;
+  /** The clicked segment's series label (the drill-down's second chip). */
+  seriesLabel?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -177,18 +261,15 @@ export const CHART_COLORLESS_BASE = '#908D8C';
 
 export const CHART_OPACITY_STEPS = [1, 0.7, 0.5, 0.35, 0.2] as const;
 
-/** The persisted `number_color` values (ARCHITECTURE §2.2). */
-export type ChartNumberColor =
-  | 'default'
-  | 'gray'
-  | 'brown'
-  | 'orange'
-  | 'yellow'
-  | 'green'
-  | 'blue'
-  | 'purple'
-  | 'pink'
-  | 'red';
+export type { ChartNumberColor };
+export type {
+  ChartTextGrouping,
+  ChartXSort,
+  NumberColorOperator,
+  NumberColorRule,
+  NumberConditionalColor,
+} from './chart-extended-settings';
+export { CHART_TEXT_GROUPINGS, CHART_X_SORTS, NUMBER_COLOR_NAMES } from './chart-extended-settings';
 
 /** Number card value colors; the variables switch with the theme (`dashboard-tokens.css`). */
 export const CHART_NUMBER_COLOR_VARS: Record<ChartNumberColor, string> = {
@@ -295,14 +376,7 @@ export function applyChartLayoutUpdate(
     if (value !== undefined) writeChartLayoutValue(map, field, value);
   }
 
-  if (!extended) return;
-  const values: Partial<Record<ChartExtendedField, unknown>> = extended;
-
-  for (const field of Object.keys(ChartExtendedLayoutKeys) as ChartExtendedField[]) {
-    const value = values[field];
-
-    if (value !== undefined) writeChartExtendedValue(map, field, value);
-  }
+  if (extended) writeChartExtendedUpdate(map, extended);
 }
 
 /**
@@ -346,10 +420,11 @@ export function parseChartLayoutSettings(map: { get(key: string): unknown }): Ch
 export const CHART_LAYOUT_SETTINGS_KEY = '3';
 
 /**
- * Field types that can be used as X-axis (grouping) fields.
- * Mirrors desktop's `is_chart_groupable_field_type`.
+ * The X-axis types a chart picks by default when `x_field_id` names no usable
+ * field, so existing charts do not move (WP11 §1.4). Mirrors Rust
+ * `is_chart_groupable_field_type` (the aggregate cache stays single-select).
  */
-export const GROUPABLE_FIELD_TYPES: readonly FieldType[] = [
+export const CHART_DEFAULT_X_FIELD_TYPES: readonly FieldType[] = [
   FieldType.SingleSelect,
   FieldType.MultiSelect,
   FieldType.Checkbox,
@@ -357,6 +432,67 @@ export const GROUPABLE_FIELD_TYPES: readonly FieldType[] = [
   FieldType.LastEditedTime,
   FieldType.CreatedTime,
 ];
+
+/** The second default tier, used when no field of `CHART_DEFAULT_X_FIELD_TYPES` exists. */
+export const CHART_FALLBACK_X_FIELD_TYPES: readonly FieldType[] = [
+  FieldType.Person,
+  FieldType.CreatedBy,
+  FieldType.LastEditedBy,
+  FieldType.Relation,
+  FieldType.Number,
+  FieldType.URL,
+];
+
+/** Every type a chart can group its X axis by (WP11 §1.4); formulas, rollups and AI fields are excluded. */
+export const CHART_X_FIELD_TYPES: readonly FieldType[] = [
+  ...CHART_DEFAULT_X_FIELD_TYPES,
+  FieldType.Person,
+  FieldType.CreatedBy,
+  FieldType.LastEditedBy,
+  FieldType.Relation,
+  FieldType.RichText,
+  FieldType.URL,
+  FieldType.Number,
+];
+
+/** Every type a chart can aggregate as its value ("What to show", WP11 §1.9). */
+export const CHART_Y_FIELD_TYPES: readonly FieldType[] = [
+  FieldType.Number,
+  FieldType.Checkbox,
+  FieldType.DateTime,
+  FieldType.CreatedTime,
+  FieldType.LastEditedTime,
+  FieldType.SingleSelect,
+  FieldType.MultiSelect,
+  FieldType.RichText,
+  FieldType.URL,
+  FieldType.Person,
+  FieldType.CreatedBy,
+  FieldType.LastEditedBy,
+  FieldType.Relation,
+];
+
+export function isChartXFieldType(fieldType: number): boolean {
+  return (CHART_X_FIELD_TYPES as readonly number[]).includes(fieldType);
+}
+
+export function isChartYFieldType(fieldType: number): boolean {
+  return (CHART_Y_FIELD_TYPES as readonly number[]).includes(fieldType);
+}
+
+/**
+ * The X field a chart uses when `x_field_id` is empty or names a missing or
+ * ineligible field: the first field (in view order) of the default types,
+ * else of the fallback types, else the primary field (WP11 §1.4).
+ */
+export function defaultChartXField<T extends { type: number; isPrimary?: boolean }>(fields: readonly T[]): T | null {
+  return (
+    fields.find((field) => (CHART_DEFAULT_X_FIELD_TYPES as readonly number[]).includes(field.type)) ??
+    fields.find((field) => (CHART_FALLBACK_X_FIELD_TYPES as readonly number[]).includes(field.type)) ??
+    fields.find((field) => field.isPrimary && isChartXFieldType(field.type)) ??
+    null
+  );
+}
 
 /**
  * Field types that produce date buckets when used as X-axis.
@@ -366,10 +502,6 @@ export const DATE_GROUPABLE_FIELD_TYPES: readonly FieldType[] = [
   FieldType.LastEditedTime,
   FieldType.CreatedTime,
 ];
-
-export function isGroupableFieldType(fieldType: number): boolean {
-  return (GROUPABLE_FIELD_TYPES as readonly number[]).includes(fieldType);
-}
 
 export function isDateGroupableFieldType(fieldType: number): boolean {
   return (DATE_GROUPABLE_FIELD_TYPES as readonly number[]).includes(fieldType);

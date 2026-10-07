@@ -20,9 +20,10 @@ import { TextFilterCondition } from '../../src/application/database-yjs/fields/t
 import { ViewLayout } from '../../src/application/types';
 
 import { mockProSubscription } from './chart-test-helpers';
-import { canonicalJson, equalRowWidths, readServerDatabaseDoc } from './dashboard-shared-helpers';
+import { canonicalJson, equalRowWidths, readServerDatabaseDoc, readServerRowDoc } from './dashboard-shared-helpers';
 import {
   addFixtureDatabase,
+  addGlobalFilter,
   apiGet,
   apiPost,
   chooseGlobalFilterCondition,
@@ -41,6 +42,7 @@ import {
   FIELD_TYPE_BY_NAME,
   fixtureDatabase,
   FixtureDatabase,
+  globalFilterChip,
   installDashboardTestBridge,
   inviteDashboardMember,
   KnownWidget,
@@ -55,11 +57,14 @@ import {
   readDatabaseViews,
   readViewConditions,
   registerDashboardWorld,
+  removeGlobalFilterTarget,
   rowColumnPitch,
   signBrowserInWithSession,
   signInFixtureAccount,
   splitList,
   toggleGlobalFilterOptionById,
+  viewIdForLabel,
+  waitForDashboardSync,
   widgetLocator,
   writeDashboardSetting,
 } from './dashboard-test-helpers';
@@ -406,6 +411,7 @@ const LAYOUTS: Record<string, ViewLayoutInfo> = {
   Board: { folderLayout: ViewLayout.Board, databaseLayout: DatabaseViewLayout.Board },
   Calendar: { folderLayout: ViewLayout.Calendar, databaseLayout: DatabaseViewLayout.Calendar },
   'Bar chart': { folderLayout: ViewLayout.Chart, databaseLayout: DatabaseViewLayout.Chart, chartType: 0 },
+  'Horizontal bar chart': { folderLayout: ViewLayout.Chart, databaseLayout: DatabaseViewLayout.Chart, chartType: 2 },
   'Line chart': { folderLayout: ViewLayout.Chart, databaseLayout: DatabaseViewLayout.Chart, chartType: 1 },
   'Donut chart': { folderLayout: ViewLayout.Chart, databaseLayout: DatabaseViewLayout.Chart, chartType: 3 },
   'Number chart': { folderLayout: ViewLayout.Chart, databaseLayout: DatabaseViewLayout.Chart, chartType: 4 },
@@ -428,7 +434,15 @@ export interface ViewConfig {
   layout: DatabaseViewLayout;
   filters: ViewFilterSpec[];
   sorts: { fieldId: string; condition: number }[];
-  chart?: { chartType: number; xFieldId: string; aggregationType: number; yFieldId: string };
+  chart?: {
+    chartType: number;
+    xFieldId: string;
+    aggregationType: number;
+    yFieldId: string;
+    /** WP12: the Group by property and the group style (`, group by P`, `, stacked|grouped|percent`). */
+    groupByFieldId?: string;
+    groupStyle?: 'stacked' | 'grouped' | 'percent';
+  };
   group?: { fieldId: string; fieldType: FieldType; columnIds: string[] };
   calendarFieldId?: string;
   timeline?: { fieldId: string; endFieldId: string };
@@ -483,7 +497,8 @@ function parseWhere(page: Page, database: FixtureDatabase, text: string): ViewFi
  * The settings mini-language of the view tables: `count`, `sum of P`,
  * `count by P`, `sum of P by Q`, `where …` (clauses joined with ` and `),
  * `sorted by P ascending|descending`, `grouped by P`, `by Date`,
- * `from Start to End`.
+ * `from Start to End`. A chart can add `, group by P` and then
+ * `, stacked|grouped|percent` (WP12).
  */
 export function parseViewSettings(page: Page, databaseName: string, layoutName: string, text: string): ViewConfig {
   const database = fixtureDatabase(page, databaseName);
@@ -502,16 +517,18 @@ export function parseViewSettings(page: Page, databaseName: string, layoutName: 
   }
 
   if (info.chartType !== undefined) {
-    const aggregate = /^(count|sum of (.+?))(?: by (.+))?$/.exec(rest);
+    const aggregate = /^(count|sum of (.+?))(?: by (.+?))?(?:, group by (.+?))?(?:, (stacked|grouped|percent))?$/.exec(rest);
 
     if (!aggregate) throw new Error(`A chart view needs "count" or "sum of <property>", got "${text}"`);
-    const [, , sumProperty, byProperty] = aggregate;
+    const [, , sumProperty, byProperty, groupByProperty, groupStyle] = aggregate;
 
     config.chart = {
       chartType: info.chartType,
       aggregationType: sumProperty ? AGGREGATION.sum : AGGREGATION.count,
       yFieldId: sumProperty ? fieldIdOf(database, sumProperty) : '',
       xFieldId: byProperty ? fieldIdOf(database, byProperty) : '',
+      ...(groupByProperty ? { groupByFieldId: fieldIdOf(database, groupByProperty) } : {}),
+      ...(groupStyle ? { groupStyle: groupStyle as 'stacked' | 'grouped' | 'percent' } : {}),
     };
     if (info.chartType !== 4 && !byProperty) throw new Error(`"${layoutName}" needs "by <property>": "${text}"`);
     return config;
@@ -715,6 +732,8 @@ export async function configureView(page: Page, databaseId: string, viewId: stri
           chart.set('show_empty_values', true);
           chart.set('cumulative', false);
           chart.set('date_condition', 3);
+          if (config.chart.groupByFieldId) chart.set('group_by_field_id', config.chart.groupByFieldId);
+          if (config.chart.groupStyle) chart.set('group_style', config.chart.groupStyle);
           layoutSettings().set('3', chart);
         }
 
@@ -1286,9 +1305,19 @@ export async function clickChartSegment(page: Page, widget: Locator, label: stri
     .poll(() => chartCategoryIndex(widget, label).catch(() => -1), { timeout: USE_CASE_TIMEOUT })
     .toBeGreaterThan(-1);
   if ((await widget.locator('.recharts-pie').count()) === 0) {
-    const bar = await chartBarPath(widget, label);
+    // WP12: every bar is a `chart-bar-segment` named by its category (a single series has one per category).
+    const bar = widget.locator(`[data-testid="chart-bar-segment"][data-category="${label}"]`).first();
 
-    await bar.scrollIntoViewIfNeeded();
+    await expect(bar).toBeVisible({ timeout: USE_CASE_TIMEOUT });
+    // The bars animate in, and are drawn again as rows arrive: click once the bar holds still.
+    await expect(async () => {
+      await bar.scrollIntoViewIfNeeded({ timeout: 1_000 });
+      const before = await bar.boundingBox({ timeout: 1_000 });
+
+      await page.waitForTimeout(150);
+      expect(before).not.toBeNull();
+      expect(await bar.boundingBox({ timeout: 1_000 })).toEqual(before);
+    }).toPass({ timeout: USE_CASE_TIMEOUT });
     await bar.click();
     return;
   }
@@ -1323,14 +1352,14 @@ export async function clickChartSegment(page: Page, widget: Locator, label: stri
   await page.mouse.click(point.x, point.y);
 }
 
+/** The chart drill-down (WP13): the dialog, or the phone sheet's content. */
 export function drillDown(page: Page): Locator {
-  return page.locator('.MuiDialog-paper').filter({ has: page.locator('.MuiDialogTitle-root') }).first();
+  return page.getByTestId('chart-drilldown');
 }
 
+/** The titles of the drill-down's rows (the table is virtualized; the fixture categories are small). */
 export async function drillDownTitles(page: Page): Promise<string[]> {
-  return drillDown(page)
-    .locator('.MuiDialogContent-root button')
-    .evaluateAll((buttons) => buttons.map((button) => (button.textContent ?? '').trim()));
+  return (await drillDown(page).getByTestId('drill-row-title').allTextContents()).map((title) => title.trim());
 }
 
 // ---------------------------------------------------------------------------
@@ -1373,8 +1402,8 @@ export async function rowIdByTitle(page: Page, viewName: string, title: string):
   return rowId;
 }
 
-/** Pick `value` in the open select option menu of `cell`, close the menu and check the cell shows it. */
-async function chooseSelectOption(page: Page, value: string, cell: Locator) {
+/** Pick an option; the resulting filter may remove the edited row and its menu. */
+async function chooseSelectOption(page: Page, value: string) {
   const menu = page.getByTestId('select-option-menu');
 
   await expect(menu).toBeVisible({ timeout: USE_CASE_TIMEOUT });
@@ -1382,12 +1411,10 @@ async function chooseSelectOption(page: Page, value: string, cell: Locator) {
 
   await expect(option).toBeVisible();
   await option.click();
-  await expect(menu.getByTestId(`select-option-${namedOptionId(value)}`)).toBeVisible();
-  // Picking an option keeps the menu open; Escape closes the menu only.
+  // An unfiltered row keeps its menu open; a row that no longer matches its
+  // view is unmounted together with the menu. Verify the saved value below.
   if (await menu.isVisible()) await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
-  // The pick took: the cell shows the option.
-  await expect(cell).toContainText(value, { timeout: USE_CASE_TIMEOUT });
 }
 
 /** Edit a grid cell of a widget: pick a select option or type a number / text. */
@@ -1403,7 +1430,8 @@ export async function editWidgetCell(page: Page, viewName: string, title: string
   await cell.scrollIntoViewIfNeeded();
   await cell.click();
   if (type === FieldType.SingleSelect) {
-    await chooseSelectOption(page, value, cell);
+    await chooseSelectOption(page, value);
+    await expectPersistedCell(page, page.request, database.name, title, property, value);
     return;
   }
 
@@ -1413,6 +1441,9 @@ export async function editWidgetCell(page: Page, viewName: string, title: string
   await input.fill(value);
   await input.press('Enter');
   await page.keyboard.press('Escape');
+  if (type === FieldType.Number) {
+    await expectPersistedCell(page, page.request, database.name, title, property, value);
+  }
 }
 
 export async function expectPersistedCell(
@@ -1427,6 +1458,31 @@ export async function expectPersistedCell(
   const database = fixtureDatabase(page, databaseName);
   const rowId = database.rowIds[title];
   const fieldId = fieldIdOf(database, property);
+
+  if (!rowId) throw new Error(`No "${title}" row is known in "${databaseName}"`);
+  if (fieldTypeOf(page, database, property) === FieldType.Number) {
+    expect(expected.trim(), 'numeric assertions require a value').not.toBe('');
+    expect(Number.isFinite(Number(expected)), 'numeric assertions require a finite number').toBe(true);
+    await expect
+      .poll(
+        () =>
+          readServerRowDoc(
+            request,
+            { token: world.owner.accessToken, workspaceId: world.workspaceId },
+            rowId,
+            (row) => {
+              const cell = (row?.get('cells') as Y.Map<Y.Map<unknown>> | undefined)?.get(fieldId);
+              const raw = cell?.get('data');
+
+              if ((typeof raw !== 'string' && typeof raw !== 'number') || String(raw).trim() === '') return null;
+              return Number.isFinite(Number(raw)) ? Number(raw) : null;
+            }
+          ),
+        { timeout: USE_CASE_TIMEOUT, message: `waiting for raw "${property}" of "${title}" to be saved` }
+      )
+      .toBe(Number(expected));
+    return;
+  }
 
   await expect
     .poll(
@@ -1457,18 +1513,24 @@ async function primaryFieldId(page: Page, databaseId: string): Promise<string> {
 }
 
 /**
- * Add a row through a grid widget's "New row" button and type its name into
- * the new row. A filtered view opens the new row's page instead (its title
- * focused) so the row can be filled in: which of the two happens is known
- * before the click.
+ * Add a row through a grid widget's inline "+ New page" row (in the widget
+ * body: the header's `+ New` tool opens a row page instead, WP09) and type its
+ * name into the new row. A filtered widget opens the new row's page instead (its title
+ * focused) so the row can be filled in. The widget's effective filters decide
+ * (saved, private and global ones, WP07 P0-5), so with any filter active the
+ * page is waited for briefly. `viewName` is a use-case view name or a fixture
+ * widget label ("Tasks Grid").
  */
 export async function addRowInWidget(page: Page, viewName: string, title: string) {
   const widget = widgetLocator(page, viewName);
   const database = fixtureDatabase(page, databaseForLabel(page, viewName));
-  const viewId = namedView(page, viewName).viewId;
+  const viewId = viewIdForLabel(page, viewName);
   const before = await browserRowIds(page, database.databaseId, viewId);
-  const filtered = (await readViewConditions(page, viewId)).filters.length > 0;
-  const button = widget.getByTestId('grid-new-row');
+  const mayFilter =
+    (await readViewConditions(page, viewId)).filters.length > 0 ||
+    (await widget.getByTestId('database-actions-filter').getAttribute('data-active').catch(() => null)) === 'true' ||
+    (await page.locator('[data-testid="dashboard-global-filter-chip"][data-active="true"]').count()) > 0;
+  const button = widget.getByTestId('dashboard-widget-body').getByTestId('grid-new-row');
 
   await button.scrollIntoViewIfNeeded();
   await button.click();
@@ -1484,11 +1546,15 @@ export async function addRowInWidget(page: Page, viewName: string, title: string
     )
     .not.toBe('');
   const cell = widget.getByTestId(`grid-cell-${rowId}-${await primaryFieldId(page, database.databaseId)}`);
+  const titleInput = rowPage(page).getByTestId('row-title-input');
+  const opensPage =
+    mayFilter &&
+    (await titleInput
+      .waitFor({ state: 'visible', timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false));
 
-  if (filtered) {
-    const titleInput = rowPage(page).getByTestId('row-title-input');
-
-    await expect(titleInput).toBeVisible({ timeout: USE_CASE_TIMEOUT });
+  if (opensPage) {
     await titleInput.click();
     await page.keyboard.type(title);
     await expect(titleInput).toContainText(title);
@@ -1508,13 +1574,30 @@ export async function addRowInWidget(page: Page, viewName: string, title: string
   await expect(cell).toContainText(title, { timeout: USE_CASE_TIMEOUT });
 }
 
+/** An open record: the side peek (WP13 §3.9, the default from a dashboard) or a centre modal. */
+const ROW_PAGE_SELECTOR = '[data-testid="row-side-peek"], .MuiDialog-paper';
+
 export function rowPage(scope: Page): Locator {
-  return scope.locator('.MuiDialog-paper').filter({ has: scope.getByTestId('row-title-input') }).last();
+  return scope.locator(ROW_PAGE_SELECTOR).filter({ has: scope.getByTestId('row-title-input') }).last();
+}
+
+/** The record side peek. */
+export function sidePeek(page: Page): Locator {
+  return page.getByTestId('row-side-peek');
+}
+
+/** Close the side peek from its Close button; a drill-down under it stays open. */
+export async function closeSidePeek(page: Page) {
+  const peek = sidePeek(page);
+
+  await expect(peek).toBeVisible({ timeout: USE_CASE_TIMEOUT });
+  await peek.getByTestId('row-side-peek-close').click();
+  await expect(peek).toHaveCount(0, { timeout: USE_CASE_TIMEOUT });
 }
 
 /** Wait for a row page showing `title` (its title is a textarea, so compare values). */
 export async function expectRowPage(scope: Page, title: string) {
-  const titleInputs = scope.locator('.MuiDialog-paper').getByTestId('row-title-input');
+  const titleInputs = scope.locator(ROW_PAGE_SELECTOR).getByTestId('row-title-input');
 
   await expect(titleInputs.last()).toBeVisible({ timeout: USE_CASE_TIMEOUT });
   await expect
@@ -1553,7 +1636,8 @@ export async function setRowPageProperty(page: Page, property: string, value: st
 
   await expect(menu.or(input).first()).toBeVisible({ timeout: USE_CASE_TIMEOUT });
   if (await menu.isVisible()) {
-    await chooseSelectOption(page, value, cell);
+    await chooseSelectOption(page, value);
+    await expect(cell).toContainText(value, { timeout: USE_CASE_TIMEOUT });
     return;
   }
 
@@ -1626,21 +1710,12 @@ async function dashboardSourceDatabases(page: Page): Promise<string[]> {
   return names;
 }
 
-function mappedTargets(page: Page) {
-  return DashboardSelectors.globalFilterTargets(page).evaluateAll((targets) =>
-    targets
-      .filter((target) => (target.getAttribute('data-field-id') ?? '') !== '')
-      .map((target) => ({
-        databaseId: target.getAttribute('data-database-id') ?? '',
-        fieldId: target.getAttribute('data-field-id') ?? '',
-      }))
-  );
-}
-
 /**
- * Start a global filter from "Filter multiple sources", pick the property type
- * of `property`, map every dashboard source that has a property of that name
- * (or the override) and remove the others.
+ * Start a global filter on `property` the way a writer does (WP08): with one
+ * dashboard source that has the property (or the override), pick it in the
+ * toolbar's "Filter by…" menu; with several, build it through "Filter
+ * multiple sources" (the first source, then "Add another" per source). The
+ * new pill's editor is open afterwards.
  */
 export async function startGlobalFilter(
   scope: Page,
@@ -1651,55 +1726,13 @@ export async function startGlobalFilter(
   const sources = await dashboardSourceDatabases(owner);
   const wanted = sources
     .map((name) => ({ database: fixtureDatabase(owner, name), property: overrides[name] ?? property }))
-    .filter(({ database, property: name }) => Boolean(database.fieldIds[name]));
+    .filter(({ database, property: name }) => name === 'Name' || Boolean(database.fieldIds[name]));
 
   if (wanted.length === 0) throw new Error(`No dashboard source has a "${property}" property`);
   const type = fieldTypeOf(owner, wanted[0].database, wanted[0].property);
+  const mapping = Object.fromEntries(wanted.map(({ database, property: name }) => [database.name, name]));
 
-  await DashboardSelectors.globalFilterButton(scope).click();
-  const menu = DashboardSelectors.globalFilterMenu(scope);
-
-  await expect(menu).toBeVisible();
-  await DashboardSelectors.globalFilterAdd(scope).click();
-  await DashboardSelectors.globalFilterPropertyOption(scope, type).click();
-  await expect(scope.getByTestId('dashboard-global-filter-editor')).toBeVisible();
-  await expect(DashboardSelectors.globalFilterTargets(scope).first()).toBeVisible({ timeout: USE_CASE_TIMEOUT });
-
-  for (const { database, property: name } of wanted) {
-    const fieldId = database.fieldIds[name];
-    const target = DashboardSelectors.globalFilterTarget(scope, database.databaseId);
-
-    if (!(await target.isVisible())) {
-      await scope.getByTestId('dashboard-global-filter-add-source').click();
-      await scope
-        .locator(
-          `[data-testid="dashboard-global-filter-add-source-option"][data-database-id="${database.databaseId}"]`
-        )
-        .click();
-      await expect(target).toBeVisible();
-    }
-
-    if ((await target.getAttribute('data-field-id')) === fieldId) continue;
-    await target.getByTestId('dashboard-global-filter-target-select').click();
-    await scope
-      .locator(`[data-testid="dashboard-global-filter-target-option"][data-field-id="${fieldId}"]`)
-      .click();
-    await expect(target).toHaveAttribute('data-field-id', fieldId);
-  }
-
-  const wantedIds = wanted.map(({ database }) => database.databaseId);
-
-  for (const { databaseId } of await mappedTargets(scope)) {
-    if (wantedIds.includes(databaseId)) continue;
-    const target = DashboardSelectors.globalFilterTarget(scope, databaseId);
-
-    await target.getByTestId('dashboard-global-filter-target-remove').click();
-    await expect(target).toHaveCount(0);
-  }
-
-  await expect
-    .poll(async () => (await mappedTargets(scope)).map((target) => target.databaseId).sort())
-    .toEqual([...wantedIds].sort());
+  await addGlobalFilter(scope, type, mapping, owner);
   return type;
 }
 
@@ -1708,13 +1741,14 @@ export async function toggleFilterOption(scope: Page, optionName: string) {
   await toggleGlobalFilterOptionById(scope, namedOptionId(optionName));
 }
 
+/** The editor shows the condition in Notion's lowercase (`is ˅`); labels compare case-insensitively. */
 export async function chooseFilterCondition(scope: Page, label: string) {
-  await chooseGlobalFilterCondition(scope, label, { ignoreCase: false });
+  await chooseGlobalFilterCondition(scope, label);
 }
 
+/** The pill editor has no Done: Escape closes it (debounced input flushes on close). */
 export async function finishGlobalFilter(scope: Page) {
-  await DashboardSelectors.globalFilterDone(scope).click();
-  await expect(DashboardSelectors.globalFilterMenu(scope)).toBeHidden();
+  await closeGlobalFilterMenu(scope);
 }
 
 export async function addSelectGlobalFilter(
@@ -1730,28 +1764,64 @@ export async function addSelectGlobalFilter(
   await finishGlobalFilter(scope);
 }
 
+/** A date filter's absolute value is picked in the editor's inline calendar. */
 export async function addOnOrAfterDateFilter(page: Page, property: string, day: string) {
   await startGlobalFilter(page, page, property);
   await chooseFilterCondition(page, 'Is on or after');
-  await page.getByTestId('dashboard-global-filter-date-trigger').click();
-  await pickCalendarDay(page, relativeDayOffset(day));
-  await expect(page.getByTestId('dashboard-global-filter-date-trigger')).not.toHaveText(/Type a value/);
+  await pickCalendarDay(page, relativeDayOffset(day), page.getByTestId('dashboard-global-filter-date-calendar'));
+  await expect(page.getByTestId('dashboard-global-filter-date-value')).not.toHaveText(/Type a value/);
   await finishGlobalFilter(page);
 }
 
+/** Delete a filter from its pill: `···` → Delete filter. */
 export async function removeGlobalFilter(scope: Page, name: string) {
   await openGlobalFilterChip(scope, name);
+  await DashboardSelectors.globalFilterMoreActions(scope).click();
   await DashboardSelectors.globalFilterDelete(scope).click();
   await expect(DashboardSelectors.globalFilterMenu(scope)).toBeHidden();
 }
 
+/** Remove one source from a filter: `···` → Filter multiple sources → remove → Done, then close. */
 export async function stopApplyingGlobalFilter(page: Page, name: string, databaseName: string) {
   await openGlobalFilterChip(page, name);
-  const target = DashboardSelectors.globalFilterTarget(page, fixtureDatabase(page, databaseName).databaseId);
-
-  await target.getByTestId('dashboard-global-filter-target-remove').click();
-  await expect(target).toHaveCount(0);
+  await removeGlobalFilterTarget(page, fixtureDatabase(page, databaseName).databaseId);
   await closeGlobalFilterMenu(page);
+}
+
+/**
+ * Seed a saved select global filter named after `property` of the
+ * dashboard's host database, with its default condition and no value (a grey
+ * pill everyone can give a value to, privately for readers).
+ */
+export async function seedEmptyUseCaseGlobalFilter(
+  page: Page,
+  request: APIRequestContext,
+  dashboardName: string,
+  property: string
+) {
+  const dashboard = activateDashboard(page, dashboardName);
+  const host = fixtureDatabase(page, dashboard.host);
+  const type = fieldTypeOf(page, host, property);
+
+  if (type !== FieldType.SingleSelect && type !== FieldType.MultiSelect) {
+    throw new Error(`"${property}" is not a select property`);
+  }
+
+  const filter = {
+    id: `gf-${uuidv4().slice(0, 12)}`,
+    name: property,
+    ty: type,
+    condition:
+      type === FieldType.SingleSelect ? SelectOptionFilterCondition.OptionIs : SelectOptionFilterCondition.OptionContains,
+    content: '',
+    targets: { [host.databaseId]: fieldIdOf(host, property) },
+  };
+  const { global_filters: current } = await readDashboardSetting(page);
+
+  await writeDashboardSetting(page, { global_filters: [...current, filter] });
+  await expect(globalFilterChip(page, property)).toBeVisible({ timeout: USE_CASE_TIMEOUT });
+  // Saved: a member opening the dashboard next reads it from the server.
+  await waitForDashboardSync(page, request);
 }
 
 export async function changeSelectGlobalFilter(scope: Page, name: string, option: string) {
@@ -1820,10 +1890,13 @@ export async function expectMemberViewMode(page: Page) {
   await expect(DashboardSelectors.addWidgetButton(member).filter({ visible: true })).toHaveCount(0);
 }
 
+/** A viewer's filter change stays theirs (WP07): a pill's orange dot, Reset, and no "Save for everyone". */
 export async function expectLocalOnlyFilters(scope: Page) {
-  await expect(DashboardSelectors.globalFilterLocalBadge(scope).first()).toBeVisible({ timeout: USE_CASE_TIMEOUT });
-  await expect(DashboardSelectors.globalFilterLocalBadge(scope).first()).toContainText(/Only you see/);
-  await expect(DashboardSelectors.globalFilterSaveForEverybody(scope)).toHaveCount(0);
+  await expect(scope.getByTestId('dashboard-global-filter-chip-dot').first()).toBeVisible({
+    timeout: USE_CASE_TIMEOUT,
+  });
+  await expect(DashboardSelectors.globalFilterReset(scope)).toBeVisible();
+  await expect(DashboardSelectors.globalFilterSaveForEveryone(scope)).toHaveCount(0);
 }
 
 export async function expectStackedWidgets(scope: Page) {

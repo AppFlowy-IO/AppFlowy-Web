@@ -40,6 +40,12 @@ import {
 import { DefaultTimeSetting, MetadataKey } from '@/application/user-metadata';
 import { useCurrentUser } from '@/components/main/app.hooks';
 
+/** Where a record is opened from, for the "Open pages in" resolver (WP13 §3.8). */
+export interface NavigateToRowOptions {
+  /** A chart drill-down: records open in a side peek by default, even on a standalone chart page. */
+  source?: 'drilldown';
+}
+
 export interface DatabaseContextState {
   readOnly: boolean;
   /** Immutable historical sessions must never fall back to live caches or services. */
@@ -128,7 +134,7 @@ export interface DatabaseContextState {
    */
   isDashboardWidget?: boolean;
   // use different view id to navigate to row
-  navigateToRow?: (rowId: string, viewId?: string) => void;
+  navigateToRow?: (rowId: string, viewId?: string, options?: NavigateToRowOptions) => void;
   loadView?: LoadView;
   bindViewSync?: BindViewSync;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
@@ -201,6 +207,17 @@ export const DatabaseExtraFiltersContext = createContext<DashboardExtraFilter[] 
  * everything else is the real view. Set by a dashboard widget in View mode.
  */
 export const DatabaseViewOverlayContext = createContext<YDatabaseView | undefined>(undefined);
+
+/**
+ * The committed (debounced, trimmed) row search of the view instance (WP09
+ * §1.2): a session-only term the row selectors AND into the effective rows.
+ * `''` is no search. Kept out of `DatabaseContext` so typing only re-renders
+ * the row selectors. Gallery and Feed keep their card-level search and leave
+ * it empty (`DatabaseSearchProvider` `applyToRows`).
+ */
+export const DatabaseSearchQueryContext = createContext<string>('');
+
+export const useDatabaseSearchQuery = () => useContext(DatabaseSearchQueryContext);
 
 export const useDatabaseViewOverlay = () => useContext(DatabaseViewOverlayContext);
 

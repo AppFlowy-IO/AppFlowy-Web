@@ -1,43 +1,35 @@
 import { memo, useMemo } from 'react';
-import {
-  Bar,
-  BarChart as RechartsBarChart,
-  CartesianGrid,
-  Cell,
-  Customized,
-  LabelList,
-  ReferenceLine,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { BarChart as RechartsBarChart, CartesianGrid, Customized, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
 
-import { CHART_GRID_DASH, ChartDataItem, ChartType } from '@/application/database-yjs/chart.type';
+import { CHART_GRID_DASH, ChartDataItem, ChartSeriesData, ChartType } from '@/application/database-yjs/chart.type';
 import { DASHBOARD_CHART_GEOMETRY } from '@/application/database-yjs/dashboard-geometry';
+import { groupedBarWidth } from '@/components/database/chart/hooks/chartSeries';
 
 import { layoutHorizontalCartesian } from './cartesianLayout';
 import { CategoryAnchors, CategoryTick, ValueTick } from './ChartAxisParts';
 import { ChartFrame } from './ChartFrame';
-import { calculateBarHeight, chartItemKey } from './chartUtils';
+import { calculateBarHeight } from './chartUtils';
 import { useChartMeasure } from './measureText';
 import { CartesianPlotProps, useCartesianChartModel } from './useCartesianChartModel';
-import { useDataLabelRenderer } from './useDataLabelRenderer';
-import { useReducedMotion } from './useReducedMotion';
+import { useChartAnimation } from './useReducedMotion';
+import { useSeriesBars } from './useSeriesBars';
 
 interface HorizontalBarChartWidgetProps {
-  data: ChartDataItem[];
-  /** Opens the drill-down of the clicked category. */
+  /** The series build (WP12): one `__all__` series without a Group by. */
+  data: ChartSeriesData;
+  /** Opens the drill-down of the clicked segment or category band. */
   onItemClick?: (item: ChartDataItem) => void;
   /** Fill a dashboard widget card instead of the standalone scrolling height. */
   fill?: boolean;
 }
 
-const { axis, bar, hoverBandRadius } = DASHBOARD_CHART_GEOMETRY;
+const { axis, hoverBandRadius } = DASHBOARD_CHART_GEOMETRY;
 
 // Module constants, so Recharts sees the same props on every render.
-const BAR_RADIUS: [number, number, number, number] = [0, bar.radius, bar.radius, 0];
 const HOVER_BAND = { fill: 'var(--chart-hover-band)', stroke: 'none', radius: hoverBandRadius };
 const renderNoTooltip = () => null;
+/** The 2px gap between grouped bars (WP12 §2.3). */
+const GROUPED_BAR_GAP = 2;
 
 /** Standalone pages keep today's scrolling height: one slot per category, 300–500px visible. */
 function standaloneHeights(count: number) {
@@ -48,11 +40,18 @@ function standaloneHeights(count: number) {
 
 /**
  * The Recharts tree of the horizontal bar chart. Memoized like the vertical
- * plot: a pointer move does not render it, and its layout, ticks, label
- * renderer and margin keep their identity between renders.
+ * plot: a pointer move does not render it, and its layout, ticks, segment
+ * shapes, labels and margin keep their identity between renders.
  */
 const HorizontalBarPlot = memo(function HorizontalBarPlot({
   data,
+  items,
+  chartRows,
+  seriesStyle,
+  fills,
+  categoryFills,
+  formatValue,
+  labels,
   width,
   height,
   domain,
@@ -60,16 +59,20 @@ const HorizontalBarPlot = memo(function HorizontalBarPlot({
   valueTickTexts,
   dataLabelTexts,
   hoverActive,
+  tooltipTrigger,
   clickable,
+  animate,
   onClick,
+  onSegmentClick,
   onMouseMove,
   onMouseLeave,
 }: CartesianPlotProps & { valueTickTexts: readonly string[] }) {
   const { measure12 } = useChartMeasure();
-  const reducedMotion = useReducedMotion();
+  // No animation while the widget box resizes, nor after it until the data changes (W21).
+  const animation = useChartAnimation(chartRows);
   const layout = useMemo(
-    () => layoutHorizontalCartesian(data, { width, height }, valueTickTexts, dataLabelTexts, measure12),
-    [data, width, height, valueTickTexts, dataLabelTexts, measure12]
+    () => layoutHorizontalCartesian(items, { width, height }, valueTickTexts, dataLabelTexts, measure12),
+    [items, width, height, valueTickTexts, dataLabelTexts, measure12]
   );
   const margin = useMemo(
     () => ({ top: layout.marginTop, right: layout.marginRight, bottom: 0, left: 0 }),
@@ -78,18 +81,34 @@ const HorizontalBarPlot = memo(function HorizontalBarPlot({
   const categoryTick = useMemo(() => <CategoryTick orientation='left' ticks={layout.ticks} />, [layout.ticks]);
   const valueTick = useMemo(() => <ValueTick format={formatAxis} orientation='bottom' />, [formatAxis]);
   const anchors = useMemo(() => <CategoryAnchors rects={layout.anchors} />, [layout.anchors]);
-  const renderLabel = useDataLabelRenderer(data, layout.dataLabels, 'horizontal', 'bar');
+  const barSize = seriesStyle === 'grouped' ? groupedBarWidth(layout.slot, data.series.length) : layout.barWidth;
+  const { bars, stackLabels } = useSeriesBars({
+    data,
+    categoryFills,
+    seriesStyle,
+    fills,
+    labels,
+    visibleLabels: layout.dataLabels,
+    orientation: 'horizontal',
+    barSize,
+    clickable,
+    animate: animate && animation,
+    onSegmentClick,
+    formatValue,
+  });
 
   return (
     <RechartsBarChart
       barCategoryGap={0}
-      data={data}
+      barGap={GROUPED_BAR_GAP}
+      data={chartRows}
       height={height}
       layout='vertical'
       margin={margin}
       onClick={onClick}
       onMouseLeave={onMouseLeave}
       onMouseMove={onMouseMove}
+      stackOffset='sign'
       width={width}
     >
       <CartesianGrid
@@ -113,7 +132,7 @@ const HorizontalBarPlot = memo(function HorizontalBarPlot({
       />
       <YAxis
         axisLine={false}
-        dataKey={chartItemKey}
+        dataKey='__key'
         interval={0}
         tick={categoryTick}
         tickLine={false}
@@ -123,33 +142,30 @@ const HorizontalBarPlot = memo(function HorizontalBarPlot({
         width={layout.yAxisWidth}
       />
       <ReferenceLine stroke='var(--chart-grid)' x={0} />
-      <Tooltip active={hoverActive ? undefined : false} content={renderNoTooltip} cursor={HOVER_BAND} isAnimationActive={false} />
-      <Bar
-        activeBar={false}
-        barSize={layout.barWidth}
-        cursor={clickable ? 'pointer' : undefined}
-        dataKey='value'
-        isAnimationActive={!reducedMotion}
-        radius={BAR_RADIUS}
-      >
-        {data.map((item) => (
-          <Cell data-parity-id='dash-chart-bar' fill={item.color} key={chartItemKey(item)} />
-        ))}
-        <LabelList content={renderLabel} dataKey='value' />
-      </Bar>
+      <Tooltip
+        active={hoverActive ? undefined : false}
+        content={renderNoTooltip}
+        cursor={HOVER_BAND}
+        isAnimationActive={false}
+        trigger={tooltipTrigger}
+      />
+      {bars}
+      {stackLabels ? <Customized component={stackLabels} /> : null}
       <Customized component={anchors} />
     </RechartsBarChart>
   );
 });
 
 /**
- * Horizontal bar chart (WP10 §2.1): categories on the left, right-aligned and
- * truncated to the label column, values along the bottom with a vertical
- * dotted grid and a solid zero line; negative bars extend left of it.
+ * Horizontal bar chart (WP10 §2.1, WP12 §2.3): categories on the left,
+ * right-aligned and truncated to the label column, values along the bottom
+ * with a vertical dotted grid and a solid zero line; negative bars extend
+ * left of it. With a Group by the stacks grow right (series 0 at the right
+ * end) and grouped bars list series 0 on top.
  */
 function HorizontalBarChartWidgetImpl({ data, onItemClick, fill = false }: HorizontalBarChartWidgetProps) {
   const model = useCartesianChartModel(data, ChartType.HorizontalBar, onItemClick);
-  const standalone = standaloneHeights(data.length);
+  const standalone = standaloneHeights(data.categories.length);
 
   return (
     <ChartFrame
@@ -157,11 +173,13 @@ function HorizontalBarChartWidgetImpl({ data, onItemClick, fill = false }: Horiz
       frameHandlers={model.frameHandlers}
       legend={model.legend}
       pointer={model.pointer}
+      rootAttributes={model.rootAttributes}
       rows={model.rows}
       scrollContentHeight={fill ? undefined : standalone.contentHeight}
       standaloneHeight={standalone.frameHeight}
       testId='horizontal-bar-chart-widget'
       tooltip={model.tooltip}
+      truncationCount={model.truncationCount}
     >
       {(size) => (
         <HorizontalBarPlot
@@ -176,8 +194,8 @@ function HorizontalBarChartWidgetImpl({ data, onItemClick, fill = false }: Horiz
   );
 }
 
-// `ChartProvider` hands over a new `data` array only when the content changed
-// and a stable `onItemClick`, so the default shallow comparison is enough.
+// `useChartData` hands over a new build only when the content changed and
+// `ChartProvider` a stable `onItemClick`, so the default shallow comparison is enough.
 export const HorizontalBarChartWidget = memo(HorizontalBarChartWidgetImpl);
 
 export default HorizontalBarChartWidget;

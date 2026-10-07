@@ -5,6 +5,7 @@ import { DatabaseContext, type DatabaseContextState, useDatabaseContext } from '
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { useConditionsActions, useConditionsContext } from '@/components/database/components/conditions/context';
 import { createDatabaseDoc as createDatabaseFixture } from '@/components/database/dashboard/__tests__/dashboardTestHarness';
+import { WidgetCompositionProvider } from '@/components/database/dashboard/WidgetCompositionProvider';
 import DatabaseViews from '@/components/database/DatabaseViews';
 
 import type { ReactNode } from 'react';
@@ -120,15 +121,17 @@ function renderWidget({ withFilter = true, isDashboardWidget = true } = {}) {
   };
 
   const tree = (activeViewId: string) => (
-    <DatabaseContext.Provider value={{ ...contextValue, activeViewId }}>
-      <DatabaseViews
-        activeViewId={activeViewId}
-        databasePageId='view-id'
-        fixedHeight={314}
-        onChangeView={jest.fn()}
-        visibleViewIds={['view-id', 'board-id']}
-      />
-    </DatabaseContext.Provider>
+    <WidgetCompositionProvider>
+      <DatabaseContext.Provider value={{ ...contextValue, activeViewId }}>
+        <DatabaseViews
+          activeViewId={activeViewId}
+          databasePageId='view-id'
+          fixedHeight={314}
+          onChangeView={jest.fn()}
+          visibleViewIds={['view-id', 'board-id']}
+        />
+      </DatabaseContext.Provider>
+    </WidgetCompositionProvider>
   );
   const result = render(tree('view-id'));
 

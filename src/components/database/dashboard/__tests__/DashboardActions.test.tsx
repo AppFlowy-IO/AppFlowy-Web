@@ -5,7 +5,15 @@ import { DatabaseContext, DatabaseContextState } from '@/application/database-yj
 import { YDoc } from '@/application/types';
 
 import { DashboardActions, DashboardActionsProps } from '../DashboardActions';
-import { DashboardContext, DashboardContextValue, DashboardFiltersContext } from '../DashboardContext';
+import {
+  DashboardContext,
+  DashboardContextValue,
+  DashboardFiltersContext,
+  DashboardLayoutContext,
+  DashboardLayoutContextValue,
+  DashboardSourcesContext,
+  DashboardSourcesContextValue,
+} from '../DashboardContext';
 
 import { createDashboardContextValue, createDashboardFiltersValue } from './dashboardTestHarness';
 
@@ -36,6 +44,27 @@ jest.mock('@/components/database/hooks/useOpenDatabaseAsPage', () => ({
 }));
 
 const FILTERS = createDashboardFiltersValue();
+// No widget is mounted: the filter button trusts every mapping it counts.
+const LAYOUT: DashboardLayoutContextValue = { rows: [], hostViewIds: [], showWidgetTitles: true, showIconsInHeading: false };
+const SOURCES: DashboardSourcesContextValue = {
+  sourceDocs: {},
+  registerSourceDoc: jest.fn(),
+  sourceNames: {},
+  registerSourceName: jest.fn(),
+};
+
+/** The dashboard contexts the toolbar and its filter button read. */
+function DashboardProviders({ context, children }: { context: DashboardContextValue; children: ReactNode }) {
+  return (
+    <DashboardContext.Provider value={context}>
+      <DashboardLayoutContext.Provider value={LAYOUT}>
+        <DashboardSourcesContext.Provider value={SOURCES}>
+          <DashboardFiltersContext.Provider value={FILTERS}>{children}</DashboardFiltersContext.Provider>
+        </DashboardSourcesContext.Provider>
+      </DashboardLayoutContext.Provider>
+    </DashboardContext.Provider>
+  );
+}
 
 /** The host database as the database toolbar hands it over. */
 function database(overrides: DashboardActionsProps = {}): DashboardActionsProps {
@@ -50,11 +79,9 @@ function database(overrides: DashboardActionsProps = {}): DashboardActionsProps 
 
 function renderActions(context: DashboardContextValue = createDashboardContextValue(), props = database()) {
   return render(
-    <DashboardContext.Provider value={context}>
-      <DashboardFiltersContext.Provider value={FILTERS}>
-        <DashboardActions {...props} />
-      </DashboardFiltersContext.Provider>
-    </DashboardContext.Provider>
+    <DashboardProviders context={context}>
+      <DashboardActions {...props} />
+    </DashboardProviders>
   );
 }
 
@@ -191,11 +218,9 @@ describe('DashboardActions', () => {
     });
     const tree = (value: DatabaseContextState) => (
       <DatabaseContext.Provider value={value}>
-        <DashboardContext.Provider value={context}>
-          <DashboardFiltersContext.Provider value={FILTERS}>
-            <DashboardActions {...props} />
-          </DashboardFiltersContext.Provider>
-        </DashboardContext.Provider>
+        <DashboardProviders context={context}>
+          <DashboardActions {...props} />
+        </DashboardProviders>
       </DatabaseContext.Provider>
     );
     const { rerender } = render(tree(host({})));

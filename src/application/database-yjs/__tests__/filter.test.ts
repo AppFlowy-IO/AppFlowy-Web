@@ -9,6 +9,7 @@ import {
   checkboxFilterCheck,
   checklistFilterCheck,
   dateFilterCheck,
+  dateFilterFillData,
   filterBy,
   numberFilterCheck,
   personFilterCheck,
@@ -43,6 +44,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 
+import { loadParityFixture } from './dashboard-parity-helpers';
 import {
   createCell,
   createDesktopFilterGridFixture,
@@ -124,9 +126,10 @@ describe('text filter tests', () => {
     expect(textFilterCheck('', '', TextFilterCondition.TextIsNotEmpty)).toBe(false);
   });
 
-  it('filters rows where text exactly matches', () => {
+  it('filters rows where text exactly matches, ignoring case like desktop (WP13 decision 12)', () => {
     expect(textFilterCheck('Alpha', 'Alpha', TextFilterCondition.TextIs)).toBe(true);
-    expect(textFilterCheck('Alpha', 'alpha', TextFilterCondition.TextIs)).toBe(false);
+    expect(textFilterCheck('Alpha', 'alpha', TextFilterCondition.TextIs)).toBe(true);
+    expect(textFilterCheck('Alpha', 'Alph', TextFilterCondition.TextIs)).toBe(false);
   });
 
   it('filters rows where text does not match', () => {
@@ -356,6 +359,21 @@ describe('date filter tests', () => {
     expect(dateFilterCheck(cell, { condition: DateFilterCondition.DateStartsBetween, start: before, end: after })).toBe(
       true
     );
+  });
+
+  it('counts both days of a between window, whatever time the cell carries', () => {
+    const noon = (day: string) => ({ ...cell, data: dayjs.unix(Number(day)).hour(12).unix().toString() });
+    const window = { condition: DateFilterCondition.DateStartsBetween, start: timestamp, end: after };
+
+    expect(dateFilterCheck(noon(timestamp), window)).toBe(true);
+    expect(dateFilterCheck(noon(after), window)).toBe(true);
+    expect(dateFilterCheck(noon(before), window)).toBe(false);
+    expect(
+      dateFilterCheck(
+        { ...cell, endTimestamp: noon(after).data },
+        { ...window, condition: DateFilterCondition.DateEndsBetween }
+      )
+    ).toBe(true);
   });
 
   it('filters rows where date is empty', () => {
@@ -3174,3 +3192,110 @@ describe('v070 checkbox/checklist filter tests', () => {
     ]);
   });
 });
+
+/** `dashboard-parity/relative-dates.json` `matches` (WP08 §1.10), read by Rust too. */
+interface RelativeMatchesFixture {
+  matches: {
+    name: string;
+    condition: number;
+    spec: Record<string, unknown>;
+    today: string;
+    cell_start: string | null;
+    cell_end?: string;
+    expected: boolean;
+  }[];
+}
+
+describe('relative to today (conditions 28 and 29)', () => {
+  const { matches } = loadParityFixture<RelativeMatchesFixture>('relative-dates.json');
+  const unix = (date: string | null | undefined) => (date ? String(dayjs(date).add(9, 'hour').unix()) : '');
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it.each(matches.map((entry) => [entry.name, entry] as const))('dateFilterCheck: %s', (_name, entry) => {
+    jest.useFakeTimers().setSystemTime(dayjs(entry.today).add(15, 'hour').toDate());
+    const filter = parseFilter(
+      FieldType.DateTime,
+      createFilter({ fieldType: FieldType.DateTime, condition: entry.condition, content: JSON.stringify(entry.spec) })
+    );
+    const cell = { data: unix(entry.cell_start), endTimestamp: unix(entry.cell_end) } as DateTimeCell;
+
+    expect(dateFilterCheck(cell, filter as never)).toBe(entry.expected);
+  });
+
+  it('row times compare the row time, also for the end variant', () => {
+    jest.useFakeTimers().setSystemTime(dayjs('2024-06-12T12:00:00').toDate());
+    const spec = JSON.stringify({ relative_direction: 'past', relative_amount: 7, relative_unit: 'day' });
+
+    for (const condition of [DateFilterCondition.DateStartsRelative, DateFilterCondition.DateEndsRelative]) {
+      const filter = parseFilter(FieldType.CreatedTime, createFilter({ fieldType: FieldType.CreatedTime, condition, content: spec }));
+
+      expect(rowTimeFilterCheck(unix('2024-06-08'), filter as never)).toBe(true);
+      expect(rowTimeFilterCheck(unix('2024-06-01'), filter as never)).toBe(false);
+    }
+  });
+
+  it('reads malformed content with the defaults (This week)', () => {
+    const filter = parseFilter(
+      FieldType.DateTime,
+      createFilter({ fieldType: FieldType.DateTime, condition: DateFilterCondition.DateStartsRelative, content: '{bad' })
+    );
+
+    expect(filter).toMatchObject({ relative_direction: 'this', relative_amount: 1, relative_unit: 'week' });
+  });
+
+  it('narrows rows even without content, like the presets', () => {
+    jest.useFakeTimers().setSystemTime(dayjs('2024-06-12T12:00:00').toDate());
+    const doc = new Y.Doc();
+    const fields = doc.getMap('fields') as YDatabaseFields;
+    const field = new Y.Map() as YDatabaseField;
+
+    field.set(YjsDatabaseKey.type, FieldType.CreatedTime);
+    fields.set('created', field);
+    const rows = [
+      { id: 'recent', height: 36 },
+      { id: 'old', height: 36 },
+    ] as Row[];
+    const rowMetas = {
+      recent: createTimedRowDoc('recent', '2024-06-11'),
+      old: createTimedRowDoc('old', '2024-01-01'),
+    };
+    const filters = createFilters([
+      { fieldId: 'created', fieldType: FieldType.CreatedTime, condition: DateFilterCondition.DateStartsRelative },
+    ]);
+
+    expect(filterBy(rows, filters, fields, rowMetas).map((row) => row.id)).toEqual(['recent']);
+  });
+
+  it('prefills today for a new row', () => {
+    jest.useFakeTimers().setSystemTime(dayjs('2024-06-12T12:00:00').toDate());
+    const today = String(dayjs('2024-06-12').startOf('day').unix());
+    const spec = JSON.stringify({ relative_direction: 'next', relative_amount: 2, relative_unit: 'week' });
+
+    expect(
+      dateFilterFillData(
+        createFilter({ fieldType: FieldType.DateTime, condition: DateFilterCondition.DateStartsRelative, content: spec })
+      )
+    ).toEqual({ data: today, isRange: false });
+    expect(
+      dateFilterFillData(
+        createFilter({ fieldType: FieldType.DateTime, condition: DateFilterCondition.DateEndsRelative, content: spec })
+      )
+    ).toEqual({ data: today, endTimestamp: today, isRange: true });
+  });
+});
+
+function createTimedRowDoc(rowId: string, createdAt: string): YDoc {
+  const rowDoc = new Y.Doc({ guid: rowId }) as YDoc;
+  const sharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+  const row = new Y.Map() as YDatabaseRow;
+
+  row.set(YjsDatabaseKey.id, rowId);
+  row.set(YjsDatabaseKey.created_at, String(dayjs(createdAt).add(9, 'hour').unix()));
+  row.set(YjsDatabaseKey.last_modified, String(dayjs(createdAt).add(9, 'hour').unix()));
+  row.set(YjsDatabaseKey.cells, new Y.Map());
+  sharedRoot.set(YjsEditorKey.database_row, row);
+  return rowDoc;
+}

@@ -6,7 +6,11 @@ import { toggleFilterId } from '@/application/database-yjs/dispatch/filter-updat
 import { CheckboxFilter, CheckboxFilterCondition } from '@/application/database-yjs/fields/checkbox/checkbox.type';
 import { ChecklistFilterCondition } from '@/application/database-yjs/fields/checklist/checklist.type';
 import { DateFilter, DateFilterCondition } from '@/application/database-yjs/fields/date/date.type';
-import { isRelativeDateCondition } from '@/application/database-yjs/fields/date/relativeDate';
+import {
+  isParameterizedRelativeCondition,
+  isRelativeDateCondition,
+  toEndDateCondition,
+} from '@/application/database-yjs/fields/date/relativeDate';
 import { NumberFilter, NumberFilterCondition } from '@/application/database-yjs/fields/number/number.type';
 import { PersonFilter, PersonFilterCondition } from '@/application/database-yjs/fields/person/person.type';
 import { RelationFilterCondition } from '@/application/database-yjs/fields/relation/relation.type';
@@ -79,7 +83,7 @@ export function ConditionSelector({
   const baseConditions = useConditionsForFieldType(fieldType, t, field);
   const isEnd = fieldType === FieldType.DateTime && isEndDateCondition(filter.condition);
   const conditions = isEnd
-    ? baseConditions.map((item) => ({ ...item, value: item.value >= 16 ? item.value + 6 : item.value + 8 }))
+    ? baseConditions.map((item) => ({ ...item, value: toEndDateCondition(item.value) }))
     : baseConditions;
 
   const selectedCondition = useMemo(() => {
@@ -209,6 +213,7 @@ function useConditionsForFieldType(
         { value: DateFilterCondition.DateStartsOnOrBefore, text: t('grid.dateFilter.onOrBefore') },
         { value: DateFilterCondition.DateStartsOnOrAfter, text: t('grid.dateFilter.onOrAfter') },
         { value: DateFilterCondition.DateStartsBetween, text: t('grid.dateFilter.between') },
+        { value: DateFilterCondition.DateStartsRelative, text: t('dashboard.globalFilters.relativeToToday') },
         { value: DateFilterCondition.DateStartsToday, text: t('relativeDates.today') },
         { value: DateFilterCondition.DateStartsYesterday, text: t('relativeDates.yesterday') },
         { value: DateFilterCondition.DateStartsTomorrow, text: t('relativeDates.tomorrow') },
@@ -505,8 +510,10 @@ function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled
 
 // Date Value Input - uses the existing DateTimeFilterDatePicker
 function DateValueInput({ filter, disabled }: { filter: DateFilter; disabled?: boolean }) {
-  // Don't show input for isEmpty/isNotEmpty or relative date conditions (Today, This week, …)
+  // Don't show input for isEmpty/isNotEmpty or the date presets (Today, This week, …);
+  // "Is relative to today" shows its direction, amount and unit instead.
   const showInput = useMemo(() => {
+    if (isParameterizedRelativeCondition(filter.condition)) return true;
     if (isRelativeDateCondition(filter.condition)) return false;
 
     return ![

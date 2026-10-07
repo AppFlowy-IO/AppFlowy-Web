@@ -1,47 +1,33 @@
-import { CSSProperties, Fragment, memo, useCallback, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { resizeDashboardWidget, setDashboardRowHeight } from '@/application/database-yjs/dashboard-layout';
-import { DASHBOARD_MAX_WIDGETS_PER_ROW, DashboardRow as DashboardRowData } from '@/application/database-yjs/dashboard.type';
-import { ReactComponent as ArrowDownIcon } from '@/assets/icons/arrow_down.svg';
-import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import {
+  moveDashboardRow,
+  resizeDashboardWidget,
+  setDashboardRowHeight,
+} from '@/application/database-yjs/dashboard-layout';
+import { DashboardAddControlState, DashboardRow as DashboardRowData } from '@/application/database-yjs/dashboard.type';
 
+import { DefaultWidgetSpecKind } from './add-widget/add-widget-flow';
+import { PendingWidgetBox } from './add-widget/PendingWidgetBox';
 import {
   DASHBOARD_COLUMN_GAP,
-  DASHBOARD_MOTION_FAST_CLASS,
-  DASHBOARD_ROW_CONTROL_OFFSET,
-  DASHBOARD_ROW_CONTROL_SIZE,
+  DASHBOARD_DROP_INDICATOR_WIDTH,
   DASHBOARD_ROW_GAP,
   DASHBOARD_WIDGET_BOX_INSET,
 } from './constants';
-import { LimitedAction } from './DashboardLimitMessage';
+import { dashboardFullAnnouncement } from './DashboardFullTooltip';
+import { RowAddControl, RowMoveControl } from './DashboardRowControls';
 import { DashboardRowGap } from './DashboardRowGap';
-import {
-  DashboardLimitReason,
-  useDashboardDraggingWidgetId,
-  useDashboardHost,
-  useDashboardUi,
-} from './DashboardUiContext';
+import { useDashboardDraggingWidgetId, useDashboardUi } from './DashboardUiContext';
 import { DashboardWidget } from './DashboardWidget';
 import { dashboardLineSizes, dashboardWidgetSlots, getWidthHandleCenter } from './grid-layout';
-import { ROW_HEIGHT_CSS_VARIABLE, useRowHeightResize } from './hooks/useRowHeightResize';
+import { useRowHeightResize } from './hooks/useRowHeightResize';
 import { applyWidthPreview, getWidthHandleBounds, useWidthResize } from './hooks/useWidthResize';
 import { RowHeightHandle, WidthResizeHandle } from './RowResizeHandles';
 import { getWidgetCardCenter } from './utils';
-import { preloadWidgetPicker } from './WidgetPicker';
 
-// Notion's row controls: round, tinted buttons centred in the page gutter on
-// both sides of a row, shown while the row is hovered (or one of them has
-// focus). The anchors take no width; their centre sits 30px outside the column.
-const CONTROL_ANCHOR_CLASS = cn(
-  'absolute inset-y-0 flex items-center justify-center opacity-0 transition-opacity',
-  DASHBOARD_MOTION_FAST_CLASS,
-  'focus-within:opacity-100 group-hover/row:opacity-100 motion-reduce:transition-none'
-);
-const CONTROL_ANCHOR_OFFSET = -(DASHBOARD_ROW_CONTROL_OFFSET + DASHBOARD_ROW_CONTROL_SIZE / 2);
-const EDGE_BUTTON_CLASS = 'rounded-full bg-dash-row-control-bg text-dash-accent';
+import type { DropIndicatorStore } from './arrange-stores';
 
 interface DashboardRowProps {
   row: DashboardRowData;
@@ -56,8 +42,46 @@ interface DashboardRowProps {
   isEditing: boolean;
   showWidgetTitles: boolean;
   showIconsInHeading: boolean;
-  /** The dashboard holds its maximum number of widgets. */
-  dashboardFull: boolean;
+  /** The row controls (`getDashboardRowControls`), as primitives so the row stays memoized. */
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  addToRow: DashboardAddControlState;
+  /** The add flow's pending widget, rendered as a pending slot when it is in this row. */
+  pendingWidgetId: string | null;
+  /** The pending widget's default spec when it is in this row, else `null`. */
+  pendingSpec: DefaultWidgetSpecKind | null;
+}
+
+/**
+ * The vertical drop line of a widget dragged next to a widget of this row:
+ * 2px of the accent over the card's height, centred in the gap at the
+ * dropped edge. Reads the dashboard's drop-line store, so only the row that
+ * shows the line renders on a pointer move.
+ */
+function RowDropIndicator({ rowId, store }: { rowId: string; store: DropIndicatorStore }) {
+  const getSnapshot = useCallback(() => {
+    const geometry = store.get();
+
+    return geometry?.rowId === rowId ? geometry : null;
+  }, [rowId, store]);
+  const geometry = useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
+
+  if (!geometry) return null;
+  return (
+    <div
+      aria-hidden='true'
+      className='pointer-events-none absolute z-20 rounded-full bg-dash-accent'
+      data-orientation='vertical'
+      data-row-id={rowId}
+      data-testid='dashboard-drop-indicator'
+      style={{
+        left: geometry.left - DASHBOARD_DROP_INDICATOR_WIDTH / 2,
+        top: geometry.top,
+        width: DASHBOARD_DROP_INDICATOR_WIDTH,
+        height: geometry.height,
+      }}
+    />
+  );
 }
 
 /**
@@ -67,7 +91,9 @@ interface DashboardRowProps {
  * box would be narrower than 240px, every line keeping the row height.
  *
  * Edit mode adds width handles between the widgets of an unwrapped row, the
- * height handle in the band below, and the row controls in the page gutter.
+ * height handle in the band below, the row controls in the page gutter (the
+ * ↑/↓ move control on the left, "Add to row" on the right) and the drop line
+ * of a widget dragged into the row.
  */
 export const DashboardRow = memo(function DashboardRow({
   row,
@@ -78,13 +104,26 @@ export const DashboardRow = memo(function DashboardRow({
   isEditing,
   showWidgetTitles,
   showIconsInHeading,
-  dashboardFull,
+  canMoveUp,
+  canMoveDown,
+  addToRow,
+  pendingWidgetId,
+  pendingSpec,
 }: DashboardRowProps) {
   const { t } = useTranslation();
-  const { openPicker, updateRows } = useDashboardUi();
-  const { workspaceId, variant } = useDashboardHost();
+  const {
+    addWidget,
+    announce,
+    consumeRowFocus,
+    dropIndicatorStore,
+    getRows,
+    requestRowFocus,
+    startAddWidget,
+    updateRows,
+  } = useDashboardUi();
   const draggingWidgetId = useDashboardDraggingWidgetId();
   const editing = isEditing && canEdit;
+  const rowRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const getRowElement = useCallback(() => trackRef.current, []);
   const rowId = row.id;
@@ -117,12 +156,49 @@ export const DashboardRow = memo(function DashboardRow({
   const widths = applyWidthPreview(row.widgets, widthResize.preview);
   const slots = dashboardWidgetSlots(widths, wrapColumns);
   const lines = dashboardLineSizes(count, wrapColumns);
-  const isResizing = widthResize.preview !== null || heightResize.dragging;
-  // Seeds the row height variable for the first paint only: `useRowHeightResize`
-  // writes it from then on, so a render during a drag (a collaborator's edit)
-  // cannot put the persisted height back, nor skip writing a committed one.
-  const [initialRowHeight] = useState(row.height);
-  const preloadPicker = useCallback(() => preloadWidgetPicker(workspaceId, variant), [variant, workspaceId]);
+  const widthResizing = widthResize.preview !== null;
+  const isResizing = widthResizing || heightResize.dragging;
+  const preloadPicker = addWidget.preload;
+
+  // ↑ / ↓: swap with the neighbouring row (one write, one undo step), tell
+  // assistive technology, and keep the focus on the moved row's arrow.
+  const moveRow = useCallback(
+    (delta: -1 | 1) => {
+      const current = getRows();
+
+      if (moveDashboardRow(current, rowId, delta) === current) return;
+      requestRowFocus(rowId, delta < 0 ? 'up' : 'down');
+      updateRows((latest) => moveDashboardRow(latest, rowId, delta));
+      announce(
+        delta < 0
+          ? t('dashboard.row.movedUp', { defaultValue: 'Row moved up' })
+          : t('dashboard.row.movedDown', { defaultValue: 'Row moved down' })
+      );
+    },
+    [announce, getRows, requestRowFocus, rowId, t, updateRows]
+  );
+  const addToThisRow = useCallback(
+    () => startAddWidget({ type: 'existing_row', rowId, index: count }),
+    [count, startAddWidget, rowId]
+  );
+  const refuseAdd = useCallback(() => announce(dashboardFullAnnouncement(t)), [announce, t]);
+
+  // The moved row renders at its new place: focus the arrow that moved it, or
+  // the remaining one when that arrow is gone (the row became first or last).
+  useLayoutEffect(() => {
+    // The arrows only exist in Edit mode.
+    if (!editing) return;
+    const control = consumeRowFocus(rowId);
+
+    if (!control) return;
+    const root = rowRef.current;
+    const wanted = root?.querySelector<HTMLElement>(`[data-testid='dashboard-row-move-${control}']`);
+    const other = root?.querySelector<HTMLElement>(
+      `[data-testid='dashboard-row-move-${control === 'up' ? 'down' : 'up'}']`
+    );
+
+    (wanted ?? other)?.focus();
+  }, [canMoveDown, canMoveUp, consumeRowFocus, editing, rowId, rowIndex]);
 
   const boundaries = wrapped
     ? []
@@ -132,49 +208,6 @@ export const DashboardRow = memo(function DashboardRow({
         columnsBefore: widths.slice(0, index + 1).reduce((sum, width) => sum + width, 0),
         bounds: getWidthHandleBounds(widths, index, minColumns),
       }));
-
-  // A new row needs one free widget slot on the dashboard; a widget in this row also one in the row.
-  const insertLimit: DashboardLimitReason | null = dashboardFull ? 'dashboard' : null;
-  const addLimit: DashboardLimitReason | null =
-    insertLimit ?? (count >= DASHBOARD_MAX_WIDGETS_PER_ROW ? 'row' : null);
-  const insertLabel = t('dashboard.insertRowBelow', { defaultValue: 'Insert a row below' });
-  const addLabel = t('dashboard.addWidget', { defaultValue: 'Add widget' });
-  const insertButton = (
-    <Button
-      aria-label={insertLabel}
-      className={EDGE_BUTTON_CLASS}
-      data-row-id={row.id}
-      data-testid='dashboard-insert-row-button'
-      disabled={insertLimit !== null}
-      onClick={() => openPicker({ mode: 'add', placement: { type: 'new_row', rowIndex: rowIndex + 1 } })}
-      onFocus={preloadPicker}
-      onPointerEnter={preloadPicker}
-      size='icon-sm'
-      type='button'
-      variant='ghost'
-    >
-      <ArrowDownIcon aria-hidden='true' className='h-4 w-4' />
-    </Button>
-  );
-
-  const addButton = (
-    <Button
-      aria-label={addLabel}
-      className={EDGE_BUTTON_CLASS}
-      data-parity-id='dash-row-control-add'
-      data-row-id={row.id}
-      data-testid='dashboard-add-widget-row-button'
-      disabled={addLimit !== null}
-      onClick={() => openPicker({ mode: 'add', placement: { type: 'existing_row', rowId: row.id, index: count } })}
-      onFocus={preloadPicker}
-      onPointerEnter={preloadPicker}
-      size='icon-sm'
-      type='button'
-      variant='ghost'
-    >
-      <PlusIcon aria-hidden='true' className='h-5 w-5' data-parity-id='dash-row-control-add__icon' />
-    </Button>
-  );
 
   // The same element while nothing of the handle changes, so the band below
   // the row (memoized) does not render with the row.
@@ -207,45 +240,56 @@ export const DashboardRow = memo(function DashboardRow({
       <div
         className='group/row relative w-full'
         data-lines={lines.join(',')}
+        data-parity-id='dash-row-band'
         data-resizing={isResizing ? 'true' : undefined}
         data-row-id={row.id}
         data-row-index={rowIndex}
         data-testid='dashboard-row'
         data-wrap-columns={wrapColumns}
+        ref={rowRef}
       >
         <div
           className='flex flex-wrap'
           data-parity-id='dash-row'
           data-testid='dashboard-row-track'
           ref={trackRef}
-          style={
-            {
-              // The track bleeds the box inset past the content column on both sides.
-              marginLeft: -DASHBOARD_WIDGET_BOX_INSET,
-              marginRight: -DASHBOARD_WIDGET_BOX_INSET,
-              columnGap: DASHBOARD_COLUMN_GAP,
-              rowGap: DASHBOARD_ROW_GAP,
-              // The boxes read the row height from this variable, so a height
-              // drag is one style write instead of a render per pixel.
-              [ROW_HEIGHT_CSS_VARIABLE]: `${initialRowHeight}px`,
-            } as CSSProperties
-          }
+          style={{
+            // The track bleeds the box inset past the content column on both sides.
+            marginLeft: -DASHBOARD_WIDGET_BOX_INSET,
+            marginRight: -DASHBOARD_WIDGET_BOX_INSET,
+            columnGap: DASHBOARD_COLUMN_GAP,
+            rowGap: DASHBOARD_ROW_GAP,
+          }}
         >
-          {row.widgets.map((widget, index) => (
-            <DashboardWidget
-              canEdit={canEdit}
-              height={row.height}
-              heightPreview={heightResize.preview}
-              isDragging={draggingWidgetId === widget.id}
-              isEditing={isEditing}
-              key={widget.id}
-              lineSize={slots[index].lineSize}
-              showIconsInHeading={showIconsInHeading}
-              showWidgetTitles={showWidgetTitles}
-              span={slots[index].span}
-              widget={widget}
-            />
-          ))}
+          {/* `useRowHeightResize` writes the row height on each box: a height drag
+              is one style write per box and 20px step, never a render. */}
+          {row.widgets.map((widget, index) =>
+            widget.id === pendingWidgetId && pendingSpec ? (
+              <PendingWidgetBox
+                key={widget.id}
+                lineSize={slots[index].lineSize}
+                showWidgetTitles={showWidgetTitles}
+                span={slots[index].span}
+                spec={pendingSpec}
+                widgetId={widget.id}
+              />
+            ) : (
+              <DashboardWidget
+                canEdit={canEdit}
+                height={row.height}
+                heightPreview={heightResize.preview}
+                isDragging={draggingWidgetId === widget.id}
+                isEditing={isEditing}
+                key={widget.id}
+                lineSize={slots[index].lineSize}
+                showIconsInHeading={showIconsInHeading}
+                showWidgetTitles={showWidgetTitles}
+                span={slots[index].span}
+                widget={widget}
+                widthResizing={widthResizing}
+              />
+            )
+          )}
         </div>
 
         {editing
@@ -267,29 +311,17 @@ export const DashboardRow = memo(function DashboardRow({
           : null}
 
         {editing ? (
-          <div
-            className={CONTROL_ANCHOR_CLASS}
-            data-side='start'
-            data-testid='dashboard-row-control-anchor'
-            style={{ left: CONTROL_ANCHOR_OFFSET, width: DASHBOARD_ROW_CONTROL_SIZE }}
-          >
-            <LimitedAction limit={insertLimit} side='right' tooltip={insertLabel}>
-              {insertButton}
-            </LimitedAction>
-          </div>
-        ) : null}
-
-        {editing ? (
-          <div
-            className={CONTROL_ANCHOR_CLASS}
-            data-side='end'
-            data-testid='dashboard-row-control-anchor'
-            style={{ right: CONTROL_ANCHOR_OFFSET, width: DASHBOARD_ROW_CONTROL_SIZE }}
-          >
-            <LimitedAction limit={addLimit} side='left' tooltip={addLabel}>
-              {addButton}
-            </LimitedAction>
-          </div>
+          <>
+            <RowMoveControl moveDown={canMoveDown} moveUp={canMoveUp} onMove={moveRow} rowId={rowId} />
+            <RowAddControl
+              onAdd={addToThisRow}
+              onPreload={preloadPicker}
+              onRefuse={refuseAdd}
+              rowId={rowId}
+              state={addToRow}
+            />
+            <RowDropIndicator rowId={rowId} store={dropIndicatorStore} />
+          </>
         ) : null}
       </div>
 

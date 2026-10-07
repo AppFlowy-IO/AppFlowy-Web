@@ -23,6 +23,11 @@ import {
 const mockLoader = jest.fn();
 const mockSourceDocs = new Map<string, YDoc>();
 const mockLabels: string[] = [];
+/** What the loader says of its request: still out, or settled. */
+let mockLoadInFlight = false;
+/** The loader's "not found", which the trash probe sets as soon as it answers. */
+let mockNotFound = false;
+let mockCanRead = true;
 
 jest.mock('react-i18next', () => {
   const t = (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key;
@@ -56,9 +61,10 @@ jest.mock('@/components/editor/components/blocks/database/hooks/useDocumentLoade
     mockLoader(options.viewId, options.databaseId);
     return {
       doc: options.viewId ? mockSourceDocs.get(options.databaseId) ?? null : null,
-      notFound: false,
+      notFound: Boolean(options.viewId) && mockNotFound,
       noAccess: false,
       offline: false,
+      loading: Boolean(options.viewId) && mockLoadInFlight,
       setNotFound: jest.fn(),
     };
   },
@@ -70,8 +76,8 @@ jest.mock('@/components/editor/components/blocks/database/hooks/useEmbeddedDatab
   EmbeddedDatabasePermissionsResolver: ({
     children,
   }: {
-    children: (permissions: { readOnly: boolean; canWrite: boolean; canShare: boolean }) => ReactNode;
-  }) => children({ readOnly: false, canWrite: true, canShare: false }),
+    children: (permissions: { readOnly: boolean; canWrite: boolean; canShare: boolean }, access: { settled: boolean; canRead: boolean }) => ReactNode;
+  }) => children({ readOnly: false, canWrite: true, canShare: false }, { settled: true, canRead: mockCanRead }),
 }));
 jest.mock('../hooks/useDashboardDnd', () => ({
   useDraggableWidget: ({ label }: { label: string }) => {
@@ -141,17 +147,18 @@ function renderInDashboard(children: ReactNode) {
     getShownDoc: () => null,
   } as unknown as DashboardSourceRegistryContextValue;
 
-  const rendered = render(
+  const tree = (content: ReactNode) => (
     <DashboardHostContext.Provider value={host}>
       <DashboardUiContext.Provider value={ui}>
         <DashboardFiltersContext.Provider value={filters}>
-          <DashboardSourceRegistryContext.Provider value={registry}>{children}</DashboardSourceRegistryContext.Provider>
+          <DashboardSourceRegistryContext.Provider value={registry}>{content}</DashboardSourceRegistryContext.Provider>
         </DashboardFiltersContext.Provider>
       </DashboardUiContext.Provider>
     </DashboardHostContext.Provider>
   );
+  const rendered = render(tree(children));
 
-  return { ...rendered, ui, release };
+  return { ...rendered, ui, release, rerenderInDashboard: (content: ReactNode) => rendered.rerender(tree(content)) };
 }
 
 const header = () => screen.getByTestId('widget-header');
@@ -161,7 +168,55 @@ beforeEach(() => {
   mockLoader.mockClear();
   mockSourceDocs.clear();
   mockLabels.length = 0;
+  mockLoadInFlight = false;
+  mockNotFound = false;
+  mockCanRead = true;
   (actions.remove as jest.Mock).mockClear();
+});
+
+it('hides resident data when the refreshed source permission denies reads', () => {
+  mockSourceDocs.set('source-db', createDatabaseDoc('source-db', { v1: { name: 'Source', layout: DatabaseViewLayout.Grid } }));
+  const frame = createFrame();
+  const rendered = renderInDashboard(<WidgetDatabaseHost frame={frame} viewportHeight={300} />);
+
+  expect(screen.getByTestId('nested-database')).toBeTruthy();
+  mockCanRead = false;
+  rendered.rerenderInDashboard(<WidgetDatabaseHost frame={frame} viewportHeight={300} />);
+  expect(screen.queryByTestId('nested-database')).toBeNull();
+  expect(placeholder()?.getAttribute('data-reason')).toBe('no-access');
+});
+
+describe('a source the trash probe calls gone while its document request is still out', () => {
+  it('shows the placeholder at once but gives its load slot up only once the request settled', () => {
+    mockNotFound = true;
+    mockLoadInFlight = true;
+    const onLoadStateChange = jest.fn();
+    const frame = createFrame();
+    // A fresh element each time: the same one would not render again.
+    const host = () => <WidgetDatabaseHost frame={frame} viewportHeight={314} onLoadStateChange={onLoadStateChange} />;
+    const { rerenderInDashboard } = renderInDashboard(host());
+
+    expect(placeholder()?.dataset.reason).toBe('not-found');
+    // The request in flight would overlap the next source's: the slot is kept.
+    expect(onLoadStateChange).not.toHaveBeenCalledWith('unavailable');
+
+    mockLoadInFlight = false;
+    rerenderInDashboard(host());
+
+    expect(placeholder()?.dataset.reason).toBe('not-found');
+    expect(onLoadStateChange).toHaveBeenCalledWith('unavailable');
+    expect(onLoadStateChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives the slot up at once when the probe answers after the request settled', () => {
+    mockNotFound = true;
+    const onLoadStateChange = jest.fn();
+
+    renderInDashboard(<WidgetDatabaseHost frame={createFrame()} viewportHeight={314} onLoadStateChange={onLoadStateChange} />);
+
+    expect(placeholder()?.dataset.reason).toBe('not-found');
+    expect(onLoadStateChange).toHaveBeenCalledWith('unavailable');
+  });
 });
 
 describe('a widget that waits for its turn (WidgetContextProvider + WidgetPlaceholderFrame, no host)', () => {

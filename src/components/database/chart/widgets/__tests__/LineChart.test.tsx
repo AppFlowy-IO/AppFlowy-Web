@@ -1,9 +1,9 @@
 import { act, screen } from '@testing-library/react';
 
-import { ChartAggregationType, ChartDataItem } from '@/application/database-yjs/chart.type';
+import { CHART_ALL_SERIES_KEY, ChartAggregationType, ChartDataItem, ChartSeriesData } from '@/application/database-yjs/chart.type';
 import LineChartWidget from '@/components/database/chart/widgets/LineChart';
 
-import { hoverCategory, installChartEnvironment, renderChart, texts } from './chartTestUtils';
+import { hoverCategory, installChartEnvironment, renderChart, texts, seriesDataOf } from './chartTestUtils';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -24,7 +24,7 @@ describe('LineChartWidget', () => {
   installChartEnvironment();
 
   it('draws a smooth 1.5px line over a gradient area, without dots', () => {
-    const { container } = renderChart(<LineChartWidget data={MONTHS} fill />, COUNT);
+    const { container } = renderChart(<LineChartWidget data={seriesDataOf(MONTHS)} fill />, COUNT);
     const curve = container.querySelector('.recharts-line-curve') as SVGPathElement;
 
     expect(curve.getAttribute('d')).toContain('C');
@@ -49,7 +49,7 @@ describe('LineChartWidget', () => {
   });
 
   it('shows one data point and the tooltip at the hovered month', () => {
-    const { container } = renderChart(<LineChartWidget data={MONTHS} fill />, COUNT);
+    const { container } = renderChart(<LineChartWidget data={seriesDataOf(MONTHS)} fill />, COUNT);
 
     act(() => hoverCategory(container, 1));
     expect(container.querySelectorAll('.recharts-active-dot')).toHaveLength(1);
@@ -60,7 +60,7 @@ describe('LineChartWidget', () => {
   });
 
   it('labels the points and lists the series in a line-glyph legend', () => {
-    const { container } = renderChart(<LineChartWidget data={MONTHS} fill />, COUNT);
+    const { container } = renderChart(<LineChartWidget data={seriesDataOf(MONTHS)} fill />, COUNT);
 
     expect(texts(container, '[data-testid="chart-data-label"]')).toEqual(['2', '5', '3', '2']);
     const legend = screen.getByTestId('chart-legend');
@@ -70,7 +70,7 @@ describe('LineChartWidget', () => {
   });
 
   it('follows the color theme and the style settings', () => {
-    const { container } = renderChart(<LineChartWidget data={MONTHS} fill />, {
+    const { container } = renderChart(<LineChartWidget data={seriesDataOf(MONTHS)} fill />, {
       ...COUNT,
       style: { colorTheme: 'green', showDataLabels: false, legendPosition: 'off' },
     });
@@ -78,5 +78,39 @@ describe('LineChartWidget', () => {
     expect(container.querySelector('.recharts-line-curve')?.getAttribute('stroke')).toBe('#72BC8F');
     expect(container.querySelector('[data-testid="chart-data-label"]')).toBeNull();
     expect(screen.queryByTestId('chart-legend')).toBeNull();
+  });
+
+  it('draws one line per group, without labels or area, and lists the groups', () => {
+    const base = seriesDataOf(MONTHS);
+    const color = (hex: string) => ({ kind: 'hex' as const, hex, alpha: 1 });
+    const data: ChartSeriesData = {
+      ...base,
+      categories: base.categories.map((category) => ({ ...category, color: null })),
+      series: [
+        { key: 'biz', label: 'Business', color: color('#DE9255'), isEmpty: false, values: [1, 2, 0, 1], rowIds: [['a'], ['c', 'd'], [], ['k']] },
+        { key: 'con', label: 'Consumers', color: color('#5E9FE8'), isEmpty: false, values: [1, 3, 3, 1], rowIds: [['b'], ['e', 'f', 'g'], ['h', 'i', 'j'], ['l']] },
+        { key: '__empty__', label: 'No Audience', color: { kind: 'empty' }, isEmpty: true, values: [0, 0, 0, 0], rowIds: [[], [], [], []] },
+      ],
+    };
+
+    expect(data.series.some((series) => series.key === CHART_ALL_SERIES_KEY)).toBe(false);
+    const { container } = renderChart(<LineChartWidget data={data} fill />, COUNT);
+    const lines = Array.from(container.querySelectorAll('.recharts-line-curve[data-testid="chart-line"]'));
+
+    expect(lines).toHaveLength(3);
+    expect(lines.map((line) => line.getAttribute('stroke'))).toEqual(['#DE9255', '#5E9FE8', '#F1F1EF']);
+    expect(lines.map((line) => line.getAttribute('stroke-width'))).toEqual(['1.5', '1.5', '1.5']);
+    expect(container.querySelector('[data-testid="chart-data-label"]')).toBeNull();
+    expect(container.querySelector('linearGradient')).toBeNull();
+    expect(container.querySelector('.recharts-area-area')).toBeNull();
+    expect(screen.getByTestId('line-chart-widget').getAttribute('data-series-count')).toBe('3');
+    expect(screen.getAllByTestId('chart-legend-item').map((item) => item.textContent)).toEqual([
+      'Business',
+      'Consumers',
+      'No Audience',
+    ]);
+    act(() => hoverCategory(container, 1));
+    expect(screen.getByTestId('chart-tooltip-title').textContent).toBe('Feb 2026');
+    expect(screen.getAllByTestId('chart-tooltip-row').map((row) => row.textContent)).toEqual(['Business2', 'Consumers3']);
   });
 });

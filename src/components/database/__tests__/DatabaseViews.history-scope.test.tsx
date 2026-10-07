@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 
 import { DatabaseContext, type DatabaseContextState, useDatabaseHistoryManager } from '@/application/database-yjs';
 import { DatabaseViewLayout, type YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { WidgetCompositionProvider } from '@/components/database/dashboard/WidgetCompositionProvider';
 import DatabaseViews from '@/components/database/DatabaseViews';
 
 import type { ReactNode } from 'react';
@@ -126,15 +127,17 @@ function renderDatabaseViews(layout: DatabaseViewLayout, isDashboardWidget = fal
   };
   const rendered = render(
     <>
-      <DatabaseContext.Provider value={contextValue}>
-        <DatabaseViews
-          fixedHeight={contextValue.embeddedHeight}
-          activeViewId='view-id'
-          databasePageId='view-id'
-          onChangeView={jest.fn()}
-          visibleViewIds={['view-id']}
-        />
-      </DatabaseContext.Provider>
+      <WidgetCompositionProvider>
+        <DatabaseContext.Provider value={contextValue}>
+          <DatabaseViews
+            fixedHeight={contextValue.embeddedHeight}
+            activeViewId='view-id'
+            databasePageId='view-id'
+            onChangeView={jest.fn()}
+            visibleViewIds={['view-id']}
+          />
+        </DatabaseContext.Provider>
+      </WidgetCompositionProvider>
       <button data-testid='outside-database'>Outside database</button>
     </>
   );

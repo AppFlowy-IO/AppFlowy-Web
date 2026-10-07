@@ -4,7 +4,7 @@ import { ChartAggregationType, ChartDataItem } from '@/application/database-yjs/
 import { NumberFormat } from '@/application/database-yjs/fields';
 import BarChartWidget from '@/components/database/chart/widgets/BarChart';
 
-import { firePointer, hoverCategory, installChartEnvironment, renderChart, texts } from './chartTestUtils';
+import { firePointer, hoverCategory, installChartEnvironment, renderChart, texts, seriesDataOf } from './chartTestUtils';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -35,7 +35,7 @@ describe('BarChartWidget', () => {
 
     expect(() =>
       ({ container } = renderChart(
-        <BarChartWidget data={[{ color: '#5E9FE8', label: 'In Progress', rowIds: ['row-1'], value: 1 }]} />
+        <BarChartWidget data={seriesDataOf([{ color: '#5E9FE8', label: 'In Progress', rowIds: ['row-1'], value: 1 }])} />
       ))
     ).not.toThrow();
 
@@ -45,7 +45,7 @@ describe('BarChartWidget', () => {
   });
 
   it('draws a measured value axis with nice compact ticks and no axis line', () => {
-    const { container } = renderChart(<BarChartWidget data={OWNERS} />);
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />);
 
     expect(container.querySelector('.recharts-yAxis .recharts-cartesian-axis-line')).toBeNull();
     expect(texts(container, '[data-testid="chart-value-tick"]')).toEqual(['$0', '$500K', '$1M', '$1.5M']);
@@ -57,7 +57,7 @@ describe('BarChartWidget', () => {
   });
 
   it('labels each bar with its compact value and keeps the bars thin', () => {
-    const { container } = renderChart(<BarChartWidget data={OWNERS} />);
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />);
     const labels = Array.from(container.querySelectorAll('[data-testid="chart-data-label"]'));
 
     expect(labels.map((label) => [label.getAttribute('data-label'), label.textContent])).toEqual([
@@ -72,7 +72,7 @@ describe('BarChartWidget', () => {
   });
 
   it('draws a negative bar below the zero line', () => {
-    const { container } = renderChart(<BarChartWidget data={MARGINS} />, { yField: NUMBER_FIELD });
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(MARGINS)} />, { yField: NUMBER_FIELD });
 
     expect(texts(container, '[data-testid="chart-value-tick"]')).toEqual(['-2K', '-1K', '0', '1K', '2K']);
     const zero = container.querySelector('.recharts-reference-line line') as SVGLineElement;
@@ -87,14 +87,14 @@ describe('BarChartWidget', () => {
   });
 
   it('hides the data labels when they are turned off', () => {
-    const { container } = renderChart(<BarChartWidget data={OWNERS} />, { style: { showDataLabels: false } });
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />, { style: { showDataLabels: false } });
 
     expect(container.querySelector('[data-testid="chart-data-label"]')).toBeNull();
   });
 
   it('highlights the hovered category and shows the tooltip until the pointer leaves', () => {
     const onItemClick = jest.fn();
-    const { container } = renderChart(<BarChartWidget data={OWNERS} onItemClick={onItemClick} />);
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} onItemClick={onItemClick} />);
 
     act(() => hoverCategory(container, 1));
 
@@ -118,18 +118,18 @@ describe('BarChartWidget', () => {
   });
 
   it('drops the tooltip when the charted data changes', () => {
-    const { container, rerenderChart } = renderChart(<BarChartWidget data={OWNERS} />);
+    const { container, rerenderChart } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />);
 
     act(() => hoverCategory(container, 1));
     expect(screen.getByTestId('chart-tooltip')).toBeTruthy();
 
-    rerenderChart(<BarChartWidget data={OWNERS.map((item) => (item.key === 'bob' ? { ...item, value: 2300000 } : item))} />);
+    rerenderChart(<BarChartWidget data={seriesDataOf(OWNERS.map((item) => (item.key === 'bob' ? { ...item, value: 2300000 } : item)))} />);
     expect(screen.queryByTestId('chart-tooltip')).toBeNull();
   });
 
   it('opens the drill-down of the clicked category', () => {
     const onItemClick = jest.fn();
-    const { container } = renderChart(<BarChartWidget data={OWNERS} onItemClick={onItemClick} />);
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} onItemClick={onItemClick} />);
 
     act(() => hoverCategory(container, 2));
     const anchor = container.querySelectorAll('[data-testid="chart-category-anchor"]')[2] as SVGRectElement;
@@ -142,13 +142,14 @@ describe('BarChartWidget', () => {
         200
       );
     });
-    expect(onItemClick).toHaveBeenCalledWith(OWNERS[2]);
+    // A band click opens the whole category: no series in the payload (WP12 §2.10).
+    expect(onItemClick).toHaveBeenCalledWith({ ...OWNERS[2], categoryKey: 'carol', isEmptyCategory: false });
     // The click hides the tooltip before the drill-down opens.
     expect(screen.queryByTestId('chart-tooltip')).toBeNull();
   });
 
   it('lists every category in the accessibility table with its raw value and color', () => {
-    const { container } = renderChart(<BarChartWidget data={OWNERS} />);
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />);
     const rows = Array.from(container.querySelectorAll('[data-testid="chart-data-table"] tr'));
 
     expect(rows.map((row) => [row.getAttribute('data-label'), row.getAttribute('data-value'), row.getAttribute('data-color')])).toEqual([
@@ -159,10 +160,10 @@ describe('BarChartWidget', () => {
   });
 
   it('shows no legend for a single series under auto, and the categories when Bottom is picked', () => {
-    const { rerenderChart } = renderChart(<BarChartWidget data={OWNERS} />);
+    const { rerenderChart } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />);
 
     expect(screen.queryByTestId('chart-legend')).toBeNull();
-    rerenderChart(<BarChartWidget data={OWNERS} />, { style: { legendPosition: 'bottom' } });
+    rerenderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />, { style: { legendPosition: 'bottom' } });
     expect(screen.getAllByTestId('chart-legend-item').map((item) => item.getAttribute('data-label'))).toEqual([
       'Alice',
       'Bob',
@@ -173,10 +174,10 @@ describe('BarChartWidget', () => {
   it('counts with whole-number ticks', () => {
     const { container } = renderChart(
       <BarChartWidget
-        data={[
+        data={seriesDataOf([
           { key: 'a', label: 'A', value: 2, rowIds: [] },
           { key: 'b', label: 'B', value: 5, rowIds: [] },
-        ]}
+        ])}
       />,
       { aggregation: ChartAggregationType.Count, yField: null }
     );

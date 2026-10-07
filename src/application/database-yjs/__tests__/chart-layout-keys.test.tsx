@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, type DatabaseContextState, useChartLayoutSetting } from '@/application/database-yjs';
+import { DEFAULT_CHART_EXTENDED_SETTINGS } from '@/application/database-yjs/chart-extended-settings';
 import {
   ChartAggregationType,
   ChartLayoutKeys,
@@ -87,7 +88,7 @@ describe('chart layout keys', () => {
       dateCondition: DateGroupCondition.Relative,
       numberFormat: 'compact',
       titleText: 'Revenue',
-      extended: { decimalPlaces: null, colorTheme: 'auto', showDataLabels: true, legendPosition: 'auto' },
+      extended: DEFAULT_CHART_EXTENDED_SETTINGS,
     });
   });
 
@@ -125,6 +126,7 @@ describe('chart layout keys', () => {
     );
 
     expect(settings.extended).toEqual({
+      ...DEFAULT_CHART_EXTENDED_SETTINGS,
       decimalPlaces: 2,
       colorTheme: 'purple',
       showDataLabels: false,
@@ -163,7 +165,13 @@ describe('chart layout keys', () => {
       dateCondition: DateGroupCondition.Month,
       numberFormat: 'auto',
       titleText: '',
-      extended: { decimalPlaces: null, colorTheme: 'auto', showDataLabels: true, legendPosition: 'auto' },
+      extended: DEFAULT_CHART_EXTENDED_SETTINGS,
+    });
+    // WP12: no Group by, the Month date grouping and stacked bars.
+    expect(parseChartLayoutSettings(mapOf({})).extended).toMatchObject({
+      groupByFieldId: '',
+      groupByDateCondition: DateGroupCondition.Month,
+      groupStyle: 'stacked',
     });
   });
 

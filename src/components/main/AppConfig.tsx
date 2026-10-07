@@ -6,11 +6,13 @@ import { clearData, db } from '@/application/db';
 import { UserService } from '@/application/services/domains';
 import { clearHttpResponseCaches, initAPIService } from '@/application/services/js-services/http/core';
 import { EventType, on } from '@/application/session';
+import { registerSignOutCleanup } from '@/application/session/sign-out';
 import { getTokenParsed } from '@/application/session/token';
 import { User } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
 import { createInitialTimezone, UserTimezone } from '@/application/user-timezone.types';
 import { InfoSnackbarProps } from '@/components/_shared/notify';
+import { removePrivatePayloadsForUser } from '@/components/database/dashboard/private/private-storage';
 import { AFConfigContext, defaultConfig } from '@/components/main/app.hooks';
 import { useUserTimezone } from '@/components/main/hooks/useUserTimezone';
 import { useAppLanguage } from '@/components/main/useAppLanguage';
@@ -64,6 +66,10 @@ function AppConfig({ children }: { children: React.ReactNode }) {
     setLoginOpen(true);
     setLoginCompletedRedirectTo(redirectTo || window.location.href);
   }, []);
+
+  // An explicit sign-out keeps no private dashboard state of that user on
+  // this device (WP07 rule 11): the app root wires it, the session helper runs it.
+  useEffect(() => registerSignOutCleanup(removePrivatePayloadsForUser), []);
 
   useEffect(() => {
     const syncAuthenticationState = () => {

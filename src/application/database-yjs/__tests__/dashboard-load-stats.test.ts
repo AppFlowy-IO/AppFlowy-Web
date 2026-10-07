@@ -15,6 +15,7 @@ const EMPTY: DashboardLoadStatsSnapshot = {
   sourceOpens: {},
   rowLoadPasses: {},
   rowsBound: {},
+  rowsRead: {},
   derivedComputes: {},
   widgetStarts: [],
   widgetFirstData: {},
@@ -42,6 +43,7 @@ function recordEverything(stats: StatsModule['dashboardLoadStats']) {
   stats.recordSourceOpen('db');
   stats.recordRowLoadPass('db');
   stats.recordRowsBound('db', 3);
+  stats.recordRowsRead('db', 256);
   stats.recordDerivedCompute('view:hash');
   stats.recordWidgetStart({ widgetId: 'w1', sourceId: 'db', visibleAtStart: true, at: 1 });
   stats.recordWidgetFirstData('w1', 2);
@@ -92,6 +94,19 @@ describe('dashboardLoadStats in a development or test build', () => {
     stats.recordRowsBound('a', 49);
     stats.recordRowsBound('b', 7);
     expect(stats.snapshot().rowsBound).toEqual({ a: 50, b: 7 });
+  });
+
+  it('adds up the rows read per database, and ignores a read of no rows', () => {
+    const stats = loadStats(true);
+
+    stats.recordRowsRead('a', 256);
+    stats.recordRowsRead('a', 1);
+    stats.recordRowsRead('b', 0);
+    stats.recordRowsRead('c', 12);
+    expect(stats.snapshot().rowsRead).toEqual({ a: 257, c: 12 });
+
+    stats.reset();
+    expect(stats.snapshot().rowsRead).toEqual({});
   });
 
   it('counts the full computations of each derived result', () => {
@@ -215,6 +230,7 @@ describe('dashboardLoadStats in a development or test build', () => {
       sourceOpens: { db: 2 },
       rowLoadPasses: { db: 1 },
       rowsBound: { db: 3 },
+      rowsRead: { db: 256 },
       derivedComputes: { 'view:hash': 1 },
       widgetStarts: [{ widgetId: 'w1', sourceId: 'db', visibleAtStart: true, at: 1 }],
       widgetFirstData: { w1: 2 },
@@ -252,6 +268,7 @@ describe('dashboardLoadStats in a production build', () => {
     recordEverything(stats);
     stats.recordWidgetStart({ widgetId: 'w2', sourceId: 'db', visibleAtStart: false });
     stats.recordRowsBound('db');
+    stats.recordRowsRead('db', 2000);
     stats.recordSourceLoadStart('other');
     expect(stats.snapshot()).toEqual(EMPTY);
     expect(statsWindow.__DASHBOARD_LOAD_STATS__).toBeUndefined();

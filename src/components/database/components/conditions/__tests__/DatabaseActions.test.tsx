@@ -7,6 +7,7 @@ import {
   DatabaseSearchProvider,
   useDatabaseSearch,
 } from '@/components/database/components/conditions/DatabaseSearchContext';
+import { WidgetActions } from '@/components/database/dashboard/widget-tool-buttons/WidgetActions';
 import { WIDGET_TOOL_SLOT_CLASS, WIDGET_TOOLS_CONTAINER_CLASS } from '@/components/database/dashboard/widget-tools';
 
 import { DatabaseActions } from '../DatabaseActions';
@@ -53,11 +54,17 @@ jest.mock('@/components/database/dashboard/widget-tool-buttons/WidgetSortTool', 
   WidgetSortTool: () => <div data-testid='widget-sort-tool' />,
 }));
 
+// The phone's widget tools (tested with `MobileWidgetTools`).
+jest.mock('@/components/database/dashboard/mobile/MobileWidgetTools', () => ({
+  MobileWidgetTools: () => <div data-testid='mobile-widget-tools' />,
+}));
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) =>
       ({
         'button.clear': 'Clear',
+        'databaseSearch.placeholder': 'Type to search...',
         'gallery.searchPlaceholder': 'Type to search',
         'search.label': 'Search',
         'settings.title': 'Settings',
@@ -102,8 +109,12 @@ jest.mock('@/components/database/components/settings/Settings', () => ({
 }));
 
 jest.mock('@/components/database/components/template', () => ({
-  DatabaseTemplateButton: ({ compact }: { compact?: boolean }) => (
-    <button data-compact={String(Boolean(compact))} data-testid='database-template-button'>
+  DatabaseTemplateButton: ({ compact, variant }: { compact?: boolean; variant?: string }) => (
+    <button
+      data-compact={String(Boolean(compact) || variant === 'compact')}
+      data-testid='database-template-button'
+      data-variant={variant ?? (compact ? 'compact' : 'default')}
+    >
       New
     </button>
   ),
@@ -166,12 +177,13 @@ describe('DatabaseActions template support', () => {
     expect(screen.getByTestId('database-template-button')).toBeTruthy();
   });
 
-  it('shows sorting in grid, list, and gallery layouts', () => {
+  // WP09: boards sort too (cards inside each column).
+  it('shows sorting in grid, list, board, gallery and feed layouts', () => {
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Board);
 
     const { rerender } = render(<DatabaseActions />);
 
-    expect(screen.queryByTestId('sorts-button')).toBeNull();
+    expect(screen.getByTestId('sorts-button')).toBeTruthy();
 
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Grid);
     rerender(<DatabaseActions />);
@@ -223,10 +235,11 @@ describe('DatabaseActions template support', () => {
     expect(screen.getByTestId('database-actions-search')).toBeTruthy();
   });
 
+  // WP09: Grid, List and Board search their rows, so read-only ones keep Search too.
   it.each([
-    [DatabaseViewLayout.Grid, false],
-    [DatabaseViewLayout.Board, false],
-    [DatabaseViewLayout.List, false],
+    [DatabaseViewLayout.Grid, true],
+    [DatabaseViewLayout.Board, true],
+    [DatabaseViewLayout.List, true],
     [DatabaseViewLayout.Calendar, false],
     [DatabaseViewLayout.Chart, false],
     [DatabaseViewLayout.Gallery, true],
@@ -360,8 +373,13 @@ describe('DatabaseActions template support', () => {
     fireEvent.change(screen.getByTestId('database-actions-search-input'), { target: { value: '  Roadmap  ' } });
 
     expect(screen.getByTestId('database-search-query').textContent).toBe('');
+    // 300 ms on both clients (WP09 §1.2).
     act(() => {
-      jest.advanceTimersByTime(200);
+      jest.advanceTimersByTime(299);
+    });
+    expect(screen.getByTestId('database-search-query').textContent).toBe('');
+    act(() => {
+      jest.advanceTimersByTime(1);
     });
     expect(screen.getByTestId('database-search-query').textContent).toBe('Roadmap');
 
@@ -385,11 +403,12 @@ describe('DatabaseActions template support', () => {
     fireEvent.click(screen.getByTestId('database-actions-search'));
     fireEvent.change(screen.getByTestId('database-actions-search-input'), { target: { value: 'Roadmap' } });
     act(() => {
-      jest.advanceTimersByTime(200);
+      jest.advanceTimersByTime(300);
     });
     expect(screen.getByTestId('database-search-query').textContent).toBe('Roadmap');
 
-    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Board);
+    // A layout without Search (boards search since WP09).
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Calendar);
     rerender(createActions());
     expect(screen.queryByTestId('database-actions-search-input')).toBeNull();
 
@@ -490,6 +509,31 @@ describe('DatabaseActions in dashboards', () => {
 
       expect(screen.getByTestId('database-actions-settings')).toBeTruthy();
     });
+
+    // WP14 §1.4.4: Search and Filter, always visible, instead of the hover tools.
+    it("gives a dashboard widget the phone's tools, as its dashboard decides", () => {
+      mockWidget = widgetContext({ mobileContext: true });
+      mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Grid);
+      mockUseDatabaseContext.mockReturnValue({
+        activeViewId: 'grid-view',
+        databasePageId: 'grid-view',
+        isDocumentBlock: true,
+        isDashboardWidget: true,
+      } as ReturnType<typeof useDatabaseContext>);
+
+      const { rerender } = render(<WidgetActions />);
+
+      expect(screen.getByTestId('mobile-widget-tools')).toBeTruthy();
+      expect(screen.queryByTestId('widget-filter-tool')).toBeNull();
+      expect(screen.queryByTestId('database-template-button')).toBeNull();
+      expect(screen.queryByTestId('database-actions-settings')).toBeNull();
+
+      // The widget context (the dashboard's mobile context) wins over the viewport.
+      mockWidget = widgetContext({ mobileContext: false });
+      rerender(<WidgetActions />);
+      expect(screen.queryByTestId('mobile-widget-tools')).toBeNull();
+      expect(screen.getByTestId('widget-filter-tool')).toBeTruthy();
+    });
   });
 
   it('still offers the dashboard toolbar (global filters) to read-only viewers', async () => {
@@ -506,7 +550,7 @@ describe('DatabaseActions in dashboards', () => {
     expect(toolbarTestIds()).toEqual(['dashboard-toolbar']);
   });
 
-  it('shows the Filter and Sort tools of a grid widget in View mode, as popovers, without open-as-page', () => {
+  it('shows the Filter, Sort, Search and New tools of a grid widget in View mode, without open-as-page', () => {
     mockWidget = widgetContext();
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Grid);
     mockUseDatabaseContext.mockReturnValue({
@@ -517,10 +561,18 @@ describe('DatabaseActions in dashboards', () => {
       navigateToView: jest.fn(),
     } as ReturnType<typeof useDatabaseContext>);
 
-    render(<DatabaseActions />);
+    render(<WidgetActions />);
 
-    expect(toolbarTestIds()).toEqual(['widget-filter-tool', 'widget-sort-tool']);
-    expect(widgetTools()).toEqual(['filter', 'sort']);
+    expect(toolbarTestIds()).toEqual([
+      'widget-filter-tool',
+      'widget-sort-tool',
+      'database-actions-search',
+      'database-template-button',
+    ]);
+    expect(widgetTools()).toEqual(['filter', 'sort', 'search', 'new']);
+    // The compact widget variants (WP09 §1.2, §1.3).
+    expect(screen.getByTestId('database-actions-search').getAttribute('data-parity-id')).toBe('dash-widget-tool-search');
+    expect(screen.getByTestId('database-template-button').getAttribute('data-variant')).toBe('icon');
     const tools = screen.getByTestId('database-actions');
 
     expect(tools.getAttribute('data-dashboard-widget')).toBe('true');
@@ -553,7 +605,7 @@ describe('DatabaseActions in dashboards', () => {
       isDashboardWidget: true,
     } as ReturnType<typeof useDatabaseContext>);
 
-    render(<DatabaseActions />);
+    render(<WidgetActions />);
 
     expect(toolbarTestIds()).toEqual(['widget-filter-tool', 'widget-sort-tool', 'dashboard-widget-settings-button']);
     expect(screen.getByTestId('database-actions').getAttribute('data-force-visible')).toBe('true');
@@ -580,7 +632,7 @@ describe('DatabaseActions in dashboards', () => {
       isDashboardWidget: true,
     } as ReturnType<typeof useDatabaseContext>);
 
-    render(<DatabaseActions />);
+    render(<WidgetActions />);
     const settings = screen.getByTestId('dashboard-widget-settings-button');
 
     // A press on it is the host's own toggle, never an outside press; the focus returns to it.
@@ -602,10 +654,10 @@ describe('DatabaseActions in dashboards', () => {
       isDashboardWidget: true,
     } as ReturnType<typeof useDatabaseContext>);
 
-    render(<DatabaseActions />);
+    render(<WidgetActions />);
     const slots = Array.from(screen.getByTestId('database-actions').querySelectorAll('[data-widget-tool]'));
 
-    expect(slots.map((slot) => slot.getAttribute('data-active'))).toEqual(['true', 'false']);
+    expect(slots.map((slot) => slot.getAttribute('data-active'))).toEqual(['true', 'false', 'false', 'false']);
     // The group stays visible for the active tool (the tested visibility rule reads `data-has-active`).
     expect(screen.getByTestId('database-actions').getAttribute('data-has-active')).toBe('true');
     expect(screen.getByTestId('database-actions').className).toContain(WIDGET_TOOLS_CONTAINER_CLASS);
@@ -627,7 +679,7 @@ describe('DatabaseActions in dashboards', () => {
       isDashboardWidget: true,
     } as ReturnType<typeof useDatabaseContext>);
 
-    render(<DatabaseActions />);
+    render(<WidgetActions />);
 
     expect(widgetTools()).toEqual(['filter']);
     expect(screen.getByTestId('database-actions').getAttribute('data-force-visible')).toBe('true');
@@ -645,7 +697,7 @@ describe('DatabaseActions in dashboards', () => {
 
     render(
       <DatabaseSearchProvider activeViewId='gallery-view'>
-        <DatabaseActions />
+        <WidgetActions />
       </DatabaseSearchProvider>
     );
 
@@ -655,7 +707,7 @@ describe('DatabaseActions in dashboards', () => {
     expect(screen.getByTestId('dashboard-widget-settings-button')).toBeTruthy();
   });
 
-  it('offers no tool in a published (read-only) widget', () => {
+  it('offers only Search in a published (read-only) widget', () => {
     mockWidget = widgetContext();
     mockUseReadOnly.mockReturnValue(true);
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Board);
@@ -666,13 +718,14 @@ describe('DatabaseActions in dashboards', () => {
       isDashboardWidget: true,
     } as ReturnType<typeof useDatabaseContext>);
 
-    render(<DatabaseActions />);
+    render(<WidgetActions />);
 
-    expect(screen.queryByTestId('database-actions')).toBeNull();
+    expect(widgetTools()).toEqual(['search']);
+    expect(screen.queryByTestId('database-template-button')).toBeNull();
     expect(screen.queryByTestId('database-actions-open-as-page')).toBeNull();
   });
 
-  it('keeps the Filter tool for a reader who edits their own conditions', () => {
+  it('keeps Filter, Sort and Search, but no New, for a reader who edits their own conditions', () => {
     mockWidget = widgetContext();
     mockUseReadOnly.mockReturnValue(true);
     mockConditionsReadOnly = false;
@@ -684,9 +737,42 @@ describe('DatabaseActions in dashboards', () => {
       isDashboardWidget: true,
     } as ReturnType<typeof useDatabaseContext>);
 
-    render(<DatabaseActions />);
+    render(<WidgetActions />);
 
-    expect(widgetTools()).toEqual(['filter']);
+    expect(widgetTools()).toEqual(['filter', 'sort', 'search']);
+  });
+
+  it('keeps the widget tools shown while the search field is expanded, and collapses it on Escape', () => {
+    mockWidget = widgetContext();
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Board);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'board-view',
+      databasePageId: 'board-view',
+      isDocumentBlock: true,
+      isDashboardWidget: true,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(
+      <DatabaseSearchProvider activeViewId='board-view' applyToRows>
+        <WidgetActions />
+      </DatabaseSearchProvider>
+    );
+
+    const button = screen.getByTestId('database-actions-search');
+
+    expect(button.className).toContain('h-6');
+    expect(button.className).toContain('w-6');
+    fireEvent.click(button);
+    const field = screen.getByTestId('database-actions-search-field');
+
+    expect(field.getAttribute('data-search-active')).toBe('true');
+    expect(field.getAttribute('data-parity-id')).toBe('dash-widget-search-field');
+    expect(field.className).toContain('w-[min(200px,45cqw)]');
+    expect(field.className).toContain('max-w-[45%]');
+    expect(screen.getByTestId('database-actions').className).toContain('has-[[data-search-active=true]]:opacity-100');
+    expect(screen.getByTestId('database-actions-search-input').getAttribute('placeholder')).toBe('Type to search...');
+    fireEvent.keyDown(screen.getByTestId('database-actions-search-input'), { key: 'Escape' });
+    expect(screen.queryByTestId('database-actions-search-field')).toBeNull();
   });
 
   it('never renders the dashboard toolbar inside a widget', () => {
@@ -699,7 +785,7 @@ describe('DatabaseActions in dashboards', () => {
       isDashboardWidget: true,
     } as ReturnType<typeof useDatabaseContext>);
 
-    render(<DatabaseActions />);
+    render(<WidgetActions />);
 
     expect(screen.queryByTestId('dashboard-toolbar')).toBeNull();
     // A nested dashboard is no widget layout: no tools either.

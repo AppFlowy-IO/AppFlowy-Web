@@ -1,11 +1,13 @@
 import { EventEmitter } from 'events';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { APP_EVENTS } from '@/application/constants';
-import { View, ViewIcon } from '@/application/types';
+import { UIVariant, View, ViewIcon } from '@/application/types';
 import { useViewMeta } from '@/components/editor/components/blocks/database/hooks/useViewMeta';
 
 import { useDashboardHost } from '../DashboardUiContext';
+
+import { dashboardViewMetaLoader } from './viewMetaBatch';
 
 interface MetaOverride {
   name: string;
@@ -84,9 +86,21 @@ function sameIcon(a: ViewIcon | null, b: ViewIcon | null) {
   return a === b || (a !== null && b !== null && a.ty === b.ty && a.value === b.value);
 }
 
-/** Folder name / icon of the widget's view, following renames. */
+/**
+ * Folder name / icon of the widget's view, following renames. The widgets of
+ * one dashboard ask for their views together: one batched request per
+ * dashboard open (`viewMetaBatch.ts`), the per-view load as the fallback. A
+ * published page keeps the per-view load.
+ */
 export function useWidgetViewMeta(viewId: string) {
-  const { loadViewMeta, eventEmitter } = useDashboardHost();
+  const { loadViewMeta: loadOneViewMeta, eventEmitter, variant, workspaceId } = useDashboardHost();
+  const loadViewMeta = useMemo(
+    () =>
+      loadOneViewMeta && workspaceId && variant !== UIVariant.Publish
+        ? dashboardViewMetaLoader(loadOneViewMeta, workspaceId)
+        : loadOneViewMeta,
+    [loadOneViewMeta, variant, workspaceId]
+  );
   const { viewMeta } = useViewMeta({ viewId, loadViewMeta, ignoreMetaErrors: true });
   const [override, setOverride] = useState<MetaOverride | null>(null);
 

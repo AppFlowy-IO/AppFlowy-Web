@@ -8,6 +8,8 @@
  * to compute the text a chart must show.
  */
 
+import { toIntlLocale } from '../../i18n/intl-locale';
+
 import { CHART_MAX_DECIMAL_PLACES, ChartAggregationType } from './chart-enums';
 
 export type ChartValueMode = 'axis' | 'label' | 'tooltip' | 'center' | 'card';
@@ -43,23 +45,26 @@ export interface ChartFormatContext {
 const NUMBER_FORMAT_NUM = 0;
 const NUMBER_FORMAT_PERCENT = 36;
 
-// The branches for 7–15 are WP11's: the shared vectors drive them on both
-// clients already, but no web chart reaches them, because
-// `resolveEffectiveAggregation` maps a stored value this client does not
-// compute to Count.
-/** Count, Count values, and WP11's Count empty / Count not empty. */
+// The branches for 7–15 are WP11's aggregations, which charts compute through
+// `effectiveChartAggregation`; the shared vectors drive them on both clients.
+/** Count, Count unique, and WP11's Count not empty / Count empty. */
 const COUNT_AGGREGATIONS: ReadonlySet<number> = new Set([
   ChartAggregationType.Count,
-  ChartAggregationType.CountValues,
-  7,
-  8,
+  ChartAggregationType.CountUnique,
+  ChartAggregationType.CountNotEmpty,
+  ChartAggregationType.CountEmpty,
 ]);
 /** WP11's percent aggregations; the value is in percentage points (0–100). */
-const PERCENT_AGGREGATIONS = new Set([9, 10, 11, 12]);
+const PERCENT_AGGREGATIONS: ReadonlySet<number> = new Set([
+  ChartAggregationType.PercentEmpty,
+  ChartAggregationType.PercentNotEmpty,
+  ChartAggregationType.PercentChecked,
+  ChartAggregationType.PercentUnchecked,
+]);
 /** WP11's earliest and latest date; the value is days since the Unix epoch. */
-const DATE_AGGREGATIONS = new Set([13, 14]);
+const DATE_AGGREGATIONS: ReadonlySet<number> = new Set([ChartAggregationType.Earliest, ChartAggregationType.Latest]);
 /** WP11's date range; the value is a number of days. */
-const DATE_RANGE_AGGREGATION = 15;
+const DATE_RANGE_AGGREGATION: number = ChartAggregationType.DateRange;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -284,21 +289,13 @@ function incrementDigits(digits: string): string {
   return `1${chars.join('')}`;
 }
 
-const LOCALE_ALIASES: Record<string, string> = { en: 'en-US', zh: 'zh-CN', pt: 'pt-BR' };
-
-/** The chart locale for an app language: `en → en-US`, `zh → zh-CN`, `pt → pt-BR`; unsupported → `en-US`. */
+/**
+ * The chart locale for an app language: `toIntlLocale` (`en → en-US`,
+ * `hin → hi`, `zh → zh-CN`, `pt → pt-BR`; unsupported → `en-US`), so charts,
+ * board calculations and chart date labels share one mapping.
+ */
 export function resolveChartLocale(appLanguage: string | null | undefined): string {
-  const tag = (appLanguage ?? '').trim().replace(/_/g, '-');
-
-  if (!tag) return 'en-US';
-  const resolved = LOCALE_ALIASES[tag] ?? tag;
-
-  try {
-    return Intl.NumberFormat.supportedLocalesOf(resolved).length > 0 ? resolved : 'en-US';
-  } catch {
-    // An invalid tag throws a RangeError.
-    return 'en-US';
-  }
+  return toIntlLocale(appLanguage);
 }
 
 /** A donut slice's share of the total: one decimal unless it rounds to an integer (`4/12 → 33.3%`). */

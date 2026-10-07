@@ -186,6 +186,15 @@ type SeedHydrationRequest = {
   rowOrders: YDatabaseRowOrders;
   /** The walk has not reached its terminal page: its seeds are provisional. */
   walkInFlight: boolean;
+  /**
+   * The rows are read again for a view that already shows them (its
+   * conditions changed: a dashboard's global filter, the viewer's private
+   * filter) and the source's seeds are committed. The pass then publishes its
+   * docs once, when it ends: each publish recomputes the view's filter and
+   * sort over every row and re-renders it, so publishing every frame showed
+   * every intermediate result. A cold load keeps publishing as rows arrive.
+   */
+  publishOnce: boolean;
   seedsRevision: number;
   rowOrderRevision: number;
   peekRowDocFromSeed: PeekRowDocFromSeed;
@@ -434,6 +443,8 @@ function createSeedHydrator(store: LoaderStore): SeedHydrator {
   const pendingUnwatch = new Map<string, () => void>();
   let request: SeedHydrationRequest | null = null;
   let walkInFlight = false;
+  /** The pass in flight publishes once, when it ends (`SeedHydrationRequest.publishOnce`). */
+  let publishOnce = false;
   let frame: number | null = null;
   let run = 0;
   let passActive = false;
@@ -503,14 +514,20 @@ function createSeedHydrator(store: LoaderStore): SeedHydrator {
   const processBatch = (runId: number) => {
     if (run !== runId) return;
     const frameStartedAt = performance.now();
+    // A pass that publishes once shows nothing until it ends: it is bounded by
+    // time only, so docs the seed cache already built (another widget of the
+    // source read them) take one frame instead of one per 128 rows.
+    const settledPass = publishOnce && !walkInFlight;
     // While a walk is still in flight, each frame builds docs for a bounded
     // time, so the next page's response is not starved of the main thread.
-    const frameBudgetMs = walkInFlight ? PROVISIONAL_SEED_HYDRATE_FRAME_BUDGET_MS : Number.POSITIVE_INFINITY;
+    const frameBudgetMs =
+      walkInFlight || settledPass ? PROVISIONAL_SEED_HYDRATE_FRAME_BUDGET_MS : Number.POSITIVE_INFINITY;
+    const batchSize = settledPass ? Number.POSITIVE_INFINITY : SEED_HYDRATE_BATCH_SIZE;
     let hydrated = 0;
     let scanned = 0;
 
     for (const rowId of queue) {
-      if (hydrated >= SEED_HYDRATE_BATCH_SIZE || scanned >= SEED_HYDRATE_SCAN_LIMIT) break;
+      if (hydrated >= batchSize || scanned >= SEED_HYDRATE_SCAN_LIMIT) break;
       if (hydrated > 0 && performance.now() - frameStartedAt > frameBudgetMs) break;
       queue.delete(rowId);
       scanned += 1;
@@ -526,7 +543,9 @@ function createSeedHydrator(store: LoaderStore): SeedHydrator {
 
     const publishDueAt = walkInFlight ? publishedAt + provisionalSeedPublishInterval(publishCount) : frameStartedAt;
 
-    if (frameStartedAt >= publishDueAt) {
+    if (settledPass) {
+      if (queue.size === 0) publish();
+    } else if (frameStartedAt >= publishDueAt) {
       publish();
     } else if (queue.size === 0 && publishTimer === null && hasPending()) {
       // The pass ends here; the next page starts another one.
@@ -554,6 +573,7 @@ function createSeedHydrator(store: LoaderStore): SeedHydrator {
         previous &&
         previous.rowOrders === next.rowOrders &&
         previous.walkInFlight === next.walkInFlight &&
+        previous.publishOnce === next.publishOnce &&
         previous.seedsRevision === next.seedsRevision &&
         previous.rowOrderRevision === next.rowOrderRevision &&
         previous.peekRowDocFromSeed === next.peekRowDocFromSeed &&
@@ -563,6 +583,9 @@ function createSeedHydrator(store: LoaderStore): SeedHydrator {
 
       request = next;
       walkInFlight = next.walkInFlight;
+      // A new pass takes the request's mode; a pass in flight only ever turns
+      // progressive (a consumer that loads cold joined it), never back.
+      publishOnce = passActive ? publishOnce && next.publishOnce : next.publishOnce;
       if (!walkInFlight) {
         // Committed seeds publish every frame again, starting with what the walk left.
         publishCount = 0;
@@ -662,6 +685,14 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
   const [rowOrderRevision, setRowOrderRevision] = useState(0);
   // Identifies this consumer's row map in the store for as long as the hook is mounted.
   const [consumer] = useState(() => Symbol('row-doc-consumer'));
+  // The consumer was mounted inactive: once active, its view gained
+  // conditions while it showed rows, and the rows are read again rather
+  // than loaded cold (`SeedHydrationRequest.publishOnce`).
+  const shownInactiveRef = useRef(false);
+
+  useEffect(() => {
+    if (!active) shownInactiveRef.current = true;
+  }, [active]);
 
   // A background run is shared by consumers and can outlive the render that
   // started it. Publish transport-sensitive operations only after commit so an
@@ -817,6 +848,7 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
     store.seedHydrator.sync({
       rowOrders,
       walkInFlight: !seedsReady,
+      publishOnce: shownInactiveRef.current,
       seedsRevision,
       rowOrderRevision,
       peekRowDocFromSeed,

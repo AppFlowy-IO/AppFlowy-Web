@@ -30,6 +30,11 @@ interface UseDocumentLoaderResult {
   noAccess: boolean;
   /** The load failed because the browser is offline (a network error, not a refusal). */
   offline: boolean;
+  /**
+   * A load is in flight. A verdict reached meanwhile (a probe found the view
+   * in the trash) is not the end of the load: its request is still out.
+   */
+  loading: boolean;
   setNotFound: (notFound: boolean) => void;
 }
 
@@ -67,6 +72,9 @@ export function useDocumentLoader({
   const [notFound, setNotFound] = useState(false);
   const [noAccess, setNoAccess] = useState(false);
   const [offline, setOffline] = useState(false);
+  // The view whose load settled last (loaded, or failed for good). Derived
+  // rather than toggled: a load that ends where it began changes no state.
+  const [settledViewId, setSettledViewId] = useState<string | null>(null);
   // Bumped by the `online` event to load again after an offline failure.
   const [reloadToken, setReloadToken] = useState(0);
   const [syncBound, setSyncBound] = useState(false);
@@ -142,6 +150,7 @@ export function useDocumentLoader({
         setNoAccess(false);
         setOffline(false);
         setSyncBound(false);
+        setSettledViewId(viewId);
       } catch (error) {
         if (cancelled) return;
 
@@ -161,6 +170,7 @@ export function useDocumentLoader({
         setNoAccess(isPermissionDenied);
         setOffline(!isPermissionDenied && isOfflineError(error));
         setNotFound(true);
+        setSettledViewId(viewId);
       }
     };
 
@@ -254,5 +264,5 @@ export function useDocumentLoader({
     return subscribeCollabDocReset(eventEmitter, handleCollabDocReset);
   }, [eventEmitter, viewId]);
 
-  return { doc, notFound, noAccess, offline, setNotFound };
+  return { doc, notFound, noAccess, offline, loading: Boolean(viewId) && settledViewId !== viewId, setNotFound };
 }

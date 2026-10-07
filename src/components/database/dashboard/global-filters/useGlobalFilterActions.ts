@@ -1,137 +1,210 @@
 import { useCallback, useMemo, useRef } from 'react';
 
 import { dashboardSourceDatabaseIds, sameDashboardGlobalFilters } from '@/application/database-yjs/dashboard-layout';
+import { globalFilterValueOf } from '@/application/database-yjs/dashboard-private';
 import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
 import {
   useDashboardContext,
   useDashboardFilters,
   useDashboardLayout,
-  useDashboardLocalWidgetChanges,
   useDashboardSources,
 } from '@/components/database/dashboard/DashboardContext';
 
-import { removeGlobalFilter, replaceGlobalFilter } from './global-filter.utils';
+import {
+  createGlobalFilterForField,
+  findSingleTargetFilter,
+  GlobalFilterSource,
+  GlobalFilterSourceField,
+  removeGlobalFilter,
+  removeGlobalFilterTarget,
+  replaceGlobalFilter,
+  setGlobalFilterTarget,
+} from './global-filter.utils';
+import { requestGlobalFilterEditor } from './pendingEditorStore';
 import { useGlobalFilterSources } from './useGlobalFilterSources';
 
 type FiltersUpdater = (filters: DashboardGlobalFilter[]) => DashboardGlobalFilter[];
+type FilterUpdater = (filter: DashboardGlobalFilter) => DashboardGlobalFilter;
+
+/** A select filter's selection: the option ids and, in parallel, their names. */
+export interface GlobalFilterSelection {
+  content: string;
+  optionNames: string[];
+}
 
 /**
- * Read and write the dashboard's global filters.
+ * Read and write the dashboard's global filters (WP07 §2, WP08 §1.1).
  *
- * Writers in Edit mode persist every change for everybody; everyone else
- * (viewers, and writers in View mode) edits a local override that only they
- * see until a writer saves it. An override made in View mode stays private in
- * Edit mode: an Edit-mode change is applied to the saved filters and, on top
- * of the unsaved differences, to the override, and only "Save for everybody"
- * publishes the override. Updates are computed from the latest lists so
- * several writes in one event (for example two debounced inputs flushing on
- * close) never overwrite each other.
+ * Two paths:
+ * - **Values** (condition, content, option names): a writer in Edit mode
+ *   writes them for everyone; in View mode, and for readers, they are the
+ *   viewer's private values until someone with write access saves them.
+ * - **Structure** (add, delete, rename, re-map sources): shared writes that
+ *   need write access in either mode. Readers cannot change it; the calls
+ *   are ignored for them.
  *
- * "Save for everybody" publishes the override as the whole filter list, a
- * snapshot like every dashboard layout write (last writer wins): a change a
- * collaborator saved to the same filters in the meantime is replaced, and a
- * filter they added while the override was open is dropped from it.
+ * Updates read the latest lists, so several writes in one event (two
+ * debounced inputs flushing on close) never overwrite each other.
+ *
+ * The writers are stable; the returned object changes only with the filters,
+ * the dirty ids, the access or the mode, so a consumer that depends on a
+ * writer alone is not rebuilt on every render.
  */
 export function useGlobalFilterActions() {
   const { canEdit, isEditing, updateSetting } = useDashboardContext();
-  const {
-    globalFilters,
-    effectiveGlobalFilters,
-    localGlobalFilters,
-    setLocalGlobalFilters,
-    resetViewOverlays,
-    commitViewOverlays,
-  } = useDashboardFilters();
-  const widgetChanges = useDashboardLocalWidgetChanges();
-  const persist = canEdit && isEditing;
+  const { globalFilters, effectiveGlobalFilters, dirtyGlobalFilterIds, setPrivateGlobalValue } = useDashboardFilters();
+  const persistValues = canEdit && isEditing;
   const persistedRef = useRef(globalFilters);
-  const localRef = useRef(localGlobalFilters);
+  const effectiveRef = useRef(effectiveGlobalFilters);
 
   persistedRef.current = globalFilters;
-  localRef.current = localGlobalFilters;
+  effectiveRef.current = effectiveGlobalFilters;
 
-  const setLocal = useCallback(
-    (next: DashboardGlobalFilter[] | null) => {
-      const local = next && !sameDashboardGlobalFilters(next, persistedRef.current) ? next : null;
+  const persist = useCallback(
+    (updater: FiltersUpdater) => {
+      if (!canEdit) return;
+      const persisted = persistedRef.current;
+      const shared = updater(persisted);
 
-      localRef.current = local;
-      setLocalGlobalFilters(local);
+      if (shared === persisted || sameDashboardGlobalFilters(shared, persisted)) return;
+      persistedRef.current = shared;
+      updateSetting({ globalFilters: shared });
     },
-    [setLocalGlobalFilters]
+    [canEdit, updateSetting]
   );
 
-  const commit = useCallback(
-    (updater: FiltersUpdater) => {
-      const persisted = persistedRef.current;
-      const local = localRef.current;
-
-      if (!persist) {
-        const current = local ?? persisted;
-        const next = updater(current);
-
-        if (next !== current) setLocal(next);
+  /** The value path: condition, content and option names. */
+  const setFilterValue = useCallback(
+    (filterId: string, updater: FilterUpdater) => {
+      if (persistValues) {
+        persist((filters) => replaceGlobalFilter(filters, filterId, updater));
         return;
       }
 
-      const shared = updater(persisted);
+      const current = effectiveRef.current.find((filter) => filter.id === filterId);
 
-      if (shared !== persisted && !sameDashboardGlobalFilters(shared, persisted)) {
-        persistedRef.current = shared;
-        updateSetting({ globalFilters: shared });
-      }
+      if (!current) return;
+      const next = updater(current);
 
-      // The writer's private override gets the same edit and stays private.
-      if (local) setLocal(updater(local));
+      if (next === current) return;
+      effectiveRef.current = replaceGlobalFilter(effectiveRef.current, filterId, () => next);
+      setPrivateGlobalValue(filterId, globalFilterValueOf(next));
     },
-    [persist, setLocal, updateSetting]
+    [persist, persistValues, setPrivateGlobalValue]
   );
 
-  const addFilter = useCallback((filter: DashboardGlobalFilter) => commit((filters) => [...filters, filter]), [commit]);
+  /** A select filter's selection, content and names together (a viewer's pick stays private). */
+  const setSelection = useCallback(
+    (filterId: string, { content, optionNames }: GlobalFilterSelection) =>
+      setFilterValue(filterId, (filter) => {
+        const names = optionNames.length > 0 ? optionNames : undefined;
+        const same =
+          filter.content === content &&
+          (filter.optionNames ?? []).length === optionNames.length &&
+          (filter.optionNames ?? []).every((name, index) => name === optionNames[index]);
 
-  const updateFilter = useCallback(
-    (filterId: string, updater: (filter: DashboardGlobalFilter) => DashboardGlobalFilter) =>
-      commit((filters) => replaceGlobalFilter(filters, filterId, updater)),
-    [commit]
+        return same ? filter : { ...filter, content, optionNames: names };
+      }),
+    [setFilterValue]
+  );
+
+  /** The structure path: name and mappings. Write access only, in either mode. */
+  const updateFilterStructure = useCallback(
+    (filterId: string, updater: FilterUpdater) => persist((filters) => replaceGlobalFilter(filters, filterId, updater)),
+    [persist]
+  );
+
+  const addFilter = useCallback(
+    (filter: DashboardGlobalFilter) => persist((filters) => [...filters, filter]),
+    [persist]
   );
 
   const deleteFilter = useCallback(
-    (filterId: string) => commit((filters) => removeGlobalFilter(filters, filterId)),
-    [commit]
+    (filterId: string) => persist((filters) => removeGlobalFilter(filters, filterId)),
+    [persist]
   );
 
-  const resetLocal = useCallback(() => {
-    setLocal(null);
-    resetViewOverlays();
-  }, [resetViewOverlays, setLocal]);
+  const setTarget = useCallback(
+    (filterId: string, sources: GlobalFilterSource[], databaseId: string, fieldId: string) =>
+      updateFilterStructure(filterId, (filter) => setGlobalFilterTarget(filter, sources, databaseId, fieldId)),
+    [updateFilterStructure]
+  );
 
-  // Publishes the global-filter override and every widget's local filters / sorts.
-  const saveForEverybody = useCallback(() => {
-    const local = localRef.current;
+  const removeTarget = useCallback(
+    (filterId: string, sources: GlobalFilterSource[], databaseId: string) =>
+      updateFilterStructure(filterId, (filter) => removeGlobalFilterTarget(filter, sources, databaseId)),
+    [updateFilterStructure]
+  );
 
-    if (!canEdit) return;
-    commitViewOverlays(local ?? undefined);
-    if (local) {
-      persistedRef.current = local;
-      setLocal(null);
-    }
-  }, [canEdit, commitViewOverlays, setLocal]);
+  /**
+   * A property picked in the menu (WP08 §1.3): the filter of exactly that
+   * property if there is one, else a new one for it alone. Returns its id, or
+   * `null` for a reader (who cannot add filters).
+   */
+  const createFromProperty = useCallback(
+    (databaseId: string, field: Pick<GlobalFilterSourceField, 'id' | 'name' | 'type'>, typeName: string) => {
+      if (!canEdit) return null;
+      const existing = findSingleTargetFilter(persistedRef.current, databaseId, field.id);
 
-  return {
-    filters: effectiveGlobalFilters,
-    hasLocalChanges: localGlobalFilters !== null || widgetChanges.unsaved > 0,
-    // Widgets whose source the viewer can only read keep their private
-    // conditions; with nothing else changed there is nothing to save.
-    canSave: canEdit && (localGlobalFilters !== null || widgetChanges.savable > 0),
-    canEdit,
-    isEditing,
-    persist,
-    addFilter,
-    updateFilter,
-    deleteFilter,
-    resetLocal,
-    saveForEverybody,
-  };
+      if (existing) return existing.id;
+      const filter = createGlobalFilterForField(databaseId, field, typeName);
+
+      addFilter(filter);
+      return filter.id;
+    },
+    [addFilter, canEdit]
+  );
+
+  /** Pick from the toolbar or `+ Filter` menu: then that pill opens its editor with the value focused. */
+  const pickProperty = useCallback(
+    (databaseId: string, field: Pick<GlobalFilterSourceField, 'id' | 'name' | 'type'>, typeName: string) => {
+      const id = createFromProperty(databaseId, field, typeName);
+
+      if (id) requestGlobalFilterEditor(id);
+      return id;
+    },
+    [createFromProperty]
+  );
+
+  return useMemo(
+    () => ({
+      /** What the pills show: the saved filters, with the viewer's private values in View mode. */
+      filters: effectiveGlobalFilters,
+      dirtyIds: dirtyGlobalFilterIds,
+      canEdit,
+      isEditing,
+      /** Value edits are written for everyone (a writer in Edit mode). */
+      persist: persistValues,
+      setFilterValue,
+      setSelection,
+      updateFilterStructure,
+      addFilter,
+      deleteFilter,
+      setTarget,
+      removeTarget,
+      pickProperty,
+      createFromMultiPicker: createFromProperty,
+    }),
+    [
+      addFilter,
+      canEdit,
+      createFromProperty,
+      deleteFilter,
+      dirtyGlobalFilterIds,
+      effectiveGlobalFilters,
+      isEditing,
+      persistValues,
+      pickProperty,
+      removeTarget,
+      setFilterValue,
+      setSelection,
+      setTarget,
+      updateFilterStructure,
+    ]
+  );
 }
+
+export type GlobalFilterActions = ReturnType<typeof useGlobalFilterActions>;
 
 /** Source databases of the dashboard's widgets, in widget order, with live property lists. */
 export function useDashboardFilterSources() {

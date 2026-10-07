@@ -37,6 +37,14 @@ export interface DashboardLoadStatsSnapshot {
   rowLoadPasses: Record<string, number>;
   /** Rows that got a realtime binding. */
   rowsBound: Record<string, number>;
+  /**
+   * Rows of the database read from outside the tab's memory, by any reader:
+   * every row of each blob/diff page fetched from the server, and each row a
+   * view had to fetch on its own (from IndexedDB or its realtime sync) because
+   * the tab held neither its data nor a seed of it. A reader served from
+   * memory (a seed, a resident row document) reads nothing.
+   */
+  rowsRead: Record<string, number>;
   /** Full computations of a derived result, by its cache key. */
   derivedComputes: Record<string, number>;
   /** In start order. */
@@ -66,6 +74,7 @@ function emptyStats(): DashboardLoadStatsSnapshot {
     sourceOpens: {},
     rowLoadPasses: {},
     rowsBound: {},
+    rowsRead: {},
     derivedComputes: {},
     widgetStarts: [],
     widgetFirstData: {},
@@ -94,6 +103,7 @@ function snapshot(): DashboardLoadStatsSnapshot {
     sourceOpens: { ...stats.sourceOpens },
     rowLoadPasses: { ...stats.rowLoadPasses },
     rowsBound: { ...stats.rowsBound },
+    rowsRead: { ...stats.rowsRead },
     derivedComputes: { ...stats.derivedComputes },
     widgetStarts: stats.widgetStarts.map((entry) => ({ ...entry })),
     widgetFirstData: { ...stats.widgetFirstData },
@@ -153,6 +163,11 @@ export const dashboardLoadStats = {
   /** `rows` rows of the database got a realtime binding. */
   recordRowsBound(databaseId: string, rows = 1) {
     if (recording()) count(stats.rowsBound, databaseId, rows);
+  },
+
+  /** `rows` rows of the database were read from the server or from IndexedDB (see `rowsRead`). */
+  recordRowsRead(databaseId: string, rows: number) {
+    if (rows > 0 && recording()) count(stats.rowsRead, databaseId, rows);
   },
 
   /** A derived result (filter, sort, group, calculation, chart) was computed in full. */

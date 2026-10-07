@@ -5,6 +5,13 @@
 import { Page, expect } from '@playwright/test';
 
 import {
+  chartAggregationOf,
+  chooseChartCalculation,
+  chooseChartYProperty,
+  closeChartPanel,
+  openChartPagePanel,
+} from './chart-settings-helpers';
+import {
   ChartDrilldownSelectors,
   ChartSelectors,
   ChartSettingsSelectors,
@@ -54,76 +61,65 @@ export async function setSelectOptionOnRow(
 }
 
 /**
- * Open the Chart settings submenu (gear button → "Chart settings"). Waits for
- * the X-Axis section to be visible so callers can immediately interact.
+ * Open the chart settings panel (gear button → "Chart settings ›"). Waits for
+ * the panel so callers can immediately interact.
  */
 export async function openChartSettings(page: Page): Promise<void> {
-  // Make sure no stale menu is open from a previous interaction.
-  await page.keyboard.press('Escape').catch(() => {});
-  await page.waitForTimeout(200);
-
-  await ChartSettingsSelectors.settingsButton(page).click({ force: true });
-  await page.waitForTimeout(400);
-  await ChartSettingsSelectors.chartSettingsSubTrigger(page).click({ force: true });
-  await page.waitForTimeout(400);
-  await expect(ChartSettingsSelectors.xAxisLabel(page)).toBeVisible({ timeout: 5000 });
-  await expect(ChartSettingsSelectors.aggregationLabel(page)).toBeVisible({ timeout: 5000 });
+  await openChartPagePanel(page);
 }
 
 /**
- * Close any open dropdown by pressing Escape twice (covers nested submenus).
+ * Close any open menu (the panel's page first, then the menus).
  */
 export async function closeDropdown(page: Page): Promise<void> {
-  await page.keyboard.press('Escape').catch(() => {});
-  await page.waitForTimeout(150);
-  await page.keyboard.press('Escape').catch(() => {});
-  await page.waitForTimeout(250);
+  await closeChartPanel(page);
 }
 
 /**
- * Click an aggregation option (e.g. "Count", "Sum") inside the open chart
- * settings dropdown, then close the dropdown so the Yjs write can settle and
- * the next openChartSettings() starts from a clean state.
+ * Pick a calculation the way the panel offers it, property first: "Count"
+ * (Count all) clears the property; any other label first sets "What to show"
+ * to `property` (when given), then picks the calculation. Closes the panel so
+ * the Yjs write can settle and the next openChartSettings() starts clean.
  */
-export async function selectAggregation(page: Page, label: string): Promise<void> {
-  await ChartSettingsSelectors.aggregationItem(page, label).click({ force: true });
-  await page.waitForTimeout(300);
+export async function selectAggregation(page: Page, label: string, property?: string): Promise<void> {
+  const aggregation = chartAggregationOf(label);
+
+  if (aggregation === 0) {
+    await chooseChartYProperty(page, null);
+  } else {
+    if (property) await chooseChartYProperty(page, property);
+    await chooseChartCalculation(page, aggregation);
+  }
+
   await closeDropdown(page);
 }
 
 /**
- * Click a chart-type row (Bar / Horizontal Bar / Line / Donut) in the open
- * chart settings dropdown, then close it. Chart type now lives as a flat
- * section at the bottom of the chart settings submenu.
+ * Click a chart type icon button of the open panel, then close it. The old
+ * menu labels map to the buttons: Bar → Vertical bar, Horizontal Bar →
+ * Horizontal bar, Line, Donut, Number.
  */
 export async function selectChartType(page: Page, label: string): Promise<void> {
-  const item = ChartSettingsSelectors.chartTypeItem(page, label);
+  const button = ChartSettingsSelectors.chartTypeButton(page, label);
 
-  await item.scrollIntoViewIfNeeded().catch(() => {});
-  await page.waitForTimeout(150);
-  await item.click({ force: true });
-  await page.waitForTimeout(400);
+  await button.click();
+  await expect(button).toHaveAttribute('aria-pressed', 'true');
   await closeDropdown(page);
 }
 
 /**
- * Click the "Show empty values" toggle row inside the open chart settings
- * dropdown and close it. The on/off state isn't returned because only the
- * resulting visual change is observable from outside.
+ * Click the "Show empty values" switch row of the open panel and close it.
  */
 export async function toggleShowEmptyValues(page: Page): Promise<void> {
-  await ChartSettingsSelectors.showEmptyValuesItem(page).click({ force: true });
-  await page.waitForTimeout(300);
+  await ChartSettingsSelectors.showEmptyToggle(page).click();
   await closeDropdown(page);
 }
 
 /**
- * Click the "Cumulative" toggle row inside the open chart settings dropdown
- * and close it.
+ * Click the "Cumulative" switch row of the open panel and close it.
  */
 export async function toggleCumulative(page: Page): Promise<void> {
-  await ChartSettingsSelectors.cumulativeItem(page).click({ force: true });
-  await page.waitForTimeout(300);
+  await ChartSettingsSelectors.cumulativeToggle(page).click();
   await closeDropdown(page);
 }
 
@@ -143,10 +139,22 @@ export async function waitForDrilldownOpen(page: Page): Promise<void> {
 }
 
 /**
- * Close the drilldown popup via Escape (more reliable than targeting the X
- * button when MUI renders multiple buttons inside Dialog).
+ * Close the drill-down with Escape (it closes the innermost layer, WP13
+ * §3.12) and wait until it has gone.
  */
 export async function closeDrilldown(page: Page): Promise<void> {
+  const dialog = ChartDrilldownSelectors.dialog(page);
+
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(400);
+  // Focus inside a chip editor or the search swallows the first Escape: retry once with Dismiss.
+  const closed = await dialog
+    .waitFor({ state: 'detached', timeout: 2000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!closed) {
+    await ChartDrilldownSelectors.closeButton(page).click();
+  }
+
+  await expect(dialog).toHaveCount(0, { timeout: 10000 });
 }

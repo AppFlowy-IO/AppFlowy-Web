@@ -5,19 +5,23 @@ import { ViewIcon, ViewLayout } from '@/application/types';
 import { WidgetMoveDirection } from './widget-moves';
 
 /**
- * What a widget's options menu does. Stable per widget: which entries are
- * enabled is read from the rows by the menu itself while it is open.
+ * What a widget's menu and settings host do. Stable per widget: which entries
+ * are enabled is read from the rows by the menu itself while it is open.
  */
 export interface WidgetActions {
-  /** Navigate to the widget's view (falls back to the source database page). */
+  /** "View data source": navigate to the widget's view (falls back to the source database page). */
   open: () => void;
-  /** Open the widget picker in replace mode (explains the limit when full). */
+  /** Settings › Source: the Source panel docked to the widget (replace mode). */
   changeView: () => void;
-  /** Duplicate next to the widget, or show the widget limit when the dashboard is full. */
+  /**
+   * Duplicate next to the widget with an owned copy of its view; on a full
+   * dashboard the refusal is announced and nothing is created.
+   */
   duplicate: () => void;
   remove: () => void;
+  /** Move left / right, or "Move to row" › Create new row above / below. */
   move: (direction: WidgetMoveDirection) => void;
-  /** Open the widget's settings host (Edit mode); closes the menu. */
+  /** "Edit view": open the widget's settings host (Edit mode); closes the menu. */
   openSettings: () => void;
 }
 
@@ -40,6 +44,17 @@ export interface WidgetContextValue {
   canEdit: boolean;
   /** Effective Edit mode: `isEditing && canEdit`. */
   editing: boolean;
+  /**
+   * A phone or a web viewport below 768px (WP14 §1.4): the header shows the
+   * mobile tools, and the menu and the filters open as bottom sheets.
+   */
+  mobileContext: boolean;
+  /**
+   * The mobile search field replaces the title (WP14 §1.4.5). Owned by the
+   * widget box, which drops it when the mobile context ends.
+   */
+  searchActive: boolean;
+  setSearchActive: (active: boolean) => void;
   /** The header band with the title pill shows (the same in both modes). */
   showWidgetTitles: boolean;
   /** The title pill shows the view icon ("Show icons in heading"). */
@@ -67,6 +82,13 @@ export interface WidgetContextValue {
    */
   settingsToolRef: RefObject<HTMLButtonElement>;
   actions: WidgetActions;
+  /**
+   * The rows of the widget's view failed to load (LOADING-DESIGN R8): the
+   * card says "Some rows haven't loaded yet" and offers a retry.
+   */
+  rowsLoadFailed?: boolean;
+  /** Loads the rows again after a failure (mounts the nested database again). */
+  retryRowsLoad?: () => void;
 }
 
 /**

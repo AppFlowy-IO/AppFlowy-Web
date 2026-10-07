@@ -28,8 +28,8 @@ jest.mock('@/components/_shared/view-icon/PageIcon', () => ({
   default: ({ view }: { view: { layout: ViewLayout } }) => <span data-layout={view.layout} data-testid='page-icon' />,
 }));
 
-jest.mock('@/components/database/components/conditions', () => ({
-  DatabaseActions: () => <div data-testid='database-actions' />,
+jest.mock('../widget-tool-buttons/WidgetActions', () => ({
+  WidgetActions: () => <div data-testid='database-actions' />,
 }));
 
 jest.mock('../WidgetSettingsHost', () => ({
@@ -293,5 +293,21 @@ describe('WidgetHeaderFrame without titles', () => {
     render(<Harness name='' />);
 
     expect(screen.getByTestId('dashboard-widget-title').textContent).toBe('untitled');
+  });
+
+  it('keeps the capsule shown in View mode while its search field is expanded (WP09)', () => {
+    render(<Harness showWidgetTitles={false} />);
+
+    expect(screen.getByTestId('dashboard-widget-tool-capsule').className).toContain(
+      'has-[[data-search-active=true]]:opacity-100'
+    );
+  });
+});
+
+describe('WidgetHeaderFrame and the widget search (WP09 §1.2)', () => {
+  it('makes the band the size container its expanded search field measures 45% of', () => {
+    render(<Harness actions={<div data-testid='view-actions' />} />);
+
+    expect(screen.getByTestId('dashboard-widget-header').style.containerType).toBe('inline-size');
   });
 });

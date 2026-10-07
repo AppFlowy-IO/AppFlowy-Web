@@ -6,7 +6,7 @@ import BarChartWidget from '@/components/database/chart/widgets/BarChart';
 
 import { ChartMeasureContext } from '../measureText';
 
-import { chartContextStub, firePointer, FIXTURE_MEASURE, installChartEnvironment } from './chartTestUtils';
+import { chartContextStub, firePointer, FIXTURE_MEASURE, installChartEnvironment, seriesDataOf } from './chartTestUtils';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -55,7 +55,7 @@ describe('BarChartWidget hover path', () => {
     const { container } = render(
       <ChartMeasureContext.Provider value={{ ...FIXTURE_MEASURE, measure12 }}>
         <ChartContext.Provider value={chartContextStub()}>
-          <BarChartWidget data={OWNERS} onItemClick={jest.fn()} />
+          <BarChartWidget data={seriesDataOf(OWNERS)} onItemClick={jest.fn()} />
         </ChartContext.Provider>
       </ChartMeasureContext.Provider>
     );
@@ -109,7 +109,7 @@ describe('BarChartWidget hover path', () => {
     const { container } = render(
       <ChartMeasureContext.Provider value={FIXTURE_MEASURE}>
         <ChartContext.Provider value={chartContextStub()}>
-          <BarChartWidget data={OWNERS} />
+          <BarChartWidget data={seriesDataOf(OWNERS)} />
         </ChartContext.Provider>
       </ChartMeasureContext.Provider>
     );

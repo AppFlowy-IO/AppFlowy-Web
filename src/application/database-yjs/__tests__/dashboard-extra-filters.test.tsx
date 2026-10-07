@@ -427,3 +427,95 @@ describe('useRowOrdersSelector with dashboard extra filters', () => {
     });
   });
 });
+
+describe('select global filters matched by option name (WP08 §1.9)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockRelativeRefresh.useActual = false;
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  /** This widget's database calls its options `b-*`; the filter was picked in another database (`a-*`). */
+  function createSelectFixture(): Fixture {
+    const fixture = createFixture();
+    const database = fixture.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const status = new Y.Map() as YDatabaseField;
+
+    status.set(YjsDatabaseKey.id, statusFieldId);
+    status.set(YjsDatabaseKey.name, 'Status');
+    status.set(YjsDatabaseKey.type, FieldType.SingleSelect);
+    const typeOptions = new Y.Map<unknown>();
+    const typeOption = new Y.Map<unknown>();
+
+    typeOption.set(
+      YjsDatabaseKey.content,
+      JSON.stringify({
+        disable_color: false,
+        options: [
+          { id: 'b-todo', name: 'Todo', color: 'Purple' },
+          { id: 'b-done', name: 'Done', color: 'Pink' },
+        ],
+      })
+    );
+    typeOptions.set(String(FieldType.SingleSelect), typeOption);
+    status.set(YjsDatabaseKey.type_option, typeOptions as never);
+    database.get(YjsDatabaseKey.fields).set(statusFieldId, status);
+    fixture.rowMap['row-a'] = createRowDoc('row-a', databaseId, {
+      [statusFieldId]: createCell(FieldType.SingleSelect, 'b-done'),
+    });
+    fixture.rowMap['row-b'] = createRowDoc('row-b', databaseId, {
+      [statusFieldId]: createCell(FieldType.SingleSelect, 'b-todo'),
+    });
+    fixture.rowMap['row-c'] = createRowDoc('row-c', databaseId, {
+      [statusFieldId]: createCell(FieldType.SingleSelect, 'b-todo'),
+    });
+    return fixture;
+  }
+
+  const filter = {
+    id: 'gf-status',
+    name: 'Status',
+    fieldType: FieldType.SingleSelect,
+    condition: 0,
+    content: 'a-done',
+    optionNames: ['Done'],
+    targets: { [databaseId]: statusFieldId },
+  };
+  const targetSource = {
+    fields: [
+      {
+        id: statusFieldId,
+        type: FieldType.SingleSelect,
+        options: [
+          { id: 'b-todo', name: 'Todo' },
+          { id: 'b-done', name: 'Done' },
+        ],
+      },
+    ],
+  };
+
+  it('a target source whose option ids differ gives the matching rows', async () => {
+    const { result } = renderRowOrders(
+      createSelectFixture(),
+      resolveExtraFiltersForDatabase([filter], databaseId, targetSource)
+    );
+
+    await waitFor(() => {
+      expect(ids(result.current)).toEqual(['row-a']);
+    });
+  });
+
+  it('an unloaded source keeps the ids (which match nothing here)', async () => {
+    const resolved = resolveExtraFiltersForDatabase([filter], databaseId);
+
+    expect(resolved[0].content).toBe('a-done');
+    const { result } = renderRowOrders(createSelectFixture(), resolved);
+
+    await waitFor(() => {
+      expect(ids(result.current)).toEqual([]);
+    });
+  });
+});

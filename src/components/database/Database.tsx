@@ -5,21 +5,26 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { APP_EVENTS } from '@/application/constants';
 import {
   getDatabaseRowDocFromSeed,
+  holdsDatabaseSourceRows,
+  isDatabaseSourceResident,
   peekDatabaseRowDocSeed,
   prefetchDatabaseBlobDiff,
   releaseDatabaseRowDocSeedCache,
   retainDatabaseRowDocSeedCache,
+  subscribeToDatabaseSourceResidency,
 } from '@/application/database-blob';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import {
   DatabaseExtraFiltersContext,
   DatabaseViewOverlayContext,
+  type NavigateToRowOptions,
   type RowPassState,
 } from '@/application/database-yjs/context';
-import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
+import { dashboardLoadStats, isDashboardLoadStatsRecording } from '@/application/database-yjs/dashboard-load-stats';
 import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
 import { combineFilters, hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@/application/database-yjs/history';
+import { readViewOpenPagesIn, resolveRecordOpening } from '@/application/database-yjs/open-pages-in';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
@@ -57,7 +62,9 @@ import {
   YjsEditorKey,
   YDatabaseView,
 } from '@/application/types';
+import { useMobileContext } from '@/components/_shared/hooks/useMobileContext';
 import { useDatabaseRestoreNotice } from '@/components/app/DatabaseRestoreNotice';
+import { DatabaseRowSidePeek } from '@/components/database/components/database-row/DatabaseRowSidePeek';
 import { DatabaseRow } from '@/components/database/DatabaseRow';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import DatabaseViews from '@/components/database/DatabaseViews';
@@ -207,6 +214,8 @@ type RowSyncRegistration = {
   revision: number;
   cleanup?: (objectId: string, delayMs?: number) => void;
   promise?: Promise<YDoc | undefined>;
+  /** The row document the binding syncs, once it is registered. */
+  doc?: YDoc;
   forceSyncPromise?: Promise<YDoc | undefined>;
   forceSyncedDoc?: YDoc;
   reconciliationPromise?: Promise<void>;
@@ -268,6 +277,122 @@ function completeRowSyncRegistration(registration: RowSyncRegistration) {
   if (registration.status === 'pending') {
     registration.status = 'registered';
   }
+}
+
+/**
+ * Whether the tab holds every row of the database in memory under a current
+ * storage fence (`isDatabaseSourceResident`). Suites that mock the blob module
+ * without it get a database that is never resident.
+ */
+function isSourceResident(databaseId: string) {
+  return typeof isDatabaseSourceResident === 'function' && isDatabaseSourceResident(databaseId);
+}
+
+/**
+ * Whether the tab holds every row of the database in memory: it is resident,
+ * or its walk committed the complete seed set and is still writing it to
+ * storage (`holdsDatabaseSourceRows`).
+ */
+function holdsSourceRows(databaseId: string) {
+  return typeof holdsDatabaseSourceRows === 'function' && holdsDatabaseSourceRows(databaseId);
+}
+
+function databaseIdOfRowKey(rowKey: string) {
+  return rowKey.split('_rows_')[0] ?? '';
+}
+
+/**
+ * The realtime row bindings of views that unmounted while the tab held every
+ * row of their source, by database and row key, one entry per sync owner.
+ * They stay registered until the tab no longer holds them (the source's idle
+ * release, the release limit, a sign-out or a restore), so a view of the
+ * source mounted within that window adopts them instead of binding its rows
+ * again.
+ */
+const parkedRowSyncs = new Map<string, Map<string, RowSyncRegistration[]>>();
+let stopWatchingParkedRowSyncs: (() => void) | null = null;
+
+function releaseParkedRowSyncs(databaseId: string) {
+  const parked = parkedRowSyncs.get(databaseId);
+
+  if (parked) {
+    parkedRowSyncs.delete(databaseId);
+    // One still registering is released once it completes, as an unmounted view's is.
+    parked.forEach((owners) => owners.forEach(releaseRowSyncRegistration));
+  }
+
+  if (parkedRowSyncs.size === 0 && stopWatchingParkedRowSyncs) {
+    stopWatchingParkedRowSyncs();
+    stopWatchingParkedRowSyncs = null;
+  }
+}
+
+/** The bindings of a released source go with it. */
+function releaseParkedRowSyncsOfReleasedSources() {
+  Array.from(parkedRowSyncs.keys()).forEach((databaseId) => {
+    if (!holdsSourceRows(databaseId)) releaseParkedRowSyncs(databaseId);
+  });
+}
+
+/**
+ * Keeps the registration of an ending lifecycle, registered or still
+ * registering, while the tab holds the rows of its source. False when it has
+ * to be released now, as before.
+ */
+function parkRowSyncRegistration(registration: RowSyncRegistration) {
+  const databaseId = databaseIdOfRowKey(registration.rowKey);
+  const live = registration.status === 'pending' || (registration.status === 'registered' && Boolean(registration.doc));
+
+  if (!live || !databaseId || !holdsSourceRows(databaseId)) return false;
+
+  // Work the ending lifecycle still has in flight leaves the binding alone.
+  registration.revision += 1;
+  registration.forceSyncPromise = undefined;
+  registration.reconciliationPromise = undefined;
+  let parked = parkedRowSyncs.get(databaseId);
+
+  if (!parked) {
+    parked = new Map();
+    parkedRowSyncs.set(databaseId, parked);
+  }
+
+  parked.set(registration.rowKey, [...(parked.get(registration.rowKey) ?? []), registration]);
+  stopWatchingParkedRowSyncs ??= subscribeToDatabaseSourceResidency(releaseParkedRowSyncsOfReleasedSources);
+  return true;
+}
+
+/**
+ * Takes a binding that an earlier view of the source left for the row. One
+ * whose registration failed meanwhile holds nothing and is skipped; one whose
+ * rows the tab stopped holding without a notice (the storage fence moved), or
+ * whose row document a version reset replaced while it was parked, is
+ * released instead.
+ */
+function adoptParkedRowSync(rowKey: string): RowSyncRegistration | undefined {
+  const databaseId = databaseIdOfRowKey(rowKey);
+  const parked = parkedRowSyncs.get(databaseId);
+  const owners = parked?.get(rowKey);
+
+  if (!parked || !owners) return undefined;
+  let registration = owners.pop();
+
+  while (registration?.status === 'released') registration = owners.pop();
+  if (owners.length === 0) parked.delete(rowKey);
+  if (parked.size === 0) releaseParkedRowSyncs(databaseId);
+  if (!registration) return undefined;
+
+  if (!holdsSourceRows(databaseId)) {
+    releaseRowSyncRegistration(registration);
+    releaseParkedRowSyncs(databaseId);
+    return undefined;
+  }
+
+  if (registration.status === 'registered' && getCachedRowDoc(rowKey) !== registration.doc) {
+    releaseRowSyncRegistration(registration);
+    return undefined;
+  }
+
+  return registration;
 }
 
 export interface Database2Props {
@@ -464,6 +589,10 @@ function Database(props: Database2Props) {
   const rowGateWaitersRef = useRef(new Map<RowId, Set<() => void>>());
   // Rows opened before the walk committed its seeds, still without data.
   const earlyOpenedRowIdsRef = useRef(new Set<RowId>());
+  // The walk in flight only refreshes a resident source, whose rows showed
+  // from memory before it started: a row without data waits for its commit
+  // before it counts as missing.
+  const residentRefreshInFlightRef = useRef(false);
 
   // --- Load state (`onLoadStateChange`) ---
   const onLoadStateChangeRef = useRef(onLoadStateChange);
@@ -733,6 +862,9 @@ function Database(props: Database2Props) {
     }
   }, [rowMap, emitLoadState]);
 
+  // The active view's row search (WP09 §3.1): like a filter, it reads every row.
+  const [searchActive, setSearchActive] = useState(false);
+
   const getActiveViewRowDataNeed = useCallback((): RowDataNeed => {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section);
     const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
@@ -756,11 +888,12 @@ function Database(props: Database2Props) {
     const filters = combineFilters(conditionsView?.get(YjsDatabaseKey.filters), extraFilters, fields);
 
     return isGroupedView ||
+      searchActive ||
       hasEffectiveFilters(filters, fields) ||
       (conditionsView?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0
       ? 'full'
       : 'delta';
-  }, [doc, activeViewId, viewConditionsOverlay, extraFilters]);
+  }, [doc, activeViewId, viewConditionsOverlay, extraFilters, searchActive]);
 
   const activeViewRowDataNeed = useSyncExternalStore(
     useCallback(
@@ -834,6 +967,7 @@ function Database(props: Database2Props) {
 
               if (doc) {
                 existingRegistration.promise = Promise.resolve(doc);
+                existingRegistration.doc = doc;
                 existingRegistration.forceSyncedDoc = hasRowConditionData(doc) ? doc : undefined;
               }
 
@@ -847,6 +981,32 @@ function Database(props: Database2Props) {
         return existingRegistration.promise;
       }
 
+      const parked = adoptParkedRowSync(rowKey);
+
+      if (parked) {
+        // An earlier view of this source left the binding live (or still
+        // registering): it needs no new owner, and its doc no forced re-sync,
+        // so a return within the residency window binds no row again.
+        if (parked.status === 'registered') {
+          parked.forceSyncedDoc = parked.doc && hasRowConditionData(parked.doc) ? parked.doc : undefined;
+          parked.promise = Promise.resolve(parked.doc);
+        } else {
+          parked.promise = parked.promise?.then((doc) => {
+            if (parked.status !== 'registered') {
+              // It failed: the row registers anew the next time it is asked for.
+              if (lifecycleRegistrations.get(rowKey) === parked) lifecycleRegistrations.delete(rowKey);
+              return doc;
+            }
+
+            if (doc && hasRowConditionData(doc)) parked.forceSyncedDoc ??= doc;
+            return doc;
+          });
+        }
+
+        lifecycleRegistrations.set(rowKey, parked);
+        return parked.promise;
+      }
+
       const registration: RowSyncRegistration = {
         rowKey,
         status: 'pending',
@@ -858,6 +1018,7 @@ function Database(props: Database2Props) {
       const promise = createRow(rowKey)
         .then((doc) => {
           completeRowSyncRegistration(registration);
+          registration.doc = doc;
           // The row now has a realtime binding, owned by this database.
           dashboardLoadStats.recordRowsBound(rowKey.split('_rows_')[0]);
           return doc;
@@ -965,6 +1126,7 @@ function Database(props: Database2Props) {
       if (registration?.status === 'registered') {
         registration.revision += 1;
         registration.promise = Promise.resolve(canonicalDoc);
+        registration.doc = canonicalDoc;
         registration.forceSyncPromise = undefined;
         registration.forceSyncedDoc = hasRowConditionData(canonicalDoc) ? canonicalDoc : undefined;
         registration.reconciliationPromise = undefined;
@@ -1251,11 +1413,14 @@ function Database(props: Database2Props) {
    * walk. Its seed is still provisional then: the row opens its live doc and
    * binds realtime, as every rendered row does, and gets the committed seed
    * when the walk ends (`seedEarlyOpenedRows`). A dashboard starts no walk: a
-   * row it opens (a row detail) waits for nothing.
+   * row it opens (a row detail) waits for nothing. On a resident source every
+   * row the tab holds passes at once, whatever the walk that refreshes them
+   * does.
    */
   const waitForRowGate = useCallback(
     (rowId: string, gate: DeferredGate) => {
       if (activeViewRowDataNeed === 'none') return Promise.resolve();
+      if (isSourceResident(getDatabaseId()) && isRowDelivered(rowId)) return Promise.resolve();
       if (gate.isOpen() || !priorityRowIdsRef.current.has(rowId)) return gate.promise;
       if (seedsProgress.getRevision() > 0 && isRowDelivered(rowId)) return Promise.resolve();
 
@@ -1273,7 +1438,7 @@ function Database(props: Database2Props) {
         void gate.promise.then(open);
       });
     },
-    [activeViewRowDataNeed, isRowDelivered, seedsProgress]
+    [activeViewRowDataNeed, getDatabaseId, isRowDelivered, seedsProgress]
   );
 
   // Each page the walk stages may deliver rows that wait at the gate.
@@ -1349,6 +1514,24 @@ function Database(props: Database2Props) {
       rowPassCompleteRef.current = false;
     }
 
+    const commitSeeds = () => {
+      // Seeds are cached — filter/sort can now build ephemeral docs from them
+      // without waiting for IndexedDB persist.
+      rowPass.set({ seedsReady: true });
+      seedEarlyOpenedRows();
+      // Also kick off batch preload for visible rows (heavy IndexedDB path).
+      runBatchPreload(prefetchGeneration);
+      markRowPassComplete();
+    };
+
+    // A resident source holds every row in memory already: its rows show from
+    // there now, and the delta walk only refreshes them in the background,
+    // applying what changed to the open row documents.
+    if (!forceFullSync && isSourceResident(databaseId)) {
+      residentRefreshInFlightRef.current = true;
+      commitSeeds();
+    }
+
     const promise = prefetchDatabaseBlobDiff(workspaceId, databaseId, {
       priorityRowIds,
       forceFullSync,
@@ -1358,18 +1541,19 @@ function Database(props: Database2Props) {
       },
       onSeedsReady: () => {
         if (!isCurrentPrefetch()) return;
-
-        // Seeds are cached — filter/sort can now build ephemeral docs from them
-        // without waiting for IndexedDB persist.
-        rowPass.set({ seedsReady: true });
-        seedEarlyOpenedRows();
-        // Also kick off batch preload for visible rows (heavy IndexedDB path).
-        runBatchPreload(prefetchGeneration);
-        markRowPassComplete();
+        residentRefreshInFlightRef.current = false;
+        commitSeeds();
       },
     })
       .then(() => {
         if (!isCurrentPrefetch()) return;
+
+        if (residentRefreshInFlightRef.current) {
+          // The refresh ended without a commit of its own: a row it left
+          // without data gets its seed now, or the one-shot recovery.
+          residentRefreshInFlightRef.current = false;
+          seedEarlyOpenedRows();
+        }
 
         rowPass.set({ blobPrefetchComplete: true });
         markRowPassComplete();
@@ -1377,6 +1561,7 @@ function Database(props: Database2Props) {
       .catch(() => {
         if (!isCurrentPrefetch()) return;
 
+        residentRefreshInFlightRef.current = false;
         prefetchPromisesRef.current.delete(prefetchKey);
         gate.resolve(); // Unblock ensureRow on failure
         rowPass.set({ blobPrefetchComplete: true, seedsReady: true });
@@ -1486,14 +1671,15 @@ function Database(props: Database2Props) {
           scheduleRowSyncReconciliation(rowId);
 
           if (!hasRowConditionData(rowDoc)) {
-            if (gate.isOpen()) {
+            if (gate.isOpen() && !residentRefreshInFlightRef.current) {
               // The local pipeline (seed cache + IndexedDB) produced no row data —
               // the delta watermark is ahead of the local store. Trigger the
               // one-shot full resync instead of leaving the row to realtime sync.
               scheduleMissingRowRecovery();
             } else {
-              // The row passed the gate ahead of the walk's terminal page: its
-              // seed is applied once the walk commits.
+              // The row passed the gate ahead of the walk's terminal page, or
+              // of the refresh of a resident source: its seed is applied once
+              // the walk commits.
               earlyOpenedRowIdsRef.current.add(rowId);
             }
           }
@@ -1599,6 +1785,12 @@ function Database(props: Database2Props) {
           return syncedRowDoc ?? cachedRowDoc;
         }
 
+        // Neither the tab nor a page of the walk holds the row: it is read on
+        // its own, from IndexedDB or its realtime sync.
+        if (!seed && isDashboardLoadStatsRecording() && !isRowDelivered(rowId)) {
+          dashboardLoadStats.recordRowsRead(databaseId, 1);
+        }
+
         try {
           const rowDoc = await openRowDoc(rowKey, seed ?? undefined);
 
@@ -1658,6 +1850,7 @@ function Database(props: Database2Props) {
       databaseLifecycleIdentity,
       getDatabaseId,
       ensureBlobPrefetch,
+      isRowDelivered,
       readOnly,
       registerRowDocWithHistory,
       registerRowSync,
@@ -1767,6 +1960,7 @@ function Database(props: Database2Props) {
     priorityRowIdsRef.current = new Set();
     rowGateWaitersRef.current = new Map();
     earlyOpenedRowIdsRef.current = new Set();
+    residentRefreshInFlightRef.current = false;
 
     return () => {
       // A page of this lifecycle's walk must not publish into the next one.
@@ -1779,7 +1973,9 @@ function Database(props: Database2Props) {
         blobPrefetchGenerationRef.current += 1;
       }
 
-      lifecycleRowSyncRegistrations.forEach(releaseRowSyncRegistration);
+      lifecycleRowSyncRegistrations.forEach((registration) => {
+        if (!parkRowSyncRegistration(registration)) releaseRowSyncRegistration(registration);
+      });
       lifecycleRowSyncRegistrations.clear();
       lifecycleGate.resolve();
     };
@@ -1800,24 +1996,39 @@ function Database(props: Database2Props) {
     viewId: string | null;
     databaseDoc: YDoc | null;
     rowMap: Record<RowId, YDoc> | null;
+    /** How the open record shows: the centre modal or the side peek (WP13 §3.8). */
+    mode: 'center_peek' | 'side_peek';
   }>(() => ({
     rowId: modalRowId || null,
     viewId: modalRowId ? activeViewId : null,
     databaseDoc: null,
     rowMap: null,
+    mode: 'center_peek',
   }));
 
+  const mobileContext = useMobileContext();
+
   const handleOpenRow = useCallback(
-    async (rowId: string, viewId?: string) => {
+    async (rowId: string, viewId?: string, options?: NavigateToRowOptions) => {
       // A locked document's embedded database must keep the row detail inside
       // this Database context so the row editor inherits the document's
       // read-only permission. Navigating to the source database would reopen
       // the same row with that page's independent (usually editable) context.
       // Published databases still use route-based row pages because their row
       // documents are loaded through the publish navigation/cache path.
-      const shouldNavigateReadonlyRow = readOnly && (!_isDocumentBlock || props.variant === UIVariant.Publish);
+      // Then a mobile context opens records full screen, and otherwise the
+      // view's "Open pages in" decides (WP13 §3.8): a dashboard widget or a
+      // drill-down opens a side peek by default, any other view the centre peek.
+      const opening = resolveRecordOpening({
+        readOnly,
+        isDocumentBlock: Boolean(_isDocumentBlock),
+        publish: props.variant === UIVariant.Publish,
+        mobile: mobileContext,
+        raw: readViewOpenPagesIn(doc, activeViewId),
+        source: options?.source === 'drilldown' ? 'drilldown' : isDashboardWidget ? 'dashboard_widget' : 'view',
+      });
 
-      if (shouldNavigateReadonlyRow) {
+      if (opening === 'readonly_page') {
         if (viewId) {
           void navigateToView?.(viewId, rowId);
           return;
@@ -1827,12 +2038,26 @@ function Database(props: Database2Props) {
         return;
       }
 
+      // Full screen (a phone) or a full page, when there is a page to go to.
+      if ((opening === 'mobile_page' || opening === 'full_page') && (viewId ? navigateToView : onOpenRowPage)) {
+        if (viewId) void navigateToView?.(viewId, rowId);
+        else onOpenRowPage?.(rowId);
+        return;
+      }
+
+      const mode = opening === 'side_peek' ? 'side_peek' : 'center_peek';
+
       if (viewId) {
         try {
           const viewDoc = await loadView?.(viewId);
 
           if (!viewDoc) {
-            void navigateToView?.(viewId);
+            // A missing source doc cannot bypass the locked embed's local
+            // row editor by reopening the source with independent permissions.
+            if (!readOnly || !_isDocumentBlock || props.variant === UIVariant.Publish) {
+              void navigateToView?.(viewId);
+            }
+
             return;
           }
 
@@ -1848,6 +2073,7 @@ function Database(props: Database2Props) {
             viewId,
             databaseDoc: viewDoc,
             rowMap: { [rowId]: rowDoc },
+            mode,
           });
           return;
         } catch (e) {
@@ -1855,9 +2081,21 @@ function Database(props: Database2Props) {
         }
       }
 
-      setModalState((prev) => ({ ...prev, rowId }));
+      setModalState((prev) => ({ ...prev, rowId, mode }));
     },
-    [createNewRow, loadView, navigateToView, onOpenRowPage, props.variant, readOnly, _isDocumentBlock]
+    [
+      createNewRow,
+      loadView,
+      navigateToView,
+      onOpenRowPage,
+      props.variant,
+      readOnly,
+      _isDocumentBlock,
+      mobileContext,
+      doc,
+      activeViewId,
+      isDashboardWidget,
+    ]
   );
 
   const handleCloseRowModal = useCallback(() => {
@@ -1866,7 +2104,13 @@ function Database(props: Database2Props) {
       viewId: null,
       databaseDoc: null,
       rowMap: null,
+      mode: 'center_peek',
     });
+  }, []);
+
+  // The side peek's "Open in center peek": the same record in the centre modal.
+  const handleSwitchToCenterPeek = useCallback(() => {
+    setModalState((prev) => ({ ...prev, mode: 'center_peek' }));
   }, []);
 
   // Memoized callback for modal open change to avoid inline function in JSX
@@ -2073,18 +2317,30 @@ function Database(props: Database2Props) {
                     fixedHeight={embeddedHeight}
                     onViewIdsChanged={onViewIdsChanged}
                     onReorderViews={onReorderViews}
+                    onSearchActiveChange={setSearchActive}
                   />
                 </div>
               )}
             </DatabaseContextProvider>
             {modalState.rowId && modalContextValue && (
               <DatabaseContextProvider value={modalContextValue}>
-                <DatabaseRowModal
-                  rowId={modalState.rowId}
-                  open={Boolean(modalState.rowId)}
-                  openPage={onOpenRowPage}
-                  onOpenChange={handleModalOpenChange}
-                />
+                {modalState.mode === 'side_peek' ? (
+                  <DatabaseRowSidePeek
+                    fullWidth={mobileContext}
+                    onOpenChange={handleModalOpenChange}
+                    onSwitchToCenter={handleSwitchToCenterPeek}
+                    open={Boolean(modalState.rowId)}
+                    openPage={onOpenRowPage}
+                    rowId={modalState.rowId}
+                  />
+                ) : (
+                  <DatabaseRowModal
+                    rowId={modalState.rowId}
+                    open={Boolean(modalState.rowId)}
+                    openPage={onOpenRowPage}
+                    onOpenChange={handleModalOpenChange}
+                  />
+                )}
               </DatabaseContextProvider>
             )}
           </div>

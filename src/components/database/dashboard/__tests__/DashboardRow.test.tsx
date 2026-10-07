@@ -2,14 +2,16 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 
 import { DASHBOARD_GEOMETRY } from '@/application/database-yjs/dashboard-geometry';
-import { DashboardRow as DashboardRowData } from '@/application/database-yjs/dashboard.type';
+import { DashboardAddControlState, DashboardRow as DashboardRowData } from '@/application/database-yjs/dashboard.type';
 import { UIVariant } from '@/application/types';
 
+import { createInertAddWidgetApi } from '../add-widget/add-widget-api';
 import { DashboardRow } from '../DashboardRow';
 import { DashboardHostContext, DashboardHostServices, DashboardUiContext } from '../DashboardUiContext';
-import { ROW_HEIGHT_CSS_VARIABLE } from '../hooks/useRowHeightResize';
 import { getHeightBandStyle, getWidthPillStyle } from '../RowResizeHandles';
 import { preloadWidgetPicker } from '../WidgetPicker';
+
+import { createDashboardUiValue } from './dashboardTestHarness';
 
 const mockGetWorkspaceDatabaseCatalog = jest.fn((_workspaceId: string) => Promise.resolve([]));
 
@@ -24,17 +26,10 @@ jest.mock('react-i18next', () => {
   return { useTranslation: () => ({ t }) };
 });
 
-jest.mock('../WidgetPickerContent', () => ({ __esModule: true, default: () => null }));
-
 jest.mock('../DashboardWidget', () => ({
   DashboardWidget: ({ widget, span, lineSize }: { widget: { id: string }; span: number; lineSize: number }) => (
     <div data-line-size={lineSize} data-span={span} data-testid='dashboard-widget' data-widget-id={widget.id} />
   ),
-}));
-
-// The indicator package ships compiled CSS that jest cannot parse.
-jest.mock('@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box', () => ({
-  DropIndicator: () => null,
 }));
 
 // jsdom has no PointerEvent; a MouseEvent named after it carries the coordinates.
@@ -66,7 +61,9 @@ const FULL_ROW: DashboardRowData = {
   widgets: [0, 1, 2, 3].map((index) => ({ id: `w${index}`, viewId: `v${index}`, databaseId: 'db', width: 3 })),
 };
 
-const mockShowLimitMessage = jest.fn();
+const mockAnnounce = jest.fn();
+const mockStartAddWidget = jest.fn();
+const mockPreload = jest.fn();
 let setRows: (rows: DashboardRowData[]) => void = () => undefined;
 
 function Harness({
@@ -75,26 +72,36 @@ function Harness({
   wrapColumns,
   minColumns = 1,
   showWidgetTitles = true,
-  dashboardFull = false,
+  canMoveUp = false,
+  canMoveDown = false,
+  addToRow = 'enabled',
+  editing = true,
+  pendingWidgetId = null,
+  pendingSpec = null,
 }: {
   variant?: UIVariant;
   initialRow?: DashboardRowData;
   wrapColumns?: number;
   minColumns?: number;
   showWidgetTitles?: boolean;
-  dashboardFull?: boolean;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  addToRow?: DashboardAddControlState;
+  editing?: boolean;
+  pendingWidgetId?: string | null;
+  pendingSpec?: 'chart' | 'grid' | null;
 }) {
   const [rows, updateRows] = useState([initialRow]);
-  const [ui] = useState(() => ({
-    hostDatabaseId: 'db',
-    openPicker: jest.fn(),
-    showLimitMessage: mockShowLimitMessage,
-    dndInstanceId: Symbol('dashboard-row-test'),
-    getRows: () => rows,
-    updateRows,
-    acquireSourceDoc: () => () => undefined,
-    selectWidget: jest.fn(),
-  }));
+  const [ui] = useState(() =>
+    createDashboardUiValue({
+      announce: mockAnnounce,
+      startAddWidget: mockStartAddWidget,
+      addWidget: { ...createInertAddWidgetApi(), preload: mockPreload },
+      dndInstanceId: Symbol('dashboard-row-test'),
+      getRows: () => rows,
+      updateRows,
+    })
+  );
   const host = { workspaceId: 'workspace-id', variant } as DashboardHostServices;
 
   setRows = updateRows;
@@ -103,10 +110,14 @@ function Harness({
     <DashboardHostContext.Provider value={host}>
       <DashboardUiContext.Provider value={ui}>
         <DashboardRow
+          addToRow={addToRow}
           canEdit
-          dashboardFull={dashboardFull}
-          isEditing
+          canMoveDown={canMoveDown}
+          canMoveUp={canMoveUp}
+          isEditing={editing}
           minColumns={minColumns}
+          pendingSpec={pendingSpec}
+          pendingWidgetId={pendingWidgetId}
           row={rows[0]}
           rowIndex={0}
           showIconsInHeading={false}
@@ -119,11 +130,29 @@ function Harness({
 }
 
 const grid = () => screen.getByTestId('dashboard-row').firstElementChild as HTMLElement;
-const rowHeightVariable = () => grid().style.getPropertyValue(ROW_HEIGHT_CSS_VARIABLE);
+
+/** No banner: a limit text shows only in the full tooltip (refusals go to the mocked live region). */
+function expectNoLimitBanner() {
+  const shown = screen
+    .queryAllByText(/Dashboard is full|Delete a view to add a new one|A row holds up to/)
+    .filter((node) => !node.closest('[data-testid="dashboard-full-tooltip"], [role="tooltip"]'));
+
+  expect(shown.map((node) => node.textContent)).toEqual([]);
+}
+
+/** The height the row wrote on its boxes: every box of the track carries the same one. */
+const rowBoxHeight = () => {
+  const heights = new Set(Array.from(grid().children, (box) => (box as HTMLElement).style.height));
+
+  expect(heights.size).toBe(1);
+  return Array.from(heights)[0];
+};
 
 beforeEach(() => {
   mockGetWorkspaceDatabaseCatalog.mockClear();
-  mockShowLimitMessage.mockClear();
+  mockAnnounce.mockClear();
+  mockStartAddWidget.mockClear();
+  mockPreload.mockClear();
 });
 
 afterEach(() => {
@@ -134,7 +163,7 @@ afterEach(() => {
 describe('DashboardRow height', () => {
   it('shows the committed height after a drag during which the row re-rendered', () => {
     render(<Harness />);
-    expect(rowHeightVariable()).toBe('360px');
+    expect(rowBoxHeight()).toBe('360px');
 
     const handle = screen.getByTestId('dashboard-height-handle');
 
@@ -142,7 +171,7 @@ describe('DashboardRow height', () => {
     act(() => {
       document.dispatchEvent(pointer('pointermove', 220));
     });
-    expect(rowHeightVariable()).toBe('480px');
+    expect(rowBoxHeight()).toBe('480px');
 
     // A collaborator edits the row while the preview already shows the final
     // height: the row renders with it before the drag ends.
@@ -152,7 +181,45 @@ describe('DashboardRow height', () => {
     });
 
     expect(handle.getAttribute('aria-valuenow')).toBe('480');
-    expect(rowHeightVariable()).toBe('480px');
+    expect(rowBoxHeight()).toBe('480px');
+  });
+});
+
+describe('DashboardRow height limits', () => {
+  const handle = () => screen.getByTestId('dashboard-height-handle');
+  const press = (key: 'ArrowUp' | 'ArrowDown') => act(() => void fireEvent.keyDown(handle(), { key }));
+
+  it('exposes the shared height range on the handle and stops a keyboard step at the maximum', () => {
+    render(<Harness initialRow={{ ...ROW, height: 1200 }} />);
+
+    expect(handle().getAttribute('aria-valuemin')).toBe('240');
+    expect(handle().getAttribute('aria-valuemax')).toBe('1200');
+    expect(handle().getAttribute('aria-valuenow')).toBe('1200');
+    press('ArrowDown');
+    expect(rowBoxHeight()).toBe('1200px');
+    press('ArrowUp');
+    expect(rowBoxHeight()).toBe('1180px');
+    expect(handle().getAttribute('aria-valuenow')).toBe('1180');
+  });
+
+  it('stops a keyboard step at the minimum', () => {
+    render(<Harness initialRow={{ ...ROW, height: 250 }} />);
+
+    press('ArrowUp');
+    expect(rowBoxHeight()).toBe('240px');
+    press('ArrowUp');
+    expect(rowBoxHeight()).toBe('240px');
+    expect(handle().getAttribute('aria-valuenow')).toBe('240');
+  });
+
+  it('snaps a height another client saved off the 20 px grid with the first keyboard step', () => {
+    render(<Harness initialRow={{ ...ROW, height: 365 }} />);
+
+    expect(handle().getAttribute('aria-valuenow')).toBe('365');
+    press('ArrowDown');
+    expect(rowBoxHeight()).toBe('380px');
+    press('ArrowUp');
+    expect(rowBoxHeight()).toBe('360px');
   });
 });
 
@@ -167,7 +234,7 @@ describe('DashboardRow handles (WP02)', () => {
       document.dispatchEvent(pointer('pointermove', 211));
     });
 
-    expect(rowHeightVariable()).toBe('480px');
+    expect(rowBoxHeight()).toBe('480px');
     expect(handle.getAttribute('aria-valuenow')).toBe('480');
     expect(handle.getAttribute('aria-valuetext')).toBe('480 pixels');
     expect(screen.queryByText(/\d+\s?px$/)).toBeNull();
@@ -281,7 +348,7 @@ describe('DashboardRow handles (WP02)', () => {
   });
 
   it('has no width handles on a wrapped row but keeps its row controls', () => {
-    render(<Harness initialRow={TWO_UP} wrapColumns={1} />);
+    render(<Harness canMoveDown initialRow={TWO_UP} wrapColumns={1} />);
 
     expect(screen.queryByTestId('dashboard-width-handle')).toBeNull();
     expect(screen.getAllByTestId('dashboard-row-control-anchor').map((anchor) => anchor.dataset.side)).toEqual([
@@ -293,54 +360,88 @@ describe('DashboardRow handles (WP02)', () => {
   });
 });
 
-describe('DashboardRow limits', () => {
-  const insertButton = () => screen.getByTestId('dashboard-insert-row-button');
+describe('DashboardRow controls (WP04)', () => {
   const addButton = () => screen.getByTestId('dashboard-add-widget-row-button');
 
-  it('offers both row controls while there is room', () => {
-    render(<Harness />);
+  it('offers "Add to row" at the end of the row while it has room, and never an insert-row control', () => {
+    render(<Harness initialRow={TWO_UP} />);
 
-    expect(insertButton().hasAttribute('disabled')).toBe(false);
+    expect(addButton().hasAttribute('aria-disabled')).toBe(false);
+    expect(addButton().getAttribute('aria-label')).toBe('Add to row');
+    expect(screen.queryByTestId('dashboard-insert-row-button')).toBeNull();
+    fireEvent.click(addButton());
+    expect(mockStartAddWidget.mock.calls).toEqual([[{ type: 'existing_row', rowId: 'r1', index: 2 }]]);
+  });
+
+  it('hides "Add to row" for a full row and shows no limit text', () => {
+    render(<Harness addToRow='hidden' initialRow={FULL_ROW} />);
+
+    expect(screen.queryByTestId('dashboard-add-widget-row-button')).toBeNull();
+    expectNoLimitBanner();
+    // Nothing was refused: the full row offers nothing to press.
+    expect(mockAnnounce).not.toHaveBeenCalled();
+  });
+
+  it('refuses an add on a full dashboard with an announcement, never a banner', () => {
+    render(<Harness addToRow='disabled' />);
+
+    expect(addButton().getAttribute('aria-disabled')).toBe('true');
     expect(addButton().hasAttribute('disabled')).toBe(false);
-    // No wrapper takes the click of a usable control.
-    expect(insertButton().parentElement?.getAttribute('data-testid')).toBe('dashboard-row-control-anchor');
-    expect(addButton().parentElement?.getAttribute('data-testid')).toBe('dashboard-row-control-anchor');
+    fireEvent.click(addButton());
+    expect(mockStartAddWidget).not.toHaveBeenCalled();
+    expect(mockAnnounce.mock.calls).toEqual([['Dashboard is full. Delete a view to add a new one.']]);
+    expectNoLimitBanner();
   });
 
-  it('explains the row limit from the disabled add control of a full row, and still inserts rows', () => {
-    render(<Harness initialRow={FULL_ROW} />);
+  it('renders the add flow\'s pending widget as a pending slot in its place', () => {
+    render(<Harness initialRow={TWO_UP} pendingSpec='chart' pendingWidgetId='w1' />);
 
-    expect(insertButton().hasAttribute('disabled')).toBe(false);
-    expect(addButton().hasAttribute('disabled')).toBe(true);
-    fireEvent.click(addButton().parentElement as HTMLElement);
-    expect(mockShowLimitMessage.mock.calls).toEqual([['row']]);
+    expect(screen.getAllByTestId('dashboard-widget').map((widget) => widget.getAttribute('data-widget-id'))).toEqual(['w0']);
+    const pending = screen.getByTestId('dashboard-widget-pending');
+
+    expect(pending.getAttribute('data-widget-id')).toBe('w1');
+    expect(pending.getAttribute('data-selected')).toBe('true');
+    expect(screen.getByTestId('chart-loading')).toBeTruthy();
   });
 
-  it('explains the widget limit from both disabled controls of a full dashboard', () => {
-    render(<Harness dashboardFull initialRow={FULL_ROW} />);
+  it('shows no row controls outside Edit mode', () => {
+    const { unmount } = render(<Harness canMoveDown initialRow={TWO_UP} />);
 
-    expect(insertButton().hasAttribute('disabled')).toBe(true);
-    expect(addButton().hasAttribute('disabled')).toBe(true);
-    fireEvent.click(insertButton().parentElement as HTMLElement);
-    fireEvent.click(addButton().parentElement as HTMLElement);
-    expect(mockShowLimitMessage.mock.calls).toEqual([['dashboard'], ['dashboard']]);
+    expect(screen.getByTestId('dashboard-row-move-control')).toBeTruthy();
+    unmount();
+
+    render(<Harness canMoveDown editing={false} initialRow={TWO_UP} />);
+    expect(screen.queryByTestId('dashboard-row-move-control')).toBeNull();
+    expect(screen.queryByTestId('dashboard-add-widget-row-button')).toBeNull();
+    expect(screen.queryByTestId('dashboard-row-control-anchor')).toBeNull();
   });
 });
 
 describe('widget picker preload', () => {
-  it('warms the workspace catalog on hover or focus of the add buttons', () => {
+  it('warms the add flow (picker code, catalog, plan) on hover or focus of the add button', () => {
     render(<Harness />);
 
     fireEvent.pointerEnter(screen.getByTestId('dashboard-add-widget-row-button'));
-    act(() => screen.getByTestId('dashboard-insert-row-button').focus());
+    act(() => screen.getByTestId('dashboard-add-widget-row-button').focus());
 
-    expect(mockGetWorkspaceDatabaseCatalog.mock.calls).toEqual([['workspace-id'], ['workspace-id']]);
+    expect(mockPreload).toHaveBeenCalledTimes(2);
+  });
+
+  it('warms the workspace catalog for the picker', () => {
+    preloadWidgetPicker('workspace-id', UIVariant.App);
+
+    expect(mockGetWorkspaceDatabaseCatalog.mock.calls).toEqual([['workspace-id']]);
+  });
+
+  it('warms nothing from a refused add button', () => {
+    render(<Harness addToRow='disabled' />);
+
+    fireEvent.pointerEnter(screen.getByTestId('dashboard-add-widget-row-button'));
+    expect(mockPreload).not.toHaveBeenCalled();
   });
 
   it('leaves the catalog alone where the picker never loads it', () => {
-    render(<Harness variant={UIVariant.Publish} />);
-    fireEvent.pointerEnter(screen.getByTestId('dashboard-add-widget-row-button'));
-
+    preloadWidgetPicker('workspace-id', UIVariant.Publish);
     preloadWidgetPicker(undefined, UIVariant.App);
     expect(mockGetWorkspaceDatabaseCatalog).not.toHaveBeenCalled();
   });

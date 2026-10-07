@@ -134,10 +134,10 @@
           "parityId": "dash-widget-tool-search__icon",
           "size": "geometry.widget.toolButton.icon",
           "wave": 4,
-          "status": "pending"
+          "status": "enforced"
         },
-        { "parityId": "dash-widget-search-field__icon", "size": 12, "wave": 4, "status": "pending" },
-        { "parityId": "dash-drilldown-search__icon", "size": 16, "wave": 5, "status": "pending" }
+        { "parityId": "dash-widget-search-field__icon", "size": 12, "wave": 4, "status": "enforced" },
+        { "parityId": "dash-drilldown-search__icon", "size": 16, "wave": 5, "status": "enforced" }
       ],
       "web": {
         "current": {
@@ -161,8 +161,8 @@
         "target": {
           "symbol": "FlowySvgs.dashboard_search_s",
           "asset": "resources/flowy_icons/16x/dashboard_search.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "63877abc0afe4348d1423c7d8735e682e7190733dcc08ae10f6e93f7d2baf988",
           "createFrom": "web:src/assets/icons/search.svg"
         }
       },
@@ -173,9 +173,9 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": true, "desktop": false },
-      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 4,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "settings",
@@ -195,7 +195,7 @@
           "wave": 2,
           "status": "enforced"
         },
-        { "parityId": "dash-widget-menu-item-edit-view__icon", "size": 16, "wave": 3, "status": "pending" }
+        { "parityId": "dash-widget-menu-item-edit-view__icon", "size": 16, "wave": 3, "status": "enforced" }
       ],
       "web": {
         "current": {
@@ -296,7 +296,7 @@
           "wave": 2,
           "status": "enforced"
         },
-        { "parityId": "dash-drilldown-more__icon", "size": 16, "wave": 5, "status": "pending" }
+        { "parityId": "dash-drilldown-more__icon", "size": 16, "wave": 5, "status": "enforced" }
       ],
       "web": {
         "current": {
@@ -389,7 +389,14 @@
       "contexts": [
         { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2, "status": "waived" },
         { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2, "status": "waived" },
-        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "waived" }
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "waived" },
+        {
+          "parityId": "dash-empty-type-icon-table",
+          "size": 24,
+          "wave": 4,
+          "note": "the Table glyph of the five faint placeholder icons",
+          "status": "waived"
+        }
       ],
       "web": {
         "current": {
@@ -485,7 +492,7 @@
       "contexts": [
         { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2, "status": "enforced" },
         { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2, "status": "enforced" },
-        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "pending" }
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "enforced" }
       ],
       "web": {
         "current": {
@@ -676,7 +683,7 @@
       "contexts": [
         { "parityId": "dash-view-tab__icon", "size": 16, "wave": 2, "status": "enforced" },
         { "parityId": "dash-widget-title-pill__icon", "size": 16, "wave": 2, "status": "enforced" },
-        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "pending" }
+        { "parityId": "dash-widget-picker-layout__icon", "size": 16, "wave": 4, "status": "enforced" }
       ],
       "web": {
         "current": {
@@ -857,7 +864,7 @@
       "scope": "app-wide",
       "contexts": [
         { "parityId": "dash-widget-grid-header-cell__icon", "size": 16, "wave": 2, "status": "enforced" },
-        { "parityId": "dash-chart-type-button-number__icon", "size": 20, "wave": 3, "status": "pending" }
+        { "parityId": "dash-chart-type-button-number__icon", "size": 20, "wave": 3, "status": "enforced" }
       ],
       "web": {
         "current": {
@@ -901,7 +908,7 @@
       "role": "Edit-mode row control \"Move up\" (left gutter).",
       "notion": "Arrow with a stem, pointing up, in a light-blue pill (official/crop-edit-mode-row-move-up-down-control.png).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-row-control-move-up__icon", "size": 16, "wave": 3, "status": "pending" }],
+      "contexts": [{ "parityId": "dash-row-control-move-up__icon", "size": 16, "wave": 3, "status": "enforced" }],
       "web": {
         "current": null,
         "currentNote": "no row move control today (WidgetMenu has \"Move up\" with arrow_up.svg; WP04 removes it)",
@@ -921,8 +928,8 @@
         "target": {
           "symbol": "FlowySvgs.dashboard_arrow_up_s",
           "asset": "resources/flowy_icons/16x/dashboard_arrow_up.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "a7672473f914355c08b15bfa4485594b23d7800786dbde7ec3854879374e738e",
           "createFrom": "web:src/assets/icons/arrow_up.svg"
         }
       },
@@ -933,16 +940,16 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": false, "desktop": false },
-      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "row-move-down",
       "role": "Edit-mode row control \"Move down\" (left gutter).",
       "notion": "Arrow with a stem, pointing down (official/crop-edit-mode-widget-chrome-zoom.png).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-row-control-move-down__icon", "size": 16, "wave": 3, "status": "pending" }],
+      "contexts": [{ "parityId": "dash-row-control-move-down__icon", "size": 16, "wave": 3, "status": "enforced" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/arrow_down.svg",
@@ -968,8 +975,8 @@
         "target": {
           "symbol": "FlowySvgs.dashboard_arrow_down_s",
           "asset": "resources/flowy_icons/16x/dashboard_arrow_down.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "906b846268e9be8db2716c7b5166d17ad7dad5680d517062ac68204d86515883",
           "createFrom": "web:src/assets/icons/arrow_down.svg"
         }
       },
@@ -980,16 +987,16 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": true, "desktop": false },
-      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "move-left",
       "role": "Widget menu \"Move left\".",
       "notion": "Stemmed arrow left (spec §7.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-move-left__icon", "size": 16, "wave": 3, "status": "pending" }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-move-left__icon", "size": 16, "wave": 3, "status": "enforced" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/arrow_left.svg",
@@ -1012,8 +1019,8 @@
         "target": {
           "symbol": "FlowySvgs.dashboard_arrow_left_s",
           "asset": "resources/flowy_icons/16x/dashboard_arrow_left.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "4ad60d801da6f43d5845c6c505d15e638125f0761e9b3b793a8755b806cd1f91",
           "createFrom": "web:src/assets/icons/arrow_left.svg"
         }
       },
@@ -1024,16 +1031,16 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": true, "desktop": false },
-      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "move-right",
       "role": "Widget menu \"Move right\".",
       "notion": "Stemmed arrow right (spec §7.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-move-right__icon", "size": 16, "wave": 3, "status": "pending" }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-move-right__icon", "size": 16, "wave": 3, "status": "enforced" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/arrow_right.svg",
@@ -1056,8 +1063,8 @@
         "target": {
           "symbol": "FlowySvgs.dashboard_arrow_right_s",
           "asset": "resources/flowy_icons/16x/dashboard_arrow_right.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "579e2eba5c6ca59456d3485d16da42359c029f2db0a10c3967a79535f0c4d4f1",
           "createFrom": "web:src/assets/icons/arrow_right.svg"
         }
       },
@@ -1068,121 +1075,152 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": true, "desktop": false },
-      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "move-to-row",
       "role": "Widget menu \"Move to row\".",
       "notion": "Up-down arrow (spec §7.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-move-to-row__icon", "size": 16, "wave": 3, "status": "pending" }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-move-to-row__icon", "size": 16, "wave": 3, "status": "enforced" }],
       "web": {
         "current": null,
-        "target": { "asset": "src/assets/icons/dashboard_move_to_row.svg", "exists": false, "sha256": null }
+        "target": {
+          "asset": "src/assets/icons/dashboard_move_to_row.svg",
+          "exists": true,
+          "sha256": "d24b074a4fe33ee164b5a733d2366318668c538f404945e22d1e68e38d9f10f4"
+        }
       },
       "desktop": {
         "current": null,
         "target": {
           "symbol": "FlowySvgs.dashboard_move_to_row_s",
           "asset": "resources/flowy_icons/16x/dashboard_move_to_row.svg",
-          "exists": false,
-          "sha256": null
+          "exists": true,
+          "sha256": "d24b074a4fe33ee164b5a733d2366318668c538f404945e22d1e68e38d9f10f4"
         }
       },
       "canonical": {
         "source": "new",
-        "sha256": null,
+        "sha256": "d24b074a4fe33ee164b5a733d2366318668c538f404945e22d1e68e38d9f10f4",
         "reason": "WP04 §2.2 authors one new SVG committed byte-identically to both repos and records its hash here in the same commit."
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": false, "desktop": false },
-      "targetsMatchCanonical": { "web": false, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "row-above",
       "role": "Widget menu \"Create new row above\".",
       "notion": "Arrow up to a bar (spec §7.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-row-above__icon", "size": 16, "wave": 3, "status": "pending" }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-row-above__icon", "size": 16, "wave": 3, "status": "enforced" }],
       "web": {
         "current": null,
-        "target": { "asset": "src/assets/icons/dashboard_row_above.svg", "exists": false, "sha256": null }
+        "target": {
+          "asset": "src/assets/icons/dashboard_row_above.svg",
+          "exists": true,
+          "sha256": "abe9db4d0dd5f51f9faf5a7c3a729802d830af40a97d32667e0f0766d7b63d0d"
+        }
       },
       "desktop": {
         "current": null,
         "target": {
           "symbol": "FlowySvgs.dashboard_row_above_s",
           "asset": "resources/flowy_icons/16x/dashboard_row_above.svg",
-          "exists": false,
-          "sha256": null
+          "exists": true,
+          "sha256": "abe9db4d0dd5f51f9faf5a7c3a729802d830af40a97d32667e0f0766d7b63d0d"
         }
       },
-      "canonical": { "source": "new", "sha256": null, "reason": "New WP04 asset, byte-identical in both repos." },
+      "canonical": {
+        "source": "new",
+        "sha256": "abe9db4d0dd5f51f9faf5a7c3a729802d830af40a97d32667e0f0766d7b63d0d",
+        "reason": "New WP04 asset, byte-identical in both repos."
+      },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": false, "desktop": false },
-      "targetsMatchCanonical": { "web": false, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "row-below",
       "role": "Widget menu \"Create new row below\".",
       "notion": "Arrow down to a bar (spec §7.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-row-below__icon", "size": 16, "wave": 3, "status": "pending" }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-row-below__icon", "size": 16, "wave": 3, "status": "enforced" }],
       "web": {
         "current": null,
-        "target": { "asset": "src/assets/icons/dashboard_row_below.svg", "exists": false, "sha256": null }
+        "target": {
+          "asset": "src/assets/icons/dashboard_row_below.svg",
+          "exists": true,
+          "sha256": "91c928c9d6b7d7b1b9296d3e351483377ebb57ac4965fc0efad58a8766f72649"
+        }
       },
       "desktop": {
         "current": null,
         "target": {
           "symbol": "FlowySvgs.dashboard_row_below_s",
           "asset": "resources/flowy_icons/16x/dashboard_row_below.svg",
-          "exists": false,
-          "sha256": null
+          "exists": true,
+          "sha256": "91c928c9d6b7d7b1b9296d3e351483377ebb57ac4965fc0efad58a8766f72649"
         }
       },
-      "canonical": { "source": "new", "sha256": null, "reason": "New WP04 asset, byte-identical in both repos." },
+      "canonical": {
+        "source": "new",
+        "sha256": "91c928c9d6b7d7b1b9296d3e351483377ebb57ac4965fc0efad58a8766f72649",
+        "reason": "New WP04 asset, byte-identical in both repos."
+      },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": false, "desktop": false },
-      "targetsMatchCanonical": { "web": false, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "view-data-source",
       "role": "Read-only widget menu \"View data source\".",
       "notion": "Arrow pointing up and right (live/mktkpi-07-light-widget-options-menu.png).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-view-data-source__icon", "size": 16, "wave": 3, "status": "pending" }],
-      "web": { "current": null, "target": { "asset": "src/assets/icons/arrow_up_right.svg", "exists": false, "sha256": null } },
+      "contexts": [{ "parityId": "dash-widget-menu-item-view-data-source__icon", "size": 16, "wave": 3, "status": "enforced" }],
+      "web": {
+        "current": null,
+        "target": {
+          "asset": "src/assets/icons/arrow_up_right.svg",
+          "exists": true,
+          "sha256": "bc355da412cd7aed02613d8e0311e5df948051ee119f96287c1dbec16a451903"
+        }
+      },
       "desktop": {
         "current": null,
         "target": {
           "symbol": "FlowySvgs.arrow_up_right_s",
           "asset": "resources/flowy_icons/16x/arrow_up_right.svg",
-          "exists": false,
-          "sha256": null
+          "exists": true,
+          "sha256": "bc355da412cd7aed02613d8e0311e5df948051ee119f96287c1dbec16a451903"
         }
       },
-      "canonical": { "source": "new", "sha256": null, "reason": "New WP04 asset, byte-identical in both repos." },
+      "canonical": {
+        "source": "new",
+        "sha256": "bc355da412cd7aed02613d8e0311e5df948051ee119f96287c1dbec16a451903",
+        "reason": "New WP04 asset, byte-identical in both repos."
+      },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": false, "desktop": false },
-      "targetsMatchCanonical": { "web": false, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "duplicate",
       "role": "Widget menu \"Duplicate\".",
       "notion": "Two overlapping rounded squares, no plus (spec §7.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-duplicate__icon", "size": 16, "wave": 3, "status": "pending" }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-duplicate__icon", "size": 16, "wave": 3, "status": "enforced" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/duplicate.svg",
@@ -1218,14 +1256,14 @@
       "currentMatchesCanonical": { "web": false, "desktop": true },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "delete",
       "role": "Widget menu \"Delete\"; placeholder \"Remove\".",
       "notion": "Trash can, neutral colour.",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-widget-menu-item-delete__icon", "size": 16, "wave": 3, "status": "pending" }],
+      "contexts": [{ "parityId": "dash-widget-menu-item-delete__icon", "size": 16, "wave": 3, "status": "enforced" }],
       "web": {
         "current": {
           "asset": "src/assets/icons/delete.svg",
@@ -1264,7 +1302,7 @@
       "currentMatchesCanonical": { "web": true, "desktop": true },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "add",
@@ -1272,12 +1310,12 @@
       "notion": "Thin plus (official/crop-edit-mode-row-add-widget-plus.png).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-row-control-add__icon", "size": 16, "wave": 3, "status": "pending" },
-        { "parityId": "dash-grid-add-row__icon", "size": 16, "wave": 3, "status": "pending" },
-        { "parityId": "dash-global-filter-add__icon", "size": 16, "wave": 3, "status": "pending" },
-        { "parityId": "dash-empty-new-view__icon", "size": 16, "wave": 4, "status": "pending" },
-        { "parityId": "dash-widget-tool-new__icon", "size": 16, "wave": 4, "status": "pending" },
-        { "parityId": "dash-widget-grid-new-row__icon", "size": 16, "wave": 4, "status": "pending" }
+        { "parityId": "dash-row-control-add__icon", "size": 16, "wave": 3, "status": "enforced" },
+        { "parityId": "dash-grid-add-row__icon", "size": 16, "wave": 3, "status": "enforced" },
+        { "parityId": "dash-global-filter-add__icon", "size": 16, "wave": 3, "status": "enforced" },
+        { "parityId": "dash-empty-new-view__icon", "size": 16, "wave": 4, "status": "enforced" },
+        { "parityId": "dash-widget-tool-new__icon", "size": 16, "wave": 4, "status": "enforced" },
+        { "parityId": "dash-widget-grid-new-row__icon", "size": 16, "wave": 4, "status": "enforced" }
       ],
       "web": {
         "current": {
@@ -1322,7 +1360,7 @@
       "currentMatchesCanonical": { "web": true, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "drag",
@@ -1330,8 +1368,14 @@
       "notion": "Six dots in two columns.",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-widget-filters-popover-rule__drag-icon", "size": 16, "wave": 3, "status": "pending" },
-        { "parityId": "dash-number-color-rule__drag-icon", "size": 16, "wave": 3, "status": "pending" }
+        { "parityId": "dash-widget-filters-popover-rule__drag-icon", "size": 16, "wave": 3, "status": "enforced" },
+        {
+          "parityId": "dash-number-color-rule__drag-icon",
+          "size": 16,
+          "wave": 3,
+          "waiver": "A Number chart's Color page with a dynamic rule is a fixture state neither probe builds (the rule handle shows on hover). The handle draws the drag target on both clients (web NumberRuleEditor.tsx drag.svg, desktop number_rule_editor.dart FlowySvgs.drag_s), whose glyph L1 checks, and the same glyph is enforced in the filters popover rule context.",
+          "status": "waived"
+        }
       ],
       "web": {
         "current": {
@@ -1368,7 +1412,7 @@
       "currentMatchesCanonical": { "web": true, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "close",
@@ -1378,8 +1422,14 @@
       "contexts": [
         { "parityId": "dash-widget-settings-close__icon", "size": 16, "wave": 2, "status": "enforced" },
         { "parityId": "dash-widget-filters-popover-close__icon", "size": 16, "wave": 2, "status": "enforced" },
-        { "parityId": "dash-widget-picker-close__icon", "size": 16, "wave": 4, "status": "pending" },
-        { "parityId": "dash-drilldown-dismiss__icon", "size": 16, "wave": 5, "status": "pending" }
+        { "parityId": "dash-widget-picker-close__icon", "size": 16, "wave": 4, "status": "enforced" },
+        {
+          "parityId": "dash-drilldown-dismiss__icon",
+          "size": 14,
+          "wave": 5,
+          "note": "WP13 §3.10: a 14px close icon in the 24px Dismiss circle (Notion mktkpi-10)",
+          "status": "enforced"
+        }
       ],
       "web": {
         "current": {
@@ -1431,8 +1481,8 @@
       "notion": "Small down chevron (spec §9).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-global-filter-pill__chevron", "size": 12, "wave": 3, "status": "pending" },
-        { "parityId": "dash-widget-tool-new__chevron", "size": 16, "wave": 4, "status": "pending" }
+        { "parityId": "dash-global-filter-pill__chevron", "size": 12, "wave": 3, "status": "enforced" },
+        { "parityId": "dash-widget-tool-new__chevron", "size": 16, "wave": 4, "status": "enforced" }
       ],
       "web": {
         "current": {
@@ -1472,7 +1522,7 @@
       "currentMatchesCanonical": { "web": true, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "chevron-left",
@@ -1480,9 +1530,15 @@
       "notion": "Left chevron.",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-chart-panel-back__icon", "size": 16, "wave": 3, "status": "pending" },
-        { "parityId": "dash-global-filter-back__icon", "size": 16, "wave": 3, "status": "pending" },
-        { "parityId": "dash-widget-picker-back__icon", "size": 16, "wave": 4, "status": "pending" }
+        { "parityId": "dash-chart-panel-back__icon", "size": 16, "wave": 3, "status": "enforced" },
+        {
+          "parityId": "dash-global-filter-back__icon",
+          "size": 16,
+          "wave": 3,
+          "waiver": "The back button shows only in the global filter builder screens (Filter multiple sources, Add another), which need a second source the global-filters scene does not have. It draws the target on both clients (web GlobalFilterMenu.tsx and GlobalFilterMultiSources.tsx alt_arrow_left.svg, desktop global_filter_button.dart FlowySvgs.dashboard_chevron_left_s), whose glyph L1 checks, and the same glyph is enforced on the chart panel back button.",
+          "status": "waived"
+        },
+        { "parityId": "dash-widget-picker-back__icon", "size": 16, "wave": 4, "status": "enforced" }
       ],
       "web": {
         "current": {
@@ -1509,8 +1565,8 @@
         "target": {
           "symbol": "FlowySvgs.dashboard_chevron_left_s",
           "asset": "resources/flowy_icons/16x/dashboard_chevron_left.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "4144772f3677639d3cd5bb72075cfe288b39cf7a9c24aa45cc4ddd4a11599f44",
           "createFrom": "web:src/assets/icons/alt_arrow_left.svg"
         }
       },
@@ -1521,9 +1577,9 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": true, "desktop": false },
-      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "chevron-right",
@@ -1532,8 +1588,8 @@
       "scope": "dashboard",
       "contexts": [
         { "parityId": "dash-widget-settings-row__chevron", "size": 16, "wave": 2, "status": "enforced" },
-        { "parityId": "dash-widget-menu-item-move-to-row__chevron", "size": 16, "wave": 3, "status": "pending" },
-        { "parityId": "dash-chart-panel-row__chevron", "size": 16, "wave": 3, "status": "pending" }
+        { "parityId": "dash-widget-menu-item-move-to-row__chevron", "size": 16, "wave": 3, "status": "enforced" },
+        { "parityId": "dash-chart-panel-row__chevron", "size": 16, "wave": 3, "status": "enforced" }
       ],
       "web": {
         "current": {
@@ -1578,7 +1634,7 @@
       "role": "Chart panel \"What to show\" row icon.",
       "notion": "Up arrow glyph on the axis rows (spec §8.2).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-chart-panel-row-what-to-show__icon", "size": 16, "wave": 3, "status": "pending" }],
+      "contexts": [{ "parityId": "dash-chart-panel-row-what-to-show__icon", "size": 16, "wave": 3, "status": "enforced" }],
       "web": {
         "current": null,
         "target": {
@@ -1605,7 +1661,7 @@
       "currentMatchesCanonical": { "web": false, "desktop": false },
       "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "chart-type-bar",
@@ -1613,16 +1669,16 @@
       "notion": "Five square outlined buttons: bars, horizontal bars, line, ring, # (spec §8.1).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-chart-type-button-bar__icon", "size": 20, "wave": 3, "status": "pending" },
-        { "parityId": "dash-empty-type-icon-bar", "size": 24, "wave": 4, "status": "pending" }
+        { "parityId": "dash-chart-type-button-bar__icon", "size": 20, "wave": 3, "status": "enforced" },
+        { "parityId": "dash-empty-type-icon-bar", "size": 24, "wave": 4, "status": "enforced" }
       ],
       "web": {
         "current": null,
         "currentNote": "the web chart type menu is text-only today",
         "target": {
           "asset": "src/assets/icons/chart_type_bar.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "919d5518a2ee541a3fe34307c9d81069b3f6d5a679b0a883af9a6d0bfe64fb42",
           "createFrom": "desktop:resources/flowy_icons/16x/chart_type_bar.svg"
         }
       },
@@ -1647,23 +1703,23 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": false, "desktop": true },
-      "targetsMatchCanonical": { "web": false, "desktop": true },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "chart-type-horizontal-bar",
       "role": "\"Horizontal bar\" button of the chart type row (chart settings panel); chart settings only.",
       "notion": "Five square outlined buttons: bars, horizontal bars, line, ring, # (spec §8.1).",
       "scope": "dashboard",
-      "contexts": [{ "parityId": "dash-chart-type-button-horizontal-bar__icon", "size": 20, "wave": 3, "status": "pending" }],
+      "contexts": [{ "parityId": "dash-chart-type-button-horizontal-bar__icon", "size": 20, "wave": 3, "status": "enforced" }],
       "web": {
         "current": null,
         "currentNote": "the web chart type menu is text-only today",
         "target": {
           "asset": "src/assets/icons/chart_type_horizontal_bar.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "bf181fd7c63c63ac13a06a8ac67dfe194499429842090523fb6642fceda22123",
           "createFrom": "desktop:resources/flowy_icons/16x/chart_type_horizontal_bar.svg"
         }
       },
@@ -1688,9 +1744,9 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": false, "desktop": true },
-      "targetsMatchCanonical": { "web": false, "desktop": true },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "chart-type-line",
@@ -1698,16 +1754,16 @@
       "notion": "Five square outlined buttons: bars, horizontal bars, line, ring, # (spec §8.1).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-chart-type-button-line__icon", "size": 20, "wave": 3, "status": "pending" },
-        { "parityId": "dash-empty-type-icon-line", "size": 24, "wave": 4, "status": "pending" }
+        { "parityId": "dash-chart-type-button-line__icon", "size": 20, "wave": 3, "status": "enforced" },
+        { "parityId": "dash-empty-type-icon-line", "size": 24, "wave": 4, "status": "enforced" }
       ],
       "web": {
         "current": null,
         "currentNote": "the web chart type menu is text-only today",
         "target": {
           "asset": "src/assets/icons/chart_type_line.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "afea5675e3448196388f550dcec8c47199610ecce1d1ad01adb03376be58d6da",
           "createFrom": "desktop:resources/flowy_icons/16x/chart_type_line.svg"
         }
       },
@@ -1732,9 +1788,9 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": false, "desktop": true },
-      "targetsMatchCanonical": { "web": false, "desktop": true },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "chart-type-donut",
@@ -1742,16 +1798,16 @@
       "notion": "Five square outlined buttons: bars, horizontal bars, line, ring, # (spec §8.1).",
       "scope": "dashboard",
       "contexts": [
-        { "parityId": "dash-chart-type-button-donut__icon", "size": 20, "wave": 3, "status": "pending" },
-        { "parityId": "dash-empty-type-icon-donut", "size": 24, "wave": 4, "status": "pending" }
+        { "parityId": "dash-chart-type-button-donut__icon", "size": 20, "wave": 3, "status": "enforced" },
+        { "parityId": "dash-empty-type-icon-donut", "size": 24, "wave": 4, "status": "enforced" }
       ],
       "web": {
         "current": null,
         "currentNote": "the web chart type menu is text-only today",
         "target": {
           "asset": "src/assets/icons/chart_type_donut.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "8948f983c90f0df4bde7ceba2850fdefedd095fa25546ece31f0c61b9d5667a2",
           "createFrom": "desktop:resources/flowy_icons/16x/chart_type_donut.svg"
         }
       },
@@ -1776,25 +1832,16 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": false, "desktop": true },
-      "targetsMatchCanonical": { "web": false, "desktop": true },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 3,
-      "status": "pending"
+      "status": "enforced"
     },
     {
       "name": "empty-list-glyph",
       "role": "List glyph of the five faint icons in the empty edit-mode placeholder.",
       "notion": "Five faint icons: list, vertical bar, donut, table, line (spec §10.3).",
       "scope": "dashboard",
-      "contexts": [
-        { "parityId": "dash-empty-type-icon-list", "size": 24, "wave": 4, "status": "pending" },
-        {
-          "parityId": "dash-empty-type-icon-table",
-          "size": 24,
-          "wave": 4,
-          "note": "the table glyph is layout-grid",
-          "status": "pending"
-        }
-      ],
+      "contexts": [{ "parityId": "dash-empty-type-icon-list", "size": 24, "wave": 4, "status": "enforced" }],
       "web": {
         "current": null,
         "target": {
@@ -1808,8 +1855,8 @@
         "target": {
           "symbol": "FlowySvgs.dashboard_list_s",
           "asset": "resources/flowy_icons/16x/dashboard_list.svg",
-          "exists": false,
-          "sha256": null,
+          "exists": true,
+          "sha256": "bc8b228077e70f85df7d7b970056ee19afcb282da8706182ec0953a58bb64d54",
           "createFrom": "web:src/assets/icons/list.svg"
         }
       },
@@ -1820,9 +1867,9 @@
       },
       "currentlyIdentical": false,
       "currentMatchesCanonical": { "web": false, "desktop": false },
-      "targetsMatchCanonical": { "web": true, "desktop": false },
+      "targetsMatchCanonical": { "web": true, "desktop": true },
       "wave": 4,
-      "status": "pending"
+      "status": "enforced"
     }
   ],
   "nonGlyph": [

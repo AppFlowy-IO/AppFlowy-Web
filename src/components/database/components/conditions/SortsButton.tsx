@@ -79,7 +79,6 @@ function SortsButton({ compact = false }: { compact?: boolean }) {
               variant={'ghost'}
               size={compact ? 'icon-sm' : 'icon'}
               data-testid={'database-actions-sort'}
-              className={'relative'}
               onClick={(e) => {
                 e.stopPropagation();
                 if (readOnly || sorts.length > 0) {

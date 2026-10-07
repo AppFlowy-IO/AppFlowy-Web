@@ -4,11 +4,13 @@ import * as Y from 'yjs';
 import {
   convertViewToDashboard,
   createOwnedDatabaseView,
+  deleteOwnedDatabaseView,
   duplicateDashboardOwnedWidgets,
   duplicateDatabaseViewWithOwnedWidgets,
   duplicateOwnedDatabaseView,
   renameDatabaseViewInDoc,
   repairDashboardOwnerMarkers,
+  resolveDashboardViewOwner,
 } from '@/application/database-yjs/dashboard-owned-view-ops';
 import { readDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
 import { DASHBOARD_LAYOUT_KEY } from '@/application/database-yjs/dashboard.type';
@@ -353,9 +355,8 @@ describe('markDashboardOwnedView', () => {
 });
 
 describe('repairDashboardOwnerMarkers', () => {
-  it('rewrites the missing copy of each marker of this dashboard, in the host and a widget source', async () => {
-    const { workspace, hostDoc, foreignDoc } = setup();
-
+  /** The host's board view has its mirror only, the foreign tasks view its folder marker only, the grid is another dashboard's. */
+  function seedHalfWrittenMarkers(workspace: FakeWorkspace, hostDoc: YDoc) {
     // Mirror only (the folder PATCH failed): the folder gets the marker.
     executeDatabaseOperations(hostDoc.getMap(YjsEditorKey.data_section) as YSharedRoot, [
       () => getView(hostDoc, 'v:board').set(YjsDatabaseKey.dashboard_owner, 'v:dash'),
@@ -364,32 +365,81 @@ describe('repairDashboardOwnerMarkers', () => {
     workspace.folder.set('v:tasks', { ...workspace.meta('v:tasks'), extra: { database_id: FOREIGN_DB, dashboard_owner: 'v:dash' } } as View);
     // Owned by another dashboard: untouched.
     workspace.folder.set('v:grid', { ...workspace.meta('v:grid'), extra: { dashboard_owner: 'v:other' } } as View);
+    return [
+      ...readDashboardLayoutSetting(undefined, 'none').rows,
+      {
+        id: 'r:1',
+        height: 360,
+        widgets: [
+          { id: 'w:1', viewId: 'v:board', databaseId: HOST_DB, width: 4 },
+          { id: 'w:2', viewId: 'v:tasks', databaseId: FOREIGN_DB, width: 4 },
+          { id: 'w:3', viewId: 'v:grid', databaseId: HOST_DB, width: 4 },
+        ],
+      },
+    ];
+  }
 
-    const rows = readDashboardLayoutSetting(undefined, 'none').rows;
-    const repaired = await repairDashboardOwnerMarkers(
-      workspace.deps(hostDoc),
-      'v:dash',
-      [
-        ...rows,
-        {
-          id: 'r:1',
-          height: 360,
-          widgets: [
-            { id: 'w:1', viewId: 'v:board', databaseId: HOST_DB, width: 4 },
-            { id: 'w:2', viewId: 'v:tasks', databaseId: FOREIGN_DB, width: 4 },
-            { id: 'w:3', viewId: 'v:grid', databaseId: HOST_DB, width: 4 },
-          ],
-        },
-      ],
-      { sleep: noSleep }
-    );
+  it('rewrites the missing copy of each marker of this dashboard, in the host and an open widget source', async () => {
+    const { workspace, hostDoc, foreignDoc } = setup();
+    const rows = seedHalfWrittenMarkers(workspace, hostDoc);
+    const repaired = await repairDashboardOwnerMarkers(workspace.deps(hostDoc), 'v:dash', rows, {
+      sleep: noSleep,
+      getOpenDoc: (databaseId) => (databaseId === FOREIGN_DB ? foreignDoc : undefined),
+    });
 
     expect(repaired).toBe(2);
     expect(workspace.folder.get('v:board')?.extra?.dashboard_owner).toBe('v:dash');
     expect(getView(foreignDoc, 'v:tasks').get(YjsDatabaseKey.dashboard_owner)).toBe('v:dash');
     expect(getView(hostDoc, 'v:grid').get(YjsDatabaseKey.dashboard_owner)).toBeUndefined();
-    expect(workspace.bindViewSync).toHaveBeenCalledWith(foreignDoc, { retain: true });
-    expect(workspace.scheduleDeferredCleanup).toHaveBeenCalledWith(foreignDoc.guid);
+    // The open doc is written in place: no load, no extra sync owner (R7 leaves loads to the scheduler).
+    expect(workspace.loadView).not.toHaveBeenCalled();
+    expect(workspace.bindViewSync).not.toHaveBeenCalled();
+    expect(workspace.scheduleDeferredCleanup).not.toHaveBeenCalled();
+  });
+
+  it('never loads a widget source whose doc is not open: that widget waits for a later open', async () => {
+    const { workspace, hostDoc, foreignDoc } = setup();
+    const rows = seedHalfWrittenMarkers(workspace, hostDoc);
+    const repaired = await repairDashboardOwnerMarkers(workspace.deps(hostDoc), 'v:dash', rows, { sleep: noSleep });
+
+    expect(repaired).toBe(1);
+    expect(workspace.folder.get('v:board')?.extra?.dashboard_owner).toBe('v:dash');
+    expect(getView(foreignDoc, 'v:tasks').get(YjsDatabaseKey.dashboard_owner)).toBeUndefined();
+    expect(workspace.loadView).not.toHaveBeenCalled();
+    expect(workspace.loadViewMeta).not.toHaveBeenCalledWith('v:tasks');
+  });
+
+  it('reads the folder metas of every widget in one batch, not one round trip after another', async () => {
+    const { workspace, hostDoc, foreignDoc } = setup();
+    const rows = seedHalfWrittenMarkers(workspace, hostDoc);
+    const loadMeta = workspace.loadViewMeta.getMockImplementation()!;
+    const reads: { viewId: string; release: () => void }[] = [];
+
+    workspace.loadViewMeta.mockImplementation(async (viewId: string, ...rest: unknown[]) => {
+      await new Promise<void>((release) => reads.push({ viewId, release }));
+      return (loadMeta as (viewId: string, ...rest: unknown[]) => Promise<View>)(viewId, ...rest);
+    });
+
+    const repair = repairDashboardOwnerMarkers(workspace.deps(hostDoc), 'v:dash', rows, {
+      sleep: noSleep,
+      getOpenDoc: (databaseId) => (databaseId === FOREIGN_DB ? foreignDoc : undefined),
+    });
+
+    // Every read is in flight before any of them returns.
+    for (let tick = 0; tick < 50 && reads.length < 3; tick += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(reads.map(({ viewId }) => viewId)).toEqual(['v:board', 'v:tasks', 'v:grid']);
+    expect(workspace.updatePage).not.toHaveBeenCalled();
+    reads.splice(0).forEach(({ release }) => release());
+    // The folder write of the board marker starts with its own (authoritative) read.
+    for (let tick = 0; tick < 50 && reads.length < 1; tick += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+
+    reads.splice(0).forEach(({ release }) => release());
+    expect(await repair).toBe(2);
   });
 });
 
@@ -489,6 +539,80 @@ describe('duplicateOwnedDatabaseView', () => {
     });
     expect(copy.get(YjsDatabaseKey.dashboard_owner)).toBe('v:dash');
     expect(source.get(YjsDatabaseKey.dashboard_owner)).toBe('v:old-owner');
+  });
+});
+
+describe('duplicateOwnedDatabaseView of a widget (numbered)', () => {
+  // WP05 §1.3: "Board" duplicates to the first free "Board (n)" among the database's views.
+  it('names the copy with the first free number of its base name', async () => {
+    const { workspace, hostDoc } = setup();
+
+    const first = await duplicateOwnedDatabaseView(workspace.deps(hostDoc), {
+      sourceViewId: 'v:board',
+      owner: 'v:dash',
+      name: 'Board',
+      numbered: true,
+    });
+
+    expect(getView(hostDoc, first).get(YjsDatabaseKey.name)).toBe('Board (1)');
+    const second = await duplicateOwnedDatabaseView(workspace.deps(hostDoc), {
+      sourceViewId: first,
+      owner: 'v:dash',
+      name: 'Board (1)',
+      numbered: true,
+    });
+
+    expect(getView(hostDoc, second).get(YjsDatabaseKey.name)).toBe('Board (2)');
+  });
+
+  it('numbers a copy in another database among that database\'s views', async () => {
+    const { workspace, hostDoc, foreignDoc } = setup();
+
+    const copyId = await duplicateOwnedDatabaseView(workspace.deps(hostDoc), {
+      sourceViewId: 'v:tasks',
+      databaseId: FOREIGN_DB,
+      owner: 'v:dash',
+      name: 'Tasks Grid',
+      numbered: true,
+    });
+
+    expect(getView(foreignDoc, copyId).get(YjsDatabaseKey.name)).toBe('Tasks Grid (1)');
+    expect(getView(foreignDoc, copyId).get(YjsDatabaseKey.dashboard_owner)).toBe('v:dash');
+  });
+});
+
+describe('deleteOwnedDatabaseView', () => {
+  it('trashes the folder page and removes the view from its database, host or foreign', async () => {
+    const { workspace, hostDoc, foreignDoc } = setup();
+
+    await deleteOwnedDatabaseView(workspace.deps(hostDoc), { viewId: 'v:board', databaseId: HOST_DB });
+    await deleteOwnedDatabaseView(workspace.deps(hostDoc), { viewId: 'v:tasks', databaseId: FOREIGN_DB });
+
+    expect(workspace.deletePage.mock.calls).toEqual([['v:board'], ['v:tasks']]);
+    expect(getDatabase(hostDoc).get(YjsDatabaseKey.views).has('v:board')).toBe(false);
+    expect(getDatabase(foreignDoc).get(YjsDatabaseKey.views).has('v:tasks')).toBe(false);
+    // The foreign doc was opened for the write and released.
+    expect(workspace.scheduleDeferredCleanup).toHaveBeenCalled();
+  });
+
+  it('still trashes the folder page of a view its database no longer holds', async () => {
+    const { workspace, hostDoc } = setup();
+
+    await deleteOwnedDatabaseView(workspace.deps(hostDoc), { viewId: 'v:gone', databaseId: HOST_DB });
+    expect(workspace.deletePage.mock.calls).toEqual([['v:gone']]);
+  });
+});
+
+describe('resolveDashboardViewOwner', () => {
+  it('reads the folder marker first, else the collab mirror', async () => {
+    const { workspace, hostDoc, foreignDoc } = setup();
+
+    workspace.addFolderView({ view_id: 'v:owned', parent_view_id: CONTAINER, extra: { dashboard_owner: 'v:dash' } });
+    getView(foreignDoc, 'v:tasks').set(YjsDatabaseKey.dashboard_owner, 'v:other');
+
+    await expect(resolveDashboardViewOwner(workspace.deps(hostDoc), 'v:owned')).resolves.toBe('v:dash');
+    await expect(resolveDashboardViewOwner(workspace.deps(hostDoc), 'v:tasks', foreignDoc)).resolves.toBe('v:other');
+    await expect(resolveDashboardViewOwner(workspace.deps(hostDoc), 'v:grid')).resolves.toBeNull();
   });
 });
 

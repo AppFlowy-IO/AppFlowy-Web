@@ -12,19 +12,27 @@ import { useCallback } from 'react';
 import * as Y from 'yjs';
 
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
-import { useDatabaseView, useSharedRoot } from '@/application/database-yjs/context';
+import { useDatabaseContext, useDatabaseView, useSharedRoot } from '@/application/database-yjs/context';
 import { CalculationType } from '@/application/database-yjs/database.type';
 import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
-import { useFieldType } from '@/application/database-yjs/selector';
+import { useCalculationFieldType } from '@/application/database-yjs/selector';
 import { YDatabaseCalculation, YDatabaseCalculations, YjsDatabaseKey } from '@/application/types';
 
+/**
+ * Persists a footer total into the shared `calculation_value`. Never inside a
+ * dashboard widget (WP07 P0-5): a widget's rows are narrowed by the viewer's
+ * private filters and the global filters, so its total is computed locally
+ * (`GridCalculateRowCell`) and the shared value stays the view's own.
+ */
 export function useCalculateFieldDispatch(fieldId: string) {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
-  const fieldType = useFieldType(fieldId);
+  const fieldType = useCalculationFieldType(fieldId);
+  const { isDashboardWidget } = useDatabaseContext();
 
   return useCallback(
     (cells: Map<string, unknown>) => {
+      if (isDashboardWidget) return;
       const calculations = view?.get(YjsDatabaseKey.calculations);
       const index = (calculations?.toArray() || []).findIndex((calculation) => {
         return calculation.get(YjsDatabaseKey.field_id) === fieldId;
@@ -59,7 +67,7 @@ export function useCalculateFieldDispatch(fieldId: string) {
         );
       }
     },
-    [view, fieldId, fieldType, sharedRoot]
+    [view, fieldId, fieldType, sharedRoot, isDashboardWidget]
   );
 }
 

@@ -217,6 +217,12 @@ describe('createViewConditionsOverlay', () => {
     // A collaborator's change no longer overwrites the viewer's copy.
     filters.push([filterMap('f2')]);
     expect(readOverlayConditions(overlay).filters).toEqual([]);
+    expect([...overlay.dirtyParts()]).toEqual([YjsDatabaseKey.filters]);
+
+    // Per part (WP07 decision 1): a sort saved by a collaborator still reaches the viewer.
+    (view.get(YjsDatabaseKey.sorts) as Y.Array<unknown>).push([sortMap('shared-sort')]);
+    expect(readOverlayConditions(overlay).sorts.map((sort) => sort.id)).toEqual(['shared-sort']);
+    expect([...overlay.dirtyParts()]).toEqual([YjsDatabaseKey.filters]);
 
     overlay.reset();
     expect(overlay.isDirty()).toBe(false);
@@ -314,6 +320,8 @@ describe('createViewConditionsOverlay', () => {
 
     (overlay.view.get(YjsDatabaseKey.sorts) as Y.Array<unknown>).push([sortMap('mine')]);
     expect(listener).toHaveBeenCalledTimes(1);
+    expect(overlay.isDirty()).toBe(true);
+    expect([...overlay.dirtyParts()]).toEqual([YjsDatabaseKey.sorts]);
     stop();
     (overlay.view.get(YjsDatabaseKey.sorts) as Y.Array<unknown>).delete(0, 1);
     expect(listener).toHaveBeenCalledTimes(1);
@@ -372,8 +380,10 @@ describe('createViewConditionsOverlay', () => {
     const realEvents = jest.fn();
 
     localFirst.set(YjsDatabaseKey.condition, 1);
+    expect([...overlay.dirtyParts()]).toEqual([YjsDatabaseKey.sorts]);
     sorts.observeDeep(realEvents);
     overlay.commit();
+    expect(overlay.dirtyParts().size).toBe(0);
 
     expect(sorts.get(0)).toBe(realFirst);
     expect(sorts.get(1)).toBe(realSecond);
@@ -389,7 +399,9 @@ describe('createViewConditionsOverlay', () => {
     localSorts.delete(0, 1);
     localSorts.push([sortMap('s1')]);
     expect(overlay.isDirty()).toBe(true);
+    expect([...overlay.dirtyParts()]).toEqual([YjsDatabaseKey.sorts]);
     overlay.reset();
+    expect(overlay.dirtyParts().size).toBe(0);
     expect(readOverlayConditions(overlay).sorts).toEqual(sorts.toJSON());
     expect(overlay.isDirty()).toBe(false);
 
@@ -492,6 +504,162 @@ describe('createViewConditionsOverlay', () => {
     // The previous doc's actions no longer open a local transaction.
     twoPushes(first.doc);
     expect(localChanges).toHaveBeenCalledTimes(3);
+    overlay.destroy();
+  });
+});
+
+describe('per-part private conditions (WP07)', () => {
+  const dataFilter = (id: string, content = 'done') => {
+    const map = filterMap(id, content);
+
+    map.set(YjsDatabaseKey.type, FieldType.SingleSelect);
+    return map;
+  };
+
+  it('a private filter edit freezes filters only; sorts keep following the real view', () => {
+    const { view, sorts } = createRealView();
+    const overlay = createViewConditionsOverlay(view);
+
+    (overlay.view.get(YjsDatabaseKey.filters) as Y.Array<unknown>).push([dataFilter('mine')]);
+    sorts.push([sortMap('saved')]);
+    expect([...overlay.dirtyParts()]).toEqual([YjsDatabaseKey.filters]);
+    expect(readOverlayConditions(overlay).sorts.map((sort) => sort.id)).toEqual(['saved']);
+    overlay.destroy();
+  });
+
+  it('the Sort part alone is dirty after a private sort', () => {
+    const { view, filters } = createRealView();
+    const overlay = createViewConditionsOverlay(view);
+
+    (overlay.view.get(YjsDatabaseKey.sorts) as Y.Array<unknown>).push([sortMap('mine')]);
+    filters.push([dataFilter('saved')]);
+    expect([...overlay.dirtyParts()]).toEqual([YjsDatabaseKey.sorts]);
+    expect(readOverlayConditions(overlay).filters.map((filter) => filter.id)).toEqual(['saved']);
+    overlay.destroy();
+  });
+
+  it('filter ids and top-level filter order do not make the overlay dirty', () => {
+    const { view, filters } = createRealView();
+
+    filters.push([dataFilter('a', 'one'), dataFilter('b', 'two')]);
+    const overlay = createViewConditionsOverlay(view);
+    const local = overlay.view.get(YjsDatabaseKey.filters) as Y.Array<unknown>;
+    const listener = jest.fn();
+
+    overlay.onPrivateChange(listener);
+    // Reorder with fresh ids: the same rows pass.
+    local.doc!.transact(() => {
+      local.delete(0, 2);
+      local.push([dataFilter('y', 'two'), dataFilter('x', 'one')]);
+    });
+    expect(overlay.isDirty()).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(1);
+    overlay.destroy();
+  });
+
+  it('sort order makes the overlay dirty', () => {
+    const { view, sorts } = createRealView();
+
+    sorts.push([sortMap('a', 'name'), sortMap('b', 'status')]);
+    const overlay = createViewConditionsOverlay(view);
+    const local = overlay.view.get(YjsDatabaseKey.sorts) as Y.Array<unknown>;
+
+    local.doc!.transact(() => {
+      local.delete(0, 2);
+      local.push([sortMap('b', 'status'), sortMap('a', 'name')]);
+    });
+    expect([...overlay.dirtyParts()]).toEqual([YjsDatabaseKey.sorts]);
+    overlay.destroy();
+  });
+
+  it('commit writes only dirty parts and leaves the clean part\'s maps untouched', () => {
+    const { doc, view, filters, sorts } = createRealView();
+
+    filters.push([dataFilter('saved-filter')]);
+    sorts.push([sortMap('saved-sort')]);
+    const realFilter = filters.get(0);
+    const realSort = sorts.get(0);
+    const overlay = createViewConditionsOverlay(view);
+
+    (overlay.view.get(YjsDatabaseKey.sorts) as Y.Array<unknown>).push([sortMap('mine', 'status')]);
+    const filterEvents = jest.fn();
+
+    filters.observeDeep(filterEvents);
+    overlay.commit();
+    expect(filterEvents).not.toHaveBeenCalled();
+    expect(filters.get(0)).toBe(realFilter);
+    expect(sorts.get(0)).toBe(realSort);
+    expect(sorts.toJSON().map((sort: { id: string }) => sort.id)).toEqual(['saved-sort', 'mine']);
+    expect(overlay.isDirty()).toBe(false);
+
+    getOrCreateDatabaseHistoryManager(doc).undo();
+    expect(sorts.toJSON().map((sort: { id: string }) => sort.id)).toEqual(['saved-sort']);
+    filters.unobserveDeep(filterEvents);
+    overlay.destroy();
+  });
+
+  it('initial restores dirty parts without notifying and reports dirtyParts', () => {
+    const { view, sorts } = createRealView();
+
+    sorts.push([sortMap('saved')]);
+    const overlay = createViewConditionsOverlay(view, {
+      initial: {
+        filters: [
+          { id: 'f1', filter_type: FilterType.Data, field_id: 'status', ty: FieldType.SingleSelect, condition: 0, content: 'done' },
+        ],
+        // Equal to the saved sort: follows the real view.
+        sorts: [{ id: 'other', field_id: 'name', condition: 0 }],
+      },
+    });
+    const listener = jest.fn();
+
+    overlay.subscribe(listener);
+    expect([...overlay.dirtyParts()]).toEqual([YjsDatabaseKey.filters]);
+    expect(readOverlayConditions(overlay).filters.map((filter) => filter.id)).toEqual(['f1']);
+    expect(readOverlayConditions(overlay).sorts.map((sort) => sort.id)).toEqual(['saved']);
+    expect(listener).not.toHaveBeenCalled();
+    overlay.destroy();
+  });
+
+  it('exportPrivate returns dirty parts only', () => {
+    const { view } = createRealView();
+    const overlay = createViewConditionsOverlay(view);
+
+    expect(overlay.exportPrivate()).toBeNull();
+    (overlay.view.get(YjsDatabaseKey.sorts) as Y.Array<unknown>).push([sortMap('mine')]);
+    expect(overlay.exportPrivate()).toEqual({ sorts: [{ id: 'mine', field_id: 'name', condition: 0 }] });
+    overlay.destroy();
+  });
+
+  it('onPrivateChange fires on every private edit, not on mirror', () => {
+    const { view, filters } = createRealView();
+    const overlay = createViewConditionsOverlay(view);
+    const listener = jest.fn();
+    const local = overlay.view.get(YjsDatabaseKey.filters) as Y.Array<unknown>;
+
+    overlay.onPrivateChange(listener);
+    filters.push([dataFilter('shared')]);
+    expect(listener).not.toHaveBeenCalled();
+    local.push([dataFilter('mine', 'todo')]);
+    (local.get(1) as Y.Map<unknown>).set(YjsDatabaseKey.content, 'later');
+    expect(listener).toHaveBeenCalledTimes(2);
+    overlay.reset();
+    expect(listener).toHaveBeenCalledTimes(2);
+    overlay.destroy();
+  });
+
+  it('restore never overrides a part the viewer already changed', () => {
+    const { view } = createRealView();
+    const overlay = createViewConditionsOverlay(view);
+
+    (overlay.view.get(YjsDatabaseKey.sorts) as Y.Array<unknown>).push([sortMap('typed')]);
+    overlay.restore({
+      sorts: [{ id: 'stored', field_id: 'status', condition: 1 }],
+      filters: [{ id: 'f1', filter_type: FilterType.Data, field_id: 'status', ty: FieldType.SingleSelect, content: 'x' }],
+    });
+    expect(readOverlayConditions(overlay).sorts.map((sort) => sort.id)).toEqual(['typed']);
+    expect(readOverlayConditions(overlay).filters.map((filter) => filter.id)).toEqual(['f1']);
+    expect([...overlay.dirtyParts()].sort()).toEqual([YjsDatabaseKey.filters, YjsDatabaseKey.sorts]);
     overlay.destroy();
   });
 });

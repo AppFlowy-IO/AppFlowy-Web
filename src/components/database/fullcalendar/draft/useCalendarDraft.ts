@@ -9,6 +9,7 @@ import {
   usePrimaryFieldId,
 } from '@/application/database-yjs';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
+import { useEffectiveViewFilters } from '@/application/database-yjs/effective-conditions';
 import { YjsDatabaseKey } from '@/application/types';
 
 import { CalendarDraftSelection, CalendarEventDraft } from './CalendarEventDraft';
@@ -28,6 +29,7 @@ export function useCalendarDraft(events: EventInput[], emptyEvents: EventInput[]
   // the dashboard's global filters.
   const conditionsView = useDatabaseView();
   const extraFilters = useDatabaseExtraFilters();
+  const prefillFilters = useEffectiveViewFilters();
   const active = useRef<CalendarEventDraft | null>(null);
   const [model, setModel] = useState<CalendarEventDraft | null>(null);
   const [revision, setRevision] = useState(0);
@@ -83,13 +85,13 @@ export function useCalendarDraft(events: EventInput[], emptyEvents: EventInput[]
       // A modal editor owns the active draft. Repeated FullCalendar select
       // callbacks must not create another one before that editor is dismissed.
       if (active.current) return active.current.id;
-      const next = new CalendarEventDraft(context, setting.fieldId, selection);
+      const next = new CalendarEventDraft(context, setting.fieldId, selection, prefillFilters);
 
       active.current = next;
       setModel(next);
       return next.id;
     },
-    [context, setting?.fieldId]
+    [context, prefillFilters, setting?.fieldId]
   );
 
   const discardDraft = useCallback(() => {

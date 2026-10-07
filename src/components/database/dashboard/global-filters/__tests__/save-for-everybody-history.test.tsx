@@ -1,4 +1,5 @@
-import { act, fireEvent, renderHook, screen } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
+import { ReactElement } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
@@ -11,13 +12,17 @@ import {
   DashboardProvider,
   useDashboardContext,
   useDashboardFilters,
-  useDashboardLocalWidgetChanges,
+  useDashboardPrivateSummary,
 } from '@/components/database/dashboard/DashboardContext';
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 
 import { useGlobalFilterActions } from '../useGlobalFilterActions';
 
 jest.mock('@/utils/runtime-config', () => ({ getConfigValue: (_key: string, fallback: string) => fallback }));
+
+jest.mock('sonner', () => ({ toast: { custom: jest.fn(), dismiss: jest.fn() } }));
+
+const mockToast = (jest.requireMock('sonner') as { toast: { custom: jest.Mock; dismiss: jest.Mock } }).toast;
 
 const DASHBOARD_VIEW_ID = 'dashboard-view';
 const WIDGET_VIEW_ID = 'widget-view';
@@ -57,9 +62,9 @@ function context(doc: YDoc, viewId: string): DatabaseContextState {
 }
 
 function SaveButton() {
-  const { saveForEverybody } = useGlobalFilterActions();
+  const { saveForEveryone } = useDashboardFilters();
 
-  return <button onClick={saveForEverybody}>Save for everybody</button>;
+  return <button onClick={() => saveForEveryone()}>Save for everyone</button>;
 }
 
 function conditions(view: YDatabaseView) {
@@ -71,7 +76,12 @@ function conditions(view: YDatabaseView) {
 
 const EMPTY_CONDITIONS = { filters: [], sorts: [] };
 
-describe('Save for everybody history', () => {
+beforeEach(() => {
+  mockToast.custom.mockClear();
+  mockToast.dismiss.mockClear();
+});
+
+describe('Save for everyone history', () => {
   it.each([
     { sourceCount: 1, saveGlobalFilters: false },
     { sourceCount: 2, saveGlobalFilters: false },
@@ -106,7 +116,7 @@ describe('Save for everybody history', () => {
         () => ({
           dashboard: useDashboardContext(),
           filters: useDashboardFilters(),
-          changes: useDashboardLocalWidgetChanges(),
+          changes: useDashboardPrivateSummary(),
           actions: useGlobalFilterActions(),
         }),
         {
@@ -129,7 +139,9 @@ describe('Save for everybody history', () => {
       );
 
       // The save must not accidentally undo this older dashboard layout action.
-      act(() => result.current.dashboard.updateRows((current) => current.map((row) => ({ ...row, height: 480 }))));
+      act(() => {
+        result.current.dashboard.updateRows((current) => current.map((row) => ({ ...row, height: 480 })));
+      });
       const earlierLayout = readDashboardLayoutSetting(host.database, DASHBOARD_VIEW_ID);
       const overlays = [...sources, readOnly].map((source, index) =>
         result.current.filters.getViewOverlay(widgets[index], source.view) as YDatabaseView
@@ -146,14 +158,17 @@ describe('Save for everybody history', () => {
           (overlay.get(YjsDatabaseKey.sorts) as Y.Array<unknown>).push(privateConditions[index].sorts);
         });
         if (saveGlobalFilters) {
-          result.current.actions.updateFilter(GLOBAL_FILTER.id, (filter) => ({ ...filter, content: 'private' }));
+          result.current.actions.setFilterValue(GLOBAL_FILTER.id, (filter) => ({ ...filter, content: 'private' }));
         }
       });
-      expect(result.current.changes).toEqual({ unsaved: sourceCount + 1, savable: sourceCount });
+      expect(result.current.changes).toMatchObject({
+        dirtyWidgetCount: sourceCount + 1,
+        savableWidgetCount: sourceCount,
+      });
       sources.forEach((source) => expect(conditions(source.view)).toEqual(EMPTY_CONDITIONS));
 
       const sourceWidget = screen.getByRole('button', { name: 'Source widget' });
-      const saveButton = screen.getByRole('button', { name: 'Save for everybody' });
+      const saveButton = screen.getByRole('button', { name: 'Save for everyone' });
 
       fireEvent.pointerDown(sourceWidget);
       fireEvent.pointerDown(saveButton);
@@ -162,8 +177,8 @@ describe('Save for everybody history', () => {
       sources.forEach((source, index) => expect(conditions(source.view)).toEqual(privateConditions[index]));
       expect(conditions(readOnly.view)).toEqual(EMPTY_CONDITIONS);
       expect(conditions(overlays[sourceCount])).toEqual(privateConditions[sourceCount]);
-      expect(result.current.changes).toEqual({ unsaved: 1, savable: 0 });
-      expect(result.current.actions.canSave).toBe(false);
+      expect(result.current.changes).toMatchObject({ dirtyWidgetCount: 1, savableWidgetCount: 0 });
+      expect(result.current.changes.canSave).toBe(false);
       const savedLayout = readDashboardLayoutSetting(host.database, DASHBOARD_VIEW_ID);
 
       expect(savedLayout.globalFilters).toEqual([
@@ -229,6 +244,51 @@ describe('Save for everybody history', () => {
     act(() => result.current.commitViewOverlays([{ ...GLOBAL_FILTER, targets: { ...GLOBAL_FILTER.targets } }]));
 
     expect(storedFilters()).toBe(before);
+    expect(hostHistory.canUndo()).toBe(false);
+
+    unmount();
+    [host, source].forEach(({ doc }) => doc.destroy());
+  });
+
+  it('the toast offers Undo for exactly that save, while it is the latest step', () => {
+    const host = createDatabase('host', DASHBOARD_VIEW_ID);
+    const source = createDatabase('source-1', WIDGET_VIEW_ID);
+    const widget = { id: 'widget', viewId: WIDGET_VIEW_ID, databaseId: 'source-1', width: 12 };
+
+    updateDashboardLayoutSetting(host.view, { rows: [{ id: 'row', height: 360, widgets: [widget] }], globalFilters: [GLOBAL_FILTER] });
+    const hostHistory = getOrCreateDatabaseHistoryManager(host.doc);
+    const { result, unmount } = renderHook(() => useDashboardFilters(), {
+      wrapper: ({ children }) => (
+        <DatabaseContext.Provider value={context(host.doc, DASHBOARD_VIEW_ID)}>
+          <DatabaseHistoryScope>
+            <DashboardProvider>{children}</DashboardProvider>
+          </DatabaseHistoryScope>
+        </DatabaseContext.Provider>
+      ),
+    });
+    const overlay = result.current.getViewOverlay(widget, source.view) as YDatabaseView;
+
+    act(() => {
+      result.current.setViewOverlayWritable(widget, true);
+      (overlay.get(YjsDatabaseKey.sorts) as Y.Array<unknown>).push([{ id: 'sort', field_id: 'name', condition: 1 }]);
+    });
+    act(() => {
+      result.current.saveForEveryone({ widget });
+    });
+    expect(conditions(source.view).sorts).toHaveLength(1);
+    expect(mockToast.custom).toHaveBeenCalledTimes(1);
+
+    // Render the toast and click its Undo.
+    const [renderToast, options] = mockToast.custom.mock.calls[0] as [() => ReactElement, { id: string; duration: number }];
+
+    expect(options).toMatchObject({ id: 'dashboard-saved-for-everyone', duration: 5000 });
+    render(renderToast());
+    expect(screen.getByTestId('dashboard-saved-toast').textContent).toContain('Changes saved for everyone.');
+    act(() => {
+      fireEvent.click(screen.getByTestId('dashboard-saved-toast-undo'));
+    });
+    expect(conditions(source.view)).toEqual(EMPTY_CONDITIONS);
+    expect(mockToast.dismiss).toHaveBeenCalledWith('dashboard-saved-for-everyone');
     expect(hostHistory.canUndo()).toBe(false);
 
     unmount();

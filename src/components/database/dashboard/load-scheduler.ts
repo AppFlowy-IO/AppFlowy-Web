@@ -9,9 +9,14 @@
  *   the host database never takes a slot, nor does a resident source (one
  *   whose rows the tab holds already, `isSourceResident`): only cold loads count.
  * - Visible widgets start first; the others wait for them (or the deferred
- *   timeout) and for a free slot.
+ *   timeout) and for a free slot. The host's widgets too: its document is
+ *   open, but each widget still loads the rows of its view.
  * - A widget holds its source's slot until it reports its load complete or
- *   failed, its source turns out unavailable, or it unmounts.
+ *   failed, its source turns out unavailable, or it unmounts. A widget whose
+ *   source has not opened `sourceLoadTimeoutMs` after its start (its document
+ *   or its permission probe never settled) gives the slot up too, so stalled
+ *   sources never hold the others back for good; an opened source keeps its
+ *   slot however slowly its rows load.
  * - A closed scheduler (the dashboard was left) starts nothing and keeps no timer.
  *
  * No React and no DOM here: `DashboardLoadScheduler.tsx` feeds it the widget
@@ -30,14 +35,16 @@ import {
 
 /**
  * What a started widget reports about its load:
+ * - `opened`: its source document and permission probe settled and its nested
+ *   database mounted (the source load timeout no longer applies to it);
  * - `first-data`: it shows something real (its first rows, matches or a value);
  * - `complete`: its rows and its derived result are complete;
  * - `failed`: the row download failed;
  * - `unavailable`: it shows a placeholder instead of its view (deleted, no access, offline, unsupported).
  *
- * All but `first-data` end the load and free the slot.
+ * `complete`, `failed` and `unavailable` end the load and free the slot.
  */
-export type WidgetLoadReport = 'first-data' | 'complete' | 'failed' | 'unavailable';
+export type WidgetLoadReport = 'opened' | 'first-data' | 'complete' | 'failed' | 'unavailable';
 
 export interface WidgetLoadRegistration {
   id: string;
@@ -52,7 +59,10 @@ export interface WidgetLoadRegistration {
 }
 
 export interface DashboardLoadSchedulerOptions {
-  /** The database of the dashboard view: open already, its widgets start at once. */
+  /**
+   * The database of the dashboard view: open already, so its widgets never
+   * take a slot. They are queued like the others: visible ones first.
+   */
   hostSourceId: string;
   /**
    * Whether the tab holds the rows of a source in memory already, so its
@@ -98,6 +108,10 @@ interface WidgetEntry {
   visible: boolean | null;
   state: DashboardWidgetLoadState;
   firstData: boolean;
+  /** When the widget started, in ms; `null` while idle. */
+  startedAt: number | null;
+  /** The widget reported `opened`: its source settled, so the source load timeout no longer applies. */
+  opened: boolean;
 }
 
 function toPlanWidget({ id, sourceId, visible, state, firstData }: WidgetEntry): DashboardLoadWidget {
@@ -159,6 +173,8 @@ export function createDashboardLoadScheduler({
 
   const markStarted = (entry: WidgetEntry, at: number) => {
     entry.state = 'loading';
+    entry.startedAt = at;
+    entry.opened = false;
     if (entry.visible && visibleStartedAt === null) visibleStartedAt = at;
     dashboardLoadStats.recordWidgetStart({
       widgetId: entry.id,
@@ -202,6 +218,35 @@ export function createDashboardLoadScheduler({
     }, Math.max(0, at - now()));
   };
 
+  /** The started widgets the source load timeout still applies to: loading, not opened, and holding a slot. */
+  const stallingEntries = () =>
+    Array.from(entries.values()).filter(
+      (entry) =>
+        entry.state === 'loading' && !entry.opened && entry.startedAt !== null && entry.sourceId !== hostSourceId
+    );
+
+  /**
+   * Fix B4: a widget whose source has not opened `sourceLoadTimeoutMs` after
+   * its start is done as far as the queue goes: it keeps its placeholder and
+   * may still open later, but its slot goes to the next widget.
+   */
+  const releaseStalledLoads = (at: number) => {
+    stallingEntries().forEach((entry) => {
+      if (at - (entry.startedAt as number) < constants.sourceLoadTimeoutMs) return;
+      entry.state = 'done';
+    });
+  };
+
+  /** When the next source load timeout falls due, or `null` when no started widget is waiting for its source. */
+  const nextStallAt = () =>
+    stallingEntries().reduce<number | null>((next, entry) => {
+      const at = (entry.startedAt as number) + constants.sourceLoadTimeoutMs;
+
+      return next === null || at < next ? at : next;
+    }, null);
+
+  const earliest = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : Math.min(a, b));
+
   function plan() {
     if (closed) {
       clearWake();
@@ -209,6 +254,8 @@ export function createDashboardLoadScheduler({
     }
 
     const at = now();
+
+    releaseStalledLoads(at);
     const resident = residentSources();
     const { start, nextWakeAt } = planDashboardLoads({
       now: at,
@@ -227,23 +274,30 @@ export function createDashboardLoadScheduler({
       if (entry) markStarted(entry, at);
     });
     syncSlots(resident);
-    scheduleWake(nextWakeAt);
+    scheduleWake(earliest(nextWakeAt, nextStallAt()));
     if (start.length > 0) notify();
   }
 
   return {
     register({ id, sourceId, resume = false }) {
       const token = Symbol(id);
-      const entry: WidgetEntry = { id, sourceId, token, visible: null, state: 'idle', firstData: false };
+      const entry: WidgetEntry = {
+        id,
+        sourceId,
+        token,
+        visible: null,
+        state: 'idle',
+        firstData: false,
+        startedAt: null,
+        opened: false,
+      };
 
       entries.set(id, entry);
       if (resume) {
         // It loaded before the move; its source's load is cached and takes no slot.
         entry.state = 'done';
         entry.firstData = true;
-      } else if (sourceId === hostSourceId && !closed) {
-        // The host database is open already: never queued.
-        markStarted(entry, now());
+        entry.opened = true;
       }
 
       plan();
@@ -284,7 +338,8 @@ export function createDashboardLoadScheduler({
         if (!entry || entry.visible === visible) continue;
         entry.visible = visible;
         changed = true;
-        // A widget started before it was seen (the host's) starts the deferred timeout once it shows.
+        // A widget that started before it was seen (it resumed after a move, or started off-screen) starts the
+        // deferred timeout once it shows.
         if (visible && entry.state !== 'idle' && visibleStartedAt === null) visibleStartedAt = now();
       }
 
@@ -305,6 +360,14 @@ export function createDashboardLoadScheduler({
       const entry = entries.get(id);
 
       if (!entry || entry.state === 'idle') return;
+      if (report === 'opened') {
+        if (entry.opened) return;
+        entry.opened = true;
+        // The source load timeout no longer applies to it: the wake is planned again.
+        plan();
+        return;
+      }
+
       if (report === 'first-data' || report === 'complete') {
         entry.firstData = true;
         dashboardLoadStats.recordWidgetFirstData(id);

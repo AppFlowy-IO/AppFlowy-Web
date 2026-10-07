@@ -1,0 +1,271 @@
+{
+  "fixture": "drill-queries",
+  "version": 1,
+  "now_local": "2026-09-30T10:00:00",
+  "encoding": {
+    "save_merge": "mergeFiltersForSave(view, extras) / merge_filters_for_save (WP13 §3.7). Nodes are persisted filter maps: {id, filter_type (0 And, 1 Or, 2 Data), field_id, ty, condition, content, children}. extras are already saved-filter nodes (toSavedFilterNodes / extra_to_saved_filter). Rules: no extras keeps the view; an empty or flat view (its first node is a Data filter) gives [...view, ...extras]; a single And root gives [And{children: [...root.children, ...extras]}] and keeps the root; an Or root or several top-level nodes give [And{children: [...view, ...extras]}] with a new root. Compare with every id ignored (a new root gets a fresh id and has none in expect) and with order significant at every depth."
+  },
+  "save_merge": [
+    {
+      "name": "a flat view takes the extras after its filters",
+      "view": [
+        {"id": "f1", "filter_type": 2, "field_id": "f_stage", "ty": 3, "condition": 0, "content": "o_lead"},
+        {"id": "f2", "filter_type": 2, "field_id": "f_amount", "ty": 1, "condition": 2, "content": "100"}
+      ],
+      "extras": [
+        {"id": "x1", "filter_type": 2, "field_id": "f_region", "ty": 3, "condition": 0, "content": "o_emea"},
+        {"id": "x2", "filter_type": 2, "field_id": "f_done", "ty": 5, "condition": 0}
+      ],
+      "expect": [
+        {"id": "f1", "filter_type": 2, "field_id": "f_stage", "ty": 3, "condition": 0, "content": "o_lead"},
+        {"id": "f2", "filter_type": 2, "field_id": "f_amount", "ty": 1, "condition": 2, "content": "100"},
+        {"id": "x1", "filter_type": 2, "field_id": "f_region", "ty": 3, "condition": 0, "content": "o_emea"},
+        {"id": "x2", "filter_type": 2, "field_id": "f_done", "ty": 5, "condition": 0}
+      ]
+    },
+    {
+      "name": "an empty view becomes the extras",
+      "view": [],
+      "extras": [
+        {"id": "x1", "filter_type": 2, "field_id": "f_region", "ty": 3, "condition": 0, "content": "o_emea"},
+        {"id": "x2", "filter_type": 2, "field_id": "f_done", "ty": 5, "condition": 0}
+      ],
+      "expect": [
+        {"id": "x1", "filter_type": 2, "field_id": "f_region", "ty": 3, "condition": 0, "content": "o_emea"},
+        {"id": "x2", "filter_type": 2, "field_id": "f_done", "ty": 5, "condition": 0}
+      ]
+    },
+    {
+      "name": "an And root takes the extras as its last children",
+      "view": [
+        {
+          "id": "g1",
+          "filter_type": 0,
+          "children": [
+            {"id": "f1", "filter_type": 2, "field_id": "f_stage", "ty": 3, "condition": 0, "content": "o_lead"},
+            {"id": "f2", "filter_type": 2, "field_id": "f_amount", "ty": 1, "condition": 2, "content": "100"}
+          ]
+        }
+      ],
+      "extras": [{"id": "x1", "filter_type": 2, "field_id": "f_region", "ty": 3, "condition": 0, "content": "o_emea"}],
+      "expect": [
+        {
+          "id": "g1",
+          "filter_type": 0,
+          "children": [
+            {"id": "f1", "filter_type": 2, "field_id": "f_stage", "ty": 3, "condition": 0, "content": "o_lead"},
+            {"id": "f2", "filter_type": 2, "field_id": "f_amount", "ty": 1, "condition": 2, "content": "100"},
+            {"id": "x1", "filter_type": 2, "field_id": "f_region", "ty": 3, "condition": 0, "content": "o_emea"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "an Or root is wrapped in a new And root with the extras",
+      "view": [
+        {
+          "id": "g1",
+          "filter_type": 1,
+          "children": [
+            {"id": "f1", "filter_type": 2, "field_id": "f_stage", "ty": 3, "condition": 0, "content": "o_lead"},
+            {"id": "f2", "filter_type": 2, "field_id": "f_amount", "ty": 1, "condition": 2, "content": "100"}
+          ]
+        }
+      ],
+      "extras": [{"id": "x1", "filter_type": 2, "field_id": "f_region", "ty": 3, "condition": 0, "content": "o_emea"}],
+      "expect": [
+        {
+          "filter_type": 0,
+          "children": [
+            {
+              "id": "g1",
+              "filter_type": 1,
+              "children": [
+                {"id": "f1", "filter_type": 2, "field_id": "f_stage", "ty": 3, "condition": 0, "content": "o_lead"},
+                {"id": "f2", "filter_type": 2, "field_id": "f_amount", "ty": 1, "condition": 2, "content": "100"}
+              ]
+            },
+            {"id": "x1", "filter_type": 2, "field_id": "f_region", "ty": 3, "condition": 0, "content": "o_emea"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "two top-level groups are wrapped in a new And root with the extras",
+      "view": [
+        {
+          "id": "g1",
+          "filter_type": 0,
+          "children": [{"id": "f1", "filter_type": 2, "field_id": "f_stage", "ty": 3, "condition": 0, "content": "o_lead"}]
+        },
+        {
+          "id": "g2",
+          "filter_type": 1,
+          "children": [
+            {"id": "f2", "filter_type": 2, "field_id": "f_amount", "ty": 1, "condition": 2, "content": "100"},
+            {"id": "f3", "filter_type": 2, "field_id": "f_name", "ty": 0, "condition": 0, "content": "acme"}
+          ]
+        }
+      ],
+      "extras": [
+        {"id": "x1", "filter_type": 2, "field_id": "f_region", "ty": 3, "condition": 0, "content": "o_emea"},
+        {"id": "x2", "filter_type": 2, "field_id": "f_done", "ty": 5, "condition": 0}
+      ],
+      "expect": [
+        {
+          "filter_type": 0,
+          "children": [
+            {
+              "id": "g1",
+              "filter_type": 0,
+              "children": [{"id": "f1", "filter_type": 2, "field_id": "f_stage", "ty": 3, "condition": 0, "content": "o_lead"}]
+            },
+            {
+              "id": "g2",
+              "filter_type": 1,
+              "children": [
+                {"id": "f2", "filter_type": 2, "field_id": "f_amount", "ty": 1, "condition": 2, "content": "100"},
+                {"id": "f3", "filter_type": 2, "field_id": "f_name", "ty": 0, "condition": 0, "content": "acme"}
+              ]
+            },
+            {"id": "x1", "filter_type": 2, "field_id": "f_region", "ty": 3, "condition": 0, "content": "o_emea"},
+            {"id": "x2", "filter_type": 2, "field_id": "f_done", "ty": 5, "condition": 0}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "no extras keeps the view as it is",
+      "view": [
+        {
+          "id": "g1",
+          "filter_type": 1,
+          "children": [
+            {"id": "f1", "filter_type": 2, "field_id": "f_stage", "ty": 3, "condition": 0, "content": "o_lead"},
+            {"id": "f2", "filter_type": 2, "field_id": "f_amount", "ty": 1, "condition": 2, "content": "100"}
+          ]
+        }
+      ],
+      "extras": [],
+      "expect": [
+        {
+          "id": "g1",
+          "filter_type": 1,
+          "children": [
+            {"id": "f1", "filter_type": 2, "field_id": "f_stage", "ty": 3, "condition": 0, "content": "o_lead"},
+            {"id": "f2", "filter_type": 2, "field_id": "f_amount", "ty": 1, "condition": 2, "content": "100"}
+          ]
+        }
+      ]
+    }
+  ],
+  "section_encoding": {
+    "cases": "drillFiltersForGroupKey(field, key, now) / drill_filters_for_group_key (WP13 §3.2), with now = now_local read as local wall-clock time. field: {id, type (FieldType), date_condition (a DateConditionPB name: Relative, Day, Week, Month, Year; Month when absent), number_bucket_size (the resolved range size of a Number axis; absent means unknown)}. A null field (the Number chart, or an X field that no longer exists) or the key \"\" gives {kind: none}. expect.kind is filters (the category nodes, AND-ed, in this order), rows (the row-set fallback: the clicked cell's row ids become an allow-list) or none. A filter is {field_id, ty, condition, content}; a date filter has `date` instead of `content`: a local calendar date whose content is {\"timestamp\": <that date's local midnight in seconds>}, so the fixture is time-zone independent. Node ids (drill:x:<n> and drill:sub:<n>) and filter_type (2) are not compared.",
+    "chips": "drillChipText: `{field name}: {label}`, `{field name}: Empty` for the empty category (web chart.emptyValue, desktop LocaleKeys.chart_emptyValue, English shown), and `Selected rows ({n})` for the row-set fallback (chart.drilldown.selectedRows).",
+    "canonical_decimal": "[input, expected]: x.toFixed(10) (Dart toStringAsFixed(10)), then trailing zeros and a trailing `.` stripped; -0 is 0.",
+    "open_pages_in": "resolveOpenPagesIn(raw, source) / resolve_open_pages_in (WP13 §3.8): a known raw value (side_peek, center_peek, full_page) wins; anything else (null, \"\", an unknown string) reads as absent: source dashboard_widget or drilldown gives side_peek, view gives center_peek. A mobile context opens records full screen before this resolver runs."
+  },
+  "cases": [
+    {"name": "select option", "field": {"id": "f_sel", "type": 3}, "key": "o_blocker", "expect": {"kind": "filters", "filters": [{"field_id": "f_sel", "ty": 3, "condition": 0, "content": "o_blocker"}]}},
+    {"name": "multi-select option", "field": {"id": "f_tags", "type": 4}, "key": "o_ui", "expect": {"kind": "filters", "filters": [{"field_id": "f_tags", "ty": 4, "condition": 2, "content": "o_ui"}]}},
+    {"name": "checkbox checked", "field": {"id": "f_done", "type": 5}, "key": "checked", "expect": {"kind": "filters", "filters": [{"field_id": "f_done", "ty": 5, "condition": 0, "content": ""}]}},
+    {"name": "checkbox unchecked", "field": {"id": "f_done", "type": 5}, "key": "unchecked", "expect": {"kind": "filters", "filters": [{"field_id": "f_done", "ty": 5, "condition": 1, "content": ""}]}},
+    {"name": "checkbox unknown key", "field": {"id": "f_done", "type": 5}, "key": "maybe", "expect": {"kind": "rows"}},
+    {"name": "day bucket", "field": {"id": "f_due", "type": 2, "date_condition": "Day"}, "key": "2026-03-09", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-03-09"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-03-10"}]}},
+    {"name": "week bucket keyed by its Monday", "field": {"id": "f_due", "type": 2, "date_condition": "Week"}, "key": "2026-03-09", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-03-09"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-03-16"}]}},
+    {"name": "week bucket across the year end", "field": {"id": "f_due", "type": 2, "date_condition": "Week"}, "key": "2025-12-29", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2025-12-29"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-01-05"}]}},
+    {"name": "month bucket", "field": {"id": "f_due", "type": 2, "date_condition": "Month"}, "key": "2026-03", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-03-01"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-04-01"}]}},
+    {"name": "month bucket in December rolls over the year", "field": {"id": "f_due", "type": 2, "date_condition": "Month"}, "key": "2025-12", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2025-12-01"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-01-01"}]}},
+    {"name": "year bucket", "field": {"id": "f_due", "type": 2, "date_condition": "Year"}, "key": "2026", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-01-01"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2027-01-01"}]}},
+    {"name": "an impossible day key", "field": {"id": "f_due", "type": 2, "date_condition": "Day"}, "key": "2026-02-31", "expect": {"kind": "rows"}},
+    {"name": "relative today", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "rel:today", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-09-30"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-10-01"}]}},
+    {"name": "relative yesterday", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "rel:yesterday", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-09-29"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-09-30"}]}},
+    {"name": "relative tomorrow", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "rel:tomorrow", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-10-01"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-10-02"}]}},
+    {"name": "relative last 7 days", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "rel:last_7_days", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-09-23"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-09-29"}]}},
+    {"name": "relative next 7 days", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "rel:next_7_days", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-10-02"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-10-08"}]}},
+    {"name": "relative last 30 days", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "rel:last_30_days", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-08-31"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-09-23"}]}},
+    {"name": "relative next 30 days", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "rel:next_30_days", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-10-08"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-10-31"}]}},
+    {"name": "legacy relative key rel-today", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "rel-today", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-09-30"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-10-01"}]}},
+    {"name": "relative unknown bucket", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "rel:next_year", "expect": {"kind": "rows"}},
+    {"name": "relative month away from the window", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "2026-01", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-01-01"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-02-01"}]}},
+    {"name": "relative month after the window", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "2026-11", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 4, "date": "2026-11-01"}, {"field_id": "f_due", "ty": 2, "condition": 1, "date": "2026-12-01"}]}},
+    {"name": "relative month overlapping the window", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "2026-09", "expect": {"kind": "rows"}},
+    {"name": "relative month touching the start of the window", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "2026-08", "expect": {"kind": "rows"}},
+    {"name": "relative month touching the end of the window", "field": {"id": "f_due", "type": 2, "date_condition": "Relative"}, "key": "2026-10", "expect": {"kind": "rows"}},
+    {"name": "created time month", "field": {"id": "f_created", "type": 9, "date_condition": "Month"}, "key": "2026-03", "expect": {"kind": "filters", "filters": [{"field_id": "f_created", "ty": 9, "condition": 4, "date": "2026-03-01"}, {"field_id": "f_created", "ty": 9, "condition": 1, "date": "2026-04-01"}]}},
+    {"name": "last edited time month", "field": {"id": "f_edited", "type": 8, "date_condition": "Month"}, "key": "2026-02", "expect": {"kind": "filters", "filters": [{"field_id": "f_edited", "ty": 8, "condition": 4, "date": "2026-02-01"}, {"field_id": "f_edited", "ty": 8, "condition": 1, "date": "2026-03-01"}]}},
+    {"name": "empty select", "field": {"id": "f_sel", "type": 3}, "key": "__empty__", "expect": {"kind": "filters", "filters": [{"field_id": "f_sel", "ty": 3, "condition": 4, "content": ""}]}},
+    {"name": "empty multi-select", "field": {"id": "f_tags", "type": 4}, "key": "__empty__", "expect": {"kind": "filters", "filters": [{"field_id": "f_tags", "ty": 4, "condition": 4, "content": ""}]}},
+    {"name": "empty date", "field": {"id": "f_due", "type": 2, "date_condition": "Month"}, "key": "__empty__", "expect": {"kind": "filters", "filters": [{"field_id": "f_due", "ty": 2, "condition": 6, "content": ""}]}},
+    {"name": "empty person", "field": {"id": "f_owner", "type": 15}, "key": "__empty__", "expect": {"kind": "filters", "filters": [{"field_id": "f_owner", "ty": 15, "condition": 2, "content": ""}]}},
+    {"name": "empty text", "field": {"id": "f_name", "type": 0}, "key": "__empty__", "expect": {"kind": "filters", "filters": [{"field_id": "f_name", "ty": 0, "condition": 6, "content": ""}]}},
+    {"name": "empty url", "field": {"id": "f_link", "type": 6}, "key": "__empty__", "expect": {"kind": "filters", "filters": [{"field_id": "f_link", "ty": 6, "condition": 6, "content": ""}]}},
+    {"name": "empty number", "field": {"id": "f_amount", "type": 1, "number_bucket_size": 5}, "key": "__empty__", "expect": {"kind": "filters", "filters": [{"field_id": "f_amount", "ty": 1, "condition": 6, "content": ""}]}},
+    {"name": "empty relation", "field": {"id": "f_rel", "type": 10}, "key": "__empty__", "expect": {"kind": "filters", "filters": [{"field_id": "f_rel", "ty": 10, "condition": 0, "content": ""}]}},
+    {"name": "empty checkbox cannot be expressed", "field": {"id": "f_done", "type": 5}, "key": "__empty__", "expect": {"kind": "rows"}},
+    {"name": "empty created time cannot be expressed", "field": {"id": "f_created", "type": 9, "date_condition": "Month"}, "key": "__empty__", "expect": {"kind": "rows"}},
+    {"name": "empty last edited time cannot be expressed", "field": {"id": "f_edited", "type": 8, "date_condition": "Month"}, "key": "__empty__", "expect": {"kind": "rows"}},
+    {"name": "empty created by cannot be expressed", "field": {"id": "f_creator", "type": 17}, "key": "__empty__", "expect": {"kind": "rows"}},
+    {"name": "empty last edited by cannot be expressed", "field": {"id": "f_editor", "type": 18}, "key": "__empty__", "expect": {"kind": "rows"}},
+    {"name": "person", "field": {"id": "f_owner", "type": 15}, "key": "u_1", "expect": {"kind": "filters", "filters": [{"field_id": "f_owner", "ty": 15, "condition": 0, "content": "[\"u_1\"]"}]}},
+    {"name": "created by", "field": {"id": "f_creator", "type": 17}, "key": "1234", "expect": {"kind": "filters", "filters": [{"field_id": "f_creator", "ty": 17, "condition": 0, "content": "[\"1234\"]"}]}},
+    {"name": "last edited by", "field": {"id": "f_editor", "type": 18}, "key": "5678", "expect": {"kind": "filters", "filters": [{"field_id": "f_editor", "ty": 18, "condition": 0, "content": "[\"5678\"]"}]}},
+    {"name": "exact text (the key is case-folded; TextIs matches it case-insensitively)", "field": {"id": "f_name", "type": 0}, "key": "t:login fails", "expect": {"kind": "filters", "filters": [{"field_id": "f_name", "ty": 0, "condition": 0, "content": "login fails"}]}},
+    {"name": "exact url", "field": {"id": "f_link", "type": 6}, "key": "t:https://appflowy.io", "expect": {"kind": "filters", "filters": [{"field_id": "f_link", "ty": 6, "condition": 0, "content": "https://appflowy.io"}]}},
+    {"name": "first letter", "field": {"id": "f_name", "type": 0}, "key": "l:A", "expect": {"kind": "filters", "filters": [{"field_id": "f_name", "ty": 0, "condition": 4, "content": "A"}]}},
+    {"name": "first letter of a url", "field": {"id": "f_link", "type": 6}, "key": "l:H", "expect": {"kind": "filters", "filters": [{"field_id": "f_link", "ty": 6, "condition": 4, "content": "H"}]}},
+    {"name": "first letter of a non-letter", "field": {"id": "f_name", "type": 0}, "key": "l:#", "expect": {"kind": "rows"}},
+    {"name": "text key without a prefix", "field": {"id": "f_name", "type": 0}, "key": "Login fails", "expect": {"kind": "rows"}},
+    {"name": "number range", "field": {"id": "f_amount", "type": 1, "number_bucket_size": 5}, "key": "n:10", "expect": {"kind": "filters", "filters": [{"field_id": "f_amount", "ty": 1, "condition": 4, "content": "10"}, {"field_id": "f_amount", "ty": 1, "condition": 3, "content": "15"}]}},
+    {"name": "number range with float noise", "field": {"id": "f_amount", "type": 1, "number_bucket_size": 0.2}, "key": "n:0.1", "expect": {"kind": "filters", "filters": [{"field_id": "f_amount", "ty": 1, "condition": 4, "content": "0.1"}, {"field_id": "f_amount", "ty": 1, "condition": 3, "content": "0.3"}]}},
+    {"name": "negative number range ending at zero", "field": {"id": "f_amount", "type": 1, "number_bucket_size": 2.5}, "key": "n:-2.5", "expect": {"kind": "filters", "filters": [{"field_id": "f_amount", "ty": 1, "condition": 4, "content": "-2.5"}, {"field_id": "f_amount", "ty": 1, "condition": 3, "content": "0"}]}},
+    {"name": "number below the minimum", "field": {"id": "f_amount", "type": 1, "number_bucket_size": 5}, "key": "n:lt:0", "expect": {"kind": "filters", "filters": [{"field_id": "f_amount", "ty": 1, "condition": 3, "content": "0"}]}},
+    {"name": "number at or above the maximum", "field": {"id": "f_amount", "type": 1, "number_bucket_size": 5}, "key": "n:ge:100", "expect": {"kind": "filters", "filters": [{"field_id": "f_amount", "ty": 1, "condition": 4, "content": "100"}]}},
+    {"name": "number range without a size", "field": {"id": "f_amount", "type": 1}, "key": "n:10", "expect": {"kind": "rows"}},
+    {"name": "number key that is not a number", "field": {"id": "f_amount", "type": 1, "number_bucket_size": 5}, "key": "n:ten", "expect": {"kind": "rows"}},
+    {"name": "relation", "field": {"id": "f_rel", "type": 10}, "key": "row_1", "expect": {"kind": "rows"}},
+    {"name": "unknown field type", "field": {"id": "f_check", "type": 7}, "key": "anything", "expect": {"kind": "rows"}},
+    {"name": "the Number chart has no category", "field": null, "key": "", "expect": {"kind": "none"}}
+  ],
+  "chips": [
+    {"field_name": "Severity", "label": "Blocker", "is_empty": false, "expect": "Severity: Blocker"},
+    {"field_name": "Status", "label": "No Status", "is_empty": true, "expect": "Status: Empty"},
+    {"field_name": "Due", "label": "Last 7 days", "is_empty": false, "expect": "Due: Last 7 days"},
+    {"field_name": "Amount", "label": "10–15", "is_empty": false, "expect": "Amount: 10–15"},
+    {"selected_rows": 3, "expect": "Selected rows (3)"},
+    {"selected_rows": 1, "expect": "Selected rows (1)"}
+  ],
+  "canonical_decimal": [
+    [0.30000000000000004, "0.3"],
+    [10, "10"],
+    [-2.5, "-2.5"],
+    [1e-7, "0.0000001"],
+    [-0.0, "0"],
+    [0.1, "0.1"],
+    [100, "100"],
+    [2500, "2500"],
+    [1.23456789012, "1.2345678901"],
+    [-1e-11, "0"],
+    [0.15000000000000002, "0.15"]
+  ],
+  "open_pages_in": [
+    {"raw": "side_peek", "source": "dashboard_widget", "expect": "side_peek"},
+    {"raw": "side_peek", "source": "drilldown", "expect": "side_peek"},
+    {"raw": "side_peek", "source": "view", "expect": "side_peek"},
+    {"raw": "center_peek", "source": "dashboard_widget", "expect": "center_peek"},
+    {"raw": "center_peek", "source": "drilldown", "expect": "center_peek"},
+    {"raw": "center_peek", "source": "view", "expect": "center_peek"},
+    {"raw": "full_page", "source": "dashboard_widget", "expect": "full_page"},
+    {"raw": "full_page", "source": "drilldown", "expect": "full_page"},
+    {"raw": "full_page", "source": "view", "expect": "full_page"},
+    {"raw": "bogus", "source": "dashboard_widget", "expect": "side_peek"},
+    {"raw": "bogus", "source": "drilldown", "expect": "side_peek"},
+    {"raw": "bogus", "source": "view", "expect": "center_peek"},
+    {"raw": "", "source": "dashboard_widget", "expect": "side_peek"},
+    {"raw": "", "source": "drilldown", "expect": "side_peek"},
+    {"raw": "", "source": "view", "expect": "center_peek"},
+    {"raw": null, "source": "dashboard_widget", "expect": "side_peek"},
+    {"raw": null, "source": "drilldown", "expect": "side_peek"},
+    {"raw": null, "source": "view", "expect": "center_peek"}
+  ]
+}

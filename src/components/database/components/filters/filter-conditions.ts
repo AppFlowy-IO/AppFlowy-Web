@@ -109,6 +109,11 @@ export function dateFilterConditions(
     { value: pick(DateFilterCondition.DateStartsOnOrBefore), text: t('grid.dateFilter.onOrBefore') },
     { value: pick(DateFilterCondition.DateStartsOnOrAfter), text: t('grid.dateFilter.onOrAfter') },
     { value: pick(DateFilterCondition.DateStartsBetween), text: t('grid.dateFilter.between') },
+    // Notion's order: the parameterized relative condition right after "Is between" (WP08 §1.6).
+    {
+      value: pick(DateFilterCondition.DateStartsRelative),
+      text: t('dashboard.globalFilters.relativeToToday', { defaultValue: 'Is relative to today' }),
+    },
     ...(emptiness
       ? [
           { value: pick(DateFilterCondition.DateStartIsEmpty), text: t('grid.dateFilter.empty') },

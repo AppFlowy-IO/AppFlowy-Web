@@ -46,6 +46,47 @@ describe('useDocumentLoader', () => {
     });
   });
 
+  it('reports the load in flight until loadView settles with a doc', async () => {
+    const pending = deferred<YDoc>();
+    const loadView = jest.fn(() => pending.promise);
+
+    const { result } = renderHook(() => useDocumentLoader({ viewId: 'view-id', databaseId: 'database-id', loadView }));
+
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      pending.resolve(createDoc('database-id'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    expect(result.current.doc).not.toBeNull();
+  });
+
+  it('reports the load settled once it failed for good', async () => {
+    const loadView = jest.fn(async () => {
+      return Promise.reject({ code: 1012, message: 'user is not allowed to access this view' });
+    });
+
+    const { result } = renderHook(() => useDocumentLoader({ viewId: 'view-id', loadView }));
+
+    expect(result.current.loading).toBe(true);
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    expect(result.current.noAccess).toBe(true);
+  });
+
+  it('loads nothing, and reports no load in flight, without a view id', () => {
+    const loadView = jest.fn();
+
+    const { result } = renderHook(() => useDocumentLoader({ viewId: '', loadView }));
+
+    expect(result.current.loading).toBe(false);
+    expect(loadView).not.toHaveBeenCalled();
+  });
+
   it('reports noAccess without retrying when loadView fails with a permission error', async () => {
     const loadView = jest.fn(async () => {
       return Promise.reject({ code: 1012, message: 'user is not allowed to access this view' });

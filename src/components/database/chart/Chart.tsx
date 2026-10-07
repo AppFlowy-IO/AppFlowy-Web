@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
-import { ChartType } from '@/application/database-yjs/chart.type';
+import { resolveNumberColor } from '@/application/database-yjs/chart-config';
+import { ChartType, resolveChartStyle } from '@/application/database-yjs/chart.type';
 import ChartProvider from '@/components/database/chart/ChartProvider';
 import {
   ChartErrorState,
@@ -19,22 +20,26 @@ import NumberChartWidget from '@/components/database/chart/widgets/NumberChart';
 import { cn } from '@/lib/utils';
 
 function NumberChartContent() {
-  const { chartData, settings, seriesLabel, format, onItemClick } = useChartContext();
-  const item = chartData[0] ?? null;
+  const { numberItem: item, settings, numberTitle, format, onItemClick } = useChartContext();
+  const config = resolveChartStyle(settings);
+  // No rows is "No data" too: the card shows no caption and no color then.
+  const value = item && item.rowIds.length > 0 ? item.value : null;
 
   return (
     <NumberChartWidget
       item={item}
       onItemClick={onItemClick}
-      // The custom title when one is set, otherwise the generated one.
-      title={settings?.titleText?.trim() || seriesLabel}
+      // The custom title when one is set, otherwise the generated one (it titles the drill-down too).
+      title={numberTitle}
+      showTitle={config.showTitle}
+      color={resolveNumberColor(value, config.numberColor, config.numberConditionalColor)}
       valueText={item ? format(item.value, 'card') : ''}
     />
   );
 }
 
 function ChartContent({ fill }: { fill: boolean }) {
-  const { chartType, chartData, isLoading, loadError, retry, hasGroupableFields, onItemClick } = useChartContext();
+  const { chartType, seriesData, isLoading, loadError, retry, hasGroupableFields, onItemClick } = useChartContext();
 
   if (isLoading) {
     return <ChartLoadingState fill={fill} />;
@@ -50,25 +55,27 @@ function ChartContent({ fill }: { fill: boolean }) {
     return <NumberChartContent />;
   }
 
-  // The database has no field a chart can group by (`GROUPABLE_FIELD_TYPES`).
+  // The database has no field a chart can group by (`CHART_X_FIELD_TYPES`).
   if (!hasGroupableFields) {
     return <ChartNoFieldState fill={fill} />;
   }
 
-  if (chartData.length === 0) {
+  if (seriesData.categories.length === 0) {
     return <ChartNoDataState fill={fill} variant={chartType === ChartType.Donut ? 'donut' : undefined} />;
   }
 
+  // Every bar, line and donut chart draws the series build (WP12); the
+  // truncation caption is the last line of its frame.
   switch (chartType) {
     case ChartType.HorizontalBar:
-      return <HorizontalBarChartWidget data={chartData} fill={fill} onItemClick={onItemClick} />;
+      return <HorizontalBarChartWidget data={seriesData} fill={fill} onItemClick={onItemClick} />;
     case ChartType.Line:
-      return <LineChartWidget data={chartData} fill={fill} onItemClick={onItemClick} />;
+      return <LineChartWidget data={seriesData} fill={fill} onItemClick={onItemClick} />;
     case ChartType.Donut:
-      return <DonutChartWidget data={chartData} fill={fill} onItemClick={onItemClick} />;
+      return <DonutChartWidget data={seriesData} fill={fill} onItemClick={onItemClick} />;
     case ChartType.Bar:
     default:
-      return <BarChartWidget data={chartData} fill={fill} onItemClick={onItemClick} />;
+      return <BarChartWidget data={seriesData} fill={fill} onItemClick={onItemClick} />;
   }
 }
 

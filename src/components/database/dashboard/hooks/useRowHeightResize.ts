@@ -5,13 +5,33 @@ import { snapDashboardRowHeight } from '../grid-layout';
 
 import { startPointerDrag } from './pointerDrag';
 
-/** CSS custom property (on the row's grid) that the grid and its cards take their height from. */
+/**
+ * @deprecated No element sets it any more: the row writes `height` on its
+ * boxes (`applyRowHeight`). An inherited custom property on the track
+ * restyled the row's whole subtree on every drag step (W10). Kept only while
+ * `PendingWidgetBox` still names it; the row writes that box's height too.
+ */
 export const ROW_HEIGHT_CSS_VARIABLE = '--dashboard-row-height';
 
 /**
+ * Writes `height` on every box of a row track (its element children: the
+ * widget boxes and a pending slot), skipping the boxes that already have it.
+ * A box's own height restyles that box only, where an inherited property on
+ * the track restyled every element of the row.
+ */
+export function applyRowHeight(track: HTMLElement | null, height: number) {
+  if (!track) return;
+  const value = `${height}px`;
+
+  for (const box of Array.from(track.children)) {
+    if (box instanceof HTMLElement && box.style.height !== value) box.style.height = value;
+  }
+}
+
+/**
  * The height being dragged, `null` outside a drag. An external store rather
- * than state: a drag changes it on every pointer move, and only the handle's
- * value and the widgets' nested databases need to follow it through React.
+ * than state: a drag changes it on every 20px step, and only the handle's
+ * value needs to follow it through React.
  */
 export interface RowHeightPreview {
   subscribe: (listener: () => void) => () => void;
@@ -23,8 +43,9 @@ interface UseRowHeightResizeOptions {
   enabled: boolean;
   onCommit: (height: number) => void;
   /**
-   * The element carrying `ROW_HEIGHT_CSS_VARIABLE`. Its style prop may seed
-   * the variable on mount; from then on this hook is its only writer.
+   * The row track. The hook writes the height on its children (the widget
+   * boxes); a box may seed its own height on mount, the hook is its writer
+   * from then on.
    */
   getRowElement: () => HTMLElement | null;
 }
@@ -35,10 +56,11 @@ interface UseRowHeightResizeOptions {
  * local until pointer up (Escape cancels); arrow keys change it by
  * `DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP` and snap the same way.
  *
- * A pointer move updates the CSS variable and the `preview` store, not React
- * state: the row and its cards resize through CSS, so the row never
- * re-renders per pixel. Only `dragging` is state. Outside a drag the variable
- * holds the persisted `height`.
+ * A drag step writes the boxes' `height` and the `preview` store, not React
+ * state, so the row never re-renders per step: the boxes and the track follow
+ * the pointer while the widgets' content keeps its height until the commit
+ * (see `DashboardWidget`). Only `dragging` is state. Outside a drag the boxes
+ * hold the persisted `height`.
  */
 export function useRowHeightResize({ height, enabled, onCommit, getRowElement }: UseRowHeightResizeOptions) {
   const [dragging, setDragging] = useState(false);
@@ -71,18 +93,19 @@ export function useRowHeightResize({ height, enabled, onCommit, getRowElement }:
     previewRef.current = next;
     // `null` puts the persisted height back; a commit then writes the new one
     // from the layout effect below before the next paint, so nothing flashes.
-    getRowElementRef.current()?.style.setProperty(ROW_HEIGHT_CSS_VARIABLE, `${next ?? heightRef.current}px`);
+    applyRowHeight(getRowElementRef.current(), next ?? heightRef.current);
     listenersRef.current.forEach((listener) => listener());
   }, []);
 
-  // A committed height (a drag, the keyboard, a collaborator) is written here
-  // rather than through React's style prop: React diffs against the value it
-  // last rendered, not the DOM the drag wrote, and could skip the write. A
-  // running drag keeps its preview; its end puts the latest height back.
+  // After every render of the row: a committed height (a drag, the keyboard,
+  // a collaborator), and the boxes mounted since (a widget added or moved in).
+  // Written here rather than through React's style prop: React diffs against
+  // the value it last rendered, not the DOM a drag wrote, and could skip the
+  // write. A running drag keeps its preview on every box; its end puts the
+  // latest height back.
   useLayoutEffect(() => {
-    if (previewRef.current !== null) return;
-    getRowElementRef.current()?.style.setProperty(ROW_HEIGHT_CSS_VARIABLE, `${height}px`);
-  }, [height]);
+    applyRowHeight(getRowElementRef.current(), previewRef.current ?? heightRef.current);
+  });
 
   useEffect(() => () => cancelRef.current?.(), []);
 

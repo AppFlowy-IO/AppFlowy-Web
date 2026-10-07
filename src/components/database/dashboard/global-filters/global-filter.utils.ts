@@ -4,7 +4,6 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import { SelectOption } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
 import { FILTER_EXCLUDED_FIELD_TYPES } from '@/components/database/components/filters/filter-field-types';
-import { orderSelectOptionContent } from '@/components/database/components/filters/value-controls/filter-value';
 
 /** One property of a source database, as the global filter editor sees it. */
 export interface GlobalFilterSourceField {
@@ -53,44 +52,24 @@ export const GLOBAL_FILTER_FIELD_TYPES: FieldType[] = GLOBAL_FILTER_FIELD_TYPE_O
 );
 
 /**
- * A global filter stores its content once, but for some property types the
- * content is only meaningful against one database's field:
- *
- * - SingleSelect / MultiSelect content is a comma-separated list of option ids,
- *   and option ids are generated per database. The option list shown in the
- *   editor therefore comes from the *primary* target (the first mapped source),
- *   and another source may only be mapped when its field carries every option
- *   of the primary field with the same id and the same name (true for databases
- *   duplicated from one another or created from the same template). Matching by
- *   name alone is not enough, because evaluation compares ids.
- * - Person content is a list of workspace person ids and Checklist content is
- *   empty (the condition carries the value), so both are portable across
- *   databases and need no extra check.
+ * SingleSelect / MultiSelect content is a comma-separated list of option ids,
+ * and option ids are generated per database. A select filter therefore also
+ * stores the option names (`optionNames`), and each source matches its own
+ * options by name (`resolveGlobalFilterOptionIds`, WP08 §1.9). Person content
+ * is a list of workspace person ids and Checklist content is empty (the
+ * condition carries the value), so both are portable across databases.
  */
 export function usesOptionContent(type: FieldType): boolean {
   return type === FieldType.SingleSelect || type === FieldType.MultiSelect;
 }
 
+/** Whether a property type can be the target of a global filter (the picker lists only these). */
+export function isGlobalFilterFieldType(type: FieldType): boolean {
+  return GLOBAL_FILTER_FIELD_TYPES.includes(type);
+}
+
 export function fieldsOfType(source: GlobalFilterSource | undefined, type: FieldType): GlobalFilterSourceField[] {
   return source ? source.fields.filter((field) => field.type === type) : [];
-}
-
-/** Number of sources that have at least one property of each type, in one pass over the fields. */
-export function countSourcesByFieldType(sources: GlobalFilterSource[]): Map<FieldType, number> {
-  const counts = new Map<FieldType, number>();
-
-  sources.forEach((source) => {
-    new Set(source.fields.map((field) => field.type)).forEach((type) => counts.set(type, (counts.get(type) ?? 0) + 1));
-  });
-  return counts;
-}
-
-/** Union of the supported property types present in any source, in picker order. */
-export function getAvailableFieldTypes(
-  sources: GlobalFilterSource[],
-  countsByType: ReadonlyMap<FieldType, number> = countSourcesByFieldType(sources)
-): FieldType[] {
-  return GLOBAL_FILTER_FIELD_TYPES.filter((type) => countsByType.has(type));
 }
 
 export function findSourceField(
@@ -139,39 +118,45 @@ export function isGlobalFilterTargetUsable(
 }
 
 /** Number of mapped sources; with `sources`, mappings known to be unusable are left out. */
-export function countGlobalFilterSources(filter: DashboardGlobalFilter, sources?: GlobalFilterSource[]): number {
+export function countUsableTargets(filter: DashboardGlobalFilter, sources?: GlobalFilterSource[]): number {
   const databaseIds = Object.keys(filter.targets);
 
   if (!sources) return databaseIds.length;
   return databaseIds.filter((databaseId) => isGlobalFilterTargetUsable(filter, sources, databaseId)).length;
 }
 
-/** Whether `candidate` carries every option of `primary` (same id, same name). */
-export function areOptionFieldsCompatible(primary: GlobalFilterSourceField, candidate: GlobalFilterSourceField) {
-  const names = new Map(candidate.options.map((option) => [option.id, option.name]));
-
-  return primary.options.every((option) => names.get(option.id) === option.name);
+export interface GlobalFilterUsableTarget {
+  databaseId: string;
+  fieldId: string;
+  /** Absent while the source is not loaded (the mapping is trusted). */
+  source?: GlobalFilterSource;
+  field?: GlobalFilterSourceField;
 }
 
-/** The properties of `databaseId` the filter may be mapped to. */
+/** The usable mappings in target order, with their source and property when loaded (badge, tooltip, merged options). */
+export function getUsableTargets(
+  filter: DashboardGlobalFilter,
+  sources: GlobalFilterSource[]
+): GlobalFilterUsableTarget[] {
+  return Object.entries(filter.targets).flatMap(([databaseId, fieldId]) => {
+    if (!isGlobalFilterTargetUsable(filter, sources, databaseId)) return [];
+    const source = sources.find((item) => item.databaseId === databaseId);
+    const field = source?.fields.find((item) => item.id === fieldId);
+
+    return [{ databaseId, fieldId, source, field }];
+  });
+}
+
+/** The properties of `databaseId` the filter may be mapped to: every property of its type. */
 export function getTargetCandidates(
   filter: GlobalFilterTargetShape,
   sources: GlobalFilterSource[],
   databaseId: string
 ): GlobalFilterSourceField[] {
-  const source = sources.find((item) => item.databaseId === databaseId);
-  const fields = fieldsOfType(source, filter.fieldType);
-
-  if (!usesOptionContent(filter.fieldType)) return fields;
-  const primaryDatabaseId = getPrimaryTargetDatabaseId(filter);
-
-  // The primary source (or the first mapping to be made) defines the options.
-  if (!primaryDatabaseId || primaryDatabaseId === databaseId) return fields;
-  const primaryField = getPrimaryTargetField(filter, sources);
-
-  // Without the primary field the options cannot be verified.
-  if (!primaryField) return [];
-  return fields.filter((field) => areOptionFieldsCompatible(primaryField, field));
+  return fieldsOfType(
+    sources.find((item) => item.databaseId === databaseId),
+    filter.fieldType
+  );
 }
 
 /**
@@ -194,110 +179,46 @@ export function getMappedSources(
   );
 }
 
-/**
- * Unmapped sources that have a property the filter can be mapped to (what
- * `getTargetCandidates` offers them), in one pass: the primary property is
- * resolved once for all sources.
- */
+/** Unmapped sources that have a property of the filter's type. */
 export function getAddableSources(filter: GlobalFilterTargetShape, sources: GlobalFilterSource[]) {
-  // An unmapped source is never the primary one, so with a primary mapping an
-  // option type only accepts properties compatible with it.
-  const checksOptions = usesOptionContent(filter.fieldType) && getPrimaryTargetDatabaseId(filter) !== undefined;
-  const primaryField = checksOptions ? getPrimaryTargetField(filter, sources) : undefined;
-
-  return sources.filter((source) => {
-    if (source.databaseId in filter.targets) return false;
-    const fields = fieldsOfType(source, filter.fieldType);
-
-    if (!checksOptions) return fields.length > 0;
-    return primaryField !== undefined && fields.some((field) => areOptionFieldsCompatible(primaryField, field));
-  });
-}
-
-/** Map `databaseId` to its first compatible property (no-op when it has none). */
-export function addGlobalFilterSource(
-  filter: DashboardGlobalFilter,
-  sources: GlobalFilterSource[],
-  databaseId: string
-): DashboardGlobalFilter {
-  if (databaseId in filter.targets) return filter;
-  const field = getTargetCandidates(filter, sources, databaseId)[0];
-
-  return field ? setGlobalFilterTarget(filter, sources, databaseId, field.id) : filter;
+  return sources.filter(
+    (source) => !(source.databaseId in filter.targets) && fieldsOfType(source, filter.fieldType).length > 0
+  );
 }
 
 /**
- * Map every source that has a property of `type` to its first such property.
- * For option types the first mapped source is the primary one and later
- * sources only get a property compatible with it.
+ * A new filter for one property of one source (WP08 §1.3): named after the
+ * property, with the view filter's default condition and no value (dates
+ * too), and no other source mapped.
  */
-export function buildDefaultTargets(sources: GlobalFilterSource[], type: FieldType): Record<string, string> {
-  const targets: Record<string, string> = {};
-  let primary: GlobalFilterSourceField | undefined;
-
-  sources.forEach((source) => {
-    const fields = fieldsOfType(source, type);
-    const primaryField = primary;
-    const field =
-      primaryField && usesOptionContent(type)
-        ? fields.find((candidate) => areOptionFieldsCompatible(primaryField, candidate))
-        : fields[0];
-
-    if (!field) return;
-    if (!primary) primary = field;
-    targets[source.databaseId] = field.id;
-  });
-
-  return targets;
-}
-
-export function createGlobalFilter(
-  sources: GlobalFilterSource[],
-  type: FieldType,
-  fallbackName: string
+export function createGlobalFilterForField(
+  databaseId: string,
+  field: Pick<GlobalFilterSourceField, 'id' | 'name' | 'type'>,
+  typeName: string
 ): DashboardGlobalFilter {
-  const targets = buildDefaultTargets(sources, type);
-  const primaryDatabaseId = Object.keys(targets)[0];
-  const primaryField = primaryDatabaseId
-    ? findSourceField(sources, primaryDatabaseId, targets[primaryDatabaseId])
-    : undefined;
-  const defaults = getDefaultFilterCondition(type);
+  const defaults = getDefaultFilterCondition(field.type);
 
   return {
     id: generateDashboardId('gf'),
-    name: primaryField?.name || fallbackName,
-    fieldType: type,
+    name: field.name || typeName,
+    fieldType: field.type,
     condition: defaults?.condition ?? 0,
-    content: defaults?.content ?? '',
-    targets,
+    content: '',
+    targets: { [databaseId]: field.id },
   };
 }
 
-/** Keep only the selected option ids that exist on `field`, in field option order. */
-export function pruneOptionContent(content: string, field: GlobalFilterSourceField | undefined): string {
-  if (!field || !content) return content;
-  return orderSelectOptionContent(new Set(content.split(',').filter(Boolean)), field.options);
-}
+/** The filter whose only mapping is `databaseId → fieldId`, if any (a pick reopens it instead of adding another). */
+export function findSingleTargetFilter(
+  filters: DashboardGlobalFilter[],
+  databaseId: string,
+  fieldId: string
+): DashboardGlobalFilter | undefined {
+  return filters.find((filter) => {
+    const entries = Object.entries(filter.targets);
 
-/** Drop non-primary mappings whose property no longer matches the primary one. */
-function pruneIncompatibleTargets(targets: Record<string, string>, sources: GlobalFilterSource[]) {
-  const entries = Object.entries(targets);
-
-  if (entries.length < 2) return targets;
-  const [primaryDatabaseId, primaryFieldId] = entries[0];
-  const primaryField = findSourceField(sources, primaryDatabaseId, primaryFieldId);
-
-  if (!primaryField) return targets;
-  const next: Record<string, string> = { [primaryDatabaseId]: primaryFieldId };
-
-  entries.slice(1).forEach(([databaseId, fieldId]) => {
-    const field = findSourceField(sources, databaseId, fieldId);
-
-    // A mapping into a source that is not loaded was validated when it was made.
-    if (!field || areOptionFieldsCompatible(primaryField, field)) next[databaseId] = fieldId;
+    return entries.length === 1 && entries[0][0] === databaseId && entries[0][1] === fieldId;
   });
-
-  return next;
 }
 
 /** A name that still equals the primary property's name follows that property. */
@@ -312,9 +233,8 @@ function followPrimaryName(
 }
 
 /**
- * Map `databaseId` to `fieldId`. Re-pointing the primary target of an option
- * type re-validates the select content and the other mappings against the new
- * primary property.
+ * Map `databaseId` to `fieldId`. The content and the option names are kept:
+ * the new source matches select options by name.
  */
 export function setGlobalFilterTarget(
   filter: DashboardGlobalFilter,
@@ -331,16 +251,7 @@ export function setGlobalFilterTarget(
   const previousField = getPrimaryTargetField(filter, sources);
   const nextField = findSourceField(sources, databaseId, fieldId);
 
-  if (!usesOptionContent(filter.fieldType)) {
-    return { ...filter, targets, name: followPrimaryName(filter.name, previousField, nextField) };
-  }
-
-  return {
-    ...filter,
-    targets: pruneIncompatibleTargets(targets, sources),
-    name: followPrimaryName(filter.name, previousField, nextField),
-    content: pruneOptionContent(filter.content, nextField),
-  };
+  return { ...filter, targets, name: followPrimaryName(filter.name, previousField, nextField) };
 }
 
 /** Remove the mapping for `databaseId`; the next mapping becomes primary. */
@@ -361,20 +272,15 @@ export function removeGlobalFilterTarget(
   const nextField = getPrimaryTargetField(next, sources);
 
   next.name = followPrimaryName(filter.name, previousField, nextField);
-  if (usesOptionContent(filter.fieldType)) {
-    next.targets = pruneIncompatibleTargets(targets, sources);
-    next.content = pruneOptionContent(filter.content, nextField);
-  }
-
   return next;
 }
 
 /**
  * Drop the mappings of databases that no longer have a widget on the
- * dashboard. Removing a primary mapping promotes the next one, exactly like
- * `removeGlobalFilterTarget` (pass the loaded `sources` so option content and
- * the remaining mappings are re-validated). Returns `filters` itself when
- * nothing changes.
+ * dashboard (stale targets, WP08 §1.8). Removing a primary mapping promotes
+ * the next one, exactly like `removeGlobalFilterTarget` (pass the loaded
+ * `sources` so the name can follow the new primary property). Returns
+ * `filters` itself when nothing changes.
  */
 export function detachRemovedGlobalFilterSources(
   filters: DashboardGlobalFilter[],

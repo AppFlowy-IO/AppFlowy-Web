@@ -114,11 +114,57 @@ export function resetChartTextMetrics() {
   metricsListeners.forEach((listener) => listener());
 }
 
+/** The families of the body font, lower-cased and unquoted, as `FontFace.family` is compared. */
+function chartFontFamilies(): Set<string> {
+  return new Set(resolveFontFamily().split(',').map(normalizeFontFamily));
+}
+
+function normalizeFontFamily(family: string): string {
+  return family.trim().replace(/^["']|["']$/g, '').toLowerCase();
+}
+
+/** `FontFaceSetLoadEvent` without the DOM lib: the faces the batch loaded, absent in old implementations. */
+type FontLoadEvent = Event & { fontfaces?: ReadonlyArray<{ family: string }> };
+
+let resetFrame: number | null = null;
+
+/** One reset per frame: a dashboard's charts are laid out again together, not once per batch. */
+function scheduleReset() {
+  if (resetFrame !== null) return;
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+    resetChartTextMetrics();
+    return;
+  }
+
+  resetFrame = window.requestAnimationFrame(() => {
+    resetFrame = null;
+    resetChartTextMetrics();
+  });
+}
+
+/**
+ * `loadingdone` fires for any batch of faces (an emoji or CJK subset a
+ * document next to the charts pulls in, too); only a face of the body font
+ * changes what the charts measured. A batch that does not say which faces it
+ * loaded is taken as one that did.
+ */
+function onFontsLoaded(event?: FontLoadEvent) {
+  const faces = event?.fontfaces;
+
+  if (faces) {
+    const families = chartFontFamilies();
+
+    if (!faces.some((face) => families.has(normalizeFontFamily(face.family)))) return;
+  }
+
+  scheduleReset();
+}
+
 function watchFonts() {
   if (watchingFonts) return;
   watchingFonts = true;
   if (typeof document === 'undefined') return;
-  document.fonts?.addEventListener?.('loadingdone', resetChartTextMetrics);
+  document.fonts?.addEventListener?.('loadingdone', onFontsLoaded);
 }
 
 function subscribeToMetrics(listener: () => void) {

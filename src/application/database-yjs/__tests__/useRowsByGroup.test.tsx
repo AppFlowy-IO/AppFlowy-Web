@@ -1,13 +1,14 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import type React from 'react';
 import * as Y from 'yjs';
 
 import {
   DatabaseContext,
   DatabaseContextState,
+  DatabaseSearchQueryContext,
   FieldType,
   haveSameGroupRows,
   Row,
+  SortCondition,
   useRowsByGroup,
 } from '@/application/database-yjs';
 import * as groupModule from '@/application/database-yjs/group';
@@ -16,6 +17,8 @@ import {
   YDatabaseField,
   YDatabaseFields,
   YDatabaseRowOrders,
+  YDatabaseSort,
+  YDatabaseSorts,
   YDatabaseView,
   YDatabaseViews,
   YDoc,
@@ -24,6 +27,8 @@ import {
 } from '@/application/types';
 
 import { createCell, createRowDoc } from './test-helpers';
+
+import type React from 'react';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
@@ -326,6 +331,152 @@ describe('useRowsByGroup', () => {
     fixture.existingDoingRowDoc.destroy();
     fixture.existingTodoRowDoc.destroy();
     fixture.databaseDoc.destroy();
+  });
+});
+
+/** The Projects board of the BDD fixture: Status columns and an Estimate number. */
+function createProjectsBoard({ sorted }: { sorted: boolean }) {
+  const doc = new Y.Doc({ guid: 'projects' }) as YDoc;
+  const database = new Y.Map() as YDatabase;
+  const fields = new Y.Map<YDatabaseField>() as YDatabaseFields;
+  const status = new Y.Map() as YDatabaseField;
+  const estimate = new Y.Map() as YDatabaseField;
+  const typeOptions = new Y.Map();
+  const selectOptions = new Y.Map();
+  const views = new Y.Map<YDatabaseView>() as YDatabaseViews;
+  const view = new Y.Map() as YDatabaseView;
+  const groups = new Y.Array<Y.Map<unknown>>();
+  const group = new Y.Map<unknown>();
+  const columns = new Y.Array<{ id: string; visible: boolean }>();
+  const sorts = new Y.Array() as YDatabaseSorts;
+  const name = new Y.Map() as YDatabaseField;
+  const rows: [string, string, string, number][] = [
+    ['website', 'Website launch', doingId, 3],
+    ['mobile', 'Mobile app', todoId, 5],
+    ['api', 'API cleanup', doneId, 8],
+    ['beta', 'Beta test', doingId, 1],
+  ];
+
+  selectOptions.set(
+    YjsDatabaseKey.content,
+    JSON.stringify({
+      disable_color: false,
+      options: [
+        { id: todoId, name: 'Todo', color: 'Purple' },
+        { id: doingId, name: 'Doing', color: 'Blue' },
+        { id: doneId, name: 'Done', color: 'Green' },
+      ],
+    })
+  );
+  typeOptions.set(String(FieldType.SingleSelect), selectOptions);
+  status.set(YjsDatabaseKey.id, statusFieldId);
+  status.set(YjsDatabaseKey.name, 'Status');
+  status.set(YjsDatabaseKey.type, FieldType.SingleSelect);
+  status.set(YjsDatabaseKey.type_option, typeOptions);
+  estimate.set(YjsDatabaseKey.id, 'estimate');
+  estimate.set(YjsDatabaseKey.name, 'Estimate');
+  estimate.set(YjsDatabaseKey.type, FieldType.Number);
+  name.set(YjsDatabaseKey.id, 'name');
+  name.set(YjsDatabaseKey.name, 'Name');
+  name.set(YjsDatabaseKey.type, FieldType.RichText);
+  name.set(YjsDatabaseKey.is_primary, true);
+  fields.set('name', name);
+  fields.set(statusFieldId, status);
+  fields.set('estimate', estimate);
+  columns.push([
+    { id: statusFieldId, visible: true },
+    { id: todoId, visible: true },
+    { id: doingId, visible: true },
+    { id: doneId, visible: true },
+  ]);
+  group.set(YjsDatabaseKey.id, groupId);
+  group.set(YjsDatabaseKey.field_id, statusFieldId);
+  group.set(YjsDatabaseKey.type, FieldType.SingleSelect);
+  group.set(YjsDatabaseKey.groups, columns);
+  groups.push([group]);
+  if (sorted) {
+    const sort = new Y.Map() as YDatabaseSort;
+
+    sort.set(YjsDatabaseKey.id, 'estimate-desc');
+    sort.set(YjsDatabaseKey.field_id, 'estimate');
+    sort.set(YjsDatabaseKey.condition, SortCondition.Descending);
+    sorts.push([sort]);
+  }
+
+  view.set(YjsDatabaseKey.row_orders, Y.Array.from(rows.map(([id]) => ({ id, height: 36 }))) as YDatabaseRowOrders);
+  view.set(YjsDatabaseKey.groups, groups);
+  view.set(YjsDatabaseKey.sorts, sorts);
+  views.set(viewId, view);
+  database.set(YjsDatabaseKey.id, 'projects');
+  database.set(YjsDatabaseKey.fields, fields);
+  database.set(YjsDatabaseKey.views, views);
+  doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+
+  const rowMap = Object.fromEntries(
+    rows.map(([id, title, statusId, points]) => [
+      id,
+      createRowDoc(id, 'projects', {
+        name: createCell(FieldType.RichText, title),
+        [statusFieldId]: createCell(FieldType.SingleSelect, statusId),
+        estimate: createCell(FieldType.Number, String(points)),
+      }),
+    ])
+  );
+  const contextValue: DatabaseContextState = {
+    activeViewId: viewId,
+    blobPrefetchComplete: true,
+    databaseDoc: doc,
+    databasePageId: viewId,
+    readOnly: false,
+    rowMap,
+    seedsReady: true,
+    workspaceId: 'workspace-id',
+  };
+  const query = { value: '' };
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <DatabaseContext.Provider value={contextValue}>
+      <DatabaseSearchQueryContext.Provider value={query.value}>{children}</DatabaseSearchQueryContext.Provider>
+    </DatabaseContext.Provider>
+  );
+
+  return { wrapper, query, rowMap, destroy: () => doc.destroy() };
+}
+
+const cardIds = (result: Map<string, Row[]>, columnId: string) => result.get(columnId)?.map((row) => row.id);
+
+describe('useRowsByGroup with board sorts and search (WP09)', () => {
+  it('orders the cards of each column by the sort and keeps the column order', async () => {
+    const board = createProjectsBoard({ sorted: true });
+    const { result, unmount } = renderHook(() => useRowsByGroup(groupId), { wrapper: board.wrapper });
+
+    await waitFor(() => expect(cardIds(result.current.groupResult, doingId)).toEqual(['website', 'beta']));
+    expect(result.current.columns.map((column) => column.id)).toEqual([statusFieldId, todoId, doingId, doneId]);
+    unmount();
+    board.destroy();
+  });
+
+  it('removes the cards that do not match the search from every column', async () => {
+    const board = createProjectsBoard({ sorted: false });
+
+    board.query.value = 'mobile';
+    const { result, unmount } = renderHook(() => useRowsByGroup(groupId), { wrapper: board.wrapper });
+
+    await waitFor(() => expect(cardIds(result.current.groupResult, todoId)).toEqual(['mobile']));
+    expect(cardIds(result.current.groupResult, doingId) ?? []).toEqual([]);
+    expect(cardIds(result.current.groupResult, doneId) ?? []).toEqual([]);
+    unmount();
+    board.destroy();
+  });
+
+  it('exposes the row docs it grouped, for the column calculations', async () => {
+    const board = createProjectsBoard({ sorted: false });
+    const { result, unmount } = renderHook(() => useRowsByGroup(groupId), { wrapper: board.wrapper });
+
+    await waitFor(() => expect(result.current.groupRowsReady).toBe(true));
+    expect(Object.keys(result.current.groupingRows).sort()).toEqual(['api', 'beta', 'mobile', 'website']);
+    expect(result.current.groupingRows.mobile).toBe(board.rowMap.mobile);
+    unmount();
+    board.destroy();
   });
 });
 

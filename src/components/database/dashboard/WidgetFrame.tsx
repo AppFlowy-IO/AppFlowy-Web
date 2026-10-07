@@ -25,11 +25,12 @@ interface WidgetContextProviderProps {
  * with the view's name and layout. The name is the folder's, else the one in
  * the source database, else the layout's; the layout is the source
  * database's, else the folder's. In Edit mode the header rendered inside it
- * (`setDragHandle`) drags the widget.
+ * (`setDragHandle`) drags the widget; the dashboard's drag ghost shows its
+ * name and layout.
  */
 export function WidgetContextProvider({ frame, sourceView, children }: WidgetContextProviderProps) {
   const { t } = useTranslation();
-  const { dndInstanceId } = useDashboardUi();
+  const { dndInstanceId, dragGhostStore } = useDashboardUi();
   const [dragHandle, setDragHandle] = useState<HTMLElement | null>(null);
   const layout: ViewLayout =
     sourceView && sourceView.layout !== null
@@ -46,7 +47,9 @@ export function WidgetContextProvider({ frame, sourceView, children }: WidgetCon
     instanceId: dndInstanceId,
     enabled: frame.editing,
     label: name,
-    getCardElement: frame.getBoxElement,
+    layout,
+    getBoxElement: frame.getBoxElement,
+    ghostStore: dragGhostStore,
   });
 
   const value = useMemo<WidgetContextValue>(() => {

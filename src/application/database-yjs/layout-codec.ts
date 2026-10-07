@@ -28,6 +28,30 @@ export function toPlainValue(value: unknown): unknown {
   return value;
 }
 
+/**
+ * A deep copy of a stored value that Yjs can insert again: a Y.Map / Y.Array
+ * (at any depth) rebuilt detached, a bigint (which Yjs decodes from native
+ * clients but cannot author) as a number, anything else as it is.
+ */
+export function cloneYValue(value: unknown): unknown {
+  if (typeof value === 'bigint') return Number(value);
+  if (value instanceof Y.Map) {
+    const copy = new Y.Map<unknown>();
+
+    value.forEach((item, key) => copy.set(key, cloneYValue(item)));
+    return copy;
+  }
+
+  if (value instanceof Y.Array) {
+    const copy = new Y.Array<unknown>();
+
+    copy.push(value.toArray().map(cloneYValue));
+    return copy;
+  }
+
+  return value;
+}
+
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

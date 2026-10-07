@@ -8,6 +8,7 @@ import {
   createPartialFilterState,
   DatabaseContext,
   DatabaseContextState,
+  DatabaseSearchQueryContext,
   FieldType,
   FilterType,
   type Row,
@@ -460,6 +461,65 @@ describe('useProgressiveRowOrdersSelector', () => {
     });
     expect(result.current.complete).toHaveLength(100);
 
+    unmount();
+    destroyFixture(fixture);
+  });
+});
+
+describe('useProgressiveRowOrdersSelector with a row search (WP09)', () => {
+  function renderSearch(fixture: Fixture, rowMap: Record<RowId, YDoc>, query: string) {
+    let contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: fixture.databaseDoc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap,
+      workspaceId: 'workspace-id',
+      ensureRow: jest.fn(() => new Promise<YDoc | undefined>(() => undefined)),
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>
+        <DatabaseSearchQueryContext.Provider value={query}>{children}</DatabaseSearchQueryContext.Provider>
+      </DatabaseContext.Provider>
+    );
+    const rendered = renderHook(() => useProgressiveRowOrdersSelector(), { wrapper });
+
+    return {
+      ...rendered,
+      loadRows: (next: Record<RowId, YDoc>) => {
+        contextValue = { ...contextValue, rowMap: next };
+        rendered.rerender();
+      },
+    };
+  }
+
+  it('publishes the matches found so far as rows load, then the complete result', async () => {
+    const fixture = createFixture((index) => index % 5 === 0);
+    const { result, loadRows, unmount } = renderSearch(fixture, pickRows(fixture, range(0, 100)), 'hr');
+    const firstHundredMatches = range(0, 100)
+      .filter((index) => index % 5 === 0)
+      .map((index) => fixture.rowIds[index]);
+
+    await waitFor(() => {
+      expect(result.current.hydrating).toEqual({ ready: 100, total: TOTAL_ROWS });
+      expect(ids(result.current.rows)).toEqual(firstHundredMatches);
+    });
+    loadRows(fixture.rowDocs);
+    await waitFor(() => {
+      expect(result.current.hydrating).toBeUndefined();
+      expect(ids(result.current.rows)).toEqual(fixture.rowIds.filter((_, index) => index % 5 === 0));
+    });
+    unmount();
+    destroyFixture(fixture);
+  });
+
+  it('keeps a search without a match so far hydrating, never a settled empty result', async () => {
+    const fixture = createFixture((index) => index % 5 === 0);
+    // Every row the filter keeps is HR: a search for "Sales" matches none of them.
+    const { result, unmount } = renderSearch(fixture, pickRows(fixture, range(0, 100)), 'sales');
+
+    await waitFor(() => expect(result.current.hydrating).toEqual({ ready: 100, total: TOTAL_ROWS }));
+    expect(result.current.rows).toEqual([]);
     unmount();
     destroyFixture(fixture);
   });

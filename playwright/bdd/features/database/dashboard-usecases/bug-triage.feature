@@ -87,7 +87,7 @@ Feature: Bug triage dashboard
     And I add a global filter where "Component" is "Mobile"
     Then the "Open bugs" widget shows the number "2"
     And the "In progress" widget shows the number "1"
-    And the "Overdue" widget shows that there are no rows to count
+    And the "Overdue" widget shows no data
     And the "High priority" widget lists "Crash on photo upload"
     And the "Unassigned" widget lists nothing
 

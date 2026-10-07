@@ -316,6 +316,23 @@ export class DatabaseHistoryManager {
     return this.replay('redo');
   }
 
+  /** The group of the entry the next undo replays, or `null` when there is none. */
+  latestUndoGroup(): object | null {
+    this.pruneStacks();
+    return this.undoStack[this.undoStack.length - 1]?.group ?? null;
+  }
+
+  /**
+   * Undo `group` only while it is still the latest undo entry and no prepared
+   * edit is waiting (an undo would cancel that edit instead). The toast's
+   * Undo after "Save for everyone" uses this: it never undoes a later action.
+   */
+  undoIfLatest(group: object): boolean {
+    if (this.pendingActions.size > 0 || this.latestUndoGroup() !== group) return false;
+    this.replay('undo');
+    return true;
+  }
+
   registerPendingAction(cancel: () => void) {
     this.pendingActions.add(cancel);
     this.notify();
@@ -634,13 +651,13 @@ export function runDatabaseHistoryGroup<T>(mutate: () => T, historyGroup?: objec
  * have separate controllers so clearing or replaying this history cannot
  * consume unrelated actions from the source database's own history.
  */
-export function runDatabaseHistoryGroupForDatabase<T>(databaseDoc: YDoc, mutate: () => T): T {
-  if (activeDatabaseHistoryOwner) return runDatabaseHistoryGroup(mutate);
+export function runDatabaseHistoryGroupForDatabase<T>(databaseDoc: YDoc, mutate: () => T, historyGroup?: object): T {
+  if (activeDatabaseHistoryOwner) return runDatabaseHistoryGroup(mutate, historyGroup);
 
   activeDatabaseHistoryOwner = getOrCreateDatabaseHistoryManager(databaseDoc);
 
   try {
-    return runDatabaseHistoryGroup(mutate);
+    return runDatabaseHistoryGroup(mutate, historyGroup);
   } finally {
     activeDatabaseHistoryOwner = null;
   }

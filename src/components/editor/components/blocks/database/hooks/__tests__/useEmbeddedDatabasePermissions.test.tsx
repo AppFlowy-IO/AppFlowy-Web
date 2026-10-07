@@ -67,10 +67,16 @@ describe('useEmbeddedDatabasePermissions', () => {
     );
 
     expect(result.current).toEqual({ readOnly: true, canWrite: false, canShare: false });
-    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(null, true, sourceViewId, {
-      collabObjectId: sourceDatabaseId,
-      collabType: Types.Database,
-    });
+    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(
+      null,
+      true,
+      sourceViewId,
+      {
+        collabObjectId: sourceDatabaseId,
+        collabType: Types.Database,
+      },
+      undefined
+    );
   });
 
   it('uses source sharing permission even when the parent document cannot share', () => {
@@ -113,10 +119,16 @@ describe('useEmbeddedDatabasePermissions', () => {
     );
 
     expect(result.current).toEqual({ readOnly: false, canWrite: true, canShare: false });
-    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(null, true, sourceViewId, {
-      collabObjectId: sourceDatabaseId,
-      collabType: Types.Database,
-    });
+    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(
+      null,
+      true,
+      sourceViewId,
+      {
+        collabObjectId: sourceDatabaseId,
+        collabType: Types.Database,
+      },
+      undefined
+    );
   });
 
   it('fails closed until the database collab identity is available', () => {
@@ -130,7 +142,7 @@ describe('useEmbeddedDatabasePermissions', () => {
     );
 
     expect(result.current).toEqual({ readOnly: true, canWrite: false, canShare: false });
-    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(null, false, sourceViewId, undefined);
+    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(null, false, sourceViewId, undefined, undefined);
   });
 
   it('preserves the static publish permissions without mounting the app permission resolver', () => {
@@ -185,7 +197,10 @@ describe('useEmbeddedDatabasePermissions', () => {
     );
 
     // Until it settles the permissions fail closed, and a dashboard widget waits instead of mounting read-only.
-    expect(renders.at(-1)).toEqual([{ readOnly: !settled, canWrite: settled, canShare: false }, { settled }]);
+    expect(renders.at(-1)).toEqual([
+      { readOnly: !settled, canWrite: settled, canShare: false },
+      { settled, canRead: settled },
+    ]);
   });
 
   it('reports publish permissions as settled', () => {

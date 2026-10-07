@@ -10,6 +10,7 @@ interface EmbeddedDatabasePermissionsParams {
   inheritedReadOnly: boolean;
   publishCanWrite?: boolean;
   publishCanShare?: boolean;
+  permissionOptions?: Parameters<typeof useViewActionPermissions>[4];
 }
 
 export interface EmbeddedDatabasePermissions {
@@ -21,6 +22,7 @@ export interface EmbeddedDatabasePermissions {
 /** Whether the source permission request has answered; until then the permissions fail closed. */
 export interface EmbeddedDatabasePermissionsStatus {
   settled: boolean;
+  canRead?: boolean;
 }
 
 type EmbeddedDatabasePermissionsRenderer = (
@@ -36,6 +38,7 @@ interface AppEmbeddedDatabasePermissionsResolverProps {
   sourceViewId: string;
   sourceDatabaseId?: string;
   inheritedReadOnly: boolean;
+  permissionOptions?: EmbeddedDatabasePermissionsParams['permissionOptions'];
   children?: EmbeddedDatabasePermissionsRenderer;
 }
 
@@ -63,13 +66,14 @@ export function resolveEmbeddedDatabaseCollabId(
 
 type AppEmbeddedDatabasePermissionsParams = Pick<
   EmbeddedDatabasePermissionsParams,
-  'sourceViewId' | 'sourceDatabaseId' | 'inheritedReadOnly'
+  'sourceViewId' | 'sourceDatabaseId' | 'inheritedReadOnly' | 'permissionOptions'
 >;
 
 function useAppEmbeddedDatabasePermissionsWithStatus({
   sourceViewId,
   sourceDatabaseId,
   inheritedReadOnly,
+  permissionOptions,
 }: AppEmbeddedDatabasePermissionsParams): EmbeddedDatabasePermissionsStatus & {
   permissions: EmbeddedDatabasePermissions;
 } {
@@ -78,7 +82,8 @@ function useAppEmbeddedDatabasePermissionsWithStatus({
     null,
     shouldLoadSourcePermissions,
     sourceViewId,
-    sourceDatabaseId ? { collabObjectId: sourceDatabaseId, collabType: Types.Database } : undefined
+    sourceDatabaseId ? { collabObjectId: sourceDatabaseId, collabType: Types.Database } : undefined,
+    permissionOptions
   );
 
   return {
@@ -88,6 +93,7 @@ function useAppEmbeddedDatabasePermissionsWithStatus({
       canShare: sourcePermissions.canShare,
     },
     settled: sourcePermissions.hasLoadedViewActionPermissions,
+    canRead: sourcePermissions.canRead,
   };
 }
 
@@ -103,14 +109,16 @@ function AppEmbeddedDatabasePermissionsResolver({
   sourceDatabaseId,
   inheritedReadOnly,
   children,
+  permissionOptions,
 }: AppEmbeddedDatabasePermissionsResolverProps) {
-  const { permissions, settled } = useAppEmbeddedDatabasePermissionsWithStatus({
+  const { permissions, settled, canRead } = useAppEmbeddedDatabasePermissionsWithStatus({
     sourceViewId,
     sourceDatabaseId,
     inheritedReadOnly,
+    permissionOptions,
   });
 
-  return children?.(permissions, { settled }) ?? null;
+  return children?.(permissions, { settled, canRead }) ?? null;
 }
 
 /**
@@ -126,6 +134,7 @@ export function EmbeddedDatabasePermissionsResolver({
   publishCanWrite,
   publishCanShare,
   children,
+  permissionOptions,
 }: EmbeddedDatabasePermissionsResolverProps): ReactElement | null {
   if (variant === UIVariant.Publish) {
     return children(
@@ -143,6 +152,7 @@ export function EmbeddedDatabasePermissionsResolver({
       sourceViewId={sourceViewId}
       sourceDatabaseId={sourceDatabaseId}
       inheritedReadOnly={inheritedReadOnly}
+      permissionOptions={permissionOptions}
     >
       {children}
     </AppEmbeddedDatabasePermissionsResolver>

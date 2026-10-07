@@ -31,6 +31,7 @@ import {
 } from '@/components/app/app.hooks';
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 import { Database } from '@/components/database';
+import { loadDashboard } from '@/components/database/dashboard/load';
 import { useContainerVisibleViewIds } from '@/components/database/hooks';
 import { Button } from '@/components/ui/button';
 import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
@@ -516,6 +517,16 @@ function DatabaseView(props: DatabaseViewProps) {
         return <ComponentLoading />;
     }
   }, [rowId, viewMeta.layout]);
+
+  // A dashboard page's code is one lazy chunk (`DashboardPageScope` in
+  // `DatabaseViews`): it downloads while the document loads, so the page
+  // seldom waits for it once the document is in.
+  useEffect(() => {
+    if (viewMeta.layout !== ViewLayout.Dashboard) return;
+    loadDashboard().catch(() => {
+      // The lazy render retries the chunk and reports its failure.
+    });
+  }, [viewMeta.layout]);
 
   // Check if database has views - this ensures the data is actually populated
   const hasViews = (database?.get(YjsDatabaseKey.views)?.size ?? 0) > 0;

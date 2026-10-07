@@ -1,8 +1,9 @@
 @dashboard @cloud
 Feature: Private dashboard sorts and resetting conditions
   Viewers can experiment with widget sorting and filters without changing the
-  shared views. Save for everybody publishes the conditions, while Reset
-  restores all shared conditions together.
+  shared views; this device keeps them until they are saved or reset. Save for
+  everyone publishes the conditions, while Reset restores all shared
+  conditions together.
 
   Background:
     Given the dashboard fixture workspace is ready
@@ -12,20 +13,20 @@ Feature: Private dashboard sorts and resetting conditions
       | 1   | Projects Grid |
       | 1   | Tasks Grid    |
 
-  Scenario: A foreign widget sort stays private until reload
+  Scenario: A foreign widget sort stays private after a reload
     When I reload the dashboard
     Then the "Tasks Grid" widget shows rows in order "Write launch plan, Review, Ship"
     When I sort the "Tasks Grid" widget by "Points" "descending"
     Then the "Tasks Grid" widget shows rows in order "Ship, Write launch plan, Review"
-    And the dashboard shows the local changes badge
+    And the dashboard shows unsaved changes
     And the "Tasks Grid" view has 0 saved sorts
     And the "Tasks Grid" view has 0 saved filters
     When I reload the dashboard
-    Then the "Tasks Grid" widget shows rows in order "Write launch plan, Review, Ship"
-    And no global filter shows the local changes badge
-    And the "Tasks Grid" widget has no active sort
+    Then the "Tasks Grid" widget shows rows in order "Ship, Write launch plan, Review"
+    And the "Tasks Grid" widget Sort button shows an unsaved dot
+    And the "Tasks Grid" view has 0 saved sorts
 
-  Scenario: Save for everybody publishes a foreign widget sort to another viewer
+  Scenario: Save for everyone publishes a foreign widget sort to another viewer
     Given a workspace member with "read-only" access to the dashboard space
     When I reload the dashboard
     And the member opens the dashboard
@@ -33,8 +34,8 @@ Feature: Private dashboard sorts and resetting conditions
     Then the "Tasks Grid" widget shows rows in order "Ship, Write launch plan, Review"
     And the member sees the "Tasks Grid" widget rows in order "Write launch plan, Review, Ship"
     And the "Tasks Grid" view has 0 saved sorts
-    When I save the global filters for everybody
-    Then no global filter shows the local changes badge
+    When I click "Save for everyone" in the filter bar
+    Then no unsaved dot is shown on the dashboard
     And the "Tasks Grid" view has a saved "descending" sort by "Points"
     And the member sees the "Tasks Grid" widget rows in order "Ship, Write launch plan, Review"
     When I wait for the dashboard and widget conditions to reach the server
@@ -51,13 +52,13 @@ Feature: Private dashboard sorts and resetting conditions
     And I sort the "Tasks Grid" widget by "Points" "descending"
     Then the "Projects Grid" widget shows rows in order "API cleanup"
     And the "Tasks Grid" widget shows rows in order "Ship, Write launch plan, Review"
-    And the dashboard shows the local changes badge
+    And the dashboard shows unsaved changes
     And the shared dashboard and widget conditions are unchanged
     When I reset the dashboard local conditions
     Then the "Projects Grid" widget shows rows in order "Website launch, API cleanup"
     And the "Tasks Grid" widget shows rows in order "Write launch plan, Ship"
     And the "Tasks Grid" widget has no active sort
-    And no global filter shows the local changes badge
+    And no unsaved dot is shown on the dashboard
     And the shared dashboard and widget conditions are unchanged
     When I reload the dashboard
     Then the "Projects Grid" widget shows rows in order "Website launch, API cleanup"
@@ -70,7 +71,7 @@ Feature: Private dashboard sorts and resetting conditions
     When the member opens the dashboard
     And the member sorts the "Tasks Grid" widget by "Points" "descending"
     Then the member sees the "Tasks Grid" widget rows in order "Ship, Write launch plan, Review"
-    And the member sees the local changes badge without a Save for everybody button
+    And the member sees "Reset" but no "Save for everyone" in the filter bar
     And the "Tasks Grid" widget shows rows in order "Write launch plan, Review, Ship"
     And the shared dashboard and widget conditions are unchanged
     When the member resets the dashboard local conditions

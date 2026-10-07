@@ -1,7 +1,7 @@
 import EventEmitter from 'events';
 
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { ReactNode, StrictMode, useMemo, useRef } from 'react';
+import { ReactNode, StrictMode, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
@@ -10,6 +10,7 @@ import {
   readDashboardLayoutSetting,
   updateDashboardLayoutSetting,
 } from '@/application/database-yjs/dashboard-layout';
+import { DASHBOARD_LOADING } from '@/application/database-yjs/dashboard-loading';
 import { DashboardRow } from '@/application/database-yjs/dashboard.type';
 import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import { DatabaseViewLayout, YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -22,7 +23,7 @@ import {
   useDashboardContext,
   useDashboardFilters,
   useDashboardLayout,
-  useDashboardLocalWidgetChanges,
+  useDashboardPrivateSummary,
   useDashboardSourceRegistry,
 } from '../DashboardContext';
 import { DashboardGrid } from '../DashboardGrid';
@@ -147,13 +148,15 @@ jest.mock('@/components/editor/components/blocks/database/hooks/useViewMeta', ()
 jest.mock('@/components/editor/components/blocks/database/hooks/useEmbeddedDatabasePermissions', () => ({
   EmbeddedDatabasePermissionsResolver: ({
     children,
+    permissionOptions,
   }: {
+    permissionOptions?: { allowCachedPermission?: boolean };
     children: (
       permissions: { readOnly: boolean; canWrite: boolean; canShare: boolean },
       status: { settled: boolean }
     ) => ReactNode;
   }) =>
-    mockPermissionPending
+    mockPermissionPending && !permissionOptions?.allowCachedPermission
       ? children({ readOnly: true, canWrite: false, canShare: false }, { settled: false })
       : children({ readOnly: false, canWrite: true, canShare: false }, { settled: true }),
 }));
@@ -165,12 +168,17 @@ jest.mock('../hooks/useDashboardDnd', () => ({
 }));
 // Mounted by `Dashboard` only (the leak check below): stand-ins for its network and editor-only parts.
 jest.mock('../global-filters/GlobalFilterBar', () => ({ GlobalFilterBar: () => null }));
-jest.mock('../WidgetPicker', () => ({ WidgetPicker: () => null }));
+jest.mock('../WidgetPicker', () => ({ LazyWidgetDockHost: () => null, preloadWidgetPicker: () => undefined }));
 jest.mock('../hooks/useWorkspaceDatabases', () => ({
   useWorkspaceDatabases: () => ({ databases: [], loading: false, error: null }),
 }));
-jest.mock('../hooks/useCreateWidgetView', () => ({
-  useCreateWidgetView: () => ({ createView: jest.fn(), canCreateInOtherDatabases: false, bridge: null }),
+// A duplicate copies the widget's view first (WP05 §1.4): the copy is served here.
+jest.mock('@/application/database-yjs/dashboard-owned-view-ops', () => ({
+  ...jest.requireActual('@/application/database-yjs/dashboard-owned-view-ops'),
+  duplicateOwnedDatabaseView: jest.fn(
+    async (_deps: unknown, params: { sourceViewId: string }) => `${params.sourceViewId}-copy`
+  ),
+  repairDashboardOwnerMarkers: jest.fn().mockResolvedValue(0),
 }));
 jest.mock('../WidgetHeader', () => ({
   WidgetHeaderFrame: () => <div data-testid='widget-header-frame' />,
@@ -197,14 +205,32 @@ function makeView(rowIds = ['first']) {
 
 /** With `scheduled`, the grid runs inside the dashboard's load queue, as `Dashboard` renders it. */
 function TestDashboard({ scheduled = false }: { scheduled?: boolean }) {
-  const { updateRows } = useDashboardContext();
+  const { updateRows, ownedViews } = useDashboardContext();
   const { rows } = useDashboardLayout();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [addWidget] = useState(() =>
+    jest
+      .requireActual<typeof import('../add-widget/add-widget-api')>('../add-widget/add-widget-api')
+      .createInertAddWidgetApi()
+  );
   const order = useMemo(() => rows.flatMap((row) => row.widgets.map((widget) => widget.id)), [rows]);
-  const { resetViewOverlays, commitViewOverlays } = useDashboardFilters();
-  const { unsaved: localWidgetChanges } = useDashboardLocalWidgetChanges();
+  const { resetPrivateChanges, saveForEveryone } = useDashboardFilters();
+  const { dirtyWidgetCount: localWidgetChanges } = useDashboardPrivateSummary();
   const { registerSourceDoc } = useDashboardSourceRegistry();
   const acquireSourceDoc = useSourceDocRegistry(registerSourceDoc, 'db');
+  // The arrange stores of the UI context (WP04), created once like the dashboard's.
+  const arrange = useMemo(() => {
+    const stores = jest.requireActual<typeof import('../arrange-stores')>('../arrange-stores');
+    const rowFocus = stores.createRowFocusRequests();
+
+    return {
+      dropIndicatorStore: stores.createDropIndicatorStore(),
+      dragGhostStore: stores.createDragGhostStore(),
+      requestRowFocus: rowFocus.request,
+      consumeRowFocus: rowFocus.consume,
+      firstPaintDone: { current: false },
+    };
+  }, []);
 
   return (
     <DashboardUiContext.Provider
@@ -213,8 +239,11 @@ function TestDashboard({ scheduled = false }: { scheduled?: boolean }) {
         dndInstanceId: Symbol.for('dashboard-lifecycle-test'),
         getRows: () => rows,
         updateRows,
-        openPicker: jest.fn(),
-        showLimitMessage: jest.fn(),
+        startAddWidget: jest.fn(),
+        addWidget,
+        ownedViews,
+        announce: jest.fn(),
+        ...arrange,
         acquireSourceDoc,
         selectWidget: jest.fn(),
       }}
@@ -229,13 +258,19 @@ function TestDashboard({ scheduled = false }: { scheduled?: boolean }) {
         <DashboardGrid />
       )}
       <output data-testid='private-changes'>{localWidgetChanges}</output>
-      <button onClick={resetViewOverlays}>Reset</button>
-      <button onClick={() => commitViewOverlays()}>Save</button>
+      <button onClick={() => resetPrivateChanges()}>Reset</button>
+      <button onClick={() => saveForEveryone()}>Save</button>
     </DashboardUiContext.Provider>
   );
 }
 
-function setup(strict = false, readOnly = false, sourceDoc?: YDoc, hostServices: Partial<DashboardHostServices> = {}) {
+function setup(
+  strict = false,
+  readOnly = false,
+  sourceDoc?: YDoc,
+  hostServices: Partial<DashboardHostServices> = {},
+  initialRows: DashboardRow[] = ROWS
+) {
   const doc = new Y.Doc({ guid: 'db' }) as YDoc;
   const database = new Y.Map() as YDatabase;
   const views = new Y.Map<YDatabaseView>();
@@ -250,8 +285,11 @@ function setup(strict = false, readOnly = false, sourceDoc?: YDoc, hostServices:
   views.set('v1', makeView());
   views.set('v2', makeView());
   const rows = sourceDoc
-    ? ROWS.map((row) => ({ ...row, widgets: row.widgets.map((widget) => ({ ...widget, databaseId: 'source-db' })) }))
-    : ROWS;
+    ? initialRows.map((row) => ({
+        ...row,
+        widgets: row.widgets.map((widget) => ({ ...widget, databaseId: 'source-db' })),
+      }))
+    : initialRows;
 
   if (sourceDoc) mockSourceDocs.set('source-db', sourceDoc);
   updateDashboardLayoutSetting(dashboard, { rows });
@@ -432,7 +470,7 @@ it('leaves a view missing from the dashboard doc to its own load', () => {
   sourceDoc.destroy();
 });
 
-it.each(['duplicate', 'move'] as const)('undoes the host layout after the widget %s action', (action) => {
+it.each(['duplicate', 'move'] as const)('undoes the host layout after the widget %s action', async (action) => {
   const sourceDoc = new Y.Doc({ guid: 'source-db' }) as YDoc;
   const sourceDatabase = new Y.Map() as YDatabase;
   const sourceViews = new Y.Map<YDatabaseView>();
@@ -446,18 +484,31 @@ it.each(['duplicate', 'move'] as const)('undoes the host layout after the widget
   const sourceHistory = getOrCreateDatabaseHistoryManager(sourceDoc);
 
   runDatabaseAction(sourceDoc, { type: 'test.source-edit' }, () => sourceView.set(YjsDatabaseKey.name, 'Source edit'));
-  const { doc, database, unmount } = setup(false, false, sourceDoc);
+  // A menu move needs a neighbour: both widgets share one row, so w1 can move right.
+  const sharedRow: DashboardRow[] = [
+    {
+      id: 'r1',
+      height: 360,
+      widgets: [
+        { id: 'w1', viewId: 'v1', databaseId: 'db', width: 6 },
+        { id: 'w2', viewId: 'v2', databaseId: 'db', width: 6 },
+      ],
+    },
+  ];
+  const { doc, database, unmount } = setup(false, false, sourceDoc, {}, action === 'move' ? sharedRow : ROWS);
   const before = readDashboardLayoutSetting(database, 'dashboard').rows;
 
   fireEvent.pointerDown(screen.getByTestId('widget-surface-v1'));
   // Invoke the actual WidgetSource callbacks supplied to the nested header's
   // menu. Both layout actions must override that header's source history.
-  act(() => {
+  await act(async () => {
     const actions = mockWidgetActions.get('v1');
 
     expect(actions).toBeDefined();
     if (action === 'duplicate') actions?.duplicate();
-    else actions?.move('down');
+    else actions?.move('right');
+    // The duplicate inserts once its view copy exists.
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
   });
   expect(readDashboardLayoutSetting(database, 'dashboard').rows).not.toEqual(before);
   const modifier = /Mac|iPod|iPhone|iPad/.test(window.navigator.platform) ? { metaKey: true } : { ctrlKey: true };
@@ -737,6 +788,52 @@ describe('in the load queue', () => {
     expect(widgetPlaceholder('w1')?.dataset.reason).toBe('loading');
     cleanup();
   });
+
+  /**
+   * Fix B4: a load that never settles must not hold its slot for good, or two
+   * stalled sources would keep every other widget waiting forever. The
+   * timeout is shared with desktop (`tokens.json` `loading.sourceLoadTimeoutMs`).
+   */
+  function sourceLoadTimeoutMs() {
+    const timeout = (DASHBOARD_LOADING as unknown as Record<string, number | undefined>).sourceLoadTimeoutMs;
+
+    expect(timeout).toEqual(expect.any(Number));
+    return timeout as number;
+  }
+
+  it.each([
+    ['document load', () => (mockLoadPending = true)],
+    ['permission probe', () => (mockPermissionPending = true)],
+  ])(
+    'gives the slot of a source whose %s never settles to the next widget after the source load timeout',
+    (_what, stall) => {
+      const timeout = sourceLoadTimeoutMs();
+
+      jest.useFakeTimers();
+      stall();
+      const { cleanup } = setupQueue();
+
+      // w1 and w2 hold both slots and never get further than the loading placeholder.
+      expect(widgetPlaceholder('w1')?.dataset.reason).toBe('loading');
+      expect(widgetPlaceholder('w2')?.dataset.reason).toBe('loading');
+      expect(mockLoadedViewIds.has('v3')).toBe(false);
+      act(() => {
+        jest.advanceTimersByTime(timeout - 1);
+      });
+      expect(mockLoadedViewIds.has('v3')).toBe(false);
+
+      act(() => {
+        jest.advanceTimersByTime(1);
+      });
+
+      // Both stalled loads gave their slots up: the third widget loads its source.
+      expect(mockLoadedViewIds.has('v3')).toBe(true);
+      // A stalled widget never turns into an empty card.
+      expect(screen.queryByTestId('widget-surface-v1')).toBeNull();
+      expect(within(widgetBox('w1')).queryByTestId('dashboard-widget-placeholder')).toBeTruthy();
+      cleanup();
+    }
+  );
 });
 
 describe('leaving a dashboard', () => {
@@ -766,13 +863,28 @@ describe('leaving a dashboard', () => {
       ResizeObserver: window.ResizeObserver,
       MutationObserver: window.MutationObserver,
     };
+    const intersections: { report: () => void }[] = [];
     const recorder = (kind: string) =>
       class {
         private readonly targets = new Set<object>();
 
-        constructor(_callback: unknown, options?: { root?: unknown }) {
+        constructor(
+          private readonly callback: (records: unknown[], observer: unknown) => void,
+          options?: { root?: unknown }
+        ) {
           watching.set(`${kind}#${watching.size}`, this.targets);
-          if (kind === 'IntersectionObserver') roots.push(options?.root);
+          if (kind === 'IntersectionObserver') {
+            roots.push(options?.root);
+            intersections.push(this);
+          }
+        }
+
+        /** Reports every observed box as intersecting, as the browser does after `observe`. */
+        report() {
+          this.callback(
+            Array.from(this.targets, (target) => ({ target, isIntersecting: true })),
+            this
+          );
         }
 
         observe(target: object) {
@@ -802,6 +914,8 @@ describe('leaving a dashboard', () => {
           .map(([name]) => name),
       created: () => watching.size,
       intersectionRoots: () => roots,
+      /** Every box of the visits so far comes into view: the queued widgets start. */
+      reportEverythingVisible: () => act(() => intersections.forEach((observer) => observer.report())),
       restore: () => Object.assign(window, originals),
     };
   }
@@ -945,12 +1059,19 @@ describe('leaving a dashboard', () => {
           </DatabaseContext.Provider>
         );
 
-        // The host's widget starts at once; the others wait for the observer's first report, which never comes here.
+        // The host's widget starts at once; the others wait for the observer's first report.
         expect(screen.getByTestId('widget-surface-v0')).toBeTruthy();
         expect(screen.getAllByTestId('dashboard-widget')).toHaveLength(4);
         expect(screen.queryByTestId('widget-surface-v1')).toBeNull();
         expect(widgetPlaceholder('w1')?.dataset.reason).toBe('loading');
         expect(observers.intersectionRoots().at(-1) ?? null).toBeNull();
+        // Every box comes into view: two sources load, the third waits for a slot, then loads too.
+        observers.reportEverythingVisible();
+        expect(screen.getByTestId('widget-surface-v1')).toBeTruthy();
+        expect(screen.getByTestId('widget-surface-v2')).toBeTruthy();
+        expect(screen.queryByTestId('widget-surface-v3')).toBeNull();
+        act(() => mockLoadReporters.get('v1')?.('complete'));
+        expect(screen.getByTestId('widget-surface-v3')).toBeTruthy();
         unmount();
 
         expect(observers.stillWatching()).toEqual([]);

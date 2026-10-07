@@ -2,9 +2,10 @@
 Feature: Dashboard widgets
   Widgets render existing database views from the host database or any other
   database in the workspace. The picker adds existing views or creates a new
-  one, the widget menu opens, duplicates and deletes widgets, and a dashboard
-  holds at most 12 widgets with at most 4 per row. Widgets whose view is gone
-  or not accessible keep their place and explain why.
+  one, the widget menu opens the data source, duplicates and deletes widgets,
+  and a dashboard holds at most 12 widgets with at most 4 per row (refused
+  without a banner). Widgets whose view is gone or not accessible keep their
+  place and explain why.
 
   Background:
     Given the dashboard fixture workspace is ready
@@ -29,6 +30,7 @@ Feature: Dashboard widgets
     Then the dashboard shows 1 widget
     And the widget shows a new "Board" view of "Projects"
     And the new board widget shows the "Doing" column
+    And the "Projects" tab bar does not show the view of widget 1
 
   Scenario: The widget header shows the view title
     Given the dashboard has these widgets:
@@ -42,15 +44,16 @@ Feature: Dashboard widgets
     Given the dashboard has these widgets:
       | row | widget     |
       | 1   | Tasks Grid |
-    When I choose "open" in the "Tasks Grid" widget menu
+    When I click the dashboard Done button
+    And I choose "view-data-source" in the "Tasks Grid" widget menu
     Then the "Tasks Grid" view is open outside the dashboard
 
-  Scenario: Change view swaps the widget's view in place from its title menu
+  Scenario: Change view swaps the widget's view in place from its view settings
     Given the dashboard has these widgets:
       | row | widget        |
       | 1   | Projects Grid |
       | 1   | Tasks Grid    |
-    When I change the "Projects Grid" widget to the "Notes Grid" view from its title menu
+    When I change the "Projects Grid" widget to the "Notes Grid" view from its view settings
     Then the dashboard shows 2 widgets
     And dashboard row 1 has 1 widgets showing the "Notes Grid" view
     And dashboard row 1 has 1 widgets showing the "Tasks Grid" view
@@ -62,7 +65,8 @@ Feature: Dashboard widgets
       | 1   | Projects Grid |
     When I choose "duplicate" in the "Projects Grid" widget menu
     Then the dashboard shows 2 widgets
-    And dashboard row 1 has 2 widgets showing the "Projects Grid" view
+    And dashboard row 1 holds "Projects Grid, Projects Grid (1)"
+    And widget 2 shows a different view than widget 1
     And every dashboard row spans 12 columns
 
   Scenario: Delete removes the widget but not its view
@@ -71,7 +75,7 @@ Feature: Dashboard widgets
       | 1   | Projects Grid |
     When I choose "delete" in the "Projects Grid" widget menu
     Then the dashboard shows 0 widgets
-    And the dashboard shows its empty state with an Add widget button
+    And the dashboard shows its edit-mode empty state with a New view button
     And the dashboard layout setting exists with 0 widgets
     And the "Projects" database still has its "Grid" view
 
@@ -85,7 +89,7 @@ Feature: Dashboard widgets
 
   Scenario: A thirteenth widget is refused
     Given the dashboard has 12 widgets in 3 full rows
-    Then adding another widget is refused with the widget limit message
+    Then adding another widget is refused with the Dashboard is full tooltip
     And the dashboard shows 12 widgets
 
   Scenario: A fifth widget in a row is refused
@@ -101,6 +105,9 @@ Feature: Dashboard widgets
     When I drag the "Tasks Grid #2" widget onto the right side of the "Notes Grid" widget
     Then dashboard row 1 holds "Projects Grid, Tasks Grid, Notes Grid, Projects Grid #2"
     And dashboard row 2 holds "Tasks Grid #2"
+    # The drop happened and was refused (a drag that never started would leave the rows as they are too).
+    And the refusal "A row holds up to 4 widgets." was announced
+    And the dashboard shows no limit banner
 
   Scenario: A widget whose view was trashed shows the not-found placeholder
     Given the dashboard has these widgets:

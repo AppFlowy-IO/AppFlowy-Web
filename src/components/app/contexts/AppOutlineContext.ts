@@ -72,3 +72,12 @@ export interface AppOutlineContextType {
 }
 
 export const AppOutlineContext = createContext<AppOutlineContextType | null>(null);
+
+/**
+ * The outline read at call time, with no subscription: for a callback that
+ * looks a view up only when it runs (a dashboard's owner lookup). Its value
+ * is stable, so reading it never re-renders the reader on folder changes.
+ *
+ * **Provider:** `AppBusinessLayer`
+ */
+export const AppOutlineReaderContext = createContext<(() => View[] | undefined) | null>(null);

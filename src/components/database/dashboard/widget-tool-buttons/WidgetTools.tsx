@@ -9,6 +9,7 @@ import {
 } from '@/application/database-yjs';
 import { cn } from '@/lib/utils';
 
+import { useWidgetPrivateSnapshot } from '../private/WidgetPrivateContext';
 import {
   getDashboardWidgetTools,
   WIDGET_TOOL_SLOT_CLASS,
@@ -18,25 +19,28 @@ import {
 import { useWidgetContext } from '../WidgetContext';
 
 import { WidgetFilterTool } from './WidgetFilterTool';
+import { WidgetNewTool } from './WidgetNewTool';
+import { WidgetSearchTool } from './WidgetSearchTool';
 import { WidgetSettingsTool } from './WidgetSettingsTool';
 import { WidgetSortTool } from './WidgetSortTool';
 
-// WP09: Search and `+ New` have no component yet (their caps are off), so they would keep an empty slot.
-const TOOL_COMPONENTS: Record<WidgetTool, ComponentType | null> = {
+const TOOL_COMPONENTS: Record<WidgetTool, ComponentType> = {
   filter: WidgetFilterTool,
   sort: WidgetSortTool,
-  search: null,
-  new: null,
+  search: WidgetSearchTool,
+  new: WidgetNewTool,
   settings: WidgetSettingsTool,
 };
 
 /**
  * The tools of a dashboard widget's header (`getDashboardWidgetTools`), in
  * place of the database toolbar: Filter and Sort open popovers, and Edit mode
- * adds Settings, which opens the widget's settings host. Hidden tools keep
+ * adds Settings, which opens the widget's settings host; View mode adds
+ * Search and `+ New` for tables, lists and boards (WP09). Hidden tools keep
  * their slot and stay focusable; they show on hover, on focus, while a
- * popover or the menu is open, in Edit mode, and an active filter or sort
- * always shows (in accent).
+ * popover or the menu is open or the search field is expanded, in Edit mode,
+ * and an active filter or sort always shows (in accent), as does one with
+ * unsaved private changes.
  */
 export function WidgetTools() {
   const widget = useWidgetContext();
@@ -45,6 +49,7 @@ export function WidgetTools() {
   const conditionsReadOnly = useConditionsReadOnly();
   const filters = useFiltersSelector();
   const sorts = useSortsSelector();
+  const privateParts = useWidgetPrivateSnapshot();
 
   // The layout is read from the view after the first render.
   if (layout === null) return null;
@@ -55,8 +60,10 @@ export function WidgetTools() {
     canWrite: !readOnly,
     canEditConditions: !conditionsReadOnly,
   });
+  // An active rule, or an unsaved one (the tool's dot), keeps a tool shown.
   const isActive = (tool: WidgetTool) =>
-    (tool === 'filter' && filters.length > 0) || (tool === 'sort' && sorts.length > 0);
+    (tool === 'filter' && (filters.length > 0 || Boolean(privateParts?.filters))) ||
+    (tool === 'sort' && (sorts.length > 0 || Boolean(privateParts?.sorts)));
 
   if (tools.length === 0) return null;
 
@@ -79,7 +86,7 @@ export function WidgetTools() {
             data-widget-tool={tool}
             key={tool}
           >
-            {Tool ? <Tool /> : null}
+            <Tool />
           </div>
         );
       })}

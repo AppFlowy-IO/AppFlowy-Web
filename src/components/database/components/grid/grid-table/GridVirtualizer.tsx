@@ -1,5 +1,4 @@
 import { memo, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
@@ -12,11 +11,13 @@ import GridVirtualRow from '@/components/database/components/grid/grid-row/GridV
 import GridStickyHeader from '@/components/database/components/grid/grid-table/GridStickyHeader';
 import { useGridDnd } from '@/components/database/components/grid/grid-table/useGridDnd';
 import { PADDING_INLINE, useGridVirtualizer } from '@/components/database/components/grid/grid-table/useGridVirtualizer';
+import { RowsLoadingRow } from '@/components/database/components/loading/RowsLoadingRow';
 import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
 import DatabaseStickyHorizontalScrollbar from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
 import { useGridContext, useGridHydration } from '@/components/database/grid/useGridContext';
 import { getEmbeddedGridViewportStyle } from '@/components/database/layout';
+import { TooltipGroupProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 import { useColumnResize } from '../grid-column/useColumnResize';
@@ -24,52 +25,17 @@ import { useColumnResize } from '../grid-column/useColumnResize';
 /** The header row the sticky header draws; one object, so its memoized row keeps its render. */
 const STICKY_HEADER_ROW: RenderRow = Object.freeze({ key: 'sticky-header', type: RenderRowType.Header });
 
-const GRID_LOADING_DOT_COLORS = ['#00b5ff', '#e3006d', '#f7931e'] as const;
-
-const gridLoadingDots = (
-  <div className={'flex h-full items-center gap-1.5'}>
-    {GRID_LOADING_DOT_COLORS.map((color, index) => (
-      <span
-        key={color}
-        className={'h-1.5 w-1.5 animate-bounce rounded-full'}
-        style={{
-          animationDelay: `${index * 120}ms`,
-          animationDuration: '900ms',
-          backgroundColor: color,
-        }}
-      />
-    ))}
-  </div>
-);
-
 /**
  * The loading row. For a view still reading its rows it reports how many it
  * read, so a slow, large source never looks like an empty result.
  */
 function GridLoadingRow() {
-  const { t } = useTranslation();
-  const hydration = useGridHydration();
-
   return (
-    <div
-      data-testid={'grid-loading-indicator'}
-      data-loaded-row-count={hydration?.ready}
-      data-total-row-count={hydration?.total}
-      className={'flex h-9 w-full items-center justify-center gap-2'}
-      aria-label={'Loading rows'}
-      role={'status'}
-    >
-      {gridLoadingDots}
-      {hydration ? (
-        <span className={'text-xs text-text-tertiary'} data-testid={'grid-loading-progress'}>
-          {t('grid.row.loadingRowsProgress', {
-            loaded: hydration.ready,
-            total: hydration.total,
-            defaultValue: 'Loading rows… {{loaded}}/{{total}}',
-          })}
-        </span>
-      ) : null}
-    </div>
+    <RowsLoadingRow
+      hydration={useGridHydration()}
+      testId={'grid-loading-indicator'}
+      progressTestId={'grid-loading-progress'}
+    />
   );
 }
 
@@ -221,117 +187,120 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
 
   return (
     <GridDragContext.Provider value={contextValue}>
-      <div
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        ref={parentRef}
-        data-parity-id='dash-widget-grid-scrollbar'
-        className={cn(
-          'appflowy-custom-scroller appflowy-hidden-horizontal-scrollbar',
-          isDocumentBlock && 'min-h-0',
-          isDocumentBlock && embeddedViewportStyle?.height === undefined && 'flex-1'
-        )}
-        style={{
-          height: embeddedViewportStyle?.height,
-          maxHeight: embeddedViewportStyle?.maxHeight,
-          overflowY: 'auto',
-          overflowX: 'auto',
-          scrollBehavior: 'auto',
-        }}
-        onScroll={handleScroll}
-      >
+      {/* One tooltip provider for the grid's rows and cells, not one per tooltip (W8). */}
+      <TooltipGroupProvider>
         <div
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          ref={parentRef}
+          data-parity-id='dash-widget-grid-scrollbar'
+          className={cn(
+            'appflowy-custom-scroller appflowy-hidden-horizontal-scrollbar',
+            isDocumentBlock && 'min-h-0',
+            isDocumentBlock && embeddedViewportStyle?.height === undefined && 'flex-1'
+          )}
           style={{
-            height: gridContentHeight,
-            position: 'relative',
-            opacity: isReady ? 1 : 0, // Hide content until parent offset is stable to prevent scroll jumps
+            height: embeddedViewportStyle?.height,
+            maxHeight: embeddedViewportStyle?.maxHeight,
+            overflowY: 'auto',
+            overflowX: 'auto',
+            scrollBehavior: 'auto',
           }}
+          onScroll={handleScroll}
         >
-          {rowItems.map((row) => {
-            const rowData = data[row.index];
-            const rowId = rowData.rowId;
-            const isPlaceholderRow = rowData.type === RenderRowType.PlaceholderRow;
-            const isFullWidthControlRow =
-              rowData.type === RenderRowType.NewRow ||
-              rowData.type === RenderRowType.LoadMoreRow ||
-              rowData.type === RenderRowType.GroupHeader ||
-              rowData.type === RenderRowType.GroupSeparator;
+          <div
+            style={{
+              height: gridContentHeight,
+              position: 'relative',
+              opacity: isReady ? 1 : 0, // Hide content until parent offset is stable to prevent scroll jumps
+            }}
+          >
+            {rowItems.map((row) => {
+              const rowData = data[row.index];
+              const rowId = rowData.rowId;
+              const isPlaceholderRow = rowData.type === RenderRowType.PlaceholderRow;
+              const isFullWidthControlRow =
+                rowData.type === RenderRowType.NewRow ||
+                rowData.type === RenderRowType.LoadMoreRow ||
+                rowData.type === RenderRowType.GroupHeader ||
+                rowData.type === RenderRowType.GroupSeparator;
 
-            return (
-              <div
-                key={row.key}
-                data-row-id={rowId}
-                data-row-key={getRenderRowKey(rowData)}
-                data-index={row.index}
-                ref={virtualizer.measureElement}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  transform: `translateY(${row.start - virtualizer.options.scrollMargin}px)`,
-                  display: 'flex',
-                  right: isPlaceholderRow ? 0 : undefined,
-                  pointerEvents: isPlaceholderRow ? 'none' : undefined,
-                  zIndex: rowData.type === RenderRowType.NewRow ? 1 : undefined,
-                }}
-              >
-                {isPlaceholderRow ? (
-                  <GridLoadingRow />
-                ) : isFullWidthControlRow ? (
-                  <div
-                    style={{
-                      paddingLeft: columnItems[0]?.start,
-                      paddingRight: isDocumentBlock ? 0 : PADDING_INLINE,
-                      width: totalSize - (paddingEnd ?? 0),
-                    }}
-                  >
-                    {rowData.type === RenderRowType.LoadMoreRow ? (
-                      <GridLoadMoreRow remainingCount={rowData.remainingRowCount ?? 0} />
-                    ) : rowData.type === RenderRowType.GroupHeader ? (
-                      <GridGroupHeader data={rowData} />
-                    ) : rowData.type === RenderRowType.GroupSeparator ? (
-                      <div aria-hidden className='h-3 min-w-full bg-fill-content' />
-                    ) : (
-                      <GridNewRow groupFieldId={rowData.groupFieldId} groupId={rowData.groupId} />
-                    )}
-                  </div>
-                ) : (
-                  <GridVirtualRow
-                    rowIndex={row.index}
-                    rowData={rowData}
-                    columns={columns}
-                    totalSize={totalSize}
-                    columnItems={columnItems}
-                    onResizeColumnStart={handleResizeStart}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-        {!isDocumentBlock && (
-          <DatabaseStickyTopOverlay>
-            <GridStickyHeader
-              ref={stickyHeaderRef}
-              columns={columns}
-              rowData={STICKY_HEADER_ROW}
-              totalSize={totalSize}
-              columnItems={columnItems}
+              return (
+                <div
+                  key={row.key}
+                  data-row-id={rowId}
+                  data-row-key={getRenderRowKey(rowData)}
+                  data-index={row.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    transform: `translateY(${row.start - virtualizer.options.scrollMargin}px)`,
+                    display: 'flex',
+                    right: isPlaceholderRow ? 0 : undefined,
+                    pointerEvents: isPlaceholderRow ? 'none' : undefined,
+                    zIndex: rowData.type === RenderRowType.NewRow ? 1 : undefined,
+                  }}
+                >
+                  {isPlaceholderRow ? (
+                    <GridLoadingRow />
+                  ) : isFullWidthControlRow ? (
+                    <div
+                      style={{
+                        paddingLeft: columnItems[0]?.start,
+                        paddingRight: isDocumentBlock ? 0 : PADDING_INLINE,
+                        width: totalSize - (paddingEnd ?? 0),
+                      }}
+                    >
+                      {rowData.type === RenderRowType.LoadMoreRow ? (
+                        <GridLoadMoreRow remainingCount={rowData.remainingRowCount ?? 0} />
+                      ) : rowData.type === RenderRowType.GroupHeader ? (
+                        <GridGroupHeader data={rowData} />
+                      ) : rowData.type === RenderRowType.GroupSeparator ? (
+                        <div aria-hidden className='h-3 min-w-full bg-fill-content' />
+                      ) : (
+                        <GridNewRow groupFieldId={rowData.groupFieldId} groupId={rowData.groupId} />
+                      )}
+                    </div>
+                  ) : (
+                    <GridVirtualRow
+                      rowIndex={row.index}
+                      rowData={rowData}
+                      columns={columns}
+                      totalSize={totalSize}
+                      columnItems={columnItems}
+                      onResizeColumnStart={handleResizeStart}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {!isDocumentBlock && (
+            <DatabaseStickyTopOverlay>
+              <GridStickyHeader
+                ref={stickyHeaderRef}
+                columns={columns}
+                rowData={STICKY_HEADER_ROW}
+                totalSize={totalSize}
+                columnItems={columnItems}
+                onScrollLeft={handleScrollLeft}
+                onResizeColumnStart={handleResizeStart}
+              />
+            </DatabaseStickyTopOverlay>
+          )}
+
+          <DatabaseStickyBottomOverlay scrollElement={virtualizer.scrollElement}>
+            <DatabaseStickyHorizontalScrollbar
               onScrollLeft={handleScrollLeft}
-              onResizeColumnStart={handleResizeStart}
+              ref={bottomScrollbarRef}
+              totalSize={totalSize}
+              visible={Boolean(isHover && totalSize)}
             />
-          </DatabaseStickyTopOverlay>
-        )}
-
-        <DatabaseStickyBottomOverlay scrollElement={virtualizer.scrollElement}>
-          <DatabaseStickyHorizontalScrollbar
-            onScrollLeft={handleScrollLeft}
-            ref={bottomScrollbarRef}
-            totalSize={totalSize}
-            visible={Boolean(isHover && totalSize)}
-          />
-        </DatabaseStickyBottomOverlay>
-      </div>
+          </DatabaseStickyBottomOverlay>
+        </div>
+      </TooltipGroupProvider>
     </GridDragContext.Provider>
   );
 }

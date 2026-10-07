@@ -18,10 +18,10 @@ Feature: Dashboard widget chrome
     When I move the pointer away from the dashboard
     Then the "Grid" widget shows no tools
     When I hover the "Grid" widget
-    Then the "Grid" widget shows the tools "Filter, Sort"
+    Then the "Grid" widget shows the tools "Filter, Sort, Search, New"
     And the "Board" widget shows no tools
     When I hover the "Board" widget
-    Then the "Board" widget shows the tools "Filter"
+    Then the "Board" widget shows the tools "Filter, Sort, Search, New"
 
   Scenario: An active widget filter keeps its highlighted icon visible without hover
     Given a dashboard of "Projects" shows its "Grid" and "Board" views side by side
@@ -100,7 +100,7 @@ Feature: Dashboard widget chrome
     When I hover the "Grid" widget
     And I click the "Widget options" button of the "Grid" widget
     Then the widget menu is open
-    When I choose "open" in the widget menu
+    When I choose "view-data-source" in the widget menu
     Then the "Grid" view is open outside the dashboard
 
   Scenario: The dashboard toolbar orders Filter, Settings and a text-only Edit button

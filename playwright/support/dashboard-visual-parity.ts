@@ -60,6 +60,7 @@ import {
 } from '../../src/application/database-yjs/visual-parity';
 import { Types } from '../../src/application/types';
 
+import { pressDashboardUndo } from './dashboard-add-widget-helpers';
 import { renameDatabaseView } from './dashboard-owned-views-helpers';
 import { mergeRawLayout } from './dashboard-parity-helpers';
 import { equalRowWidths, escapeRegExp } from './dashboard-shared-helpers';
@@ -89,8 +90,10 @@ import {
   selectGlobalFilter,
   statusOptionId,
   toggleGlobalFilterOption,
+  waitForDashboardSync,
 } from './dashboard-test-helpers';
 import { GlyphIdentity, IconRuntimeIndex } from './dashboard-visual-parity-icons';
+import { searchWidget } from './dashboard-widget-content-helpers';
 import {
   callParityProbe,
   GlyphInstance,
@@ -247,6 +250,29 @@ const PARITY_BACKLOG: DatabaseSpec = {
   rows: [],
 };
 
+/**
+ * The WP12 "content" dataset of `series.json` for the stacked bar instance of
+ * the charts scene: Channel on X, Audience as the Group by, one row without a
+ * Channel and one without an Audience. Desktop seeds the same rows.
+ */
+const PARITY_CONTENT: DatabaseSpec = {
+  fields: [
+    { name: 'Channel', type: FieldType.SingleSelect, options: ['Blog', 'Video', 'Podcast'] },
+    { name: 'Audience', type: FieldType.SingleSelect, options: ['Business', 'Consumers', 'SMB'] },
+    { name: 'Reach', type: FieldType.Number },
+  ],
+  rows: [
+    { Name: 'Launch post', Channel: 'Blog', Audience: 'Business', Reach: 100 },
+    { Name: 'Pricing post', Channel: 'Blog', Audience: 'Consumers', Reach: 50 },
+    { Name: 'Tips post', Channel: 'Blog', Audience: 'Consumers', Reach: 30 },
+    { Name: 'Demo video', Channel: 'Video', Audience: 'SMB', Reach: 200 },
+    { Name: 'Webinar', Channel: 'Video', Audience: 'Business', Reach: 10 },
+    { Name: 'Episode 1', Channel: 'Podcast', Audience: 'Consumers', Reach: 40 },
+    { Name: 'Episode 2', Channel: 'Podcast', Reach: 5 },
+    { Name: 'Guest note', Audience: 'Business', Reach: 7 },
+  ],
+};
+
 /** A saved "Stage is Doing" filter on a view (written to the open source database doc). */
 async function addSavedSelectFilter(page: Page, viewId: string, fieldId: string, optionId: string) {
   const filterId = `pf-${Date.now().toString(36)}`;
@@ -366,6 +392,17 @@ export async function seedCanonicalParityDashboard(page: Page, request: APIReque
     showEmptyValues: false,
   });
   remember('Backlog Chart', 'Backlog', backlogChart, 'chart');
+
+  // WP12: the charts scene's bar chart grouped by a second property, Stacked.
+  await addFixtureDatabase(page, request, 'Content', PARITY_CONTENT);
+  const content = fixtureDatabase(page, 'Content');
+  const stackedChart = await addViewThroughTabs(page, 'Content', 'Chart');
+
+  await setChartLayout(page, stackedChart, { chartType: CHART_TYPES.Bar, xFieldId: content.fieldIds.Channel });
+  await mergeRawLayout(page, stackedChart, '3', { group_by_field_id: content.fieldIds.Audience, group_style: 'stacked' });
+  await expect(page.locator('[data-parity-id="dash-chart-bar-segment"]').first()).toBeVisible({ timeout: 30_000 });
+  await renameDatabaseView(page, request, 'Content', stackedChart, 'Stacked');
+  remember('Content Stacked', 'Content', stackedChart, 'chart');
   world.viewsByName = { ...(world.viewsByName ?? {}), ...named };
 
   // The user report shape: the foreign grid carries one saved filter.
@@ -401,7 +438,7 @@ type InstanceSpec =
   | { label: string }
   | { row: number }
   | { nth: number }
-  | { selected: true }
+  | { selected: boolean }
   | { page: true }
   | { unavailable: string };
 
@@ -419,10 +456,18 @@ interface SceneSpec {
   /** The widget that un-instanced widget-level checks and interactions use first. */
   defaultWidget?: string;
   instances?: Record<string, InstanceSpec>;
+  /** WP09: the default widget's search is expanded on this query (View mode only). */
+  search?: string;
+  /** WP14b: a phone (a mobile context): the scene waits for the phone toolbar and the always-shown widget tools. */
+  mobile?: boolean;
+  /** WP13: every capture opens this bar's drill-down first (Esc between groups closes it). */
+  drill?: { widget: string; category: string };
   unavailable?: string;
 }
 
 const TWO_WIDGETS = [['Projects Grid', 'Projects Board']];
+/** The `drilldown` scene's side-peek instance. */
+const DRILL_ROW_OPENED = 'after opening a drill-down row';
 const GRID_INSTANCE = { 'Grid widget': { label: 'Projects Grid' } };
 
 /** How the web probe builds each scene of `visual-metrics.json` on the canonical fixture. */
@@ -472,21 +517,26 @@ export const PARITY_SCENES: Record<string, SceneSpec> = {
     rows: [
       ['Projects Bar', 'Projects Donut', 'Projects Number'],
       ['Projects Line', 'Backlog Chart'],
+      // WP12: a bar chart of the "content" dataset grouped by Audience, Stacked.
+      ['Content Stacked'],
     ],
     instances: {
       'middle widget': { label: 'Projects Donut' },
       'bar chart widget': { label: 'Projects Bar' },
       'a chart whose source has no rows': { label: 'Backlog Chart' },
       'selected type': { selected: true },
+      'unselected types': { selected: false },
       'a chart before its rows load': { unavailable: 'the loading state is transient; the web probe cannot hold it' },
-      'bar chart grouped by a second property, Stacked': { unavailable: 'stacked bars arrive in wave 4 (WP12)' },
+      'bar chart grouped by a second property, Stacked': { label: 'Content Stacked' },
     },
   },
   empty: { id: 'empty', rows: [], instances: { 'after clicking + New view': { page: true } } },
+  // WP14b: View mode only; `dash-widget-tools` at opacity 1 at rest and `order-dash-mobile-toolbar` ([dash-toolbar-filter]).
   'mobile-390': {
     id: 'mobile-390',
     rows: TWO_WIDGETS,
     viewport: { width: 390, height: 844 },
+    mobile: true,
     defaultWidget: 'Projects Grid',
     instances: GRID_INSTANCE,
   },
@@ -500,8 +550,27 @@ export const PARITY_SCENES: Record<string, SceneSpec> = {
   // A document whose first block links Projects as a dashboard. The block is a new, empty
   // linked dashboard: the contract measures only its toolbar there.
   embedded: { id: 'embedded', rows: [], embedded: true },
-  'widget-search': { id: 'widget-search', unavailable: 'web widgets have no search tool before wave 4 (WP09)' },
-  drilldown: { id: 'drilldown', unavailable: 'the drill-down dialog arrives in wave 5 (WP13a)' },
+  // WP09: the Projects grid's search expanded on a query that matches nothing, so the
+  // field, "No results" and "Clear search" are all on screen.
+  'widget-search': {
+    id: 'widget-search',
+    rows: TWO_WIDGETS,
+    search: 'zzqx',
+    defaultWidget: 'Projects Grid',
+    instances: GRID_INSTANCE,
+  },
+  // WP13: the charts dashboard after clicking the second Status bar ("Doing") of Projects Bar;
+  // the side peek is the drill-down's first row opened.
+  drilldown: {
+    id: 'drilldown',
+    rows: [
+      ['Projects Bar', 'Projects Donut', 'Projects Number'],
+      ['Projects Line', 'Backlog Chart'],
+      ['Content Stacked'],
+    ],
+    drill: { widget: 'Projects Bar', category: 'Doing' },
+    instances: { [DRILL_ROW_OPENED]: { page: true } },
+  },
 };
 
 /**
@@ -516,6 +585,8 @@ const SCENE_ORDER = [
   'filtered-grid',
   'three-rows',
   'charts',
+  'drilldown',
+  'widget-search',
   'empty',
   'mobile-390',
   'read-only-grid',
@@ -595,6 +666,53 @@ async function applyLayout(page: Page, layout: LayoutSpec) {
   for (const label of layout.rows.flat()) await waitForWidgetContent(page, page, label);
 }
 
+/**
+ * Wait until the reader shows the scene's layout: exactly its widgets, each
+ * with its title pill (or without, when titles are hidden). Under load an owner's
+ * layout write can stay unacknowledged and never reach the reader
+ * (VISUAL-PARITY §11), so a write the reader has not seen is made again.
+ */
+async function waitForMemberLayout(
+  page: Page,
+  request: APIRequestContext,
+  member: Page,
+  scene: SceneSpec,
+  globalFilters: PersistedGlobalFilter[]
+) {
+  const showTitles = scene.showTitles ?? true;
+  const labels = (scene.rows ?? []).flat();
+  const shown = async () => {
+    if ((await DashboardSelectors.widgets(member).count()) !== labels.length) return false;
+    for (const label of labels) {
+      const widget = widgetLocatorById(member, widgetIdFor(label));
+      const pill = widget.locator('[data-parity-id="dash-widget-title-pill"]');
+
+      if (!(await widget.isVisible()) || (await pill.isVisible()) !== showTitles) return false;
+    }
+
+    return true;
+  };
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const synced = await expect
+      .poll(shown, { timeout: 15_000 })
+      .toBe(true)
+      .then(() => true)
+      .catch(() => false);
+
+    if (synced) return;
+    await applyLayout(page, {
+      rows: scene.rows ?? [],
+      globalFilters,
+      showTitles: scene.showTitles,
+      showIcons: scene.showIcons,
+    });
+    await waitForDashboardSync(page, request).catch(() => undefined);
+  }
+
+  await expect.poll(shown, { timeout: 15_000, message: 'the reader shows the scene layout' }).toBe(true);
+}
+
 /** Enter the mode with the toolbar Edit/Done button; a toolbar without it (phone width, reader) stays in View mode. */
 async function setMode(target: Page, mode: 'view' | 'edit'): Promise<string | null> {
   if (mode === 'edit') {
@@ -640,6 +758,9 @@ async function settle(target: Page, ms = 400) {
 async function resetPointer(target: Page) {
   await target.mouse.up().catch(() => undefined);
   await target.keyboard.press('Escape').catch(() => undefined);
+  // Rest is nothing hovered and nothing focused: a closed menu hands the focus
+  // back to its title, which would keep that row's controls shown.
+  await target.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.()).catch(() => undefined);
   await target.mouse.move(4, 4);
   await settle(target, 250);
 }
@@ -675,6 +796,20 @@ async function buildEmbeddedScene(page: Page, mode: 'view' | 'edit'): Promise<Bu
   return { target: page, labels: {} };
 }
 
+/**
+ * The `mobile-390` scene is ready once the phone surfaces are: the toolbar
+ * holding the Filter button alone, and every widget's Search / Filter tools,
+ * which a phone always shows (no hover needed).
+ */
+async function waitForPhoneSurfaces(page: Page, labels: Record<string, string>) {
+  await expect(page.locator('[data-parity-id="dash-toolbar"][data-mobile="true"]')).toBeVisible({ timeout: 30_000 });
+  for (const widgetId of Object.values(labels)) {
+    await expect(
+      DashboardSelectors.widget(page, widgetId).locator('[data-parity-id="dash-widget-tools"][data-mobile="true"]')
+    ).toBeVisible({ timeout: 30_000 });
+  }
+}
+
 async function buildScene(
   page: Page,
   request: APIRequestContext,
@@ -684,6 +819,9 @@ async function buildScene(
   if (scene.unavailable) return { target: page, unavailable: scene.unavailable, labels: {} };
   const { mode, theme } = parseParityState(state);
   const labels = Object.fromEntries((scene.rows ?? []).flat().map((label) => [label, widgetIdFor(label)]));
+
+  // A widget search of an earlier scene must not narrow this one.
+  await clearWidgetSearches(page);
   const globalFilters =
     scene.globalFilters === 'two'
       ? [statusGlobalFilter(page), buildGlobalFilter(page, 'Stage', FieldType.SingleSelect, 0, '', { Tasks: 'Stage' })]
@@ -712,6 +850,7 @@ async function buildScene(
 
     await member.emulateMedia({ reducedMotion: 'reduce' });
     await setTheme(member, theme);
+    await waitForMemberLayout(page, request, member, scene, globalFilters);
     for (const label of Object.keys(labels)) await waitForWidgetContent(page, member, label);
     if (mode === 'edit') return { target: member, unavailable: 'a reader cannot enter Edit mode', labels };
     await resetPointer(member);
@@ -722,8 +861,40 @@ async function buildScene(
 
   if (modeProblem) return { target: page, unavailable: modeProblem, labels };
   if (scene.localChange && mode === 'view') await makeLocalFilterChange(page);
+  if (scene.mobile) await waitForPhoneSurfaces(page, labels);
   await resetPointer(page);
+  if (scene.search) {
+    if (mode === 'edit') {
+      return {
+        target: page,
+        unavailable: 'Edit mode hides the widget Search tool and clears its query (WP09 §1.2)',
+        labels,
+      };
+    }
+
+    await openNoMatchSearch(page, labels[scene.defaultWidget ?? 'Projects Grid'], scene.search);
+  }
+
   return { target: page, labels };
+}
+
+/** Expand a widget's search on a query that matches nothing, then leave the focus (Escape would clear it). */
+async function openNoMatchSearch(page: Page, widgetId: string, query: string) {
+  const widget = DashboardSelectors.widget(page, widgetId);
+
+  await searchWidget(widget, query);
+  await expect(widget.getByTestId('database-search-empty-state')).toBeVisible({ timeout: 30_000 });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
+  await page.mouse.move(4, 4);
+}
+
+/** Collapse every expanded widget search (Escape in its field clears and collapses it). */
+async function clearWidgetSearches(page: Page) {
+  const inputs = page.getByTestId('database-actions-search-input');
+
+  for (let attempt = 0; attempt < 8 && (await inputs.count()) > 0; attempt += 1) {
+    await inputs.first().press('Escape');
+  }
 }
 
 const PAGE_LEVEL_PREFIXES = [
@@ -773,7 +944,9 @@ function instanceScope(scene: SceneSpec, built: BuiltScene, id: string, pattern:
 
     if ('row' in spec) return { scope: { kind: 'row-index', index: spec.row }, label: `row ${spec.row + 1}` };
     if ('nth' in spec) return { scope: { kind: 'page' }, label: `instance ${spec.nth + 1}`, nth: spec.nth };
-    if ('selected' in spec) return { scope: { kind: 'page' }, label: 'selected', selected: true };
+    if ('selected' in spec) {
+      return { scope: { kind: 'page' }, label: spec.selected ? 'selected' : 'unselected', selected: spec.selected };
+    }
     return { scope: { kind: 'page' }, label: 'page' };
   }
 
@@ -795,7 +968,7 @@ function interactionWidget(scene: SceneSpec, built: BuiltScene, when: string, in
   if (spec && 'row' in spec) return { kind: 'row-index', index: spec.row };
   const prefer = defaultWidgetId(scene, built);
 
-  if (when === 'hover-bar' || when === 'chart-panel-open') {
+  if (when === 'hover-bar' || when === 'chart-panel-open' || when === 'chart-page-open') {
     return { kind: 'widget-containing', pattern: '^dash-chart-(bar|grid-line|tick-label)$', prefer };
   }
 
@@ -822,18 +995,38 @@ async function interact(
 ): Promise<Interaction | { unavailable: string }> {
   const none = { undo: async () => undefined };
   const escape = { undo: async () => resetPointer(target) };
+  // A sub-page or submenu takes the first Escape (back to its root page or menu).
+  const escapeTwice = {
+    undo: async () => {
+      await target.keyboard.press('Escape').catch(() => undefined);
+      await resetPointer(target);
+    },
+  };
 
   if (pickerNewView) {
-    const add = DashboardSelectors.addWidgetButton(target).filter({ visible: true }).first();
+    // WP06: the Edit-mode placeholder's "+ New view" pill inserts a default widget and docks the picker beside it.
+    const pill = DashboardSelectors.emptyNewViewButton(target);
+    const picker = DashboardSelectors.picker(target);
 
-    if (!(await add.isVisible())) return { unavailable: 'no add widget button (Edit mode only)' };
-    await add.click();
-    await expect(DashboardSelectors.picker(target)).toBeVisible();
-    const newView = DashboardSelectors.pickerNewView(target);
-
-    if (await newView.isEnabled()) await newView.click();
+    if (!(await pill.isVisible())) return { unavailable: 'no New view pill (Edit mode only)' };
+    await pill.click();
+    await expect(picker).toBeVisible();
+    await expect(picker).toHaveAttribute('data-state', 'ready');
     await settle(target);
-    return escape;
+    return {
+      // Close the picker, then undo the add: the scene is empty again for its next group.
+      undo: async () => {
+        await target.keyboard.press('Escape').catch(() => undefined);
+        await expect(picker)
+          .toHaveCount(0)
+          .catch(() => undefined);
+        await pressDashboardUndo(target).catch(() => undefined);
+        await expect(DashboardSelectors.emptyState(target))
+          .toBeVisible()
+          .catch(() => undefined);
+        await resetPointer(target);
+      },
+    };
   }
 
   if (when === 'rest') return none;
@@ -902,17 +1095,26 @@ async function interact(
       return none;
     }
 
-    case 'menu-open': {
+    case 'menu-open':
+    case 'move-to-row-open': {
       const title = await first(host.getByTestId('dashboard-widget-title-button'));
 
       if (!title) return { unavailable: 'no title pill to open the widget menu from' };
       await title.click();
       await expect(DashboardSelectors.widgetMenu(target)).toBeVisible();
-      return escape;
+      if (when === 'menu-open') return escape;
+      // The submenu opens on hover of "Move to row ›".
+      const moveToRow = target.locator('[data-parity-id="dash-widget-menu-item-move-to-row"]').first();
+
+      if (!(await moveToRow.isVisible())) return { unavailable: 'no Move to row item (Edit mode only)' };
+      await moveToRow.hover();
+      await expect(target.locator('[data-parity-id^="dash-widget-menu-item-row-"]').first()).toBeVisible();
+      return escapeTwice;
     }
 
     case 'settings-open':
     case 'chart-panel-open':
+    case 'chart-page-open':
     case 'filters-open': {
       await host.hover();
       const testId = when === 'filters-open' ? 'database-actions-filter' : 'dashboard-widget-settings-button';
@@ -920,7 +1122,14 @@ async function interact(
 
       if (!button) return { unavailable: `no ${testId} tool in the widget` };
       await button.click();
-      return escape;
+      if (when !== 'chart-page-open') return escape;
+      // The first "What to show" row opens its page, whose header has the back button.
+      const row = target.locator('[data-parity-id="dash-chart-panel-row-what-to-show"]').first();
+
+      await expect(row).toBeVisible();
+      await row.click();
+      await expect(target.locator('[data-parity-id="dash-chart-panel-back"]').first()).toBeVisible();
+      return escapeTwice;
     }
 
     case 'filter-popover-open': {
@@ -1067,7 +1276,10 @@ function iconActual(identity: GlyphIdentity, expectedName: string | null): { act
   const entry = expectedName ? parityContract().icons.icons.find((icon) => icon.name === expectedName) : undefined;
   const wanted = entry ? icons().expectedHash(entry) : null;
 
-  if (entry && identity.hash && wanted && identity.hash === wanted) return { actual: entry.name, pass: true };
+  // `identify` also knows the hash of the source bytes (React re-serializes SVGO's short numbers).
+  if (entry && identity.hash && ((wanted && identity.hash === wanted) || identity.icons.includes(entry.name))) {
+    return { actual: entry.name, pass: true };
+  }
   if (identity.assets.length > 0) {
     const listed = new Set(
       parityContract().icons.icons.flatMap((icon) => [icon.web.current?.asset, icon.web.target.asset].filter(Boolean) as string[])
@@ -1316,7 +1528,7 @@ function planGroups(ctx: RunContext): Map<string, Group> {
 
 /** Where an icon context whose owner has no element entry is shown (scene, interaction, instance; `mode` when only one has it). */
 const ICON_OWNER_SURFACES: [string, { scene: string; when: string; instance?: string; mode?: 'view' | 'edit' }][] = [
-  ['dash-widget-picker', { scene: 'empty', when: 'rest', instance: 'after clicking + New view' }],
+  ['dash-widget-picker', { scene: 'empty', when: 'rest', instance: 'after clicking + New view', mode: 'edit' }],
   ['dash-empty-', { scene: 'empty', when: 'rest' }],
   ['dash-widget-menu-item-', { scene: 'charts', when: 'menu-open' }],
   ['dash-widget-filters-popover', { scene: 'filtered-grid', when: 'filters-open' }],
@@ -1328,7 +1540,7 @@ const ICON_OWNER_SURFACES: [string, { scene: string; when: string; instance?: st
   ['dash-global-filter-back', { scene: 'two-widgets', when: 'filter-popover-open' }],
   ['dash-row-control-', { scene: 'three-rows', when: 'hover-row', instance: 'middle row' }],
   ['dash-drilldown', { scene: 'drilldown', when: 'rest' }],
-  ['dash-widget-search', { scene: 'widget-search', when: 'rest' }],
+  ['dash-widget-search', { scene: 'widget-search', when: 'rest', mode: 'view' }],
 ];
 
 function unavailableRows(ctx: RunContext, group: Group, reason: string) {
@@ -1428,12 +1640,78 @@ async function capture(ctx: RunContext, target: Page, group: Group) {
   });
 }
 
+/**
+ * The `drilldown` scene (WP13): open the bar's drill-down and wait for its
+ * rows; the side-peek instance also opens its first row. `close` puts the
+ * dashboard back for the next group.
+ */
+async function openSceneDrill(
+  target: Page,
+  built: BuiltScene,
+  scene: SceneSpec,
+  instance: string | undefined
+): Promise<{ close: () => Promise<void> } | { unavailable: string }> {
+  const drill = scene.drill;
+
+  if (!drill) return { close: async () => undefined };
+  const widgetId = built.labels[drill.widget];
+
+  if (!widgetId) return { unavailable: `"${drill.widget}" is not part of scene ${scene.id}` };
+  const bar = DashboardSelectors.widget(target, widgetId)
+    .locator(`[data-testid="chart-bar-segment"][data-category="${drill.category}"]`)
+    .first();
+  const dialog = target.getByTestId('chart-drilldown');
+  const peek = target.getByTestId('row-side-peek');
+  const close = async () => {
+    if (await peek.isVisible().catch(() => false)) {
+      await peek.getByTestId('row-side-peek-close').click().catch(() => undefined);
+      await expect(peek).toHaveCount(0).catch(() => undefined);
+    }
+
+    if (await dialog.isVisible().catch(() => false)) {
+      await target
+        .getByTestId('chart-drilldown-dismiss')
+        .click()
+        .catch(() => undefined);
+      await expect(dialog).toHaveCount(0).catch(() => undefined);
+    }
+
+    await resetPointer(target);
+  };
+
+  if (!(await bar.isVisible().catch(() => false))) {
+    return { unavailable: `no "${drill.category}" bar in ${drill.widget}` };
+  }
+
+  await bar.click();
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  const rows = dialog.locator('[data-parity-id="dash-drilldown-row"]');
+
+  await expect.poll(() => rows.count(), { timeout: 30_000 }).toBeGreaterThan(0);
+  if (instance === DRILL_ROW_OPENED) {
+    await rows.first().click();
+    await expect(peek).toBeVisible({ timeout: 30_000 });
+  }
+
+  // Rest: nothing hovered (the OPEN pill shows on hover) and the dialog's entry motion over.
+  await target.mouse.move(4, 4);
+  await settle(target);
+  return { close };
+}
+
 async function measureGroup(ctx: RunContext, built: BuiltScene, group: Group) {
   const { target } = built;
   const { scene } = group;
   const pickerNewView = group.instance === 'after clicking + New view';
 
   await resetPointer(target);
+  const drill = await openSceneDrill(target, built, scene, group.instance);
+
+  if ('unavailable' in drill) {
+    unavailableRows(ctx, group, drill.unavailable);
+    return;
+  }
+
   await prepareParityProbe(target);
   const interaction = await interact(
     target,
@@ -1444,6 +1722,7 @@ async function measureGroup(ctx: RunContext, built: BuiltScene, group: Group) {
 
   if ('unavailable' in interaction) {
     unavailableRows(ctx, group, interaction.unavailable);
+    await drill.close();
     return;
   }
 
@@ -1514,6 +1793,7 @@ async function measureGroup(ctx: RunContext, built: BuiltScene, group: Group) {
     for (const task of group.icons) await measureIcon(ctx, built, group, task);
   } finally {
     await interaction.undo();
+    await drill.close();
   }
 }
 

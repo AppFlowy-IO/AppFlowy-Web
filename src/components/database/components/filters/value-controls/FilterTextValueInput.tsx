@@ -15,6 +15,8 @@ export interface FilterTextValueInputProps {
   numeric?: boolean;
   /** The debounced value; also flushed when the input unmounts. */
   onChange: (content: string) => void;
+  /** How long the input waits after the last key; a saved filter's 500 ms by default. */
+  debounceMs?: number;
   disabled?: boolean;
   autoFocus?: boolean;
   'data-testid'?: string;
@@ -31,6 +33,7 @@ export function FilterTextValueInput({
   content,
   numeric = false,
   onChange,
+  debounceMs,
   disabled,
   autoFocus,
   ...attributes
@@ -43,7 +46,7 @@ export function FilterTextValueInput({
     },
     [onChange]
   );
-  const { value, updateValue } = useDebouncedFilterInput({ content, filterId, fieldId, updateFilter });
+  const { value, updateValue } = useDebouncedFilterInput({ content, filterId, fieldId, updateFilter, debounceMs });
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const next = event.target.value;

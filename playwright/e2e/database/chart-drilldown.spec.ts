@@ -1,11 +1,11 @@
 /**
- * Chart drilldown popup.
+ * Chart drill-down (WP13).
  *
- * Verifies the `ChartRowListPopup` flow: clicking a chart bar opens an MUI
- * Dialog whose title shows the category label and the matching row count,
- * and Escape closes the dialog. Used to catch regressions in
- * `src/components/database/chart/ChartProvider.tsx` (drillDownItem state)
- * and `ChartRowListPopup.tsx` (Dialog layout / row mapping).
+ * Verifies the drill-down flow: clicking a chart bar opens the "Table data
+ * preview" dialog with the clicked category as its title and the matching
+ * row count, and Escape closes it. Used to catch regressions in
+ * `src/components/database/chart/ChartProvider.tsx` and
+ * `src/components/database/chart/drill/ChartDrillDialog.tsx`.
  */
 import { expect, test } from '@playwright/test';
 
@@ -54,9 +54,10 @@ test.describe('Chart drilldown', () => {
     // When: the user clicks the first bar
     await clickFirstBar(page);
 
-    // Then: the drilldown dialog is visible and its title contains "rows"
+    // Then: the drill-down dialog is visible with its count ("1 row" for the first bar)
     await waitForDrilldownOpen(page);
-    await expect(ChartDrilldownSelectors.dialog(page)).toContainText(/rows/i);
+    await expect(ChartDrilldownSelectors.dialog(page)).toHaveAttribute('aria-label', 'Table data preview');
+    await expect(ChartDrilldownSelectors.count(page)).toHaveText(/^\d+ rows?$/, { timeout: 10000 });
   });
 
   test('Escape closes the drilldown dialog', async ({ page, request }) => {

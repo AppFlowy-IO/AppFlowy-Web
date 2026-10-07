@@ -48,6 +48,28 @@ jest.mock('@/components/database/components/tabs/DatabaseViewTabs', () => ({
   ),
 }));
 
+// The phone's view switcher (tested with `MobileDatabaseViewPill`): its props are what matters here.
+jest.mock('@/components/database/components/tabs/MobileDatabaseViewPill', () => ({
+  MobileDatabaseViewPill: ({
+    viewIds,
+    selectedViewId,
+    readOnly,
+    onViewAdded,
+  }: {
+    viewIds: string[];
+    selectedViewId?: string;
+    readOnly: boolean;
+    onViewAdded?: (viewId: string) => void;
+  }) => (
+    <div
+      data-can-add={String(!readOnly && Boolean(onViewAdded))}
+      data-selected={selectedViewId}
+      data-testid='database-view-pill'
+      data-view-ids={viewIds.join(',')}
+    />
+  ),
+}));
+
 jest.mock('@/components/app/view-actions/RenameModal', () => ({
   __esModule: true,
   default: ({ view }: { view: { name: string } }) => <div data-testid='rename-modal'>{view.name}</div>,
@@ -438,6 +460,61 @@ describe('DatabaseTabs', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('rename-modal').textContent).toBe('Live Grid');
+    });
+  });
+
+  // WP14 W-11: below 768px a view pill replaces the tab strip; the toolbar stays at the right.
+  describe('in a mobile context (a 390px window)', () => {
+    const initialWidth = window.innerWidth;
+
+    beforeEach(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 390 });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: initialWidth });
+    });
+
+    it('renders the view pill instead of the tabs, and keeps the actions', () => {
+      (useDatabaseContext as jest.Mock).mockReturnValue({
+        createDatabaseView: jest.fn(),
+        isDocumentBlock: false,
+        loadViewMeta: jest.fn(async () => databaseContainer),
+        readOnly: false,
+        showActions: true,
+      } as unknown as DatabaseContextState);
+
+      render(
+        <DatabaseTabs
+          databasePageId={databaseView.view_id}
+          selectedViewId='view-b'
+          setSelectedViewId={jest.fn()}
+          viewIds={['view-a', 'view-b']}
+        />
+      );
+
+      const pill = screen.getByTestId('database-view-pill');
+
+      expect(screen.queryByTestId('database-view-tabs')).toBeNull();
+      expect(pill.getAttribute('data-view-ids')).toBe('view-a,view-b');
+      expect(pill.getAttribute('data-selected')).toBe('view-b');
+      expect(pill.getAttribute('data-can-add')).toBe('true');
+      expect(screen.getByTestId('database-actions-mock')).toBeTruthy();
+    });
+
+    it('keeps the tab strip at 768px', () => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 768 });
+      (useDatabaseContext as jest.Mock).mockReturnValue({
+        isDocumentBlock: false,
+        loadViewMeta: jest.fn(async () => databaseContainer),
+        readOnly: false,
+        showActions: true,
+      } as unknown as DatabaseContextState);
+
+      render(<DatabaseTabs databasePageId={databaseView.view_id} viewIds={[databaseView.view_id]} />);
+
+      expect(screen.getByTestId('database-view-tabs')).toBeTruthy();
+      expect(screen.queryByTestId('database-view-pill')).toBeNull();
     });
   });
 });

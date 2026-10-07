@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -14,11 +14,16 @@ import {
   useAddSort,
   useClearSortingDispatch,
 } from '@/application/database-yjs/dispatch';
+// Imported from its module: `dispatch.ts` shadows the folder's index in Vite.
+import { useMoveFilter } from '@/application/database-yjs/dispatch/sort-filter';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useConditionsContext } from '@/components/database/components/conditions/context';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
+import DragItem from '@/components/database/components/drag-and-drop/DragItem';
+import { DragContext, useDragContextValue } from '@/components/database/components/drag-and-drop/useDragContext';
 import { AdvancedFiltersBadge } from '@/components/database/components/filters/advanced';
 import Filter from '@/components/database/components/filters/Filter';
 import { FILTER_EXCLUDED_FIELD_TYPES } from '@/components/database/components/filters/filter-field-types';
@@ -27,10 +32,68 @@ import { useRollupSortableIds } from '@/components/database/components/sorts/uti
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 
+import { WidgetPrivateFooter } from './private/WidgetPrivateFooter';
+
 export type WidgetConditionsKind = 'filters' | 'sorts';
 
-/** The rules of the widget's filters: chips stacked vertically (or the advanced rules), then "Add filter". */
-export function WidgetFiltersBody() {
+/**
+ * The top-level rules, reorderable with a drag handle (WP07 R7). A move is
+ * written to the view the widget shows: its private copy in View mode, the
+ * saved view in Edit mode. A pure reorder changes no rows, so it never puts
+ * an unsaved dot on the Filter tool.
+ */
+function WidgetFilterRules({ filterIds }: { filterIds: string[] }) {
+  const { t } = useTranslation();
+  const readOnly = useConditionsReadOnly();
+  const moveFilter = useMoveFilter();
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const data = useMemo(() => filterIds.map((id) => ({ id })), [filterIds]);
+  const onReorder = useCallback(
+    ({ oldData, startIndex, finishIndex }: { oldData: { id: string }[]; startIndex: number; finishIndex: number }) => {
+      const id = oldData[startIndex]?.id;
+
+      if (id) moveFilter(id, finishIndex);
+    },
+    [moveFilter]
+  );
+  const dragValue = useDragContextValue({ enabled: !readOnly, data, reorderAction: onReorder, container });
+  const handleLabel = t('grid.row.drag', { defaultValue: 'Drag to move' });
+
+  return (
+    <div className='flex w-full flex-col items-start gap-1.5' ref={setContainer}>
+      <DragContext.Provider value={dragValue}>
+        {filterIds.map((id, index) => (
+          <div className='max-w-full' data-parity-id='dash-widget-filters-popover-rule' key={id}>
+            <DragItem
+              className='gap-0.5'
+              dragHandleLabel={handleLabel}
+              dragHandleVisibility='hover'
+              dragIcon={
+                <DragIcon
+                  aria-hidden='true'
+                  className='h-4 w-4 text-icon-secondary'
+                  data-parity-id='dash-widget-filters-popover-rule__drag-icon'
+                />
+              }
+              id={id}
+              onMoveDown={index < filterIds.length - 1 ? () => moveFilter(id, index + 1) : undefined}
+              onMoveUp={index > 0 ? () => moveFilter(id, index - 1) : undefined}
+            >
+              <Filter filterId={id} />
+            </DragItem>
+          </div>
+        ))}
+      </DragContext.Provider>
+    </div>
+  );
+}
+
+/**
+ * The rules of the widget's filters: chips stacked vertically (or the advanced
+ * rules), then "Add filter". `initialAddOpen` opens the property picker of
+ * "Add filter" at once (the phone's filter sheet without a rule, WP14 §1.4.2).
+ */
+export function WidgetFiltersBody({ initialAddOpen = false }: { initialAddOpen?: boolean } = {}) {
   const { t } = useTranslation();
   const filters = useFiltersSelector();
   const advancedFilters = useAdvancedFiltersSelector();
@@ -41,7 +104,22 @@ export function WidgetFiltersBody() {
   const setOpenFilterId = context?.setOpenFilterId;
   const setAdvancedPanelOpen = context?.setAdvancedPanelOpen;
   const [addOpen, setAddOpen] = useState(false);
+  const landOnPickerRef = useRef(initialAddOpen && !readOnly);
+
+  // The picker opens on the next frame, once the sheet around the panel has
+  // mounted: its layer then sits above the sheet's (focus and outside presses).
+  useEffect(() => {
+    if (!landOnPickerRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      landOnPickerRef.current = false;
+      setAddOpen(true);
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const isAdvanced = advancedFilters.length > 0;
+  const filterIdsKey = filters.map((filter) => filter.id).join('\n');
+  const filterIds = useMemo(() => (filterIdsKey ? filterIdsKey.split('\n') : []), [filterIdsKey]);
 
   // A new rule opens its editor at once (desktop parity): the chip popover,
   // or the rules panel in advanced mode.
@@ -63,11 +141,7 @@ export function WidgetFiltersBody() {
       {isAdvanced ? (
         <AdvancedFiltersBadge count={advancedFilters.length} />
       ) : (
-        filters.map((filter) => (
-          <div className='max-w-full' data-parity-id='dash-widget-filters-popover-rule' key={filter.id}>
-            <Filter filterId={filter.id} />
-          </div>
-        ))
+        <WidgetFilterRules filterIds={filterIds} />
       )}
       {readOnly ? null : (
         <PropertiesMenu
@@ -89,6 +163,21 @@ export function WidgetFiltersBody() {
           </Button>
         </PropertiesMenu>
       )}
+    </div>
+  );
+}
+
+/**
+ * A widget's filter panel outside its popover: the phone's "Filter" sheet
+ * (WP14 §1.4.2). The rules and "Add filter" as in the popover, then the
+ * private-state footer (WP07). `landOnPicker` starts on the property picker.
+ */
+export function WidgetFiltersPanel({ landOnPicker = false }: { landOnPicker?: boolean }) {
+  return (
+    <div className='flex flex-col pt-1' data-testid='dashboard-widget-filters-panel'>
+      <WidgetFiltersBody initialAddOpen={landOnPicker} />
+      {/* Reset and "Save for everyone" while this widget's filters or sorts are private (WP07). */}
+      <WidgetPrivateFooter />
     </div>
   );
 }
@@ -155,7 +244,7 @@ interface WidgetConditionsPopoverProps {
   onOpenChange: (open: boolean) => void;
   /** The widget's filter or sort tool; the popover is anchored to it and gives it the focus back. */
   children: ReactNode;
-  /** Bottom slot for the private-state actions (WP07). */
+  /** Extra content after the rules; the private-state footer (WP07) always follows. */
   footer?: ReactNode;
 }
 
@@ -163,7 +252,8 @@ interface WidgetConditionsPopoverProps {
  * The "Filters" or "Sorts" popover of a dashboard widget's tool: a widget has
  * no conditions bar inside its card, so its rules live here. 300px wide,
  * anchored under the tool, with a title and a round close button. Nested
- * editors (a chip's filter menu) close first on Escape.
+ * editors (a chip's filter menu) close first on Escape. A backdrop popover:
+ * modal behaviour without a whole-page restyle on open and close (W11).
  */
 export function WidgetConditionsPopover({ kind, open, onOpenChange, children, footer }: WidgetConditionsPopoverProps) {
   const { t } = useTranslation();
@@ -175,7 +265,7 @@ export function WidgetConditionsPopover({ kind, open, onOpenChange, children, fo
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
 
   return (
-    <Popover modal onOpenChange={onOpenChange} open={open}>
+    <Popover modal='backdrop' onOpenChange={onOpenChange} open={open}>
       <PopoverAnchor asChild>
         <div className='flex' data-state={open ? 'open' : 'closed'} ref={anchorRef}>
           {children}
@@ -219,6 +309,8 @@ export function WidgetConditionsPopover({ kind, open, onOpenChange, children, fo
           </div>
           {kind === 'filters' ? <WidgetFiltersBody /> : <WidgetSortsBody onClose={close} />}
           {footer ? <div data-slot='widget-conditions-footer'>{footer}</div> : null}
+          {/* Reset and "Save for everyone" while this widget's filters or sorts are private (WP07). */}
+          <WidgetPrivateFooter />
         </PopoverContent>
       ) : null}
     </Popover>

@@ -520,10 +520,30 @@ Then('the {string} panel opens beside the {string} widget', async ({ page }, pan
   const hostBox = await box(host);
   const widgetBox = await box(widgetOf(page, name));
   const right = hostBox.x >= widgetBox.x + widgetBox.width - 0.5;
-  const flipped = hostBox.x + hostBox.width <= widgetBox.x + 0.5;
+  // WP06 §1.6 (one dock for the picker and the settings host): anchored at the box's top-right corner;
+  // without room on the right the host opens on its left, its right edge 8px inside the box (over the widget).
+  const dockedLeft = Math.abs(hostBox.x + hostBox.width - (widgetBox.x + widgetBox.width - 8)) <= 1;
 
-  expect(right || flipped).toBe(true);
-  expect(Math.abs(hostBox.y - widgetBox.y)).toBeLessThanOrEqual(8);
+  expect(right || dockedLeft).toBe(true);
+  await expect(host).toHaveAttribute('data-side', right ? 'right' : 'left');
+  // Top-aligned with the widget, shifted up only as far as the window edge
+  // needs (the host's 16px collision padding): a chart widget's host holds
+  // the whole chart panel (WP11, up to 560px tall) and may not fit below a
+  // widget in the lower half of the window.
+  const viewportHeight = page.viewportSize()?.height ?? Number.POSITIVE_INFINITY;
+
+  // Measured once the host settles: the chart panel's rows mount after it opens and the host is placed again.
+  await expect
+    .poll(
+      async () => {
+        const settled = await box(host);
+        const expectedTop = Math.max(16, Math.min(widgetBox.y, viewportHeight - 16 - settled.height));
+
+        return Math.abs(settled.y - expectedTop);
+      },
+      { message: 'the View settings host is top-aligned with the widget, within the window' }
+    )
+    .toBeLessThanOrEqual(8);
 });
 
 Then('the dashboard layout setting {string} is true', async ({ page }, key: string) => {

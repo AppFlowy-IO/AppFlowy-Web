@@ -32,3 +32,10 @@ Feature: Dashboard settings from other app versions
     Then the new row has the default row height
     When the new row is resized well below the minimum height
     Then the new row has the minimum row height
+
+  Scenario: Switching a chart to a donut keeps its grouping
+    Given a dashboard with a chart widget
+    And another client grouped the chart by "Urgent" in the "grouped" style
+    When the chart widget is changed to a donut chart in Edit mode
+    Then the chart is saved as a donut chart
+    And the chart is still grouped by "Urgent" in the "grouped" style

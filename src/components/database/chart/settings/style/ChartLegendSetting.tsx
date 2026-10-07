@@ -1,53 +1,60 @@
+import { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CHART_LEGEND_POSITIONS, ChartLegendPosition } from '@/application/database-yjs/chart-extended-settings';
-import {
-  DropdownMenuItem,
-  DropdownMenuItemTick,
-  DropdownMenuPortal,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-} from '@/components/ui/dropdown-menu';
+
+import { ChartSettingsRow } from '../ChartSettingsRow';
+import { OptionListPage } from '../pages/OptionListPage';
 
 const POSITION_FALLBACKS: Record<ChartLegendPosition, string> = { auto: 'Auto', off: 'Off', bottom: 'Bottom' };
 
-export interface ChartLegendSettingProps {
-  value: ChartLegendPosition;
-  onChange: (position: ChartLegendPosition) => void;
+function useLegendLabel() {
+  const { t } = useTranslation();
+
+  return (position: ChartLegendPosition) => t(`chart.legend.${position}`, { defaultValue: POSITION_FALLBACKS[position] });
 }
 
-/** The Legend row of the chart style settings (`legend_position`): Auto, Off or Bottom. */
-export function ChartLegendSetting({ value, onChange }: ChartLegendSettingProps) {
+export interface ChartLegendSettingProps {
+  value: ChartLegendPosition;
+  icon?: ReactNode;
+  onOpen: () => void;
+}
+
+/** The Legend row of the chart style section (`legend_position`, WP10): Auto, Off or Bottom; opens its page. */
+export function ChartLegendSetting({ value, icon, onOpen }: ChartLegendSettingProps) {
   const { t } = useTranslation();
-  const label = (position: ChartLegendPosition) =>
-    t(`chart.legend.${position}`, { defaultValue: POSITION_FALLBACKS[position] });
+  const label = useLegendLabel();
 
   return (
-    <DropdownMenuSub>
-      <DropdownMenuSubTrigger data-testid='chart-style-legend'>
-        <span>{t('chart.style.legend', { defaultValue: 'Legend' })}</span>
-        <span className='ml-auto text-text-secondary'>{label(value)}</span>
-      </DropdownMenuSubTrigger>
-      <DropdownMenuPortal>
-        <DropdownMenuSubContent>
-          {CHART_LEGEND_POSITIONS.map((position) => (
-            <DropdownMenuItem
-              className='w-full'
-              data-testid={`chart-style-legend-option-${position}`}
-              key={position}
-              onSelect={(event) => {
-                event.preventDefault();
-                onChange(position);
-              }}
-            >
-              <span>{label(position)}</span>
-              {value === position ? <DropdownMenuItemTick /> : null}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuSubContent>
-      </DropdownMenuPortal>
-    </DropdownMenuSub>
+    <ChartSettingsRow
+      rowId='style_legend'
+      icon={icon}
+      label={t('chart.settings.legend', { defaultValue: 'Legend' })}
+      value={label(value)}
+      onClick={onOpen}
+    />
+  );
+}
+
+export interface ChartLegendPageProps {
+  value: ChartLegendPosition;
+  onChange: (position: ChartLegendPosition) => void;
+  onBack: () => void;
+}
+
+export function ChartLegendPage({ value, onChange, onBack }: ChartLegendPageProps) {
+  const { t } = useTranslation();
+  const label = useLegendLabel();
+
+  return (
+    <OptionListPage
+      title={t('chart.settings.legend', { defaultValue: 'Legend' })}
+      page='style-legend'
+      selected={value}
+      onSelect={onChange}
+      onBack={onBack}
+      options={CHART_LEGEND_POSITIONS.map((position) => ({ value: position, label: label(position), testValue: position }))}
+    />
   );
 }
 

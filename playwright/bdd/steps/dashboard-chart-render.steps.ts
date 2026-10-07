@@ -488,21 +488,22 @@ Then('the dashboard widget \\{{string}\\} shows \\{{string}\\}', async ({ page }
 // ---------------------------------------------------------------------------
 
 When('the user sets the chart decimal places to \\{{string}\\}', async ({ page }, value: string) => {
-  const option = value === 'Auto' ? 'auto' : value;
+  // The panel's Decimal places page (WP11): Default resets the key.
+  const option = value === 'Auto' ? 'default' : value;
 
-  await pickChartStyleOption(page, 'chart-style-decimal-places', `chart-style-decimal-places-option-${option}`);
+  await pickChartStyleOption(page, 'chart-settings-row-y-decimals', `chart-option-y-decimals-${option}`);
 });
 
 When('the user sets the chart color to \\{{string}\\}', async ({ page }, theme: string) => {
-  await pickChartStyleOption(page, 'chart-style-color', `chart-style-color-option-${theme.toLowerCase()}`);
+  await pickChartStyleOption(page, 'chart-settings-row-style-color', `chart-option-style-color-${theme.toLowerCase()}`);
 });
 
 When('the user sets the chart legend to \\{{string}\\}', async ({ page }, position: string) => {
-  await pickChartStyleOption(page, 'chart-style-legend', `chart-style-legend-option-${position.toLowerCase()}`);
+  await pickChartStyleOption(page, 'chart-settings-row-style-legend', `chart-option-style-legend-${position.toLowerCase()}`);
 });
 
 When('the user turns off the chart data labels', async ({ page }) => {
-  await toggleChartStyleRow(page, 'chart-style-data-labels');
+  await toggleChartStyleRow(page, 'chart-settings-row-style-data-labels');
 });
 
 Then(

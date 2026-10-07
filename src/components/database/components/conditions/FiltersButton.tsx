@@ -63,7 +63,6 @@ function FiltersButton({ compact = false }: { compact?: boolean }) {
               aria-label={t('grid.settings.filter')}
               variant={'ghost'}
               size={compact ? 'icon-sm' : 'icon'}
-              className={'relative'}
               data-testid={'database-actions-filter'}
               onClick={(e) => {
                 e.stopPropagation();

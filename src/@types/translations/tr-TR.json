@@ -1245,7 +1245,7 @@
       "isNotEmpty": "Boş değil"
     },
     "dateFilter": {
-      "is": "Şudur",
+      "is": "Tarihinde",
       "before": "Şundan önce",
       "after": "Şundan sonra",
       "onOrBefore": "Şunda veya önce",
@@ -1329,7 +1329,11 @@
       "newColumn": "Yeni Sütun",
       "format": "Format",
       "reminderOnDateTooltip": "Bu hücrenin planlanmış bir hatırlatıcısı var",
-      "optionAlreadyExist": "Seçenek zaten mevcut"
+      "optionAlreadyExist": "Seçenek zaten mevcut",
+      "person": {
+        "searchForMore_one": "{{count}} kişi daha bulmak için arayın",
+        "searchForMore_other": "{{count}} kişi daha bulmak için arayın"
+      }
     },
     "rowPage": {
       "newField": "Yeni bir alan ekle",
@@ -1345,7 +1349,9 @@
         "other": "{{count}} gizli alanı gizle"
       },
       "openAsFullPage": "Tam sayfa olarak aç",
-      "moreRowActions": "Daha fazla satır eylemi"
+      "moreRowActions": "Daha fazla satır eylemi",
+      "openInCenterPeek": "Orta panelde aç",
+      "resizeSidePeek": "Yan paneli yeniden boyutlandır"
     },
     "sort": {
       "ascending": "Artan",
@@ -1365,7 +1371,7 @@
       "textPlaceholder": "Boş",
       "copyProperty": "Özellik panoya kopyalandı",
       "count": "Sayı",
-      "newRow": "Yeni satır",
+      "newRow": "Yeni sayfa",
       "action": "Eylem",
       "add": "Alta eklemek için tıklayın",
       "drag": "Taşımak için sürükleyin",
@@ -1374,7 +1380,9 @@
       "dragAndClick": "Taşımak için sürükleyin, menüyü açmak için tıklayın",
       "insertRecordAbove": "Üste kayıt ekle",
       "insertRecordBelow": "Alta kayıt ekle",
-      "noContent": "İçerik yok"
+      "noContent": "İçerik yok",
+      "loadingRowsProgress": "Satırlar yükleniyor… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "Bazı satırlar henüz yüklenmedi"
     },
     "selectOption": {
       "create": "Oluştur",
@@ -1434,7 +1442,9 @@
       "countEmpty": "Boş sayısı",
       "countEmptyShort": "BOŞ",
       "countNonEmpty": "Dolu sayısı",
-      "countNonEmptyShort": "DOLU"
+      "countNonEmptyShort": "DOLU",
+      "countChecked": "İşaretli",
+      "countUnchecked": "İşaretsiz"
     },
     "media": {
       "rename": "Yeniden adlandır",
@@ -1444,6 +1454,12 @@
       "addFileMobile": "Dosya ekle",
       "downloadSuccess": "Dosya başarıyla kaydedildi",
       "hideFileNames": "Dosya adlarını gizle"
+    },
+    "openPagesIn": {
+      "title": "Sayfaları şurada aç",
+      "sidePeek": "Yan panel",
+      "centerPeek": "Orta panel",
+      "fullPage": "Tam sayfa"
     }
   },
   "document": {
@@ -1752,7 +1768,11 @@
       "hideColumn": "Gizle",
       "newGroup": "Yeni grup",
       "deleteColumn": "Sil",
-      "deleteColumnConfirmation": "Bu, bu grubu ve içindeki tüm kartları silecektir.\nDevam etmek istediğinizden emin misiniz?"
+      "deleteColumnConfirmation": "Bu, bu grubu ve içindeki tüm kartları silecektir.\nDevam etmek istediğinizden emin misiniz?",
+      "calculate": "Hesapla",
+      "calculationTooltip": "{{property}} için {{calculation}}",
+      "colorColumns": "Sütunları renklendir",
+      "properties": "Özellikler"
     },
     "hiddenGroupSection": {
       "sectionTitle": "Gizli Gruplar",
@@ -2301,5 +2321,422 @@
     "privacyPolicy": "Gizlilik Politikası",
     "signInError": "Oturum açma hatası",
     "login": "Kaydolun veya giriş yapın"
+  },
+  "chart": {
+    "a11y": {
+      "table": "Grafik verileri"
+    },
+    "agg": {
+      "average": "Ortalama",
+      "countAll": "Tümünü say",
+      "countEmpty": "Boşları say",
+      "countUnique": "Benzersiz değerleri say",
+      "countValues": "Değerleri say",
+      "dateRange": "Tarih aralığı",
+      "earliest": "En erken",
+      "latest": "En geç",
+      "max": "Maksimum",
+      "median": "Medyan",
+      "min": "Minimum",
+      "percentChecked": "İşaretli yüzdesi",
+      "percentEmpty": "Boş yüzdesi",
+      "percentNotEmpty": "Dolu yüzdesi",
+      "percentUnchecked": "İşaretsiz yüzdesi",
+      "range": "Aralık",
+      "sum": "Toplam"
+    },
+    "aggregation": "Toplama",
+    "barChart": "Çubuk",
+    "chartType": "Grafik türü",
+    "checked": "İşaretli",
+    "color": {
+      "auto": "Otomatik",
+      "blue": "Mavi",
+      "colorful": "Renkli",
+      "colorless": "Renksiz",
+      "green": "Yeşil",
+      "orange": "Turuncu",
+      "pink": "Pembe",
+      "purple": "Mor",
+      "red": "Kırmızı",
+      "teal": "Camgöbeği",
+      "yellow": "Sarı"
+    },
+    "cumulative": "Kümülatif",
+    "dateCondition": "Tarih gruplama",
+    "dateGrouping": {
+      "day": "Gün",
+      "month": "Ay",
+      "relative": "Göreli",
+      "week": "Hafta",
+      "year": "Yıl"
+    },
+    "decimalPlaces": {
+      "auto": "Otomatik"
+    },
+    "donutChart": "Halka",
+    "emptyState": {
+      "description": "Grafiği görmek için veri içeren satırlar ekleyin",
+      "noField": "Gruplama için kullanılabilir alan yok",
+      "noFieldDescription": "Grafik görünümünü kullanmak için Seçim, Çoklu seçim, Onay kutusu veya Tarih alanı oluşturun.",
+      "title": "Gösterilecek veri yok"
+    },
+    "emptyValue": "Boş",
+    "groups": {
+      "count": "{{count}} grup",
+      "hideAll": "Tümünü gizle",
+      "hideGroup": "Grubu gizle",
+      "noGroups": "Grup yok",
+      "showAll": "Tümünü göster",
+      "showGroup": "Grubu göster",
+      "unknownPerson": "Bilinmeyen kişi",
+      "unknownUser": "Bilinmeyen kullanıcı",
+      "untitled": "Başlıksız",
+      "visibleOfTotal": "{{visible}} / {{total}}"
+    },
+    "horizontalBarChart": "Yatay çubuk",
+    "legend": {
+      "auto": "Otomatik",
+      "bottom": "Alt",
+      "nextPage": "Sonraki sayfa",
+      "off": "Kapalı",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "Önceki sayfa"
+    },
+    "lineChart": "Çizgi",
+    "menuName": "Grafik",
+    "noFieldValue": "{} yok",
+    "noGroupableFields": "Gruplanabilir alan yok",
+    "number": {
+      "calculate": "Hesapla",
+      "countAll": "Tümünü say",
+      "emptyState": "Veri yok",
+      "format": "Biçim",
+      "formatAuto": "Otomatik",
+      "formatCompact": "Kısa",
+      "formatPercent": "Yüzde",
+      "property": "Özellik",
+      "title": "Başlık",
+      "titleOf": "{{field}} için {{aggregation}}",
+      "titlePlaceholder": "Varsayılan başlık"
+    },
+    "numberChart": "Sayı",
+    "numberColor": {
+      "addRule": "Kural ekle",
+      "blue": "Mavi",
+      "brown": "Kahverengi",
+      "default": "Varsayılan",
+      "deleteRule": "Kuralı sil",
+      "dynamic": "Dinamik",
+      "dynamicColor": "Dinamik renk",
+      "else": "Değilse",
+      "equal": "Eşittir",
+      "gray": "Gri",
+      "greaterThan": "Büyüktür",
+      "greaterThanOrEqual": "Büyük veya eşittir",
+      "green": "Yeşil",
+      "ifValue": "Değer şuysa",
+      "lessThan": "Küçüktür",
+      "lessThanOrEqual": "Küçük veya eşittir",
+      "notEqual": "Eşit değildir",
+      "orange": "Turuncu",
+      "pink": "Pembe",
+      "purple": "Mor",
+      "red": "Kırmızı",
+      "sameAsColor": "Renkle aynı",
+      "yellow": "Sarı"
+    },
+    "settings": {
+      "auto": "Otomatik",
+      "back": "Geri",
+      "calculate": "Hesapla",
+      "chartSettings": "Grafik ayarları",
+      "chartTitle": "Grafik başlığı",
+      "chartType": "Grafik türü",
+      "color": "Renk",
+      "count": "Sayı",
+      "cumulative": "Kümülatif",
+      "data": "Veri",
+      "dataLabels": "Veri etiketleri",
+      "dateGrouping": "Tarih gruplama",
+      "decimalPlaces": "Ondalık basamak",
+      "default": "Varsayılan",
+      "donut": "Halka",
+      "eachSliceRepresents": "Her dilim şunu gösterir",
+      "endAt": "Bitiş",
+      "exactValue": "Tam değer",
+      "firstLetter": "İlk harf",
+      "format": "Biçim",
+      "groupBy": "Grupla",
+      "groupByNone": "Yok",
+      "groupByText": "Metne göre grupla",
+      "groupStyle": "Grup stili",
+      "groupStyleGrouped": "Gruplanmış",
+      "groupStylePercent": "Yüzde",
+      "groupStyleStacked": "Yığılmış",
+      "groups": "Gruplar",
+      "horizontalBar": "Yatay çubuk",
+      "legend": "Gösterge",
+      "line": "Çizgi",
+      "moreOptions": "Daha fazla seçenek",
+      "moreSeries": "+{{n}} daha",
+      "noResults": "Sonuç yok",
+      "number": "Sayı",
+      "onlyShowingFirstGroups": "Yalnızca ilk {{n}} grup gösteriliyor",
+      "percent": "Yüzde",
+      "rangeSize": "Aralık boyutu",
+      "ranges": "Aralıklar",
+      "rangesPreview": "{{from}} ile {{to}} arasında {{count}} aralık",
+      "searchProperty": "Özellik ara…",
+      "size": "Boyut {{size}}",
+      "sortBy": "Sıralama ölçütü",
+      "startAt": "Başlangıç",
+      "style": "Stil",
+      "verticalBar": "Dikey çubuk",
+      "viewSettings": "Görünüm ayarları",
+      "whatToShow": "Gösterilecekler",
+      "xAxis": "X ekseni",
+      "yAxis": "Y ekseni"
+    },
+    "showEmptyValues": "Boş değerleri göster",
+    "sort": {
+      "default": "Varsayılan",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "Elle",
+      "valueAsc": "Değer: düşükten yükseğe",
+      "valueDesc": "Değer: yüksekten düşüğe"
+    },
+    "state": {
+      "error": "Bu grafik yüklenemedi",
+      "noData": "Veri yok",
+      "preparing": "Grafiğiniz hazırlanıyor",
+      "retry": "Tekrar dene"
+    },
+    "style": {
+      "color": "Renk",
+      "dataLabels": "Veri etiketleri",
+      "decimalPlaces": "Ondalık basamak",
+      "legend": "Gösterge",
+      "title": "Stil"
+    },
+    "tooltip": {
+      "average": "Ortalama",
+      "clickToView": "Verileri görmek için tıklayın",
+      "count": "Sayı",
+      "countValues": "Değerleri say",
+      "max": "Maksimum",
+      "median": "Medyan",
+      "min": "Minimum",
+      "rows": "{{count}} satır",
+      "sum": "Toplam",
+      "tapAgainToView": "Verileri görmek için tekrar dokunun"
+    },
+    "total": "Toplam",
+    "unchecked": "İşaretsiz",
+    "upgradeRequired": "Yükseltme gerekli",
+    "upgradeToProForChartTypes": "Yatay çubuk, çizgi ve halka grafikleri kullanmak için Pro plana yükseltin",
+    "value": {
+      "days_one": "{{count}} gün",
+      "days_other": "{{count}} gün"
+    },
+    "xAxis": "X ekseni",
+    "yAxis": "Y ekseni",
+    "drilldown": {
+      "ariaLabel": "Tablo verisi önizlemesi",
+      "search": "Ara",
+      "dismiss": "Kapat",
+      "more": "Daha fazla",
+      "saveAsView": "Görünüm olarak kaydet…",
+      "openDatabase": "{{database}} veritabanını aç",
+      "selectedRows": "Seçili satırlar ({{count}})",
+      "cannotSaveSelectedRows": "Seçili satırlar görünüm olarak kaydedilemez",
+      "open": "AÇ",
+      "fromDashboardFilter": "Gösterge paneli filtresinden",
+      "rowCount_one": "{{count}} satır",
+      "rowCount_other": "{{count}} satır"
+    }
+  },
+  "dashboard": {
+    "addWidget": "Bileşen ekle",
+    "creationRequiresPro": "Gösterge paneli görünümü oluşturmak için Pro çalışma alanı gerekir.",
+    "done": "Bitti",
+    "edit": "Düzenle",
+    "empty": {
+      "editDashboard": "Gösterge panelini düzenle",
+      "newView": "Yeni görünüm",
+      "text": "Grafik, tablo, liste ekleyin"
+    },
+    "globalFilters": {
+      "addAnother": "Başka ekle",
+      "addToFilter": "Filtreye ekle",
+      "appliesTo": "Bu filtre aşağıda seçilen {{type}} özelliklerine uygulanır",
+      "button": "Filtre",
+      "delete": "Filtreyi sil",
+      "done": "Bitti",
+      "endDate": "Bitiş tarihi",
+      "filterBy": "Filtreleme ölçütü…",
+      "isChecked": "İşaretli",
+      "isUnchecked": "İşaretsiz",
+      "more": "{{count}} daha",
+      "moreActions": "Diğer işlemler",
+      "multipleSourcesIntro": "Birden fazla kaynaktaki özelliklere uygulanan bir filtre oluşturun",
+      "name": "Filtre adı",
+      "noResults": "Sonuç yok",
+      "op": {
+        "after": "Sonra",
+        "before": "Önce",
+        "between": "Arasında",
+        "checked": "İşaretli",
+        "complete": "Tamamlandı",
+        "doesNotContain": "İçermez",
+        "endsWith": "İle biter",
+        "incomplete": "Tamamlanmadı",
+        "is": "Eşittir",
+        "isEmpty": "Boş",
+        "isNot": "Eşit değildir",
+        "isNotEmpty": "Boş değil",
+        "onOrAfter": "Bu tarihte veya sonra",
+        "onOrBefore": "Bu tarihte veya önce",
+        "startsWith": "İle başlar",
+        "unchecked": "İşaretsiz"
+      },
+      "people_one": "{{count}} kişi",
+      "people_other": "{{count}} kişi",
+      "relative": {
+        "amount": "Miktar",
+        "next": "Önümüzdeki",
+        "past": "Son",
+        "summaryNext_one": "Önümüzdeki {{unit}}",
+        "summaryNext_other": "Önümüzdeki {{count}} {{unit}}",
+        "summaryPast_one": "Son {{unit}}",
+        "summaryPast_other": "Son {{count}} {{unit}}",
+        "summaryThis": "Bu {{unit}}",
+        "this": "Bu"
+      },
+      "relativeHint": "Filtre güncel tarihle birlikte güncellenir",
+      "relativeToToday": "Bugüne göre",
+      "remove": "Kaldır",
+      "reset": "Sıfırla",
+      "sourceLine": "{{source}} içinde {{property}}",
+      "startDate": "Başlangıç tarihi",
+      "title": "Birden fazla kaynağı filtrele",
+      "units": {
+        "day_one": "gün",
+        "day_other": "gün",
+        "month_one": "ay",
+        "month_other": "ay",
+        "week_one": "hafta",
+        "week_other": "hafta",
+        "year_one": "yıl",
+        "year_other": "yıl"
+      },
+      "viewCount_one": "{{count}} görünüm",
+      "viewCount_other": "{{count}} görünüm"
+    },
+    "historyPreviewUnavailable": "Gösterge panelleri sürüm geçmişinde önizlenmez.",
+    "limit": {
+      "fullHint": "Yeni bir görünüm eklemek için bir görünümü silin",
+      "fullTitle": "Gösterge paneli dolu"
+    },
+    "menuName": "Gösterge paneli",
+    "picker": {
+      "back": "Geri",
+      "changeViewTitle": "Görünümü değiştir",
+      "close": "Kapat",
+      "createFailed": "Görünüm oluşturulamadı",
+      "editChart": "Grafiği düzenle",
+      "layout": {
+        "board": "Pano",
+        "calendar": "Takvim",
+        "chart": "Grafik",
+        "feed": "Akış",
+        "gallery": "Galeri",
+        "list": "Liste",
+        "table": "Tablo",
+        "timeline": "Zaman çizelgesi"
+      },
+      "loadFailed": "Veritabanları yüklenemedi",
+      "newView": "Yeni görünüm",
+      "newViewIn": "{{database}} içinde yeni görünüm",
+      "noResults": "Görünüm bulunamadı",
+      "otherSources": "Diğer veri kaynakları",
+      "searchPlaceholder": "Görünüm ara...",
+      "showMore": "{{count}} tane daha göster",
+      "source": "Kaynak",
+      "thisDatabase": "Bu veritabanı",
+      "viewName": "Görünüm adı",
+      "viewsOn": "{{database}} görünümleri",
+      "viewsOnThisDatabase": "Bu veritabanının görünümleri"
+    },
+    "private": {
+      "reset": "Sıfırla",
+      "resetAll": "Tüm değişiklikleri sıfırla",
+      "saveForEveryone": "Herkes için kaydet",
+      "saveOptions": "Diğer kaydetme seçenekleri",
+      "saved": "Değişiklikler herkes için kaydedildi.",
+      "undo": "Geri al",
+      "unsaved": "Kaydedilmemiş değişiklikler"
+    },
+    "referencedDashboardPrefix": "Görünümü",
+    "row": {
+      "addToNewRow": "Yeni satıra ekle",
+      "addToRow": "Satıra ekle",
+      "moveDown": "Aşağı taşı",
+      "moveUp": "Yukarı taşı",
+      "movedDown": "Satır aşağı taşındı",
+      "movedUp": "Satır yukarı taşındı"
+    },
+    "rowLimit": "Bir satırda en fazla {{count}} bileşen olabilir.",
+    "settings": {
+      "name": "Gösterge paneli ayarları",
+      "showIconsInHeading": "Başlıkta simgeleri göster",
+      "showWidgetTitles": "Bileşen başlıklarını göster"
+    },
+    "toolbar": {
+      "openAsFullPage": "Tam sayfa olarak aç",
+      "settings": "Ayarlar"
+    },
+    "widget": {
+      "changeView": "Görünümü değiştir",
+      "close": "Kapat",
+      "createRowAbove": "Üste yeni satır oluştur",
+      "createRowBelow": "Alta yeni satır oluştur",
+      "delete": "Sil",
+      "dragHandle": "Taşımak için sürükleyin",
+      "duplicate": "Çoğalt",
+      "editView": "Görünümü düzenle",
+      "filters": "Filtreler",
+      "loading": "Yükleniyor…",
+      "menu": "Bileşen seçenekleri",
+      "moveLeft": "Sola taşı",
+      "moveRight": "Sağa taşı",
+      "moveToRow": "Satıra taşı",
+      "noAccess": "Bu veritabanına erişiminiz yok",
+      "notFound": "Bu görünüm artık mevcut değil",
+      "offline": "Tekrar çevrimiçi olduğunuzda kullanılabilir",
+      "openFailed": "Görünüm açılamadı",
+      "remove": "Bileşeni kaldır",
+      "resizeHeight": "Satır yüksekliğini değiştirmek için sürükleyin",
+      "resizeHeightValue": "{{height}} piksel",
+      "resizeWidth": "Yeniden boyutlandırmak için sürükleyin",
+      "resizeWidthValue": "12 sütundan {{columns}}",
+      "settings": "Ayarlar",
+      "sorts": "Sıralamalar",
+      "source": "Kaynak",
+      "unsupported": "Bir gösterge paneli başka bir gösterge panelinin içinde gösterilemez",
+      "viewDataSource": "Veri kaynağını görüntüle",
+      "viewNameHint": "Bu görünümü yeniden adlandırır",
+      "viewSettings": "Görünüm ayarları"
+    },
+    "mobile": {
+      "viewCount_one": "{{count}} görünüm",
+      "viewCount_other": "{{count}} görünüm"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "Aramayı temizle",
+    "noResults": "Sonuç yok",
+    "placeholder": "Aramak için yazın..."
   }
 }

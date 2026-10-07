@@ -144,12 +144,25 @@ describe('chart layout writes', () => {
 });
 
 describe('chart extended settings', () => {
-  it('registers the WP10 style keys and reads unknown values as the defaults', () => {
+  it('registers the WP10 style keys, the WP11 configuration keys and the WP12 Group by keys and reads unknown values as the defaults', () => {
     expect(ChartExtendedLayoutKeys).toEqual({
       decimalPlaces: 'decimal_places',
       colorTheme: 'color_theme',
       showDataLabels: 'show_data_labels',
       legendPosition: 'legend_position',
+      xSort: 'x_sort',
+      xManualOrder: 'x_manual_order',
+      hiddenGroups: 'hidden_groups',
+      xNumberBucketSize: 'x_number_bucket_size',
+      xNumberBucketMin: 'x_number_bucket_min',
+      xNumberBucketMax: 'x_number_bucket_max',
+      xTextGrouping: 'x_text_grouping',
+      showTitle: 'show_title',
+      numberColor: 'number_color',
+      numberConditionalColor: 'number_conditional_color',
+      groupByFieldId: 'group_by_field_id',
+      groupByDateCondition: 'group_by_date_condition',
+      groupStyle: 'group_style',
     });
     expect(parseChartExtendedSettings(new Map([['zz_parity_enum', 'neon']]))).toEqual(DEFAULT_CHART_EXTENDED_SETTINGS);
     expect(parseChartLayoutSettings(new Map()).extended).toEqual(DEFAULT_CHART_EXTENDED_SETTINGS);

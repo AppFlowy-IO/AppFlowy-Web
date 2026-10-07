@@ -34,6 +34,12 @@ export interface WidgetSource {
   snapshot: WidgetViewSnapshot;
   /** The widget remounted (a move) and starts from the doc it showed as ready. */
   seeded: boolean;
+  /**
+   * The source document load is still in flight. A placeholder decided
+   * meanwhile (the trash probe answered first) ends the load only once the
+   * request settles: until then the source still holds its load slot.
+   */
+  loadInFlight: boolean;
 }
 
 /**
@@ -56,6 +62,7 @@ export function useWidgetSource({ widgetId, viewId, databaseId }: WidgetSourceId
     notFound: loadFailed,
     noAccess,
     offline,
+    loading: loadInFlight,
     setNotFound,
   } = useDocumentLoader({
     // The host database is already open; only other databases are loaded.
@@ -129,5 +136,13 @@ export function useWidgetSource({ widgetId, viewId, databaseId }: WidgetSourceId
     return markWidgetShown(widgetId, viewId, doc);
   }, [doc, isHost, markWidgetShown, status, viewId, widgetId]);
 
-  return { doc, status, isHost, hasDatabase, snapshot, seeded: seedDoc !== null };
+  return {
+    doc,
+    status,
+    isHost,
+    hasDatabase,
+    snapshot,
+    seeded: seedDoc !== null,
+    loadInFlight: !isHost && Boolean(loadInFlight),
+  };
 }

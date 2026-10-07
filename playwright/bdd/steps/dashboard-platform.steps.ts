@@ -1,5 +1,6 @@
 import { createBdd } from 'playwright-bdd';
 
+import { seedWidgetsOfHostGrid } from '../../support/dashboard-add-widget-helpers';
 import {
   collaboratorAddsWidget,
   confirmDashboardWriteAccess,
@@ -99,6 +100,11 @@ Then('the dashboard offers no Edit button', async ({ page }) => {
   await expectNoEditButton(page);
 });
 
-Then('the dashboard has {int} widget(s)', async ({ page }, count: number) => {
+Then('the dashboard has {int} widget(s)', async ({ page, $bddContext }, count: number) => {
+  // As a Given ("And the dashboard has 12 widgets", WP05 §4) it seeds them first.
+  if ($bddContext.bddTestData?.steps[$bddContext.stepIndex]?.keywordType === 'Context') {
+    await seedWidgetsOfHostGrid(page, count);
+  }
+
   await expectWidgetCount(page, count);
 });

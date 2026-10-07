@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useSortsSelector } from '@/application/database-yjs';
 import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import DeleteRowConfirm from '@/components/database/components/database-row/DeleteRowConfirm';
 import {
   useHoverControlsActions,
   useHoverControlsDisplay,
@@ -28,6 +29,36 @@ const CONTROLS_BORDER_WIDTH = 2;
 export const HOVER_CONTROLS_WIDTH = 2 * ACCESSORY_BUTTON_WIDTH + CONTROLS_BORDER_WIDTH;
 /** Gutter that fits the compact controls (the menu / drag button alone). */
 export const COMPACT_HOVER_CONTROLS_WIDTH = ACCESSORY_BUTTON_WIDTH + CONTROLS_BORDER_WIDTH;
+
+/**
+ * Tooltip texts render only while their tooltip shows: a row's controls
+ * translate nothing for tooltips that never open (W8).
+ */
+function AddRowTooltipText() {
+  const { t } = useTranslation();
+
+  return (
+    <>
+      {t('tooltip.addNewRow')}
+      <TooltipShortcut>{`${isMac() ? t('blockActions.addAboveMacCmd') : t('blockActions.addAboveCmd')} ${t(
+        'blockActions.addAboveTooltip'
+      )}`}</TooltipShortcut>
+    </>
+  );
+}
+
+function RowMenuTooltipText({ canDrag }: { canDrag: boolean }) {
+  const { t } = useTranslation();
+
+  return canDrag ? (
+    <>
+      {t('tooltip.dragRow')}
+      <TooltipShortcut>{t('tooltip.openMenu')}</TooltipShortcut>
+    </>
+  ) : (
+    <>{t('tooltip.openMenu')}</>
+  );
+}
 
 export function HoverControls({
   rowId,
@@ -63,6 +94,9 @@ export function HoverControls({
 
   const [menuOpen, setMenuOpen] = useState<boolean>(false);
   const [openPrevented, setOpenPrevented] = useState<boolean>(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<boolean>(false);
+  // The delete confirm mounts the first time it opens and stays for its exit transition.
+  const [deleteConfirmMounted, setDeleteConfirmMounted] = useState<boolean>(false);
   const sorts = useSortsSelector();
   const hasSorted = sorts.length > 0;
   const continueRef = useRef<(() => void) | null>(null);
@@ -78,13 +112,15 @@ export function HoverControls({
     },
     [hasSorted]
   );
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const openDeleteConfirm = useCallback(() => {
+    setDeleteConfirmMounted(true);
+    setDeleteConfirmOpen(true);
+  }, []);
+  const hoverControlsContext = useMemo(() => ({ showPreventDialog }), [showPreventDialog]);
 
   return (
-    <HoverControlsProvider
-      value={{
-        showPreventDialog,
-      }}
-    >
+    <HoverControlsProvider value={hoverControlsContext}>
       <div
         ref={ref}
         style={{
@@ -128,10 +164,7 @@ export function HoverControls({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {t('tooltip.addNewRow')}
-              <TooltipShortcut>{`${isMac() ? t('blockActions.addAboveMacCmd') : t('blockActions.addAboveCmd')} ${t(
-                'blockActions.addAboveTooltip'
-              )}`}</TooltipShortcut>
+              <AddRowTooltipText />
             </TooltipContent>
           </Tooltip>
         )}
@@ -167,38 +200,44 @@ export function HoverControls({
               </TooltipTrigger>
               {!menuOpen && (
                 <TooltipContent>
-                  {canDrag ? (
-                    <>
-                      {t('tooltip.dragRow')}
-                      <TooltipShortcut>{t('tooltip.openMenu')}</TooltipShortcut>
-                    </>
-                  ) : (
-                    t('tooltip.openMenu')
-                  )}
+                  <RowMenuTooltipText canDrag={canDrag} />
                 </TooltipContent>
               )}
             </Tooltip>
-            <RowMenu
-              groupFieldId={groupFieldId}
-              groupId={groupId}
-              onClose={() => {
-                setMenuOpen(false);
-              }}
-              rowId={rowId}
-            />
+            {/* Mounted only while open: the menu has no exit animation (W8). */}
+            {menuOpen && (
+              <RowMenu
+                groupFieldId={groupFieldId}
+                groupId={groupId}
+                onClose={closeMenu}
+                onDelete={openDeleteConfirm}
+                rowId={rowId}
+              />
+            )}
           </DropdownMenu>
         </div>
       </div>
-      <ClearSortingConfirm
-        open={openPrevented}
-        onClose={() => {
-          setOpenPrevented(false);
-        }}
-        onRemoved={() => {
-          continueRef.current?.();
-          continueRef.current = null;
-        }}
-      />
+      {openPrevented && (
+        <ClearSortingConfirm
+          open={openPrevented}
+          onClose={() => {
+            setOpenPrevented(false);
+          }}
+          onRemoved={() => {
+            continueRef.current?.();
+            continueRef.current = null;
+          }}
+        />
+      )}
+      {deleteConfirmMounted && (
+        <DeleteRowConfirm
+          open={deleteConfirmOpen}
+          onClose={() => {
+            setDeleteConfirmOpen(false);
+          }}
+          rowIds={[rowId]}
+        />
+      )}
     </HoverControlsProvider>
   );
 }

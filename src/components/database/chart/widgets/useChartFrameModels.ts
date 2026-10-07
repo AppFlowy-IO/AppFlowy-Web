@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
 
 import { ChartLegendPosition } from '@/application/database-yjs/chart-extended-settings';
-import { ChartValueFormatter } from '@/application/database-yjs/chart-format';
+import { ChartValueFormatter, formatShare } from '@/application/database-yjs/chart-format';
 import { resolveLegend } from '@/application/database-yjs/chart-scale';
-import { ChartDataItem, ChartType } from '@/application/database-yjs/chart.type';
+import { ChartDataItem, ChartSeriesData, ChartType } from '@/application/database-yjs/chart.type';
+import { ChartSeriesStyle } from '@/components/database/chart/hooks/chartGroupBy';
+import { ChartColorPainter, seriesTooltipRows } from '@/components/database/chart/hooks/chartSeries';
 
 import { ChartA11yRow } from './ChartA11yTable';
 import { ChartFrameTooltip } from './ChartFrame';
@@ -56,16 +58,18 @@ export function useChartA11yRows(data: readonly ChartDataItem[], format: ChartVa
 }
 
 /**
- * The tooltip of the hovered category: one row with its swatch, name and
- * `valueText`, and the drill-down hint when a click opens the rows. The same
- * object comes back while the hovered category is the same, so the tooltip
- * neither renders nor is measured again while the pointer moves inside it.
+ * The tooltip of the hovered (on mobile: tapped) category: one row with its
+ * swatch, name and `valueText`, and the drill-down hint when a click (on
+ * mobile: a second tap) opens the rows. The same object comes back while the
+ * hovered category is the same, so the tooltip neither renders nor is
+ * measured again while the pointer moves inside it.
  */
 export function useChartItemTooltip(
   item: ChartDataItem | undefined,
   valueText: string | undefined,
   color: string | undefined,
-  showDrilldownHint: boolean
+  showDrilldownHint: boolean,
+  mobile = false
 ): ChartFrameTooltip | null {
   const name = item?.label;
 
@@ -73,7 +77,80 @@ export function useChartItemTooltip(
     () =>
       name === undefined || valueText === undefined
         ? null
-        : { rows: [{ color, name, value: valueText }], showDrilldownHint },
-    [name, valueText, color, showDrilldownHint]
+        : { category: name, rows: [{ color, name, value: valueText }], showDrilldownHint, mobile },
+    [name, valueText, color, showDrilldownHint, mobile]
   );
+}
+
+/**
+ * The legend of a chart with a Group by (WP12 §2.7): its series in series
+ * order, "No {field}" included, when `resolveLegend` shows one for that many
+ * series. Without a Group by, `useChartLegend`'s categories or line series.
+ */
+export function useSeriesChartLegend(
+  chartType: ChartType,
+  position: ChartLegendPosition,
+  data: ChartSeriesData,
+  hasGroupBy: boolean,
+  paint: ChartColorPainter,
+  categories: readonly ChartDataItem[],
+  series?: { label: string; color: string }
+): { items: ChartLegendItem[]; glyph: ChartLegendGlyph } | null {
+  const single = useChartLegend(chartType, position, categories, series);
+
+  return useMemo(() => {
+    if (!hasGroupBy) return single;
+    const resolved = resolveLegend(chartType, data.series.length, position);
+
+    if (!resolved) return null;
+    return {
+      glyph: resolved.glyph,
+      items: data.series.map((entry) => ({
+        key: entry.key,
+        seriesKey: entry.key,
+        label: entry.label,
+        color: paint(entry.color) ?? '',
+      })),
+    };
+  }, [hasGroupBy, single, chartType, data, position, paint]);
+}
+
+/**
+ * The tooltip of the hovered category of a chart with a Group by (WP12 §2.8):
+ * the category as the title, one row per series with a value (percent bars
+ * print `{share} ({value})`), "+{n} more" after ten rows. The same object
+ * comes back while the hovered category is the same.
+ */
+export function useSeriesTooltip(
+  data: ChartSeriesData,
+  hoveredIndex: number | null,
+  style: ChartSeriesStyle,
+  format: ChartValueFormatter,
+  paint: ChartColorPainter,
+  showDrilldownHint: boolean,
+  mobile = false
+): ChartFrameTooltip | null {
+  return useMemo(() => {
+    const category = hoveredIndex === null ? undefined : data.categories[hoveredIndex];
+
+    if (hoveredIndex === null || !category) return null;
+    const { rows, more } = seriesTooltipRows(data, hoveredIndex, style);
+
+    return {
+      title: category.label,
+      category: category.label,
+      rows: rows.map((row) => ({
+        color: paint(row.color),
+        name: row.label,
+        seriesKey: row.series,
+        value:
+          row.percent === undefined
+            ? format(row.value, 'tooltip')
+            : `${formatShare(row.percent, 100)} (${format(row.value, 'tooltip')})`,
+      })),
+      more,
+      showDrilldownHint,
+      mobile,
+    };
+  }, [data, hoveredIndex, style, format, paint, showDrilldownHint, mobile]);
 }

@@ -45,6 +45,8 @@ describe('resolveChartLocale', () => {
     ['zh-CN', 'zh-CN'],
     ['zh_TW', 'zh-TW'],
     ['pt', 'pt-BR'],
+    // One mapping with the chart date labels (`toIntlLocale`, date-labels.json `locale_map`).
+    ['hin', 'hi'],
     ['de-DE', 'de-DE'],
     ['', 'en-US'],
     [undefined, 'en-US'],

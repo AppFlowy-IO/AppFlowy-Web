@@ -429,7 +429,11 @@
       "addOption": "Lägg till alternativ",
       "editProperty": "Redigera egenskap",
       "newProperty": "Ny kolumn",
-      "deleteFieldPromptMessage": "Är du säker? Denna egenskap kommer att raderas."
+      "deleteFieldPromptMessage": "Är du säker? Denna egenskap kommer att raderas.",
+      "person": {
+        "searchForMore_one": "Sök för att hitta {{count}} person till",
+        "searchForMore_other": "Sök för att hitta {{count}} personer till"
+      }
     },
     "sort": {
       "ascending": "Stigande",
@@ -443,8 +447,10 @@
       "textPlaceholder": "Tom",
       "copyProperty": "Kopierade egenskap till urklipp",
       "count": "Antal",
-      "newRow": "Ny rad",
-      "action": "Handling"
+      "newRow": "Ny sida",
+      "action": "Handling",
+      "loadingRowsProgress": "Läser in rader… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "Vissa rader har inte lästs in än"
     },
     "selectOption": {
       "create": "Skapa",
@@ -466,7 +472,24 @@
       "addNew": "Lägg till ett objekt"
     },
     "menuName": "Tabell",
-    "referencedGridPrefix": "Utsikt över"
+    "referencedGridPrefix": "Utsikt över",
+    "calculationTypeLabel": {
+      "countChecked": "Markerad",
+      "countUnchecked": "Omarkerad"
+    },
+    "dateFilter": {
+      "is": "Är"
+    },
+    "openPagesIn": {
+      "title": "Öppna sidor i",
+      "sidePeek": "Sidopanel",
+      "centerPeek": "Centrerad panel",
+      "fullPage": "Helsida"
+    },
+    "rowPage": {
+      "openInCenterPeek": "Öppna i centrerad panel",
+      "resizeSidePeek": "Ändra storlek på sidopanelen"
+    }
   },
   "document": {
     "menuName": "Dokument",
@@ -618,7 +641,11 @@
   },
   "board": {
     "column": {
-      "createNewCard": "Nytt"
+      "createNewCard": "Nytt",
+      "calculate": "Beräkna",
+      "calculationTooltip": "{{calculation}} av {{property}}",
+      "colorColumns": "Färglägg kolumner",
+      "properties": "Egenskaper"
     },
     "menuName": "Tavla",
     "referencedBoardPrefix": "Utsikt över",
@@ -670,5 +697,422 @@
   "views": {
     "deleteContentTitle": "Är du säker på att du vill ta bort {pageType}?",
     "deleteContentCaption": "om du tar bort denna {pageType} kan du återställa den från papperskorgen."
+  },
+  "chart": {
+    "a11y": {
+      "table": "Diagramdata"
+    },
+    "agg": {
+      "average": "Medelvärde",
+      "countAll": "Räkna alla",
+      "countEmpty": "Räkna tomma",
+      "countUnique": "Räkna unika värden",
+      "countValues": "Räkna värden",
+      "dateRange": "Datumintervall",
+      "earliest": "Tidigaste",
+      "latest": "Senaste",
+      "max": "Högsta",
+      "median": "Median",
+      "min": "Lägsta",
+      "percentChecked": "Procent markerade",
+      "percentEmpty": "Procent tomma",
+      "percentNotEmpty": "Procent ej tomma",
+      "percentUnchecked": "Procent omarkerade",
+      "range": "Variationsbredd",
+      "sum": "Summa"
+    },
+    "aggregation": "Beräkning",
+    "barChart": "Stapel",
+    "chartType": "Diagramtyp",
+    "checked": "Markerad",
+    "color": {
+      "auto": "Automatisk",
+      "blue": "Blå",
+      "colorful": "Färgglad",
+      "colorless": "Färglös",
+      "green": "Grön",
+      "orange": "Orange",
+      "pink": "Rosa",
+      "purple": "Lila",
+      "red": "Röd",
+      "teal": "Blågrön",
+      "yellow": "Gul"
+    },
+    "cumulative": "Kumulativ",
+    "dateCondition": "Datumgruppering",
+    "dateGrouping": {
+      "day": "Dag",
+      "month": "Månad",
+      "relative": "Relativ",
+      "week": "Vecka",
+      "year": "År"
+    },
+    "decimalPlaces": {
+      "auto": "Automatisk"
+    },
+    "donutChart": "Ring",
+    "emptyState": {
+      "description": "Lägg till rader med data för att se diagrammet",
+      "noField": "Inga fält tillgängliga för gruppering",
+      "noFieldDescription": "Skapa ett fält av typen enkelval, flerval, kryssruta eller datum för att använda diagramvyn.",
+      "title": "Ingen data att visa"
+    },
+    "emptyValue": "Tom",
+    "groups": {
+      "count": "{{count}} grupper",
+      "hideAll": "Dölj alla",
+      "hideGroup": "Dölj grupp",
+      "noGroups": "Inga grupper",
+      "showAll": "Visa alla",
+      "showGroup": "Visa grupp",
+      "unknownPerson": "Okänd person",
+      "unknownUser": "Okänd användare",
+      "untitled": "Namnlös",
+      "visibleOfTotal": "{{visible}} av {{total}}"
+    },
+    "horizontalBarChart": "Liggande stapel",
+    "legend": {
+      "auto": "Automatisk",
+      "bottom": "Nederst",
+      "nextPage": "Nästa sida",
+      "off": "Av",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "Föregående sida"
+    },
+    "lineChart": "Linje",
+    "menuName": "Diagram",
+    "noFieldValue": "Utan {}",
+    "noGroupableFields": "Inga grupperbara fält tillgängliga",
+    "number": {
+      "calculate": "Beräkna",
+      "countAll": "Räkna alla",
+      "emptyState": "Ingen data",
+      "format": "Format",
+      "formatAuto": "Automatisk",
+      "formatCompact": "Kompakt",
+      "formatPercent": "Procent",
+      "property": "Egenskap",
+      "title": "Titel",
+      "titleOf": "{{aggregation}} av {{field}}",
+      "titlePlaceholder": "Standardtitel"
+    },
+    "numberChart": "Tal",
+    "numberColor": {
+      "addRule": "Lägg till regel",
+      "blue": "Blå",
+      "brown": "Brun",
+      "default": "Standard",
+      "deleteRule": "Ta bort regel",
+      "dynamic": "Dynamisk",
+      "dynamicColor": "Dynamisk färg",
+      "else": "Annars",
+      "equal": "Lika med",
+      "gray": "Grå",
+      "greaterThan": "Större än",
+      "greaterThanOrEqual": "Större än eller lika med",
+      "green": "Grön",
+      "ifValue": "Om värdet",
+      "lessThan": "Mindre än",
+      "lessThanOrEqual": "Mindre än eller lika med",
+      "notEqual": "Inte lika med",
+      "orange": "Orange",
+      "pink": "Rosa",
+      "purple": "Lila",
+      "red": "Röd",
+      "sameAsColor": "Samma som färg",
+      "yellow": "Gul"
+    },
+    "settings": {
+      "auto": "Automatisk",
+      "back": "Tillbaka",
+      "calculate": "Beräkna",
+      "chartSettings": "Diagraminställningar",
+      "chartTitle": "Diagramtitel",
+      "chartType": "Diagramtyp",
+      "color": "Färg",
+      "count": "Antal",
+      "cumulative": "Kumulativ",
+      "data": "Data",
+      "dataLabels": "Dataetiketter",
+      "dateGrouping": "Datumgruppering",
+      "decimalPlaces": "Decimaler",
+      "default": "Standard",
+      "donut": "Ring",
+      "eachSliceRepresents": "Varje sektor representerar",
+      "endAt": "Slutar vid",
+      "exactValue": "Exakt värde",
+      "firstLetter": "Första bokstaven",
+      "format": "Format",
+      "groupBy": "Gruppera efter",
+      "groupByNone": "Ingen",
+      "groupByText": "Gruppera efter text",
+      "groupStyle": "Gruppstil",
+      "groupStyleGrouped": "Grupperad",
+      "groupStylePercent": "Procent",
+      "groupStyleStacked": "Staplad",
+      "groups": "Grupper",
+      "horizontalBar": "Liggande stapel",
+      "legend": "Teckenförklaring",
+      "line": "Linje",
+      "moreOptions": "Fler alternativ",
+      "moreSeries": "+{{n}} till",
+      "noResults": "Inga resultat",
+      "number": "Tal",
+      "onlyShowingFirstGroups": "Visar bara de första {{n}} grupperna",
+      "percent": "Procent",
+      "rangeSize": "Intervallstorlek",
+      "ranges": "Intervall",
+      "rangesPreview": "{{count}} intervall från {{from}} till {{to}}",
+      "searchProperty": "Sök efter en egenskap…",
+      "size": "Storlek {{size}}",
+      "sortBy": "Sortera efter",
+      "startAt": "Börjar vid",
+      "style": "Stil",
+      "verticalBar": "Stående stapel",
+      "viewSettings": "Vyinställningar",
+      "whatToShow": "Vad som visas",
+      "xAxis": "X-axel",
+      "yAxis": "Y-axel"
+    },
+    "showEmptyValues": "Visa tomma värden",
+    "sort": {
+      "default": "Standard",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "Manuell",
+      "valueAsc": "Värde lågt → högt",
+      "valueDesc": "Värde högt → lågt"
+    },
+    "state": {
+      "error": "Det gick inte att läsa in diagrammet",
+      "noData": "Ingen data",
+      "preparing": "Förbereder ditt diagram",
+      "retry": "Försök igen"
+    },
+    "style": {
+      "color": "Färg",
+      "dataLabels": "Dataetiketter",
+      "decimalPlaces": "Decimaler",
+      "legend": "Teckenförklaring",
+      "title": "Stil"
+    },
+    "tooltip": {
+      "average": "Medelvärde",
+      "clickToView": "Klicka för att visa data",
+      "count": "Antal",
+      "countValues": "Räkna värden",
+      "max": "Högsta",
+      "median": "Median",
+      "min": "Lägsta",
+      "rows": "{{count}} rader",
+      "sum": "Summa",
+      "tapAgainToView": "Tryck igen för att visa data"
+    },
+    "total": "Totalt",
+    "unchecked": "Omarkerad",
+    "upgradeRequired": "Uppgradering krävs",
+    "upgradeToProForChartTypes": "Uppgradera till Pro för att använda liggande stapel-, linje- och ringdiagram",
+    "value": {
+      "days_one": "{{count}} dag",
+      "days_other": "{{count}} dagar"
+    },
+    "xAxis": "X-axel",
+    "yAxis": "Y-axel",
+    "drilldown": {
+      "ariaLabel": "Förhandsvisning av tabelldata",
+      "search": "Sök",
+      "dismiss": "Stäng",
+      "more": "Mer",
+      "saveAsView": "Spara som vy…",
+      "openDatabase": "Öppna {{database}}",
+      "selectedRows": "Valda rader ({{count}})",
+      "cannotSaveSelectedRows": "Valda rader kan inte sparas som en vy",
+      "open": "ÖPPNA",
+      "fromDashboardFilter": "Från instrumentpanelens filter",
+      "rowCount_one": "{{count}} rad",
+      "rowCount_other": "{{count}} rader"
+    }
+  },
+  "dashboard": {
+    "addWidget": "Lägg till widget",
+    "creationRequiresPro": "Det krävs en Pro-arbetsyta för att skapa en instrumentpanelsvy.",
+    "done": "Klar",
+    "edit": "Redigera",
+    "empty": {
+      "editDashboard": "Redigera instrumentpanel",
+      "newView": "Ny vy",
+      "text": "Lägg till diagram, tabeller och listor"
+    },
+    "globalFilters": {
+      "addAnother": "Lägg till en till",
+      "addToFilter": "Lägg till i filter",
+      "appliesTo": "Filtret gäller för de {{type}}-egenskaper som valts nedan",
+      "button": "Filter",
+      "delete": "Ta bort filter",
+      "done": "Klar",
+      "endDate": "Slutdatum",
+      "filterBy": "Filtrera efter…",
+      "isChecked": "Är markerad",
+      "isUnchecked": "Är omarkerad",
+      "more": "{{count}} till",
+      "moreActions": "Fler åtgärder",
+      "multipleSourcesIntro": "Skapa ett filter som gäller för egenskaper från flera källor",
+      "name": "Filternamn",
+      "noResults": "Inga resultat",
+      "op": {
+        "after": "Efter",
+        "before": "Före",
+        "between": "Mellan",
+        "checked": "Markerad",
+        "complete": "Slutförd",
+        "doesNotContain": "Innehåller inte",
+        "endsWith": "Slutar med",
+        "incomplete": "Ej slutförd",
+        "is": "Är",
+        "isEmpty": "Är tom",
+        "isNot": "Är inte",
+        "isNotEmpty": "Är inte tom",
+        "onOrAfter": "På eller efter",
+        "onOrBefore": "På eller före",
+        "startsWith": "Börjar med",
+        "unchecked": "Omarkerad"
+      },
+      "people_one": "{{count}} person",
+      "people_other": "{{count}} personer",
+      "relative": {
+        "amount": "Antal",
+        "next": "Kommande",
+        "past": "Föregående",
+        "summaryNext_one": "Kommande {{unit}}",
+        "summaryNext_other": "Kommande {{count}} {{unit}}",
+        "summaryPast_one": "Föregående {{unit}}",
+        "summaryPast_other": "Föregående {{count}} {{unit}}",
+        "summaryThis": "Innevarande {{unit}}",
+        "this": "Innevarande"
+      },
+      "relativeHint": "Filtret uppdateras med dagens datum",
+      "relativeToToday": "Är relativt till idag",
+      "remove": "Ta bort",
+      "reset": "Återställ",
+      "sourceLine": "{{property}} i {{source}}",
+      "startDate": "Startdatum",
+      "title": "Filtrera flera källor",
+      "units": {
+        "day_one": "dag",
+        "day_other": "dagar",
+        "month_one": "månad",
+        "month_other": "månader",
+        "week_one": "vecka",
+        "week_other": "veckor",
+        "year_one": "år",
+        "year_other": "år"
+      },
+      "viewCount_one": "{{count}} vy",
+      "viewCount_other": "{{count}} vyer"
+    },
+    "historyPreviewUnavailable": "Instrumentpaneler förhandsvisas inte i versionshistoriken.",
+    "limit": {
+      "fullHint": "Ta bort en vy för att lägga till en ny",
+      "fullTitle": "Instrumentpanelen är full"
+    },
+    "menuName": "Instrumentpanel",
+    "picker": {
+      "back": "Tillbaka",
+      "changeViewTitle": "Byt vy",
+      "close": "Stäng",
+      "createFailed": "Det gick inte att skapa vyn",
+      "editChart": "Redigera diagram",
+      "layout": {
+        "board": "Tavla",
+        "calendar": "Kalender",
+        "chart": "Diagram",
+        "feed": "Flöde",
+        "gallery": "Galleri",
+        "list": "Lista",
+        "table": "Tabell",
+        "timeline": "Tidslinje"
+      },
+      "loadFailed": "Det gick inte att läsa in databaser",
+      "newView": "Ny vy",
+      "newViewIn": "Ny vy i {{database}}",
+      "noResults": "Inga vyer hittades",
+      "otherSources": "Andra datakällor",
+      "searchPlaceholder": "Sök efter en vy...",
+      "showMore": "Visa {{count}} till",
+      "source": "Källa",
+      "thisDatabase": "Den här databasen",
+      "viewName": "Vynamn",
+      "viewsOn": "Vyer i {{database}}",
+      "viewsOnThisDatabase": "Vyer i den här databasen"
+    },
+    "private": {
+      "reset": "Återställ",
+      "resetAll": "Återställ alla ändringar",
+      "saveForEveryone": "Spara för alla",
+      "saveOptions": "Fler sparalternativ",
+      "saved": "Ändringarna har sparats för alla.",
+      "undo": "Ångra",
+      "unsaved": "Osparade ändringar"
+    },
+    "referencedDashboardPrefix": "Vy av",
+    "row": {
+      "addToNewRow": "Lägg till på ny rad",
+      "addToRow": "Lägg till på rad",
+      "moveDown": "Flytta ner",
+      "moveUp": "Flytta upp",
+      "movedDown": "Raden flyttades ner",
+      "movedUp": "Raden flyttades upp"
+    },
+    "rowLimit": "En rad rymmer högst {{count}} widgetar.",
+    "settings": {
+      "name": "Inställningar för instrumentpanel",
+      "showIconsInHeading": "Visa ikoner i rubriken",
+      "showWidgetTitles": "Visa widgetrubriker"
+    },
+    "toolbar": {
+      "openAsFullPage": "Öppna som helsida",
+      "settings": "Inställningar"
+    },
+    "widget": {
+      "changeView": "Byt vy",
+      "close": "Stäng",
+      "createRowAbove": "Skapa ny rad ovanför",
+      "createRowBelow": "Skapa ny rad nedanför",
+      "delete": "Ta bort",
+      "dragHandle": "Dra för att flytta",
+      "duplicate": "Duplicera",
+      "editView": "Redigera vy",
+      "filters": "Filter",
+      "loading": "Läser in…",
+      "menu": "Widgetalternativ",
+      "moveLeft": "Flytta vänster",
+      "moveRight": "Flytta höger",
+      "moveToRow": "Flytta till rad",
+      "noAccess": "Du har inte åtkomst till den här databasen",
+      "notFound": "Den här vyn finns inte längre",
+      "offline": "Tillgänglig när du är online igen",
+      "openFailed": "Det gick inte att öppna vyn",
+      "remove": "Ta bort widget",
+      "resizeHeight": "Dra för att ändra radhöjd",
+      "resizeHeightValue": "{{height}} pixlar",
+      "resizeWidth": "Dra för att ändra storlek",
+      "resizeWidthValue": "{{columns}} av 12 kolumner",
+      "settings": "Inställningar",
+      "sorts": "Sorteringar",
+      "source": "Källa",
+      "unsupported": "En instrumentpanel kan inte visas inuti en instrumentpanel",
+      "viewDataSource": "Visa datakälla",
+      "viewNameHint": "Byter namn på den här vyn",
+      "viewSettings": "Vyinställningar"
+    },
+    "mobile": {
+      "viewCount_one": "{{count}} vy",
+      "viewCount_other": "{{count}} vyer"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "Rensa sökning",
+    "noResults": "Inga resultat",
+    "placeholder": "Skriv för att söka..."
   }
 }

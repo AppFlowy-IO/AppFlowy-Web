@@ -27,7 +27,12 @@ import {
   readDatabaseViews,
 } from '../../support/dashboard-test-helpers';
 import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
-import { EMPLOYEE_FIELDS, employeeRecords, loadEmployeesFixture, seededEmployeesDatabase } from '../../support/employees-database';
+import {
+  EMPLOYEE_FIELDS,
+  employeeRecords,
+  loadEmployeesFixture,
+  seededEmployeesDatabase,
+} from '../../support/employees-database';
 import { DatabaseViewSelectors } from '../../support/selectors';
 import { grantWorkspaceProSubscription, mockProSubscription } from '../../support/subscription-test-helpers';
 
@@ -66,7 +71,10 @@ interface LargeSourceScenario {
 interface WidgetSample {
   /** Milliseconds since the page started loading. */
   t: number;
+  /** The widget's grid is mounted (before that the widget waits for a slot or for its source). */
+  grid: boolean;
   rowIds: string[];
+  /** The loading placeholder, the loading row or a grid still reading its rows. */
   loading: boolean;
   hydrating: boolean;
   rowCount: string | null;
@@ -216,7 +224,12 @@ function rowIdsInDeliveryOrder(pages: Buffer[]): string[] {
 }
 
 /** The server's copy of a view of a database (`read` gets the view map). */
-async function readServerView<T>(page: Page, database: OpenDatabase, viewId: string, read: (view?: Y.Map<unknown>) => T) {
+async function readServerView<T>(
+  page: Page,
+  database: OpenDatabase,
+  viewId: string,
+  read: (view?: Y.Map<unknown>) => T
+) {
   const access = { token: await browserAccessToken(page), workspaceId: database.workspaceId };
 
   return readServerDatabaseDoc(page.request, access, database.databaseId, (yDatabase) =>
@@ -478,7 +491,11 @@ Given('a new database has a dashboard showing its own grid and the employees HR 
   current.team = { ...host, dashboardViewId };
 });
 
-/** Record the HR widget every 100 ms from the first frame of the next page load. */
+/**
+ * Record the HR widget every 100 ms from its first frame in the next page
+ * load: while it waits for a load slot or for its source (the loading
+ * placeholder), then its grid.
+ */
 async function recordHrWidget(page: Page) {
   await page.addInitScript(
     ({ viewId, key }) => {
@@ -487,17 +504,22 @@ async function recordHrWidget(page: Page) {
       (window as any)[key] = samples;
       window.setInterval(() => {
         const widget = document.querySelector(`[data-testid="dashboard-widget"][data-view-id="${viewId}"]`);
-        const grid = widget?.querySelector('[data-testid="database-grid"]');
 
-        if (!widget || !grid) return;
+        if (!widget) return;
+        const grid = widget.querySelector('[data-testid="database-grid"]');
+        const placeholder = widget.querySelector('[data-testid="dashboard-widget-placeholder"]');
+
         samples.push({
           t: Math.round(performance.now()),
+          grid: Boolean(grid),
           rowIds: Array.from(widget.querySelectorAll('[data-testid^="grid-row-"]'))
             .map((row) => (row.getAttribute('data-testid') ?? '').slice('grid-row-'.length))
             .filter((rowId) => rowId && rowId !== 'undefined'),
-          loading: Boolean(widget.querySelector('[data-testid="grid-loading-indicator"]')),
-          hydrating: grid.getAttribute('data-hydrating') === 'true',
-          rowCount: grid.getAttribute('data-row-count'),
+          loading:
+            placeholder?.getAttribute('data-reason') === 'loading' ||
+            Boolean(widget.querySelector('[data-testid="grid-loading-indicator"]')),
+          hydrating: grid?.getAttribute('data-hydrating') === 'true',
+          rowCount: grid?.getAttribute('data-row-count') ?? null,
         });
       }, 100);
     },
@@ -616,12 +638,19 @@ When('I open that dashboard while the employees HR view is open in another tab',
   await openTeamDashboard(page, async () => {
     const other = await page.context().newPage();
 
-    await other.goto(new URL(`/app/${employees.workspaceId}/${employees.pageId}?v=${employees.hrViewId}`, page.url()).toString(), {
-      waitUntil: 'domcontentloaded',
-    });
-    await expect(DatabaseViewSelectors.gridView(other)).toHaveAttribute('data-row-count', String(employees.hrRowIds.length), {
-      timeout: LOAD_TIMEOUT_MS,
-    });
+    await other.goto(
+      new URL(`/app/${employees.workspaceId}/${employees.pageId}?v=${employees.hrViewId}`, page.url()).toString(),
+      {
+        waitUntil: 'domcontentloaded',
+      }
+    );
+    await expect(DatabaseViewSelectors.gridView(other)).toHaveAttribute(
+      'data-row-count',
+      String(employees.hrRowIds.length),
+      {
+        timeout: LOAD_TIMEOUT_MS,
+      }
+    );
   });
 });
 
@@ -655,11 +684,16 @@ Then('the HR widget shows its first HR employees within 5 seconds, above a loadi
   await expect(gridDataRows(widget).first()).toBeVisible({ timeout: FIRST_ROWS_WITHIN_MS + 5000 });
 
   const samples = await readSamples(page);
-  const gridShownAt = samples[0]?.t ?? 0;
+  // From the widget's first frame: its wait for a slot and its source's open count too.
+  const frameShownAt = samples[0]?.t;
   const firstRows = samples.find((sample) => sample.rowIds.length > 0);
 
+  expect(frameShownAt, 'the HR widget was never seen').toBeDefined();
   expect(firstRows, 'the HR widget listed no row').toBeDefined();
-  expect((firstRows as WidgetSample).t - gridShownAt).toBeLessThanOrEqual(FIRST_ROWS_WITHIN_MS);
+  expect(
+    (firstRows as WidgetSample).t - (frameShownAt as number),
+    'ms from the HR widget frame to its first rows'
+  ).toBeLessThanOrEqual(FIRST_ROWS_WITHIN_MS);
   // They came before the employees database finished loading.
   expect(firstRows?.hydrating).toBe(true);
   expect(firstRows?.rowCount).toBeNull();
@@ -687,9 +721,10 @@ Then('the HR widget never looked empty while it loaded', async ({ page }) => {
   const { employees } = currentScenario(page);
   const samples = await readSamples(page);
 
+  // Looked at from its first frame, while it waited for its source too.
   expect(samples.length).toBeGreaterThan(0);
   samples.forEach((sample) => {
-    // Rows, or the loading row: never a grid with neither.
+    // Rows, or the loading placeholder or row: never a widget with neither.
     expect(sample.rowIds.length > 0 || sample.loading, `the HR widget looked empty at ${sample.t} ms`).toBe(true);
     expect(sample.rowCount).not.toBe('0');
     // Rows only ever append below the ones already shown.
@@ -714,29 +749,26 @@ async function visitSamples(page: Page) {
   return (await readSamples(page)).filter((sample) => sample.t >= from);
 }
 
-Then(
-  'the HR widget shows no loading row within {int} seconds of its last row',
-  async ({ page }, seconds: number) => {
-    const scenario = currentScenario(page);
-    const count = String(scenario.employees.hrRowIds.length);
-    const listed = (await visitSamples(page)).find((sample) => sample.rowCount === count);
+Then('the HR widget shows no loading row within {int} seconds of its last row', async ({ page }, seconds: number) => {
+  const scenario = currentScenario(page);
+  const count = String(scenario.employees.hrRowIds.length);
+  const listed = (await visitSamples(page)).find((sample) => sample.rowCount === count);
 
-    expect(listed, 'the HR widget never listed every HR employee').toBeDefined();
-    const deadline = (listed as WidgetSample).t + seconds * 1000;
+  expect(listed, 'the HR widget never listed every HR employee').toBeDefined();
+  const deadline = (listed as WidgetSample).t + seconds * 1000;
 
-    // The loading row is gone by the deadline, and every look from then on agrees.
-    await waitForPageClock(page, deadline + 200);
-    const after = (await visitSamples(page)).filter((sample) => sample.t >= deadline);
+  // The loading row is gone by the deadline, and every look from then on agrees.
+  await waitForPageClock(page, deadline + 200);
+  const after = (await visitSamples(page)).filter((sample) => sample.t >= deadline);
 
-    expect(after.length, 'no look at the HR widget after the deadline').toBeGreaterThan(0);
-    expect(
-      after.filter((sample) => sample.loading).map((sample) => sample.t),
-      `the HR widget still showed its loading row ${seconds} s after its last row (ms since load)`
-    ).toEqual([]);
-    await expect(hrWidget(page).getByTestId('grid-loading-indicator')).toHaveCount(0);
-    scenario.noLoadingRowFrom = deadline;
-  }
-);
+  expect(after.length, 'no look at the HR widget after the deadline').toBeGreaterThan(0);
+  expect(
+    after.filter((sample) => sample.loading).map((sample) => sample.t),
+    `the HR widget still showed its loading row ${seconds} s after its last row (ms since load)`
+  ).toEqual([]);
+  await expect(hrWidget(page).getByTestId('grid-loading-indicator')).toHaveCount(0);
+  scenario.noLoadingRowFrom = deadline;
+});
 
 Then('the HR widget still shows no loading row {int} seconds later', async ({ page }, seconds: number) => {
   const scenario = currentScenario(page);

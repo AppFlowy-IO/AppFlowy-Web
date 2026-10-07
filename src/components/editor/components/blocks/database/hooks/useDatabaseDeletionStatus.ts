@@ -1,8 +1,11 @@
-
 import { useEffect, useRef, useState } from 'react';
 
 import { APP_EVENTS } from '@/application/constants';
 import { ViewService } from '@/application/services/domains';
+import {
+  captureWorkspaceViewMetadataAccessToken,
+  primeWorkspaceViewMetadataFromServer,
+} from '@/application/services/js-services/workspace-view-metadata';
 import type { View } from '@/application/types';
 
 import { isViewGoneError } from '../utils/databaseBlockUtils';
@@ -63,6 +66,7 @@ function flushViewProbes(workspaceId: string) {
   const viewIds = Array.from(new Set(probes.map((probe) => probe.viewId)));
 
   pendingViewProbes.delete(workspaceId);
+  const accessToken = captureWorkspaceViewMetadataAccessToken(workspaceId);
 
   // Shared by the probes of one view: a lookup of its own gives the server's
   // answer for it (deleted, refused, failed), which the batch cannot.
@@ -94,7 +98,10 @@ function flushViewProbes(workspaceId: string) {
 
   // The batch returns the views it could read and leaves the others out.
   ViewService.getMultiple(workspaceId, viewIds, 1).then(
-    (views) => settle(new Map(views.map((view) => [view.view_id, view]))),
+    (views) => {
+      primeWorkspaceViewMetadataFromServer(workspaceId, views, accessToken);
+      settle(new Map(views.map((view) => [view.view_id, view])));
+    },
     () => settle(new Map())
   );
 }
@@ -105,7 +112,7 @@ function flushViewProbes(workspaceId: string) {
  * request per view. A view already cached is not asked for again.
  */
 function loadViewForMountProbe(workspaceId: string, viewId: string): Promise<View> {
-  const cached = ViewService.getCached(workspaceId, viewId);
+  const cached = ViewService.getCached(workspaceId, viewId) ?? ViewService.getCachedMetadata(workspaceId, viewId);
 
   if (cached) return Promise.resolve(cached);
 

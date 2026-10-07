@@ -1,10 +1,9 @@
 /**
  * Chart settings — chart type switching.
  *
- * Verifies the "Chart type" sub-submenu in
- * `src/components/database/components/settings/ChartLayoutSettings.tsx`
- * actually swaps the rendered Recharts widget when each of the four chart
- * types is selected.
+ * Verifies the chart type icon row of the settings panel
+ * (`src/components/database/chart/settings/ChartTypeRow.tsx`) actually swaps
+ * the rendered Recharts widget when each chart type is selected.
  *
  * Recharts class hooks used:
  *  - Bar              → `.recharts-bar-rectangle`
@@ -58,21 +57,21 @@ test.describe('Chart settings — Chart type', () => {
     await mockProSubscription(page);
   });
 
-  test('defaults to Bar with the tick on Bar', async ({ page, request }) => {
+  test('defaults to Vertical bar, the selected icon button', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
 
     await setupChartWithData(page, request, testEmail);
     await openChartSettings(page);
 
-    // Scroll the chart-type items into view (they're at the bottom of the
-    // scrollable chart settings dropdown).
-    const barItem = ChartSettingsSelectors.chartTypeItem(page, 'Bar');
+    // The five icon buttons, Vertical bar selected (pressed) by default.
+    const buttons = page.getByTestId('chart-type-row').locator('button');
 
-    await barItem.scrollIntoViewIfNeeded().catch(() => {});
-    await page.waitForTimeout(150);
-
-    // Bar carries the right-aligned tick by default
-    await expect(barItem.locator('svg').last()).toBeVisible();
+    await expect(buttons).toHaveCount(5);
+    await expect(ChartSettingsSelectors.chartTypeButton(page, 'Bar')).toHaveAttribute('aria-pressed', 'true');
+    await expect(ChartSettingsSelectors.chartTypeButton(page, 'Bar')).toHaveAttribute('aria-label', 'Vertical bar');
+    for (const label of ['Horizontal Bar', 'Line', 'Donut', 'Number']) {
+      await expect(ChartSettingsSelectors.chartTypeButton(page, label)).toHaveAttribute('aria-pressed', 'false');
+    }
   });
 
   test('switching to Line renders a Recharts line series', async ({ page, request }) => {

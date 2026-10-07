@@ -26,9 +26,14 @@ import {
   DASHBOARD_MAX_WIDGETS,
   DASHBOARD_MAX_WIDGETS_PER_ROW,
   DASHBOARD_MIN_ROW_HEIGHT,
+  DashboardAddControlState,
+  DashboardDropIndicator,
+  DashboardDropTarget,
   DashboardLayoutSetting,
   DashboardLayoutUpdate,
+  DashboardMoveFeedback,
   DashboardRow,
+  DashboardRowControls,
   DashboardWidget,
   DashboardWidgetPlacement,
 } from './dashboard.type';
@@ -527,6 +532,58 @@ export function shareDashboardRows(previous: DashboardRow[], next: DashboardRow[
   });
 }
 
+/**
+ * Whether deep events of a database doc's data section can change the
+ * dashboard setting of `viewId`. Ancestors count too: an incoming update can
+ * insert or replace the view, `layout_settings` or the dashboard map instead
+ * of changing an existing key.
+ */
+function touchesDashboardSetting(
+  events: readonly { path: (string | number)[]; changes: { keys: Map<string, unknown> } }[],
+  viewId: string
+) {
+  return events.some((event) => {
+    if (event.path.length === 0) return event.changes.keys.has(YjsEditorKey.database);
+    if (event.path[0] !== YjsEditorKey.database) return false;
+    const path = event.path.slice(1);
+
+    if (path.length === 0) return event.changes.keys.has(YjsDatabaseKey.views);
+    if (path[0] !== YjsDatabaseKey.views) return false;
+    if (path.length === 1) return event.changes.keys.has(viewId);
+    if (path[1] !== viewId) return false;
+    if (path.length === 2) return event.changes.keys.has(YjsDatabaseKey.layout_settings);
+    if (path[2] !== YjsDatabaseKey.layout_settings) return false;
+    return path.length === 3 ? event.changes.keys.has(DASHBOARD_LAYOUT_KEY) : path[3] === DASHBOARD_LAYOUT_KEY;
+  });
+}
+
+/**
+ * Report the dashboard's rows changes made by this client: its own writes,
+ * undo and redo (all local transactions). Remote updates and a local cache
+ * catching up (applied updates) only move the baseline. `listener` gets every
+ * stored widget before and after the change, hidden ones included (they still
+ * reference their views). Feeds the owned-view deletion queue (WP05 §1.5).
+ */
+export function observeLocalDashboardRowsChanges(
+  databaseDoc: Y.Doc,
+  viewId: string,
+  listener: (before: DashboardWidget[], after: DashboardWidget[]) => void
+): () => void {
+  const root = databaseDoc.getMap(YjsEditorKey.data_section);
+  const read = () => readStoredDashboardWidgets(root.get(YjsEditorKey.database) as YDatabase | undefined, viewId);
+  let previous = read();
+  const observer: Parameters<typeof root.observeDeep>[0] = (events, transaction) => {
+    if (!touchesDashboardSetting(events, viewId)) return;
+    const before = previous;
+
+    previous = read();
+    if (transaction.local) listener(before, previous);
+  };
+
+  root.observeDeep(observer);
+  return () => root.unobserveDeep(observer);
+}
+
 /** Stable snapshots keep row updates from rebuilding dashboard consumers. */
 export function createDashboardLayoutStore(databaseDoc: Y.Doc, viewId: string) {
   const root = databaseDoc.getMap(YjsEditorKey.data_section);
@@ -554,23 +611,7 @@ export function createDashboardLayoutStore(databaseDoc: Y.Doc, viewId: string) {
 
   const subscribe = (notify: () => void) => {
     const observer: Parameters<typeof root.observeDeep>[0] = (events) => {
-      // Observe ancestors too: an incoming update can insert or replace the view,
-      // layout_settings, or dashboard map instead of changing an existing key.
-      const relevant = events.some((event) => {
-        if (event.path.length === 0) return event.changes.keys.has(YjsEditorKey.database);
-        if (event.path[0] !== YjsEditorKey.database) return false;
-        const path = event.path.slice(1);
-
-        if (path.length === 0) return event.changes.keys.has(YjsDatabaseKey.views);
-        if (path[0] !== YjsDatabaseKey.views) return false;
-        if (path.length === 1) return event.changes.keys.has(viewId);
-        if (path[1] !== viewId) return false;
-        if (path.length === 2) return event.changes.keys.has(YjsDatabaseKey.layout_settings);
-        if (path[2] !== YjsDatabaseKey.layout_settings) return false;
-        return path.length === 3 ? event.changes.keys.has(DASHBOARD_LAYOUT_KEY) : path[3] === DASHBOARD_LAYOUT_KEY;
-      });
-
-      if (relevant && getSnapshot() !== snapshotBeforeChange) {
+      if (touchesDashboardSetting(events, viewId) && getSnapshot() !== snapshotBeforeChange) {
         snapshotBeforeChange = snapshot;
         notify();
       }
@@ -615,12 +656,18 @@ export function canAddDashboardWidget(rows: DashboardRow[], placement?: Dashboar
   return true;
 }
 
+/**
+ * A new widget. The add flow passes the id it generated when the "+" was
+ * clicked (WP06 §1.1), so the pending slot, the persisted widget, the
+ * selection and the docked picker share one identity.
+ */
 export function createDashboardWidget(
   viewId: string,
   databaseId: string,
-  width = DASHBOARD_GRID_COLUMNS
+  width = DASHBOARD_GRID_COLUMNS,
+  id = generateDashboardId('w')
 ): DashboardWidget {
-  return { id: generateDashboardId('w'), viewId, databaseId, width };
+  return { id, viewId, databaseId, width };
 }
 
 export function createDashboardRow(widgets: DashboardWidget[], height = DASHBOARD_DEFAULT_ROW_HEIGHT): DashboardRow {
@@ -628,22 +675,28 @@ export function createDashboardRow(widgets: DashboardWidget[], height = DASHBOAR
 }
 
 /**
- * Width a widget must carry into `row` so that, once the row is rebalanced, it
- * holds an equal share (`1 / (n + 1)`: 1 → 2 widgets is 6 / 6, 2 → 3 is
- * 4 / 4 / 4) while the widgets already there keep their proportions.
+ * R-SPLIT: every widget of the row gets an equal share of the twelve columns
+ * (12, 6/6, 4/4/4, 3/3/3/3), discarding earlier custom widths as Notion does
+ * when a widget joins or leaves a row. Returns `widgets` itself when nothing
+ * changes, so memoized rows keep their identity. An equal split is a fixed
+ * point of `normalizeDashboardRows` (and of Rust `normalize_dashboard_rows`).
  */
-export function getDashboardJoinWidth(row: DashboardRow) {
-  const count = row.widgets.length;
+export function splitDashboardRowEqually(widgets: DashboardWidget[]): DashboardWidget[] {
+  const count = widgets.length;
 
-  if (count === 0) return DASHBOARD_GRID_COLUMNS;
-  const total = row.widgets.reduce((sum, widget) => sum + (Number.isFinite(widget.width) ? widget.width : 0), 0);
+  if (count === 0) return widgets;
+  // At most four widgets after normalization, so 12 / n is exact; anything else balances evenly.
+  if (DASHBOARD_GRID_COLUMNS % count !== 0) return balanceRowWidths(widgets.map((widget) => ({ ...widget, width: 0 })));
+  const width = DASHBOARD_GRID_COLUMNS / count;
 
-  return Math.max(1, Math.round((total > 0 ? total : DASHBOARD_GRID_COLUMNS) / count));
+  return widgets.every((widget) => widget.width === width)
+    ? widgets
+    : widgets.map((widget) => (widget.width === width ? widget : { ...widget, width }));
 }
 
 /**
  * Add a widget; returns the unchanged rows when the limits refuse it. A widget
- * joining a row gets an equal share of it (see `getDashboardJoinWidth`).
+ * joining a row splits that row equally (R-SPLIT); a new row holds it alone.
  */
 export function addDashboardWidget(
   rows: DashboardRow[],
@@ -659,8 +712,8 @@ export function addDashboardWidget(
         const widgets = [...row.widgets];
         const index = placement.index === undefined ? widgets.length : Math.min(placement.index, widgets.length);
 
-        widgets.splice(index, 0, { ...widget, width: getDashboardJoinWidth(row) });
-        return { ...row, widgets: balanceRowWidths(widgets) };
+        widgets.splice(index, 0, widget);
+        return { ...row, widgets: splitDashboardRowEqually(widgets) };
       })
     );
   }
@@ -673,24 +726,35 @@ export function addDashboardWidget(
   return normalizeDashboardRows(next);
 }
 
+/** Remove a widget; the rest of its row splits equally (R-SPLIT) and an emptied row disappears. */
 export function removeDashboardWidget(rows: DashboardRow[], widgetId: string): DashboardRow[] {
   return normalizeDashboardRows(
     rows.map((row) => {
       if (!row.widgets.some((widget) => widget.id === widgetId)) return row;
-      return { ...row, widgets: balanceRowWidths(row.widgets.filter((widget) => widget.id !== widgetId)) };
+      return { ...row, widgets: splitDashboardRowEqually(row.widgets.filter((widget) => widget.id !== widgetId)) };
     })
   );
 }
 
 /**
  * Duplicate a widget next to its source. When the row is full the copy starts
- * a new row directly below; when the dashboard is full nothing changes.
+ * a new row directly below; when the dashboard is full nothing changes. With
+ * `copy`, the new widget shows that view (the source view's owned copy, WP05
+ * §1.4) instead of sharing the source's.
  */
-export function duplicateDashboardWidget(rows: DashboardRow[], widgetId: string): DashboardRow[] {
+export function duplicateDashboardWidget(
+  rows: DashboardRow[],
+  widgetId: string,
+  copyView?: { viewId: string; databaseId: string }
+): DashboardRow[] {
   const location = findDashboardWidget(rows, widgetId);
 
   if (!location || countDashboardWidgets(rows) >= DASHBOARD_MAX_WIDGETS) return rows;
-  const copy: DashboardWidget = { ...location.widget, id: generateDashboardId('w') };
+  const copy: DashboardWidget = {
+    ...location.widget,
+    ...(copyView ? { viewId: copyView.viewId, databaseId: copyView.databaseId } : null),
+    id: generateDashboardId('w'),
+  };
 
   if (location.row.widgets.length < DASHBOARD_MAX_WIDGETS_PER_ROW) {
     return addDashboardWidget(rows, copy, { type: 'existing_row', rowId: location.row.id, index: location.index + 1 });
@@ -701,9 +765,11 @@ export function duplicateDashboardWidget(rows: DashboardRow[], widgetId: string)
 
 /**
  * Move a widget to a new position. Moving into a full row is refused unless
- * the widget already lives in that row (a reorder). A widget joining another
- * row gets an equal share of it; a reorder inside a row keeps every width.
- * Rows left empty vanish.
+ * the widget already lives in that row (a reorder). A reorder inside a row
+ * keeps every width; a widget that changes rows splits both rows equally
+ * (R-SPLIT), and a new row holds it alone at its old row's height. Rows left
+ * empty vanish. A widget alone in its row dropped next to that row returns
+ * `rows` itself (#15).
  */
 export function moveDashboardWidget(
   rows: DashboardRow[],
@@ -714,22 +780,26 @@ export function moveDashboardWidget(
 
   if (!location) return rows;
   const { widget } = location;
-  const withoutWidget = rows.map((row) =>
-    row.id === location.row.id ? { ...row, widgets: row.widgets.filter((item) => item.id !== widgetId) } : row
-  );
+  const sameRow = placement.type === 'existing_row' && placement.rowId === location.row.id;
+  const withoutWidget = rows.map((row) => {
+    if (row.id !== location.row.id) return row;
+    const rest = row.widgets.filter((item) => item.id !== widgetId);
+
+    // The widget leaves the row: the rest splits equally (a reorder keeps the widths).
+    return { ...row, widgets: sameRow ? rest : splitDashboardRowEqually(rest) };
+  });
 
   if (placement.type === 'existing_row') {
     const target = withoutWidget.find((row) => row.id === placement.rowId);
 
     if (!target || target.widgets.length >= DASHBOARD_MAX_WIDGETS_PER_ROW) return rows;
-    const moving = target.id === location.row.id ? widget : { ...widget, width: getDashboardJoinWidth(target) };
     const next = withoutWidget.map((row) => {
       if (row.id !== placement.rowId) return row;
       const widgets = [...row.widgets];
       const index = placement.index === undefined ? widgets.length : Math.min(placement.index, widgets.length);
 
-      widgets.splice(index, 0, moving);
-      return { ...row, widgets: balanceRowWidths(widgets) };
+      widgets.splice(index, 0, widget);
+      return { ...row, widgets: sameRow ? widgets : splitDashboardRowEqually(widgets) };
     });
 
     return normalizeDashboardRows(next.filter((row) => row.widgets.length > 0));
@@ -738,17 +808,113 @@ export function moveDashboardWidget(
   // A new row: the index is expressed against the row list before the source
   // row (if now empty) disappears, so compute it on the pruned list.
   const pruned = withoutWidget.filter((row) => row.widgets.length > 0);
+  const alone = location.row.widgets.length === 1;
   let rowIndex = placement.rowIndex === undefined ? pruned.length : placement.rowIndex;
 
-  if (placement.rowIndex !== undefined && location.row.widgets.length === 1 && location.rowIndex < placement.rowIndex) {
+  if (placement.rowIndex !== undefined && alone && location.rowIndex < placement.rowIndex) {
     rowIndex -= 1;
   }
 
   rowIndex = Math.max(0, Math.min(rowIndex, pruned.length));
+  // A widget alone in its row, put back where that row was: nothing changes.
+  if (alone && rowIndex === location.rowIndex) return rows;
   const next = [...pruned];
 
   next.splice(rowIndex, 0, createDashboardRow([{ ...widget, width: DASHBOARD_GRID_COLUMNS }], location.row.height));
   return normalizeDashboardRows(next);
+}
+
+/**
+ * How a move would end: `blocked` when the widget would join a full row,
+ * `noop` when the layout would not change (or the widget or row is unknown),
+ * else `allowed`.
+ */
+export function classifyDashboardMove(
+  rows: DashboardRow[],
+  widgetId: string,
+  placement: DashboardWidgetPlacement
+): DashboardMoveFeedback {
+  const source = findDashboardWidget(rows, widgetId);
+
+  if (!source) return 'noop';
+  if (placement.type === 'existing_row' && placement.rowId !== source.row.id) {
+    const target = rows.find((row) => row.id === placement.rowId);
+
+    if (!target) return 'noop';
+    if (target.widgets.length >= DASHBOARD_MAX_WIDGETS_PER_ROW) return 'blocked';
+  }
+
+  const next = moveDashboardWidget(rows, widgetId, placement);
+
+  return next === rows || sameDashboardRows(next, rows) ? 'noop' : 'allowed';
+}
+
+/**
+ * The `moveDashboardWidget` placement of dropping `sourceId` on `target`, by
+ * position alone (whether the move is allowed is `getDashboardDropFeedback`).
+ * `null` for an unknown source or target, or a drop on the source itself.
+ */
+export function resolveDashboardDropPlacement(
+  rows: DashboardRow[],
+  sourceId: string,
+  target: DashboardDropTarget
+): DashboardWidgetPlacement | null {
+  const source = findDashboardWidget(rows, sourceId);
+
+  if (!source) return null;
+  if (target.type === 'row_gap') {
+    return { type: 'new_row', rowIndex: Math.max(0, Math.min(target.rowIndex, rows.length)) };
+  }
+
+  if (target.widgetId === sourceId) return null;
+  const destination = findDashboardWidget(rows, target.widgetId);
+
+  if (!destination) return null;
+  let index = target.edge === 'left' ? destination.index : destination.index + 1;
+
+  // `moveDashboardWidget` inserts into the row after removing the widget.
+  if (destination.row.id === source.row.id && source.index < index) index -= 1;
+  return { type: 'existing_row', rowId: destination.row.id, index };
+}
+
+/**
+ * Dropping `sourceId` on `target`: `blocked` next to a widget of another full
+ * row, `noop` where the widget would stay put (beside itself in its row, or a
+ * widget alone in its row dropped next to that row), else `allowed`.
+ */
+export function getDashboardDropFeedback(
+  rows: DashboardRow[],
+  sourceId: string,
+  target: DashboardDropTarget
+): DashboardMoveFeedback {
+  const placement = resolveDashboardDropPlacement(rows, sourceId, target);
+
+  return placement ? classifyDashboardMove(rows, sourceId, placement) : 'noop';
+}
+
+/**
+ * The line an allowed drop draws, else `null` (blocked and no-op targets show
+ * nothing). The right edge of widget `i` and the left edge of widget `i + 1`
+ * give the same boundary, so the row shows one line there.
+ */
+export function getDashboardDropIndicator(
+  rows: DashboardRow[],
+  sourceId: string,
+  target: DashboardDropTarget
+): DashboardDropIndicator | null {
+  if (getDashboardDropFeedback(rows, sourceId, target) !== 'allowed') return null;
+  if (target.type === 'row_gap') {
+    return { type: 'row_gap', rowIndex: Math.max(0, Math.min(target.rowIndex, rows.length)) };
+  }
+
+  const destination = findDashboardWidget(rows, target.widgetId);
+
+  if (!destination) return null;
+  return {
+    type: 'column',
+    rowId: destination.row.id,
+    boundary: target.edge === 'left' ? destination.index : destination.index + 1,
+  };
 }
 
 /**
@@ -798,21 +964,53 @@ export function setDashboardRowHeight(rows: DashboardRow[], rowId: string, heigh
   return rows.map((row) => (row.id === rowId && row.height !== clamped ? { ...row, height: clamped } : row));
 }
 
-export function moveDashboardRow(rows: DashboardRow[], rowId: string, toIndex: number): DashboardRow[] {
-  const fromIndex = rows.findIndex((row) => row.id === rowId);
+/**
+ * Swap a row with its neighbour above (`-1`) or below (`1`): one write, so one
+ * undo step. The row objects are kept as they are (ids, heights, widths).
+ * Returns `rows` itself at either end, for an unknown row or a single row.
+ */
+export function moveDashboardRow(rows: DashboardRow[], rowId: string, delta: -1 | 1): DashboardRow[] {
+  const from = rows.findIndex((row) => row.id === rowId);
+  const to = from + delta;
 
-  if (fromIndex === -1) return rows;
-  const target = Math.max(0, Math.min(toIndex, rows.length - 1));
-
-  if (target === fromIndex) return rows;
+  if (from === -1 || (delta !== 1 && delta !== -1) || to < 0 || to >= rows.length) return rows;
   const next = [...rows];
-  const [row] = next.splice(fromIndex, 1);
 
-  next.splice(target, 0, row);
+  [next[from], next[to]] = [next[to], next[from]];
   return next;
 }
 
-/** Replace the view a widget shows (used by "Change view"). */
+/**
+ * What the controls beside row `rowId` offer: the move arrows (none for a
+ * single row) and the "Add to row" control, hidden for a full row and
+ * disabled on a full dashboard.
+ */
+export function getDashboardRowControls(rows: DashboardRow[], rowId: string): DashboardRowControls {
+  const index = rows.findIndex((row) => row.id === rowId);
+  const row = rows[index];
+
+  if (!row) return { moveUp: false, moveDown: false, addToRow: 'hidden' };
+  // Notion's glyph for a single row is unverified: it gets no move control.
+  const single = rows.length < 2;
+
+  return {
+    moveUp: !single && index > 0,
+    moveDown: !single && index < rows.length - 1,
+    addToRow:
+      row.widgets.length >= DASHBOARD_MAX_WIDGETS_PER_ROW
+        ? 'hidden'
+        : countDashboardWidgets(rows) >= DASHBOARD_MAX_WIDGETS
+        ? 'disabled'
+        : 'enabled',
+  };
+}
+
+/** The "Add to new row" button under the last row: disabled on a full dashboard. */
+export function getDashboardAddToNewRowState(rows: DashboardRow[]): Exclude<DashboardAddControlState, 'hidden'> {
+  return countDashboardWidgets(rows) >= DASHBOARD_MAX_WIDGETS ? 'disabled' : 'enabled';
+}
+
+/** Replace the view a widget shows (Settings › Source). */
 export function replaceDashboardWidgetView(
   rows: DashboardRow[],
   widgetId: string,

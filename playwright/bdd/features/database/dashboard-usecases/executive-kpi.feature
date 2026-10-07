@@ -70,14 +70,15 @@ Feature: Executive KPI review
     And I finish editing the dashboard
     Then the "Needs attention" widget shows the number "1"
     When the executive opens the "Scorecard" dashboard
-    Then the executive sees the global filter "Quarter: Is Q3"
+    Then the executive sees the global filter "Quarter: Q3"
     And the executive sees the "Needs attention" widget show the number "1"
     When the executive changes the global filter "Quarter" to "Q2"
     Then the executive sees the "Needs attention" widget show the number "1"
     And the executive sees the "Metrics needing attention" widget list "Productized revenue share"
     And the executive sees that the global filter only applies for them
     When the executive reloads the page
-    Then the executive sees the global filter "Quarter: Is Q3"
+    Then the executive sees the global filter "Quarter: Q2"
+    And the executive sees that the global filter only applies for them
 
   Scenario: The executive checks the scorecard on a phone
     When the executive opens the "Scorecard" dashboard on a 390 by 844 screen

@@ -274,6 +274,32 @@ export function isDatabaseSourceResident(databaseId: string) {
   return !fence || isDatabaseStorageFenceCurrent(fence);
 }
 
+/**
+ * Whether the tab holds every row of the database in memory: it is resident
+ * (`isDatabaseSourceResident`), or the walk that will make it resident has
+ * committed its complete seed set and is still writing its pages to storage.
+ * Residency listeners also hear when a walk ends that held the rows without
+ * making the database resident.
+ */
+export function holdsDatabaseSourceRows(databaseId: string) {
+  if (isDatabaseSourceResident(databaseId)) return true;
+
+  for (const [key, entry] of sharedPrefetchEntries) {
+    if (
+      sharedPrefetchEntryMatchesDatabase(key, databaseId) &&
+      !entry.settled &&
+      entry.seedsReady &&
+      entry.hasCompleteSeedSet &&
+      entry.coversFullSnapshot &&
+      isSharedPrefetchEntryCurrent(entry)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function notifySourceResidency() {
   sourceResidencyListeners.forEach((listener) => listener());
 }
@@ -1738,6 +1764,8 @@ async function fetchReadyDiff(
         }
 
         if (diff.status === readyStatus) {
+          // Every row of the page came over the network, whatever becomes of the page.
+          dashboardLoadStats.recordRowsRead(databaseId, diff.creates.length + diff.updates.length);
           const nextCursor = page.nextCursor ?? new Uint8Array();
 
           // Validate the continuation contract before handing the page over, so a
@@ -2078,6 +2106,9 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
     dropProvisionalSeeds();
     if (entry.hasCompleteSeedSet && entry.coversFullSnapshot && isSharedPrefetchEntryCurrent(entry)) {
       markSourceResident(databaseId, entry.storageFence);
+    } else if (entry.hasCompleteSeedSet && entry.coversFullSnapshot) {
+      // It held the rows (`holdsDatabaseSourceRows`) and a restore retired it before it settled.
+      notifySourceResidency();
     }
   });
 

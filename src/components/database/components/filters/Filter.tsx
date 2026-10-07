@@ -12,7 +12,22 @@ import { useConditionsContext } from '../conditions/context';
 import { FilterMenu } from './filter-menu';
 import { useFilterChipLabel } from './overview/useFilterChipLabel';
 
-function Filter({ filterId }: { filterId: string }) {
+export type FilterChipVariant = 'default' | 'pill';
+
+/**
+ * A filter chip and its editor. `pill` is the drill-down's chip (WP13 §3.4):
+ * 24px tall, fully rounded, the active pill colours and a 12px chevron.
+ */
+function Filter({
+  filterId,
+  variant = 'default',
+  parityId,
+}: {
+  filterId: string;
+  variant?: FilterChipVariant;
+  /** `data-parity-id` of the chip (the visual parity probe measures it). */
+  parityId?: string;
+}) {
   const filter = useFilterSelector(filterId);
   const readOnly = useConditionsReadOnly();
   const conditionsContext = useConditionsContext();
@@ -41,36 +56,56 @@ function Filter({ filterId }: { filterId: string }) {
   const fieldName = field.get(YjsDatabaseKey.name) ?? '';
   const buttonText = hasContent ? `${fieldName}: ${description}` : fieldName;
 
+  const pill = variant === 'pill';
+
   return (
-    <div className={'relative h-7'}>
-      <Popover modal open={open} onOpenChange={setOpen}>
+    <div className={cn('relative', pill ? 'h-6' : 'h-7')}>
+      <Popover modal='backdrop' open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <button
-            aria-readonly={readOnly ? 'true' : 'false'}
-            data-testid={'database-filter-condition'}
-            className={cn(
-              'flex h-7 max-w-[300px] items-center rounded-full border px-2 py-1 outline-none',
-              hasContent
-                ? 'border-border-theme-thick bg-fill-theme-select'
-                : 'border-border-primary bg-transparent hover:bg-fill-content-hover'
-            )}
-          >
-            <FieldCustomIcon
-              fieldId={filter.fieldId}
-              className={cn('h-4 w-4 shrink-0', hasContent ? 'text-other-colors-text-event' : 'text-icon-primary')}
-            />
-            <span
+          {pill ? (
+            <button
+              aria-readonly={readOnly ? 'true' : 'false'}
+              data-parity-id={parityId}
+              data-testid={'database-filter-condition'}
+              data-variant='pill'
               className={cn(
-                'ml-1 max-w-[200px] truncate whitespace-nowrap text-sm font-medium',
-                hasContent ? 'text-other-colors-text-event' : 'text-text-primary'
+                'flex h-6 max-w-[300px] items-center gap-1 rounded-full px-2 text-sm outline-none',
+                'bg-dash-pill-bg-active text-dash-pill-fg-active hover:brightness-95',
+                'focus-visible:ring-1 focus-visible:ring-border-theme-thick'
               )}
             >
-              {buttonText}
-            </span>
-            <ArrowDown
-              className={cn('ml-1 h-5 w-5 shrink-0', hasContent ? 'text-icon-info-thick' : 'text-icon-secondary')}
-            />
-          </button>
+              <FieldCustomIcon fieldId={filter.fieldId} className={'h-3.5 w-3.5 shrink-0'} />
+              <span className={'max-w-[200px] truncate whitespace-nowrap'}>{buttonText}</span>
+              <ArrowDown className={'h-3 w-3 shrink-0'} data-testid='filter-chip-chevron' />
+            </button>
+          ) : (
+            <button
+              aria-readonly={readOnly ? 'true' : 'false'}
+              data-testid={'database-filter-condition'}
+              className={cn(
+                'flex h-7 max-w-[300px] items-center rounded-full border px-2 py-1 outline-none',
+                hasContent
+                  ? 'border-border-theme-thick bg-fill-theme-select'
+                  : 'border-border-primary bg-transparent hover:bg-fill-content-hover'
+              )}
+            >
+              <FieldCustomIcon
+                fieldId={filter.fieldId}
+                className={cn('h-4 w-4 shrink-0', hasContent ? 'text-other-colors-text-event' : 'text-icon-primary')}
+              />
+              <span
+                className={cn(
+                  'ml-1 max-w-[200px] truncate whitespace-nowrap text-sm font-medium',
+                  hasContent ? 'text-other-colors-text-event' : 'text-text-primary'
+                )}
+              >
+                {buttonText}
+              </span>
+              <ArrowDown
+                className={cn('ml-1 h-5 w-5 shrink-0', hasContent ? 'text-icon-info-thick' : 'text-icon-secondary')}
+              />
+            </button>
+          )}
         </PopoverTrigger>
         <PopoverContent
           align='start'

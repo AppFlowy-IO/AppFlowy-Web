@@ -47,6 +47,19 @@ export function runtimeAssetHash(asset: string): string | null {
   }
 }
 
+/**
+ * svg-norm/1 of the asset bytes themselves. React re-serializes the numbers
+ * SVGO shortens (`rx=".5"` renders as `rx="0.5"`), so a rendered glyph can
+ * hash like the source file rather than like SVGO's output.
+ */
+function sourceAssetHash(asset: string): string | null {
+  try {
+    return svgNormHash(readFileSync(join(REPO_ROOT, asset), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 /** svg-norm/1 of a rendered inline `<svg>` (outerHTML), or `null` when it does not parse. */
 export function renderedGlyphHash(outerHtml: string): string | null {
   try {
@@ -77,6 +90,8 @@ export interface GlyphIdentity {
 export class IconRuntimeIndex {
   private byHash = new Map<string, string[]>();
   private targetHash = new Map<string, string | null>();
+  /** Every hash an icon's web target may render to (SVGO output, or the source bytes). */
+  private targetHashes = new Map<string, Set<string>>();
   private built = false;
 
   constructor(private readonly fixture: IconsFixture) {}
@@ -91,13 +106,18 @@ export class IconRuntimeIndex {
       if (icon.web.target.asset) assets.add(icon.web.target.asset);
     });
     assets.forEach((asset) => {
-      const hash = runtimeAssetHash(asset);
-
-      if (!hash) return;
-      this.byHash.set(hash, [...(this.byHash.get(hash) ?? []), asset]);
+      new Set([runtimeAssetHash(asset), sourceAssetHash(asset)]).forEach((hash) => {
+        if (!hash) return;
+        this.byHash.set(hash, [...(this.byHash.get(hash) ?? []), asset]);
+      });
     });
     this.fixture.icons.forEach((icon) => {
-      this.targetHash.set(icon.name, icon.web.target.exists === false ? null : runtimeAssetHash(icon.web.target.asset));
+      const exists = icon.web.target.exists !== false;
+      const runtime = exists ? runtimeAssetHash(icon.web.target.asset) : null;
+      const source = exists ? sourceAssetHash(icon.web.target.asset) : null;
+
+      this.targetHash.set(icon.name, runtime);
+      this.targetHashes.set(icon.name, new Set([runtime, source].filter((hash): hash is string => Boolean(hash))));
     });
   }
 
@@ -112,7 +132,9 @@ export class IconRuntimeIndex {
     const hash = renderedGlyphHash(outerHtml);
 
     if (!hash) return { hash: null, assets: [], icons: [] };
-    const icons = this.fixture.icons.filter((icon) => this.targetHash.get(icon.name) === hash).map((icon) => icon.name);
+    const icons = this.fixture.icons
+      .filter((icon) => this.targetHashes.get(icon.name)?.has(hash))
+      .map((icon) => icon.name);
 
     return { hash, assets: this.byHash.get(hash) ?? [], icons };
   }

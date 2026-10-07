@@ -1500,7 +1500,10 @@
       "newColumn": "새 열",
       "format": "형식",
       "reminderOnDateTooltip": "이 셀에는 예약된 알림이 있습니다",
-      "optionAlreadyExist": "옵션이 이미 존재합니다"
+      "optionAlreadyExist": "옵션이 이미 존재합니다",
+      "person": {
+        "searchForMore_other": "검색하여 {{count}}명 더 찾기"
+      }
     },
     "rowPage": {
       "newField": "새 필드 추가",
@@ -1516,7 +1519,9 @@
         "other": "숨겨진 필드 {{count}}개 숨기기"
       },
       "openAsFullPage": "전체 페이지로 열기",
-      "moreRowActions": "더 많은 행 작업"
+      "moreRowActions": "더 많은 행 작업",
+      "openInCenterPeek": "중앙 보기로 열기",
+      "resizeSidePeek": "사이드 보기 크기 조정"
     },
     "sort": {
       "ascending": "오름차순",
@@ -1538,7 +1543,7 @@
       "textPlaceholder": "비어 있음",
       "copyProperty": "속성이 클립보드에 복사되었습니다",
       "count": "개수",
-      "newRow": "새 행",
+      "newRow": "새 페이지",
       "loadMore": "더 로드",
       "action": "작업",
       "add": "아래에 추가하려면 클릭",
@@ -1551,7 +1556,9 @@
       "noContent": "내용 없음",
       "reorderRowDescription": "행 순서 변경",
       "createRowAboveDescription": "위에 행 생성",
-      "createRowBelowDescription": "아래에 행 삽입"
+      "createRowBelowDescription": "아래에 행 삽입",
+      "loadingRowsProgress": "행 로드 중… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "일부 행이 아직 로드되지 않았습니다"
     },
     "selectOption": {
       "create": "생성",
@@ -1611,7 +1618,9 @@
       "countEmpty": "비어 있는 개수",
       "countEmptyShort": "비어 있음",
       "countNonEmpty": "비어 있지 않은 개수",
-      "countNonEmptyShort": "채워짐"
+      "countNonEmptyShort": "채워짐",
+      "countChecked": "체크됨",
+      "countUnchecked": "체크되지 않음"
     },
     "media": {
       "rename": "이름 변경",
@@ -1630,6 +1639,12 @@
       "setAsCover": "표지로 설정",
       "openInBrowser": "브라우저에서 열기",
       "embedLink": "파일 링크 삽입"
+    },
+    "openPagesIn": {
+      "title": "페이지 열기 방식",
+      "sidePeek": "사이드 보기",
+      "centerPeek": "중앙 보기",
+      "fullPage": "전체 페이지"
     }
   },
   "document": {
@@ -2071,7 +2086,11 @@
       "hideColumn": "숨기기",
       "newGroup": "새 그룹",
       "deleteColumn": "삭제",
-      "deleteColumnConfirmation": "이 그룹과 모든 카드를 삭제합니다. 계속하시겠습니까?"
+      "deleteColumnConfirmation": "이 그룹과 모든 카드를 삭제합니다. 계속하시겠습니까?",
+      "calculate": "계산",
+      "calculationTooltip": "{{property}}의 {{calculation}}",
+      "colorColumns": "열 색상 지정",
+      "properties": "속성"
     },
     "hiddenGroupSection": {
       "sectionTitle": "숨겨진 그룹",
@@ -3078,5 +3097,411 @@
   "embedLink": "링크 삽입",
   "embedVideoLinkPlaceholder": "여기에 비디오 링크를 붙여넣으세요.",
   "videoSupported": "지원되는 서비스: YouTube, Vimeo 등.",
-  "copiedVideoLink": "비디오 원본 링크가 클립보드에 복사되었습니다"
+  "copiedVideoLink": "비디오 원본 링크가 클립보드에 복사되었습니다",
+  "chart": {
+    "a11y": {
+      "table": "차트 데이터"
+    },
+    "agg": {
+      "average": "평균",
+      "countAll": "전체 개수",
+      "countEmpty": "비어 있는 개수",
+      "countUnique": "고유 값 개수",
+      "countValues": "값 개수",
+      "dateRange": "날짜 범위",
+      "earliest": "가장 이른 날짜",
+      "latest": "가장 늦은 날짜",
+      "max": "최대",
+      "median": "중앙값",
+      "min": "최소",
+      "percentChecked": "체크된 비율",
+      "percentEmpty": "비어 있는 비율",
+      "percentNotEmpty": "비어 있지 않은 비율",
+      "percentUnchecked": "체크되지 않은 비율",
+      "range": "범위",
+      "sum": "합계"
+    },
+    "aggregation": "집계",
+    "barChart": "막대형",
+    "chartType": "차트 유형",
+    "checked": "체크됨",
+    "color": {
+      "auto": "자동",
+      "blue": "파란색",
+      "colorful": "컬러풀",
+      "colorless": "무색",
+      "green": "녹색",
+      "orange": "주황색",
+      "pink": "분홍색",
+      "purple": "보라색",
+      "red": "빨간색",
+      "teal": "청록색",
+      "yellow": "노란색"
+    },
+    "cumulative": "누적",
+    "dateCondition": "날짜 그룹화",
+    "dateGrouping": {
+      "day": "일",
+      "month": "월",
+      "relative": "상대적",
+      "week": "주",
+      "year": "년"
+    },
+    "decimalPlaces": {
+      "auto": "자동"
+    },
+    "donutChart": "도넛형",
+    "emptyState": {
+      "description": "데이터가 있는 행을 추가하면 차트가 표시됩니다",
+      "noField": "그룹화에 사용할 수 있는 필드가 없습니다",
+      "noFieldDescription": "차트 보기를 사용하려면 선택, 다중 선택, 체크박스 또는 날짜 필드를 만드세요.",
+      "title": "표시할 데이터가 없습니다"
+    },
+    "emptyValue": "비어 있음",
+    "groups": {
+      "count": "그룹 {{count}}개",
+      "hideAll": "모두 숨기기",
+      "hideGroup": "그룹 숨기기",
+      "noGroups": "그룹 없음",
+      "showAll": "모두 표시",
+      "showGroup": "그룹 표시",
+      "unknownPerson": "알 수 없는 사람",
+      "unknownUser": "알 수 없는 사용자",
+      "untitled": "제목 없음",
+      "visibleOfTotal": "{{visible}}/{{total}}"
+    },
+    "horizontalBarChart": "가로 막대형",
+    "legend": {
+      "auto": "자동",
+      "bottom": "아래쪽",
+      "nextPage": "다음 페이지",
+      "off": "끄기",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "이전 페이지"
+    },
+    "lineChart": "꺾은선형",
+    "menuName": "차트",
+    "noFieldValue": "{} 없음",
+    "noGroupableFields": "그룹화할 수 있는 필드가 없습니다",
+    "number": {
+      "calculate": "계산",
+      "countAll": "전체 개수",
+      "emptyState": "데이터 없음",
+      "format": "형식",
+      "formatAuto": "자동",
+      "formatCompact": "축약",
+      "formatPercent": "백분율",
+      "property": "속성",
+      "title": "제목",
+      "titleOf": "{{field}}의 {{aggregation}}",
+      "titlePlaceholder": "기본 제목"
+    },
+    "numberChart": "숫자",
+    "numberColor": {
+      "addRule": "규칙 추가",
+      "blue": "파란색",
+      "brown": "갈색",
+      "default": "기본",
+      "deleteRule": "규칙 삭제",
+      "dynamic": "동적",
+      "dynamicColor": "동적 색상",
+      "else": "그 외",
+      "equal": "같음",
+      "gray": "회색",
+      "greaterThan": "보다 큼",
+      "greaterThanOrEqual": "크거나 같음",
+      "green": "녹색",
+      "ifValue": "값이",
+      "lessThan": "보다 작음",
+      "lessThanOrEqual": "작거나 같음",
+      "notEqual": "같지 않음",
+      "orange": "주황색",
+      "pink": "분홍색",
+      "purple": "보라색",
+      "red": "빨간색",
+      "sameAsColor": "색상과 동일",
+      "yellow": "노란색"
+    },
+    "settings": {
+      "auto": "자동",
+      "back": "뒤로",
+      "calculate": "계산",
+      "chartSettings": "차트 설정",
+      "chartTitle": "차트 제목",
+      "chartType": "차트 유형",
+      "color": "색상",
+      "count": "개수",
+      "cumulative": "누적",
+      "data": "데이터",
+      "dataLabels": "데이터 레이블",
+      "dateGrouping": "날짜 그룹화",
+      "decimalPlaces": "소수 자릿수",
+      "default": "기본",
+      "donut": "도넛형",
+      "eachSliceRepresents": "각 조각이 나타내는 값",
+      "endAt": "종료 값",
+      "exactValue": "정확한 값",
+      "firstLetter": "첫 글자",
+      "format": "형식",
+      "groupBy": "그룹 기준",
+      "groupByNone": "없음",
+      "groupByText": "텍스트 그룹화",
+      "groupStyle": "그룹 스타일",
+      "groupStyleGrouped": "묶음",
+      "groupStylePercent": "백분율",
+      "groupStyleStacked": "누적",
+      "groups": "그룹",
+      "horizontalBar": "가로 막대형",
+      "legend": "범례",
+      "line": "꺾은선형",
+      "moreOptions": "더 많은 옵션",
+      "moreSeries": "+{{n}}개 더",
+      "noResults": "결과 없음",
+      "number": "숫자",
+      "onlyShowingFirstGroups": "처음 {{n}}개 그룹만 표시 중",
+      "percent": "백분율",
+      "rangeSize": "범위 크기",
+      "ranges": "범위",
+      "rangesPreview": "{{from}}부터 {{to}}까지 범위 {{count}}개",
+      "searchProperty": "속성 검색…",
+      "size": "크기 {{size}}",
+      "sortBy": "정렬 기준",
+      "startAt": "시작 값",
+      "style": "스타일",
+      "verticalBar": "세로 막대형",
+      "viewSettings": "보기 설정",
+      "whatToShow": "표시할 항목",
+      "xAxis": "X축",
+      "yAxis": "Y축"
+    },
+    "showEmptyValues": "빈 값 표시",
+    "sort": {
+      "default": "기본",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "수동",
+      "valueAsc": "값 낮은 순",
+      "valueDesc": "값 높은 순"
+    },
+    "state": {
+      "error": "이 차트를 불러올 수 없습니다",
+      "noData": "데이터 없음",
+      "preparing": "차트를 준비하는 중",
+      "retry": "다시 시도"
+    },
+    "style": {
+      "color": "색상",
+      "dataLabels": "데이터 레이블",
+      "decimalPlaces": "소수 자릿수",
+      "legend": "범례",
+      "title": "스타일"
+    },
+    "tooltip": {
+      "average": "평균",
+      "clickToView": "클릭하여 데이터 보기",
+      "count": "개수",
+      "countValues": "값 개수",
+      "max": "최대",
+      "median": "중앙값",
+      "min": "최소",
+      "rows": "{{count}}개 행",
+      "sum": "합계",
+      "tapAgainToView": "다시 탭하여 데이터 보기"
+    },
+    "total": "총계",
+    "unchecked": "체크되지 않음",
+    "upgradeRequired": "업그레이드 필요",
+    "upgradeToProForChartTypes": "가로 막대형, 꺾은선형, 도넛형 차트를 사용하려면 Pro 플랜으로 업그레이드하세요",
+    "value": {
+      "days_other": "{{count}}일"
+    },
+    "xAxis": "X축",
+    "yAxis": "Y축",
+    "drilldown": {
+      "ariaLabel": "테이블 데이터 미리 보기",
+      "search": "검색",
+      "dismiss": "닫기",
+      "more": "더 보기",
+      "saveAsView": "보기로 저장…",
+      "openDatabase": "{{database}} 열기",
+      "selectedRows": "선택한 행 ({{count}})",
+      "cannotSaveSelectedRows": "선택한 행은 보기로 저장할 수 없습니다",
+      "open": "열기",
+      "fromDashboardFilter": "대시보드 필터에서 적용됨",
+      "rowCount_other": "{{count}}개 행"
+    }
+  },
+  "dashboard": {
+    "addWidget": "위젯 추가",
+    "creationRequiresPro": "대시보드 보기를 만들려면 Pro 작업 공간이 필요합니다.",
+    "done": "완료",
+    "edit": "편집",
+    "empty": {
+      "editDashboard": "대시보드 편집",
+      "newView": "새 보기",
+      "text": "차트, 테이블, 목록 추가"
+    },
+    "globalFilters": {
+      "addAnother": "하나 더 추가",
+      "addToFilter": "필터에 추가",
+      "appliesTo": "이 필터는 아래에서 선택한 {{type}} 속성 전체에 적용됩니다",
+      "button": "필터",
+      "delete": "필터 삭제",
+      "done": "완료",
+      "endDate": "종료 날짜",
+      "filterBy": "필터 기준…",
+      "isChecked": "체크됨",
+      "isUnchecked": "체크되지 않음",
+      "more": "{{count}}개 더",
+      "moreActions": "추가 작업",
+      "multipleSourcesIntro": "여러 데이터 소스의 속성에 적용되는 필터를 만드세요",
+      "name": "필터 이름",
+      "noResults": "결과 없음",
+      "op": {
+        "after": "이후",
+        "before": "이전",
+        "between": "사이",
+        "checked": "체크됨",
+        "complete": "완료됨",
+        "doesNotContain": "포함하지 않음",
+        "endsWith": "다음으로 끝남",
+        "incomplete": "미완료",
+        "is": "일치",
+        "isEmpty": "비어 있음",
+        "isNot": "일치하지 않음",
+        "isNotEmpty": "비어 있지 않음",
+        "onOrAfter": "당일 또는 이후",
+        "onOrBefore": "당일 또는 이전",
+        "startsWith": "다음으로 시작",
+        "unchecked": "체크되지 않음"
+      },
+      "people_other": "{{count}}명",
+      "relative": {
+        "amount": "수량",
+        "next": "향후",
+        "past": "지난",
+        "summaryNext_other": "향후 {{count}}{{unit}}",
+        "summaryPast_other": "지난 {{count}}{{unit}}",
+        "summaryThis": "이번 {{unit}}",
+        "this": "이번"
+      },
+      "relativeHint": "필터는 현재 날짜에 맞춰 업데이트됩니다",
+      "relativeToToday": "오늘 기준",
+      "remove": "제거",
+      "reset": "재설정",
+      "sourceLine": "{{source}}의 {{property}}",
+      "startDate": "시작 날짜",
+      "title": "여러 데이터 소스 필터링",
+      "units": {
+        "day_other": "일",
+        "month_other": "달",
+        "week_other": "주",
+        "year_other": "년"
+      },
+      "viewCount_other": "보기 {{count}}개"
+    },
+    "historyPreviewUnavailable": "버전 기록에서는 대시보드를 미리 볼 수 없습니다.",
+    "limit": {
+      "fullHint": "새 보기를 추가하려면 보기를 하나 삭제하세요",
+      "fullTitle": "대시보드가 가득 찼습니다"
+    },
+    "menuName": "대시보드",
+    "picker": {
+      "back": "뒤로",
+      "changeViewTitle": "보기 변경",
+      "close": "닫기",
+      "createFailed": "보기를 만들 수 없습니다",
+      "editChart": "차트 편집",
+      "layout": {
+        "board": "보드",
+        "calendar": "캘린더",
+        "chart": "차트",
+        "feed": "피드",
+        "gallery": "갤러리",
+        "list": "목록",
+        "table": "테이블",
+        "timeline": "타임라인"
+      },
+      "loadFailed": "데이터베이스를 불러올 수 없습니다",
+      "newView": "새 보기",
+      "newViewIn": "{{database}}에 새 보기",
+      "noResults": "보기를 찾을 수 없습니다",
+      "otherSources": "다른 데이터 소스",
+      "searchPlaceholder": "보기 검색...",
+      "showMore": "{{count}}개 더 보기",
+      "source": "데이터 소스",
+      "thisDatabase": "이 데이터베이스",
+      "viewName": "보기 이름",
+      "viewsOn": "{{database}}의 보기",
+      "viewsOnThisDatabase": "이 데이터베이스의 보기"
+    },
+    "private": {
+      "reset": "재설정",
+      "resetAll": "모든 변경 사항 재설정",
+      "saveForEveryone": "모든 사용자에게 저장",
+      "saveOptions": "추가 저장 옵션",
+      "saved": "모든 사용자에게 변경 사항을 저장했습니다.",
+      "undo": "실행 취소",
+      "unsaved": "저장되지 않은 변경 사항"
+    },
+    "referencedDashboardPrefix": "보기",
+    "row": {
+      "addToNewRow": "새 행에 추가",
+      "addToRow": "행에 추가",
+      "moveDown": "아래로 이동",
+      "moveUp": "위로 이동",
+      "movedDown": "행을 아래로 이동했습니다",
+      "movedUp": "행을 위로 이동했습니다"
+    },
+    "rowLimit": "한 행에는 위젯을 최대 {{count}}개까지 배치할 수 있습니다.",
+    "settings": {
+      "name": "대시보드 설정",
+      "showIconsInHeading": "제목에 아이콘 표시",
+      "showWidgetTitles": "위젯 제목 표시"
+    },
+    "toolbar": {
+      "openAsFullPage": "전체 페이지로 열기",
+      "settings": "설정"
+    },
+    "widget": {
+      "changeView": "보기 변경",
+      "close": "닫기",
+      "createRowAbove": "위에 새 행 만들기",
+      "createRowBelow": "아래에 새 행 만들기",
+      "delete": "삭제",
+      "dragHandle": "드래그하여 이동",
+      "duplicate": "복제",
+      "editView": "보기 편집",
+      "filters": "필터",
+      "loading": "로드 중…",
+      "menu": "위젯 옵션",
+      "moveLeft": "왼쪽으로 이동",
+      "moveRight": "오른쪽으로 이동",
+      "moveToRow": "행으로 이동",
+      "noAccess": "이 데이터베이스에 대한 액세스 권한이 없습니다",
+      "notFound": "이 보기는 더 이상 존재하지 않습니다",
+      "offline": "다시 온라인 상태가 되면 사용할 수 있습니다",
+      "openFailed": "보기를 열 수 없습니다",
+      "remove": "위젯 제거",
+      "resizeHeight": "드래그하여 행 높이 변경",
+      "resizeHeightValue": "{{height}}픽셀",
+      "resizeWidth": "드래그하여 크기 조정",
+      "resizeWidthValue": "12열 중 {{columns}}열",
+      "settings": "설정",
+      "sorts": "정렬",
+      "source": "데이터 소스",
+      "unsupported": "대시보드 안에는 대시보드를 표시할 수 없습니다",
+      "viewDataSource": "데이터 소스 보기",
+      "viewNameHint": "이 보기의 이름을 변경합니다",
+      "viewSettings": "보기 설정"
+    },
+    "mobile": {
+      "viewCount_other": "보기 {{count}}개"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "검색 지우기",
+    "noResults": "결과 없음",
+    "placeholder": "검색하려면 입력..."
+  }
 }

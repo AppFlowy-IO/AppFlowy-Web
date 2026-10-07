@@ -12,6 +12,7 @@ jest.mock('@/application/services/domains', () => ({
   ViewService: {
     get: jest.fn(),
     getCached: jest.fn(),
+    getCachedMetadata: jest.fn(),
     getMultiple: jest.fn(),
     getTrashCached: jest.fn(),
     refresh: jest.fn(),
@@ -46,6 +47,40 @@ function createView(viewId: string, overrides: Partial<View> = {}): View {
 describe('useDatabaseDeletionStatus', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (ViewService.getCachedMetadata as jest.Mock).mockReturnValue(undefined);
+  });
+
+  it('reuses flat metadata on a return while still checking the current trash list', async () => {
+    const setNotFound = jest.fn();
+    const eventEmitter = new EventEmitter();
+
+    (ViewService.getCachedMetadata as jest.Mock).mockReturnValue(createView('database-view'));
+    (ViewService.getTrashCached as jest.Mock).mockResolvedValue([]);
+    const { result } = renderHook(() =>
+      useDatabaseDeletionStatus({
+        workspaceId: 'workspace-id',
+        viewId: 'database-view',
+        databaseId: 'database-id',
+        hasDatabase: true,
+        eventEmitter,
+        notFound: false,
+        setNotFound,
+      })
+    );
+
+    await waitFor(() => expect(result.current).toBe('none'));
+    expect(ViewService.get).not.toHaveBeenCalled();
+    expect(ViewService.getMultiple).not.toHaveBeenCalled();
+
+    (ViewService.refresh as jest.Mock).mockResolvedValue(createView('database-view'));
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.TRASH_UPDATED, {
+        workspaceId: 'workspace-id',
+        trashItems: [createView('database-view')],
+      });
+    });
+    await waitFor(() => expect(result.current).toBe('inTrash'));
+    expect(setNotFound).toHaveBeenCalledWith(true);
   });
 
   it('settles an unconfirmed database as active when the initial view probe fails transiently', async () => {

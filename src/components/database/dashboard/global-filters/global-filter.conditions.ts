@@ -1,11 +1,18 @@
+import dayjs from 'dayjs';
+
 import { DashboardGlobalFilter } from '@/application/database-yjs/dashboard.type';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { CheckboxFilterCondition } from '@/application/database-yjs/fields/checkbox/checkbox.type';
 import { ChecklistFilterCondition } from '@/application/database-yjs/fields/checklist/checklist.type';
 import { DateFilterCondition } from '@/application/database-yjs/fields/date/date.type';
 import {
-  isRelativeDateCondition,
+  DEFAULT_RELATIVE_DATE_SPEC,
+  isParameterizedRelativeCondition,
+  isPresetRelativeDateCondition,
   isStartDateCondition,
+  parseRelativeDateSpec,
+  relativeDateSummary,
+  serializeRelativeDateSpec,
   toEndDateCondition,
   toStartDateCondition,
 } from '@/application/database-yjs/fields/date/relativeDate';
@@ -25,18 +32,11 @@ import {
   Translate,
 } from '@/components/database/components/filters/filter-conditions';
 import {
-  dateChipDescription,
-  numberConditionShortName,
-  personConditionName,
-  selectOptionConditionName,
-  textChipPrefix,
-} from '@/components/database/components/filters/overview/useFilterChipLabel';
-import {
   DateFilterValue,
   serializeDateFilterContent,
 } from '@/components/database/components/filters/value-controls/filter-value';
 
-import { countGlobalFilterSources, GlobalFilterSource, GlobalFilterSourceField } from './global-filter.utils';
+import { countUsableTargets, GlobalFilterSource } from './global-filter.utils';
 
 export type { Translate };
 export type GlobalFilterConditionOption = FilterConditionOption;
@@ -135,7 +135,8 @@ export function conditionHidesContent(fieldType: FieldType, condition: number): 
     case FieldType.DateTime:
     case FieldType.CreatedTime:
     case FieldType.LastEditedTime:
-      return isRelativeDateCondition(condition) || DATE_EMPTINESS_CONDITIONS.has(condition);
+      // The presets carry their range; "Is relative to today" shows its builder.
+      return isPresetRelativeDateCondition(condition) || DATE_EMPTINESS_CONDITIONS.has(condition);
     default:
       return true;
   }
@@ -180,11 +181,24 @@ export function hasRequiredDate(condition: number, content: string): boolean {
 
 /**
  * Condition switch for a filter: keeps the content shape valid for the new
- * condition (a single date becomes a range start and vice versa).
+ * condition (a single date becomes a range start and vice versa). Into "Is
+ * relative to today" the spec starts as This week; back to an absolute
+ * condition the date is picked again.
  */
 export function applyConditionChange(filter: DashboardGlobalFilter, condition: number): DashboardGlobalFilter {
   if (filter.condition === condition) return filter;
   if (!isDateFieldType(filter.fieldType)) return { ...filter, condition };
+  const wasRelative = isParameterizedRelativeCondition(filter.condition);
+
+  if (isParameterizedRelativeCondition(condition)) {
+    return {
+      ...filter,
+      condition,
+      content: wasRelative ? filter.content : serializeRelativeDateSpec(DEFAULT_RELATIVE_DATE_SPEC),
+    };
+  }
+
+  if (wasRelative) return { ...filter, condition, content: '' };
   const wasRange = isDateRangeCondition(filter.condition);
   const isRange = isDateRangeCondition(condition);
 
@@ -232,10 +246,10 @@ export function parseOptionContent(content: string): string[] {
 /**
  * Whether the filter currently narrows any widget. Mirrors the evaluator's
  * `isDataFilterEffective` (a filter without a value is ignored) and requires at
- * least one usable mapped source (see `countGlobalFilterSources`).
+ * least one usable mapped source (see `countUsableTargets`).
  */
 export function isGlobalFilterActive(filter: DashboardGlobalFilter, sources?: GlobalFilterSource[]): boolean {
-  if (countGlobalFilterSources(filter, sources) === 0) return false;
+  if (countUsableTargets(filter, sources) === 0) return false;
   const { fieldType, condition, content } = filter;
 
   switch (fieldType) {
@@ -257,81 +271,229 @@ export function isGlobalFilterActive(filter: DashboardGlobalFilter, sources?: Gl
     case FieldType.DateTime:
     case FieldType.CreatedTime:
     case FieldType.LastEditedTime:
-      return conditionHidesContent(fieldType, condition) || hasRequiredDate(condition, content);
+      return (
+        conditionHidesContent(fieldType, condition) ||
+        isParameterizedRelativeCondition(condition) ||
+        hasRequiredDate(condition, content)
+      );
     default:
       return false;
   }
 }
 
-/**
- * The condition summary shown after "Name: " on a chip, formatted like the
- * single-view filter chips (`useFilterChipLabel`).
- */
-export function getGlobalFilterDescription(
-  filter: DashboardGlobalFilter,
-  {
-    primaryField,
-    dateFormat,
-    t,
-  }: {
-    /** The primary target's property; supplies option names for select content. */
-    primaryField?: GlobalFilterSourceField;
-    dateFormat: string;
-    t: Translate;
+const OP_DEFAULTS = {
+  is: 'Is',
+  isNot: 'Is not',
+  doesNotContain: 'Does not contain',
+  startsWith: 'Starts with',
+  endsWith: 'Ends with',
+  isEmpty: 'Is empty',
+  isNotEmpty: 'Is not empty',
+  before: 'Before',
+  after: 'After',
+  onOrBefore: 'On or before',
+  onOrAfter: 'On or after',
+  between: 'Between',
+  checked: 'Checked',
+  unchecked: 'Unchecked',
+  complete: 'Complete',
+  incomplete: 'Incomplete',
+} as const;
+
+type PillOperator = keyof typeof OP_DEFAULTS;
+
+function operator(t: Translate, op: PillOperator) {
+  return t(`dashboard.globalFilters.op.${op}`, { defaultValue: OP_DEFAULTS[op] });
+}
+
+function withValue(t: Translate, op: PillOperator, value: string) {
+  return `${operator(t, op)} ${value}`;
+}
+
+export interface GlobalFilterPillLabelInput {
+  /** Whether the filter narrows rows (`isGlobalFilterActive`). */
+  active: boolean;
+  /** The primary target's property name, when known. */
+  primaryFieldName?: string;
+  /** The display name of the filter's type. */
+  typeName: string;
+  /** Names of the selected merged options (select filters). */
+  mergedNames?: string[];
+  /** Display names of the selected people (person filters). */
+  people?: string[];
+  dateFormat: string;
+  t: Translate;
+}
+
+/** The pill's name: the filter's own, else its primary property's, else its type's. */
+export function getGlobalFilterPillName(
+  filter: Pick<DashboardGlobalFilter, 'name'>,
+  primaryFieldName: string | undefined,
+  typeName: string
+) {
+  return filter.name.trim() || primaryFieldName || typeName;
+}
+
+function selectSummary(filter: DashboardGlobalFilter, mergedNames: string[] | undefined, t: Translate) {
+  const { fieldType, condition, content } = filter;
+  const names = mergedNames?.length ? mergedNames.join(', ') : `(${parseOptionContent(content).length})`;
+  const defaultCondition =
+    fieldType === FieldType.SingleSelect
+      ? SelectOptionFilterCondition.OptionIs
+      : SelectOptionFilterCondition.OptionContains;
+
+  switch (condition) {
+    case SelectOptionFilterCondition.OptionIsEmpty:
+      return operator(t, 'isEmpty');
+    case SelectOptionFilterCondition.OptionIsNotEmpty:
+      return operator(t, 'isNotEmpty');
+    case SelectOptionFilterCondition.OptionIsNot:
+      return withValue(t, 'isNot', names);
+    case SelectOptionFilterCondition.OptionDoesNotContain:
+      return withValue(t, 'doesNotContain', names);
+    case SelectOptionFilterCondition.OptionIs:
+      return condition === defaultCondition ? names : withValue(t, 'is', names);
+    default:
+      return names;
   }
+}
+
+/**
+ * The start-date condition that reads the same as `condition` ("ends before"
+ * reads "Before"). Not `toStartDateCondition`: the side toggle pairs "starts
+ * before" with "ends after".
+ */
+function sameWordingStartCondition(condition: number): number {
+  if (condition >= DateFilterCondition.DateEndsOn && condition <= DateFilterCondition.DateEndIsNotEmpty) {
+    return condition - (DateFilterCondition.DateEndsOn - DateFilterCondition.DateStartsOn);
+  }
+
+  if (condition >= DateFilterCondition.DateEndsToday && condition <= DateFilterCondition.DateEndsNextWeek) {
+    return condition - (DateFilterCondition.DateEndsToday - DateFilterCondition.DateStartsToday);
+  }
+
+  return condition === DateFilterCondition.DateEndsRelative ? DateFilterCondition.DateStartsRelative : condition;
+}
+
+function dateSummary(condition: number, content: string, dateFormat: string, t: Translate) {
+  const base = sameWordingStartCondition(condition);
+  const value = parseDateContent(content);
+  const format = (unix: number | undefined) => (unix === undefined ? '' : dayjs.unix(unix).format(dateFormat));
+
+  switch (base) {
+    case DateFilterCondition.DateStartsRelative:
+      return relativeDateSummary(parseRelativeDateSpec(content), t);
+    case DateFilterCondition.DateStartsToday:
+      return t('relativeDates.today', { defaultValue: 'Today' });
+    case DateFilterCondition.DateStartsYesterday:
+      return t('relativeDates.yesterday', { defaultValue: 'Yesterday' });
+    case DateFilterCondition.DateStartsTomorrow:
+      return t('relativeDates.tomorrow', { defaultValue: 'Tomorrow' });
+    case DateFilterCondition.DateStartsThisWeek:
+      return t('relativeDates.thisWeek', { defaultValue: 'This week' });
+    case DateFilterCondition.DateStartsLastWeek:
+      return t('relativeDates.lastWeek', { defaultValue: 'Last week' });
+    case DateFilterCondition.DateStartsNextWeek:
+      return t('relativeDates.nextWeek', { defaultValue: 'Next week' });
+    case DateFilterCondition.DateStartIsEmpty:
+      return operator(t, 'isEmpty');
+    case DateFilterCondition.DateStartIsNotEmpty:
+      return operator(t, 'isNotEmpty');
+    case DateFilterCondition.DateStartsBefore:
+      return withValue(t, 'before', format(value.timestamp));
+    case DateFilterCondition.DateStartsAfter:
+      return withValue(t, 'after', format(value.timestamp));
+    case DateFilterCondition.DateStartsOnOrBefore:
+      return withValue(t, 'onOrBefore', format(value.timestamp));
+    case DateFilterCondition.DateStartsOnOrAfter:
+      return withValue(t, 'onOrAfter', format(value.timestamp));
+    case DateFilterCondition.DateStartsBetween:
+      return withValue(t, 'between', `${format(value.start)} – ${format(value.end)}`);
+    default:
+      return format(value.timestamp);
+  }
+}
+
+/**
+ * What a pill says after "Name: " (WP08 §1.5): the default operator of a
+ * type is left out ("Status: Doing", "Amount: 5"), every other one is a short
+ * word before the value ("Status: Is not Doing", "Amount: > 5").
+ */
+export function getGlobalFilterSummary(
+  filter: DashboardGlobalFilter,
+  { mergedNames, people, dateFormat, t }: Omit<GlobalFilterPillLabelInput, 'active' | 'typeName' | 'primaryFieldName'>
 ): string {
   const { fieldType, condition, content } = filter;
 
   switch (fieldType) {
     case FieldType.RichText:
-    case FieldType.URL: {
-      const prefix = textChipPrefix(condition, t);
+    case FieldType.URL:
+      switch (condition) {
+        case TextFilterCondition.TextIs:
+          return withValue(t, 'is', content);
+        case TextFilterCondition.TextIsNot:
+          return withValue(t, 'isNot', content);
+        case TextFilterCondition.TextDoesNotContain:
+          return withValue(t, 'doesNotContain', content);
+        case TextFilterCondition.TextStartsWith:
+          return withValue(t, 'startsWith', content);
+        case TextFilterCondition.TextEndsWith:
+          return withValue(t, 'endsWith', content);
+        case TextFilterCondition.TextIsEmpty:
+          return operator(t, 'isEmpty');
+        case TextFilterCondition.TextIsNotEmpty:
+          return operator(t, 'isNotEmpty');
+        default:
+          return content;
+      }
 
-      if (conditionHidesContent(fieldType, condition)) return prefix;
-      return content ? `${prefix} ${content}`.trim() : prefix;
-    }
+    case FieldType.Number:
+      switch (condition) {
+        case NumberFilterCondition.NotEqual:
+          return `≠ ${content}`;
+        case NumberFilterCondition.GreaterThan:
+          return `> ${content}`;
+        case NumberFilterCondition.LessThan:
+          return `< ${content}`;
+        case NumberFilterCondition.GreaterThanOrEqualTo:
+          return `≥ ${content}`;
+        case NumberFilterCondition.LessThanOrEqualTo:
+          return `≤ ${content}`;
+        case NumberFilterCondition.NumberIsEmpty:
+          return operator(t, 'isEmpty');
+        case NumberFilterCondition.NumberIsNotEmpty:
+          return operator(t, 'isNotEmpty');
+        default:
+          return content;
+      }
 
-    case FieldType.Number: {
-      const shortName = numberConditionShortName(condition, t);
-
-      if (conditionHidesContent(fieldType, condition)) return shortName;
-      return content ? `${shortName} ${content}` : shortName;
-    }
-
-    case FieldType.Checkbox:
-      return condition === CheckboxFilterCondition.IsChecked
-        ? t('grid.checkboxFilter.isChecked')
-        : t('grid.checkboxFilter.isUnchecked');
-    case FieldType.Checklist:
-      return condition === ChecklistFilterCondition.IsComplete
-        ? t('grid.checklistFilter.isComplete')
-        : t('grid.checklistFilter.isIncomplted');
     case FieldType.SingleSelect:
-    case FieldType.MultiSelect: {
-      const name = selectOptionConditionName(condition, t);
-      const selected = new Set(parseOptionContent(content));
-
-      if (conditionHidesContent(fieldType, condition) || selected.size === 0) return name;
-      const names = (primaryField?.options ?? [])
-        .filter((option) => selected.has(option.id))
-        .map((option) => option.name)
-        .join(', ');
-
-      return names ? `${name} ${names}` : `${name} (${selected.size})`;
-    }
-
+    case FieldType.MultiSelect:
+      return selectSummary(filter, mergedNames, t);
+    case FieldType.Checkbox:
+      return operator(t, condition === CheckboxFilterCondition.IsChecked ? 'checked' : 'unchecked');
+    case FieldType.Checklist:
+      return operator(t, condition === ChecklistFilterCondition.IsComplete ? 'complete' : 'incomplete');
     case FieldType.DateTime:
     case FieldType.CreatedTime:
     case FieldType.LastEditedTime:
-      return dateChipDescription(condition, parseDateContent(content), dateFormat, t);
+      return dateSummary(condition, content, dateFormat, t);
     case FieldType.Person:
     case FieldType.CreatedBy:
     case FieldType.LastEditedBy: {
-      const name = personConditionName(condition, t);
-      const userIds = parsePersonContent(content);
+      if (condition === PersonFilterCondition.PersonIsEmpty) return operator(t, 'isEmpty');
+      if (condition === PersonFilterCondition.PersonIsNotEmpty) return operator(t, 'isNotEmpty');
+      const count = parsePersonContent(content).length;
+      const names = people?.length
+        ? people.join(', ')
+        : t('dashboard.globalFilters.people', {
+            count,
+            defaultValue: '{{count}} people',
+            defaultValue_one: '{{count}} person',
+            defaultValue_other: '{{count}} people',
+          });
 
-      if (conditionHidesContent(fieldType, condition) || userIds.length === 0) return name;
-      return `${name}: ${t('grid.person.count', { count: userIds.length })}`;
+      return condition === PersonFilterCondition.PersonDoesNotContain ? withValue(t, 'doesNotContain', names) : names;
     }
 
     default:
@@ -339,17 +501,12 @@ export function getGlobalFilterDescription(
   }
 }
 
-/**
- * Chip text: `Name: summary` while the filter narrows widgets, the bare name
- * otherwise. Pass `active` when it is already known (see `isGlobalFilterActive`).
- */
-export function getGlobalFilterChipText(
-  filter: DashboardGlobalFilter,
-  description: string,
-  fallbackName: string,
-  active: boolean = isGlobalFilterActive(filter)
-) {
-  const name = filter.name.trim() || fallbackName;
+/** The pill's text: the name alone while the filter narrows nothing, else `Name: summary`. */
+export function getGlobalFilterPillLabel(filter: DashboardGlobalFilter, input: GlobalFilterPillLabelInput): string {
+  const name = getGlobalFilterPillName(filter, input.primaryFieldName, input.typeName);
 
-  return active && description ? `${name}: ${description}` : name;
+  if (!input.active) return name;
+  const summary = getGlobalFilterSummary(filter, input);
+
+  return summary ? `${name}: ${summary}` : name;
 }

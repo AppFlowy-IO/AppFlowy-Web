@@ -4,6 +4,7 @@ import { useLayoutEffect } from 'react';
 import { DatabaseContext, type DatabaseContextState } from '@/application/database-yjs';
 import { DatabaseViewLayout } from '@/application/types';
 import { createDatabaseDoc } from '@/components/database/dashboard/__tests__/dashboardTestHarness';
+import { WidgetCompositionProvider } from '@/components/database/dashboard/WidgetCompositionProvider';
 import DatabaseViews from '@/components/database/DatabaseViews';
 
 import type { ReactNode } from 'react';
@@ -61,15 +62,17 @@ it("commits a dashboard widget's header with its first rows, never a blank band 
   };
 
   render(
-    <DatabaseContext.Provider value={context}>
-      <DatabaseViews
-        activeViewId='view-id'
-        databasePageId='view-id'
-        fixedHeight={314}
-        onChangeView={jest.fn()}
-        visibleViewIds={['view-id']}
-      />
-    </DatabaseContext.Provider>
+    <WidgetCompositionProvider>
+      <DatabaseContext.Provider value={context}>
+        <DatabaseViews
+          activeViewId='view-id'
+          databasePageId='view-id'
+          fixedHeight={314}
+          onChangeView={jest.fn()}
+          visibleViewIds={['view-id']}
+        />
+      </DatabaseContext.Provider>
+    </WidgetCompositionProvider>
   );
 
   await screen.findByTestId('grid-layout');

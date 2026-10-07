@@ -1,8 +1,12 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { createBdd, type DataTable } from 'playwright-bdd';
 
-import { switchViewToDashboard } from '../../support/dashboard-owned-views-helpers';
-import { expectDashboardViewMode } from '../../support/dashboard-platform-helpers';
+import { expectAnnounced, expectNoLimitBanner } from '../../support/dashboard-limits-helpers';
+import {
+  readDatabaseViews as readOwnedDatabaseViews,
+  switchViewToDashboard,
+} from '../../support/dashboard-owned-views-helpers';
+import { dashboardEditOffered, expectDashboardViewMode } from '../../support/dashboard-platform-helpers';
 import { pressEscapeUntilHidden, WIDGET_TIMEOUT } from '../../support/dashboard-shared-helpers';
 import {
   addDashboardView,
@@ -63,6 +67,7 @@ import {
   widgetLocator,
 } from '../../support/dashboard-test-helpers';
 import { boardColumn, expectMemberViewMode, expectRowPage } from '../../support/dashboard-usecase-helpers';
+import { restoreEmployeeCells } from '../../support/employees-database';
 import { selectFilterOption } from '../../support/filter-test-helpers';
 import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from '../../support/page-utils';
 import { closeRowDetailWithEscape } from '../../support/row-detail-helpers';
@@ -83,7 +88,11 @@ Before({ tags: '@dashboard' }, async ({ page, $testInfo }) => {
 });
 
 After({ tags: '@dashboard' }, async ({ page, request }) => {
-  await cleanupDashboardFixture(page, request);
+  try {
+    await restoreEmployeeCells(page);
+  } finally {
+    await cleanupDashboardFixture(page, request);
+  }
 });
 
 /** Make sure the dashboard (and so the host database doc) is mounted before seeding it. */
@@ -93,20 +102,14 @@ async function ensureDashboardOpen(page: Page) {
 }
 
 /**
- * A disabled add button ignores pointer events; its tooltip wrapper takes the
- * click and shows the limit message instead.
+ * A refused add button is `aria-disabled`, not disabled: it keeps the pointer
+ * events, so the press reaches it and is announced (never a banner).
+ * Playwright treats an aria-disabled button as not enabled, so the press
+ * skips its actionability wait.
  */
 async function clickDisabledAddButton(button: Locator) {
-  await button.locator('xpath=..').click();
-}
-
-/** The banner a refused add shows (a full dashboard also keeps an inline hint with the same test id). */
-async function expectLimitMessage(page: Page, reason: 'dashboard' | 'row', count: number) {
-  const message = DashboardSelectors.limitMessage(page).and(page.locator('[data-variant="banner"]'));
-
-  await expect(message).toBeVisible();
-  await expect(message).toHaveAttribute('data-reason', reason);
-  await expect(message).toContainText(String(count));
+  await expect(button).toHaveAttribute('aria-disabled', 'true');
+  await button.click({ force: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -234,12 +237,15 @@ Then('the dashboard shows width handles', async ({ page }) => {
   await expect(DashboardSelectors.widthHandles(page).first()).toBeAttached();
 });
 
-Then('the dashboard shows its empty state with an Add widget button', async ({ page }) => {
+// WP06 §1.9: the edit placeholder widget with its "+ New view" pill, without a border.
+Then('the dashboard shows its edit-mode empty state with a New view button', async ({ page }) => {
   const empty = DashboardSelectors.emptyState(page);
 
   await expect(empty).toBeVisible();
-  await expect(empty).toContainText('Build your dashboard');
-  await expect(DashboardSelectors.addWidgetButton(page).filter({ visible: true }).first()).toBeEnabled();
+  await expect(empty).toHaveAttribute('data-editing', 'true');
+  await expect(DashboardSelectors.emptyPlaceholder(page)).toBeVisible();
+  await expect(DashboardSelectors.emptyNewViewButton(page)).toBeEnabled();
+  expect(await empty.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('0px');
 });
 
 Then('the dashboard empty state reads {string}', async ({ page }, text: string) => {
@@ -247,7 +253,10 @@ Then('the dashboard empty state reads {string}', async ({ page }, text: string) 
 
   await expect(empty).toBeVisible();
   await expect(empty).toContainText(text);
-  await expect(empty.getByTestId('dashboard-add-widget-button')).toHaveCount(0);
+  await expect(DashboardSelectors.emptyNewViewButton(page)).toHaveCount(0);
+  // Writers who can enter Edit mode get "Edit dashboard": expected from the test's own access
+  // state, not from the toolbar (a regression hiding both buttons would otherwise pass).
+  await expect(DashboardSelectors.emptyEditDashboardButton(page)).toHaveCount(dashboardEditOffered(page) ? 1 : 0);
 });
 
 Then('the active dashboard tab is named {string}', async ({ page }, name: string) => {
@@ -343,7 +352,8 @@ Given('the dashboard has these widgets:', async ({ page }, table: DataTable) => 
 Given('the dashboard has {int} widgets in {int} full rows', async ({ page }, count: number, rows: number) => {
   expect(count).toBe(DASHBOARD_MAX_WIDGETS);
   await ensureDashboardOpen(page);
-  const databases = ['Projects', 'Tasks', 'Notes'];
+  // The fixture databases of the scenario (the add-widget scenarios only prepare Projects).
+  const databases = ['Projects', 'Tasks', 'Notes'].filter((name) => dashboardWorld(page).databases[name]);
   const perRow = count / rows;
   const layout = Array.from({ length: count }, (_, index) => ({
     row: Math.floor(index / perRow) + 1,
@@ -384,14 +394,21 @@ When(
     const target = fixtureDatabase(page, database);
     const world = dashboardWorld(page);
 
-    world.viewCountBefore = (await readDatabaseViews(page, target.databaseId)).length;
-    await DashboardSelectors.pickerNewView(page).click();
-    // Pick the source database first (the host is listed as "This database"), then the layout.
-    const databaseChoice = DashboardSelectors.pickerDatabase(page, target.databaseId);
+    // WP06: "+" already created the widget's own view (counted by `openWidgetPicker`).
+    if (target.databaseId === hostDatabase(page).databaseId) {
+      // A New view type turns that view into this layout in place; the dock is closed afterwards.
+      await DashboardSelectors.pickerLayoutOption(page, layout).click();
+      await expect(DashboardSelectors.newViewPanel(page)).toBeVisible(WIDGET_TIMEOUT);
+      await expect(DashboardSelectors.newViewTile(page, layout)).toHaveAttribute('data-selected', 'true');
+      await page.getByTestId('dashboard-widget-new-view-panel-close').click();
+      await expect(DashboardSelectors.newViewPanel(page)).toHaveCount(0, WIDGET_TIMEOUT);
+      return;
+    }
 
-    await expect(databaseChoice).toBeVisible(WIDGET_TIMEOUT);
-    if ((await databaseChoice.getAttribute('data-selected')) !== 'true') await databaseChoice.click();
-    await expect(databaseChoice).toHaveAttribute('data-selected', 'true');
+    // Another database: Other data sources › New view in {database} › the layout.
+    world.viewCountBefore = (await readDatabaseViews(page, target.databaseId)).length;
+    await DashboardSelectors.pickerOtherSources(page).click();
+    await DashboardSelectors.pickerNewInDatabase(page, target.databaseId).click();
     await DashboardSelectors.pickerLayoutOption(page, layout).click();
     await expect(DashboardSelectors.picker(page)).toBeHidden(WIDGET_TIMEOUT);
   }
@@ -457,6 +474,14 @@ Then('the widget shows a new {string} view of {string}', async ({ page }, layout
     .toBe(true);
   target.views[layoutName] = newViewId;
   await expect(DashboardSelectors.widgetsForView(page, newViewId)).toBeVisible(WIDGET_TIMEOUT);
+  // WP05: named after its layout ("Board", then "Board (1)") and owned by the dashboard.
+  const created = async () =>
+    (await readOwnedDatabaseViews(page, target.databaseId)).find((view) => view.id === newViewId);
+
+  await expect
+    .poll(async () => (await created())?.name, WIDGET_TIMEOUT)
+    .toMatch(new RegExp(`^${layoutName}( \\(\\d+\\))?$`));
+  await expect.poll(async () => (await created())?.dashboardOwner, WIDGET_TIMEOUT).toBe(dashboardViewId(page));
 });
 
 Then('the new board widget shows the {string} column', async ({ page }, column: string) => {
@@ -486,27 +511,12 @@ Then('the {string} widget header shows its view name', async ({ page }, label: s
   await expect(title).toContainText(name);
 });
 
-When(
-  'I change the {string} widget to the {string} view from its title menu',
-  async ({ page }, label: string, nextLabel: string) => {
-    const widget = widgetLocator(page, label);
-    const before = JSON.stringify((await readDashboardSetting(page)).rows);
-
-    // Clicking the title opens the widget menu, like right-clicking it.
-    await widget.hover();
-    await widget.getByTestId('dashboard-widget-title-button').click();
-    await expect(DashboardSelectors.widgetMenu(page)).toBeVisible();
-    await DashboardSelectors.widgetMenuItem(page, 'change-view').click();
-    await pickExistingView(page, viewIdForLabel(page, nextLabel));
-    await expect.poll(async () => JSON.stringify((await readDashboardSetting(page)).rows)).not.toBe(before);
-  }
-);
-
 When('I choose {string} in the {string} widget menu', async ({ page }, action: string, label: string) => {
   const before = await readDashboardSetting(page);
 
   await chooseWidgetMenuAction(page, widgetLocator(page, label), action as Parameters<typeof chooseWidgetMenuAction>[2]);
-  if (action !== 'open') {
+  // Navigating to the data source or opening the settings host writes no layout.
+  if (action !== 'view-data-source' && action !== 'edit-view') {
     await expect
       .poll(async () => JSON.stringify((await readDashboardSetting(page)).rows))
       .not.toBe(JSON.stringify(before.rows));
@@ -529,9 +539,15 @@ Then('the {string} view is open outside the dashboard', async ({ page }, label: 
     }, WIDGET_TIMEOUT)
     .toBe(true);
   await waitForDatabaseContext(page, target.databaseId);
-  const grid = DatabaseGridSelectors.grid(page)
-    .filter({ hasText: String(DASHBOARD_FIXTURE_DATABASES[database]?.rows[0]?.Name ?? 'Write launch plan') })
-    .last();
+  // The grid shows the fixture's first row, or (a use-case database, whose rows the scenario
+  // seeded) any of its rows: the open view may filter the first one out.
+  const fixtureTitle = DASHBOARD_FIXTURE_DATABASES[database]?.rows[0]?.Name;
+  const seededTitles = Object.keys(target.rowIds);
+  const anyTitle =
+    fixtureTitle !== undefined || seededTitles.length === 0
+      ? String(fixtureTitle ?? 'Write launch plan')
+      : new RegExp(seededTitles.map((title) => title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'));
+  const grid = DatabaseGridSelectors.grid(page).filter({ hasText: anyTitle }).last();
 
   await expect(grid).toBeVisible(WIDGET_TIMEOUT);
 });
@@ -575,28 +591,48 @@ When(
   }
 );
 
-When(
-  'I add the {string} view through the insert-row control of dashboard row {int}',
-  async ({ page }, label: string, rowIndex: number) => {
-    const row = await persistedRow(page, rowIndex);
+When('I move dashboard row {int} up', async ({ page }, rowIndex: number) => {
+  const row = await persistedRow(page, rowIndex);
 
-    await DashboardSelectors.row(page, row.id).hover();
-    await openWidgetPicker(page, DashboardSelectors.insertRowButton(page, row.id));
-    await pickExistingView(page, viewIdForLabel(page, label));
-  }
-);
+  await DashboardSelectors.row(page, row.id).hover();
+  await page.locator(`[data-testid="dashboard-row-move-up"][data-row-id="${row.id}"]`).click();
+  await expect.poll(async () => (await readDashboardSetting(page)).rows[rowIndex - 2]?.id).toBe(row.id);
+});
+
+When('I move dashboard row {int} down', async ({ page }, rowIndex: number) => {
+  const row = await persistedRow(page, rowIndex);
+
+  await DashboardSelectors.row(page, row.id).hover();
+  await page.locator(`[data-testid="dashboard-row-move-down"][data-row-id="${row.id}"]`).click();
+  await expect.poll(async () => (await readDashboardSetting(page)).rows[rowIndex]?.id).toBe(row.id);
+});
+
+/** Row labels, a view the scenario did not name (a duplicate's copy) by "<Database> <view name>". */
+async function rowLabels(page: Page, rowIndex: number) {
+  const { rows } = await readDashboardSetting(page);
+  const row = rows[rowIndex - 1];
+
+  if (!row) return [];
+  const labels = labelsOfRow(page, row);
+
+  return Promise.all(
+    labels.map(async (label, index) => {
+      if (!label.startsWith('?')) return label;
+      const widget = row.widgets[index];
+      const database = Object.values(dashboardWorld(page).databases).find(
+        (candidate) => candidate.databaseId === widget.database_id
+      );
+      const name = (await readDatabaseViews(page, widget.database_id)).find((view) => view.id === widget.view_id)?.name;
+
+      return database && name ? `${database.name} ${name}` : label;
+    })
+  );
+}
 
 Then('dashboard row {int} holds {string}', async ({ page }, rowIndex: number, labels: string) => {
   const expected = splitList(labels);
 
-  await expect
-    .poll(async () => {
-      const { rows } = await readDashboardSetting(page);
-      const row = rows[rowIndex - 1];
-
-      return row ? labelsOfRow(page, row) : [];
-    }, WIDGET_TIMEOUT)
-    .toEqual(expected);
+  await expect.poll(() => rowLabels(page, rowIndex), WIDGET_TIMEOUT).toEqual(expected);
   const row = await persistedRow(page, rowIndex);
 
   await expect
@@ -626,20 +662,34 @@ Then('the dashboard has {int} rows', async ({ page }, count: number) => {
   await expect(DashboardSelectors.rows(page)).toHaveCount(count);
 });
 
-Then('adding another widget is refused with the widget limit message', async ({ page }) => {
-  const addButton = DashboardSelectors.addWidgetButton(page).filter({ visible: true }).first();
+Then('adding another widget is refused with the Dashboard is full tooltip', async ({ page }) => {
+  const addButton = DashboardSelectors.grid(page).getByTestId('dashboard-add-widget-button');
 
   await expect(addButton).toBeVisible(WIDGET_TIMEOUT);
-  await expect(addButton).toBeDisabled();
+  await expect(addButton).toHaveAttribute('aria-disabled', 'true');
+  await addButton.hover();
+  const tooltip = page.getByTestId('dashboard-full-tooltip');
+
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText('Dashboard is full');
+  await expect(tooltip).toContainText('Delete a view to add a new one');
+  const viewsBefore = (await readDatabaseViews(page, hostDatabase(page).databaseId)).map((view) => view.id).sort();
+
   await clickDisabledAddButton(addButton);
-  await expectLimitMessage(page, 'dashboard', DASHBOARD_MAX_WIDGETS);
   await expect(DashboardSelectors.picker(page)).toHaveCount(0);
-  // Every row add button is disabled too, whichever row it belongs to.
+  await expect(DashboardSelectors.pendingWidget(page)).toHaveCount(0);
+  await expectNoLimitBanner(page);
+  // WP06 #16: a refused add creates no view.
+  expect((await readDatabaseViews(page, hostDatabase(page).databaseId)).map((view) => view.id).sort()).toEqual(
+    viewsBefore
+  );
+  // Every row is full (4 widgets): none offers "Add to row".
   const { rows } = await readDashboardSetting(page);
 
   for (const row of rows) {
+    expect(row.widgets).toHaveLength(DASHBOARD_MAX_WIDGETS_PER_ROW);
     await DashboardSelectors.row(page, row.id).hover();
-    await expect(DashboardSelectors.addWidgetRowButton(page, row.id)).toBeDisabled();
+    await expect(DashboardSelectors.addWidgetRowButton(page, row.id)).toHaveCount(0);
   }
 
   expect(allWidgets(await readDashboardSetting(page))).toHaveLength(DASHBOARD_MAX_WIDGETS);
@@ -647,14 +697,10 @@ Then('adding another widget is refused with the widget limit message', async ({ 
 
 Then('dashboard row {int} offers no add widget button', async ({ page }, rowIndex: number) => {
   const row = await persistedRow(page, rowIndex);
-  const button = DashboardSelectors.addWidgetRowButton(page, row.id);
 
   await DashboardSelectors.row(page, row.id).hover();
-  await expect(button).toBeVisible();
-  await expect(button).toBeDisabled();
-  await clickDisabledAddButton(button);
-  await expectLimitMessage(page, 'row', DASHBOARD_MAX_WIDGETS_PER_ROW);
-  await expect(DashboardSelectors.picker(page)).toHaveCount(0);
+  // A full row hides its "+" (Notion): nothing to press, no banner.
+  await expect(DashboardSelectors.addWidgetRowButton(page, row.id)).toHaveCount(0);
 });
 
 Then('dashboard row {int} offers an add widget button', async ({ page }, rowIndex: number) => {
@@ -664,6 +710,7 @@ Then('dashboard row {int} offers an add widget button', async ({ page }, rowInde
   await DashboardSelectors.row(page, row.id).hover();
   await expect(button).toBeVisible();
   await expect(button).toBeEnabled();
+  await expect(button).not.toHaveAttribute('aria-disabled', 'true');
 });
 
 When('the {string} database is moved to the trash', async ({ page, request }, database: string) => {
@@ -759,8 +806,11 @@ Then('I see the {string} widget with {int} rows', async ({ page }, label: string
   await expect(gridDataRows(widget)).toHaveCount(count, WIDGET_TIMEOUT);
 });
 
-Then('the dashboard shows the local changes badge', async ({ page }) => {
-  await expect(DashboardSelectors.globalFilterLocalBadge(page).first()).toBeVisible(WIDGET_TIMEOUT);
+// Something differs from the saved dashboard (WP07): an orange dot, and Reset in the filter bar.
+Then('the dashboard shows unsaved changes', async ({ page }) => {
+  await expect(DashboardSelectors.unsavedDots(page).first()).toBeVisible(WIDGET_TIMEOUT);
+  await expect(DashboardSelectors.privateControls(page)).toBeVisible();
+  await expect(DashboardSelectors.globalFilterReset(page)).toBeVisible();
 });
 
 Then('the {string} view has {int} saved filters', async ({ page }, label: string, count: number) => {
@@ -787,8 +837,17 @@ When(
   'I drag the {string} widget onto the right side of the {string} widget',
   async ({ page }, source: string, target: string) => {
     await dragWidgetBeside(page, widgetLocator(page, source), widgetLocator(page, target), 'right');
+    // The drop has been handled, and any layout write made, once the dashboard stops dragging
+    // (useDashboardDnd clears the drag and moves the widget in one handler): a refused drop must
+    // not pass early.
+    await expect(DashboardSelectors.view(page)).not.toHaveAttribute('data-dragging', 'true', WIDGET_TIMEOUT);
   }
 );
+
+// A refusal is told to assistive technology only (never a banner): the live region's text.
+Then('the refusal {string} was announced', async ({ page }, text: string) => {
+  await expectAnnounced(page, text);
+});
 
 When(
   'I drag the {string} widget between dashboard rows {int} and {int}',
@@ -911,9 +970,12 @@ Then('the {string} widget shows a number chart', async ({ page }, label: string)
 Then('the {string} widget shows an empty number chart', async ({ page }, label: string) => {
   const chart = widgetLocator(page, label).getByTestId('number-chart');
 
+  // WP11: only "No data", without a caption or a value.
   await expect(chart).toBeVisible(WIDGET_TIMEOUT);
   await expect(chart).toHaveAttribute('data-empty', 'true');
-  await expect(chart).toContainText(/No rows to count|^\s*0\s*$/);
+  await expect(chart.getByTestId('number-chart-empty')).toHaveText('No data');
+  await expect(chart.getByTestId('number-chart-title')).toHaveCount(0);
+  await expect(chart.getByTestId('number-chart-value')).toHaveCount(0);
 });
 
 // ---------------------------------------------------------------------------
@@ -974,14 +1036,15 @@ When('I click the first bar of the {string} widget', async ({ page }, label: str
 });
 
 Then('a drill-down lists exactly one of {string}', async ({ page }, titles: string) => {
-  const dialog = page.getByRole('dialog').last();
+  // The chart drill-down itself: a record's side peek is a dialog too (WP13).
+  const dialog = page.getByTestId('chart-drilldown');
 
   await expect(dialog).toBeVisible(WIDGET_TIMEOUT);
   await expect
     .poll(async () => {
-      const text = (await dialog.textContent()) ?? '';
+      const listed = (await dialog.getByTestId('drill-row-title').allTextContents()).map((title) => title.trim());
 
-      return splitList(titles).filter((title) => text.includes(title)).length;
+      return splitList(titles).filter((title) => listed.includes(title)).length;
     })
     .toBe(1);
   // The drill-down is an overlay; the dashboard stays underneath.

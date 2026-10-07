@@ -1,8 +1,8 @@
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
-import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
+import { DatabaseContext, DatabaseContextState, DatabaseSearchQueryContext } from '@/application/database-yjs/context';
 import { CalculationType, FieldType } from '@/application/database-yjs/database.type';
 import {
   YDatabase,
@@ -26,7 +26,11 @@ jest.mock('@/components/database/components/grid/grid-calculation-cell/Calcation
   __esModule: true,
   default: () => null,
 }));
-jest.mock('@/components/database/components/grid/grid-calculation-cell', () => ({ CalculationCell: () => null }));
+jest.mock('@/components/database/components/grid/grid-calculation-cell', () => ({
+  CalculationCell: ({ cell }: { cell?: { value: string } }) => (
+    <output data-testid='calculation-value'>{cell?.value}</output>
+  ),
+}));
 
 const fieldId = 'amount';
 const rowOrders = ['a', 'b', 'c'].map((id) => ({ id, height: 36 }));
@@ -37,7 +41,7 @@ const completeCells = new Map<string, unknown>([
 ]);
 const documents: YDoc[] = [];
 
-function fixture(readOnly = false) {
+function fixture(readOnly = false, isDashboardWidget = false) {
   const databaseDoc = new Y.Doc() as YDoc;
   const database = new Y.Map() as YDatabase;
   const fields = new Y.Map() as YDatabaseFields;
@@ -78,6 +82,7 @@ function fixture(readOnly = false) {
     rowMap: { a: liveRows.a },
     readOnly,
     ensureRow: jest.fn(),
+    isDashboardWidget,
   } as DatabaseContextState;
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <DatabaseContext.Provider value={context}>{children}</DatabaseContext.Provider>
@@ -140,5 +145,103 @@ describe('GridCalculateRowCellWithValues', () => {
     context.rowMap = liveRows;
     rerender(<GridCalculateRowCell fieldId={fieldId} rowOrders={rowOrders} />);
     await waitFor(() => expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('60'));
+  });
+
+  describe('inside a dashboard widget (WP07 P0-5)', () => {
+    it('inside a dashboard widget a writer never writes calculation_value', async () => {
+      const { Wrapper, calculation, databaseDoc } = fixture(false, true);
+      const updates = jest.fn();
+
+      databaseDoc.on('update', updates);
+      render(<GridCalculateRowCellWithValues fieldId={fieldId} cells={new Map([['a', '10']])} ready />, {
+        wrapper: Wrapper,
+      });
+      await waitFor(() => expect(screen.getByTestId('calculation-value').textContent).toBe('10'));
+      expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('60');
+      expect(updates).not.toHaveBeenCalled();
+    });
+
+    it('shows the value computed from the widget rows', async () => {
+      const { Wrapper } = fixture(true, true);
+      const { rerender } = render(
+        <GridCalculateRowCellWithValues
+          fieldId={fieldId}
+          cells={
+            new Map([
+              ['a', '10'],
+              ['c', '30'],
+            ])
+          }
+          ready
+        />,
+        { wrapper: Wrapper }
+      );
+
+      // Readers see the widget's own total too, not the shared one.
+      await waitFor(() => expect(screen.getByTestId('calculation-value').textContent).toBe('40'));
+      rerender(<GridCalculateRowCellWithValues fieldId={fieldId} cells={new Map([['a', '10']])} ready={false} />);
+      expect(screen.getByTestId('calculation-value').textContent).toBe('');
+    });
+
+    it('outside widgets it still persists as before', async () => {
+      const { Wrapper, calculation } = fixture(false, false);
+
+      render(<GridCalculateRowCellWithValues fieldId={fieldId} cells={new Map([['a', '10']])} ready />, {
+        wrapper: Wrapper,
+      });
+      await waitFor(() => expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('10'));
+      expect(screen.getByTestId('calculation-value').textContent).toBe('10');
+    });
+  });
+
+  describe('while a row search is active (WP09 §1.2)', () => {
+    it('never writes calculation_value and shows the value of the searched rows', async () => {
+      const { Wrapper, calculation, databaseDoc } = fixture(false, false);
+      const updates = jest.fn();
+
+      databaseDoc.on('update', updates);
+      render(
+        <Wrapper>
+          <DatabaseSearchQueryContext.Provider value='launch'>
+            <GridCalculateRowCellWithValues
+              fieldId={fieldId}
+              cells={
+                new Map([
+                  ['a', '10'],
+                  ['b', '20'],
+                ])
+              }
+              ready
+            />
+          </DatabaseSearchQueryContext.Provider>
+        </Wrapper>
+      );
+      await waitFor(() => expect(screen.getByTestId('calculation-value').textContent).toBe('30'));
+      expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('60');
+      expect(updates).not.toHaveBeenCalled();
+    });
+
+    it('persists again once the search is cleared', async () => {
+      const { Wrapper, calculation } = fixture(false, false);
+      const cells = new Map([['a', '10']]);
+      const { rerender } = render(
+        <Wrapper>
+          <DatabaseSearchQueryContext.Provider value='launch'>
+            <GridCalculateRowCellWithValues fieldId={fieldId} cells={cells} ready />
+          </DatabaseSearchQueryContext.Provider>
+        </Wrapper>
+      );
+
+      await waitFor(() => expect(screen.getByTestId('calculation-value').textContent).toBe('10'));
+      expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('60');
+      rerender(
+        <Wrapper>
+          <DatabaseSearchQueryContext.Provider value=''>
+            <GridCalculateRowCellWithValues fieldId={fieldId} cells={cells} ready />
+          </DatabaseSearchQueryContext.Provider>
+        </Wrapper>
+      );
+      await waitFor(() => expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('10'));
+    });
   });
 });

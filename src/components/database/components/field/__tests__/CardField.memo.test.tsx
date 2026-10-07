@@ -20,6 +20,7 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
 }));
 
 jest.mock('@/components/database/components/cell/Cell', () => ({
+  CellValue: ({ children }: { children: (cell: typeof mockCell) => React.ReactNode }) => children(mockCell),
   Cell: ({ cell }: { cell?: { data: string } }) => {
     mockCellRenders();
     return <span>{cell?.data}</span>;

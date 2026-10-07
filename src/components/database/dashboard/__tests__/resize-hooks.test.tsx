@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { CSSProperties, useRef, useState, useSyncExternalStore } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 
 import {
   DASHBOARD_MAX_ROW_HEIGHT,
@@ -8,7 +8,7 @@ import {
 } from '@/application/database-yjs/dashboard.type';
 
 import { DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP } from '../constants';
-import { ROW_HEIGHT_CSS_VARIABLE, useRowHeightResize } from '../hooks/useRowHeightResize';
+import { useRowHeightResize } from '../hooks/useRowHeightResize';
 import { applyWidthPreview, useWidthResize } from '../hooks/useWidthResize';
 
 // jsdom has no PointerEvent (and `fireEvent.pointerDown` would drop the
@@ -90,11 +90,14 @@ function HeightProbe({
   const rowRef = useRef<HTMLDivElement>(null);
   const resize = useRowHeightResize({ height, enabled, onCommit, getRowElement: () => rowRef.current });
   const preview = useSyncExternalStore(resize.preview.subscribe, resize.preview.get);
-  // Like DashboardRow: the style prop only seeds the variable, the hook owns it.
+  // Like DashboardWidget: the box's style prop only seeds its height, the hook owns it.
   const [initialHeight] = useState(height);
 
   return (
-    <div data-testid='row' ref={rowRef} style={{ [ROW_HEIGHT_CSS_VARIABLE]: `${initialHeight}px` } as CSSProperties}>
+    <div>
+      <div data-testid='row' ref={rowRef}>
+        <div data-testid='box' style={{ height: initialHeight }} />
+      </div>
       <output data-testid='height'>{preview ?? height}</output>
       <output data-testid='previewing'>{String(resize.dragging)}</output>
       <div
@@ -129,7 +132,8 @@ function PersistingHeightProbe({
   );
 }
 
-const rowHeightVariable = () => screen.getByTestId('row').style.getPropertyValue(ROW_HEIGHT_CSS_VARIABLE);
+/** The height the hook wrote on the row's box. */
+const rowBoxHeight = () => screen.getByTestId('box').style.height;
 
 function pressHandle(clientX = 0, clientY = 0, button = 0) {
   fireEvent(screen.getByTestId('handle'), pointer('pointerdown', { button, clientX, clientY }));
@@ -347,14 +351,14 @@ describe('useRowHeightResize', () => {
     movePointer(0, 220);
     expect(screen.getByTestId('height').textContent).toBe('480');
     expect(screen.getByTestId('previewing').textContent).toBe('true');
-    // The row resizes through its CSS variable, written by the drag itself.
-    expect(rowHeightVariable()).toBe('480px');
+    // The row's boxes resize through their own height, written by the drag itself.
+    expect(rowBoxHeight()).toBe('480px');
 
     releasePointer();
     expect(onCommit).toHaveBeenCalledWith(480);
     expect(screen.getByTestId('previewing').textContent).toBe('false');
     expect(screen.getByTestId('height').textContent).toBe('360');
-    expect(rowHeightVariable()).toBe('360px');
+    expect(rowBoxHeight()).toBe('360px');
   });
 
   it('writes the committed height to the row once the drag ends', () => {
@@ -369,10 +373,10 @@ describe('useRowHeightResize', () => {
     // new to write: the committed height must come from the hook.
     expect(onCommit).toHaveBeenCalledWith(480);
     expect(screen.getByTestId('height').textContent).toBe('480');
-    expect(rowHeightVariable()).toBe('480px');
+    expect(rowBoxHeight()).toBe('480px');
 
     fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowDown' });
-    expect(rowHeightVariable()).toBe(`${480 + DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP}px`);
+    expect(rowBoxHeight()).toBe(`${480 + DASHBOARD_ROW_HEIGHT_KEYBOARD_STEP}px`);
   });
 
   it('keeps the preview over a collaborator height until the drag ends', () => {
@@ -382,16 +386,16 @@ describe('useRowHeightResize', () => {
     pressHandle(0, 100);
     movePointer(0, 220);
     rerender(<HeightProbe height={300} onCommit={onCommit} />);
-    expect(rowHeightVariable()).toBe('480px');
+    expect(rowBoxHeight()).toBe('480px');
 
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
     expect(onCommit).not.toHaveBeenCalled();
-    expect(rowHeightVariable()).toBe('300px');
+    expect(rowBoxHeight()).toBe('300px');
 
     rerender(<HeightProbe height={420} onCommit={onCommit} />);
-    expect(rowHeightVariable()).toBe('420px');
+    expect(rowBoxHeight()).toBe('420px');
   });
 
   it('snaps the preview to 20 px and commits the snapped height', () => {
@@ -401,7 +405,7 @@ describe('useRowHeightResize', () => {
     pressHandle(0, 100);
     movePointer(0, 150);
     expect(screen.getByTestId('height').textContent).toBe('420');
-    expect(rowHeightVariable()).toBe('420px');
+    expect(rowBoxHeight()).toBe('420px');
     movePointer(0, 211);
     expect(screen.getByTestId('height').textContent).toBe('480');
     releasePointer();

@@ -165,19 +165,42 @@ export function createDashboardContextValue(overrides: Partial<DashboardContextV
     canEnterEdit: true,
     pinEditing: jest.fn(),
     updateSetting: jest.fn(),
-    updateRows: jest.fn(),
+    updateRows: jest.fn(() => true),
+    ownedViews: jest
+      .requireActual<typeof import('../hooks/useOwnedWidgetViews')>('../hooks/useOwnedWidgetViews')
+      .createInertOwnedWidgetViews(),
     ...overrides,
   };
 }
+
+/**
+ * A saved global filter without a value (it narrows nothing): readers only
+ * get the toolbar Filter button on a dashboard that has filters (WP08 §1.1).
+ */
+export const HARNESS_GLOBAL_FILTER = {
+  id: 'gf:harness',
+  name: 'Name',
+  fieldType: 0,
+  condition: 2,
+  content: '',
+  targets: { db: 'name' },
+} satisfies DashboardFiltersContextValue['globalFilters'][number];
 
 export function createDashboardFiltersValue(
   overrides: Partial<DashboardFiltersContextValue> = {}
 ): DashboardFiltersContextValue {
   return {
-    globalFilters: [],
-    effectiveGlobalFilters: [],
-    localGlobalFilters: null,
-    setLocalGlobalFilters: jest.fn(),
+    globalFilters: [HARNESS_GLOBAL_FILTER],
+    effectiveGlobalFilters: [HARNESS_GLOBAL_FILTER],
+    privateGlobalValues: {},
+    dirtyGlobalFilterIds: new Set(),
+    setPrivateGlobalValue: jest.fn(),
+    saveForEveryone: jest.fn(() => null),
+    resetPrivateChanges: jest.fn(),
+    getWidgetPrivateParts: jest.fn(() => ({
+      subscribe: () => () => undefined,
+      getSnapshot: () => ({ filters: false, sorts: false, writable: false }),
+    })),
     getViewOverlay: jest.fn(),
     setViewOverlayWritable: jest.fn(),
     resetViewOverlays: jest.fn(),
@@ -187,13 +210,28 @@ export function createDashboardFiltersValue(
 }
 
 export function createDashboardUiValue(overrides: Partial<DashboardUiContextValue> = {}): DashboardUiContextValue {
+  // Required here rather than imported, so the harness's import block stays as it is.
+  const stores = jest.requireActual<typeof import('../arrange-stores')>('../arrange-stores');
+  const rowFocus = stores.createRowFocusRequests();
+
   return {
     hostDatabaseId: 'db',
     dndInstanceId: Symbol('dashboard-test'),
     getRows: () => [],
-    updateRows: jest.fn(),
-    openPicker: jest.fn(),
-    showLimitMessage: jest.fn(),
+    updateRows: jest.fn(() => true),
+    startAddWidget: jest.fn(),
+    addWidget: jest
+      .requireActual<typeof import('../add-widget/add-widget-api')>('../add-widget/add-widget-api')
+      .createInertAddWidgetApi(),
+    ownedViews: jest
+      .requireActual<typeof import('../hooks/useOwnedWidgetViews')>('../hooks/useOwnedWidgetViews')
+      .createInertOwnedWidgetViews(),
+    announce: jest.fn(),
+    dropIndicatorStore: stores.createDropIndicatorStore(),
+    dragGhostStore: stores.createDragGhostStore(),
+    requestRowFocus: rowFocus.request,
+    consumeRowFocus: rowFocus.consume,
+    firstPaintDone: { current: false },
     acquireSourceDoc: () => () => undefined,
     selectWidget: jest.fn(),
     ...overrides,
@@ -225,6 +263,9 @@ export function createWidgetContextValue(overrides: Partial<WidgetContextValue> 
     isEditing: editing,
     canEdit: true,
     editing,
+    mobileContext: false,
+    searchActive: false,
+    setSearchActive: jest.fn(),
     showWidgetTitles: true,
     showIcon: false,
     headerHeight: 40,

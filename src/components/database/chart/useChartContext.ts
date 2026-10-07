@@ -9,24 +9,39 @@ import {
   ChartAggregationType,
   ChartDataItem,
   ChartLayoutSettings,
+  ChartSeriesData,
   ChartType,
+  EMPTY_CHART_SERIES_DATA,
 } from '@/application/database-yjs/chart.type';
 import { YDatabaseField } from '@/application/types';
+import { ChartSeriesStyle } from '@/components/database/chart/hooks/chartGroupBy';
+import { ChartColorPainter, paintChartColor } from '@/components/database/chart/hooks/chartSeries';
+import { FALLBACK_INTL_LOCALE } from '@/i18n/intl-locale';
 
 export interface ChartContextValue {
   /** Current chart type */
   chartType: ChartType;
   /** Chart layout settings */
   settings: ChartLayoutSettings | null;
-  /** Computed chart data, colored for the current theme */
-  chartData: ChartDataItem[];
+  /** What bar, line and donut charts draw (WP12): categories and series, colours unpainted. */
+  seriesData: ChartSeriesData;
+  /** The Number chart's value; `null` while there is none (and for other charts). */
+  numberItem: ChartDataItem | null;
+  /** The effective Group by property, or `null`. */
+  groupByField: YDatabaseField | null;
+  /** Whether the chart splits its categories into Group by series. */
+  hasGroupBy: boolean;
+  /** What the series draw with: the group style of a bar chart with a Group by, `none` otherwise. */
+  groupStyle: ChartSeriesStyle;
+  /** Paints a series builder colour for the current theme. */
+  paint: ChartColorPainter;
   /** Whether data is loading */
   isLoading: boolean;
   /** X-axis field */
   xAxisField: YDatabaseField | null;
   /**
    * What the chart computes, formats and titles: Count unless a value
-   * aggregation has its Y field (`resolveEffectiveAggregation`). Resolved once,
+   * aggregation has its Y field (`effectiveChartAggregation`). Resolved once,
    * in `useChartData`; nothing below the provider re-derives it.
    */
   effectiveAggregation: ChartAggregationType;
@@ -38,25 +53,37 @@ export interface ChartContextValue {
   format: ChartValueFormatter;
   /** The generated name of what the chart shows ("Count all", "Sum of Amount"): the line legend, the Number title */
   seriesLabel: string;
+  /** The Number chart's caption as the card shows it (`getNumberChartTitle`): the custom title, else `seriesLabel`. It titles its drill-down too. */
+  numberTitle: string;
+  /**
+   * The mobile context (`useMobileContext`, WP14 §1.4.6): taps replace hover,
+   * so a first tap shows a category's tooltip and a second tap drills.
+   */
+  mobile: boolean;
   /** The rows failed to load and the chart has none to show */
   loadError: boolean;
   /** Retry the rows that failed to load */
   retry: () => void;
   isDark: boolean;
-  /** Opens the drill-down of a chart item */
+  /** Opens the drill-down (`ChartDrillDialog`) of a chart item: a category, a segment, or the Number card's value */
   onItemClick?: (item: ChartDataItem) => void;
 }
 
-/** Outside a provider (tests, previews): a plain Sum in US English. */
+/** Outside a provider (tests, previews): a plain Sum in the fallback locale (`toIntlLocale` of no language). */
 function defaultFormat(value: number, mode: ChartValueMode) {
-  return formatChartValue(value, { aggregation: ChartAggregationType.Sum, mode, locale: 'en-US' });
+  return formatChartValue(value, { aggregation: ChartAggregationType.Sum, mode, locale: FALLBACK_INTL_LOCALE });
 }
 
 /** The value outside a provider; tests spread it to stub a chart. */
 export const DEFAULT_CHART_CONTEXT: ChartContextValue = {
   chartType: ChartType.Bar,
   settings: null,
-  chartData: [],
+  seriesData: EMPTY_CHART_SERIES_DATA,
+  numberItem: null,
+  groupByField: null,
+  hasGroupBy: false,
+  groupStyle: 'none',
+  paint: (color) => paintChartColor(color, false),
   isLoading: true,
   xAxisField: null,
   effectiveAggregation: ChartAggregationType.Count,
@@ -64,6 +91,8 @@ export const DEFAULT_CHART_CONTEXT: ChartContextValue = {
   style: DEFAULT_CHART_EXTENDED_SETTINGS,
   format: defaultFormat,
   seriesLabel: '',
+  numberTitle: '',
+  mobile: false,
   loadError: false,
   retry: () => undefined,
   isDark: false,

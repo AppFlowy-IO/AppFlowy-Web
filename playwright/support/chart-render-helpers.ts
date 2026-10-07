@@ -17,6 +17,7 @@ import * as Y from 'yjs';
 
 import { DatabaseViewLayout } from '../../src/application/types';
 
+import { openChartPagePanel } from './chart-settings-helpers';
 import { pressEscapeUntilHidden, readServerDatabaseDoc } from './dashboard-shared-helpers';
 import {
   dashboardWorld,
@@ -107,7 +108,7 @@ function localNoonIso(day: string) {
   return new Date(year, month - 1, date, 12).toISOString();
 }
 
-interface TypeOptionUpdate {
+export interface TypeOptionUpdate {
   fieldId: string;
   type: FieldType;
   entries: Record<string, unknown>;
@@ -137,7 +138,7 @@ function typeOptionUpdates(spec: FixtureDatabaseSpec, fieldIds: Record<string, s
   });
 }
 
-async function writeTypeOptions(page: Page, databaseId: string, updates: TypeOptionUpdate[]) {
+export async function writeTypeOptions(page: Page, databaseId: string, updates: TypeOptionUpdate[]) {
   await page.evaluate(
     ({ databaseId, updates }) => {
       const win = window as any;
@@ -170,7 +171,7 @@ async function writeTypeOptions(page: Page, databaseId: string, updates: TypeOpt
 }
 
 /** Wait until the server holds the type options the browser wrote. */
-async function waitForTypeOptionSync(
+export async function waitForTypeOptionSync(
   page: Page,
   request: APIRequestContext,
   databaseId: string,
@@ -399,7 +400,7 @@ export async function writeCellInBackground(
   const fieldId = database.fieldIds[property];
 
   if (!rowId || !fieldId) throw new Error(`"${databaseName}" has no "${rowTitle}" row or "${property}" property`);
-  const written = await page.evaluate(
+  const writeOnce = () => page.evaluate(
     ({ databaseId, rowId, fieldId, value }) => {
       const bridge = (window as any).__DASHBOARD_TEST__;
       // The same match as the bridge's `byDatabase`, newest context first.
@@ -422,59 +423,47 @@ export async function writeCellInBackground(
     },
     { databaseId: database.databaseId, rowId, fieldId, value }
   );
+  // Row docs load after the database opens (shared row loading), so the row may not be mounted yet.
+  let written = false;
 
-  if (!written) throw new Error(`No mounted row doc holds "${rowTitle}"`);
+  await expect
+    .poll(async () => (written = written || (await writeOnce())), {
+      message: `No mounted row doc holds "${rowTitle}"`,
+      timeout: 15000,
+    })
+    .toBe(true);
 }
 
-/** Open the chart settings menu of the open chart page (gear → Chart settings). */
+/** Open the chart settings panel of the open chart page (gear → Chart settings ›). */
 export async function openChartSettingsMenu(page: Page) {
-  await closeMenus(page);
-  await page.getByTestId('database-actions-settings').first().click();
-  const chartSettings = page.getByRole('menuitem', { name: /chart settings/i });
-
-  await expect(chartSettings).toBeVisible(CHART_TIMEOUT);
-  await chartSettings.click();
+  await openChartPagePanel(page);
 }
 
-/**
- * Point at a row of the open Chart settings submenu the way a user does:
- * across into the submenu first, then along it to the row. (A straight jump
- * from the trigger crosses the root menu, which closes the submenu.)
- */
-async function pointAtChartSettingsRow(page: Page, row: Locator) {
-  await expect(row).toBeVisible(CHART_TIMEOUT);
-  const trigger = await page.getByRole('menuitem', { name: /chart settings/i }).boundingBox();
-  const submenu = await row.locator('xpath=ancestor::*[@role="menu"][1]').boundingBox();
-
-  if (!trigger || !submenu) throw new Error('The Chart settings submenu is not open');
-  await page.mouse.move(submenu.x + submenu.width / 2, trigger.y + trigger.height / 2, { steps: 10 });
-  await row.scrollIntoViewIfNeeded();
-  const box = await row.boundingBox();
-
-  if (!box) throw new Error('The chart settings row is not on screen');
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 10 });
-}
-
-/** Pick `optionTestId` in the chart style submenu behind `rowTestId`. */
+/** Pick `optionTestId` on the panel page that the row `rowTestId` opens, then close the panel. */
 export async function pickChartStyleOption(page: Page, rowTestId: string, optionTestId: string) {
   await openChartSettingsMenu(page);
   const row = page.getByTestId(rowTestId);
 
-  await pointAtChartSettingsRow(page, row);
+  await expect(row).toBeVisible(CHART_TIMEOUT);
   await row.click();
   const option = page.getByTestId(optionTestId);
 
   await expect(option).toBeVisible(CHART_TIMEOUT);
   await option.click();
+  await expect(option).toHaveAttribute('aria-checked', 'true');
   await closeMenus(page);
 }
 
+/** Flip a switch row of the panel (Data labels), then close the panel. */
 export async function toggleChartStyleRow(page: Page, rowTestId: string) {
   await openChartSettingsMenu(page);
   const row = page.getByTestId(rowTestId);
 
-  await pointAtChartSettingsRow(page, row);
+  await expect(row).toBeVisible(CHART_TIMEOUT);
+  const before = await row.getAttribute('aria-checked');
+
   await row.click();
+  await expect(row).not.toHaveAttribute('aria-checked', before ?? '');
   await closeMenus(page);
 }
 

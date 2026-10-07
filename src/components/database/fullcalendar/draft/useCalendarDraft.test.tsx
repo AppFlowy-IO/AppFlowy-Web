@@ -25,6 +25,8 @@ jest.mock('@/application/database-yjs', () => ({
   usePrimaryFieldId: jest.fn(),
 }));
 jest.mock('@/application/database-yjs/dispatch/row', () => ({ useNewRowDispatch: jest.fn() }));
+// The filters a new row is prefilled from (WP07 P0-5): the view's, or a widget's private and global ones.
+jest.mock('@/application/database-yjs/effective-conditions', () => ({ useEffectiveViewFilters: jest.fn() }));
 
 const selection = { start: new Date(2026, 8, 11, 17), end: new Date(2026, 8, 11, 18), allDay: false };
 const emptyProps: { events: EventInput[]; emptyEvents: EventInput[] } = { events: [], emptyEvents: [] };
